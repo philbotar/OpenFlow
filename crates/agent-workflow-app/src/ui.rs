@@ -53,7 +53,7 @@ impl WorkflowApp {
     }
 
     fn save_workflow(&mut self) {
-        match self.store.save(&[self.state.workflow.clone()]) {
+        match self.store.save(std::slice::from_ref(&self.state.workflow)) {
             Ok(()) => self.state.last_error = None,
             Err(error) => self.state.last_error = Some(format!("save failed: {error}")),
         }
@@ -141,7 +141,8 @@ impl eframe::App for WorkflowApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading(&self.state.workflow.name);
-            let (response, painter) = ui.allocate_painter(ui.available_size(), egui::Sense::click());
+            let (response, painter) =
+                ui.allocate_painter(ui.available_size(), egui::Sense::click());
             let rect = response.rect;
             painter.rect_stroke(
                 rect,
@@ -164,7 +165,8 @@ impl eframe::App for WorkflowApp {
                     .iter()
                     .find(|node| node.id == edge.to);
                 if let (Some(from), Some(to)) = (from, to) {
-                    let start = rect.left_top() + egui::vec2(from.position.x + 140.0, from.position.y + 32.0);
+                    let start = rect.left_top()
+                        + egui::vec2(from.position.x + 140.0, from.position.y + 32.0);
                     let end = rect.left_top() + egui::vec2(to.position.x, to.position.y + 32.0);
                     painter.line_segment(
                         [start, end],
@@ -212,7 +214,10 @@ impl eframe::App for WorkflowApp {
                             RunEventKind::Completed => "completed",
                             RunEventKind::Failed => "failed",
                         };
-                        ui.label(format!("{} | {} | {}", event.node_id, status, event.message));
+                        ui.label(format!(
+                            "{} | {} | {}",
+                            event.node_id, status, event.message
+                        ));
                         if let Some(output) = &event.output {
                             ui.monospace(output.to_string());
                         }

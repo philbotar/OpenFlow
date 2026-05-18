@@ -35,8 +35,11 @@ pub fn execution_layers(workflow: &Workflow) -> Result<Vec<Vec<NodeId>>, Workflo
     }
 
     let mut edge_ids = HashSet::new();
-    let mut incoming: HashMap<NodeId, usize> =
-        workflow.nodes.iter().map(|node| (node.id.clone(), 0)).collect();
+    let mut incoming: HashMap<NodeId, usize> = workflow
+        .nodes
+        .iter()
+        .map(|node| (node.id.clone(), 0))
+        .collect();
     let mut outgoing: HashMap<NodeId, Vec<NodeId>> = workflow
         .nodes
         .iter()
@@ -72,7 +75,8 @@ pub fn execution_layers(workflow: &Workflow) -> Result<Vec<Vec<NodeId>>, Workflo
 
     let mut ready: Vec<NodeId> = incoming
         .iter()
-        .filter_map(|(node_id, count)| (*count == 0).then(|| node_id.clone()))
+        .filter(|(_, count)| **count == 0)
+        .map(|(node_id, _)| node_id.clone())
         .collect();
     ready.sort();
 
@@ -181,6 +185,9 @@ mod tests {
         let mut workflow = workflow_with_nodes(&["a", "b"]);
         workflow.edges = vec![Edge::new("a", "b"), Edge::new("b", "a")];
 
-        assert_eq!(validate_workflow(&workflow), Err(WorkflowValidationError::Cycle));
+        assert_eq!(
+            validate_workflow(&workflow),
+            Err(WorkflowValidationError::Cycle)
+        );
     }
 }

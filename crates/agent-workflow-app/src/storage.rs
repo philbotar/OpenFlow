@@ -84,7 +84,7 @@ mod tests {
         let store = FileWorkflowStore::new(dir.path().join("nested").join("workflows.json"));
         let workflow = Workflow::new("Saved");
 
-        store.save(&[workflow.clone()]).unwrap();
+        store.save(std::slice::from_ref(&workflow)).unwrap();
         let loaded = store.load().unwrap();
 
         assert_eq!(loaded, vec![workflow]);

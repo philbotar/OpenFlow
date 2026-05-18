@@ -77,7 +77,9 @@ impl AppState {
             self.last_error = Some("cannot connect a node to itself".to_string());
             return;
         }
-        self.workflow.edges.push(Edge::new(from_node_id, to_node_id));
+        self.workflow
+            .edges
+            .push(Edge::new(from_node_id, to_node_id));
         self.last_error = None;
     }
 

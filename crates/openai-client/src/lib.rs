@@ -60,7 +60,10 @@ impl AiPort for OpenAiResponsesClient {
 
         let response = self
             .http
-            .post(format!("{}/v1/responses", self.base_url.trim_end_matches('/')))
+            .post(format!(
+                "{}/v1/responses",
+                self.base_url.trim_end_matches('/')
+            ))
             .bearer_auth(&self.api_key)
             .json(&body)
             .send()
@@ -81,7 +84,9 @@ impl AiPort for OpenAiResponsesClient {
 
         let text = extract_output_text(&payload)?;
         let output: Value = serde_json::from_str(&text).map_err(|error| {
-            AgentError::Failed(format!("OpenAI structured output was not valid JSON: {error}"))
+            AgentError::Failed(format!(
+                "OpenAI structured output was not valid JSON: {error}"
+            ))
         })?;
 
         Ok(AgentResponse {
@@ -105,7 +110,9 @@ fn extract_output_text(payload: &Value) -> Result<String, AgentError> {
         let content = item
             .get("content")
             .and_then(Value::as_array)
-            .ok_or_else(|| AgentError::Failed("OpenAI message missing content array".to_string()))?;
+            .ok_or_else(|| {
+                AgentError::Failed("OpenAI message missing content array".to_string())
+            })?;
 
         for content_item in content {
             match content_item.get("type").and_then(Value::as_str) {
