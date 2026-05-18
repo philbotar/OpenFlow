@@ -22,6 +22,7 @@ pub struct WorkflowApp {
     state: AppState,
     store: FileWorkflowStore,
     runtime: tokio::runtime::Runtime,
+    show_settings: bool,
 }
 
 impl WorkflowApp {
@@ -40,6 +41,7 @@ impl WorkflowApp {
             },
             store,
             runtime: tokio::runtime::Runtime::new().expect("tokio runtime starts"),
+            show_settings: false,
         }
     }
 
@@ -162,125 +164,98 @@ impl eframe::App for WorkflowApp {
             self.save_workflow();
         }
 
-        // ── Toolbar ─────────────────────────────────────────────────────────
+        // ── Top bar (Codex-style minimal) ────────────────────────────────────
         egui::TopBottomPanel::top("toolbar")
+            .exact_height(44.0)
             .frame(
                 egui::Frame::new()
-                    .fill(SURFACE_2)
-                    .inner_margin(egui::Margin::symmetric(10, 6))
+                    .fill(SURFACE_1)
                     .stroke(egui::Stroke::new(1.0, BORDER)),
             )
             .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    // Left pill: graph mutations
-                    egui::Frame::new()
-                        .fill(SURFACE_1)
-                        .corner_radius(egui::CornerRadius::same(6))
-                        .stroke(egui::Stroke::new(1.0, BORDER))
-                        .inner_margin(egui::Margin::symmetric(4, 2))
-                        .show(ui, |ui| {
-                            ui.spacing_mut().item_spacing.x = 2.0;
-                            if ui
-                                .add(
-                                    egui::Button::new("✚  Node")
-                                        .fill(egui::Color32::TRANSPARENT)
-                                        .corner_radius(egui::CornerRadius::same(4)),
-                                )
-                                .on_hover_text("Add agent node")
-                                .clicked()
-                            {
-                                self.state.add_agent_node();
-                            }
-                            ui.add(egui::Separator::default().vertical());
-                            if ui
-                                .add(
-                                    egui::Button::new("🔗  Link")
-                                        .fill(egui::Color32::TRANSPARENT)
-                                        .corner_radius(egui::CornerRadius::same(4)),
-                                )
-                                .on_hover_text("Begin linking from selected node")
-                                .clicked()
-                            {
-                                self.state.begin_link_from_selected();
-                            }
-                            ui.add(egui::Separator::default().vertical());
-                            if ui
-                                .add(
-                                    egui::Button::new("🗑  Delete")
-                                        .fill(egui::Color32::TRANSPARENT)
-                                        .corner_radius(egui::CornerRadius::same(4)),
-                                )
-                                .on_hover_text("Delete selected node")
-                                .clicked()
-                            {
-                                self.state.remove_selected_node();
-                            }
+                egui::Frame::new()
+                    .inner_margin(egui::Margin::symmetric(14, 0))
+                    .show(ui, |ui| {
+                        ui.centered_and_justified(|ui| {
+                            ui.horizontal(|ui| {
+                                // Left: workflow identity
+                                ui.label(
+                                    egui::RichText::new("⬡")
+                                        .color(ACCENT)
+                                        .size(16.0),
+                                );
+                                ui.label(
+                                    egui::RichText::new(&self.state.workflow.name)
+                                        .size(14.0)
+                                        .color(TEXT_BRIGHT),
+                                );
+
+                                if let Some(error) = &self.state.last_error.clone() {
+                                    ui.add_space(12.0);
+                                    ui.label(
+                                        egui::RichText::new(error)
+                                            .size(12.0)
+                                            .color(DANGER),
+                                    );
+                                }
+
+                                // Right: actions
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        // Run button — primary CTA
+                                        if ui
+                                            .add(
+                                                egui::Button::new("▶  Run")
+                                                    .fill(ACCENT)
+                                                    .corner_radius(egui::CornerRadius::same(6))
+                                                    .min_size(egui::vec2(72.0, 28.0)),
+                                            )
+                                            .on_hover_text("Run workflow (⌘↵)")
+                                            .clicked()
+                                        {
+                                            self.run_current_workflow();
+                                        }
+
+                                        ui.add_space(4.0);
+
+                                        // Settings toggle
+                                        let settings_fill = if self.show_settings {
+                                            SURFACE_3
+                                        } else {
+                                            egui::Color32::TRANSPARENT
+                                        };
+                                        if ui
+                                            .add(
+                                                egui::Button::new("⚙")
+                                                    .fill(settings_fill)
+                                                    .corner_radius(egui::CornerRadius::same(6))
+                                                    .min_size(egui::vec2(32.0, 28.0)),
+                                            )
+                                            .on_hover_text("Settings")
+                                            .clicked()
+                                        {
+                                            self.show_settings = !self.show_settings;
+                                        }
+
+                                        // Save (quiet, no fill)
+                                        if ui
+                                            .add(
+                                                egui::Button::new("↓  Save")
+                                                    .fill(egui::Color32::TRANSPARENT)
+                                                    .corner_radius(egui::CornerRadius::same(6))
+                                                    .min_size(egui::vec2(64.0, 28.0)),
+                                            )
+                                            .on_hover_text("Save workflow (⌘S)")
+                                            .clicked()
+                                        {
+                                            self.save_workflow();
+                                        }
+                                    },
+                                );
+                            });
                         });
-
-                    ui.add_space(8.0);
-
-                    // Middle pill: workflow execution
-                    egui::Frame::new()
-                        .fill(SURFACE_1)
-                        .corner_radius(egui::CornerRadius::same(6))
-                        .stroke(egui::Stroke::new(1.0, BORDER))
-                        .inner_margin(egui::Margin::symmetric(4, 2))
-                        .show(ui, |ui| {
-                            ui.spacing_mut().item_spacing.x = 2.0;
-                            if ui
-                                .add(
-                                    egui::Button::new("▶  Run")
-                                        .fill(ACCENT)
-                                        .corner_radius(egui::CornerRadius::same(4))
-                                        .min_size(egui::vec2(64.0, 0.0)),
-                                )
-                                .on_hover_text("Run workflow (⌘↵)")
-                                .clicked()
-                            {
-                                self.run_current_workflow();
-                            }
-                            ui.add(egui::Separator::default().vertical());
-                            if ui
-                                .add(
-                                    egui::Button::new("💾  Save")
-                                        .fill(egui::Color32::TRANSPARENT)
-                                        .corner_radius(egui::CornerRadius::same(4)),
-                                )
-                                .on_hover_text("Save workflow (⌘S)")
-                                .clicked()
-                            {
-                                self.save_workflow();
-                            }
-                            ui.add(egui::Separator::default().vertical());
-                            if ui
-                                .add(
-                                    egui::Button::new("⟳  Clear")
-                                        .fill(egui::Color32::TRANSPARENT)
-                                        .corner_radius(egui::CornerRadius::same(4)),
-                                )
-                                .on_hover_text("Clear last run output")
-                                .clicked()
-                            {
-                                self.state.last_run = None;
-                                self.state.refresh_statuses_from_report();
-                            }
-                        });
-
-                    // Right: API key + error
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if let Some(error) = &self.state.last_error.clone() {
-                            ui.colored_label(DANGER, error);
-                            ui.add_space(8.0);
-                        }
-                        ui.add(
-                            egui::TextEdit::singleline(&mut self.state.openai_api_key_input)
-                                .password(true)
-                                .hint_text("sk-…")
-                                .desired_width(180.0),
-                        );
-                        ui.label(egui::RichText::new("🔑").color(TEXT_DIM).size(12.0));
                     });
-                });
             });
 
         // ── Left sidebar ─────────────────────────────────────────────────────
@@ -380,12 +355,7 @@ impl eframe::App for WorkflowApp {
                                 egui::vec2(24.0, 18.0),
                             );
                             if ui
-                                .put(
-                                    btn_rect,
-                                    egui::Button::new("→")
-                                        .fill(ACCENT_DIM)
-                                        .small(),
-                                )
+                                .put(btn_rect, egui::Button::new("→").fill(ACCENT_DIM).small())
                                 .clicked()
                             {
                                 self.state.connect_link_to(node.id.clone());
@@ -425,10 +395,66 @@ impl eframe::App for WorkflowApp {
                                 );
                             });
                     }
+
+                    // Canvas action strip (at bottom of sidebar)
+                    ui.add_space(8.0);
+                    ui.separator();
+                    egui::Frame::new()
+                        .fill(SURFACE_2)
+                        .inner_margin(egui::Margin::symmetric(10, 6))
+                        .show(ui, |ui| {
+                            ui.label(
+                                egui::RichText::new("ACTIONS")
+                                    .size(10.0)
+                                    .color(TEXT_DIM)
+                                    .monospace(),
+                            );
+                        });
+                    egui::Frame::new()
+                        .inner_margin(egui::Margin::symmetric(8, 4))
+                        .show(ui, |ui| {
+                            ui.set_width(ui.available_width());
+                            if ui
+                                .add(
+                                    egui::Button::new("🔗  Link from selected")
+                                        .fill(egui::Color32::TRANSPARENT)
+                                        .corner_radius(egui::CornerRadius::same(5))
+                                        .min_size(egui::vec2(ui.available_width(), 0.0)),
+                                )
+                                .clicked()
+                            {
+                                self.state.begin_link_from_selected();
+                            }
+                            if ui
+                                .add(
+                                    egui::Button::new("🗑  Delete selected")
+                                        .fill(egui::Color32::TRANSPARENT)
+                                        .corner_radius(egui::CornerRadius::same(5))
+                                        .min_size(egui::vec2(ui.available_width(), 0.0)),
+                                )
+                                .clicked()
+                            {
+                                self.state.remove_selected_node();
+                            }
+                            if self.state.last_run.is_some() {
+                                if ui
+                                    .add(
+                                        egui::Button::new("⟳  Clear run")
+                                            .fill(egui::Color32::TRANSPARENT)
+                                            .corner_radius(egui::CornerRadius::same(5))
+                                            .min_size(egui::vec2(ui.available_width(), 0.0)),
+                                    )
+                                    .clicked()
+                                {
+                                    self.state.last_run = None;
+                                    self.state.refresh_statuses_from_report();
+                                }
+                            }
+                        });
                 });
             });
 
-        // ── Inspector ────────────────────────────────────────────────────────
+        // ── Right panel: Inspector or Settings ───────────────────────────────
         egui::SidePanel::right("inspector")
             .resizable(true)
             .default_width(300.0)
@@ -439,141 +465,17 @@ impl eframe::App for WorkflowApp {
                     .inner_margin(egui::Margin::same(0)),
             )
             .show(ctx, |ui| {
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    ui.set_width(ui.available_width());
-
-                    egui::Frame::new()
-                        .fill(SURFACE_2)
-                        .inner_margin(egui::Margin::symmetric(12, 8))
-                        .show(ui, |ui| {
-                            ui.label(
-                                egui::RichText::new("INSPECTOR")
-                                    .size(10.0)
-                                    .color(TEXT_DIM)
-                                    .monospace(),
-                            );
-                        });
-
-                    ui.add_space(4.0);
-
-                    egui::CollapsingHeader::new(
-                        egui::RichText::new("Agent Config")
-                            .size(12.0)
-                            .color(TEXT_BRIGHT),
-                    )
-                    .default_open(true)
-                    .show(ui, |ui| {
-                        if let Some(node) = self.state.selected_node_mut() {
-                            inspector_row(ui, "Label", |ui| {
-                                ui.add(
-                                    egui::TextEdit::singleline(&mut node.label)
-                                        .desired_width(f32::INFINITY),
-                                );
-                            });
-                            inspector_row(ui, "Model", |ui| {
-                                ui.add(
-                                    egui::TextEdit::singleline(&mut node.agent.model)
-                                        .desired_width(f32::INFINITY),
-                                );
-                            });
-                            inspector_row_tall(ui, "System", |ui| {
-                                ui.add(
-                                    egui::TextEdit::multiline(&mut node.agent.system_prompt)
-                                        .desired_rows(3)
-                                        .desired_width(f32::INFINITY),
-                                );
-                            });
-                            inspector_row_tall(ui, "Task", |ui| {
-                                ui.add(
-                                    egui::TextEdit::multiline(&mut node.agent.task_prompt)
-                                        .desired_rows(3)
-                                        .desired_width(f32::INFINITY),
-                                );
-                            });
-                        } else {
-                            ui.add_space(6.0);
-                            ui.label(
-                                egui::RichText::new("No node selected")
-                                    .size(12.0)
-                                    .color(TEXT_DIM)
-                                    .italics(),
-                            );
-                            ui.add_space(6.0);
-                        }
-                    });
-
-                    ui.add_space(4.0);
-
-                    egui::CollapsingHeader::new(
-                        egui::RichText::new("Output Schema")
-                            .size(12.0)
-                            .color(TEXT_BRIGHT),
-                    )
-                    .default_open(false)
-                    .show(ui, |ui| {
-                        ui.add(
-                            egui::TextEdit::multiline(&mut self.state.schema_editor_text)
-                                .desired_rows(8)
-                                .desired_width(f32::INFINITY),
-                        );
-                        ui.add_space(4.0);
-                        if ui
-                            .add(egui::Button::new("Apply Schema").fill(SURFACE_3))
-                            .clicked()
-                        {
-                            self.state.apply_schema_editor();
-                        }
-                    });
-
-                    ui.add_space(4.0);
-
-                    egui::CollapsingHeader::new(
-                        egui::RichText::new("Entrypoint")
-                            .size(12.0)
-                            .color(TEXT_BRIGHT),
-                    )
-                    .default_open(true)
-                    .show(ui, |ui| {
-                        ui.add(
-                            egui::TextEdit::multiline(&mut self.state.entrypoint_text)
-                                .desired_rows(4)
-                                .desired_width(f32::INFINITY)
-                                .hint_text("Describe what the first agent should do…"),
-                        );
-                    });
-                });
+                if self.show_settings {
+                    self.show_settings_page(ui);
+                } else {
+                    self.show_inspector(ui);
+                }
             });
 
         // ── Canvas ───────────────────────────────────────────────────────────
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(SURFACE_0).inner_margin(egui::Margin::same(0)))
             .show(ctx, |ui| {
-                egui::Frame::new()
-                    .fill(SURFACE_1)
-                    .stroke(egui::Stroke::new(1.0, BORDER))
-                    .inner_margin(egui::Margin::symmetric(12, 6))
-                    .show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new("⬡").color(ACCENT).size(14.0));
-                            ui.label(
-                                egui::RichText::new(&self.state.workflow.name)
-                                    .size(13.0)
-                                    .color(TEXT_BRIGHT),
-                            );
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| {
-                                    ui.label(
-                                        egui::RichText::new("WORKFLOW")
-                                            .size(10.0)
-                                            .color(TEXT_DIM)
-                                            .monospace(),
-                                    );
-                                },
-                            );
-                        });
-                    });
-
                 let (response, painter) =
                     ui.allocate_painter(ui.available_size(), egui::Sense::click());
                 let rect = response.rect;
@@ -697,32 +599,12 @@ impl eframe::App for WorkflowApp {
                     .fill(SURFACE_2)
                     .inner_margin(egui::Margin::symmetric(12, 6))
                     .show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            ui.label(
-                                egui::RichText::new("RUN TRACE")
-                                    .size(10.0)
-                                    .color(TEXT_DIM)
-                                    .monospace(),
-                            );
-                            if self.state.last_run.is_some() {
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| {
-                                        if ui
-                                            .add(
-                                                egui::Button::new("⟳  Clear")
-                                                    .fill(egui::Color32::TRANSPARENT)
-                                                    .small(),
-                                            )
-                                            .clicked()
-                                        {
-                                            self.state.last_run = None;
-                                            self.state.refresh_statuses_from_report();
-                                        }
-                                    },
-                                );
-                            }
-                        });
+                        ui.label(
+                            egui::RichText::new("RUN TRACE")
+                                .size(10.0)
+                                .color(TEXT_DIM)
+                                .monospace(),
+                        );
                     });
 
                 egui::ScrollArea::vertical()
@@ -788,12 +670,10 @@ impl eframe::App for WorkflowApp {
                                                 .inner_margin(egui::Margin::symmetric(8, 4))
                                                 .show(ui, |ui| {
                                                     ui.label(
-                                                        egui::RichText::new(
-                                                            output.to_string(),
-                                                        )
-                                                        .size(11.0)
-                                                        .color(TEXT_DIM)
-                                                        .monospace(),
+                                                        egui::RichText::new(output.to_string())
+                                                            .size(11.0)
+                                                            .color(TEXT_DIM)
+                                                            .monospace(),
                                                     );
                                                 });
                                         }
@@ -815,6 +695,163 @@ impl eframe::App for WorkflowApp {
                         }
                     });
             });
+    }
+}
+
+impl WorkflowApp {
+    fn show_inspector(&mut self, ui: &mut egui::Ui) {
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            ui.set_width(ui.available_width());
+
+            egui::Frame::new()
+                .fill(SURFACE_2)
+                .inner_margin(egui::Margin::symmetric(12, 8))
+                .show(ui, |ui| {
+                    ui.label(
+                        egui::RichText::new("INSPECTOR")
+                            .size(10.0)
+                            .color(TEXT_DIM)
+                            .monospace(),
+                    );
+                });
+
+            ui.add_space(4.0);
+
+            egui::CollapsingHeader::new(
+                egui::RichText::new("Agent Config").size(12.0).color(TEXT_BRIGHT),
+            )
+            .default_open(true)
+            .show(ui, |ui| {
+                if let Some(node) = self.state.selected_node_mut() {
+                    inspector_row(ui, "Label", |ui| {
+                        ui.add(egui::TextEdit::singleline(&mut node.label).desired_width(f32::INFINITY));
+                    });
+                    inspector_row(ui, "Model", |ui| {
+                        ui.add(egui::TextEdit::singleline(&mut node.agent.model).desired_width(f32::INFINITY));
+                    });
+                    inspector_row_tall(ui, "System", |ui| {
+                        ui.add(
+                            egui::TextEdit::multiline(&mut node.agent.system_prompt)
+                                .desired_rows(3)
+                                .desired_width(f32::INFINITY),
+                        );
+                    });
+                    inspector_row_tall(ui, "Task", |ui| {
+                        ui.add(
+                            egui::TextEdit::multiline(&mut node.agent.task_prompt)
+                                .desired_rows(3)
+                                .desired_width(f32::INFINITY),
+                        );
+                    });
+                } else {
+                    ui.add_space(6.0);
+                    ui.label(
+                        egui::RichText::new("No node selected")
+                            .size(12.0)
+                            .color(TEXT_DIM)
+                            .italics(),
+                    );
+                    ui.add_space(6.0);
+                }
+            });
+
+            ui.add_space(4.0);
+
+            egui::CollapsingHeader::new(
+                egui::RichText::new("Output Schema").size(12.0).color(TEXT_BRIGHT),
+            )
+            .default_open(false)
+            .show(ui, |ui| {
+                ui.add(
+                    egui::TextEdit::multiline(&mut self.state.schema_editor_text)
+                        .desired_rows(8)
+                        .desired_width(f32::INFINITY),
+                );
+                ui.add_space(4.0);
+                if ui.add(egui::Button::new("Apply Schema").fill(SURFACE_3)).clicked() {
+                    self.state.apply_schema_editor();
+                }
+            });
+
+            ui.add_space(4.0);
+
+            egui::CollapsingHeader::new(
+                egui::RichText::new("Entrypoint").size(12.0).color(TEXT_BRIGHT),
+            )
+            .default_open(true)
+            .show(ui, |ui| {
+                ui.add(
+                    egui::TextEdit::multiline(&mut self.state.entrypoint_text)
+                        .desired_rows(4)
+                        .desired_width(f32::INFINITY)
+                        .hint_text("Describe what the first agent should do…"),
+                );
+            });
+        });
+    }
+
+    fn show_settings_page(&mut self, ui: &mut egui::Ui) {
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            ui.set_width(ui.available_width());
+
+            egui::Frame::new()
+                .fill(SURFACE_2)
+                .inner_margin(egui::Margin::symmetric(12, 8))
+                .show(ui, |ui| {
+                    ui.label(
+                        egui::RichText::new("SETTINGS")
+                            .size(10.0)
+                            .color(TEXT_DIM)
+                            .monospace(),
+                    );
+                });
+
+            ui.add_space(8.0);
+
+            egui::CollapsingHeader::new(
+                egui::RichText::new("API").size(12.0).color(TEXT_BRIGHT),
+            )
+            .default_open(true)
+            .show(ui, |ui| {
+                inspector_row(ui, "OpenAI key", |ui| {
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.state.openai_api_key_input)
+                            .password(true)
+                            .hint_text("sk-…")
+                            .desired_width(f32::INFINITY),
+                    );
+                });
+                ui.add_space(4.0);
+                egui::Frame::new()
+                    .fill(SURFACE_0)
+                    .corner_radius(egui::CornerRadius::same(4))
+                    .inner_margin(egui::Margin::symmetric(10, 8))
+                    .show(ui, |ui| {
+                        ui.label(
+                            egui::RichText::new(
+                                "You can also set OPENAI_API_KEY in your environment.",
+                            )
+                            .size(11.0)
+                            .color(TEXT_DIM),
+                        );
+                    });
+            });
+
+            ui.add_space(4.0);
+
+            egui::CollapsingHeader::new(
+                egui::RichText::new("Workflow").size(12.0).color(TEXT_BRIGHT),
+            )
+            .default_open(true)
+            .show(ui, |ui| {
+                inspector_row(ui, "Name", |ui| {
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.state.workflow.name)
+                            .desired_width(f32::INFINITY),
+                    );
+                });
+            });
+        });
     }
 }
 
