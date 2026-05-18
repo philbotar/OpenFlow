@@ -83,6 +83,24 @@ impl eframe::App for WorkflowApp {
 
     #[allow(deprecated)]
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        ctx.set_visuals(egui::Visuals {
+            window_fill: egui::Color32::from_rgb(10, 14, 20),
+            panel_fill: egui::Color32::from_rgb(15, 20, 29),
+            extreme_bg_color: egui::Color32::from_rgb(7, 10, 15),
+            ..egui::Visuals::dark()
+        });
+
+        let run_shortcut =
+            ctx.input(|input| input.modifiers.command && input.key_pressed(egui::Key::Enter));
+        if run_shortcut {
+            self.run_current_workflow();
+        }
+        let save_shortcut =
+            ctx.input(|input| input.modifiers.command && input.key_pressed(egui::Key::S));
+        if save_shortcut {
+            self.save_workflow();
+        }
+
         egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 if ui.button("Add node").clicked() {
@@ -96,6 +114,13 @@ impl eframe::App for WorkflowApp {
                 }
                 if ui.button("Save").clicked() {
                     self.save_workflow();
+                }
+                if ui.button("Delete node").clicked() {
+                    self.state.remove_selected_node();
+                }
+                if ui.button("Clear run").clicked() {
+                    self.state.last_run = None;
+                    self.state.refresh_statuses_from_report();
                 }
                 ui.separator();
                 ui.label("OpenAI key");
@@ -285,10 +310,15 @@ impl eframe::App for WorkflowApp {
                             RunEventKind::Completed => "completed",
                             RunEventKind::Failed => "failed",
                         };
-                        ui.label(format!(
-                            "{} | {} | {}",
-                            event.node_id, status, event.message
-                        ));
+                        let node_label = self
+                            .state
+                            .workflow
+                            .nodes
+                            .iter()
+                            .find(|node| node.id == event.node_id)
+                            .map(|node| node.label.as_str())
+                            .unwrap_or(event.node_id.as_str());
+                        ui.label(format!("{} | {} | {}", node_label, status, event.message));
                         if let Some(output) = &event.output {
                             ui.monospace(output.to_string());
                         }

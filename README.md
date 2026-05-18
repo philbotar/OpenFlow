@@ -5,11 +5,15 @@ Rust desktop app for composing AI agent workflows as nodes and edges.
 ## What It Does
 
 - Define agent nodes with system prompt, task prompt, model, and JSON output schema.
+- Drag nodes on canvas and connect agents with explicit edge builder controls.
 - Connect nodes so upstream JSON outputs become downstream inputs.
 - Validate workflow graphs as DAGs.
 - Run nodes by dependency layer. Branches in the same layer run together; downstream nodes wait for all required upstream outputs.
 - Call OpenAI Responses API with Structured Outputs.
-- Inspect run events and node outputs in the UI.
+- Provide OpenAI API key in-app (secure input) or fall back to `OPENAI_API_KEY`.
+- Provide entrypoint input text routed to root agents only.
+- Inspect per-agent execution status chips plus run events and node outputs in the UI.
+- Use keyboard QoL: `Cmd/Ctrl+Enter` run, `Cmd/Ctrl+S` save, delete selected node, clear run trace.
 - Save workflows as local JSON.
 
 ## Setup

@@ -65,7 +65,8 @@ impl AppState {
         );
         let node_id = node.id.clone();
         self.workflow.nodes.push(node);
-        self.status_by_node.insert(node_id.clone(), AgentStatus::Idle);
+        self.status_by_node
+            .insert(node_id.clone(), AgentStatus::Idle);
         self.select_node(node_id.clone());
         node_id
     }
@@ -145,7 +146,12 @@ impl AppState {
         canvas_size: (f32, f32),
         node_size: (f32, f32),
     ) {
-        if let Some(node) = self.workflow.nodes.iter_mut().find(|node| node.id == node_id) {
+        if let Some(node) = self
+            .workflow
+            .nodes
+            .iter_mut()
+            .find(|node| node.id == node_id)
+        {
             let max_x = (canvas_size.0 - node_size.0).max(0.0);
             let max_y = (canvas_size.1 - node_size.1).max(0.0);
             node.position.x = (node.position.x + dx).clamp(0.0, max_x);
@@ -156,7 +162,8 @@ impl AppState {
     pub fn refresh_statuses_from_report(&mut self) {
         self.status_by_node.clear();
         for node in &self.workflow.nodes {
-            self.status_by_node.insert(node.id.clone(), AgentStatus::Idle);
+            self.status_by_node
+                .insert(node.id.clone(), AgentStatus::Idle);
         }
         if let Some(report) = &self.last_run {
             for event in &report.events {
@@ -169,6 +176,20 @@ impl AppState {
                 self.status_by_node.insert(event.node_id.clone(), status);
             }
         }
+    }
+
+    pub fn remove_selected_node(&mut self) {
+        let Some(selected) = self.selected_node_id.clone() else {
+            return;
+        };
+        self.workflow.nodes.retain(|node| node.id != selected);
+        self.workflow
+            .edges
+            .retain(|edge| edge.from != selected && edge.to != selected);
+        self.status_by_node.remove(&selected);
+        self.link_from_node_id = None;
+        self.selected_node_id = self.workflow.nodes.first().map(|node| node.id.clone());
+        self.refresh_schema_editor();
     }
 
     pub fn apply_schema_editor(&mut self) {
@@ -313,7 +334,13 @@ mod tests {
         assert!(moved.x >= 0.0);
         assert!(moved.y >= 0.0);
 
-        state.move_node_by_delta(&node_id, -10_000.0, -10_000.0, (640.0, 480.0), (220.0, 120.0));
+        state.move_node_by_delta(
+            &node_id,
+            -10_000.0,
+            -10_000.0,
+            (640.0, 480.0),
+            (220.0, 120.0),
+        );
         let clamped = state.selected_node().unwrap().position.clone();
         assert_eq!(clamped.x, 0.0);
         assert_eq!(clamped.y, 0.0);
@@ -339,5 +366,22 @@ mod tests {
         state.connect_link_to(target.clone());
 
         assert_eq!(state.edge_rows(), vec!["Idea -> Agent 2".to_string()]);
+    }
+
+    #[test]
+    fn removing_selected_node_also_removes_incident_edges() {
+        let mut state = AppState::new();
+        let first = state.selected_node_id.clone().unwrap();
+        let second = state.add_agent_node();
+
+        state.select_node(first.clone());
+        state.begin_link_from_selected();
+        state.connect_link_to(second.clone());
+
+        state.select_node(second);
+        state.remove_selected_node();
+
+        assert_eq!(state.workflow.nodes.len(), 1);
+        assert!(state.workflow.edges.is_empty());
     }
 }
