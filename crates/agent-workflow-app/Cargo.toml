@@ -1,0 +1,19 @@
+[package]
+name = "agent-workflow-app"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+dirs.workspace = true
+eframe.workspace = true
+egui.workspace = true
+openai-client = { path = "../openai-client" }
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+uuid.workspace = true
+workflow-core = { path = "../workflow-core" }
+
+[dev-dependencies]
+tempfile.workspace = true

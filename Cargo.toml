@@ -1,0 +1,27 @@
+[workspace]
+members = [
+    "crates/workflow-core",
+    "crates/openai-client",
+    "crates/agent-workflow-app",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+repository = "https://example.invalid/step-through-agentic-workflow"
+
+[workspace.dependencies]
+async-trait = "0.1.89"
+dirs = "6.0.0"
+eframe = "0.34.2"
+egui = "0.34.2"
+futures = "0.3.32"
+reqwest = { version = "0.13.3", features = ["json", "rustls"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+tempfile = "3.27.0"
+thiserror = "2.0.18"
+tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread", "sync"] }
+uuid = { version = "1.23.1", features = ["v4", "serde"] }
+wiremock = "0.6.5"
