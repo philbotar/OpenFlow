@@ -1,3 +1,1 @@
-pub fn app_ready() -> bool {
-    true
-}
+pub mod storage;
