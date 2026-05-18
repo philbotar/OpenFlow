@@ -28,6 +28,14 @@ where
     }
 
     pub async fn run(&self, workflow: &Workflow) -> Result<RunReport, RunError> {
+        self.run_with_entrypoint(workflow, None).await
+    }
+
+    pub async fn run_with_entrypoint(
+        &self,
+        workflow: &Workflow,
+        entrypoint_text: Option<&str>,
+    ) -> Result<RunReport, RunError> {
         let layers = execution_layers(workflow)?;
         let nodes_by_id: HashMap<NodeId, _> = workflow
             .nodes
@@ -59,7 +67,12 @@ where
                     model: node.agent.model.clone(),
                     system_prompt: node.agent.system_prompt.clone(),
                     task_prompt: node.agent.task_prompt.clone(),
-                    input: build_node_input(node_id, &upstream_by_node, &outputs_by_node),
+                    input: build_node_input(
+                        node_id,
+                        &upstream_by_node,
+                        &outputs_by_node,
+                        entrypoint_text,
+                    ),
                     output_schema: node.agent.output_schema.clone(),
                 };
 
@@ -138,6 +151,7 @@ fn build_node_input(
     node_id: &str,
     upstream_by_node: &HashMap<NodeId, Vec<NodeId>>,
     outputs_by_node: &BTreeMap<NodeId, Value>,
+    entrypoint_text: Option<&str>,
 ) -> Value {
     let upstream = upstream_by_node
         .get(node_id)
@@ -153,6 +167,15 @@ fn build_node_input(
         })
         .collect::<Vec<_>>();
 
+    if upstream.is_empty() {
+        if let Some(text) = entrypoint_text.filter(|text| !text.trim().is_empty()) {
+            return json!({
+                "entrypoint": { "text": text },
+                "upstream": []
+            });
+        }
+    }
+
     json!({
         "upstream": upstream
     })
@@ -164,11 +187,11 @@ mod tests {
     use crate::{Edge, Node};
     use async_trait::async_trait;
     use serde_json::json;
-    use std::sync::Mutex;
+    use std::sync::{Arc, Mutex};
 
     #[derive(Default)]
     struct RecordingAi {
-        requests: Mutex<Vec<AgentRequest>>,
+        requests: Arc<Mutex<Vec<AgentRequest>>>,
     }
 
     #[async_trait]
@@ -235,5 +258,46 @@ mod tests {
         assert_eq!(report.outputs[0].node_id, "idea");
         assert_eq!(report.outputs[1].node_id, "plan");
         assert_eq!(report.outputs[2].node_id, "risk");
+    }
+
+    #[tokio::test]
+    async fn injects_entrypoint_into_root_node_input_only() {
+        let mut workflow = Workflow::new("entrypoint");
+        workflow.nodes = vec![node("idea"), node("plan")];
+        workflow.edges = vec![Edge::new("idea", "plan")];
+
+        let ai = RecordingAi::default();
+        let requests_handle = ai.requests.clone();
+        let runner = WorkflowRunner::new(ai);
+
+        runner
+            .run_with_entrypoint(&workflow, Some("Draft a launch plan"))
+            .await
+            .unwrap();
+
+        let requests = requests_handle.lock().unwrap();
+        let idea_req = requests.iter().find(|req| req.node_id == "idea").unwrap();
+        let plan_req = requests.iter().find(|req| req.node_id == "plan").unwrap();
+
+        assert_eq!(
+            idea_req.input["entrypoint"]["text"],
+            json!("Draft a launch plan")
+        );
+        assert!(plan_req.input.get("entrypoint").is_none());
+    }
+
+    #[tokio::test]
+    async fn run_without_entrypoint_preserves_existing_input_shape() {
+        let mut workflow = Workflow::new("default");
+        workflow.nodes = vec![node("idea")];
+
+        let ai = RecordingAi::default();
+        let requests_handle = ai.requests.clone();
+        let runner = WorkflowRunner::new(ai);
+
+        runner.run(&workflow).await.unwrap();
+
+        let requests = requests_handle.lock().unwrap();
+        assert_eq!(requests[0].input, json!({"upstream": []}));
     }
 }
