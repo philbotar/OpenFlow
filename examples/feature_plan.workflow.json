@@ -1,0 +1,97 @@
+{
+  "id": "feature-plan-demo",
+  "name": "Feature planning demo",
+  "nodes": [
+    {
+      "id": "idea",
+      "label": "Clarify idea",
+      "kind": "Agent",
+      "position": { "x": 80.0, "y": 120.0 },
+      "agent": {
+        "system_prompt": "You clarify product ideas into concrete user value.",
+        "task_prompt": "Read the initial idea and return the target user, user pain, and desired outcome.",
+        "model": "gpt-5.5",
+        "output_schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "target_user": { "type": "string" },
+            "pain": { "type": "string" },
+            "outcome": { "type": "string" }
+          },
+          "required": ["target_user", "pain", "outcome"]
+        }
+      }
+    },
+    {
+      "id": "plan",
+      "label": "Create plan",
+      "kind": "Agent",
+      "position": { "x": 320.0, "y": 80.0 },
+      "agent": {
+        "system_prompt": "You create compact implementation plans for Rust apps.",
+        "task_prompt": "Use upstream clarified idea output to return ordered implementation slices.",
+        "model": "gpt-5.5",
+        "output_schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "slices": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          },
+          "required": ["slices"]
+        }
+      }
+    },
+    {
+      "id": "risk",
+      "label": "Find risks",
+      "kind": "Agent",
+      "position": { "x": 320.0, "y": 220.0 },
+      "agent": {
+        "system_prompt": "You find delivery risks in software designs.",
+        "task_prompt": "Use upstream clarified idea output to return the highest-impact risks.",
+        "model": "gpt-5.5",
+        "output_schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "risks": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          },
+          "required": ["risks"]
+        }
+      }
+    },
+    {
+      "id": "brief",
+      "label": "Final brief",
+      "kind": "Agent",
+      "position": { "x": 580.0, "y": 150.0 },
+      "agent": {
+        "system_prompt": "You synthesize planning and risk outputs into a concise product brief.",
+        "task_prompt": "Combine all upstream outputs into one brief.",
+        "model": "gpt-5.5",
+        "output_schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "brief": { "type": "string" },
+            "next_action": { "type": "string" }
+          },
+          "required": ["brief", "next_action"]
+        }
+      }
+    }
+  ],
+  "edges": [
+    { "id": "idea-plan", "from": "idea", "to": "plan" },
+    { "id": "idea-risk", "from": "idea", "to": "risk" },
+    { "id": "plan-brief", "from": "plan", "to": "brief" },
+    { "id": "risk-brief", "from": "risk", "to": "brief" }
+  ]
+}
