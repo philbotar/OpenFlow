@@ -328,4 +328,16 @@ mod tests {
 
         assert_eq!(key.as_deref(), Some("sk-ui-123"));
     }
+
+    #[test]
+    fn edge_composer_connects_selected_source_and_target() {
+        let mut state = AppState::new();
+        let source = state.selected_node_id.clone().unwrap();
+        let target = state.add_agent_node();
+
+        state.link_from_node_id = Some(source.clone());
+        state.connect_link_to(target.clone());
+
+        assert_eq!(state.edge_rows(), vec!["Idea -> Agent 2".to_string()]);
+    }
 }

@@ -1,4 +1,5 @@
-use crate::state::AppState;
+use crate::canvas_math::{edge_anchor_points, NODE_HEIGHT, NODE_WIDTH};
+use crate::state::{AgentStatus, AppState};
 use crate::storage::FileWorkflowStore;
 use eframe::egui;
 use openai_client::OpenAiResponsesClient;
@@ -36,18 +37,29 @@ impl WorkflowApp {
             return;
         }
 
-        let api_key = match env::var("OPENAI_API_KEY") {
-            Ok(value) if !value.trim().is_empty() => value,
+        let env_key = env::var("OPENAI_API_KEY").ok();
+        let api_key = match self.state.resolve_api_key(env_key.as_deref()) {
+            Some(value) => value,
             _ => {
-                self.state.last_error = Some("OPENAI_API_KEY is not configured".to_string());
+                self.state.last_error =
+                    Some("OpenAI API key missing (UI field and OPENAI_API_KEY empty)".to_string());
                 return;
             }
         };
 
+        self.state.last_error = None;
         let client = OpenAiResponsesClient::new(api_key);
         let runner = WorkflowRunner::new(client);
-        match self.runtime.block_on(runner.run(&self.state.workflow)) {
-            Ok(report) => self.state.set_run_report(report),
+        let entrypoint = self.state.entrypoint_text.trim();
+        let entrypoint = (!entrypoint.is_empty()).then_some(entrypoint);
+        match self
+            .runtime
+            .block_on(runner.run_with_entrypoint(&self.state.workflow, entrypoint))
+        {
+            Ok(report) => {
+                self.state.set_run_report(report);
+                self.state.refresh_statuses_from_report();
+            }
             Err(error) => self.state.last_error = Some(error.to_string()),
         }
     }
@@ -85,6 +97,14 @@ impl eframe::App for WorkflowApp {
                 if ui.button("Save").clicked() {
                     self.save_workflow();
                 }
+                ui.separator();
+                ui.label("OpenAI key");
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.state.openai_api_key_input)
+                        .password(true)
+                        .hint_text("sk-...")
+                        .desired_width(220.0),
+                );
                 if let Some(error) = &self.state.last_error {
                     ui.colored_label(egui::Color32::from_rgb(190, 40, 40), error);
                 }
@@ -111,8 +131,8 @@ impl eframe::App for WorkflowApp {
 
                 ui.separator();
                 ui.heading("Edges");
-                for edge in &self.state.workflow.edges {
-                    ui.label(format!("{} -> {}", edge.from, edge.to));
+                for row in self.state.edge_rows() {
+                    ui.label(row);
                 }
             });
 
@@ -137,6 +157,14 @@ impl eframe::App for WorkflowApp {
                 if ui.button("Apply schema").clicked() {
                     self.state.apply_schema_editor();
                 }
+
+                ui.separator();
+                ui.label("Entrypoint input for root agents");
+                ui.add(
+                    egui::TextEdit::multiline(&mut self.state.entrypoint_text)
+                        .desired_rows(4)
+                        .hint_text("Describe what the first agent should do"),
+                );
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -151,6 +179,7 @@ impl eframe::App for WorkflowApp {
                 egui::StrokeKind::Inside,
             );
 
+            let node_size = (NODE_WIDTH, NODE_HEIGHT);
             for edge in &self.state.workflow.edges {
                 let from = self
                     .state
@@ -165,9 +194,13 @@ impl eframe::App for WorkflowApp {
                     .iter()
                     .find(|node| node.id == edge.to);
                 if let (Some(from), Some(to)) = (from, to) {
-                    let start = rect.left_top()
-                        + egui::vec2(from.position.x + 140.0, from.position.y + 32.0);
-                    let end = rect.left_top() + egui::vec2(to.position.x, to.position.y + 32.0);
+                    let (start_offset, end_offset) = edge_anchor_points(
+                        (from.position.x, from.position.y),
+                        (to.position.x, to.position.y),
+                        node_size,
+                    );
+                    let start = rect.left_top() + egui::vec2(start_offset.0, start_offset.1);
+                    let end = rect.left_top() + egui::vec2(end_offset.0, end_offset.1);
                     painter.line_segment(
                         [start, end],
                         egui::Stroke::new(2.0, egui::Color32::from_rgb(90, 110, 130)),
@@ -175,9 +208,10 @@ impl eframe::App for WorkflowApp {
                 }
             }
 
-            for node in &self.state.workflow.nodes {
+            for node in self.state.workflow.nodes.clone() {
                 let min = rect.left_top() + egui::vec2(node.position.x, node.position.y);
-                let node_rect = egui::Rect::from_min_size(min, egui::vec2(140.0, 64.0));
+                let node_rect =
+                    egui::Rect::from_min_size(min, egui::vec2(node_size.0, node_size.1));
                 let selected = self.state.selected_node_id.as_ref() == Some(&node.id);
                 let fill = if selected {
                     egui::Color32::from_rgb(235, 246, 255)
@@ -190,6 +224,43 @@ impl eframe::App for WorkflowApp {
                     6.0,
                     egui::Stroke::new(1.0, egui::Color32::from_rgb(80, 90, 105)),
                     egui::StrokeKind::Inside,
+                );
+
+                let node_id = egui::Id::new(("node", node.id.clone()));
+                let node_response = ui.interact(node_rect, node_id, egui::Sense::click_and_drag());
+                if node_response.dragged() {
+                    let delta = node_response.drag_motion();
+                    self.state.move_node_by_delta(
+                        &node.id,
+                        delta.x,
+                        delta.y,
+                        (rect.width(), rect.height()),
+                        node_size,
+                    );
+                }
+                if node_response.clicked() {
+                    self.state.select_node(node.id.clone());
+                }
+
+                let status = self
+                    .state
+                    .status_by_node
+                    .get(&node.id)
+                    .copied()
+                    .unwrap_or(AgentStatus::Idle);
+                let (status_text, status_color) = match status {
+                    AgentStatus::Idle => ("IDLE", egui::Color32::from_gray(120)),
+                    AgentStatus::Queued => ("QUEUED", egui::Color32::from_rgb(120, 120, 220)),
+                    AgentStatus::Started => ("RUNNING", egui::Color32::from_rgb(76, 148, 255)),
+                    AgentStatus::Completed => ("DONE", egui::Color32::from_rgb(34, 176, 125)),
+                    AgentStatus::Failed => ("FAILED", egui::Color32::from_rgb(219, 72, 72)),
+                };
+                painter.text(
+                    node_rect.left_top() + egui::vec2(10.0, 10.0),
+                    egui::Align2::LEFT_TOP,
+                    status_text,
+                    egui::TextStyle::Small.resolve(ui.style()),
+                    status_color,
                 );
                 painter.text(
                     node_rect.center(),
