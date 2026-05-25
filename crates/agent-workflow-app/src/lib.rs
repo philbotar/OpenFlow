@@ -1,4 +1,7 @@
 pub mod canvas_math;
+pub mod execution;
+pub mod provider_config;
+pub mod settings_store;
 pub mod state;
 pub mod storage;
 pub mod ui;
