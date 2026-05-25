@@ -16,7 +16,9 @@ impl AiPort for ScriptedAi {
         self.requests.lock().unwrap().push(request.clone());
         let output = match request.node_id.as_str() {
             "idea" => {
-                let entrypoint = request.input["entrypoint"]["text"].as_str().unwrap_or_default();
+                let entrypoint = request.input["entrypoint"]["text"]
+                    .as_str()
+                    .unwrap_or_default();
                 assert!(entrypoint.contains("ORCHID-91"));
                 json!({
                     "project_code": "ORCHID-91",

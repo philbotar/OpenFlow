@@ -5,8 +5,8 @@ mod settings;
 mod theme;
 mod widgets;
 
-use crate::provider_config::{resolve_provider_config, ProviderEnv};
 use crate::execution::{spawn_interactive_workflow_run, ExecutionAction, ExecutionEvent};
+use crate::provider_config::{resolve_provider_config, ProviderEnv};
 use crate::settings_store::{AppSettings, FileSettingsStore};
 use crate::state::{AgentStatus, AppState, RunTraceEntry, TraceStatus};
 use crate::storage::FileWorkflowStore;

@@ -4,8 +4,7 @@ use std::collections::{BTreeMap, VecDeque};
 use thiserror::Error;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use workflow_core::{
-    AiPort, ChatMessage, ChatRole, EnginePollResult, InteractiveEngine, NodeId, RunReport,
-    Workflow,
+    AiPort, ChatMessage, ChatRole, EnginePollResult, InteractiveEngine, NodeId, RunReport, Workflow,
 };
 
 #[derive(Debug, Clone)]
@@ -115,7 +114,8 @@ async fn drive_interactive_workflow<A>(
                 if let Some(output) = engine.node_output(&node_id) {
                     let _ = event_tx.send(ExecutionEvent::NodeCompleted { node_id, output });
                 } else {
-                    let error = invoke_error.unwrap_or_else(|| "node invocation failed".to_string());
+                    let error =
+                        invoke_error.unwrap_or_else(|| "node invocation failed".to_string());
                     let _ = event_tx.send(ExecutionEvent::NodeFailed { node_id, error });
                     break;
                 }
@@ -198,11 +198,7 @@ where
     let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
     let (action_tx, action_rx) = tokio::sync::mpsc::unbounded_channel();
     let driver = tokio::spawn(drive_interactive_workflow(
-        workflow,
-        entrypoint,
-        ai,
-        event_tx,
-        action_rx,
+        workflow, entrypoint, ai, event_tx, action_rx,
     ));
 
     let mut snapshot = PartialSnapshot::default();
@@ -247,7 +243,9 @@ where
                     ChatRole::Thinking,
                     format!("Context:\n{context}"),
                 );
-                let Some(text) = manual_inputs.get_mut(&node_id).and_then(VecDeque::pop_front)
+                let Some(text) = manual_inputs
+                    .get_mut(&node_id)
+                    .and_then(VecDeque::pop_front)
                 else {
                     driver.abort();
                     return Err(WorkflowExecutionError::MissingManualInput(node_id));
@@ -270,7 +268,11 @@ where
             ExecutionEvent::NodeFailed { node_id, error } => {
                 let label = snapshot.node_label_or_id(&node_id);
                 snapshot.push_trace(node_id.clone(), label, TraceStatus::Failed, &error, None);
-                snapshot.push_chat(node_id.clone(), ChatRole::System, format!("Failed: {error}"));
+                snapshot.push_chat(
+                    node_id.clone(),
+                    ChatRole::System,
+                    format!("Failed: {error}"),
+                );
                 driver.abort();
                 return Err(WorkflowExecutionError::NodeFailed {
                     node_id,
