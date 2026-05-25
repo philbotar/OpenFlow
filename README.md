@@ -15,6 +15,10 @@ Rust desktop app for composing AI agent workflows as nodes and edges.
 - Inspect per-agent execution status chips plus run events and node outputs in the UI.
 - Use keyboard QoL: `Cmd/Ctrl+Enter` run, `Cmd/Ctrl+S` save, delete selected node, clear run trace.
 - Save workflows as local JSON.
+- **Interactive node chat**: Each node has a chat log showing system messages, reasoning steps, and outputs.
+- **Conditional auto-start**: Toggle "Auto-start" per node. Disabled nodes pause before execution and open a chat input bar, accepting human input as their output.
+- **Background execution**: Workflow runs in a background task; the UI stays responsive and shows real-time status updates.
+- **Context-aware prompting**: Chat input only appears once all upstream dependencies have completed, and the assembled context is visible in the chat history before you type.
 
 ## Setup
 
@@ -25,13 +29,28 @@ rustup default stable
 rustup component add rustfmt clippy
 ```
 
-## OpenAI Config
+## Provider Config
+
+The Settings screen can run workflows through:
+
+- `ChatGPT / OpenAI`: default provider using `https://api.openai.com` and the Responses API.
+- `OpenAI-compatible API`: custom base URL using either Responses API or Chat Completions API wire format.
+
+API keys typed in Settings are transient and are not saved to disk.
+
+Environment fallback:
 
 ```bash
-export OPENAI_API_KEY="sk-your-key"
+export OPENAI_API_KEY="sk-your-openai-key"
+export OPENAI_COMPATIBLE_API_KEY="provider-key"
 ```
 
-The app uses the Responses API endpoint `POST /v1/responses` and sends each node output contract as `text.format.type = "json_schema"` with `strict = true`.
+The official OpenAI provider uses `POST /v1/responses` and sends each node output contract as `text.format.type = "json_schema"` with `strict = true`.
+
+For OpenAI-compatible providers, choose:
+
+- `Responses API` when the provider supports `/v1/responses`.
+- `Chat Completions API` when the provider supports `/v1/chat/completions` with `response_format.type = "json_schema"`.
 
 ## Run
 
@@ -42,12 +61,31 @@ cargo run -p agent-workflow-app
 
 ## Test
 
+Default verification:
+
 ```bash
 . "$HOME/.cargo/env"
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
+
+Workflow acceptance tests:
+
+```bash
+cargo test -p agent-workflow-app --test workflow_acceptance -- --nocapture
+```
+
+Opt-in live AI smoke test:
+
+```bash
+STEP_WORKFLOW_LIVE_AI=1 \
+OPENAI_API_KEY="$OPENAI_API_KEY" \
+STEP_WORKFLOW_LIVE_MODEL="$STEP_WORKFLOW_LIVE_MODEL" \
+cargo test -p agent-workflow-app --test live_workflow -- --ignored --nocapture
+```
+
+Live smoke tests assert schema-level behavior and sentinel preservation, not exact wording.
 
 ## Example Workflow
 
