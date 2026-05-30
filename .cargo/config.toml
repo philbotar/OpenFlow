@@ -1,0 +1,3 @@
+[alias]
+# Maximum strictness lint pass for manual/CI audits.
+clippy-max = "clippy --workspace --all-targets -- -D warnings -D clippy::pedantic -D clippy::nursery -D clippy::cargo"

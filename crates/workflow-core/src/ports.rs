@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use serde_json::Value;
 use thiserror::Error;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentRequest {
     pub workflow_id: WorkflowId,
     pub node_id: NodeId,
@@ -15,7 +15,7 @@ pub struct AgentRequest {
     pub output_schema: Value,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentResponse {
     pub output: Value,
     pub raw_text: String,

@@ -19,6 +19,7 @@ impl FileWorkflowStore {
         Self { path: path.into() }
     }
 
+    #[must_use]
     pub fn default_path() -> PathBuf {
         dirs::data_local_dir()
             .unwrap_or_else(|| PathBuf::from("."))
@@ -26,6 +27,8 @@ impl FileWorkflowStore {
             .join("workflows.json")
     }
 
+    /// # Errors
+    /// Returns an error if the file cannot be read or parsed.
     pub fn load(&self) -> io::Result<Vec<Workflow>> {
         if !self.path.exists() {
             return Ok(Vec::new());
@@ -41,6 +44,8 @@ impl FileWorkflowStore {
         Ok(stored.workflows)
     }
 
+    /// # Errors
+    /// Returns an error if the file cannot be serialized or written.
     pub fn save(&self, workflows: &[Workflow]) -> io::Result<()> {
         if let Some(parent) = self.path.parent() {
             fs::create_dir_all(parent)?;
@@ -55,9 +60,12 @@ impl FileWorkflowStore {
                 format!("workflow store JSON serialization failed: {error}"),
             )
         })?;
-        fs::write(&self.path, text)
+        let tmp = self.path.with_extension("tmp");
+        fs::write(&tmp, text)?;
+        fs::rename(&tmp, &self.path)
     }
 
+    #[must_use]
     pub fn path(&self) -> &Path {
         &self.path
     }
@@ -88,5 +96,45 @@ mod tests {
         let loaded = store.load().unwrap();
 
         assert_eq!(loaded, vec![workflow]);
+    }
+
+    #[test]
+    fn invalid_store_json_returns_invalid_data_error() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("workflows.json");
+        fs::write(&path, "{\"workflows\":").unwrap();
+        let store = FileWorkflowStore::new(path);
+
+        let error = store.load().unwrap_err();
+
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert!(error.to_string().contains("workflow store JSON invalid"));
+    }
+
+    #[test]
+    fn saved_file_uses_workflows_wrapper_key() {
+        let dir = tempdir().unwrap();
+        let store = FileWorkflowStore::new(dir.path().join("workflows.json"));
+        let workflow = Workflow::new("Wrapped");
+
+        store.save(std::slice::from_ref(&workflow)).unwrap();
+        let raw = fs::read_to_string(store.path()).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap();
+
+        assert!(parsed.get("workflows").is_some());
+        assert_eq!(parsed["workflows"][0]["name"], "Wrapped");
+    }
+
+    #[test]
+    fn atomic_save_does_not_leave_temp_file() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("workflows.json");
+        let store = FileWorkflowStore::new(&path);
+        let workflow = Workflow::new("Atomic");
+
+        store.save(std::slice::from_ref(&workflow)).unwrap();
+
+        assert!(path.exists());
+        assert!(!path.with_extension("tmp").exists());
     }
 }

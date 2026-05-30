@@ -65,10 +65,17 @@ Default verification:
 
 ```bash
 . "$HOME/.cargo/env"
+./scripts/verify.sh
 cargo fmt --all --check
-cargo clippy --workspace --all-targets -- -D warnings
+cargo clippy --workspace --all-targets
+cargo clippy-max
 cargo test --workspace
 ```
+
+CI policy:
+
+- Blocking gate (`Verify`): `cargo fmt --all --check`, `cargo clippy --workspace --all-targets`, `cargo test --workspace`.
+- Audit-only gate (`Clippy max`): `cargo clippy-max` runs with `continue-on-error` to track stricter lint debt without blocking merges.
 
 Workflow acceptance tests:
 
@@ -80,8 +87,20 @@ Opt-in live AI smoke test:
 
 ```bash
 STEP_WORKFLOW_LIVE_AI=1 \
-OPENAI_API_KEY="$OPENAI_API_KEY" \
-STEP_WORKFLOW_LIVE_MODEL="$STEP_WORKFLOW_LIVE_MODEL" \
+STEP_WORKFLOW_LIVE_API_KEY="$OPENAI_API_KEY" \
+STEP_WORKFLOW_LIVE_MODEL="gpt-4o-mini" \
+cargo test -p agent-workflow-app --test live_workflow -- --ignored --nocapture
+```
+
+OpenAI-compatible live smoke example:
+
+```bash
+STEP_WORKFLOW_LIVE_AI=1 \
+STEP_WORKFLOW_LIVE_API_KEY="$OPENAI_COMPATIBLE_API_KEY" \
+STEP_WORKFLOW_LIVE_BASE_URL="https://api.deepinfra.com/v1/openai" \
+STEP_WORKFLOW_LIVE_WIRE_API="chat-completions" \
+STEP_WORKFLOW_LIVE_CHAT_COMPLETIONS_PATH="chat/completions" \
+STEP_WORKFLOW_LIVE_MODEL="deepseek-ai/DeepSeek-V4-Flash" \
 cargo test -p agent-workflow-app --test live_workflow -- --ignored --nocapture
 ```
 

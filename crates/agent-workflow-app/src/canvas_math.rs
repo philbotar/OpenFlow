@@ -1,6 +1,7 @@
 pub const NODE_WIDTH: f32 = 220.0;
-pub const NODE_HEIGHT: f32 = 120.0;
+pub const NODE_HEIGHT: f32 = 52.0;
 
+#[must_use]
 pub fn clamp_node_position(
     pos: (f32, f32),
     node_size: (f32, f32),
@@ -11,14 +12,18 @@ pub fn clamp_node_position(
     (pos.0.clamp(0.0, max_x), pos.1.clamp(0.0, max_y))
 }
 
+#[must_use]
 pub fn edge_anchor_points(
     from_pos: (f32, f32),
     to_pos: (f32, f32),
     node_size: (f32, f32),
 ) -> ((f32, f32), (f32, f32)) {
     (
-        (from_pos.0 + node_size.0, from_pos.1 + node_size.1 * 0.5),
-        (to_pos.0, to_pos.1 + node_size.1 * 0.5),
+        (
+            from_pos.0 + node_size.0,
+            node_size.1.mul_add(0.5, from_pos.1),
+        ),
+        (to_pos.0, node_size.1.mul_add(0.5, to_pos.1)),
     )
 }
 

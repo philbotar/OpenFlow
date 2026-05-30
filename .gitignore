@@ -6,3 +6,8 @@
 .env.*
 !.env.example
 /data/
+.claude/
+.kilo/
+.superpowers/
+/docs/
+.aider*

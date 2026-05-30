@@ -3,7 +3,9 @@ use agent_workflow_app::state::TraceStatus;
 use async_trait::async_trait;
 use serde_json::json;
 use std::sync::{Arc, Mutex};
-use workflow_core::{AgentError, AgentRequest, AgentResponse, AiPort, Edge, Node, Workflow};
+use workflow_core::{
+    AgentError, AgentRequest, AgentResponse, AiPort, Edge, Node, NodeId, Workflow,
+};
 
 #[derive(Clone, Default)]
 struct ScriptedAi {
@@ -14,7 +16,7 @@ struct ScriptedAi {
 impl AiPort for ScriptedAi {
     async fn invoke(&self, request: AgentRequest) -> Result<AgentResponse, AgentError> {
         self.requests.lock().unwrap().push(request.clone());
-        let output = match request.node_id.as_str() {
+        let output = match &*request.node_id {
             "idea" => {
                 let entrypoint = request.input["entrypoint"]["text"]
                     .as_str()
@@ -68,7 +70,7 @@ impl AiPort for ScriptedAi {
 
 fn agent(id: &str, label: &str) -> Node {
     let mut node = Node::agent(label, 0.0, 0.0);
-    node.id = id.to_string();
+    node.id = NodeId(id.to_string());
     node.agent.output_schema = json!({
         "type": "object",
         "additionalProperties": true,
@@ -109,14 +111,17 @@ async fn branch_join_workflow_preserves_sentinel_and_trace_contract() {
     .await
     .unwrap();
 
-    assert_eq!(snapshot.outputs["brief"]["project_code"], "ORCHID-91");
+    assert_eq!(
+        snapshot.outputs[&NodeId("brief".into())]["project_code"],
+        "ORCHID-91"
+    );
     assert_eq!(snapshot.report.outputs.len(), 4);
 
     let completed = snapshot
         .run_trace
         .iter()
         .filter(|entry| entry.status == TraceStatus::Completed)
-        .map(|entry| entry.node_id.as_str())
+        .map(|entry| &*entry.node_id)
         .collect::<Vec<_>>();
     assert_eq!(completed, vec!["idea", "plan", "risk", "brief"]);
 
@@ -124,7 +129,7 @@ async fn branch_join_workflow_preserves_sentinel_and_trace_contract() {
     assert_eq!(
         requests
             .iter()
-            .map(|request| request.node_id.as_str())
+            .map(|request| &*request.node_id)
             .collect::<Vec<_>>(),
         vec!["idea", "plan", "risk", "brief"]
     );
@@ -141,7 +146,7 @@ async fn manual_node_pauses_accepts_input_and_feeds_downstream_node() {
     impl AiPort for DownstreamAi {
         async fn invoke(&self, request: AgentRequest) -> Result<AgentResponse, AgentError> {
             self.requests.lock().unwrap().push(request.clone());
-            assert_eq!(request.node_id, "final");
+            assert_eq!(&*request.node_id, "final");
             assert_eq!(request.input["upstream"][0]["node_id"], "human-review");
             assert_eq!(
                 request.input["upstream"][0]["output"],
@@ -171,21 +176,25 @@ async fn manual_node_pauses_accepts_input_and_feeds_downstream_node() {
         Some("Use project code ORCHID-91".to_string()),
         ai.clone(),
         vec![ManualInput {
-            node_id: "human-review".to_string(),
+            node_id: NodeId("human-review".to_string()),
             text: "human approved ORCHID-91".to_string(),
         }],
     )
     .await
     .unwrap();
 
-    assert_eq!(snapshot.outputs["final"]["project_code"], "ORCHID-91");
+    assert_eq!(
+        snapshot.outputs[&NodeId("final".into())]["project_code"],
+        "ORCHID-91"
+    );
     assert!(snapshot
         .run_trace
         .iter()
         .any(|entry| entry.node_id == "human-review" && entry.status == TraceStatus::Paused));
+    let review_id = NodeId("human-review".into());
     assert!(snapshot
         .chat_logs
-        .get("human-review")
+        .get(&review_id)
         .unwrap()
         .iter()
         .any(|message| message.content == "human approved ORCHID-91"));

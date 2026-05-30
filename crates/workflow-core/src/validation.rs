@@ -1,27 +1,35 @@
-use crate::{NodeId, Workflow};
+use crate::{EdgeId, NodeId, Workflow};
 use std::collections::{HashMap, HashSet};
 use thiserror::Error;
 
-#[derive(Debug, Error, PartialEq, Eq)]
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
 pub enum WorkflowValidationError {
     #[error("workflow must contain at least one node")]
     EmptyWorkflow,
     #[error("duplicate node id: {0}")]
-    DuplicateNodeId(String),
+    DuplicateNodeId(NodeId),
     #[error("duplicate edge id: {0}")]
-    DuplicateEdgeId(String),
+    DuplicateEdgeId(EdgeId),
     #[error("edge {edge_id} references missing node {node_id}")]
-    MissingEndpoint { edge_id: String, node_id: String },
+    MissingEndpoint { edge_id: EdgeId, node_id: NodeId },
     #[error("edge {0} connects a node to itself")]
-    SelfEdge(String),
+    SelfEdge(EdgeId),
     #[error("workflow contains a cycle")]
     Cycle,
 }
 
+/// # Errors
+/// Returns an error if the workflow is invalid.
 pub fn validate_workflow(workflow: &Workflow) -> Result<(), WorkflowValidationError> {
     execution_layers(workflow).map(|_| ())
 }
 
+/// # Errors
+/// Returns an error if the workflow is invalid (empty, duplicate ids, missing endpoints, cycles).
+///
+/// # Panics
+/// Panics if a child node id encountered during layer traversal is not found in the incoming map,
+/// which indicates an internal consistency violation and should never happen on a validated graph.
 pub fn execution_layers(workflow: &Workflow) -> Result<Vec<Vec<NodeId>>, WorkflowValidationError> {
     if workflow.nodes.is_empty() {
         return Err(WorkflowValidationError::EmptyWorkflow);
@@ -119,6 +127,7 @@ mod tests {
     use super::*;
     use crate::{Edge, Node, Workflow};
 
+    #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
     fn workflow_with_nodes(labels: &[&str]) -> Workflow {
         let mut workflow = Workflow::new("test");
         workflow.nodes = labels
@@ -126,7 +135,7 @@ mod tests {
             .enumerate()
             .map(|(index, label)| {
                 let mut node = Node::agent(*label, index as f32 * 120.0, 0.0);
-                node.id = (*label).to_string();
+                node.id = NodeId((*label).to_string());
                 node
             })
             .collect();
@@ -158,9 +167,9 @@ mod tests {
         assert_eq!(
             layers,
             vec![
-                vec!["idea".to_string()],
-                vec!["plan".to_string(), "risk".to_string()],
-                vec!["final".to_string()]
+                vec![NodeId("idea".into())],
+                vec![NodeId("plan".into()), NodeId("risk".into())],
+                vec![NodeId("final".into())]
             ]
         );
     }
@@ -175,7 +184,7 @@ mod tests {
             validate_workflow(&workflow),
             Err(WorkflowValidationError::MissingEndpoint {
                 edge_id,
-                node_id: "plan".to_string()
+                node_id: NodeId("plan".to_string())
             })
         );
     }
@@ -188,6 +197,52 @@ mod tests {
         assert_eq!(
             validate_workflow(&workflow),
             Err(WorkflowValidationError::Cycle)
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_node_ids() {
+        let mut workflow = workflow_with_nodes(&["a", "a"]);
+
+        let error = validate_workflow(&workflow).unwrap_err();
+
+        assert_eq!(
+            error,
+            WorkflowValidationError::DuplicateNodeId(NodeId("a".to_string()))
+        );
+        workflow.nodes[1].id = NodeId("b".to_string());
+        assert!(validate_workflow(&workflow).is_ok());
+    }
+
+    #[test]
+    fn rejects_duplicate_edge_ids() {
+        let mut workflow = workflow_with_nodes(&["a", "b", "c"]);
+        let mut first = Edge::new("a", "b");
+        first.id = EdgeId("edge-1".to_string());
+        let mut second = Edge::new("a", "c");
+        second.id = EdgeId("edge-1".to_string());
+        workflow.edges = vec![first, second];
+
+        let error = validate_workflow(&workflow).unwrap_err();
+
+        assert_eq!(
+            error,
+            WorkflowValidationError::DuplicateEdgeId(EdgeId("edge-1".to_string()))
+        );
+    }
+
+    #[test]
+    fn rejects_self_edges_before_layer_execution() {
+        let mut workflow = workflow_with_nodes(&["a"]);
+        let mut edge = Edge::new("a", "a");
+        edge.id = EdgeId("self-edge".to_string());
+        workflow.edges = vec![edge];
+
+        let error = validate_workflow(&workflow).unwrap_err();
+
+        assert_eq!(
+            error,
+            WorkflowValidationError::SelfEdge(EdgeId("self-edge".to_string()))
         );
     }
 }

@@ -2,7 +2,12 @@
 name = "openai-client"
 version = "0.1.0"
 edition.workspace = true
+description.workspace = true
 license.workspace = true
+readme.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
 async-trait.workspace = true
@@ -14,3 +19,6 @@ workflow-core = { path = "../workflow-core" }
 [dev-dependencies]
 tokio.workspace = true
 wiremock.workspace = true
+
+[lints]
+workspace = true

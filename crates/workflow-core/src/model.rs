@@ -1,10 +1,167 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::fmt;
+use std::ops::Deref;
 use uuid::Uuid;
 
-pub type WorkflowId = String;
-pub type NodeId = String;
-pub type EdgeId = String;
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct NodeId(pub String);
+
+impl fmt::Display for NodeId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl Deref for NodeId {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl From<String> for NodeId {
+    fn from(s: String) -> Self {
+        NodeId(s)
+    }
+}
+
+impl From<&str> for NodeId {
+    fn from(s: &str) -> Self {
+        NodeId(s.to_string())
+    }
+}
+
+impl From<NodeId> for String {
+    fn from(id: NodeId) -> Self {
+        id.0
+    }
+}
+
+impl PartialEq<str> for NodeId {
+    fn eq(&self, other: &str) -> bool {
+        self.0 == other
+    }
+}
+
+impl PartialEq<&str> for NodeId {
+    fn eq(&self, other: &&str) -> bool {
+        self.0 == *other
+    }
+}
+
+impl std::borrow::Borrow<str> for NodeId {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct EdgeId(pub String);
+
+impl fmt::Display for EdgeId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl Deref for EdgeId {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl From<String> for EdgeId {
+    fn from(s: String) -> Self {
+        EdgeId(s)
+    }
+}
+
+impl From<&str> for EdgeId {
+    fn from(s: &str) -> Self {
+        EdgeId(s.to_string())
+    }
+}
+
+impl From<EdgeId> for String {
+    fn from(id: EdgeId) -> Self {
+        id.0
+    }
+}
+
+impl PartialEq<str> for EdgeId {
+    fn eq(&self, other: &str) -> bool {
+        self.0 == other
+    }
+}
+
+impl PartialEq<&str> for EdgeId {
+    fn eq(&self, other: &&str) -> bool {
+        self.0 == *other
+    }
+}
+
+impl std::borrow::Borrow<str> for EdgeId {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct WorkflowId(pub String);
+
+impl fmt::Display for WorkflowId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl Deref for WorkflowId {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl From<String> for WorkflowId {
+    fn from(s: String) -> Self {
+        WorkflowId(s)
+    }
+}
+
+impl From<&str> for WorkflowId {
+    fn from(s: &str) -> Self {
+        WorkflowId(s.to_string())
+    }
+}
+
+impl From<WorkflowId> for String {
+    fn from(id: WorkflowId) -> Self {
+        id.0
+    }
+}
+
+impl PartialEq<str> for WorkflowId {
+    fn eq(&self, other: &str) -> bool {
+        self.0 == other
+    }
+}
+
+impl PartialEq<&str> for WorkflowId {
+    fn eq(&self, other: &&str) -> bool {
+        self.0 == *other
+    }
+}
+
+impl std::borrow::Borrow<str> for WorkflowId {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Workflow {
@@ -17,7 +174,7 @@ pub struct Workflow {
 impl Workflow {
     pub fn new(name: impl Into<String>) -> Self {
         Self {
-            id: Uuid::new_v4().to_string(),
+            id: WorkflowId(Uuid::new_v4().to_string()),
             name: name.into(),
             nodes: Vec::new(),
             edges: Vec::new(),
@@ -37,7 +194,7 @@ pub struct Node {
 impl Node {
     pub fn agent(label: impl Into<String>, x: f32, y: f32) -> Self {
         Self {
-            id: Uuid::new_v4().to_string(),
+            id: NodeId(Uuid::new_v4().to_string()),
             label: label.into(),
             kind: NodeKind::Agent,
             position: NodePosition { x, y },
@@ -57,12 +214,32 @@ pub struct NodePosition {
     pub y: f32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ChatRole {
+    System,
+    Thinking,
+    User,
+    Assistant,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ChatMessage {
+    pub role: ChatRole,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AgentNodeConfig {
     pub system_prompt: String,
     pub task_prompt: String,
     pub model: String,
     pub output_schema: Value,
+    #[serde(default = "default_auto_start")]
+    pub auto_start: bool,
+}
+
+const fn default_auto_start() -> bool {
+    true
 }
 
 impl Default for AgentNodeConfig {
@@ -79,6 +256,7 @@ impl Default for AgentNodeConfig {
                 },
                 "required": ["summary"]
             }),
+            auto_start: true,
         }
     }
 }
@@ -91,16 +269,16 @@ pub struct Edge {
 }
 
 impl Edge {
-    pub fn new(from: impl Into<String>, to: impl Into<String>) -> Self {
+    pub fn new(from: impl Into<NodeId>, to: impl Into<NodeId>) -> Self {
         Self {
-            id: Uuid::new_v4().to_string(),
+            id: EdgeId(Uuid::new_v4().to_string()),
             from: from.into(),
             to: to.into(),
         }
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct NodeRunOutput {
     pub node_id: NodeId,
     pub output: Value,
@@ -114,7 +292,7 @@ pub enum RunEventKind {
     Failed,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RunEvent {
     pub node_id: NodeId,
     pub kind: RunEventKind,
@@ -122,7 +300,7 @@ pub struct RunEvent {
     pub output: Option<Value>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RunReport {
     pub workflow_id: WorkflowId,
     pub events: Vec<RunEvent>,
@@ -152,5 +330,22 @@ mod tests {
         assert_eq!(node.position, NodePosition { x: 24.0, y: 48.0 });
         assert_eq!(node.agent.model, "gpt-5.5");
         assert_eq!(node.agent.output_schema["required"], json!(["summary"]));
+    }
+
+    #[test]
+    fn agent_node_defaults_auto_start_true() {
+        let node = Node::agent("Plan", 0.0, 0.0);
+        assert!(node.agent.auto_start);
+    }
+
+    #[test]
+    fn chat_message_serde_roundtrip() {
+        let msg = ChatMessage {
+            role: ChatRole::Thinking,
+            content: "Preparing request...".to_string(),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        let back: ChatMessage = serde_json::from_str(&json).unwrap();
+        assert_eq!(msg, back);
     }
 }

@@ -7,12 +7,12 @@ use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
 use thiserror::Error;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, Error)]
 pub enum RunError {
     #[error(transparent)]
     Validation(#[from] WorkflowValidationError),
     #[error("node {node_id} failed: {message}")]
-    NodeFailed { node_id: String, message: String },
+    NodeFailed { node_id: NodeId, message: String },
 }
 
 pub struct WorkflowRunner<A> {
@@ -23,14 +23,21 @@ impl<A> WorkflowRunner<A>
 where
     A: AiPort,
 {
-    pub fn new(ai: A) -> Self {
+    pub const fn new(ai: A) -> Self {
         Self { ai }
     }
 
+    /// # Errors
+    /// Returns an error if the workflow is invalid or a node call fails.
     pub async fn run(&self, workflow: &Workflow) -> Result<RunReport, RunError> {
         self.run_with_entrypoint(workflow, None).await
     }
 
+    /// # Errors
+    /// Returns an error if the workflow is invalid or a node call fails.
+    ///
+    /// # Panics
+    /// Panics if a layer references a node id that was not found in the validated node map.
     pub async fn run_with_entrypoint(
         &self,
         workflow: &Workflow,
@@ -147,7 +154,7 @@ fn upstream_map(workflow: &Workflow) -> HashMap<NodeId, Vec<NodeId>> {
     upstream
 }
 
-fn build_node_input(
+pub(crate) fn build_node_input(
     node_id: &str,
     upstream_by_node: &HashMap<NodeId, Vec<NodeId>>,
     outputs_by_node: &BTreeMap<NodeId, Value>,
@@ -207,9 +214,21 @@ mod tests {
         }
     }
 
+    struct FailingAi;
+
+    #[async_trait]
+    impl AiPort for FailingAi {
+        async fn invoke(&self, request: AgentRequest) -> Result<AgentResponse, AgentError> {
+            Err(AgentError::Failed(format!(
+                "synthetic failure for {}",
+                request.node_id
+            )))
+        }
+    }
+
     fn node(id: &str) -> Node {
         let mut node = Node::agent(id, 0.0, 0.0);
-        node.id = id.to_string();
+        node.id = NodeId(id.to_string());
         node
     }
 
@@ -275,15 +294,29 @@ mod tests {
             .await
             .unwrap();
 
-        let requests = requests_handle.lock().unwrap();
-        let idea_req = requests.iter().find(|req| req.node_id == "idea").unwrap();
-        let plan_req = requests.iter().find(|req| req.node_id == "plan").unwrap();
+        let (idea_input, plan_input) = {
+            let requests = requests_handle.lock().unwrap();
+            let idea = requests
+                .iter()
+                .find(|req| req.node_id == "idea")
+                .unwrap()
+                .input
+                .clone();
+            let plan = requests
+                .iter()
+                .find(|req| req.node_id == "plan")
+                .unwrap()
+                .input
+                .clone();
+            drop(requests);
+            (idea, plan)
+        };
 
         assert_eq!(
-            idea_req.input["entrypoint"]["text"],
+            idea_input["entrypoint"]["text"],
             json!("Draft a launch plan")
         );
-        assert!(plan_req.input.get("entrypoint").is_none());
+        assert!(plan_input.get("entrypoint").is_none());
     }
 
     #[tokio::test]
@@ -297,7 +330,78 @@ mod tests {
 
         runner.run(&workflow).await.unwrap();
 
-        let requests = requests_handle.lock().unwrap();
-        assert_eq!(requests[0].input, json!({"upstream": []}));
+        let input = { requests_handle.lock().unwrap()[0].input.clone() };
+        assert_eq!(input, json!({"upstream": []}));
+    }
+
+    #[tokio::test]
+    async fn downstream_request_receives_sorted_upstream_outputs() {
+        let mut workflow = Workflow::new("join");
+        workflow.nodes = vec![node("root"), node("alpha"), node("beta"), node("join")];
+        workflow.edges = vec![
+            Edge::new("root", "beta"),
+            Edge::new("root", "alpha"),
+            Edge::new("beta", "join"),
+            Edge::new("alpha", "join"),
+        ];
+        let ai = RecordingAi::default();
+        let requests_handle = ai.requests.clone();
+        let runner = WorkflowRunner::new(ai);
+
+        runner.run(&workflow).await.unwrap();
+
+        let join_input = {
+            let requests = requests_handle.lock().unwrap();
+            requests
+                .iter()
+                .find(|req| req.node_id == "join")
+                .unwrap()
+                .input
+                .clone()
+        };
+        assert_eq!(
+            join_input,
+            json!({
+                "upstream": [
+                    {
+                        "node_id": "alpha",
+                        "output": { "summary": "output from alpha" }
+                    },
+                    {
+                        "node_id": "beta",
+                        "output": { "summary": "output from beta" }
+                    }
+                ]
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn node_failure_returns_node_failed_error() {
+        let mut workflow = Workflow::new("failure");
+        workflow.nodes = vec![node("idea")];
+        let runner = WorkflowRunner::new(FailingAi);
+
+        let error = runner.run(&workflow).await.unwrap_err();
+
+        match error {
+            RunError::NodeFailed { node_id, message } => {
+                assert_eq!(node_id, "idea");
+                assert_eq!(message, "synthetic failure for idea");
+            }
+            other @ RunError::Validation(_) => panic!("expected node failure, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn blank_entrypoint_is_not_injected_into_root_input() {
+        let input = build_node_input(
+            "idea",
+            &HashMap::from([(NodeId("idea".to_string()), Vec::new())]),
+            &BTreeMap::new(),
+            Some("   "),
+        );
+
+        assert_eq!(input, json!({"upstream": []}));
     }
 }

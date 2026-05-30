@@ -14,6 +14,7 @@ use eframe::egui;
 use egui_phosphor::regular as ph;
 use openai_client::{OpenAiClient, OpenAiClientConfig};
 use std::env;
+#[allow(clippy::wildcard_imports)]
 use theme::*;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use workflow_core::{ChatRole, Workflow};
@@ -22,11 +23,15 @@ const COLLAPSED_NAV_ICON_SIZE: f32 = 34.0;
 const COLLAPSED_NAV_ICON_RADIUS: u8 = 10;
 const COLLAPSED_NAV_GLYPH_SIZE: f32 = 16.0;
 
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn collapsed_nav_icon_bg(t: f32) -> egui::Color32 {
     egui::Color32::from_rgb(
-        (SURFACE_2.r() as f32 + (SURFACE_3.r() as f32 - SURFACE_2.r() as f32) * t) as u8,
-        (SURFACE_2.g() as f32 + (SURFACE_3.g() as f32 - SURFACE_2.g() as f32) * t) as u8,
-        (SURFACE_2.b() as f32 + (SURFACE_3.b() as f32 - SURFACE_2.b() as f32) * t) as u8,
+        (f32::from(SURFACE_3.r()) - f32::from(SURFACE_2.r())).mul_add(t, f32::from(SURFACE_2.r()))
+            as u8,
+        (f32::from(SURFACE_3.g()) - f32::from(SURFACE_2.g())).mul_add(t, f32::from(SURFACE_2.g()))
+            as u8,
+        (f32::from(SURFACE_3.b()) - f32::from(SURFACE_2.b())).mul_add(t, f32::from(SURFACE_2.b()))
+            as u8,
     )
 }
 
@@ -37,6 +42,7 @@ pub struct WorkflowApp {
     state: AppState,
     store: FileWorkflowStore,
     settings: AppSettings,
+    settings_snapshot: AppSettings,
     settings_store: FileSettingsStore,
     runtime: tokio::runtime::Runtime,
     show_settings: bool,
@@ -51,6 +57,9 @@ pub struct WorkflowApp {
 }
 
 impl WorkflowApp {
+    /// # Panics
+    /// Panics if the tokio runtime cannot be created.
+    #[must_use]
     pub fn new() -> Self {
         let store = FileWorkflowStore::new(FileWorkflowStore::default_path());
         let mut workflows = store.load().unwrap_or_default();
@@ -60,6 +69,7 @@ impl WorkflowApp {
         let state = AppState::from_workflow(workflows[0].clone(), String::new());
         let settings_store = FileSettingsStore::new(FileSettingsStore::default_path());
         let settings = settings_store.load().unwrap_or_default();
+        let snapshot = settings.clone();
         Self {
             workflows,
             active: 0,
@@ -67,6 +77,7 @@ impl WorkflowApp {
             state,
             store,
             settings,
+            settings_snapshot: snapshot,
             settings_store,
             runtime: tokio::runtime::Runtime::new().expect("tokio runtime"),
             show_settings: false,
@@ -112,7 +123,7 @@ impl WorkflowApp {
         if index >= self.workflows.len() {
             return;
         }
-        self.workflows[index].name = name.clone();
+        self.workflows[index].name.clone_from(&name);
         if self.active == index {
             self.state.workflow.name = name;
         }
@@ -127,7 +138,7 @@ impl WorkflowApp {
         let provider_config = match resolve_provider_config(
             &self.settings,
             &self.state,
-            ProviderEnv {
+            &ProviderEnv {
                 openai_api_key: env::var("OPENAI_API_KEY").ok(),
                 compatible_api_key: env::var("OPENAI_COMPATIBLE_API_KEY").ok(),
             },
@@ -163,6 +174,8 @@ impl WorkflowApp {
             api_key: provider_config.api_key,
             base_url: provider_config.base_url,
             wire_api: provider_config.wire_api,
+            responses_path: provider_config.responses_path,
+            chat_completions_path: provider_config.chat_completions_path,
         });
         let (handle, event_rx, action_tx) =
             spawn_interactive_workflow_run(&self.runtime, workflow, entrypoint, ai);
@@ -195,7 +208,14 @@ impl WorkflowApp {
             Ok(()) => self.state.last_error = None,
             Err(error) => self.state.last_error = Some(format!("save failed: {error}")),
         }
-        let _ = self.settings_store.save(&self.settings);
+        self.save_settings();
+    }
+
+    fn save_settings(&mut self) {
+        match self.settings_store.save(&self.settings) {
+            Ok(()) => self.settings_snapshot = self.settings.clone(),
+            Err(error) => self.state.last_error = Some(format!("settings save failed: {error}")),
+        }
     }
 }
 
@@ -208,7 +228,13 @@ impl Default for WorkflowApp {
 impl eframe::App for WorkflowApp {
     fn ui(&mut self, _ui: &mut egui::Ui, _frame: &mut eframe::Frame) {}
 
-    #[allow(deprecated)]
+    fn on_exit(&mut self) {
+        self.sync_active();
+        let _ = self.store.save(&self.workflows);
+        self.save_settings();
+    }
+
+    #[allow(deprecated, clippy::too_many_lines)]
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         theme::apply(ctx);
 
@@ -262,7 +288,7 @@ impl eframe::App for WorkflowApp {
                         self.state.add_chat_message(
                             node_id,
                             ChatRole::System,
-                            format!("Node '{}' started", label),
+                            format!("Node '{label}' started"),
                         );
                     }
                     ExecutionEvent::NodeThinking {
@@ -290,12 +316,12 @@ impl eframe::App for WorkflowApp {
                         self.state.add_chat_message(
                             node_id,
                             ChatRole::System,
-                            format!("Node '{}' is awaiting human input.", label),
+                            format!("Node '{label}' is awaiting human input."),
                         );
                         self.state.add_chat_message(
                             node_id,
                             ChatRole::Thinking,
-                            format!("Context:\n{}", context),
+                            format!("Context:\n{context}"),
                         );
                         self.bottom_panel_tab = canvas::BottomPanelTab::Chat;
                     }
@@ -336,7 +362,7 @@ impl eframe::App for WorkflowApp {
                         self.state.add_chat_message(
                             node_id,
                             ChatRole::System,
-                            format!("Failed: {}", error),
+                            format!("Failed: {error}"),
                         );
                         self.state.last_error = Some(error.clone());
                     }
@@ -352,6 +378,7 @@ impl eframe::App for WorkflowApp {
         }
 
         // ── Left nav ──────────────────────────────────────────────────────────
+        let was_showing_settings = self.show_settings;
         if self.show_sidebar {
             let nav = nav::show_nav_panel(
                 ctx,
@@ -480,6 +507,9 @@ impl eframe::App for WorkflowApp {
                     });
                 });
         }
+        if was_showing_settings && !self.show_settings {
+            self.save_settings();
+        }
 
         // ── Main content ──────────────────────────────────────────────────────
         if self.show_settings {
@@ -496,7 +526,7 @@ impl eframe::App for WorkflowApp {
             let api_key_ready = resolve_provider_config(
                 &self.settings,
                 &self.state,
-                ProviderEnv {
+                &ProviderEnv {
                     openai_api_key: env::var("OPENAI_API_KEY").ok(),
                     compatible_api_key: env::var("OPENAI_COMPATIBLE_API_KEY").ok(),
                 },
@@ -541,7 +571,7 @@ impl eframe::App for WorkflowApp {
             }
 
             let inspector_out =
-                inspector::show_floating_inspector(ctx, &mut self.state, &mut self.settings);
+                inspector::show_floating_inspector(ctx, &mut self.state, &self.settings);
 
             if inspector_out.begin_link {
                 self.state.begin_link_from_selected();
@@ -565,20 +595,55 @@ fn node_label_for(state: &AppState, node_id: &str) -> String {
         .nodes
         .iter()
         .find(|node| node.id == node_id)
-        .map(|node| node.label.clone())
-        .unwrap_or_else(|| node_id.to_string())
+        .map_or_else(|| node_id.to_string(), |node| node.label.clone())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
+    #[allow(clippy::float_cmp)]
     fn collapsed_nav_icon_tokens_match_sidebar_button() {
         assert_eq!(COLLAPSED_NAV_ICON_SIZE, 34.0);
         assert_eq!(COLLAPSED_NAV_ICON_RADIUS, 10);
         assert_eq!(COLLAPSED_NAV_GLYPH_SIZE, 16.0);
         assert_eq!(collapsed_nav_icon_bg(0.0), SURFACE_2);
         assert_eq!(collapsed_nav_icon_bg(1.0), SURFACE_3);
+    }
+
+    #[test]
+    fn save_settings_propagates_error_to_state_last_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut app = WorkflowApp::new();
+        app.settings_store = FileSettingsStore::new(dir.path().to_path_buf());
+        app.save_settings();
+        assert!(app.state.last_error.is_some());
+        assert!(app
+            .state
+            .last_error
+            .as_ref()
+            .unwrap()
+            .contains("settings save failed"));
+        fs::remove_dir_all(dir.path()).ok();
+    }
+
+    #[test]
+    fn save_settings_updates_snapshot_on_success() {
+        let dir = tempfile::tempdir().unwrap();
+        let store_path = dir.path().join("settings.json");
+        let settings = AppSettings {
+            active_provider: crate::settings_store::AiProviderKind::OpenAiCompatible,
+            ..AppSettings::default()
+        };
+        let mut app = WorkflowApp::new();
+        app.settings = settings.clone();
+        app.settings_snapshot = AppSettings::default();
+        app.settings_store = FileSettingsStore::new(store_path);
+        app.save_settings();
+        assert_eq!(app.settings_snapshot, app.settings);
+        assert!(app.state.last_error.is_none());
+        fs::remove_dir_all(dir.path()).ok();
     }
 }

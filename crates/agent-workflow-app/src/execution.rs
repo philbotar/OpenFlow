@@ -42,7 +42,7 @@ pub enum ExecutionAction {
     ProvideInput(String),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ManualInput {
     pub node_id: NodeId,
     pub text: String,
@@ -110,7 +110,7 @@ async fn drive_interactive_workflow<A>(
                 send_ai_start_events(&event_tx, &node_id, &request);
                 let result = ai.invoke(request).await;
                 let invoke_error = result.as_ref().err().map(ToString::to_string);
-                engine.on_ai_complete(node_id.clone(), result);
+                engine.on_ai_complete(&node_id, result);
                 if let Some(output) = engine.node_output(&node_id) {
                     let _ = event_tx.send(ExecutionEvent::NodeCompleted { node_id, output });
                 } else {
@@ -135,7 +135,7 @@ async fn drive_interactive_workflow<A>(
                     context,
                 });
                 if let Some(ExecutionAction::ProvideInput(text)) = action_rx.recv().await {
-                    let _ = engine.on_human_input(node_id, text);
+                    let _ = engine.on_human_input(&node_id, &text);
                 } else {
                     break;
                 }
@@ -158,26 +158,29 @@ fn send_ai_start_events(
     request: &workflow_core::AgentRequest,
 ) {
     let _ = event_tx.send(ExecutionEvent::NodeQueued {
-        node_id: node_id.to_string(),
+        node_id: NodeId(node_id.to_string()),
         label: request.node_label.clone(),
     });
     let _ = event_tx.send(ExecutionEvent::NodeStarted {
-        node_id: node_id.to_string(),
+        node_id: NodeId(node_id.to_string()),
         label: request.node_label.clone(),
     });
     let system_preview = request.system_prompt.chars().take(120).collect::<String>();
     let _ = event_tx.send(ExecutionEvent::NodeThinking {
-        node_id: node_id.to_string(),
+        node_id: NodeId(node_id.to_string()),
         message: format!("System prompt: {system_preview}..."),
     });
     let upstream_json = request.input.to_string();
     let upstream_preview = upstream_json.chars().take(200).collect::<String>();
     let _ = event_tx.send(ExecutionEvent::NodeThinking {
-        node_id: node_id.to_string(),
+        node_id: NodeId(node_id.to_string()),
         message: format!("Upstream input: {upstream_preview}"),
     });
 }
 
+/// # Errors
+/// Returns an error if the workflow execution fails.
+#[allow(clippy::too_many_lines)]
 pub async fn run_workflow_headless<A>(
     workflow: Workflow,
     entrypoint: Option<String>,
@@ -341,7 +344,6 @@ impl PartialSnapshot {
         self.run_trace
             .iter()
             .find(|entry| entry.node_id == node_id)
-            .map(|entry| entry.node_label.clone())
-            .unwrap_or_else(|| node_id.to_string())
+            .map_or_else(|| node_id.to_string(), |entry| entry.node_label.clone())
     }
 }

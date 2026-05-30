@@ -8,8 +8,12 @@ resolver = "2"
 
 [workspace.package]
 edition = "2021"
+description = "Desktop app and core engine for composing and running agentic workflows"
 license = "MIT"
+readme = "README.md"
 repository = "https://example.invalid/step-through-agentic-workflow"
+keywords = ["agent", "workflow", "desktop", "openai", "rust"]
+categories = ["development-tools", "gui"]
 
 [workspace.dependencies]
 async-trait = "0.1.89"
@@ -25,3 +29,17 @@ thiserror = "2.0.18"
 tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread", "sync"] }
 uuid = { version = "1.23.1", features = ["v4", "serde"] }
 wiremock = "0.6.5"
+
+[workspace.lints.rust]
+warnings = "deny"
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = "deny"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true

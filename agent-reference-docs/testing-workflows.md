@@ -8,7 +8,7 @@ Purpose: explain how to verify workflow behavior without manually clicking throu
 | --- | --- | --- |
 | Unit tests | `cargo test --workspace` | Domain rules, app state, persistence, provider config, UI layout contracts, OpenAI wire mapping |
 | Deterministic workflow acceptance | `cargo test -p agent-workflow-app --test workflow_acceptance -- --nocapture` | A whole workflow can run headlessly with scripted AI outputs |
-| Live AI smoke | `STEP_WORKFLOW_LIVE_AI=1 OPENAI_API_KEY=... STEP_WORKFLOW_LIVE_MODEL=... cargo test -p agent-workflow-app --test live_workflow -- --ignored --nocapture` | A real model can complete a small workflow and satisfy schema-level rules |
+| Live AI smoke | `STEP_WORKFLOW_LIVE_AI=1 STEP_WORKFLOW_LIVE_API_KEY=... STEP_WORKFLOW_LIVE_MODEL=... cargo test -p agent-workflow-app --test live_workflow -- --ignored --nocapture` | A real model can complete a small workflow and satisfy schema-level rules |
 
 ## Acceptance Rules
 
@@ -38,7 +38,8 @@ Run this before normal commits:
 
 ```bash
 cargo fmt --all --check
-cargo clippy --workspace --all-targets -- -D warnings
+cargo clippy --workspace --all-targets
+cargo clippy-max
 cargo test --workspace
 ```
 
@@ -52,7 +53,19 @@ Run this only when intentionally checking a real provider/model:
 
 ```bash
 STEP_WORKFLOW_LIVE_AI=1 \
-OPENAI_API_KEY="$OPENAI_API_KEY" \
-STEP_WORKFLOW_LIVE_MODEL="$STEP_WORKFLOW_LIVE_MODEL" \
+STEP_WORKFLOW_LIVE_API_KEY="$OPENAI_API_KEY" \
+STEP_WORKFLOW_LIVE_MODEL="gpt-4o-mini" \
+cargo test -p agent-workflow-app --test live_workflow -- --ignored --nocapture
+```
+
+DeepInfra-compatible chat completions example:
+
+```bash
+STEP_WORKFLOW_LIVE_AI=1 \
+STEP_WORKFLOW_LIVE_API_KEY="$OPENAI_COMPATIBLE_API_KEY" \
+STEP_WORKFLOW_LIVE_BASE_URL="https://api.deepinfra.com/v1/openai" \
+STEP_WORKFLOW_LIVE_WIRE_API="chat-completions" \
+STEP_WORKFLOW_LIVE_CHAT_COMPLETIONS_PATH="chat/completions" \
+STEP_WORKFLOW_LIVE_MODEL="deepseek-ai/DeepSeek-V4-Flash" \
 cargo test -p agent-workflow-app --test live_workflow -- --ignored --nocapture
 ```

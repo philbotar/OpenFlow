@@ -2,7 +2,12 @@
 name = "workflow-core"
 version = "0.1.0"
 edition.workspace = true
+description.workspace = true
 license.workspace = true
+readme.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [dependencies]
 async-trait.workspace = true
@@ -14,3 +19,6 @@ uuid.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true
+
+[lints]
+workspace = true
