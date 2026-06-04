@@ -17,6 +17,10 @@ pub enum EnginePollResult {
         label: String,
         context: String,
     },
+    ManualNodeActive {
+        node_id: NodeId,
+        label: String,
+    },
     Completed(RunReport),
     Failed(crate::RunError),
 }
@@ -30,6 +34,7 @@ pub struct InteractiveEngine {
     outputs: BTreeMap<NodeId, Value>,
     events: Vec<RunEvent>,
     awaiting_node: Option<NodeId>,
+    active_manual_node: Option<NodeId>,
     entrypoint_text: Option<String>,
 }
 
@@ -64,6 +69,7 @@ impl InteractiveEngine {
             outputs: BTreeMap::new(),
             events: Vec::new(),
             awaiting_node: None,
+            active_manual_node: None,
             entrypoint_text,
         })
     }
@@ -81,6 +87,16 @@ impl InteractiveEngine {
     }
 
     pub fn poll(&mut self) -> EnginePollResult {
+        // If a manual node is in active conversation, signal that
+        if let Some(ref manual_id) = self.active_manual_node {
+            if let Some(node) = self.find_node(manual_id) {
+                return EnginePollResult::ManualNodeActive {
+                    node_id: manual_id.clone(),
+                    label: node.label.clone(),
+                };
+            }
+        }
+
         // If a node is awaiting input, return its context again
         if let Some(ref awaiting_id) = self.awaiting_node {
             if let Some(node) = self.find_node(awaiting_id) {
@@ -204,6 +220,20 @@ impl InteractiveEngine {
             message: "completed via human input".to_string(),
             output: Some(value),
         });
+        // Enter multi-turn mode — don't advance, let user choose when to continue
+        self.active_manual_node = Some(NodeId(node_id.to_string()));
+        Ok(())
+    }
+
+    /// Complete the multi-turn manual node session and advance to the next node.
+    ///
+    /// # Errors
+    /// Returns an error if no manual node is active.
+    pub fn complete_manual_node(&mut self) -> Result<(), String> {
+        let _node_id = self
+            .active_manual_node
+            .take()
+            .ok_or("no manual node is active")?;
         self.advance();
         Ok(())
     }
@@ -302,7 +332,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn human_input_becomes_node_output() {
+    async fn human_input_enters_manual_node_mode() {
         let mut workflow = Workflow::new("test");
         let mut idea = node("idea");
         idea.agent.auto_start = false;
@@ -312,9 +342,17 @@ mod tests {
         engine.poll(); // AwaitInput
         engine.on_human_input("idea", "User decision").unwrap();
 
+        // After human input, we're in multi-turn mode
         let result = engine.poll();
         assert!(
-            matches!(result, EnginePollResult::Completed(ref report) if report.outputs[0].output == json!("User decision"))
+            matches!(result, EnginePollResult::ManualNodeActive { ref node_id, .. } if node_id == "idea")
+        );
+
+        // Complete the manual node to advance
+        engine.complete_manual_node().unwrap();
+        let final_result = engine.poll();
+        assert!(
+            matches!(final_result, EnginePollResult::Completed(ref report) if report.outputs[0].output == json!("User decision"))
         );
     }
 
@@ -371,5 +409,34 @@ mod tests {
             matches!(result, EnginePollResult::AwaitInput { ref node_id, .. } if node_id == "idea")
         );
         assert!(engine.node_output("idea").is_none());
+    }
+
+    #[tokio::test]
+    async fn complete_manual_node_without_active_node_is_error() {
+        let mut workflow = Workflow::new("test");
+        let idea = node("idea");
+        workflow.nodes = vec![idea];
+        let mut engine = InteractiveEngine::new(workflow, None).unwrap();
+
+        let err = engine.complete_manual_node().unwrap_err();
+        assert_eq!(err, "no manual node is active");
+    }
+
+    #[tokio::test]
+    async fn manual_node_active_signals_after_human_input() {
+        let mut workflow = Workflow::new("test");
+        let mut idea = node("idea");
+        idea.agent.auto_start = false;
+        workflow.nodes = vec![idea];
+        let mut engine = InteractiveEngine::new(workflow, None).unwrap();
+
+        assert!(matches!(engine.poll(), EnginePollResult::AwaitInput { .. }));
+        engine.on_human_input("idea", "done").unwrap();
+
+        let result = engine.poll();
+        assert!(matches!(
+            result,
+            EnginePollResult::ManualNodeActive { ref node_id, ref label } if node_id == "idea" && label == "idea"
+        ));
     }
 }

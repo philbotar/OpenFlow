@@ -2,12 +2,14 @@ pub mod interactive;
 pub mod model;
 pub mod ports;
 pub mod runner;
+pub mod template;
+pub mod template_store;
 pub mod validation;
 
 pub use interactive::{EnginePollResult, InteractiveEngine};
 pub use model::{
     AgentNodeConfig, ChatMessage, ChatRole, Edge, EdgeId, Node, NodeId, NodeKind, NodePosition,
-    NodeRunOutput, RunEvent, RunEventKind, RunReport, Workflow, WorkflowId,
+    NodeRunOutput, NodeTemplate, RunEvent, RunEventKind, RunReport, Workflow, WorkflowId,
 };
 pub use ports::{AgentError, AgentRequest, AgentResponse, AiPort};
 pub use runner::{RunError, WorkflowRunner};

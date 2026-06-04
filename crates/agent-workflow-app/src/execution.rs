@@ -1,4 +1,4 @@
-use crate::state::{RunTraceEntry, TraceStatus};
+use crate::state::{AgentStatus, RunTraceEntry, TraceStatus, WorkflowRunState};
 use serde_json::Value;
 use std::collections::{BTreeMap, VecDeque};
 use thiserror::Error;
@@ -26,6 +26,10 @@ pub enum ExecutionEvent {
         label: String,
         context: String,
     },
+    ManualNodeActive {
+        node_id: NodeId,
+        label: String,
+    },
     NodeCompleted {
         node_id: NodeId,
         output: Value,
@@ -40,6 +44,7 @@ pub enum ExecutionEvent {
 
 pub enum ExecutionAction {
     ProvideInput(String),
+    CompleteManualNode,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -138,6 +143,28 @@ async fn drive_interactive_workflow<A>(
                     let _ = engine.on_human_input(&node_id, &text);
                 } else {
                     break;
+                }
+            }
+            EnginePollResult::ManualNodeActive { node_id, label } => {
+                let _ = event_tx.send(ExecutionEvent::NodeQueued {
+                    node_id: node_id.clone(),
+                    label: label.clone(),
+                });
+                let _ = event_tx.send(ExecutionEvent::ManualNodeActive {
+                    node_id: node_id.clone(),
+                    label: label.clone(),
+                });
+                match action_rx.recv().await {
+                    Some(ExecutionAction::CompleteManualNode) => {
+                        if let Err(e) = engine.complete_manual_node() {
+                            let _ = event_tx.send(ExecutionEvent::Error(e));
+                            break;
+                        }
+                    }
+                    Some(ExecutionAction::ProvideInput(text)) => {
+                        let _ = engine.on_human_input(&node_id, &text);
+                    }
+                    None => break,
                 }
             }
             EnginePollResult::Completed(report) => {
@@ -256,6 +283,17 @@ where
                 snapshot.push_chat(node_id, ChatRole::User, text.clone());
                 let _ = action_tx.send(ExecutionAction::ProvideInput(text));
             }
+            ExecutionEvent::ManualNodeActive { node_id, label } => {
+                snapshot.push_trace(
+                    node_id.clone(),
+                    label.clone(),
+                    TraceStatus::Paused,
+                    "awaiting user decision",
+                    None,
+                );
+                // In headless mode, auto-complete the manual node
+                let _ = action_tx.send(ExecutionAction::CompleteManualNode);
+            }
             ExecutionEvent::NodeCompleted { node_id, output } => {
                 let label = snapshot.node_label_or_id(&node_id);
                 snapshot.push_trace(
@@ -346,4 +384,123 @@ impl PartialSnapshot {
             .find(|entry| entry.node_id == node_id)
             .map_or_else(|| node_id.to_string(), |entry| entry.node_label.clone())
     }
+}
+
+pub fn apply_event_to_run_state(
+    _workflow: &Workflow,
+    state: &mut WorkflowRunState,
+    event: ExecutionEvent,
+) {
+    match event {
+        ExecutionEvent::NodeQueued { node_id, label } => {
+            state
+                .status_by_node
+                .insert(node_id.clone(), AgentStatus::Queued);
+            state.run_trace.push(RunTraceEntry {
+                node_id,
+                node_label: label,
+                status: TraceStatus::Queued,
+                message: String::new(),
+                output: None,
+            });
+        }
+        ExecutionEvent::NodeStarted { node_id, label } => {
+            state
+                .status_by_node
+                .insert(node_id.clone(), AgentStatus::Started);
+            state.run_trace.push(RunTraceEntry {
+                node_id,
+                node_label: label,
+                status: TraceStatus::Running,
+                message: String::new(),
+                output: None,
+            });
+        }
+        ExecutionEvent::NodeThinking { node_id, message } => {
+            if let Some(entry) = state
+                .run_trace
+                .iter_mut()
+                .rev()
+                .find(|e| e.node_id == node_id)
+            {
+                entry.message = message;
+            }
+        }
+        ExecutionEvent::NodeAwaitingInput {
+            node_id,
+            label,
+            context,
+        } => {
+            state
+                .status_by_node
+                .insert(node_id.clone(), AgentStatus::AwaitingInput);
+            state.awaiting_node_id = Some(node_id.clone());
+            state.run_trace.push(RunTraceEntry {
+                node_id,
+                node_label: label,
+                status: TraceStatus::Paused,
+                message: context,
+                output: None,
+            });
+        }
+        ExecutionEvent::ManualNodeActive { node_id, label } => {
+            state.active_manual_node_id = Some(node_id.clone());
+            state
+                .status_by_node
+                .insert(node_id.clone(), AgentStatus::AwaitingInput);
+            state.run_trace.push(RunTraceEntry {
+                node_id,
+                node_label: label,
+                status: TraceStatus::Paused,
+                message: "awaiting user decision".to_string(),
+                output: None,
+            });
+        }
+        ExecutionEvent::NodeCompleted { node_id, output } => {
+            state
+                .status_by_node
+                .insert(node_id.clone(), AgentStatus::Completed);
+            state.outputs.insert(node_id.clone(), output.clone());
+            state.run_trace.push(RunTraceEntry {
+                node_id,
+                node_label: String::new(),
+                status: TraceStatus::Completed,
+                message: String::new(),
+                output: Some(output),
+            });
+        }
+        ExecutionEvent::NodeFailed { node_id, error } => {
+            state
+                .status_by_node
+                .insert(node_id.clone(), AgentStatus::Failed);
+            state.run_trace.push(RunTraceEntry {
+                node_id: node_id.clone(),
+                node_label: String::new(),
+                status: TraceStatus::Failed,
+                message: error.clone(),
+                output: None,
+            });
+            state.last_error = Some(error);
+        }
+        ExecutionEvent::Finished(report) => {
+            state.active = false;
+            state.last_report = Some(report);
+        }
+        ExecutionEvent::Error(error) => {
+            state.last_error = Some(error);
+        }
+    }
+}
+
+pub fn record_user_input(state: &mut WorkflowRunState, node_id: &str, text: String) {
+    state
+        .chat_logs
+        .entry(NodeId(node_id.to_string()))
+        .or_default()
+        .push(ChatMessage {
+            role: ChatRole::User,
+            content: text,
+        });
+    state.awaiting_node_id = None;
+    state.active_manual_node_id = None;
 }

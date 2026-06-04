@@ -1,5 +1,4 @@
 use crate::settings_store::{AiProviderKind, AppSettings, ProviderTransport};
-use crate::state::AppState;
 use openai_client::OpenAiWireApi;
 use thiserror::Error;
 
@@ -7,6 +6,16 @@ use thiserror::Error;
 pub struct ProviderEnv {
     pub openai_api_key: Option<String>,
     pub compatible_api_key: Option<String>,
+}
+
+impl ProviderEnv {
+    #[must_use]
+    pub fn from_system() -> Self {
+        Self {
+            openai_api_key: std::env::var("OPENAI_API_KEY").ok(),
+            compatible_api_key: std::env::var("OPENAI_COMPATIBLE_API_KEY").ok(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,7 +41,7 @@ pub enum ProviderConfigError {
 /// Returns an error if the API key cannot be resolved for the active provider.
 pub fn resolve_provider_config(
     settings: &AppSettings,
-    state: &AppState,
+    transient_api_key: Option<&str>,
     env: &ProviderEnv,
 ) -> Result<ResolvedProviderConfig, ProviderConfigError> {
     let profile = settings.active_profile();
@@ -41,8 +50,16 @@ pub fn resolve_provider_config(
         AiProviderKind::OpenAi => env.openai_api_key.as_deref(),
         AiProviderKind::OpenAiCompatible => env.compatible_api_key.as_deref(),
     };
-    let api_key = state
-        .resolve_provider_api_key(env_key_value)
+    let api_key = transient_api_key
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(ToString::to_string)
+        .or_else(|| {
+            env_key_value
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(ToString::to_string)
+        })
         .ok_or_else(|| ProviderConfigError::MissingApiKey {
             provider: settings.active_provider.label(),
             env_var: env_key_name,
@@ -70,12 +87,10 @@ mod tests {
     #[test]
     fn openai_provider_uses_ui_key_before_env_key() {
         let settings = AppSettings::default();
-        let mut state = AppState::new();
-        state.provider_api_key_input = " sk-ui ".to_string();
 
         let resolved = resolve_provider_config(
             &settings,
-            &state,
+            Some(" sk-ui "),
             &ProviderEnv {
                 openai_api_key: Some("sk-env".to_string()),
                 compatible_api_key: None,
@@ -104,11 +119,10 @@ mod tests {
             },
             ..Default::default()
         };
-        let state = AppState::new();
 
         let resolved = resolve_provider_config(
             &settings,
-            &state,
+            None,
             &ProviderEnv {
                 openai_api_key: Some("sk-openai".to_string()),
                 compatible_api_key: Some(" vendor-key ".to_string()),
@@ -130,11 +144,10 @@ mod tests {
             active_provider: AiProviderKind::OpenAiCompatible,
             ..Default::default()
         };
-        let state = AppState::new();
 
         let error = resolve_provider_config(
             &settings,
-            &state,
+            None,
             &ProviderEnv {
                 openai_api_key: Some("sk-openai".to_string()),
                 compatible_api_key: None,

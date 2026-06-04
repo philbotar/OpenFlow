@@ -1,4 +1,5 @@
 use crate::canvas_math::clamp_node_position;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use workflow_core::{
@@ -6,7 +7,8 @@ use workflow_core::{
     Workflow, WorkflowValidationError,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum AgentStatus {
     Idle,
     Queued,
@@ -16,7 +18,8 @@ pub enum AgentStatus {
     Failed,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum TraceStatus {
     Queued,
     Running,
@@ -36,13 +39,59 @@ impl TraceStatus {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RunTraceEntry {
     pub node_id: NodeId,
     pub node_label: String,
     pub status: TraceStatus,
     pub message: String,
     pub output: Option<Value>,
+}
+
+/// Live run state pushed to the frontend via Tauri events.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowRunState {
+    pub active: bool,
+    pub awaiting_node_id: Option<NodeId>,
+    pub active_manual_node_id: Option<NodeId>,
+    pub status_by_node: BTreeMap<NodeId, AgentStatus>,
+    pub last_report: Option<RunReport>,
+    pub last_error: Option<String>,
+    pub chat_logs: BTreeMap<NodeId, Vec<ChatMessage>>,
+    pub run_trace: Vec<RunTraceEntry>,
+    pub outputs: BTreeMap<NodeId, Value>,
+}
+
+impl WorkflowRunState {
+    #[must_use]
+    pub fn running_for_workflow(workflow: &Workflow) -> Self {
+        let status_by_node = workflow
+            .nodes
+            .iter()
+            .map(|node| (node.id.clone(), AgentStatus::Idle))
+            .collect();
+        Self {
+            active: true,
+            awaiting_node_id: None,
+            active_manual_node_id: None,
+            status_by_node,
+            last_report: None,
+            last_error: None,
+            chat_logs: BTreeMap::new(),
+            run_trace: Vec::new(),
+            outputs: BTreeMap::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn idle_for_workflow(workflow: &Workflow) -> Self {
+        Self {
+            active: false,
+            ..Self::running_for_workflow(workflow)
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

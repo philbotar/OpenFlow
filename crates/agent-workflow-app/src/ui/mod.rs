@@ -7,7 +7,7 @@ mod widgets;
 
 use crate::execution::{spawn_interactive_workflow_run, ExecutionAction, ExecutionEvent};
 use crate::provider_config::{resolve_provider_config, ProviderEnv};
-use crate::settings_store::{AppSettings, FileSettingsStore};
+use crate::settings_store::{AiProviderKind, AppSettings, FileSettingsStore};
 use crate::state::{AgentStatus, AppState, RunTraceEntry, TraceStatus};
 use crate::storage::FileWorkflowStore;
 use eframe::egui;
@@ -135,13 +135,20 @@ impl WorkflowApp {
             return;
         }
 
+        let env = ProviderEnv {
+            openai_api_key: env::var("OPENAI_API_KEY").ok(),
+            compatible_api_key: env::var("OPENAI_COMPATIBLE_API_KEY").ok(),
+        };
+        let env_key_value = match self.settings.active_provider {
+            AiProviderKind::OpenAi => env.openai_api_key.as_deref(),
+            AiProviderKind::OpenAiCompatible => env.compatible_api_key.as_deref(),
+        };
         let provider_config = match resolve_provider_config(
             &self.settings,
-            &self.state,
-            &ProviderEnv {
-                openai_api_key: env::var("OPENAI_API_KEY").ok(),
-                compatible_api_key: env::var("OPENAI_COMPATIBLE_API_KEY").ok(),
-            },
+            self.state
+                .resolve_provider_api_key(env_key_value)
+                .as_deref(),
+            &env,
         ) {
             Ok(config) => config,
             Err(error) => {
@@ -323,6 +330,22 @@ impl eframe::App for WorkflowApp {
                             ChatRole::Thinking,
                             format!("Context:\n{context}"),
                         );
+                        self.bottom_panel_tab = canvas::BottomPanelTab::Chat;
+                    }
+                    ExecutionEvent::ManualNodeActive {
+                        ref node_id,
+                        ref label,
+                    } => {
+                        self.state
+                            .status_by_node
+                            .insert(node_id.clone(), AgentStatus::AwaitingInput);
+                        self.state.push_run_trace(RunTraceEntry {
+                            node_id: node_id.clone(),
+                            node_label: label.clone(),
+                            status: TraceStatus::Paused,
+                            message: "awaiting user decision".to_string(),
+                            output: None,
+                        });
                         self.bottom_panel_tab = canvas::BottomPanelTab::Chat;
                     }
                     ExecutionEvent::NodeCompleted {
@@ -523,15 +546,17 @@ impl eframe::App for WorkflowApp {
                     settings::show_settings_panel(ui, &mut self.state, &mut self.settings);
                 });
         } else {
-            let api_key_ready = resolve_provider_config(
-                &self.settings,
-                &self.state,
-                &ProviderEnv {
-                    openai_api_key: env::var("OPENAI_API_KEY").ok(),
-                    compatible_api_key: env::var("OPENAI_COMPATIBLE_API_KEY").ok(),
-                },
-            )
-            .is_ok();
+            let env = ProviderEnv {
+                openai_api_key: env::var("OPENAI_API_KEY").ok(),
+                compatible_api_key: env::var("OPENAI_COMPATIBLE_API_KEY").ok(),
+            };
+            let env_key_value = match self.settings.active_provider {
+                AiProviderKind::OpenAi => env.openai_api_key.as_deref(),
+                AiProviderKind::OpenAiCompatible => env.compatible_api_key.as_deref(),
+            };
+            let transient = self.state.resolve_provider_api_key(env_key_value);
+            let api_key_ready =
+                resolve_provider_config(&self.settings, transient.as_deref(), &env).is_ok();
             let execution_running = self
                 .execution_task
                 .as_ref()

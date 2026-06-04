@@ -23,6 +23,7 @@ pub struct AppBackend {
     agent_store: FileAgentStore,
     settings_store: FileSettingsStore,
     env: ProviderEnv,
+    runtime: tokio::runtime::Handle,
     run_session: Mutex<RunSession>,
 }
 
@@ -84,7 +85,6 @@ pub struct AgentDefinitionSummary {
     pub name: String,
     pub model: String,
 }
-
 impl AppBackend {
     #[must_use]
     pub fn new(
@@ -92,12 +92,14 @@ impl AppBackend {
         agent_store: FileAgentStore,
         settings_store: FileSettingsStore,
         env: ProviderEnv,
+        runtime: tokio::runtime::Handle,
     ) -> Self {
         Self {
             workflow_store,
             agent_store,
             settings_store,
             env,
+            runtime,
             run_session: Mutex::new(RunSession {
                 workflow: None,
                 run_state: None,
@@ -114,6 +116,7 @@ impl AppBackend {
             FileAgentStore::new(FileAgentStore::default_path()),
             FileSettingsStore::new(FileSettingsStore::default_path()),
             ProviderEnv::from_system(),
+            tokio::runtime::Handle::current(),
         )
     }
 
@@ -255,7 +258,7 @@ impl AppBackend {
         settings: &AppSettings,
         _transient_api_key: Option<&str>,
     ) -> ProviderReadiness {
-        match resolve_provider_config(settings, &self.env) {
+        match resolve_provider_config(settings, None, &self.env) {
             Ok(_) => ProviderReadiness {
                 ready: true,
                 provider: settings.active_provider.label().to_string(),
@@ -298,7 +301,7 @@ impl AppBackend {
         _transient_api_key: Option<&str>,
     ) -> Result<UnboundedReceiver<ExecutionEvent>, BackendError> {
         validate_workflow(&workflow)?;
-        let provider_config = resolve_provider_config(settings, &self.env)?;
+        let provider_config = resolve_provider_config(settings, None, &self.env)?;
         let ai = OpenAiClient::with_config(OpenAiClientConfig {
             api_key: provider_config.api_key,
             base_url: provider_config.base_url,
@@ -307,7 +310,8 @@ impl AppBackend {
             chat_completions_path: provider_config.chat_completions_path,
         });
 
-        let (handle, event_rx, action_tx) = spawn_interactive_workflow_run(workflow.clone(), ai);
+        let (handle, event_rx, action_tx) =
+            spawn_interactive_workflow_run(&self.runtime, workflow.clone(), None, ai);
 
         let mut session = self.run_session.lock().await;
         if let Some(existing) = session.handle.take() {
@@ -455,6 +459,7 @@ mod tests {
                 openai_api_key: Some("openai-key".to_string()),
                 compatible_api_key: Some("compatible-key".to_string()),
             },
+            tokio::runtime::Handle::current(),
         );
         (backend, dir)
     }

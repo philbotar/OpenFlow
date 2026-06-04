@@ -261,6 +261,58 @@ impl Default for AgentNodeConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct NodeTemplate {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub config: AgentNodeConfig,
+}
+
+impl NodeTemplate {
+    #[must_use]
+    pub fn builtin_defaults() -> Vec<NodeTemplate> {
+        vec![
+            NodeTemplate {
+                id: "builtin.task-runner".to_string(),
+                name: "Task Runner".to_string(),
+                description: "Executes a single focused task".to_string(),
+                config: AgentNodeConfig::default(),
+            },
+            NodeTemplate {
+                id: "builtin.code-assistant".to_string(),
+                name: "Code Assistant".to_string(),
+                description: "Writes and reviews code".to_string(),
+                config: AgentNodeConfig::default(),
+            },
+            NodeTemplate {
+                id: "builtin.writer".to_string(),
+                name: "Writer".to_string(),
+                description: "Generates prose, docs, and content".to_string(),
+                config: AgentNodeConfig::default(),
+            },
+            NodeTemplate {
+                id: "builtin.analyst".to_string(),
+                name: "Analyst".to_string(),
+                description: "Analyzes data and provides insights".to_string(),
+                config: AgentNodeConfig::default(),
+            },
+            NodeTemplate {
+                id: "builtin.translator".to_string(),
+                name: "Translator".to_string(),
+                description: "Translates between formats and languages".to_string(),
+                config: AgentNodeConfig::default(),
+            },
+            NodeTemplate {
+                id: "builtin.ideator".to_string(),
+                name: "Ideator".to_string(),
+                description: "Generates creative ideas and approaches".to_string(),
+                config: AgentNodeConfig::default(),
+            },
+        ]
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Edge {
     pub id: EdgeId,
@@ -347,5 +399,47 @@ mod tests {
         let json = serde_json::to_string(&msg).unwrap();
         let back: ChatMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
+    }
+
+    #[test]
+    fn builtin_defaults_has_six_templates() {
+        let templates = NodeTemplate::builtin_defaults();
+        assert_eq!(templates.len(), 6);
+    }
+
+    #[test]
+    fn builtin_defaults_all_have_builtin_prefix() {
+        for template in NodeTemplate::builtin_defaults() {
+            assert!(
+                template.id.starts_with("builtin."),
+                "expected id to start with 'builtin.': {}",
+                template.id
+            );
+        }
+    }
+
+    #[test]
+    fn builtin_defaults_have_unique_ids() {
+        let ids: Vec<String> = NodeTemplate::builtin_defaults()
+            .into_iter()
+            .map(|t| t.id)
+            .collect();
+        let mut deduped = ids.clone();
+        deduped.sort();
+        deduped.dedup();
+        assert_eq!(ids.len(), deduped.len());
+    }
+
+    #[test]
+    fn node_template_serialization_roundtrip() {
+        let template = NodeTemplate {
+            id: "builtin.writer".to_string(),
+            name: "Writer".to_string(),
+            description: "Generates prose, docs, and content".to_string(),
+            config: AgentNodeConfig::default(),
+        };
+        let json = serde_json::to_string(&template).unwrap();
+        let back: NodeTemplate = serde_json::from_str(&json).unwrap();
+        assert_eq!(template, back);
     }
 }

@@ -16,13 +16,14 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build.workspace = true
 
-[dependencies]
-agent-workflow-app = { path = "../../agent-workflow-app" }
-serde.workspace = true
-tauri.workspace = true
-thiserror.workspace = true
-tokio.workspace = true
-workflow-core = { path = "../../workflow-core" }
+ [dependencies]
+ agent-workflow-app = { path = "../../agent-workflow-app" }
+ serde.workspace = true
+ tauri.workspace = true
+ tauri-plugin-shell = "2"
+ thiserror.workspace = true
+ tokio.workspace = true
+ workflow-core = { path = "../../workflow-core" }
 
 [lints]
 workspace = true
