@@ -1,0 +1,166 @@
+import { describe, expect, test } from "vitest";
+import type { AppSettings, Workflow, WorkflowRunState } from "./types";
+import {
+  cloneSettings,
+  cloneWorkflow,
+  projectWorkflowCanvasGraph,
+  projectWorkflowCanvasStatusByNode,
+} from "./workflow";
+
+const workflow: Workflow = {
+  id: "workflow-1",
+  name: "Smoke workflow",
+  nodes: [
+    {
+      id: "node-1",
+      label: "Plan",
+      kind: "Agent",
+      position: { x: 96, y: 96 },
+      agent: {
+        system_prompt: "system",
+        task_prompt: "task",
+        model: "gpt-4o-mini",
+        output_schema: { type: "object", properties: { title: { type: "string" } } },
+        auto_start: true,
+      },
+    },
+    {
+      id: "node-2",
+      label: "Draft",
+      kind: "Agent",
+      position: { x: 496, y: 96 },
+      agent: {
+        system_prompt: "system-2",
+        task_prompt: "task-2",
+        model: "gpt-4o-mini",
+        output_schema: { type: "object" },
+        auto_start: false,
+      },
+    },
+  ],
+  edges: [{ id: "edge-1", from: "node-1", to: "node-2" }],
+};
+
+const settings: AppSettings = {
+  active_provider: "open_ai",
+  openai: {
+    display_name: "OpenAI",
+    base_url: "https://api.openai.com",
+    transport: "responses",
+    responses_path: "v1/responses",
+    chat_completions_path: "v1/chat/completions",
+    api_key: "openai-secret",
+    known_models: ["gpt-4o-mini"],
+    default_model: "gpt-4o-mini",
+  },
+  openai_compatible: {
+    display_name: "Compatible",
+    base_url: "http://localhost:11434",
+    transport: "chat_completions",
+    responses_path: "v1/responses",
+    chat_completions_path: "v1/chat/completions",
+    api_key: "compatible-secret",
+    known_models: ["llama3.1"],
+    default_model: "llama3.1",
+  },
+};
+
+const runState: WorkflowRunState = {
+  active: true,
+  awaitingNodeId: "node-2",
+  statusByNode: {
+    "node-1": "completed",
+    "node-2": "awaiting_input",
+  },
+  lastReport: null,
+  lastError: null,
+  chatLogs: {
+    "node-1": [],
+    "node-2": [],
+  },
+  runTrace: [
+    {
+      nodeId: "node-1",
+      nodeLabel: "Plan",
+      status: "completed",
+      message: "done",
+      output: null,
+    },
+  ],
+  outputs: {},
+};
+
+describe("workflow helpers", () => {
+  test("cloneWorkflow detaches nested workflow state", () => {
+    const cloned = cloneWorkflow(workflow);
+
+    cloned.nodes[0].position.x = 320;
+    cloned.nodes[0].agent.model = "o3";
+    (cloned.nodes[0].agent.output_schema as { properties: { title: { type: string } } }).properties.title.type = "number";
+    cloned.edges[0].to = "node-9";
+
+    expect(workflow.nodes[0].position.x).toBe(96);
+    expect(workflow.nodes[0].agent.model).toBe("gpt-4o-mini");
+    expect((workflow.nodes[0].agent.output_schema as { properties: { title: { type: string } } }).properties.title.type).toBe(
+      "string",
+    );
+    expect(workflow.edges[0].to).toBe("node-2");
+  });
+
+  test("cloneSettings detaches provider fields", () => {
+    const cloned = cloneSettings(settings);
+
+    cloned.openai.api_key = "updated-secret";
+    cloned.openai.known_models.push("o3");
+
+    expect(settings.openai.api_key).toBe("openai-secret");
+    expect(settings.openai.known_models).toEqual(["gpt-4o-mini"]);
+  });
+
+  test("projectWorkflowCanvasGraph reuses the previous graph when only agent config changes", () => {
+    const previous = projectWorkflowCanvasGraph(workflow);
+    const edited = cloneWorkflow(workflow);
+    edited.nodes[0].agent.system_prompt = "new system prompt";
+    edited.nodes[1].agent.model = "gpt-4.1";
+
+    const next = projectWorkflowCanvasGraph(edited, previous);
+
+    expect(next).toBe(previous);
+  });
+
+  test("projectWorkflowCanvasGraph emits a new graph when canvas-visible fields change", () => {
+    const previous = projectWorkflowCanvasGraph(workflow);
+    const edited = cloneWorkflow(workflow);
+    edited.nodes[0].label = "Plan v2";
+
+    const next = projectWorkflowCanvasGraph(edited, previous);
+
+    expect(next).not.toBe(previous);
+    expect(next?.nodes[0].label).toBe("Plan v2");
+  });
+
+  test("projectWorkflowCanvasStatusByNode reuses the previous snapshot when statuses are unchanged", () => {
+    const previous = projectWorkflowCanvasStatusByNode(runState);
+    const updated = {
+      ...runState,
+      runTrace: [
+        ...runState.runTrace,
+        {
+          nodeId: "node-2",
+          nodeLabel: "Draft",
+          status: "paused",
+          message: "waiting",
+          output: null,
+        },
+      ],
+      chatLogs: {
+        ...runState.chatLogs,
+        "node-2": [{ role: "User", content: "continue" }],
+      },
+    } satisfies WorkflowRunState;
+
+    const next = projectWorkflowCanvasStatusByNode(updated, previous);
+
+    expect(next).toBe(previous);
+  });
+});

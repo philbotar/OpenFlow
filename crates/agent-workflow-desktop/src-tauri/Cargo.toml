@@ -1,0 +1,28 @@
+[package]
+name = "agent-workflow-desktop"
+version = "0.1.0"
+edition.workspace = true
+description.workspace = true
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[lib]
+name = "agent_workflow_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build.workspace = true
+
+[dependencies]
+agent-workflow-app = { path = "../../agent-workflow-app" }
+serde.workspace = true
+tauri.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+workflow-core = { path = "../../workflow-core" }
+
+[lints]
+workspace = true

@@ -1,0 +1,697 @@
+// @vitest-environment jsdom
+import { render } from "solid-js/web";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import type { AgentDefinition, AppSettings, BootstrapPayload, ProviderReadiness, Workflow, WorkflowRunState } from "./types";
+
+const apiMocks = vi.hoisted(() => ({
+  bootstrapApp: vi.fn(),
+  clearRunTrace: vi.fn(),
+  createAgentDefinition: vi.fn(),
+  createAgentNode: vi.fn(),
+  createWorkflow: vi.fn(),
+  listenToRunState: vi.fn(),
+  resolveProviderReadiness: vi.fn(),
+  saveAgents: vi.fn(),
+  saveSettings: vi.fn(),
+  saveWorkflows: vi.fn(),
+  startRun: vi.fn(),
+  submitUserInput: vi.fn(),
+  validateWorkflow: vi.fn(),
+}));
+
+vi.mock("./api", () => ({
+  bootstrapApp: apiMocks.bootstrapApp,
+  clearRunTrace: apiMocks.clearRunTrace,
+  createAgentDefinition: apiMocks.createAgentDefinition,
+  createAgentNode: apiMocks.createAgentNode,
+  createWorkflow: apiMocks.createWorkflow,
+  listenToRunState: apiMocks.listenToRunState,
+  resolveProviderReadiness: apiMocks.resolveProviderReadiness,
+  saveAgents: apiMocks.saveAgents,
+  saveSettings: apiMocks.saveSettings,
+  saveWorkflows: apiMocks.saveWorkflows,
+  startRun: apiMocks.startRun,
+  submitUserInput: apiMocks.submitUserInput,
+  validateWorkflow: apiMocks.validateWorkflow,
+}));
+
+vi.mock("./canvas/WorkflowCanvasHost", () => ({
+  default: () => null,
+}));
+
+import App from "./App";
+
+const SETTINGS: AppSettings = {
+  active_provider: "open_ai",
+  openai: {
+    display_name: "OpenAI",
+    base_url: "https://api.openai.com/v1",
+    transport: "responses",
+    responses_path: "responses",
+    chat_completions_path: "chat/completions",
+    api_key: "stored-openai-key",
+    known_models: ["gpt-4.1-mini"],
+    default_model: "gpt-4.1-mini",
+  },
+  openai_compatible: {
+    display_name: "Compatible",
+    base_url: "https://example.invalid/v1",
+    transport: "chat_completions",
+    responses_path: "responses",
+    chat_completions_path: "chat/completions",
+    api_key: "stored-compatible-key",
+    known_models: ["compatible-model"],
+    default_model: "compatible-model",
+  },
+};
+
+const READY: ProviderReadiness = {
+  ready: true,
+  provider: "OpenAI",
+  message: "Ready",
+  envVar: "OPENAI_API_KEY",
+};
+
+function makeWorkflow(id: string, name: string): Workflow {
+  return {
+    id,
+    name,
+    nodes: [
+      {
+        id: `${id}-node-1`,
+        label: `${name} node`,
+        kind: "Agent",
+        position: { x: 120, y: 140 },
+        agent: {
+          system_prompt: "",
+          task_prompt: "",
+          model: "gpt-4.1-mini",
+          output_schema: { type: "object" },
+          auto_start: false,
+        },
+      },
+    ],
+    edges: [],
+  };
+}
+
+function makeAgent(id: string, name: string): AgentDefinition {
+  return {
+    id,
+    name,
+    system_prompt: "",
+    task_prompt: "",
+    model: "gpt-4.1-mini",
+    output_schema: { type: "object" },
+    auto_start: false,
+  };
+}
+
+function makeBootstrapPayload(workflows: Workflow[], agents: AgentDefinition[] = [makeAgent("agent-1", "Research Agent")]): BootstrapPayload {
+  return {
+    workflows,
+    agents,
+    settings: SETTINGS,
+    runState: null,
+  };
+}
+
+function makeAwaitingRunState(workflow: Workflow): WorkflowRunState {
+  const [node] = workflow.nodes;
+  return {
+    active: true,
+    awaitingNodeId: node.id,
+    statusByNode: {
+      [node.id]: "awaiting_input",
+    },
+    lastReport: null,
+    lastError: null,
+    chatLogs: {
+      [node.id]: [],
+    },
+    runTrace: [],
+    outputs: {},
+  };
+}
+
+function flush() {
+  return new Promise<void>((resolve) => setTimeout(resolve, 0));
+}
+
+async function waitForElement<T extends Element>(read: () => T | null, label: string): Promise<T> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const value = read();
+    if (value) {
+      return value;
+    }
+    await flush();
+  }
+  throw new Error(`Timed out waiting for ${label}`);
+}
+
+function workflowTitles(container: HTMLElement) {
+  return Array.from(container.querySelectorAll(".workflow-row-title")).map((element) => element.textContent ?? "");
+}
+
+function topbarTitle(container: HTMLElement) {
+  const title = container.querySelector(".topbar-copy h2");
+  if (!title) {
+    throw new Error("topbar title missing");
+  }
+  return title.textContent ?? "";
+}
+
+function setUserAgent(userAgent: string) {
+  const descriptor = Object.getOwnPropertyDescriptor(window.navigator, "userAgent");
+  Object.defineProperty(window.navigator, "userAgent", {
+    value: userAgent,
+    configurable: true,
+  });
+  return () => {
+    if (descriptor) {
+      Object.defineProperty(window.navigator, "userAgent", descriptor);
+      return;
+    }
+    Object.defineProperty(window.navigator, "userAgent", {
+      value: undefined,
+      configurable: true,
+    });
+  };
+}
+
+
+async function mountApp(payload: BootstrapPayload) {
+  apiMocks.bootstrapApp.mockResolvedValue(payload);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const dispose = render(() => <App />, container);
+  await waitForElement(() => container.querySelector(".workflow-row"), "workflow rows");
+  await flush();
+  return { container, dispose };
+}
+
+async function startWorkflowRename(container: HTMLElement, name: string) {
+  const renameButton = await waitForElement(
+    () => container.querySelector(`[aria-label="Rename ${name}"]`),
+    `rename button for ${name}`,
+  );
+  (renameButton as HTMLButtonElement).click();
+  await flush();
+  return waitForElement(
+    () => container.querySelector(`input[aria-label="Workflow name for ${name}"]`),
+    `workflow rename input for ${name}`,
+  ) as Promise<HTMLInputElement>;
+}
+
+describe("App workflow rename", () => {
+  afterEach(() => {
+    document.body.innerHTML = "";
+    vi.clearAllMocks();
+    window.localStorage.clear();
+  });
+
+  beforeEach(() => {
+    apiMocks.listenToRunState.mockResolvedValue(() => {});
+    apiMocks.resolveProviderReadiness.mockResolvedValue(READY);
+    apiMocks.createWorkflow.mockImplementation(async (name: string) => makeWorkflow("created-workflow", name));
+    apiMocks.createAgentDefinition.mockImplementation(async (name: string) => makeAgent("created-agent", name));
+  });
+
+  test("focuses the rename input and does not switch workflows when it is clicked", async () => {
+    const { container, dispose } = await mountApp(
+      makeBootstrapPayload([
+        makeWorkflow("workflow-1", "Workflow One"),
+        makeWorkflow("workflow-2", "Workflow Two"),
+      ]),
+    );
+
+    try {
+      expect(topbarTitle(container)).toBe("Workflow One");
+
+      const input = await startWorkflowRename(container, "Workflow Two");
+
+      expect(document.activeElement).toBe(input);
+      expect(input.selectionStart).toBe(0);
+      expect(input.selectionEnd).toBe(input.value.length);
+
+      input.click();
+      await flush();
+
+      expect(document.activeElement).toBe(input);
+      expect(topbarTitle(container)).toBe("Workflow One");
+    } finally {
+      dispose();
+    }
+  });
+
+  test("renders the macOS titlebar spacer inside the topbar", async () => {
+    const restoreUserAgent = setUserAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)");
+    const { container, dispose } = await mountApp(
+      makeBootstrapPayload([makeWorkflow("workflow-1", "Workflow One")]),
+    );
+
+    try {
+      const topbar = await waitForElement(() => container.querySelector(".topbar"), "topbar");
+      expect(topbar.classList.contains("topbar-macos")).toBe(true);
+      expect(topbar.querySelector(".topbar-window-controls-spacer")).not.toBeNull();
+    } finally {
+      dispose();
+      restoreUserAgent();
+    }
+  });
+
+  test("commits the edited workflow name on blur", async () => {
+    const { container, dispose } = await mountApp(
+      makeBootstrapPayload([
+        makeWorkflow("workflow-1", "Workflow One"),
+        makeWorkflow("workflow-2", "Workflow Two"),
+      ]),
+    );
+
+    try {
+      const input = await startWorkflowRename(container, "Workflow Two");
+
+      input.value = "Workflow Two Renamed";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.blur();
+      await flush();
+
+      expect(container.querySelector(".workflow-row-input")).toBeNull();
+      expect(workflowTitles(container)).toContain("Workflow Two Renamed");
+    } finally {
+      dispose();
+    }
+  });
+
+  test("cancels the edited workflow name on escape", async () => {
+    const { container, dispose } = await mountApp(
+      makeBootstrapPayload([
+        makeWorkflow("workflow-1", "Workflow One"),
+        makeWorkflow("workflow-2", "Workflow Two"),
+      ]),
+    );
+
+    try {
+      const input = await startWorkflowRename(container, "Workflow Two");
+
+      input.value = "Discarded Rename";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await flush();
+
+      expect(container.querySelector(".workflow-row-input")).toBeNull();
+      expect(workflowTitles(container)).toContain("Workflow Two");
+      expect(workflowTitles(container)).not.toContain("Discarded Rename");
+    } finally {
+      dispose();
+    }
+  });
+});
+
+describe("App agent dashboard", () => {
+  afterEach(() => {
+    document.body.innerHTML = "";
+    vi.clearAllMocks();
+    window.localStorage.clear();
+  });
+
+  beforeEach(() => {
+    apiMocks.listenToRunState.mockResolvedValue(() => {});
+    apiMocks.resolveProviderReadiness.mockResolvedValue(READY);
+    apiMocks.createWorkflow.mockImplementation(async (name: string) => makeWorkflow("created-workflow", name));
+    apiMocks.createAgentDefinition.mockImplementation(async (name: string) => makeAgent("created-agent", name));
+  });
+
+  test("opens the agent dashboard from the sidebar", async () => {
+    const { container, dispose } = await mountApp(
+      makeBootstrapPayload([makeWorkflow("workflow-1", "Workflow One")], [makeAgent("agent-1", "Research Agent")]),
+    );
+
+    try {
+      const agentsButton = await waitForElement(
+        () => Array.from(container.querySelectorAll(".sidebar-nav-button")).find((element) => element.textContent?.includes("Agents")) as HTMLButtonElement | null,
+        "agents button",
+      );
+      agentsButton.click();
+      await flush();
+
+      expect(topbarTitle(container)).toBe("Agents");
+      expect(container.querySelector(".agent-list-row-title")?.textContent).toBe("Research Agent");
+      expect((container.querySelector(".agent-list-row.active") as HTMLElement | null)).not.toBeNull();
+    } finally {
+      dispose();
+    }
+  });
+
+  test("creates and saves reusable agents", async () => {
+    const { container, dispose } = await mountApp(
+      makeBootstrapPayload([makeWorkflow("workflow-1", "Workflow One")], []),
+    );
+
+    try {
+      const agentsButton = await waitForElement(
+        () => Array.from(container.querySelectorAll(".sidebar-nav-button")).find((element) => element.textContent?.includes("Agents")) as HTMLButtonElement | null,
+        "agents button",
+      );
+      agentsButton.click();
+      await flush();
+
+      const newAgentButton = await waitForElement(
+        () => Array.from(container.querySelectorAll("button")).find((element) => element.textContent === "New agent") as HTMLButtonElement | null,
+        "new agent button",
+      );
+      newAgentButton.click();
+      await flush();
+
+      expect(apiMocks.createAgentDefinition).toHaveBeenCalledWith("Agent 1");
+
+      const nameInput = await waitForElement(
+        () => Array.from(container.querySelectorAll("label span")).find((element) => element.textContent === "Name")?.parentElement?.querySelector("input") as HTMLInputElement | null,
+        "agent name input",
+      );
+      nameInput.value = "Planner Agent";
+      nameInput.dispatchEvent(new Event("input", { bubbles: true }));
+
+      const saveButton = Array.from(container.querySelectorAll("button")).find(
+        (element) => element.textContent === "Save agents",
+      ) as HTMLButtonElement | undefined;
+      expect(saveButton).toBeDefined();
+      saveButton?.click();
+      await flush();
+
+      expect(apiMocks.saveAgents).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: "created-agent",
+            name: "Planner Agent",
+          }),
+        ]),
+      );
+    } finally {
+      dispose();
+    }
+  });
+});
+
+describe("App settings persistence", () => {
+  afterEach(() => {
+    document.body.innerHTML = "";
+    vi.clearAllMocks();
+    window.localStorage.clear();
+  });
+
+  beforeEach(() => {
+    apiMocks.listenToRunState.mockResolvedValue(() => {});
+    apiMocks.resolveProviderReadiness.mockResolvedValue(READY);
+    apiMocks.createWorkflow.mockImplementation(async (name: string) => makeWorkflow("created-workflow", name));
+    apiMocks.createAgentDefinition.mockImplementation(async (name: string) => makeAgent("created-agent", name));
+  });
+
+  test("loads and saves provider API keys per provider", async () => {
+    const { container, dispose } = await mountApp(
+      makeBootstrapPayload([makeWorkflow("workflow-1", "Workflow One")]),
+    );
+
+    try {
+      const settingsButton = await waitForElement(
+        () => Array.from(container.querySelectorAll(".sidebar-nav-button")).find((element) => element.textContent?.includes("Settings")) as HTMLButtonElement | null,
+        "settings button",
+      );
+      settingsButton.click();
+      await flush();
+
+      const apiKeyInput = await waitForElement(
+        () => container.querySelector('input[type="password"]'),
+        "provider api key input",
+      ) as HTMLInputElement;
+      expect(apiKeyInput.value).toBe("stored-openai-key");
+
+      const compatibleButton = Array.from(container.querySelectorAll(".segmented-control button")).find(
+        (element) => element.textContent === "Compatible",
+      ) as HTMLButtonElement | undefined;
+      expect(compatibleButton).toBeDefined();
+      compatibleButton?.click();
+      await flush();
+
+      expect(apiKeyInput.value).toBe("stored-compatible-key");
+
+      apiKeyInput.value = "updated-compatible-key";
+      apiKeyInput.dispatchEvent(new Event("input", { bubbles: true }));
+      await flush();
+
+      const saveButton = Array.from(container.querySelectorAll("button")).find(
+        (element) => element.textContent === "Save settings",
+      ) as HTMLButtonElement | undefined;
+      expect(saveButton).toBeDefined();
+      saveButton?.click();
+      await flush();
+
+      expect(apiMocks.saveSettings).toHaveBeenCalledWith(
+        expect.objectContaining({
+          openai_compatible: expect.objectContaining({
+            api_key: "updated-compatible-key",
+          }),
+        }),
+      );
+    } finally {
+      dispose();
+    }
+  });
+});
+
+describe("App chat slash commands", () => {
+  afterEach(() => {
+    document.body.innerHTML = "";
+    vi.clearAllMocks();
+    window.localStorage.clear();
+  });
+
+  beforeEach(() => {
+    apiMocks.listenToRunState.mockResolvedValue(() => {});
+    apiMocks.resolveProviderReadiness.mockResolvedValue(READY);
+    apiMocks.createWorkflow.mockImplementation(async (name: string) => makeWorkflow("created-workflow", name));
+    apiMocks.createAgentDefinition.mockImplementation(async (name: string) => makeAgent("created-agent", name));
+  });
+
+  test("expands known skill commands before submitting paused-node input", async () => {
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    const runState = makeAwaitingRunState(workflow);
+    apiMocks.submitUserInput.mockResolvedValue(runState);
+    const { container, dispose } = await mountApp({
+      workflows: [workflow],
+      agents: [makeAgent("agent-1", "Research Agent")],
+      settings: SETTINGS,
+      runState,
+    });
+    const chatTab = await waitForElement(
+      () => Array.from(container.querySelectorAll(".dock-tab-switcher button")).find((btn) => btn.textContent === "Chat") as HTMLButtonElement | null,
+      "chat tab",
+    );
+    chatTab.click();
+    await flush();
+    try {
+      const textarea = await waitForElement(
+        () => container.querySelector(".chat-composer-pill textarea"),
+        "chat textarea",
+      );
+      (textarea as HTMLTextAreaElement).value = "/systematic-debugging Investigate ORCHID-91";
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      await flush();
+
+      const sendButton = await waitForElement(
+        () => container.querySelector(".chat-composer .primary-button"),
+        "chat send button",
+      );
+      (sendButton as HTMLButtonElement).click();
+      await flush();
+
+      expect(apiMocks.submitUserInput).toHaveBeenCalledWith(
+        workflow.nodes[0].id,
+        "Skill invocation:\n- systematic-debugging\n\nUser message:\nInvestigate ORCHID-91",
+      );
+    } finally {
+      dispose();
+    }
+  });
+
+  test("submits paused-node input on enter from the compact composer", async () => {
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    const runState = makeAwaitingRunState(workflow);
+    apiMocks.submitUserInput.mockResolvedValue(runState);
+    const { container, dispose } = await mountApp({
+      workflows: [workflow],
+      agents: [makeAgent("agent-1", "Research Agent")],
+      settings: SETTINGS,
+      runState,
+    });
+    const chatTab = await waitForElement(
+      () => Array.from(container.querySelectorAll(".dock-tab-switcher button")).find((btn) => btn.textContent === "Chat") as HTMLButtonElement | null,
+      "chat tab",
+    );
+    chatTab.click();
+    await flush();
+
+    try {
+      const textarea = await waitForElement(
+        () => container.querySelector(".chat-composer-pill textarea"),
+        "chat textarea",
+      );
+      (textarea as HTMLTextAreaElement).value = "Approved";
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      await flush();
+
+      expect(apiMocks.submitUserInput).toHaveBeenCalledWith(workflow.nodes[0].id, "Approved");
+    } finally {
+      dispose();
+    }
+  });
+
+  test("keeps the compact composer free of provider controls", async () => {
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    const runState = makeAwaitingRunState(workflow);
+    const { container, dispose } = await mountApp({
+      workflows: [workflow],
+      agents: [makeAgent("agent-1", "Research Agent")],
+      settings: SETTINGS,
+      runState,
+    });
+    const chatTab = await waitForElement(
+      () => Array.from(container.querySelectorAll(".dock-tab-switcher button")).find((btn) => btn.textContent === "Chat") as HTMLButtonElement | null,
+      "chat tab",
+    );
+    chatTab.click();
+    await flush();
+
+    try {
+      expect(container.querySelector(".composer-settings-button")).toBeNull();
+      expect(container.querySelector(".composer-status-pill")).toBeNull();
+      expect(container.querySelector('[aria-label="Send to paused node"]')).not.toBeNull();
+    } finally {
+      dispose();
+    }
+  });
+
+  test("shows node messages under the selected node label", async () => {
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    workflow.nodes[0].label = "Agent 2";
+    const runState = makeAwaitingRunState(workflow);
+    runState.chatLogs[workflow.nodes[0].id] = [
+      { role: "System", content: "Node 'Agent 2' started" },
+      { role: "Thinking", content: "Agent prompt: You are a focused AI agent..." },
+      { role: "Assistant", content: "{\"summary\":\"Hello\"}" },
+    ];
+    const { container, dispose } = await mountApp({
+      workflows: [workflow],
+      agents: [makeAgent("agent-1", "Research Agent")],
+      settings: SETTINGS,
+      runState,
+    });
+    const chatTab = await waitForElement(
+      () => Array.from(container.querySelectorAll(".dock-tab-switcher button")).find((btn) => btn.textContent === "Chat") as HTMLButtonElement | null,
+      "chat tab",
+    );
+    chatTab.click();
+    await flush();
+
+    try {
+      const labels = Array.from(container.querySelectorAll(".chat-role")).map((element) => element.textContent);
+      expect(labels).toEqual(["System", "Agent 2", "Agent 2"]);
+    } finally {
+      dispose();
+    }
+  });
+});
+
+describe("App bottom dock", () => {
+  afterEach(() => {
+    document.body.innerHTML = "";
+    vi.clearAllMocks();
+    window.localStorage.clear();
+  });
+
+  beforeEach(() => {
+    apiMocks.listenToRunState.mockResolvedValue(() => {});
+    apiMocks.resolveProviderReadiness.mockResolvedValue(READY);
+    apiMocks.createWorkflow.mockImplementation(async (name: string) => makeWorkflow("created-workflow", name));
+    apiMocks.createAgentDefinition.mockImplementation(async (name: string) => makeAgent("created-agent", name));
+  });
+
+  test("collapses and restores the bottom dock by dragging the seam", async () => {
+    Object.defineProperty(window, "innerHeight", { value: 1000, configurable: true });
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    const runState = makeAwaitingRunState(workflow);
+    const { container, dispose } = await mountApp({
+      workflows: [workflow],
+      agents: [makeAgent("agent-1", "Research Agent")],
+      settings: SETTINGS,
+      runState,
+    });
+
+    try {
+      const editorScreen = await waitForElement(
+        () => container.querySelector(".editor-screen"),
+        "editor screen",
+      ) as HTMLDivElement;
+      const resizeZone = await waitForElement(
+        () => container.querySelector(".dock-resize-zone"),
+        "dock resize zone",
+      );
+
+      expect(container.querySelector(".dock-visibility-action")).toBeNull();
+      expect(container.querySelector(".dock-resize-handle")).toBeNull();
+      expect(container.querySelector(".overview-layout")).not.toBeNull();
+
+      resizeZone.dispatchEvent(new MouseEvent("pointerdown", { clientY: 600, button: 0, bubbles: true }));
+      window.dispatchEvent(new MouseEvent("pointermove", { clientY: 740, bubbles: true }));
+      await flush();
+      window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+
+      expect(editorScreen.style.getPropertyValue("--dock-height")).toBe("52px");
+      expect(container.querySelector(".overview-layout")).toBeNull();
+
+      resizeZone.dispatchEvent(new MouseEvent("pointerdown", { clientY: 600, button: 0, bubbles: true }));
+      window.dispatchEvent(new MouseEvent("pointermove", { clientY: 460, bubbles: true }));
+      await flush();
+      window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+
+      expect(editorScreen.style.getPropertyValue("--dock-height")).toBe("192px");
+      expect(container.querySelector(".overview-layout")).not.toBeNull();
+    } finally {
+      dispose();
+    }
+  });
+
+  test("resizes the bottom dock from the seam", async () => {
+    Object.defineProperty(window, "innerHeight", { value: 1000, configurable: true });
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    const runState = makeAwaitingRunState(workflow);
+    const { container, dispose } = await mountApp({
+      workflows: [workflow],
+      agents: [makeAgent("agent-1", "Research Agent")],
+      settings: SETTINGS,
+      runState,
+    });
+
+    try {
+      const editorScreen = await waitForElement(
+        () => container.querySelector(".editor-screen"),
+        "editor screen",
+      ) as HTMLDivElement;
+      const resizeZone = await waitForElement(
+        () => container.querySelector(".dock-resize-zone"),
+        "dock resize zone",
+      );
+
+      expect(editorScreen.style.getPropertyValue("--dock-height")).toBe("188px");
+      resizeZone.dispatchEvent(new MouseEvent("pointerdown", { clientY: 600, button: 0, bubbles: true }));
+      window.dispatchEvent(new MouseEvent("pointermove", { clientY: 520, bubbles: true }));
+      await flush();
+      window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+
+      expect(editorScreen.style.getPropertyValue("--dock-height")).toBe("268px");
+    } finally {
+      dispose();
+    }
+  });
+});
