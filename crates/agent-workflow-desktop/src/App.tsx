@@ -1,6 +1,7 @@
 import { onCleanup, onMount, createEffect, createMemo, createSignal, For, Show } from "solid-js";
-import ArrowUp from "lucide-solid/icons/arrow-up";
+import { Toaster, toast } from "solid-sonner";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import ArrowUp from "lucide-solid/icons/arrow-up";
 import CircleCheck from "lucide-solid/icons/circle-check";
 import Bot from "lucide-solid/icons/bot";
 import PencilLine from "lucide-solid/icons/pencil-line";
@@ -67,8 +68,6 @@ import {
 } from "./uiZoom";
 import { resolveCommittedNodeLabel } from "./nodeLabel";
 
-type BannerKind = "error" | "success" | "info";
-type Banner = { kind: BannerKind; text: string } | null;
 type BottomTab = "overview" | "chat" | "trace";
 type Screen = "editor" | "settings" | "agents";
 
@@ -99,10 +98,20 @@ const EMPTY_SETTINGS: AppSettings = {
 type SidebarIconName = "agents" | "plus" | "edit" | "settings" | "save" | "validate" | "run" | "trash";
 
 const ICON_STROKE_WIDTH = 1.9;
+const STATUS_TOAST_ID = "app-status";
 const BANNER_DISMISS_MS = 4000;
 const DEFAULT_DOCK_HEIGHT = 188;
 const COLLAPSED_DOCK_HEIGHT = 52;
 const DOCK_VIEWPORT_MARGIN = 160;
+function nextNodePlacement(workflow: Workflow) {
+  const index = workflow.nodes.length;
+  return {
+    index,
+    x: 96 + index * 32,
+    y: 96 + index * 20,
+  };
+}
+
 
 function SidebarIcon(props: { name: SidebarIconName }) {
   switch (props.name) {
@@ -299,7 +308,7 @@ function App() {
   const [settings, setSettings] = createSignal<AppSettings>(cloneSettings(EMPTY_SETTINGS));
   const [runState, setRunState] = createSignal<WorkflowRunState | null>(null);
   const [readiness, setReadiness] = createSignal<{ ready: boolean; provider: string; message: string; envVar: string } | null>(null);
-  const [banner, setBanner] = createSignal<Banner>(null);
+  const clearStatusToast = () => toast.dismiss(STATUS_TOAST_ID);
   const [bottomTab, setBottomTab] = createSignal<BottomTab>("overview");
   const [dockOpen, setDockOpen] = createSignal(true);
   const [dockHeight, setDockHeight] = createSignal(DEFAULT_DOCK_HEIGHT);
@@ -319,6 +328,7 @@ function App() {
   const [editingNodeId, setEditingNodeId] = createSignal<NodeId | null>(null);
   const [nodeLabelDraft, setNodeLabelDraft] = createSignal("");
   const [agentSchemaDraft, setAgentSchemaDraft] = createSignal("");
+  const [addNodePickerOpen, setAddNodePickerOpen] = createSignal(false);
   const [isMaximized, setIsMaximized] = createSignal(false);
   let workflowNameInput: HTMLInputElement | undefined;
   let agentNameInput: HTMLInputElement | undefined;
@@ -388,9 +398,8 @@ function App() {
     chatSubmission().submittedText !== "",
   );
 
-  const showBanner = (kind: BannerKind, text: string) => setBanner({ kind, text });
-  const setError = (text: string) => showBanner("error", text);
-  const setSuccess = (text: string) => showBanner("success", text);
+  const setError = (text: string) => toast.error(text, { id: STATUS_TOAST_ID });
+  const setSuccess = (text: string) => toast.success(text, { id: STATUS_TOAST_ID });
   const applyUiZoom = (nextZoom: number) => {
     const normalized = clampUiZoom(nextZoom);
     setUiZoom(normalized);
@@ -481,7 +490,7 @@ function App() {
     setNodeLabelDraft("");
     setRunState(initialRunState ?? createIdleRunState(firstWorkflow));
     setSettings(cloneSettings(initialSettings));
-    setBanner(null);
+    clearStatusToast();
     await refreshReadiness(initialSettings);
   };
 
@@ -543,18 +552,6 @@ function App() {
     }
   });
 
-  createEffect(() => {
-    const currentBanner = banner();
-    if (!currentBanner) {
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      setBanner((active) => (active === currentBanner ? null : active));
-    }, BANNER_DISMISS_MS);
-
-    onCleanup(() => window.clearTimeout(timeoutId));
-  });
 
   createEffect(() => {
     const node = currentNode();
@@ -648,7 +645,7 @@ function App() {
           node.agent.output_schema = parsed;
         }
       });
-      setBanner(null);
+      clearStatusToast();
       return true;
     } catch (error) {
       setError(`output schema JSON invalid: ${normalizeError(error)}`);
@@ -671,6 +668,10 @@ function App() {
     }
   };
 
+  const closeAddNodePicker = () => {
+    setAddNodePickerOpen(false);
+  };
+
   const handleSwitchWorkflow = (workflowId: string) => {
     if (!applySchemaEditor()) {
       return;
@@ -679,6 +680,7 @@ function App() {
     if (!workflow) {
       return;
     }
+    closeAddNodePicker();
     setActiveWorkflowId(workflow.id);
     setSelectedNodeId(workflow.nodes[0]?.id ?? null);
     setSelectedEdgeId(null);
@@ -705,6 +707,7 @@ function App() {
   };
 
   const handleOpenAgents = () => {
+    closeAddNodePicker();
     setScreen("agents");
     if (!selectedAgentId() && agents().length > 0) {
       setSelectedAgentId(agents()[0].id);
@@ -748,7 +751,7 @@ function App() {
       updateSelectedAgent((draft) => {
         draft.output_schema = parsed;
       });
-      setBanner(null);
+      clearStatusToast();
     } catch {
       // preserve draft until save
     }
@@ -782,27 +785,41 @@ function App() {
     }
   };
 
-  const handleAddNode = async () => {
+  const handleOpenAddNodePicker = () => {
+    if (!activeWorkflow()) {
+      return;
+    }
+    setScreen("editor");
+    setSelectedEdgeId(null);
+    setAddNodePickerOpen(true);
+  };
+
+  const handleAddNode = async (agentId: string | null) => {
     const workflow = activeWorkflow();
     if (!workflow) {
       return;
     }
+    const placement = nextNodePlacement(workflow);
     try {
       const node = await createAgentNode(
-        workflow.nodes.length,
-        96 + workflow.nodes.length * 32,
-        96 + workflow.nodes.length * 20,
+        placement.index,
+        placement.x,
+        placement.y,
+        agentId,
       );
       const defaultModel = activeProfileMemo().default_model;
-      const nextNode = defaultModel ? { ...node, agent: { ...node.agent, model: defaultModel } } : node;
+      const nextNode = defaultModel && !node.agent.model
+        ? { ...node, agent: { ...node.agent, model: defaultModel } }
+        : node;
       updateActiveWorkflow((draft) => {
         draft.nodes.push(nextNode);
       });
-      setSelectedNodeId(node.id);
+      closeAddNodePicker();
+      setSelectedNodeId(nextNode.id);
       setSelectedEdgeId(null);
       setEditingNodeId(null);
       setNodeLabelDraft("");
-      setSuccess("Added node");
+      setSuccess(agentId ? "Added saved agent to workflow" : "Added node");
     } catch (error) {
       setError(normalizeError(error));
     }
@@ -854,7 +871,7 @@ function App() {
       setRunState(nextRunState);
       setSelectedTraceIndex(null);
       setBottomTab("chat");
-      setBanner(null);
+      clearStatusToast();
     } catch (error) {
       setError(normalizeError(error));
     }
@@ -1130,8 +1147,25 @@ function App() {
   }
 
   return (
-    <div class="app-shell">
-      <aside class="sidebar" classList={{ "sidebar-macos": isMacOS(), "sidebar-maximized": isMaximized() }}>
+    <>
+      <Toaster
+        position="top-center"
+        offset={{ top: "72px" }}
+        visibleToasts={1}
+        richColors
+        closeButton
+        duration={BANNER_DISMISS_MS}
+        style={{ "--width": "min(640px, calc(100vw - 32px))", "z-index": "9999" }}
+        toastOptions={{
+          classNames: {
+            toast: "app-toast",
+            title: "app-toast-title",
+            closeButton: "app-toast-close-button",
+          },
+        }}
+      />
+      <div class="app-shell">
+        <aside class="sidebar" classList={{ "sidebar-macos": isMacOS(), "sidebar-maximized": isMaximized() }}>
         <Show when={isMacOS()}>
           <div class="sidebar-window-controls-spacer" aria-hidden="true" data-tauri-drag-region />
         </Show>
@@ -1202,7 +1236,10 @@ function App() {
           <div class="settings-nav-menu">
             <button
               class="sidebar-nav-button"
-              onClick={() => setScreen(screen() === "settings" ? "editor" : "settings")}
+              onClick={() => {
+                closeAddNodePicker();
+                setScreen(screen() === "settings" ? "editor" : "settings");
+              }}
             >
               <SidebarIcon name="settings" />
               <span>{screen() === "settings" ? "Back to editor" : "Settings"}</span>
@@ -1214,6 +1251,9 @@ function App() {
 
       <main class="main-shell">
         <header class="topbar" classList={{ "topbar-macos": isMacOS(), "topbar-maximized": isMaximized() }} data-tauri-drag-region>
+          <Show when={isMacOS()}>
+            <div class="topbar-window-controls-spacer" aria-hidden="true" data-tauri-drag-region />
+          </Show>
           <div class="topbar-leading">
             <div class="topbar-copy" data-tauri-drag-region>
               <h2>{screen() === "agents" ? "Agents" : activeWorkflow()?.name ?? "Loading…"}</h2>
@@ -1226,6 +1266,15 @@ function App() {
             </div>
             <Show when={screen() === "editor"}>
               <div class="toolbar-group topbar-button-group">
+                <button
+                  class="topbar-icon-button"
+                  onClick={() => handleOpenAddNodePicker()}
+                  title="Add node"
+                  aria-label="Add node"
+                  data-tauri-drag-region="false"
+                >
+                  <SidebarIcon name="plus" />
+                </button>
                 <button
                   class="topbar-icon-button"
                   onClick={() => void persistAll()}
@@ -1529,12 +1578,48 @@ function App() {
             class="editor-screen"
             style={{ "--dock-height": `${dockOpen() ? dockHeight() : COLLAPSED_DOCK_HEIGHT}px` }}
           >
-            <Show when={banner()}>
-              {(currentBanner) => (
-                <div class="banner" classList={{ error: currentBanner().kind === "error", success: currentBanner().kind === "success" }}>
-                  {currentBanner().text}
-                </div>
-              )}
+            <Show when={addNodePickerOpen()}>
+              <div class="node-picker-backdrop" onClick={closeAddNodePicker}>
+                <section
+                  class="node-picker-card"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="Add agent node"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <div class="node-picker-header">
+                    <div>
+                      <div class="eyebrow">Add node</div>
+                      <h3>Choose a starting point</h3>
+                      <p>Start blank or reuse one of your saved agents.</p>
+                    </div>
+                  </div>
+                  <div class="node-picker-list">
+                    <button class="node-picker-option" onClick={() => void handleAddNode(null)}>
+                      <span class="node-picker-option-title">Blank agent node</span>
+                      <span class="node-picker-option-copy">
+                        Start with the default prompts, schema, and tool access.
+                      </span>
+                    </button>
+                    <Show
+                      when={agents().length > 0}
+                      fallback={<div class="node-picker-empty">No saved agents yet. Create one in the Agents screen.</div>}
+                    >
+                      <For each={agents()}>
+                        {(agent) => (
+                          <button class="node-picker-option" onClick={() => void handleAddNode(agent.id)}>
+                            <span class="node-picker-option-title">{agent.name || "Untitled agent"}</span>
+                            <span class="node-picker-option-copy">{agent.model || "No model selected"}</span>
+                          </button>
+                        )}
+                      </For>
+                    </Show>
+                  </div>
+                  <div class="button-row end">
+                    <button class="secondary-button" onClick={closeAddNodePicker}>Cancel</button>
+                  </div>
+                </section>
+              </div>
             </Show>
 
             <div class="workspace-grid">
@@ -1550,7 +1635,7 @@ function App() {
                   onCreateEdge={handleCreateEdge}
                   onReconnectEdge={handleReconnectEdge}
                   onDeleteEdge={handleDeleteEdge}
-                  onAddNode={() => void handleAddNode()}
+                  onAddNode={() => handleOpenAddNodePicker()}
                 />
               </section>
 
@@ -1836,7 +1921,8 @@ function App() {
           </div>
         </Show>
       </main>
-    </div>
+      </div>
+    </>
   );
 }
 

@@ -102,7 +102,13 @@ pub(crate) fn build_node_input(
 }
 
 #[cfg(test)]
-#[allow(clippy::items_after_statements, clippy::significant_drop_tightening)]
+#[allow(
+    clippy::items_after_statements,
+    clippy::significant_drop_tightening,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic
+)]
 mod tests {
     use super::*;
     use crate::{

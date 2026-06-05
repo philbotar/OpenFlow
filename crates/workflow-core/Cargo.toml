@@ -12,7 +12,7 @@ categories.workspace = true
 [dependencies]
 anyhow = "1.0"
 async-trait.workspace = true
-dirs = "5.0"
+dirs.workspace = true
 futures.workspace = true
 log = "0.4"
 parking_lot.workspace = true
@@ -25,5 +25,15 @@ uuid.workspace = true
  tempfile = "3"
  tokio.workspace = true
 
-[lints]
-workspace = true
+[lints.rust]
+warnings = "deny"
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"

@@ -46,7 +46,11 @@ vi.mock("@tauri-apps/api/window", () => ({
 }));
 
 vi.mock("./canvas/WorkflowCanvasHost", () => ({
-  default: () => null,
+  default: (props: { onAddNode: () => void }) => (
+    <button aria-label="Canvas add node" onClick={() => props.onAddNode()}>
+      Canvas add node
+    </button>
+  ),
 }));
 
 import App from "./App";
@@ -124,6 +128,45 @@ function makeAgent(id: string, name: string): AgentDefinition {
     auto_start: true,
     tools: createEmptyToolConfig(),
   };
+}
+
+function makeNodeFromAgent(index: number, x: number, y: number, agent: AgentDefinition | null) {
+  return {
+    id: `created-node-${index + 1}`,
+    label: agent?.name ?? `Agent ${index + 1}`,
+    kind: "Agent" as const,
+    position: { x, y },
+    agent: agent
+      ? {
+          system_prompt: agent.system_prompt,
+          task_prompt: agent.task_prompt,
+          model: agent.model,
+          output_schema: agent.output_schema,
+          auto_start: agent.auto_start,
+          tools: agent.tools,
+        }
+      : {
+          system_prompt: "",
+          task_prompt: "",
+          model: "",
+          output_schema: { type: "object" },
+          auto_start: false,
+          tools: createEmptyToolConfig(),
+        },
+  };
+}
+
+function installDefaultApiMocks() {
+  apiMocks.listenToRunState.mockResolvedValue(() => {});
+  apiMocks.resolveProviderReadiness.mockResolvedValue(READY);
+  apiMocks.createWorkflow.mockImplementation(async (name: string) => makeWorkflow("created-workflow", name));
+  apiMocks.createAgentDefinition.mockImplementation(async (name: string) => makeAgent("created-agent", name));
+  apiMocks.createAgentNode.mockImplementation(
+    async (index: number, x: number, y: number, agentId: string | null = null) => {
+      const agent = agentId ? makeAgent(agentId, agentId === "agent-2" ? "Writer Agent" : "Research Agent") : null;
+      return makeNodeFromAgent(index, x, y, agent);
+    },
+  );
 }
 
 function makeBootstrapPayload(workflows: Workflow[], agents: AgentDefinition[] = [makeAgent("agent-1", "Research Agent")]): BootstrapPayload {
@@ -236,10 +279,7 @@ describe("App workflow rename", () => {
   });
 
   beforeEach(() => {
-    apiMocks.listenToRunState.mockResolvedValue(() => {});
-    apiMocks.resolveProviderReadiness.mockResolvedValue(READY);
-    apiMocks.createWorkflow.mockImplementation(async (name: string) => makeWorkflow("created-workflow", name));
-    apiMocks.createAgentDefinition.mockImplementation(async (name: string) => makeAgent("created-agent", name));
+    installDefaultApiMocks();
   });
 
   test("focuses the rename input and does not switch workflows when it is clicked", async () => {
@@ -341,10 +381,7 @@ describe("App agent dashboard", () => {
   });
 
   beforeEach(() => {
-    apiMocks.listenToRunState.mockResolvedValue(() => {});
-    apiMocks.resolveProviderReadiness.mockResolvedValue(READY);
-    apiMocks.createWorkflow.mockImplementation(async (name: string) => makeWorkflow("created-workflow", name));
-    apiMocks.createAgentDefinition.mockImplementation(async (name: string) => makeAgent("created-agent", name));
+    installDefaultApiMocks();
   });
 
   test("opens the agent dashboard from the sidebar", async () => {
@@ -450,6 +487,65 @@ describe("App agent dashboard", () => {
     }
   });
 
+  test("lets you choose a saved agent when adding a node", async () => {
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    const savedAgents = [makeAgent("agent-1", "Research Agent"), makeAgent("agent-2", "Writer Agent")];
+    const { container, dispose } = await mountApp(
+      makeBootstrapPayload([workflow], savedAgents),
+    );
+
+    try {
+      const addNodeButton = await waitForElement(
+        () => container.querySelector('button[aria-label="Add node"]') as HTMLButtonElement | null,
+        "add node button",
+      );
+      addNodeButton.click();
+      await flush();
+
+      expect(container.querySelector('[role="dialog"][aria-label="Add agent node"]')).not.toBeNull();
+
+      const savedAgentButton = await waitForElement(
+        () => Array.from(container.querySelectorAll(".node-picker-option-title")).find((element) => element.textContent === "Writer Agent")?.closest("button") as HTMLButtonElement | null,
+        "saved agent option",
+      );
+      savedAgentButton.click();
+      await flush();
+
+      expect(apiMocks.createAgentNode).toHaveBeenCalledWith(1, 128, 116, "agent-2");
+      expect(container.querySelector(".panel-header-title-row h3")?.textContent).toBe("Writer Agent");
+    } finally {
+      dispose();
+    }
+  });
+  test("shows a visible success toast after validation", async () => {
+    apiMocks.validateWorkflow.mockResolvedValue({ layerCount: 1 });
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    const { container, dispose } = await mountApp(makeBootstrapPayload([workflow]));
+
+    try {
+      const validateButton = await waitForElement(
+        () => container.querySelector('button[aria-label="Validate workflow"]') as HTMLButtonElement | null,
+        "validate workflow button",
+      );
+      validateButton.click();
+      await flush();
+
+      expect(apiMocks.validateWorkflow).toHaveBeenCalledWith(expect.objectContaining({ id: "workflow-1" }));
+
+      const successToast = await waitForElement(
+        () =>
+          document.body.querySelector(
+            '[data-sonner-toast][data-mounted="true"][data-visible="true"][data-type="success"] [data-title]',
+          ) as HTMLElement | null,
+        "validation success toast",
+      );
+      expect(successToast.textContent).toContain("Valid DAG · 1 layer");
+    } finally {
+      dispose();
+    }
+  });
+
+
   test("node tool access is hideable and saves enabled tools", async () => {
     apiMocks.saveWorkflows.mockResolvedValue(undefined);
     apiMocks.saveSettings.mockResolvedValue(undefined);
@@ -517,10 +613,7 @@ describe("App settings persistence", () => {
   });
 
   beforeEach(() => {
-    apiMocks.listenToRunState.mockResolvedValue(() => {});
-    apiMocks.resolveProviderReadiness.mockResolvedValue(READY);
-    apiMocks.createWorkflow.mockImplementation(async (name: string) => makeWorkflow("created-workflow", name));
-    apiMocks.createAgentDefinition.mockImplementation(async (name: string) => makeAgent("created-agent", name));
+    installDefaultApiMocks();
   });
 
   test("loads and saves provider API keys per provider", async () => {
@@ -561,6 +654,15 @@ describe("App settings persistence", () => {
       expect(saveButton).toBeDefined();
       saveButton?.click();
       await flush();
+      const successToast = await waitForElement(
+        () =>
+          Array.from(document.body.querySelectorAll("*")).find(
+            (element) => element.textContent?.includes("Settings saved successfully."),
+          ) ?? null,
+        "settings saved toast",
+      );
+      expect(successToast.textContent).toContain("Settings saved successfully.");
+
 
       expect(apiMocks.saveSettings).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -581,12 +683,8 @@ describe("App chat slash commands", () => {
     vi.clearAllMocks();
     window.localStorage.clear();
   });
-
   beforeEach(() => {
-    apiMocks.listenToRunState.mockResolvedValue(() => {});
-    apiMocks.resolveProviderReadiness.mockResolvedValue(READY);
-    apiMocks.createWorkflow.mockImplementation(async (name: string) => makeWorkflow("created-workflow", name));
-    apiMocks.createAgentDefinition.mockImplementation(async (name: string) => makeAgent("created-agent", name));
+    installDefaultApiMocks();
   });
 
   test("expands known skill commands before submitting paused-node input", async () => {
@@ -761,12 +859,8 @@ describe("App bottom dock", () => {
     vi.clearAllMocks();
     window.localStorage.clear();
   });
-
   beforeEach(() => {
-    apiMocks.listenToRunState.mockResolvedValue(() => {});
-    apiMocks.resolveProviderReadiness.mockResolvedValue(READY);
-    apiMocks.createWorkflow.mockImplementation(async (name: string) => makeWorkflow("created-workflow", name));
-    apiMocks.createAgentDefinition.mockImplementation(async (name: string) => makeAgent("created-agent", name));
+    installDefaultApiMocks();
   });
 
   test("collapses and restores the bottom dock by dragging the seam", async () => {

@@ -238,22 +238,42 @@ impl AppBackend {
     }
 
     /// # Errors
-    /// Returns an error if the agent store cannot be read or the index is out of bounds.
-    pub fn create_agent_node(&self, index: usize, x: f32, y: f32) -> Result<Node, BackendError> {
-        let agents = self.agent_store.load()?;
-        let agent = agents.get(index).ok_or_else(|| {
-            BackendError::Io(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                format!("agent index {} out of bounds", index),
-            ))
-        })?;
+    /// Returns an error if the agent store cannot be read or the selected agent does not exist.
+    pub fn create_agent_node(
+        &self,
+        index: usize,
+        x: f32,
+        y: f32,
+        agent_id: Option<&str>,
+    ) -> Result<Node, BackendError> {
+        let default_name = format!("Agent {}", index + 1);
+        let Some(agent_id) = agent_id else {
+            return Ok(Node::agent(default_name, x, y));
+        };
 
-        let mut node = Node::agent(&agent.name, x, y);
+        let agents = self.agent_store.load()?;
+        let agent = agents
+            .iter()
+            .find(|agent| agent.id == agent_id)
+            .ok_or_else(|| {
+                BackendError::Io(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("agent {agent_id} not found"),
+                ))
+            })?;
+
+        let label = if agent.name.trim().is_empty() {
+            default_name
+        } else {
+            agent.name.clone()
+        };
+        let mut node = Node::agent(label, x, y);
         node.agent.system_prompt = agent.system_prompt.clone();
         node.agent.task_prompt = agent.task_prompt.clone();
         node.agent.model = agent.model.clone();
         node.agent.output_schema = agent.output_schema.clone();
         node.agent.auto_start = agent.auto_start;
+        node.agent.tools = agent.tools.clone();
 
         Ok(node)
     }
@@ -594,6 +614,63 @@ mod tests {
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].id, first.id);
         assert_eq!(loaded, vec![first]);
+    }
+    #[test]
+    fn create_agent_node_without_template_uses_default_node() {
+        let (backend, _dir) = backend();
+
+        let node = backend
+            .create_agent_node(2, 32.0, 48.0, None)
+            .expect("create default node");
+
+        assert_eq!(node.label, "Agent 3");
+        assert_eq!(node.position.x, 32.0);
+        assert_eq!(node.position.y, 48.0);
+        assert_eq!(node.agent, workflow_core::AgentNodeConfig::default());
+    }
+
+    #[test]
+    fn create_agent_node_from_template_id_copies_agent_config() {
+        let (backend, _dir) = backend();
+        let mut agent = backend
+            .create_agent_definition("Research Agent".to_string())
+            .expect("create agent");
+        agent.system_prompt = "system".to_string();
+        agent.task_prompt = "task".to_string();
+        agent.model = "gpt-template".to_string();
+        agent.output_schema =
+            serde_json::json!({ "type": "object", "properties": { "ok": { "type": "boolean" } } });
+        agent.auto_start = false;
+        agent.tools.catalog.tools = vec![workflow_core::ToolRef {
+            name: "search".to_string(),
+        }];
+        agent.tools.max_tool_rounds = 7;
+        backend
+            .save_agents(std::slice::from_ref(&agent))
+            .expect("save agent");
+
+        let node = backend
+            .create_agent_node(0, 12.0, 24.0, Some(&agent.id))
+            .expect("create templated node");
+
+        assert_eq!(node.label, "Research Agent");
+        assert_eq!(node.position.x, 12.0);
+        assert_eq!(node.position.y, 24.0);
+        assert_eq!(node.agent.system_prompt, "system");
+        assert_eq!(node.agent.task_prompt, "task");
+        assert_eq!(node.agent.model, "gpt-template");
+        assert_eq!(
+            node.agent.output_schema,
+            serde_json::json!({ "type": "object", "properties": { "ok": { "type": "boolean" } } })
+        );
+        assert!(!node.agent.auto_start);
+        assert_eq!(
+            node.agent.tools.catalog.tools,
+            vec![workflow_core::ToolRef {
+                name: "search".to_string(),
+            }]
+        );
+        assert_eq!(node.agent.tools.max_tool_rounds, 7);
     }
 
     #[test]

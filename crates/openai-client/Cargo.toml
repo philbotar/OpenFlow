@@ -14,11 +14,21 @@ async-trait.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-workflow-core = { path = "../workflow-core" }
+workflow-core = { path = "../workflow-core", version = "0.1.0" }
 
 [dev-dependencies]
 tokio.workspace = true
 wiremock.workspace = true
 
-[lints]
-workspace = true
+[lints.rust]
+warnings = "deny"
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"

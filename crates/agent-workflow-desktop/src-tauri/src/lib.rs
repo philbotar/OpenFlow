@@ -185,8 +185,9 @@ fn create_agent_node(
     index: usize,
     x: f32,
     y: f32,
+    agent_id: Option<String>,
 ) -> Result<workflow_core::Node, CommandError> {
-    Ok(backend.create_agent_node(index, x, y)?)
+    Ok(backend.create_agent_node(index, x, y, agent_id.as_deref())?)
 }
 
 /// Tauri command: Start a workflow run.

@@ -16,6 +16,8 @@ pub enum WorkflowValidationError {
     SelfEdge(EdgeId),
     #[error("workflow contains a cycle")]
     Cycle,
+    #[error("internal consistency: {0}")]
+    InternalConsistency(String),
 }
 
 /// # Errors
@@ -25,11 +27,8 @@ pub fn validate_workflow(workflow: &Workflow) -> Result<(), WorkflowValidationEr
 }
 
 /// # Errors
-/// Returns an error if the workflow is invalid (empty, duplicate ids, missing endpoints, cycles).
-///
-/// # Panics
-/// Panics if a child node id encountered during layer traversal is not found in the incoming map,
-/// which indicates an internal consistency violation and should never happen on a validated graph.
+/// Returns an error if the workflow is invalid (empty, duplicate ids, missing endpoints, cycles,
+/// or internal consistency violation).
 pub fn execution_layers(workflow: &Workflow) -> Result<Vec<Vec<NodeId>>, WorkflowValidationError> {
     if workflow.nodes.is_empty() {
         return Err(WorkflowValidationError::EmptyWorkflow);
@@ -99,9 +98,11 @@ pub fn execution_layers(workflow: &Workflow) -> Result<Vec<Vec<NodeId>>, Workflo
         for node_id in &layer {
             if let Some(children) = outgoing.get(node_id) {
                 for child_id in children {
-                    let count = incoming
-                        .get_mut(child_id)
-                        .expect("child id was validated before layer build");
+                    let count = incoming.get_mut(child_id).ok_or_else(|| {
+                        WorkflowValidationError::InternalConsistency(
+                            "child id was validated before layer build".to_string(),
+                        )
+                    })?;
                     *count -= 1;
                     if *count == 0 {
                         next.push(child_id.clone());
@@ -123,6 +124,7 @@ pub fn execution_layers(workflow: &Workflow) -> Result<Vec<Vec<NodeId>>, Workflo
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use crate::{Edge, Node, Workflow};

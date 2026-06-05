@@ -24,18 +24,18 @@ fn legacy_store_path(path: &Path) -> Option<PathBuf> {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct AgentDefinition {
     pub id: String,
     pub name: String,
-    #[serde(default)]
+    #[serde(default, alias = "systemPrompt")]
     pub system_prompt: String,
-    #[serde(default)]
+    #[serde(default, alias = "taskPrompt")]
     pub task_prompt: String,
     #[serde(default)]
     pub model: String,
+    #[serde(alias = "outputSchema")]
     pub output_schema: serde_json::Value,
-    #[serde(default)]
+    #[serde(default, alias = "autoStart")]
     pub auto_start: bool,
     #[serde(default)]
     pub tools: workflow_core::NodeToolConfig,
@@ -195,6 +195,54 @@ mod tests {
 
         assert_eq!(agent.tools, workflow_core::NodeToolConfig::default());
         assert!(!agent.auto_start);
+    }
+    #[test]
+    fn agent_definition_deserializes_snake_case_fields() {
+        let agent: AgentDefinition = serde_json::from_value(serde_json::json!({
+            "id": "agent-1",
+            "name": "Snake",
+            "system_prompt": "system",
+            "task_prompt": "task",
+            "model": "gpt-test",
+            "output_schema": { "type": "object" },
+            "auto_start": true,
+            "tools": {
+                "catalog": {
+                    "tools": [{ "name": "read" }]
+                },
+                "approvalMode": "write",
+                "maxToolRounds": 2,
+                "overrides": []
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(agent.system_prompt, "system");
+        assert_eq!(agent.task_prompt, "task");
+        assert_eq!(agent.model, "gpt-test");
+        assert_eq!(agent.output_schema, serde_json::json!({ "type": "object" }));
+        assert!(agent.auto_start);
+        assert_eq!(agent.tools.catalog.tools[0].name, "read");
+        assert_eq!(
+            agent.tools.approval_mode,
+            Some(workflow_core::ApprovalMode::Write)
+        );
+        assert_eq!(agent.tools.max_tool_rounds, 2);
+    }
+
+    #[test]
+    fn agent_definition_serializes_snake_case_fields() {
+        let agent = AgentDefinition::new("Serialized");
+        let value = serde_json::to_value(&agent).unwrap();
+
+        assert!(value.get("system_prompt").is_some());
+        assert!(value.get("task_prompt").is_some());
+        assert!(value.get("output_schema").is_some());
+        assert!(value.get("auto_start").is_some());
+        assert!(value.get("systemPrompt").is_none());
+        assert!(value.get("taskPrompt").is_none());
+        assert!(value.get("outputSchema").is_none());
+        assert!(value.get("autoStart").is_none());
     }
 
     #[test]

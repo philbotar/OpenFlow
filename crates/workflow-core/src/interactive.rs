@@ -169,7 +169,10 @@ impl InteractiveEngine {
             }
             return EnginePollResult::CallAi {
                 node_id: node_id.clone(),
-                request: Box::new(self.build_request(&node_id)),
+                request: Box::new(match self.build_request(&node_id) {
+                    Ok(r) => r,
+                    Err(e) => return EnginePollResult::Failed(e),
+                }),
             };
         }
 
@@ -381,9 +384,14 @@ impl InteractiveEngine {
         self.transcripts.get(node_id).map_or(&[], Vec::as_slice)
     }
 
-    fn build_request(&self, node_id: &str) -> AgentRequest {
-        let node = self.find_node(node_id).expect("node must exist");
-        AgentRequest {
+    fn build_request(&self, node_id: &str) -> Result<AgentRequest, RunError> {
+        let node = self
+            .find_node(node_id)
+            .ok_or_else(|| RunError::NodeFailed {
+                node_id: NodeId(node_id.to_string()),
+                message: "node must exist".to_string(),
+            })?;
+        Ok(AgentRequest {
             workflow_id: self.workflow.id.clone(),
             node_id: node.id.clone(),
             node_label: node.label.clone(),
@@ -399,8 +407,8 @@ impl InteractiveEngine {
             output_schema: node.agent.output_schema.clone(),
             tool_config: node.agent.tools.clone(),
             available_tools: Vec::new(),
-            transcript: self.transcript(node_id).to_vec(),
-        }
+            transcript: self.transcript(&node.id).to_vec(),
+        })
     }
 
     fn assemble_context(&self, node_id: &str) -> String {
@@ -408,16 +416,16 @@ impl InteractiveEngine {
         let mut context = String::new();
         for upstream_id in &upstream {
             if let Some(output) = self.outputs.get(upstream_id) {
-                writeln!(context, "{upstream_id}: {output}").expect("write context");
+                let _ = writeln!(context, "{upstream_id}: {output}");
             }
         }
         if context.is_empty() {
             if let Some(text) = self.entrypoint_text.as_deref() {
-                writeln!(context, "Entrypoint: {text}").expect("write context");
+                let _ = writeln!(context, "Entrypoint: {text}");
             }
         }
         if let Some(node) = self.find_node(node_id) {
-            write!(context, "\nTask: {}", node.agent.task_prompt).expect("write context");
+            let _ = write!(context, "\nTask: {}", node.agent.task_prompt);
         }
         context
     }
@@ -433,6 +441,7 @@ impl InteractiveEngine {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::Node;

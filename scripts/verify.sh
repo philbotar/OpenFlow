@@ -10,4 +10,6 @@ fi
 cargo fmt --all --check
 cargo clippy --workspace --all-targets
 cargo test --workspace
+cargo deny check
+./scripts/check-architecture.sh
 

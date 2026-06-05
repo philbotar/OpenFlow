@@ -153,6 +153,7 @@ impl TemplateStore for FileTemplateStore {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     fn empty_template_store() -> (FileTemplateStore, tempfile::TempDir) {

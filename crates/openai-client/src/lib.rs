@@ -170,7 +170,7 @@ fn tool_payload(tool: &ToolSpec) -> Value {
     })
 }
 
-fn transcript_to_responses_input(request: &AgentRequest) -> Vec<Value> {
+fn transcript_to_responses_input(request: &AgentRequest) -> Result<Vec<Value>, AgentError> {
     let mut input = vec![
         json!({ "role": "system", "content": request.system_prompt }),
         json!({ "role": "user", "content": build_node_context(request) }),
@@ -189,8 +189,7 @@ fn transcript_to_responses_input(request: &AgentRequest) -> Vec<Value> {
                     "type": "function_call",
                     "call_id": call.id,
                     "name": call.name,
-                    "arguments": serde_json::to_string(&call.arguments)
-                        .expect("tool arguments serialize")
+                    "arguments": serde_json::to_string(&call.arguments).map_err(|e| AgentError::Failed(format!("tool arguments serialize: {e}")))?
                 }));
             }
             AgentTranscriptItem::ToolResult { result } => {
@@ -203,10 +202,10 @@ fn transcript_to_responses_input(request: &AgentRequest) -> Vec<Value> {
         }
     }
 
-    input
+    Ok(input)
 }
 
-fn transcript_to_chat_messages(request: &AgentRequest) -> Vec<Value> {
+fn transcript_to_chat_messages(request: &AgentRequest) -> Result<Vec<Value>, AgentError> {
     let mut messages = vec![
         json!({ "role": "system", "content": request.system_prompt }),
         json!({ "role": "user", "content": build_node_context(request) }),
@@ -229,8 +228,7 @@ fn transcript_to_chat_messages(request: &AgentRequest) -> Vec<Value> {
                         "type": "function",
                         "function": {
                             "name": call.name,
-                            "arguments": serde_json::to_string(&call.arguments)
-                                .expect("tool arguments serialize")
+                            "arguments": serde_json::to_string(&call.arguments).map_err(|e| AgentError::Failed(format!("tool arguments serialize: {e}")))?
                         }
                     }]
                 }));
@@ -245,7 +243,7 @@ fn transcript_to_chat_messages(request: &AgentRequest) -> Vec<Value> {
         }
     }
 
-    messages
+    Ok(messages)
 }
 
 fn parse_internal_tool_outcome(
@@ -562,7 +560,7 @@ impl OpenAiClient {
     ) -> Result<AgentTurnOutcome, AgentError> {
         let body = json!({
             "model": request.model,
-            "input": transcript_to_responses_input(&request),
+            "input": transcript_to_responses_input(&request)?,
             "tools": all_tool_specs(&request)
                 .into_iter()
                 .map(|tool| tool_payload(&tool))
@@ -581,7 +579,7 @@ impl OpenAiClient {
     ) -> Result<AgentTurnOutcome, AgentError> {
         let body = json!({
             "model": request.model,
-            "messages": transcript_to_chat_messages(&request),
+            "messages": transcript_to_chat_messages(&request)?,
             "tools": all_tool_specs(&request)
                 .into_iter()
                 .map(|tool| json!({
@@ -648,6 +646,7 @@ impl OpenAiClient {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
     use wiremock::matchers::{body_json, method, path};

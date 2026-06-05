@@ -81,8 +81,8 @@ export function validateWorkflow(workflow: Workflow) {
   return invoke<WorkflowValidationSummary>("validate_workflow", { workflow });
 }
 
-export function createAgentNode(index: number, x: number, y: number) {
-  return invoke<Node>("create_agent_node", { index, x, y });
+export function createAgentNode(index: number, x: number, y: number, agentId: string | null = null) {
+  return invoke<Node>("create_agent_node", { index, x, y, agentId });
 }
 
 export function startRun(
