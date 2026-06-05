@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_lines)]
 #![allow(deprecated, clippy::wildcard_imports)]
 
 use super::theme::*;
@@ -116,8 +117,10 @@ pub(super) fn show_canvas_panel(ctx: &egui::Context, state: &mut AppState) -> eg
                 let status_color = match status {
                     AgentStatus::Idle => BORDER,
                     AgentStatus::Queued => egui::Color32::from_rgb(120, 120, 220),
-                    AgentStatus::Started => ACCENT,
-                    AgentStatus::AwaitingInput => egui::Color32::from_rgb(255, 193, 7),
+                    AgentStatus::Started | AgentStatus::RunningTool => ACCENT,
+                    AgentStatus::AwaitingInput | AgentStatus::AwaitingToolApproval => {
+                        egui::Color32::from_rgb(255, 193, 7)
+                    }
                     AgentStatus::Completed => SUCCESS,
                     AgentStatus::Failed => DANGER,
                 };
@@ -198,9 +201,12 @@ pub(super) fn show_canvas_panel(ctx: &egui::Context, state: &mut AppState) -> eg
                 let status_label = match status {
                     AgentStatus::Idle => None,
                     AgentStatus::Queued => Some(("QUEUED", egui::Color32::from_rgb(120, 120, 220))),
-                    AgentStatus::Started => Some(("RUNNING", ACCENT)),
+                    AgentStatus::Started | AgentStatus::RunningTool => Some(("RUNNING", ACCENT)),
                     AgentStatus::AwaitingInput => {
                         Some(("WAITING", egui::Color32::from_rgb(255, 193, 7)))
+                    }
+                    AgentStatus::AwaitingToolApproval => {
+                        Some(("APPROVAL", egui::Color32::from_rgb(255, 193, 7)))
                     }
                     AgentStatus::Completed => Some(("DONE", SUCCESS)),
                     AgentStatus::Failed => Some(("FAILED", DANGER)),

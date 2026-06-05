@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_lines, clippy::float_cmp, clippy::doc_markdown)]
+
 use crate::model::{AgentNodeConfig, Node, NodeId, NodeKind, NodePosition};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -46,6 +48,7 @@ impl Template {
 
     /// Instantiate a new `Node` from this template at the given canvas position.
     /// The node gets the template's default config and the template's display_name as its label.
+    #[must_use]
     pub fn instantiate(&self, x: f32, y: f32) -> Node {
         Node {
             id: NodeId(Uuid::new_v4().to_string()),
@@ -93,8 +96,9 @@ pub fn default_templates() -> Vec<Template> {
                     "required": ["summary"]
                 }),
                 auto_start: true,
+                tools: AgentNodeConfig::default().tools,
             },
-            HashSet::new(), // fully customizable
+            HashSet::new(),
         ),
         Template::new(
             "Code Reviewer",
@@ -127,6 +131,7 @@ pub fn default_templates() -> Vec<Template> {
                     "required": ["findings"]
                 }),
                 auto_start: true,
+                tools: AgentNodeConfig::default().tools,
             },
             {
                 let mut locked = HashSet::new();
@@ -158,6 +163,7 @@ pub fn default_templates() -> Vec<Template> {
                     "required": ["executive_summary", "key_points"]
                 }),
                 auto_start: true,
+                tools: AgentNodeConfig::default().tools,
             },
             {
                 let mut locked = HashSet::new();
@@ -183,6 +189,7 @@ pub fn default_templates() -> Vec<Template> {
                     "required": ["category", "confidence"]
                 }),
                 auto_start: true,
+                tools: AgentNodeConfig::default().tools,
             },
             {
                 let mut locked = HashSet::new();
@@ -207,6 +214,7 @@ pub fn default_templates() -> Vec<Template> {
                     "required": ["approved"]
                 }),
                 auto_start: false,
+                tools: AgentNodeConfig::default().tools,
             },
             {
                 let mut locked = HashSet::new();
@@ -274,6 +282,7 @@ mod tests {
             model: "o3".to_string(),
             output_schema: serde_json::json!({"custom": true}),
             auto_start: false,
+            tools: AgentNodeConfig::default().tools,
         };
         let template = Template::new("Test", "desc", config.clone(), HashSet::new());
         let node = template.instantiate(0.0, 0.0);

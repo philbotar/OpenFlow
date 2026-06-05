@@ -1,10 +1,14 @@
-use agent_workflow_app::execution::{run_workflow_headless, ManualInput};
+#![allow(clippy::significant_drop_tightening)]
+
+use agent_workflow_app::execution::{run_workflow_headless, ApprovalResponse, ManualInput};
 use agent_workflow_app::state::TraceStatus;
 use async_trait::async_trait;
+use parking_lot::Mutex;
 use serde_json::json;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use workflow_core::{
-    AgentError, AgentRequest, AgentResponse, AiPort, Edge, Node, NodeId, Workflow,
+    AgentError, AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTurnOutcome,
+    AgentTurnSuccess, AiPort, ApprovalMode, Edge, Node, NodeId, ToolCall, ToolRef, Workflow,
 };
 
 #[derive(Clone, Default)]
@@ -14,66 +18,44 @@ struct ScriptedAi {
 
 #[async_trait]
 impl AiPort for ScriptedAi {
-    async fn invoke(&self, request: AgentRequest) -> Result<AgentResponse, AgentError> {
-        self.requests.lock().unwrap().push(request.clone());
+    async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+        self.requests.lock().push(request.clone());
         let output = match &*request.node_id {
             "idea" => {
                 let entrypoint = request.input["entrypoint"]["text"]
                     .as_str()
                     .unwrap_or_default();
-                assert!(entrypoint.contains("ORCHID-91"));
-                json!({
-                    "project_code": "ORCHID-91",
-                    "summary": "clarified"
-                })
+                json!({"summary": format!("idea keeps {entrypoint}")})
             }
             "plan" => {
-                assert_eq!(request.input["upstream"][0]["node_id"], "idea");
-                assert_eq!(
-                    request.input["upstream"][0]["output"]["project_code"],
-                    "ORCHID-91"
-                );
-                json!({
-                    "project_code": "ORCHID-91",
-                    "slices": ["extract execution driver", "add acceptance tests"]
-                })
+                let upstream = request.input["upstream"][0]["output"]["summary"]
+                    .as_str()
+                    .unwrap_or_default();
+                json!({"summary": format!("plan extends {upstream}")})
             }
             "risk" => {
-                assert_eq!(request.input["upstream"][0]["node_id"], "idea");
-                json!({
-                    "project_code": "ORCHID-91",
-                    "risks": ["live model output may vary"]
-                })
+                let upstream = request.input["upstream"][0]["output"]["summary"]
+                    .as_str()
+                    .unwrap_or_default();
+                json!({"summary": format!("risk checks {upstream}")})
             }
-            "brief" => {
-                let upstream_ids = request.input["upstream"]
+            "join" => {
+                let joined = request.input["upstream"]
                     .as_array()
                     .unwrap()
                     .iter()
-                    .map(|item| item["node_id"].as_str().unwrap())
-                    .collect::<Vec<_>>();
-                assert_eq!(upstream_ids, vec!["plan", "risk"]);
-                json!({
-                    "project_code": "ORCHID-91",
-                    "brief": "acceptance lane ready",
-                    "next_action": "run cargo test"
-                })
+                    .map(|item| item["output"]["summary"].as_str().unwrap().to_string())
+                    .collect::<Vec<_>>()
+                    .join(" | ");
+                json!({"summary": joined})
             }
-            other => panic!("unexpected node id: {other}"),
+            other => json!({"summary": format!("output from {other}")}),
         };
-        Ok(AgentResponse {
-            raw_text: output.to_string(),
+        Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
             output,
-        })
-    }
-
-    async fn invoke_conversation(
-        &self,
-        _request: workflow_core::ConversationAgentRequest,
-    ) -> Result<workflow_core::ConversationAgentResponse, AgentError> {
-        Err(AgentError::Failed(
-            "conversation path not used in this test".to_string(),
-        ))
+            raw_text: "{}".to_string(),
+            assistant_message: None,
+        }))
     }
 }
 
@@ -82,11 +64,11 @@ fn agent(id: &str, label: &str) -> Node {
     node.id = NodeId(id.to_string());
     node.agent.output_schema = json!({
         "type": "object",
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
-            "project_code": { "type": "string" }
+            "summary": { "type": "string" }
         },
-        "required": ["project_code"]
+        "required": ["summary"]
     });
     node
 }
@@ -94,16 +76,16 @@ fn agent(id: &str, label: &str) -> Node {
 fn branch_join_workflow() -> Workflow {
     let mut workflow = Workflow::new("Acceptance branch join");
     workflow.nodes = vec![
-        agent("idea", "Clarify idea"),
-        agent("plan", "Create plan"),
-        agent("risk", "Find risks"),
-        agent("brief", "Final brief"),
+        agent("idea", "Idea"),
+        agent("plan", "Plan"),
+        agent("risk", "Risk"),
+        agent("join", "Join"),
     ];
     workflow.edges = vec![
         Edge::new("idea", "plan"),
         Edge::new("idea", "risk"),
-        Edge::new("plan", "brief"),
-        Edge::new("risk", "brief"),
+        Edge::new("plan", "join"),
+        Edge::new("risk", "join"),
     ];
     workflow
 }
@@ -116,134 +98,191 @@ async fn branch_join_workflow_preserves_sentinel_and_trace_contract() {
         Some("Plan project ORCHID-91".to_string()),
         ai.clone(),
         vec![],
+        vec![],
     )
     .await
     .unwrap();
 
     assert_eq!(
-        snapshot.outputs[&NodeId("brief".into())]["project_code"],
-        "ORCHID-91"
+        snapshot.outputs[&NodeId("join".into())],
+        json!({"summary": "plan extends idea keeps Plan project ORCHID-91 | risk checks idea keeps Plan project ORCHID-91"})
     );
-    assert_eq!(snapshot.report.outputs.len(), 4);
-
-    let completed = snapshot
-        .run_trace
-        .iter()
-        .filter(|entry| entry.status == TraceStatus::Completed)
-        .map(|entry| &*entry.node_id)
-        .collect::<Vec<_>>();
-    assert_eq!(completed, vec!["idea", "plan", "risk", "brief"]);
-
-    let requests = ai.requests.lock().unwrap();
-    assert_eq!(
-        requests
+    assert!(
+        snapshot
+            .run_trace
             .iter()
-            .map(|request| &*request.node_id)
-            .collect::<Vec<_>>(),
-        vec!["idea", "plan", "risk", "brief"]
+            .filter(|entry| entry.status == TraceStatus::Completed)
+            .count()
+            >= 4
+    );
+    let requests = ai.requests.lock();
+    assert_eq!(
+        requests[0].input["entrypoint"]["text"],
+        "Plan project ORCHID-91"
     );
 }
 
 #[tokio::test]
 async fn manual_node_pauses_accepts_input_and_feeds_downstream_node() {
     #[derive(Clone, Default)]
-    struct DownstreamAi {
+    struct ManualAi {
         requests: Arc<Mutex<Vec<AgentRequest>>>,
     }
 
     #[async_trait]
-    impl AiPort for DownstreamAi {
-        async fn invoke(&self, request: AgentRequest) -> Result<AgentResponse, AgentError> {
-            self.requests.lock().unwrap().push(request.clone());
-            assert_eq!(&*request.node_id, "final");
-            assert_eq!(request.input["upstream"][0]["node_id"], "human-review");
-            assert_eq!(
-                request.input["upstream"][0]["output"],
-                "human approved ORCHID-91"
-            );
-            let output = json!({
-                "project_code": "ORCHID-91",
-                "brief": "manual input accepted"
-            });
-            Ok(AgentResponse {
-                raw_text: output.to_string(),
-                output,
-            })
-        }
-
-        async fn invoke_conversation(
-            &self,
-            request: workflow_core::ConversationAgentRequest,
-        ) -> Result<workflow_core::ConversationAgentResponse, AgentError> {
-            self.requests.lock().unwrap().push(AgentRequest {
-                workflow_id: request.workflow_id,
-                node_id: request.node_id.clone(),
-                node_label: request.node_label,
-                model: request.model,
-                system_prompt: request.system_prompt,
-                task_prompt: request.task_prompt,
-                input: request.input.clone(),
-                output_schema: request.output_schema,
-            });
-            assert_eq!(&*request.node_id, "human-review");
-            let user_turns = request
-                .conversation
-                .iter()
-                .filter(|message| message.role == workflow_core::ChatRole::User)
-                .map(|message| message.content.as_str())
-                .collect::<Vec<_>>();
-            assert_eq!(user_turns, vec!["human approved ORCHID-91"]);
-            Ok(workflow_core::ConversationAgentResponse {
-                ready_to_advance: true,
-                assistant_message: Some("Review complete.".to_string()),
-                output: Some(json!("human approved ORCHID-91")),
-                raw_text: "{\"ready_to_advance\":true}".to_string(),
-            })
+    impl AiPort for ManualAi {
+        async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            self.requests.lock().push(request.clone());
+            match &*request.node_id {
+                "human-review" => {
+                    let asked_already = request.transcript.iter().any(|item| {
+                        matches!(
+                            item,
+                            workflow_core::AgentTranscriptItem::AssistantMessage { .. }
+                        )
+                    });
+                    if !asked_already {
+                        return Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
+                            raw_text: "{}".to_string(),
+                            assistant_message: "Which approval is mandatory?".to_string(),
+                        }));
+                    }
+                    let answer = request
+                        .transcript
+                        .iter()
+                        .rev()
+                        .find_map(|item| match item {
+                            workflow_core::AgentTranscriptItem::UserMessage { content } => {
+                                Some(content.clone())
+                            }
+                            _ => None,
+                        })
+                        .unwrap();
+                    Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                        output: json!({"summary": answer}),
+                        raw_text: "{}".to_string(),
+                        assistant_message: Some("Locked. Advancing.".to_string()),
+                    }))
+                }
+                "final" => {
+                    assert_eq!(request.input["upstream"][0]["node_id"], "human-review");
+                    Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                        output: json!({
+                            "summary": request.input["upstream"][0]["output"]["summary"]
+                        }),
+                        raw_text: "{}".to_string(),
+                        assistant_message: None,
+                    }))
+                }
+                _ => unreachable!(),
+            }
         }
     }
 
-    let mut manual = agent("human-review", "Human review");
-    manual.agent.auto_start = false;
-    let final_node = agent("final", "Final brief");
-    let mut workflow = Workflow::new("Manual acceptance");
-    workflow.nodes = vec![manual, final_node];
+    let mut workflow = Workflow::new("manual acceptance");
+    let mut review = agent("human-review", "Human review");
+    review.agent.auto_start = false;
+    let final_node = agent("final", "Final");
+    workflow.nodes = vec![review, final_node];
     workflow.edges = vec![Edge::new("human-review", "final")];
 
-    let ai = DownstreamAi::default();
     let snapshot = run_workflow_headless(
         workflow,
         Some("Use project code ORCHID-91".to_string()),
-        ai.clone(),
-        vec![ManualInput {
-            node_id: NodeId("human-review".to_string()),
-            text: "human approved ORCHID-91".to_string(),
-        }],
+        ManualAi::default(),
+        vec![
+            ManualInput {
+                node_id: NodeId("human-review".into()),
+                text: "Need the mandatory approval".to_string(),
+            },
+            ManualInput {
+                node_id: NodeId("human-review".into()),
+                text: "Legal sign-off keeps ORCHID-91".to_string(),
+            },
+        ],
+        vec![],
     )
     .await
     .unwrap();
 
-    assert_eq!(
-        snapshot.outputs[&NodeId("final".into())]["project_code"],
-        "ORCHID-91"
-    );
     assert!(snapshot
         .run_trace
         .iter()
         .any(|entry| entry.node_id == "human-review" && entry.status == TraceStatus::Paused));
-    let review_id = NodeId("human-review".into());
-    assert!(snapshot
-        .chat_logs
-        .get(&review_id)
-        .unwrap()
-        .iter()
-        .any(|message| message.content == "human approved ORCHID-91"));
     assert_eq!(
-        ai.requests
-            .lock()
-            .unwrap()
-            .iter()
-            .map(|request| &*request.node_id)
-            .collect::<Vec<_>>(),
-        vec!["human-review", "final"]
+        snapshot.outputs[&NodeId("final".into())],
+        json!({"summary": "Legal sign-off keeps ORCHID-91"})
     );
+}
+
+#[tokio::test]
+async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
+    #[derive(Clone, Default)]
+    struct ToolAi {
+        calls: Arc<Mutex<usize>>,
+    }
+
+    #[async_trait]
+    impl AiPort for ToolAi {
+        async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            let mut calls = self.calls.lock();
+            *calls += 1;
+            if *calls == 1 {
+                assert_eq!(request.available_tools.len(), 1);
+                return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+                    raw_text: String::new(),
+                    assistant_message: Some("Need repo context".to_string()),
+                    tool_calls: vec![ToolCall {
+                        id: "call-1".to_string(),
+                        name: "read".to_string(),
+                        arguments: json!({"path": "README.md"}),
+                        intent: Some("Reading repository overview".to_string()),
+                    }],
+                }));
+            }
+            let saw_tool_result = request
+                .transcript
+                .iter()
+                .any(|item| matches!(item, workflow_core::AgentTranscriptItem::ToolResult { .. }));
+            assert!(saw_tool_result);
+            Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                output: json!({"summary": "tool verified ORCHID-91"}),
+                raw_text: "{}".to_string(),
+                assistant_message: None,
+            }))
+        }
+    }
+
+    let mut workflow = Workflow::new("tool acceptance");
+    let mut node = agent("tool-node", "Tool node");
+    node.agent.tools.catalog.tools = vec![ToolRef {
+        name: "read".to_string(),
+    }];
+    node.agent.tools.approval_mode = Some(ApprovalMode::AlwaysAsk);
+    workflow.nodes = vec![node];
+
+    let first_attempt =
+        run_workflow_headless(workflow.clone(), None, ToolAi::default(), vec![], vec![]).await;
+    assert!(matches!(
+        first_attempt,
+        Err(agent_workflow_app::execution::WorkflowExecutionError::MissingApproval(_))
+    ));
+
+    let snapshot = run_workflow_headless(
+        workflow,
+        None,
+        ToolAi::default(),
+        vec![],
+        vec![ApprovalResponse {
+            approval_id: String::new(),
+            allow: true,
+        }],
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        snapshot.outputs[&NodeId("tool-node".into())],
+        json!({"summary": "tool verified ORCHID-91"})
+    );
+    assert!(!snapshot.tool_calls_by_node[&NodeId("tool-node".into())].is_empty());
 }

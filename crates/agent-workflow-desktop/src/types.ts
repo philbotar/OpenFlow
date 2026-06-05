@@ -22,12 +22,39 @@ export interface NodePosition {
   y: number;
 }
 
+export type ToolTier = "read" | "write" | "exec";
+export type ToolConcurrency = "shared" | "exclusive";
+export type ToolPolicy = "allow" | "prompt" | "deny";
+export type ApprovalMode = "always_ask" | "write" | "yolo";
+
+export interface ToolRef {
+  name: string;
+}
+
+export interface ToolCatalogSelection {
+  tools: ToolRef[];
+}
+
+export interface ToolPolicyOverride {
+  toolName: string;
+  policy: ToolPolicy;
+  timeoutSecs: number | null;
+}
+
+export interface NodeToolConfig {
+  catalog: ToolCatalogSelection;
+  approvalMode: ApprovalMode | null;
+  overrides: ToolPolicyOverride[];
+  maxToolRounds: number;
+}
+
 export interface AgentNodeConfig {
   system_prompt: string;
   task_prompt: string;
   model: string;
   output_schema: unknown;
   auto_start: boolean;
+  tools: NodeToolConfig;
 }
 
 export interface AgentDefinition {
@@ -38,6 +65,7 @@ export interface AgentDefinition {
   model: string;
   output_schema: unknown;
   auto_start: boolean;
+  tools: NodeToolConfig;
 }
 
 export interface Edge {
@@ -58,6 +86,8 @@ export type AgentStatus =
   | "queued"
   | "started"
   | "awaiting_input"
+  | "awaiting_tool_approval"
+  | "running_tool"
   | "completed"
   | "failed";
 
@@ -69,6 +99,46 @@ export interface RunTraceEntry {
   status: TraceStatus;
   message: string;
   output: unknown | null;
+}
+
+export type ToolCallStatus =
+  | "proposed"
+  | "awaiting_approval"
+  | "running"
+  | "completed"
+  | "blocked"
+  | "failed"
+  | "aborted";
+
+export interface ToolCall {
+  id: string;
+  name: string;
+  arguments: unknown;
+  intent: string | null;
+}
+
+export interface PendingToolApproval {
+  approvalId: string;
+  nodeId: NodeId;
+  nodeLabel: string;
+  toolCall: ToolCall;
+  tier: ToolTier;
+}
+
+export interface ToolCallSummary {
+  toolCallId: string;
+  toolName: string;
+  status: ToolCallStatus;
+  arguments: unknown;
+  lastOutput: string | null;
+  isError: boolean;
+}
+
+export interface ToolArtifactSummary {
+  artifactId: string;
+  toolName: string;
+  path: string;
+  sizeBytes: number;
 }
 
 export interface RunEvent {
@@ -92,6 +162,12 @@ export interface RunReport {
 export interface WorkflowRunState {
   active: boolean;
   awaitingNodeId: NodeId | null;
+  activeManualNodeId: NodeId | null;
+  activeToolCallId: string | null;
+  pendingApprovals: PendingToolApproval[];
+  toolCallsByNode: Record<NodeId, ToolCallSummary[]>;
+  toolArtifacts: Record<string, ToolArtifactSummary>;
+  execApprovalGranted: boolean;
   statusByNode: Record<NodeId, AgentStatus>;
   lastReport: RunReport | null;
   lastError: string | null;

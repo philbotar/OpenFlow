@@ -1,3 +1,13 @@
+#![allow(
+    clippy::assigning_clones,
+    clippy::derive_partial_eq_without_eq,
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    clippy::needless_pass_by_value,
+    clippy::significant_drop_tightening,
+    clippy::uninlined_format_args
+)]
+
 use crate::agent_store::{AgentDefinition, FileAgentStore};
 use crate::execution::{
     apply_event_to_run_state, record_user_input, spawn_interactive_workflow_run, ExecutionAction,
@@ -49,8 +59,12 @@ pub enum BackendError {
     NoActiveRun,
     #[error("workflow run is not awaiting input")]
     NoAwaitingInput,
+    #[error("workflow run has no pending tool approval")]
+    NoPendingApproval,
     #[error("expected input for {expected}, got {received}")]
     WrongAwaitingNode { expected: NodeId, received: NodeId },
+    #[error("expected approval {expected}, got {received}")]
+    WrongApprovalId { expected: String, received: String },
     #[error("workflow run channel closed")]
     RunChannelClosed,
 }
@@ -403,6 +417,45 @@ impl AppBackend {
         Ok(run_state.clone())
     }
 
+    /// # Errors
+    /// Returns an error if there is no active run or the wrong approval is selected.
+    pub async fn submit_tool_approval(
+        &self,
+        approval_id: &str,
+        allow: bool,
+    ) -> Result<WorkflowRunState, BackendError> {
+        let mut session = self.run_session.lock().await;
+        let expected = session
+            .run_state
+            .as_ref()
+            .ok_or(BackendError::NoActiveRun)?
+            .pending_approvals
+            .first()
+            .cloned()
+            .ok_or(BackendError::NoPendingApproval)?;
+        if expected.approval_id != approval_id {
+            return Err(BackendError::WrongApprovalId {
+                expected: expected.approval_id,
+                received: approval_id.to_string(),
+            });
+        }
+        session
+            .action_tx
+            .as_ref()
+            .ok_or(BackendError::NoActiveRun)?
+            .send(ExecutionAction::ResolveApproval {
+                approval_id: approval_id.to_string(),
+                allow,
+            })
+            .map_err(|_| BackendError::RunChannelClosed)?;
+        let run_state = session
+            .run_state
+            .as_mut()
+            .ok_or(BackendError::NoActiveRun)?;
+        run_state.pending_approvals.clear();
+        Ok(run_state.clone())
+    }
+
     /// Returns an error because conversational paused nodes advance via `submit_user_input`.
     pub async fn complete_manual_node(&self) -> Result<WorkflowRunState, BackendError> {
         let session = self.run_session.lock().await;
@@ -645,6 +698,53 @@ mod tests {
             match action_rx.recv().await.expect("action") {
                 ExecutionAction::ProvideInput(text) => {
                     assert_eq!(text, "Continue with approvals");
+                }
+                ExecutionAction::ResolveApproval { .. } => {
+                    panic!("unexpected approval action");
+                }
+            }
+        });
+    }
+
+    #[test]
+    fn submit_tool_approval_updates_snapshot_and_sends_action() {
+        let (backend, _dir) = backend();
+        backend.runtime.block_on(async {
+            let workflow = default_workflow("Workflow");
+            let (action_tx, mut action_rx) = tokio::sync::mpsc::unbounded_channel();
+            {
+                let mut session = backend.run_session.lock().await;
+                let mut run_state = WorkflowRunState::running_for_workflow(&workflow);
+                run_state.pending_approvals = vec![workflow_core::PendingToolApproval {
+                    approval_id: "approval-1".to_string(),
+                    node_id: "idea".to_string(),
+                    node_label: "Idea".to_string(),
+                    tool_call: workflow_core::ToolCall {
+                        id: "call-1".to_string(),
+                        name: "read".to_string(),
+                        arguments: serde_json::json!({ "path": "README.md" }),
+                        intent: None,
+                    },
+                    tier: workflow_core::ToolTier::Read,
+                }];
+                session.workflow = Some(workflow);
+                session.run_state = Some(run_state);
+                session.action_tx = Some(action_tx);
+            }
+
+            let run_state = backend
+                .submit_tool_approval("approval-1", true)
+                .await
+                .expect("submit approval");
+
+            assert!(run_state.pending_approvals.is_empty());
+            match action_rx.recv().await.expect("action") {
+                ExecutionAction::ResolveApproval { approval_id, allow } => {
+                    assert_eq!(approval_id, "approval-1");
+                    assert!(allow);
+                }
+                ExecutionAction::ProvideInput(_) => {
+                    panic!("unexpected input action");
                 }
             }
         });

@@ -99,6 +99,10 @@ export function submitUserInput(nodeId: string, text: string) {
   return invoke<WorkflowRunState>("submit_user_input", { nodeId, text });
 }
 
+export function submitToolApproval(approvalId: string, allow: boolean) {
+  return invoke<WorkflowRunState>("submit_tool_approval", { approvalId, allow });
+}
+
 export function completeManualNode() {
   return invoke<WorkflowRunState>("complete_manual_node");
 }

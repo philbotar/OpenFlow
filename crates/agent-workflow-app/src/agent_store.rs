@@ -37,6 +37,8 @@ pub struct AgentDefinition {
     pub output_schema: serde_json::Value,
     #[serde(default)]
     pub auto_start: bool,
+    #[serde(default)]
+    pub tools: workflow_core::NodeToolConfig,
 }
 
 impl AgentDefinition {
@@ -51,6 +53,7 @@ impl AgentDefinition {
             model: defaults.model,
             output_schema: defaults.output_schema,
             auto_start: defaults.auto_start,
+            tools: defaults.tools,
         }
     }
 }
@@ -178,6 +181,20 @@ mod tests {
         assert_eq!(agent.model, defaults.model);
         assert_eq!(agent.output_schema, defaults.output_schema);
         assert_eq!(agent.auto_start, defaults.auto_start);
+        assert_eq!(agent.tools, defaults.tools);
+    }
+
+    #[test]
+    fn agent_definition_serde_backfills_tool_defaults() {
+        let agent: AgentDefinition = serde_json::from_value(serde_json::json!({
+            "id": "agent-1",
+            "name": "Legacy",
+            "outputSchema": { "type": "object" }
+        }))
+        .unwrap();
+
+        assert_eq!(agent.tools, workflow_core::NodeToolConfig::default());
+        assert!(!agent.auto_start);
     }
 
     #[test]

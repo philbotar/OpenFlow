@@ -2,6 +2,7 @@
 import { render } from "solid-js/web";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { AgentDefinition, AppSettings, BootstrapPayload, ProviderReadiness, Workflow, WorkflowRunState } from "./types";
+import { createEmptyToolConfig } from "./workflow";
 
 const apiMocks = vi.hoisted(() => ({
   bootstrapApp: vi.fn(),
@@ -15,6 +16,7 @@ const apiMocks = vi.hoisted(() => ({
   saveSettings: vi.fn(),
   saveWorkflows: vi.fn(),
   startRun: vi.fn(),
+  submitToolApproval: vi.fn(),
   submitUserInput: vi.fn(),
   validateWorkflow: vi.fn(),
 }));
@@ -28,6 +30,7 @@ vi.mock("./api", () => ({
   listenToRunState: apiMocks.listenToRunState,
   resolveProviderReadiness: apiMocks.resolveProviderReadiness,
   saveAgents: apiMocks.saveAgents,
+  submitToolApproval: apiMocks.submitToolApproval,
   saveSettings: apiMocks.saveSettings,
   saveWorkflows: apiMocks.saveWorkflows,
   startRun: apiMocks.startRun,
@@ -95,6 +98,7 @@ function makeWorkflow(id: string, name: string): Workflow {
           model: "gpt-4.1-mini",
           output_schema: { type: "object" },
           auto_start: false,
+          tools: createEmptyToolConfig(),
         },
       },
     ],
@@ -118,6 +122,7 @@ function makeAgent(id: string, name: string): AgentDefinition {
       required: ["summary"],
     },
     auto_start: true,
+    tools: createEmptyToolConfig(),
   };
 }
 
@@ -135,6 +140,12 @@ function makeAwaitingRunState(workflow: Workflow): WorkflowRunState {
   return {
     active: true,
     awaitingNodeId: node.id,
+    activeManualNodeId: null,
+    activeToolCallId: null,
+    pendingApprovals: [],
+    toolCallsByNode: {},
+    toolArtifacts: {},
+    execApprovalGranted: false,
     statusByNode: {
       [node.id]: "awaiting_input",
     },
@@ -438,6 +449,64 @@ describe("App agent dashboard", () => {
       dispose();
     }
   });
+
+  test("node tool access is hideable and saves enabled tools", async () => {
+    apiMocks.saveWorkflows.mockResolvedValue(undefined);
+    apiMocks.saveSettings.mockResolvedValue(undefined);
+
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    const { container, dispose } = await mountApp(makeBootstrapPayload([workflow]));
+
+    try {
+      expect(
+        Array.from(container.querySelectorAll("span")).some((element) => element.textContent === "Max tool rounds"),
+      ).toBe(false);
+
+      const showToolsButton = await waitForElement(
+        () =>
+          Array.from(container.querySelectorAll("button")).find(
+            (element) => element.textContent === "Show tools",
+          ) as HTMLButtonElement | null,
+        "show tools button",
+      );
+      showToolsButton.click();
+      await flush();
+
+      expect(
+        Array.from(container.querySelectorAll(".tool-config-option-title")).map((element) => element.textContent),
+      ).toEqual(["read", "search", "find", "ast_grep"]);
+
+      const checkboxes = Array.from(
+        container.querySelectorAll('.tool-config-option input[type="checkbox"]'),
+      ) as HTMLInputElement[];
+      expect(checkboxes.every((element) => element.checked)).toBe(true);
+
+      const hideToolsButton = Array.from(container.querySelectorAll("button")).find(
+        (element) => element.textContent === "Hide tools",
+      ) as HTMLButtonElement | undefined;
+      hideToolsButton?.click();
+      await flush();
+
+      expect(
+        Array.from(container.querySelectorAll("span")).some((element) => element.textContent === "Max tool rounds"),
+      ).toBe(false);
+
+      const saveButton = container.querySelector('button[aria-label="Save workflow"]') as HTMLButtonElement | null;
+      expect(saveButton).not.toBeNull();
+      saveButton?.click();
+      await flush();
+      const saveCalls = apiMocks.saveWorkflows.mock.calls as [Workflow[]][];
+      const savedWorkflows = saveCalls[saveCalls.length - 1]?.[0];
+      expect(savedWorkflows?.[0]?.nodes[0]?.agent.tools.catalog.tools).toEqual([
+        { name: "read" },
+        { name: "search" },
+        { name: "find" },
+        { name: "ast_grep" },
+      ]);
+    } finally {
+      dispose();
+    }
+  });
 });
 
 describe("App settings persistence", () => {
@@ -644,6 +713,42 @@ describe("App chat slash commands", () => {
     try {
       const labels = Array.from(container.querySelectorAll(".chat-role")).map((element) => element.textContent);
       expect(labels).toEqual(["System", "Agent 2", "Agent 2"]);
+    } finally {
+      dispose();
+    }
+  });
+
+  test("renders tool request and tool result details in chat", async () => {
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    workflow.nodes[0].label = "Idea";
+    const runState = makeAwaitingRunState(workflow);
+    runState.chatLogs[workflow.nodes[0].id] = [
+      {
+        role: "Thinking",
+        content: "Tool request: read\nArguments:\n{\n  \"path\": \"README.md\"\n}",
+      },
+      {
+        role: "Thinking",
+        content: "Tool result: read\n¶README.md\n1:# OpenFlow",
+      },
+    ];
+    const { container, dispose } = await mountApp({
+      workflows: [workflow],
+      agents: [makeAgent("agent-1", "Research Agent")],
+      settings: SETTINGS,
+      runState,
+    });
+    const chatTab = await waitForElement(
+      () => Array.from(container.querySelectorAll(".dock-tab-switcher button")).find((btn) => btn.textContent === "Chat") as HTMLButtonElement | null,
+      "chat tab",
+    );
+    chatTab.click();
+    await flush();
+
+    try {
+      const rows = Array.from(container.querySelectorAll(".chat-row pre")).map((element) => element.textContent);
+      expect(rows).toContain("Tool request: read\nArguments:\n{\n  \"path\": \"README.md\"\n}");
+      expect(rows).toContain("Tool result: read\n¶README.md\n1:# OpenFlow");
     } finally {
       dispose();
     }

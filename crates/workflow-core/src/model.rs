@@ -1,3 +1,6 @@
+#![allow(clippy::use_self, clippy::derive_partial_eq_without_eq)]
+
+use crate::tools::NodeToolConfig;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::fmt;
@@ -236,6 +239,8 @@ pub struct AgentNodeConfig {
     pub output_schema: Value,
     #[serde(default = "default_auto_start")]
     pub auto_start: bool,
+    #[serde(default)]
+    pub tools: NodeToolConfig,
 }
 
 const fn default_auto_start() -> bool {
@@ -257,6 +262,7 @@ impl Default for AgentNodeConfig {
                 "required": ["summary"]
             }),
             auto_start: true,
+            tools: NodeToolConfig::default(),
         }
     }
 }
@@ -388,6 +394,27 @@ mod tests {
     fn agent_node_defaults_auto_start_true() {
         let node = Node::agent("Plan", 0.0, 0.0);
         assert!(node.agent.auto_start);
+    }
+
+    #[test]
+    fn agent_node_defaults_tools_enabled() {
+        let node = Node::agent("Plan", 0.0, 0.0);
+        assert!(node.agent.tools.is_enabled());
+        assert_eq!(node.agent.tools.catalog.tools.len(), 4);
+    }
+
+    #[test]
+    fn agent_node_config_serde_backfills_new_tool_fields() {
+        let config: AgentNodeConfig = serde_json::from_value(json!({
+            "system_prompt": "sys",
+            "task_prompt": "task",
+            "model": "gpt-test",
+            "output_schema": { "type": "object" }
+        }))
+        .unwrap();
+
+        assert!(config.auto_start);
+        assert_eq!(config.tools, NodeToolConfig::default());
     }
 
     #[test]

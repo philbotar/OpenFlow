@@ -1,9 +1,12 @@
+#![allow(clippy::needless_pass_by_value)]
+
 use agent_workflow_app::execution::run_workflow_headless;
 use agent_workflow_app::state::TraceStatus;
 use openai_client::{OpenAiClient, OpenAiClientConfig, OpenAiWireApi};
-use serde_json::json;
+use reqwest::Client;
+use serde_json::{json, Value};
 use std::env;
-use workflow_core::{Edge, Node, NodeId, Workflow};
+use workflow_core::{Edge, Node, NodeId, ToolRef, Workflow};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct LiveWorkflowConfig {
@@ -79,6 +82,67 @@ fn live_smoke_node(id: &str, label: &str, task: &str, model: &str) -> Node {
     node
 }
 
+fn compatible_probe_request_body(config: &LiveWorkflowConfig) -> Value {
+    json!({
+        "model": config.model,
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are running an automated smoke test. Return valid JSON or a tool call."
+            },
+            {
+                "role": "user",
+                "content": "Read README.md if needed. Preserve project_code exactly as ORCHID-91. Return a JSON object with project_code and summary."
+            }
+        ],
+        "tools": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "read",
+                    "description": "Read a file or URL.",
+                    "parameters": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "path": { "type": "string" }
+                        },
+                        "required": ["path"]
+                    },
+                    "strict": true
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "openflow_submit_node_output",
+                    "description": "Submit the final structured node output when the task is complete.",
+                    "parameters": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "output": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "project_code": { "type": "string" },
+                                    "summary": { "type": "string" }
+                                },
+                                "required": ["project_code", "summary"]
+                            },
+                            "assistant_message": {
+                                "type": ["string", "null"]
+                            }
+                        },
+                        "required": ["output", "assistant_message"]
+                    },
+                    "strict": true
+                }
+            }
+        ]
+    })
+}
+
 #[tokio::test]
 #[ignore = "requires STEP_WORKFLOW_LIVE_AI=1, STEP_WORKFLOW_LIVE_API_KEY or OPENAI_API_KEY, and STEP_WORKFLOW_LIVE_MODEL"]
 async fn live_openai_workflow_preserves_sentinel_and_schema_contract() {
@@ -119,6 +183,7 @@ async fn live_openai_workflow_preserves_sentinel_and_schema_contract() {
         Some("This is a live smoke test. project_code: ORCHID-91".to_string()),
         client,
         vec![],
+        vec![],
     )
     .await
     .unwrap();
@@ -136,6 +201,107 @@ async fn live_openai_workflow_preserves_sentinel_and_schema_contract() {
             .count(),
         2
     );
+}
+
+#[tokio::test]
+#[ignore = "requires STEP_WORKFLOW_LIVE_AI=1 with STEP_WORKFLOW_LIVE_WIRE_API=chat-completions"]
+async fn live_chat_completions_provider_returns_supported_message_shape() {
+    if env::var("STEP_WORKFLOW_LIVE_AI").as_deref() != Ok("1") {
+        eprintln!("skipping live smoke: set STEP_WORKFLOW_LIVE_AI=1 to enable");
+        return;
+    }
+
+    let config = live_workflow_config_from_env().unwrap_or_else(|error| panic!("{error}"));
+    if config.wire_api != OpenAiWireApi::ChatCompletions {
+        eprintln!("skipping live smoke: requires STEP_WORKFLOW_LIVE_WIRE_API=chat-completions");
+        return;
+    }
+
+    let response = Client::new()
+        .post(format!(
+            "{}/{}",
+            config.base_url.trim_end_matches('/'),
+            config.chat_completions_path.trim_start_matches('/')
+        ))
+        .bearer_auth(&config.api_key)
+        .json(&compatible_probe_request_body(&config))
+        .send()
+        .await
+        .unwrap();
+    let status = response.status();
+    let payload: Value = response.json().await.unwrap();
+    assert!(status.is_success(), "provider returned {status}: {payload}");
+
+    let choice = payload["choices"]
+        .as_array()
+        .and_then(|choices| choices.first())
+        .unwrap_or_else(|| panic!("missing choices[0]: {payload}"));
+    let message = choice
+        .get("message")
+        .unwrap_or_else(|| panic!("missing message: {payload}"));
+    let supported_shape = message
+        .get("tool_calls")
+        .and_then(Value::as_array)
+        .is_some_and(|calls| !calls.is_empty())
+        || message.get("function_call").is_some()
+        || message
+            .get("content")
+            .is_some_and(|content| content.is_string() || content.is_array());
+
+    assert!(
+        supported_shape,
+        "unsupported compatible response shape: {payload}"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires STEP_WORKFLOW_LIVE_AI=1 with STEP_WORKFLOW_LIVE_WIRE_API=chat-completions"]
+async fn live_chat_completions_tool_enabled_workflow_completes() {
+    if env::var("STEP_WORKFLOW_LIVE_AI").as_deref() != Ok("1") {
+        eprintln!("skipping live smoke: set STEP_WORKFLOW_LIVE_AI=1 to enable");
+        return;
+    }
+
+    let config = live_workflow_config_from_env().unwrap_or_else(|error| panic!("{error}"));
+    if config.wire_api != OpenAiWireApi::ChatCompletions {
+        eprintln!("skipping live smoke: requires STEP_WORKFLOW_LIVE_WIRE_API=chat-completions");
+        return;
+    }
+
+    let mut workflow = Workflow::new("Live compatible tooling smoke");
+    let mut node = live_smoke_node(
+        "tooling",
+        "Tooling",
+        "Use the available tools if needed. Preserve project_code exactly as ORCHID-91 and provide a non-empty summary.",
+        &config.model,
+    );
+    node.agent.tools.catalog.tools = vec![ToolRef {
+        name: "read".to_string(),
+    }];
+    workflow.nodes = vec![node];
+
+    let client = OpenAiClient::with_config(OpenAiClientConfig {
+        api_key: config.api_key,
+        base_url: config.base_url,
+        wire_api: config.wire_api,
+        responses_path: config.responses_path,
+        chat_completions_path: config.chat_completions_path,
+    });
+
+    let snapshot = run_workflow_headless(
+        workflow,
+        Some("This is a live smoke test. project_code: ORCHID-91".to_string()),
+        client,
+        vec![],
+        vec![],
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(snapshot.outputs["tooling"]["project_code"], "ORCHID-91");
+    assert!(snapshot.outputs["tooling"]["summary"]
+        .as_str()
+        .is_some_and(|value| !value.trim().is_empty()));
 }
 
 fn vars(items: &[(&str, &str)], key: &str) -> Option<String> {

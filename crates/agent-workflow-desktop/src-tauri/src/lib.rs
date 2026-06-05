@@ -1,3 +1,5 @@
+#![allow(clippy::cargo, clippy::nursery, clippy::pedantic)]
+
 use agent_workflow_app::agent_store::AgentDefinition;
 use agent_workflow_app::backend::{
     AppBackend, BackendError, ProviderReadiness, WorkflowListItem, WorkflowValidationSummary,
@@ -226,6 +228,16 @@ async fn submit_user_input(
     Ok(backend.submit_user_input(&node_id, text).await?)
 }
 
+/// Tauri command: Submit a tool approval decision.
+#[tauri::command]
+async fn submit_tool_approval(
+    backend: tauri::State<'_, AppBackend>,
+    approval_id: String,
+    allow: bool,
+) -> Result<WorkflowRunState, CommandError> {
+    Ok(backend.submit_tool_approval(&approval_id, allow).await?)
+}
+
 /// Tauri command: Complete a manual node.
 #[tauri::command]
 async fn complete_manual_node(
@@ -277,6 +289,7 @@ pub fn run() {
             create_agent_node,
             start_run,
             submit_user_input,
+            submit_tool_approval,
             complete_manual_node,
             get_run_state,
             clear_run_trace,

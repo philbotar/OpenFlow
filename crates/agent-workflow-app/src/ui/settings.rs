@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_lines)]
+
 #[allow(clippy::wildcard_imports)]
 use super::theme::*;
 use super::widgets::inspector_field;

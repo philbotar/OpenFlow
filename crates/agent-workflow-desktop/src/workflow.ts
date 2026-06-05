@@ -5,6 +5,7 @@ import type {
   EdgeId,
   Node,
   NodeId,
+  NodeToolConfig,
   ProviderProfile,
   Workflow,
   WorkflowRunState,
@@ -12,7 +13,35 @@ import type {
 
 export const NODE_WIDTH = 320;
 export const NODE_HEIGHT = 88;
+export const SUPPORTED_NODE_TOOLS = [
+  {
+    name: "read",
+    description: "Read local files, directories, and URLs.",
+  },
+  {
+    name: "search",
+    description: "Search files with regular expressions.",
+  },
+  {
+    name: "find",
+    description: "Find files and directories by glob.",
+  },
+  {
+    name: "ast_grep",
+    description: "Search code structurally with ast-grep. Included with this repo tooling.",
+  },
+] as const;
 
+
+
+export function createEmptyToolConfig(): NodeToolConfig {
+  return {
+    catalog: { tools: SUPPORTED_NODE_TOOLS.map((tool) => ({ name: tool.name })) },
+    approvalMode: "write",
+    overrides: [],
+    maxToolRounds: 8,
+  };
+}
 export type WorkflowCanvasGraphNode = {
   id: NodeId;
   label: string;
@@ -68,6 +97,12 @@ export function createIdleRunState(workflow: Workflow): WorkflowRunState {
   return {
     active: false,
     awaitingNodeId: null,
+    activeManualNodeId: null,
+    activeToolCallId: null,
+    pendingApprovals: [],
+    toolCallsByNode: {},
+    toolArtifacts: {},
+    execApprovalGranted: false,
     statusByNode,
     lastReport: null,
     lastError: null,
@@ -205,6 +240,7 @@ function cloneNode(node: Node): Node {
       model: node.agent.model,
       output_schema: structuredClone(node.agent.output_schema),
       auto_start: node.agent.auto_start,
+      tools: structuredClone(node.agent.tools),
     },
   };
 }

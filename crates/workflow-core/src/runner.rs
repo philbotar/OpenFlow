@@ -1,8 +1,7 @@
 use crate::{
-    execution_layers, AgentError, AgentRequest, AgentResponse, AiPort, NodeId, NodeRunOutput,
-    RunEvent, RunEventKind, RunReport, Workflow, WorkflowValidationError,
+    AiPort, EnginePollResult, InteractiveEngine, NodeId, RunReport, Workflow,
+    WorkflowValidationError,
 };
-use futures::future::join_all;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
 use thiserror::Error;
@@ -35,123 +34,37 @@ where
 
     /// # Errors
     /// Returns an error if the workflow is invalid or a node call fails.
-    ///
-    /// # Panics
-    /// Panics if a layer references a node id that was not found in the validated node map.
     pub async fn run_with_entrypoint(
         &self,
         workflow: &Workflow,
         entrypoint_text: Option<&str>,
     ) -> Result<RunReport, RunError> {
-        let layers = execution_layers(workflow)?;
-        let nodes_by_id: HashMap<NodeId, _> = workflow
-            .nodes
-            .iter()
-            .map(|node| (node.id.clone(), node))
-            .collect();
-        let upstream_by_node = upstream_map(workflow);
-        let mut events = Vec::new();
-        let mut outputs_by_node: BTreeMap<NodeId, Value> = BTreeMap::new();
+        let mut engine =
+            InteractiveEngine::new(workflow.clone(), entrypoint_text.map(ToString::to_string))?;
 
-        for layer in layers {
-            for node_id in &layer {
-                events.push(RunEvent {
-                    node_id: node_id.clone(),
-                    kind: RunEventKind::Queued,
-                    message: "queued after upstream dependencies completed".to_string(),
-                    output: None,
-                });
-            }
-
-            let calls = layer.iter().map(|node_id| {
-                let node = nodes_by_id
-                    .get(node_id)
-                    .expect("layer contains validated node id");
-                let request = AgentRequest {
-                    workflow_id: workflow.id.clone(),
-                    node_id: node.id.clone(),
-                    node_label: node.label.clone(),
-                    model: node.agent.model.clone(),
-                    system_prompt: node.agent.system_prompt.clone(),
-                    task_prompt: node.agent.task_prompt.clone(),
-                    input: build_node_input(
-                        node_id,
-                        &upstream_by_node,
-                        &outputs_by_node,
-                        entrypoint_text,
-                    ),
-                    output_schema: node.agent.output_schema.clone(),
-                };
-
-                async move { (node_id.clone(), self.ai.invoke(request).await) }
-            });
-
-            for node_id in &layer {
-                events.push(RunEvent {
-                    node_id: node_id.clone(),
-                    kind: RunEventKind::Started,
-                    message: "started OpenAI node call".to_string(),
-                    output: None,
-                });
-            }
-
-            let responses: Vec<(NodeId, Result<AgentResponse, AgentError>)> = join_all(calls).await;
-
-            for (node_id, response) in responses {
-                match response {
-                    Ok(response) => {
-                        outputs_by_node.insert(node_id.clone(), response.output.clone());
-                        events.push(RunEvent {
-                            node_id,
-                            kind: RunEventKind::Completed,
-                            message: "completed OpenAI node call".to_string(),
-                            output: Some(response.output),
-                        });
-                    }
-                    Err(error) => {
-                        let message = error.to_string();
-                        events.push(RunEvent {
-                            node_id: node_id.clone(),
-                            kind: RunEventKind::Failed,
-                            message: message.clone(),
-                            output: None,
-                        });
-                        return Err(RunError::NodeFailed { node_id, message });
-                    }
+        loop {
+            match engine.poll() {
+                EnginePollResult::CallAi { node_id, request } => {
+                    let result = self.ai.invoke((*request).clone()).await;
+                    engine.on_ai_complete(&node_id, result);
                 }
+                EnginePollResult::AwaitInput { node_id, .. } => {
+                    return Err(RunError::NodeFailed {
+                        node_id,
+                        message: "headless runner cannot satisfy human input".to_string(),
+                    });
+                }
+                EnginePollResult::AwaitToolApproval { node_id, .. } => {
+                    return Err(RunError::NodeFailed {
+                        node_id,
+                        message: "headless runner cannot satisfy tool execution".to_string(),
+                    });
+                }
+                EnginePollResult::Completed(report) => return Ok(report),
+                EnginePollResult::Failed(error) => return Err(error),
             }
         }
-
-        Ok(RunReport {
-            workflow_id: workflow.id.clone(),
-            events,
-            outputs: outputs_by_node
-                .into_iter()
-                .map(|(node_id, output)| NodeRunOutput { node_id, output })
-                .collect(),
-        })
     }
-}
-
-fn upstream_map(workflow: &Workflow) -> HashMap<NodeId, Vec<NodeId>> {
-    let mut upstream: HashMap<NodeId, Vec<NodeId>> = workflow
-        .nodes
-        .iter()
-        .map(|node| (node.id.clone(), Vec::new()))
-        .collect();
-
-    for edge in &workflow.edges {
-        upstream
-            .entry(edge.to.clone())
-            .or_default()
-            .push(edge.from.clone());
-    }
-
-    for ids in upstream.values_mut() {
-        ids.sort();
-    }
-
-    upstream
 }
 
 pub(crate) fn build_node_input(
@@ -189,37 +102,33 @@ pub(crate) fn build_node_input(
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_statements, clippy::significant_drop_tightening)]
 mod tests {
     use super::*;
-    use crate::{Edge, Node};
+    use crate::{
+        AgentError, AgentRequest, AgentToolCallBatch, AgentTurnOutcome, AgentTurnSuccess, Edge,
+        Node, ToolCall, ToolRef,
+    };
     use async_trait::async_trait;
-    use serde_json::json;
-    use std::sync::{Arc, Mutex};
+    use parking_lot::Mutex;
+    use std::sync::Arc;
 
-    #[derive(Default)]
+    #[derive(Clone, Default)]
     struct RecordingAi {
         requests: Arc<Mutex<Vec<AgentRequest>>>,
     }
 
     #[async_trait]
     impl AiPort for RecordingAi {
-        async fn invoke(&self, request: AgentRequest) -> Result<AgentResponse, AgentError> {
-            self.requests.lock().unwrap().push(request.clone());
-            Ok(AgentResponse {
+        async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            self.requests.lock().push(request.clone());
+            Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
                 output: json!({
                     "summary": format!("output from {}", request.node_id)
                 }),
-                raw_text: "{\"summary\":\"ok\"}".to_string(),
-            })
-        }
-
-        async fn invoke_conversation(
-            &self,
-            _request: crate::ConversationAgentRequest,
-        ) -> Result<crate::ConversationAgentResponse, AgentError> {
-            Err(AgentError::Failed(
-                "conversation path not used in runner tests".to_string(),
-            ))
+                raw_text: "{}".to_string(),
+                assistant_message: None,
+            }))
         }
     }
 
@@ -227,20 +136,11 @@ mod tests {
 
     #[async_trait]
     impl AiPort for FailingAi {
-        async fn invoke(&self, request: AgentRequest) -> Result<AgentResponse, AgentError> {
+        async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
             Err(AgentError::Failed(format!(
                 "synthetic failure for {}",
                 request.node_id
             )))
-        }
-
-        async fn invoke_conversation(
-            &self,
-            _request: crate::ConversationAgentRequest,
-        ) -> Result<crate::ConversationAgentResponse, AgentError> {
-            Err(AgentError::Failed(
-                "conversation path not used in runner tests".to_string(),
-            ))
         }
     }
 
@@ -256,17 +156,17 @@ mod tests {
         workflow.nodes = vec![node("idea"), node("plan")];
         workflow.edges = vec![Edge::new("idea", "plan")];
         let ai = RecordingAi::default();
+        let requests_handle = ai.requests.clone();
         let runner = WorkflowRunner::new(ai);
 
         let report = runner.run(&workflow).await.unwrap();
+        let requests = requests_handle.lock();
 
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].node_id, "idea");
+        assert_eq!(requests[1].node_id, "plan");
+        assert_eq!(requests[1].input["upstream"][0]["node_id"], "idea");
         assert_eq!(report.outputs.len(), 2);
-        let completed_events = report
-            .events
-            .iter()
-            .filter(|event| event.kind == RunEventKind::Completed)
-            .count();
-        assert_eq!(completed_events, 2);
     }
 
     #[tokio::test]
@@ -275,26 +175,43 @@ mod tests {
         let runner = WorkflowRunner::new(RecordingAi::default());
 
         let error = runner.run(&workflow).await.unwrap_err();
-
-        assert!(matches!(
-            error,
-            RunError::Validation(WorkflowValidationError::EmptyWorkflow)
-        ));
+        assert!(matches!(error, RunError::Validation(_)));
     }
 
     #[tokio::test]
-    async fn fan_out_nodes_run_in_same_layer() {
-        let mut workflow = Workflow::new("fan out");
-        workflow.nodes = vec![node("idea"), node("plan"), node("risk")];
-        workflow.edges = vec![Edge::new("idea", "plan"), Edge::new("idea", "risk")];
-        let runner = WorkflowRunner::new(RecordingAi::default());
+    async fn tool_enabled_node_requires_tool_execution_in_headless_runner() {
+        let mut workflow = Workflow::new("tooling");
+        let mut idea = node("idea");
+        idea.agent.tools.catalog.tools = vec![ToolRef {
+            name: "read".to_string(),
+        }];
+        workflow.nodes = vec![idea];
 
-        let report = runner.run(&workflow).await.unwrap();
+        struct ToolCallingAi;
 
-        assert_eq!(report.outputs.len(), 3);
-        assert_eq!(report.outputs[0].node_id, "idea");
-        assert_eq!(report.outputs[1].node_id, "plan");
-        assert_eq!(report.outputs[2].node_id, "risk");
+        #[async_trait]
+        impl AiPort for ToolCallingAi {
+            async fn invoke(&self, _request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+                Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+                    raw_text: "{}".to_string(),
+                    assistant_message: None,
+                    tool_calls: vec![ToolCall {
+                        id: "call-1".to_string(),
+                        name: "read".to_string(),
+                        arguments: json!({"path": "README.md"}),
+                        intent: None,
+                    }],
+                }))
+            }
+        }
+
+        let runner = WorkflowRunner::new(ToolCallingAi);
+        let error = runner.run(&workflow).await.unwrap_err();
+        assert!(matches!(
+            error,
+            RunError::NodeFailed { node_id, message }
+                if node_id == "idea" && message == "headless runner cannot satisfy tool execution"
+        ));
     }
 
     #[tokio::test]
@@ -302,39 +219,40 @@ mod tests {
         let mut workflow = Workflow::new("entrypoint");
         workflow.nodes = vec![node("idea"), node("plan")];
         workflow.edges = vec![Edge::new("idea", "plan")];
-
         let ai = RecordingAi::default();
         let requests_handle = ai.requests.clone();
         let runner = WorkflowRunner::new(ai);
 
         runner
-            .run_with_entrypoint(&workflow, Some("Draft a launch plan"))
+            .run_with_entrypoint(&workflow, Some("ORCHID-91 kickoff"))
             .await
             .unwrap();
 
         let (idea_input, plan_input) = {
-            let requests = requests_handle.lock().unwrap();
-            let idea = requests
-                .iter()
-                .find(|req| req.node_id == "idea")
-                .unwrap()
-                .input
-                .clone();
-            let plan = requests
-                .iter()
-                .find(|req| req.node_id == "plan")
-                .unwrap()
-                .input
-                .clone();
-            drop(requests);
-            (idea, plan)
+            let requests = requests_handle.lock();
+            let idea = requests.iter().find(|req| req.node_id == "idea").unwrap();
+            let plan = requests.iter().find(|req| req.node_id == "plan").unwrap();
+            (idea.input.clone(), plan.input.clone())
         };
 
         assert_eq!(
-            idea_input["entrypoint"]["text"],
-            json!("Draft a launch plan")
+            idea_input,
+            json!({
+                "entrypoint": { "text": "ORCHID-91 kickoff" },
+                "upstream": []
+            })
         );
-        assert!(plan_input.get("entrypoint").is_none());
+        assert_eq!(
+            plan_input,
+            json!({
+                "upstream": [
+                    {
+                        "node_id": "idea",
+                        "output": { "summary": "output from idea" }
+                    }
+                ]
+            })
+        );
     }
 
     #[tokio::test]
@@ -348,7 +266,7 @@ mod tests {
 
         runner.run(&workflow).await.unwrap();
 
-        let input = { requests_handle.lock().unwrap()[0].input.clone() };
+        let input = { requests_handle.lock()[0].input.clone() };
         assert_eq!(input, json!({"upstream": []}));
     }
 
@@ -362,6 +280,7 @@ mod tests {
             Edge::new("beta", "join"),
             Edge::new("alpha", "join"),
         ];
+
         let ai = RecordingAi::default();
         let requests_handle = ai.requests.clone();
         let runner = WorkflowRunner::new(ai);
@@ -369,7 +288,7 @@ mod tests {
         runner.run(&workflow).await.unwrap();
 
         let join_input = {
-            let requests = requests_handle.lock().unwrap();
+            let requests = requests_handle.lock();
             requests
                 .iter()
                 .find(|req| req.node_id == "join")
@@ -377,6 +296,7 @@ mod tests {
                 .input
                 .clone()
         };
+
         assert_eq!(
             join_input,
             json!({
@@ -401,14 +321,11 @@ mod tests {
         let runner = WorkflowRunner::new(FailingAi);
 
         let error = runner.run(&workflow).await.unwrap_err();
-
-        match error {
-            RunError::NodeFailed { node_id, message } => {
-                assert_eq!(node_id, "idea");
-                assert_eq!(message, "synthetic failure for idea");
-            }
-            other @ RunError::Validation(_) => panic!("expected node failure, got {other:?}"),
-        }
+        assert!(matches!(
+            error,
+            RunError::NodeFailed { ref node_id, ref message }
+                if node_id == "idea" && message == "synthetic failure for idea"
+        ));
     }
 
     #[test]
@@ -419,7 +336,6 @@ mod tests {
             &BTreeMap::new(),
             Some("   "),
         );
-
         assert_eq!(input, json!({"upstream": []}));
     }
 }

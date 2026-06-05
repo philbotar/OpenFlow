@@ -3,6 +3,7 @@ import type { AppSettings, Workflow, WorkflowRunState } from "./types";
 import {
   cloneSettings,
   cloneWorkflow,
+  createEmptyToolConfig,
   projectWorkflowCanvasGraph,
   projectWorkflowCanvasStatusByNode,
 } from "./workflow";
@@ -22,6 +23,7 @@ const workflow: Workflow = {
         model: "gpt-4o-mini",
         output_schema: { type: "object", properties: { title: { type: "string" } } },
         auto_start: true,
+        tools: createEmptyToolConfig(),
       },
     },
     {
@@ -35,6 +37,7 @@ const workflow: Workflow = {
         model: "gpt-4o-mini",
         output_schema: { type: "object" },
         auto_start: false,
+        tools: createEmptyToolConfig(),
       },
     },
   ],
@@ -68,6 +71,12 @@ const settings: AppSettings = {
 const runState: WorkflowRunState = {
   active: true,
   awaitingNodeId: "node-2",
+  activeManualNodeId: null,
+  activeToolCallId: null,
+  pendingApprovals: [],
+  toolCallsByNode: {},
+  toolArtifacts: {},
+  execApprovalGranted: false,
   statusByNode: {
     "node-1": "completed",
     "node-2": "awaiting_input",

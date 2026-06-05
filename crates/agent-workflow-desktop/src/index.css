@@ -568,11 +568,13 @@ select:focus-visible {
   box-shadow: none;
   backdrop-filter: none;
 }
-
 .canvas-panel,
 .inspector-panel {
   min-height: 0;
   overflow: hidden;
+}
+.canvas-panel {
+  border: none;
 }
 
 label span {
@@ -867,6 +869,88 @@ select.text-input:hover {
 
 .button-row.end {
   justify-content: flex-end;
+}
+
+.tool-config-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px 0 2px;
+}
+
+.tool-config-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tool-config-header-copy {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.tool-config-header p {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+}
+
+.tool-config-toggle {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.tool-config-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tool-config-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tool-config-option {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.tool-config-option input {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  accent-color: #111111;
+  flex: 0 0 auto;
+}
+
+.tool-config-option-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.tool-config-option-title {
+  font-weight: 600;
+}
+
+.tool-config-option-description {
+  color: var(--text-muted);
+  font-size: 0.92rem;
+}
+
+.tool-config-grid {
+  grid-template-columns: 1fr;
+  gap: 10px;
 }
 
 

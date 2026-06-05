@@ -1,8 +1,16 @@
+#![allow(
+    clippy::missing_errors_doc,
+    clippy::needless_pass_by_value,
+    clippy::redundant_clone,
+    clippy::significant_drop_tightening,
+    clippy::uninlined_format_args
+)]
+
 use crate::model::NodeTemplate;
 use anyhow::{Context, Result};
 use log::{debug, info, warn};
+use parking_lot::RwLock;
 use std::path::{Path, PathBuf};
-use std::sync::RwLock;
 
 const CURRENT_DATA_DIR_SLUG: &str = "openflow";
 const LEGACY_DATA_DIR_SLUG: &str = "step-through-agentic-workflow";
@@ -106,7 +114,7 @@ impl FileTemplateStore {
     }
 
     fn save(&self) -> Result<()> {
-        let data = self.templates.read().unwrap();
+        let data = self.templates.read();
         Self::write_templates(&self.path, &data)?;
         debug!("saved {} templates to disk", data.len());
         Ok(())
@@ -121,21 +129,21 @@ impl FileTemplateStore {
 
 impl TemplateStore for FileTemplateStore {
     fn list(&self) -> Vec<NodeTemplate> {
-        self.templates.read().unwrap().clone()
+        self.templates.read().clone()
     }
 
     fn add(&self, template: NodeTemplate) {
-        self.templates.write().unwrap().push(template);
+        self.templates.write().push(template);
         self.try_save();
     }
 
     fn remove(&self, id: &str) {
-        self.templates.write().unwrap().retain(|t| t.id != id);
+        self.templates.write().retain(|t| t.id != id);
         self.try_save();
     }
 
     fn update(&self, template: NodeTemplate) {
-        let mut data = self.templates.write().unwrap();
+        let mut data = self.templates.write();
         if let Some(existing) = data.iter_mut().find(|t| t.id == template.id) {
             *existing = template;
             drop(data);

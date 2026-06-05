@@ -1,3 +1,5 @@
+#![allow(clippy::match_same_arms, clippy::redundant_clone)]
+
 mod canvas;
 mod inspector;
 mod nav;
@@ -328,6 +330,55 @@ impl eframe::App for WorkflowApp {
                         );
                         self.bottom_panel_tab = canvas::BottomPanelTab::Chat;
                     }
+                    ExecutionEvent::ToolCallProposed { .. } => {
+                        self.bottom_panel_tab = canvas::BottomPanelTab::Chat;
+                    }
+                    ExecutionEvent::ToolApprovalRequested { ref request } => {
+                        self.state.status_by_node.insert(
+                            request.node_id.clone().into(),
+                            AgentStatus::AwaitingToolApproval,
+                        );
+                        self.state.add_chat_message(
+                            &request.node_id,
+                            ChatRole::System,
+                            format!(
+                                "Approval required for tool '{}' on node '{}'.",
+                                request.tool_call.name, request.node_label
+                            ),
+                        );
+                        self.bottom_panel_tab = canvas::BottomPanelTab::Chat;
+                    }
+                    ExecutionEvent::ToolApproved { .. } => {}
+                    ExecutionEvent::ToolDenied {
+                        ref node_id,
+                        ref reason,
+                        ..
+                    } => {
+                        self.state
+                            .add_chat_message(node_id, ChatRole::System, reason.clone());
+                    }
+                    ExecutionEvent::ToolStarted { ref node_id, .. } => {
+                        self.state
+                            .status_by_node
+                            .insert(node_id.clone(), AgentStatus::RunningTool);
+                    }
+                    ExecutionEvent::ToolCompleted {
+                        ref node_id,
+                        ref content,
+                        is_error,
+                        ..
+                    } => {
+                        self.state.add_chat_message(
+                            node_id,
+                            if is_error {
+                                ChatRole::System
+                            } else {
+                                ChatRole::Thinking
+                            },
+                            content.clone(),
+                        );
+                    }
+                    ExecutionEvent::ToolArtifactCreated { .. } => {}
                     ExecutionEvent::NodeCompleted {
                         ref node_id,
                         ref label,

@@ -1,3 +1,5 @@
+#![allow(clippy::suboptimal_flops)]
+
 #[allow(clippy::wildcard_imports)]
 use super::theme::*;
 use crate::settings_store::AppSettings;

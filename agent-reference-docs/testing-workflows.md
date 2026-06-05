@@ -6,8 +6,8 @@ Purpose: explain how to verify workflow behavior without manually clicking throu
 
 | Layer | Command | What It Proves |
 | --- | --- | --- |
-| Unit tests | `cargo test --workspace` | Domain rules, app state, persistence, provider config, UI layout contracts, OpenAI wire mapping |
-| Deterministic workflow acceptance | `cargo test -p agent-workflow-app --test workflow_acceptance -- --nocapture` | A whole workflow can run headlessly with scripted AI outputs |
+| Unit tests | `cargo test --workspace` | Domain rules, tool approval resolution, app state, persistence, provider config, UI layout contracts, OpenAI wire mapping |
+| Deterministic workflow acceptance | `cargo test -p agent-workflow-app --test workflow_acceptance -- --nocapture` | A whole workflow can run headlessly with scripted AI outputs, tool calls, and approval pauses |
 | Live AI smoke | `STEP_WORKFLOW_LIVE_AI=1 STEP_WORKFLOW_LIVE_API_KEY=... STEP_WORKFLOW_LIVE_MODEL=... cargo test -p agent-workflow-app --test live_workflow -- --ignored --nocapture` | A real model can complete a small workflow and satisfy schema-level rules |
 
 ## Acceptance Rules
@@ -17,9 +17,11 @@ The deterministic acceptance tests should prove:
 1. Root nodes receive `entrypoint.text`.
 2. Downstream nodes receive upstream outputs in deterministic order.
 3. Branch/join workflows complete with all expected node outputs.
-4. Manual nodes pause before execution, receive scripted human input, and pass that input downstream.
-5. Run trace entries expose queued, running, paused, completed, or failed state.
-6. Chat logs capture system, thinking, user, and assistant messages where relevant.
+4. Manual nodes pause before execution, carry a per-node conversation, and pass the final structured node output downstream when the model signals it is ready.
+5. Tool-enabled nodes can request one or more tool calls, receive tool results back into the model loop, and still produce the final node output downstream.
+6. Tool approval pauses block progress until an approval decision is supplied, and denied tools surface a structured error without corrupting the run.
+7. Run trace entries expose queued, running, paused, completed, or failed state transitions.
+8. Chat logs capture system, thinking, user, and assistant messages where relevant, including paused-node follow-up turns and approval prompts.
 
 ## Live AI Rules
 
@@ -43,7 +45,7 @@ cargo clippy-max
 cargo test --workspace
 ```
 
-Run this when changing execution behavior, node input shaping, manual pauses, run trace, or chat logs:
+Run this when changing execution behavior, node input shaping, manual pauses, tool approvals, tool result routing, run trace, or chat logs:
 
 ```bash
 cargo test -p agent-workflow-app --test workflow_acceptance -- --nocapture

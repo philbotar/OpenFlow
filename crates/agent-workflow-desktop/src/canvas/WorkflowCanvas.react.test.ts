@@ -5,6 +5,7 @@ import { createElement } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { Workflow } from "../types";
 import {
+  createEmptyToolConfig,
   projectWorkflowCanvasGraph,
   type WorkflowCanvasStatusByNode,
 } from "../workflow";
@@ -36,6 +37,7 @@ const workflow: Workflow = {
         model: "gpt-4o-mini",
         output_schema: { type: "object" },
         auto_start: true,
+        tools: createEmptyToolConfig(),
       },
     },
     {
@@ -49,6 +51,7 @@ const workflow: Workflow = {
         model: "gpt-4o-mini",
         output_schema: { type: "object" },
         auto_start: true,
+        tools: createEmptyToolConfig(),
       },
     },
   ],

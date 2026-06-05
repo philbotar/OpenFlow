@@ -5,7 +5,6 @@ import {
   BackgroundVariant,
   Controls,
   MarkerType,
-  MiniMap,
   Panel,
   ReactFlow,
   type Connection,
@@ -335,25 +334,7 @@ export function WorkflowCanvas(props: WorkflowCanvasProps) {
           </button>
         </Panel>
         <Controls showInteractive={false} position="bottom-left" />
-        <MiniMap
-          nodeColor={(node) => {
-            const status = (node.data as { status?: AgentStatus })?.status ?? "idle";
-            switch (status) {
-              case "completed":
-                return "#22c55e";
-              case "started":
-                return "#3b82f6";
-              case "awaiting_input":
-                return "#f59e0b";
-              case "failed":
-                return "#ef4444";
-              default:
-                return "#6b7280";
-            }
-          }}
-          pannable
-          zoomable
-        />
+
       </ReactFlow>
     </div>
   );

@@ -21,6 +21,7 @@ import {
   saveSettings,
   saveWorkflows,
   startRun,
+  submitToolApproval,
   submitUserInput,
   validateWorkflow,
   listenToRunState,
@@ -51,6 +52,7 @@ import {
   removeSelectedNode,
   replaceWorkflow,
   selectedNode,
+  SUPPORTED_NODE_TOOLS,
   type WorkflowCanvasGraph,
   type WorkflowCanvasStatusByNode,
 } from "./workflow";
@@ -195,6 +197,98 @@ function AgentConfigForm(props: {
   );
 }
 
+function ToolConfigEditor(props: {
+  config: {
+    catalog: { tools: { name: string }[] };
+    approvalMode: "always_ask" | "write" | "yolo" | null;
+    maxToolRounds: number;
+  };
+  onToolEnabledChange: (toolName: string, enabled: boolean) => void;
+  onApprovalModeChange: (value: "always_ask" | "write" | "yolo" | null) => void;
+  onMaxToolRoundsChange: (value: number) => void;
+  defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = createSignal(props.defaultOpen ?? false);
+  const enabledTools = createMemo(
+    () => new Set(props.config.catalog.tools.map((tool) => tool.name)),
+  );
+
+  return (
+    <section class="tool-config-section">
+      <div class="tool-config-header">
+        <div class="tool-config-header-copy">
+          <div class="eyebrow">Tool access</div>
+          <p>Safe retrieval tools are enabled by default for this node.</p>
+        </div>
+        <button
+          type="button"
+          class="secondary-button tool-config-toggle"
+          onClick={() => setOpen((value) => !value)}
+          aria-expanded={open()}
+        >
+          {open() ? "Hide tools" : "Show tools"}
+        </button>
+      </div>
+      <Show when={open()}>
+        <div class="tool-config-body">
+          <div class="tool-config-list" role="group" aria-label="Enabled node tools">
+            <For each={SUPPORTED_NODE_TOOLS}>
+              {(tool) => (
+                <label class="tool-config-option">
+                  <span class="tool-config-option-copy">
+                    <span class="tool-config-option-title">{tool.name}</span>
+                    <span class="tool-config-option-description">{tool.description}</span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={enabledTools().has(tool.name)}
+                    onChange={(event) =>
+                      props.onToolEnabledChange(tool.name, event.currentTarget.checked)
+                    }
+                  />
+                </label>
+              )}
+            </For>
+          </div>
+          <div class="field-grid tool-config-grid">
+            <label>
+              <span>Approval mode</span>
+              <select
+                class="text-input"
+                value={props.config.approvalMode ?? "write"}
+                onChange={(event) =>
+                  props.onApprovalModeChange(
+                    event.currentTarget.value as "always_ask" | "write" | "yolo",
+                  )
+                }
+              >
+                <option value="always_ask">Always ask</option>
+                <option value="write">Read tools auto-approve</option>
+                <option value="yolo">Read and write auto-approve</option>
+              </select>
+            </label>
+            <label>
+              <span>Max tool rounds</span>
+              <input
+                class="text-input"
+                type="number"
+                min="1"
+                max="32"
+                value={props.config.maxToolRounds}
+                onInput={(event) =>
+                  props.onMaxToolRoundsChange(
+                    Number.parseInt(event.currentTarget.value, 10) || 1,
+                  )
+                }
+              />
+            </label>
+          </div>
+        </div>
+      </Show>
+    </section>
+  );
+}
+
 function App() {
   const [workflows, setWorkflows] = createSignal<Workflow[]>([]);
   const [agents, setAgents] = createSignal<AgentDefinition[]>([]);
@@ -228,6 +322,7 @@ function App() {
   const [isMaximized, setIsMaximized] = createSignal(false);
   let workflowNameInput: HTMLInputElement | undefined;
   let agentNameInput: HTMLInputElement | undefined;
+  let chatHistoryRef: HTMLDivElement | undefined;
   let dockResizeState: { startY: number; startHeight: number } | null = null;
   const activeWorkflow = createMemo(() =>
     workflows().find((workflow) => workflow.id === activeWorkflowId()),
@@ -267,6 +362,20 @@ function App() {
     }
     return runState()?.chatLogs[nodeId] ?? [];
   });
+  createEffect(() => {
+    chatMessages();
+    if (chatHistoryRef?.isConnected) {
+      chatHistoryRef.scrollTop = chatHistoryRef.scrollHeight;
+    }
+  });
+  const selectedPendingApproval = createMemo(() => {
+    const nodeId = selectedNodeId();
+    const approvals = runState()?.pendingApprovals ?? [];
+    if (!nodeId) {
+      return approvals[0] ?? null;
+    }
+    return approvals.find((approval) => approval.nodeId === nodeId) ?? approvals[0] ?? null;
+  });
   const chatEnabledMemo = createMemo(() =>
     runState()?.active === true &&
     runState()?.awaitingNodeId === selectedNodeId() &&
@@ -274,7 +383,9 @@ function App() {
   );
   const chatSubmission = createMemo(() => resolveChatSubmission(chatInput()));
   const canSendChatMemo = createMemo(() =>
-    chatEnabledMemo() && chatSubmission().submittedText !== "",
+    !selectedPendingApproval() &&
+    chatEnabledMemo() &&
+    chatSubmission().submittedText !== "",
   );
 
   const showBanner = (kind: BannerKind, text: string) => setBanner({ kind, text });
@@ -404,7 +515,15 @@ function App() {
       });
       unlisten = await listenToRunState((nextRunState) => {
         setRunState(nextRunState);
-        if (nextRunState.awaitingNodeId) {
+        if (nextRunState.pendingApprovals.length > 0) {
+          setSelectedEdgeId(null);
+          setSelectedNodeId(nextRunState.pendingApprovals[0].nodeId);
+          setEditingNodeId(null);
+          setNodeLabelDraft("");
+          setDockOpen(true);
+          setBottomTab("chat");
+          setDockHeight((current) => clampDockHeight(current, "chat"));
+        } else if (nextRunState.awaitingNodeId) {
           setSelectedEdgeId(null);
           setSelectedNodeId(nextRunState.awaitingNodeId);
           setEditingNodeId(null);
@@ -481,6 +600,38 @@ function App() {
     const next = cloneWorkflow(workflow);
     mutator(next);
     setWorkflows(replaceWorkflow(workflows(), next));
+  };
+
+  const updateCurrentNode = (mutator: (node: Workflow["nodes"][number]) => void) => {
+    const nodeId = selectedNodeId();
+    if (!nodeId) {
+      return;
+    }
+    updateActiveWorkflow((draft) => {
+      const nextNode = draft.nodes.find((item) => item.id === nodeId);
+      if (nextNode) {
+        mutator(nextNode);
+      }
+    });
+  };
+
+  const updateCurrentNodeToolConfig = (
+    mutator: (tools: Workflow["nodes"][number]["agent"]["tools"]) => void,
+  ) => {
+    updateCurrentNode((node) => {
+      mutator(node.agent.tools);
+    });
+  };
+
+  const setToolEnabled = (
+    tools: { catalog: { tools: { name: string }[] } },
+    toolName: string,
+    enabled: boolean,
+  ) => {
+    const nextTools = tools.catalog.tools.filter((tool) => tool.name !== toolName);
+    tools.catalog.tools = enabled
+      ? [...nextTools, { name: toolName }].sort((left, right) => left.name.localeCompare(right.name))
+      : nextTools;
   };
 
   const applySchemaEditor = () => {
@@ -730,6 +881,19 @@ function App() {
       const nextRunState = await submitUserInput(nodeId, chatSubmission().submittedText);
       setRunState(nextRunState);
       setChatInput("");
+    } catch (error) {
+      setError(normalizeError(error));
+    }
+  };
+
+  const handleToolApproval = async (allow: boolean) => {
+    const approval = selectedPendingApproval();
+    if (!approval) {
+      return;
+    }
+    try {
+      const nextRunState = await submitToolApproval(approval.approvalId, allow);
+      setRunState(nextRunState);
     } catch (error) {
       setError(normalizeError(error));
     }
@@ -1179,6 +1343,24 @@ function App() {
                               defaultModel={activeProfileMemo().default_model}
                               listId="agent-model-list"
                             />
+                            <ToolConfigEditor
+                              config={agent().tools}
+                              onToolEnabledChange={(toolName, enabled) =>
+                                updateSelectedAgent((draft) => {
+                                  setToolEnabled(draft.tools, toolName, enabled);
+                                })
+                              }
+                              onApprovalModeChange={(value) =>
+                                updateSelectedAgent((draft) => {
+                                  draft.tools.approvalMode = value;
+                                })
+                              }
+                              onMaxToolRoundsChange={(value) =>
+                                updateSelectedAgent((draft) => {
+                                  draft.tools.maxToolRounds = Math.min(32, Math.max(1, value));
+                                })
+                              }
+                            />
                             <div class="button-row end">
                               <button class="primary-button" onClick={() => void handleSaveAgents()}>Save</button>
                             </div>
@@ -1427,42 +1609,29 @@ function App() {
                         </div>
                       </div>
 
-
                       <AgentConfigForm
                         model={node().agent.model}
                         onModelChange={(value) =>
-                          updateActiveWorkflow((draft) => {
-                            const nextNode = draft.nodes.find((item) => item.id === node().id);
-                            if (nextNode) {
-                              nextNode.agent.model = value;
-                            }
+                          updateCurrentNode((nextNode) => {
+                            nextNode.agent.model = value;
                           })
                         }
                         autoStart={node().agent.auto_start}
                         onAutoStartChange={(value) =>
-                          updateActiveWorkflow((draft) => {
-                            const nextNode = draft.nodes.find((item) => item.id === node().id);
-                            if (nextNode) {
-                              nextNode.agent.auto_start = value;
-                            }
+                          updateCurrentNode((nextNode) => {
+                            nextNode.agent.auto_start = value;
                           })
                         }
                         systemPrompt={node().agent.system_prompt}
                         onSystemPromptChange={(value) =>
-                          updateActiveWorkflow((draft) => {
-                            const nextNode = draft.nodes.find((item) => item.id === node().id);
-                            if (nextNode) {
-                              nextNode.agent.system_prompt = value;
-                            }
+                          updateCurrentNode((nextNode) => {
+                            nextNode.agent.system_prompt = value;
                           })
                         }
                         taskPrompt={node().agent.task_prompt}
                         onTaskPromptChange={(value) =>
-                          updateActiveWorkflow((draft) => {
-                            const nextNode = draft.nodes.find((item) => item.id === node().id);
-                            if (nextNode) {
-                              nextNode.agent.task_prompt = value;
-                            }
+                          updateCurrentNode((nextNode) => {
+                            nextNode.agent.task_prompt = value;
                           })
                         }
                         schemaJson={schemaText()}
@@ -1475,6 +1644,25 @@ function App() {
                         schemaRows={14}
                       />
 
+                      <ToolConfigEditor
+                        config={node().agent.tools}
+                        onToolEnabledChange={(toolName, enabled) =>
+                          updateCurrentNodeToolConfig((tools) => {
+                            setToolEnabled(tools, toolName, enabled);
+                          })
+                        }
+                        onApprovalModeChange={(value) =>
+                          updateCurrentNodeToolConfig((tools) => {
+                            tools.approvalMode = value;
+                          })
+                        }
+                        onMaxToolRoundsChange={(value) =>
+                          updateCurrentNodeToolConfig((tools) => {
+                            tools.maxToolRounds = Math.min(32, Math.max(1, value));
+                          })
+                        }
+                      />
+
                       <div class="button-row">
                         <button class="secondary-button" onClick={applySchemaEditor}>
                           Apply schema
@@ -1485,7 +1673,6 @@ function App() {
                 </Show>
               </aside>
             </div>
-
             <section class="dock-panel" classList={{ collapsed: !dockOpen() }}>
               <div
                 class="dock-resize-zone"
@@ -1555,7 +1742,7 @@ function App() {
                       }
                     >
                       <div class="chat-layout">
-                        <div class="chat-history">
+                        <div class="chat-history" ref={(el) => { chatHistoryRef = el; }}>
                           <Show when={chatMessages().length > 0} fallback={<div class="empty-panel">Run a workflow or select a paused node to continue.</div>}>
                             <For each={chatMessages()}>
                               {(message) => (
@@ -1569,6 +1756,24 @@ function App() {
                             </For>
                           </Show>
                         </div>
+                        <Show when={selectedPendingApproval()}>
+                          {(approval) => (
+                            <div class="inspector-card">
+                              <div class="eyebrow">Approval required</div>
+                              <h3>{approval().toolCall.name}</h3>
+                              <p>{approval().nodeLabel}</p>
+                              <pre>{prettyJson(approval().toolCall.arguments)}</pre>
+                              <div class="inspector-actions">
+                                <button class="secondary-button" onClick={() => void handleToolApproval(false)}>
+                                  Deny
+                                </button>
+                                <button class="primary-button" onClick={() => void handleToolApproval(true)}>
+                                  Approve
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </Show>
                         <div class="chat-composer">
                           <div class="chat-composer-pill">
                             <textarea
@@ -1577,8 +1782,12 @@ function App() {
                               value={chatInput()}
                               onInput={(event) => setChatInput(event.currentTarget.value)}
                               onKeyDown={handleChatInputKeyDown}
-                              placeholder="Continue paused node. Prefix /brainstorming for a skill."
-                              disabled={!chatEnabledMemo()}
+                              placeholder={
+                                selectedPendingApproval()
+                                  ? "Resolve the pending tool approval above."
+                                  : "Continue paused node. Prefix /brainstorming for a skill."
+                              }
+                              disabled={!chatEnabledMemo() || !!selectedPendingApproval()}
                             />
                             <Show when={chatSubmission().invokedSkills.length > 0}>
                               <span

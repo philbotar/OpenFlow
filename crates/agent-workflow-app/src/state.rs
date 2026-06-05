@@ -14,6 +14,8 @@ pub enum AgentStatus {
     Queued,
     Started,
     AwaitingInput,
+    AwaitingToolApproval,
+    RunningTool,
     Completed,
     Failed,
 }
@@ -49,6 +51,26 @@ pub struct RunTraceEntry {
     pub output: Option<Value>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolCallSummary {
+    pub tool_call_id: String,
+    pub tool_name: String,
+    pub status: workflow_core::ToolCallStatus,
+    pub arguments: Value,
+    pub last_output: Option<String>,
+    pub is_error: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolArtifactSummary {
+    pub artifact_id: String,
+    pub tool_name: String,
+    pub path: String,
+    pub size_bytes: usize,
+}
+
 /// Live run state pushed to the frontend via Tauri events.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -56,6 +78,11 @@ pub struct WorkflowRunState {
     pub active: bool,
     pub awaiting_node_id: Option<NodeId>,
     pub active_manual_node_id: Option<NodeId>,
+    pub active_tool_call_id: Option<String>,
+    pub pending_approvals: Vec<workflow_core::PendingToolApproval>,
+    pub tool_calls_by_node: BTreeMap<NodeId, Vec<ToolCallSummary>>,
+    pub tool_artifacts: BTreeMap<String, ToolArtifactSummary>,
+    pub exec_approval_granted: bool,
     pub status_by_node: BTreeMap<NodeId, AgentStatus>,
     pub last_report: Option<RunReport>,
     pub last_error: Option<String>,
@@ -76,6 +103,11 @@ impl WorkflowRunState {
             active: true,
             awaiting_node_id: None,
             active_manual_node_id: None,
+            active_tool_call_id: None,
+            pending_approvals: Vec::new(),
+            tool_calls_by_node: BTreeMap::new(),
+            tool_artifacts: BTreeMap::new(),
+            exec_approval_granted: false,
             status_by_node,
             last_report: None,
             last_error: None,

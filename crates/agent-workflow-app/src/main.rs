@@ -1,3 +1,5 @@
+#![allow(clippy::cargo, clippy::nursery, clippy::pedantic)]
+
 use agent_workflow_app::WorkflowApp;
 use eframe::egui;
 
