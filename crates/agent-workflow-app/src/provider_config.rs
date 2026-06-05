@@ -50,10 +50,18 @@ pub fn resolve_provider_config(
         AiProviderKind::OpenAi => env.openai_api_key.as_deref(),
         AiProviderKind::OpenAiCompatible => env.compatible_api_key.as_deref(),
     };
+    let stored_key = profile.api_key.trim();
     let api_key = transient_api_key
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(ToString::to_string)
+        .or_else(|| {
+            if stored_key.is_empty() {
+                None
+            } else {
+                Some(stored_key.to_string())
+            }
+        })
         .or_else(|| {
             env_key_value
                 .map(str::trim)
@@ -104,6 +112,52 @@ mod tests {
         assert_eq!(resolved.wire_api, OpenAiWireApi::Responses);
         assert_eq!(resolved.responses_path, "v1/responses");
         assert_eq!(resolved.chat_completions_path, "v1/chat/completions");
+    }
+
+    #[test]
+    fn stored_key_is_used_when_no_transient_or_env() {
+        let settings = AppSettings {
+            openai: ProviderProfile {
+                api_key: " sk-stored ".to_string(),
+                ..ProviderProfile::openai_default()
+            },
+            ..Default::default()
+        };
+
+        let resolved = resolve_provider_config(
+            &settings,
+            None,
+            &ProviderEnv {
+                openai_api_key: None,
+                compatible_api_key: None,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(resolved.api_key, "sk-stored");
+    }
+
+    #[test]
+    fn stored_key_takes_priority_over_env() {
+        let settings = AppSettings {
+            openai: ProviderProfile {
+                api_key: "sk-stored".to_string(),
+                ..ProviderProfile::openai_default()
+            },
+            ..Default::default()
+        };
+
+        let resolved = resolve_provider_config(
+            &settings,
+            None,
+            &ProviderEnv {
+                openai_api_key: Some("sk-env".to_string()),
+                compatible_api_key: None,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(resolved.api_key, "sk-stored");
     }
 
     #[test]

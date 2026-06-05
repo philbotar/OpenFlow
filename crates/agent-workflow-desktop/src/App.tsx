@@ -622,6 +622,14 @@ function App() {
       setError(normalizeError(error));
     }
   };
+  const handleSaveSettings = async () => {
+    try {
+      await saveSettings(settings());
+      setSuccess("Settings saved successfully.");
+    } catch (error) {
+      setError(normalizeError(error));
+    }
+  };
 
   const handleAddNode = async () => {
     const workflow = activeWorkflow();
@@ -934,6 +942,8 @@ function App() {
       event.preventDefault();
       if (screen() === "agents") {
         void handleSaveAgents();
+      } else if (screen() === "settings") {
+        void handleSaveSettings();
       } else {
         void persistAll();
       }
@@ -1308,7 +1318,7 @@ function App() {
                         <For each={activeProfileMemo().known_models}>{(model) => <option value={model} />}</For>
                       </datalist>
                     </label>
-                    <button class="primary-button" onClick={() => void persistAll("Saved settings")}>Save settings</button>
+                    <button class="primary-button" onClick={() => void handleSaveSettings()}>Save settings</button>
                   </div>
                 </div>
               </section>

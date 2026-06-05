@@ -11,6 +11,9 @@ pub use model::{
     AgentNodeConfig, ChatMessage, ChatRole, Edge, EdgeId, Node, NodeId, NodeKind, NodePosition,
     NodeRunOutput, NodeTemplate, RunEvent, RunEventKind, RunReport, Workflow, WorkflowId,
 };
-pub use ports::{AgentError, AgentRequest, AgentResponse, AiPort};
+pub use ports::{
+    AgentError, AgentRequest, AgentResponse, AiPort, ConversationAgentRequest,
+    ConversationAgentResponse,
+};
 pub use runner::{RunError, WorkflowRunner};
 pub use validation::{execution_layers, validate_workflow, WorkflowValidationError};

@@ -1,26 +1,26 @@
 /** @jsxImportSource react */
 /** @jsxRuntime automatic */
 import {
-  applyEdgeChanges,
-  applyNodeChanges,
   Background,
+  BackgroundVariant,
   Controls,
-  Handle,
   MarkerType,
+  MiniMap,
   Panel,
-  Position,
   ReactFlow,
   type Connection,
   type Edge as FlowEdge,
   type EdgeChange,
   type Node as FlowNode,
   type NodeChange,
-  type NodeProps,
   type OnSelectionChangeParams,
+  type NodeProps,
+  useEdgesState,
+  useNodesState,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import * as React from "react";
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import type { AgentStatus, EdgeId, NodeId } from "../types";
 import {
   NODE_HEIGHT,
@@ -29,7 +29,7 @@ import {
   type WorkflowCanvasGraph,
   type WorkflowCanvasStatusByNode,
 } from "../workflow";
-
+import { WorkflowNode } from "./WorkflowNode.react";
 type WorkflowCanvasProps = {
   graph: WorkflowCanvasGraph | null;
   selectedNodeId: NodeId | null;
@@ -53,23 +53,7 @@ export type WorkflowCanvasNode = FlowNode<WorkflowCanvasNodeData, "workflowNode"
 export type WorkflowCanvasEdge = FlowEdge<Record<string, never>, "default">;
 
 const NODE_TYPES = {
-  workflowNode: memo(function WorkflowNodeCard(props: NodeProps<WorkflowCanvasNode>) {
-    const status = props.data.status;
-
-    return (
-      <>
-        <Handle type="target" position={Position.Left} className={`workflow-flow-handle status-${status}`} />
-        <div className={`workflow-flow-node workflow-flow-node-${status}`}>
-          <div className="node-status-row">
-            <span className={`node-dot status-${status}`} />
-            <span className="node-status-label">{labelForStatus(status)}</span>
-          </div>
-          <strong>{props.data.label}</strong>
-        </div>
-        <Handle type="source" position={Position.Right} className={`workflow-flow-handle status-${status}`} />
-      </>
-    );
-  }),
+  workflowNode: WorkflowNode,
 };
 
 const DEFAULT_EDGE_OPTIONS = {
@@ -251,23 +235,42 @@ export function WorkflowCanvas(props: WorkflowCanvasProps) {
     [props.graph, props.selectedEdgeId],
   );
 
-  const [nodes, setNodes] = useState<WorkflowCanvasNode[]>(externalNodes);
-  const [edges, setEdges] = useState<WorkflowCanvasEdge[]>(externalEdges);
+  // Use xyflow hooks for state management
+  const [nodes, setNodes, onNodesChange] = useNodesState<WorkflowCanvasNode>(externalNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<WorkflowCanvasEdge>(externalEdges);
 
+  // Sync external updates to internal state
   useEffect(() => {
     setNodes((current) => reconcileFlowNodes(current, externalNodes));
-  }, [externalNodes]);
+  }, [externalNodes, setNodes]);
 
   useEffect(() => {
     setEdges((current) => reconcileFlowEdges(current, externalEdges));
-  }, [externalEdges]);
+  }, [externalEdges, setEdges]);
+
+  const handleSelectionChange = useCallback(
+    (selection: OnSelectionChangeParams<WorkflowCanvasNode, WorkflowCanvasEdge>) => {
+      const { selectedNodeId, selectedEdgeId } = selectionIdsFromChange(selection);
+      props.onSelectEdge(selectedEdgeId);
+      props.onSelectNode(selectedNodeId);
+    },
+    [props.onSelectEdge, props.onSelectNode],
+  );
 
   const handleNodesChange = useCallback(
     (changes: NodeChange<WorkflowCanvasNode>[]) => {
-      setNodes((current) => applyNodeChanges(changes, current));
+      onNodesChange(changes);
       forEachNodePositionChange(changes, props.onUpdateNodePosition);
     },
-    [props.onUpdateNodePosition],
+    [onNodesChange, props.onUpdateNodePosition],
+  );
+
+  const handleEdgesChange = useCallback(
+    (changes: EdgeChange<WorkflowCanvasEdge>[]) => {
+      onEdgesChange(changes);
+      forEachRemovedEdge(changes, props.onDeleteEdge);
+    },
+    [onEdgesChange, props.onDeleteEdge],
   );
 
   const handleConnect = useCallback(
@@ -292,23 +295,6 @@ export function WorkflowCanvas(props: WorkflowCanvasProps) {
     [props.onReconnectEdge],
   );
 
-  const handleEdgesChange = useCallback(
-    (changes: EdgeChange<WorkflowCanvasEdge>[]) => {
-      setEdges((current) => applyEdgeChanges(changes, current));
-      forEachRemovedEdge(changes, props.onDeleteEdge);
-    },
-    [props.onDeleteEdge],
-  );
-
-  const handleSelectionChange = useCallback(
-    (selection: OnSelectionChangeParams<WorkflowCanvasNode, WorkflowCanvasEdge>) => {
-      const { selectedNodeId, selectedEdgeId } = selectionIdsFromChange(selection);
-      props.onSelectEdge(selectedEdgeId);
-      props.onSelectNode(selectedNodeId);
-    },
-    [props.onSelectEdge, props.onSelectNode],
-  );
-
   const handlePaneClick = useCallback(() => {
     props.onSelectEdge(null);
     props.onSelectNode(null);
@@ -329,8 +315,8 @@ export function WorkflowCanvas(props: WorkflowCanvasProps) {
         onEdgesChange={handleEdgesChange}
         onConnect={handleConnect}
         onReconnect={handleReconnect}
-        onSelectionChange={handleSelectionChange}
         onPaneClick={handlePaneClick}
+        onSelectionChange={handleSelectionChange}
         deleteKeyCode={null}
         fitView={false}
         minZoom={0.4}
@@ -339,32 +325,36 @@ export function WorkflowCanvas(props: WorkflowCanvasProps) {
         selectionOnDrag={false}
         edgesReconnectable
         isValidConnection={isValidCanvasConnection}
+        snapToGrid={true}
+        snapGrid={[16, 16]}
       >
-        <Background gap={22} size={1.5} color="rgba(24, 24, 27, 0.14)" />
+        <Background gap={22} size={1.5} color="rgba(24, 24, 27, 0.14)" variant={BackgroundVariant.Dots} />
         <Panel position="top-left" className="workflow-flow-panel">
           <button type="button" className="secondary-button small workflow-flow-add-button" onClick={handleAddNode}>
             Add node
           </button>
         </Panel>
         <Controls showInteractive={false} position="bottom-left" />
+        <MiniMap
+          nodeColor={(node) => {
+            const status = (node.data as { status?: AgentStatus })?.status ?? "idle";
+            switch (status) {
+              case "completed":
+                return "#22c55e";
+              case "started":
+                return "#3b82f6";
+              case "awaiting_input":
+                return "#f59e0b";
+              case "failed":
+                return "#ef4444";
+              default:
+                return "#6b7280";
+            }
+          }}
+          pannable
+          zoomable
+        />
       </ReactFlow>
     </div>
   );
-}
-
-function labelForStatus(status: AgentStatus) {
-  switch (status) {
-    case "queued":
-      return "Queued";
-    case "started":
-      return "Running";
-    case "awaiting_input":
-      return "Waiting";
-    case "completed":
-      return "Done";
-    case "failed":
-      return "Failed";
-    default:
-      return "Idle";
-  }
 }

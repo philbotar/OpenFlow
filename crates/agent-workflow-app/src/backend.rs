@@ -23,7 +23,7 @@ pub struct AppBackend {
     agent_store: FileAgentStore,
     settings_store: FileSettingsStore,
     env: ProviderEnv,
-    runtime: tokio::runtime::Handle,
+    runtime: tokio::runtime::Runtime,
     run_session: Mutex<RunSession>,
 }
 
@@ -92,7 +92,7 @@ impl AppBackend {
         agent_store: FileAgentStore,
         settings_store: FileSettingsStore,
         env: ProviderEnv,
-        runtime: tokio::runtime::Handle,
+        runtime: tokio::runtime::Runtime,
     ) -> Self {
         Self {
             workflow_store,
@@ -116,7 +116,7 @@ impl AppBackend {
             FileAgentStore::new(FileAgentStore::default_path()),
             FileSettingsStore::new(FileSettingsStore::default_path()),
             ProviderEnv::from_system(),
-            tokio::runtime::Handle::current(),
+            tokio::runtime::Runtime::new().expect("failed to create tokio runtime"),
         )
     }
 
@@ -224,6 +224,27 @@ impl AppBackend {
     }
 
     /// # Errors
+    /// Returns an error if the agent store cannot be read or the index is out of bounds.
+    pub fn create_agent_node(&self, index: usize, x: f32, y: f32) -> Result<Node, BackendError> {
+        let agents = self.agent_store.load()?;
+        let agent = agents.get(index).ok_or_else(|| {
+            BackendError::Io(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("agent index {} out of bounds", index),
+            ))
+        })?;
+
+        let mut node = Node::agent(&agent.name, x, y);
+        node.agent.system_prompt = agent.system_prompt.clone();
+        node.agent.task_prompt = agent.task_prompt.clone();
+        node.agent.model = agent.model.clone();
+        node.agent.output_schema = agent.output_schema.clone();
+        node.agent.auto_start = agent.auto_start;
+
+        Ok(node)
+    }
+
+    /// # Errors
     /// Returns an error if the agent store cannot be read.
     pub fn list_agents(&self) -> Result<Vec<AgentDefinitionSummary>, BackendError> {
         Ok(self
@@ -299,7 +320,7 @@ impl AppBackend {
         _entrypoint: Option<String>,
         settings: &AppSettings,
         _transient_api_key: Option<&str>,
-    ) -> Result<UnboundedReceiver<ExecutionEvent>, BackendError> {
+    ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
         validate_workflow(&workflow)?;
         let provider_config = resolve_provider_config(settings, None, &self.env)?;
         let ai = OpenAiClient::with_config(OpenAiClientConfig {
@@ -317,11 +338,12 @@ impl AppBackend {
         if let Some(existing) = session.handle.take() {
             existing.abort();
         }
-        session.workflow = Some(workflow.clone());
-        session.run_state = Some(WorkflowRunState::running_for_workflow(&workflow));
+        let initial_state = WorkflowRunState::running_for_workflow(&workflow);
+        session.workflow = Some(workflow);
+        session.run_state = Some(initial_state.clone());
         session.action_tx = Some(action_tx);
         session.handle = Some(handle);
-        Ok(event_rx)
+        Ok((initial_state, event_rx))
     }
 
     /// # Errors
@@ -381,38 +403,17 @@ impl AppBackend {
         Ok(run_state.clone())
     }
 
-    /// # Errors
-    /// Returns an error if there is no active run or no manual node is active.
+    /// Returns an error because conversational paused nodes advance via `submit_user_input`.
     pub async fn complete_manual_node(&self) -> Result<WorkflowRunState, BackendError> {
         let session = self.run_session.lock().await;
-
-        // Check if we can complete a manual node
-        {
-            let run_state = session
-                .run_state
-                .as_ref()
-                .ok_or(BackendError::NoActiveRun)?;
-
-            if run_state.active_manual_node_id.is_none() {
-                return Err(BackendError::NoAwaitingInput);
-            }
-        }
-
-        // Send the complete action
-        if let Some(action_tx) = session.action_tx.as_ref() {
-            action_tx
-                .send(ExecutionAction::CompleteManualNode)
-                .map_err(|_| BackendError::RunChannelClosed)?;
-        } else {
-            return Err(BackendError::NoActiveRun);
-        }
-
-        // Return current state
-        Ok(session
+        let run_state = session
             .run_state
             .as_ref()
-            .ok_or(BackendError::NoActiveRun)?
-            .clone())
+            .ok_or(BackendError::NoActiveRun)?;
+        if run_state.awaiting_node_id.is_some() {
+            return Err(BackendError::NoAwaitingInput);
+        }
+        Err(BackendError::NoAwaitingInput)
     }
 
     #[must_use]
@@ -459,7 +460,7 @@ mod tests {
                 openai_api_key: Some("openai-key".to_string()),
                 compatible_api_key: Some("compatible-key".to_string()),
             },
-            tokio::runtime::Handle::current(),
+            tokio::runtime::Runtime::new().expect("runtime"),
         );
         (backend, dir)
     }
@@ -561,10 +562,91 @@ mod tests {
                 openai_api_key: None,
                 compatible_api_key: None,
             },
+            tokio::runtime::Runtime::new().expect("runtime"),
         )
         .resolve_provider_readiness(&settings, None);
 
         assert!(!readiness.ready);
         assert_eq!(readiness.env_var, "OPENAI_COMPATIBLE_API_KEY");
+    }
+
+    #[test]
+    fn start_run_returns_initial_state_and_manual_events() {
+        let (backend, _dir) = backend();
+        backend.runtime.block_on(async {
+            let mut workflow = Workflow::new("Manual run");
+            let mut node = Node::agent("Review", 0.0, 0.0);
+            node.id = NodeId("review".to_string());
+            node.agent.auto_start = false;
+            workflow.nodes = vec![node];
+
+            let (initial_state, mut event_rx) = backend
+                .start_run(workflow, None, &AppSettings::default(), None)
+                .await
+                .expect("start run");
+
+            assert!(initial_state.active);
+            assert!(initial_state.awaiting_node_id.is_none());
+
+            let first = event_rx.recv().await.expect("queued event");
+            let second = event_rx.recv().await.expect("awaiting event");
+            assert!(matches!(
+                first,
+                ExecutionEvent::NodeQueued { ref node_id, ref label }
+                    if node_id == "review" && label == "Review"
+            ));
+            assert!(matches!(
+                second,
+                ExecutionEvent::NodeAwaitingInput { ref node_id, ref label, is_initial: true, .. }
+                    if node_id == "review" && label == "Review"
+            ));
+
+            let handle = {
+                let mut session = backend.run_session.lock().await;
+                session.handle.take()
+            };
+            if let Some(handle) = handle {
+                handle.abort();
+            }
+        });
+    }
+
+    #[test]
+    fn submit_user_input_updates_snapshot_and_sends_action() {
+        let (backend, _dir) = backend();
+        backend.runtime.block_on(async {
+            let workflow = default_workflow("Workflow");
+            let (action_tx, mut action_rx) = tokio::sync::mpsc::unbounded_channel();
+            {
+                let mut session = backend.run_session.lock().await;
+                let mut run_state = WorkflowRunState::running_for_workflow(&workflow);
+                run_state.awaiting_node_id = Some(NodeId("idea".to_string()));
+                session.workflow = Some(workflow);
+                session.run_state = Some(run_state);
+                session.action_tx = Some(action_tx);
+            }
+
+            let run_state = backend
+                .submit_user_input("idea", "Continue with approvals".to_string())
+                .await
+                .expect("submit input");
+
+            assert!(run_state.awaiting_node_id.is_none());
+            assert_eq!(
+                run_state
+                    .chat_logs
+                    .get(&NodeId("idea".to_string()))
+                    .unwrap()
+                    .last()
+                    .unwrap()
+                    .content,
+                "Continue with approvals"
+            );
+            match action_rx.recv().await.expect("action") {
+                ExecutionAction::ProvideInput(text) => {
+                    assert_eq!(text, "Continue with approvals");
+                }
+            }
+        });
     }
 }

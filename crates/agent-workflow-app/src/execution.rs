@@ -4,7 +4,8 @@ use std::collections::{BTreeMap, VecDeque};
 use thiserror::Error;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use workflow_core::{
-    AiPort, ChatMessage, ChatRole, EnginePollResult, InteractiveEngine, NodeId, RunReport, Workflow,
+    AiPort, ChatMessage, ChatRole, ConversationAgentRequest, EnginePollResult, InteractiveEngine,
+    NodeId, RunReport, Workflow,
 };
 
 #[derive(Debug, Clone)]
@@ -17,25 +18,25 @@ pub enum ExecutionEvent {
         node_id: NodeId,
         label: String,
     },
-    NodeThinking {
+    ChatMessage {
         node_id: NodeId,
-        message: String,
+        role: ChatRole,
+        content: String,
     },
     NodeAwaitingInput {
         node_id: NodeId,
         label: String,
         context: String,
-    },
-    ManualNodeActive {
-        node_id: NodeId,
-        label: String,
+        is_initial: bool,
     },
     NodeCompleted {
         node_id: NodeId,
+        label: String,
         output: Value,
     },
     NodeFailed {
         node_id: NodeId,
+        label: String,
         error: String,
     },
     Finished(RunReport),
@@ -44,7 +45,6 @@ pub enum ExecutionEvent {
 
 pub enum ExecutionAction {
     ProvideInput(String),
-    CompleteManualNode,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -112,16 +112,55 @@ async fn drive_interactive_workflow<A>(
     loop {
         match engine.poll() {
             EnginePollResult::CallAi { node_id, request } => {
-                send_ai_start_events(&event_tx, &node_id, &request);
-                let result = ai.invoke(request).await;
+                send_auto_start_events(&event_tx, &request);
+                let result = ai.invoke(request.clone()).await;
                 let invoke_error = result.as_ref().err().map(ToString::to_string);
+                let label = request.node_label.clone();
                 engine.on_ai_complete(&node_id, result);
                 if let Some(output) = engine.node_output(&node_id) {
-                    let _ = event_tx.send(ExecutionEvent::NodeCompleted { node_id, output });
+                    let _ = event_tx.send(ExecutionEvent::NodeCompleted {
+                        node_id,
+                        label,
+                        output,
+                    });
                 } else {
                     let error =
                         invoke_error.unwrap_or_else(|| "node invocation failed".to_string());
-                    let _ = event_tx.send(ExecutionEvent::NodeFailed { node_id, error });
+                    let _ = event_tx.send(ExecutionEvent::NodeFailed {
+                        node_id,
+                        label,
+                        error,
+                    });
+                    break;
+                }
+            }
+            EnginePollResult::CallConversationAi { node_id, request } => {
+                send_conversation_start_events(&event_tx, &request);
+                let result = ai.invoke_conversation(request.clone()).await;
+                let invoke_error = result.as_ref().err().map(ToString::to_string);
+                if let Ok(response) = &result {
+                    if let Some(message) = &response.assistant_message {
+                        let _ = event_tx.send(ExecutionEvent::ChatMessage {
+                            node_id: node_id.clone(),
+                            role: ChatRole::Assistant,
+                            content: message.clone(),
+                        });
+                    }
+                }
+                let label = request.node_label.clone();
+                engine.on_conversation_ai_complete(&node_id, result);
+                if let Some(output) = engine.node_output(&node_id) {
+                    let _ = event_tx.send(ExecutionEvent::NodeCompleted {
+                        node_id,
+                        label,
+                        output,
+                    });
+                } else if let Some(error) = invoke_error {
+                    let _ = event_tx.send(ExecutionEvent::NodeFailed {
+                        node_id,
+                        label,
+                        error,
+                    });
                     break;
                 }
             }
@@ -129,40 +168,26 @@ async fn drive_interactive_workflow<A>(
                 node_id,
                 label,
                 context,
+                is_initial,
             } => {
-                let _ = event_tx.send(ExecutionEvent::NodeQueued {
-                    node_id: node_id.clone(),
-                    label: label.clone(),
-                });
+                if is_initial {
+                    let _ = event_tx.send(ExecutionEvent::NodeQueued {
+                        node_id: node_id.clone(),
+                        label: label.clone(),
+                    });
+                }
                 let _ = event_tx.send(ExecutionEvent::NodeAwaitingInput {
                     node_id: node_id.clone(),
-                    label,
+                    label: label.clone(),
                     context,
-                });
-                if let Some(ExecutionAction::ProvideInput(text)) = action_rx.recv().await {
-                    let _ = engine.on_human_input(&node_id, &text);
-                } else {
-                    break;
-                }
-            }
-            EnginePollResult::ManualNodeActive { node_id, label } => {
-                let _ = event_tx.send(ExecutionEvent::NodeQueued {
-                    node_id: node_id.clone(),
-                    label: label.clone(),
-                });
-                let _ = event_tx.send(ExecutionEvent::ManualNodeActive {
-                    node_id: node_id.clone(),
-                    label: label.clone(),
+                    is_initial,
                 });
                 match action_rx.recv().await {
-                    Some(ExecutionAction::CompleteManualNode) => {
-                        if let Err(e) = engine.complete_manual_node() {
-                            let _ = event_tx.send(ExecutionEvent::Error(e));
+                    Some(ExecutionAction::ProvideInput(text)) => {
+                        if let Err(error) = engine.on_human_input(&node_id, &text) {
+                            let _ = event_tx.send(ExecutionEvent::Error(error));
                             break;
                         }
-                    }
-                    Some(ExecutionAction::ProvideInput(text)) => {
-                        let _ = engine.on_human_input(&node_id, &text);
                     }
                     None => break,
                 }
@@ -179,29 +204,53 @@ async fn drive_interactive_workflow<A>(
     }
 }
 
-fn send_ai_start_events(
+fn send_auto_start_events(
     event_tx: &UnboundedSender<ExecutionEvent>,
-    node_id: &str,
     request: &workflow_core::AgentRequest,
 ) {
     let _ = event_tx.send(ExecutionEvent::NodeQueued {
-        node_id: NodeId(node_id.to_string()),
+        node_id: request.node_id.clone(),
         label: request.node_label.clone(),
     });
     let _ = event_tx.send(ExecutionEvent::NodeStarted {
-        node_id: NodeId(node_id.to_string()),
+        node_id: request.node_id.clone(),
         label: request.node_label.clone(),
     });
+    let _ = event_tx.send(ExecutionEvent::ChatMessage {
+        node_id: request.node_id.clone(),
+        role: ChatRole::System,
+        content: format!("Node '{}' started", request.node_label),
+    });
     let system_preview = request.system_prompt.chars().take(120).collect::<String>();
-    let _ = event_tx.send(ExecutionEvent::NodeThinking {
-        node_id: NodeId(node_id.to_string()),
-        message: format!("System prompt: {system_preview}..."),
+    let _ = event_tx.send(ExecutionEvent::ChatMessage {
+        node_id: request.node_id.clone(),
+        role: ChatRole::Thinking,
+        content: format!("System prompt: {system_preview}..."),
     });
     let upstream_json = request.input.to_string();
     let upstream_preview = upstream_json.chars().take(200).collect::<String>();
-    let _ = event_tx.send(ExecutionEvent::NodeThinking {
-        node_id: NodeId(node_id.to_string()),
-        message: format!("Upstream input: {upstream_preview}"),
+    let _ = event_tx.send(ExecutionEvent::ChatMessage {
+        node_id: request.node_id.clone(),
+        role: ChatRole::Thinking,
+        content: format!("Upstream input: {upstream_preview}"),
+    });
+}
+
+fn send_conversation_start_events(
+    event_tx: &UnboundedSender<ExecutionEvent>,
+    request: &ConversationAgentRequest,
+) {
+    let _ = event_tx.send(ExecutionEvent::NodeStarted {
+        node_id: request.node_id.clone(),
+        label: request.node_label.clone(),
+    });
+    let _ = event_tx.send(ExecutionEvent::ChatMessage {
+        node_id: request.node_id.clone(),
+        role: ChatRole::Thinking,
+        content: format!(
+            "Continuing paused node with {} conversation message(s).",
+            request.conversation.len()
+        ),
     });
 }
 
@@ -246,15 +295,19 @@ where
                     "started OpenAI node call",
                     None,
                 );
-                snapshot.push_chat(node_id, ChatRole::System, format!("Node '{label}' started"));
             }
-            ExecutionEvent::NodeThinking { node_id, message } => {
-                snapshot.push_chat(node_id, ChatRole::Thinking, message);
+            ExecutionEvent::ChatMessage {
+                node_id,
+                role,
+                content,
+            } => {
+                snapshot.push_chat(node_id, role, content);
             }
             ExecutionEvent::NodeAwaitingInput {
                 node_id,
                 label,
                 context,
+                ..
             } => {
                 snapshot.push_trace(
                     node_id.clone(),
@@ -283,19 +336,11 @@ where
                 snapshot.push_chat(node_id, ChatRole::User, text.clone());
                 let _ = action_tx.send(ExecutionAction::ProvideInput(text));
             }
-            ExecutionEvent::ManualNodeActive { node_id, label } => {
-                snapshot.push_trace(
-                    node_id.clone(),
-                    label.clone(),
-                    TraceStatus::Paused,
-                    "awaiting user decision",
-                    None,
-                );
-                // In headless mode, auto-complete the manual node
-                let _ = action_tx.send(ExecutionAction::CompleteManualNode);
-            }
-            ExecutionEvent::NodeCompleted { node_id, output } => {
-                let label = snapshot.node_label_or_id(&node_id);
+            ExecutionEvent::NodeCompleted {
+                node_id,
+                label,
+                output,
+            } => {
                 snapshot.push_trace(
                     node_id.clone(),
                     label,
@@ -306,8 +351,11 @@ where
                 snapshot.outputs.insert(node_id.clone(), output.clone());
                 snapshot.push_chat(node_id, ChatRole::Assistant, output.to_string());
             }
-            ExecutionEvent::NodeFailed { node_id, error } => {
-                let label = snapshot.node_label_or_id(&node_id);
+            ExecutionEvent::NodeFailed {
+                node_id,
+                label,
+                error,
+            } => {
                 snapshot.push_trace(node_id.clone(), label, TraceStatus::Failed, &error, None);
                 snapshot.push_chat(
                     node_id.clone(),
@@ -377,13 +425,6 @@ impl PartialSnapshot {
             .or_default()
             .push(ChatMessage { role, content });
     }
-
-    fn node_label_or_id(&self, node_id: &str) -> String {
-        self.run_trace
-            .iter()
-            .find(|entry| entry.node_id == node_id)
-            .map_or_else(|| node_id.to_string(), |entry| entry.node_label.clone())
-    }
 }
 
 pub fn apply_event_to_run_state(
@@ -400,11 +441,13 @@ pub fn apply_event_to_run_state(
                 node_id,
                 node_label: label,
                 status: TraceStatus::Queued,
-                message: String::new(),
+                message: "queued".to_string(),
                 output: None,
             });
         }
         ExecutionEvent::NodeStarted { node_id, label } => {
+            state.awaiting_node_id = None;
+            state.active_manual_node_id = None;
             state
                 .status_by_node
                 .insert(node_id.clone(), AgentStatus::Started);
@@ -412,81 +455,121 @@ pub fn apply_event_to_run_state(
                 node_id,
                 node_label: label,
                 status: TraceStatus::Running,
-                message: String::new(),
+                message: "started OpenAI node call".to_string(),
                 output: None,
             });
         }
-        ExecutionEvent::NodeThinking { node_id, message } => {
-            if let Some(entry) = state
-                .run_trace
-                .iter_mut()
-                .rev()
-                .find(|e| e.node_id == node_id)
-            {
-                entry.message = message;
-            }
+        ExecutionEvent::ChatMessage {
+            node_id,
+            role,
+            content,
+        } => {
+            state
+                .chat_logs
+                .entry(node_id)
+                .or_default()
+                .push(ChatMessage { role, content });
         }
         ExecutionEvent::NodeAwaitingInput {
             node_id,
             label,
             context,
+            ..
         } => {
             state
                 .status_by_node
                 .insert(node_id.clone(), AgentStatus::AwaitingInput);
             state.awaiting_node_id = Some(node_id.clone());
+            state.active_manual_node_id = None;
             state.run_trace.push(RunTraceEntry {
-                node_id,
-                node_label: label,
+                node_id: node_id.clone(),
+                node_label: label.clone(),
                 status: TraceStatus::Paused,
-                message: context,
+                message: "paused for human input".to_string(),
                 output: None,
             });
-        }
-        ExecutionEvent::ManualNodeActive { node_id, label } => {
-            state.active_manual_node_id = Some(node_id.clone());
             state
-                .status_by_node
-                .insert(node_id.clone(), AgentStatus::AwaitingInput);
-            state.run_trace.push(RunTraceEntry {
-                node_id,
-                node_label: label,
-                status: TraceStatus::Paused,
-                message: "awaiting user decision".to_string(),
-                output: None,
-            });
+                .chat_logs
+                .entry(node_id.clone())
+                .or_default()
+                .push(ChatMessage {
+                    role: ChatRole::System,
+                    content: format!("Node '{label}' is awaiting human input."),
+                });
+            state
+                .chat_logs
+                .entry(node_id)
+                .or_default()
+                .push(ChatMessage {
+                    role: ChatRole::Thinking,
+                    content: format!("Context:\n{context}"),
+                });
         }
-        ExecutionEvent::NodeCompleted { node_id, output } => {
+        ExecutionEvent::NodeCompleted {
+            node_id,
+            label,
+            output,
+        } => {
+            state.awaiting_node_id = None;
+            state.active_manual_node_id = None;
             state
                 .status_by_node
                 .insert(node_id.clone(), AgentStatus::Completed);
             state.outputs.insert(node_id.clone(), output.clone());
             state.run_trace.push(RunTraceEntry {
-                node_id,
-                node_label: String::new(),
+                node_id: node_id.clone(),
+                node_label: label,
                 status: TraceStatus::Completed,
-                message: String::new(),
-                output: Some(output),
+                message: "completed".to_string(),
+                output: Some(output.clone()),
             });
+            state
+                .chat_logs
+                .entry(node_id)
+                .or_default()
+                .push(ChatMessage {
+                    role: ChatRole::Assistant,
+                    content: output.to_string(),
+                });
         }
-        ExecutionEvent::NodeFailed { node_id, error } => {
+        ExecutionEvent::NodeFailed {
+            node_id,
+            label,
+            error,
+        } => {
+            state.active = false;
+            state.awaiting_node_id = None;
+            state.active_manual_node_id = None;
             state
                 .status_by_node
                 .insert(node_id.clone(), AgentStatus::Failed);
             state.run_trace.push(RunTraceEntry {
                 node_id: node_id.clone(),
-                node_label: String::new(),
+                node_label: label,
                 status: TraceStatus::Failed,
                 message: error.clone(),
                 output: None,
             });
-            state.last_error = Some(error);
+            state.last_error = Some(error.clone());
+            state
+                .chat_logs
+                .entry(node_id)
+                .or_default()
+                .push(ChatMessage {
+                    role: ChatRole::System,
+                    content: format!("Failed: {error}"),
+                });
         }
         ExecutionEvent::Finished(report) => {
             state.active = false;
+            state.awaiting_node_id = None;
+            state.active_manual_node_id = None;
             state.last_report = Some(report);
         }
         ExecutionEvent::Error(error) => {
+            state.active = false;
+            state.awaiting_node_id = None;
+            state.active_manual_node_id = None;
             state.last_error = Some(error);
         }
     }
@@ -503,4 +586,112 @@ pub fn record_user_input(state: &mut WorkflowRunState, node_id: &str, text: Stri
         });
     state.awaiting_node_id = None;
     state.active_manual_node_id = None;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn workflow() -> Workflow {
+        let mut workflow = Workflow::new("trace");
+        let mut first = workflow_core::Node::agent("First", 0.0, 0.0);
+        first.id = NodeId("first".to_string());
+        workflow.nodes = vec![first];
+        workflow
+    }
+
+    #[test]
+    fn reducer_preserves_labels_and_transition_order() {
+        let workflow = workflow();
+        let mut state = WorkflowRunState::running_for_workflow(&workflow);
+
+        apply_event_to_run_state(
+            &workflow,
+            &mut state,
+            ExecutionEvent::NodeQueued {
+                node_id: NodeId("first".to_string()),
+                label: "First".to_string(),
+            },
+        );
+        apply_event_to_run_state(
+            &workflow,
+            &mut state,
+            ExecutionEvent::NodeAwaitingInput {
+                node_id: NodeId("first".to_string()),
+                label: "First".to_string(),
+                context: "Entrypoint: kickoff".to_string(),
+                is_initial: true,
+            },
+        );
+        record_user_input(&mut state, "first", "Need approvals".to_string());
+        apply_event_to_run_state(
+            &workflow,
+            &mut state,
+            ExecutionEvent::NodeStarted {
+                node_id: NodeId("first".to_string()),
+                label: "First".to_string(),
+            },
+        );
+        apply_event_to_run_state(
+            &workflow,
+            &mut state,
+            ExecutionEvent::ChatMessage {
+                node_id: NodeId("first".to_string()),
+                role: ChatRole::Assistant,
+                content: "Locked.".to_string(),
+            },
+        );
+        apply_event_to_run_state(
+            &workflow,
+            &mut state,
+            ExecutionEvent::NodeCompleted {
+                node_id: NodeId("first".to_string()),
+                label: "First".to_string(),
+                output: json!({"summary": "approved"}),
+            },
+        );
+
+        assert_eq!(
+            state
+                .run_trace
+                .iter()
+                .map(|entry| (&*entry.node_id, entry.node_label.as_str(), entry.status))
+                .collect::<Vec<_>>(),
+            vec![
+                ("first", "First", TraceStatus::Queued),
+                ("first", "First", TraceStatus::Paused),
+                ("first", "First", TraceStatus::Running),
+                ("first", "First", TraceStatus::Completed),
+            ]
+        );
+        let chat = state.chat_logs.get(&NodeId("first".to_string())).unwrap();
+        assert_eq!(chat[2].role, ChatRole::User);
+        assert_eq!(chat[3].role, ChatRole::Assistant);
+        assert_eq!(
+            state.outputs[&NodeId("first".to_string())],
+            json!({"summary": "approved"})
+        );
+    }
+
+    #[test]
+    fn reducer_marks_failure_terminal_with_label() {
+        let workflow = workflow();
+        let mut state = WorkflowRunState::running_for_workflow(&workflow);
+
+        apply_event_to_run_state(
+            &workflow,
+            &mut state,
+            ExecutionEvent::NodeFailed {
+                node_id: NodeId("first".to_string()),
+                label: "First".to_string(),
+                error: "boom".to_string(),
+            },
+        );
+
+        assert!(!state.active);
+        assert_eq!(state.last_error.as_deref(), Some("boom"));
+        assert_eq!(state.run_trace[0].node_label, "First");
+        assert_eq!(state.run_trace[0].status, TraceStatus::Failed);
+    }
 }

@@ -1,3 +1,5 @@
+pub mod agent_store;
+pub mod backend;
 pub mod canvas_math;
 pub mod execution;
 pub mod provider_config;

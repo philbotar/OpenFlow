@@ -66,6 +66,15 @@ impl AiPort for ScriptedAi {
             output,
         })
     }
+
+    async fn invoke_conversation(
+        &self,
+        _request: workflow_core::ConversationAgentRequest,
+    ) -> Result<workflow_core::ConversationAgentResponse, AgentError> {
+        Err(AgentError::Failed(
+            "conversation path not used in this test".to_string(),
+        ))
+    }
 }
 
 fn agent(id: &str, label: &str) -> Node {
@@ -161,6 +170,36 @@ async fn manual_node_pauses_accepts_input_and_feeds_downstream_node() {
                 output,
             })
         }
+
+        async fn invoke_conversation(
+            &self,
+            request: workflow_core::ConversationAgentRequest,
+        ) -> Result<workflow_core::ConversationAgentResponse, AgentError> {
+            self.requests.lock().unwrap().push(AgentRequest {
+                workflow_id: request.workflow_id,
+                node_id: request.node_id.clone(),
+                node_label: request.node_label,
+                model: request.model,
+                system_prompt: request.system_prompt,
+                task_prompt: request.task_prompt,
+                input: request.input.clone(),
+                output_schema: request.output_schema,
+            });
+            assert_eq!(&*request.node_id, "human-review");
+            let user_turns = request
+                .conversation
+                .iter()
+                .filter(|message| message.role == workflow_core::ChatRole::User)
+                .map(|message| message.content.as_str())
+                .collect::<Vec<_>>();
+            assert_eq!(user_turns, vec!["human approved ORCHID-91"]);
+            Ok(workflow_core::ConversationAgentResponse {
+                ready_to_advance: true,
+                assistant_message: Some("Review complete.".to_string()),
+                output: Some(json!("human approved ORCHID-91")),
+                raw_text: "{\"ready_to_advance\":true}".to_string(),
+            })
+        }
     }
 
     let mut manual = agent("human-review", "Human review");
@@ -198,5 +237,13 @@ async fn manual_node_pauses_accepts_input_and_feeds_downstream_node() {
         .unwrap()
         .iter()
         .any(|message| message.content == "human approved ORCHID-91"));
-    assert_eq!(ai.requests.lock().unwrap().len(), 1);
+    assert_eq!(
+        ai.requests
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|request| &*request.node_id)
+            .collect::<Vec<_>>(),
+        vec!["human-review", "final"]
+    );
 }

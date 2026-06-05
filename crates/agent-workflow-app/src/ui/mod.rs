@@ -292,23 +292,19 @@ impl eframe::App for WorkflowApp {
                             message: "started OpenAI node call".to_string(),
                             output: None,
                         });
-                        self.state.add_chat_message(
-                            node_id,
-                            ChatRole::System,
-                            format!("Node '{label}' started"),
-                        );
                     }
-                    ExecutionEvent::NodeThinking {
+                    ExecutionEvent::ChatMessage {
                         ref node_id,
-                        ref message,
+                        role,
+                        ref content,
                     } => {
-                        self.state
-                            .add_chat_message(node_id, ChatRole::Thinking, message.clone());
+                        self.state.add_chat_message(node_id, role, content.clone());
                     }
                     ExecutionEvent::NodeAwaitingInput {
                         ref node_id,
                         ref label,
                         ref context,
+                        ..
                     } => {
                         self.state
                             .status_by_node
@@ -332,24 +328,9 @@ impl eframe::App for WorkflowApp {
                         );
                         self.bottom_panel_tab = canvas::BottomPanelTab::Chat;
                     }
-                    ExecutionEvent::ManualNodeActive {
-                        ref node_id,
-                        ref label,
-                    } => {
-                        self.state
-                            .status_by_node
-                            .insert(node_id.clone(), AgentStatus::AwaitingInput);
-                        self.state.push_run_trace(RunTraceEntry {
-                            node_id: node_id.clone(),
-                            node_label: label.clone(),
-                            status: TraceStatus::Paused,
-                            message: "awaiting user decision".to_string(),
-                            output: None,
-                        });
-                        self.bottom_panel_tab = canvas::BottomPanelTab::Chat;
-                    }
                     ExecutionEvent::NodeCompleted {
                         ref node_id,
+                        ref label,
                         ref output,
                     } => {
                         self.state
@@ -357,7 +338,7 @@ impl eframe::App for WorkflowApp {
                             .insert(node_id.clone(), AgentStatus::Completed);
                         self.state.push_run_trace(RunTraceEntry {
                             node_id: node_id.clone(),
-                            node_label: node_label_for(&self.state, node_id),
+                            node_label: label.clone(),
                             status: TraceStatus::Completed,
                             message: "completed".to_string(),
                             output: Some(output.clone()),
@@ -370,6 +351,7 @@ impl eframe::App for WorkflowApp {
                     }
                     ExecutionEvent::NodeFailed {
                         ref node_id,
+                        ref label,
                         ref error,
                     } => {
                         self.state
@@ -377,7 +359,7 @@ impl eframe::App for WorkflowApp {
                             .insert(node_id.clone(), AgentStatus::Failed);
                         self.state.push_run_trace(RunTraceEntry {
                             node_id: node_id.clone(),
-                            node_label: node_label_for(&self.state, node_id),
+                            node_label: label.clone(),
                             status: TraceStatus::Failed,
                             message: error.clone(),
                             output: None,
@@ -612,15 +594,6 @@ impl eframe::App for WorkflowApp {
             }
         }
     }
-}
-
-fn node_label_for(state: &AppState, node_id: &str) -> String {
-    state
-        .workflow
-        .nodes
-        .iter()
-        .find(|node| node.id == node_id)
-        .map_or_else(|| node_id.to_string(), |node| node.label.clone())
 }
 
 #[cfg(test)]

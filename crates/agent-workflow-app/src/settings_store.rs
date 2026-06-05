@@ -57,6 +57,7 @@ pub struct ProviderProfile {
     pub known_models: Vec<String>,
     #[serde(skip)]
     pub new_model_input: String,
+    pub api_key: String,
 }
 
 fn default_responses_path() -> String {
@@ -68,7 +69,6 @@ fn default_chat_completions_path() -> String {
 }
 
 impl ProviderProfile {
-    #[must_use]
     pub fn openai_default() -> Self {
         Self {
             display_name: "ChatGPT / OpenAI".to_string(),
@@ -83,6 +83,7 @@ impl ProviderProfile {
                 "o3".into(),
             ],
             new_model_input: String::new(),
+            api_key: String::new(),
         }
     }
 
@@ -96,6 +97,7 @@ impl ProviderProfile {
             chat_completions_path: default_chat_completions_path(),
             known_models: vec!["llama3.1".into(), "qwen2.5".into(), "mistral".into()],
             new_model_input: String::new(),
+            api_key: String::new(),
         }
     }
 }
@@ -399,14 +401,19 @@ mod tests {
     fn settings_roundtrip_restores_identical_state() {
         let dir = tempdir().unwrap();
         let store = FileSettingsStore::new(dir.path().join("settings.json"));
-        let mut settings = AppSettings::default();
-        settings.active_provider = AiProviderKind::OpenAiCompatible;
-        settings.compatible.known_models.push("grok-1".to_string());
-        settings.openai.transport = ProviderTransport::ChatCompletions;
-
+        let settings = AppSettings {
+            active_provider: AiProviderKind::OpenAiCompatible,
+            compatible: ProviderProfile {
+                known_models: vec!["grok-1".to_string()],
+                ..ProviderProfile::compatible_default()
+            },
+            openai: ProviderProfile {
+                transport: ProviderTransport::ChatCompletions,
+                ..ProviderProfile::openai_default()
+            },
+        };
         store.save(&settings).unwrap();
         let loaded = store.load().unwrap();
-
         assert_eq!(loaded, settings);
     }
 }

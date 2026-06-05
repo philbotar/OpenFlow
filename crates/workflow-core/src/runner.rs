@@ -212,6 +212,15 @@ mod tests {
                 raw_text: "{\"summary\":\"ok\"}".to_string(),
             })
         }
+
+        async fn invoke_conversation(
+            &self,
+            _request: crate::ConversationAgentRequest,
+        ) -> Result<crate::ConversationAgentResponse, AgentError> {
+            Err(AgentError::Failed(
+                "conversation path not used in runner tests".to_string(),
+            ))
+        }
     }
 
     struct FailingAi;
@@ -223,6 +232,15 @@ mod tests {
                 "synthetic failure for {}",
                 request.node_id
             )))
+        }
+
+        async fn invoke_conversation(
+            &self,
+            _request: crate::ConversationAgentRequest,
+        ) -> Result<crate::ConversationAgentResponse, AgentError> {
+            Err(AgentError::Failed(
+                "conversation path not used in runner tests".to_string(),
+            ))
         }
     }
 

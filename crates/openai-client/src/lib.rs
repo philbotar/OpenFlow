@@ -1,7 +1,11 @@
 use async_trait::async_trait;
 use reqwest::Client;
+use serde::Deserialize;
 use serde_json::{json, Value};
-use workflow_core::{AgentError, AgentRequest, AgentResponse, AiPort};
+use workflow_core::{
+    AgentError, AgentRequest, AgentResponse, AiPort, ChatRole, ConversationAgentRequest,
+    ConversationAgentResponse,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OpenAiWireApi {
@@ -47,7 +51,6 @@ impl OpenAiClient {
         let base = self.config.base_url.trim().trim_end_matches('/');
         let mut normalized_path = path.trim().trim_start_matches('/').to_string();
 
-        // Avoid duplicated API prefixes like base_url=/v1 and path=v1/chat/completions.
         if let Ok(parsed) = reqwest::Url::parse(base) {
             let base_path = parsed.path().trim_matches('/');
             if !base_path.is_empty() {
@@ -88,6 +91,18 @@ impl AiPort for OpenAiClient {
         match self.config.wire_api {
             OpenAiWireApi::Responses => self.invoke_responses(request).await,
             OpenAiWireApi::ChatCompletions => self.invoke_chat_completions(request).await,
+        }
+    }
+
+    async fn invoke_conversation(
+        &self,
+        request: ConversationAgentRequest,
+    ) -> Result<ConversationAgentResponse, AgentError> {
+        match self.config.wire_api {
+            OpenAiWireApi::Responses => self.invoke_responses_conversation(request).await,
+            OpenAiWireApi::ChatCompletions => {
+                self.invoke_chat_completions_conversation(request).await
+            }
         }
     }
 }
@@ -134,11 +149,43 @@ fn extract_responses_output_text(payload: &Value) -> Result<String, AgentError> 
     ))
 }
 
-fn build_user_content(request: &AgentRequest) -> String {
+fn build_structured_user_content(request: &AgentRequest) -> String {
     format!(
         "Node: {}\nTask:\n{}\n\nUpstream input JSON:\n{}",
         request.node_label, request.task_prompt, request.input
     )
+}
+
+fn build_conversation_context(request: &ConversationAgentRequest) -> String {
+    format!(
+        "Node: {}\nTask:\n{}\n\nUpstream input JSON:\n{}\n\nDecide whether you are ready to advance. If you need more user input, set ready_to_advance to false, put your follow-up in assistant_message, and set output to null. If you are ready to advance, set ready_to_advance to true, return the final structured node output in output, and only include assistant_message when it helps the user understand the handoff.",
+        request.node_label, request.task_prompt, request.input
+    )
+}
+
+fn conversation_role(role: ChatRole) -> Option<&'static str> {
+    match role {
+        ChatRole::User => Some("user"),
+        ChatRole::Assistant => Some("assistant"),
+        ChatRole::System | ChatRole::Thinking => None,
+    }
+}
+
+fn build_conversation_schema(output_schema: &Value) -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "ready_to_advance": { "type": "boolean" },
+            "assistant_message": {
+                "type": ["string", "null"]
+            },
+            "output": {
+                "anyOf": [output_schema.clone(), { "type": "null" }]
+            }
+        },
+        "required": ["ready_to_advance", "assistant_message", "output"]
+    })
 }
 
 fn extract_chat_completion_content(payload: &Value) -> Result<String, AgentError> {
@@ -181,6 +228,53 @@ fn parse_structured_output(label: &str, text: String) -> Result<AgentResponse, A
     })
 }
 
+#[derive(Debug, Deserialize)]
+struct ConversationPayload {
+    ready_to_advance: bool,
+    assistant_message: Option<String>,
+    output: Option<Value>,
+}
+
+fn parse_conversation_output(
+    label: &str,
+    text: String,
+) -> Result<ConversationAgentResponse, AgentError> {
+    let payload: ConversationPayload = serde_json::from_str(&text).map_err(|error| {
+        AgentError::Failed(format!(
+            "{label} conversation output was not valid JSON: {error}"
+        ))
+    })?;
+    let assistant_message = payload
+        .assistant_message
+        .and_then(|message| (!message.trim().is_empty()).then_some(message));
+
+    if payload.ready_to_advance {
+        if payload.output.is_none() {
+            return Err(AgentError::Failed(format!(
+                "{label} conversation output was missing final output"
+            )));
+        }
+    } else {
+        if assistant_message.is_none() {
+            return Err(AgentError::Failed(format!(
+                "{label} conversation output was missing assistant_message"
+            )));
+        }
+        if payload.output.is_some() {
+            return Err(AgentError::Failed(format!(
+                "{label} conversation output included output before ready_to_advance"
+            )));
+        }
+    }
+
+    Ok(ConversationAgentResponse {
+        ready_to_advance: payload.ready_to_advance,
+        assistant_message,
+        output: payload.output,
+        raw_text: text,
+    })
+}
+
 impl OpenAiClient {
     async fn invoke_responses(&self, request: AgentRequest) -> Result<AgentResponse, AgentError> {
         let body = json!({
@@ -192,7 +286,7 @@ impl OpenAiClient {
                 },
                 {
                     "role": "user",
-                    "content": build_user_content(&request)
+                    "content": build_structured_user_content(&request)
                 }
             ],
             "text": {
@@ -225,7 +319,7 @@ impl OpenAiClient {
                 },
                 {
                     "role": "user",
-                    "content": build_user_content(&request)
+                    "content": build_structured_user_content(&request)
                 }
             ],
             "response_format": {
@@ -247,6 +341,94 @@ impl OpenAiClient {
             .await?;
         let text = extract_chat_completion_content(&payload)?;
         parse_structured_output("OpenAI-compatible", text)
+    }
+
+    async fn invoke_responses_conversation(
+        &self,
+        request: ConversationAgentRequest,
+    ) -> Result<ConversationAgentResponse, AgentError> {
+        let mut input = vec![
+            json!({
+                "role": "system",
+                "content": request.system_prompt
+            }),
+            json!({
+                "role": "user",
+                "content": build_conversation_context(&request)
+            }),
+        ];
+        input.extend(request.conversation.iter().filter_map(|message| {
+            conversation_role(message.role.clone()).map(|role| {
+                json!({
+                    "role": role,
+                    "content": message.content
+                })
+            })
+        }));
+        let body = json!({
+            "model": request.model,
+            "input": input,
+            "text": {
+                "format": {
+                    "type": "json_schema",
+                    "name": "manual_node_turn",
+                    "strict": true,
+                    "schema": build_conversation_schema(&request.output_schema)
+                }
+            }
+        });
+
+        let payload = self
+            .post_json(&self.config.responses_path, body, "OpenAI")
+            .await?;
+        let text = extract_responses_output_text(&payload)?;
+        parse_conversation_output("OpenAI", text)
+    }
+
+    async fn invoke_chat_completions_conversation(
+        &self,
+        request: ConversationAgentRequest,
+    ) -> Result<ConversationAgentResponse, AgentError> {
+        let mut messages = vec![
+            json!({
+                "role": "system",
+                "content": request.system_prompt
+            }),
+            json!({
+                "role": "user",
+                "content": build_conversation_context(&request)
+            }),
+        ];
+        messages.extend(request.conversation.iter().filter_map(|message| {
+            conversation_role(message.role.clone()).map(|role| {
+                json!({
+                    "role": role,
+                    "content": message.content
+                })
+            })
+        }));
+        let body = json!({
+            "model": request.model,
+            "messages": messages,
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "manual_node_turn",
+                    "strict": true,
+                    "schema": build_conversation_schema(&request.output_schema)
+                }
+            }
+        });
+
+        let payload = self
+            .post_json(
+                &self.config.chat_completions_path,
+                body,
+                "OpenAI-compatible",
+            )
+            .await?;
+        let text = extract_chat_completion_content(&payload)?;
+        parse_conversation_output("OpenAI-compatible", text)
     }
 
     async fn post_json(&self, path: &str, body: Value, label: &str) -> Result<Value, AgentError> {
@@ -280,7 +462,9 @@ mod tests {
     use serde_json::json;
     use wiremock::matchers::{body_json, header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
-    use workflow_core::{AgentRequest, NodeId, WorkflowId};
+    use workflow_core::{
+        AgentRequest, ChatMessage, ChatRole, ConversationAgentRequest, NodeId, WorkflowId,
+    };
 
     fn request() -> AgentRequest {
         AgentRequest {
@@ -299,6 +483,40 @@ mod tests {
                 },
                 "required": ["summary"]
             }),
+        }
+    }
+
+    fn conversation_request() -> ConversationAgentRequest {
+        ConversationAgentRequest {
+            workflow_id: WorkflowId("wf".to_string()),
+            node_id: NodeId("node-1".to_string()),
+            node_label: "Planner".to_string(),
+            model: "gpt-5.5".to_string(),
+            system_prompt: "You plan features.".to_string(),
+            task_prompt: "Clarify the remaining user choices.".to_string(),
+            input: json!({"upstream": [{"node_id": "idea", "output": {"summary": "draft"}}]}),
+            output_schema: json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "summary": { "type": "string" }
+                },
+                "required": ["summary"]
+            }),
+            conversation: vec![
+                ChatMessage {
+                    role: ChatRole::User,
+                    content: "I want to tighten the scope.".to_string(),
+                },
+                ChatMessage {
+                    role: ChatRole::Assistant,
+                    content: "Which capability is mandatory for the first release?".to_string(),
+                },
+                ChatMessage {
+                    role: ChatRole::User,
+                    content: "Workflow execution with approvals.".to_string(),
+                },
+            ],
         }
     }
 
@@ -540,6 +758,212 @@ mod tests {
         let response = client.invoke(request).await.unwrap();
 
         assert_eq!(response.output, json!({"summary": "done"}));
+    }
+
+    #[tokio::test]
+    async fn sends_responses_conversation_request_with_manual_turn_schema() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/responses"))
+            .and(header("authorization", "Bearer test-key"))
+            .and(body_json(json!({
+                "model": "gpt-5.5",
+                "input": [
+                    {
+                        "role": "system",
+                        "content": "You plan features."
+                    },
+                    {
+                        "role": "user",
+                        "content": "Node: Planner\nTask:\nClarify the remaining user choices.\n\nUpstream input JSON:\n{\"upstream\":[{\"node_id\":\"idea\",\"output\":{\"summary\":\"draft\"}}]}\n\nDecide whether you are ready to advance. If you need more user input, set ready_to_advance to false, put your follow-up in assistant_message, and set output to null. If you are ready to advance, set ready_to_advance to true, return the final structured node output in output, and only include assistant_message when it helps the user understand the handoff."
+                    },
+                    {
+                        "role": "user",
+                        "content": "I want to tighten the scope."
+                    },
+                    {
+                        "role": "assistant",
+                        "content": "Which capability is mandatory for the first release?"
+                    },
+                    {
+                        "role": "user",
+                        "content": "Workflow execution with approvals."
+                    }
+                ],
+                "text": {
+                    "format": {
+                        "type": "json_schema",
+                        "name": "manual_node_turn",
+                        "strict": true,
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "ready_to_advance": { "type": "boolean" },
+                                "assistant_message": { "type": ["string", "null"] },
+                                "output": {
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "properties": {
+                                                "summary": { "type": "string" }
+                                            },
+                                            "required": ["summary"]
+                                        },
+                                        { "type": "null" }
+                                    ]
+                                }
+                            },
+                            "required": ["ready_to_advance", "assistant_message", "output"]
+                        }
+                    }
+                }
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "output": [{
+                    "type": "message",
+                    "content": [{
+                        "type": "output_text",
+                        "text": "{\"ready_to_advance\":false,\"assistant_message\":\"What deadline matters most?\",\"output\":null}"
+                    }]
+                }]
+            })))
+            .mount(&server)
+            .await;
+
+        let client = OpenAiClient::with_base_url("test-key", server.uri());
+
+        let response = client
+            .invoke_conversation(conversation_request())
+            .await
+            .unwrap();
+
+        assert!(!response.ready_to_advance);
+        assert_eq!(
+            response.assistant_message.as_deref(),
+            Some("What deadline matters most?")
+        );
+        assert_eq!(response.output, None);
+    }
+
+    #[tokio::test]
+    async fn sends_chat_completions_conversation_request_with_manual_turn_schema() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .and(header("authorization", "Bearer test-key"))
+            .and(body_json(json!({
+                "model": "vendor-model",
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "You plan features."
+                    },
+                    {
+                        "role": "user",
+                        "content": "Node: Planner\nTask:\nClarify the remaining user choices.\n\nUpstream input JSON:\n{\"upstream\":[{\"node_id\":\"idea\",\"output\":{\"summary\":\"draft\"}}]}\n\nDecide whether you are ready to advance. If you need more user input, set ready_to_advance to false, put your follow-up in assistant_message, and set output to null. If you are ready to advance, set ready_to_advance to true, return the final structured node output in output, and only include assistant_message when it helps the user understand the handoff."
+                    },
+                    {
+                        "role": "user",
+                        "content": "I want to tighten the scope."
+                    },
+                    {
+                        "role": "assistant",
+                        "content": "Which capability is mandatory for the first release?"
+                    },
+                    {
+                        "role": "user",
+                        "content": "Workflow execution with approvals."
+                    }
+                ],
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "manual_node_turn",
+                        "strict": true,
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "ready_to_advance": { "type": "boolean" },
+                                "assistant_message": { "type": ["string", "null"] },
+                                "output": {
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "additionalProperties": false,
+                                            "properties": {
+                                                "summary": { "type": "string" }
+                                            },
+                                            "required": ["summary"]
+                                        },
+                                        { "type": "null" }
+                                    ]
+                                }
+                            },
+                            "required": ["ready_to_advance", "assistant_message", "output"]
+                        }
+                    }
+                }
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "choices": [{
+                    "message": {
+                        "role": "assistant",
+                        "content": "{\"ready_to_advance\":true,\"assistant_message\":null,\"output\":{\"summary\":\"workflow execution with approvals\"}}"
+                    }
+                }]
+            })))
+            .mount(&server)
+            .await;
+
+        let mut request = conversation_request();
+        request.model = "vendor-model".to_string();
+        let client = OpenAiClient::with_config(OpenAiClientConfig {
+            api_key: "test-key".to_string(),
+            base_url: server.uri(),
+            wire_api: OpenAiWireApi::ChatCompletions,
+            responses_path: "v1/responses".to_string(),
+            chat_completions_path: "v1/chat/completions".to_string(),
+        });
+
+        let response = client.invoke_conversation(request).await.unwrap();
+
+        assert!(response.ready_to_advance);
+        assert_eq!(
+            response.output,
+            Some(json!({"summary": "workflow execution with approvals"}))
+        );
+    }
+
+    #[tokio::test]
+    async fn conversation_output_without_required_follow_up_is_rejected() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/responses"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "output": [{
+                    "type": "message",
+                    "content": [{
+                        "type": "output_text",
+                        "text": "{\"ready_to_advance\":false,\"assistant_message\":null,\"output\":null}"
+                    }]
+                }]
+            })))
+            .mount(&server)
+            .await;
+        let client = OpenAiClient::with_base_url("test-key", server.uri());
+
+        let error = client
+            .invoke_conversation(conversation_request())
+            .await
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "OpenAI conversation output was missing assistant_message"
+        );
     }
 
     #[tokio::test]

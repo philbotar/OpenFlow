@@ -21,15 +21,17 @@ Single-file orientation for contributors and coding agents.
 | `crates/workflow-core/src/runner.rs` | Non-interactive workflow execution | Changing execution semantics or upstream payload shape |
 | `crates/workflow-core/src/interactive.rs` | Interactive engine poll loop + human input pauses | Changing pause/resume behavior or per-node interaction |
 | `crates/workflow-core/src/ports.rs` | AI boundary trait (`AiPort`) + request/response DTOs | Changing AI contract between core and adapters |
-| `crates/openai-client/src/lib.rs` | OpenAI Responses API adapter | Changing HTTP request/response mapping |
-| `crates/agent-workflow-app/src/ui/` | UI panels, canvas, theme, inspector, settings | Changing visuals, layout, interactions, keyboard behavior |
+| `crates/openai-client/src/lib.rs` | OpenAI Responses / Chat Completions adapter | Changing HTTP request/response mapping |
+| `crates/agent-workflow-app/src/provider_config.rs` | Provider readiness and API-key resolution | Changing key precedence, env fallback, or provider setup rules |
+| `crates/agent-workflow-app/src/settings_store.rs` | App settings persistence (`settings.json`) | Changing settings schema, defaults, or provider profile fields |
 | `crates/agent-workflow-app/src/state.rs` | App edit state + mutations | Changing selection, edge creation, schema editor, status tracking |
 | `crates/agent-workflow-app/src/storage.rs` | Workflow persistence (`workflows.json`) | Changing workflow save/load format or location |
-| `crates/agent-workflow-app/src/settings_store.rs` | App settings persistence (`settings.json`) | Changing settings schema or defaults |
-| `crates/agent-workflow-app/src/main.rs` | Desktop bootstrapping + viewport + fonts | Changing app startup, window defaults, or font loading |
+| `crates/agent-workflow-desktop/src-tauri/src/lib.rs` | Tauri commands/events and app bootstrap | Changing frontend/backend IPC or desktop startup |
+| `crates/agent-workflow-desktop/src/App.tsx` | Main Solid desktop shell | Changing layout, app interactions, sidebar/header/dock behavior |
+| `crates/agent-workflow-desktop/src/api.ts` | Typed Tauri invoke/event wrappers | Changing frontend RPC names or payloads |
+| `crates/agent-workflow-desktop/src/types.ts` | Frontend DTO mirror types | Changing command payload/result shapes |
 | `examples/*.workflow.json` | Example workflows | Adding demos and smoke workflows |
 | `docs/superpowers/plans/` | Historical implementation plans | Reviewing prior design intent and rollout details |
-
 ## Common Change Paths
 
 | Goal | Primary Files |
@@ -37,15 +39,16 @@ Single-file orientation for contributors and coding agents.
 | Add a workflow rule or validation | `workflow-core/src/validation.rs`, tests in same file |
 | Change what each node receives as input | `workflow-core/src/runner.rs` (`build_node_input`) and `interactive.rs` |
 | Add a new model/backend adapter | New crate or module implementing `AiPort`, then wire in `agent-workflow-app/src/ui/mod.rs` |
-| Change canvas look/behavior | `agent-workflow-app/src/ui/canvas.rs`, `ui/theme.rs`, `canvas_math.rs` |
-| Change inspector controls or spacing | `agent-workflow-app/src/ui/inspector.rs`, `ui/widgets.rs`, `ui/theme.rs` |
-| Change settings UX or defaults | `agent-workflow-app/src/ui/settings.rs`, `settings_store.rs` |
-
+| Change canvas look/behavior | `agent-workflow-desktop/src/canvas/`, `index.css` |
+| Change inspector controls or spacing | `agent-workflow-desktop/src/App.tsx`, `index.css` |
+| Change settings UX or toast behavior | `agent-workflow-desktop/src/App.tsx`, `api.ts`, `settings_store.rs` |
+| Change provider config or key resolution | `agent-workflow-app/src/provider_config.rs`, `settings_store.rs` |
 ## Runtime/Persistence Locations
 
 - Workflow files save to `dirs::data_local_dir()/step-through-agentic-workflow/workflows.json`.
 - Settings save to `dirs::data_local_dir()/step-through-agentic-workflow/settings.json`.
-- API key precedence: UI settings value first, `OPENAI_API_KEY` fallback.
+- Provider API keys are stored inside `settings.json` under the active provider profile (`openai.api_key` / `openai_compatible.api_key`).
+- API key resolution order (highest to lowest): transient input panel → stored profile key → env var fallback (`OPENAI_API_KEY` / `OPENAI_COMPATIBLE_API_KEY`).
 
 ## Verification Commands
 
