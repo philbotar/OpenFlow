@@ -1049,7 +1049,7 @@ function App() {
       </aside>
 
       <main class="main-shell">
-        <header class="topbar" classList={{ "topbar-macos": isMacOS(), "topbar-maximized": isMaximized() }}>
+        <header class="topbar" classList={{ "topbar-macos": isMacOS(), "topbar-maximized": isMaximized() }} data-tauri-drag-region>
           <div class="topbar-leading">
             <div class="topbar-copy" data-tauri-drag-region>
               <h2>{screen() === "agents" ? "Agents" : activeWorkflow()?.name ?? "Loading…"}</h2>
@@ -1062,13 +1062,31 @@ function App() {
             </div>
             <Show when={screen() === "editor"}>
               <div class="toolbar-group topbar-button-group">
-                <button class="topbar-icon-button" onClick={() => void persistAll()} title="Save" aria-label="Save workflow">
+                <button
+                  class="topbar-icon-button"
+                  onClick={() => void persistAll()}
+                  title="Save"
+                  aria-label="Save workflow"
+                  data-tauri-drag-region="false"
+                >
                   <SidebarIcon name="save" />
                 </button>
-                <button class="topbar-icon-button" onClick={() => void handleValidate()} title="Validate" aria-label="Validate workflow">
+                <button
+                  class="topbar-icon-button"
+                  onClick={() => void handleValidate()}
+                  title="Validate"
+                  aria-label="Validate workflow"
+                  data-tauri-drag-region="false"
+                >
                   <SidebarIcon name="validate" />
                 </button>
-                <button class="topbar-icon-button topbar-icon-button-primary" onClick={() => void handleRun()} title="Run" aria-label="Run workflow">
+                <button
+                  class="topbar-icon-button topbar-icon-button-primary"
+                  onClick={() => void handleRun()}
+                  title="Run"
+                  aria-label="Run workflow"
+                  data-tauri-drag-region="false"
+                >
                   <SidebarIcon name="run" />
                 </button>
               </div>

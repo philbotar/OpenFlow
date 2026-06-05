@@ -35,6 +35,13 @@ vi.mock("./api", () => ({
   validateWorkflow: apiMocks.validateWorkflow,
 }));
 
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => ({
+    isMaximized: vi.fn().mockResolvedValue(false),
+    onResized: vi.fn().mockResolvedValue(() => {}),
+  }),
+}));
+
 vi.mock("./canvas/WorkflowCanvasHost", () => ({
   default: () => null,
 }));
@@ -99,11 +106,18 @@ function makeAgent(id: string, name: string): AgentDefinition {
   return {
     id,
     name,
-    system_prompt: "",
-    task_prompt: "",
-    model: "gpt-4.1-mini",
-    output_schema: { type: "object" },
-    auto_start: false,
+    system_prompt: "You are a focused AI agent in a node workflow.",
+    task_prompt: "Return a concise JSON object for this node.",
+    model: "gpt-5.5",
+    output_schema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        summary: { type: "string" },
+      },
+      required: ["summary"],
+    },
+    auto_start: true,
   };
 }
 
@@ -357,13 +371,46 @@ describe("App agent dashboard", () => {
       await flush();
 
       const newAgentButton = await waitForElement(
-        () => Array.from(container.querySelectorAll("button")).find((element) => element.textContent === "New agent") as HTMLButtonElement | null,
+        () => container.querySelector('button[aria-label="New agent"]') as HTMLButtonElement | null,
         "new agent button",
       );
       newAgentButton.click();
       await flush();
 
       expect(apiMocks.createAgentDefinition).toHaveBeenCalledWith("Agent 1");
+
+      const modelInput = await waitForElement(
+        () => Array.from(container.querySelectorAll("label span")).find((element) => element.textContent === "Model")?.parentElement?.querySelector("input") as HTMLInputElement | null,
+        "agent model input",
+      );
+      expect(modelInput.value).toBe("gpt-5.5");
+
+      const autoStartInput = Array.from(container.querySelectorAll("label.checkbox-row input")).find(
+        (element) => (element.parentElement?.textContent ?? "").includes("Auto-start without pausing for human input"),
+      ) as HTMLInputElement | undefined;
+      expect(autoStartInput?.checked).toBe(true);
+
+      const systemPromptInput = Array.from(container.querySelectorAll("label span")).find(
+        (element) => element.textContent === "System prompt",
+      )?.parentElement?.querySelector("textarea") as HTMLTextAreaElement | null;
+      expect(systemPromptInput?.value).toBe("You are a focused AI agent in a node workflow.");
+
+      const taskPromptInput = Array.from(container.querySelectorAll("label span")).find(
+        (element) => element.textContent === "Task prompt",
+      )?.parentElement?.querySelector("textarea") as HTMLTextAreaElement | null;
+      expect(taskPromptInput?.value).toBe("Return a concise JSON object for this node.");
+
+      const schemaInput = Array.from(container.querySelectorAll("label span")).find(
+        (element) => element.textContent === "JSON output schema",
+      )?.parentElement?.querySelector("textarea") as HTMLTextAreaElement | null;
+      expect(JSON.parse(schemaInput?.value ?? "")).toEqual({
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          summary: { type: "string" },
+        },
+        required: ["summary"],
+      });
 
       const nameInput = await waitForElement(
         () => Array.from(container.querySelectorAll("label span")).find((element) => element.textContent === "Name")?.parentElement?.querySelector("input") as HTMLInputElement | null,
@@ -373,7 +420,7 @@ describe("App agent dashboard", () => {
       nameInput.dispatchEvent(new Event("input", { bubbles: true }));
 
       const saveButton = Array.from(container.querySelectorAll("button")).find(
-        (element) => element.textContent === "Save agents",
+        (element) => element.textContent === "Save",
       ) as HTMLButtonElement | undefined;
       expect(saveButton).toBeDefined();
       saveButton?.click();

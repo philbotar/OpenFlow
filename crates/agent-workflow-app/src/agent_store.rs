@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use workflow_core::AgentNodeConfig;
 
 const CURRENT_DATA_DIR_SLUG: &str = "openflow";
 const LEGACY_DATA_DIR_SLUG: &str = "step-through-agentic-workflow";
@@ -41,14 +42,15 @@ pub struct AgentDefinition {
 impl AgentDefinition {
     #[must_use]
     pub fn new(name: impl Into<String>) -> Self {
+        let defaults = AgentNodeConfig::default();
         Self {
             id: uuid::Uuid::new_v4().to_string(),
             name: name.into(),
-            system_prompt: String::new(),
-            task_prompt: String::new(),
-            model: String::new(),
-            output_schema: serde_json::json!({ "type": "object" }),
-            auto_start: false,
+            system_prompt: defaults.system_prompt,
+            task_prompt: defaults.task_prompt,
+            model: defaults.model,
+            output_schema: defaults.output_schema,
+            auto_start: defaults.auto_start,
         }
     }
 }
@@ -164,6 +166,18 @@ mod tests {
         let loaded = store.load().unwrap();
 
         assert_eq!(loaded, vec![agent]);
+    }
+
+    #[test]
+    fn new_agent_uses_core_default_template() {
+        let agent = AgentDefinition::new("Templated");
+        let defaults = AgentNodeConfig::default();
+
+        assert_eq!(agent.system_prompt, defaults.system_prompt);
+        assert_eq!(agent.task_prompt, defaults.task_prompt);
+        assert_eq!(agent.model, defaults.model);
+        assert_eq!(agent.output_schema, defaults.output_schema);
+        assert_eq!(agent.auto_start, defaults.auto_start);
     }
 
     #[test]
