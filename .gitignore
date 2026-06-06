@@ -9,9 +9,11 @@
 .claude/
 .kilo/
 .superpowers/
-/docs/
 .aider*
-/node_modules/
+*/node_modules/*
 dist/
 .planning/
 crates/agent-workflow-desktop/node_modules*
+*/crates/ui/node_modules
+*node_modules/*
+node_modules/
