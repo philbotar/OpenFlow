@@ -1259,7 +1259,7 @@ function App() {
           </div>
         </div>
         <div class="sidebar-list">
-          <button class="sidebar-nav-button" onClick={handleOpenAgents}>
+          <button class="sidebar-nav-button" classList={{ active: screen() === "agents" }} onClick={handleOpenAgents}>
             <SidebarIcon name="agents" />
             <span>Agents</span>
           </button>
@@ -1334,9 +1334,6 @@ function App() {
 
       <main class="main-shell">
         <header class="topbar" classList={{ "topbar-macos": isMacOS(), "topbar-maximized": isMaximized() }} data-tauri-drag-region>
-          <Show when={isMacOS()}>
-            <div class="topbar-window-controls-spacer" aria-hidden="true" data-tauri-drag-region />
-          </Show>
           <div class="topbar-leading">
             <div class="topbar-copy" data-tauri-drag-region>
               <h2>{screen() === "agents" ? "Agents" : activeWorkflow()?.name ?? "Loading…"}</h2>

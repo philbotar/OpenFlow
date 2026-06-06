@@ -53,8 +53,7 @@ OpenAI defaults to `POST /v1/responses`; other OpenAI-compatible providers defau
 ## Run
 
 ```bash
-. "$HOME/.cargo/env"
-cargo run -p agent-workflow-app
+cargo run -p agent-workflow-desktop
 ```
 
 ## Test
@@ -78,7 +77,7 @@ CI policy:
 Workflow acceptance tests:
 
 ```bash
-cargo test -p agent-workflow-app --test workflow_acceptance -- --nocapture
+cargo test -p app-backend --test workflow_acceptance -- --nocapture
 ```
 
 Opt-in live AI smoke test:
@@ -87,7 +86,7 @@ Opt-in live AI smoke test:
 STEP_WORKFLOW_LIVE_AI=1 \
 STEP_WORKFLOW_LIVE_API_KEY="$OPENAI_API_KEY" \
 STEP_WORKFLOW_LIVE_MODEL="gpt-4o-mini" \
-cargo test -p agent-workflow-app --test live_workflow -- --ignored --nocapture
+cargo test -p app-backend --test live_workflow -- --ignored --nocapture
 ```
 
 OpenAI-compatible live smoke example:
@@ -99,7 +98,7 @@ STEP_WORKFLOW_LIVE_BASE_URL="https://api.deepinfra.com/v1/openai" \
 STEP_WORKFLOW_LIVE_WIRE_API="chat-completions" \
 STEP_WORKFLOW_LIVE_CHAT_COMPLETIONS_PATH="chat/completions" \
 STEP_WORKFLOW_LIVE_MODEL="deepseek-ai/DeepSeek-V4-Flash" \
-cargo test -p agent-workflow-app --test live_workflow -- --ignored --nocapture
+cargo test -p app-backend --test live_workflow -- --ignored --nocapture
 ```
 
 Live smoke tests assert schema-level behavior and sentinel preservation, not exact wording.
@@ -117,5 +116,5 @@ Clarify idea -> Create plan -> Final brief
 
 - `crates/workflow-core`: domain model, validation, execution ordering, runner, AI port.
 - `crates/ai`: provider adapters for OpenAI-compatible APIs and Anthropic direct.
-- `crates/agent-workflow-app`: desktop UI, local workflow persistence, edit state.
+- `crates/app-backend`: desktop UI, local workflow persistence, edit state.
 - `examples`: shareable workflow JSON files.

@@ -1,7 +1,7 @@
 #![allow(clippy::significant_drop_tightening)]
 
-use agent_workflow_app::execution::{run_workflow_headless, ApprovalResponse, ManualInput};
-use agent_workflow_app::state::TraceStatus;
+use app_backend::execution::{run_workflow_headless, ApprovalResponse, ManualInput};
+use app_backend::state::TraceStatus;
 use async_trait::async_trait;
 use parking_lot::Mutex;
 use serde_json::json;
@@ -10,7 +10,6 @@ use workflow_core::{
     AgentError, AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTurnOutcome,
     AgentTurnSuccess, AiPort, ApprovalMode, Edge, Node, NodeId, ToolCall, ToolRef, Workflow,
 };
-
 #[derive(Clone, Default)]
 struct ScriptedAi {
     requests: Arc<Mutex<Vec<AgentRequest>>>,
@@ -266,7 +265,7 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
         run_workflow_headless(workflow.clone(), None, ToolAi::default(), vec![], vec![]).await;
     assert!(matches!(
         first_attempt,
-        Err(agent_workflow_app::execution::WorkflowExecutionError::MissingApproval(_))
+        Err(app_backend::execution::WorkflowExecutionError::MissingApproval(_))
     ));
 
     let snapshot = run_workflow_headless(

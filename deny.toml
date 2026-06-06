@@ -52,14 +52,10 @@ allow-wildcard-paths = true
 highlight = "all"
 allow = []
 deny = []
-skip = []
 skip-tree = [
     { crate = "tauri@2.11.2", depth = 20 },
-    { crate = "eframe@0.34.2", depth = 20 },
-    { crate = "egui@0.34.2", depth = 20 },
     { crate = "reqwest@0.13.3", depth = 20 },
 ]
-
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"

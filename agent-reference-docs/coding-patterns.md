@@ -6,9 +6,9 @@ Patterns we follow in this repo.
 
 1. `workflow-core` is pure domain logic.
 2. `ai` is an adapter crate that implements `AiPort` for BYOK providers.
-3. `agent-workflow-app` composes UI, local state, and persistence.
-4. Domain crate must not depend on `egui`, `eframe`, or HTTP clients.
-5. UI crate must call domain APIs; do not duplicate domain rules in UI.
+3. `app-backend` composes runtime, state, and persistence.
+4. Domain crate must not depend on HTTP clients or async runtimes beyond what's needed for tests.
+5. `app-backend` must call domain APIs; do not duplicate domain rules in `app-backend`.
 
 ## Ownership By Concern
 
@@ -20,9 +20,8 @@ Patterns we follow in this repo.
 | Interactive pause/resume semantics | `crates/workflow-core/src/interactive.rs` |
 | LLM invocation contract | `crates/workflow-core/src/ports.rs` |
 | LLM transport mapping | `crates/ai/src/*` |
-| UI rendering + interactions | `crates/agent-workflow-app/src/ui/*` |
-| Mutable app state transitions | `crates/agent-workflow-app/src/state.rs` |
-| File persistence formats | `crates/agent-workflow-app/src/storage.rs`, `settings_store.rs` |
+| Mutable app state transitions | `crates/app-backend/src/state.rs` |
+| File persistence formats | `crates/app-backend/src/storage.rs`, `settings_store.rs` |
 
 ## Implementation Conventions
 
@@ -31,8 +30,7 @@ Patterns we follow in this repo.
 3. Keep tests in `#[cfg(test)] mod tests` in the same file as behavior.
 4. Use typed errors with `thiserror`; include actionable error strings.
 5. Preserve deterministic order where it affects behavior by sorting IDs (existing pattern in `validation.rs` and `runner.rs`).
-6. For mutating state, prefer dedicated methods on `AppState` rather than direct map/vector edits across UI files.
-7. For visibility in UI modules, default to `pub(super)` to keep surface area narrow.
+6. For mutating state, prefer dedicated methods on `AppState` rather than direct map/vector edits across modules.
 
 ## Error Handling Rules
 
@@ -49,7 +47,6 @@ Patterns we follow in this repo.
    - layer/execution ordering,
    - upstream input shape,
    - failure propagation.
-4. For UI token/spacing changes, keep value-locking tests where tokens are intentional contracts.
 
 ## Dependency Boundary
 
@@ -57,7 +54,7 @@ Patterns we follow in this repo.
 2. Keep crate dependencies minimal and role-specific:
    - `workflow-core`: model/validation/runner only.
    - `ai`: HTTP + provider payload parsing/auth only.
-   - `agent-workflow-app`: UI/runtime/persistence.
+   - `app-backend`: runtime/state/persistence.
 
 ## Change Checklist
 

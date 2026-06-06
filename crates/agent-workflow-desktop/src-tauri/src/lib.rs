@@ -1,15 +1,14 @@
 #![allow(clippy::cargo, clippy::nursery, clippy::pedantic)]
 
-use agent_workflow_app::agent_store::AgentDefinition;
-use agent_workflow_app::backend::{
+use app_backend::agent_store::AgentDefinition;
+use app_backend::backend::{
     AppBackend, BackendError, ProviderReadiness, WorkflowListItem, WorkflowValidationSummary,
 };
-use agent_workflow_app::settings_store::AppSettings;
-use agent_workflow_app::state::WorkflowRunState;
+use app_backend::settings_store::AppSettings;
+use app_backend::state::WorkflowRunState;
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
 use workflow_core::Workflow;
-
 /// Bootstrap payload returned on app startup.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -117,10 +116,9 @@ fn rename_workflow(
 #[tauri::command]
 fn list_agents(
     backend: tauri::State<'_, AppBackend>,
-) -> Result<Vec<agent_workflow_app::backend::AgentDefinitionSummary>, CommandError> {
+) -> Result<Vec<app_backend::backend::AgentDefinitionSummary>, CommandError> {
     Ok(backend.list_agents()?)
 }
-
 /// Tauri command: Load all agents.
 #[tauri::command]
 fn load_agents(backend: tauri::State<AppBackend>) -> Result<Vec<AgentDefinition>, CommandError> {

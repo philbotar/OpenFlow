@@ -1,11 +1,11 @@
 #![allow(clippy::needless_pass_by_value)]
 
-use agent_workflow_app::execution::run_workflow_headless;
-use agent_workflow_app::state::TraceStatus;
 use ai::{
     AiClient, AiClientConfig, AuthConfig, OpenAiCompatibleConfig, ProviderAdapterConfig,
     ProviderId, WireApi,
 };
+use app_backend::execution::run_workflow_headless;
+use app_backend::state::TraceStatus;
 use reqwest::Client;
 use serde_json::{json, Value};
 use std::env;

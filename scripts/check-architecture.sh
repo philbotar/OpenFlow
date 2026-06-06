@@ -17,14 +17,14 @@ ERRORS = 0
 ALLOWED = {
     "workflow-core": [],
     "ai": ["workflow-core"],
-    "agent-workflow-app": ["workflow-core", "ai"],
-    "agent-workflow-desktop": ["workflow-core", "agent-workflow-app"],
+    "app-backend": ["workflow-core", "ai"],
+    "agent-workflow-desktop": ["workflow-core", "app-backend"],
 }
 
 CRATE_MANIFESTS = {
     "workflow-core": WORKSPACE_DIR / "crates" / "workflow-core" / "Cargo.toml",
     "ai": WORKSPACE_DIR / "crates" / "ai" / "Cargo.toml",
-    "agent-workflow-app": WORKSPACE_DIR / "crates" / "agent-workflow-app" / "Cargo.toml",
+    "app-backend": WORKSPACE_DIR / "crates" / "app-backend" / "Cargo.toml",
     "agent-workflow-desktop": WORKSPACE_DIR / "crates" / "agent-workflow-desktop" / "src-tauri" / "Cargo.toml",
 }
 
@@ -41,7 +41,7 @@ for crate, manifest in CRATE_MANIFESTS.items():
                 ERRORS += 1
 
 # Verify workflow-core has no forbidden external deps
-FORBIDDEN = {"reqwest", "tauri", "eframe", "egui", "egui-phosphor"}
+FORBIDDEN = {"reqwest", "tauri"}
 workflow_core_manifest = CRATE_MANIFESTS["workflow-core"]
 with workflow_core_manifest.open("rb") as f:
     data = tomllib.load(f)
@@ -50,15 +50,6 @@ for dep in FORBIDDEN:
     if dep in deps:
         print(f"error: workflow-core must not depend on '{dep}' (GUI/framework concern)")
         ERRORS += 1
-
-# Advisory note about known architectural drift
-app_manifest = CRATE_MANIFESTS["agent-workflow-app"]
-with app_manifest.open("rb") as f:
-    data = tomllib.load(f)
-deps = data.get("dependencies", {})
-for gui_dep in {"eframe", "egui"}:
-    if gui_dep in deps:
-        print(f"note: agent-workflow-app contains GUI dependency '{gui_dep}'. Per AGENTS.md, visual UI should be in agent-workflow-desktop. This is deferred — see architecture plan.")
 
 if ERRORS:
     print(f"Architecture check failed with {ERRORS} error(s).")

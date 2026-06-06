@@ -6,10 +6,9 @@ Purpose: explain how to verify workflow behavior without manually clicking throu
 
 | Layer | Command | What It Proves |
 | --- | --- | --- |
-| Unit tests | `cargo test --workspace` | Domain rules, tool approval resolution, app state, persistence, provider config, UI layout contracts, OpenAI-compatible and Anthropic wire mapping |
-| Deterministic workflow acceptance | `cargo test -p agent-workflow-app --test workflow_acceptance -- --nocapture` | A whole workflow can run headlessly with scripted AI outputs, tool calls, and approval pauses |
-| Live AI smoke | `STEP_WORKFLOW_LIVE_AI=1 STEP_WORKFLOW_LIVE_API_KEY=... STEP_WORKFLOW_LIVE_MODEL=... cargo test -p agent-workflow-app --test live_workflow -- --ignored --nocapture` | A real BYOK provider can complete a small workflow and satisfy schema-level rules |
-
+| Unit tests | `cargo test --workspace` | Domain rules, tool approval resolution, app state, persistence, provider config, OpenAI-compatible and Anthropic wire mapping |
+| Deterministic workflow acceptance | `cargo test -p app-backend --test workflow_acceptance -- --nocapture` | A whole workflow can run headlessly with scripted AI outputs, tool calls, and approval pauses |
+| Live AI smoke | `STEP_WORKFLOW_LIVE_AI=1 STEP_WORKFLOW_LIVE_API_KEY=... STEP_WORKFLOW_LIVE_MODEL=... cargo test -p app-backend --test live_workflow -- --ignored --nocapture` | A real BYOK provider can complete a small workflow and satisfy schema-level rules |
 ## Acceptance Rules
 
 The deterministic acceptance tests should prove:
@@ -46,18 +45,16 @@ cargo test --workspace
 ```
 
 Run this when changing execution behavior, node input shaping, manual pauses, tool approvals, tool result routing, run trace, or chat logs:
-
 ```bash
-cargo test -p agent-workflow-app --test workflow_acceptance -- --nocapture
+cargo test -p app-backend --test workflow_acceptance -- --nocapture
 ```
-
 Run this only when intentionally checking a real provider/model:
 
 ```bash
 STEP_WORKFLOW_LIVE_AI=1 \
 STEP_WORKFLOW_LIVE_API_KEY="$OPENAI_API_KEY" \
 STEP_WORKFLOW_LIVE_MODEL="gpt-4o-mini" \
-cargo test -p agent-workflow-app --test live_workflow -- --ignored --nocapture
+cargo test -p app-backend --test live_workflow -- --ignored --nocapture
 ```
 
 DeepInfra-compatible chat completions example:
@@ -66,8 +63,7 @@ DeepInfra-compatible chat completions example:
 STEP_WORKFLOW_LIVE_AI=1 \
 STEP_WORKFLOW_LIVE_API_KEY="$OPENAI_COMPATIBLE_API_KEY" \
 STEP_WORKFLOW_LIVE_BASE_URL="https://api.deepinfra.com/v1/openai" \
-STEP_WORKFLOW_LIVE_WIRE_API="chat-completions" \
 STEP_WORKFLOW_LIVE_CHAT_COMPLETIONS_PATH="chat/completions" \
 STEP_WORKFLOW_LIVE_MODEL="deepseek-ai/DeepSeek-V4-Flash" \
-cargo test -p agent-workflow-app --test live_workflow -- --ignored --nocapture
+cargo test -p app-backend --test live_workflow -- --ignored --nocapture
 ```

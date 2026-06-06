@@ -2,7 +2,7 @@
 members = [
     "crates/workflow-core",
     "crates/ai",
-    "crates/agent-workflow-app",
+    "crates/app-backend",
     "crates/agent-workflow-desktop/src-tauri",
 ]
 resolver = "2"
@@ -19,8 +19,6 @@ categories = ["development-tools", "gui"]
 [workspace.dependencies]
 async-trait = "0.1.89"
 dirs = "6.0.0"
-eframe = "0.34.2"
-egui = "0.34.2"
 futures = "0.3.32"
 parking_lot = "0.12.5"
 reqwest = { version = "0.13.3", features = ["json", "rustls"] }

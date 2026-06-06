@@ -16,9 +16,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build.workspace = true
 
- [dependencies]
-agent-workflow-app = { path = "../../agent-workflow-app", version = "0.1.0" }
- serde.workspace = true
+[dependencies]
+app-backend = { path = "../../app-backend", version = "0.1.0" }
+serde.workspace = true
  tauri.workspace = true
  tauri-plugin-shell = "2"
  thiserror.workspace = true

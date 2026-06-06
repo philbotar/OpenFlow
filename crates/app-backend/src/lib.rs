@@ -30,6 +30,3 @@ pub mod settings_store;
 pub mod state;
 pub mod storage;
 pub mod tools;
-pub mod ui;
-
-pub use ui::WorkflowApp;
