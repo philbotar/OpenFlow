@@ -3,8 +3,8 @@
 //! Concrete implementations of inbound port traits backed by `AppBackend`.
 //! These provide the Tauri command interface.
 
+use app_backend::{Node, Workflow};
 use async_trait::async_trait;
-use workflow_core::{Node, Workflow};
 
 use app_backend::agent_store::AgentDefinition;
 use app_backend::backend::{

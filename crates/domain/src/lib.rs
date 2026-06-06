@@ -14,8 +14,8 @@
     clippy::derive_partial_eq_without_eq
 )]
 
-pub mod interactive;
 pub mod adapters;
+pub mod interactive;
 pub mod model;
 pub mod ports;
 pub mod runner;

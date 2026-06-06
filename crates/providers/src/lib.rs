@@ -13,8 +13,8 @@ mod spec;
 pub use adapters::inbound::DefaultProviderFactory;
 pub use auth::AuthConfig;
 pub use client::{AiClient, AiClientConfig, AnthropicConfig, ProviderAdapterConfig};
-pub use ports::inbound::ProviderFactoryPort;
 pub use openai_compat::OpenAiCompatibleConfig;
+pub use ports::inbound::ProviderFactoryPort;
 pub use spec::{
     builtin_provider_specs, provider_spec, AnthropicSpec, AuthSpec, OpenAiCompatibleSpec,
     ProviderId, ProviderKind, ProviderSpec, WireApi,

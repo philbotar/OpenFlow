@@ -8,7 +8,7 @@ use crate::AiClientConfig;
 pub struct DefaultProviderFactory;
 
 impl ProviderFactoryPort for DefaultProviderFactory {
-	fn create(&self, config: AiClientConfig) -> BoxedAiPort {
-		Box::new(AiClient::with_config(config))
-	}
+    fn create(&self, config: AiClientConfig) -> BoxedAiPort {
+        Box::new(AiClient::with_config(config))
+    }
 }

@@ -3,9 +3,9 @@
 //! These traits define the contracts the desktop layer depends on.
 //! The adapters module provides concrete implementations backed by `AppBackend`.
 
+use app_backend::Node;
 use async_trait::async_trait;
 use tokio::sync::mpsc::UnboundedReceiver;
-use workflow_core::Node;
 
 use app_backend::agent_store::AgentDefinition;
 use app_backend::backend::{
@@ -15,7 +15,7 @@ use app_backend::backend::{
 use app_backend::execution::ExecutionEvent;
 use app_backend::settings_store::AppSettings;
 use app_backend::state::WorkflowRunState;
-use workflow_core::Workflow;
+use app_backend::Workflow;
 
 // ── Workflow CRUD ──────────────────────────────────────────────
 

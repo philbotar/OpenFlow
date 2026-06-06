@@ -24,7 +24,6 @@ serde.workspace = true
  tauri-plugin-shell = "2"
  thiserror.workspace = true
  tokio.workspace = true
-workflow-core = { package = "domain", path = "../../domain", version = "0.1.0" }
 
 [dev-dependencies]
 serde_json.workspace = true

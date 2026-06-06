@@ -19,7 +19,7 @@ ALLOWED = {
     "domain": set(),
     "providers": {"domain"},
     "orchestration": {"domain", "providers"},
-    "desktop": {"domain", "orchestration"},
+    "desktop": {"orchestration"},
 }
 
 CRATE_MANIFESTS = {
@@ -129,6 +129,70 @@ for seam_file in RUST_SEAM_FILES:
     if not has_api_shape:
         print(f"error: Rust seam file lacks API surface: {seam_file}")
         ERRORS += 1
+
+# ── Import-level boundary checks (Tier 2) ──────────────────────
+IMPORT_RULES = [
+    # providers may only import from domain's ports module, not domain internals
+    {
+        "label": "providers → domain: only ports module",
+        "root": WORKSPACE_DIR / "crates" / "providers" / "src",
+        "banned_paths": [
+            "workflow_core::model",
+            "workflow_core::validation",
+            "workflow_core::runner",
+            "workflow_core::interactive",
+            "workflow_core::template",
+            "workflow_core::template_store",
+            "workflow_core::tools",
+            "workflow_core::adapters",
+        ],
+    },
+    # orchestration may not import provider adapter/port internals directly
+    {
+        "label": "orchestration → providers: only crate-root API",
+        "root": WORKSPACE_DIR / "crates" / "orchestration" / "src",
+        "banned_paths": [
+            "ai::adapters",
+            "ai::ports",
+        ],
+    },
+]
+
+for rule in IMPORT_RULES:
+    rule_root = rule["root"]
+    if not rule_root.is_dir():
+        continue
+    for file in sorted(rule_root.rglob("*.rs")):
+        text = file.read_text(encoding="utf-8")
+        for line in text.splitlines():
+            stripped = line.strip()
+            for banned in rule["banned_paths"]:
+                # Check both `use banned::path` and `use crate::{banned::path, ...}`
+                if f"use {banned}" in stripped or re.search(
+                    rf'\b{re.escape(banned)}::\b', stripped
+                ):
+                    rel = file.relative_to(WORKSPACE_DIR)
+                    print(
+                        f"error: {rule['label']}\n"
+                        f"  {rel}:{line}\n"
+                        f"  imports from banned path '{banned}'"
+                    )
+                    ERRORS += 1
+
+# Belt-and-suspenders: desktop must not reference workflow_core anywhere
+DESKTOP_DIRS = [
+    WORKSPACE_DIR / "crates" / "desktop" / "src-tauri" / "src",
+    WORKSPACE_DIR / "crates" / "desktop" / "src-tauri" / "tests",
+]
+for desk_dir in DESKTOP_DIRS:
+    if not desk_dir.is_dir():
+        continue
+    for file in sorted(desk_dir.rglob("*.rs")):
+        text = file.read_text(encoding="utf-8")
+        if "workflow_core" in text:
+            rel = file.relative_to(WORKSPACE_DIR)
+            print(f"error: desktop must not reference 'workflow_core' (use app_backend re-exports): {rel}")
+            ERRORS += 1
 
 if ERRORS:
     print(f"Architecture check failed with {ERRORS} error(s).")

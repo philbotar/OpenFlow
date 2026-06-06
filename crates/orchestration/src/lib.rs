@@ -20,8 +20,8 @@
     clippy::unused_self
 )]
 
-pub mod agent_store;
 pub mod adapters;
+pub mod agent_store;
 pub mod backend;
 pub mod canvas_math;
 pub mod credential_store;
@@ -32,3 +32,6 @@ pub mod settings_store;
 pub mod state;
 pub mod storage;
 pub mod tools;
+
+// Re-exports of domain types consumed by downstream layers
+pub use workflow_core::{Node, Workflow};

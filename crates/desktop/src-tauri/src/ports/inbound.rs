@@ -3,8 +3,8 @@
 //! These traits define the contracts the desktop layer exposes to its consumers.
 //! The adapters module provides the concrete Tauri command implementations.
 
+use app_backend::Workflow;
 use async_trait::async_trait;
-use workflow_core::Workflow;
 
 use app_backend::agent_store::AgentDefinition;
 use app_backend::backend::{
@@ -64,7 +64,7 @@ pub trait AgentCommands {
         x: f32,
         y: f32,
         agent_id: Option<String>,
-    ) -> Result<workflow_core::Node, BackendError>;
+    ) -> Result<app_backend::Node, BackendError>;
 }
 
 // ── Settings commands ──────────────────────────────────────────

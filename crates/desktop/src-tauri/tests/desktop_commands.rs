@@ -3,9 +3,9 @@
 //! These tests verify the command logic in isolation by providing
 //! canned data through the port trait implementations.
 
+use app_backend::Workflow;
 use async_trait::async_trait;
 use tokio::sync::mpsc;
-use workflow_core::Workflow;
 
 use app_backend::agent_store::AgentDefinition;
 use app_backend::backend::{
@@ -147,8 +147,8 @@ impl AgentRepository for MockBackend {
         _x: f32,
         _y: f32,
         _agent_id: Option<&str>,
-    ) -> Result<workflow_core::Node, BackendError> {
-        Ok(workflow_core::Node::agent("mock-node", 0.0, 0.0))
+    ) -> Result<app_backend::Node, BackendError> {
+        Ok(app_backend::Node::agent("mock-node", 0.0, 0.0))
     }
 }
 

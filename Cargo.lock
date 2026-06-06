@@ -632,7 +632,6 @@ name = "desktop"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "domain",
  "orchestration",
  "serde",
  "serde_json",

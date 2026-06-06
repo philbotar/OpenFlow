@@ -13,7 +13,7 @@ use app_backend::backend::{
 use app_backend::execution::ExecutionEvent;
 use app_backend::settings_store::AppSettings;
 use app_backend::state::WorkflowRunState;
-use workflow_core::{Node, Workflow};
+use app_backend::{Node, Workflow};
 
 use crate::ports::outbound::{
     AgentRepository, CredentialStore, ProviderResolver, RunOrchestrator, SettingsStore,

@@ -9,9 +9,9 @@ use app_backend::backend::{
 };
 use app_backend::settings_store::AppSettings;
 use app_backend::state::WorkflowRunState;
+use app_backend::Workflow;
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
-use workflow_core::Workflow;
 
 /// Bootstrap payload returned on app startup.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -217,7 +217,7 @@ fn create_agent_node(
     x: f32,
     y: f32,
     agent_id: Option<String>,
-) -> Result<workflow_core::Node, CommandError> {
+) -> Result<app_backend::Node, CommandError> {
     Ok(backend.create_agent_node(index, x, y, agent_id.as_deref())?)
 }
 
