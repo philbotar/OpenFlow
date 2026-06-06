@@ -4,24 +4,28 @@ Patterns we follow in this repo.
 
 ## Architecture Rules
 
-1. `workflow-core` is pure domain logic.
-2. `ai` is an adapter crate that implements `AiPort` for BYOK providers.
-3. `app-backend` composes runtime, state, and persistence.
-4. Domain crate must not depend on HTTP clients or async runtimes beyond what's needed for tests.
-5. `app-backend` must call domain APIs; do not duplicate domain rules in `app-backend`.
+1. `domain` is pure domain logic.
+2. `providers` is an adapter crate that implements `AiPort` for BYOK providers.
+3. `orchestration` composes runtime, state, and persistence.
+4. `desktop` is a transport adapter only; keep Tauri commands and app bootstrap there.
+5. `ui` owns rendering and interaction; it should talk through typed desktop invokes/events.
+6. Domain crate must not depend on HTTP clients or async runtimes beyond what's needed for tests.
+7. `orchestration` must call domain APIs; do not duplicate domain rules in `orchestration`.
 
 ## Ownership By Concern
 
 | Concern | Source of Truth |
 | --- | --- |
-| Workflow types, defaults, schema | `crates/workflow-core/src/model.rs` |
-| Graph validity and layer order | `crates/workflow-core/src/validation.rs` |
-| Batch run semantics | `crates/workflow-core/src/runner.rs` |
-| Interactive pause/resume semantics | `crates/workflow-core/src/interactive.rs` |
-| LLM invocation contract | `crates/workflow-core/src/ports.rs` |
-| LLM transport mapping | `crates/ai/src/*` |
-| Mutable app state transitions | `crates/app-backend/src/state.rs` |
-| File persistence formats | `crates/app-backend/src/storage.rs`, `settings_store.rs` |
+| Workflow types, defaults, schema | `crates/domain/src/model.rs` |
+| Graph validity and layer order | `crates/domain/src/validation.rs` |
+| Batch run semantics | `crates/domain/src/runner.rs` |
+| Interactive pause/resume semantics | `crates/domain/src/interactive.rs` |
+| LLM invocation contract | `crates/domain/src/ports.rs` |
+| LLM transport mapping | `crates/providers/src/*` |
+| Mutable app state transitions | `crates/orchestration/src/state.rs` |
+| File persistence formats | `crates/orchestration/src/storage.rs`, `settings_store.rs` |
+| Tauri command/event surface | `crates/desktop/src-tauri/src/lib.rs` |
+| Frontend invoke wrappers and UI state wiring | `crates/ui/src/api.ts`, `crates/ui/src/App.tsx` |
 
 ## Implementation Conventions
 
@@ -52,9 +56,17 @@ Patterns we follow in this repo.
 
 1. Add workspace deps in root `Cargo.toml` first, then consume in crate manifests.
 2. Keep crate dependencies minimal and role-specific:
-   - `workflow-core`: model/validation/runner only.
-   - `ai`: HTTP + provider payload parsing/auth only.
-   - `app-backend`: runtime/state/persistence.
+   - `domain`: model/validation/runner only.
+   - `providers`: HTTP + provider payload parsing/auth only.
+   - `orchestration`: runtime/state/persistence.
+   - `desktop`: Tauri adapter only.
+   - `ui`: frontend rendering and interaction only.
+
+## Local Run Commands
+
+1. Desktop app: `npm --prefix crates/desktop run start -- dev`
+2. Frontend only: `npm --prefix crates/ui run dev`
+3. Frontend typecheck: `npm --prefix crates/ui run typecheck`
 
 ## Change Checklist
 

@@ -1,5 +1,5 @@
 [package]
-name = "workflow-core"
+name = "providers"
 version = "0.1.0"
 edition.workspace = true
 description.workspace = true
@@ -9,21 +9,19 @@ repository.workspace = true
 keywords.workspace = true
 categories.workspace = true
 
+[lib]
+name = "ai"
+
 [dependencies]
-anyhow = "1.0"
 async-trait.workspace = true
-dirs.workspace = true
-futures.workspace = true
-log = "0.4"
-parking_lot.workspace = true
+reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-thiserror.workspace = true
-uuid.workspace = true
+workflow-core = { package = "domain", path = "../domain", version = "0.1.0" }
 
- [dev-dependencies]
- tempfile = "3"
- tokio.workspace = true
+[dev-dependencies]
+tokio.workspace = true
+wiremock.workspace = true
 
 [lints.rust]
 warnings = "deny"

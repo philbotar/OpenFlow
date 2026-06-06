@@ -1,9 +1,9 @@
 [workspace]
 members = [
-    "crates/workflow-core",
-    "crates/ai",
-    "crates/app-backend",
-    "crates/agent-workflow-desktop/src-tauri",
+    "crates/domain",
+    "crates/providers",
+    "crates/orchestration",
+    "crates/desktop/src-tauri",
 ]
 resolver = "2"
 

@@ -1,0 +1,46 @@
+%% Step-through-agentic-workflow Architecture
+%% Source of truth: docs/architecture-contract.md
+%% This diagram intentionally shows both current coupling and target seams.
+
+flowchart LR
+    subgraph Current["Current (as-is)"]
+        direction TB
+        C_UI["UI\ncrates/ui/src"]
+        C_Desktop["Desktop adapter\ncrates/desktop/src-tauri"]
+        C_Orch["Orchestration + stores\ncrates/orchestration"]
+        C_Domain["Domain engine + ports\ncrates/domain"]
+        C_Providers["Provider adapters\ncrates/providers"]
+        C_Infra["Infrastructure\nfiles + keychain + model APIs"]
+
+        C_UI --> C_Desktop --> C_Orch --> C_Domain
+        C_Orch --> C_Providers --> C_Infra
+        C_Orch --> C_Infra
+
+        C_Desktop -. direct workflow_core types .-> C_Domain
+    end
+
+    subgraph Target["Target (after refactor)"]
+        direction TB
+        T_UI["UI\ncrates/ui/src"]
+        T_Desktop["Desktop adapter\ncrates/desktop/src-tauri (transport only)"]
+        T_Orch["Orchestration runtime\ncrates/orchestration"]
+        T_Domain["Domain engine + ports\ncrates/domain"]
+        T_Providers["Provider adapters\ncrates/providers (port impls)"]
+        T_Infra["Infrastructure\nfiles + keychain + model APIs"]
+
+        T_UI --> T_Desktop --> T_Orch --> T_Domain
+        T_Orch --> T_Providers --> T_Infra
+        T_Orch --> T_Infra
+        T_Providers -. implements AiPort .-> T_Domain
+    end
+
+    C_Desktop -. move DTO mapping to orchestration DTO seam .-> T_Desktop
+    C_Orch -. split provider config/building into adapter seam .-> T_Orch
+
+    classDef layer fill:#e8f1fb,stroke:#2b6cb0,stroke-width:2px
+    classDef infra fill:#fff7e6,stroke:#c05621,stroke-width:2px
+    classDef warn fill:#fff5f5,stroke:#c53030,stroke-width:2px
+
+    class C_UI,C_Desktop,C_Orch,C_Domain,C_Providers,T_UI,T_Desktop,T_Orch,T_Domain,T_Providers layer
+    class C_Infra,T_Infra infra
+    class C_Desktop warn

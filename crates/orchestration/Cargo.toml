@@ -1,5 +1,5 @@
 [package]
-name = "app-backend"
+name = "orchestration"
 version = "0.1.0"
 edition.workspace = true
 description.workspace = true
@@ -9,9 +9,12 @@ repository.workspace = true
 keywords.workspace = true
 categories.workspace = true
 
+[lib]
+name = "app_backend"
+
 [dependencies]
 dirs.workspace = true
-ai = { path = "../ai", version = "0.1.0" }
+ai = { package = "providers", path = "../providers", version = "0.1.0" }
 serde.workspace = true
 glob = "0.3.2"
 parking_lot.workspace = true
@@ -23,7 +26,7 @@ serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 uuid.workspace = true
-workflow-core = { path = "../workflow-core", version = "0.1.0" }
+workflow-core = { package = "domain", path = "../domain", version = "0.1.0" }
 
 [dev-dependencies]
 async-trait.workspace = true

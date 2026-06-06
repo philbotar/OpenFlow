@@ -1,5 +1,5 @@
 {
-  "name": "agent-workflow-desktop",
+  "name": "ui",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
-    "tauri": "tauri"
+    "tauri": "sh -c 'cmd=\"$1\"; shift; exec tauri \"$cmd\" -c ../desktop/src-tauri/tauri.conf.json \"$@\"' --"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
