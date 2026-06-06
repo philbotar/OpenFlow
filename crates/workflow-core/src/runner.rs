@@ -153,6 +153,7 @@ mod tests {
     fn node(id: &str) -> Node {
         let mut node = Node::agent(id, 0.0, 0.0);
         node.id = NodeId(id.to_string());
+        node.agent.model = "test-model".to_string();
         node
     }
 

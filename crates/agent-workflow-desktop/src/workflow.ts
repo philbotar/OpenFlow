@@ -74,15 +74,17 @@ export function cloneWorkflow(workflow: Workflow): Workflow {
 export function cloneSettings(settings: AppSettings): AppSettings {
   return {
     active_provider: settings.active_provider,
-    openai: cloneProviderProfile(settings.openai),
-    openai_compatible: cloneProviderProfile(settings.openai_compatible),
+    providers: Object.fromEntries(
+      Object.entries(settings.providers).map(([providerId, profile]) => [
+        providerId,
+        cloneProviderProfile(profile),
+      ]),
+    ),
   };
 }
 
 export function activeProfile(settings: AppSettings): ProviderProfile {
-  return settings.active_provider === "open_ai"
-    ? settings.openai
-    : settings.openai_compatible;
+  return settings.providers[settings.active_provider] ?? Object.values(settings.providers)[0];
 }
 
 export function createIdleRunState(workflow: Workflow): WorkflowRunState {
@@ -260,9 +262,10 @@ function cloneProviderProfile(profile: ProviderProfile): ProviderProfile {
     transport: profile.transport,
     responses_path: profile.responses_path,
     chat_completions_path: profile.chat_completions_path,
-    api_key: profile.api_key,
     known_models: [...profile.known_models],
     default_model: profile.default_model,
+    key_ref: profile.key_ref,
+    editable: profile.editable,
   };
 }
 

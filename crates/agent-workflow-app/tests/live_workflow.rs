@@ -2,7 +2,10 @@
 
 use agent_workflow_app::execution::run_workflow_headless;
 use agent_workflow_app::state::TraceStatus;
-use openai_client::{OpenAiClient, OpenAiClientConfig, OpenAiWireApi};
+use ai::{
+    AiClient, AiClientConfig, AuthConfig, OpenAiCompatibleConfig, ProviderAdapterConfig,
+    ProviderId, WireApi,
+};
 use reqwest::Client;
 use serde_json::{json, Value};
 use std::env;
@@ -13,15 +16,15 @@ struct LiveWorkflowConfig {
     api_key: String,
     model: String,
     base_url: String,
-    wire_api: OpenAiWireApi,
+    wire_api: WireApi,
     responses_path: String,
     chat_completions_path: String,
 }
 
-fn parse_live_wire_api(value: Option<String>) -> Result<OpenAiWireApi, String> {
+fn parse_live_wire_api(value: Option<String>) -> Result<WireApi, String> {
     match value.as_deref().unwrap_or("responses") {
-        "responses" => Ok(OpenAiWireApi::Responses),
-        "chat-completions" => Ok(OpenAiWireApi::ChatCompletions),
+        "responses" => Ok(WireApi::Responses),
+        "chat-completions" => Ok(WireApi::ChatCompletions),
         other => Err(format!(
             "STEP_WORKFLOW_LIVE_WIRE_API must be 'responses' or 'chat-completions', got '{other}'"
         )),
@@ -57,6 +60,23 @@ fn live_workflow_config_from_vars(
 
 fn live_workflow_config_from_env() -> Result<LiveWorkflowConfig, String> {
     live_workflow_config_from_vars(|key| env::var(key).ok())
+}
+
+fn live_client(config: &LiveWorkflowConfig) -> AiClient {
+    AiClient::with_config(AiClientConfig {
+        provider_id: ProviderId::from("live_openai_compatible"),
+        provider_label: "Live OpenAI-compatible".to_string(),
+        auth: AuthConfig::Bearer {
+            api_key: Some(config.api_key.clone()),
+            required: true,
+        },
+        adapter: ProviderAdapterConfig::OpenAiCompatible(OpenAiCompatibleConfig {
+            base_url: config.base_url.clone(),
+            wire_api: config.wire_api,
+            responses_path: config.responses_path.clone(),
+            chat_completions_path: config.chat_completions_path.clone(),
+        }),
+    })
 }
 
 fn live_smoke_node(id: &str, label: &str, task: &str, model: &str) -> Node {
@@ -170,13 +190,7 @@ async fn live_openai_workflow_preserves_sentinel_and_schema_contract() {
     ];
     workflow.edges = vec![Edge::new("extract", "summarize")];
 
-    let client = OpenAiClient::with_config(OpenAiClientConfig {
-        api_key: config.api_key,
-        base_url: config.base_url,
-        wire_api: config.wire_api,
-        responses_path: config.responses_path,
-        chat_completions_path: config.chat_completions_path,
-    });
+    let client = live_client(&config);
 
     let snapshot = run_workflow_headless(
         workflow,
@@ -212,7 +226,7 @@ async fn live_chat_completions_provider_returns_supported_message_shape() {
     }
 
     let config = live_workflow_config_from_env().unwrap_or_else(|error| panic!("{error}"));
-    if config.wire_api != OpenAiWireApi::ChatCompletions {
+    if config.wire_api != WireApi::ChatCompletions {
         eprintln!("skipping live smoke: requires STEP_WORKFLOW_LIVE_WIRE_API=chat-completions");
         return;
     }
@@ -263,7 +277,7 @@ async fn live_chat_completions_tool_enabled_workflow_completes() {
     }
 
     let config = live_workflow_config_from_env().unwrap_or_else(|error| panic!("{error}"));
-    if config.wire_api != OpenAiWireApi::ChatCompletions {
+    if config.wire_api != WireApi::ChatCompletions {
         eprintln!("skipping live smoke: requires STEP_WORKFLOW_LIVE_WIRE_API=chat-completions");
         return;
     }
@@ -280,13 +294,7 @@ async fn live_chat_completions_tool_enabled_workflow_completes() {
     }];
     workflow.nodes = vec![node];
 
-    let client = OpenAiClient::with_config(OpenAiClientConfig {
-        api_key: config.api_key,
-        base_url: config.base_url,
-        wire_api: config.wire_api,
-        responses_path: config.responses_path,
-        chat_completions_path: config.chat_completions_path,
-    });
+    let client = live_client(&config);
 
     let snapshot = run_workflow_headless(
         workflow,
@@ -312,14 +320,14 @@ fn vars(items: &[(&str, &str)], key: &str) -> Option<String> {
 
 #[test]
 fn live_wire_api_defaults_to_responses() {
-    assert_eq!(parse_live_wire_api(None).unwrap(), OpenAiWireApi::Responses);
+    assert_eq!(parse_live_wire_api(None).unwrap(), WireApi::Responses);
 }
 
 #[test]
 fn live_wire_api_accepts_chat_completions() {
     assert_eq!(
         parse_live_wire_api(Some("chat-completions".to_string())).unwrap(),
-        OpenAiWireApi::ChatCompletions
+        WireApi::ChatCompletions
     );
 }
 
@@ -345,7 +353,7 @@ fn live_config_prefers_live_api_key_and_defaults_openai_paths() {
     assert_eq!(config.api_key, "live-key");
     assert_eq!(config.model, "gpt-test");
     assert_eq!(config.base_url, "https://api.openai.com");
-    assert_eq!(config.wire_api, OpenAiWireApi::Responses);
+    assert_eq!(config.wire_api, WireApi::Responses);
     assert_eq!(config.responses_path, "v1/responses");
     assert_eq!(config.chat_completions_path, "v1/chat/completions");
 }
@@ -370,6 +378,6 @@ fn live_config_supports_deepinfra_chat_completions_path() {
 
     assert_eq!(config.api_key, "fallback-key");
     assert_eq!(config.base_url, "https://api.deepinfra.com/v1/openai");
-    assert_eq!(config.wire_api, OpenAiWireApi::ChatCompletions);
+    assert_eq!(config.wire_api, WireApi::ChatCompletions);
     assert_eq!(config.chat_completions_path, "chat/completions");
 }

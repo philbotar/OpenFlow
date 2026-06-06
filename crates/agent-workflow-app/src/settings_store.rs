@@ -1,51 +1,14 @@
 #![allow(clippy::derive_partial_eq_without_eq, clippy::must_use_candidate)]
 
+use crate::credential_store::{CredentialStore, CredentialStoreError};
+use ai::{builtin_provider_specs, provider_spec, ProviderId, ProviderKind, ProviderSpec, WireApi};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AiProviderKind {
-    OpenAi,
-    OpenAiCompatible,
-}
-
-impl AiProviderKind {
-    #[must_use]
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::OpenAi => "ChatGPT / OpenAI",
-            Self::OpenAiCompatible => "OpenAI-compatible API",
-        }
-    }
-
-    #[must_use]
-    pub const fn env_key(self) -> &'static str {
-        match self {
-            Self::OpenAi => "OPENAI_API_KEY",
-            Self::OpenAiCompatible => "OPENAI_COMPATIBLE_API_KEY",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ProviderTransport {
-    Responses,
-    ChatCompletions,
-}
-
-impl ProviderTransport {
-    #[must_use]
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Responses => "Responses API",
-            Self::ChatCompletions => "Chat Completions API",
-        }
-    }
-}
+pub type ProviderTransport = WireApi;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderProfile {
@@ -57,9 +20,14 @@ pub struct ProviderProfile {
     #[serde(default = "default_chat_completions_path")]
     pub chat_completions_path: String,
     pub known_models: Vec<String>,
+    #[serde(default)]
+    pub default_model: Option<String>,
+    #[serde(default)]
+    pub key_ref: String,
+    #[serde(default)]
+    pub editable: bool,
     #[serde(skip)]
     pub new_model_input: String,
-    pub api_key: String,
 }
 
 fn default_responses_path() -> String {
@@ -70,111 +38,429 @@ fn default_chat_completions_path() -> String {
     "v1/chat/completions".to_string()
 }
 
+#[must_use]
+pub fn key_ref_for_provider(provider_id: &ProviderId) -> String {
+    format!("provider:{}:api-key", provider_id.as_str())
+}
+
 impl ProviderProfile {
-    pub fn openai_default() -> Self {
+    #[must_use]
+    pub fn from_spec(spec: &ProviderSpec) -> Self {
+        let (transport, responses_path, chat_completions_path) = match spec.kind {
+            ProviderKind::OpenAiCompatible(openai) => (
+                openai.default_wire_api,
+                openai.responses_path.to_string(),
+                openai.chat_completions_path.to_string(),
+            ),
+            ProviderKind::Anthropic(_) => (
+                ProviderTransport::ChatCompletions,
+                default_responses_path(),
+                default_chat_completions_path(),
+            ),
+        };
         Self {
-            display_name: "ChatGPT / OpenAI".to_string(),
-            base_url: "https://api.openai.com".to_string(),
-            transport: ProviderTransport::Responses,
-            responses_path: default_responses_path(),
-            chat_completions_path: default_chat_completions_path(),
-            known_models: vec![
-                "gpt-4o".into(),
-                "gpt-4o-mini".into(),
-                "gpt-4.5".into(),
-                "o3".into(),
-            ],
+            display_name: spec.display_name.to_string(),
+            base_url: spec.default_base_url.to_string(),
+            transport,
+            responses_path,
+            chat_completions_path,
+            known_models: spec
+                .default_models
+                .iter()
+                .map(|model| (*model).to_string())
+                .collect(),
+            default_model: Some(spec.default_model.to_string()),
+            key_ref: key_ref_for_provider(&ProviderId::from(spec.id)),
+            editable: spec.editable,
             new_model_input: String::new(),
-            api_key: String::new(),
         }
     }
 
     #[must_use]
+    pub fn openai_default() -> Self {
+        provider_spec(&ProviderId::from("openai"))
+            .map(Self::from_spec)
+            .unwrap_or_else(|| Self::fallback("openai", "OpenAI"))
+    }
+
+    #[must_use]
     pub fn compatible_default() -> Self {
+        provider_spec(&ProviderId::from("custom_openai_compatible"))
+            .map(Self::from_spec)
+            .unwrap_or_else(|| {
+                Self::fallback("custom_openai_compatible", "Custom OpenAI-compatible API")
+            })
+    }
+
+    fn fallback(id: &str, display_name: &str) -> Self {
         Self {
-            display_name: "OpenAI-compatible API".to_string(),
-            base_url: "http://localhost:11434".to_string(),
-            transport: ProviderTransport::ChatCompletions,
+            display_name: display_name.to_string(),
+            base_url: "https://api.openai.com".to_string(),
+            transport: ProviderTransport::Responses,
             responses_path: default_responses_path(),
             chat_completions_path: default_chat_completions_path(),
-            known_models: vec!["llama3.1".into(), "qwen2.5".into(), "mistral".into()],
+            known_models: vec!["gpt-4o-mini".to_string()],
+            default_model: Some("gpt-4o-mini".to_string()),
+            key_ref: key_ref_for_provider(&ProviderId::from(id)),
+            editable: false,
             new_model_input: String::new(),
-            api_key: String::new(),
         }
+    }
+
+    fn normalize(&mut self, provider_id: &ProviderId, spec: Option<&ProviderSpec>) {
+        if self.key_ref.trim().is_empty() {
+            self.key_ref = key_ref_for_provider(provider_id);
+        }
+        if let Some(spec) = spec {
+            if self.display_name.trim().is_empty() {
+                self.display_name = spec.display_name.to_string();
+            }
+            if self.base_url.trim().is_empty() {
+                self.base_url = spec.default_base_url.to_string();
+            }
+            if self.known_models.is_empty() {
+                self.known_models = spec
+                    .default_models
+                    .iter()
+                    .map(|model| (*model).to_string())
+                    .collect();
+            }
+            if self.default_model.is_none() {
+                self.default_model = Some(spec.default_model.to_string());
+            }
+            self.editable = spec.editable;
+        }
+        self.new_model_input.clear();
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppSettings {
-    pub active_provider: AiProviderKind,
-    pub openai: ProviderProfile,
-    #[serde(rename = "openai_compatible")]
-    pub compatible: ProviderProfile,
+    pub active_provider: ProviderId,
+    pub providers: BTreeMap<ProviderId, ProviderProfile>,
 }
 
 impl AppSettings {
     #[must_use]
-    pub const fn active_profile(&self) -> &ProviderProfile {
-        match self.active_provider {
-            AiProviderKind::OpenAi => &self.openai,
-            AiProviderKind::OpenAiCompatible => &self.compatible,
-        }
+    pub fn active_profile(&self) -> &ProviderProfile {
+        self.providers
+            .get(&self.active_provider)
+            .expect("active provider profile exists")
     }
 
     #[must_use]
-    pub const fn active_profile_mut(&mut self) -> &mut ProviderProfile {
-        match self.active_provider {
-            AiProviderKind::OpenAi => &mut self.openai,
-            AiProviderKind::OpenAiCompatible => &mut self.compatible,
-        }
+    pub fn active_profile_mut(&mut self) -> &mut ProviderProfile {
+        self.providers
+            .get_mut(&self.active_provider)
+            .expect("active provider profile exists")
     }
 
     #[must_use]
     pub fn active_models(&self) -> &[String] {
         &self.active_profile().known_models
     }
+
+    #[must_use]
+    pub fn provider_display_order(&self) -> Vec<ProviderId> {
+        let mut ids = builtin_provider_specs()
+            .iter()
+            .map(|spec| ProviderId::from(spec.id))
+            .filter(|id| self.providers.contains_key(id))
+            .collect::<Vec<_>>();
+        ids.extend(
+            self.providers
+                .keys()
+                .filter(|id| provider_spec(id).is_none())
+                .cloned(),
+        );
+        ids
+    }
+
+    fn normalized(mut self) -> Self {
+        for spec in builtin_provider_specs() {
+            let id = ProviderId::from(spec.id);
+            self.providers
+                .entry(id)
+                .or_insert_with(|| ProviderProfile::from_spec(spec));
+        }
+        let ids = self.providers.keys().cloned().collect::<Vec<_>>();
+        for id in ids {
+            let spec = provider_spec(&id);
+            if let Some(profile) = self.providers.get_mut(&id) {
+                profile.normalize(&id, spec);
+            }
+        }
+        if !self.providers.contains_key(&self.active_provider) {
+            self.active_provider = ProviderId::from("openai");
+        }
+        self
+    }
 }
 
 impl Default for AppSettings {
     fn default() -> Self {
+        let providers = builtin_provider_specs()
+            .iter()
+            .map(|spec| (ProviderId::from(spec.id), ProviderProfile::from_spec(spec)))
+            .collect::<BTreeMap<_, _>>();
         Self {
-            active_provider: AiProviderKind::OpenAi,
-            openai: ProviderProfile::openai_default(),
-            compatible: ProviderProfile::compatible_default(),
+            active_provider: ProviderId::from("openai"),
+            providers,
         }
     }
 }
 
 #[derive(Debug, Deserialize)]
-struct LegacySettings {
+struct LegacyKnownModelsSettings {
     known_models: Vec<String>,
 }
 
-impl From<LegacySettings> for AppSettings {
-    fn from(value: LegacySettings) -> Self {
-        Self {
-            active_provider: AiProviderKind::OpenAi,
-            openai: ProviderProfile {
-                known_models: if value.known_models.is_empty() {
-                    ProviderProfile::openai_default().known_models
-                } else {
-                    value.known_models
-                },
-                ..ProviderProfile::openai_default()
+impl From<LegacyKnownModelsSettings> for AppSettings {
+    fn from(value: LegacyKnownModelsSettings) -> Self {
+        let mut settings = Self::default();
+        if !value.known_models.is_empty() {
+            if let Some(profile) = settings.providers.get_mut(&ProviderId::from("openai")) {
+                profile.known_models = value.known_models;
+            }
+        }
+        settings
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct LegacyFixedSettings {
+    active_provider: Option<LegacyProviderKind>,
+    openai: Option<LegacyProviderProfile>,
+    #[serde(rename = "openai_compatible")]
+    compatible: Option<LegacyProviderProfile>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum LegacyProviderKind {
+    OpenAi,
+    OpenAiCompatible,
+}
+
+#[derive(Debug, Deserialize)]
+struct LegacyProviderProfile {
+    display_name: String,
+    base_url: String,
+    transport: ProviderTransport,
+    #[serde(default = "default_responses_path")]
+    responses_path: String,
+    #[serde(default = "default_chat_completions_path")]
+    chat_completions_path: String,
+    known_models: Vec<String>,
+    #[serde(default)]
+    default_model: Option<String>,
+    #[serde(default)]
+    api_key: String,
+}
+
+struct MigratedSettings {
+    settings: AppSettings,
+    migrated_secret: bool,
+}
+
+impl LegacyProviderProfile {
+    fn into_profile(self, provider_id: &ProviderId, fallback: ProviderProfile) -> ProviderProfile {
+        ProviderProfile {
+            display_name: if self.display_name.trim().is_empty() {
+                fallback.display_name
+            } else {
+                self.display_name
             },
-            compatible: ProviderProfile::compatible_default(),
+            base_url: if self.base_url.trim().is_empty() {
+                fallback.base_url
+            } else {
+                self.base_url
+            },
+            transport: self.transport,
+            responses_path: self.responses_path,
+            chat_completions_path: self.chat_completions_path,
+            known_models: if self.known_models.is_empty() {
+                fallback.known_models
+            } else {
+                self.known_models
+            },
+            default_model: self.default_model.or(fallback.default_model),
+            key_ref: key_ref_for_provider(provider_id),
+            editable: fallback.editable,
+            new_model_input: String::new(),
         }
     }
 }
 
+fn migrate_settings_json(
+    text: &str,
+    credential_store: &CredentialStore,
+) -> Result<MigratedSettings, SettingsParseError> {
+    let current_error = match serde_json::from_str::<AppSettings>(text) {
+        Ok(settings) => {
+            let mut value = serde_json::from_str::<serde_json::Value>(text)
+                .map_err(SettingsParseError::JsonValue)?;
+            let migrated_secret = migrate_provider_map_secrets(&mut value, credential_store)
+                .map_err(SettingsParseError::Credential)?;
+            return Ok(MigratedSettings {
+                settings: settings.normalized(),
+                migrated_secret,
+            });
+        }
+        Err(error) => error,
+    };
+
+    let fixed_error = match serde_json::from_str::<LegacyFixedSettings>(text) {
+        Ok(legacy) if legacy.openai.is_some() || legacy.compatible.is_some() => {
+            return migrate_legacy_fixed_settings(legacy, credential_store)
+                .map_err(SettingsParseError::Credential);
+        }
+        Ok(_) => serde_json::Error::io(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "not legacy fixed provider settings",
+        )),
+        Err(error) => error,
+    };
+
+    serde_json::from_str::<LegacyKnownModelsSettings>(text)
+        .map(|legacy| MigratedSettings {
+            settings: AppSettings::from(legacy),
+            migrated_secret: false,
+        })
+        .map_err(|known_error| SettingsParseError::Schemas {
+            current: current_error,
+            fixed: fixed_error,
+            known: known_error,
+        })
+}
+
+fn migrate_provider_map_secrets(
+    value: &mut serde_json::Value,
+    credential_store: &CredentialStore,
+) -> Result<bool, CredentialStoreError> {
+    let Some(providers) = value
+        .get_mut("providers")
+        .and_then(serde_json::Value::as_object_mut)
+    else {
+        return Ok(false);
+    };
+    let mut migrated_secret = false;
+    for (provider_id, profile) in providers {
+        let Some(profile) = profile.as_object_mut() else {
+            continue;
+        };
+        let api_key = profile
+            .remove("api_key")
+            .and_then(|value| value.as_str().map(str::to_string))
+            .unwrap_or_default();
+        if !api_key.trim().is_empty() {
+            let provider_id = ProviderId::from(provider_id.as_str());
+            credential_store.set(&key_ref_for_provider(&provider_id), api_key.trim())?;
+            migrated_secret = true;
+        }
+    }
+    Ok(migrated_secret)
+}
+
+fn migrate_legacy_fixed_settings(
+    legacy: LegacyFixedSettings,
+    credential_store: &CredentialStore,
+) -> Result<MigratedSettings, CredentialStoreError> {
+    let mut settings = AppSettings::default();
+    let mut migrated_secret = false;
+
+    if let Some(openai) = legacy.openai {
+        let provider_id = ProviderId::from("openai");
+        let api_key = openai.api_key.trim().to_string();
+        settings.providers.insert(
+            provider_id.clone(),
+            openai.into_profile(&provider_id, ProviderProfile::openai_default()),
+        );
+        if !api_key.is_empty() {
+            credential_store.set(&key_ref_for_provider(&provider_id), &api_key)?;
+            migrated_secret = true;
+        }
+    }
+
+    if let Some(compatible) = legacy.compatible {
+        let provider_id = ProviderId::from("custom_openai_compatible");
+        let api_key = compatible.api_key.trim().to_string();
+        settings.providers.insert(
+            provider_id.clone(),
+            compatible.into_profile(&provider_id, ProviderProfile::compatible_default()),
+        );
+        if !api_key.is_empty() {
+            credential_store.set(&key_ref_for_provider(&provider_id), &api_key)?;
+            migrated_secret = true;
+        }
+    }
+
+    settings.active_provider = match legacy.active_provider.unwrap_or(LegacyProviderKind::OpenAi) {
+        LegacyProviderKind::OpenAi => ProviderId::from("openai"),
+        LegacyProviderKind::OpenAiCompatible => ProviderId::from("custom_openai_compatible"),
+    };
+
+    Ok(MigratedSettings {
+        settings: settings.normalized(),
+        migrated_secret,
+    })
+}
+
+#[derive(Debug)]
+enum SettingsParseError {
+    JsonValue(serde_json::Error),
+    Credential(CredentialStoreError),
+    Schemas {
+        current: serde_json::Error,
+        fixed: serde_json::Error,
+        known: serde_json::Error,
+    },
+}
+
+impl std::fmt::Display for SettingsParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::JsonValue(error) => write!(f, "settings JSON invalid: {error}"),
+            Self::Credential(error) => write!(f, "settings credential migration failed: {error}"),
+            Self::Schemas {
+                current,
+                fixed,
+                known,
+            } => write!(
+                f,
+                "settings JSON invalid: current schema: {current}; legacy provider schema: {fixed}; legacy known-model schema: {known}"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for SettingsParseError {}
+
 #[derive(Debug, Clone)]
 pub struct FileSettingsStore {
     path: PathBuf,
+    credential_store: CredentialStore,
 }
 
 impl FileSettingsStore {
     pub fn new(path: impl Into<PathBuf>) -> Self {
-        Self { path: path.into() }
+        Self::with_credential_store(path, CredentialStore::system())
+    }
+
+    #[must_use]
+    pub fn with_credential_store(
+        path: impl Into<PathBuf>,
+        credential_store: CredentialStore,
+    ) -> Self {
+        Self {
+            path: path.into(),
+            credential_store,
+        }
+    }
+
+    #[must_use]
+    pub fn credential_store(&self) -> &CredentialStore {
+        &self.credential_store
     }
 
     #[must_use]
@@ -186,25 +472,18 @@ impl FileSettingsStore {
     }
 
     /// # Errors
-    /// Returns an error if the settings file cannot be read or parsed.
+    /// Returns an error if the settings file cannot be read, parsed, migrated, or sanitized.
     pub fn load(&self) -> io::Result<AppSettings> {
         if !self.path.exists() {
             return Ok(AppSettings::default());
         }
         let text = fs::read_to_string(&self.path)?;
-        match serde_json::from_str::<AppSettings>(&text) {
-            Ok(settings) => Ok(settings),
-            Err(current_error) => serde_json::from_str::<LegacySettings>(&text)
-                .map(AppSettings::from)
-                .map_err(|legacy_error| {
-                    io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        format!(
-                            "settings JSON invalid: current schema: {current_error}; legacy schema: {legacy_error}"
-                        ),
-                    )
-                }),
+        let migrated = migrate_settings_json(&text, &self.credential_store)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error.to_string()))?;
+        if migrated.migrated_secret {
+            self.save(&migrated.settings)?;
         }
+        Ok(migrated.settings)
     }
 
     /// # Errors
@@ -235,52 +514,58 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
+    fn memory_store(path: impl Into<PathBuf>) -> FileSettingsStore {
+        FileSettingsStore::with_credential_store(path, CredentialStore::in_memory())
+    }
+
     #[test]
-    fn default_settings_include_provider_profiles() {
+    fn default_settings_include_builtin_provider_profiles() {
         let settings = AppSettings::default();
 
-        assert_eq!(settings.active_provider, AiProviderKind::OpenAi);
-        assert_eq!(settings.openai.display_name, "ChatGPT / OpenAI");
-        assert_eq!(settings.openai.base_url, "https://api.openai.com");
-        assert_eq!(settings.openai.transport, ProviderTransport::Responses);
+        assert_eq!(settings.active_provider, ProviderId::from("openai"));
+        assert!(settings.providers.contains_key(&ProviderId::from("openai")));
         assert!(settings
-            .openai
-            .known_models
-            .contains(&"gpt-4.5".to_string()));
-        assert_eq!(settings.compatible.display_name, "OpenAI-compatible API");
-        assert_eq!(settings.compatible.base_url, "http://localhost:11434");
-        assert_eq!(
-            settings.compatible.transport,
-            ProviderTransport::ChatCompletions
-        );
-        assert_eq!(settings.openai.responses_path, "v1/responses");
-        assert_eq!(settings.openai.chat_completions_path, "v1/chat/completions");
-        assert_eq!(settings.compatible.responses_path, "v1/responses");
-        assert_eq!(
-            settings.compatible.chat_completions_path,
-            "v1/chat/completions"
-        );
-        assert!(settings
-            .compatible
-            .known_models
-            .contains(&"llama3.1".to_string()));
-        assert!(settings.openai.new_model_input.is_empty());
-        assert!(settings.compatible.new_model_input.is_empty());
+            .providers
+            .contains_key(&ProviderId::from("anthropic")));
+        assert!(!settings
+            .providers
+            .contains_key(&ProviderId::from("bedrock")));
+        assert!(!settings
+            .providers
+            .contains_key(&ProviderId::from("azure_native")));
+        let openai = settings
+            .providers
+            .get(&ProviderId::from("openai"))
+            .expect("openai profile");
+        assert_eq!(openai.display_name, "OpenAI");
+        assert_eq!(openai.base_url, "https://api.openai.com");
+        assert_eq!(openai.transport, ProviderTransport::Responses);
+        assert_eq!(openai.responses_path, "v1/responses");
+        assert_eq!(openai.chat_completions_path, "v1/chat/completions");
+        assert_eq!(openai.default_model.as_deref(), Some("gpt-4o-mini"));
+        assert_eq!(openai.key_ref, "provider:openai:api-key");
+        assert!(!openai.editable);
+        let custom = settings
+            .providers
+            .get(&ProviderId::from("custom_openai_compatible"))
+            .expect("custom profile");
+        assert!(custom.editable);
+        assert!(custom.known_models.contains(&"model-name".to_string()));
     }
 
     #[test]
     fn active_profile_tracks_active_provider() {
         let mut settings = AppSettings {
-            active_provider: AiProviderKind::OpenAi,
+            active_provider: ProviderId::from("openai"),
             ..Default::default()
         };
 
-        assert_eq!(settings.active_profile().display_name, "ChatGPT / OpenAI");
+        assert_eq!(settings.active_profile().display_name, "OpenAI");
 
-        settings.active_provider = AiProviderKind::OpenAiCompatible;
+        settings.active_provider = ProviderId::from("custom_openai_compatible");
         assert_eq!(
             settings.active_profile().display_name,
-            "OpenAI-compatible API"
+            "Custom OpenAI-compatible API"
         );
         settings
             .active_profile_mut()
@@ -288,11 +573,15 @@ mod tests {
             .push("custom-model".to_string());
 
         assert!(settings
-            .compatible
+            .providers
+            .get(&ProviderId::from("custom_openai_compatible"))
+            .expect("custom profile")
             .known_models
             .contains(&"custom-model".to_string()));
         assert!(!settings
-            .openai
+            .providers
+            .get(&ProviderId::from("openai"))
+            .expect("openai profile")
             .known_models
             .contains(&"custom-model".to_string()));
     }
@@ -308,65 +597,130 @@ mod tests {
 }"#,
         )
         .unwrap();
-        let store = FileSettingsStore::new(path);
+        let store = memory_store(path);
 
         let settings = store.load().unwrap();
 
-        assert_eq!(settings.active_provider, AiProviderKind::OpenAi);
+        assert_eq!(settings.active_provider, ProviderId::from("openai"));
         assert_eq!(
-            settings.openai.known_models,
+            settings
+                .providers
+                .get(&ProviderId::from("openai"))
+                .expect("openai profile")
+                .known_models,
             vec!["legacy-a".to_string(), "legacy-b".to_string()]
-        );
-        assert_eq!(
-            settings.compatible.known_models,
-            ProviderProfile::compatible_default().known_models
         );
     }
 
     #[test]
-    fn saves_provider_settings_without_transient_model_inputs() {
+    fn migrates_legacy_fixed_profiles_and_removes_plaintext_keys() {
         let dir = tempdir().unwrap();
-        let store = FileSettingsStore::new(dir.path().join("settings.json"));
-        let settings = AppSettings {
-            active_provider: AiProviderKind::OpenAiCompatible,
-            compatible: ProviderProfile {
-                base_url: "https://models.example.test".to_string(),
-                transport: ProviderTransport::Responses,
-                responses_path: "custom/responses".to_string(),
-                chat_completions_path: "custom/chat/completions".to_string(),
-                known_models: vec!["vendor-model".to_string()],
-                new_model_input: "draft-model".to_string(),
-                ..ProviderProfile::compatible_default()
-            },
+        let path = dir.path().join("settings.json");
+        fs::write(
+            &path,
+            r#"{
+  "active_provider": "open_ai_compatible",
+  "openai": {
+    "display_name": "ChatGPT / OpenAI",
+    "base_url": "https://api.openai.com",
+    "transport": "responses",
+    "responses_path": "v1/responses",
+    "chat_completions_path": "v1/chat/completions",
+    "known_models": ["legacy-openai"],
+    "default_model": "legacy-openai",
+    "api_key": " sk-openai "
+  },
+  "openai_compatible": {
+    "display_name": "Compatible",
+    "base_url": "https://vendor.example.test/v1-root",
+    "transport": "chat_completions",
+    "responses_path": "custom/responses",
+    "chat_completions_path": "chat/completions",
+    "known_models": ["vendor-model"],
+    "default_model": "vendor-model",
+    "api_key": " vendor-key "
+  }
+}"#,
+        )
+        .unwrap();
+        let store = memory_store(path);
+
+        let settings = store.load().unwrap();
+        let raw = fs::read_to_string(store.path()).unwrap();
+
+        assert_eq!(
+            settings.active_provider,
+            ProviderId::from("custom_openai_compatible")
+        );
+        let custom = settings
+            .providers
+            .get(&ProviderId::from("custom_openai_compatible"))
+            .expect("custom profile");
+        assert_eq!(custom.base_url, "https://vendor.example.test/v1-root");
+        assert_eq!(custom.transport, ProviderTransport::ChatCompletions);
+        assert_eq!(custom.responses_path, "custom/responses");
+        assert_eq!(custom.chat_completions_path, "chat/completions");
+        assert_eq!(custom.known_models, vec!["vendor-model".to_string()]);
+        assert_eq!(custom.default_model.as_deref(), Some("vendor-model"));
+        assert!(!raw.contains("api_key"));
+        assert_eq!(
+            store
+                .credential_store()
+                .get("provider:openai:api-key")
+                .unwrap()
+                .as_deref(),
+            Some("sk-openai")
+        );
+        assert_eq!(
+            store
+                .credential_store()
+                .get("provider:custom_openai_compatible:api-key")
+                .unwrap()
+                .as_deref(),
+            Some("vendor-key")
+        );
+    }
+
+    #[test]
+    fn saves_provider_settings_without_transient_or_secret_fields() {
+        let dir = tempdir().unwrap();
+        let store = memory_store(dir.path().join("settings.json"));
+        let mut settings = AppSettings {
+            active_provider: ProviderId::from("custom_openai_compatible"),
             ..Default::default()
         };
+        let profile = settings.active_profile_mut();
+        profile.base_url = "https://models.example.test".to_string();
+        profile.transport = ProviderTransport::Responses;
+        profile.responses_path = "custom/responses".to_string();
+        profile.chat_completions_path = "custom/chat/completions".to_string();
+        profile.known_models = vec!["vendor-model".to_string()];
+        profile.default_model = Some("vendor-model".to_string());
+        profile.new_model_input = "draft-model".to_string();
 
         store.save(&settings).unwrap();
         let raw = fs::read_to_string(store.path()).unwrap();
         let loaded = store.load().unwrap();
 
         assert!(raw.contains("\"active_provider\""));
-        assert!(raw.contains("\"openai_compatible\""));
+        assert!(raw.contains("\"providers\""));
         assert!(!raw.contains("draft-model"));
-        assert_eq!(loaded.active_provider, AiProviderKind::OpenAiCompatible);
-        assert_eq!(loaded.compatible.base_url, "https://models.example.test");
-        assert_eq!(loaded.compatible.transport, ProviderTransport::Responses);
-        assert_eq!(loaded.compatible.responses_path, "custom/responses");
+        assert!(!raw.contains("api_key"));
         assert_eq!(
-            loaded.compatible.chat_completions_path,
-            "custom/chat/completions"
+            loaded
+                .providers
+                .get(&ProviderId::from("custom_openai_compatible"))
+                .expect("custom profile")
+                .base_url,
+            "https://models.example.test"
         );
-        assert_eq!(
-            loaded.compatible.known_models,
-            vec!["vendor-model".to_string()]
-        );
-        assert!(loaded.compatible.new_model_input.is_empty());
+        assert!(loaded.active_profile().new_model_input.is_empty());
     }
 
     #[test]
     fn missing_settings_file_loads_default_settings() {
         let dir = tempdir().unwrap();
-        let store = FileSettingsStore::new(dir.path().join("settings.json"));
+        let store = memory_store(dir.path().join("settings.json"));
 
         let settings = store.load().unwrap();
 
@@ -378,7 +732,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().join("settings.json");
         fs::write(&path, "{not json").unwrap();
-        let store = FileSettingsStore::new(path);
+        let store = memory_store(path);
 
         let error = store.load().unwrap_err();
 
@@ -390,7 +744,7 @@ mod tests {
     fn atomic_save_does_not_leave_temp_file() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("settings.json");
-        let store = FileSettingsStore::new(&path);
+        let store = memory_store(&path);
         let settings = AppSettings::default();
 
         store.save(&settings).unwrap();
@@ -402,18 +756,22 @@ mod tests {
     #[test]
     fn settings_roundtrip_restores_identical_state() {
         let dir = tempdir().unwrap();
-        let store = FileSettingsStore::new(dir.path().join("settings.json"));
-        let settings = AppSettings {
-            active_provider: AiProviderKind::OpenAiCompatible,
-            compatible: ProviderProfile {
-                known_models: vec!["grok-1".to_string()],
-                ..ProviderProfile::compatible_default()
-            },
-            openai: ProviderProfile {
-                transport: ProviderTransport::ChatCompletions,
-                ..ProviderProfile::openai_default()
-            },
+        let store = memory_store(dir.path().join("settings.json"));
+        let mut settings = AppSettings {
+            active_provider: ProviderId::from("anthropic"),
+            ..Default::default()
         };
+        settings
+            .providers
+            .get_mut(&ProviderId::from("openai"))
+            .expect("openai profile")
+            .transport = ProviderTransport::ChatCompletions;
+        settings
+            .providers
+            .get_mut(&ProviderId::from("anthropic"))
+            .expect("anthropic profile")
+            .known_models = vec!["claude-custom".to_string()];
+
         store.save(&settings).unwrap();
         let loaded = store.load().unwrap();
         assert_eq!(loaded, settings);

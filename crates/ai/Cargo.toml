@@ -1,5 +1,5 @@
 [package]
-name = "openai-client"
+name = "ai"
 version = "0.1.0"
 edition.workspace = true
 description.workspace = true

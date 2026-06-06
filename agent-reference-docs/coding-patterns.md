@@ -5,7 +5,7 @@ Patterns we follow in this repo.
 ## Architecture Rules
 
 1. `workflow-core` is pure domain logic.
-2. `openai-client` is an adapter that implements `AiPort`.
+2. `ai` is an adapter crate that implements `AiPort` for BYOK providers.
 3. `agent-workflow-app` composes UI, local state, and persistence.
 4. Domain crate must not depend on `egui`, `eframe`, or HTTP clients.
 5. UI crate must call domain APIs; do not duplicate domain rules in UI.
@@ -19,7 +19,7 @@ Patterns we follow in this repo.
 | Batch run semantics | `crates/workflow-core/src/runner.rs` |
 | Interactive pause/resume semantics | `crates/workflow-core/src/interactive.rs` |
 | LLM invocation contract | `crates/workflow-core/src/ports.rs` |
-| OpenAI Responses transport mapping | `crates/openai-client/src/lib.rs` |
+| LLM transport mapping | `crates/ai/src/*` |
 | UI rendering + interactions | `crates/agent-workflow-app/src/ui/*` |
 | Mutable app state transitions | `crates/agent-workflow-app/src/state.rs` |
 | File persistence formats | `crates/agent-workflow-app/src/storage.rs`, `settings_store.rs` |
@@ -56,7 +56,7 @@ Patterns we follow in this repo.
 1. Add workspace deps in root `Cargo.toml` first, then consume in crate manifests.
 2. Keep crate dependencies minimal and role-specific:
    - `workflow-core`: model/validation/runner only.
-   - `openai-client`: HTTP + payload parsing.
+   - `ai`: HTTP + provider payload parsing/auth only.
    - `agent-workflow-app`: UI/runtime/persistence.
 
 ## Change Checklist

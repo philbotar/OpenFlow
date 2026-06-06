@@ -176,7 +176,8 @@ export interface WorkflowRunState {
   outputs: Record<NodeId, unknown>;
 }
 
-export type AiProviderKind = "open_ai" | "open_ai_compatible";
+export type ProviderId = string;
+export type AiProviderKind = ProviderId;
 export type ProviderTransport = "responses" | "chat_completions";
 
 export interface ProviderProfile {
@@ -185,15 +186,15 @@ export interface ProviderProfile {
   transport: ProviderTransport;
   responses_path: string;
   chat_completions_path: string;
-  api_key: string;
   known_models: string[];
   default_model: string | null;
+  key_ref: string;
+  editable: boolean;
 }
 
 export interface AppSettings {
-  active_provider: AiProviderKind;
-  openai: ProviderProfile;
-  openai_compatible: ProviderProfile;
+  active_provider: ProviderId;
+  providers: Record<ProviderId, ProviderProfile>;
 }
 
 export interface WorkflowListItem {

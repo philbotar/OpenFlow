@@ -86,7 +86,7 @@ pub fn default_templates() -> Vec<Template> {
             AgentNodeConfig {
                 system_prompt: "You are a focused AI agent in a node workflow.".to_string(),
                 task_prompt: "Return a concise JSON object for this node.".to_string(),
-                model: "gpt-5.5".to_string(),
+                model: String::new(),
                 output_schema: serde_json::json!({
                     "type": "object",
                     "additionalProperties": false,
@@ -106,7 +106,7 @@ pub fn default_templates() -> Vec<Template> {
             AgentNodeConfig {
                 system_prompt: "You are a code reviewer. Analyze code for bugs, style issues, security problems, and performance concerns. Be thorough and specific.".to_string(),
                 task_prompt: "Review the provided code and return findings as a structured object with severity ratings.".to_string(),
-                model: "gpt-5.5".to_string(),
+                model: String::new(),
                 output_schema: serde_json::json!({
                     "type": "object",
                     "additionalProperties": false,
@@ -145,7 +145,7 @@ pub fn default_templates() -> Vec<Template> {
             AgentNodeConfig {
                 system_prompt: "You are a document summarizer. Extract the most important information and present it clearly. Include key takeaways, action items, and a concise executive summary.".to_string(),
                 task_prompt: "Summarize the input and return a structured digest.".to_string(),
-                model: "gpt-5.5".to_string(),
+                model: String::new(),
                 output_schema: serde_json::json!({
                     "type": "object",
                     "additionalProperties": false,
@@ -177,7 +177,7 @@ pub fn default_templates() -> Vec<Template> {
             AgentNodeConfig {
                 system_prompt: "You are a classifier. Determine which category the input belongs to and provide a confidence score. If none fit, use 'other'.".to_string(),
                 task_prompt: "Classify the input and return the result.".to_string(),
-                model: "gpt-5.5".to_string(),
+                model: String::new(),
                 output_schema: serde_json::json!({
                     "type": "object",
                     "additionalProperties": false,
@@ -203,7 +203,7 @@ pub fn default_templates() -> Vec<Template> {
             AgentNodeConfig {
                 system_prompt: "You are a reviewer agent. Wait to be triggered before processing.".to_string(),
                 task_prompt: "Review the upstream output and return your assessment.".to_string(),
-                model: "gpt-5.5".to_string(),
+                model: String::new(),
                 output_schema: serde_json::json!({
                     "type": "object",
                     "additionalProperties": false,

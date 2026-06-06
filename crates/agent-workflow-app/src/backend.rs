@@ -9,15 +9,19 @@
 )]
 
 use crate::agent_store::{AgentDefinition, FileAgentStore};
+use crate::credential_store::CredentialStoreError;
 use crate::execution::{
     apply_event_to_run_state, record_user_input, spawn_interactive_workflow_run, ExecutionAction,
     ExecutionEvent,
 };
-use crate::provider_config::{resolve_provider_config, ProviderConfigError, ProviderEnv};
-use crate::settings_store::{AppSettings, FileSettingsStore};
+use crate::provider_config::{
+    active_provider_env_var, active_provider_label, resolve_provider_config, ProviderConfigError,
+    ProviderEnv,
+};
+use crate::settings_store::{key_ref_for_provider, AppSettings, FileSettingsStore};
 use crate::state::WorkflowRunState;
 use crate::storage::FileWorkflowStore;
-use openai_client::{OpenAiClient, OpenAiClientConfig};
+use ai::{AiClient, ProviderId};
 use serde::{Deserialize, Serialize};
 use std::io;
 use thiserror::Error;
@@ -49,6 +53,8 @@ struct RunSession {
 pub enum BackendError {
     #[error(transparent)]
     Io(#[from] io::Error),
+    #[error(transparent)]
+    Credential(#[from] CredentialStoreError),
     #[error(transparent)]
     Validation(#[from] WorkflowValidationError),
     #[error(transparent)]
@@ -307,24 +313,79 @@ impl AppBackend {
             .map_err(BackendError::from)
     }
 
+    /// # Errors
+    /// Returns an error if the credential store cannot be read.
+    pub fn load_provider_api_key(&self, provider_id: &str) -> Result<Option<String>, BackendError> {
+        let provider_id = ProviderId::from(provider_id);
+        Ok(self
+            .settings_store
+            .credential_store()
+            .get(&key_ref_for_provider(&provider_id))?)
+    }
+
+    /// # Errors
+    /// Returns an error if the credential store cannot be written.
+    pub fn save_provider_api_key(
+        &self,
+        provider_id: &str,
+        api_key: &str,
+    ) -> Result<(), BackendError> {
+        let provider_id = ProviderId::from(provider_id);
+        let key_ref = key_ref_for_provider(&provider_id);
+        let api_key = api_key.trim();
+        if api_key.is_empty() {
+            self.settings_store.credential_store().delete(&key_ref)?;
+        } else {
+            self.settings_store
+                .credential_store()
+                .set(&key_ref, api_key)?;
+        }
+        Ok(())
+    }
+
+    /// # Errors
+    /// Returns an error if the credential store cannot delete the key.
+    pub fn delete_provider_api_key(&self, provider_id: &str) -> Result<(), BackendError> {
+        let provider_id = ProviderId::from(provider_id);
+        self.settings_store
+            .credential_store()
+            .delete(&key_ref_for_provider(&provider_id))?;
+        Ok(())
+    }
+
     #[must_use]
     pub fn resolve_provider_readiness(
         &self,
         settings: &AppSettings,
-        _transient_api_key: Option<&str>,
+        transient_api_key: Option<&str>,
     ) -> ProviderReadiness {
-        match resolve_provider_config(settings, None, &self.env) {
+        match resolve_provider_config(
+            settings,
+            transient_api_key,
+            &self.env,
+            self.settings_store.credential_store(),
+        ) {
             Ok(_) => ProviderReadiness {
                 ready: true,
-                provider: settings.active_provider.label().to_string(),
+                provider: active_provider_label(settings),
                 message: "Ready".to_string(),
-                env_var: settings.active_provider.env_key().to_string(),
+                env_var: active_provider_env_var(settings)
+                    .unwrap_or_default()
+                    .to_string(),
             },
             Err(ProviderConfigError::MissingApiKey { provider, env_var }) => ProviderReadiness {
                 ready: false,
-                provider: provider.to_string(),
+                provider,
                 message: format!("API key missing (set it in Settings or {env_var})"),
-                env_var: env_var.to_string(),
+                env_var,
+            },
+            Err(error) => ProviderReadiness {
+                ready: false,
+                provider: active_provider_label(settings),
+                message: error.to_string(),
+                env_var: active_provider_env_var(settings)
+                    .unwrap_or_default()
+                    .to_string(),
             },
         }
     }
@@ -351,22 +412,21 @@ impl AppBackend {
     pub async fn start_run(
         &self,
         workflow: Workflow,
-        _entrypoint: Option<String>,
+        entrypoint: Option<String>,
         settings: &AppSettings,
-        _transient_api_key: Option<&str>,
+        transient_api_key: Option<&str>,
     ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
         validate_workflow(&workflow)?;
-        let provider_config = resolve_provider_config(settings, None, &self.env)?;
-        let ai = OpenAiClient::with_config(OpenAiClientConfig {
-            api_key: provider_config.api_key,
-            base_url: provider_config.base_url,
-            wire_api: provider_config.wire_api,
-            responses_path: provider_config.responses_path,
-            chat_completions_path: provider_config.chat_completions_path,
-        });
+        let provider_config = resolve_provider_config(
+            settings,
+            transient_api_key,
+            &self.env,
+            self.settings_store.credential_store(),
+        )?;
+        let ai = AiClient::with_config(provider_config);
 
         let (handle, event_rx, action_tx) =
-            spawn_interactive_workflow_run(&self.runtime, workflow.clone(), None, ai);
+            spawn_interactive_workflow_run(&self.runtime, workflow.clone(), entrypoint, ai);
 
         let mut session = self.run_session.lock().await;
         if let Some(existing) = session.handle.take() {
@@ -518,21 +578,27 @@ fn default_workflow(name: &str) -> Workflow {
 }
 
 #[cfg(test)]
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
-    use crate::settings_store::{AiProviderKind, ProviderTransport};
+    use crate::credential_store::CredentialStore;
+    use crate::settings_store::{ProviderProfile, ProviderTransport};
     use tempfile::tempdir;
 
     fn backend() -> (AppBackend, tempfile::TempDir) {
         let dir = tempdir().expect("tempdir");
+        let credential_store = CredentialStore::in_memory();
         let backend = AppBackend::new(
             FileWorkflowStore::new(dir.path().join("workflows.json")),
             FileAgentStore::new(dir.path().join("agents.json")),
-            FileSettingsStore::new(dir.path().join("settings.json")),
-            ProviderEnv {
-                openai_api_key: Some("openai-key".to_string()),
-                compatible_api_key: Some("compatible-key".to_string()),
-            },
+            FileSettingsStore::with_credential_store(
+                dir.path().join("settings.json"),
+                credential_store,
+            ),
+            ProviderEnv::from_pairs([
+                ("OPENAI_API_KEY", "openai-key"),
+                ("OPENAI_COMPATIBLE_API_KEY", "compatible-key"),
+            ]),
             tokio::runtime::Runtime::new().expect("runtime"),
         );
         (backend, dir)
@@ -675,23 +741,24 @@ mod tests {
 
     #[test]
     fn provider_readiness_reports_missing_key() {
-        let settings = AppSettings {
-            active_provider: AiProviderKind::OpenAiCompatible,
-            compatible: crate::settings_store::ProviderProfile {
-                transport: ProviderTransport::ChatCompletions,
-                ..crate::settings_store::ProviderProfile::compatible_default()
-            },
+        let mut settings = AppSettings {
+            active_provider: ProviderId::from("custom_openai_compatible"),
             ..AppSettings::default()
         };
+        settings.providers.insert(
+            ProviderId::from("custom_openai_compatible"),
+            ProviderProfile {
+                transport: ProviderTransport::ChatCompletions,
+                ..ProviderProfile::compatible_default()
+            },
+        );
 
+        let credential_store = CredentialStore::in_memory();
         let readiness = AppBackend::new(
             FileWorkflowStore::new("/tmp/unused-workflows.json"),
             FileAgentStore::new("/tmp/unused-agents.json"),
-            FileSettingsStore::new("/tmp/unused-settings.json"),
-            ProviderEnv {
-                openai_api_key: None,
-                compatible_api_key: None,
-            },
+            FileSettingsStore::with_credential_store("/tmp/unused-settings.json", credential_store),
+            ProviderEnv::default(),
             tokio::runtime::Runtime::new().expect("runtime"),
         )
         .resolve_provider_readiness(&settings, None);

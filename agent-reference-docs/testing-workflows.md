@@ -6,9 +6,9 @@ Purpose: explain how to verify workflow behavior without manually clicking throu
 
 | Layer | Command | What It Proves |
 | --- | --- | --- |
-| Unit tests | `cargo test --workspace` | Domain rules, tool approval resolution, app state, persistence, provider config, UI layout contracts, OpenAI wire mapping |
+| Unit tests | `cargo test --workspace` | Domain rules, tool approval resolution, app state, persistence, provider config, UI layout contracts, OpenAI-compatible and Anthropic wire mapping |
 | Deterministic workflow acceptance | `cargo test -p agent-workflow-app --test workflow_acceptance -- --nocapture` | A whole workflow can run headlessly with scripted AI outputs, tool calls, and approval pauses |
-| Live AI smoke | `STEP_WORKFLOW_LIVE_AI=1 STEP_WORKFLOW_LIVE_API_KEY=... STEP_WORKFLOW_LIVE_MODEL=... cargo test -p agent-workflow-app --test live_workflow -- --ignored --nocapture` | A real model can complete a small workflow and satisfy schema-level rules |
+| Live AI smoke | `STEP_WORKFLOW_LIVE_AI=1 STEP_WORKFLOW_LIVE_API_KEY=... STEP_WORKFLOW_LIVE_MODEL=... cargo test -p agent-workflow-app --test live_workflow -- --ignored --nocapture` | A real BYOK provider can complete a small workflow and satisfy schema-level rules |
 
 ## Acceptance Rules
 

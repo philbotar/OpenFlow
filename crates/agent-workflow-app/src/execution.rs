@@ -19,6 +19,7 @@ use crate::tools::{
 };
 use serde_json::Value;
 use std::collections::{BTreeMap, VecDeque};
+use std::fmt::Write as _;
 use std::path::PathBuf;
 use thiserror::Error;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -899,18 +900,18 @@ fn format_tool_call_message(tool_call: &ToolCall) -> String {
         .as_deref()
         .filter(|value| !value.trim().is_empty())
     {
-        message.push_str(&format!("\nIntent: {intent}"));
+        let _ = write!(message, "\nIntent: {intent}");
     }
     let arguments = serde_json::to_string_pretty(&tool_call.arguments)
         .unwrap_or_else(|_| tool_call.arguments.to_string());
-    message.push_str(&format!("\nArguments:\n{arguments}"));
+    let _ = write!(message, "\nArguments:\n{arguments}");
     message
 }
 
 fn format_tool_result_message(tool_name: &str, content: &str, artifact_ids: &[String]) -> String {
     let mut message = format!("Tool result: {tool_name}\n{content}");
     if !artifact_ids.is_empty() {
-        message.push_str(&format!("\nArtifacts: {}", artifact_ids.join(", ")));
+        let _ = write!(message, "\nArtifacts: {}", artifact_ids.join(", "));
     }
     message
 }
@@ -964,6 +965,7 @@ mod tests {
         let mut workflow = Workflow::new("trace");
         let mut first = workflow_core::Node::agent("First", 0.0, 0.0);
         first.id = NodeId("first".to_string());
+        first.agent.model = "test-model".to_string();
         workflow.nodes = vec![first];
         workflow
     }

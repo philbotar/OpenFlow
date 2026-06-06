@@ -160,13 +160,42 @@ fn save_settings(
     Ok(backend.save_settings(&settings)?)
 }
 
+/// Tauri command: Load a provider API key from the OS credential store.
+#[tauri::command]
+fn load_provider_api_key(
+    backend: tauri::State<AppBackend>,
+    provider_id: String,
+) -> Result<Option<String>, CommandError> {
+    Ok(backend.load_provider_api_key(&provider_id)?)
+}
+
+/// Tauri command: Save a provider API key to the OS credential store.
+#[tauri::command]
+fn save_provider_api_key(
+    backend: tauri::State<AppBackend>,
+    provider_id: String,
+    api_key: String,
+) -> Result<(), CommandError> {
+    Ok(backend.save_provider_api_key(&provider_id, &api_key)?)
+}
+
+/// Tauri command: Delete a provider API key from the OS credential store.
+#[tauri::command]
+fn delete_provider_api_key(
+    backend: tauri::State<AppBackend>,
+    provider_id: String,
+) -> Result<(), CommandError> {
+    Ok(backend.delete_provider_api_key(&provider_id)?)
+}
+
 /// Tauri command: Check provider readiness.
 #[tauri::command]
 fn resolve_provider_readiness(
     backend: tauri::State<AppBackend>,
     settings: AppSettings,
+    transient_api_key: Option<String>,
 ) -> ProviderReadiness {
-    backend.resolve_provider_readiness(&settings, None)
+    backend.resolve_provider_readiness(&settings, transient_api_key.as_deref())
 }
 
 /// Tauri command: Validate a workflow.
@@ -197,8 +226,11 @@ async fn start_run(
     app: tauri::AppHandle,
     workflow: Workflow,
     settings: AppSettings,
+    transient_api_key: Option<String>,
 ) -> Result<WorkflowRunState, CommandError> {
-    let (initial_state, mut event_rx) = backend.start_run(workflow, None, &settings, None).await?;
+    let (initial_state, mut event_rx) = backend
+        .start_run(workflow, None, &settings, transient_api_key.as_deref())
+        .await?;
     let app_handle = app.clone();
 
     tauri::async_runtime::spawn(async move {
@@ -285,6 +317,9 @@ pub fn run() {
             save_agents,
             load_settings,
             save_settings,
+            load_provider_api_key,
+            save_provider_api_key,
+            delete_provider_api_key,
             resolve_provider_readiness,
             validate_workflow,
             create_agent_node,

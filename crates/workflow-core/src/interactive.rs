@@ -391,6 +391,15 @@ impl InteractiveEngine {
                 node_id: NodeId(node_id.to_string()),
                 message: "node must exist".to_string(),
             })?;
+        if node.agent.model.trim().is_empty() {
+            return Err(RunError::NodeFailed {
+                node_id: node.id.clone(),
+                message: format!(
+                    "node \"{}\" has no model configured — select a model in the inspector before running",
+                    node.label
+                ),
+            });
+        }
         Ok(AgentRequest {
             workflow_id: self.workflow.id.clone(),
             node_id: node.id.clone(),
@@ -450,6 +459,7 @@ mod tests {
     fn node(id: &str) -> Node {
         let mut node = Node::agent(id, 0.0, 0.0);
         node.id = NodeId(id.to_string());
+        node.agent.model = "test-model".to_string();
         node
     }
 

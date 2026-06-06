@@ -56,7 +56,6 @@ body,
 }
 
 body {
-  zoom: var(--ui-zoom);
   background:
     radial-gradient(circle at top left, rgba(133, 160, 255, 0.16), transparent 28%),
     radial-gradient(circle at top right, rgba(194, 187, 255, 0.12), transparent 24%),
@@ -141,6 +140,7 @@ select:focus-visible {
   height: 100vh;
   height: 100dvh;
   overflow: hidden;
+  zoom: var(--ui-zoom);
 }
 
 .sidebar {
@@ -157,7 +157,7 @@ select:focus-visible {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 2px 8px 6px;
+  padding: 0px 8px 6px;
 }
 .sidebar-macos .sidebar-brand {
   padding-top: 8px;
@@ -173,7 +173,7 @@ select:focus-visible {
 .sidebar-window-controls-spacer {
   display: none;
   width: 100%;
-  height: 28px;
+  height: 24px;
   flex-shrink: 0;
 }
 .sidebar-macos .sidebar-window-controls-spacer {

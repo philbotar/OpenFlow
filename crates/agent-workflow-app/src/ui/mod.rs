@@ -9,13 +9,12 @@ mod widgets;
 
 use crate::execution::{spawn_interactive_workflow_run, ExecutionAction, ExecutionEvent};
 use crate::provider_config::{resolve_provider_config, ProviderEnv};
-use crate::settings_store::{AiProviderKind, AppSettings, FileSettingsStore};
+use crate::settings_store::{AppSettings, FileSettingsStore};
 use crate::state::{AgentStatus, AppState, RunTraceEntry, TraceStatus};
 use crate::storage::FileWorkflowStore;
+use ai::AiClient;
 use eframe::egui;
 use egui_phosphor::regular as ph;
-use openai_client::{OpenAiClient, OpenAiClientConfig};
-use std::env;
 #[allow(clippy::wildcard_imports)]
 use theme::*;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -137,20 +136,12 @@ impl WorkflowApp {
             return;
         }
 
-        let env = ProviderEnv {
-            openai_api_key: env::var("OPENAI_API_KEY").ok(),
-            compatible_api_key: env::var("OPENAI_COMPATIBLE_API_KEY").ok(),
-        };
-        let env_key_value = match self.settings.active_provider {
-            AiProviderKind::OpenAi => env.openai_api_key.as_deref(),
-            AiProviderKind::OpenAiCompatible => env.compatible_api_key.as_deref(),
-        };
+        let env = ProviderEnv::from_system();
         let provider_config = match resolve_provider_config(
             &self.settings,
-            self.state
-                .resolve_provider_api_key(env_key_value)
-                .as_deref(),
+            self.state.resolve_provider_api_key(None).as_deref(),
             &env,
+            self.settings_store.credential_store(),
         ) {
             Ok(config) => config,
             Err(error) => {
@@ -179,13 +170,7 @@ impl WorkflowApp {
         } else {
             Some(entrypoint)
         };
-        let ai = OpenAiClient::with_config(OpenAiClientConfig {
-            api_key: provider_config.api_key,
-            base_url: provider_config.base_url,
-            wire_api: provider_config.wire_api,
-            responses_path: provider_config.responses_path,
-            chat_completions_path: provider_config.chat_completions_path,
-        });
+        let ai = AiClient::with_config(provider_config);
         let (handle, event_rx, action_tx) =
             spawn_interactive_workflow_run(&self.runtime, workflow, entrypoint, ai);
         self.execution_task = Some(handle);
@@ -221,6 +206,17 @@ impl WorkflowApp {
     }
 
     fn save_settings(&mut self) {
+        if let Some(api_key) = self.state.resolve_provider_api_key(None) {
+            let key_ref = self.settings.active_profile().key_ref.clone();
+            if let Err(error) = self
+                .settings_store
+                .credential_store()
+                .set(&key_ref, api_key.as_str())
+            {
+                self.state.last_error = Some(format!("API key save failed: {error}"));
+                return;
+            }
+        }
         match self.settings_store.save(&self.settings) {
             Ok(()) => self.settings_snapshot = self.settings.clone(),
             Err(error) => self.state.last_error = Some(format!("settings save failed: {error}")),
@@ -579,17 +575,15 @@ impl eframe::App for WorkflowApp {
                     settings::show_settings_panel(ui, &mut self.state, &mut self.settings);
                 });
         } else {
-            let env = ProviderEnv {
-                openai_api_key: env::var("OPENAI_API_KEY").ok(),
-                compatible_api_key: env::var("OPENAI_COMPATIBLE_API_KEY").ok(),
-            };
-            let env_key_value = match self.settings.active_provider {
-                AiProviderKind::OpenAi => env.openai_api_key.as_deref(),
-                AiProviderKind::OpenAiCompatible => env.compatible_api_key.as_deref(),
-            };
-            let transient = self.state.resolve_provider_api_key(env_key_value);
-            let api_key_ready =
-                resolve_provider_config(&self.settings, transient.as_deref(), &env).is_ok();
+            let env = ProviderEnv::from_system();
+            let transient = self.state.resolve_provider_api_key(None);
+            let api_key_ready = resolve_provider_config(
+                &self.settings,
+                transient.as_deref(),
+                &env,
+                self.settings_store.credential_store(),
+            )
+            .is_ok();
             let execution_running = self
                 .execution_task
                 .as_ref()
@@ -683,7 +677,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store_path = dir.path().join("settings.json");
         let settings = AppSettings {
-            active_provider: crate::settings_store::AiProviderKind::OpenAiCompatible,
+            active_provider: ai::ProviderId::from("custom_openai_compatible"),
             ..AppSettings::default()
         };
         let mut app = WorkflowApp::new();

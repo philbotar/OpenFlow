@@ -12,7 +12,10 @@ const apiMocks = vi.hoisted(() => ({
   createWorkflow: vi.fn(),
   listenToRunState: vi.fn(),
   resolveProviderReadiness: vi.fn(),
+  deleteProviderApiKey: vi.fn(),
+  loadProviderApiKey: vi.fn(),
   saveAgents: vi.fn(),
+  saveProviderApiKey: vi.fn(),
   saveSettings: vi.fn(),
   saveWorkflows: vi.fn(),
   startRun: vi.fn(),
@@ -29,8 +32,11 @@ vi.mock("./api", () => ({
   createWorkflow: apiMocks.createWorkflow,
   listenToRunState: apiMocks.listenToRunState,
   resolveProviderReadiness: apiMocks.resolveProviderReadiness,
+  deleteProviderApiKey: apiMocks.deleteProviderApiKey,
+  loadProviderApiKey: apiMocks.loadProviderApiKey,
   saveAgents: apiMocks.saveAgents,
   submitToolApproval: apiMocks.submitToolApproval,
+  saveProviderApiKey: apiMocks.saveProviderApiKey,
   saveSettings: apiMocks.saveSettings,
   saveWorkflows: apiMocks.saveWorkflows,
   startRun: apiMocks.startRun,
@@ -56,26 +62,30 @@ vi.mock("./canvas/WorkflowCanvasHost", () => ({
 import App from "./App";
 
 const SETTINGS: AppSettings = {
-  active_provider: "open_ai",
-  openai: {
-    display_name: "OpenAI",
-    base_url: "https://api.openai.com/v1",
-    transport: "responses",
-    responses_path: "responses",
-    chat_completions_path: "chat/completions",
-    api_key: "stored-openai-key",
-    known_models: ["gpt-4.1-mini"],
-    default_model: "gpt-4.1-mini",
-  },
-  openai_compatible: {
-    display_name: "Compatible",
-    base_url: "https://example.invalid/v1",
-    transport: "chat_completions",
-    responses_path: "responses",
-    chat_completions_path: "chat/completions",
-    api_key: "stored-compatible-key",
-    known_models: ["compatible-model"],
-    default_model: "compatible-model",
+  active_provider: "openai",
+  providers: {
+    openai: {
+      display_name: "OpenAI",
+      base_url: "https://api.openai.com/v1",
+      transport: "responses",
+      responses_path: "responses",
+      chat_completions_path: "chat/completions",
+      known_models: ["gpt-4.1-mini"],
+      default_model: "gpt-4.1-mini",
+      key_ref: "provider:openai:api-key",
+      editable: false,
+    },
+    custom_openai_compatible: {
+      display_name: "Compatible",
+      base_url: "https://example.invalid/v1",
+      transport: "chat_completions",
+      responses_path: "responses",
+      chat_completions_path: "chat/completions",
+      known_models: ["compatible-model"],
+      default_model: "compatible-model",
+      key_ref: "provider:custom_openai_compatible:api-key",
+      editable: true,
+    },
   },
 };
 
@@ -116,7 +126,7 @@ function makeAgent(id: string, name: string): AgentDefinition {
     name,
     system_prompt: "You are a focused AI agent in a node workflow.",
     task_prompt: "Return a concise JSON object for this node.",
-    model: "gpt-5.5",
+    model: "",
     output_schema: {
       type: "object",
       additionalProperties: false,
@@ -159,6 +169,17 @@ function makeNodeFromAgent(index: number, x: number, y: number, agent: AgentDefi
 function installDefaultApiMocks() {
   apiMocks.listenToRunState.mockResolvedValue(() => {});
   apiMocks.resolveProviderReadiness.mockResolvedValue(READY);
+  apiMocks.loadProviderApiKey.mockImplementation(async (providerId: string) => {
+    if (providerId === "openai") {
+      return "stored-openai-key";
+    }
+    if (providerId === "custom_openai_compatible") {
+      return "stored-compatible-key";
+    }
+    return null;
+  });
+  apiMocks.saveProviderApiKey.mockResolvedValue(undefined);
+  apiMocks.deleteProviderApiKey.mockResolvedValue(undefined);
   apiMocks.createWorkflow.mockImplementation(async (name: string) => makeWorkflow("created-workflow", name));
   apiMocks.createAgentDefinition.mockImplementation(async (name: string) => makeAgent("created-agent", name));
   apiMocks.createAgentNode.mockImplementation(
@@ -431,7 +452,7 @@ describe("App agent dashboard", () => {
         () => Array.from(container.querySelectorAll("label span")).find((element) => element.textContent === "Model")?.parentElement?.querySelector("input") as HTMLInputElement | null,
         "agent model input",
       );
-      expect(modelInput.value).toBe("gpt-5.5");
+      expect(modelInput.value).toBe("gpt-4.1-mini");
 
       const autoStartInput = Array.from(container.querySelectorAll("label.checkbox-row input")).find(
         (element) => (element.parentElement?.textContent ?? "").includes("Auto-start without pausing for human input"),
@@ -496,7 +517,7 @@ describe("App agent dashboard", () => {
 
     try {
       const addNodeButton = await waitForElement(
-        () => container.querySelector('button[aria-label="Add node"]') as HTMLButtonElement | null,
+        () => container.querySelector('button[aria-label="Canvas add node"]') as HTMLButtonElement | null,
         "add node button",
       );
       addNodeButton.click();
@@ -635,14 +656,18 @@ describe("App settings persistence", () => {
       ) as HTMLInputElement;
       expect(apiKeyInput.value).toBe("stored-openai-key");
 
-      const compatibleButton = Array.from(container.querySelectorAll(".segmented-control button")).find(
-        (element) => element.textContent === "Compatible",
-      ) as HTMLButtonElement | undefined;
-      expect(compatibleButton).toBeDefined();
-      compatibleButton?.click();
+      const providerSelect = Array.from(container.querySelectorAll("select")).find(
+        (element) => Array.from(element.options).some((option) => option.value === "custom_openai_compatible"),
+      ) as HTMLSelectElement | undefined;
+      expect(providerSelect).toBeDefined();
+      providerSelect!.value = "custom_openai_compatible";
+      providerSelect!.dispatchEvent(new Event("change", { bubbles: true }));
       await flush();
 
-      expect(apiKeyInput.value).toBe("stored-compatible-key");
+      await waitForElement(
+        () => (apiKeyInput.value === "stored-compatible-key" ? apiKeyInput : null),
+        "compatible provider api key",
+      );
 
       apiKeyInput.value = "updated-compatible-key";
       apiKeyInput.dispatchEvent(new Event("input", { bubbles: true }));
@@ -663,14 +688,21 @@ describe("App settings persistence", () => {
       );
       expect(successToast.textContent).toContain("Settings saved successfully.");
 
-
+      expect(apiMocks.saveProviderApiKey).toHaveBeenCalledWith(
+        "custom_openai_compatible",
+        "updated-compatible-key",
+      );
       expect(apiMocks.saveSettings).toHaveBeenCalledWith(
         expect.objectContaining({
-          openai_compatible: expect.objectContaining({
-            api_key: "updated-compatible-key",
+          providers: expect.objectContaining({
+            custom_openai_compatible: expect.objectContaining({
+              key_ref: "provider:custom_openai_compatible:api-key",
+            }),
           }),
         }),
       );
+      const lastSavedSettings = apiMocks.saveSettings.mock.calls[apiMocks.saveSettings.mock.calls.length - 1]?.[0];
+      expect(JSON.stringify(lastSavedSettings)).not.toContain("api_key");
     } finally {
       dispose();
     }

@@ -9,8 +9,8 @@ Rust desktop app for composing AI agent workflows as nodes and edges.
 - Connect nodes so upstream JSON outputs become downstream inputs.
 - Validate workflow graphs as DAGs.
 - Run nodes by dependency layer. Branches in the same layer run together; downstream nodes wait for all required upstream outputs.
-- Call OpenAI Responses API with Structured Outputs.
-- Provide OpenAI API key in-app (secure input) or fall back to `OPENAI_API_KEY`.
+- Run workflows through OpenAI-compatible providers or Anthropic direct BYOK APIs.
+- Store BYOK API keys in the OS credential store, with environment-variable fallback.
 - Provide entrypoint input text routed to root agents only.
 - Inspect per-agent execution status chips plus run events and node outputs in the UI.
 - Use keyboard QoL: `Cmd/Ctrl+Enter` run, `Cmd/Ctrl+S` save, delete selected node, clear run trace.
@@ -33,10 +33,10 @@ rustup component add rustfmt clippy
 
 The Settings screen can run workflows through:
 
-- `ChatGPT / OpenAI`: default provider using `https://api.openai.com` and the Responses API.
-- `OpenAI-compatible API`: custom base URL using either Responses API or Chat Completions API wire format.
+- OpenAI-compatible providers: OpenAI, OpenRouter, Groq, Together, Fireworks, DeepSeek, xAI/Grok, Mistral, Perplexity, Gemini OpenAI compatibility, Ollama local, LM Studio local, and one custom OpenAI-compatible profile.
+- Anthropic direct Messages API.
 
-API keys typed in Settings are transient and are not saved to disk.
+API keys saved in Settings are stored in the OS credential store/keychain, not in `settings.json`. Local providers such as Ollama and LM Studio can run without a key.
 
 Environment fallback:
 
@@ -45,9 +45,7 @@ export OPENAI_API_KEY="sk-your-openai-key"
 export OPENAI_COMPATIBLE_API_KEY="provider-key"
 ```
 
-The official OpenAI provider uses `POST /v1/responses` and sends each node output contract as `text.format.type = "json_schema"` with `strict = true`.
-
-For OpenAI-compatible providers, choose:
+OpenAI defaults to `POST /v1/responses`; other OpenAI-compatible providers default to Chat Completions. Custom OpenAI-compatible profiles can edit base URL and wire paths.
 
 - `Responses API` when the provider supports `/v1/responses`.
 - `Chat Completions API` when the provider supports `/v1/chat/completions` with `response_format.type = "json_schema"`.
@@ -118,6 +116,6 @@ Clarify idea -> Create plan -> Final brief
 ## Ownership
 
 - `crates/workflow-core`: domain model, validation, execution ordering, runner, AI port.
-- `crates/openai-client`: OpenAI Responses API adapter.
+- `crates/ai`: provider adapters for OpenAI-compatible APIs and Anthropic direct.
 - `crates/agent-workflow-app`: desktop UI, local workflow persistence, edit state.
 - `examples`: shareable workflow JSON files.

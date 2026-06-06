@@ -71,9 +71,23 @@ export function saveSettings(settings: AppSettings) {
   return invoke<void>("save_settings", { settings });
 }
 
-export function resolveProviderReadiness(settings: AppSettings) {
+export function loadProviderApiKey(providerId: string) {
+  return invoke<string | null>("load_provider_api_key", { providerId });
+}
+
+export function saveProviderApiKey(providerId: string, apiKey: string) {
+  return invoke<void>("save_provider_api_key", { providerId, apiKey });
+}
+
+export function deleteProviderApiKey(providerId: string) {
+  return invoke<void>("delete_provider_api_key", { providerId });
+}
+
+
+export function resolveProviderReadiness(settings: AppSettings, transientApiKey: string | null = null) {
   return invoke<ProviderReadiness>("resolve_provider_readiness", {
     settings,
+    transientApiKey,
   });
 }
 
@@ -88,10 +102,12 @@ export function createAgentNode(index: number, x: number, y: number, agentId: st
 export function startRun(
   workflow: Workflow,
   settings: AppSettings,
+  transientApiKey: string | null = null,
 ) {
   return invoke<WorkflowRunState>("start_run", {
     workflow,
     settings,
+    transientApiKey,
   });
 }
 

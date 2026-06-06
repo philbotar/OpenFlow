@@ -45,26 +45,30 @@ const workflow: Workflow = {
 };
 
 const settings: AppSettings = {
-  active_provider: "open_ai",
-  openai: {
-    display_name: "OpenAI",
-    base_url: "https://api.openai.com",
-    transport: "responses",
-    responses_path: "v1/responses",
-    chat_completions_path: "v1/chat/completions",
-    api_key: "openai-secret",
-    known_models: ["gpt-4o-mini"],
-    default_model: "gpt-4o-mini",
-  },
-  openai_compatible: {
-    display_name: "Compatible",
-    base_url: "http://localhost:11434",
-    transport: "chat_completions",
-    responses_path: "v1/responses",
-    chat_completions_path: "v1/chat/completions",
-    api_key: "compatible-secret",
-    known_models: ["llama3.1"],
-    default_model: "llama3.1",
+  active_provider: "openai",
+  providers: {
+    openai: {
+      display_name: "OpenAI",
+      base_url: "https://api.openai.com",
+      transport: "responses",
+      responses_path: "v1/responses",
+      chat_completions_path: "v1/chat/completions",
+      known_models: ["gpt-4o-mini"],
+      default_model: "gpt-4o-mini",
+      key_ref: "provider:openai:api-key",
+      editable: false,
+    },
+    custom_openai_compatible: {
+      display_name: "Compatible",
+      base_url: "http://localhost:11434",
+      transport: "chat_completions",
+      responses_path: "v1/responses",
+      chat_completions_path: "v1/chat/completions",
+      known_models: ["llama3.1"],
+      default_model: "llama3.1",
+      key_ref: "provider:custom_openai_compatible:api-key",
+      editable: true,
+    },
   },
 };
 
@@ -119,11 +123,11 @@ describe("workflow helpers", () => {
   test("cloneSettings detaches provider fields", () => {
     const cloned = cloneSettings(settings);
 
-    cloned.openai.api_key = "updated-secret";
-    cloned.openai.known_models.push("o3");
+    cloned.providers.openai.known_models.push("o3");
+    cloned.providers.openai.base_url = "https://changed.example";
 
-    expect(settings.openai.api_key).toBe("openai-secret");
-    expect(settings.openai.known_models).toEqual(["gpt-4o-mini"]);
+    expect(settings.providers.openai.base_url).toBe("https://api.openai.com");
+    expect(settings.providers.openai.known_models).toEqual(["gpt-4o-mini"]);
   });
 
   test("projectWorkflowCanvasGraph reuses the previous graph when only agent config changes", () => {

@@ -3,8 +3,9 @@
 #[allow(clippy::wildcard_imports)]
 use super::theme::*;
 use super::widgets::inspector_field;
-use crate::settings_store::{AiProviderKind, AppSettings, ProviderTransport};
+use crate::settings_store::{AppSettings, ProviderTransport};
 use crate::state::AppState;
+use ai::{provider_spec, ProviderKind};
 use eframe::egui;
 
 pub(super) fn show_settings_panel(
@@ -32,7 +33,7 @@ pub(super) fn show_settings_panel(
                 );
                 ui.add_space(2.0);
                 ui.label(
-                    egui::RichText::new("Configure API keys and application preferences.")
+                    egui::RichText::new("Configure BYOK provider keys and application preferences.")
                         .size(TS_LABEL)
                         .color(TEXT_DIM),
                 );
@@ -53,95 +54,131 @@ pub(super) fn show_settings_panel(
                     .stroke(egui::Stroke::new(1.0, BORDER))
                     .inner_margin(egui::Margin::same(16))
                     .show(ui, |ui| {
+                        let provider_ids = settings.provider_display_order();
                         inspector_field(ui, "Provider", |ui| {
                             egui::ComboBox::from_id_salt("provider_kind_combo")
-                                .selected_text(settings.active_provider.label())
+                                .selected_text(settings.active_profile().display_name.as_str())
                                 .width(ui.available_width())
                                 .show_ui(ui, |ui| {
-                                    ui.selectable_value(
-                                        &mut settings.active_provider,
-                                        AiProviderKind::OpenAi,
-                                        AiProviderKind::OpenAi.label(),
-                                    );
-                                    ui.selectable_value(
-                                        &mut settings.active_provider,
-                                        AiProviderKind::OpenAiCompatible,
-                                        AiProviderKind::OpenAiCompatible.label(),
-                                    );
+                                    for provider_id in provider_ids {
+                                        let label = settings
+                                            .providers
+                                            .get(&provider_id)
+                                            .map_or_else(|| provider_id.to_string(), |profile| profile.display_name.clone());
+                                        ui.selectable_value(
+                                            &mut settings.active_provider,
+                                            provider_id,
+                                            label,
+                                        );
+                                    }
                                 });
                         });
 
-                        if settings.active_provider == AiProviderKind::OpenAiCompatible {
-                            let profile = settings.active_profile_mut();
-                            inspector_field(ui, "Base URL", |ui| {
-                                ui.add(
-                                    egui::TextEdit::singleline(&mut profile.base_url)
-                                        .hint_text("https://api.provider.example")
-                                        .desired_width(f32::INFINITY),
-                                );
-                            });
+                        let active_provider = settings.active_provider.clone();
+                        let active_spec = provider_spec(&active_provider);
+                        let active_env_var = active_spec.and_then(|spec| spec.auth.env_var());
+                        let active_kind = active_spec.map(|spec| spec.kind);
+                        let profile = settings.active_profile_mut();
 
-                            inspector_field(ui, "Wire API", |ui| {
-                                egui::ComboBox::from_id_salt("provider_transport_combo")
-                                    .selected_text(profile.transport.label())
-                                    .width(ui.available_width())
-                                    .show_ui(ui, |ui| {
-                                        ui.selectable_value(
-                                            &mut profile.transport,
-                                            ProviderTransport::Responses,
-                                            ProviderTransport::Responses.label(),
-                                        );
-                                        ui.selectable_value(
-                                            &mut profile.transport,
-                                            ProviderTransport::ChatCompletions,
-                                            ProviderTransport::ChatCompletions.label(),
-                                        );
-                                    });
-                            });
+                        match active_kind {
+                            Some(ProviderKind::OpenAiCompatible(_)) if profile.editable => {
+                                inspector_field(ui, "Base URL", |ui| {
+                                    ui.add(
+                                        egui::TextEdit::singleline(&mut profile.base_url)
+                                            .hint_text("https://api.provider.example/v1")
+                                            .desired_width(f32::INFINITY),
+                                    );
+                                });
 
-                            inspector_field(ui, "Responses Path", |ui| {
-                                ui.add(
-                                    egui::TextEdit::singleline(&mut profile.responses_path)
-                                        .hint_text("v1/responses")
-                                        .desired_width(f32::INFINITY),
-                                );
-                            });
+                                inspector_field(ui, "Wire API", |ui| {
+                                    egui::ComboBox::from_id_salt("provider_transport_combo")
+                                        .selected_text(profile.transport.label())
+                                        .width(ui.available_width())
+                                        .show_ui(ui, |ui| {
+                                            ui.selectable_value(
+                                                &mut profile.transport,
+                                                ProviderTransport::Responses,
+                                                ProviderTransport::Responses.label(),
+                                            );
+                                            ui.selectable_value(
+                                                &mut profile.transport,
+                                                ProviderTransport::ChatCompletions,
+                                                ProviderTransport::ChatCompletions.label(),
+                                            );
+                                        });
+                                });
 
-                            inspector_field(ui, "Chat Completions Path", |ui| {
-                                ui.add(
-                                    egui::TextEdit::singleline(&mut profile.chat_completions_path)
-                                        .hint_text("v1/chat/completions")
-                                        .desired_width(f32::INFINITY),
-                                );
-                            });
-                        } else {
-                            ui.label(
-                                egui::RichText::new("Uses https://api.openai.com with the Responses API.")
+                                inspector_field(ui, "Responses Path", |ui| {
+                                    ui.add(
+                                        egui::TextEdit::singleline(&mut profile.responses_path)
+                                            .hint_text("v1/responses")
+                                            .desired_width(f32::INFINITY),
+                                    );
+                                });
+
+                                inspector_field(ui, "Chat Completions Path", |ui| {
+                                    ui.add(
+                                        egui::TextEdit::singleline(&mut profile.chat_completions_path)
+                                            .hint_text("v1/chat/completions")
+                                            .desired_width(f32::INFINITY),
+                                    );
+                                });
+                            }
+                            Some(ProviderKind::OpenAiCompatible(_)) => {
+                                ui.label(
+                                    egui::RichText::new(format!(
+                                        "Uses {} with the {}.",
+                                        profile.base_url,
+                                        profile.transport.label()
+                                    ))
                                     .size(TS_LABEL)
                                     .color(TEXT_DIM),
-                            );
-                            ui.add_space(6.0);
+                                );
+                                ui.add_space(6.0);
+                            }
+                            Some(ProviderKind::Anthropic(_)) => {
+                                ui.label(
+                                    egui::RichText::new(format!(
+                                        "Uses {} with the Anthropic Messages API.",
+                                        profile.base_url
+                                    ))
+                                    .size(TS_LABEL)
+                                    .color(TEXT_DIM),
+                                );
+                                ui.add_space(6.0);
+                            }
+                            None => {
+                                ui.label(
+                                    egui::RichText::new("This provider is not implemented.")
+                                        .size(TS_LABEL)
+                                        .color(TEXT_DIM),
+                                );
+                                ui.add_space(6.0);
+                            }
                         }
 
                         inspector_field(ui, "Provider API Key", |ui| {
                             ui.add(
                                 egui::TextEdit::singleline(&mut state.provider_api_key_input)
                                     .password(true)
-                                    .hint_text("sk-...")
+                                    .hint_text(active_env_var.unwrap_or("optional local provider key"))
                                     .desired_width(f32::INFINITY),
                             );
                         });
 
-                        let env_key_label = settings.active_provider.env_key();
                         egui::Frame::new()
                             .fill(SURFACE_0)
                             .corner_radius(egui::CornerRadius::same(4))
                             .inner_margin(egui::Margin::symmetric(10, 8))
                             .show(ui, |ui| {
+                                let message = active_env_var.map_or_else(
+                                    || "Local providers can run without a key. Non-empty keys are saved to the OS credential store when settings are saved.".to_string(),
+                                    |env_var| format!(
+                                        "Non-empty keys are saved to the OS credential store when settings are saved. You can also set {env_var} in your environment."
+                                    ),
+                                );
                                 ui.label(
-                                    egui::RichText::new(format!(
-                                        "This key is not saved. You can also set {env_key_label} in your environment."
-                                    ))
+                                    egui::RichText::new(message)
                                     .size(TS_LABEL)
                                     .color(TEXT_DIM),
                                 );

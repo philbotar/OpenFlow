@@ -235,6 +235,7 @@ pub struct ChatMessage {
 pub struct AgentNodeConfig {
     pub system_prompt: String,
     pub task_prompt: String,
+    #[serde(default)]
     pub model: String,
     pub output_schema: Value,
     #[serde(default = "default_auto_start")]
@@ -252,7 +253,7 @@ impl Default for AgentNodeConfig {
         Self {
             system_prompt: "You are a focused AI agent in a node workflow.".to_string(),
             task_prompt: "Return a concise JSON object for this node.".to_string(),
-            model: "gpt-5.5".to_string(),
+            model: String::new(),
             output_schema: json!({
                 "type": "object",
                 "additionalProperties": false,
@@ -387,7 +388,7 @@ mod tests {
         assert_eq!(node.label, "Plan");
         assert_eq!(node.kind, NodeKind::Agent);
         assert_eq!(node.position, NodePosition { x: 24.0, y: 48.0 });
-        assert_eq!(node.agent.model, "gpt-5.5");
+        assert_eq!(node.agent.model, "");
         assert_eq!(node.agent.output_schema["required"], json!(["summary"]));
     }
 

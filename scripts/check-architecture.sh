@@ -16,14 +16,14 @@ ERRORS = 0
 
 ALLOWED = {
     "workflow-core": [],
-    "openai-client": ["workflow-core"],
-    "agent-workflow-app": ["workflow-core", "openai-client"],
+    "ai": ["workflow-core"],
+    "agent-workflow-app": ["workflow-core", "ai"],
     "agent-workflow-desktop": ["workflow-core", "agent-workflow-app"],
 }
 
 CRATE_MANIFESTS = {
     "workflow-core": WORKSPACE_DIR / "crates" / "workflow-core" / "Cargo.toml",
-    "openai-client": WORKSPACE_DIR / "crates" / "openai-client" / "Cargo.toml",
+    "ai": WORKSPACE_DIR / "crates" / "ai" / "Cargo.toml",
     "agent-workflow-app": WORKSPACE_DIR / "crates" / "agent-workflow-app" / "Cargo.toml",
     "agent-workflow-desktop": WORKSPACE_DIR / "crates" / "agent-workflow-desktop" / "src-tauri" / "Cargo.toml",
 }

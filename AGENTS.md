@@ -4,8 +4,8 @@ Single-file orientation for contributors and coding agents.
 
 ## 30-Second Intake
 
-1. This is a Rust workspace with three crates: `workflow-core`, `openai-client`, `agent-workflow-app`.
-2. Core rule: keep domain logic in `workflow-core`; keep API transport in `openai-client`; keep UI/state/storage in `agent-workflow-app`.
+1. This is a Rust workspace with four crates: `workflow-core`, `ai`, `agent-workflow-app`, `agent-workflow-desktop`.
+2. Core rule: keep domain logic in `workflow-core`; keep API transport/auth quirks in `ai`; keep UI/state/storage in `agent-workflow-app` and Tauri/Solid desktop code in `agent-workflow-desktop`.
 3. Start reference docs at `/Users/philipbotar/Developer/Step-through-agentic-workflow/agent-reference-docs/README.md`.
 4. Coding patterns and implementation rules are in `/Users/philipbotar/Developer/Step-through-agentic-workflow/agent-reference-docs/coding-patterns.md`.
 5. Workflow acceptance and live-AI verification rules are in `/Users/philipbotar/Developer/Step-through-agentic-workflow/agent-reference-docs/testing-workflows.md`.
@@ -21,7 +21,7 @@ Single-file orientation for contributors and coding agents.
 | `crates/workflow-core/src/runner.rs` | Non-interactive workflow execution | Changing execution semantics or upstream payload shape |
 | `crates/workflow-core/src/interactive.rs` | Interactive engine poll loop + human input pauses | Changing pause/resume behavior or per-node interaction |
 | `crates/workflow-core/src/ports.rs` | AI boundary trait (`AiPort`) + request/response DTOs | Changing AI contract between core and adapters |
-| `crates/openai-client/src/lib.rs` | OpenAI Responses / Chat Completions adapter | Changing HTTP request/response mapping |
+| `crates/ai/src/lib.rs` | Multi-provider BYOK AI adapters (OpenAI-compatible + Anthropic direct) | Changing HTTP request/response mapping |
 | `crates/agent-workflow-app/src/provider_config.rs` | Provider readiness and API-key resolution | Changing key precedence, env fallback, or provider setup rules |
 | `crates/agent-workflow-app/src/settings_store.rs` | App settings persistence (`settings.json`) | Changing settings schema, defaults, or provider profile fields |
 | `crates/agent-workflow-app/src/state.rs` | App edit state + mutations | Changing selection, edge creation, schema editor, status tracking |
@@ -47,8 +47,8 @@ Single-file orientation for contributors and coding agents.
 
 - Workflow files save to `dirs::data_local_dir()/step-through-agentic-workflow/workflows.json`.
 - Settings save to `dirs::data_local_dir()/step-through-agentic-workflow/settings.json`.
-- Provider API keys are stored inside `settings.json` under the active provider profile (`openai.api_key` / `openai_compatible.api_key`).
-- API key resolution order (highest to lowest): transient input panel → stored profile key → env var fallback (`OPENAI_API_KEY` / `OPENAI_COMPATIBLE_API_KEY`).
+- Provider API keys are stored in the OS credential store/keychain using provider-specific key refs from settings.
+- API key resolution order (highest to lowest): transient input panel → OS credential store → provider env var fallback (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, etc.).
 
 ## Verification Commands
 

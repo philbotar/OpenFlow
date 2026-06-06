@@ -62,6 +62,7 @@ impl AiPort for ScriptedAi {
 fn agent(id: &str, label: &str) -> Node {
     let mut node = Node::agent(label, 0.0, 0.0);
     node.id = NodeId(id.to_string());
+    node.agent.model = "test-model".to_string();
     node.agent.output_schema = json!({
         "type": "object",
         "additionalProperties": false,

@@ -17,8 +17,11 @@ import {
   createAgentDefinition,
   createAgentNode,
   createWorkflow,
+  deleteProviderApiKey,
+  loadProviderApiKey,
   resolveProviderReadiness,
   saveAgents,
+  saveProviderApiKey,
   saveSettings,
   saveWorkflows,
   startRun,
@@ -71,29 +74,71 @@ import { resolveCommittedNodeLabel } from "./nodeLabel";
 type BottomTab = "overview" | "chat" | "trace";
 type Screen = "editor" | "settings" | "agents";
 
+const PROVIDER_ORDER = [
+  "openai",
+  "openrouter",
+  "groq",
+  "together",
+  "fireworks",
+  "deepseek",
+  "xai",
+  "mistral",
+  "perplexity",
+  "gemini",
+  "ollama",
+  "lmstudio",
+  "custom_openai_compatible",
+  "anthropic",
+] as const;
+
 const EMPTY_SETTINGS: AppSettings = {
-  active_provider: "open_ai",
-  openai: {
-    display_name: "ChatGPT / OpenAI",
-    base_url: "https://api.openai.com",
-    transport: "responses",
-    responses_path: "v1/responses",
-    chat_completions_path: "v1/chat/completions",
-    api_key: "",
-    known_models: ["gpt-4o", "gpt-4o-mini", "gpt-4.5", "o3"],
-    default_model: "gpt-4o-mini",
-  },
-  openai_compatible: {
-    display_name: "OpenAI-compatible API",
-    base_url: "http://localhost:11434",
-    transport: "chat_completions",
-    responses_path: "v1/responses",
-    chat_completions_path: "v1/chat/completions",
-    api_key: "",
-    known_models: ["llama3.1", "qwen2.5", "mistral"],
-    default_model: "llama3.1",
+  active_provider: "openai",
+  providers: {
+    openai: {
+      display_name: "OpenAI",
+      base_url: "https://api.openai.com",
+      transport: "responses",
+      responses_path: "v1/responses",
+      chat_completions_path: "v1/chat/completions",
+      known_models: ["gpt-4o", "gpt-4o-mini", "gpt-4.5", "o3"],
+      default_model: "gpt-4o-mini",
+      key_ref: "provider:openai:api-key",
+      editable: false,
+    },
+    custom_openai_compatible: {
+      display_name: "Custom OpenAI-compatible API",
+      base_url: "http://localhost:11434/v1",
+      transport: "chat_completions",
+      responses_path: "v1/responses",
+      chat_completions_path: "v1/chat/completions",
+      known_models: ["model-name"],
+      default_model: "model-name",
+      key_ref: "provider:custom_openai_compatible:api-key",
+      editable: true,
+    },
+    anthropic: {
+      display_name: "Anthropic",
+      base_url: "https://api.anthropic.com",
+      transport: "chat_completions",
+      responses_path: "v1/responses",
+      chat_completions_path: "v1/chat/completions",
+      known_models: ["claude-3-5-sonnet-latest", "claude-3-5-haiku-latest"],
+      default_model: "claude-3-5-sonnet-latest",
+      key_ref: "provider:anthropic:api-key",
+      editable: false,
+    },
   },
 };
+
+function providerDisplayOrder(settings: AppSettings) {
+  const providerIds = Object.keys(settings.providers);
+  const ordered = PROVIDER_ORDER.filter((providerId) => providerId in settings.providers);
+  const extras = providerIds
+    .filter((providerId) => !PROVIDER_ORDER.includes(providerId as (typeof PROVIDER_ORDER)[number]))
+    .sort();
+  return [...ordered, ...extras];
+}
+
 
 type SidebarIconName = "agents" | "plus" | "edit" | "settings" | "save" | "validate" | "run" | "trash";
 
@@ -153,6 +198,11 @@ function AgentConfigForm(props: {
   schemaRows?: number;
 }) {
   const effectiveModel = () => props.model || props.defaultModel || "";
+  createEffect(() => {
+    if (!props.model && props.defaultModel) {
+      props.onModelChange(props.defaultModel);
+    }
+  });
   return (
     <>
       <label>
@@ -315,10 +365,8 @@ function App() {
   const [selectedTraceIndex, setSelectedTraceIndex] = createSignal<number | null>(null);
   const [schemaText, setSchemaText] = createSignal("");
   const [chatInput, setChatInput] = createSignal("");
-  const [newModelInputByProvider, setNewModelInputByProvider] = createSignal<Record<AiProviderKind, string>>({
-    open_ai: "",
-    open_ai_compatible: "",
-  });
+  const [newModelInputByProvider, setNewModelInputByProvider] = createSignal<Record<AiProviderKind, string>>({});
+  const [providerKeyInputByProvider, setProviderKeyInputByProvider] = createSignal<Record<AiProviderKind, string>>({});
   const [uiZoom, setUiZoom] = createSignal(readStoredUiZoom(globalThis.localStorage));
   const [editingWorkflowId, setEditingWorkflowId] = createSignal<string | null>(null);
   const [workflowNameDraft, setWorkflowNameDraft] = createSignal("");
@@ -352,6 +400,8 @@ function App() {
     selectedNode(activeWorkflow(), selectedNodeId()),
   );
   const activeProfileMemo = createMemo(() => activeProfile(settings()));
+  const providerIdsMemo = createMemo(() => providerDisplayOrder(settings()));
+  const activeProviderKeyInput = createMemo(() => providerKeyInputByProvider()[settings().active_provider] ?? "");
   const selectedTrace = createMemo<RunTraceEntry | null>(() => {
     const index = selectedTraceIndex();
     if (index === null) {
@@ -462,7 +512,7 @@ function App() {
     nextSettings = settings(),
   ) => {
     try {
-      setReadiness(await resolveProviderReadiness(nextSettings));
+      setReadiness(await resolveProviderReadiness(nextSettings, providerKeyInputByProvider()[nextSettings.active_provider] ?? null));
     } catch (error) {
       setError(normalizeError(error));
     }
@@ -490,7 +540,6 @@ function App() {
     setNodeLabelDraft("");
     setRunState(initialRunState ?? createIdleRunState(firstWorkflow));
     setSettings(cloneSettings(initialSettings));
-    clearStatusToast();
     await refreshReadiness(initialSettings);
   };
 
@@ -532,7 +581,9 @@ function App() {
           setDockOpen(true);
           setBottomTab("chat");
           setDockHeight((current) => clampDockHeight(current, "chat"));
+          toast(`${nextRunState.pendingApprovals[0].nodeLabel} needs tool approval`, { id: STATUS_TOAST_ID });
         } else if (nextRunState.awaitingNodeId) {
+          const label = activeWorkflow()?.nodes.find((n) => n.id === nextRunState.awaitingNodeId)?.label ?? "Node";
           setSelectedEdgeId(null);
           setSelectedNodeId(nextRunState.awaitingNodeId);
           setEditingNodeId(null);
@@ -540,6 +591,7 @@ function App() {
           setDockOpen(true);
           setBottomTab("chat");
           setDockHeight((current) => clampDockHeight(current, "chat"));
+          toast(`${label} is waiting for input`, { id: STATUS_TOAST_ID });
         }
         if (nextRunState.lastError) {
           setError(nextRunState.lastError);
@@ -550,6 +602,29 @@ function App() {
     } catch (error) {
       setError(normalizeError(error));
     }
+
+  });
+
+  createEffect(() => {
+    const providerId = settings().active_provider;
+    void loadProviderApiKey(providerId)
+      .then((apiKey) => {
+        if (settings().active_provider !== providerId) {
+          return;
+        }
+        const nextKey = apiKey ?? "";
+        setProviderKeyInputByProvider((current) => ({
+          ...current,
+          [providerId]: nextKey,
+        }));
+        return resolveProviderReadiness(settings(), nextKey || null);
+      })
+      .then((nextReadiness) => {
+        if (nextReadiness) {
+          setReadiness(nextReadiness);
+        }
+      })
+      .catch((error) => setError(normalizeError(error)));
   });
 
 
@@ -777,8 +852,16 @@ function App() {
     }
   };
   const handleSaveSettings = async () => {
+    const providerId = settings().active_provider;
+    const apiKey = activeProviderKeyInput().trim();
     try {
+      if (apiKey) {
+        await saveProviderApiKey(providerId, apiKey);
+      } else {
+        await deleteProviderApiKey(providerId);
+      }
       await saveSettings(settings());
+      await refreshReadiness();
       setSuccess("Settings saved successfully.");
     } catch (error) {
       setError(normalizeError(error));
@@ -867,7 +950,7 @@ function App() {
       return;
     }
     try {
-      const nextRunState = await startRun(activeWorkflow()!, settings());
+      const nextRunState = await startRun(activeWorkflow()!, settings(), activeProviderKeyInput() || null);
       setRunState(nextRunState);
       setSelectedTraceIndex(null);
       setBottomTab("chat");
@@ -1079,7 +1162,7 @@ function App() {
 
   const handleAddKnownModel = () => {
     const provider = settings().active_provider;
-    const nextName = newModelInputByProvider()[provider].trim();
+    const nextName = (newModelInputByProvider()[provider] ?? "").trim();
     if (nextName === "") {
       return;
     }
@@ -1149,13 +1232,13 @@ function App() {
   return (
     <>
       <Toaster
-        position="top-center"
-        offset={{ top: "72px" }}
+        position="top-right"
+        offset={{ top: "72px", right: "16px" }}
         visibleToasts={1}
         richColors
         closeButton
         duration={BANNER_DISMISS_MS}
-        style={{ "--width": "min(640px, calc(100vw - 32px))", "z-index": "9999" }}
+        style={{ "--width": "min(400px, calc(100vw - 32px))", "z-index": "9999", zoom: "var(--ui-zoom)" }}
         toastOptions={{
           classNames: {
             toast: "app-toast",
@@ -1266,15 +1349,6 @@ function App() {
             </div>
             <Show when={screen() === "editor"}>
               <div class="toolbar-group topbar-button-group">
-                <button
-                  class="topbar-icon-button"
-                  onClick={() => handleOpenAddNodePicker()}
-                  title="Add node"
-                  aria-label="Add node"
-                  data-tauri-drag-region="false"
-                >
-                  <SidebarIcon name="plus" />
-                </button>
                 <button
                   class="topbar-icon-button"
                   onClick={() => void persistAll()}
@@ -1427,17 +1501,23 @@ function App() {
                     <div>
                       <div class="eyebrow">Authentication</div>
                       <h3>Provider API key</h3>
-                      <p>Saved in this app’s settings file for the selected provider. Environment variables still act as fallback.</p>
+                      <p>Saved in the OS credential store for the selected provider. Environment variables still act as fallback.</p>
                     </div>
                     <input
                       type="password"
-                      value={activeProfileMemo().api_key}
-                      onInput={(event) =>
-                        void updateSettings((draft) => {
-                          activeProfile(draft).api_key = event.currentTarget.value;
-                        })
-                      }
-                      placeholder={readiness()?.envVar ?? "OPENAI_API_KEY"}
+                      value={activeProviderKeyInput()}
+                      onInput={(event) => {
+                        const providerId = settings().active_provider;
+                        const nextKey = event.currentTarget.value;
+                        setProviderKeyInputByProvider({
+                          ...providerKeyInputByProvider(),
+                          [providerId]: nextKey,
+                        });
+                        void resolveProviderReadiness(settings(), nextKey || null)
+                          .then(setReadiness)
+                          .catch((error) => setError(normalizeError(error)));
+                      }}
+                      placeholder={readiness()?.envVar || "optional local provider key"}
                       class="text-input"
                     />
                   </div>
@@ -1447,30 +1527,33 @@ function App() {
                       <div class="eyebrow">Provider</div>
                       <h3>Execution transport</h3>
                     </div>
-                    <div class="segmented-control">
-                      <button
-                        classList={{ active: settings().active_provider === "open_ai" }}
-                        onClick={() => void updateSettings((draft) => {
-                          draft.active_provider = "open_ai";
-                        })}
+                    <label>
+                      <span>Provider</span>
+                      <select
+                        class="text-input"
+                        value={settings().active_provider}
+                        onChange={(event) =>
+                          void updateSettings((draft) => {
+                            draft.active_provider = event.currentTarget.value;
+                          })
+                        }
                       >
-                        OpenAI
-                      </button>
-                      <button
-                        classList={{ active: settings().active_provider === "open_ai_compatible" }}
-                        onClick={() => void updateSettings((draft) => {
-                          draft.active_provider = "open_ai_compatible";
-                        })}
-                      >
-                        Compatible
-                      </button>
-                    </div>
+                        <For each={providerIdsMemo()}>
+                          {(providerId) => (
+                            <option value={providerId}>
+                              {settings().providers[providerId]?.display_name ?? providerId}
+                            </option>
+                          )}
+                        </For>
+                      </select>
+                    </label>
                     <div class="field-grid">
                       <label>
                         <span>Base URL</span>
                         <input
                           class="text-input"
                           value={activeProfileMemo().base_url}
+                          disabled={!activeProfileMemo().editable}
                           onInput={(event) =>
                             void updateSettings((draft) => {
                               activeProfile(draft).base_url = event.currentTarget.value;
@@ -1483,6 +1566,7 @@ function App() {
                         <select
                           class="text-input"
                           value={activeProfileMemo().transport}
+                          disabled={!activeProfileMemo().editable}
                           onChange={(event) =>
                             void updateSettings((draft) => {
                               activeProfile(draft).transport = event.currentTarget.value as ProviderTransport;
@@ -1498,6 +1582,7 @@ function App() {
                         <input
                           class="text-input"
                           value={activeProfileMemo().responses_path}
+                          disabled={!activeProfileMemo().editable}
                           onInput={(event) =>
                             void updateSettings((draft) => {
                               activeProfile(draft).responses_path = event.currentTarget.value;
@@ -1510,6 +1595,7 @@ function App() {
                         <input
                           class="text-input"
                           value={activeProfileMemo().chat_completions_path}
+                          disabled={!activeProfileMemo().editable}
                           onInput={(event) =>
                             void updateSettings((draft) => {
                               activeProfile(draft).chat_completions_path = event.currentTarget.value;
@@ -1539,7 +1625,7 @@ function App() {
                       <input
                         class="text-input"
                         placeholder="Add model"
-                        value={newModelInputByProvider()[settings().active_provider]}
+                        value={newModelInputByProvider()[settings().active_provider] ?? ""}
                         onInput={(event) =>
                           setNewModelInputByProvider({
                             ...newModelInputByProvider(),
