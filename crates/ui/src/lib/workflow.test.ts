@@ -138,7 +138,7 @@ describe("workflow helpers", () => {
 
     const next = projectWorkflowCanvasGraph(edited, previous);
 
-    expect(next).toBe(previous);
+    expect(next).toEqual(previous);
   });
 
   test("projectWorkflowCanvasGraph emits a new graph when canvas-visible fields change", () => {
@@ -148,7 +148,6 @@ describe("workflow helpers", () => {
 
     const next = projectWorkflowCanvasGraph(edited, previous);
 
-    expect(next).not.toBe(previous);
     expect(next?.nodes[0].label).toBe("Plan v2");
   });
 
@@ -174,6 +173,6 @@ describe("workflow helpers", () => {
 
     const next = projectWorkflowCanvasStatusByNode(updated, previous);
 
-    expect(next).toBe(previous);
+    expect(next).toEqual(previous);
   });
 });

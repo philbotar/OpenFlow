@@ -591,12 +591,6 @@ mod tests {
     }
 
     #[test]
-    fn awaiting_input_status_is_new_variant() {
-        let status = AgentStatus::AwaitingInput;
-        assert_ne!(status, AgentStatus::Idle);
-    }
-
-    #[test]
     fn stores_chat_message_for_node() {
         let mut state = AppState::new();
         let id = state.selected_node_id.clone().unwrap();

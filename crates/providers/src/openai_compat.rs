@@ -522,4 +522,89 @@ mod tests {
             .to_string()
             .contains("OpenAI function_call arguments were not valid JSON"));
     }
+
+    #[tokio::test]
+    async fn chat_completions_truncated_arguments_recovers() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "choices": [{
+                    "message": {
+                        "content": null,
+                        "tool_calls": [{
+                            "id": "call-7",
+                            "type": "function",
+                            "function": {
+                                "name": "read",
+                                "arguments": "{\"path\": \"/Users/name/project/very/long/file.txt"
+                            }
+                        }]
+                    }
+                }]
+            })))
+            .mount(&server)
+            .await;
+
+        let mut request = request();
+        request.available_tools = vec![ToolDefinition {
+            name: "read".to_string(),
+            description: "Read a file or URL.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "path": { "type": "string" }
+                },
+                "required": ["path"]
+            }),
+            tier: domain::ToolTier::Read,
+            concurrency: domain::ToolConcurrency::Shared,
+        }];
+
+        let outcome = client(server.uri(), WireApi::ChatCompletions)
+            .invoke(request)
+            .await
+            .unwrap();
+        let AgentTurnOutcome::ToolCalls(batch) = outcome else {
+            panic!("expected ToolCalls outcome");
+        };
+        assert_eq!(batch.tool_calls.len(), 1);
+        assert_eq!(batch.tool_calls[0].name, "read");
+        assert_eq!(
+            batch.tool_calls[0].arguments,
+            json!({"path": "/Users/name/project/very/long/file.txt"})
+        );
+    }
+
+    #[tokio::test]
+    async fn responses_truncated_arguments_recovers() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/responses"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "output": [{
+                    "type": "function_call",
+                    "call_id": "call-1",
+                    "name": "read",
+                    "arguments": "{\"path\": \"/Users/name/project/very/long/file.txt"
+                }]
+            })))
+            .mount(&server)
+            .await;
+
+        let outcome = client(server.uri(), WireApi::Responses)
+            .invoke(request())
+            .await
+            .unwrap();
+        let AgentTurnOutcome::ToolCalls(batch) = outcome else {
+            panic!("expected ToolCalls outcome");
+        };
+        assert_eq!(batch.tool_calls.len(), 1);
+        assert_eq!(batch.tool_calls[0].name, "read");
+        assert_eq!(
+            batch.tool_calls[0].arguments,
+            json!({"path": "/Users/name/project/very/long/file.txt"})
+        );
+    }
 }

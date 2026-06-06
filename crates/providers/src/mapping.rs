@@ -3,6 +3,7 @@ use domain::{
     AgentTurnOutcome, AgentTurnSuccess, ToolCall, ToolDefinition,
 };
 use serde::Deserialize;
+use serde_json::error::Category;
 use serde_json::{json, Value};
 
 pub const SUBMIT_OUTPUT_TOOL: &str = "openflow_submit_node_output";
@@ -279,6 +280,42 @@ pub fn extract_chat_message_text(content: Option<&Value>) -> Option<String> {
     }
 }
 
+/// Attempt to parse a JSON string, with automatic recovery for truncated JSON.
+/// When the input ends mid-value (EOF during parsing), tries common completions
+/// to close open quotes, brackets, and braces.
+fn try_parse_or_recover_json(input: &str) -> Result<Value, serde_json::Error> {
+    // Fast path: try the original input
+    if let Ok(value) = serde_json::from_str(input) {
+        return Ok(value);
+    }
+
+    // Only attempt recovery on EOF errors (truncation)
+    let original_err = match serde_json::from_str::<Value>(input) {
+        Ok(v) => return Ok(v),
+        Err(e) if e.classify() == Category::Eof => e,
+        Err(e) => return Err(e),
+    };
+
+    // Try appending closing structures in order of likelihood.
+    let trials = [
+        "}",    // close object (most common truncation)
+        "\"}",  // close string + object
+        "\"",   // close string only
+        "]}",   // close array + object
+        "\"]}", // close string + array + object
+    ];
+
+    for suffix in &trials {
+        let mut candidate = input.to_string();
+        candidate.push_str(suffix);
+        if let Ok(v) = serde_json::from_str(&candidate) {
+            return Ok(v);
+        }
+    }
+
+    Err(original_err)
+}
+
 pub fn parse_compatible_tool_call(call: &Value) -> Result<ToolCall, AgentError> {
     let call_id = call
         .get("id")
@@ -301,7 +338,7 @@ pub fn parse_compatible_tool_call(call: &Value) -> Result<ToolCall, AgentError> 
     Ok(ToolCall {
         id: call_id.to_string(),
         name: name.to_string(),
-        arguments: serde_json::from_str(arguments).map_err(|error| {
+        arguments: try_parse_or_recover_json(arguments).map_err(|error| {
             AgentError::Failed(format!(
                 "OpenAI-compatible tool call arguments were not valid JSON: {error}"
             ))
@@ -366,7 +403,7 @@ pub fn parse_responses_output(payload: &Value) -> Result<AgentTurnOutcome, Agent
                 tool_calls.push(ToolCall {
                     id: call_id.to_string(),
                     name: name.to_string(),
-                    arguments: serde_json::from_str(arguments).map_err(|error| {
+                    arguments: try_parse_or_recover_json(arguments).map_err(|error| {
                         AgentError::Failed(format!(
                             "OpenAI function_call arguments were not valid JSON: {error}"
                         ))
@@ -485,4 +522,96 @@ pub fn parse_chat_completion_output(
         assistant_message,
         tool_calls: parsed,
     }))
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::expect_used,
+    clippy::panic,
+    clippy::too_many_lines,
+    clippy::unwrap_used
+)]
+mod tests {
+    use super::*;
+    fn make_tool_call_value(name: &str, arguments: &str) -> Value {
+        json!({
+            "id": "call-7",
+            "type": "function",
+            "function": {
+                "name": name,
+                "arguments": arguments
+            }
+        })
+    }
+    #[test]
+    fn truncated_json_recovered_missing_close_brace() {
+        // Missing trailing `}` - most common truncation pattern
+        let args = r#"{"path": "/Users/username/projects/some/really/long/path/file.txt"#;
+        let call = make_tool_call_value("read", args);
+        let result = parse_compatible_tool_call(&call).unwrap();
+        assert_eq!(result.name, "read");
+        assert_eq!(
+            result.arguments,
+            json!({"path": "/Users/username/projects/some/really/long/path/file.txt"})
+        );
+    }
+
+    #[test]
+    fn truncated_json_recovered_mid_string() {
+        // Value cut mid-string: `fn ` without closing quote
+        let args = r#"{"path": "src/main.rs", "pattern": "fn "#;
+        let call = make_tool_call_value("search", args);
+        let result = parse_compatible_tool_call(&call).unwrap();
+        assert_eq!(result.name, "search");
+        assert_eq!(
+            result.arguments,
+            json!({"path": "src/main.rs", "pattern": "fn "})
+        );
+    }
+
+    #[test]
+    fn truncated_json_recovered_no_closing_string_quote() {
+        // String value without closing quote + missing brace
+        let args = r#"{"path": "/Users/name/project/very/long/file"#;
+        let call = make_tool_call_value("read", args);
+        let result = parse_compatible_tool_call(&call).unwrap();
+        assert_eq!(result.name, "read");
+        assert_eq!(
+            result.arguments,
+            json!({"path": "/Users/name/project/very/long/file"})
+        );
+    }
+
+    #[test]
+    fn truncated_json_recovered_missing_array_close() {
+        // Array value without closing bracket
+        let args = r#"{"files": ["src/main.rs", "src/lib.rs"#;
+        let call = make_tool_call_value("read", args);
+        let result = parse_compatible_tool_call(&call).unwrap();
+        assert_eq!(result.name, "read");
+        assert_eq!(
+            result.arguments["files"],
+            json!(["src/main.rs", "src/lib.rs"])
+        );
+    }
+
+    #[test]
+    fn invalid_non_truncated_json_still_returns_error() {
+        // Non-EOF invalid JSON should still be an error
+        let args = "not-json-at-all";
+        let call = make_tool_call_value("read", args);
+        let result = parse_compatible_tool_call(&call);
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("were not valid JSON"), "expected parse error");
+    }
+
+    #[test]
+    fn empty_args_still_returns_error() {
+        // Empty string should still be an error
+        let args = "";
+        let call = make_tool_call_value("read", args);
+        let result = parse_compatible_tool_call(&call);
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("were not valid JSON"), "expected parse error");
+    }
 }

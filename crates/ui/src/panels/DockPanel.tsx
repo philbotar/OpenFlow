@@ -159,7 +159,7 @@ export function DockPanel() {
                 </Show>
 
                 <div class="chat-composer">
-                  <div class="chat-composer-pill">
+                  <div class="chat-composer-pill" classList={{ "is-loading": ctx.runState()?.active === true && !ctx.chatEnabledMemo() }}>
                     <textarea
                       class="text-area composer-input"
                       rows={1}

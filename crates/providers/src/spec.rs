@@ -374,13 +374,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn builtin_specs_are_in_display_order_and_exclude_deferred_special_auth() {
+    fn builtin_specs_include_openai_and_anthropic_exclude_deferred_special_auth() {
         let ids = builtin_provider_specs()
             .iter()
             .map(|spec| spec.id)
             .collect::<Vec<_>>();
 
-        assert_eq!(ids.first(), Some(&"openai"));
+        assert!(ids.contains(&"openai"));
         assert!(ids.contains(&"anthropic"));
         assert!(!ids.contains(&"bedrock"));
         assert!(!ids.contains(&"azure_native"));

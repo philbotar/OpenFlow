@@ -1342,6 +1342,34 @@ select.text-input:hover {
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.88);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  position: relative;
+  z-index: 0;
+}
+
+.chat-composer-pill.is-loading {
+  border-color: transparent;
+}
+
+.chat-composer-pill.is-loading::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  background: conic-gradient(
+    var(--accent) 0deg,
+    transparent 60deg,
+    transparent 300deg,
+    var(--accent) 360deg
+  );
+  animation: composer-loading 2.5s linear infinite;
+  pointer-events: none;
+  z-index: -1;
+}
+
+@keyframes composer-loading {
+  to {
+    rotate: 360deg;
+  }
 }
 
 .composer-input {
