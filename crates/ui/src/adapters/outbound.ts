@@ -1,2 +1,34 @@
-// Outbound adapters for invoke/event clients.
-export type UiOutboundAdapterPlaceholder = never;
+import * as desktopApi from "../api";
+import type { UiDesktopOutboundPort } from "../ports";
+
+export function createUiDesktopOutboundAdapter(): UiDesktopOutboundPort {
+	return {
+		bootstrapApp: desktopApi.bootstrapApp,
+		listWorkflows: desktopApi.listWorkflows,
+		loadAllWorkflows: desktopApi.loadAllWorkflows,
+		loadWorkflow: desktopApi.loadWorkflow,
+		createWorkflow: desktopApi.createWorkflow,
+		saveWorkflow: desktopApi.saveWorkflow,
+		saveWorkflows: desktopApi.saveWorkflows,
+		renameWorkflow: desktopApi.renameWorkflow,
+		listAgents: desktopApi.listAgents,
+		loadAgents: desktopApi.loadAgents,
+		createAgentDefinition: desktopApi.createAgentDefinition,
+		saveAgents: desktopApi.saveAgents,
+		loadSettings: desktopApi.loadSettings,
+		saveSettings: desktopApi.saveSettings,
+		loadProviderApiKey: desktopApi.loadProviderApiKey,
+		saveProviderApiKey: desktopApi.saveProviderApiKey,
+		deleteProviderApiKey: desktopApi.deleteProviderApiKey,
+		resolveProviderReadiness: desktopApi.resolveProviderReadiness,
+		validateWorkflow: desktopApi.validateWorkflow,
+		createAgentNode: desktopApi.createAgentNode,
+		startRun: desktopApi.startRun,
+		submitUserInput: desktopApi.submitUserInput,
+		submitToolApproval: desktopApi.submitToolApproval,
+		completeManualNode: desktopApi.completeManualNode,
+		getRunState: desktopApi.getRunState,
+		clearRunTrace: desktopApi.clearRunTrace,
+		listenToRunState: desktopApi.listenToRunState,
+	};
+}

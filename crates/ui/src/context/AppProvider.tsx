@@ -8,25 +8,7 @@ import {
 import type { ParentProps } from "solid-js";
 import { toast } from "solid-sonner";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import {
-  bootstrapApp,
-  clearRunTrace,
-  createAgentDefinition,
-  createAgentNode,
-  createWorkflow,
-  deleteProviderApiKey,
-  listenToRunState,
-  loadProviderApiKey,
-  resolveProviderReadiness,
-  saveAgents,
-  saveProviderApiKey,
-  saveSettings,
-  saveWorkflows,
-  startRun,
-  submitToolApproval,
-  submitUserInput,
-  validateWorkflow,
-} from "../api";
+import { bindRunStateEvents, createUiDesktopOutboundAdapter } from "../adapters";
 import { resolveChatSubmission } from "../lib/chatCommands";
 import type {
   AgentDefinition,
@@ -77,6 +59,8 @@ import {
 import { AppContext } from "./AppContext";
 
 export function AppProvider(props: ParentProps) {
+  const desktop = createUiDesktopOutboundAdapter();
+
   // ── Signals ───────────────────────────────────────────────────────────────
   const [workflows, setWorkflows] = createSignal<Workflow[]>([]);
   const [agents, setAgents] = createSignal<AgentDefinition[]>([]);
@@ -239,7 +223,7 @@ export function AppProvider(props: ParentProps) {
   const refreshReadiness = async (nextSettings = settings()) => {
     try {
       setReadiness(
-        await resolveProviderReadiness(
+        await desktop.resolveProviderReadiness(
           nextSettings,
           providerKeyInputByProvider()[nextSettings.active_provider] ?? null,
         ),
@@ -259,7 +243,7 @@ export function AppProvider(props: ParentProps) {
   const handleApiKeyInput = (key: string) => {
     const providerId = settings().active_provider;
     setProviderKeyInputByProvider((current) => ({ ...current, [providerId]: key }));
-    void resolveProviderReadiness(settings(), key || null)
+    void desktop.resolveProviderReadiness(settings(), key || null)
       .then(setReadiness)
       .catch((error) => setError(normalizeError(error)));
   };
@@ -269,11 +253,11 @@ export function AppProvider(props: ParentProps) {
     const apiKey = activeProviderKeyInput().trim();
     try {
       if (apiKey) {
-        await saveProviderApiKey(providerId, apiKey);
+        await desktop.saveProviderApiKey(providerId, apiKey);
       } else {
-        await deleteProviderApiKey(providerId);
+        await desktop.deleteProviderApiKey(providerId);
       }
-      await saveSettings(settings());
+      await desktop.saveSettings(settings());
       await refreshReadiness();
       setSuccess("Settings saved successfully.");
     } catch (error) {
@@ -310,7 +294,7 @@ export function AppProvider(props: ParentProps) {
   ) => {
     let nextWorkflows = initialWorkflows;
     if (nextWorkflows.length === 0) {
-      nextWorkflows = [await createWorkflow("Workflow 1")];
+      nextWorkflows = [await desktop.createWorkflow("Workflow 1")];
     }
     const firstWorkflow = nextWorkflows[0];
     setWorkflows(nextWorkflows);
@@ -346,7 +330,7 @@ export function AppProvider(props: ParentProps) {
 
   const handleCreateWorkflow = async () => {
     try {
-      const workflow = await createWorkflow(`Workflow ${workflows().length + 1}`);
+      const workflow = await desktop.createWorkflow(`Workflow ${workflows().length + 1}`);
       setWorkflows([...workflows(), workflow]);
       setActiveWorkflowId(workflow.id);
       setSelectedNodeId(workflow.nodes[0]?.id ?? null);
@@ -392,7 +376,7 @@ export function AppProvider(props: ParentProps) {
 
   const handleCreateAgent = async () => {
     try {
-      const agent = await createAgentDefinition(`Agent ${agents().length + 1}`);
+      const agent = await desktop.createAgentDefinition(`Agent ${agents().length + 1}`);
       const defaultModel = activeProfileMemo().default_model;
       if (defaultModel && !agent.model) {
         agent.model = defaultModel;
@@ -420,7 +404,7 @@ export function AppProvider(props: ParentProps) {
       }
     }
     try {
-      await saveAgents(agents());
+      await desktop.saveAgents(agents());
       setSuccess("Saved agents");
     } catch (error) {
       setError(normalizeError(error));
@@ -483,8 +467,8 @@ export function AppProvider(props: ParentProps) {
   const persistAll = async (successText = "Saved") => {
     if (!applySchemaEditor()) return false;
     try {
-      await saveWorkflows(workflows());
-      await saveSettings(settings());
+      await desktop.saveWorkflows(workflows());
+      await desktop.saveSettings(settings());
       setSuccess(successText);
       return true;
     } catch (error) {
@@ -506,7 +490,12 @@ export function AppProvider(props: ParentProps) {
     if (!workflow) return;
     const placement = nextNodePlacement(workflow);
     try {
-      const node = await createAgentNode(placement.index, placement.x, placement.y, agentId);
+      const node = await desktop.createAgentNode(
+        placement.index,
+        placement.x,
+        placement.y,
+        agentId,
+      );
       const defaultModel = activeProfileMemo().default_model;
       const nextNode =
         defaultModel && !node.agent.model
@@ -549,7 +538,7 @@ export function AppProvider(props: ParentProps) {
     const workflow = activeWorkflow();
     if (!workflow || !applySchemaEditor()) return;
     try {
-      const summary = await validateWorkflow(activeWorkflow()!);
+      const summary = await desktop.validateWorkflow(activeWorkflow()!);
       setSuccess(
         `Valid DAG · ${summary.layerCount} layer${summary.layerCount === 1 ? "" : "s"}`,
       );
@@ -562,7 +551,7 @@ export function AppProvider(props: ParentProps) {
     const workflow = activeWorkflow();
     if (!workflow || !applySchemaEditor()) return;
     try {
-      const nextRunState = await startRun(
+      const nextRunState = await desktop.startRun(
         activeWorkflow()!,
         settings(),
         activeProviderKeyInput() || null,
@@ -578,7 +567,7 @@ export function AppProvider(props: ParentProps) {
 
   const handleClearRunTrace = async () => {
     try {
-      const nextRunState = await clearRunTrace();
+      const nextRunState = await desktop.clearRunTrace();
       if (nextRunState) setRunState(nextRunState);
       setSelectedTraceIndex(null);
     } catch (error) {
@@ -590,7 +579,10 @@ export function AppProvider(props: ParentProps) {
     const nodeId = selectedNodeId();
     if (!nodeId || !canSendChatMemo()) return;
     try {
-      const nextRunState = await submitUserInput(nodeId, chatSubmission().submittedText);
+      const nextRunState = await desktop.submitUserInput(
+        nodeId,
+        chatSubmission().submittedText,
+      );
       setRunState(nextRunState);
       setChatInput("");
     } catch (error) {
@@ -602,7 +594,7 @@ export function AppProvider(props: ParentProps) {
     const approval = selectedPendingApproval();
     if (!approval) return;
     try {
-      const nextRunState = await submitToolApproval(approval.approvalId, allow);
+      const nextRunState = await desktop.submitToolApproval(approval.approvalId, allow);
       setRunState(nextRunState);
     } catch (error) {
       setError(normalizeError(error));
@@ -798,12 +790,12 @@ export function AppProvider(props: ParentProps) {
 
   createEffect(() => {
     const providerId = settings().active_provider;
-    void loadProviderApiKey(providerId)
+    void desktop.loadProviderApiKey(providerId)
       .then((apiKey) => {
         if (settings().active_provider !== providerId) return;
         const nextKey = apiKey ?? "";
         setProviderKeyInputByProvider((current) => ({ ...current, [providerId]: nextKey }));
-        return resolveProviderReadiness(settings(), nextKey || null);
+        return desktop.resolveProviderReadiness(settings(), nextKey || null);
       })
       .then((nextReadiness) => {
         if (nextReadiness) setReadiness(nextReadiness);
@@ -865,38 +857,43 @@ export function AppProvider(props: ParentProps) {
       unlistenMaximized = await appWindow.onResized(() => {
         void appWindow.isMaximized().then(setIsMaximized);
       });
-      unlisten = await listenToRunState((nextRunState) => {
-        setRunState(nextRunState);
-        if (nextRunState.pendingApprovals.length > 0) {
-          setSelectedEdgeId(null);
-          setSelectedNodeId(nextRunState.pendingApprovals[0].nodeId);
-          setEditingNodeId(null);
-          setNodeLabelDraft("");
-          setDockOpen(true);
-          setBottomTab("chat");
-          setDockHeight((current) => clampDockHeight(current, "chat"));
-          toast(
-            `${nextRunState.pendingApprovals[0].nodeLabel} needs tool approval`,
-            { id: STATUS_TOAST_ID },
-          );
-        } else if (nextRunState.awaitingNodeId) {
-          const label =
-            activeWorkflow()?.nodes.find((n) => n.id === nextRunState.awaitingNodeId)
-              ?.label ?? "Node";
-          setSelectedEdgeId(null);
-          setSelectedNodeId(nextRunState.awaitingNodeId);
-          setEditingNodeId(null);
-          setNodeLabelDraft("");
-          setDockOpen(true);
-          setBottomTab("chat");
-          setDockHeight((current) => clampDockHeight(current, "chat"));
-          toast(`${label} is waiting for input`, { id: STATUS_TOAST_ID });
-        }
-        if (nextRunState.lastError) {
-          setError(nextRunState.lastError);
-        }
-      });
-      const data = await bootstrapApp();
+      unlisten = await bindRunStateEvents(
+        {
+          handleRunStateUpdate: (nextRunState) => {
+            setRunState(nextRunState);
+            if (nextRunState.pendingApprovals.length > 0) {
+              setSelectedEdgeId(null);
+              setSelectedNodeId(nextRunState.pendingApprovals[0].nodeId);
+              setEditingNodeId(null);
+              setNodeLabelDraft("");
+              setDockOpen(true);
+              setBottomTab("chat");
+              setDockHeight((current) => clampDockHeight(current, "chat"));
+              toast(
+                `${nextRunState.pendingApprovals[0].nodeLabel} needs tool approval`,
+                { id: STATUS_TOAST_ID },
+              );
+            } else if (nextRunState.awaitingNodeId) {
+              const label =
+                activeWorkflow()?.nodes.find((n) => n.id === nextRunState.awaitingNodeId)
+                  ?.label ?? "Node";
+              setSelectedEdgeId(null);
+              setSelectedNodeId(nextRunState.awaitingNodeId);
+              setEditingNodeId(null);
+              setNodeLabelDraft("");
+              setDockOpen(true);
+              setBottomTab("chat");
+              setDockHeight((current) => clampDockHeight(current, "chat"));
+              toast(`${label} is waiting for input`, { id: STATUS_TOAST_ID });
+            }
+            if (nextRunState.lastError) {
+              setError(nextRunState.lastError);
+            }
+          },
+        },
+        desktop,
+      );
+      const data = await desktop.bootstrapApp();
       await initializeWorkspace(data.workflows, data.agents, data.settings, data.runState);
     } catch (error) {
       setError(normalizeError(error));

@@ -1,2 +1,5 @@
-// Inbound ports for UI-driven use-cases.
-export type UiInboundPortPlaceholder = never;
+import type { WorkflowRunState } from "../lib/types";
+
+export interface RunStateEventSink {
+	handleRunStateUpdate: (runState: WorkflowRunState) => void;
+}

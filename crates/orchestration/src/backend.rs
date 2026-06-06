@@ -21,7 +21,7 @@ use crate::provider_config::{
 use crate::settings_store::{key_ref_for_provider, AppSettings, FileSettingsStore};
 use crate::state::WorkflowRunState;
 use crate::storage::FileWorkflowStore;
-use ai::{AiClient, ProviderId};
+use ai::{create_provider, ProviderId};
 use serde::{Deserialize, Serialize};
 use std::io;
 use thiserror::Error;
@@ -423,7 +423,7 @@ impl AppBackend {
             &self.env,
             self.settings_store.credential_store(),
         )?;
-        let ai = AiClient::with_config(provider_config);
+        let ai = create_provider(provider_config);
 
         let (handle, event_rx, action_tx) =
             spawn_interactive_workflow_run(&self.runtime, workflow.clone(), entrypoint, ai);
