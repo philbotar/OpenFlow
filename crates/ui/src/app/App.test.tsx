@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { render } from "solid-js/web";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { AgentDefinition, AppSettings, BootstrapPayload, ProviderReadiness, Workflow, WorkflowRunState } from "./types";
-import { createEmptyToolConfig } from "./workflow";
+import type { AgentDefinition, AppSettings, BootstrapPayload, ProviderReadiness, Workflow, WorkflowRunState } from "../lib/types";
+import { createEmptyToolConfig } from "../lib/workflow";
 
 const apiMocks = vi.hoisted(() => ({
   bootstrapApp: vi.fn(),
@@ -24,7 +24,7 @@ const apiMocks = vi.hoisted(() => ({
   validateWorkflow: vi.fn(),
 }));
 
-vi.mock("./api", () => ({
+vi.mock("../api", () => ({
   bootstrapApp: apiMocks.bootstrapApp,
   clearRunTrace: apiMocks.clearRunTrace,
   createAgentDefinition: apiMocks.createAgentDefinition,
@@ -51,7 +51,7 @@ vi.mock("@tauri-apps/api/window", () => ({
   }),
 }));
 
-vi.mock("./canvas/WorkflowCanvasHost", () => ({
+vi.mock("../canvas/WorkflowCanvasHost", () => ({
   default: (props: { onAddNode: () => void }) => (
     <button aria-label="Canvas add node" onClick={() => props.onAddNode()}>
       Canvas add node
@@ -59,7 +59,7 @@ vi.mock("./canvas/WorkflowCanvasHost", () => ({
   ),
 }));
 
-import App from "./App";
+import App from "../App";
 
 const SETTINGS: AppSettings = {
   active_provider: "openai",

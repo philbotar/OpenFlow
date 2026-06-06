@@ -20,14 +20,14 @@ import {
 import "@xyflow/react/dist/style.css";
 import * as React from "react";
 import { useCallback, useEffect, useMemo } from "react";
-import type { AgentStatus, EdgeId, NodeId } from "../types";
+import type { AgentStatus, EdgeId, NodeId } from "../lib/types";
 import {
   NODE_HEIGHT,
   NODE_WIDTH,
   statusForNode,
   type WorkflowCanvasGraph,
   type WorkflowCanvasStatusByNode,
-} from "../workflow";
+} from "../lib/workflow";
 import { WorkflowNode } from "./WorkflowNode.react";
 type WorkflowCanvasProps = {
   graph: WorkflowCanvasGraph | null;

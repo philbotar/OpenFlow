@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 /** @jsxRuntime automatic */
 import { Handle, Position } from "@xyflow/react";
-import type { AgentStatus } from "../types";
+import type { AgentStatus } from "../lib/types";
 
 export type WorkflowNodeData = {
   label: string;

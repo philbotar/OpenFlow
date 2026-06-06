@@ -1,7 +1,7 @@
 import { render } from "solid-js/web";
 import "solid-sonner/styles.css";
-import App from "./App";
-import "./index.css";
+import App from "../App";
+import "../styles/index.css";
 
 const root = document.getElementById("root");
 

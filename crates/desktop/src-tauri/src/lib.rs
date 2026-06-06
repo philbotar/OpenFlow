@@ -12,6 +12,7 @@ use app_backend::state::WorkflowRunState;
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
 use workflow_core::Workflow;
+
 /// Bootstrap payload returned on app startup.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

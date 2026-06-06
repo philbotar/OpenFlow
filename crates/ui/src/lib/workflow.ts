@@ -10,9 +10,31 @@ import type {
   Workflow,
   WorkflowRunState,
 } from "./types";
+import { PROVIDER_ORDER } from "../constants/providers";
 
 export const NODE_WIDTH = 320;
 export const NODE_HEIGHT = 88;
+
+export function providerDisplayOrder(settings: AppSettings): string[] {
+  const providerIds = Object.keys(settings.providers);
+  const ordered = PROVIDER_ORDER.filter((providerId) => providerId in settings.providers);
+  const extras = providerIds
+    .filter(
+      (providerId) =>
+        !PROVIDER_ORDER.includes(providerId as (typeof PROVIDER_ORDER)[number]),
+    )
+    .sort();
+  return [...ordered, ...extras];
+}
+
+export function nextNodePlacement(workflow: Workflow): { index: number; x: number; y: number } {
+  const index = workflow.nodes.length;
+  return {
+    index,
+    x: 96 + index * 32,
+    y: 96 + index * 20,
+  };
+}
 export const SUPPORTED_NODE_TOOLS = [
   {
     name: "read",

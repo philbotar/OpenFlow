@@ -3,12 +3,12 @@ import type { EdgeChange, NodeChange } from "@xyflow/react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import type { Workflow } from "../types";
+import type { Workflow } from "../lib/types";
 import {
   createEmptyToolConfig,
   projectWorkflowCanvasGraph,
   type WorkflowCanvasStatusByNode,
-} from "../workflow";
+} from "../lib/workflow";
 import {
   WorkflowCanvas,
   buildFlowEdges,

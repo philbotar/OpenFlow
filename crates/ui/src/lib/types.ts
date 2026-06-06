@@ -2,6 +2,9 @@ export type NodeId = string;
 export type WorkflowId = string;
 export type EdgeId = string;
 
+export type BottomTab = "overview" | "chat" | "trace";
+export type Screen = "editor" | "settings" | "agents";
+
 export interface Workflow {
   id: WorkflowId;
   name: string;

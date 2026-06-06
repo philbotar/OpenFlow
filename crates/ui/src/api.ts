@@ -11,7 +11,7 @@ import type {
   WorkflowListItem,
   WorkflowRunState,
   WorkflowValidationSummary,
-} from "./types";
+} from "./lib/types";
 
 export const RUN_STATE_EVENT = "run-state";
 

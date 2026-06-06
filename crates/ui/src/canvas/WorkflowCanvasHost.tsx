@@ -1,8 +1,8 @@
 import { createEffect, onCleanup, onMount } from "solid-js";
 import { createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import type { EdgeId, NodeId } from "../types";
-import type { WorkflowCanvasGraph, WorkflowCanvasStatusByNode } from "../workflow";
+import type { EdgeId, NodeId } from "../lib/types";
+import type { WorkflowCanvasGraph, WorkflowCanvasStatusByNode } from "../lib/workflow";
 import { WorkflowCanvas } from "./WorkflowCanvas.react";
 
 type WorkflowCanvasHostProps = {
