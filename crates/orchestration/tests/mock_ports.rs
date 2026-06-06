@@ -3,21 +3,21 @@
 //! These tests verify the trait contracts in isolation by providing
 //! canned data through mock implementations of the outbound port traits.
 
+use domain::{Node, Workflow};
 use std::collections::BTreeMap;
 use std::io;
-use workflow_core::{Node, Workflow};
 
-use app_backend::agent_store::AgentDefinition;
-use app_backend::backend::{
+use orchestration::agent_store::AgentDefinition;
+use orchestration::backend::{
     AgentDefinitionSummary, BackendError, ProviderReadiness, WorkflowListItem,
     WorkflowValidationSummary,
 };
-use app_backend::credential_store::{CredentialStore, CredentialStoreError};
-use app_backend::provider_config::{ProviderConfigError, ProviderEnv};
-use app_backend::settings_store::AppSettings;
+use orchestration::credential_store::{CredentialStore, CredentialStoreError};
+use orchestration::provider_config::{ProviderConfigError, ProviderEnv};
+use orchestration::settings_store::AppSettings;
 
-use app_backend::ports::inbound::OrchestrationCommandsPort;
-use app_backend::ports::outbound::{
+use orchestration::ports::inbound::OrchestrationCommandsPort;
+use orchestration::ports::outbound::{
     AgentStoragePort, CredentialLookupPort, ProviderConfigResolverPort, SettingsStoragePort,
     WorkflowStoragePort,
 };
@@ -118,8 +118,8 @@ impl ProviderConfigResolverPort for MockProviderResolver {
         _transient_api_key: Option<&str>,
         _env: &ProviderEnv,
         _credential_store: &CredentialStore,
-    ) -> Result<ai::AiClientConfig, ProviderConfigError> {
-        Ok(ai::AiClientConfig::openai("mock-key"))
+    ) -> Result<providers::AiClientConfig, ProviderConfigError> {
+        Ok(providers::AiClientConfig::openai("mock-key"))
     }
 }
 

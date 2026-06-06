@@ -1,9 +1,9 @@
-use serde::Deserialize;
-use serde_json::{json, Value};
-use workflow_core::{
+use domain::{
     AgentError, AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTranscriptItem,
     AgentTurnOutcome, AgentTurnSuccess, ToolCall, ToolDefinition,
 };
+use serde::Deserialize;
+use serde_json::{json, Value};
 
 pub const SUBMIT_OUTPUT_TOOL: &str = "openflow_submit_node_output";
 pub const REQUEST_INPUT_TOOL: &str = "openflow_request_user_input";

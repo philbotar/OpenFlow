@@ -4,12 +4,12 @@ use crate::mapping::{
     all_tool_specs, build_node_context, parse_internal_tool_outcome, parse_plain_json_completion,
     should_allow_user_input, ToolSpec, REQUEST_INPUT_TOOL, SUBMIT_OUTPUT_TOOL,
 };
-use reqwest::Client;
-use serde_json::{json, Value};
-use workflow_core::{
+use domain::{
     AgentError, AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTranscriptItem,
     AgentTurnOutcome, ToolCall,
 };
+use reqwest::Client;
+use serde_json::{json, Value};
 
 const DEFAULT_MAX_TOKENS: u16 = 4096;
 
@@ -238,14 +238,14 @@ fn parse_anthropic_tool_call(block: &Value) -> Result<ToolCall, AgentError> {
 mod tests {
     use super::*;
     use crate::{AiClient, AiClientConfig, ProviderAdapterConfig, ProviderId};
+    use domain::{AiPort, ToolDefinition};
     use wiremock::matchers::{body_json, header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
-    use workflow_core::{AiPort, ToolDefinition};
 
     fn request() -> AgentRequest {
         AgentRequest {
-            workflow_id: workflow_core::WorkflowId("wf-1".to_string()),
-            node_id: workflow_core::NodeId("idea".to_string()),
+            workflow_id: domain::WorkflowId("wf-1".to_string()),
+            node_id: domain::NodeId("idea".to_string()),
             node_label: "Idea".to_string(),
             model: "claude-3-5-sonnet-latest".to_string(),
             system_prompt: "You are precise.".to_string(),
@@ -259,7 +259,7 @@ mod tests {
                 },
                 "required": ["summary"]
             }),
-            tool_config: workflow_core::NodeToolConfig::default(),
+            tool_config: domain::NodeToolConfig::default(),
             available_tools: Vec::new(),
             transcript: Vec::new(),
         }
@@ -376,8 +376,8 @@ mod tests {
                 },
                 "required": ["path"]
             }),
-            tier: workflow_core::ToolTier::Read,
-            concurrency: workflow_core::ToolConcurrency::Shared,
+            tier: domain::ToolTier::Read,
+            concurrency: domain::ToolConcurrency::Shared,
         }];
 
         let outcome = client(server.uri()).invoke(request).await.unwrap();

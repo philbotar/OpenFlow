@@ -1,15 +1,15 @@
 #![allow(clippy::needless_pass_by_value)]
 
-use ai::{
+use domain::{Edge, Node, NodeId, ToolRef, Workflow};
+use orchestration::execution::run_workflow_headless;
+use orchestration::state::TraceStatus;
+use providers::{
     AiClient, AiClientConfig, AuthConfig, OpenAiCompatibleConfig, ProviderAdapterConfig,
     ProviderId, WireApi,
 };
-use app_backend::execution::run_workflow_headless;
-use app_backend::state::TraceStatus;
 use reqwest::Client;
 use serde_json::{json, Value};
 use std::env;
-use workflow_core::{Edge, Node, NodeId, ToolRef, Workflow};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct LiveWorkflowConfig {

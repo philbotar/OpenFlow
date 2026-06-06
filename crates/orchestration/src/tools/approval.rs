@@ -1,6 +1,6 @@
 #![allow(clippy::must_use_candidate)]
 
-use workflow_core::{
+use domain::{
     ApprovalMode, NodeId, NodeToolConfig, PendingToolApproval, ToolCall, ToolPolicy, ToolTier,
 };
 
@@ -99,7 +99,7 @@ mod tests {
     #[test]
     fn override_can_deny_tool() {
         let mut config = NodeToolConfig::default();
-        config.overrides.push(workflow_core::ToolPolicyOverride {
+        config.overrides.push(domain::ToolPolicyOverride {
             tool_name: "read".to_string(),
             policy: ToolPolicy::Deny,
             timeout_secs: None,

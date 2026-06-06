@@ -1,8 +1,8 @@
+use domain::AgentNodeConfig;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use workflow_core::AgentNodeConfig;
 
 const CURRENT_DATA_DIR_SLUG: &str = "openflow";
 const LEGACY_DATA_DIR_SLUG: &str = "step-through-agentic-workflow";
@@ -38,7 +38,7 @@ pub struct AgentDefinition {
     #[serde(default, alias = "autoStart")]
     pub auto_start: bool,
     #[serde(default)]
-    pub tools: workflow_core::NodeToolConfig,
+    pub tools: domain::NodeToolConfig,
 }
 
 impl AgentDefinition {
@@ -193,7 +193,7 @@ mod tests {
         }))
         .unwrap();
 
-        assert_eq!(agent.tools, workflow_core::NodeToolConfig::default());
+        assert_eq!(agent.tools, domain::NodeToolConfig::default());
         assert!(!agent.auto_start);
     }
     #[test]
@@ -223,10 +223,7 @@ mod tests {
         assert_eq!(agent.output_schema, serde_json::json!({ "type": "object" }));
         assert!(agent.auto_start);
         assert_eq!(agent.tools.catalog.tools[0].name, "read");
-        assert_eq!(
-            agent.tools.approval_mode,
-            Some(workflow_core::ApprovalMode::Write)
-        );
+        assert_eq!(agent.tools.approval_mode, Some(domain::ApprovalMode::Write));
         assert_eq!(agent.tools.max_tool_rounds, 2);
     }
 

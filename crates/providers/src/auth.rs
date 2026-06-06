@@ -1,5 +1,5 @@
+use domain::AgentError;
 use reqwest::RequestBuilder;
-use workflow_core::AgentError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthConfig {

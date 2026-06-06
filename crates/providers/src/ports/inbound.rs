@@ -1,7 +1,7 @@
 //! Inbound ports for provider adapters.
 
 use crate::AiClientConfig;
-use workflow_core::AiPort;
+use domain::AiPort;
 
 pub type BoxedAiPort = Box<dyn AiPort>;
 

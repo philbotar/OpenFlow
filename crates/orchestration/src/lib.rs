@@ -34,4 +34,4 @@ pub mod storage;
 pub mod tools;
 
 // Re-exports of domain types consumed by downstream layers
-pub use workflow_core::{Node, Workflow};
+pub use domain::{Node, Workflow};

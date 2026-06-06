@@ -21,15 +21,15 @@ use crate::provider_config::{
 use crate::settings_store::{key_ref_for_provider, AppSettings, FileSettingsStore};
 use crate::state::WorkflowRunState;
 use crate::storage::FileWorkflowStore;
-use ai::{create_provider, ProviderId};
+use domain::{
+    execution_layers, validate_workflow, Node, NodeId, Workflow, WorkflowValidationError,
+};
+use providers::{create_provider, ProviderId};
 use serde::{Deserialize, Serialize};
 use std::io;
 use thiserror::Error;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::sync::Mutex;
-use workflow_core::{
-    execution_layers, validate_workflow, Node, NodeId, Workflow, WorkflowValidationError,
-};
 
 #[derive(Debug)]
 pub struct AppBackend {
@@ -692,7 +692,7 @@ mod tests {
         assert_eq!(node.label, "Agent 3");
         assert_eq!(node.position.x, 32.0);
         assert_eq!(node.position.y, 48.0);
-        assert_eq!(node.agent, workflow_core::AgentNodeConfig::default());
+        assert_eq!(node.agent, domain::AgentNodeConfig::default());
     }
 
     #[test]
@@ -707,7 +707,7 @@ mod tests {
         agent.output_schema =
             serde_json::json!({ "type": "object", "properties": { "ok": { "type": "boolean" } } });
         agent.auto_start = false;
-        agent.tools.catalog.tools = vec![workflow_core::ToolRef {
+        agent.tools.catalog.tools = vec![domain::ToolRef {
             name: "search".to_string(),
         }];
         agent.tools.max_tool_rounds = 7;
@@ -732,7 +732,7 @@ mod tests {
         assert!(!node.agent.auto_start);
         assert_eq!(
             node.agent.tools.catalog.tools,
-            vec![workflow_core::ToolRef {
+            vec![domain::ToolRef {
                 name: "search".to_string(),
             }]
         );
@@ -859,17 +859,17 @@ mod tests {
             {
                 let mut session = backend.run_session.lock().await;
                 let mut run_state = WorkflowRunState::running_for_workflow(&workflow);
-                run_state.pending_approvals = vec![workflow_core::PendingToolApproval {
+                run_state.pending_approvals = vec![domain::PendingToolApproval {
                     approval_id: "approval-1".to_string(),
                     node_id: "idea".to_string(),
                     node_label: "Idea".to_string(),
-                    tool_call: workflow_core::ToolCall {
+                    tool_call: domain::ToolCall {
                         id: "call-1".to_string(),
                         name: "read".to_string(),
                         arguments: serde_json::json!({ "path": "README.md" }),
                         intent: None,
                     },
-                    tier: workflow_core::ToolTier::Read,
+                    tier: domain::ToolTier::Read,
                 }];
                 session.workflow = Some(workflow);
                 session.run_state = Some(run_state);

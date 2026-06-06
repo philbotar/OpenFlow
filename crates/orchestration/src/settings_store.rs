@@ -1,7 +1,9 @@
 #![allow(clippy::derive_partial_eq_without_eq, clippy::must_use_candidate)]
 
 use crate::credential_store::{CredentialStore, CredentialStoreError};
-use ai::{builtin_provider_specs, provider_spec, ProviderId, ProviderKind, ProviderSpec, WireApi};
+use providers::{
+    builtin_provider_specs, provider_spec, ProviderId, ProviderKind, ProviderSpec, WireApi,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;

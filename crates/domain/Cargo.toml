@@ -10,7 +10,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [lib]
-name = "workflow_core"
+name = "domain"
 
 [dependencies]
 anyhow = "1.0"

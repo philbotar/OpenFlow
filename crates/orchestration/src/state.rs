@@ -1,11 +1,11 @@
 use crate::canvas_math::clamp_node_position;
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use std::collections::BTreeMap;
-use workflow_core::{
+use domain::{
     validate_workflow, ChatMessage, ChatRole, Edge, Node, NodeId, RunEventKind, RunReport,
     Workflow, WorkflowValidationError,
 };
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -56,7 +56,7 @@ pub struct RunTraceEntry {
 pub struct ToolCallSummary {
     pub tool_call_id: String,
     pub tool_name: String,
-    pub status: workflow_core::ToolCallStatus,
+    pub status: domain::ToolCallStatus,
     pub arguments: Value,
     pub last_output: Option<String>,
     pub is_error: bool,
@@ -79,7 +79,7 @@ pub struct WorkflowRunState {
     pub awaiting_node_id: Option<NodeId>,
     pub active_manual_node_id: Option<NodeId>,
     pub active_tool_call_id: Option<String>,
-    pub pending_approvals: Vec<workflow_core::PendingToolApproval>,
+    pub pending_approvals: Vec<domain::PendingToolApproval>,
     pub tool_calls_by_node: BTreeMap<NodeId, Vec<ToolCallSummary>>,
     pub tool_artifacts: BTreeMap<String, ToolArtifactSummary>,
     pub exec_approval_granted: bool,
@@ -670,13 +670,13 @@ mod tests {
         state.set_run_report(RunReport {
             workflow_id: state.workflow.id.clone(),
             events: vec![
-                workflow_core::RunEvent {
+                domain::RunEvent {
                     node_id: first.clone(),
                     kind: RunEventKind::Queued,
                     message: "queued".to_string(),
                     output: None,
                 },
-                workflow_core::RunEvent {
+                domain::RunEvent {
                     node_id: first.clone(),
                     kind: RunEventKind::Completed,
                     message: "completed".to_string(),

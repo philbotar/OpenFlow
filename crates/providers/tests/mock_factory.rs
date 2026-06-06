@@ -4,10 +4,10 @@
 //! providing a mock factory that returns canned AiPort implementations.
 
 use async_trait::async_trait;
-use workflow_core::{AgentError, AgentRequest, AgentTurnOutcome, AgentTurnSuccess, AiPort};
+use domain::{AgentError, AgentRequest, AgentTurnOutcome, AgentTurnSuccess, AiPort};
 
-use ai::ports::inbound::{BoxedAiPort, ProviderFactoryPort};
-use ai::AiClientConfig;
+use providers::ports::inbound::{BoxedAiPort, ProviderFactoryPort};
+use providers::AiClientConfig;
 
 // ── Mock AiPort ────────────────────────────────────────────────
 
@@ -100,7 +100,7 @@ fn mock_factory_creates_with_custom_response() {
             task_prompt: "Do something".to_string(),
             input: serde_json::json!({}),
             output_schema: serde_json::json!({}),
-            tool_config: workflow_core::NodeToolConfig::default(),
+            tool_config: domain::NodeToolConfig::default(),
             available_tools: vec![],
             transcript: vec![],
         };
@@ -126,7 +126,7 @@ async fn mock_ai_port_invoke_returns_success() {
         task_prompt: "Do something".to_string(),
         input: serde_json::json!({}),
         output_schema: serde_json::json!({}),
-        tool_config: workflow_core::NodeToolConfig::default(),
+        tool_config: domain::NodeToolConfig::default(),
         available_tools: vec![],
         transcript: vec![],
     };
@@ -156,7 +156,7 @@ async fn mock_ai_port_invoke_returns_custom_response() {
         task_prompt: "Do something".to_string(),
         input: serde_json::json!({}),
         output_schema: serde_json::json!({}),
-        tool_config: workflow_core::NodeToolConfig::default(),
+        tool_config: domain::NodeToolConfig::default(),
         available_tools: vec![],
         transcript: vec![],
     };
@@ -185,7 +185,7 @@ async fn error_mock_ai_port_invoke_returns_error() {
         task_prompt: "Do something".to_string(),
         input: serde_json::json!({}),
         output_schema: serde_json::json!({}),
-        tool_config: workflow_core::NodeToolConfig::default(),
+        tool_config: domain::NodeToolConfig::default(),
         available_tools: vec![],
         transcript: vec![],
     };

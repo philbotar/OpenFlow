@@ -4,8 +4,8 @@ use crate::auth::AuthConfig;
 use crate::client::AnthropicConfig;
 use crate::openai_compat::OpenAiCompatibleConfig;
 use crate::ports::outbound::ProviderInvokeResult;
+use domain::AgentRequest;
 use reqwest::Client;
-use workflow_core::AgentRequest;
 
 pub async fn invoke_openai_compatible(
     http: &Client,

@@ -3,13 +3,13 @@
 pub mod adapters;
 pub mod ports;
 
-use app_backend::agent_store::AgentDefinition;
-use app_backend::backend::{
+use orchestration::agent_store::AgentDefinition;
+use orchestration::backend::{
     AppBackend, BackendError, ProviderReadiness, WorkflowListItem, WorkflowValidationSummary,
 };
-use app_backend::settings_store::AppSettings;
-use app_backend::state::WorkflowRunState;
-use app_backend::Workflow;
+use orchestration::settings_store::AppSettings;
+use orchestration::state::WorkflowRunState;
+use orchestration::Workflow;
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
 
@@ -120,7 +120,7 @@ fn rename_workflow(
 #[tauri::command]
 fn list_agents(
     backend: tauri::State<'_, AppBackend>,
-) -> Result<Vec<app_backend::backend::AgentDefinitionSummary>, CommandError> {
+) -> Result<Vec<orchestration::backend::AgentDefinitionSummary>, CommandError> {
     Ok(backend.list_agents()?)
 }
 /// Tauri command: Load all agents.
@@ -217,7 +217,7 @@ fn create_agent_node(
     x: f32,
     y: f32,
     agent_id: Option<String>,
-) -> Result<app_backend::Node, CommandError> {
+) -> Result<orchestration::Node, CommandError> {
     Ok(backend.create_agent_node(index, x, y, agent_id.as_deref())?)
 }
 

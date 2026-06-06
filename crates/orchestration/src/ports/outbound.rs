@@ -4,9 +4,9 @@ use crate::agent_store::AgentDefinition;
 use crate::credential_store::{CredentialStore, CredentialStoreError};
 use crate::provider_config::{ProviderConfigError, ProviderEnv};
 use crate::settings_store::AppSettings;
-use ai::AiClientConfig;
+use domain::Workflow;
+use providers::AiClientConfig;
 use std::io;
-use workflow_core::Workflow;
 
 pub trait WorkflowStoragePort {
     fn load_workflows(&self) -> Result<Vec<Workflow>, io::Error>;

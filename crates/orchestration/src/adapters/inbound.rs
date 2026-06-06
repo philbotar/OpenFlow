@@ -7,7 +7,7 @@ use crate::backend::{
 };
 use crate::ports::inbound::OrchestrationCommandsPort;
 use crate::settings_store::AppSettings;
-use workflow_core::{Node, Workflow};
+use domain::{Node, Workflow};
 
 impl OrchestrationCommandsPort for AppBackend {
     fn list_workflows(&self) -> Result<Vec<WorkflowListItem>, BackendError> {

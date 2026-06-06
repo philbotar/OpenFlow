@@ -11,6 +11,7 @@
 use crate::tools::errors::ToolError;
 use crate::tools::output::{ArtifactStore, ToolArtifactRecord};
 use crate::tools::registry::{BuiltinToolKind, ToolRegistry, ToolRegistryError};
+use domain::{ToolCall, ToolResult};
 use regex::{Regex, RegexBuilder};
 use reqwest::Client;
 use serde::Deserialize;
@@ -20,7 +21,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use thiserror::Error;
 use walkdir::WalkDir;
-use workflow_core::{ToolCall, ToolResult};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ToolExecutionRecord {

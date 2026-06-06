@@ -1,15 +1,15 @@
 #![allow(clippy::significant_drop_tightening)]
 
-use app_backend::execution::{run_workflow_headless, ApprovalResponse, ManualInput};
-use app_backend::state::TraceStatus;
 use async_trait::async_trait;
-use parking_lot::Mutex;
-use serde_json::json;
-use std::sync::Arc;
-use workflow_core::{
+use domain::{
     AgentError, AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTurnOutcome,
     AgentTurnSuccess, AiPort, ApprovalMode, Edge, Node, NodeId, ToolCall, ToolRef, Workflow,
 };
+use orchestration::execution::{run_workflow_headless, ApprovalResponse, ManualInput};
+use orchestration::state::TraceStatus;
+use parking_lot::Mutex;
+use serde_json::json;
+use std::sync::Arc;
 #[derive(Clone, Default)]
 struct ScriptedAi {
     requests: Arc<Mutex<Vec<AgentRequest>>>,
@@ -136,10 +136,7 @@ async fn manual_node_pauses_accepts_input_and_feeds_downstream_node() {
             match &*request.node_id {
                 "human-review" => {
                     let asked_already = request.transcript.iter().any(|item| {
-                        matches!(
-                            item,
-                            workflow_core::AgentTranscriptItem::AssistantMessage { .. }
-                        )
+                        matches!(item, domain::AgentTranscriptItem::AssistantMessage { .. })
                     });
                     if !asked_already {
                         return Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
@@ -152,7 +149,7 @@ async fn manual_node_pauses_accepts_input_and_feeds_downstream_node() {
                         .iter()
                         .rev()
                         .find_map(|item| match item {
-                            workflow_core::AgentTranscriptItem::UserMessage { content } => {
+                            domain::AgentTranscriptItem::UserMessage { content } => {
                                 Some(content.clone())
                             }
                             _ => None,
@@ -243,7 +240,7 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
             let saw_tool_result = request
                 .transcript
                 .iter()
-                .any(|item| matches!(item, workflow_core::AgentTranscriptItem::ToolResult { .. }));
+                .any(|item| matches!(item, domain::AgentTranscriptItem::ToolResult { .. }));
             assert!(saw_tool_result);
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
                 output: json!({"summary": "tool verified ORCHID-91"}),
@@ -265,7 +262,7 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
         run_workflow_headless(workflow.clone(), None, ToolAi::default(), vec![], vec![]).await;
     assert!(matches!(
         first_attempt,
-        Err(app_backend::execution::WorkflowExecutionError::MissingApproval(_))
+        Err(orchestration::execution::WorkflowExecutionError::MissingApproval(_))
     ));
 
     let snapshot = run_workflow_headless(

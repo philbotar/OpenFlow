@@ -1,8 +1,8 @@
+use domain::Workflow;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use workflow_core::Workflow;
 
 #[derive(Debug, Clone)]
 pub struct FileWorkflowStore {

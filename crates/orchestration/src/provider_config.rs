@@ -1,6 +1,6 @@
 use crate::credential_store::{CredentialStore, CredentialStoreError};
 use crate::settings_store::AppSettings;
-use ai::{
+use providers::{
     provider_spec, AiClientConfig, AnthropicConfig, AuthConfig, AuthSpec, OpenAiCompatibleConfig,
     ProviderAdapterConfig, ProviderKind,
 };
@@ -15,7 +15,7 @@ pub struct ProviderEnv {
 impl ProviderEnv {
     #[must_use]
     pub fn from_system() -> Self {
-        let values = ai::builtin_provider_specs()
+        let values = providers::builtin_provider_specs()
             .iter()
             .filter_map(|spec| spec.auth.env_var())
             .filter_map(|env_var| {
@@ -171,7 +171,7 @@ mod tests {
     use super::*;
     use crate::credential_store::CredentialStore;
     use crate::settings_store::{ProviderProfile, ProviderTransport};
-    use ai::{ProviderAdapterConfig, ProviderId, WireApi};
+    use providers::{ProviderAdapterConfig, ProviderId, WireApi};
 
     fn store() -> CredentialStore {
         CredentialStore::in_memory()

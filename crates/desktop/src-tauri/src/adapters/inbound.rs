@@ -3,16 +3,16 @@
 //! Concrete implementations of inbound port traits backed by `AppBackend`.
 //! These provide the Tauri command interface.
 
-use app_backend::{Node, Workflow};
 use async_trait::async_trait;
+use orchestration::{Node, Workflow};
 
-use app_backend::agent_store::AgentDefinition;
-use app_backend::backend::{
+use orchestration::agent_store::AgentDefinition;
+use orchestration::backend::{
     AgentDefinitionSummary, AppBackend, BackendError, ProviderReadiness, WorkflowListItem,
     WorkflowValidationSummary,
 };
-use app_backend::settings_store::AppSettings;
-use app_backend::state::WorkflowRunState;
+use orchestration::settings_store::AppSettings;
+use orchestration::state::WorkflowRunState;
 
 use crate::ports::inbound::{
     AgentCommands, BootstrapPort, CredentialCommands, ProviderCommands, RunCommands,

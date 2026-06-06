@@ -9,9 +9,9 @@ use crate::ports::outbound::{
 use crate::provider_config::{resolve_provider_config, ProviderConfigError, ProviderEnv};
 use crate::settings_store::{AppSettings, FileSettingsStore};
 use crate::storage::FileWorkflowStore;
-use ai::AiClientConfig;
+use domain::Workflow;
+use providers::AiClientConfig;
 use std::io;
-use workflow_core::Workflow;
 
 impl WorkflowStoragePort for FileWorkflowStore {
     fn load_workflows(&self) -> Result<Vec<Workflow>, io::Error> {

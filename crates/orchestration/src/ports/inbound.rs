@@ -6,7 +6,7 @@ use crate::backend::{
     WorkflowValidationSummary,
 };
 use crate::settings_store::AppSettings;
-use workflow_core::{Node, Workflow};
+use domain::{Node, Workflow};
 
 pub trait OrchestrationCommandsPort {
     fn list_workflows(&self) -> Result<Vec<WorkflowListItem>, BackendError>;

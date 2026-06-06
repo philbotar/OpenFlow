@@ -3,20 +3,20 @@
 //! These tests verify the command logic in isolation by providing
 //! canned data through the port trait implementations.
 
-use app_backend::Workflow;
 use async_trait::async_trait;
+use orchestration::Workflow;
 use tokio::sync::mpsc;
 
-use app_backend::agent_store::AgentDefinition;
-use app_backend::backend::{
+use orchestration::agent_store::AgentDefinition;
+use orchestration::backend::{
     AgentDefinitionSummary, BackendError, ProviderReadiness, WorkflowListItem,
     WorkflowValidationSummary,
 };
-use app_backend::execution::ExecutionEvent;
-use app_backend::settings_store::AppSettings;
-use app_backend::state::WorkflowRunState;
+use orchestration::execution::ExecutionEvent;
+use orchestration::settings_store::AppSettings;
+use orchestration::state::WorkflowRunState;
 
-use agent_workflow_desktop_lib::ports::outbound::{
+use desktop::ports::outbound::{
     AgentRepository, CredentialStore, ProviderResolver, RunOrchestrator, SettingsStore,
     WorkflowRepository,
 };
@@ -147,8 +147,8 @@ impl AgentRepository for MockBackend {
         _x: f32,
         _y: f32,
         _agent_id: Option<&str>,
-    ) -> Result<app_backend::Node, BackendError> {
-        Ok(app_backend::Node::agent("mock-node", 0.0, 0.0))
+    ) -> Result<orchestration::Node, BackendError> {
+        Ok(orchestration::Node::agent("mock-node", 0.0, 0.0))
     }
 }
 

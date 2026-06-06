@@ -5,15 +5,15 @@
 use async_trait::async_trait;
 use tokio::sync::mpsc::UnboundedReceiver;
 
-use app_backend::agent_store::AgentDefinition;
-use app_backend::backend::{
+use orchestration::agent_store::AgentDefinition;
+use orchestration::backend::{
     AgentDefinitionSummary, AppBackend, BackendError, ProviderReadiness, WorkflowListItem,
     WorkflowValidationSummary,
 };
-use app_backend::execution::ExecutionEvent;
-use app_backend::settings_store::AppSettings;
-use app_backend::state::WorkflowRunState;
-use app_backend::{Node, Workflow};
+use orchestration::execution::ExecutionEvent;
+use orchestration::settings_store::AppSettings;
+use orchestration::state::WorkflowRunState;
+use orchestration::{Node, Workflow};
 
 use crate::ports::outbound::{
     AgentRepository, CredentialStore, ProviderResolver, RunOrchestrator, SettingsStore,

@@ -17,6 +17,11 @@ use crate::tools::{
     resolve_tool_policy, ApprovalDecision, ArtifactStore, ToolApprovalRequest, ToolRegistry,
     ToolRunner, ToolRunnerError,
 };
+use domain::{
+    AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTurnOutcome, AiPort, ChatMessage,
+    ChatRole, EnginePollResult, InteractiveEngine, NodeId, RunReport, ToolCall, ToolCallStatus,
+    ToolOutputMeta, Workflow,
+};
 use serde_json::Value;
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt::Write as _;
@@ -24,11 +29,6 @@ use std::path::PathBuf;
 use thiserror::Error;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use uuid::Uuid;
-use workflow_core::{
-    AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTurnOutcome, AiPort, ChatMessage,
-    ChatRole, EnginePollResult, InteractiveEngine, NodeId, RunReport, ToolCall, ToolCallStatus,
-    ToolOutputMeta, Workflow,
-};
 
 #[derive(Debug, Clone)]
 pub enum ExecutionEvent {
@@ -57,7 +57,7 @@ pub enum ExecutionEvent {
         tool_call: ToolCall,
     },
     ToolApprovalRequested {
-        request: workflow_core::PendingToolApproval,
+        request: domain::PendingToolApproval,
     },
     ToolApproved {
         approval_id: String,
@@ -128,7 +128,7 @@ pub struct WorkflowRunSnapshot {
     pub run_trace: Vec<RunTraceEntry>,
     pub chat_logs: BTreeMap<NodeId, Vec<ChatMessage>>,
     pub outputs: BTreeMap<NodeId, Value>,
-    pub pending_approvals: Vec<workflow_core::PendingToolApproval>,
+    pub pending_approvals: Vec<domain::PendingToolApproval>,
     pub tool_calls_by_node: BTreeMap<NodeId, Vec<ToolCallSummary>>,
     pub tool_artifacts: BTreeMap<String, ToolArtifactSummary>,
 }
@@ -344,7 +344,7 @@ async fn drive_interactive_workflow<A>(
                         continue;
                     }
 
-                    if registered.definition.tier == workflow_core::ToolTier::Exec {
+                    if registered.definition.tier == domain::ToolTier::Exec {
                         exec_approval_granted = true;
                     }
                     let _ = event_tx.send(ExecutionEvent::ToolStarted {
@@ -956,14 +956,14 @@ pub fn record_user_input(state: &mut WorkflowRunState, node_id: &str, text: Stri
 mod tests {
     use super::*;
     use async_trait::async_trait;
+    use domain::{AgentTurnSuccess, ToolRef, ToolTier};
     use parking_lot::Mutex;
     use serde_json::json;
     use std::sync::Arc;
-    use workflow_core::{AgentTurnSuccess, ToolRef, ToolTier};
 
     fn workflow() -> Workflow {
         let mut workflow = Workflow::new("trace");
-        let mut first = workflow_core::Node::agent("First", 0.0, 0.0);
+        let mut first = domain::Node::agent("First", 0.0, 0.0);
         first.id = NodeId("first".to_string());
         first.agent.model = "test-model".to_string();
         workflow.nodes = vec![first];
@@ -991,7 +991,7 @@ mod tests {
             &workflow,
             &mut state,
             ExecutionEvent::ToolApprovalRequested {
-                request: workflow_core::PendingToolApproval {
+                request: domain::PendingToolApproval {
                     approval_id: "approval-1".to_string(),
                     node_id: "first".to_string(),
                     node_label: "First".to_string(),
@@ -1045,7 +1045,7 @@ mod tests {
             async fn invoke(
                 &self,
                 request: AgentRequest,
-            ) -> Result<AgentTurnOutcome, workflow_core::AgentError> {
+            ) -> Result<AgentTurnOutcome, domain::AgentError> {
                 let mut calls = self.calls.lock();
                 *calls += 1;
                 if *calls == 1 {
@@ -1099,7 +1099,7 @@ mod tests {
             async fn invoke(
                 &self,
                 _request: AgentRequest,
-            ) -> Result<AgentTurnOutcome, workflow_core::AgentError> {
+            ) -> Result<AgentTurnOutcome, domain::AgentError> {
                 Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                     raw_text: String::new(),
                     assistant_message: None,
@@ -1117,7 +1117,7 @@ mod tests {
         workflow.nodes[0].agent.tools.catalog.tools = vec![ToolRef {
             name: "read".to_string(),
         }];
-        workflow.nodes[0].agent.tools.approval_mode = Some(workflow_core::ApprovalMode::AlwaysAsk);
+        workflow.nodes[0].agent.tools.approval_mode = Some(domain::ApprovalMode::AlwaysAsk);
         let error = run_workflow_headless(workflow, None, PromptingAi, Vec::new(), Vec::new())
             .await
             .unwrap_err();

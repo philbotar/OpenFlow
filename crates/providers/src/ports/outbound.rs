@@ -1,5 +1,5 @@
 //! Outbound ports for provider-internal integrations.
 
-use workflow_core::{AgentError, AgentTurnOutcome};
+use domain::{AgentError, AgentTurnOutcome};
 
 pub type ProviderInvokeResult = Result<AgentTurnOutcome, AgentError>;

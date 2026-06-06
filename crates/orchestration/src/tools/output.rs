@@ -5,10 +5,10 @@
 )]
 
 use crate::tools::errors::ToolError;
+use domain::{ToolOutputMeta, ToolTruncation, ToolTruncationStrategy};
 use std::fs;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
-use workflow_core::{ToolOutputMeta, ToolTruncation, ToolTruncationStrategy};
 
 const INLINE_OUTPUT_BYTE_LIMIT: usize = 50_000;
 const DEFAULT_HEAD_BYTES: usize = 20_000;

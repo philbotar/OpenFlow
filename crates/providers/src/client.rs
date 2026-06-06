@@ -3,8 +3,8 @@ use crate::auth::AuthConfig;
 use crate::openai_compat::OpenAiCompatibleConfig;
 use crate::spec::ProviderId;
 use async_trait::async_trait;
+use domain::{AgentError, AgentRequest, AgentTurnOutcome, AiPort};
 use reqwest::Client;
-use workflow_core::{AgentError, AgentRequest, AgentTurnOutcome, AiPort};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AnthropicConfig {

@@ -10,14 +10,14 @@ keywords.workspace = true
 categories.workspace = true
 
 [lib]
-name = "ai"
+name = "providers"
 
 [dependencies]
 async-trait.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-workflow-core = { package = "domain", path = "../domain", version = "0.1.0" }
+domain = { path = "../domain", version = "0.1.0" }
 
 [dev-dependencies]
 tokio.workspace = true

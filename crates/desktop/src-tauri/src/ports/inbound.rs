@@ -3,16 +3,16 @@
 //! These traits define the contracts the desktop layer exposes to its consumers.
 //! The adapters module provides the concrete Tauri command implementations.
 
-use app_backend::Workflow;
 use async_trait::async_trait;
+use orchestration::Workflow;
 
-use app_backend::agent_store::AgentDefinition;
-use app_backend::backend::{
+use orchestration::agent_store::AgentDefinition;
+use orchestration::backend::{
     AgentDefinitionSummary, BackendError, ProviderReadiness, WorkflowListItem,
     WorkflowValidationSummary,
 };
-use app_backend::settings_store::AppSettings;
-use app_backend::state::WorkflowRunState;
+use orchestration::settings_store::AppSettings;
+use orchestration::state::WorkflowRunState;
 
 // ── Bootstrap ──────────────────────────────────────────────────
 
@@ -64,7 +64,7 @@ pub trait AgentCommands {
         x: f32,
         y: f32,
         agent_id: Option<String>,
-    ) -> Result<app_backend::Node, BackendError>;
+    ) -> Result<orchestration::Node, BackendError>;
 }
 
 // ── Settings commands ──────────────────────────────────────────

@@ -1,8 +1,8 @@
 #![allow(clippy::map_unwrap_or, clippy::missing_errors_doc)]
 
+use domain::{NodeToolConfig, ToolConcurrency, ToolDefinition, ToolTier};
 use std::collections::BTreeMap;
 use thiserror::Error;
-use workflow_core::{NodeToolConfig, ToolConcurrency, ToolDefinition, ToolTier};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuiltinToolKind {
@@ -173,7 +173,7 @@ mod tests {
     fn registry_returns_requested_definitions() {
         let registry = ToolRegistry::new();
         let mut config = NodeToolConfig::default();
-        config.catalog.tools = vec![workflow_core::ToolRef {
+        config.catalog.tools = vec![domain::ToolRef {
             name: "read".to_string(),
         }];
         let definitions = registry.definitions_for(&config);
