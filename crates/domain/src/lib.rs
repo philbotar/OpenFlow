@@ -15,6 +15,7 @@
 )]
 
 pub mod interactive;
+pub mod adapters;
 pub mod model;
 pub mod ports;
 pub mod runner;

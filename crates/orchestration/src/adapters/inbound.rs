@@ -1,0 +1,1 @@
+//! Inbound adapters for orchestration (CLI, IPC, HTTP, etc.).

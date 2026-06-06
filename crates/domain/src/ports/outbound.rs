@@ -1,0 +1,1 @@
+//! Outbound ports owned by the domain.

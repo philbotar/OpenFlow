@@ -1,0 +1,1 @@
+//! Outbound ports for provider-internal integrations.

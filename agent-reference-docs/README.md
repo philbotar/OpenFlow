@@ -16,6 +16,20 @@ Purpose: fast, stable standards for contributors and coding agents.
 - `crates/domain`: workflow model, validation, execution semantics, ports.
 - `crates/providers`: concrete provider adapters and transport mapping.
 
+## Standard Structure
+
+Use these folders consistently across sections to keep seam changes easy and predictable:
+
+- `src/ports/inbound.*`
+- `src/ports/outbound.*`
+- `src/adapters/inbound.*`
+- `src/adapters/outbound.*`
+
+Meaning:
+
+- Ports define contracts.
+- Adapters provide concrete implementations and transport wiring.
+
 ## Dev Entry Points
 
 - Desktop app: `npm --prefix crates/desktop run start -- dev`

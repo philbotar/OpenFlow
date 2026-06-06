@@ -1,0 +1,1 @@
+//! Inbound ports owned by the domain.

@@ -21,10 +21,12 @@
 )]
 
 pub mod agent_store;
+pub mod adapters;
 pub mod backend;
 pub mod canvas_math;
 pub mod credential_store;
 pub mod execution;
+pub mod ports;
 pub mod provider_config;
 pub mod settings_store;
 pub mod state;

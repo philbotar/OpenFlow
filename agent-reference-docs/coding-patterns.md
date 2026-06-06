@@ -11,6 +11,9 @@ Patterns we follow in this repo.
 5. `ui` owns rendering and interaction; it should talk through typed desktop invokes/events.
 6. Domain crate must not depend on HTTP clients or async runtimes beyond what's needed for tests.
 7. `orchestration` must call domain APIs; do not duplicate domain rules in `orchestration`.
+8. Keep section-local seams in `src/ports/inbound.*` and `src/ports/outbound.*`.
+9. Keep section-local implementations in `src/adapters/inbound.*` and `src/adapters/outbound.*`.
+10. Prefer moving integration logic into `adapters/*` before adding new top-level modules.
 
 ## Ownership By Concern
 
@@ -20,8 +23,10 @@ Patterns we follow in this repo.
 | Graph validity and layer order | `crates/domain/src/validation.rs` |
 | Batch run semantics | `crates/domain/src/runner.rs` |
 | Interactive pause/resume semantics | `crates/domain/src/interactive.rs` |
-| LLM invocation contract | `crates/domain/src/ports.rs` |
+| LLM invocation contract | `crates/domain/src/ports/mod.rs` |
+| Domain seam declarations | `crates/domain/src/ports/inbound.rs`, `crates/domain/src/ports/outbound.rs` |
 | LLM transport mapping | `crates/providers/src/*` |
+| Section adapter entry points | `*/src/adapters/inbound.*`, `*/src/adapters/outbound.*` |
 | Mutable app state transitions | `crates/orchestration/src/state.rs` |
 | File persistence formats | `crates/orchestration/src/storage.rs`, `settings_store.rs` |
 | Tauri command/event surface | `crates/desktop/src-tauri/src/lib.rs` |

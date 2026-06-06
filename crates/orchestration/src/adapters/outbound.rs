@@ -1,0 +1,1 @@
+//! Outbound adapters for orchestration dependencies.

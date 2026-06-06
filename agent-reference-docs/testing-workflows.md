@@ -41,6 +41,29 @@ Live AI smoke tests must avoid exact prose assertions. Model output changes natu
 5. Required fields are non-empty.
 6. A sentinel value such as `ORCHID-91` is preserved exactly across nodes.
 
+## Ports vs Adapters Test Placement
+
+Use the same testing split across all sections (`domain`, `providers`, `orchestration`, `desktop`, `ui`) now that each section has:
+
+- `src/ports/inbound.*`
+- `src/ports/outbound.*`
+- `src/adapters/inbound.*`
+- `src/adapters/outbound.*`
+
+Guidelines:
+
+1. Ports tests verify contract behavior and invariants, not transport details.
+2. Adapter tests verify translation and wiring to concrete dependencies (HTTP, file system, keychain, Tauri invoke/event, etc.).
+3. Prefer fast unit tests for port contracts and deterministic adapter behavior.
+4. Use integration tests when an adapter interacts with external systems or runtime boundaries.
+5. Keep contract assertions stable; adapter assertions may include protocol-specific mapping details.
+
+Practical placement:
+
+1. Contract-focused tests near `ports/*` modules.
+2. Mapping/wiring tests near `adapters/*` modules.
+3. End-to-end behavior remains in existing acceptance/live workflows.
+
 ## When To Run Each Layer
 
 Run this before normal commits:

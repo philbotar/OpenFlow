@@ -1,3 +1,6 @@
+pub mod inbound;
+pub mod outbound;
+
 use crate::{AgentTranscriptItem, NodeId, NodeToolConfig, ToolCall, ToolDefinition, WorkflowId};
 use async_trait::async_trait;
 use serde_json::Value;

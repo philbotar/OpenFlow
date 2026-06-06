@@ -1,0 +1,1 @@
+//! Outbound adapters for provider wire protocols.

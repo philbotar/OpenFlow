@@ -1,0 +1,1 @@
+//! Inbound ports for provider adapters.

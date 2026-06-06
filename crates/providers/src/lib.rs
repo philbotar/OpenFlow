@@ -1,5 +1,8 @@
 #![allow(clippy::multiple_crate_versions)]
 
+pub mod adapters;
+pub mod ports;
+
 pub(crate) mod anthropic;
 pub(crate) mod auth;
 mod client;

@@ -1,5 +1,8 @@
 #![allow(clippy::cargo, clippy::nursery, clippy::pedantic)]
 
+pub mod adapters;
+pub mod ports;
+
 use app_backend::agent_store::AgentDefinition;
 use app_backend::backend::{
     AppBackend, BackendError, ProviderReadiness, WorkflowListItem, WorkflowValidationSummary,
