@@ -97,6 +97,8 @@ pub fn default_templates() -> Vec<Template> {
                 }),
                 auto_start: true,
                 tools: AgentNodeConfig::default().tools,
+                callable_agents: Vec::new(),
+                allow_all_callable_agents: false,
             },
             HashSet::new(),
         ),
@@ -132,6 +134,8 @@ pub fn default_templates() -> Vec<Template> {
                 }),
                 auto_start: true,
                 tools: AgentNodeConfig::default().tools,
+                callable_agents: Vec::new(),
+                allow_all_callable_agents: false,
             },
             {
                 let mut locked = HashSet::new();
@@ -164,6 +168,8 @@ pub fn default_templates() -> Vec<Template> {
                 }),
                 auto_start: true,
                 tools: AgentNodeConfig::default().tools,
+                callable_agents: Vec::new(),
+                allow_all_callable_agents: false,
             },
             {
                 let mut locked = HashSet::new();
@@ -190,6 +196,8 @@ pub fn default_templates() -> Vec<Template> {
                 }),
                 auto_start: true,
                 tools: AgentNodeConfig::default().tools,
+                callable_agents: Vec::new(),
+                allow_all_callable_agents: false,
             },
             {
                 let mut locked = HashSet::new();
@@ -215,6 +223,8 @@ pub fn default_templates() -> Vec<Template> {
                 }),
                 auto_start: false,
                 tools: AgentNodeConfig::default().tools,
+                callable_agents: Vec::new(),
+                allow_all_callable_agents: false,
             },
             {
                 let mut locked = HashSet::new();
@@ -284,6 +294,8 @@ mod tests {
             output_schema: serde_json::json!({"custom": true}),
             auto_start: false,
             tools: AgentNodeConfig::default().tools,
+            callable_agents: Vec::new(),
+            allow_all_callable_agents: false,
         };
         let template = Template::new("Test", "desc", config.clone(), HashSet::new());
         let node = template.instantiate(0.0, 0.0);

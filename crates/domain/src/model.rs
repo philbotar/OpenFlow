@@ -323,6 +323,10 @@ pub struct AgentNodeConfig {
     pub auto_start: bool,
     #[serde(default)]
     pub tools: NodeToolConfig,
+    #[serde(default, rename = "callableAgents")]
+    pub callable_agents: Vec<String>,
+    #[serde(default, rename = "allowAllCallableAgents")]
+    pub allow_all_callable_agents: bool,
 }
 
 const fn default_auto_start() -> bool {
@@ -345,6 +349,8 @@ impl Default for AgentNodeConfig {
             }),
             auto_start: true,
             tools: NodeToolConfig::default(),
+            callable_agents: Vec::new(),
+            allow_all_callable_agents: false,
         }
     }
 }
@@ -498,6 +504,23 @@ mod tests {
 
         assert!(config.auto_start);
         assert_eq!(config.tools, NodeToolConfig::default());
+        assert!(config.callable_agents.is_empty());
+        assert!(!config.allow_all_callable_agents);
+    }
+
+    #[test]
+    fn agent_node_config_callable_agents_serde_roundtrip() {
+        let config = AgentNodeConfig {
+            callable_agents: vec!["agent-1".to_string(), "agent-2".to_string()],
+            ..AgentNodeConfig::default()
+        };
+        let value = serde_json::to_value(&config).unwrap();
+        assert_eq!(
+            value["callableAgents"],
+            json!(["agent-1", "agent-2"])
+        );
+        let back: AgentNodeConfig = serde_json::from_value(value).unwrap();
+        assert_eq!(back.callable_agents, config.callable_agents);
     }
 
     #[test]

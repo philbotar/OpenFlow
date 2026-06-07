@@ -11,8 +11,8 @@
 use crate::agent_store::{AgentDefinition, FileAgentStore};
 use crate::credential_store::CredentialStoreError;
 use crate::execution::{
-    apply_event_to_run_state, record_user_input, resolve_execution_cwd,
-    spawn_interactive_workflow_run, ExecutionAction, ExecutionEvent,
+    apply_event_to_run_state, record_user_input, resolve_callable_agent_snapshots,
+    resolve_execution_cwd, spawn_interactive_workflow_run, ExecutionAction, ExecutionEvent,
 };
 use crate::provider_config::{
     active_provider_env_var, active_provider_label, resolve_provider_config, ProviderConfigError,
@@ -594,12 +594,15 @@ impl AppBackend {
         )?;
         let ai = create_provider(provider_config);
 
+        let agents = self.agent_store.load()?;
+        let agent_snapshots = resolve_callable_agent_snapshots(&workflow, &agents);
         let (handle, event_rx, action_tx) = spawn_interactive_workflow_run(
             &self.runtime,
             workflow.clone(),
             entrypoint,
             resolved_cwd,
             ai,
+            agent_snapshots,
         );
 
         let mut session = self.run_session.lock().await;

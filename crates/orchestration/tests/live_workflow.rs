@@ -9,6 +9,7 @@ use providers::{
 };
 use reqwest::Client;
 use serde_json::{json, Value};
+use std::collections::BTreeMap;
 use std::env;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -198,6 +199,7 @@ async fn live_openai_workflow_preserves_sentinel_and_schema_contract() {
         client,
         vec![],
         vec![],
+        BTreeMap::new(),
     )
     .await
     .unwrap();
@@ -302,6 +304,7 @@ async fn live_chat_completions_tool_enabled_workflow_completes() {
         client,
         vec![],
         vec![],
+        BTreeMap::new(),
     )
     .await
     .unwrap();

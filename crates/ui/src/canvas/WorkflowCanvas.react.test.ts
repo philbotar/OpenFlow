@@ -39,6 +39,8 @@ const workflow: Workflow = {
         output_schema: { type: "object" },
         auto_start: true,
         tools: createEmptyToolConfig(),
+        callable_agents: [],
+        allow_all_callable_agents: false,
       },
     },
     {
@@ -53,6 +55,8 @@ const workflow: Workflow = {
         output_schema: { type: "object" },
         auto_start: true,
         tools: createEmptyToolConfig(),
+        callable_agents: [],
+        allow_all_callable_agents: false,
       },
     },
   ],

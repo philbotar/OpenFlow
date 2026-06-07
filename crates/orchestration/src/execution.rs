@@ -10,6 +10,7 @@
     clippy::too_many_lines
 )]
 
+use crate::agent_store::AgentDefinition;
 use crate::state::{
     AgentStatus, RunTraceEntry, ToolArtifactSummary, ToolCallSummary, TraceStatus, WorkflowRunState,
 };
@@ -20,11 +21,11 @@ use crate::tools::{
 use domain::{
     filter_tool_turn_assistant_message, AgentNeedUserInput, AgentRequest, AgentToolCallBatch,
     AgentTranscriptItem, AgentTurnOutcome, AiPort, ChatMessage, ChatRole, EnginePollResult,
-    InteractiveEngine, NodeId, RunReport, SubagentDeclaration, SubagentStatus, SubagentSummary,
-    ToolCall, ToolCallStatus, ToolOutputMeta, Workflow,
+    InteractiveEngine, Node, NodeId, RunReport, SubagentDeclaration, SubagentStatus, SubagentSummary,
+    ToolCall, ToolCallStatus, ToolDefinition, ToolOutputMeta, Workflow,
 };
 use serde_json::Value;
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use thiserror::Error;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -39,6 +40,171 @@ struct SubagentDeclarationBatch {
 struct CallSubagentArgs {
     subagent_id: String,
     input: String,
+}
+
+/// Collect snapshotted agent definitions referenced by workflow node settings.
+#[must_use]
+pub fn resolve_callable_agent_snapshots(
+    workflow: &Workflow,
+    agents: &[AgentDefinition],
+) -> BTreeMap<String, AgentDefinition> {
+    let mut requested = HashSet::new();
+    for node in &workflow.nodes {
+        if node.agent.allow_all_callable_agents {
+            for agent in agents {
+                requested.insert(agent.id.clone());
+            }
+        } else {
+            for id in &node.agent.callable_agents {
+                if !id.trim().is_empty() {
+                    requested.insert(id.clone());
+                }
+            }
+        }
+    }
+    agents
+        .iter()
+        .filter(|agent| requested.contains(&agent.id))
+        .map(|agent| (agent.id.clone(), agent.clone()))
+        .collect()
+}
+
+fn agent_purpose(agent: &AgentDefinition) -> String {
+    let first_line = agent.task_prompt.lines().next().unwrap_or("").trim();
+    if first_line.is_empty() {
+        "Saved agent".to_string()
+    } else {
+        first_line.to_string()
+    }
+}
+
+fn append_shared_context(workflow: &Workflow, base: &str) -> String {
+    let shared = workflow.settings.shared_context.trim();
+    if shared.is_empty() {
+        base.to_string()
+    } else {
+        format!("{base}\n\n--- Workflow context ---\n{shared}")
+    }
+}
+
+fn adhoc_subagent_base_index(
+    node_id: &NodeId,
+    declared_subagents: &BTreeMap<String, SubagentSummary>,
+) -> usize {
+    let prefix = format!("{node_id}-subagent-");
+    declared_subagents
+        .keys()
+        .filter(|id| id.starts_with(&prefix))
+        .count()
+}
+
+fn build_adhoc_subagent_summaries(
+    node_id: &NodeId,
+    declarations: &[SubagentDeclaration],
+    base_index: usize,
+) -> Vec<SubagentSummary> {
+    declarations
+        .iter()
+        .enumerate()
+        .map(|(i, dec)| SubagentSummary {
+            id: format!("{}-subagent-{}", node_id, base_index + i + 1),
+            name: dec.name.clone(),
+            purpose: dec.purpose.clone(),
+            status: SubagentStatus::Declared,
+        })
+        .collect()
+}
+
+fn build_predefined_subagent_summaries(
+    node: &Node,
+    agent_snapshots: &BTreeMap<String, AgentDefinition>,
+) -> Vec<SubagentSummary> {
+    if node.agent.allow_all_callable_agents {
+        return agent_snapshots
+            .values()
+            .map(|agent| SubagentSummary {
+                id: agent.id.clone(),
+                name: agent.name.clone(),
+                purpose: agent_purpose(agent),
+                status: SubagentStatus::Declared,
+            })
+            .collect();
+    }
+
+    node.agent
+        .callable_agents
+        .iter()
+        .filter_map(|id| agent_snapshots.get(id))
+        .map(|agent| SubagentSummary {
+            id: agent.id.clone(),
+            name: agent.name.clone(),
+            purpose: agent_purpose(agent),
+            status: SubagentStatus::Declared,
+        })
+        .collect()
+}
+
+fn merge_subagent_summaries_into_map(
+    declared_subagents: &mut BTreeMap<String, SubagentSummary>,
+    summaries: &[SubagentSummary],
+) {
+    for summary in summaries {
+        declared_subagents.insert(summary.id.clone(), summary.clone());
+    }
+}
+
+fn subagents_for_node(
+    node: &Node,
+    declared_subagents: &BTreeMap<String, SubagentSummary>,
+    agent_snapshots: &BTreeMap<String, AgentDefinition>,
+) -> Vec<SubagentSummary> {
+    let mut result = Vec::new();
+    if node.agent.allow_all_callable_agents {
+        for agent_id in agent_snapshots.keys() {
+            if let Some(summary) = declared_subagents.get(agent_id) {
+                result.push(summary.clone());
+            }
+        }
+    } else {
+        for agent_id in &node.agent.callable_agents {
+            if let Some(summary) = declared_subagents.get(agent_id) {
+                result.push(summary.clone());
+            }
+        }
+    }
+    let prefix = format!("{}-subagent-", node.id);
+    for summary in declared_subagents.values() {
+        if summary.id.starts_with(&prefix) && !result.iter().any(|item| item.id == summary.id) {
+            result.push(summary.clone());
+        }
+    }
+    result
+}
+
+fn augment_call_subagent_tool_description(
+    tools: &mut [ToolDefinition],
+    node: &Node,
+    declared_subagents: &BTreeMap<String, SubagentSummary>,
+    agent_snapshots: &BTreeMap<String, AgentDefinition>,
+) {
+    let available = subagents_for_node(node, declared_subagents, agent_snapshots);
+    if available.is_empty() {
+        return;
+    }
+    let listing = available
+        .iter()
+        .map(|summary| format!("- {} (id: {})", summary.name, summary.id))
+        .collect::<Vec<_>>()
+        .join("\n");
+    if let Some(tool) = tools
+        .iter_mut()
+        .find(|def| def.name == "openflow_call_subagent")
+    {
+        tool.description = format!(
+            "{}\n\nAvailable subagents for this node:\n{listing}",
+            tool.description
+        );
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -116,7 +282,7 @@ pub enum ExecutionEvent {
     Error(String),
     SubagentsDeclared {
         node_id: NodeId,
-        declarations: Vec<SubagentDeclaration>,
+        summaries: Vec<SubagentSummary>,
     },
     SubagentStarted {
         node_id: NodeId,
@@ -207,6 +373,7 @@ pub fn spawn_interactive_workflow_run<A>(
     entrypoint: Option<String>,
     execution_cwd: PathBuf,
     ai: A,
+    agent_snapshots: BTreeMap<String, AgentDefinition>,
 ) -> (
     tokio::task::JoinHandle<()>,
     UnboundedReceiver<ExecutionEvent>,
@@ -218,8 +385,16 @@ where
     let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel();
     let (action_tx, action_rx) = tokio::sync::mpsc::unbounded_channel();
     let handle = runtime.spawn(async move {
-        drive_interactive_workflow(workflow, entrypoint, execution_cwd, ai, event_tx, action_rx)
-            .await;
+        drive_interactive_workflow(
+            workflow,
+            entrypoint,
+            execution_cwd,
+            ai,
+            event_tx,
+            action_rx,
+            agent_snapshots,
+        )
+        .await;
     });
     (handle, event_rx, action_tx)
 }
@@ -231,6 +406,7 @@ async fn drive_interactive_workflow<A>(
     ai: A,
     event_tx: UnboundedSender<ExecutionEvent>,
     mut action_rx: UnboundedReceiver<ExecutionAction>,
+    agent_snapshots: BTreeMap<String, AgentDefinition>,
 ) where
     A: AiPort,
 {
@@ -254,6 +430,7 @@ async fn drive_interactive_workflow<A>(
     let tool_runner = ToolRunner::new(tool_registry, execution_cwd, artifacts);
     let mut exec_approval_granted = false;
     let mut declared_subagents: BTreeMap<String, SubagentSummary> = BTreeMap::new();
+    let mut predefined_registered: HashSet<NodeId> = HashSet::new();
 
     loop {
         match engine.poll() {
@@ -261,8 +438,33 @@ async fn drive_interactive_workflow<A>(
                 node_id,
                 mut request,
             } => {
+                if !predefined_registered.contains(&node_id) {
+                    if let Some(node) = workflow.nodes.iter().find(|node| node.id == node_id) {
+                        let summaries =
+                            build_predefined_subagent_summaries(node, &agent_snapshots);
+                        if !summaries.is_empty() {
+                            merge_subagent_summaries_into_map(
+                                &mut declared_subagents,
+                                &summaries,
+                            );
+                            let _ = event_tx.send(ExecutionEvent::SubagentsDeclared {
+                                node_id: node_id.clone(),
+                                summaries,
+                            });
+                        }
+                    }
+                    predefined_registered.insert(node_id.clone());
+                }
                 request.available_tools =
                     tool_runner.registry().definitions_for(&request.tool_config);
+                if let Some(node) = workflow.nodes.iter().find(|node| node.id == node_id) {
+                    augment_call_subagent_tool_description(
+                        &mut request.available_tools,
+                        node,
+                        &declared_subagents,
+                        &agent_snapshots,
+                    );
+                }
                 send_node_start_events(&event_tx, &request);
                 let result = ai.invoke((*request).clone()).await;
                 if let Ok(outcome) = &result {
@@ -346,22 +548,17 @@ async fn drive_interactive_workflow<A>(
                                 Ok(batch) => batch.subagents,
                                 Err(_) => Vec::new(),
                             };
-                        let summaries: Vec<SubagentSummary> = declarations
-                            .iter()
-                            .enumerate()
-                            .map(|(i, dec)| SubagentSummary {
-                                id: format!("{}-subagent-{}", node_id, i + 1),
-                                name: dec.name.clone(),
-                                purpose: dec.purpose.clone(),
-                                status: SubagentStatus::Declared,
-                            })
-                            .collect();
-                        for summary in &summaries {
-                            declared_subagents.insert(summary.id.clone(), summary.clone());
-                        }
+                        let base_index =
+                            adhoc_subagent_base_index(&node_id, &declared_subagents);
+                        let summaries = build_adhoc_subagent_summaries(
+                            &node_id,
+                            &declarations,
+                            base_index,
+                        );
+                        merge_subagent_summaries_into_map(&mut declared_subagents, &summaries);
                         let _ = event_tx.send(ExecutionEvent::SubagentsDeclared {
                             node_id: node_id.clone(),
-                            declarations,
+                            summaries: summaries.clone(),
                         });
                         let declared_json: Vec<Value> = summaries
                             .iter()
@@ -440,38 +637,49 @@ async fn drive_interactive_workflow<A>(
                                 continue;
                             }
                         };
-                        let subagent = match declared_subagents.get(&call_args.subagent_id) {
-                            Some(s) => s.clone(),
-                            None => {
-                                let result_content = serde_json::json!({
-                                    "error": format!("Subagent '{}' not found. Declare subagents before invoking them.", call_args.subagent_id)
-                                }).to_string();
-                                let tool_result = domain::ToolResult {
-                                    tool_call_id: tool_call.id.clone(),
-                                    tool_name: tool_call.name.clone(),
-                                    content: result_content.clone(),
-                                    is_error: true,
-                                    artifact_ids: Vec::new(),
-                                    output_meta: None,
-                                };
-                                let _ = event_tx.send(ExecutionEvent::ToolStarted {
-                                    node_id: node_id.clone(),
-                                    tool_call_id: tool_call.id.clone(),
-                                    tool_name: tool_call.name.clone(),
-                                    arguments: tool_call.arguments.clone(),
-                                });
-                                let _ = event_tx.send(ExecutionEvent::ToolCompleted {
-                                    node_id: node_id.clone(),
-                                    tool_call_id: tool_call.id.clone(),
-                                    tool_name: tool_call.name.clone(),
-                                    content: result_content,
-                                    is_error: true,
-                                    output_meta: None,
-                                    artifact_ids: Vec::new(),
-                                });
-                                results.push(tool_result);
-                                continue;
-                            }
+                        let subagent = if let Some(summary) =
+                            declared_subagents.get(&call_args.subagent_id)
+                        {
+                            Some(summary.clone())
+                        } else {
+                            agent_snapshots.get(&call_args.subagent_id).map(|agent| {
+                                SubagentSummary {
+                                    id: agent.id.clone(),
+                                    name: agent.name.clone(),
+                                    purpose: agent_purpose(agent),
+                                    status: SubagentStatus::Declared,
+                                }
+                            })
+                        };
+                        let Some(subagent) = subagent else {
+                            let result_content = serde_json::json!({
+                                "error": format!("Subagent '{}' not found. Declare subagents before invoking them.", call_args.subagent_id)
+                            }).to_string();
+                            let tool_result = domain::ToolResult {
+                                tool_call_id: tool_call.id.clone(),
+                                tool_name: tool_call.name.clone(),
+                                content: result_content.clone(),
+                                is_error: true,
+                                artifact_ids: Vec::new(),
+                                output_meta: None,
+                            };
+                            let _ = event_tx.send(ExecutionEvent::ToolStarted {
+                                node_id: node_id.clone(),
+                                tool_call_id: tool_call.id.clone(),
+                                tool_name: tool_call.name.clone(),
+                                arguments: tool_call.arguments.clone(),
+                            });
+                            let _ = event_tx.send(ExecutionEvent::ToolCompleted {
+                                node_id: node_id.clone(),
+                                tool_call_id: tool_call.id.clone(),
+                                tool_name: tool_call.name.clone(),
+                                content: result_content,
+                                is_error: true,
+                                output_meta: None,
+                                artifact_ids: Vec::new(),
+                            });
+                            results.push(tool_result);
+                            continue;
                         };
                         if subagent.status != SubagentStatus::Declared
                             && subagent.status != SubagentStatus::Completed
@@ -523,38 +731,70 @@ async fn drive_interactive_workflow<A>(
                             tool_name: tool_call.name.clone(),
                             arguments: tool_call.arguments.clone(),
                         });
-                        // Build subagent request from node data
+                        // Build subagent request from saved agent or ad-hoc declaration
                         let parent_node = workflow
                             .nodes
                             .iter()
                             .find(|n| n.id == node_id)
                             .expect("node exists in workflow");
-                        let sub_node_config = node_config.clone();
-                        let sub_available_tools = tool_runner
-                            .registry()
-                            .definitions_for_subagent(&sub_node_config);
-                        let sub_transcript = vec![AgentTranscriptItem::UserMessage {
-                            content: format!(
-                                "You are a subagent named \"{}\" with the purpose: \"{}\"\n\nTask: {}",
-                                subagent.name, subagent.purpose, call_args.input
-                            ),
-                        }];
-                        let sub_request = AgentRequest {
-                            workflow_id: workflow.id.clone(),
-                            node_id: NodeId(subagent.id.clone()),
-                            node_label: subagent.name.clone(),
-                            model: parent_node.agent.model.clone(),
-                            system_prompt: format!(
-                                "You are {}. {}",
-                                subagent.name, subagent.purpose
-                            ),
-                            task_prompt: call_args.input.clone(),
-                            input: serde_json::json!(null),
-                            output_schema: Value::Null,
-                            tool_config: sub_node_config.clone(),
-                            available_tools: sub_available_tools,
-                            transcript: sub_transcript,
-                        };
+                        let (sub_node_config, sub_request) =
+                            if let Some(agent_def) = agent_snapshots.get(&call_args.subagent_id) {
+                                let sub_node_config = agent_def.tools.clone();
+                                let sub_available_tools = tool_runner
+                                    .registry()
+                                    .definitions_for_subagent(&sub_node_config);
+                                let system_prompt =
+                                    append_shared_context(&workflow, &agent_def.system_prompt);
+                                let sub_transcript = vec![AgentTranscriptItem::UserMessage {
+                                    content: format!(
+                                        "You are the saved agent \"{}\".\n\nTask: {}",
+                                        agent_def.name, call_args.input
+                                    ),
+                                }];
+                                let sub_request = AgentRequest {
+                                    workflow_id: workflow.id.clone(),
+                                    node_id: NodeId(subagent.id.clone()),
+                                    node_label: subagent.name.clone(),
+                                    model: agent_def.model.clone(),
+                                    system_prompt,
+                                    task_prompt: call_args.input.clone(),
+                                    input: serde_json::json!(null),
+                                    output_schema: agent_def.output_schema.clone(),
+                                    tool_config: sub_node_config.clone(),
+                                    available_tools: sub_available_tools,
+                                    transcript: sub_transcript,
+                                };
+                                (sub_node_config, sub_request)
+                            } else {
+                                let sub_node_config = node_config.clone();
+                                let sub_available_tools = tool_runner
+                                    .registry()
+                                    .definitions_for_subagent(&sub_node_config);
+                                let sub_transcript = vec![AgentTranscriptItem::UserMessage {
+                                    content: format!(
+                                        "You are a subagent named \"{}\" with the purpose: \"{}\"\n\nTask: {}",
+                                        subagent.name, subagent.purpose, call_args.input
+                                    ),
+                                }];
+                                let system_prompt = append_shared_context(
+                                    &workflow,
+                                    &format!("You are {}. {}", subagent.name, subagent.purpose),
+                                );
+                                let sub_request = AgentRequest {
+                                    workflow_id: workflow.id.clone(),
+                                    node_id: NodeId(subagent.id.clone()),
+                                    node_label: subagent.name.clone(),
+                                    model: parent_node.agent.model.clone(),
+                                    system_prompt,
+                                    task_prompt: call_args.input.clone(),
+                                    input: serde_json::json!(null),
+                                    output_schema: Value::Null,
+                                    tool_config: sub_node_config.clone(),
+                                    available_tools: sub_available_tools,
+                                    transcript: sub_transcript,
+                                };
+                                (sub_node_config, sub_request)
+                            };
                         // Execute subagent in a mini-loop
                         let max_rounds = sub_node_config.max_tool_rounds;
                         let mut sub_transcript = sub_request.transcript.clone();
@@ -915,6 +1155,7 @@ pub async fn run_workflow_headless<A>(
     ai: A,
     manual_inputs: Vec<ManualInput>,
     approvals: Vec<ApprovalResponse>,
+    agent_snapshots: BTreeMap<String, AgentDefinition>,
 ) -> Result<WorkflowRunSnapshot, WorkflowExecutionError>
 where
     A: AiPort + Send + Sync + 'static,
@@ -929,6 +1170,7 @@ where
         ai,
         event_tx,
         action_rx,
+        agent_snapshots,
     ));
     let mut manual_inputs = VecDeque::from(manual_inputs);
     let mut approvals = VecDeque::from(approvals);
@@ -1310,26 +1552,24 @@ pub fn apply_event_to_run_state(
         }
         ExecutionEvent::SubagentsDeclared {
             node_id,
-            declarations,
+            summaries,
         } => {
-            let summaries: Vec<SubagentSummary> = declarations
-                .iter()
-                .enumerate()
-                .map(|(i, dec)| SubagentSummary {
-                    id: format!("{}-subagent-{}", node_id, i + 1),
-                    name: dec.name.clone(),
-                    purpose: dec.purpose.clone(),
-                    status: SubagentStatus::Declared,
-                })
-                .collect();
-            state.subagents_by_node.insert(node_id.clone(), summaries);
+            let count = summaries.len();
+            let entry = state.subagents_by_node.entry(node_id.clone()).or_default();
+            for summary in summaries {
+                if let Some(existing) = entry.iter_mut().find(|item| item.id == summary.id) {
+                    *existing = summary;
+                } else {
+                    entry.push(summary);
+                }
+            }
             state
                 .chat_logs
                 .entry(node_id)
                 .or_default()
                 .push(ChatMessage::text(
                     ChatRole::System,
-                    format!("Declared {} subagent(s).", declarations.len()),
+                    format!("Registered {count} subagent(s)."),
                 ));
         }
         ExecutionEvent::SubagentStarted {
@@ -1552,6 +1792,7 @@ mod tests {
             ScriptedAi::default(),
             Vec::new(),
             Vec::new(),
+            BTreeMap::new(),
         )
         .await
         .unwrap();
@@ -1591,7 +1832,14 @@ mod tests {
             name: "read".to_string(),
         }];
         workflow.nodes[0].agent.tools.approval_mode = Some(domain::ApprovalMode::AlwaysAsk);
-        let error = run_workflow_headless(workflow, None, PromptingAi, Vec::new(), Vec::new())
+        let error = run_workflow_headless(
+            workflow,
+            None,
+            PromptingAi,
+            Vec::new(),
+            Vec::new(),
+            BTreeMap::new(),
+        )
             .await
             .unwrap_err();
         assert!(matches!(error, WorkflowExecutionError::MissingApproval(_)));
@@ -1628,14 +1876,18 @@ mod tests {
             &mut state,
             ExecutionEvent::SubagentsDeclared {
                 node_id: NodeId("first".to_string()),
-                declarations: vec![
-                    SubagentDeclaration {
+                summaries: vec![
+                    SubagentSummary {
+                        id: "first-subagent-1".to_string(),
                         name: "Researcher".to_string(),
                         purpose: "Investigate API behavior".to_string(),
+                        status: SubagentStatus::Declared,
                     },
-                    SubagentDeclaration {
+                    SubagentSummary {
+                        id: "first-subagent-2".to_string(),
                         name: "Writer".to_string(),
                         purpose: "Summarize findings".to_string(),
+                        status: SubagentStatus::Declared,
                     },
                 ],
             },
@@ -1652,7 +1904,7 @@ mod tests {
 
         assert!(state.chat_logs[&NodeId("first".to_string())]
             .iter()
-            .any(|m| m.content.contains("Declared 2 subagent")));
+            .any(|m| m.content.contains("Registered 2 subagent")));
     }
 
     #[test]
@@ -1669,9 +1921,11 @@ mod tests {
             &mut state,
             ExecutionEvent::SubagentsDeclared {
                 node_id: NodeId("first".to_string()),
-                declarations: vec![SubagentDeclaration {
+                summaries: vec![SubagentSummary {
+                    id: "first-subagent-1".to_string(),
                     name: "Researcher".to_string(),
                     purpose: "Investigate".to_string(),
+                    status: SubagentStatus::Declared,
                 }],
             },
         );
@@ -1702,9 +1956,11 @@ mod tests {
             &mut state,
             ExecutionEvent::SubagentsDeclared {
                 node_id: NodeId("first".to_string()),
-                declarations: vec![SubagentDeclaration {
+                summaries: vec![SubagentSummary {
+                    id: "first-subagent-1".to_string(),
                     name: "Worker".to_string(),
                     purpose: "Do work".to_string(),
+                    status: SubagentStatus::Declared,
                 }],
             },
         );
@@ -1736,9 +1992,11 @@ mod tests {
             &mut state,
             ExecutionEvent::SubagentsDeclared {
                 node_id: NodeId("first".to_string()),
-                declarations: vec![SubagentDeclaration {
+                summaries: vec![SubagentSummary {
+                    id: "first-subagent-1".to_string(),
                     name: "Worker".to_string(),
                     purpose: "Do work".to_string(),
+                    status: SubagentStatus::Declared,
                 }],
             },
         );
@@ -1773,9 +2031,11 @@ mod tests {
             &mut state,
             ExecutionEvent::SubagentsDeclared {
                 node_id: NodeId("first".to_string()),
-                declarations: vec![SubagentDeclaration {
+                summaries: vec![SubagentSummary {
+                    id: "first-subagent-1".to_string(),
                     name: "Worker".to_string(),
                     purpose: "Do work".to_string(),
+                    status: SubagentStatus::Declared,
                 }],
             },
         );
@@ -1826,5 +2086,85 @@ mod tests {
         let error = resolve_execution_cwd(Some("/definitely/not/a/real/openflow/path"))
             .expect_err("invalid path");
         assert!(error.contains("execution folder"));
+    }
+
+    #[test]
+    fn resolve_callable_agent_snapshots_collects_referenced_agents() {
+        let mut workflow = workflow();
+        workflow.nodes[0].agent.callable_agents = vec![
+            "agent-a".to_string(),
+            "missing".to_string(),
+            "agent-b".to_string(),
+        ];
+        let agents = vec![
+            AgentDefinition::new("Alpha"),
+            AgentDefinition::new("Beta"),
+        ];
+        let mut agent_a = agents[0].clone();
+        agent_a.id = "agent-a".to_string();
+        let mut agent_b = agents[1].clone();
+        agent_b.id = "agent-b".to_string();
+
+        let snapshots = resolve_callable_agent_snapshots(&workflow, &[agent_a.clone(), agent_b]);
+
+        assert_eq!(snapshots.len(), 2);
+        assert_eq!(snapshots["agent-a"].name, "Alpha");
+        assert_eq!(snapshots["agent-b"].name, "Beta");
+    }
+
+    #[test]
+    fn resolve_callable_agent_snapshots_includes_all_agents_when_allow_all() {
+        let mut workflow = workflow();
+        workflow.nodes[0].agent.allow_all_callable_agents = true;
+        let agents = vec![
+            AgentDefinition::new("Alpha"),
+            AgentDefinition::new("Beta"),
+        ];
+        let mut agent_a = agents[0].clone();
+        agent_a.id = "agent-a".to_string();
+        let mut agent_b = agents[1].clone();
+        agent_b.id = "agent-b".to_string();
+
+        let snapshots = resolve_callable_agent_snapshots(&workflow, &[agent_a, agent_b]);
+
+        assert_eq!(snapshots.len(), 2);
+    }
+
+    #[test]
+    fn subagents_declared_event_appends_without_replacing() {
+        let workflow = workflow();
+        let mut state = WorkflowRunState::running_for_workflow(&workflow);
+
+        apply_event_to_run_state(
+            &workflow,
+            &mut state,
+            ExecutionEvent::SubagentsDeclared {
+                node_id: NodeId("first".to_string()),
+                summaries: vec![SubagentSummary {
+                    id: "saved-agent-1".to_string(),
+                    name: "Researcher".to_string(),
+                    purpose: "Saved agent".to_string(),
+                    status: SubagentStatus::Declared,
+                }],
+            },
+        );
+        apply_event_to_run_state(
+            &workflow,
+            &mut state,
+            ExecutionEvent::SubagentsDeclared {
+                node_id: NodeId("first".to_string()),
+                summaries: vec![SubagentSummary {
+                    id: "first-subagent-1".to_string(),
+                    name: "Worker".to_string(),
+                    purpose: "Ad hoc".to_string(),
+                    status: SubagentStatus::Declared,
+                }],
+            },
+        );
+
+        let subs = &state.subagents_by_node[&NodeId("first".to_string())];
+        assert_eq!(subs.len(), 2);
+        assert_eq!(subs[0].id, "saved-agent-1");
+        assert_eq!(subs[1].id, "first-subagent-1");
     }
 }

@@ -90,6 +90,8 @@ export interface AgentNodeConfig {
   output_schema: unknown;
   auto_start: boolean;
   tools: NodeToolConfig;
+  callable_agents: string[];
+  allow_all_callable_agents: boolean;
 }
 
 export interface AgentDefinition {

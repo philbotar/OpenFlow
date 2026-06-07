@@ -1,6 +1,7 @@
 import { Show } from "solid-js";
 import { useAppContext } from "../context/AppContext";
 import { AgentConfigForm } from "../forms/AgentConfigForm";
+import { CallableAgentsEditor } from "../forms/CallableAgentsEditor";
 import { ToolConfigEditor } from "../forms/ToolConfigEditor";
 import { SidebarIcon } from "../components/SidebarIcon";
 
@@ -112,6 +113,34 @@ export function InspectorPanel() {
               onMaxToolRoundsChange={(value) =>
                 ctx.updateCurrentNodeToolConfig((tools) => {
                   tools.maxToolRounds = Math.min(32, Math.max(1, value));
+                })
+              }
+            />
+
+            <CallableAgentsEditor
+              allowAll={node().agent.allow_all_callable_agents ?? false}
+              selectedIds={node().agent.callable_agents ?? []}
+              agents={ctx.agents()}
+              onAllowAllChange={(value) =>
+                ctx.updateCurrentNode((nextNode) => {
+                  nextNode.agent.allow_all_callable_agents = value;
+                  if (value) {
+                    nextNode.agent.callable_agents = [];
+                  }
+                })
+              }
+              onToggle={(agentId, enabled) =>
+                ctx.updateCurrentNode((nextNode) => {
+                  if (nextNode.agent.allow_all_callable_agents) {
+                    return;
+                  }
+                  const ids = new Set(nextNode.agent.callable_agents ?? []);
+                  if (enabled) {
+                    ids.add(agentId);
+                  } else {
+                    ids.delete(agentId);
+                  }
+                  nextNode.agent.callable_agents = [...ids];
                 })
               }
             />

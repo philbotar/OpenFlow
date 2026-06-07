@@ -321,6 +321,8 @@ function cloneNode(node: Node): Node {
       output_schema: structuredClone(node.agent.output_schema),
       auto_start: node.agent.auto_start,
       tools: structuredClone(node.agent.tools),
+      callable_agents: [...(node.agent.callable_agents ?? [])],
+      allow_all_callable_agents: node.agent.allow_all_callable_agents ?? false,
     },
   };
 }

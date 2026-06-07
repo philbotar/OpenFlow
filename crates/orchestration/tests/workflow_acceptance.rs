@@ -9,6 +9,7 @@ use orchestration::execution::{run_workflow_headless, ApprovalResponse, ManualIn
 use orchestration::state::TraceStatus;
 use parking_lot::Mutex;
 use serde_json::json;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 #[derive(Clone, Default)]
 struct ScriptedAi {
@@ -99,6 +100,7 @@ async fn branch_join_workflow_preserves_sentinel_and_trace_contract() {
         ai.clone(),
         vec![],
         vec![],
+        BTreeMap::new(),
     )
     .await
     .unwrap();
@@ -198,6 +200,7 @@ async fn manual_node_pauses_accepts_input_and_feeds_downstream_node() {
             },
         ],
         vec![],
+        BTreeMap::new(),
     )
     .await
     .unwrap();
@@ -259,7 +262,15 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
     workflow.nodes = vec![node];
 
     let first_attempt =
-        run_workflow_headless(workflow.clone(), None, ToolAi::default(), vec![], vec![]).await;
+        run_workflow_headless(
+            workflow.clone(),
+            None,
+            ToolAi::default(),
+            vec![],
+            vec![],
+            BTreeMap::new(),
+        )
+        .await;
     assert!(matches!(
         first_attempt,
         Err(orchestration::execution::WorkflowExecutionError::MissingApproval(_))
@@ -274,6 +285,7 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
             approval_id: String::new(),
             allow: true,
         }],
+        BTreeMap::new(),
     )
     .await
     .unwrap();

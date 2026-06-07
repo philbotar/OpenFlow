@@ -14,6 +14,9 @@ export function WorkflowSettingsPanel() {
 
       <label>
         <span>Shared context</span>
+        <p class="field-help">
+          Shared context is injected into every node&apos;s system prompt at run time.
+        </p>
         <textarea
           class="text-input"
           rows={12}
@@ -23,13 +26,9 @@ export function WorkflowSettingsPanel() {
               settings.shared_context = event.currentTarget.value;
             })
           }
-          placeholder="Context injected into every node at run time (style guide, repo conventions, etc.)"
         />
       </label>
 
-      <p class="field-help">
-        Shared context is injected into every node&apos;s system prompt at run time.
-      </p>
     </aside>
   );
 }
