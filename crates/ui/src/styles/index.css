@@ -674,6 +674,10 @@ select:focus-visible {
   overflow: hidden;
 }
 
+.workspace-grid--no-inspector {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .canvas-panel {
   /* border: 1px solid var(--border); */
   border-radius: 0;

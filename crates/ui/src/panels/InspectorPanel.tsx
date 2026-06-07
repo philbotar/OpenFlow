@@ -9,14 +9,7 @@ export function InspectorPanel() {
 
   return (
     <aside class="inspector-panel">
-      <Show
-        when={ctx.currentNode()}
-        fallback={
-          <div class="empty-panel">
-            Select a node to edit its prompts, schema, and model.
-          </div>
-        }
-      >
+      <Show when={ctx.currentNode()}>
         {(node) => (
           <>
             <div class="panel-header">

@@ -1,3 +1,4 @@
+import { Show } from "solid-js";
 import { useAppContext } from "../context/AppContext";
 import { NodePickerModal } from "../components/NodePickerModal";
 import { InspectorPanel } from "../panels/InspectorPanel";
@@ -17,7 +18,10 @@ export function EditorScreen() {
     >
       <NodePickerModal />
 
-      <div class="workspace-grid">
+      <div
+        class="workspace-grid"
+        classList={{ "workspace-grid--no-inspector": !ctx.selectedNodeId() }}
+      >
         <section class="canvas-panel">
           <WorkflowCanvasHost
             graph={ctx.canvasGraph()}
@@ -35,7 +39,9 @@ export function EditorScreen() {
           />
         </section>
 
-        <InspectorPanel />
+        <Show when={ctx.selectedNodeId()}>
+          <InspectorPanel />
+        </Show>
       </div>
 
       <DockPanel />
