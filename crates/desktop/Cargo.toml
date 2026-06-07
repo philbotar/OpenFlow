@@ -17,7 +17,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build.workspace = true
 
 [dependencies]
-orchestration = { path = "../../orchestration", version = "0.1.0" }
+orchestration = { path = "../orchestration", version = "0.1.0" }
 async-trait.workspace = true
 serde.workspace = true
  tauri.workspace = true

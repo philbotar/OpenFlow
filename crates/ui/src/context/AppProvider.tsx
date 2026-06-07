@@ -196,6 +196,7 @@ export function AppProvider(props: ParentProps) {
 
   // ── Dock ──────────────────────────────────────────────────────────────────
   const handleSelectBottomTab = (tab: BottomTab) => {
+    console.log(`Selecting bottom tab: ${tab}`);
     setBottomTab(tab);
     setDockOpen(true);
     setDockHeight((current) => clampDockHeight(current, tab));

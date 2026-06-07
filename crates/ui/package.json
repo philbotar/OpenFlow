@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
-    "tauri": "sh -c 'cmd=\"$1\"; shift; exec tauri \"$cmd\" -c ../desktop/src-tauri/tauri.conf.json \"$@\"' --"
+    "tauri": "sh -c 'cmd=\"$1\"; shift; exec tauri \"$cmd\" -c ../desktop/tauri.conf.json \"$@\"' --"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
