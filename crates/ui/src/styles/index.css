@@ -1396,32 +1396,75 @@ select.text-input:hover {
   background: rgba(255, 255, 255, 0.88);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
   position: relative;
+  isolation: isolate;
+  overflow: visible;
   z-index: 0;
 }
 
 .chat-composer-pill.is-busy {
-  border-color: transparent;
+  border-color: rgba(111, 124, 247, 0.18);
+}
+
+.chat-composer-pill.is-busy > * {
+  position: relative;
+  z-index: 1;
+}
+
+.chat-composer-pill.is-busy::before,
+.chat-composer-pill.is-busy::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: 999px;
+  offset-path: inset(-1.5px round 999px);
+  offset-distance: 0%;
+  offset-rotate: auto;
+  offset-anchor: center;
+  animation: composer-border-travel 2.5s linear infinite;
+  pointer-events: none;
+  z-index: 0;
 }
 
 .chat-composer-pill.is-busy::before {
-  content: "";
-  position: absolute;
-  inset: -2px;
-  border-radius: inherit;
-  background: conic-gradient(
-    var(--accent) 0deg,
-    transparent 60deg,
-    transparent 300deg,
-    var(--accent) 360deg
+  width: 88px;
+  height: 6px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(111, 124, 247, 0.35),
+    transparent
   );
-  animation: composer-loading 2.5s linear infinite;
-  pointer-events: none;
-  z-index: -1;
+  filter: blur(7px);
+  opacity: 0.95;
 }
 
-@keyframes composer-loading {
+.chat-composer-pill.is-busy::after {
+  content: '';
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  overflow: hidden;
+  height: 100%;
+  border-radius: calc(100px + 1.5px);
+  background-size: 100% 100%;
+  background-position: 0px 0px;
+  background-image: conic-gradient(
+    from var(--animate-duration) at 50% 50%,
+    #ffff 0%,
+    #ffff 20%,
+    var(--Color) 50%,
+    var(--Color) 66%,
+    #ffff 100%
+  );
+  animation: rotate 3s infinite linear;
+}
+
+@keyframes composer-border-travel {
   to {
-    rotate: 360deg;
+    offset-distance: 100%;
   }
 }
 
