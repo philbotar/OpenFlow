@@ -18,9 +18,10 @@ use crate::tools::{
     ToolRunner, ToolRunnerError,
 };
 use domain::{
-    AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTurnOutcome, AiPort, ChatMessage,
-    ChatRole, EnginePollResult, InteractiveEngine, NodeId, RunReport, ToolCall, ToolCallStatus,
-    ToolOutputMeta, Workflow,
+    AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTranscriptItem, AgentTurnOutcome,
+    AiPort, ChatMessage, ChatRole, EnginePollResult, InteractiveEngine, NodeId, RunReport,
+    SubagentDeclaration, SubagentStatus, SubagentSummary, ToolCall, ToolCallStatus, ToolOutputMeta,
+    Workflow,
 };
 use serde_json::Value;
 use std::collections::{BTreeMap, VecDeque};
@@ -29,6 +30,17 @@ use std::path::PathBuf;
 use thiserror::Error;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use uuid::Uuid;
+
+#[derive(serde::Deserialize)]
+struct SubagentDeclarationBatch {
+    subagents: Vec<SubagentDeclaration>,
+}
+
+#[derive(serde::Deserialize)]
+struct CallSubagentArgs {
+    subagent_id: String,
+    input: String,
+}
 
 #[derive(Debug, Clone)]
 pub enum ExecutionEvent {
@@ -103,6 +115,23 @@ pub enum ExecutionEvent {
     },
     Finished(RunReport),
     Error(String),
+    SubagentsDeclared {
+        node_id: NodeId,
+        declarations: Vec<SubagentDeclaration>,
+    },
+    SubagentStarted {
+        node_id: NodeId,
+        subagent_id: String,
+    },
+    SubagentCompleted {
+        node_id: NodeId,
+        subagent_id: String,
+    },
+    SubagentFailed {
+        node_id: NodeId,
+        subagent_id: String,
+        error: String,
+    },
 }
 
 pub enum ExecutionAction {
@@ -195,6 +224,7 @@ async fn drive_interactive_workflow<A>(
     };
     let tool_runner = ToolRunner::new(tool_registry, cwd, artifacts);
     let mut exec_approval_granted = false;
+    let mut declared_subagents: BTreeMap<String, SubagentSummary> = BTreeMap::new();
 
     loop {
         match engine.poll() {
@@ -273,6 +303,389 @@ async fn drive_interactive_workflow<A>(
                     .unwrap_or_default();
                 let mut results = Vec::new();
                 for tool_call in tool_calls {
+                    // Handle runtime builtin: openflow_declare_subagents
+                    if tool_call.name == "openflow_declare_subagents" {
+                        let _ = event_tx.send(ExecutionEvent::ToolCallProposed {
+                            node_id: node_id.clone(),
+                            label: label.clone(),
+                            tool_call: tool_call.clone(),
+                        });
+                        let declarations =
+                            match serde_json::value::from_value::<SubagentDeclarationBatch>(
+                                tool_call.arguments.clone(),
+                            ) {
+                                Ok(batch) => batch.subagents,
+                                Err(_) => Vec::new(),
+                            };
+                        let summaries: Vec<SubagentSummary> = declarations
+                            .iter()
+                            .enumerate()
+                            .map(|(i, dec)| SubagentSummary {
+                                id: format!("{}-subagent-{}", node_id, i + 1),
+                                name: dec.name.clone(),
+                                purpose: dec.purpose.clone(),
+                                status: SubagentStatus::Declared,
+                            })
+                            .collect();
+                        for summary in &summaries {
+                            declared_subagents.insert(summary.id.clone(), summary.clone());
+                        }
+                        let _ = event_tx.send(ExecutionEvent::SubagentsDeclared {
+                            node_id: node_id.clone(),
+                            declarations,
+                        });
+                        let declared_json: Vec<Value> = summaries
+                            .iter()
+                            .map(|s| serde_json::to_value(s).unwrap_or_default())
+                            .collect();
+                        let result_content = serde_json::json!({
+                            "declared": declared_json,
+                            "message": "Subagents declared and ready for invocation."
+                        })
+                        .to_string();
+                        let tool_result = domain::ToolResult {
+                            tool_call_id: tool_call.id.clone(),
+                            tool_name: tool_call.name.clone(),
+                            content: result_content.clone(),
+                            is_error: false,
+                            artifact_ids: Vec::new(),
+                            output_meta: None,
+                        };
+                        let _ = event_tx.send(ExecutionEvent::ToolStarted {
+                            node_id: node_id.clone(),
+                            tool_call_id: tool_call.id.clone(),
+                            tool_name: tool_call.name.clone(),
+                            arguments: tool_call.arguments.clone(),
+                        });
+                        let _ = event_tx.send(ExecutionEvent::ToolCompleted {
+                            node_id: node_id.clone(),
+                            tool_call_id: tool_call.id.clone(),
+                            tool_name: tool_call.name.clone(),
+                            content: result_content.clone(),
+                            is_error: false,
+                            output_meta: None,
+                            artifact_ids: Vec::new(),
+                        });
+                        results.push(tool_result);
+                        continue;
+                    }
+                    // Handle runtime builtin: openflow_call_subagent
+                    if tool_call.name == "openflow_call_subagent" {
+                        let _ = event_tx.send(ExecutionEvent::ToolCallProposed {
+                            node_id: node_id.clone(),
+                            label: label.clone(),
+                            tool_call: tool_call.clone(),
+                        });
+                        let call_args = match serde_json::value::from_value::<CallSubagentArgs>(
+                            tool_call.arguments.clone(),
+                        ) {
+                            Ok(args) => args,
+                            Err(err) => {
+                                let result_content = serde_json::json!({
+                                    "error": format!("Invalid arguments for openflow_call_subagent: {err}")
+                                }).to_string();
+                                let tool_result = domain::ToolResult {
+                                    tool_call_id: tool_call.id.clone(),
+                                    tool_name: tool_call.name.clone(),
+                                    content: result_content.clone(),
+                                    is_error: true,
+                                    artifact_ids: Vec::new(),
+                                    output_meta: None,
+                                };
+                                let _ = event_tx.send(ExecutionEvent::ToolStarted {
+                                    node_id: node_id.clone(),
+                                    tool_call_id: tool_call.id.clone(),
+                                    tool_name: tool_call.name.clone(),
+                                    arguments: tool_call.arguments.clone(),
+                                });
+                                let _ = event_tx.send(ExecutionEvent::ToolCompleted {
+                                    node_id: node_id.clone(),
+                                    tool_call_id: tool_call.id.clone(),
+                                    tool_name: tool_call.name.clone(),
+                                    content: result_content,
+                                    is_error: true,
+                                    output_meta: None,
+                                    artifact_ids: Vec::new(),
+                                });
+                                results.push(tool_result);
+                                continue;
+                            }
+                        };
+                        let subagent = match declared_subagents.get(&call_args.subagent_id) {
+                            Some(s) => s.clone(),
+                            None => {
+                                let result_content = serde_json::json!({
+                                    "error": format!("Subagent '{}' not found. Declare subagents before invoking them.", call_args.subagent_id)
+                                }).to_string();
+                                let tool_result = domain::ToolResult {
+                                    tool_call_id: tool_call.id.clone(),
+                                    tool_name: tool_call.name.clone(),
+                                    content: result_content.clone(),
+                                    is_error: true,
+                                    artifact_ids: Vec::new(),
+                                    output_meta: None,
+                                };
+                                let _ = event_tx.send(ExecutionEvent::ToolStarted {
+                                    node_id: node_id.clone(),
+                                    tool_call_id: tool_call.id.clone(),
+                                    tool_name: tool_call.name.clone(),
+                                    arguments: tool_call.arguments.clone(),
+                                });
+                                let _ = event_tx.send(ExecutionEvent::ToolCompleted {
+                                    node_id: node_id.clone(),
+                                    tool_call_id: tool_call.id.clone(),
+                                    tool_name: tool_call.name.clone(),
+                                    content: result_content,
+                                    is_error: true,
+                                    output_meta: None,
+                                    artifact_ids: Vec::new(),
+                                });
+                                results.push(tool_result);
+                                continue;
+                            }
+                        };
+                        if subagent.status != SubagentStatus::Declared
+                            && subagent.status != SubagentStatus::Completed
+                        {
+                            let result_content = serde_json::json!({
+                                "error": format!("Subagent '{}' is {} and cannot be invoked. Only declared or completed subagents can be called.", call_args.subagent_id, serde_json::to_value(&subagent.status).unwrap_or_default())
+                            }).to_string();
+                            let tool_result = domain::ToolResult {
+                                tool_call_id: tool_call.id.clone(),
+                                tool_name: tool_call.name.clone(),
+                                content: result_content.clone(),
+                                is_error: true,
+                                artifact_ids: Vec::new(),
+                                output_meta: None,
+                            };
+                            let _ = event_tx.send(ExecutionEvent::ToolStarted {
+                                node_id: node_id.clone(),
+                                tool_call_id: tool_call.id.clone(),
+                                tool_name: tool_call.name.clone(),
+                                arguments: tool_call.arguments.clone(),
+                            });
+                            let _ = event_tx.send(ExecutionEvent::ToolCompleted {
+                                node_id: node_id.clone(),
+                                tool_call_id: tool_call.id.clone(),
+                                tool_name: tool_call.name.clone(),
+                                content: result_content,
+                                is_error: true,
+                                output_meta: None,
+                                artifact_ids: Vec::new(),
+                            });
+                            results.push(tool_result);
+                            continue;
+                        }
+                        // Transition subagent to Active
+                        declared_subagents.insert(
+                            subagent.id.clone(),
+                            SubagentSummary {
+                                status: SubagentStatus::Active,
+                                ..subagent.clone()
+                            },
+                        );
+                        let _ = event_tx.send(ExecutionEvent::SubagentStarted {
+                            node_id: node_id.clone(),
+                            subagent_id: subagent.id.clone(),
+                        });
+                        let _ = event_tx.send(ExecutionEvent::ToolStarted {
+                            node_id: node_id.clone(),
+                            tool_call_id: tool_call.id.clone(),
+                            tool_name: tool_call.name.clone(),
+                            arguments: tool_call.arguments.clone(),
+                        });
+                        // Build subagent request from node data
+                        let parent_node = workflow
+                            .nodes
+                            .iter()
+                            .find(|n| n.id == node_id)
+                            .expect("node exists in workflow");
+                        let sub_node_config = node_config.clone();
+                        let sub_available_tools = tool_runner
+                            .registry()
+                            .definitions_for_subagent(&sub_node_config);
+                        let sub_transcript = vec![AgentTranscriptItem::UserMessage {
+                            content: format!(
+                                "You are a subagent named \"{}\" with the purpose: \"{}\"\n\nTask: {}",
+                                subagent.name, subagent.purpose, call_args.input
+                            ),
+                        }];
+                        let sub_request = AgentRequest {
+                            workflow_id: workflow.id.clone(),
+                            node_id: NodeId(subagent.id.clone()),
+                            node_label: subagent.name.clone(),
+                            model: parent_node.agent.model.clone(),
+                            system_prompt: format!(
+                                "You are {}. {}",
+                                subagent.name, subagent.purpose
+                            ),
+                            task_prompt: call_args.input.clone(),
+                            input: serde_json::json!(null),
+                            output_schema: Value::Null,
+                            tool_config: sub_node_config.clone(),
+                            available_tools: sub_available_tools,
+                            transcript: sub_transcript,
+                        };
+                        // Execute subagent in a mini-loop
+                        let max_rounds = sub_node_config.max_tool_rounds;
+                        let mut sub_transcript = sub_request.transcript.clone();
+                        let mut sub_outcome = ai.invoke(sub_request.clone()).await;
+                        let mut sub_round = 0u8;
+                        let sub_result_content = loop {
+                            match sub_outcome {
+                                Ok(AgentTurnOutcome::Completed(success)) => {
+                                    declared_subagents.insert(
+                                        subagent.id.clone(),
+                                        SubagentSummary {
+                                            status: SubagentStatus::Completed,
+                                            ..subagent.clone()
+                                        },
+                                    );
+                                    let _ = event_tx.send(ExecutionEvent::SubagentCompleted {
+                                        node_id: node_id.clone(),
+                                        subagent_id: subagent.id.clone(),
+                                    });
+                                    break serde_json::json!({
+                                        "output": success.output,
+                                        "message": format!("Subagent '{}' completed.", subagent.name)
+                                    }).to_string();
+                                }
+                                Ok(AgentTurnOutcome::ToolCalls(batch)) => {
+                                    if sub_round >= max_rounds {
+                                        declared_subagents.insert(
+                                            subagent.id.clone(),
+                                            SubagentSummary {
+                                                status: SubagentStatus::Failed,
+                                                ..subagent.clone()
+                                            },
+                                        );
+                                        let _ = event_tx.send(ExecutionEvent::SubagentFailed {
+                                            node_id: node_id.clone(),
+                                            subagent_id: subagent.id.clone(),
+                                            error: "Max tool rounds exceeded".to_string(),
+                                        });
+                                        break serde_json::json!({
+                                            "error": format!("Subagent '{}' exceeded maximum tool rounds ({})", subagent.name, max_rounds)
+                                        }).to_string();
+                                    }
+                                    sub_round += 1;
+                                    if let Some(msg) = &batch.assistant_message {
+                                        sub_transcript.push(
+                                            AgentTranscriptItem::AssistantMessage {
+                                                content: msg.clone(),
+                                            },
+                                        );
+                                    }
+                                    for tc in &batch.tool_calls {
+                                        let is_runtime_builtin = tc.name
+                                            == "openflow_declare_subagents"
+                                            || tc.name == "openflow_call_subagent";
+                                        if is_runtime_builtin {
+                                            sub_transcript.push(AgentTranscriptItem::ToolResult {
+                                                result: domain::ToolResult {
+                                                    tool_call_id: tc.id.clone(),
+                                                    tool_name: tc.name.clone(),
+                                                    content: serde_json::json!({
+                                                        "error": "Subagent cannot invoke runtime builtin tools."
+                                                    }).to_string(),
+                                                    is_error: true,
+                                                    artifact_ids: Vec::new(),
+                                                    output_meta: None,
+                                                },
+                                            });
+                                            continue;
+                                        }
+                                        // Auto-approve and execute
+                                        match tool_runner.execute(tc.clone()).await {
+                                            Ok(record) => {
+                                                sub_transcript.push(
+                                                    AgentTranscriptItem::ToolResult {
+                                                        result: record.result.clone(),
+                                                    },
+                                                );
+                                            }
+                                            Err(err) => {
+                                                let error_content = err.to_string();
+                                                sub_transcript.push(
+                                                    AgentTranscriptItem::ToolResult {
+                                                        result: domain::ToolResult {
+                                                            tool_call_id: tc.id.clone(),
+                                                            tool_name: tc.name.clone(),
+                                                            content: error_content,
+                                                            is_error: true,
+                                                            artifact_ids: Vec::new(),
+                                                            output_meta: None,
+                                                        },
+                                                    },
+                                                );
+                                            }
+                                        }
+                                    }
+                                    let next_request = AgentRequest {
+                                        transcript: sub_transcript.clone(),
+                                        ..sub_request.clone()
+                                    };
+                                    sub_outcome = ai.invoke(next_request).await;
+                                    continue;
+                                }
+                                Ok(AgentTurnOutcome::NeedsUserInput(_)) => {
+                                    declared_subagents.insert(
+                                        subagent.id.clone(),
+                                        SubagentSummary {
+                                            status: SubagentStatus::Failed,
+                                            ..subagent.clone()
+                                        },
+                                    );
+                                    let _ = event_tx.send(ExecutionEvent::SubagentFailed {
+                                        node_id: node_id.clone(),
+                                        subagent_id: subagent.id.clone(),
+                                        error: "Subagent requires user input (not supported)"
+                                            .to_string(),
+                                    });
+                                    break serde_json::json!({
+                                        "error": format!("Subagent '{}' requires user input, which is not supported in subagent context.", subagent.name)
+                                    }).to_string();
+                                }
+                                Err(err) => {
+                                    declared_subagents.insert(
+                                        subagent.id.clone(),
+                                        SubagentSummary {
+                                            status: SubagentStatus::Failed,
+                                            ..subagent.clone()
+                                        },
+                                    );
+                                    let _ = event_tx.send(ExecutionEvent::SubagentFailed {
+                                        node_id: node_id.clone(),
+                                        subagent_id: subagent.id.clone(),
+                                        error: err.to_string(),
+                                    });
+                                    break serde_json::json!({
+                                        "error": format!("Subagent '{}' failed: {}", subagent.name, err)
+                                    }).to_string();
+                                }
+                            }
+                        };
+                        let is_subagent_error = sub_result_content.contains("\"error\"");
+                        let tool_result = domain::ToolResult {
+                            tool_call_id: tool_call.id.clone(),
+                            tool_name: tool_call.name.clone(),
+                            content: sub_result_content.clone(),
+                            is_error: is_subagent_error,
+                            artifact_ids: Vec::new(),
+                            output_meta: None,
+                        };
+                        let _ = event_tx.send(ExecutionEvent::ToolCompleted {
+                            node_id: node_id.clone(),
+                            tool_call_id: tool_call.id.clone(),
+                            tool_name: tool_call.name.clone(),
+                            content: sub_result_content,
+                            is_error: is_subagent_error,
+                            output_meta: None,
+                            artifact_ids: Vec::new(),
+                        });
+                        results.push(tool_result);
+                        continue;
+                    }
                     let _ = event_tx.send(ExecutionEvent::ToolCallProposed {
                         node_id: node_id.clone(),
                         label: label.clone(),
@@ -890,6 +1303,85 @@ pub fn apply_event_to_run_state(
             state.pending_approvals.clear();
             state.last_error = Some(error);
         }
+        ExecutionEvent::SubagentsDeclared {
+            node_id,
+            declarations,
+        } => {
+            let summaries: Vec<SubagentSummary> = declarations
+                .iter()
+                .enumerate()
+                .map(|(i, dec)| SubagentSummary {
+                    id: format!("{}-subagent-{}", node_id, i + 1),
+                    name: dec.name.clone(),
+                    purpose: dec.purpose.clone(),
+                    status: SubagentStatus::Declared,
+                })
+                .collect();
+            state.subagents_by_node.insert(node_id.clone(), summaries);
+            state
+                .chat_logs
+                .entry(node_id)
+                .or_default()
+                .push(ChatMessage {
+                    role: ChatRole::System,
+                    content: format!("Declared {} subagent(s).", declarations.len()),
+                });
+        }
+        ExecutionEvent::SubagentStarted {
+            node_id,
+            subagent_id,
+        } => {
+            if let Some(subs) = state.subagents_by_node.get_mut(&node_id) {
+                if let Some(sub) = subs.iter_mut().find(|s| s.id == *subagent_id) {
+                    sub.status = SubagentStatus::Active;
+                }
+            }
+            state
+                .chat_logs
+                .entry(node_id.clone())
+                .or_default()
+                .push(ChatMessage {
+                    role: ChatRole::System,
+                    content: format!("Subagent {} started.", subagent_id),
+                });
+        }
+        ExecutionEvent::SubagentCompleted {
+            node_id,
+            subagent_id,
+        } => {
+            if let Some(subs) = state.subagents_by_node.get_mut(&node_id) {
+                if let Some(sub) = subs.iter_mut().find(|s| s.id == *subagent_id) {
+                    sub.status = SubagentStatus::Completed;
+                }
+            }
+            state
+                .chat_logs
+                .entry(node_id.clone())
+                .or_default()
+                .push(ChatMessage {
+                    role: ChatRole::System,
+                    content: format!("Subagent {} completed.", subagent_id),
+                });
+        }
+        ExecutionEvent::SubagentFailed {
+            node_id,
+            subagent_id,
+            error,
+        } => {
+            if let Some(subs) = state.subagents_by_node.get_mut(&node_id) {
+                if let Some(sub) = subs.iter_mut().find(|s| s.id == *subagent_id) {
+                    sub.status = SubagentStatus::Failed;
+                }
+            }
+            state
+                .chat_logs
+                .entry(node_id.clone())
+                .or_default()
+                .push(ChatMessage {
+                    role: ChatRole::System,
+                    content: format!("Subagent {} failed: {}", subagent_id, error),
+                });
+        }
     }
 }
 
@@ -956,7 +1448,7 @@ pub fn record_user_input(state: &mut WorkflowRunState, node_id: &str, text: Stri
 mod tests {
     use super::*;
     use async_trait::async_trait;
-    use domain::{AgentTurnSuccess, ToolRef, ToolTier};
+    use domain::{AgentTurnSuccess, NodeToolConfig, ToolRef, ToolTier};
     use parking_lot::Mutex;
     use serde_json::json;
     use std::sync::Arc;
@@ -1049,7 +1541,7 @@ mod tests {
                 let mut calls = self.calls.lock();
                 *calls += 1;
                 if *calls == 1 {
-                    assert_eq!(request.available_tools.len(), 1);
+                    assert_eq!(request.available_tools.len(), 3);
                     return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                         raw_text: String::new(),
                         assistant_message: Some("Inspecting docs".to_string()),
@@ -1143,5 +1635,202 @@ mod tests {
         assert_eq!(state.last_error.as_deref(), Some("boom"));
         assert_eq!(state.run_trace[0].node_label, "First");
         assert_eq!(state.run_trace[0].status, TraceStatus::Failed);
+    }
+
+    #[test]
+    fn subagents_declared_event_updates_run_state() {
+        let workflow = workflow();
+        let mut state = WorkflowRunState::running_for_workflow(&workflow);
+
+        apply_event_to_run_state(
+            &workflow,
+            &mut state,
+            ExecutionEvent::SubagentsDeclared {
+                node_id: NodeId("first".to_string()),
+                declarations: vec![
+                    SubagentDeclaration {
+                        name: "Researcher".to_string(),
+                        purpose: "Investigate API behavior".to_string(),
+                    },
+                    SubagentDeclaration {
+                        name: "Writer".to_string(),
+                        purpose: "Summarize findings".to_string(),
+                    },
+                ],
+            },
+        );
+
+        let subs = &state.subagents_by_node[&NodeId("first".to_string())];
+        assert_eq!(subs.len(), 2);
+        assert_eq!(subs[0].name, "Researcher");
+        assert_eq!(subs[0].purpose, "Investigate API behavior");
+        assert_eq!(subs[0].status, SubagentStatus::Declared);
+        assert_eq!(subs[0].id, "first-subagent-1");
+        assert_eq!(subs[1].name, "Writer");
+        assert_eq!(subs[1].id, "first-subagent-2");
+
+        assert!(state.chat_logs[&NodeId("first".to_string())]
+            .iter()
+            .any(|m| m.content.contains("Declared 2 subagent")));
+    }
+
+    #[test]
+    fn subagents_are_scoped_to_declaring_node() {
+        let mut second = domain::Node::agent("Second", 100.0, 0.0);
+        second.id = NodeId("second".to_string());
+        second.agent.model = "test-model".to_string();
+        let mut workflow = workflow();
+        workflow.nodes.push(second);
+        let mut state = WorkflowRunState::running_for_workflow(&workflow);
+
+        apply_event_to_run_state(
+            &workflow,
+            &mut state,
+            ExecutionEvent::SubagentsDeclared {
+                node_id: NodeId("first".to_string()),
+                declarations: vec![SubagentDeclaration {
+                    name: "Researcher".to_string(),
+                    purpose: "Investigate".to_string(),
+                }],
+            },
+        );
+
+        assert!(state
+            .subagents_by_node
+            .contains_key(&NodeId("first".to_string())));
+        assert!(!state
+            .subagents_by_node
+            .contains_key(&NodeId("second".to_string())));
+    }
+
+    #[test]
+    fn fresh_run_state_has_empty_subagents() {
+        let workflow = workflow();
+        let state = WorkflowRunState::running_for_workflow(&workflow);
+        assert!(state.subagents_by_node.is_empty());
+    }
+
+    #[test]
+    fn subagent_started_event_transitions_status() {
+        let workflow = workflow();
+        let mut state = WorkflowRunState::running_for_workflow(&workflow);
+
+        // First declare the subagent
+        apply_event_to_run_state(
+            &workflow,
+            &mut state,
+            ExecutionEvent::SubagentsDeclared {
+                node_id: NodeId("first".to_string()),
+                declarations: vec![SubagentDeclaration {
+                    name: "Worker".to_string(),
+                    purpose: "Do work".to_string(),
+                }],
+            },
+        );
+
+        // Then start it
+        apply_event_to_run_state(
+            &workflow,
+            &mut state,
+            ExecutionEvent::SubagentStarted {
+                node_id: NodeId("first".to_string()),
+                subagent_id: "first-subagent-1".to_string(),
+            },
+        );
+
+        let sub = &state.subagents_by_node[&NodeId("first".to_string())][0];
+        assert_eq!(sub.status, SubagentStatus::Active);
+        assert!(state.chat_logs[&NodeId("first".to_string())]
+            .iter()
+            .any(|m| m.content.contains("Subagent first-subagent-1 started")));
+    }
+
+    #[test]
+    fn subagent_completed_event_transitions_status() {
+        let workflow = workflow();
+        let mut state = WorkflowRunState::running_for_workflow(&workflow);
+
+        apply_event_to_run_state(
+            &workflow,
+            &mut state,
+            ExecutionEvent::SubagentsDeclared {
+                node_id: NodeId("first".to_string()),
+                declarations: vec![SubagentDeclaration {
+                    name: "Worker".to_string(),
+                    purpose: "Do work".to_string(),
+                }],
+            },
+        );
+        apply_event_to_run_state(
+            &workflow,
+            &mut state,
+            ExecutionEvent::SubagentStarted {
+                node_id: NodeId("first".to_string()),
+                subagent_id: "first-subagent-1".to_string(),
+            },
+        );
+        apply_event_to_run_state(
+            &workflow,
+            &mut state,
+            ExecutionEvent::SubagentCompleted {
+                node_id: NodeId("first".to_string()),
+                subagent_id: "first-subagent-1".to_string(),
+            },
+        );
+
+        let sub = &state.subagents_by_node[&NodeId("first".to_string())][0];
+        assert_eq!(sub.status, SubagentStatus::Completed);
+    }
+
+    #[test]
+    fn subagent_failed_event_transitions_status() {
+        let workflow = workflow();
+        let mut state = WorkflowRunState::running_for_workflow(&workflow);
+
+        apply_event_to_run_state(
+            &workflow,
+            &mut state,
+            ExecutionEvent::SubagentsDeclared {
+                node_id: NodeId("first".to_string()),
+                declarations: vec![SubagentDeclaration {
+                    name: "Worker".to_string(),
+                    purpose: "Do work".to_string(),
+                }],
+            },
+        );
+        apply_event_to_run_state(
+            &workflow,
+            &mut state,
+            ExecutionEvent::SubagentStarted {
+                node_id: NodeId("first".to_string()),
+                subagent_id: "first-subagent-1".to_string(),
+            },
+        );
+        apply_event_to_run_state(
+            &workflow,
+            &mut state,
+            ExecutionEvent::SubagentFailed {
+                node_id: NodeId("first".to_string()),
+                subagent_id: "first-subagent-1".to_string(),
+                error: "API error".to_string(),
+            },
+        );
+
+        let sub = &state.subagents_by_node[&NodeId("first".to_string())][0];
+        assert_eq!(sub.status, SubagentStatus::Failed);
+        assert!(state.chat_logs[&NodeId("first".to_string())]
+            .iter()
+            .any(|m| m
+                .content
+                .contains("Subagent first-subagent-1 failed: API error")));
+    }
+
+    #[test]
+    fn declare_subagents_tool_is_always_in_definitions() {
+        let registry = ToolRegistry::new();
+        let definitions = registry.definitions_for(&NodeToolConfig::default());
+        let names: Vec<&str> = definitions.iter().map(|d| d.name.as_str()).collect();
+        assert!(names.contains(&"openflow_declare_subagents"));
+        assert!(names.contains(&"openflow_call_subagent"));
     }
 }

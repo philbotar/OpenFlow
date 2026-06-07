@@ -35,9 +35,9 @@ pub use ports::{
 };
 pub use runner::{RunError, WorkflowRunner};
 pub use tools::{
-    AgentTranscriptItem, ApprovalMode, NodeToolConfig, PendingToolApproval, ToolCall,
-    ToolCallStatus, ToolCatalogSelection, ToolConcurrency, ToolDefinition, ToolOutputMeta,
-    ToolPolicy, ToolPolicyOverride, ToolRef, ToolResult, ToolTier, ToolTruncation,
-    ToolTruncationStrategy,
+    AgentTranscriptItem, ApprovalMode, NodeToolConfig, PendingToolApproval, SubagentDeclaration,
+    SubagentStatus, SubagentSummary, ToolCall, ToolCallStatus, ToolCatalogSelection,
+    ToolConcurrency, ToolDefinition, ToolOutputMeta, ToolPolicy, ToolPolicyOverride, ToolRef,
+    ToolResult, ToolTier, ToolTruncation, ToolTruncationStrategy,
 };
 pub use validation::{execution_layers, validate_workflow, WorkflowValidationError};

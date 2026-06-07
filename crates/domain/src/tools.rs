@@ -204,6 +204,30 @@ pub struct PendingToolApproval {
     pub tier: ToolTier,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SubagentStatus {
+    Declared,
+    Active,
+    Completed,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SubagentDeclaration {
+    pub name: String,
+    pub purpose: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubagentSummary {
+    pub id: String,
+    pub name: String,
+    pub purpose: String,
+    pub status: SubagentStatus,
+}
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
@@ -229,5 +253,72 @@ mod tests {
     fn approval_mode_serializes_snake_case() {
         let value = serde_json::to_value(ApprovalMode::AlwaysAsk).unwrap();
         assert_eq!(value, json!("always_ask"));
+    }
+
+    #[test]
+    fn subagent_declaration_deserialize_valid() {
+        let json = json!({
+            "name": "Researcher",
+            "purpose": "Investigate API behavior"
+        });
+        let dec: SubagentDeclaration = serde_json::from_value(json).unwrap();
+        assert_eq!(dec.name, "Researcher");
+        assert_eq!(dec.purpose, "Investigate API behavior");
+    }
+
+    #[test]
+    fn subagent_declaration_rejects_missing_name() {
+        let json = json!({
+            "purpose": "Investigate"
+        });
+        let result = serde_json::from_value::<SubagentDeclaration>(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn subagent_declaration_rejects_missing_purpose() {
+        let json = json!({
+            "name": "Researcher"
+        });
+        let result = serde_json::from_value::<SubagentDeclaration>(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn subagent_declaration_rejects_additional_properties() {
+        let json = json!({
+            "name": "Researcher",
+            "purpose": "Investigate",
+            "extra": "field"
+        });
+        let result = serde_json::from_value::<SubagentDeclaration>(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn subagent_status_serializes_snake_case() {
+        let value = serde_json::to_value(SubagentStatus::Declared).unwrap();
+        assert_eq!(value, json!("declared"));
+        let value = serde_json::to_value(SubagentStatus::Active).unwrap();
+        assert_eq!(value, json!("active"));
+        let value = serde_json::to_value(SubagentStatus::Completed).unwrap();
+        assert_eq!(value, json!("completed"));
+        let value = serde_json::to_value(SubagentStatus::Failed).unwrap();
+        assert_eq!(value, json!("failed"));
+    }
+
+    #[test]
+    fn subagent_summary_serializes_camel_case() {
+        let summary = SubagentSummary {
+            id: "node-1-subagent-1".to_string(),
+            name: "Researcher".to_string(),
+            purpose: "Investigate".to_string(),
+            status: SubagentStatus::Declared,
+        };
+        let value = serde_json::to_value(&summary).unwrap();
+        assert_eq!(value["id"], "node-1-subagent-1");
+        assert_eq!(value["name"], "Researcher");
+        assert_eq!(value["purpose"], "Investigate");
+        assert_eq!(value["status"], "declared");
     }
 }

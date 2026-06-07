@@ -1,11 +1,13 @@
 import { describe, expect, test } from "vitest";
-import type { AppSettings, Workflow, WorkflowRunState } from "./types";
+import type { AppSettings, SubagentStatus, SubagentSummary, Workflow, WorkflowRunState } from "./types";
 import {
   cloneSettings,
   cloneWorkflow,
   createEmptyToolConfig,
+  isChatComposerBusy,
   projectWorkflowCanvasGraph,
   projectWorkflowCanvasStatusByNode,
+  projectWorkflowCanvasSubagentsByNode,
 } from "./workflow";
 
 const workflow: Workflow = {
@@ -85,6 +87,7 @@ const runState: WorkflowRunState = {
     "node-1": "completed",
     "node-2": "awaiting_input",
   },
+  subagentsByNode: {},
   lastReport: null,
   lastError: null,
   chatLogs: {
@@ -174,5 +177,86 @@ describe("workflow helpers", () => {
     const next = projectWorkflowCanvasStatusByNode(updated, previous);
 
     expect(next).toEqual(previous);
+  });
+
+  test("isChatComposerBusy only returns true while the selected node is started or running a tool", () => {
+    expect(isChatComposerBusy(runState, "node-2")).toBe(false);
+    expect(
+      isChatComposerBusy(
+        {
+          ...runState,
+          statusByNode: {
+            ...runState.statusByNode,
+            "node-2": "started",
+          },
+        },
+        "node-2",
+      ),
+    ).toBe(true);
+    expect(
+      isChatComposerBusy(
+        {
+          ...runState,
+          statusByNode: {
+            ...runState.statusByNode,
+            "node-2": "running_tool",
+          },
+        },
+        "node-2",
+      ),
+    ).toBe(true);
+    expect(
+      isChatComposerBusy(
+        {
+          ...runState,
+          statusByNode: {
+            ...runState.statusByNode,
+            "node-2": "awaiting_input",
+          },
+        },
+        "node-2",
+      ),
+    ).toBe(false);
+    expect(
+      isChatComposerBusy(
+        {
+          ...runState,
+          statusByNode: {
+            ...runState.statusByNode,
+            "node-2": "awaiting_tool_approval",
+          },
+        },
+        "node-2",
+      ),
+    ).toBe(false);
+  });
+
+  test("projectWorkflowCanvasSubagentsByNode returns null for null runState", () => {
+    expect(projectWorkflowCanvasSubagentsByNode(null, null)).toBeNull();
+  });
+
+  test("projectWorkflowCanvasSubagentsByNode reads subagentsByNode", () => {
+    const result = projectWorkflowCanvasSubagentsByNode(
+      { ...runState, subagentsByNode: { "node-1": [{ id: "n1-sub-1", name: "Researcher", purpose: "Investigate", status: "declared" as SubagentStatus }] } },
+      null,
+    );
+    expect(result).not.toBeNull();
+    expect(result!["node-1"]).toEqual([
+      { id: "n1-sub-1", name: "Researcher", purpose: "Investigate", status: "declared" as SubagentStatus },
+    ]);
+  });
+
+  test("projectWorkflowCanvasSubagentsByNode reuses previous when unchanged", () => {
+    const subagents: Record<string, SubagentSummary[]> = { "node-1": [{ id: "n1-sub-1", name: "Researcher", purpose: "Investigate", status: "declared" as SubagentStatus }] };
+    const stateWithSubagents = { ...runState, subagentsByNode: subagents };
+    const first = projectWorkflowCanvasSubagentsByNode(stateWithSubagents, null);
+    const second = projectWorkflowCanvasSubagentsByNode(stateWithSubagents, first);
+    expect(second).toBe(first);
+  });
+
+  test("projectWorkflowCanvasSubagentsByNode returns empty for nodes with no subagents", () => {
+    const result = projectWorkflowCanvasSubagentsByNode(runState, null);
+    expect(result).not.toBeNull();
+    expect(Object.keys(result!)).toHaveLength(0);
   });
 });

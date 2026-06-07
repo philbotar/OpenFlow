@@ -24,6 +24,7 @@ export function EditorScreen() {
             selectedNodeId={ctx.selectedNodeId()}
             selectedEdgeId={ctx.selectedEdgeId()}
             statusByNode={ctx.canvasStatusByNode()}
+            subagentsByNode={ctx.canvasSubagentsByNode()}
             onSelectNode={ctx.handleSelectNode}
             onSelectEdge={ctx.handleSelectEdge}
             onUpdateNodePosition={ctx.handleCanvasNodePosition}

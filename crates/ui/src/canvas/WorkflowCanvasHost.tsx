@@ -1,8 +1,8 @@
 import { createEffect, onCleanup, onMount } from "solid-js";
 import { createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import type { EdgeId, NodeId } from "../lib/types";
-import type { WorkflowCanvasGraph, WorkflowCanvasStatusByNode } from "../lib/workflow";
+import type { EdgeId, NodeId, SubagentSummary } from "../lib/types";
+import type { WorkflowCanvasGraph, WorkflowCanvasStatusByNode, WorkflowCanvasSubagentsByNode } from "../lib/workflow";
 import { WorkflowCanvas } from "./WorkflowCanvas.react";
 
 type WorkflowCanvasHostProps = {
@@ -10,6 +10,7 @@ type WorkflowCanvasHostProps = {
   selectedNodeId: NodeId | null;
   selectedEdgeId: EdgeId | null;
   statusByNode: WorkflowCanvasStatusByNode | null;
+  subagentsByNode: WorkflowCanvasSubagentsByNode | null;
   onSelectNode: (nodeId: NodeId | null) => void;
   onSelectEdge: (edgeId: EdgeId | null) => void;
   onUpdateNodePosition: (nodeId: NodeId, x: number, y: number) => void;
@@ -34,6 +35,7 @@ function WorkflowCanvasHost(props: WorkflowCanvasHostProps) {
         selectedNodeId: props.selectedNodeId,
         selectedEdgeId: props.selectedEdgeId,
         statusByNode: props.statusByNode,
+        subagentsByNode: props.subagentsByNode,
         onSelectNode: props.onSelectNode,
         onSelectEdge: props.onSelectEdge,
         onUpdateNodePosition: props.onUpdateNodePosition,

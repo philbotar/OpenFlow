@@ -213,6 +213,7 @@ function makeAwaitingRunState(workflow: Workflow): WorkflowRunState {
     statusByNode: {
       [node.id]: "awaiting_input",
     },
+    subagentsByNode: {},
     lastReport: null,
     lastError: null,
     chatLogs: {

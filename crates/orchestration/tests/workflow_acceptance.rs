@@ -225,7 +225,7 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
             let mut calls = self.calls.lock();
             *calls += 1;
             if *calls == 1 {
-                assert_eq!(request.available_tools.len(), 1);
+                assert_eq!(request.available_tools.len(), 3);
                 return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                     raw_text: String::new(),
                     assistant_message: Some("Need repo context".to_string()),

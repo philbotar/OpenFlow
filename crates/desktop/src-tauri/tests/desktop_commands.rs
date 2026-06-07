@@ -23,23 +23,12 @@ use desktop::ports::outbound::{
 
 // ── Mock Backend ───────────────────────────────────────────────
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct MockBackend {
     pub workflows: Vec<Workflow>,
     pub agents: Vec<AgentDefinition>,
     pub settings: AppSettings,
     pub run_state: Option<WorkflowRunState>,
-}
-
-impl Default for MockBackend {
-    fn default() -> Self {
-        Self {
-            workflows: Vec::new(),
-            agents: Vec::new(),
-            settings: AppSettings::default(),
-            run_state: None,
-        }
-    }
 }
 
 impl MockBackend {

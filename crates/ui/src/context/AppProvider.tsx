@@ -26,16 +26,19 @@ import {
   cloneWorkflow,
   createIdleRunState,
   nextNodePlacement,
+  isChatComposerBusy,
   nodeOutput,
   prettyJson,
   projectWorkflowCanvasGraph,
   projectWorkflowCanvasStatusByNode,
+  projectWorkflowCanvasSubagentsByNode,
   providerDisplayOrder,
   removeSelectedNode,
   replaceWorkflow,
   selectedNode,
   type WorkflowCanvasGraph,
   type WorkflowCanvasStatusByNode,
+  type WorkflowCanvasSubagentsByNode,
 } from "../lib/workflow";
 import {
   clampUiZoom,
@@ -129,6 +132,10 @@ export function AppProvider(props: ParentProps) {
     (previous) => projectWorkflowCanvasStatusByNode(runState(), previous),
     null,
   );
+  const canvasSubagentsByNode = createMemo<WorkflowCanvasSubagentsByNode | null>(
+    (previous) => projectWorkflowCanvasSubagentsByNode(runState(), previous),
+    null,
+  );
   const currentNode = createMemo(() => selectedNode(activeWorkflow(), selectedNodeId()));
   const activeProfileMemo = createMemo(() => activeProfile(settings()));
   const providerIdsMemo = createMemo(() => providerDisplayOrder(settings()));
@@ -158,6 +165,9 @@ export function AppProvider(props: ParentProps) {
       runState()?.active === true &&
       runState()?.awaitingNodeId === selectedNodeId() &&
       (readiness()?.ready ?? false),
+  );
+  const chatComposerBusyMemo = createMemo(() =>
+    isChatComposerBusy(runState(), selectedNodeId()),
   );
   const chatSubmission = createMemo(() => resolveChatSubmission(chatInput()));
   const canSendChatMemo = createMemo(
@@ -946,6 +956,7 @@ export function AppProvider(props: ParentProps) {
     selectedAgent,
     canvasGraph,
     canvasStatusByNode,
+    canvasSubagentsByNode,
     currentNode,
     activeProfileMemo,
     providerIdsMemo,
@@ -956,6 +967,7 @@ export function AppProvider(props: ParentProps) {
     chatMessages,
     selectedPendingApproval,
     chatEnabledMemo,
+    chatComposerBusyMemo,
     chatSubmission,
     canSendChatMemo,
     // Ref setters

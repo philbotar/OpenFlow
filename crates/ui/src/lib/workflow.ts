@@ -7,6 +7,7 @@ import type {
   NodeId,
   NodeToolConfig,
   ProviderProfile,
+  SubagentSummary,
   Workflow,
   WorkflowRunState,
 } from "./types";
@@ -84,6 +85,15 @@ export type WorkflowCanvasGraph = {
 
 export type WorkflowCanvasStatusByNode = Readonly<Record<NodeId, AgentStatus>>;
 
+export type WorkflowCanvasSubagent = {
+  id: string;
+  name: string;
+  purpose: string;
+  status: SubagentSummary["status"];
+};
+
+export type WorkflowCanvasSubagentsByNode = Readonly<Record<NodeId, WorkflowCanvasSubagent[]>>;
+
 export function cloneWorkflow(workflow: Workflow): Workflow {
   return {
     id: workflow.id,
@@ -128,6 +138,7 @@ export function createIdleRunState(workflow: Workflow): WorkflowRunState {
     toolArtifacts: {},
     execApprovalGranted: false,
     statusByNode,
+    subagentsByNode: {},
     lastReport: null,
     lastError: null,
     chatLogs,
@@ -217,6 +228,30 @@ export function projectWorkflowCanvasStatusByNode(
   return { ...runState.statusByNode };
 }
 
+export function projectWorkflowCanvasSubagentsByNode(
+  runState: WorkflowRunState | null,
+  previous: WorkflowCanvasSubagentsByNode | null = null,
+): WorkflowCanvasSubagentsByNode | null {
+  if (!runState) {
+    return null;
+  }
+
+  if (previous && sameWorkflowCanvasSubagentsByNode(previous, runState.subagentsByNode)) {
+    return previous;
+  }
+
+  const result: Record<NodeId, WorkflowCanvasSubagent[]> = {};
+  for (const [nodeId, subs] of Object.entries(runState.subagentsByNode)) {
+    result[nodeId] = subs.map((s) => ({
+      id: s.id,
+      name: s.name,
+      purpose: s.purpose,
+      status: s.status,
+    }));
+  }
+  return result;
+}
+
 export function statusForNode(
   statusByNode: WorkflowCanvasStatusByNode | null,
   nodeId: NodeId,
@@ -250,6 +285,18 @@ export function canSendChat(
     readinessReady &&
     text.trim() !== ""
   );
+}
+
+export function isChatComposerBusy(
+  runState: WorkflowRunState | null,
+  selectedNodeId: NodeId | null,
+): boolean {
+  if (!runState || !selectedNodeId) {
+    return false;
+  }
+
+  const status = runState.statusByNode[selectedNodeId];
+  return status === "started" || status === "running_tool";
 }
 
 function cloneNode(node: Node): Node {
@@ -352,6 +399,37 @@ function sameWorkflowCanvasStatusByNode(
   for (const nodeId of nextKeys) {
     if (previous[nodeId] !== next[nodeId]) {
       return false;
+    }
+  }
+
+  return true;
+}
+
+function sameWorkflowCanvasSubagentsByNode(
+  previous: WorkflowCanvasSubagentsByNode,
+  next: Record<NodeId, SubagentSummary[]>,
+): boolean {
+  const previousKeys = Object.keys(previous);
+  const nextKeys = Object.keys(next);
+
+  if (previousKeys.length !== nextKeys.length) {
+    return false;
+  }
+
+  for (const nodeId of nextKeys) {
+    const prevSubs = previous[nodeId];
+    const nextSubs = next[nodeId];
+    if (!prevSubs || prevSubs.length !== nextSubs.length) {
+      return false;
+    }
+    for (let i = 0; i < nextSubs.length; i += 1) {
+      if (
+        prevSubs[i].id !== nextSubs[i].id ||
+        prevSubs[i].name !== nextSubs[i].name ||
+        prevSubs[i].status !== nextSubs[i].status
+      ) {
+        return false;
+      }
     }
   }
 

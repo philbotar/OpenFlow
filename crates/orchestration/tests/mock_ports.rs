@@ -125,23 +125,12 @@ impl ProviderConfigResolverPort for MockProviderResolver {
 
 // ── Mock OrchestrationCommandsPort ─────────────────────────────
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct MockOrchestrationCommands {
     pub workflows: Vec<Workflow>,
     pub agents: Vec<AgentDefinition>,
     pub settings: AppSettings,
     pub credentials: MockCredentialStore,
-}
-
-impl Default for MockOrchestrationCommands {
-    fn default() -> Self {
-        Self {
-            workflows: Vec::new(),
-            agents: Vec::new(),
-            settings: AppSettings::default(),
-            credentials: MockCredentialStore::default(),
-        }
-    }
 }
 
 impl MockOrchestrationCommands {

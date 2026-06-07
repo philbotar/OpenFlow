@@ -3,11 +3,12 @@ import type { EdgeChange, NodeChange } from "@xyflow/react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import type { Workflow } from "../lib/types";
+import type { SubagentStatus, Workflow } from "../lib/types";
 import {
   createEmptyToolConfig,
   projectWorkflowCanvasGraph,
   type WorkflowCanvasStatusByNode,
+  type WorkflowCanvasSubagentsByNode,
 } from "../lib/workflow";
 import {
   WorkflowCanvas,
@@ -83,7 +84,7 @@ if (!("ResizeObserver" in globalThis)) {
 
 describe("WorkflowCanvas adapter helpers", () => {
   test("buildFlowNodes preserves positions and selected status", () => {
-    const nodes = buildFlowNodes(graph, "node-2", statusByNode);
+    const nodes = buildFlowNodes(graph, "node-2", statusByNode, null);
 
     expect(nodes).toHaveLength(2);
     expect(nodes[0]).toMatchObject({
@@ -99,6 +100,27 @@ describe("WorkflowCanvas adapter helpers", () => {
       selected: true,
       data: { label: "Draft", status: "awaiting_input" },
     });
+  });
+
+  test("buildFlowNodes includes subagents when provided", () => {
+    const subagentsByNode: WorkflowCanvasSubagentsByNode = {
+      "node-1": [
+        { id: "n1-sub-1", name: "Researcher", purpose: "Investigate", status: "declared" as SubagentStatus },
+        { id: "n1-sub-2", name: "Writer", purpose: "Summarize", status: "active" as SubagentStatus },
+      ],
+    };
+    const nodes = buildFlowNodes(graph, null, statusByNode, subagentsByNode);
+    expect(nodes[0].data.subagents).toEqual([
+      { id: "n1-sub-1", name: "Researcher", purpose: "Investigate", status: "declared" as SubagentStatus },
+      { id: "n1-sub-2", name: "Writer", purpose: "Summarize", status: "active" as SubagentStatus },
+    ]);
+    expect(nodes[1].data.subagents).toEqual([]);
+  });
+
+  test("buildFlowNodes with null subagentsByNode yields empty arrays", () => {
+    const nodes = buildFlowNodes(graph, null, statusByNode, null);
+    expect(nodes[0].data.subagents).toEqual([]);
+    expect(nodes[1].data.subagents).toEqual([]);
   });
 
   test("buildFlowEdges preserves direction and edge selection", () => {
@@ -117,7 +139,7 @@ describe("WorkflowCanvas adapter helpers", () => {
   });
 
   test("reconcileFlowNodes keeps local drag position while applying external state", () => {
-    const current = buildFlowNodes(graph, null, statusByNode);
+    const current = buildFlowNodes(graph, null, statusByNode, null);
     current[0] = {
       ...current[0],
       position: { x: 640, y: 180 },
@@ -127,7 +149,7 @@ describe("WorkflowCanvas adapter helpers", () => {
     const incoming = buildFlowNodes(graph, "node-1", {
       ...statusByNode,
       "node-1": "started",
-    });
+    }, null);
 
     const reconciled = reconcileFlowNodes(current, incoming);
 
@@ -198,6 +220,7 @@ describe("WorkflowCanvas component", () => {
           selectedNodeId: null,
           selectedEdgeId: null,
           statusByNode,
+          subagentsByNode: null,
           onSelectNode: vi.fn(),
           onSelectEdge: vi.fn(),
           onUpdateNodePosition: vi.fn(),

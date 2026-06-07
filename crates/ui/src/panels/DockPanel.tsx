@@ -1,8 +1,15 @@
 import { For, Show } from "solid-js";
 import ArrowUp from "lucide-solid/icons/arrow-up";
 import { useAppContext } from "../context/AppContext";
-import { prettyJson } from "../lib/workflow";
 import { chatRoleLabel } from "../lib/utils";
+import { prettyJson } from "../lib/workflow";
+import {
+  Conversation,
+  ConversationContent,
+  ConversationEmptyState,
+  ConversationScrollButton,
+} from "../components/Conversation";
+import { Message } from "../components/Message";
 
 export function DockPanel() {
   const ctx = useAppContext();
@@ -105,33 +112,35 @@ export function DockPanel() {
               }
             >
               <div class="chat-layout">
-                <div
-                  class="chat-history"
-                  ref={(el) => ctx.setChatHistoryRef(el)}
-                >
-                  <Show
-                    when={ctx.chatMessages().length > 0}
-                    fallback={
-                      <div class="empty-panel">
-                        Run a workflow or select a paused node to continue.
-                      </div>
-                    }
-                  >
-                    <For each={ctx.chatMessages()}>
-                      {(message) => (
-                        <div class={`chat-row role-${message.role.toLowerCase()}`}>
-                          <div
-                            class="chat-role"
-                            classList={{ "is-system": message.role === "System" }}
+                <Conversation>
+                  <ConversationContent setRef={ctx.setChatHistoryRef}>
+                    <Show
+                      when={ctx.chatMessages().length > 0}
+                      fallback={<ConversationEmptyState />}
+                    >
+                      <For each={ctx.chatMessages()}>
+                        {(message) => (
+                          <Message
+                            from={
+                              message.role.toLowerCase() as
+                                | "user"
+                                | "assistant"
+                                | "system"
+                                | "thinking"
+                            }
+                            label={chatRoleLabel(
+                              message.role,
+                              ctx.currentNode()?.label,
+                            )}
                           >
-                            {chatRoleLabel(message.role, ctx.currentNode()?.label)}
-                          </div>
-                          <pre>{message.content}</pre>
-                        </div>
-                      )}
-                    </For>
-                  </Show>
-                </div>
+                            {message.content}
+                          </Message>
+                        )}
+                      </For>
+                    </Show>
+                  </ConversationContent>
+                  <ConversationScrollButton />
+                </Conversation>
 
                 <Show when={ctx.selectedPendingApproval()}>
                   {(approval) => (
@@ -159,7 +168,10 @@ export function DockPanel() {
                 </Show>
 
                 <div class="chat-composer">
-                  <div class="chat-composer-pill" classList={{ "is-loading": ctx.runState()?.active === true && !ctx.chatEnabledMemo() }}>
+                  <div
+                    class="chat-composer-pill"
+                    classList={{ "is-busy": ctx.chatComposerBusyMemo() }}
+                  >
                     <textarea
                       class="text-area composer-input"
                       rows={1}

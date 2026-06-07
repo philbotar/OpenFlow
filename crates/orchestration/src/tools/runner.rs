@@ -42,6 +42,8 @@ pub enum ToolRunnerError {
     Registry(#[from] ToolRegistryError),
     #[error(transparent)]
     Tool(#[from] ToolError),
+    #[error("{0}")]
+    InvalidArguments(String),
 }
 
 impl ToolRunner {
@@ -69,6 +71,12 @@ impl ToolRunner {
             BuiltinToolKind::Search => self.search(call.arguments.clone())?,
             BuiltinToolKind::Find => self.find(call.arguments.clone())?,
             BuiltinToolKind::AstGrep => self.ast_grep(call.arguments.clone())?,
+            BuiltinToolKind::DeclareSubagents | BuiltinToolKind::CallSubagent => {
+                return Err(ToolRunnerError::InvalidArguments(format!(
+                    "Tool '{}' is a runtime builtin and should not reach the filesystem runner",
+                    call.name
+                )));
+            }
         };
 
         let (content, artifact, output_meta) = self.artifacts.store_text(&call.name, raw_output)?;

@@ -20,13 +20,14 @@ import {
 import "@xyflow/react/dist/style.css";
 import * as React from "react";
 import { useCallback, useEffect, useMemo } from "react";
-import type { AgentStatus, EdgeId, NodeId } from "../lib/types";
+import type { AgentStatus, EdgeId, NodeId, SubagentSummary } from "../lib/types";
 import {
   NODE_HEIGHT,
   NODE_WIDTH,
   statusForNode,
   type WorkflowCanvasGraph,
   type WorkflowCanvasStatusByNode,
+  type WorkflowCanvasSubagentsByNode,
 } from "../lib/workflow";
 import { WorkflowNode } from "./WorkflowNode.react";
 type WorkflowCanvasProps = {
@@ -34,6 +35,7 @@ type WorkflowCanvasProps = {
   selectedNodeId: NodeId | null;
   selectedEdgeId: EdgeId | null;
   statusByNode: WorkflowCanvasStatusByNode | null;
+  subagentsByNode: WorkflowCanvasSubagentsByNode | null;
   onSelectNode: (nodeId: NodeId | null) => void;
   onSelectEdge: (edgeId: EdgeId | null) => void;
   onUpdateNodePosition: (nodeId: NodeId, x: number, y: number) => void;
@@ -46,6 +48,7 @@ type WorkflowCanvasProps = {
 export type WorkflowCanvasNodeData = {
   label: string;
   status: AgentStatus;
+  subagents: SubagentSummary[];
 };
 
 export type WorkflowCanvasNode = FlowNode<WorkflowCanvasNodeData, "workflowNode">;
@@ -71,6 +74,7 @@ export function buildFlowNodes(
   graph: WorkflowCanvasGraph | null,
   selectedNodeId: NodeId | null,
   statusByNode: WorkflowCanvasStatusByNode | null,
+  subagentsByNode: WorkflowCanvasSubagentsByNode | null,
 ): WorkflowCanvasNode[] {
   if (!graph) {
     return [];
@@ -84,6 +88,7 @@ export function buildFlowNodes(
     data: {
       label: node.label,
       status: statusForNode(statusByNode, node.id),
+      subagents: subagentsByNode?.[node.id] ?? [],
     },
     draggable: true,
     selectable: true,
@@ -225,8 +230,8 @@ export function isValidCanvasConnection(connection: { source: string | null; tar
 
 export function WorkflowCanvas(props: WorkflowCanvasProps) {
   const externalNodes = useMemo<WorkflowCanvasNode[]>(
-    () => buildFlowNodes(props.graph, props.selectedNodeId, props.statusByNode),
-    [props.graph, props.selectedNodeId, props.statusByNode],
+    () => buildFlowNodes(props.graph, props.selectedNodeId, props.statusByNode, props.subagentsByNode),
+    [props.graph, props.selectedNodeId, props.statusByNode, props.subagentsByNode],
   );
 
   const externalEdges = useMemo<WorkflowCanvasEdge[]>(

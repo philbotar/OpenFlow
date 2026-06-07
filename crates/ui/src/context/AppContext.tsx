@@ -20,6 +20,7 @@ import type { ChatSubmissionResolution } from "../lib/chatCommands";
 import type {
   WorkflowCanvasGraph,
   WorkflowCanvasStatusByNode,
+  WorkflowCanvasSubagentsByNode,
 } from "../lib/workflow";
 
 export interface AppContextValue {
@@ -69,6 +70,7 @@ export interface AppContextValue {
   selectedAgent: Accessor<AgentDefinition | null>;
   canvasGraph: Accessor<WorkflowCanvasGraph | null>;
   canvasStatusByNode: Accessor<WorkflowCanvasStatusByNode | null>;
+  canvasSubagentsByNode: Accessor<WorkflowCanvasSubagentsByNode | null>;
   currentNode: Accessor<Workflow["nodes"][number] | undefined>;
   activeProfileMemo: Accessor<ProviderProfile>;
   providerIdsMemo: Accessor<string[]>;
@@ -79,6 +81,7 @@ export interface AppContextValue {
   chatMessages: Accessor<ChatMessage[]>;
   selectedPendingApproval: Accessor<PendingToolApproval | null>;
   chatEnabledMemo: Accessor<boolean>;
+  chatComposerBusyMemo: Accessor<boolean>;
   chatSubmission: Accessor<ChatSubmissionResolution>;
   canSendChatMemo: Accessor<boolean>;
 

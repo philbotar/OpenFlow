@@ -1,7 +1,7 @@
 use crate::canvas_math::clamp_node_position;
 use domain::{
     validate_workflow, ChatMessage, ChatRole, Edge, Node, NodeId, RunEventKind, RunReport,
-    Workflow, WorkflowValidationError,
+    SubagentSummary, Workflow, WorkflowValidationError,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -84,6 +84,7 @@ pub struct WorkflowRunState {
     pub tool_artifacts: BTreeMap<String, ToolArtifactSummary>,
     pub exec_approval_granted: bool,
     pub status_by_node: BTreeMap<NodeId, AgentStatus>,
+    pub subagents_by_node: BTreeMap<NodeId, Vec<SubagentSummary>>,
     pub last_report: Option<RunReport>,
     pub last_error: Option<String>,
     pub chat_logs: BTreeMap<NodeId, Vec<ChatMessage>>,
@@ -109,6 +110,7 @@ impl WorkflowRunState {
             tool_artifacts: BTreeMap::new(),
             exec_approval_granted: false,
             status_by_node,
+            subagents_by_node: BTreeMap::new(),
             last_report: None,
             last_error: None,
             chat_logs: BTreeMap::new(),

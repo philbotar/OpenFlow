@@ -94,6 +94,15 @@ export type AgentStatus =
   | "completed"
   | "failed";
 
+export type SubagentStatus = "declared" | "active" | "completed" | "failed";
+
+export interface SubagentSummary {
+  id: string;
+  name: string;
+  purpose: string;
+  status: SubagentStatus;
+}
+
 export type TraceStatus = "queued" | "running" | "paused" | "failed" | "completed";
 
 export interface RunTraceEntry {
@@ -172,6 +181,7 @@ export interface WorkflowRunState {
   toolArtifacts: Record<string, ToolArtifactSummary>;
   execApprovalGranted: boolean;
   statusByNode: Record<NodeId, AgentStatus>;
+  subagentsByNode: Record<NodeId, SubagentSummary[]>;
   lastReport: RunReport | null;
   lastError: string | null;
   chatLogs: Record<NodeId, ChatMessage[]>;

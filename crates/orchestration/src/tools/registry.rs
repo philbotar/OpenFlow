@@ -10,6 +10,8 @@ pub enum BuiltinToolKind {
     Search,
     Find,
     AstGrep,
+    DeclareSubagents,
+    CallSubagent,
 }
 
 #[derive(Debug, Clone)]
@@ -37,6 +39,8 @@ impl ToolRegistry {
         register(&mut tools, search_tool());
         register(&mut tools, find_tool());
         register(&mut tools, ast_grep_tool());
+        register(&mut tools, declare_subagents_tool());
+        register(&mut tools, call_subagent_tool());
         Self { tools }
     }
 
@@ -48,13 +52,33 @@ impl ToolRegistry {
 
     #[must_use]
     pub fn definitions_for(&self, config: &NodeToolConfig) -> Vec<ToolDefinition> {
-        config
+        let mut defs: Vec<ToolDefinition> = config
             .catalog
             .tools
             .iter()
             .filter_map(|tool| self.tools.get(&tool.name))
             .map(|tool| tool.definition.clone())
-            .collect()
+            .collect();
+        // Always include the runtime subagent tools for parent agents
+        defs.push(declare_subagents_tool().definition);
+        defs.push(call_subagent_tool().definition);
+        defs
+    }
+
+    /// Tool definitions for subagent contexts — excludes openflow_call_subagent
+    /// to prevent recursive invocation.
+    #[must_use]
+    pub fn definitions_for_subagent(&self, config: &NodeToolConfig) -> Vec<ToolDefinition> {
+        let mut defs: Vec<ToolDefinition> = config
+            .catalog
+            .tools
+            .iter()
+            .filter_map(|tool| self.tools.get(&tool.name))
+            .map(|tool| tool.definition.clone())
+            .collect();
+        // Subagents can declare their own sub-subagents but cannot invoke them
+        defs.push(declare_subagents_tool().definition);
+        defs
     }
 }
 
@@ -165,6 +189,63 @@ fn ast_grep_tool() -> RegisteredTool {
     }
 }
 
+pub fn declare_subagents_tool() -> RegisteredTool {
+    RegisteredTool {
+        definition: ToolDefinition {
+            name: "openflow_declare_subagents".to_string(),
+            description: "Declare subagents that the current agent node wants available during this workflow run. Each subagent has a name and purpose. Declarations are recorded in the run state and displayed on the node.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "subagents": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "name": { "type": "string" },
+                                "purpose": { "type": "string" }
+                            },
+                            "required": ["name", "purpose"]
+                        }
+                    }
+                },
+                "required": ["subagents"]
+            }),
+            tier: ToolTier::Write,
+            concurrency: ToolConcurrency::Shared,
+        },
+        kind: BuiltinToolKind::DeclareSubagents,
+    }
+}
+
+pub fn call_subagent_tool() -> RegisteredTool {
+    RegisteredTool {
+        definition: ToolDefinition {
+            name: "openflow_call_subagent".to_string(),
+            description: "Invoke a previously declared subagent by ID. The subagent receives your input and upstream outputs, performs its task using available tools, and returns its output.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "subagent_id": {
+                        "type": "string",
+                        "description": "The ID of the declared subagent to invoke, as returned by openflow_declare_subagents."
+                    },
+                    "input": {
+                        "type": "string",
+                        "description": "The task instruction to send to the subagent."
+                    }
+                },
+                "required": ["subagent_id", "input"]
+            }),
+            tier: ToolTier::Write,
+            concurrency: ToolConcurrency::Shared,
+        },
+        kind: BuiltinToolKind::CallSubagent,
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -177,7 +258,33 @@ mod tests {
             name: "read".to_string(),
         }];
         let definitions = registry.definitions_for(&config);
-        assert_eq!(definitions.len(), 1);
+        // read + openflow_declare_subagents + openflow_call_subagent
+        assert_eq!(definitions.len(), 3);
         assert_eq!(definitions[0].name, "read");
+        assert_eq!(definitions[1].name, "openflow_declare_subagents");
+        assert_eq!(definitions[2].name, "openflow_call_subagent");
+    }
+
+    #[test]
+    fn definitions_always_includes_subagent_tools() {
+        let registry = ToolRegistry::new();
+        let empty_config_no_tools = NodeToolConfig {
+            catalog: domain::ToolCatalogSelection { tools: vec![] },
+            ..Default::default()
+        };
+        let definitions = registry.definitions_for(&empty_config_no_tools);
+        assert_eq!(definitions.len(), 2);
+        assert_eq!(definitions[0].name, "openflow_declare_subagents");
+        assert_eq!(definitions[1].name, "openflow_call_subagent");
+    }
+
+    #[test]
+    fn definitions_for_subagent_excludes_call_tool() {
+        let registry = ToolRegistry::new();
+        let config = NodeToolConfig::default();
+        let definitions = registry.definitions_for_subagent(&config);
+        let names: Vec<&str> = definitions.iter().map(|d| d.name.as_str()).collect();
+        assert!(names.contains(&"openflow_declare_subagents"));
+        assert!(!names.contains(&"openflow_call_subagent"));
     }
 }
