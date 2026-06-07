@@ -512,6 +512,155 @@ select:focus-visible {
   color: var(--text);
 }
 
+.topbar-icon-button-active {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.sidebar-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 10px 4px 4px 10px;
+}
+
+.sidebar-section-header .sidebar-section-label {
+  margin: 0;
+}
+
+.sidebar-section-action {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  color: var(--text-muted);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 150ms ease, visibility 150ms ease, color 150ms ease;
+}
+
+.sidebar-section-header:hover .sidebar-section-action,
+.sidebar-section-group:hover .sidebar-section-action {
+  opacity: 1;
+  visibility: visible;
+}
+
+.sidebar-section-action:hover {
+  color: var(--text);
+}
+
+.sidebar-section-label {
+  margin: 10px 10px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.project-folder-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.project-folder-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 10px;
+}
+
+.project-folder-header:hover,
+.project-folder-header.selected {
+  background: rgba(255, 255, 255, 0.42);
+}
+
+.project-folder-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  padding: 8px 4px 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.project-folder-header.expanded .project-folder-chevron {
+  transform: rotate(90deg);
+}
+
+.project-folder-chevron {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 150ms ease;
+}
+
+.project-folder-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.project-folder-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.project-workflow-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 18px;
+}
+
+.execution-folder-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.execution-folder-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.execution-folder-value {
+  font-size: 12px;
+  color: var(--text);
+  max-width: min(200px, 24vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.field-help {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.workflow-settings-panel textarea {
+  min-height: 220px;
+  resize: vertical;
+}
 
 .eyebrow {
   font-size: 11px;
@@ -579,6 +728,17 @@ select:focus-visible {
 
 .editor-screen > .dock-panel {
   grid-row: 2;
+}
+
+.app-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 40px 24px;
+  overflow-y: auto;
+  background: rgba(12, 16, 24, 0.24);
 }
 
 .node-picker-backdrop {

@@ -4,7 +4,7 @@
 //! These provide the Tauri command interface.
 
 use async_trait::async_trait;
-use orchestration::{Node, Workflow};
+use orchestration::{Node, Project, Workflow};
 
 use orchestration::agent_store::AgentDefinition;
 use orchestration::backend::{
@@ -15,8 +15,8 @@ use orchestration::settings_store::AppSettings;
 use orchestration::state::WorkflowRunState;
 
 use crate::ports::inbound::{
-    AgentCommands, BootstrapPort, CredentialCommands, ProviderCommands, RunCommands,
-    SettingsCommands, SkillCommands, WorkflowCommands,
+    AgentCommands, BootstrapPort, CredentialCommands, ProjectCommands, ProviderCommands,
+    RunCommands, SettingsCommands, SkillCommands, WorkflowCommands,
 };
 
 // ── Bootstrap ──────────────────────────────────────────────────
@@ -29,6 +29,7 @@ impl BootstrapPort for AppBackend {
         (
             Vec<Workflow>,
             Vec<AgentDefinition>,
+            Vec<Project>,
             AppSettings,
             Option<WorkflowRunState>,
         ),
@@ -36,9 +37,10 @@ impl BootstrapPort for AppBackend {
     > {
         let workflows = self.load_all_workflows()?;
         let agents = self.load_agents()?;
+        let projects = self.list_projects()?;
         let settings = self.load_settings()?;
         let run_state = self.get_run_state().await;
-        Ok((workflows, agents, settings, run_state))
+        Ok((workflows, agents, projects, settings, run_state))
     }
 }
 
@@ -82,6 +84,38 @@ impl WorkflowCommands for AppBackend {
         workflow: Workflow,
     ) -> Result<WorkflowValidationSummary, BackendError> {
         AppBackend::validate_workflow(self, &workflow)
+    }
+}
+
+// ── Project commands ───────────────────────────────────────────
+
+impl ProjectCommands for AppBackend {
+    fn list_projects(&self) -> Result<Vec<Project>, BackendError> {
+        AppBackend::list_projects(self)
+    }
+
+    fn save_projects(&self, projects: Vec<Project>) -> Result<(), BackendError> {
+        AppBackend::save_projects(self, &projects)
+    }
+
+    fn create_project_from_directory(&self, path: String) -> Result<Project, BackendError> {
+        AppBackend::create_project_from_directory(self, path)
+    }
+
+    fn assign_workflow_to_project(
+        &self,
+        project_id: String,
+        workflow_id: String,
+    ) -> Result<Vec<Project>, BackendError> {
+        AppBackend::assign_workflow_to_project(self, &project_id, &workflow_id)
+    }
+
+    fn unassign_workflow_from_project(
+        &self,
+        project_id: String,
+        workflow_id: String,
+    ) -> Result<Vec<Project>, BackendError> {
+        AppBackend::unassign_workflow_from_project(self, &project_id, &workflow_id)
     }
 }
 
@@ -173,12 +207,14 @@ impl RunCommands for AppBackend {
         &self,
         workflow: Workflow,
         settings: AppSettings,
+        execution_cwd: Option<String>,
         transient_api_key: Option<String>,
     ) -> Result<WorkflowRunState, BackendError> {
         let (state, _rx) = AppBackend::start_run(
             self,
             workflow,
             None,
+            execution_cwd,
             &settings,
             transient_api_key.as_deref(),
         )

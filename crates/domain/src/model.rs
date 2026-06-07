@@ -166,12 +166,55 @@ impl std::borrow::Borrow<str> for WorkflowId {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct RetryPolicy {
+    #[serde(default = "default_retry_max_attempts")]
+    pub max_attempts: u8,
+    #[serde(default = "default_retry_backoff_ms")]
+    pub backoff_ms: u64,
+}
+
+const fn default_retry_max_attempts() -> u8 {
+    0
+}
+
+const fn default_retry_backoff_ms() -> u64 {
+    1_000
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct WorkflowSchedule {
+    pub cron: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub timezone: String,
+}
+
+const fn default_true() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct WorkflowSettings {
+    #[serde(default)]
+    pub shared_context: String,
+    #[serde(default)]
+    pub schedule: Option<WorkflowSchedule>,
+    #[serde(default)]
+    pub retry_policy: RetryPolicy,
+    #[serde(default)]
+    pub provider_id: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Workflow {
     pub id: WorkflowId,
     pub name: String,
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
+    #[serde(default)]
+    pub settings: WorkflowSettings,
 }
 
 impl Workflow {
@@ -181,6 +224,7 @@ impl Workflow {
             name: name.into(),
             nodes: Vec::new(),
             edges: Vec::new(),
+            settings: WorkflowSettings::default(),
         }
     }
 }

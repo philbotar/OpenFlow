@@ -2,9 +2,49 @@ import { For, Show } from "solid-js";
 import { useAppContext } from "../../context/AppContext";
 import { isMacOS } from "../../lib/utils";
 import { formatUiZoomLabel as fmtZoom } from "../../lib/uiZoom";
+import { ProjectFolderRow } from "./ProjectFolderRow";
 import { SidebarList } from "./SidebarList";
 import { SidebarListRow } from "./SidebarListRow";
+import { SidebarIconButton } from "./SidebarIconButton";
 import { SidebarNavButton } from "./SidebarNavButton";
+
+function WorkflowRows() {
+  const ctx = useAppContext();
+
+  return (
+    <For each={ctx.independentWorkflows()}>
+      {(workflow) => {
+        const active = () =>
+          workflow.id === ctx.activeWorkflowId() && ctx.screen() === "editor";
+        const editing = () => workflow.id === ctx.editingWorkflowId();
+        return (
+          <SidebarListRow
+            title={workflow.name}
+            active={active()}
+            editing={editing()}
+            onSelect={() => ctx.handleSwitchWorkflow(workflow.id)}
+            onRename={() =>
+              ctx.handleStartWorkflowNameEdit(workflow.id, workflow.name)
+            }
+            editSlot={
+              <input
+                ref={(el) => ctx.setWorkflowNameInputRef(el)}
+                value={ctx.workflowNameDraft()}
+                onInput={(event) =>
+                  ctx.setWorkflowNameDraft(event.currentTarget.value)
+                }
+                onBlur={ctx.handleWorkflowNameCommit}
+                onKeyDown={ctx.handleWorkflowNameKeyDown}
+                class="workflow-row-input"
+                aria-label={`Workflow name for ${workflow.name}`}
+              />
+            }
+          />
+        );
+      }}
+    </For>
+  );
+}
 
 export function Sidebar() {
   const ctx = useAppContext();
@@ -37,41 +77,51 @@ export function Sidebar() {
           active={ctx.screen() === "agents"}
           onClick={ctx.handleOpenAgents}
         />
-        <SidebarNavButton
-          icon="plus"
-          label="New workflow"
-          onClick={() => void ctx.handleCreateWorkflow()}
-        />
-        <For each={ctx.workflows()}>
-          {(workflow) => {
-            const active = () =>
-              workflow.id === ctx.activeWorkflowId() && ctx.screen() === "editor";
-            const editing = () => workflow.id === ctx.editingWorkflowId();
-            return (
-              <SidebarListRow
-                title={workflow.name}
-                active={active()}
-                editing={editing()}
-                onSelect={() => ctx.handleSwitchWorkflow(workflow.id)}
-                onRename={() =>
-                  ctx.handleStartWorkflowNameEdit(workflow.id, workflow.name)
-                }
-                editSlot={
-                  <input
-                    ref={(el) => ctx.setWorkflowNameInputRef(el)}
-                    value={ctx.workflowNameDraft()}
-                    onInput={(event) =>
-                      ctx.setWorkflowNameDraft(event.currentTarget.value)
-                    }
-                    onBlur={ctx.handleWorkflowNameCommit}
-                    onKeyDown={ctx.handleWorkflowNameKeyDown}
-                    class="workflow-row-input"
-                    aria-label={`Workflow name for ${workflow.name}`}
-                  />
-                }
-              />
-            );
-          }}
+        <div class="sidebar-section-group">
+          <div class="sidebar-section-header">
+            <div class="sidebar-section-label">Workflows</div>
+            <SidebarIconButton
+              icon="plus"
+              label="New workflow"
+              class="sidebar-section-action"
+              onClick={() => void ctx.handleCreateWorkflow()}
+            />
+          </div>
+          <WorkflowRows />
+        </div>
+        <div class="sidebar-section-header">
+          <div class="sidebar-section-label">Projects</div>
+          <SidebarIconButton
+            icon="plus"
+            label="Add project"
+            class="sidebar-section-action"
+            onClick={() => void ctx.handleAddProject()}
+          />
+        </div>
+        <For each={ctx.projects()}>
+          {(project) => (
+            <ProjectFolderRow
+              project={project}
+              workflows={ctx.workflowsForProject(project)}
+              expanded={ctx.isProjectExpanded(project.id)}
+              selected={ctx.selectedProjectId() === project.id}
+              activeWorkflowId={ctx.activeWorkflowId()}
+              screen={ctx.screen()}
+              editingWorkflowId={ctx.editingWorkflowId()}
+              workflowNameDraft={ctx.workflowNameDraft()}
+              onToggleExpand={() => ctx.handleToggleProjectExpanded(project.id)}
+              onSelectProject={() => ctx.handleSelectProject(project.id)}
+              onSelectWorkflow={(workflowId) => {
+                ctx.handleSelectProject(project.id);
+                ctx.handleSwitchWorkflow(workflowId);
+              }}
+              onRenameWorkflow={ctx.handleStartWorkflowNameEdit}
+              setWorkflowNameInputRef={ctx.setWorkflowNameInputRef}
+              setWorkflowNameDraft={ctx.setWorkflowNameDraft}
+              onWorkflowNameCommit={ctx.handleWorkflowNameCommit}
+              onWorkflowNameKeyDown={ctx.handleWorkflowNameKeyDown}
+            />
+          )}
         </For>
       </SidebarList>
       <div class="sidebar-footer">

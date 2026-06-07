@@ -13,6 +13,7 @@ import type {
   ProviderReadiness,
   RunTraceEntry,
   Screen,
+  Project,
   SkillSummary,
   Workflow,
   WorkflowRunState,
@@ -27,6 +28,7 @@ import type {
 export interface AppContextValue {
   // ── Signal accessors ──────────────────────────────────────────────────────
   workflows: Accessor<Workflow[]>;
+  projects: Accessor<Project[]>;
   agents: Accessor<AgentDefinition[]>;
   activeWorkflowId: Accessor<string | null>;
   selectedNodeId: Accessor<NodeId | null>;
@@ -44,6 +46,8 @@ export interface AppContextValue {
   newModelInputByProvider: Accessor<Record<AiProviderKind, string>>;
   providerKeyInputByProvider: Accessor<Record<AiProviderKind, string>>;
   uiZoom: Accessor<number>;
+  workflowSettingsOpen: Accessor<boolean>;
+  selectedProjectId: Accessor<string | null>;
   editingWorkflowId: Accessor<string | null>;
   workflowNameDraft: Accessor<string>;
   selectedAgentId: Accessor<string | null>;
@@ -71,6 +75,9 @@ export interface AppContextValue {
 
   // ── Derived memos ─────────────────────────────────────────────────────────
   activeWorkflow: Accessor<Workflow | undefined>;
+  activeProject: Accessor<Project | undefined>;
+  independentWorkflows: Accessor<Workflow[]>;
+  executionCwdForActiveWorkflow: Accessor<string | null>;
   selectedAgent: Accessor<AgentDefinition | null>;
   canvasGraph: Accessor<WorkflowCanvasGraph | null>;
   canvasStatusByNode: Accessor<WorkflowCanvasStatusByNode | null>;
@@ -95,8 +102,13 @@ export interface AppContextValue {
 
   // ── Workflow handlers ─────────────────────────────────────────────────────
   handleSwitchWorkflow: (workflowId: string) => void;
-  handleCreateWorkflow: () => Promise<void>;
+  handleCreateWorkflow: (projectId?: string) => Promise<void>;
   handleOpenAgents: () => void;
+  handleAddProject: () => Promise<void>;
+  handleSelectProject: (projectId: string) => void;
+  handleToggleProjectExpanded: (projectId: string) => void;
+  isProjectExpanded: (projectId: string) => boolean;
+  workflowsForProject: (project: Project) => Workflow[];
 
   // ── Agent handlers ────────────────────────────────────────────────────────
   handleCreateAgent: () => Promise<void>;
@@ -148,6 +160,10 @@ export interface AppContextValue {
 
   // ── Input / keyboard handlers ─────────────────────────────────────────────
   handleChatInputKeyDown: (event: KeyboardEvent) => void;
+
+  // ── Workflow settings handlers ────────────────────────────────────────────
+  handleToggleWorkflowSettings: () => void;
+  updateActiveWorkflowSettings: (mutator: (settings: Workflow["settings"]) => void) => void;
 
   // ── Node mutation helpers ─────────────────────────────────────────────────
   updateCurrentNode: (mutator: (node: Workflow["nodes"][number]) => void) => void;

@@ -28,7 +28,8 @@ pub use interactive::{EnginePollResult, InteractiveEngine};
 pub use model::{
     filter_tool_turn_assistant_message, is_redundant_tool_call_markup, AgentNodeConfig,
     ChatMessage, ChatRole, Edge, EdgeId, Node, NodeId, NodeKind, NodePosition, NodeRunOutput,
-    NodeTemplate, RunEvent, RunEventKind, RunReport, Workflow, WorkflowId,
+    NodeTemplate, RetryPolicy, RunEvent, RunEventKind, RunReport, Workflow, WorkflowId,
+    WorkflowSchedule, WorkflowSettings,
 };
 pub use ports::{
     AgentError, AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTurnOutcome,

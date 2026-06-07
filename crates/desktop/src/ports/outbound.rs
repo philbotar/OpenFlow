@@ -86,6 +86,7 @@ pub trait RunOrchestrator: Send + Sync {
         &self,
         workflow: Workflow,
         entrypoint: Option<String>,
+        execution_cwd: Option<String>,
         settings: &AppSettings,
         transient_api_key: Option<&str>,
     ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError>;

@@ -198,6 +198,7 @@ impl RunOrchestrator for MockBackend {
         &self,
         workflow: Workflow,
         _entrypoint: Option<String>,
+        _execution_cwd: Option<String>,
         _settings: &AppSettings,
         _transient_api_key: Option<&str>,
     ) -> Result<(WorkflowRunState, mpsc::UnboundedReceiver<ExecutionEvent>), BackendError> {

@@ -6,6 +6,7 @@ import type {
   AppSettings,
   BootstrapPayload,
   Node,
+  Project,
   SkillSummary,
   ProviderReadiness,
   Workflow,
@@ -18,6 +19,26 @@ export const RUN_STATE_EVENT = "run-state";
 
 export function bootstrapApp() {
   return invoke<BootstrapPayload>("bootstrap_app");
+}
+
+export function listProjects() {
+  return invoke<Project[]>("list_projects");
+}
+
+export function saveProjects(projects: Project[]) {
+  return invoke<void>("save_projects", { projects });
+}
+
+export function createProjectFromDirectory(path: string) {
+  return invoke<Project>("create_project_from_directory", { path });
+}
+
+export function assignWorkflowToProject(projectId: string, workflowId: string) {
+  return invoke<Project[]>("assign_workflow_to_project", { projectId, workflowId });
+}
+
+export function unassignWorkflowFromProject(projectId: string, workflowId: string) {
+  return invoke<Project[]>("unassign_workflow_from_project", { projectId, workflowId });
 }
 
 export function listWorkflows() {
@@ -107,11 +128,13 @@ export function createAgentNode(index: number, x: number, y: number, agentId: st
 export function startRun(
   workflow: Workflow,
   settings: AppSettings,
+  executionCwd: string | null = null,
   transientApiKey: string | null = null,
 ) {
   return invoke<WorkflowRunState>("start_run", {
     workflow,
     settings,
+    executionCwd,
     transientApiKey,
   });
 }

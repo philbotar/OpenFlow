@@ -21,6 +21,7 @@ orchestration = { path = "../orchestration", version = "0.1.0" }
 async-trait.workspace = true
 serde.workspace = true
  tauri.workspace = true
+ tauri-plugin-dialog = "2"
  tauri-plugin-shell = "2"
  thiserror.workspace = true
  tokio.workspace = true

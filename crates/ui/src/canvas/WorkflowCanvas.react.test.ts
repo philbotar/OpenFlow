@@ -57,6 +57,7 @@ const workflow: Workflow = {
     },
   ],
   edges: [{ id: "edge-1", from: "node-1", to: "node-2" }],
+  settings: { shared_context: "" },
 };
 
 const statusByNode: WorkflowCanvasStatusByNode = {

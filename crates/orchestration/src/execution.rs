@@ -173,10 +173,39 @@ pub enum WorkflowExecutionError {
     MissingApproval(String),
 }
 
+pub fn resolve_execution_cwd(execution_cwd: Option<&str>) -> Result<PathBuf, String> {
+    match execution_cwd.map(str::trim).filter(|value| !value.is_empty()) {
+        None => Ok(std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))),
+        Some(path) => {
+            let expanded = expand_tilde(path);
+            let canonical = expanded.canonicalize().map_err(|error| {
+                format!("execution folder is not a valid directory ({path}): {error}")
+            })?;
+            if !canonical.is_dir() {
+                return Err(format!("execution folder is not a directory: {path}"));
+            }
+            Ok(canonical)
+        }
+    }
+}
+
+fn expand_tilde(path: &str) -> PathBuf {
+    if path == "~" {
+        return dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    }
+    if let Some(rest) = path.strip_prefix("~/") {
+        return dirs::home_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join(rest);
+    }
+    PathBuf::from(path)
+}
+
 pub fn spawn_interactive_workflow_run<A>(
     runtime: &tokio::runtime::Runtime,
     workflow: Workflow,
     entrypoint: Option<String>,
+    execution_cwd: PathBuf,
     ai: A,
 ) -> (
     tokio::task::JoinHandle<()>,
@@ -189,7 +218,8 @@ where
     let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel();
     let (action_tx, action_rx) = tokio::sync::mpsc::unbounded_channel();
     let handle = runtime.spawn(async move {
-        drive_interactive_workflow(workflow, entrypoint, ai, event_tx, action_rx).await;
+        drive_interactive_workflow(workflow, entrypoint, execution_cwd, ai, event_tx, action_rx)
+            .await;
     });
     (handle, event_rx, action_tx)
 }
@@ -197,6 +227,7 @@ where
 async fn drive_interactive_workflow<A>(
     workflow: Workflow,
     entrypoint: Option<String>,
+    execution_cwd: PathBuf,
     ai: A,
     event_tx: UnboundedSender<ExecutionEvent>,
     mut action_rx: UnboundedReceiver<ExecutionAction>,
@@ -212,7 +243,6 @@ async fn drive_interactive_workflow<A>(
     };
 
     let tool_registry = ToolRegistry::new();
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let artifact_root = std::env::temp_dir().join(format!("openflow-run-{}", Uuid::new_v4()));
     let artifacts = match ArtifactStore::new(artifact_root) {
         Ok(store) => store,
@@ -221,7 +251,7 @@ async fn drive_interactive_workflow<A>(
             return;
         }
     };
-    let tool_runner = ToolRunner::new(tool_registry, cwd, artifacts);
+    let tool_runner = ToolRunner::new(tool_registry, execution_cwd, artifacts);
     let mut exec_approval_granted = false;
     let mut declared_subagents: BTreeMap<String, SubagentSummary> = BTreeMap::new();
 
@@ -891,9 +921,11 @@ where
 {
     let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
     let (action_tx, action_rx) = tokio::sync::mpsc::unbounded_channel();
+    let execution_cwd = resolve_execution_cwd(None).map_err(WorkflowExecutionError::Execution)?;
     let handle = tokio::spawn(drive_interactive_workflow(
         workflow.clone(),
         entrypoint,
+        execution_cwd,
         ai,
         event_tx,
         action_rx,
@@ -1781,5 +1813,18 @@ mod tests {
         let names: Vec<&str> = definitions.iter().map(|d| d.name.as_str()).collect();
         assert!(names.contains(&"openflow_declare_subagents"));
         assert!(names.contains(&"openflow_call_subagent"));
+    }
+
+    #[test]
+    fn resolve_execution_cwd_uses_process_directory_when_unset() {
+        let cwd = resolve_execution_cwd(None).expect("fallback cwd");
+        assert!(cwd.is_dir());
+    }
+
+    #[test]
+    fn resolve_execution_cwd_rejects_invalid_directory() {
+        let error = resolve_execution_cwd(Some("/definitely/not/a/real/openflow/path"))
+            .expect_err("invalid path");
+        assert!(error.contains("execution folder"));
     }
 }

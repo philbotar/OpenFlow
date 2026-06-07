@@ -4,6 +4,7 @@ import type {
 	AppSettings,
 	BootstrapPayload,
 	Node,
+	Project,
 	SkillSummary,
 	ProviderReadiness,
 	Workflow,
@@ -16,6 +17,11 @@ export type RunStateListener = (runState: WorkflowRunState) => void;
 
 export interface UiDesktopOutboundPort {
 	bootstrapApp: () => Promise<BootstrapPayload>;
+	listProjects: () => Promise<Project[]>;
+	saveProjects: (projects: Project[]) => Promise<void>;
+	createProjectFromDirectory: (path: string) => Promise<Project>;
+	assignWorkflowToProject: (projectId: string, workflowId: string) => Promise<Project[]>;
+	unassignWorkflowFromProject: (projectId: string, workflowId: string) => Promise<Project[]>;
 	listWorkflows: () => Promise<WorkflowListItem[]>;
 	loadAllWorkflows: () => Promise<Workflow[]>;
 	loadWorkflow: (workflowId: string) => Promise<Workflow>;
@@ -47,6 +53,7 @@ export interface UiDesktopOutboundPort {
 	startRun: (
 		workflow: Workflow,
 		settings: AppSettings,
+		executionCwd?: string | null,
 		transientApiKey?: string | null,
 	) => Promise<WorkflowRunState>;
 	submitUserInput: (nodeId: string, text: string) => Promise<WorkflowRunState>;

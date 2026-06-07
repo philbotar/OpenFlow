@@ -5,11 +5,43 @@ export type EdgeId = string;
 export type BottomTab = "overview" | "chat" | "trace";
 export type Screen = "editor" | "settings" | "agents";
 
+export interface RetryPolicy {
+  max_attempts: number;
+  backoff_ms: number;
+}
+
+export interface WorkflowSchedule {
+  cron: string;
+  enabled: boolean;
+  timezone: string;
+}
+
+export interface WorkflowSettings {
+  shared_context: string;
+  schedule?: WorkflowSchedule | null;
+  retry_policy?: RetryPolicy;
+  provider_id?: string | null;
+}
+
+export interface ProjectMetadata {
+  description: string;
+}
+
+export interface Project {
+  id: string;
+  path: string;
+  name: string;
+  metadata: ProjectMetadata;
+  workflow_ids: string[];
+  default_execution_cwd: string;
+}
+
 export interface Workflow {
   id: WorkflowId;
   name: string;
   nodes: Node[];
   edges: Edge[];
+  settings: WorkflowSettings;
 }
 
 export interface Node {
@@ -245,6 +277,7 @@ export interface WorkflowValidationSummary {
 export interface BootstrapPayload {
   workflows: Workflow[];
   agents: AgentDefinition[];
+  projects?: Project[];
   skills: SkillSummary[];
   settings: AppSettings;
   runState: WorkflowRunState | null;

@@ -17,6 +17,7 @@ import type {
   BottomTab,
   EdgeId,
   NodeId,
+  Project,
   SkillSummary,
   Workflow,
   WorkflowRunState,
@@ -41,6 +42,15 @@ import {
   type WorkflowCanvasStatusByNode,
   type WorkflowCanvasSubagentsByNode,
 } from "../lib/workflow";
+import { open } from "@tauri-apps/plugin-dialog";
+import {
+  executionCwdForWorkflow,
+  findProjectForWorkflow,
+  independentWorkflows,
+  readExpandedProjectIds,
+  workflowsForProject,
+  writeExpandedProjectIds,
+} from "../lib/projects";
 import {
   clampUiZoom,
   DEFAULT_UI_ZOOM,
@@ -67,6 +77,11 @@ export function AppProvider(props: ParentProps) {
 
   // ── Signals ───────────────────────────────────────────────────────────────
   const [workflows, setWorkflows] = createSignal<Workflow[]>([]);
+  const [projects, setProjects] = createSignal<Project[]>([]);
+  const [expandedProjectIds, setExpandedProjectIds] = createSignal(
+    readExpandedProjectIds(globalThis.localStorage),
+  );
+  const [selectedProjectId, setSelectedProjectId] = createSignal<string | null>(null);
   const [agents, setAgents] = createSignal<AgentDefinition[]>([]);
   const [activeWorkflowId, setActiveWorkflowId] = createSignal<string | null>(null);
   const [selectedNodeId, setSelectedNodeId] = createSignal<NodeId | null>(null);
@@ -93,6 +108,7 @@ export function AppProvider(props: ParentProps) {
     Record<AiProviderKind, string>
   >({} as Record<AiProviderKind, string>);
   const [uiZoom, setUiZoom] = createSignal(readStoredUiZoom(globalThis.localStorage));
+  const [workflowSettingsOpen, setWorkflowSettingsOpen] = createSignal(false);
   const [editingWorkflowId, setEditingWorkflowId] = createSignal<string | null>(null);
   const [workflowNameDraft, setWorkflowNameDraft] = createSignal("");
   const [selectedAgentId, setSelectedAgentId] = createSignal<string | null>(null);
@@ -122,6 +138,24 @@ export function AppProvider(props: ParentProps) {
   const activeWorkflow = createMemo(() =>
     workflows().find((workflow) => workflow.id === activeWorkflowId()),
   );
+  const independentWorkflowsMemo = createMemo(() =>
+    independentWorkflows(workflows(), projects()),
+  );
+  const activeProject = createMemo(() => {
+    const workflowId = activeWorkflowId();
+    if (!workflowId) return undefined;
+    const selected = selectedProjectId();
+    if (selected) {
+      const project = projects().find((item) => item.id === selected);
+      if (project?.workflow_ids.includes(workflowId)) return project;
+    }
+    return findProjectForWorkflow(projects(), workflowId);
+  });
+  const executionCwdForActiveWorkflow = createMemo(() => {
+    const workflowId = activeWorkflowId();
+    if (!workflowId) return null;
+    return executionCwdForWorkflow(projects(), workflowId, selectedProjectId());
+  });
   const selectedAgent = createMemo(
     () => agents().find((agent) => agent.id === selectedAgentId()) ?? null,
   );
@@ -313,6 +347,7 @@ export function AppProvider(props: ParentProps) {
   const initializeWorkspace = async (
     initialWorkflows: Workflow[],
     initialAgents: AgentDefinition[],
+    initialProjects: Project[],
     initialSettings: AppSettings,
     initialRunState: WorkflowRunState | null,
   ) => {
@@ -322,6 +357,7 @@ export function AppProvider(props: ParentProps) {
     }
     const firstWorkflow = nextWorkflows[0];
     setWorkflows(nextWorkflows);
+    setProjects(initialProjects);
     setAgents(initialAgents);
     setSelectedAgentId(initialAgents[0]?.id ?? null);
     setAgentSchemaDraft(initialAgents[0] ? prettyJson(initialAgents[0].output_schema) : "");
@@ -352,10 +388,20 @@ export function AppProvider(props: ParentProps) {
     setSelectedTraceIndex(null);
   };
 
-  const handleCreateWorkflow = async () => {
+  const handleCreateWorkflow = async (projectId?: string) => {
     try {
       const workflow = await desktop.createWorkflow(`Workflow ${workflows().length + 1}`);
       setWorkflows([...workflows(), workflow]);
+      if (projectId) {
+        const nextProjects = await desktop.assignWorkflowToProject(projectId, workflow.id);
+        setProjects(nextProjects);
+        setExpandedProjectIds((current) => {
+          const next = new Set(current);
+          next.add(projectId);
+          writeExpandedProjectIds(globalThis.localStorage, next);
+          return next;
+        });
+      }
       setActiveWorkflowId(workflow.id);
       setSelectedNodeId(workflow.nodes[0]?.id ?? null);
       setSelectedEdgeId(null);
@@ -367,6 +413,51 @@ export function AppProvider(props: ParentProps) {
       setError(normalizeError(error));
     }
   };
+
+  const handleAddProject = async () => {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: "Select project folder",
+      });
+      if (!selected || Array.isArray(selected)) return;
+      const project = await desktop.createProjectFromDirectory(selected);
+      setProjects([...projects(), project]);
+      setSelectedProjectId(project.id);
+      setExpandedProjectIds((current) => {
+        const next = new Set(current);
+        next.add(project.id);
+        writeExpandedProjectIds(globalThis.localStorage, next);
+        return next;
+      });
+      setSuccess(`Added project ${project.name}`);
+    } catch (error) {
+      setError(normalizeError(error));
+    }
+  };
+
+  const handleSelectProject = (projectId: string) => {
+    setSelectedProjectId(projectId);
+  };
+
+  const handleToggleProjectExpanded = (projectId: string) => {
+    setExpandedProjectIds((current) => {
+      const next = new Set(current);
+      if (next.has(projectId)) {
+        next.delete(projectId);
+      } else {
+        next.add(projectId);
+      }
+      writeExpandedProjectIds(globalThis.localStorage, next);
+      return next;
+    });
+  };
+
+  const isProjectExpanded = (projectId: string) => expandedProjectIds().has(projectId);
+
+  const workflowsForProjectMemo = (project: Project) =>
+    workflowsForProject(workflows(), project);
 
   const handleOpenAgents = () => {
     closeAddNodePicker();
@@ -476,6 +567,18 @@ export function AppProvider(props: ParentProps) {
     const next = cloneWorkflow(workflow);
     mutator(next);
     setWorkflows(replaceWorkflow(workflows(), next));
+  };
+
+  const updateActiveWorkflowSettings = (
+    mutator: (settings: Workflow["settings"]) => void,
+  ) => {
+    updateActiveWorkflow((draft) => {
+      mutator(draft.settings);
+    });
+  };
+
+  const handleToggleWorkflowSettings = () => {
+    setWorkflowSettingsOpen((open) => !open);
   };
 
   const updateCurrentNode = (mutator: (node: Workflow["nodes"][number]) => void) => {
@@ -612,6 +715,7 @@ export function AppProvider(props: ParentProps) {
       const nextRunState = await desktop.startRun(
         activeWorkflow()!,
         settings(),
+        executionCwdForActiveWorkflow(),
         activeProviderKeyInput() || null,
       );
       setRunState(nextRunState);
@@ -964,7 +1068,13 @@ export function AppProvider(props: ParentProps) {
       );
       const data = await desktop.bootstrapApp();
       setAvailableSkills(data.skills ?? []);
-      await initializeWorkspace(data.workflows, data.agents, data.settings, data.runState);
+      await initializeWorkspace(
+        data.workflows,
+        data.agents,
+        data.projects ?? [],
+        data.settings,
+        data.runState,
+      );
     } catch (error) {
       setError(normalizeError(error));
     }
@@ -974,6 +1084,7 @@ export function AppProvider(props: ParentProps) {
   const value = {
     // Signals
     workflows,
+    projects,
     agents,
     activeWorkflowId,
     selectedNodeId,
@@ -991,6 +1102,8 @@ export function AppProvider(props: ParentProps) {
     newModelInputByProvider,
     providerKeyInputByProvider,
     uiZoom,
+    workflowSettingsOpen,
+    selectedProjectId,
     editingWorkflowId,
     workflowNameDraft,
     selectedAgentId,
@@ -1016,6 +1129,9 @@ export function AppProvider(props: ParentProps) {
     setScreen,
     // Memos
     activeWorkflow,
+    activeProject,
+    independentWorkflows: independentWorkflowsMemo,
+    executionCwdForActiveWorkflow,
     selectedAgent,
     canvasGraph,
     canvasStatusByNode,
@@ -1040,6 +1156,11 @@ export function AppProvider(props: ParentProps) {
     handleSwitchWorkflow,
     handleCreateWorkflow,
     handleOpenAgents,
+    handleAddProject,
+    handleSelectProject,
+    handleToggleProjectExpanded,
+    isProjectExpanded,
+    workflowsForProject: workflowsForProjectMemo,
     handleCreateAgent,
     handleSaveAgents,
     handleAgentSchemaInput,
@@ -1087,6 +1208,8 @@ export function AppProvider(props: ParentProps) {
     handleZoomIn,
     handleZoomOut,
     handleZoomReset,
+    handleToggleWorkflowSettings,
+    updateActiveWorkflowSettings,
   };
 
   return <AppContext.Provider value={value}>{props.children}</AppContext.Provider>;

@@ -100,6 +100,15 @@ export function cloneWorkflow(workflow: Workflow): Workflow {
     name: workflow.name,
     nodes: workflow.nodes.map(cloneNode),
     edges: workflow.edges.map(cloneEdge),
+    settings: {
+      shared_context: workflow.settings?.shared_context ?? "",
+      schedule: workflow.settings?.schedule ?? null,
+      retry_policy: workflow.settings?.retry_policy ?? {
+        max_attempts: 0,
+        backoff_ms: 1_000,
+      },
+      provider_id: workflow.settings?.provider_id ?? null,
+    },
   };
 }
 

@@ -11,14 +11,24 @@
 use crate::agent_store::{AgentDefinition, FileAgentStore};
 use crate::credential_store::CredentialStoreError;
 use crate::execution::{
-    apply_event_to_run_state, record_user_input, spawn_interactive_workflow_run, ExecutionAction,
-    ExecutionEvent,
+    apply_event_to_run_state, record_user_input, resolve_execution_cwd,
+    spawn_interactive_workflow_run, ExecutionAction, ExecutionEvent,
 };
 use crate::provider_config::{
     active_provider_env_var, active_provider_label, resolve_provider_config, ProviderConfigError,
     ProviderEnv,
 };
 use crate::settings_store::{key_ref_for_provider, AppSettings, FileSettingsStore};
+use crate::flow_store::{
+    delete_project_workflow, discover_project_workflows, save_project_workflow,
+    save_project_workflows,
+};
+use crate::project_store::{
+    assign_workflow, cleanup_stored_projects, create_project_from_path,
+    unassign_workflow_from_project, validate_unique_project_path, FileProjectStore, Project,
+};
+use std::collections::{BTreeMap, HashSet};
+use std::path::Path;
 use crate::skill_store::{self, SkillSummary};
 use crate::state::WorkflowRunState;
 use crate::storage::FileWorkflowStore;
@@ -36,6 +46,7 @@ use tokio::sync::Mutex;
 pub struct AppBackend {
     workflow_store: FileWorkflowStore,
     agent_store: FileAgentStore,
+    project_store: FileProjectStore,
     settings_store: FileSettingsStore,
     env: ProviderEnv,
     runtime: tokio::runtime::Runtime,
@@ -62,6 +73,8 @@ pub enum BackendError {
     ProviderConfig(#[from] ProviderConfigError),
     #[error("workflow {0} not found")]
     WorkflowNotFound(String),
+    #[error("project {0} not found")]
+    ProjectNotFound(String),
     #[error("workflow run is not active")]
     NoActiveRun,
     #[error("workflow run is not awaiting input")]
@@ -74,6 +87,8 @@ pub enum BackendError {
     WrongApprovalId { expected: String, received: String },
     #[error("workflow run channel closed")]
     RunChannelClosed,
+    #[error("{0}")]
+    Execution(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -111,6 +126,7 @@ impl AppBackend {
     pub fn new(
         workflow_store: FileWorkflowStore,
         agent_store: FileAgentStore,
+        project_store: FileProjectStore,
         settings_store: FileSettingsStore,
         env: ProviderEnv,
         runtime: tokio::runtime::Runtime,
@@ -118,6 +134,7 @@ impl AppBackend {
         Self {
             workflow_store,
             agent_store,
+            project_store,
             settings_store,
             env,
             runtime,
@@ -135,6 +152,7 @@ impl AppBackend {
         Self::new(
             FileWorkflowStore::new(FileWorkflowStore::default_path()),
             FileAgentStore::new(FileAgentStore::default_path()),
+            FileProjectStore::new(FileProjectStore::default_path()),
             FileSettingsStore::new(FileSettingsStore::default_path()),
             ProviderEnv::from_system(),
             tokio::runtime::Runtime::new().expect("failed to create tokio runtime"),
@@ -145,8 +163,7 @@ impl AppBackend {
     /// Returns an error if the workflow store cannot be read.
     pub fn list_workflows(&self) -> Result<Vec<WorkflowListItem>, BackendError> {
         Ok(self
-            .workflow_store
-            .load()?
+            .load_all_workflows()?
             .into_iter()
             .map(|workflow| WorkflowListItem {
                 id: workflow.id.to_string(),
@@ -156,16 +173,24 @@ impl AppBackend {
     }
 
     /// # Errors
-    /// Returns an error if the workflow store cannot be read.
+    /// Returns an error if workflow stores cannot be read.
     pub fn load_all_workflows(&self) -> Result<Vec<Workflow>, BackendError> {
-        self.workflow_store.load().map_err(BackendError::from)
+        let mut by_id = BTreeMap::<String, Workflow>::new();
+        for workflow in self.workflow_store.load()? {
+            by_id.insert(workflow.id.to_string(), workflow);
+        }
+        for project in self.load_projects()? {
+            for workflow in discover_project_workflows(Path::new(&project.path))? {
+                by_id.insert(workflow.id.to_string(), workflow);
+            }
+        }
+        Ok(by_id.into_values().collect())
     }
 
     /// # Errors
     /// Returns an error if the workflow store cannot be read or the workflow does not exist.
     pub fn load_workflow(&self, workflow_id: &str) -> Result<Workflow, BackendError> {
-        self.workflow_store
-            .load()?
+        self.load_all_workflows()?
             .into_iter()
             .find(|workflow| workflow.id == workflow_id)
             .ok_or_else(|| BackendError::WorkflowNotFound(workflow_id.to_string()))
@@ -184,22 +209,42 @@ impl AppBackend {
     /// # Errors
     /// Returns an error if the workflow store cannot be written.
     pub fn save_workflow(&self, workflow: Workflow) -> Result<Workflow, BackendError> {
-        let mut workflows = self.workflow_store.load()?;
+        let mut workflows = self.load_all_workflows()?;
         if let Some(existing) = workflows.iter_mut().find(|item| item.id == workflow.id) {
             *existing = workflow.clone();
         } else {
             workflows.push(workflow.clone());
         }
-        self.workflow_store.save(&workflows)?;
+        self.save_workflows(&workflows)?;
         Ok(workflow)
     }
 
     /// # Errors
-    /// Returns an error if the workflow store cannot be written.
+    /// Returns an error if workflow stores cannot be written.
     pub fn save_workflows(&self, workflows: &[Workflow]) -> Result<(), BackendError> {
-        self.workflow_store
-            .save(workflows)
-            .map_err(BackendError::from)
+        let projects = self.load_projects()?;
+        let assigned_ids: HashSet<String> = projects
+            .iter()
+            .flat_map(|project| project.workflow_ids.iter().cloned())
+            .collect();
+
+        let app_workflows: Vec<Workflow> = workflows
+            .iter()
+            .filter(|workflow| !assigned_ids.contains(&*workflow.id))
+            .cloned()
+            .collect();
+        self.workflow_store.save(&app_workflows)?;
+
+        for project in &projects {
+            let project_workflows: Vec<Workflow> = workflows
+                .iter()
+                .filter(|workflow| project.workflow_ids.iter().any(|id| id == &*workflow.id))
+                .cloned()
+                .collect();
+            save_project_workflows(Path::new(&project.path), &project_workflows)?;
+        }
+
+        Ok(())
     }
 
     /// # Errors
@@ -209,13 +254,13 @@ impl AppBackend {
         workflow_id: &str,
         name: String,
     ) -> Result<WorkflowListItem, BackendError> {
-        let mut workflows = self.workflow_store.load()?;
+        let mut workflows = self.load_all_workflows()?;
         let workflow = workflows
             .iter_mut()
             .find(|item| item.id == workflow_id)
             .ok_or_else(|| BackendError::WorkflowNotFound(workflow_id.to_string()))?;
         workflow.name = name.clone();
-        self.workflow_store.save(&workflows)?;
+        self.save_workflows(&workflows)?;
         Ok(WorkflowListItem {
             id: workflow_id.to_string(),
             name,
@@ -416,25 +461,146 @@ impl AppBackend {
     }
 
     /// # Errors
+    /// Returns an error if the project store cannot be read or written during cleanup.
+    pub fn load_projects(&self) -> Result<Vec<Project>, BackendError> {
+        let mut projects = self.project_store.load()?;
+        let before = projects.clone();
+        cleanup_stored_projects(&mut projects);
+        if projects != before {
+            self.project_store.save(&projects)?;
+        }
+        Ok(projects)
+    }
+
+    /// # Errors
+    /// Returns an error if the project store cannot be read.
+    pub fn list_projects(&self) -> Result<Vec<Project>, BackendError> {
+        self.load_projects()
+    }
+
+    /// # Errors
+    /// Returns an error if the project store cannot be written.
+    pub fn save_projects(&self, projects: &[Project]) -> Result<(), BackendError> {
+        self.project_store.save(projects).map_err(BackendError::from)
+    }
+
+    /// # Errors
+    /// Returns an error if the project store cannot be read or written.
+    pub fn upsert_project(&self, project: Project) -> Result<Project, BackendError> {
+        let mut projects = self.load_projects()?;
+        if let Some(existing) = projects.iter_mut().find(|item| item.id == project.id) {
+            *existing = project.clone();
+        } else {
+            projects.push(project.clone());
+        }
+        self.save_projects(&projects)?;
+        Ok(project)
+    }
+
+    /// # Errors
+    /// Returns an error if the project is missing or the store cannot be written.
+    pub fn delete_project(&self, project_id: &str) -> Result<(), BackendError> {
+        let mut projects = self.load_projects()?;
+        let original_len = projects.len();
+        projects.retain(|project| project.id != project_id);
+        if projects.len() == original_len {
+            return Err(BackendError::ProjectNotFound(project_id.to_string()));
+        }
+        self.save_projects(&projects)
+    }
+
+    /// # Errors
+    /// Returns an error if the path is invalid, already registered, or the store cannot be written.
+    pub fn create_project_from_directory(&self, path: String) -> Result<Project, BackendError> {
+        let mut projects = self.load_projects()?;
+        validate_unique_project_path(&projects, &path).map_err(BackendError::Execution)?;
+        let project = create_project_from_path(&path).map_err(BackendError::Execution)?;
+        projects.push(project.clone());
+        self.save_projects(&projects)?;
+        Ok(project)
+    }
+
+    /// # Errors
+    /// Returns an error if the project is missing or the store cannot be written.
+    pub fn assign_workflow_to_project(
+        &self,
+        project_id: &str,
+        workflow_id: &str,
+    ) -> Result<Vec<Project>, BackendError> {
+        let workflow = self.load_workflow(workflow_id)?;
+        let mut projects = self.project_store.load()?;
+        cleanup_stored_projects(&mut projects);
+        let project_path = projects
+            .iter()
+            .find(|project| project.id == project_id)
+            .map(|project| project.path.clone())
+            .ok_or_else(|| BackendError::ProjectNotFound(project_id.to_string()))?;
+        assign_workflow(&mut projects, project_id, workflow_id).map_err(BackendError::Execution)?;
+        save_project_workflow(Path::new(&project_path), &workflow)?;
+        self.save_projects(&projects)?;
+        Ok(projects)
+    }
+
+    /// # Errors
+    /// Returns an error if the store cannot be read or written.
+    pub fn unassign_workflow_from_project(
+        &self,
+        project_id: &str,
+        workflow_id: &str,
+    ) -> Result<Vec<Project>, BackendError> {
+        let mut projects = self.project_store.load()?;
+        cleanup_stored_projects(&mut projects);
+        let project_path = projects
+            .iter()
+            .find(|project| project.id == project_id)
+            .map(|project| project.path.clone())
+            .ok_or_else(|| BackendError::ProjectNotFound(project_id.to_string()))?;
+        unassign_workflow_from_project(&mut projects, project_id, workflow_id)
+            .map_err(BackendError::Execution)?;
+        delete_project_workflow(Path::new(&project_path), workflow_id)?;
+        self.save_projects(&projects)?;
+        Ok(projects)
+    }
+
+    /// # Errors
     /// Returns an error if the workflow fails validation or provider configuration fails.
     pub async fn start_run(
         &self,
         workflow: Workflow,
         entrypoint: Option<String>,
+        execution_cwd: Option<String>,
         settings: &AppSettings,
         transient_api_key: Option<&str>,
     ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
         validate_workflow(&workflow)?;
+        let resolved_cwd = resolve_execution_cwd(execution_cwd.as_deref())
+            .map_err(BackendError::Execution)?;
+        let provider_settings = workflow
+            .settings
+            .provider_id
+            .as_ref()
+            .filter(|provider_id| !provider_id.trim().is_empty())
+            .map(|provider_id| {
+                let mut settings = settings.clone();
+                settings.active_provider = ProviderId::from(provider_id.as_str());
+                settings
+            });
+        let provider_settings = provider_settings.as_ref().unwrap_or(settings);
         let provider_config = resolve_provider_config(
-            settings,
+            provider_settings,
             transient_api_key,
             &self.env,
             self.settings_store.credential_store(),
         )?;
         let ai = create_provider(provider_config);
 
-        let (handle, event_rx, action_tx) =
-            spawn_interactive_workflow_run(&self.runtime, workflow.clone(), entrypoint, ai);
+        let (handle, event_rx, action_tx) = spawn_interactive_workflow_run(
+            &self.runtime,
+            workflow.clone(),
+            entrypoint,
+            resolved_cwd,
+            ai,
+        );
 
         let mut session = self.run_session.lock().await;
         if let Some(existing) = session.handle.take() {
@@ -599,6 +765,7 @@ mod tests {
         let backend = AppBackend::new(
             FileWorkflowStore::new(dir.path().join("workflows.json")),
             FileAgentStore::new(dir.path().join("agents.json")),
+            FileProjectStore::new(dir.path().join("projects.json")),
             FileSettingsStore::with_credential_store(
                 dir.path().join("settings.json"),
                 credential_store,
@@ -765,6 +932,7 @@ mod tests {
         let readiness = AppBackend::new(
             FileWorkflowStore::new("/tmp/unused-workflows.json"),
             FileAgentStore::new("/tmp/unused-agents.json"),
+            FileProjectStore::new("/tmp/unused-projects.json"),
             FileSettingsStore::with_credential_store("/tmp/unused-settings.json", credential_store),
             ProviderEnv::default(),
             tokio::runtime::Runtime::new().expect("runtime"),
@@ -786,7 +954,7 @@ mod tests {
             workflow.nodes = vec![node];
 
             let (initial_state, mut event_rx) = backend
-                .start_run(workflow, None, &AppSettings::default(), None)
+                .start_run(workflow, None, None, &AppSettings::default(), None)
                 .await
                 .expect("start run");
 
@@ -900,5 +1068,24 @@ mod tests {
                 }
             }
         });
+    }
+
+    #[test]
+    fn assign_workflow_to_project_round_trips() {
+        let (backend, _dir) = backend();
+        let workflow = backend
+            .create_workflow("Flow".to_string())
+            .expect("create workflow");
+        let project = backend
+            .create_project_from_directory(std::env::temp_dir().to_string_lossy().into_owned())
+            .expect("create project");
+
+        let projects = backend
+            .assign_workflow_to_project(&project.id, &workflow.id.to_string())
+            .expect("assign workflow");
+
+        assert_eq!(projects[0].workflow_ids, vec![workflow.id.to_string()]);
+        let loaded = backend.load_projects().expect("load projects");
+        assert_eq!(loaded[0].workflow_ids, vec![workflow.id.to_string()]);
     }
 }

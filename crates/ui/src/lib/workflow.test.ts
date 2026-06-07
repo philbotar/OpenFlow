@@ -44,6 +44,9 @@ const workflow: Workflow = {
     },
   ],
   edges: [{ id: "edge-1", from: "node-1", to: "node-2" }],
+  settings: {
+    shared_context: "Use concise bullet summaries.",
+  },
 };
 
 const settings: AppSettings = {
@@ -114,8 +117,10 @@ describe("workflow helpers", () => {
     cloned.nodes[0].agent.model = "o3";
     (cloned.nodes[0].agent.output_schema as { properties: { title: { type: string } } }).properties.title.type = "number";
     cloned.edges[0].to = "node-9";
+    cloned.settings.shared_context = "changed";
 
     expect(workflow.nodes[0].position.x).toBe(96);
+    expect(workflow.settings.shared_context).toBe("Use concise bullet summaries.");
     expect(workflow.nodes[0].agent.model).toBe("gpt-4o-mini");
     expect((workflow.nodes[0].agent.output_schema as { properties: { title: { type: string } } }).properties.title.type).toBe(
       "string",

@@ -4,6 +4,11 @@ import type { UiDesktopOutboundPort } from "../ports";
 export function createUiDesktopOutboundAdapter(): UiDesktopOutboundPort {
 	return {
 		bootstrapApp: desktopApi.bootstrapApp,
+		listProjects: desktopApi.listProjects,
+		saveProjects: desktopApi.saveProjects,
+		createProjectFromDirectory: desktopApi.createProjectFromDirectory,
+		assignWorkflowToProject: desktopApi.assignWorkflowToProject,
+		unassignWorkflowFromProject: desktopApi.unassignWorkflowFromProject,
 		listWorkflows: desktopApi.listWorkflows,
 		loadAllWorkflows: desktopApi.loadAllWorkflows,
 		loadWorkflow: desktopApi.loadWorkflow,

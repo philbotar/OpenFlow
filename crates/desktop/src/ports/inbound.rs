@@ -4,7 +4,7 @@
 //! The adapters module provides the concrete Tauri command implementations.
 
 use async_trait::async_trait;
-use orchestration::Workflow;
+use orchestration::{Project, Workflow};
 
 use orchestration::agent_store::AgentDefinition;
 use orchestration::backend::{
@@ -25,11 +25,30 @@ pub trait BootstrapPort: Send + Sync {
         (
             Vec<Workflow>,
             Vec<AgentDefinition>,
+            Vec<Project>,
             AppSettings,
             Option<WorkflowRunState>,
         ),
         BackendError,
     >;
+}
+
+// ── Project commands ───────────────────────────────────────────
+
+pub trait ProjectCommands {
+    fn list_projects(&self) -> Result<Vec<Project>, BackendError>;
+    fn save_projects(&self, projects: Vec<Project>) -> Result<(), BackendError>;
+    fn create_project_from_directory(&self, path: String) -> Result<Project, BackendError>;
+    fn assign_workflow_to_project(
+        &self,
+        project_id: String,
+        workflow_id: String,
+    ) -> Result<Vec<Project>, BackendError>;
+    fn unassign_workflow_from_project(
+        &self,
+        project_id: String,
+        workflow_id: String,
+    ) -> Result<Vec<Project>, BackendError>;
 }
 
 // ── Workflow commands ──────────────────────────────────────────
@@ -111,6 +130,7 @@ pub trait RunCommands: Send + Sync {
         &self,
         workflow: Workflow,
         settings: AppSettings,
+        execution_cwd: Option<String>,
         transient_api_key: Option<String>,
     ) -> Result<WorkflowRunState, BackendError>;
     async fn submit_user_input(

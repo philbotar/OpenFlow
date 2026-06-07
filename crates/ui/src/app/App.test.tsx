@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { render } from "solid-js/web";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { AgentDefinition, AppSettings, BootstrapPayload, ProviderReadiness, SkillSummary, Workflow, WorkflowRunState } from "../lib/types";
+import type { AgentDefinition, AppSettings, BootstrapPayload, Project, ProviderReadiness, SkillSummary, Workflow, WorkflowRunState } from "../lib/types";
 import { createEmptyToolConfig } from "../lib/workflow";
 
 const apiMocks = vi.hoisted(() => ({
@@ -24,6 +24,13 @@ const apiMocks = vi.hoisted(() => ({
   submitToolApproval: vi.fn(),
   submitUserInput: vi.fn(),
   validateWorkflow: vi.fn(),
+  createProjectFromDirectory: vi.fn(),
+  assignWorkflowToProject: vi.fn(),
+  unassignWorkflowFromProject: vi.fn(),
+}));
+
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  open: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock("../api", async (importOriginal) => {
@@ -49,6 +56,9 @@ vi.mock("../api", async (importOriginal) => {
     startRun: apiMocks.startRun,
     submitUserInput: apiMocks.submitUserInput,
     validateWorkflow: apiMocks.validateWorkflow,
+    createProjectFromDirectory: apiMocks.createProjectFromDirectory,
+    assignWorkflowToProject: apiMocks.assignWorkflowToProject,
+    unassignWorkflowFromProject: apiMocks.unassignWorkflowFromProject,
   };
 });
 
@@ -153,6 +163,9 @@ function makeWorkflow(id: string, name: string): Workflow {
       },
     ],
     edges: [],
+    settings: {
+      shared_context: "",
+    },
   };
 }
 
@@ -238,14 +251,27 @@ function installDefaultApiMocks() {
   apiMocks.listSkills.mockResolvedValue(FIXTURE_SKILLS);
 }
 
+function makeProject(id: string, name: string, workflowIds: string[] = []): Project {
+  return {
+    id,
+    path: `/tmp/${name}`,
+    name,
+    metadata: { description: "" },
+    workflow_ids: workflowIds,
+    default_execution_cwd: `/tmp/${name}`,
+  };
+}
+
 function makeBootstrapPayload(
   workflows: Workflow[],
   agents: AgentDefinition[] = [makeAgent("agent-1", "Research Agent")],
   skills: SkillSummary[] = FIXTURE_SKILLS,
+  projects: Project[] = [],
 ): BootstrapPayload {
   return {
     workflows,
     agents,
+    projects,
     skills,
     settings: SETTINGS,
     runState: null,
@@ -379,6 +405,26 @@ describe("App workflow rename", () => {
 
       expect(document.activeElement).toBe(input);
       expect(topbarTitle(container)).toBe("Workflow One");
+    } finally {
+      dispose();
+    }
+  });
+
+  test("renders independent workflows above project folders", async () => {
+    const independent = makeWorkflow("workflow-independent", "Independent Flow");
+    const assigned = makeWorkflow("workflow-assigned", "Assigned Flow");
+    const folderProject = makeProject("project-1", "Syntech", ["workflow-assigned"]);
+    const { container, dispose } = await mountApp(
+      makeBootstrapPayload([independent, assigned], undefined, undefined, [folderProject]),
+    );
+
+    try {
+      const labels = Array.from(container.querySelectorAll(".sidebar-section-label")).map(
+        (element) => element.textContent ?? "",
+      );
+      expect(labels).toEqual(["Workflows", "Projects"]);
+      expect(workflowTitles(container)).toEqual(["Independent Flow"]);
+      expect(container.querySelector(".project-folder-title")?.textContent).toBe("Syntech");
     } finally {
       dispose();
     }

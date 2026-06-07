@@ -26,7 +26,9 @@ pub mod backend;
 pub mod canvas_math;
 pub mod credential_store;
 pub mod execution;
+pub mod flow_store;
 pub mod ports;
+pub mod project_store;
 pub mod provider_config;
 pub mod settings_store;
 pub mod skill_store;
@@ -36,3 +38,4 @@ pub mod tools;
 
 // Re-exports of domain types consumed by downstream layers
 pub use domain::{Node, Workflow};
+pub use project_store::Project;

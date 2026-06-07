@@ -141,10 +141,19 @@ impl RunOrchestrator for AppBackend {
         &self,
         workflow: Workflow,
         entrypoint: Option<String>,
+        execution_cwd: Option<String>,
         settings: &AppSettings,
         transient_api_key: Option<&str>,
     ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
-        AppBackend::start_run(self, workflow, entrypoint, settings, transient_api_key).await
+        AppBackend::start_run(
+            self,
+            workflow,
+            entrypoint,
+            execution_cwd,
+            settings,
+            transient_api_key,
+        )
+        .await
     }
 
     async fn apply_execution_event(

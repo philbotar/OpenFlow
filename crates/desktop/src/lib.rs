@@ -10,7 +10,7 @@ use orchestration::backend::{
 use orchestration::settings_store::AppSettings;
 use orchestration::skill_store::SkillSummary;
 use orchestration::state::WorkflowRunState;
-use orchestration::Workflow;
+use orchestration::{Project, Workflow};
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
 
@@ -20,6 +20,7 @@ use tauri::{Emitter, Manager};
 struct BootstrapPayload {
     workflows: Vec<Workflow>,
     agents: Vec<AgentDefinition>,
+    projects: Vec<Project>,
     skills: Vec<SkillSummary>,
     settings: AppSettings,
     run_state: Option<WorkflowRunState>,
@@ -48,12 +49,14 @@ async fn bootstrap_app(
 ) -> Result<BootstrapPayload, CommandError> {
     let workflows = backend.load_all_workflows()?;
     let agents = backend.load_agents()?;
+    let projects = backend.list_projects()?;
     let skills = backend.list_skills()?;
     let settings = backend.load_settings()?;
     let run_state = backend.get_run_state().await;
     Ok(BootstrapPayload {
         workflows,
         agents,
+        projects,
         skills,
         settings,
         run_state,
@@ -239,10 +242,17 @@ async fn start_run(
     app: tauri::AppHandle,
     workflow: Workflow,
     settings: AppSettings,
+    execution_cwd: Option<String>,
     transient_api_key: Option<String>,
 ) -> Result<WorkflowRunState, CommandError> {
     let (initial_state, mut event_rx) = backend
-        .start_run(workflow, None, &settings, transient_api_key.as_deref())
+        .start_run(
+            workflow,
+            None,
+            execution_cwd,
+            &settings,
+            transient_api_key.as_deref(),
+        )
         .await?;
     let app_handle = app.clone();
 
@@ -307,6 +317,50 @@ async fn clear_run_trace(
     Ok(backend.clear_run_trace().await?)
 }
 
+/// Tauri command: List projects.
+#[tauri::command]
+fn list_projects(backend: tauri::State<AppBackend>) -> Result<Vec<Project>, CommandError> {
+    Ok(backend.list_projects()?)
+}
+
+/// Tauri command: Save projects.
+#[tauri::command]
+fn save_projects(
+    backend: tauri::State<AppBackend>,
+    projects: Vec<Project>,
+) -> Result<(), CommandError> {
+    Ok(backend.save_projects(&projects)?)
+}
+
+/// Tauri command: Create a project from a directory path.
+#[tauri::command]
+fn create_project_from_directory(
+    backend: tauri::State<AppBackend>,
+    path: String,
+) -> Result<Project, CommandError> {
+    Ok(backend.create_project_from_directory(path)?)
+}
+
+/// Tauri command: Assign a workflow to a project.
+#[tauri::command]
+fn assign_workflow_to_project(
+    backend: tauri::State<AppBackend>,
+    project_id: String,
+    workflow_id: String,
+) -> Result<Vec<Project>, CommandError> {
+    Ok(backend.assign_workflow_to_project(&project_id, &workflow_id)?)
+}
+
+/// Tauri command: Remove a workflow from any project.
+#[tauri::command]
+fn unassign_workflow_from_project(
+    backend: tauri::State<AppBackend>,
+    project_id: String,
+    workflow_id: String,
+) -> Result<Vec<Project>, CommandError> {
+    Ok(backend.unassign_workflow_from_project(&project_id, &workflow_id)?)
+}
+
 pub fn run() {
     let backend = AppBackend::with_default_paths();
 
@@ -315,8 +369,14 @@ pub fn run() {
     builder
         .manage(backend)
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             bootstrap_app,
+            list_projects,
+            save_projects,
+            create_project_from_directory,
+            assign_workflow_to_project,
+            unassign_workflow_from_project,
             list_workflows,
             load_all_workflows,
             load_workflow,

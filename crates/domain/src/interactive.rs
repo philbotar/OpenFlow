@@ -382,6 +382,15 @@ impl InteractiveEngine {
         self.transcripts.get(node_id).map_or(&[], Vec::as_slice)
     }
 
+    fn workflow_system_prompt(&self, node: &crate::Node) -> String {
+        let base = node.agent.system_prompt.clone();
+        let shared = self.workflow.settings.shared_context.trim();
+        if shared.is_empty() {
+            return base;
+        }
+        format!("{base}\n\n--- Workflow context ---\n{shared}")
+    }
+
     fn build_request(&self, node_id: &str) -> Result<AgentRequest, RunError> {
         let node = self
             .find_node(node_id)
@@ -403,7 +412,7 @@ impl InteractiveEngine {
             node_id: node.id.clone(),
             node_label: node.label.clone(),
             model: node.agent.model.clone(),
-            system_prompt: node.agent.system_prompt.clone(),
+            system_prompt: self.workflow_system_prompt(node),
             task_prompt: node.agent.task_prompt.clone(),
             input: build_node_input(
                 &node.id,
@@ -459,6 +468,20 @@ mod tests {
         node.id = NodeId(id.to_string());
         node.agent.model = "test-model".to_string();
         node
+    }
+
+    #[tokio::test]
+    async fn shared_context_is_appended_to_system_prompt() {
+        let mut workflow = Workflow::new("shared");
+        workflow.settings.shared_context = "Always follow the style guide.".to_string();
+        workflow.nodes = vec![node("idea")];
+        let mut engine = InteractiveEngine::new(workflow, None).unwrap();
+
+        let EnginePollResult::CallAi { request, .. } = engine.poll() else {
+            panic!("expected CallAi");
+        };
+        assert!(request.system_prompt.contains("--- Workflow context ---"));
+        assert!(request.system_prompt.contains("Always follow the style guide."));
     }
 
     #[tokio::test]
