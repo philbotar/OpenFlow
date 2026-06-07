@@ -1,6 +1,7 @@
 use domain::{
-    AgentError, AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTranscriptItem,
-    AgentTurnOutcome, AgentTurnSuccess, ToolCall, ToolDefinition,
+    filter_tool_turn_assistant_message, AgentError, AgentNeedUserInput, AgentRequest,
+    AgentToolCallBatch, AgentTranscriptItem, AgentTurnOutcome, AgentTurnSuccess, ToolCall,
+    ToolDefinition,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -427,6 +428,7 @@ pub fn parse_responses_output(payload: &Value) -> Result<AgentTurnOutcome, Agent
         );
     }
 
+    let assistant_message = filter_tool_turn_assistant_message(assistant_message);
     Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
         raw_text: assistant_message.clone().unwrap_or_default(),
         assistant_message,
@@ -505,6 +507,7 @@ pub fn parse_chat_completion_output(
         );
     }
 
+    let assistant_message = filter_tool_turn_assistant_message(assistant_message);
     Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
         raw_text: assistant_message.clone().unwrap_or_default(),
         assistant_message,
@@ -601,5 +604,25 @@ mod tests {
         let result = parse_compatible_tool_call(&call);
         let err = result.unwrap_err().to_string();
         assert!(err.contains("were not valid JSON"), "expected parse error");
+    }
+
+    #[test]
+    fn tool_call_batch_strips_redundant_xml_assistant_message() {
+        let payload = json!({
+            "choices": [{
+                "message": {
+                    "content": "<tool_call>\n<function=search>\n<parameter=pattern>TODO</parameter>\n</function>\n</tool_call>",
+                    "tool_calls": [make_tool_call_value("search", r#"{"pattern":"TODO","paths":"rpo"}"#)]
+                }
+            }]
+        });
+
+        let outcome = parse_chat_completion_output(&payload, false).unwrap();
+        let AgentTurnOutcome::ToolCalls(batch) = outcome else {
+            panic!("expected tool call batch");
+        };
+        assert_eq!(batch.tool_calls.len(), 1);
+        assert_eq!(batch.tool_calls[0].name, "search");
+        assert_eq!(batch.assistant_message, None);
     }
 }

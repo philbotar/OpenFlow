@@ -1806,6 +1806,51 @@ select.text-input:hover {
   color: var(--text-muted);
 }
 
+.tool-bubble-row {
+  width: 100%;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.tool-bubble-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.tool-bubble {
+  width: 100%;
+  border-radius: 16px;
+  background: var(--surface-muted);
+  padding: 16px 20px;
+}
+
+.tool-bubble-header {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.tool-bubble-output {
+  max-height: 14rem;
+  overflow-y: auto;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tool-bubble--error .tool-bubble-output,
+.tool-bubble-row--error .tool-bubble-output {
+  color: var(--danger);
+}
+
+.tool-bubble-placeholder {
+  color: var(--text-subtle);
+  font-style: italic;
+}
+
 .trace-row {
   width: 100%;
   padding: 14px;

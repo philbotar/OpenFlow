@@ -392,7 +392,7 @@ impl AppState {
         self.chat_logs
             .entry(NodeId(node_id.to_string()))
             .or_default()
-            .push(ChatMessage { role, content });
+            .push(ChatMessage::text(role, content));
     }
 
     pub fn push_run_trace(&mut self, entry: RunTraceEntry) {

@@ -364,14 +364,12 @@ impl InteractiveEngine {
         self.transcript(node_id)
             .iter()
             .filter_map(|item| match item {
-                AgentTranscriptItem::AssistantMessage { content } => Some(ChatMessage {
-                    role: ChatRole::Assistant,
-                    content: content.clone(),
-                }),
-                AgentTranscriptItem::UserMessage { content } => Some(ChatMessage {
-                    role: ChatRole::User,
-                    content: content.clone(),
-                }),
+                AgentTranscriptItem::AssistantMessage { content } => {
+                    Some(ChatMessage::text(ChatRole::Assistant, content.clone()))
+                }
+                AgentTranscriptItem::UserMessage { content } => {
+                    Some(ChatMessage::text(ChatRole::User, content.clone()))
+                }
                 AgentTranscriptItem::ToolCall { .. } | AgentTranscriptItem::ToolResult { .. } => {
                     None
                 }
@@ -617,14 +615,8 @@ mod tests {
         assert_eq!(
             engine.conversation_history("idea"),
             vec![
-                ChatMessage {
-                    role: ChatRole::User,
-                    content: "Need a smaller launch scope".to_string(),
-                },
-                ChatMessage {
-                    role: ChatRole::Assistant,
-                    content: "Which approval step is mandatory?".to_string(),
-                },
+                ChatMessage::text(ChatRole::User, "Need a smaller launch scope"),
+                ChatMessage::text(ChatRole::Assistant, "Which approval step is mandatory?"),
             ]
         );
     }

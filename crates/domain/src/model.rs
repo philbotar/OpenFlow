@@ -229,6 +229,43 @@ pub enum ChatRole {
 pub struct ChatMessage {
     pub role: ChatRole,
     pub content: String,
+    #[serde(default, rename = "toolCallId", skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+}
+
+impl ChatMessage {
+    #[must_use]
+    pub fn text(role: ChatRole, content: impl Into<String>) -> Self {
+        Self {
+            role,
+            content: content.into(),
+            tool_call_id: None,
+        }
+    }
+
+    #[must_use]
+    pub fn tool_marker(tool_call_id: impl Into<String>) -> Self {
+        Self {
+            role: ChatRole::Thinking,
+            content: String::new(),
+            tool_call_id: Some(tool_call_id.into()),
+        }
+    }
+}
+
+/// True when assistant text only echoes structured tool invocation markup.
+#[must_use]
+pub fn is_redundant_tool_call_markup(content: &str) -> bool {
+    let trimmed = content.trim();
+    trimmed.starts_with("<tool_call")
+        || trimmed.starts_with("```tool_call")
+        || (trimmed.contains("<function=") && trimmed.contains("</tool_call>"))
+}
+
+/// Drop assistant text that duplicates structured tool calls in chat/transcript.
+#[must_use]
+pub fn filter_tool_turn_assistant_message(message: Option<String>) -> Option<String> {
+    message.filter(|content| !is_redundant_tool_call_markup(content))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -421,13 +458,38 @@ mod tests {
 
     #[test]
     fn chat_message_serde_roundtrip() {
-        let msg = ChatMessage {
-            role: ChatRole::Thinking,
-            content: "Preparing request...".to_string(),
-        };
+        let msg = ChatMessage::text(ChatRole::Thinking, "Preparing request...");
         let json = serde_json::to_string(&msg).unwrap();
         let back: ChatMessage = serde_json::from_str(&json).unwrap();
         assert_eq!(msg, back);
+
+        let marker = ChatMessage::tool_marker("call-1");
+        let marker_json = serde_json::to_string(&marker).unwrap();
+        assert!(marker_json.contains("\"toolCallId\":\"call-1\""));
+        let marker_back: ChatMessage = serde_json::from_str(&marker_json).unwrap();
+        assert_eq!(marker, marker_back);
+    }
+
+    #[test]
+    fn redundant_tool_call_markup_detects_xml_echoes() {
+        assert!(is_redundant_tool_call_markup(
+            "<tool_call>\n<function=search>\n</function>\n</tool_call>"
+        ));
+        assert!(!is_redundant_tool_call_markup("Let me search the repo for TODOs."));
+    }
+
+    #[test]
+    fn filter_tool_turn_assistant_message_keeps_human_text() {
+        assert_eq!(
+            filter_tool_turn_assistant_message(Some("Checking README.".to_string())),
+            Some("Checking README.".to_string())
+        );
+        assert_eq!(
+            filter_tool_turn_assistant_message(Some(
+                "<tool_call><function=read></function></tool_call>".to_string()
+            )),
+            None
+        );
     }
 
     #[test]

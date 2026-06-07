@@ -18,14 +18,13 @@ use crate::tools::{
     ToolRunner, ToolRunnerError,
 };
 use domain::{
-    AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTranscriptItem, AgentTurnOutcome,
-    AiPort, ChatMessage, ChatRole, EnginePollResult, InteractiveEngine, NodeId, RunReport,
-    SubagentDeclaration, SubagentStatus, SubagentSummary, ToolCall, ToolCallStatus, ToolOutputMeta,
-    Workflow,
+    filter_tool_turn_assistant_message, AgentNeedUserInput, AgentRequest, AgentToolCallBatch,
+    AgentTranscriptItem, AgentTurnOutcome, AiPort, ChatMessage, ChatRole, EnginePollResult,
+    InteractiveEngine, NodeId, RunReport, SubagentDeclaration, SubagentStatus, SubagentSummary,
+    ToolCall, ToolCallStatus, ToolOutputMeta, Workflow,
 };
 use serde_json::Value;
 use std::collections::{BTreeMap, VecDeque};
-use std::fmt::Write as _;
 use std::path::PathBuf;
 use thiserror::Error;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -864,7 +863,7 @@ fn emit_assistant_message(
         AgentTurnOutcome::Completed(success) => success.assistant_message.clone(),
         AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
             assistant_message, ..
-        }) => assistant_message.clone(),
+        }) => filter_tool_turn_assistant_message(assistant_message.clone()),
         AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
             assistant_message, ..
         }) => Some(assistant_message.clone()),
@@ -1033,7 +1032,7 @@ pub fn apply_event_to_run_state(
                 .chat_logs
                 .entry(node_id)
                 .or_default()
-                .push(ChatMessage { role, content });
+                .push(ChatMessage::text(role, content));
         }
         ExecutionEvent::NodeAwaitingInput {
             node_id,
@@ -1057,18 +1056,18 @@ pub fn apply_event_to_run_state(
                 .chat_logs
                 .entry(node_id.clone())
                 .or_default()
-                .push(ChatMessage {
-                    role: ChatRole::System,
-                    content: format!("Node '{label}' is awaiting human input."),
-                });
+                .push(ChatMessage::text(
+                    ChatRole::System,
+                    format!("Node '{label}' is awaiting human input."),
+                ));
             state
                 .chat_logs
                 .entry(node_id)
                 .or_default()
-                .push(ChatMessage {
-                    role: ChatRole::Thinking,
-                    content: format!("Context:\n{context}"),
-                });
+                .push(ChatMessage::text(
+                    ChatRole::Thinking,
+                    format!("Context:\n{context}"),
+                ));
         }
         ExecutionEvent::ToolCallProposed {
             node_id, tool_call, ..
@@ -1086,10 +1085,7 @@ pub fn apply_event_to_run_state(
                 .chat_logs
                 .entry(node_id)
                 .or_default()
-                .push(ChatMessage {
-                    role: ChatRole::Thinking,
-                    content: format_tool_call_message(&tool_call),
-                });
+                .push(ChatMessage::tool_marker(tool_call.id.clone()));
         }
         ExecutionEvent::ToolApprovalRequested { request } => {
             state.awaiting_node_id = None;
@@ -1110,10 +1106,10 @@ pub fn apply_event_to_run_state(
                 .chat_logs
                 .entry(NodeId(request.node_id.clone()))
                 .or_default()
-                .push(ChatMessage {
-                    role: ChatRole::System,
-                    content: format!("Approval required for tool '{}'.", request.tool_call.name),
-                });
+                .push(ChatMessage::text(
+                    ChatRole::System,
+                    format!("Approval required for tool '{}'.", request.tool_call.name),
+                ));
             update_tool_status(
                 state,
                 &NodeId(request.node_id),
@@ -1171,14 +1167,6 @@ pub fn apply_event_to_run_state(
                 message: format!("running tool {tool_name}"),
                 output: None,
             });
-            state
-                .chat_logs
-                .entry(node_id.clone())
-                .or_default()
-                .push(ChatMessage {
-                    role: ChatRole::Thinking,
-                    content: format!("Running tool: {tool_name}"),
-                });
             update_tool_status(
                 state,
                 &node_id,
@@ -1191,25 +1179,13 @@ pub fn apply_event_to_run_state(
         ExecutionEvent::ToolCompleted {
             node_id,
             tool_call_id,
-            tool_name,
+            tool_name: _,
             content,
             is_error,
-            artifact_ids,
+            artifact_ids: _,
             ..
         } => {
             state.active_tool_call_id = None;
-            state
-                .chat_logs
-                .entry(node_id.clone())
-                .or_default()
-                .push(ChatMessage {
-                    role: if is_error {
-                        ChatRole::System
-                    } else {
-                        ChatRole::Thinking
-                    },
-                    content: format_tool_result_message(&tool_name, &content, &artifact_ids),
-                });
             update_tool_status(
                 state,
                 &node_id,
@@ -1252,10 +1228,7 @@ pub fn apply_event_to_run_state(
                 .chat_logs
                 .entry(node_id)
                 .or_default()
-                .push(ChatMessage {
-                    role: ChatRole::Assistant,
-                    content: output.to_string(),
-                });
+                .push(ChatMessage::text(ChatRole::Assistant, output.to_string()));
         }
         ExecutionEvent::NodeFailed {
             node_id,
@@ -1282,10 +1255,10 @@ pub fn apply_event_to_run_state(
                 .chat_logs
                 .entry(node_id)
                 .or_default()
-                .push(ChatMessage {
-                    role: ChatRole::System,
-                    content: format!("Failed: {error}"),
-                });
+                .push(ChatMessage::text(
+                    ChatRole::System,
+                    format!("Failed: {error}"),
+                ));
         }
         ExecutionEvent::Finished(report) => {
             state.active = false;
@@ -1322,10 +1295,10 @@ pub fn apply_event_to_run_state(
                 .chat_logs
                 .entry(node_id)
                 .or_default()
-                .push(ChatMessage {
-                    role: ChatRole::System,
-                    content: format!("Declared {} subagent(s).", declarations.len()),
-                });
+                .push(ChatMessage::text(
+                    ChatRole::System,
+                    format!("Declared {} subagent(s).", declarations.len()),
+                ));
         }
         ExecutionEvent::SubagentStarted {
             node_id,
@@ -1340,10 +1313,10 @@ pub fn apply_event_to_run_state(
                 .chat_logs
                 .entry(node_id.clone())
                 .or_default()
-                .push(ChatMessage {
-                    role: ChatRole::System,
-                    content: format!("Subagent {} started.", subagent_id),
-                });
+                .push(ChatMessage::text(
+                    ChatRole::System,
+                    format!("Subagent {} started.", subagent_id),
+                ));
         }
         ExecutionEvent::SubagentCompleted {
             node_id,
@@ -1358,10 +1331,10 @@ pub fn apply_event_to_run_state(
                 .chat_logs
                 .entry(node_id.clone())
                 .or_default()
-                .push(ChatMessage {
-                    role: ChatRole::System,
-                    content: format!("Subagent {} completed.", subagent_id),
-                });
+                .push(ChatMessage::text(
+                    ChatRole::System,
+                    format!("Subagent {} completed.", subagent_id),
+                ));
         }
         ExecutionEvent::SubagentFailed {
             node_id,
@@ -1377,35 +1350,12 @@ pub fn apply_event_to_run_state(
                 .chat_logs
                 .entry(node_id.clone())
                 .or_default()
-                .push(ChatMessage {
-                    role: ChatRole::System,
-                    content: format!("Subagent {} failed: {}", subagent_id, error),
-                });
+                .push(ChatMessage::text(
+                    ChatRole::System,
+                    format!("Subagent {} failed: {}", subagent_id, error),
+                ));
         }
     }
-}
-
-fn format_tool_call_message(tool_call: &ToolCall) -> String {
-    let mut message = format!("Tool request: {}", tool_call.name);
-    if let Some(intent) = tool_call
-        .intent
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-    {
-        let _ = write!(message, "\nIntent: {intent}");
-    }
-    let arguments = serde_json::to_string_pretty(&tool_call.arguments)
-        .unwrap_or_else(|_| tool_call.arguments.to_string());
-    let _ = write!(message, "\nArguments:\n{arguments}");
-    message
-}
-
-fn format_tool_result_message(tool_name: &str, content: &str, artifact_ids: &[String]) -> String {
-    let mut message = format!("Tool result: {tool_name}\n{content}");
-    if !artifact_ids.is_empty() {
-        let _ = write!(message, "\nArtifacts: {}", artifact_ids.join(", "));
-    }
-    message
 }
 
 fn update_tool_status(
@@ -1436,10 +1386,7 @@ pub fn record_user_input(state: &mut WorkflowRunState, node_id: &str, text: Stri
         .chat_logs
         .entry(NodeId(node_id.to_string()))
         .or_default()
-        .push(ChatMessage {
-            role: ChatRole::User,
-            content: text,
-        });
+        .push(ChatMessage::text(ChatRole::User, text));
     state.awaiting_node_id = None;
     state.active_manual_node_id = None;
 }
@@ -1517,12 +1464,14 @@ mod tests {
             "read"
         );
         let chat = &state.chat_logs[&NodeId("first".to_string())];
-        assert!(chat[0].content.contains("Tool request: read"));
-        assert!(chat[0].content.contains("\"path\": \"README.md\""));
+        assert_eq!(chat[0].tool_call_id.as_deref(), Some("call-1"));
         assert!(chat[1]
             .content
             .contains("Approval required for tool 'read'."));
-        assert!(chat[2].content.contains("Tool result: read"));
+        assert_eq!(
+            state.tool_calls_by_node[&NodeId("first".to_string())][0].last_output.as_deref(),
+            Some("done")
+        );
     }
 
     #[tokio::test]

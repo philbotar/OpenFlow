@@ -82,6 +82,7 @@ export type ChatRole = "System" | "Thinking" | "User" | "Assistant";
 export interface ChatMessage {
   role: ChatRole;
   content: string;
+  toolCallId?: string;
 }
 
 export type AgentStatus =

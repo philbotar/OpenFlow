@@ -1010,9 +1010,14 @@ describe("App chat slash commands", () => {
     await flush();
 
     try {
-      const rows = Array.from(container.querySelectorAll(".chat-row pre")).map((element) => element.textContent);
-      expect(rows).toContain("Tool request: read\nArguments:\n{\n  \"path\": \"README.md\"\n}");
-      expect(rows).toContain("Tool result: read\n¶README.md\n1:# OpenFlow");
+      const bubble = container.querySelector(".tool-bubble");
+      expect(bubble).not.toBeNull();
+      expect(bubble?.querySelector(".tool-bubble-header")?.textContent).toBe(
+        "Tool Invocation: read",
+      );
+      expect(bubble?.querySelector(".tool-bubble-output")?.textContent).toContain(
+        "¶README.md",
+      );
     } finally {
       dispose();
     }
