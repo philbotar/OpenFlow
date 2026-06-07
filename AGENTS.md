@@ -1,3 +1,8 @@
+---
+description: 
+alwaysApply: true
+---
+
 # AGENTS.md
 
 Single-file orientation for contributors and coding agents.

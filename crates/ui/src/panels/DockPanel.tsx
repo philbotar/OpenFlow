@@ -1,7 +1,6 @@
 import { For, Show } from "solid-js";
-import ArrowUp from "lucide-solid/icons/arrow-up";
+import { ChatPanel } from "../components/conversation";
 import { useAppContext } from "../context/AppContext";
-import { chatRoleLabel } from "../lib/utils";
 import { prettyJson } from "../lib/workflow";
 
 export function DockPanel() {
@@ -104,106 +103,7 @@ export function DockPanel() {
                 </div>
               }
             >
-              <div class="chat-layout">
-                <div class="chat-history" ref={(el) => ctx.setChatHistoryRef(el)}>
-                  <Show
-                    when={ctx.chatMessages().length > 0}
-                    fallback={
-                      <div class="empty-panel">
-                        Run a workflow or select a paused node to continue.
-                      </div>
-                    }
-                  >
-                    <For each={ctx.chatMessages()}>
-                      {(message) => (
-                        <div class={`chat-row role-${message.role.toLowerCase()}`}>
-                          <div
-                            class="chat-role"
-                            classList={{ "is-system": message.role === "System" }}
-                          >
-                            {chatRoleLabel(message.role, ctx.currentNode()?.label)}
-                          </div>
-                          <pre>{message.content}</pre>
-                        </div>
-                      )}
-                    </For>
-                  </Show>
-                </div>
-
-                <Show when={ctx.selectedPendingApproval()}>
-                  {(approval) => (
-                    <div class="inspector-card">
-                      <div class="eyebrow">Approval required</div>
-                      <h3>{approval().toolCall.name}</h3>
-                      <p>{approval().nodeLabel}</p>
-                      <pre>{prettyJson(approval().toolCall.arguments)}</pre>
-                      <div class="inspector-actions">
-                        <button
-                          class="secondary-button"
-                          onClick={() => void ctx.handleToolApproval(false)}
-                        >
-                          Deny
-                        </button>
-                        <button
-                          class="primary-button"
-                          onClick={() => void ctx.handleToolApproval(true)}
-                        >
-                          Approve
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </Show>
-
-                <div class="chat-composer">
-                  <div
-                    class="chat-composer-pill"
-                    classList={{ "is-busy": ctx.chatComposerBusyMemo() }}
-                  >
-                    <textarea
-                      class="text-area composer-input"
-                      rows={1}
-                      value={ctx.chatInput()}
-                      onInput={(event) => ctx.setChatInput(event.currentTarget.value)}
-                      onKeyDown={ctx.handleChatInputKeyDown}
-                      placeholder={
-                        ctx.selectedPendingApproval()
-                          ? "Resolve the pending tool approval above."
-                          : "Continue paused node. Prefix /brainstorming for a skill."
-                      }
-                      disabled={!ctx.chatEnabledMemo() || !!ctx.selectedPendingApproval()}
-                    />
-                    <Show when={ctx.chatSubmission().invokedSkills.length > 0}>
-                      <span
-                        class="composer-skill-pill"
-                        title={`Sending with skills: ${ctx
-                          .chatSubmission()
-                          .invokedSkills.map((skill) => `/${skill}`)
-                          .join(", ")}`}
-                      >
-                        {ctx
-                          .chatSubmission()
-                          .invokedSkills.map((skill) => `/${skill}`)
-                          .join(", ")}
-                      </span>
-                    </Show>
-                    <button
-                      class="primary-button composer-send-button"
-                      onClick={() => void ctx.handleSubmitChat()}
-                      disabled={!ctx.canSendChatMemo()}
-                      title="Send to paused node"
-                      aria-label="Send to paused node"
-                    >
-                      <ArrowUp
-                        class="composer-send-icon"
-                        aria-hidden="true"
-                        absoluteStrokeWidth
-                        strokeWidth={2.3}
-                      />
-                    </button>
-                  </div>
-                </div>
-              </div>
+              <ChatPanel />
             </Show>
           }
         >

@@ -17,6 +17,7 @@ import type {
   BottomTab,
   EdgeId,
   NodeId,
+  SkillSummary,
   Workflow,
   WorkflowRunState,
 } from "../lib/types";
@@ -102,19 +103,15 @@ export function AppProvider(props: ParentProps) {
   const [agentSchemaDraft, setAgentSchemaDraft] = createSignal("");
   const [addNodePickerOpen, setAddNodePickerOpen] = createSignal(false);
   const [isMaximized, setIsMaximized] = createSignal(false);
+  const [availableSkills, setAvailableSkills] = createSignal<SkillSummary[]>([]);
 
   // ── Mutable refs (not signals) ────────────────────────────────────────────
   let workflowNameInput: HTMLInputElement | undefined;
   let agentNameInput: HTMLInputElement | undefined;
-  let chatHistoryRef: HTMLDivElement | undefined;
   let dockResizeState: { startY: number; startHeight: number } | null = null;
 
   const setWorkflowNameInputRef = (el: HTMLInputElement | undefined) => {
     workflowNameInput = el;
-  };
-
-  const setChatHistoryRef = (el: HTMLDivElement | undefined) => {
-    chatHistoryRef = el;
   };
 
   // ── Memos ─────────────────────────────────────────────────────────────────
@@ -169,7 +166,19 @@ export function AppProvider(props: ParentProps) {
   const chatComposerBusyMemo = createMemo(() =>
     isChatComposerBusy(runState(), selectedNodeId()),
   );
-  const chatSubmission = createMemo(() => resolveChatSubmission(chatInput()));
+  const skillIdsMemo = createMemo(
+    () => new Set(availableSkills().map((skill) => skill.id)),
+  );
+  const skillById = createMemo(() => {
+    const map = new Map<string, SkillSummary>();
+    for (const skill of availableSkills()) {
+      map.set(skill.id, skill);
+    }
+    return map;
+  });
+  const chatSubmission = createMemo(() =>
+    resolveChatSubmission(chatInput(), skillIdsMemo()),
+  );
   const canSendChatMemo = createMemo(
     () =>
       !selectedPendingApproval() &&
@@ -601,6 +610,14 @@ export function AppProvider(props: ParentProps) {
     }
   };
 
+  const handleRefreshSkills = async () => {
+    try {
+      setAvailableSkills(await desktop.listSkills());
+    } catch (error) {
+      setError(normalizeError(error));
+    }
+  };
+
   const handleToolApproval = async (allow: boolean) => {
     const approval = selectedPendingApproval();
     if (!approval) return;
@@ -793,13 +810,6 @@ export function AppProvider(props: ParentProps) {
 
   // ── Effects ───────────────────────────────────────────────────────────────
   createEffect(() => {
-    chatMessages();
-    if (chatHistoryRef?.isConnected) {
-      chatHistoryRef.scrollTop = chatHistoryRef.scrollHeight;
-    }
-  });
-
-  createEffect(() => {
     const providerId = settings().active_provider;
     void desktop.loadProviderApiKey(providerId)
       .then((apiKey) => {
@@ -905,6 +915,7 @@ export function AppProvider(props: ParentProps) {
         desktop,
       );
       const data = await desktop.bootstrapApp();
+      setAvailableSkills(data.skills ?? []);
       await initializeWorkspace(data.workflows, data.agents, data.settings, data.runState);
     } catch (error) {
       setError(normalizeError(error));
@@ -942,6 +953,8 @@ export function AppProvider(props: ParentProps) {
     agentSchemaDraft,
     addNodePickerOpen,
     isMaximized,
+    availableSkills,
+    skillById,
     // Setters
     setWorkflowNameDraft,
     setChatInput,
@@ -973,7 +986,6 @@ export function AppProvider(props: ParentProps) {
     canSendChatMemo,
     // Ref setters
     setWorkflowNameInputRef,
-    setChatHistoryRef,
     // Handlers
     handleSwitchWorkflow,
     handleCreateWorkflow,
@@ -1001,6 +1013,7 @@ export function AppProvider(props: ParentProps) {
     handleRun,
     handleClearRunTrace,
     handleSubmitChat,
+    handleRefreshSkills,
     handleToolApproval,
     handleStartNodeLabelEdit,
     handleCancelNodeLabelEdit,

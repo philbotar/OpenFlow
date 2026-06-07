@@ -8,6 +8,7 @@ use orchestration::backend::{
     AppBackend, BackendError, ProviderReadiness, WorkflowListItem, WorkflowValidationSummary,
 };
 use orchestration::settings_store::AppSettings;
+use orchestration::skill_store::SkillSummary;
 use orchestration::state::WorkflowRunState;
 use orchestration::Workflow;
 use serde::{Deserialize, Serialize};
@@ -19,6 +20,7 @@ use tauri::{Emitter, Manager};
 struct BootstrapPayload {
     workflows: Vec<Workflow>,
     agents: Vec<AgentDefinition>,
+    skills: Vec<SkillSummary>,
     settings: AppSettings,
     run_state: Option<WorkflowRunState>,
 }
@@ -46,11 +48,13 @@ async fn bootstrap_app(
 ) -> Result<BootstrapPayload, CommandError> {
     let workflows = backend.load_all_workflows()?;
     let agents = backend.load_agents()?;
+    let skills = backend.list_skills()?;
     let settings = backend.load_settings()?;
     let run_state = backend.get_run_state().await;
     Ok(BootstrapPayload {
         workflows,
         agents,
+        skills,
         settings,
         run_state,
     })
@@ -123,6 +127,13 @@ fn list_agents(
 ) -> Result<Vec<orchestration::backend::AgentDefinitionSummary>, CommandError> {
     Ok(backend.list_agents()?)
 }
+
+/// Tauri command: List discovered skills.
+#[tauri::command]
+fn list_skills(backend: tauri::State<AppBackend>) -> Result<Vec<SkillSummary>, CommandError> {
+    Ok(backend.list_skills()?)
+}
+
 /// Tauri command: Load all agents.
 #[tauri::command]
 fn load_agents(backend: tauri::State<AppBackend>) -> Result<Vec<AgentDefinition>, CommandError> {
@@ -314,6 +325,7 @@ pub fn run() {
             save_workflows,
             rename_workflow,
             list_agents,
+            list_skills,
             load_agents,
             create_agent_definition,
             save_agents,

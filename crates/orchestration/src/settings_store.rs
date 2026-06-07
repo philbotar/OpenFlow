@@ -140,6 +140,8 @@ impl ProviderProfile {
 pub struct AppSettings {
     pub active_provider: ProviderId,
     pub providers: BTreeMap<ProviderId, ProviderProfile>,
+    #[serde(default)]
+    pub skill_search_paths: Vec<String>,
 }
 
 impl AppSettings {
@@ -208,6 +210,7 @@ impl Default for AppSettings {
         Self {
             active_provider: ProviderId::from("openai"),
             providers,
+            skill_search_paths: Vec::new(),
         }
     }
 }

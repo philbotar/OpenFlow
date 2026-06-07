@@ -19,6 +19,7 @@ use crate::provider_config::{
     ProviderEnv,
 };
 use crate::settings_store::{key_ref_for_provider, AppSettings, FileSettingsStore};
+use crate::skill_store::{self, SkillSummary};
 use crate::state::WorkflowRunState;
 use crate::storage::FileWorkflowStore;
 use domain::{
@@ -297,6 +298,13 @@ impl AppBackend {
                 model: agent.model,
             })
             .collect())
+    }
+
+    /// # Errors
+    /// Returns an error if skill discovery fails.
+    pub fn list_skills(&self) -> Result<Vec<SkillSummary>, BackendError> {
+        let settings = self.settings_store.load()?;
+        skill_store::discover(&settings.skill_search_paths).map_err(BackendError::from)
     }
 
     /// # Errors

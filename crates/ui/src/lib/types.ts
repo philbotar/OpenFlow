@@ -208,6 +208,14 @@ export interface ProviderProfile {
 export interface AppSettings {
   active_provider: ProviderId;
   providers: Record<ProviderId, ProviderProfile>;
+  skill_search_paths?: string[];
+}
+
+export interface SkillSummary {
+  id: string;
+  name: string;
+  description: string;
+  path?: string;
 }
 
 export interface WorkflowListItem {
@@ -236,6 +244,7 @@ export interface WorkflowValidationSummary {
 export interface BootstrapPayload {
   workflows: Workflow[];
   agents: AgentDefinition[];
+  skills: SkillSummary[];
   settings: AppSettings;
   runState: WorkflowRunState | null;
 }

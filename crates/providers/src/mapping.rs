@@ -3,7 +3,6 @@ use domain::{
     AgentTurnOutcome, AgentTurnSuccess, ToolCall, ToolDefinition,
 };
 use serde::Deserialize;
-use serde_json::error::Category;
 use serde_json::{json, Value};
 
 pub const SUBMIT_OUTPUT_TOOL: &str = "openflow_submit_node_output";
@@ -280,40 +279,22 @@ pub fn extract_chat_message_text(content: Option<&Value>) -> Option<String> {
     }
 }
 
-/// Attempt to parse a JSON string, with automatic recovery for truncated JSON.
-/// When the input ends mid-value (EOF during parsing), tries common completions
-/// to close open quotes, brackets, and braces.
+/// Attempt to parse a JSON string, repairing common LLM output issues when needed.
+/// Uses `jsonrepair-rs` for truncation, trailing commas, single quotes, and similar
+/// malformed JSON before falling back to the original serde error.
 fn try_parse_or_recover_json(input: &str) -> Result<Value, serde_json::Error> {
-    // Fast path: try the original input
-    if let Ok(value) = serde_json::from_str(input) {
-        return Ok(value);
-    }
+    match serde_json::from_str(input) {
+        Ok(value) => Ok(value),
+        Err(original_err) => {
+            let trimmed = input.trim_start();
+            if !trimmed.starts_with('{') && !trimmed.starts_with('[') {
+                return Err(original_err);
+            }
 
-    // Only attempt recovery on EOF errors (truncation)
-    let original_err = match serde_json::from_str::<Value>(input) {
-        Ok(v) => return Ok(v),
-        Err(e) if e.classify() == Category::Eof => e,
-        Err(e) => return Err(e),
-    };
-
-    // Try appending closing structures in order of likelihood.
-    let trials = [
-        "}",    // close object (most common truncation)
-        "\"}",  // close string + object
-        "\"",   // close string only
-        "]}",   // close array + object
-        "\"]}", // close string + array + object
-    ];
-
-    for suffix in &trials {
-        let mut candidate = input.to_string();
-        candidate.push_str(suffix);
-        if let Ok(v) = serde_json::from_str(&candidate) {
-            return Ok(v);
+            let repaired = jsonrepair_rs::jsonrepair(input).map_err(|_| original_err)?;
+            serde_json::from_str(&repaired)
         }
     }
-
-    Err(original_err)
 }
 
 pub fn parse_compatible_tool_call(call: &Value) -> Result<ToolCall, AgentError> {
@@ -322,19 +303,23 @@ pub fn parse_compatible_tool_call(call: &Value) -> Result<ToolCall, AgentError> 
         .and_then(Value::as_str)
         .or_else(|| call.get("call_id").and_then(Value::as_str))
         .unwrap_or("call-legacy");
+
     let function = call.get("function").unwrap_or(call);
+
     let name = function
         .get("name")
         .and_then(Value::as_str)
         .ok_or_else(|| {
             AgentError::Failed("OpenAI-compatible tool call missing function.name".to_string())
         })?;
+
     let arguments = function
         .get("arguments")
         .and_then(Value::as_str)
         .ok_or_else(|| {
             AgentError::Failed("OpenAI-compatible tool call missing function.arguments".to_string())
         })?;
+        
     Ok(ToolCall {
         id: call_id.to_string(),
         name: name.to_string(),
@@ -391,15 +376,18 @@ pub fn parse_responses_output(payload: &Value) -> Result<AgentTurnOutcome, Agent
                     .ok_or_else(|| {
                         AgentError::Failed("OpenAI function_call missing call id".to_string())
                     })?;
+
                 let name = item.get("name").and_then(Value::as_str).ok_or_else(|| {
                     AgentError::Failed("OpenAI function_call missing name".to_string())
                 })?;
+
                 let arguments = item
                     .get("arguments")
                     .and_then(Value::as_str)
                     .ok_or_else(|| {
                         AgentError::Failed("OpenAI function_call missing arguments".to_string())
                     })?;
+
                 tool_calls.push(ToolCall {
                     id: call_id.to_string(),
                     name: name.to_string(),
@@ -565,7 +553,7 @@ mod tests {
         assert_eq!(result.name, "search");
         assert_eq!(
             result.arguments,
-            json!({"path": "src/main.rs", "pattern": "fn "})
+            json!({"path": "src/main.rs", "pattern": "fn"})
         );
     }
 

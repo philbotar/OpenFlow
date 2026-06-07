@@ -2,7 +2,7 @@ import type { ComponentProps, JSX } from "solid-js";
 
 // ── Message ──────────────────────────────────────────────────────────
 
-type MessageRole = "user" | "assistant" | "system" | "thinking";
+export type MessageRole = "user" | "assistant" | "system" | "thinking";
 
 interface MessageProps extends ComponentProps<"div"> {
   from: MessageRole;

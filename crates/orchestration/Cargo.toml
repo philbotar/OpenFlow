@@ -23,6 +23,7 @@ regex = "1.11.1"
 reqwest.workspace = true
 walkdir = "2.5.0"
 serde_json.workspace = true
+serde_yaml.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 uuid.workspace = true

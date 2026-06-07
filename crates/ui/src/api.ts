@@ -6,6 +6,7 @@ import type {
   AppSettings,
   BootstrapPayload,
   Node,
+  SkillSummary,
   ProviderReadiness,
   Workflow,
   WorkflowListItem,
@@ -49,6 +50,10 @@ export function renameWorkflow(workflowId: string, name: string) {
 
 export function listAgents() {
   return invoke<AgentDefinitionSummary[]>("list_agents");
+}
+
+export function listSkills() {
+  return invoke<SkillSummary[]>("list_skills");
 }
 
 export function loadAgents() {

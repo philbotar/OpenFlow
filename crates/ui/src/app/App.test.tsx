@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 import { render } from "solid-js/web";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { AgentDefinition, AppSettings, BootstrapPayload, ProviderReadiness, Workflow, WorkflowRunState } from "../lib/types";
+import type { AgentDefinition, AppSettings, BootstrapPayload, ProviderReadiness, SkillSummary, Workflow, WorkflowRunState } from "../lib/types";
 import { createEmptyToolConfig } from "../lib/workflow";
 
 const apiMocks = vi.hoisted(() => ({
   bootstrapApp: vi.fn(),
+  listSkills: vi.fn(),
+  listWorkflows: vi.fn(),
   clearRunTrace: vi.fn(),
   createAgentDefinition: vi.fn(),
   createAgentNode: vi.fn(),
@@ -24,25 +26,31 @@ const apiMocks = vi.hoisted(() => ({
   validateWorkflow: vi.fn(),
 }));
 
-vi.mock("../api", () => ({
-  bootstrapApp: apiMocks.bootstrapApp,
-  clearRunTrace: apiMocks.clearRunTrace,
-  createAgentDefinition: apiMocks.createAgentDefinition,
-  createAgentNode: apiMocks.createAgentNode,
-  createWorkflow: apiMocks.createWorkflow,
-  listenToRunState: apiMocks.listenToRunState,
-  resolveProviderReadiness: apiMocks.resolveProviderReadiness,
-  deleteProviderApiKey: apiMocks.deleteProviderApiKey,
-  loadProviderApiKey: apiMocks.loadProviderApiKey,
-  saveAgents: apiMocks.saveAgents,
-  submitToolApproval: apiMocks.submitToolApproval,
-  saveProviderApiKey: apiMocks.saveProviderApiKey,
-  saveSettings: apiMocks.saveSettings,
-  saveWorkflows: apiMocks.saveWorkflows,
-  startRun: apiMocks.startRun,
-  submitUserInput: apiMocks.submitUserInput,
-  validateWorkflow: apiMocks.validateWorkflow,
-}));
+vi.mock("../api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../api")>();
+  return {
+    ...actual,
+    bootstrapApp: apiMocks.bootstrapApp,
+    listSkills: apiMocks.listSkills,
+    listWorkflows: apiMocks.listWorkflows,
+    clearRunTrace: apiMocks.clearRunTrace,
+    createAgentDefinition: apiMocks.createAgentDefinition,
+    createAgentNode: apiMocks.createAgentNode,
+    createWorkflow: apiMocks.createWorkflow,
+    listenToRunState: apiMocks.listenToRunState,
+    resolveProviderReadiness: apiMocks.resolveProviderReadiness,
+    deleteProviderApiKey: apiMocks.deleteProviderApiKey,
+    loadProviderApiKey: apiMocks.loadProviderApiKey,
+    saveAgents: apiMocks.saveAgents,
+    submitToolApproval: apiMocks.submitToolApproval,
+    saveProviderApiKey: apiMocks.saveProviderApiKey,
+    saveSettings: apiMocks.saveSettings,
+    saveWorkflows: apiMocks.saveWorkflows,
+    startRun: apiMocks.startRun,
+    submitUserInput: apiMocks.submitUserInput,
+    validateWorkflow: apiMocks.validateWorkflow,
+  };
+});
 
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({
@@ -95,6 +103,34 @@ const READY: ProviderReadiness = {
   message: "Ready",
   envVar: "OPENAI_API_KEY",
 };
+
+const FIXTURE_SKILLS: SkillSummary[] = [
+  {
+    id: "systematic-debugging",
+    name: "Systematic Debugging",
+    description: "Use when encountering bugs or test failures.",
+  },
+  {
+    id: "brainstorming",
+    name: "Brainstorming",
+    description: "Explore ideas before building.",
+  },
+  {
+    id: "documents",
+    name: "Documents",
+    description: "Work with project documents.",
+  },
+  {
+    id: "browser",
+    name: "Browser",
+    description: "Inspect pages in the browser.",
+  },
+  {
+    id: "requesting-code-review",
+    name: "Requesting Code Review",
+    description: "Ask for a structured code review.",
+  },
+];
 
 function makeWorkflow(id: string, name: string): Workflow {
   return {
@@ -167,6 +203,16 @@ function makeNodeFromAgent(index: number, x: number, y: number, agent: AgentDefi
 }
 
 function installDefaultApiMocks() {
+  if (!Element.prototype.scrollTo) {
+    Element.prototype.scrollTo = vi.fn();
+  }
+  if (!globalThis.ResizeObserver) {
+    globalThis.ResizeObserver = class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    } as typeof ResizeObserver;
+  }
   apiMocks.listenToRunState.mockResolvedValue(() => {});
   apiMocks.resolveProviderReadiness.mockResolvedValue(READY);
   apiMocks.loadProviderApiKey.mockImplementation(async (providerId: string) => {
@@ -188,12 +234,19 @@ function installDefaultApiMocks() {
       return makeNodeFromAgent(index, x, y, agent);
     },
   );
+  apiMocks.listWorkflows.mockResolvedValue([]);
+  apiMocks.listSkills.mockResolvedValue(FIXTURE_SKILLS);
 }
 
-function makeBootstrapPayload(workflows: Workflow[], agents: AgentDefinition[] = [makeAgent("agent-1", "Research Agent")]): BootstrapPayload {
+function makeBootstrapPayload(
+  workflows: Workflow[],
+  agents: AgentDefinition[] = [makeAgent("agent-1", "Research Agent")],
+  skills: SkillSummary[] = FIXTURE_SKILLS,
+): BootstrapPayload {
   return {
     workflows,
     agents,
+    skills,
     settings: SETTINGS,
     runState: null,
   };
@@ -727,6 +780,7 @@ describe("App chat slash commands", () => {
     const { container, dispose } = await mountApp({
       workflows: [workflow],
       agents: [makeAgent("agent-1", "Research Agent")],
+      skills: FIXTURE_SKILLS,
       settings: SETTINGS,
       runState,
     });
@@ -761,6 +815,81 @@ describe("App chat slash commands", () => {
     }
   });
 
+  test("renders skill description preview when typing a known slash command", async () => {
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    const runState = makeAwaitingRunState(workflow);
+    const { container, dispose } = await mountApp({
+      workflows: [workflow],
+      agents: [makeAgent("agent-1", "Research Agent")],
+      skills: FIXTURE_SKILLS,
+      settings: SETTINGS,
+      runState,
+    });
+    const chatTab = await waitForElement(
+      () => Array.from(container.querySelectorAll(".dock-tab-switcher button")).find((btn) => btn.textContent === "Chat") as HTMLButtonElement | null,
+      "chat tab",
+    );
+    chatTab.click();
+    await flush();
+
+    try {
+      const textarea = await waitForElement(
+        () => container.querySelector(".chat-composer-pill textarea"),
+        "chat textarea",
+      );
+      (textarea as HTMLTextAreaElement).value = "/systematic-debugging Investigate ORCHID-91";
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      await flush();
+
+      const preview = await waitForElement(
+        () => container.querySelector(".skill-description-preview"),
+        "skill description preview",
+      );
+      expect(preview.textContent).toContain("Use when encountering bugs or test failures.");
+      expect(preview.textContent).toContain("/systematic-debugging");
+    } finally {
+      dispose();
+    }
+  });
+
+  test("shows skill combobox suggestions while typing a slash command", async () => {
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    const runState = makeAwaitingRunState(workflow);
+    const { container, dispose } = await mountApp({
+      workflows: [workflow],
+      agents: [makeAgent("agent-1", "Research Agent")],
+      skills: FIXTURE_SKILLS,
+      settings: SETTINGS,
+      runState,
+    });
+    const chatTab = await waitForElement(
+      () => Array.from(container.querySelectorAll(".dock-tab-switcher button")).find((btn) => btn.textContent === "Chat") as HTMLButtonElement | null,
+      "chat tab",
+    );
+    chatTab.click();
+    await flush();
+
+    try {
+      const textarea = await waitForElement(
+        () => container.querySelector(".chat-composer-pill textarea"),
+        "chat textarea",
+      ) as HTMLTextAreaElement;
+      textarea.value = "/sys";
+      textarea.selectionStart = 4;
+      textarea.selectionEnd = 4;
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      await flush();
+
+      const combobox = await waitForElement(
+        () => container.querySelector(".skill-command-combobox"),
+        "skill command combobox",
+      );
+      expect(combobox.textContent).toContain("/systematic-debugging");
+    } finally {
+      dispose();
+    }
+  });
+
   test("submits paused-node input on enter from the compact composer", async () => {
     const workflow = makeWorkflow("workflow-1", "Workflow One");
     const runState = makeAwaitingRunState(workflow);
@@ -768,6 +897,7 @@ describe("App chat slash commands", () => {
     const { container, dispose } = await mountApp({
       workflows: [workflow],
       agents: [makeAgent("agent-1", "Research Agent")],
+      skills: FIXTURE_SKILLS,
       settings: SETTINGS,
       runState,
     });
@@ -800,6 +930,7 @@ describe("App chat slash commands", () => {
     const { container, dispose } = await mountApp({
       workflows: [workflow],
       agents: [makeAgent("agent-1", "Research Agent")],
+      skills: FIXTURE_SKILLS,
       settings: SETTINGS,
       runState,
     });
@@ -831,6 +962,7 @@ describe("App chat slash commands", () => {
     const { container, dispose } = await mountApp({
       workflows: [workflow],
       agents: [makeAgent("agent-1", "Research Agent")],
+      skills: FIXTURE_SKILLS,
       settings: SETTINGS,
       runState,
     });
@@ -866,6 +998,7 @@ describe("App chat slash commands", () => {
     const { container, dispose } = await mountApp({
       workflows: [workflow],
       agents: [makeAgent("agent-1", "Research Agent")],
+      skills: FIXTURE_SKILLS,
       settings: SETTINGS,
       runState,
     });
@@ -903,6 +1036,7 @@ describe("App bottom dock", () => {
     const { container, dispose } = await mountApp({
       workflows: [workflow],
       agents: [makeAgent("agent-1", "Research Agent")],
+      skills: FIXTURE_SKILLS,
       settings: SETTINGS,
       runState,
     });
@@ -948,6 +1082,7 @@ describe("App bottom dock", () => {
     const { container, dispose } = await mountApp({
       workflows: [workflow],
       agents: [makeAgent("agent-1", "Research Agent")],
+      skills: FIXTURE_SKILLS,
       settings: SETTINGS,
       runState,
     });

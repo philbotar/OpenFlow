@@ -29,6 +29,7 @@ pub mod execution;
 pub mod ports;
 pub mod provider_config;
 pub mod settings_store;
+pub mod skill_store;
 pub mod state;
 pub mod storage;
 pub mod tools;

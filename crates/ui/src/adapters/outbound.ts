@@ -12,6 +12,7 @@ export function createUiDesktopOutboundAdapter(): UiDesktopOutboundPort {
 		saveWorkflows: desktopApi.saveWorkflows,
 		renameWorkflow: desktopApi.renameWorkflow,
 		listAgents: desktopApi.listAgents,
+		listSkills: desktopApi.listSkills,
 		loadAgents: desktopApi.loadAgents,
 		createAgentDefinition: desktopApi.createAgentDefinition,
 		saveAgents: desktopApi.saveAgents,

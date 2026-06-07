@@ -13,6 +13,7 @@ import type {
   ProviderReadiness,
   RunTraceEntry,
   Screen,
+  SkillSummary,
   Workflow,
   WorkflowRunState,
 } from "../lib/types";
@@ -53,6 +54,8 @@ export interface AppContextValue {
   agentSchemaDraft: Accessor<string>;
   addNodePickerOpen: Accessor<boolean>;
   isMaximized: Accessor<boolean>;
+  availableSkills: Accessor<SkillSummary[]>;
+  skillById: Accessor<Map<string, SkillSummary>>;
 
   // ── Signal setters (form inputs + simple UI state) ────────────────────────
   setWorkflowNameDraft: Setter<string>;
@@ -87,7 +90,6 @@ export interface AppContextValue {
 
   // ── Ref setters ───────────────────────────────────────────────────────────
   setWorkflowNameInputRef: (el: HTMLInputElement | undefined) => void;
-  setChatHistoryRef: (el: HTMLDivElement | undefined) => void;
 
   // ── Workflow handlers ─────────────────────────────────────────────────────
   handleSwitchWorkflow: (workflowId: string) => void;
@@ -124,6 +126,7 @@ export interface AppContextValue {
   handleRun: () => Promise<void>;
   handleClearRunTrace: () => Promise<void>;
   handleSubmitChat: () => Promise<void>;
+  handleRefreshSkills: () => Promise<void>;
   handleToolApproval: (allow: boolean) => Promise<void>;
 
   // ── Node label edit handlers ──────────────────────────────────────────────

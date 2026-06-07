@@ -12,6 +12,7 @@ use orchestration::backend::{
     WorkflowValidationSummary,
 };
 use orchestration::settings_store::AppSettings;
+use orchestration::skill_store::SkillSummary;
 use orchestration::state::WorkflowRunState;
 
 // ── Bootstrap ──────────────────────────────────────────────────
@@ -65,6 +66,12 @@ pub trait AgentCommands {
         y: f32,
         agent_id: Option<String>,
     ) -> Result<orchestration::Node, BackendError>;
+}
+
+// ── Skill commands ─────────────────────────────────────────────
+
+pub trait SkillCommands {
+    fn list_skills(&self) -> Result<Vec<SkillSummary>, BackendError>;
 }
 
 // ── Settings commands ──────────────────────────────────────────

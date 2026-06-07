@@ -4,6 +4,7 @@ import type {
 	AppSettings,
 	BootstrapPayload,
 	Node,
+	SkillSummary,
 	ProviderReadiness,
 	Workflow,
 	WorkflowListItem,
@@ -23,6 +24,7 @@ export interface UiDesktopOutboundPort {
 	saveWorkflows: (workflows: Workflow[]) => Promise<void>;
 	renameWorkflow: (workflowId: string, name: string) => Promise<WorkflowListItem>;
 	listAgents: () => Promise<AgentDefinitionSummary[]>;
+	listSkills: () => Promise<SkillSummary[]>;
 	loadAgents: () => Promise<AgentDefinition[]>;
 	createAgentDefinition: (name: string) => Promise<AgentDefinition>;
 	saveAgents: (agents: AgentDefinition[]) => Promise<void>;

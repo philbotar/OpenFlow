@@ -16,7 +16,7 @@ use orchestration::state::WorkflowRunState;
 
 use crate::ports::inbound::{
     AgentCommands, BootstrapPort, CredentialCommands, ProviderCommands, RunCommands,
-    SettingsCommands, WorkflowCommands,
+    SettingsCommands, SkillCommands, WorkflowCommands,
 };
 
 // ── Bootstrap ──────────────────────────────────────────────────
@@ -86,6 +86,12 @@ impl WorkflowCommands for AppBackend {
 }
 
 // ── Agent commands ─────────────────────────────────────────────
+
+impl SkillCommands for AppBackend {
+    fn list_skills(&self) -> Result<Vec<orchestration::skill_store::SkillSummary>, BackendError> {
+        AppBackend::list_skills(self)
+    }
+}
 
 impl AgentCommands for AppBackend {
     fn list_agents(&self) -> Result<Vec<AgentDefinitionSummary>, BackendError> {
