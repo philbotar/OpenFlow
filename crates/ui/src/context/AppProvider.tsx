@@ -114,6 +114,10 @@ export function AppProvider(props: ParentProps) {
     workflowNameInput = el;
   };
 
+  const setAgentNameInputRef = (el: HTMLInputElement | undefined) => {
+    agentNameInput = el;
+  };
+
   // ── Memos ─────────────────────────────────────────────────────────────────
   const activeWorkflow = createMemo(() =>
     workflows().find((workflow) => workflow.id === activeWorkflowId()),
@@ -408,6 +412,40 @@ export function AppProvider(props: ParentProps) {
       setSuccess("Created agent");
     } catch (error) {
       setError(normalizeError(error));
+    }
+  };
+
+  const handleStartAgentNameEdit = (agentId: string, currentName: string) => {
+    setEditingAgentId(agentId);
+    setAgentNameDraft(currentName);
+  };
+
+  const handleCancelAgentNameEdit = () => {
+    setEditingAgentId(null);
+    setAgentNameDraft("");
+  };
+
+  const handleAgentNameCommit = () => {
+    const agentId = editingAgentId();
+    if (!agentId) return;
+    const nextName = agentNameDraft().trim();
+    if (nextName !== "") {
+      setAgents(
+        agents().map((agent) => (agent.id === agentId ? { ...agent, name: nextName } : agent)),
+      );
+    }
+    handleCancelAgentNameEdit();
+  };
+
+  const handleAgentNameKeyDown = (event: KeyboardEvent) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      handleAgentNameCommit();
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      handleCancelAgentNameEdit();
     }
   };
 
@@ -845,6 +883,16 @@ export function AppProvider(props: ParentProps) {
   });
 
   createEffect(() => {
+    const agentId = editingAgentId();
+    if (!agentId) return;
+    queueMicrotask(() => {
+      if (editingAgentId() !== agentId || !agentNameInput) return;
+      agentNameInput.focus();
+      agentNameInput.setSelectionRange(0, agentNameInput.value.length);
+    });
+  });
+
+  createEffect(() => {
     const tab = bottomTab();
     setDockHeight((current) => clampDockHeight(current, tab));
   });
@@ -957,6 +1005,7 @@ export function AppProvider(props: ParentProps) {
     skillById,
     // Setters
     setWorkflowNameDraft,
+    setAgentNameDraft,
     setChatInput,
     setNewModelInputByProvider,
     setProviderKeyInputByProvider,
@@ -986,6 +1035,7 @@ export function AppProvider(props: ParentProps) {
     canSendChatMemo,
     // Ref setters
     setWorkflowNameInputRef,
+    setAgentNameInputRef,
     // Handlers
     handleSwitchWorkflow,
     handleCreateWorkflow,
@@ -994,6 +1044,10 @@ export function AppProvider(props: ParentProps) {
     handleSaveAgents,
     handleAgentSchemaInput,
     updateSelectedAgent,
+    handleStartAgentNameEdit,
+    handleCancelAgentNameEdit,
+    handleAgentNameCommit,
+    handleAgentNameKeyDown,
     handleSaveSettings,
     handleAddKnownModel,
     handleRemoveKnownModel,

@@ -2,8 +2,7 @@ import { For, Show } from "solid-js";
 import { useAppContext } from "../context/AppContext";
 import { AgentConfigForm } from "../forms/AgentConfigForm";
 import { ToolConfigEditor } from "../forms/ToolConfigEditor";
-import { SidebarIcon } from "../components/SidebarIcon";
-import { prettyJson } from "../lib/workflow";
+import { SidebarList, SidebarListRow, SidebarNavButton } from "../components/sidebar";
 
 export function AgentsScreen() {
   const ctx = useAppContext();
@@ -12,19 +11,12 @@ export function AgentsScreen() {
     <section class="agents-screen">
       <div class="agents-layout">
         <aside class="agents-sidebar-panel">
-          <div class="agents-sidebar-header">
-            <div>
-              <h3>Agents</h3>
-            </div>
-            <button
-              class="sidebar-icon-button"
-              aria-label="New agent"
+          <SidebarList>
+            <SidebarNavButton
+              icon="plus"
+              label="New agent"
               onClick={() => void ctx.handleCreateAgent()}
-            >
-              <SidebarIcon name="plus" />
-            </button>
-          </div>
-          <div class="agent-definition-list">
+            />
             <Show
               when={ctx.agents().length > 0}
               fallback={
@@ -32,20 +24,37 @@ export function AgentsScreen() {
               }
             >
               <For each={ctx.agents()}>
-                {(agent) => (
-                  <button
-                    class="agent-list-row"
-                    classList={{ active: agent.id === ctx.selectedAgentId() }}
-                    onClick={() => ctx.setSelectedAgentId(agent.id)}
-                  >
-                    <span class="agent-list-row-title">
-                      {agent.name || "Untitled agent"}
-                    </span>
-                  </button>
-                )}
+                {(agent) => {
+                  const displayName = () => agent.name || "Untitled agent";
+                  const editing = () => agent.id === ctx.editingAgentId();
+                  return (
+                    <SidebarListRow
+                      title={displayName()}
+                      active={agent.id === ctx.selectedAgentId()}
+                      editing={editing()}
+                      onSelect={() => ctx.setSelectedAgentId(agent.id)}
+                      onRename={() =>
+                        ctx.handleStartAgentNameEdit(agent.id, agent.name || "Untitled agent")
+                      }
+                      editSlot={
+                        <input
+                          ref={(el) => ctx.setAgentNameInputRef(el)}
+                          value={ctx.agentNameDraft()}
+                          onInput={(event) =>
+                            ctx.setAgentNameDraft(event.currentTarget.value)
+                          }
+                          onBlur={ctx.handleAgentNameCommit}
+                          onKeyDown={ctx.handleAgentNameKeyDown}
+                          class="workflow-row-input"
+                          aria-label={`Agent name for ${displayName()}`}
+                        />
+                      }
+                    />
+                  );
+                }}
               </For>
             </Show>
-          </div>
+          </SidebarList>
         </aside>
 
         <section class="agents-detail-panel">

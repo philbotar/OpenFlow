@@ -2,7 +2,7 @@ import { Show } from "solid-js";
 import { Toaster } from "solid-sonner";
 import { AppProvider } from "./context/AppProvider";
 import { useAppContext } from "./context/AppContext";
-import { Sidebar } from "./components/Sidebar";
+import { Sidebar } from "./components/sidebar";
 import { AppHeader } from "./components/AppHeader";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { AgentsScreen } from "./screens/AgentsScreen";

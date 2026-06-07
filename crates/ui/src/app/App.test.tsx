@@ -473,8 +473,12 @@ describe("App agent dashboard", () => {
       await flush();
 
       expect(topbarTitle(container)).toBe("Agents");
-      expect(container.querySelector(".agent-list-row-title")?.textContent).toBe("Research Agent");
-      expect((container.querySelector(".agent-list-row.active") as HTMLElement | null)).not.toBeNull();
+      expect(
+        container.querySelector(".agents-sidebar-panel .workflow-row-title")?.textContent,
+      ).toBe("Research Agent");
+      expect(
+        container.querySelector(".agents-sidebar-panel .workflow-row.active") as HTMLElement | null,
+      ).not.toBeNull();
     } finally {
       dispose();
     }
@@ -494,7 +498,10 @@ describe("App agent dashboard", () => {
       await flush();
 
       const newAgentButton = await waitForElement(
-        () => container.querySelector('button[aria-label="New agent"]') as HTMLButtonElement | null,
+        () =>
+          Array.from(container.querySelectorAll(".sidebar-nav-button")).find((element) =>
+            element.textContent?.includes("New agent"),
+          ) as HTMLButtonElement | null,
         "new agent button",
       );
       newAgentButton.click();

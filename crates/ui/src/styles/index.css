@@ -333,6 +333,11 @@ select:focus-visible {
   background: rgba(255, 255, 255, 0.48);
 }
 
+.sidebar-nav-button.active {
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(24, 24, 27, 0.06);
+}
+
 .sidebar-footer .settings-nav-menu {
   position: relative;
   width: 100%;
@@ -2164,57 +2169,10 @@ select.text-input:hover {
   overflow: hidden;
 }
 
-.agents-sidebar-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 12px 16px;
-}
-
-.agents-sidebar-header h3 {
-  margin: 0;
-}
-.agent-definition-list {
-  display: flex;
-  min-height: 0;
+.agents-sidebar-panel .sidebar-list {
   flex: 1;
-  flex-direction: column;
-  gap: 4px;
   padding: 8px;
-  overflow: auto;
 }
-.agent-list-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-height: 38px;
-  padding: 3px 6px;
-  border-radius: 12px;
-  background: transparent;
-  color: var(--text);
-  font-size: 0.9rem;
-  white-space: nowrap;
-  transition: background 150ms ease, color 150ms ease;
-}
-
-.agent-list-row:hover {
-  background: rgba(255, 255, 255, 0.48);
-}
-
-.agent-list-row.active {
-  background: rgba(255, 255, 255, 0.72);
-}
-
-.agent-list-row-title {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 500;
-}
-
 
 .agents-detail-panel {
   display: flex;

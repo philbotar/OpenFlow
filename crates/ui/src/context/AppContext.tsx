@@ -59,6 +59,7 @@ export interface AppContextValue {
 
   // ── Signal setters (form inputs + simple UI state) ────────────────────────
   setWorkflowNameDraft: Setter<string>;
+  setAgentNameDraft: Setter<string>;
   setChatInput: Setter<string>;
   setNewModelInputByProvider: Setter<Record<AiProviderKind, string>>;
   setProviderKeyInputByProvider: Setter<Record<AiProviderKind, string>>;
@@ -90,6 +91,7 @@ export interface AppContextValue {
 
   // ── Ref setters ───────────────────────────────────────────────────────────
   setWorkflowNameInputRef: (el: HTMLInputElement | undefined) => void;
+  setAgentNameInputRef: (el: HTMLInputElement | undefined) => void;
 
   // ── Workflow handlers ─────────────────────────────────────────────────────
   handleSwitchWorkflow: (workflowId: string) => void;
@@ -101,6 +103,10 @@ export interface AppContextValue {
   handleSaveAgents: () => Promise<void>;
   handleAgentSchemaInput: (text: string) => void;
   updateSelectedAgent: (mutator: (draft: AgentDefinition) => void) => void;
+  handleStartAgentNameEdit: (agentId: string, currentName: string) => void;
+  handleCancelAgentNameEdit: () => void;
+  handleAgentNameCommit: () => void;
+  handleAgentNameKeyDown: (event: KeyboardEvent) => void;
 
   // ── Settings handlers ─────────────────────────────────────────────────────
   handleSaveSettings: () => Promise<void>;
