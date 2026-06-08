@@ -57,12 +57,19 @@ impl Project {
 }
 
 /// Drops legacy global pseudo-project rows and deduplicates membership ids.
-pub fn cleanup_stored_projects(projects: &mut Vec<Project>) {
+pub fn cleanup_stored_projects(projects: &mut Vec<Project>) -> bool {
+    let before_len = projects.len();
     projects.retain(|project| project.id != "global" && !project.path.is_empty());
+    let mut changed = before_len != projects.len();
     for project in projects.iter_mut() {
+        let before_ids = project.workflow_ids.clone();
         project.workflow_ids.sort();
         project.workflow_ids.dedup();
+        if project.workflow_ids != before_ids {
+            changed = true;
+        }
     }
+    changed
 }
 
 /// Adds `workflow_id` to `project_id` without removing it from other projects.

@@ -75,6 +75,12 @@ pub enum BackendError {
     WorkflowNotFound(String),
     #[error("project {0} not found")]
     ProjectNotFound(String),
+    #[error("agent {0} not found")]
+    AgentNotFound(String),
+    #[error("{0}")]
+    InvalidExecutionCwd(String),
+    #[error("{0}")]
+    ProjectOperation(String),
     #[error("workflow run is not active")]
     NoActiveRun,
     #[error("workflow run is not awaiting input")]
@@ -87,8 +93,6 @@ pub enum BackendError {
     WrongApprovalId { expected: String, received: String },
     #[error("workflow run channel closed")]
     RunChannelClosed,
-    #[error("{0}")]
-    Execution(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -307,12 +311,7 @@ impl AppBackend {
         let agent = agents
             .iter()
             .find(|agent| agent.id == agent_id)
-            .ok_or_else(|| {
-                BackendError::Io(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    format!("agent {agent_id} not found"),
-                ))
-            })?;
+            .ok_or_else(|| BackendError::AgentNotFound(agent_id.to_string()))?;
 
         let label = if agent.name.trim().is_empty() {
             default_name
@@ -464,9 +463,7 @@ impl AppBackend {
     /// Returns an error if the project store cannot be read or written during cleanup.
     pub fn load_projects(&self) -> Result<Vec<Project>, BackendError> {
         let mut projects = self.project_store.load()?;
-        let before = projects.clone();
-        cleanup_stored_projects(&mut projects);
-        if projects != before {
+        if cleanup_stored_projects(&mut projects) {
             self.project_store.save(&projects)?;
         }
         Ok(projects)
@@ -490,8 +487,9 @@ impl AppBackend {
     /// Returns an error if the path is invalid, already registered, or the store cannot be written.
     pub fn create_project_from_directory(&self, path: String) -> Result<Project, BackendError> {
         let mut projects = self.load_projects()?;
-        validate_unique_project_path(&projects, &path).map_err(BackendError::Execution)?;
-        let project = create_project_from_path(&path).map_err(BackendError::Execution)?;
+        validate_unique_project_path(&projects, &path).map_err(BackendError::ProjectOperation)?;
+        let project =
+            create_project_from_path(&path).map_err(BackendError::ProjectOperation)?;
         projects.push(project.clone());
         self.save_projects(&projects)?;
         Ok(project)
@@ -512,7 +510,8 @@ impl AppBackend {
             .find(|project| project.id == project_id)
             .map(|project| project.path.clone())
             .ok_or_else(|| BackendError::ProjectNotFound(project_id.to_string()))?;
-        assign_workflow(&mut projects, project_id, workflow_id).map_err(BackendError::Execution)?;
+        assign_workflow(&mut projects, project_id, workflow_id)
+            .map_err(BackendError::ProjectOperation)?;
         save_project_workflow(Path::new(&project_path), &workflow)?;
         self.save_projects(&projects)?;
         Ok(projects)
@@ -533,7 +532,7 @@ impl AppBackend {
             .map(|project| project.path.clone())
             .ok_or_else(|| BackendError::ProjectNotFound(project_id.to_string()))?;
         unassign_workflow_from_project(&mut projects, project_id, workflow_id)
-            .map_err(BackendError::Execution)?;
+            .map_err(BackendError::ProjectOperation)?;
         delete_project_workflow(Path::new(&project_path), workflow_id)?;
         self.save_projects(&projects)?;
         Ok(projects)
@@ -550,8 +549,8 @@ impl AppBackend {
         transient_api_key: Option<&str>,
     ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
         validate_workflow(&workflow)?;
-        let resolved_cwd =
-            resolve_execution_cwd(execution_cwd.as_deref()).map_err(BackendError::Execution)?;
+        let resolved_cwd = resolve_execution_cwd(execution_cwd.as_deref())
+            .map_err(BackendError::InvalidExecutionCwd)?;
         let provider_settings = workflow
             .settings
             .provider_id

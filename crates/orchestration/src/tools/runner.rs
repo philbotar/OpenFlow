@@ -19,8 +19,12 @@ use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::LazyLock;
 use thiserror::Error;
 use walkdir::WalkDir;
+
+static LINE_SELECTOR: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\d+(?:-\d+)?$").expect("line selector regex is valid"));
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ToolExecutionRecord {
@@ -44,6 +48,8 @@ pub enum ToolRunnerError {
     Tool(#[from] ToolError),
     #[error("{0}")]
     InvalidArguments(String),
+    #[error("blocking tool task failed: {0}")]
+    BlockingTask(String),
 }
 
 impl ToolRunner {
@@ -68,9 +74,12 @@ impl ToolRunner {
         let registered = self.registry.get(&call.name)?;
         let raw_output = match registered.kind {
             BuiltinToolKind::Read => self.read(call.arguments.clone()).await?,
-            BuiltinToolKind::Search => self.search(call.arguments.clone())?,
-            BuiltinToolKind::Find => self.find(call.arguments.clone())?,
-            BuiltinToolKind::AstGrep => self.ast_grep(call.arguments.clone())?,
+            BuiltinToolKind::Search
+            | BuiltinToolKind::Find
+            | BuiltinToolKind::AstGrep => {
+                self.run_blocking(registered.kind, call.arguments.clone())
+                    .await?
+            }
             BuiltinToolKind::DeclareSubagents | BuiltinToolKind::CallSubagent => {
                 return Err(ToolRunnerError::InvalidArguments(format!(
                     "Tool '{}' is a runtime builtin and should not reach the filesystem runner",
@@ -79,6 +88,36 @@ impl ToolRunner {
             }
         };
 
+        self.finalize_record(call, raw_output)
+    }
+
+    async fn run_blocking(
+        &self,
+        kind: BuiltinToolKind,
+        args: Value,
+    ) -> Result<String, ToolRunnerError> {
+        let cwd = self.cwd.clone();
+        tokio::task::spawn_blocking(move || {
+            let ops = BlockingToolOps::new(cwd);
+            match kind {
+                BuiltinToolKind::Search => ops.search(args),
+                BuiltinToolKind::Find => ops.find(args),
+                BuiltinToolKind::AstGrep => ops.ast_grep(args),
+                _ => Err(ToolError::Failed(
+                    "blocking runner received a non-blocking tool".to_string(),
+                )),
+            }
+        })
+        .await
+        .map_err(|error| ToolRunnerError::BlockingTask(error.to_string()))?
+        .map_err(ToolRunnerError::from)
+    }
+
+    fn finalize_record(
+        &self,
+        call: ToolCall,
+        raw_output: String,
+    ) -> Result<ToolExecutionRecord, ToolRunnerError> {
         let (content, artifact, output_meta) = self.artifacts.store_text(&call.name, raw_output)?;
         Ok(ToolExecutionRecord {
             result: ToolResult {
@@ -110,27 +149,27 @@ impl ToolRunner {
         }
     }
 
-    async fn read(&self, args: Value) -> Result<String, ToolError> {
+    async fn read(&self, args: Value) -> Result<String, ToolRunnerError> {
         #[derive(Deserialize)]
         struct ReadArgs {
             path: String,
         }
         let args: ReadArgs = serde_json::from_value(args)
-            .map_err(|error| ToolError::Failed(format!("invalid read args: {error}")))?;
+            .map_err(|error| ToolRunnerError::Tool(ToolError::Failed(format!(
+                "invalid read args: {error}"
+            ))))?;
         if args.path.starts_with("http://") || args.path.starts_with("https://") {
-            return self.read_url(&args.path).await;
+            return self
+                .read_url(&args.path)
+                .await
+                .map_err(ToolRunnerError::from);
         }
 
-        let (path, selector) = split_selector(&args.path);
-        let absolute = self.resolve_local(&path);
-        let metadata = fs::metadata(&absolute)
-            .map_err(|error| ToolError::Failed(format!("read failed for {}: {error}", path)))?;
-        if metadata.is_dir() {
-            return self.read_directory(&absolute);
-        }
-        let text = fs::read_to_string(&absolute)
-            .map_err(|error| ToolError::Failed(format!("read failed for {}: {error}", path)))?;
-        Ok(apply_read_selector(&path, &text, selector.as_deref()))
+        let cwd = self.cwd.clone();
+        tokio::task::spawn_blocking(move || BlockingToolOps::new(cwd).read_local(&args.path))
+            .await
+            .map_err(|error| ToolRunnerError::BlockingTask(error.to_string()))?
+            .map_err(ToolRunnerError::from)
     }
 
     async fn read_url(&self, url: &str) -> Result<String, ToolError> {
@@ -151,6 +190,29 @@ impl ToolRunner {
             )));
         }
         Ok(apply_read_selector(url, &text, None))
+    }
+}
+
+struct BlockingToolOps {
+    cwd: PathBuf,
+}
+
+impl BlockingToolOps {
+    fn new(cwd: PathBuf) -> Self {
+        Self { cwd }
+    }
+
+    fn read_local(&self, path: &str) -> Result<String, ToolError> {
+        let (path, selector) = split_selector(path);
+        let absolute = self.resolve_local(&path);
+        let metadata = fs::metadata(&absolute)
+            .map_err(|error| ToolError::Failed(format!("read failed for {}: {error}", path)))?;
+        if metadata.is_dir() {
+            return self.read_directory(&absolute);
+        }
+        let text = fs::read_to_string(&absolute)
+            .map_err(|error| ToolError::Failed(format!("read failed for {}: {error}", path)))?;
+        Ok(apply_read_selector(&path, &text, selector.as_deref()))
     }
 
     fn read_directory(&self, path: &Path) -> Result<String, ToolError> {
@@ -324,7 +386,7 @@ impl StringOrMany {
 fn split_selector(path: &str) -> (String, Option<String>) {
     if let Some(index) = path.rfind(':') {
         let suffix = &path[index + 1..];
-        if suffix == "raw" || Regex::new(r"^\d+(?:-\d+)?$").unwrap().is_match(suffix) {
+        if suffix == "raw" || LINE_SELECTOR.is_match(suffix) {
             return (path[..index].to_string(), Some(suffix.to_string()));
         }
     }
