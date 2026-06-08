@@ -1,5 +1,6 @@
-use crate::adapters::outbound::{invoke_anthropic, invoke_openai_compatible};
+use crate::anthropic;
 use crate::auth::AuthConfig;
+use crate::openai_compat;
 use crate::openai_compat::OpenAiCompatibleConfig;
 use crate::spec::ProviderId;
 use async_trait::async_trait;
@@ -81,10 +82,10 @@ impl AiPort for AiClient {
     async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
         match &self.config.adapter {
             ProviderAdapterConfig::OpenAiCompatible(config) => {
-                invoke_openai_compatible(&self.http, config, &self.config.auth, request).await
+                openai_compat::invoke(&self.http, config, &self.config.auth, request).await
             }
             ProviderAdapterConfig::Anthropic(config) => {
-                invoke_anthropic(&self.http, config, &self.config.auth, request).await
+                anthropic::invoke(&self.http, config, &self.config.auth, request).await
             }
         }
     }

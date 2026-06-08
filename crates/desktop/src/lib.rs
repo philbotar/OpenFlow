@@ -1,8 +1,5 @@
 #![allow(clippy::cargo, clippy::nursery, clippy::pedantic)]
 
-pub mod adapters;
-pub mod ports;
-
 use orchestration::agent_store::AgentDefinition;
 use orchestration::backend::{
     AppBackend, BackendError, ProviderReadiness, WorkflowListItem, WorkflowValidationSummary,

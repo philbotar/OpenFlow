@@ -1,3 +1,4 @@
+import * as desktopApi from "../api";
 import type {
 	AgentDefinition,
 	AgentDefinitionSummary,
@@ -5,15 +6,19 @@ import type {
 	BootstrapPayload,
 	Node,
 	Project,
-	SkillSummary,
 	ProviderReadiness,
+	SkillSummary,
 	Workflow,
 	WorkflowListItem,
 	WorkflowRunState,
 	WorkflowValidationSummary,
-} from "../lib/types";
+} from "./types";
 
 export type RunStateListener = (runState: WorkflowRunState) => void;
+
+export interface RunStateEventSink {
+	handleRunStateUpdate: (runState: WorkflowRunState) => void;
+}
 
 export interface UiDesktopOutboundPort {
 	bootstrapApp: () => Promise<BootstrapPayload>;
@@ -62,4 +67,49 @@ export interface UiDesktopOutboundPort {
 	getRunState: () => Promise<WorkflowRunState | null>;
 	clearRunTrace: () => Promise<WorkflowRunState | null>;
 	listenToRunState: (handler: RunStateListener) => Promise<() => void>;
+}
+
+export function createUiDesktopOutboundAdapter(): UiDesktopOutboundPort {
+	return {
+		bootstrapApp: desktopApi.bootstrapApp,
+		listProjects: desktopApi.listProjects,
+		saveProjects: desktopApi.saveProjects,
+		createProjectFromDirectory: desktopApi.createProjectFromDirectory,
+		assignWorkflowToProject: desktopApi.assignWorkflowToProject,
+		unassignWorkflowFromProject: desktopApi.unassignWorkflowFromProject,
+		listWorkflows: desktopApi.listWorkflows,
+		loadAllWorkflows: desktopApi.loadAllWorkflows,
+		loadWorkflow: desktopApi.loadWorkflow,
+		createWorkflow: desktopApi.createWorkflow,
+		saveWorkflow: desktopApi.saveWorkflow,
+		saveWorkflows: desktopApi.saveWorkflows,
+		renameWorkflow: desktopApi.renameWorkflow,
+		listAgents: desktopApi.listAgents,
+		listSkills: desktopApi.listSkills,
+		loadAgents: desktopApi.loadAgents,
+		createAgentDefinition: desktopApi.createAgentDefinition,
+		saveAgents: desktopApi.saveAgents,
+		loadSettings: desktopApi.loadSettings,
+		saveSettings: desktopApi.saveSettings,
+		loadProviderApiKey: desktopApi.loadProviderApiKey,
+		saveProviderApiKey: desktopApi.saveProviderApiKey,
+		deleteProviderApiKey: desktopApi.deleteProviderApiKey,
+		resolveProviderReadiness: desktopApi.resolveProviderReadiness,
+		validateWorkflow: desktopApi.validateWorkflow,
+		createAgentNode: desktopApi.createAgentNode,
+		startRun: desktopApi.startRun,
+		submitUserInput: desktopApi.submitUserInput,
+		submitToolApproval: desktopApi.submitToolApproval,
+		completeManualNode: desktopApi.completeManualNode,
+		getRunState: desktopApi.getRunState,
+		clearRunTrace: desktopApi.clearRunTrace,
+		listenToRunState: desktopApi.listenToRunState,
+	};
+}
+
+export function bindRunStateEvents(
+	sink: RunStateEventSink,
+	outboundPort: UiDesktopOutboundPort = createUiDesktopOutboundAdapter(),
+) {
+	return outboundPort.listenToRunState((runState) => sink.handleRunStateUpdate(runState));
 }

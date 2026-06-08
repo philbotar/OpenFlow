@@ -20,13 +20,11 @@
     clippy::unused_self
 )]
 
-pub mod adapters;
 pub mod agent_store;
 pub mod backend;
 pub mod credential_store;
 pub mod execution;
 pub mod flow_store;
-pub mod ports;
 pub mod project_store;
 pub mod provider_config;
 pub mod settings_store;

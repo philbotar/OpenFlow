@@ -2,7 +2,6 @@
 // dependencies pull two `wit-bindgen` versions that this crate does not select directly.
 #![allow(clippy::multiple_crate_versions)]
 
-pub mod adapters;
 pub mod interactive;
 pub mod model;
 pub mod ports;

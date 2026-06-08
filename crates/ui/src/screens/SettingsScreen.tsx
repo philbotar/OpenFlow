@@ -1,10 +1,6 @@
 import { For } from "solid-js";
 import { useAppContext } from "../context/AppContext";
 import { activeProfile } from "../lib/workflow";
-import { resolveProviderReadiness } from "../api";
-import { normalizeError } from "../lib/utils";
-import { toast } from "solid-sonner";
-import { STATUS_TOAST_ID } from "../lib/utils";
 
 export function SettingsScreen() {
   const ctx = useAppContext();

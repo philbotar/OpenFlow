@@ -1,13 +1,7 @@
-//! Integration tests for providers port traits using mock implementations.
-//!
-//! These tests verify the `ProviderFactoryPort` contract in isolation by
-//! providing a mock factory that returns canned `AiPort` implementations.
+//! Integration tests for provider `AiPort` mocks.
 
 use async_trait::async_trait;
 use domain::{AgentError, AgentRequest, AgentTurnOutcome, AgentTurnSuccess, AiPort};
-
-use providers::ports::inbound::{BoxedAiPort, ProviderFactoryPort};
-use providers::AiClientConfig;
 
 // ── Mock AiPort ────────────────────────────────────────────────
 
@@ -35,29 +29,6 @@ impl AiPort for MockAiPort {
     }
 }
 
-// ── Mock ProviderFactory ───────────────────────────────────────
-
-#[derive(Debug, Clone, Default)]
-pub struct MockProviderFactory {
-    pub response: String,
-}
-
-impl MockProviderFactory {
-    pub fn with_response(response: impl Into<String>) -> Self {
-        Self {
-            response: response.into(),
-        }
-    }
-}
-
-impl ProviderFactoryPort for MockProviderFactory {
-    fn create(&self, _config: AiClientConfig) -> BoxedAiPort {
-        Box::new(MockAiPort {
-            response: self.response.clone(),
-        })
-    }
-}
-
 // ── Error Mock AiPort ──────────────────────────────────────────
 
 #[derive(Debug, Clone)]
@@ -72,12 +43,44 @@ impl AiPort for ErrorMockAiPort {
     }
 }
 
-// ── Factory Tests ──────────────────────────────────────────────
+// ── Tests ──────────────────────────────────────────────────────
 
-#[test]
-fn mock_factory_creates_ai_port() {
-    let factory = MockProviderFactory::default();
-    let config = AiClientConfig::openai("test-key");
-    let _ai = factory.create(config);
-    // Factory successfully creates a boxed AiPort
+fn sample_request() -> AgentRequest {
+    AgentRequest {
+        workflow_id: "wf-1".into(),
+        node_id: "node-1".into(),
+        node_label: "Agent".to_string(),
+        model: "mock".to_string(),
+        system_prompt: String::new(),
+        task_prompt: String::new(),
+        input: serde_json::json!({}),
+        output_schema: serde_json::json!({}),
+        tool_config: domain::NodeToolConfig::default(),
+        available_tools: Vec::new(),
+        transcript: Vec::new(),
+    }
+}
+
+#[tokio::test]
+async fn mock_ai_port_returns_completed_outcome() {
+    let ai = MockAiPort::default();
+    let outcome = ai.invoke(sample_request()).await;
+
+    assert!(matches!(
+        outcome,
+        Ok(AgentTurnOutcome::Completed(ref success)) if success.raw_text == "mock response"
+    ));
+}
+
+#[tokio::test]
+async fn error_mock_ai_port_returns_failed_error() {
+    let ai = ErrorMockAiPort {
+        error_message: "provider down".to_string(),
+    };
+    let outcome = ai.invoke(sample_request()).await;
+
+    assert!(matches!(
+        outcome,
+        Err(AgentError::Failed(ref message)) if message == "provider down"
+    ));
 }

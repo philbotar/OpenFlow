@@ -8,7 +8,7 @@ import {
 import type { ParentProps } from "solid-js";
 import { toast } from "solid-sonner";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { bindRunStateEvents, createUiDesktopOutboundAdapter } from "../adapters";
+import { bindRunStateEvents, createUiDesktopOutboundAdapter } from "../lib/desktopClient";
 import { resolveChatSubmission } from "../lib/chatCommands";
 import type {
   AgentDefinition,
