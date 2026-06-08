@@ -216,6 +216,7 @@ async fn headless_run_auto_approves_read_tool_and_reenters_model_loop() {
         Vec::new(),
         Vec::new(),
         BTreeMap::new(),
+        None,
     )
     .await
     .unwrap();
@@ -263,6 +264,7 @@ async fn headless_run_requires_scripted_approval_for_prompted_tool() {
         Vec::new(),
         Vec::new(),
         BTreeMap::new(),
+        None,
     )
     .await
     .unwrap_err();

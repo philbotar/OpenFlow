@@ -53,6 +53,18 @@ export const SUPPORTED_NODE_TOOLS = [
     name: "ast_grep",
     description: "Search code structurally with ast-grep. Included with this repo tooling.",
   },
+  {
+    name: "write",
+    description: "Create or overwrite a file under the execution folder.",
+  },
+  {
+    name: "edit",
+    description: "Replace exact or fuzzy-matched text in a file.",
+  },
+  {
+    name: "apply_patch",
+    description: "Apply a Codex patch envelope to files under the execution folder.",
+  },
 ] as const;
 
 

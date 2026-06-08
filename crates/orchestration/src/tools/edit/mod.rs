@@ -1,5 +1,7 @@
 pub mod apply_patch;
+pub mod apply_patch_tool;
 pub mod diff;
+pub mod edit_tool;
 pub mod errors;
 pub mod io;
 pub mod normalize;
@@ -7,6 +9,7 @@ pub mod patch;
 pub mod path;
 pub mod replace;
 pub mod replace_sequence;
+pub mod write;
 
 pub use diff::{
     generate_diff_string, normalize_create_content, normalize_diff, parse_diff_hunks, replace_text,

@@ -2,6 +2,7 @@ use crate::state::WorkflowRunState;
 use domain::CallableAgent;
 use domain::{AiPort, Workflow};
 use std::collections::{BTreeMap, VecDeque};
+use std::path::PathBuf;
 
 use super::drive::drive_interactive_workflow;
 use super::events::{apply_event_to_run_state, record_user_input};
@@ -20,13 +21,21 @@ pub async fn run_workflow_headless<A>(
     manual_inputs: Vec<ManualInput>,
     approvals: Vec<ApprovalResponse>,
     agent_snapshots: BTreeMap<String, CallableAgent>,
+    execution_cwd: Option<PathBuf>,
 ) -> Result<WorkflowRunSnapshot, WorkflowExecutionError>
 where
     A: AiPort + Send + Sync + 'static,
 {
     let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
     let (action_tx, action_rx) = tokio::sync::mpsc::unbounded_channel();
-    let execution_cwd = resolve_execution_cwd(None).map_err(WorkflowExecutionError::Execution)?;
+    let execution_cwd = match execution_cwd {
+        Some(path) => path.canonicalize().map_err(|error| {
+            WorkflowExecutionError::Execution(format!(
+                "execution folder is not a valid directory: {error}"
+            ))
+        })?,
+        None => resolve_execution_cwd(None).map_err(WorkflowExecutionError::Execution)?,
+    };
     let cancel_token = CancellationToken::new();
     let handle = tokio::spawn(drive_interactive_workflow(
         workflow.clone(),

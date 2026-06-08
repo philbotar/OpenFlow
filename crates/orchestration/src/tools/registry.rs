@@ -10,6 +10,9 @@ pub enum BuiltinToolKind {
     Search,
     Find,
     AstGrep,
+    Write,
+    Edit,
+    ApplyPatch,
     DeclareSubagents,
     CallSubagent,
 }
@@ -39,6 +42,9 @@ impl ToolRegistry {
         register(&mut tools, search_tool());
         register(&mut tools, find_tool());
         register(&mut tools, ast_grep_tool());
+        register(&mut tools, write_tool());
+        register(&mut tools, edit_tool());
+        register(&mut tools, apply_patch_tool());
         register(&mut tools, declare_subagents_tool());
         register(&mut tools, call_subagent_tool());
         Self { tools }
@@ -162,6 +168,83 @@ fn find_tool() -> RegisteredTool {
             concurrency: ToolConcurrency::Shared,
         },
         kind: BuiltinToolKind::Find,
+    }
+}
+
+fn write_tool() -> RegisteredTool {
+    RegisteredTool {
+        definition: ToolDefinition {
+            name: "write".to_string(),
+            description: "Create or overwrite a file under the execution folder.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "path": { "type": "string" },
+                    "content": { "type": "string" }
+                },
+                "required": ["path", "content"]
+            }),
+            tier: ToolTier::Write,
+            concurrency: ToolConcurrency::Exclusive,
+        },
+        kind: BuiltinToolKind::Write,
+    }
+}
+
+fn edit_tool() -> RegisteredTool {
+    RegisteredTool {
+        definition: ToolDefinition {
+            name: "edit".to_string(),
+            description: "Replace exact or fuzzy-matched text in a file under the execution folder."
+                .to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "path": { "type": "string" },
+                    "edits": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "old_text": { "type": "string" },
+                                "new_text": { "type": "string" },
+                                "all": { "type": "boolean" }
+                            },
+                            "required": ["old_text", "new_text"]
+                        }
+                    }
+                },
+                "required": ["path", "edits"]
+            }),
+            tier: ToolTier::Write,
+            concurrency: ToolConcurrency::Exclusive,
+        },
+        kind: BuiltinToolKind::Edit,
+    }
+}
+
+fn apply_patch_tool() -> RegisteredTool {
+    RegisteredTool {
+        definition: ToolDefinition {
+            name: "apply_patch".to_string(),
+            description: "Apply a Codex *** Begin Patch envelope to files under the execution folder."
+                .to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "input": { "type": "string" }
+                },
+                "required": ["input"]
+            }),
+            tier: ToolTier::Write,
+            concurrency: ToolConcurrency::Exclusive,
+        },
+        kind: BuiltinToolKind::ApplyPatch,
     }
 }
 

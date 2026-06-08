@@ -1,0 +1,62 @@
+//! Thin `write` tool handler (Tier C).
+
+use std::path::PathBuf;
+
+use serde::Deserialize;
+use serde_json::Value;
+
+use super::diff::generate_diff_string;
+use super::io::{EditIo, EditIoError};
+use crate::tools::errors::ToolError;
+
+#[derive(Debug, Deserialize)]
+struct WriteArgs {
+    path: String,
+    content: String,
+}
+
+pub fn execute_write(cwd: PathBuf, args: Value) -> Result<String, ToolError> {
+    let args: WriteArgs = serde_json::from_value(args)
+        .map_err(|error| ToolError::Failed(format!("invalid write args: {error}")))?;
+    let io = EditIo::new(cwd);
+
+    let existed = io
+        .exists(&args.path)
+        .map_err(map_io_error)?;
+
+    if existed {
+        let old_content = io.read_text(&args.path).map_err(map_io_error)?;
+        let new_content = io
+            .preview_text_after_write(&args.path, &args.content)
+            .map_err(map_io_error)?;
+        if old_content == new_content {
+            return Err(ToolError::Failed(format!(
+                "No changes would be made to {}.",
+                args.path
+            )));
+        }
+        io.write_text(&args.path, &args.content)
+            .map_err(map_io_error)?;
+        let diff = generate_diff_string(&old_content, &new_content, 2);
+        return Ok(format!("Updated {}\n\n{}", args.path, diff.diff));
+    }
+
+    io.write_text_create(&args.path, &args.content)
+        .map_err(map_io_error)?;
+    Ok(format!("Created {}", args.path))
+}
+
+fn map_io_error(error: EditIoError) -> ToolError {
+    match error {
+        EditIoError::Path(path) => ToolError::Failed(path.0),
+        EditIoError::NotebookNotSupported(path) => {
+            ToolError::Failed(format!("notebook paths are not supported: {path}"))
+        }
+        EditIoError::NotFound(path) => ToolError::Failed(format!("file not found: {path}")),
+        EditIoError::Io {
+            operation,
+            path,
+            source,
+        } => ToolError::Failed(format!("{operation} failed for {path}: {source}")),
+    }
+}

@@ -66,6 +66,36 @@ impl EditIo {
         Ok(normalize_to_lf(&stripped.text))
     }
 
+    /// LF-normalized text as [`Self::read_text`] would return after [`Self::write_text`].
+    pub fn preview_text_after_write(
+        &self,
+        user_path: &str,
+        content: &str,
+    ) -> Result<String, EditIoError> {
+        if is_notebook_path(user_path) {
+            return Err(EditIoError::NotebookNotSupported(user_path.to_string()));
+        }
+
+        let absolute = self.resolve(user_path)?;
+        let file_existed = absolute.exists();
+        let had_final_newline = if file_existed {
+            let existing = fs::read_to_string(&absolute).map_err(|source| EditIoError::Io {
+                operation: "read",
+                path: user_path.to_string(),
+                source,
+            })?;
+            existing.ends_with('\n') || existing.ends_with("\r\n")
+        } else {
+            false
+        };
+
+        let mut normalized = normalize_to_lf(content);
+        if file_existed {
+            normalized = apply_trailing_newline_policy(&normalized, had_final_newline);
+        }
+        Ok(normalized)
+    }
+
     /// Write UTF-8 text, restoring BOM and the file's original line endings when present.
     pub fn write_text(&self, user_path: &str, content: &str) -> Result<(), EditIoError> {
         if is_notebook_path(user_path) {
@@ -83,7 +113,7 @@ impl EditIo {
             }
         }
 
-        let (bom, ending, had_final_newline, file_existed) = if absolute.exists() {
+        let (bom, ending, file_existed) = if absolute.exists() {
             let existing = fs::read_to_string(&absolute).map_err(|source| EditIoError::Io {
                 operation: "read",
                 path: user_path.to_string(),
@@ -93,17 +123,17 @@ impl EditIo {
             (
                 bom_result.bom,
                 detect_line_ending(&bom_result.text),
-                existing.ends_with('\n') || existing.ends_with("\r\n"),
                 true,
             )
         } else {
-            (String::new(), detect_line_ending(content), false, false)
+            (String::new(), detect_line_ending(content), false)
         };
 
-        let mut normalized = normalize_to_lf(content);
-        if file_existed {
-            normalized = apply_trailing_newline_policy(&normalized, had_final_newline);
-        }
+        let normalized = if file_existed {
+            self.preview_text_after_write(user_path, content)?
+        } else {
+            normalize_to_lf(content)
+        };
         let payload = restore_line_endings(&normalized, ending);
         let final_content = format!("{bom}{payload}");
 
@@ -233,6 +263,23 @@ mod tests {
 
         let text = fs::read_to_string(temp.path().join(path)).expect("read");
         assert_eq!(text, "new");
+    }
+
+    #[test]
+    fn preview_text_after_write_matches_read_text_after_write() {
+        let temp = tempfile::TempDir::new().expect("tempdir");
+        let io = EditIo::new(temp.path().to_path_buf());
+        let path = "note.txt";
+        fs::write(temp.path().join(path), "alpha\n").expect("seed");
+
+        let preview = io
+            .preview_text_after_write(path, "beta\n")
+            .expect("preview");
+        io.write_text(path, "beta\n").expect("write");
+        let read_back = io.read_text(path).expect("read");
+
+        assert_eq!(preview, read_back);
+        assert_eq!(preview, "beta\n");
     }
 
     #[test]

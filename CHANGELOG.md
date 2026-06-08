@@ -4,12 +4,14 @@
 
 ### Fixed
 
+- **File edit tools (Tier C):** `write` checks for no-op overwrites before touching disk; `EditIo::preview_text_after_write` shares normalization with `write_text`; headless test cwd override is canonicalized.
 - **File edit engine (Tier C):** `resolve_writable` canonicalizes existing path segments so relative paths cannot escape the execution folder via symlinks; `EditIo::write_text` matches patch trailing-newline policy for existing files; notebook paths rejected on `exists`.
 - **File edit engine (Tier B):** patch paths are confined to the execution folder; create rejects existing files; create/delete/move verify disk state; move verifies destination before deleting source and rolls back destination on source delete failure.
 - **File edit engine (Tier B):** patch post-write verification now fails on unreadable writes, checks expected bytes on disk (including no-op and rename), reports duplicate exact sequence matches, and slices leading whitespace by byte length.
 
 ### Added
 
+- **File edit tools (Tier C):** register `write`, `edit`, and `apply_patch` builtins (`ToolTier::Write`, exclusive concurrency); wire handlers through `ToolRunner` on `spawn_blocking`; expose tools in node tool catalog UI; acceptance tests for write approval, file mutation, and path escape.
 - **File edit engine (Tier C):** `tools::edit::path` (`resolve_writable` jail) and `tools::edit::io` (`EditIo` read/write with BOM/LF restore, notebook rejection); patch engine uses shared path jail.
 - **File edit engine (Tier B):** `tools::edit::apply_patch` — Codex envelope parser (`parse_apply_patch`, `expand_apply_patch_to_inputs`, heredoc strip); 16 OMP-parity tests.
 

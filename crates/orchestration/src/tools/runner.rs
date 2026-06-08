@@ -82,7 +82,11 @@ impl ToolRunner {
         let raw_output = match registered.kind {
             BuiltinToolKind::Read => self.read(call.arguments.clone()).await?,
             BuiltinToolKind::AstGrep => self.ast_grep(call.arguments.clone()).await?,
-            BuiltinToolKind::Search | BuiltinToolKind::Find => {
+            BuiltinToolKind::Search
+            | BuiltinToolKind::Find
+            | BuiltinToolKind::Write
+            | BuiltinToolKind::Edit
+            | BuiltinToolKind::ApplyPatch => {
                 self.run_blocking(registered.kind, call.arguments.clone())
                     .await?
             }
@@ -173,6 +177,9 @@ impl ToolRunner {
             match kind {
                 BuiltinToolKind::Search => ops.search(args),
                 BuiltinToolKind::Find => ops.find(args),
+                BuiltinToolKind::Write => ops.write(args),
+                BuiltinToolKind::Edit => ops.edit(args),
+                BuiltinToolKind::ApplyPatch => ops.apply_patch(args),
                 BuiltinToolKind::AstGrep => Err(ToolError::Failed(
                     "ast_grep must use async runner".to_string(),
                 )),
@@ -343,6 +350,18 @@ impl BlockingToolOps {
         } else {
             Ok(results.join("\n"))
         }
+    }
+
+    fn write(&self, args: Value) -> Result<String, ToolError> {
+        crate::tools::edit::write::execute_write(self.cwd.clone(), args)
+    }
+
+    fn edit(&self, args: Value) -> Result<String, ToolError> {
+        crate::tools::edit::edit_tool::execute_edit(self.cwd.clone(), args)
+    }
+
+    fn apply_patch(&self, args: Value) -> Result<String, ToolError> {
+        crate::tools::edit::apply_patch_tool::execute_apply_patch(self.cwd.clone(), args)
     }
 
     fn find(&self, args: Value) -> Result<String, ToolError> {
@@ -526,5 +545,131 @@ mod tests {
             .await
             .unwrap();
         assert!(record.result.content.contains("note.txt:2:beta"));
+    }
+
+    #[tokio::test]
+    async fn write_creates_file_under_execution_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let runner = runner(dir.path());
+        let record = runner
+            .execute(ToolCall {
+                id: "call-write".to_string(),
+                name: "write".to_string(),
+                arguments: serde_json::json!({"path": "new.txt", "content": "hello\n"}),
+                intent: None,
+            })
+            .await
+            .unwrap();
+        assert!(record.result.content.contains("Created new.txt"));
+        assert_eq!(
+            fs::read_to_string(dir.path().join("new.txt")).unwrap(),
+            "hello\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn edit_replaces_text_in_file() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("note.txt"), "alpha\nbeta\n").unwrap();
+        let runner = runner(dir.path());
+        let record = runner
+            .execute(ToolCall {
+                id: "call-edit".to_string(),
+                name: "edit".to_string(),
+                arguments: serde_json::json!({
+                    "path": "note.txt",
+                    "edits": [{"old_text": "beta", "new_text": "gamma"}]
+                }),
+                intent: None,
+            })
+            .await
+            .unwrap();
+        assert!(record.result.content.contains("Updated note.txt"));
+        assert_eq!(
+            fs::read_to_string(dir.path().join("note.txt")).unwrap(),
+            "alpha\ngamma\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn write_rejects_path_outside_execution_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let runner = runner(dir.path());
+        let error = runner
+            .execute(ToolCall {
+                id: "call-escape".to_string(),
+                name: "write".to_string(),
+                arguments: serde_json::json!({"path": "../escape.txt", "content": "nope"}),
+                intent: None,
+            })
+            .await
+            .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("path escapes execution folder"));
+    }
+
+    #[tokio::test]
+    async fn write_rejects_no_op_overwrite() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("note.txt"), "alpha\n").unwrap();
+        let runner = runner(dir.path());
+        let error = runner
+            .execute(ToolCall {
+                id: "call-noop".to_string(),
+                name: "write".to_string(),
+                arguments: serde_json::json!({"path": "note.txt", "content": "alpha\n"}),
+                intent: None,
+            })
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("No changes would be made"));
+        assert_eq!(
+            fs::read_to_string(dir.path().join("note.txt")).unwrap(),
+            "alpha\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn edit_rejects_path_outside_execution_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("note.txt"), "alpha\n").unwrap();
+        let runner = runner(dir.path());
+        let error = runner
+            .execute(ToolCall {
+                id: "call-edit-escape".to_string(),
+                name: "edit".to_string(),
+                arguments: serde_json::json!({
+                    "path": "../escape.txt",
+                    "edits": [{"old_text": "alpha", "new_text": "beta"}]
+                }),
+                intent: None,
+            })
+            .await
+            .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("path escapes execution folder"));
+    }
+
+    #[tokio::test]
+    async fn apply_patch_creates_file_under_execution_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let runner = runner(dir.path());
+        let patch = "*** Begin Patch\n*** Add File: new.txt\n+hello\n*** End Patch\n";
+        let record = runner
+            .execute(ToolCall {
+                id: "call-patch".to_string(),
+                name: "apply_patch".to_string(),
+                arguments: serde_json::json!({"input": patch}),
+                intent: None,
+            })
+            .await
+            .unwrap();
+        assert!(record.result.content.contains("Created new.txt"));
+        assert_eq!(
+            fs::read_to_string(dir.path().join("new.txt")).unwrap(),
+            "hello\n"
+        );
     }
 }

@@ -101,6 +101,7 @@ async fn branch_join_workflow_preserves_sentinel_and_trace_contract() {
         vec![],
         vec![],
         BTreeMap::new(),
+        None,
     )
     .await
     .unwrap();
@@ -201,6 +202,7 @@ async fn manual_node_pauses_accepts_input_and_feeds_downstream_node() {
         ],
         vec![],
         BTreeMap::new(),
+        None,
     )
     .await
     .unwrap();
@@ -269,6 +271,7 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
         vec![],
         vec![],
         BTreeMap::new(),
+        None,
     )
     .await;
     assert!(matches!(
@@ -286,6 +289,7 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
             allow: true,
         }],
         BTreeMap::new(),
+        None,
     )
     .await
     .unwrap();
@@ -294,4 +298,95 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
         json!({"summary": "tool verified ORCHID-91"})
     );
     assert!(!snapshot.tool_calls_by_node[&NodeId("tool-node".into())].is_empty());
+}
+
+#[tokio::test]
+async fn write_tool_requires_approval_and_mutates_file_after_allow() {
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("draft.txt");
+    let execution_cwd = Some(dir.path().to_path_buf());
+
+    #[derive(Clone, Default)]
+    struct WriteAi {
+        calls: Arc<Mutex<usize>>,
+    }
+
+    #[async_trait]
+    impl AiPort for WriteAi {
+        async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            let mut calls = self.calls.lock();
+            *calls += 1;
+            if *calls == 1 {
+                return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+                    raw_text: String::new(),
+                    assistant_message: Some("Saving draft".to_string()),
+                    tool_calls: vec![ToolCall {
+                        id: "call-write".to_string(),
+                        name: "write".to_string(),
+                        arguments: json!({"path": "draft.txt", "content": "saved ORCHID-91\n"}),
+                        intent: Some("Create draft file".to_string()),
+                    }],
+                }));
+            }
+            let saw_tool_result = request
+                .transcript
+                .iter()
+                .any(|item| matches!(item, domain::AgentTranscriptItem::ToolResult { .. }));
+            assert!(saw_tool_result);
+            Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                output: json!({"summary": "draft saved ORCHID-91"}),
+                raw_text: "{}".to_string(),
+                assistant_message: None,
+            }))
+        }
+    }
+
+    let mut workflow = Workflow::new("write tool acceptance");
+    let mut node = agent("write-node", "Write node");
+    node.agent.tools.catalog.tools = vec![ToolRef {
+        name: "write".to_string(),
+        tier: Some(domain::ToolTier::Write),
+    }];
+    node.agent.tools.approval_mode = Some(ApprovalMode::AlwaysAsk);
+    workflow.nodes = vec![node];
+
+    let first_attempt = run_workflow_headless(
+        workflow.clone(),
+        None,
+        WriteAi::default(),
+        vec![],
+        vec![],
+        BTreeMap::new(),
+        execution_cwd.clone(),
+    )
+    .await;
+    assert!(matches!(
+        first_attempt,
+        Err(orchestration::execution::WorkflowExecutionError::MissingApproval(_))
+    ));
+    assert!(!target.exists());
+
+    let snapshot = run_workflow_headless(
+        workflow,
+        None,
+        WriteAi::default(),
+        vec![],
+        vec![ApprovalResponse {
+            approval_id: String::new(),
+            allow: true,
+        }],
+        BTreeMap::new(),
+        execution_cwd,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        snapshot.outputs[&NodeId("write-node".into())],
+        json!({"summary": "draft saved ORCHID-91"})
+    );
+    assert_eq!(
+        std::fs::read_to_string(&target).unwrap(),
+        "saved ORCHID-91\n"
+    );
 }
