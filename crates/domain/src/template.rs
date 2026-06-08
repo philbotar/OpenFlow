@@ -336,7 +336,7 @@ mod tests {
     #[test]
     fn default_templates_have_unique_ids() {
         let templates = default_templates();
-        let ids: HashSet<&String> = templates.iter().map(|t| &t.id).collect();
+        let ids: HashSet<&str> = templates.iter().map(|t| t.id.as_str()).collect();
         assert_eq!(
             ids.len(),
             templates.len(),

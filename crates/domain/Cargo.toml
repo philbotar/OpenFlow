@@ -13,7 +13,6 @@ categories.workspace = true
 name = "domain"
 
 [dependencies]
-anyhow = "1.0"
 async-trait.workspace = true
 dirs.workspace = true
 futures.workspace = true

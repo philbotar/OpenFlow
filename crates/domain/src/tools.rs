@@ -1,6 +1,9 @@
+//! Tool catalog, approval policy, and transcript types for agent nodes.
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+/// Risk tier used to decide default approval behavior.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ToolTier {
@@ -65,6 +68,7 @@ pub struct ToolPolicyOverride {
     pub timeout_secs: Option<u64>,
 }
 
+/// Tool catalog and approval settings attached to an agent node.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NodeToolConfig {

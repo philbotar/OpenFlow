@@ -24,6 +24,7 @@ pub use ports::{
 };
 pub use runner::{RunError, WorkflowRunner};
 pub use template::{default_templates, Template};
+pub use template_store::{FileTemplateStore, TemplateStore, TemplateStoreError};
 pub use tools::{
     override_policy_for_call, requires_approval, tool_tier_for_call, AgentTranscriptItem,
     ApprovalMode, NodeToolConfig, PendingToolApproval, SubagentDeclaration, SubagentStatus,

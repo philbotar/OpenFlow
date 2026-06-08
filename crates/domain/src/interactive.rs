@@ -1,6 +1,7 @@
 use crate::tools::{override_policy_for_call, requires_approval, tool_tier_for_call};
 use crate::{
-    execution_layers, filter_tool_turn_assistant_message, runner::build_node_input, AgentError,
+    execution_layers, filter_tool_turn_assistant_message,
+    runner::{build_node_input, build_upstream_map, workflow_system_prompt}, AgentError,
     AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTranscriptItem, AgentTurnOutcome,
     AgentTurnSuccess, ApprovalMode, ChatMessage, ChatRole, NodeId, NodeRunOutput, RunError,
     RunEvent, RunEventKind, RunReport, ToolCall, ToolDecision, ToolResult, Workflow,
@@ -12,30 +13,37 @@ use std::fmt::Write;
 use thiserror::Error;
 use uuid::Uuid;
 
+/// Next action the host runtime must perform after [`InteractiveEngine::poll`].
 #[derive(Debug, Clone)]
 pub enum EnginePollResult {
+    /// Invoke the model with the enclosed request, then call [`InteractiveEngine::on_ai_complete`].
     CallAi {
         node_id: NodeId,
         request: Box<AgentRequest>,
     },
+    /// Pause until the user submits text via [`InteractiveEngine::on_human_input`].
     AwaitInput {
         node_id: NodeId,
         label: String,
         context: String,
         is_initial: bool,
     },
+    /// Pause until the user approves or denies tools via [`InteractiveEngine::on_tool_decision`].
     AwaitToolApproval {
         approval_id: String,
         node_id: NodeId,
         label: String,
         tool_calls: Vec<ToolCall>,
     },
+    /// Run tools without approval, then call [`InteractiveEngine::on_tool_results`].
     RunTools {
         node_id: NodeId,
         label: String,
         tool_calls: Vec<ToolCall>,
     },
+    /// Workflow finished successfully.
     Completed(RunReport),
+    /// Workflow stopped with a terminal error; further polls return the same failure.
     Failed(RunError),
 }
 
@@ -87,20 +95,7 @@ impl InteractiveEngine {
         entrypoint_text: Option<String>,
     ) -> Result<Self, WorkflowValidationError> {
         let layers = execution_layers(&workflow)?;
-        let mut upstream_map: HashMap<NodeId, Vec<NodeId>> = workflow
-            .nodes
-            .iter()
-            .map(|node| (node.id.clone(), Vec::new()))
-            .collect();
-        for edge in &workflow.edges {
-            upstream_map
-                .entry(edge.to.clone())
-                .or_default()
-                .push(edge.from.clone());
-        }
-        for ids in upstream_map.values_mut() {
-            ids.sort();
-        }
+        let upstream_map = build_upstream_map(&workflow);
         let node_index = workflow
             .nodes
             .iter()
@@ -149,13 +144,20 @@ impl InteractiveEngine {
             .and_then(|index| self.workflow.nodes.get(*index))
     }
 
+    /// Advance the engine one step and return the next action for the host runtime.
+    ///
+    /// Call repeatedly until the result is [`EnginePollResult::Completed`] or
+    /// [`EnginePollResult::Failed`]. For [`EnginePollResult::CallAi`], invoke the model and
+    /// pass the outcome to [`Self::on_ai_complete`]. For input and tool variants, call the
+    /// matching `on_*` handler before polling again.
     pub fn poll(&mut self) -> EnginePollResult {
         if let Some(error) = self.terminal_error.clone() {
             return EnginePollResult::Failed(error);
         }
 
-        if let Some(awaiting_id) = self.awaiting_node.clone() {
-            let Some(node) = self.find_node(&awaiting_id) else {
+        if let Some(awaiting_id) = &self.awaiting_node {
+            let Some(node) = self.find_node(awaiting_id) else {
+                let awaiting_id = awaiting_id.clone();
                 return self.fail_internal(&awaiting_id, "awaiting node no longer exists");
             };
             return EnginePollResult::AwaitInput {
@@ -166,36 +168,33 @@ impl InteractiveEngine {
             };
         }
 
-        if let Some(pending) = self.pending_tool_batch.clone() {
+        if let Some(pending) = &self.pending_tool_batch {
             let Some(node) = self.find_node(&pending.node_id) else {
-                return self.fail_internal(&pending.node_id, "pending tool node no longer exists");
+                let node_id = pending.node_id.clone();
+                return self.fail_internal(&node_id, "pending tool node no longer exists");
             };
             if pending.requires_approval {
                 return EnginePollResult::AwaitToolApproval {
-                    approval_id: pending.approval_id,
+                    approval_id: pending.approval_id.clone(),
                     node_id: node.id.clone(),
                     label: node.label.clone(),
-                    tool_calls: pending.tool_calls,
+                    tool_calls: pending.tool_calls.clone(),
                 };
             }
             return EnginePollResult::RunTools {
                 node_id: node.id.clone(),
                 label: node.label.clone(),
-                tool_calls: pending.tool_calls,
+                tool_calls: pending.tool_calls.clone(),
             };
         }
 
         let Some(node_id) = self.current_node_id() else {
             return EnginePollResult::Completed(RunReport {
                 workflow_id: self.workflow.id.clone(),
-                events: self.events.clone(),
-                outputs: self
-                    .outputs
-                    .iter()
-                    .map(|(id, output)| NodeRunOutput {
-                        node_id: id.clone(),
-                        output: output.clone(),
-                    })
+                events: std::mem::take(&mut self.events),
+                outputs: std::mem::take(&mut self.outputs)
+                    .into_iter()
+                    .map(|(node_id, output)| NodeRunOutput { node_id, output })
                     .collect(),
             });
         };
@@ -243,6 +242,10 @@ impl InteractiveEngine {
         }
     }
 
+    /// Apply a model turn outcome for the node currently awaiting completion.
+    ///
+    /// Misrouted completions (wrong `node_id` or no active node) set a terminal workflow error
+    /// instead of panicking.
     pub fn on_ai_complete(&mut self, node_id: &str, result: Result<AgentTurnOutcome, AgentError>) {
         let Some(expected) = self.current_node_id() else {
             self.reject_misrouted_completion(node_id, "no node is awaiting model completion");
@@ -517,15 +520,6 @@ impl InteractiveEngine {
         self.transcripts.get(node_id).map_or(&[], Vec::as_slice)
     }
 
-    fn workflow_system_prompt(&self, node: &crate::Node) -> String {
-        let base = node.agent.system_prompt.clone();
-        let shared = self.workflow.settings.shared_context.trim();
-        if shared.is_empty() {
-            return base;
-        }
-        format!("{base}\n\n--- Workflow context ---\n{shared}")
-    }
-
     fn build_request(&self, node_id: &str) -> Result<AgentRequest, RunError> {
         let node = self
             .find_node(node_id)
@@ -547,7 +541,7 @@ impl InteractiveEngine {
             node_id: node.id.clone(),
             node_label: node.label.clone(),
             model: node.agent.model.clone(),
-            system_prompt: self.workflow_system_prompt(node),
+            system_prompt: workflow_system_prompt(&self.workflow, node),
             task_prompt: node.agent.task_prompt.clone(),
             input: build_node_input(
                 &node.id,
@@ -666,8 +660,8 @@ mod tests {
         node
     }
 
-    #[tokio::test]
-    async fn shared_context_is_appended_to_system_prompt() {
+    #[test]
+    fn shared_context_is_appended_to_system_prompt() {
         let mut workflow = Workflow::new("shared");
         workflow.settings.shared_context = "Always follow the style guide.".to_string();
         workflow.nodes = vec![node("idea")];
@@ -682,8 +676,8 @@ mod tests {
             .contains("Always follow the style guide."));
     }
 
-    #[tokio::test]
-    async fn auto_start_node_runs_ai_and_completes() {
+    #[test]
+    fn auto_start_node_runs_ai_and_completes() {
         let mut workflow = Workflow::new("test");
         workflow.nodes = vec![node("idea")];
         let mut engine = InteractiveEngine::new(workflow, None).unwrap();
@@ -711,8 +705,8 @@ mod tests {
         assert!(matches!(final_result, EnginePollResult::Completed(_)));
     }
 
-    #[tokio::test]
-    async fn non_auto_start_node_pauses_awaiting_input() {
+    #[test]
+    fn non_auto_start_node_pauses_awaiting_input() {
         let mut workflow = Workflow::new("test");
         let mut idea = node("idea");
         idea.agent.auto_start = false;
@@ -726,8 +720,8 @@ mod tests {
         ));
     }
 
-    #[tokio::test]
-    async fn awaiting_manual_node_repeats_context_until_input_arrives() {
+    #[test]
+    fn awaiting_manual_node_repeats_context_until_input_arrives() {
         let mut workflow = Workflow::new("manual");
         let mut idea = node("idea");
         idea.agent.auto_start = false;
@@ -762,8 +756,8 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn wrong_node_human_input_is_rejected_without_advancing() {
+    #[test]
+    fn wrong_node_human_input_is_rejected_without_advancing() {
         let mut workflow = Workflow::new("manual");
         let mut idea = node("idea");
         idea.agent.auto_start = false;
@@ -788,8 +782,8 @@ mod tests {
         assert!(engine.node_output("idea").is_none());
     }
 
-    #[tokio::test]
-    async fn manual_node_user_input_starts_ai_request() {
+    #[test]
+    fn manual_node_user_input_starts_ai_request() {
         let mut workflow = Workflow::new("manual");
         let mut idea = node("idea");
         idea.agent.auto_start = false;
@@ -814,8 +808,8 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn conversation_follow_up_repauses_same_node() {
+    #[test]
+    fn conversation_follow_up_repauses_same_node() {
         let mut workflow = Workflow::new("manual");
         let mut idea = node("idea");
         idea.agent.auto_start = false;
@@ -848,8 +842,8 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn tool_calls_pause_for_approval_and_resume_after_results() {
+    #[test]
+    fn tool_calls_pause_for_approval_and_resume_after_results() {
         let mut workflow = Workflow::new("tooling");
         let mut idea = node("idea");
         idea.agent.tools.catalog.tools = vec![crate::ToolRef {
@@ -921,8 +915,8 @@ mod tests {
         ));
     }
 
-    #[tokio::test]
-    async fn conversation_completion_sets_output_and_advances() {
+    #[test]
+    fn conversation_completion_sets_output_and_advances() {
         let mut workflow = Workflow::new("manual");
         let mut idea = node("idea");
         idea.agent.auto_start = false;
@@ -955,19 +949,24 @@ mod tests {
         ));
     }
 
-    #[tokio::test]
-    async fn find_node_uses_index() {
+    #[test]
+    fn poll_targets_first_manual_node_in_layer_order() {
         let mut workflow = Workflow::new("indexed");
-        workflow.nodes = vec![node("first"), node("second"), node("third")];
-        let engine = InteractiveEngine::new(workflow, None).unwrap();
+        let mut first = node("first");
+        first.agent.auto_start = false;
+        let mut second = node("second");
+        second.agent.auto_start = false;
+        workflow.nodes = vec![first, second];
+        let mut engine = InteractiveEngine::new(workflow, None).unwrap();
 
-        let found = engine.find_node("second").unwrap();
-
-        assert_eq!(found.label, "second");
+        match engine.poll() {
+            EnginePollResult::AwaitInput { node_id, .. } => assert_eq!(node_id, "first"),
+            other => panic!("expected AwaitInput, got {other:?}"),
+        }
     }
 
-    #[tokio::test]
-    async fn yolo_mode_skips_tool_approval() {
+    #[test]
+    fn yolo_mode_skips_tool_approval() {
         let mut workflow = Workflow::new("tooling");
         let mut idea = node("idea");
         idea.agent.tools.approval_mode = Some(ApprovalMode::Yolo);
@@ -996,8 +995,8 @@ mod tests {
         ));
     }
 
-    #[tokio::test]
-    async fn denied_tool_call_resumes_with_error_result() {
+    #[test]
+    fn denied_tool_call_resumes_with_error_result() {
         let mut workflow = Workflow::new("tooling");
         let mut idea = node("idea");
         idea.agent.tools.approval_mode = Some(ApprovalMode::AlwaysAsk);
@@ -1034,8 +1033,8 @@ mod tests {
         ));
     }
 
-    #[tokio::test]
-    async fn transient_failure_retries_then_succeeds() {
+    #[test]
+    fn transient_failure_retries_then_succeeds() {
         let mut workflow = Workflow::new("retry");
         workflow.settings.retry_policy.max_attempts = 1;
         workflow.settings.retry_policy.backoff_ms = 25;
@@ -1070,8 +1069,8 @@ mod tests {
         assert_eq!(report.outputs.len(), 1);
     }
 
-    #[tokio::test]
-    async fn permanent_failure_does_not_retry() {
+    #[test]
+    fn permanent_failure_does_not_retry() {
         let mut workflow = Workflow::new("retry");
         workflow.settings.retry_policy.max_attempts = 3;
         workflow.nodes = vec![node("idea")];
@@ -1083,8 +1082,8 @@ mod tests {
         assert!(matches!(engine.poll(), EnginePollResult::Failed(_)));
     }
 
-    #[tokio::test]
-    async fn tool_config_names_survive_into_request() {
+    #[test]
+    fn tool_config_names_survive_into_request() {
         let mut workflow = Workflow::new("tools");
         let mut idea = node("idea");
         idea.agent.tools.catalog.tools = vec![crate::ToolRef {
@@ -1102,8 +1101,8 @@ mod tests {
         assert_eq!(request.tool_config.catalog.tools[0].name, "search");
     }
 
-    #[tokio::test]
-    async fn tool_call_xml_echo_is_dropped_from_transcript() {
+    #[test]
+    fn tool_call_xml_echo_is_dropped_from_transcript() {
         let mut workflow = Workflow::new("tooling");
         let mut idea = node("idea");
         idea.agent.tools.approval_mode = Some(ApprovalMode::Yolo);
@@ -1134,8 +1133,8 @@ mod tests {
         )));
     }
 
-    #[tokio::test]
-    async fn completion_tool_call_xml_echo_is_dropped_from_transcript() {
+    #[test]
+    fn completion_tool_call_xml_echo_is_dropped_from_transcript() {
         let mut workflow = Workflow::new("completion");
         workflow.nodes = vec![node("idea")];
         let mut engine = InteractiveEngine::new(workflow, None).unwrap();
@@ -1155,8 +1154,8 @@ mod tests {
         assert!(engine.transcript("idea").is_empty());
     }
 
-    #[tokio::test]
-    async fn misrouted_completion_is_rejected() {
+    #[test]
+    fn misrouted_completion_is_rejected() {
         let mut workflow = Workflow::new("misroute");
         workflow.nodes = vec![node("idea")];
         let mut engine = InteractiveEngine::new(workflow, None).unwrap();
@@ -1179,8 +1178,8 @@ mod tests {
         assert_eq!(message, "expected model completion for idea, got other");
     }
 
-    #[tokio::test]
-    async fn started_event_is_provider_neutral_and_emitted_once_per_poll_attempt() {
+    #[test]
+    fn started_event_is_provider_neutral_and_emitted_once_per_poll_attempt() {
         let mut workflow = Workflow::new("events");
         workflow.nodes = vec![node("idea")];
         let mut engine = InteractiveEngine::new(workflow, None).unwrap();
@@ -1208,8 +1207,8 @@ mod tests {
         assert_eq!(started[0].message, "invoking model");
     }
 
-    #[tokio::test]
-    async fn max_tool_rounds_failure_is_node_local() {
+    #[test]
+    fn max_tool_rounds_failure_is_node_local() {
         let mut workflow = Workflow::new("tool rounds");
         let mut first = node("first");
         first.agent.tools.max_tool_rounds = 0;
@@ -1240,8 +1239,8 @@ mod tests {
         ));
     }
 
-    #[tokio::test]
-    async fn inbound_ports_drive_engine_inputs() {
+    #[test]
+    fn inbound_ports_drive_engine_inputs() {
         use crate::ports::inbound::{
             HumanInput, HumanInputPort, ToolApprovalInput, ToolApprovalPort,
         };

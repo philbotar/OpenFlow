@@ -174,7 +174,7 @@ struct HeadlessNodeResult {
     events: Vec<RunEvent>,
 }
 
-fn build_upstream_map(workflow: &Workflow) -> HashMap<NodeId, Vec<NodeId>> {
+pub(crate) fn build_upstream_map(workflow: &Workflow) -> HashMap<NodeId, Vec<NodeId>> {
     let mut upstream_map: HashMap<NodeId, Vec<NodeId>> = workflow
         .nodes
         .iter()
@@ -214,7 +214,7 @@ fn build_agent_request(
     }
 }
 
-fn workflow_system_prompt(workflow: &Workflow, node: &Node) -> String {
+pub(crate) fn workflow_system_prompt(workflow: &Workflow, node: &Node) -> String {
     let base = node.agent.system_prompt.clone();
     let shared = workflow.settings.shared_context.trim();
     if shared.is_empty() {

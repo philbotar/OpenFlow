@@ -1,3 +1,5 @@
+//! Workflow graph model: nodes, edges, run artifacts, and serde DTOs shared across crates.
+
 #![allow(clippy::use_self, clippy::derive_partial_eq_without_eq)]
 
 use crate::tools::NodeToolConfig;
@@ -207,6 +209,7 @@ pub struct WorkflowSettings {
     pub provider_id: Option<String>,
 }
 
+/// A directed workflow graph with settings applied at run time.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Workflow {
     pub id: WorkflowId,
@@ -229,6 +232,7 @@ impl Workflow {
     }
 }
 
+/// One canvas node. Agent nodes carry an [`AgentNodeConfig`].
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Node {
     pub id: NodeId,
@@ -325,6 +329,7 @@ pub fn filter_tool_turn_assistant_message(message: Option<String>) -> Option<Str
     message.filter(|content| !is_redundant_tool_call_markup(content))
 }
 
+/// Per-node agent invocation settings: prompts, model, tools, and callable subagents.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AgentNodeConfig {
     pub system_prompt: String,

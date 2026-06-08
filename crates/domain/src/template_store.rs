@@ -1,5 +1,4 @@
 #![allow(
-    clippy::missing_errors_doc,
     clippy::needless_pass_by_value,
     clippy::redundant_clone,
     clippy::significant_drop_tightening,
@@ -8,25 +7,62 @@
 
 use crate::model::AgentNodeConfig;
 use crate::template::{default_templates, Template};
-use anyhow::{Context, Result};
 use log::{debug, info, warn};
 use parking_lot::RwLock;
 use serde::Deserialize;
 use std::collections::HashSet;
+use std::io;
 use std::path::{Path, PathBuf};
+use thiserror::Error;
 
 const CURRENT_DATA_DIR_SLUG: &str = "openflow";
 const LEGACY_DATA_DIR_SLUG: &str = "step-through-agentic-workflow";
 const TEMPLATES_FILE_NAME: &str = "templates.json";
 
+/// Errors from template store read/write operations.
+#[derive(Debug, Error)]
+pub enum TemplateStoreError {
+    #[error("cannot determine local data directory")]
+    DataDirUnavailable,
+    #[error("cannot create directory: {path}")]
+    CannotCreateDir {
+        path: String,
+        #[source]
+        source: io::Error,
+    },
+    #[error("cannot read templates file: {path}")]
+    CannotRead {
+        path: String,
+        #[source]
+        source: io::Error,
+    },
+    #[error("cannot write templates to: {path}")]
+    CannotWrite {
+        path: String,
+        #[source]
+        source: io::Error,
+    },
+    #[error("cannot serialize templates")]
+    Serialize(#[from] serde_json::Error),
+    #[error("template not found: {id}")]
+    NotFound { id: String },
+}
+
+/// Persistence contract for node templates.
 pub trait TemplateStore {
     fn list(&self) -> Vec<Template>;
 
-    fn add(&self, template: Template) -> Result<()>;
+    /// # Errors
+    /// Returns an error when the template cannot be persisted.
+    fn add(&self, template: Template) -> Result<(), TemplateStoreError>;
 
-    fn remove(&self, id: &str) -> Result<()>;
+    /// # Errors
+    /// Returns an error when the template cannot be removed from disk.
+    fn remove(&self, id: &str) -> Result<(), TemplateStoreError>;
 
-    fn update(&self, template: Template) -> Result<()>;
+    /// # Errors
+    /// Returns [`TemplateStoreError::NotFound`] when no template matches `template.id`.
+    fn update(&self, template: Template) -> Result<(), TemplateStoreError>;
 }
 
 pub struct FileTemplateStore {
@@ -35,12 +71,14 @@ pub struct FileTemplateStore {
 }
 
 impl FileTemplateStore {
-    pub fn new() -> Result<Self> {
-        let data_dir = dirs::data_local_dir().context("cannot determine local data directory")?;
+    /// # Errors
+    /// Returns an error when the data directory or templates file cannot be opened.
+    pub fn new() -> Result<Self, TemplateStoreError> {
+        let data_dir = dirs::data_local_dir().ok_or(TemplateStoreError::DataDirUnavailable)?;
         Self::new_in(data_dir)
     }
 
-    fn new_in(data_dir: PathBuf) -> Result<Self> {
+    fn new_in(data_dir: PathBuf) -> Result<Self, TemplateStoreError> {
         let dir = data_dir.join(CURRENT_DATA_DIR_SLUG);
         let path = dir.join(TEMPLATES_FILE_NAME);
         if path.exists() {
@@ -51,8 +89,10 @@ impl FileTemplateStore {
             .join(LEGACY_DATA_DIR_SLUG)
             .join(TEMPLATES_FILE_NAME);
         if legacy_path.exists() {
-            std::fs::create_dir_all(&dir)
-                .with_context(|| format!("cannot create directory: {}", dir.display()))?;
+            std::fs::create_dir_all(&dir).map_err(|source| TemplateStoreError::CannotCreateDir {
+                path: dir.display().to_string(),
+                source,
+            })?;
             let templates = Self::load_existing_at(&legacy_path, &path)?;
             return Ok(Self {
                 templates: RwLock::new(templates),
@@ -60,15 +100,21 @@ impl FileTemplateStore {
             });
         }
 
-        std::fs::create_dir_all(&dir)
-            .with_context(|| format!("cannot create directory: {}", dir.display()))?;
+        std::fs::create_dir_all(&dir).map_err(|source| TemplateStoreError::CannotCreateDir {
+            path: dir.display().to_string(),
+            source,
+        })?;
         Self::new_at(path)
     }
 
-    pub(crate) fn new_at(path: PathBuf) -> Result<Self> {
+    pub(crate) fn new_at(path: PathBuf) -> Result<Self, TemplateStoreError> {
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("cannot create directory: {}", parent.display()))?;
+            std::fs::create_dir_all(parent).map_err(|source| {
+                TemplateStoreError::CannotCreateDir {
+                    path: parent.display().to_string(),
+                    source,
+                }
+            })?;
         }
 
         let templates = if path.exists() {
@@ -86,10 +132,14 @@ impl FileTemplateStore {
         })
     }
 
-    fn load_existing_at(source_path: &Path, write_path: &Path) -> Result<Vec<Template>> {
+    fn load_existing_at(source_path: &Path, write_path: &Path) -> Result<Vec<Template>, TemplateStoreError> {
         debug!("loading templates from {}", source_path.display());
-        let data = std::fs::read_to_string(source_path)
-            .with_context(|| format!("cannot read templates file: {}", source_path.display()))?;
+        let data = std::fs::read_to_string(source_path).map_err(|source| {
+            TemplateStoreError::CannotRead {
+                path: source_path.display().to_string(),
+                source,
+            }
+        })?;
         match serde_json::from_str::<Vec<Template>>(&data) {
             Ok(loaded) => {
                 info!("loaded {} templates from disk", loaded.len());
@@ -119,18 +169,32 @@ impl FileTemplateStore {
         }
     }
 
-    fn write_templates(path: &Path, templates: &[Template]) -> Result<()> {
-        let json = serde_json::to_string_pretty(templates)
-            .context("cannot serialize default templates")?;
-        std::fs::write(path, json)
-            .with_context(|| format!("cannot write templates to: {}", path.display()))?;
+    fn write_templates(path: &Path, templates: &[Template]) -> Result<(), TemplateStoreError> {
+        let json = serde_json::to_string_pretty(templates)?;
+        std::fs::write(path, json).map_err(|source| TemplateStoreError::CannotWrite {
+            path: path.display().to_string(),
+            source,
+        })?;
         Ok(())
     }
 
-    fn save(&self) -> Result<()> {
-        let data = self.templates.read();
-        Self::write_templates(&self.path, &data)?;
-        debug!("saved {} templates to disk", data.len());
+    fn persist(&self, templates: &[Template]) -> Result<(), TemplateStoreError> {
+        Self::write_templates(&self.path, templates)?;
+        debug!("saved {} templates to disk", templates.len());
+        Ok(())
+    }
+
+    fn mutate<F>(&self, mutate: F) -> Result<(), TemplateStoreError>
+    where
+        F: FnOnce(&mut Vec<Template>) -> Result<(), TemplateStoreError>,
+    {
+        let mut data = self.templates.write();
+        let snapshot = data.clone();
+        mutate(&mut data)?;
+        if let Err(error) = self.persist(&data) {
+            *data = snapshot;
+            return Err(error);
+        }
         Ok(())
     }
 }
@@ -140,24 +204,30 @@ impl TemplateStore for FileTemplateStore {
         self.templates.read().clone()
     }
 
-    fn add(&self, template: Template) -> Result<()> {
-        self.templates.write().push(template);
-        self.save()
+    fn add(&self, template: Template) -> Result<(), TemplateStoreError> {
+        self.mutate(|data| {
+            data.push(template);
+            Ok(())
+        })
     }
 
-    fn remove(&self, id: &str) -> Result<()> {
-        self.templates.write().retain(|t| t.id != id);
-        self.save()
+    fn remove(&self, id: &str) -> Result<(), TemplateStoreError> {
+        self.mutate(|data| {
+            data.retain(|t| t.id != id);
+            Ok(())
+        })
     }
 
-    fn update(&self, template: Template) -> Result<()> {
-        let mut data = self.templates.write();
-        if let Some(existing) = data.iter_mut().find(|t| t.id == template.id) {
+    fn update(&self, template: Template) -> Result<(), TemplateStoreError> {
+        self.mutate(|data| {
+            let Some(existing) = data.iter_mut().find(|t| t.id == template.id) else {
+                return Err(TemplateStoreError::NotFound {
+                    id: template.id.clone(),
+                });
+            };
             *existing = template;
-            drop(data);
-            return self.save();
-        }
-        Ok(())
+            Ok(())
+        })
     }
 }
 
@@ -258,6 +328,18 @@ mod tests {
         let list = store.list();
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].display_name, "Updated Runner");
+    }
+
+    #[test]
+    fn update_missing_template_returns_not_found() {
+        let (store, _dir) = empty_template_store();
+
+        let err = store
+            .update(template("builtin.simple-agent"))
+            .unwrap_err();
+
+        assert!(matches!(err, TemplateStoreError::NotFound { .. }));
+        assert_eq!(store.list().len(), 0);
     }
 
     #[test]
@@ -393,7 +475,7 @@ mod tests {
     }
 
     #[test]
-    fn add_returns_err_when_path_unwritable() {
+    fn add_rolls_back_memory_when_path_unwritable() {
         let dir = tempfile::tempdir().unwrap();
         let file_parent = dir.path().join("not-a-directory");
         std::fs::write(&file_parent, "file, not directory").unwrap();
@@ -404,7 +486,7 @@ mod tests {
 
         let err = store.add(template("builtin.simple-agent")).unwrap_err();
 
-        assert!(err.to_string().contains("cannot write templates"));
-        assert_eq!(store.list().len(), 1);
+        assert!(matches!(err, TemplateStoreError::CannotWrite { .. }));
+        assert_eq!(store.list().len(), 0);
     }
 }
