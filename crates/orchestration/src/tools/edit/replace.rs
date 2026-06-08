@@ -7,8 +7,8 @@ use super::normalize::{count_leading_whitespace, normalize_for_fuzzy};
 pub const DEFAULT_FUZZY_THRESHOLD: f64 = 0.95;
 
 const FALLBACK_THRESHOLD: f64 = 0.8;
-const DOMINANT_FUZZY_MIN_CONFIDENCE: f64 = 0.97;
-const DOMINANT_FUZZY_DELTA: f64 = 0.08;
+pub(crate) const DOMINANT_FUZZY_MIN_CONFIDENCE: f64 = 0.97;
+pub(crate) const DOMINANT_FUZZY_DELTA: f64 = 0.08;
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct MatchOutcome {
@@ -128,7 +128,7 @@ fn levenshtein_distance(a: &str, b: &str) -> usize {
     prev[b_len]
 }
 
-fn similarity(a: &str, b: &str) -> f64 {
+pub(crate) fn line_similarity(a: &str, b: &str) -> f64 {
     if a.is_empty() && b.is_empty() {
         return 1.0;
     }
@@ -238,7 +238,7 @@ fn find_best_fuzzy_match_core(
         let window_normalized = normalize_lines(window_lines, include_depth);
         let mut score = 0.0;
         for i in 0..target_lines.len() {
-            score += similarity(&target_normalized[i], &window_normalized[i]);
+            score += line_similarity(&target_normalized[i], &window_normalized[i]);
         }
         score /= target_lines.len() as f64;
 

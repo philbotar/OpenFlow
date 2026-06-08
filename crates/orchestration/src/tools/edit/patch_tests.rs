@@ -1,4 +1,342 @@
 //! Ported OMP tests for patch post-write verification (`edit-patch-unchanged-error.test.ts`).
-//! Exercised once `patch.rs` lands (tier-b-patch).
 
-// Placeholder module — tests move into patch.rs when implemented.
+use std::collections::HashMap;
+use std::io;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+
+use tempfile::TempDir;
+
+use super::patch::{
+    apply_patch_entry, PatchError, PatchFileSystem, PatchInput, PatchOp, PatchOptions,
+    PatchVerifyError, StdPatchFileSystem,
+};
+use super::replace::DEFAULT_FUZZY_THRESHOLD;
+
+struct SwallowingFileSystem {
+    inner: StdPatchFileSystem,
+    store: Mutex<HashMap<PathBuf, String>>,
+}
+
+impl SwallowingFileSystem {
+    fn new() -> Self {
+        Self {
+            inner: StdPatchFileSystem,
+            store: Mutex::new(HashMap::new()),
+        }
+    }
+
+    fn seed(&self, path: &Path, content: &str) {
+        self.store
+            .lock()
+            .expect("store lock")
+            .insert(path.to_path_buf(), content.to_string());
+        self.inner.write(path, content).expect("seed write");
+    }
+}
+
+impl PatchFileSystem for SwallowingFileSystem {
+    fn read(&self, path: &Path) -> io::Result<String> {
+        if let Some(content) = self.store.lock().expect("store lock").get(path) {
+            return Ok(content.clone());
+        }
+        self.inner.read(path)
+    }
+
+    fn read_binary(&self, path: &Path) -> io::Result<Vec<u8>> {
+        if let Some(content) = self.store.lock().expect("store lock").get(path) {
+            return Ok(content.as_bytes().to_vec());
+        }
+        self.inner.read_binary(path)
+    }
+
+    fn write(&self, _path: &Path, _content: &str) -> io::Result<()> {
+        Ok(())
+    }
+
+    fn delete(&self, path: &Path) -> io::Result<()> {
+        self.store.lock().expect("store lock").remove(path);
+        self.inner.delete(path)
+    }
+
+    fn mkdir_all(&self, path: &Path) -> io::Result<()> {
+        self.inner.mkdir_all(path)
+    }
+
+    fn exists(&self, path: &Path) -> io::Result<bool> {
+        if self.store.lock().expect("store lock").contains_key(path) {
+            return Ok(true);
+        }
+        self.inner.exists(path)
+    }
+}
+
+struct FailDeleteSourceFileSystem {
+    inner: StdPatchFileSystem,
+    source: PathBuf,
+}
+
+impl FailDeleteSourceFileSystem {
+    fn new(source: PathBuf) -> Self {
+        Self {
+            inner: StdPatchFileSystem,
+            source,
+        }
+    }
+}
+
+impl PatchFileSystem for FailDeleteSourceFileSystem {
+    fn read(&self, path: &Path) -> io::Result<String> {
+        self.inner.read(path)
+    }
+
+    fn read_binary(&self, path: &Path) -> io::Result<Vec<u8>> {
+        self.inner.read_binary(path)
+    }
+
+    fn write(&self, path: &Path, content: &str) -> io::Result<()> {
+        self.inner.write(path, content)
+    }
+
+    fn delete(&self, path: &Path) -> io::Result<()> {
+        if path == self.source {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "simulated delete failure",
+            ));
+        }
+        self.inner.delete(path)
+    }
+
+    fn mkdir_all(&self, path: &Path) -> io::Result<()> {
+        self.inner.mkdir_all(path)
+    }
+
+    fn exists(&self, path: &Path) -> io::Result<bool> {
+        self.inner.exists(path)
+    }
+}
+
+fn patch_options(root: &Path) -> PatchOptions {
+    PatchOptions {
+        cwd: root.canonicalize().expect("canonical cwd"),
+        dry_run: false,
+        allow_fuzzy: true,
+        fuzzy_threshold: DEFAULT_FUZZY_THRESHOLD,
+    }
+}
+
+fn run_unchanged_patch(
+    temp: &TempDir,
+    rel_path: &str,
+    fs: &SwallowingFileSystem,
+) -> Result<(), PatchError> {
+    let cwd = temp.path().canonicalize().expect("canonical cwd");
+    let nested = cwd.join(rel_path);
+    if let Some(parent) = nested.parent() {
+        std::fs::create_dir_all(parent).expect("mkdir");
+    }
+    fs.seed(&nested, "a\n");
+
+    apply_patch_entry(
+        &PatchInput {
+            path: rel_path.to_string(),
+            op: PatchOp::Update,
+            rename: None,
+            diff: Some("@@\n-a\n+b".to_string()),
+        },
+        &patch_options(temp.path()),
+        fs,
+    )
+    .map(|_| ())
+}
+
+#[test]
+fn patch_verify_error_message_uses_relative_path_not_temp_dir() {
+    let temp = TempDir::new().expect("tempdir");
+    let fs = SwallowingFileSystem::new();
+    let rel_path = "deep/nested/foo.txt";
+
+    let err = run_unchanged_patch(&temp, rel_path, &fs).expect_err("expected verify error");
+
+    let PatchError::Verify(PatchVerifyError { message, .. }) = err else {
+        panic!("expected PatchError::Verify");
+    };
+
+    assert!(message.contains(rel_path));
+    assert!(!message.contains(temp.path().to_str().expect("temp path")));
+}
+
+#[test]
+fn patch_verify_error_carries_absolute_resolved_path() {
+    let temp = TempDir::new().expect("tempdir");
+    let fs = SwallowingFileSystem::new();
+    let rel_path = "foo.txt";
+
+    let err = run_unchanged_patch(&temp, rel_path, &fs).expect_err("expected verify error");
+
+    let PatchError::Verify(PatchVerifyError { resolved_path, .. }) = err else {
+        panic!("expected PatchError::Verify");
+    };
+
+    assert_eq!(
+        resolved_path,
+        temp.path().join(rel_path).canonicalize().expect("canonical")
+    );
+}
+
+#[test]
+fn rejects_path_outside_execution_folder() {
+    let temp = TempDir::new().expect("tempdir");
+    let fs = StdPatchFileSystem;
+
+    let err = apply_patch_entry(
+        &PatchInput {
+            path: "../outside.txt".to_string(),
+            op: PatchOp::Create,
+            rename: None,
+            diff: Some("+hello\n".to_string()),
+        },
+        &patch_options(temp.path()),
+        &fs,
+    )
+    .expect_err("expected path escape error");
+
+    let PatchError::Apply(message) = err else {
+        panic!("expected apply error");
+    };
+    assert!(message.0.contains("escapes execution folder"));
+}
+
+#[test]
+fn rejects_create_when_file_already_exists() {
+    let temp = TempDir::new().expect("tempdir");
+    let fs = StdPatchFileSystem;
+    let rel_path = "exists.txt";
+    let absolute = temp.path().join(rel_path);
+    std::fs::write(&absolute, "old\n").expect("seed");
+
+    let err = apply_patch_entry(
+        &PatchInput {
+            path: rel_path.to_string(),
+            op: PatchOp::Create,
+            rename: None,
+            diff: Some("+new\n".to_string()),
+        },
+        &patch_options(temp.path()),
+        &fs,
+    )
+    .expect_err("expected exists error");
+
+    let PatchError::Apply(message) = err else {
+        panic!("expected apply error");
+    };
+    assert!(message.0.contains("already exists"));
+}
+
+#[test]
+fn create_update_and_delete_round_trip() {
+    let temp = TempDir::new().expect("tempdir");
+    let fs = StdPatchFileSystem;
+    let rel_path = "round.txt";
+
+    apply_patch_entry(
+        &PatchInput {
+            path: rel_path.to_string(),
+            op: PatchOp::Create,
+            rename: None,
+            diff: Some("+hello\n".to_string()),
+        },
+        &patch_options(temp.path()),
+        &fs,
+    )
+    .expect("create");
+
+    apply_patch_entry(
+        &PatchInput {
+            path: rel_path.to_string(),
+            op: PatchOp::Update,
+            rename: None,
+            diff: Some("@@\n-hello\n+world".to_string()),
+        },
+        &patch_options(temp.path()),
+        &fs,
+    )
+    .expect("update");
+
+    assert_eq!(
+        std::fs::read_to_string(temp.path().join(rel_path)).expect("read"),
+        "world\n"
+    );
+
+    apply_patch_entry(
+        &PatchInput {
+            path: rel_path.to_string(),
+            op: PatchOp::Delete,
+            rename: None,
+            diff: None,
+        },
+        &patch_options(temp.path()),
+        &fs,
+    )
+    .expect("delete");
+
+    assert!(!temp.path().join(rel_path).exists());
+}
+
+#[test]
+fn move_writes_destination_before_deleting_source() {
+    let temp = TempDir::new().expect("tempdir");
+    let fs = StdPatchFileSystem;
+    let source = "src.txt";
+    let dest = "dest.txt";
+    std::fs::write(temp.path().join(source), "old\n").expect("seed");
+
+    apply_patch_entry(
+        &PatchInput {
+            path: source.to_string(),
+            op: PatchOp::Update,
+            rename: Some(dest.to_string()),
+            diff: Some("@@\n-old\n+new".to_string()),
+        },
+        &patch_options(temp.path()),
+        &fs,
+    )
+    .expect("move");
+
+    assert!(!temp.path().join(source).exists());
+    assert_eq!(
+        std::fs::read_to_string(temp.path().join(dest)).expect("read dest"),
+        "new\n"
+    );
+}
+
+#[test]
+fn move_rolls_back_destination_when_source_delete_fails() {
+    let temp = TempDir::new().expect("tempdir");
+    let cwd = temp.path().canonicalize().expect("canonical cwd");
+    let source = "src.txt";
+    let dest = "dest.txt";
+    let source_path = cwd.join(source);
+    std::fs::write(&source_path, "old\n").expect("seed");
+    let fs = FailDeleteSourceFileSystem::new(source_path.clone());
+
+    let err = apply_patch_entry(
+        &PatchInput {
+            path: source.to_string(),
+            op: PatchOp::Update,
+            rename: Some(dest.to_string()),
+            diff: Some("@@\n-old\n+new".to_string()),
+        },
+        &patch_options(temp.path()),
+        &fs,
+    )
+    .expect_err("expected rollback error");
+
+    let PatchError::Apply(message) = err else {
+        panic!("expected apply error");
+    };
+    assert!(message.0.contains("rolled back"));
+    assert!(source_path.exists());
+    assert!(!cwd.join(dest).exists());
+}

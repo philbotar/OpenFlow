@@ -2,8 +2,17 @@
 
 ## Unreleased
 
+### Fixed
+
+- **File edit engine (Tier B):** patch paths are confined to the execution folder; create rejects existing files; create/delete/move verify disk state; move verifies destination before deleting source and rolls back destination on source delete failure.
+- **File edit engine (Tier B):** patch post-write verification now fails on unreadable writes, checks expected bytes on disk (including no-op and rename), reports duplicate exact sequence matches, and slices leading whitespace by byte length.
+
 ### Added
 
+- **File edit engine (Tier B):** `tools::edit::apply_patch` — Codex envelope parser (`parse_apply_patch`, `expand_apply_patch_to_inputs`, heredoc strip); 16 OMP-parity tests.
+
+- **File edit engine (Tier B):** `tools::edit::patch` — OMP-parity patch applicator (`apply_patch_entry`) with fuzzy hunk matching, create/update/delete/rename, BOM/line-ending restore, and post-write byte verification (`PatchVerifyError`); 7 unit tests including path confinement, create guard, round-trip CRUD, and move rollback.
+- **File edit engine (Tier B):** `parse_apply_patch_streaming` tests and `replace_sequence` unit tests for exact/EOF/context matching.
 - **File edit engine (Tier B):** `tools::edit::diff` — `generate_diff_string`, `parse_diff_hunks`, `normalize_diff`, `replace_text`; BOM/LF/`normalize_unicode` helpers on `normalize`; 55 unit tests.
 - **File edit engine (Tier B):** `replace_text` restores original line endings; `all` mode replaces occurrences one-by-one with indentation adjustment; ambiguous fuzzy matches error in single mode.
 - **File edit engine (Tier B):** OMP-parity `find_match` and `adjust_indentation` in `orchestration::tools::edit`.

@@ -156,10 +156,18 @@ pub fn count_leading_whitespace(line: &str) -> usize {
     line.chars().take_while(|c| *c == ' ' || *c == '\t').count()
 }
 
+/// Byte length of the leading whitespace prefix (safe for string slicing).
+pub fn leading_whitespace_byte_len(line: &str) -> usize {
+    line.char_indices()
+        .take_while(|(_, c)| *c == ' ' || *c == '\t')
+        .map(|(i, c)| i + c.len_utf8())
+        .last()
+        .unwrap_or(0)
+}
+
 /// Leading whitespace prefix of a line.
 pub fn get_leading_whitespace(line: &str) -> &str {
-    let end = count_leading_whitespace(line);
-    &line[..end]
+    &line[..leading_whitespace_byte_len(line)]
 }
 
 fn is_non_empty_line(line: &str) -> bool {
@@ -364,7 +372,7 @@ fn apply_indent_delta(text: &str, delta: isize, indent_char: char) -> String {
                 let prefix = indent_char.to_string().repeat(delta as usize);
                 return format!("{prefix}{line}");
             }
-            let to_remove = (-delta as usize).min(count_leading_whitespace(line));
+            let to_remove = (-delta as usize).min(leading_whitespace_byte_len(line));
             line[to_remove..].to_string()
         })
         .collect::<Vec<_>>()
