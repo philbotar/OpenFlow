@@ -1,5 +1,156 @@
 //! Text normalization for the edit engine (OMP `normalize.ts` port).
 
+use std::sync::OnceLock;
+
+use regex::Regex;
+use unicode_normalization::UnicodeNormalization;
+
+/// Line ending style detected in file content.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LineEnding {
+    Lf,
+    CrLf,
+    /// Classic Mac `\r`-only line endings.
+    Cr,
+}
+
+impl LineEnding {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Lf => "\n",
+            Self::CrLf => "\r\n",
+            Self::Cr => "\r",
+        }
+    }
+}
+
+/// Result of stripping a UTF-8 BOM prefix.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BomResult {
+    pub bom: String,
+    pub text: String,
+}
+
+/// Detect the first line-ending style in `content`.
+pub fn detect_line_ending(content: &str) -> LineEnding {
+    let crlf_idx = content.find("\r\n");
+    let lf_idx = content.find('\n');
+    let cr_idx = content.find('\r');
+
+    if let (Some(crlf), Some(lf)) = (crlf_idx, lf_idx) {
+        return if crlf < lf {
+            LineEnding::CrLf
+        } else {
+            LineEnding::Lf
+        };
+    }
+    if crlf_idx.is_some() {
+        return LineEnding::CrLf;
+    }
+    if lf_idx.is_some() {
+        return LineEnding::Lf;
+    }
+    if cr_idx.is_some() {
+        return LineEnding::Cr;
+    }
+    LineEnding::Lf
+}
+
+/// Normalize every line ending to LF.
+pub fn normalize_to_lf(text: &str) -> String {
+    let mut result = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\r' {
+            if chars.peek() == Some(&'\n') {
+                chars.next();
+            }
+            result.push('\n');
+        } else {
+            result.push(ch);
+        }
+    }
+    result
+}
+
+/// Re-encode LF text with the requested line ending.
+///
+/// Input is normalized to LF first so callers may pass CRLF text without doubling `\r`.
+pub fn restore_line_endings(text: &str, ending: LineEnding) -> String {
+    let lf = normalize_to_lf(text);
+    match ending {
+        LineEnding::Lf => lf,
+        LineEnding::CrLf => lf.replace('\n', "\r\n"),
+        LineEnding::Cr => lf.replace('\n', "\r"),
+    }
+}
+
+/// Strip a UTF-8 BOM if present.
+pub fn strip_bom(content: &str) -> BomResult {
+    if let Some(text) = content.strip_prefix('\u{FEFF}') {
+        BomResult {
+            bom: "\u{FEFF}".to_string(),
+            text: text.to_string(),
+        }
+    } else {
+        BomResult {
+            bom: String::new(),
+            text: content.to_string(),
+        }
+    }
+}
+
+static UNICODE_REPLACEMENTS: OnceLock<Vec<(Regex, &'static str)>> = OnceLock::new();
+
+fn unicode_replacements() -> &'static [(Regex, &'static str)] {
+    UNICODE_REPLACEMENTS
+        .get_or_init(|| {
+            let patterns: &[(&str, &str)] = &[
+                ("[\u{2010}-\u{2015}\u{2212}]", "-"),
+                ("[\u{2018}-\u{201B}]", "'"),
+                ("[\u{201C}-\u{201F}]", "\""),
+                ("[\u{00A0}\u{2002}-\u{200A}\u{202F}\u{205F}\u{3000}]", " "),
+                ("\u{2260}", "!="),
+                ("\u{00BD}", "1/2"),
+                ("[\u{200B}-\u{200D}\u{FEFF}]", ""),
+            ];
+            patterns
+                .iter()
+                .map(|(pattern, replacement)| {
+                    (
+                        Regex::new(pattern).expect("valid unicode replacement pattern"),
+                        *replacement,
+                    )
+                })
+                .collect()
+        })
+        .as_slice()
+}
+
+/// Trim, apply Unicode replacements, and NFC-normalize (OMP `normalizeUnicode`).
+pub fn normalize_unicode(s: &str) -> String {
+    let mut result = s.trim().to_string();
+    for (re, replacement) in unicode_replacements() {
+        result = re.replace_all(&result, *replacement).into_owned();
+    }
+    result.nfc().collect::<String>()
+}
+
+/// Minimum indentation across non-empty lines.
+pub fn min_indent(text: &str) -> usize {
+    let mut min = usize::MAX;
+    for line in text.split('\n') {
+        if is_non_empty_line(line) {
+            min = min.min(count_leading_whitespace(line));
+        }
+    }
+    if min == usize::MAX {
+        0
+    } else {
+        min
+    }
+}
+
 /// Count leading whitespace characters in a line.
 pub fn count_leading_whitespace(line: &str) -> usize {
     line.chars().take_while(|c| *c == ' ' || *c == '\t').count()
@@ -102,7 +253,8 @@ fn build_indent_profile(text: &str) -> IndentProfile {
     }
 }
 
-fn convert_leading_tabs_to_spaces(text: &str, spaces_per_tab: usize) -> String {
+/// Convert leading tabs to spaces (OMP `convertLeadingTabsToSpaces`).
+pub fn convert_leading_tabs_to_spaces(text: &str, spaces_per_tab: usize) -> String {
     if spaces_per_tab == 0 {
         return text.to_string();
     }

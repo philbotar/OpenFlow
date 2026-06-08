@@ -4,7 +4,9 @@
 
 ### Added
 
-- **File edit engine (Tier B):** implement OMP-parity `find_match` and `adjust_indentation` in `orchestration::tools::edit`; error formatting handles identical-line closest matches; tests split into `replace_tests.rs`.
+- **File edit engine (Tier B):** `tools::edit::diff` — `generate_diff_string`, `parse_diff_hunks`, `normalize_diff`, `replace_text`; BOM/LF/`normalize_unicode` helpers on `normalize`; 55 unit tests.
+- **File edit engine (Tier B):** `replace_text` restores original line endings; `all` mode replaces occurrences one-by-one with indentation adjustment; ambiguous fuzzy matches error in single mode.
+- **File edit engine (Tier B):** OMP-parity `find_match` and `adjust_indentation` in `orchestration::tools::edit`.
 - **Provider API key storage:** persist keys in plaintext on `ProviderProfile.api_key` in `settings.json`; Settings screen documents on-disk risk; env-var fallback unchanged.
 - **Run stop/cancel:** `stop_run` IPC command with cooperative cancellation (`CancellationToken`, `ExecutionAction::Stop`, `RunTelemetry::Aborted`); editor top-bar Stop button (Cmd+.) when a run is active; window close aborts active runs; `ast-grep` subprocess kill on cancel.
 - **Project workflow menu:** per-project **+** button (shown on hover) with **New workflow** and **Add existing…**; existing workflows open a picker modal to link app or other-project workflows.
