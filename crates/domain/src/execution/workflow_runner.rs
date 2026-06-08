@@ -1,19 +1,15 @@
-use crate::{
-    execution_layers, AgentRequest, AgentTranscriptItem, AgentTurnOutcome, AiPort, Node, NodeId,
-    NodeRunOutput, RunEvent, RunEventKind, RunReport, Workflow, WorkflowValidationError,
+use crate::conversation::AgentTranscriptItem;
+use crate::execution::node_invocation::{
+    build_agent_request, build_upstream_map, NodeInvocationContext,
 };
+use crate::execution::{NodeRunOutput, RunError, RunEvent, RunEventKind, RunReport};
+use crate::graph::validation::execution_layers;
+use crate::graph::{NodeId, Workflow};
+use crate::ports::{AgentTurnOutcome, AiPort};
+use crate::tools::ToolDefinition;
 use futures::future::try_join_all;
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
-use thiserror::Error;
-
-#[derive(Debug, Clone, Error)]
-pub enum RunError {
-    #[error(transparent)]
-    Validation(#[from] WorkflowValidationError),
-    #[error("node {node_id} failed: {message}")]
-    NodeFailed { node_id: NodeId, message: String },
-}
 
 pub struct WorkflowRunner<A> {
     ai: A,
@@ -102,6 +98,8 @@ where
             output: None,
         }];
         let mut retries = 0;
+        let empty_transcript: &[AgentTranscriptItem] = &[];
+        let empty_tools: &[ToolDefinition] = &[];
         loop {
             events.push(RunEvent {
                 node_id: node_id.clone(),
@@ -109,8 +107,15 @@ where
                 message: "invoking model".to_string(),
                 output: None,
             });
-            let request =
-                build_agent_request(workflow, node, upstream_map, outputs, entrypoint_text);
+            let ctx = NodeInvocationContext {
+                workflow,
+                upstream_map,
+                outputs,
+                entrypoint_text,
+                transcript: empty_transcript,
+                available_tools: empty_tools,
+            };
+            let request = build_agent_request(&ctx, node, false)?;
             match self.ai.invoke(request).await {
                 Ok(AgentTurnOutcome::Completed(success)) => {
                     events.push(RunEvent {
@@ -174,89 +179,6 @@ struct HeadlessNodeResult {
     events: Vec<RunEvent>,
 }
 
-pub(crate) fn build_upstream_map(workflow: &Workflow) -> HashMap<NodeId, Vec<NodeId>> {
-    let mut upstream_map: HashMap<NodeId, Vec<NodeId>> = workflow
-        .nodes
-        .iter()
-        .map(|node| (node.id.clone(), Vec::new()))
-        .collect();
-    for edge in &workflow.edges {
-        upstream_map
-            .entry(edge.to.clone())
-            .or_default()
-            .push(edge.from.clone());
-    }
-    for ids in upstream_map.values_mut() {
-        ids.sort();
-    }
-    upstream_map
-}
-
-fn build_agent_request(
-    workflow: &Workflow,
-    node: &Node,
-    upstream_map: &HashMap<NodeId, Vec<NodeId>>,
-    outputs: &BTreeMap<NodeId, Value>,
-    entrypoint_text: Option<&str>,
-) -> AgentRequest {
-    AgentRequest {
-        workflow_id: workflow.id.clone(),
-        node_id: node.id.clone(),
-        node_label: node.label.clone(),
-        model: node.agent.model.clone(),
-        system_prompt: workflow_system_prompt(workflow, node),
-        task_prompt: node.agent.task_prompt.clone(),
-        input: build_node_input(&node.id, upstream_map, outputs, entrypoint_text),
-        output_schema: node.agent.output_schema.clone(),
-        tool_config: node.agent.tools.clone(),
-        available_tools: Vec::new(),
-        transcript: Vec::<AgentTranscriptItem>::new(),
-    }
-}
-
-pub(crate) fn workflow_system_prompt(workflow: &Workflow, node: &Node) -> String {
-    let base = node.agent.system_prompt.clone();
-    let shared = workflow.settings.shared_context.trim();
-    if shared.is_empty() {
-        return base;
-    }
-    format!("{base}\n\n--- Workflow context ---\n{shared}")
-}
-
-pub(crate) fn build_node_input(
-    node_id: &str,
-    upstream_by_node: &HashMap<NodeId, Vec<NodeId>>,
-    outputs_by_node: &BTreeMap<NodeId, Value>,
-    entrypoint_text: Option<&str>,
-) -> Value {
-    let upstream = upstream_by_node
-        .get(node_id)
-        .into_iter()
-        .flat_map(|ids| ids.iter())
-        .filter_map(|id| {
-            outputs_by_node.get(id).map(|output| {
-                json!({
-                    "node_id": id,
-                    "output": output
-                })
-            })
-        })
-        .collect::<Vec<_>>();
-
-    if upstream.is_empty() {
-        if let Some(text) = entrypoint_text.filter(|text| !text.trim().is_empty()) {
-            return json!({
-                "entrypoint": { "text": text },
-                "upstream": []
-            });
-        }
-    }
-
-    json!({
-        "upstream": upstream
-    })
-}
-
 #[cfg(test)]
 #[allow(
     clippy::items_after_statements,
@@ -267,14 +189,15 @@ pub(crate) fn build_node_input(
 )]
 mod tests {
     use super::*;
-    use crate::{
-        AgentError, AgentRequest, AgentToolCallBatch, AgentTurnOutcome, AgentTurnSuccess, Edge,
-        Node, ToolCall, ToolRef,
+    use crate::graph::{Edge, Node};
+    use crate::ports::{
+        AgentError, AgentRequest, AgentToolCallBatch, AgentTurnOutcome, AgentTurnSuccess, AiPort,
     };
+    use crate::tools::{ToolCall, ToolRef};
     use async_trait::async_trait;
-    use parking_lot::Mutex;
+    use serde_json::json;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
 
     #[derive(Clone, Default)]
     struct RecordingAi {
@@ -284,7 +207,7 @@ mod tests {
     #[async_trait]
     impl AiPort for RecordingAi {
         async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
-            self.requests.lock().push(request.clone());
+            self.requests.lock().unwrap().push(request.clone());
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
                 output: json!({
                     "summary": format!("output from {}", request.node_id)
@@ -324,7 +247,7 @@ mod tests {
         let runner = WorkflowRunner::new(ai);
 
         let report = runner.run(&workflow).await.unwrap();
-        let requests = requests_handle.lock();
+        let requests = requests_handle.lock().unwrap();
 
         assert_eq!(requests.len(), 2);
         assert_eq!(requests[0].node_id, "idea");
@@ -348,7 +271,7 @@ mod tests {
         let mut idea = node("idea");
         idea.agent.tools.catalog.tools = vec![ToolRef {
             name: "read".to_string(),
-            tier: Some(crate::ToolTier::Read),
+            tier: Some(crate::tools::ToolTier::Read),
         }];
         workflow.nodes = vec![idea];
 
@@ -394,7 +317,7 @@ mod tests {
             .unwrap();
 
         let (idea_input, plan_input) = {
-            let requests = requests_handle.lock();
+            let requests = requests_handle.lock().unwrap();
             let idea = requests.iter().find(|req| req.node_id == "idea").unwrap();
             let plan = requests.iter().find(|req| req.node_id == "plan").unwrap();
             (idea.input.clone(), plan.input.clone())
@@ -414,65 +337,6 @@ mod tests {
                     {
                         "node_id": "idea",
                         "output": { "summary": "output from idea" }
-                    }
-                ]
-            })
-        );
-    }
-
-    #[tokio::test]
-    async fn run_without_entrypoint_preserves_existing_input_shape() {
-        let mut workflow = Workflow::new("default");
-        workflow.nodes = vec![node("idea")];
-
-        let ai = RecordingAi::default();
-        let requests_handle = ai.requests.clone();
-        let runner = WorkflowRunner::new(ai);
-
-        runner.run(&workflow).await.unwrap();
-
-        let input = { requests_handle.lock()[0].input.clone() };
-        assert_eq!(input, json!({"upstream": []}));
-    }
-
-    #[tokio::test]
-    async fn downstream_request_receives_sorted_upstream_outputs() {
-        let mut workflow = Workflow::new("join");
-        workflow.nodes = vec![node("root"), node("alpha"), node("beta"), node("join")];
-        workflow.edges = vec![
-            Edge::new("root", "beta"),
-            Edge::new("root", "alpha"),
-            Edge::new("beta", "join"),
-            Edge::new("alpha", "join"),
-        ];
-
-        let ai = RecordingAi::default();
-        let requests_handle = ai.requests.clone();
-        let runner = WorkflowRunner::new(ai);
-
-        runner.run(&workflow).await.unwrap();
-
-        let join_input = {
-            let requests = requests_handle.lock();
-            requests
-                .iter()
-                .find(|req| req.node_id == "join")
-                .unwrap()
-                .input
-                .clone()
-        };
-
-        assert_eq!(
-            join_input,
-            json!({
-                "upstream": [
-                    {
-                        "node_id": "alpha",
-                        "output": { "summary": "output from alpha" }
-                    },
-                    {
-                        "node_id": "beta",
-                        "output": { "summary": "output from beta" }
                     }
                 ]
             })
@@ -529,16 +393,5 @@ mod tests {
         runner.run(&workflow).await.unwrap();
 
         assert_eq!(max_seen.load(Ordering::SeqCst), 2);
-    }
-
-    #[test]
-    fn blank_entrypoint_is_not_injected_into_root_input() {
-        let input = build_node_input(
-            "idea",
-            &HashMap::from([(NodeId("idea".to_string()), Vec::new())]),
-            &BTreeMap::new(),
-            Some("   "),
-        );
-        assert_eq!(input, json!({"upstream": []}));
     }
 }

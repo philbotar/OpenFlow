@@ -74,9 +74,7 @@ impl ToolRunner {
         let registered = self.registry.get(&call.name)?;
         let raw_output = match registered.kind {
             BuiltinToolKind::Read => self.read(call.arguments.clone()).await?,
-            BuiltinToolKind::Search
-            | BuiltinToolKind::Find
-            | BuiltinToolKind::AstGrep => {
+            BuiltinToolKind::Search | BuiltinToolKind::Find | BuiltinToolKind::AstGrep => {
                 self.run_blocking(registered.kind, call.arguments.clone())
                     .await?
             }
@@ -154,10 +152,9 @@ impl ToolRunner {
         struct ReadArgs {
             path: String,
         }
-        let args: ReadArgs = serde_json::from_value(args)
-            .map_err(|error| ToolRunnerError::Tool(ToolError::Failed(format!(
-                "invalid read args: {error}"
-            ))))?;
+        let args: ReadArgs = serde_json::from_value(args).map_err(|error| {
+            ToolRunnerError::Tool(ToolError::Failed(format!("invalid read args: {error}")))
+        })?;
         if args.path.starts_with("http://") || args.path.starts_with("https://") {
             return self
                 .read_url(&args.path)

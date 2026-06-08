@@ -20,9 +20,16 @@
     clippy::unused_self
 )]
 
+pub mod agent_library;
 pub mod agent_store;
+pub mod api;
 pub mod backend;
 pub mod credential_store;
+pub mod error;
+pub mod project_registry;
+pub mod run_coordinator;
+pub mod settings_facade;
+pub mod workflow_catalog;
 pub mod execution;
 pub mod flow_store;
 pub mod project_store;
@@ -31,8 +38,12 @@ pub mod settings_store;
 pub mod skill_store;
 pub mod state;
 pub mod storage;
+pub mod template_store;
 pub mod tools;
 
 // Re-exports of domain types consumed by downstream layers
-pub use domain::{Node, Workflow};
+pub use domain::{
+    CallableAgent, Node, RunTelemetry, Template, TemplateStore, TemplateStoreError, Workflow,
+};
 pub use project_store::Project;
+pub use template_store::FileTemplateStore;

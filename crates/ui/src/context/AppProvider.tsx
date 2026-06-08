@@ -48,6 +48,7 @@ import {
   findProjectForWorkflow,
   independentWorkflows,
   readExpandedProjectIds,
+  workflowsAddableToProject,
   workflowsForProject,
   writeExpandedProjectIds,
 } from "../lib/projects";
@@ -118,6 +119,8 @@ export function AppProvider(props: ParentProps) {
   const [nodeLabelDraft, setNodeLabelDraft] = createSignal("");
   const [agentSchemaDraft, setAgentSchemaDraft] = createSignal("");
   const [addNodePickerOpen, setAddNodePickerOpen] = createSignal(false);
+  const [assignWorkflowPickerProjectId, setAssignWorkflowPickerProjectId] =
+    createSignal<string | null>(null);
   const [isMaximized, setIsMaximized] = createSignal(false);
   const [availableSkills, setAvailableSkills] = createSignal<SkillSummary[]>([]);
 
@@ -388,6 +391,15 @@ export function AppProvider(props: ParentProps) {
     setSelectedTraceIndex(null);
   };
 
+  const expandProject = (projectId: string) => {
+    setExpandedProjectIds((current) => {
+      const next = new Set(current);
+      next.add(projectId);
+      writeExpandedProjectIds(globalThis.localStorage, next);
+      return next;
+    });
+  };
+
   const handleCreateWorkflow = async (projectId?: string) => {
     try {
       const workflow = await desktop.createWorkflow(`Workflow ${workflows().length + 1}`);
@@ -395,12 +407,8 @@ export function AppProvider(props: ParentProps) {
       if (projectId) {
         const nextProjects = await desktop.assignWorkflowToProject(projectId, workflow.id);
         setProjects(nextProjects);
-        setExpandedProjectIds((current) => {
-          const next = new Set(current);
-          next.add(projectId);
-          writeExpandedProjectIds(globalThis.localStorage, next);
-          return next;
-        });
+        expandProject(projectId);
+        setSelectedProjectId(projectId);
       }
       setActiveWorkflowId(workflow.id);
       setSelectedNodeId(workflow.nodes[0]?.id ?? null);
@@ -409,6 +417,31 @@ export function AppProvider(props: ParentProps) {
       setNodeLabelDraft("");
       setScreen("editor");
       setSuccess("Created workflow");
+    } catch (error) {
+      setError(normalizeError(error));
+    }
+  };
+
+  const handleOpenAssignWorkflowPicker = (projectId: string) => {
+    closeAddNodePicker();
+    setSelectedProjectId(projectId);
+    expandProject(projectId);
+    setAssignWorkflowPickerProjectId(projectId);
+  };
+
+  const closeAssignWorkflowPicker = () => setAssignWorkflowPickerProjectId(null);
+
+  const workflowsAddableToProjectMemo = (projectId: string) =>
+    workflowsAddableToProject(workflows(), projects(), projectId);
+
+  const handleAssignWorkflowToProject = async (projectId: string, workflowId: string) => {
+    try {
+      const nextProjects = await desktop.assignWorkflowToProject(projectId, workflowId);
+      setProjects(nextProjects);
+      expandProject(projectId);
+      setSelectedProjectId(projectId);
+      closeAssignWorkflowPicker();
+      setSuccess("Added workflow to project");
     } catch (error) {
       setError(normalizeError(error));
     }
@@ -1113,6 +1146,7 @@ export function AppProvider(props: ParentProps) {
     nodeLabelDraft,
     agentSchemaDraft,
     addNodePickerOpen,
+    assignWorkflowPickerProjectId,
     isMaximized,
     availableSkills,
     skillById,
@@ -1155,6 +1189,10 @@ export function AppProvider(props: ParentProps) {
     // Handlers
     handleSwitchWorkflow,
     handleCreateWorkflow,
+    handleOpenAssignWorkflowPicker,
+    closeAssignWorkflowPicker,
+    workflowsAddableToProject: workflowsAddableToProjectMemo,
+    handleAssignWorkflowToProject,
     handleOpenAgents,
     handleAddProject,
     handleSelectProject,

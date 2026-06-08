@@ -57,6 +57,7 @@ export interface AppContextValue {
   nodeLabelDraft: Accessor<string>;
   agentSchemaDraft: Accessor<string>;
   addNodePickerOpen: Accessor<boolean>;
+  assignWorkflowPickerProjectId: Accessor<string | null>;
   isMaximized: Accessor<boolean>;
   availableSkills: Accessor<SkillSummary[]>;
   skillById: Accessor<Map<string, SkillSummary>>;
@@ -103,6 +104,10 @@ export interface AppContextValue {
   // ── Workflow handlers ─────────────────────────────────────────────────────
   handleSwitchWorkflow: (workflowId: string) => void;
   handleCreateWorkflow: (projectId?: string) => Promise<void>;
+  handleOpenAssignWorkflowPicker: (projectId: string) => void;
+  closeAssignWorkflowPicker: () => void;
+  workflowsAddableToProject: (projectId: string) => Workflow[];
+  handleAssignWorkflowToProject: (projectId: string, workflowId: string) => Promise<void>;
   handleOpenAgents: () => void;
   handleAddProject: () => Promise<void>;
   handleSelectProject: (projectId: string) => void;

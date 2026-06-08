@@ -1,98 +1,10 @@
-#![allow(clippy::too_many_lines, clippy::float_cmp, clippy::doc_markdown)]
+#![allow(clippy::too_many_lines, clippy::float_cmp)]
 
-use crate::model::{AgentNodeConfig, Node, NodeId, NodeKind, NodePosition};
-use serde::{Deserialize, Serialize};
+use super::Template;
+use crate::graph::AgentNodeConfig;
 use std::collections::HashSet;
-use uuid::Uuid;
 
-/// A pre-configured node template with smart defaults for quick workflow construction.
-///
-/// Templates define a reusable starting point for a node: the configuration that a
-/// user is expected to customize (override) and the fields that should remain locked
-/// (e.g., a specific model or output schema constraint for a particular use case).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Template {
-    /// Unique identifier for this template.
-    pub id: String,
-
-    /// Human-readable display name (shown in the template library).
-    pub display_name: String,
-
-    /// Longer description explaining what the template is for.
-    pub description: String,
-
-    /// The default agent configuration to apply when a node is created from this template.
-    pub default_config: AgentNodeConfig,
-
-    /// Field names that should be locked (non-editable) when this template is applied.
-    /// Valid field names: "system_prompt", "task_prompt", "model", "output_schema", "auto_start"
-    pub locked_fields: HashSet<String>,
-}
-
-impl Template {
-    /// Create a new template with generated ID.
-    pub fn new(
-        display_name: impl Into<String>,
-        description: impl Into<String>,
-        default_config: AgentNodeConfig,
-        locked_fields: HashSet<String>,
-    ) -> Self {
-        Self {
-            id: Uuid::new_v4().to_string(),
-            display_name: display_name.into(),
-            description: description.into(),
-            default_config,
-            locked_fields,
-        }
-    }
-
-    fn with_id(
-        id: impl Into<String>,
-        display_name: impl Into<String>,
-        description: impl Into<String>,
-        default_config: AgentNodeConfig,
-        locked_fields: HashSet<String>,
-    ) -> Self {
-        Self {
-            id: id.into(),
-            display_name: display_name.into(),
-            description: description.into(),
-            default_config,
-            locked_fields,
-        }
-    }
-
-    /// Instantiate a new `Node` from this template at the given canvas position.
-    /// The node gets the template's default config and the template's display_name as its label.
-    #[must_use]
-    pub fn instantiate(&self, x: f32, y: f32) -> Node {
-        Node {
-            id: NodeId(Uuid::new_v4().to_string()),
-            label: self.display_name.clone(),
-            kind: NodeKind::Agent,
-            position: NodePosition { x, y },
-            agent: self.default_config.clone(),
-        }
-    }
-
-    /// Check whether a given field name is locked in this template.
-    #[must_use]
-    pub fn is_field_locked(&self, field_name: &str) -> bool {
-        self.locked_fields.contains(field_name)
-    }
-
-    /// Lock a single field by name. Returns true if the field was newly locked.
-    pub fn lock_field(&mut self, field_name: impl Into<String>) -> bool {
-        self.locked_fields.insert(field_name.into())
-    }
-
-    /// Unlock a single field by name. Returns true if the field was previously locked.
-    pub fn unlock_field(&mut self, field_name: &str) -> bool {
-        self.locked_fields.remove(field_name)
-    }
-}
-
-/// Returns a curated set of default templates for the template library.
+/// Curated builtin templates for the template library.
 #[must_use]
 pub fn default_templates() -> Vec<Template> {
     vec![
@@ -257,72 +169,9 @@ pub fn default_templates() -> Vec<Template> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn template_instantiate_uses_display_name_as_label() {
-        let template = Template::new(
-            "Code Reviewer",
-            "desc",
-            AgentNodeConfig::default(),
-            HashSet::new(),
-        );
-        let node = template.instantiate(100.0, 200.0);
-
-        assert_eq!(node.label, "Code Reviewer");
-        assert_eq!(node.position.x, 100.0);
-        assert_eq!(node.position.y, 200.0);
-        assert_eq!(node.kind, NodeKind::Agent);
-    }
-
-    #[test]
-    fn template_lock_field() {
-        let mut template =
-            Template::new("Test", "desc", AgentNodeConfig::default(), HashSet::new());
-
-        assert!(!template.is_field_locked("model"));
-
-        let newly_locked = template.lock_field("model");
-        assert!(newly_locked);
-        assert!(template.is_field_locked("model"));
-
-        // Locking again returns false (already locked)
-        let already = template.lock_field("model");
-        assert!(!already);
-    }
-
-    #[test]
-    fn template_unlock_field() {
-        let mut locked = HashSet::new();
-        locked.insert("model".to_string());
-
-        let mut template = Template::new("Test", "desc", AgentNodeConfig::default(), locked);
-
-        assert!(template.is_field_locked("model"));
-        assert!(template.unlock_field("model"));
-        assert!(!template.is_field_locked("model"));
-        assert!(!template.unlock_field("model"));
-    }
-
-    #[test]
-    fn template_instantiate_preserves_config() {
-        let config = AgentNodeConfig {
-            system_prompt: "custom prompt".to_string(),
-            task_prompt: "custom task".to_string(),
-            model: "o3".to_string(),
-            output_schema: serde_json::json!({"custom": true}),
-            auto_start: false,
-            tools: AgentNodeConfig::default().tools,
-            callable_agents: Vec::new(),
-            allow_all_callable_agents: false,
-        };
-        let template = Template::new("Test", "desc", config.clone(), HashSet::new());
-        let node = template.instantiate(0.0, 0.0);
-
-        assert_eq!(node.agent, config);
-    }
 
     #[test]
     fn default_templates_are_non_empty() {

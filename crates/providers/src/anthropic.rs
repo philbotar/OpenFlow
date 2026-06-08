@@ -31,7 +31,11 @@ pub async fn invoke(
     });
 
     let payload = post_json(http, config, auth, &config.messages_path, body).await?;
-    parse_anthropic_output(&payload, should_allow_user_input(&request))
+    parse_anthropic_output(
+        &payload,
+        should_allow_user_input(&request),
+        Some(&request.output_schema),
+    )
 }
 
 fn transcript_to_anthropic_messages(request: &AgentRequest) -> Vec<Value> {
@@ -142,6 +146,7 @@ fn endpoint(base_url: &str, path: &str) -> String {
 fn parse_anthropic_output(
     payload: &Value,
     allow_plain_text_follow_up: bool,
+    output_schema: Option<&Value>,
 ) -> Result<AgentTurnOutcome, AgentError> {
     let content = payload
         .get("content")
@@ -204,6 +209,7 @@ fn parse_anthropic_output(
             &call.arguments.to_string(),
             assistant_message,
             "Anthropic",
+            output_schema,
         );
     }
 
@@ -298,11 +304,11 @@ mod tests {
                 "system": "You are precise.",
                 "messages": [{
                     "role": "user",
-                    "content": "Node: Idea\nTask:\nSummarize the kickoff.\n\nUpstream input JSON:\n{\"entrypoint\":{\"text\":\"ORCHID-91\"},\"upstream\":[]}\n\nWhen you are ready to finish, call openflow_submit_node_output exactly once."
+                    "content": "Node: Idea\nTask:\nSummarize the kickoff.\n\nUpstream input JSON:\n{\"entrypoint\":{\"text\":\"ORCHID-91\"},\"upstream\":[]}\n\nWhen you are ready to finish, call openflow_submit_node_output exactly once with arguments shaped as {\"output\": <object matching the node output schema>, \"assistant_message\": null}."
                 }],
                 "tools": [{
                     "name": "openflow_submit_node_output",
-                    "description": "Submit the final structured node output when the task is complete.",
+                    "description": "Submit the final structured node output when the task is complete. Required shape: {\"output\": {...schema fields...}, \"assistant_message\": null|string}. Schema fields must be nested under \"output\", not at the top level.",
                     "input_schema": {
                         "type": "object",
                         "additionalProperties": false,

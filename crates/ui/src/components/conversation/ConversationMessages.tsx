@@ -15,6 +15,7 @@ import {
   ConversationScrollButton,
 } from "./Conversation";
 import { Message } from "./Message";
+import { NodeCompletedBubble } from "./NodeCompletedBubble";
 import { ToolBubble } from "./ToolBubble";
 import { resolveToolSummary } from "./toolBubbleState";
 
@@ -74,6 +75,9 @@ function PlainMessage(props: { message: ChatMessage }) {
 function ConversationItemView(props: { item: ConversationItem }) {
   if (isLegacyToolGroup(props.item)) {
     return <LegacyToolBubble group={props.item} />;
+  }
+  if (props.item.messageKind === "node_completed") {
+    return <NodeCompletedBubble summary={props.item.content} />;
   }
   if (props.item.toolCallId) {
     return <MarkerToolBubble message={props.item} />;

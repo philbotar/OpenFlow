@@ -205,15 +205,6 @@ pub enum ToolCallStatus {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AgentTranscriptItem {
-    AssistantMessage { content: String },
-    UserMessage { content: String },
-    ToolCall { call: ToolCall },
-    ToolResult { result: ToolResult },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolResult {
     pub tool_call_id: String,

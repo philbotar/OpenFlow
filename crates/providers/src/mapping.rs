@@ -8,6 +8,7 @@ use serde_json::{json, Value};
 
 pub const SUBMIT_OUTPUT_TOOL: &str = "openflow_submit_node_output";
 pub const REQUEST_INPUT_TOOL: &str = "openflow_request_user_input";
+pub const MALFORMED_SUBMIT_OUTPUT_MARKER: &str = "final output tool arguments were not valid JSON";
 
 #[derive(Debug, Clone)]
 pub struct ToolSpec {
@@ -18,9 +19,9 @@ pub struct ToolSpec {
 
 pub fn build_node_context(request: &AgentRequest) -> String {
     let tool_instruction = if request.available_tools.is_empty() {
-        "When you are ready to finish, call openflow_submit_node_output exactly once.".to_string()
+        "When you are ready to finish, call openflow_submit_node_output exactly once with arguments shaped as {\"output\": <object matching the node output schema>, \"assistant_message\": null}.".to_string()
     } else {
-        "Use tools when they materially improve correctness. When you are ready to finish, call openflow_submit_node_output exactly once."
+        "Use tools when they materially improve correctness. When you are ready to finish, call openflow_submit_node_output exactly once with arguments shaped as {\"output\": <object matching the node output schema>, \"assistant_message\": null}."
             .to_string()
     };
     format!(
@@ -41,7 +42,7 @@ pub fn should_allow_user_input(request: &AgentRequest) -> bool {
 pub fn submit_output_tool(request: &AgentRequest) -> ToolSpec {
     ToolSpec {
         name: SUBMIT_OUTPUT_TOOL.to_string(),
-        description: "Submit the final structured node output when the task is complete."
+        description: "Submit the final structured node output when the task is complete. Required shape: {\"output\": {...schema fields...}, \"assistant_message\": null|string}. Schema fields must be nested under \"output\", not at the top level."
             .to_string(),
         parameters: json!({
             "type": "object",
@@ -184,11 +185,47 @@ pub fn transcript_to_chat_messages(request: &AgentRequest) -> Result<Vec<Value>,
     Ok(messages)
 }
 
+/// When models omit the `output` wrapper, lift top-level schema fields under `output`.
+#[must_use]
+pub fn normalize_submit_output_arguments(value: Value, output_schema: Option<&Value>) -> Value {
+    if value.get("output").is_some() {
+        return value;
+    }
+    let Value::Object(mut map) = value else {
+        return value;
+    };
+    let assistant_message = map.remove("assistant_message");
+    if map.is_empty() {
+        return json!({ "assistant_message": assistant_message });
+    }
+
+    let schema_keys = output_schema
+        .and_then(|schema| schema.get("properties"))
+        .and_then(Value::as_object)
+        .map(|properties| properties.keys().cloned().collect::<std::collections::HashSet<_>>());
+
+    let should_wrap = schema_keys.as_ref().is_none_or(|keys| {
+        !map.is_empty() && map.keys().all(|key| keys.contains(key))
+    });
+    if !should_wrap {
+        if let Some(assistant_message) = assistant_message {
+            map.insert("assistant_message".to_string(), assistant_message);
+        }
+        return Value::Object(map);
+    }
+
+    json!({
+        "output": Value::Object(map),
+        "assistant_message": assistant_message
+    })
+}
+
 pub fn parse_internal_tool_outcome(
     tool_name: &str,
     arguments: &str,
     assistant_message: Option<String>,
     label: &str,
+    output_schema: Option<&Value>,
 ) -> Result<AgentTurnOutcome, AgentError> {
     match tool_name {
         SUBMIT_OUTPUT_TOOL => {
@@ -198,15 +235,23 @@ pub fn parse_internal_tool_outcome(
                 assistant_message: Option<String>,
             }
 
-            let args: SubmitOutputArgs = serde_json::from_str(arguments).map_err(|error| {
+            let raw = try_parse_or_recover_json(arguments).map_err(|error| {
                 AgentError::Failed(format!(
-                    "{label} final output tool arguments were not valid JSON: {error}"
+                    "{label} {MALFORMED_SUBMIT_OUTPUT_MARKER}: {error}"
+                ))
+            })?;
+            let normalized = normalize_submit_output_arguments(raw, output_schema);
+            let args: SubmitOutputArgs = serde_json::from_value(normalized).map_err(|error| {
+                AgentError::Failed(format!(
+                    "{label} {MALFORMED_SUBMIT_OUTPUT_MARKER}: {error}"
                 ))
             })?;
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
                 output: args.output,
                 raw_text: arguments.to_string(),
-                assistant_message: args.assistant_message.or(assistant_message),
+                assistant_message: filter_tool_turn_assistant_message(
+                    args.assistant_message.or(assistant_message),
+                ),
             }))
         }
         REQUEST_INPUT_TOOL => {
@@ -215,11 +260,12 @@ pub fn parse_internal_tool_outcome(
                 assistant_message: String,
             }
 
-            let args: RequestInputArgs = serde_json::from_str(arguments).map_err(|error| {
-                AgentError::Failed(format!(
-                    "{label} human-input tool arguments were not valid JSON: {error}"
-                ))
-            })?;
+            let args: RequestInputArgs =
+                try_deserialize_or_recover_json(arguments).map_err(|error| {
+                    AgentError::Failed(format!(
+                        "{label} human-input tool arguments were not valid JSON: {error}"
+                    ))
+                })?;
             Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
                 raw_text: arguments.to_string(),
                 assistant_message: args.assistant_message,
@@ -246,7 +292,7 @@ pub fn parse_plain_json_completion(content: Option<&str>) -> Option<AgentTurnOut
                 .map(str::trim)
         })
         .unwrap_or(content);
-    let Ok(output) = serde_json::from_str::<Value>(candidate) else {
+    let Ok(output) = try_parse_or_recover_json(candidate) else {
         return None;
     };
     Some(AgentTurnOutcome::Completed(AgentTurnSuccess {
@@ -298,6 +344,13 @@ fn try_parse_or_recover_json(input: &str) -> Result<Value, serde_json::Error> {
     }
 }
 
+fn try_deserialize_or_recover_json<T: for<'de> Deserialize<'de>>(
+    input: &str,
+) -> Result<T, serde_json::Error> {
+    let value = try_parse_or_recover_json(input)?;
+    serde_json::from_value(value)
+}
+
 pub fn parse_compatible_tool_call(call: &Value) -> Result<ToolCall, AgentError> {
     let call_id = call
         .get("id")
@@ -333,7 +386,10 @@ pub fn parse_compatible_tool_call(call: &Value) -> Result<ToolCall, AgentError> 
     })
 }
 
-pub fn parse_responses_output(payload: &Value) -> Result<AgentTurnOutcome, AgentError> {
+pub fn parse_responses_output(
+    payload: &Value,
+    output_schema: Option<&Value>,
+) -> Result<AgentTurnOutcome, AgentError> {
     let output = payload
         .get("output")
         .and_then(Value::as_array)
@@ -425,6 +481,7 @@ pub fn parse_responses_output(payload: &Value) -> Result<AgentTurnOutcome, Agent
             &call.arguments.to_string(),
             assistant_message,
             "OpenAI",
+            output_schema,
         );
     }
 
@@ -439,6 +496,7 @@ pub fn parse_responses_output(payload: &Value) -> Result<AgentTurnOutcome, Agent
 pub fn parse_chat_completion_output(
     payload: &Value,
     allow_plain_text_follow_up: bool,
+    output_schema: Option<&Value>,
 ) -> Result<AgentTurnOutcome, AgentError> {
     let message = payload
         .get("choices")
@@ -504,6 +562,7 @@ pub fn parse_chat_completion_output(
             &call.arguments.to_string(),
             assistant_message,
             "OpenAI-compatible",
+            output_schema,
         );
     }
 
@@ -607,6 +666,119 @@ mod tests {
     }
 
     #[test]
+    fn plain_json_completion_recovers_truncated_object() {
+        let content = r#"{"summary": "done without closing brace"#;
+        let outcome = parse_plain_json_completion(Some(content)).expect("expected outcome");
+        let AgentTurnOutcome::Completed(success) = outcome else {
+            panic!("expected completed outcome");
+        };
+        assert_eq!(success.output, json!({"summary": "done without closing brace"}));
+    }
+
+    #[test]
+    fn plain_json_completion_recovers_fenced_truncated_object() {
+        let content = "```json\n{\"summary\": \"done\"\n```";
+        let outcome = parse_plain_json_completion(Some(content)).expect("expected outcome");
+        let AgentTurnOutcome::Completed(success) = outcome else {
+            panic!("expected completed outcome");
+        };
+        assert_eq!(success.output, json!({"summary": "done"}));
+    }
+
+    #[test]
+    fn internal_submit_output_recovers_truncated_arguments() {
+        let arguments = r#"{"output": {"summary": "done"}, "assistant_message": null"#;
+        let schema = json!({
+            "type": "object",
+            "properties": { "summary": { "type": "string" } },
+            "required": ["summary"]
+        });
+        let outcome = parse_internal_tool_outcome(
+            SUBMIT_OUTPUT_TOOL,
+            arguments,
+            None,
+            "test",
+            Some(&schema),
+        )
+        .expect("expected outcome");
+        let AgentTurnOutcome::Completed(success) = outcome else {
+            panic!("expected completed outcome");
+        };
+        assert_eq!(success.output, json!({"summary": "done"}));
+        assert_eq!(success.assistant_message, None);
+    }
+
+    #[test]
+    fn internal_submit_output_wraps_flat_schema_fields() {
+        let schema = json!({
+            "type": "object",
+            "properties": { "summary": { "type": "string" } },
+            "required": ["summary"]
+        });
+        let outcome = parse_internal_tool_outcome(
+            SUBMIT_OUTPUT_TOOL,
+            r#"{"summary": "done", "assistant_message": null}"#,
+            None,
+            "test",
+            Some(&schema),
+        )
+        .expect("expected outcome");
+        let AgentTurnOutcome::Completed(success) = outcome else {
+            panic!("expected completed outcome");
+        };
+        assert_eq!(success.output, json!({"summary": "done"}));
+    }
+
+    #[test]
+    fn internal_submit_output_does_not_wrap_unrelated_top_level_fields() {
+        let schema = json!({
+            "type": "object",
+            "properties": { "summary": { "type": "string" } },
+            "required": ["summary"]
+        });
+        let err = parse_internal_tool_outcome(
+            SUBMIT_OUTPUT_TOOL,
+            r#"{"path": ".flow/README.md", "assistant_message": null}"#,
+            None,
+            "test",
+            Some(&schema),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains(MALFORMED_SUBMIT_OUTPUT_MARKER));
+    }
+
+    #[test]
+    fn submit_output_strips_echoed_tool_call_markup_from_content_fallback() {
+        let preamble = "I'll submit the prepared markdown summary.";
+        let echoed = format!(
+            "{preamble}<tool_call>\n<function=openflow_submit_node_output>\n<parameter=output>{{\"summary\":\"done\"}}</parameter>\n</function>\n</tool_call>"
+        );
+        let payload = json!({
+            "choices": [{
+                "message": {
+                    "content": echoed,
+                    "tool_calls": [make_tool_call_value(
+                        SUBMIT_OUTPUT_TOOL,
+                        r#"{"output":{"summary":"done"},"assistant_message":null}"#
+                    )]
+                }
+            }]
+        });
+
+        let schema = json!({
+            "type": "object",
+            "properties": { "summary": { "type": "string" } },
+            "required": ["summary"]
+        });
+        let outcome = parse_chat_completion_output(&payload, false, Some(&schema)).unwrap();
+        let AgentTurnOutcome::Completed(success) = outcome else {
+            panic!("expected completed outcome");
+        };
+        assert_eq!(success.assistant_message.as_deref(), Some(preamble));
+    }
+
+    #[test]
     fn tool_call_batch_strips_redundant_xml_assistant_message() {
         let payload = json!({
             "choices": [{
@@ -617,7 +789,7 @@ mod tests {
             }]
         });
 
-        let outcome = parse_chat_completion_output(&payload, false).unwrap();
+        let outcome = parse_chat_completion_output(&payload, false, None).unwrap();
         let AgentTurnOutcome::ToolCalls(batch) = outcome else {
             panic!("expected tool call batch");
         };

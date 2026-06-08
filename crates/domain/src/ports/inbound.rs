@@ -1,6 +1,7 @@
 //! Inbound ports owned by the domain.
 
-use crate::{EngineInputError, NodeId};
+use crate::execution::EngineInputError;
+use crate::graph::NodeId;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HumanInput {

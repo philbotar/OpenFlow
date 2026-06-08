@@ -1,4 +1,5 @@
-use crate::{EdgeId, NodeId, Workflow};
+use crate::graph::workflow::Workflow;
+use crate::graph::{EdgeId, NodeId};
 use std::collections::{HashMap, HashSet};
 use thiserror::Error;
 
@@ -127,7 +128,7 @@ pub fn execution_layers(workflow: &Workflow) -> Result<Vec<Vec<NodeId>>, Workflo
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
-    use crate::{Edge, Node, Workflow};
+    use crate::graph::workflow::{Edge, Node, Workflow};
 
     #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
     fn workflow_with_nodes(labels: &[&str]) -> Workflow {

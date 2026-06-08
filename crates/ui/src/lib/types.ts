@@ -122,10 +122,13 @@ export type ChatRole =
   | "User"
   | "Assistant";
 
+export type ChatMessageKind = "node_completed";
+
 export interface ChatMessage {
   role: ChatRole;
   content: string;
   toolCallId?: string;
+  messageKind?: ChatMessageKind;
 }
 
 export type AgentStatus =

@@ -8,123 +8,36 @@
     clippy::uninlined_format_args
 )]
 
+use crate::agent_library::AgentLibrary;
 use crate::agent_store::{AgentDefinition, FileAgentStore};
-use crate::credential_store::CredentialStoreError;
-use crate::execution::{
-    apply_event_to_run_state, record_user_input, resolve_callable_agent_snapshots,
-    resolve_execution_cwd, spawn_interactive_workflow_run, ExecutionAction, ExecutionEvent,
-};
-use crate::flow_store::{
-    delete_project_workflow, discover_project_workflows, save_project_workflow,
-    save_project_workflows,
-};
-use crate::project_store::{
-    assign_workflow, cleanup_stored_projects, create_project_from_path,
-    unassign_workflow_from_project, validate_unique_project_path, FileProjectStore, Project,
-};
-use crate::provider_config::{
-    active_provider_env_var, active_provider_label, resolve_provider_config, ProviderConfigError,
-    ProviderEnv,
-};
-use crate::settings_store::{key_ref_for_provider, AppSettings, FileSettingsStore};
-use crate::skill_store::{self, SkillSummary};
+use crate::execution::ExecutionEvent;
+use crate::project_registry::ProjectRegistry;
+use crate::project_store::{FileProjectStore, Project};
+use crate::provider_config::ProviderEnv;
+use crate::run_coordinator::{RunCoordinator, RunStartParams};
+use crate::settings_facade::SettingsFacade;
+use crate::settings_store::{AppSettings, FileSettingsStore};
+use crate::skill_store::SkillSummary;
 use crate::state::WorkflowRunState;
 use crate::storage::FileWorkflowStore;
-use domain::{
-    execution_layers, validate_workflow, Node, NodeId, Workflow, WorkflowValidationError,
+use crate::workflow_catalog::WorkflowCatalog;
+use domain::{Node, Workflow};
+use tokio::sync::mpsc::UnboundedReceiver;
+
+pub use crate::api::{
+    AgentDefinitionSummary, ProviderReadiness, WorkflowListItem, WorkflowValidationSummary,
 };
-use providers::{create_provider, ProviderId};
-use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashSet};
-use std::io;
-use std::path::Path;
-use thiserror::Error;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-use tokio::sync::Mutex;
+pub use crate::error::BackendError;
 
 #[derive(Debug)]
 pub struct AppBackend {
-    workflow_store: FileWorkflowStore,
-    agent_store: FileAgentStore,
-    project_store: FileProjectStore,
-    settings_store: FileSettingsStore,
-    env: ProviderEnv,
-    runtime: tokio::runtime::Runtime,
-    run_session: Mutex<RunSession>,
+    workflows: WorkflowCatalog,
+    agents: AgentLibrary,
+    projects: ProjectRegistry,
+    settings: SettingsFacade,
+    runs: RunCoordinator,
 }
 
-#[derive(Debug)]
-struct RunSession {
-    workflow: Option<Workflow>,
-    run_state: Option<WorkflowRunState>,
-    action_tx: Option<UnboundedSender<ExecutionAction>>,
-    handle: Option<tokio::task::JoinHandle<()>>,
-}
-
-#[derive(Debug, Error)]
-pub enum BackendError {
-    #[error(transparent)]
-    Io(#[from] io::Error),
-    #[error(transparent)]
-    Credential(#[from] CredentialStoreError),
-    #[error(transparent)]
-    Validation(#[from] WorkflowValidationError),
-    #[error(transparent)]
-    ProviderConfig(#[from] ProviderConfigError),
-    #[error("workflow {0} not found")]
-    WorkflowNotFound(String),
-    #[error("project {0} not found")]
-    ProjectNotFound(String),
-    #[error("agent {0} not found")]
-    AgentNotFound(String),
-    #[error("{0}")]
-    InvalidExecutionCwd(String),
-    #[error("{0}")]
-    ProjectOperation(String),
-    #[error("workflow run is not active")]
-    NoActiveRun,
-    #[error("workflow run is not awaiting input")]
-    NoAwaitingInput,
-    #[error("workflow run has no pending tool approval")]
-    NoPendingApproval,
-    #[error("expected input for {expected}, got {received}")]
-    WrongAwaitingNode { expected: NodeId, received: NodeId },
-    #[error("expected approval {expected}, got {received}")]
-    WrongApprovalId { expected: String, received: String },
-    #[error("workflow run channel closed")]
-    RunChannelClosed,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkflowListItem {
-    pub id: String,
-    pub name: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ProviderReadiness {
-    pub ready: bool,
-    pub provider: String,
-    pub message: String,
-    pub env_var: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkflowValidationSummary {
-    pub layer_count: usize,
-    pub layers: Vec<Vec<String>>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentDefinitionSummary {
-    pub id: String,
-    pub name: String,
-    pub model: String,
-}
 impl AppBackend {
     #[must_use]
     pub fn new(
@@ -136,18 +49,11 @@ impl AppBackend {
         runtime: tokio::runtime::Runtime,
     ) -> Self {
         Self {
-            workflow_store,
-            agent_store,
-            project_store,
-            settings_store,
-            env,
-            runtime,
-            run_session: Mutex::new(RunSession {
-                workflow: None,
-                run_state: None,
-                action_tx: None,
-                handle: None,
-            }),
+            workflows: WorkflowCatalog::new(workflow_store),
+            agents: AgentLibrary::new(agent_store),
+            projects: ProjectRegistry::new(project_store),
+            settings: SettingsFacade::new(settings_store, env),
+            runs: RunCoordinator::new(runtime),
         }
     }
 
@@ -163,138 +69,50 @@ impl AppBackend {
         )
     }
 
-    /// # Errors
-    /// Returns an error if the workflow store cannot be read.
     pub fn list_workflows(&self) -> Result<Vec<WorkflowListItem>, BackendError> {
-        Ok(self
-            .load_all_workflows()?
-            .into_iter()
-            .map(|workflow| WorkflowListItem {
-                id: workflow.id.to_string(),
-                name: workflow.name,
-            })
-            .collect())
+        self.workflows.list(&self.projects)
     }
 
-    /// # Errors
-    /// Returns an error if workflow stores cannot be read.
     pub fn load_all_workflows(&self) -> Result<Vec<Workflow>, BackendError> {
-        let mut by_id = BTreeMap::<String, Workflow>::new();
-        for workflow in self.workflow_store.load()? {
-            by_id.insert(workflow.id.to_string(), workflow);
-        }
-        for project in self.load_projects()? {
-            for workflow in discover_project_workflows(Path::new(&project.path))? {
-                by_id.insert(workflow.id.to_string(), workflow);
-            }
-        }
-        Ok(by_id.into_values().collect())
+        self.workflows.load_all(&self.projects)
     }
 
-    /// # Errors
-    /// Returns an error if the workflow store cannot be read or the workflow does not exist.
     pub fn load_workflow(&self, workflow_id: &str) -> Result<Workflow, BackendError> {
-        self.load_all_workflows()?
-            .into_iter()
-            .find(|workflow| workflow.id == workflow_id)
-            .ok_or_else(|| BackendError::WorkflowNotFound(workflow_id.to_string()))
+        self.workflows.load_one(&self.projects, workflow_id)
     }
 
-    /// # Errors
-    /// Returns an error if the workflow store cannot be written.
     pub fn create_workflow(&self, name: String) -> Result<Workflow, BackendError> {
-        let mut workflows = self.workflow_store.load()?;
-        let workflow = default_workflow(name.as_str());
-        workflows.push(workflow.clone());
-        self.workflow_store.save(&workflows)?;
-        Ok(workflow)
+        self.workflows.create(name)
     }
 
-    /// # Errors
-    /// Returns an error if the workflow store cannot be written.
     pub fn save_workflow(&self, workflow: Workflow) -> Result<Workflow, BackendError> {
-        let mut workflows = self.load_all_workflows()?;
-        if let Some(existing) = workflows.iter_mut().find(|item| item.id == workflow.id) {
-            *existing = workflow.clone();
-        } else {
-            workflows.push(workflow.clone());
-        }
-        self.save_workflows(&workflows)?;
-        Ok(workflow)
+        self.workflows.save_one(&self.projects, workflow)
     }
 
-    /// # Errors
-    /// Returns an error if workflow stores cannot be written.
     pub fn save_workflows(&self, workflows: &[Workflow]) -> Result<(), BackendError> {
-        let projects = self.load_projects()?;
-        let assigned_ids: HashSet<String> = projects
-            .iter()
-            .flat_map(|project| project.workflow_ids.iter().cloned())
-            .collect();
-
-        let app_workflows: Vec<Workflow> = workflows
-            .iter()
-            .filter(|workflow| !assigned_ids.contains(&*workflow.id))
-            .cloned()
-            .collect();
-        self.workflow_store.save(&app_workflows)?;
-
-        for project in &projects {
-            let project_workflows: Vec<Workflow> = workflows
-                .iter()
-                .filter(|workflow| project.workflow_ids.iter().any(|id| id == &*workflow.id))
-                .cloned()
-                .collect();
-            save_project_workflows(Path::new(&project.path), &project_workflows)?;
-        }
-
-        Ok(())
+        self.workflows.save_all(&self.projects, workflows)
     }
 
-    /// # Errors
-    /// Returns an error if the workflow store cannot be written or the workflow does not exist.
     pub fn rename_workflow(
         &self,
         workflow_id: &str,
         name: String,
     ) -> Result<WorkflowListItem, BackendError> {
-        let mut workflows = self.load_all_workflows()?;
-        let workflow = workflows
-            .iter_mut()
-            .find(|item| item.id == workflow_id)
-            .ok_or_else(|| BackendError::WorkflowNotFound(workflow_id.to_string()))?;
-        workflow.name = name.clone();
-        self.save_workflows(&workflows)?;
-        Ok(WorkflowListItem {
-            id: workflow_id.to_string(),
-            name,
-        })
+        self.workflows.rename(&self.projects, workflow_id, name)
     }
 
-    /// # Errors
-    /// Returns an error if the agent store cannot be read.
     pub fn load_agents(&self) -> Result<Vec<AgentDefinition>, BackendError> {
-        self.agent_store.load().map_err(BackendError::from)
+        self.agents.load()
     }
 
-    /// # Errors
-    /// Returns an error if the agent store cannot be written.
     pub fn save_agents(&self, agents: &[AgentDefinition]) -> Result<(), BackendError> {
-        self.agent_store.save(agents).map_err(BackendError::from)
+        self.agents.save(agents)
     }
 
-    /// # Errors
-    /// Returns an error if the agent store cannot be written.
     pub fn create_agent_definition(&self, name: String) -> Result<AgentDefinition, BackendError> {
-        let mut agents = self.agent_store.load()?;
-        let agent = AgentDefinition::new(name);
-        agents.push(agent.clone());
-        self.agent_store.save(&agents)?;
-        Ok(agent)
+        self.agents.create(name)
     }
 
-    /// # Errors
-    /// Returns an error if the agent store cannot be read or the selected agent does not exist.
     pub fn create_agent_node(
         &self,
         index: usize,
@@ -302,107 +120,39 @@ impl AppBackend {
         y: f32,
         agent_id: Option<&str>,
     ) -> Result<Node, BackendError> {
-        let default_name = format!("Agent {}", index + 1);
-        let Some(agent_id) = agent_id else {
-            return Ok(Node::agent(default_name, x, y));
-        };
-
-        let agents = self.agent_store.load()?;
-        let agent = agents
-            .iter()
-            .find(|agent| agent.id == agent_id)
-            .ok_or_else(|| BackendError::AgentNotFound(agent_id.to_string()))?;
-
-        let label = if agent.name.trim().is_empty() {
-            default_name
-        } else {
-            agent.name.clone()
-        };
-        let mut node = Node::agent(label, x, y);
-        node.agent.system_prompt = agent.system_prompt.clone();
-        node.agent.task_prompt = agent.task_prompt.clone();
-        node.agent.model = agent.model.clone();
-        node.agent.output_schema = agent.output_schema.clone();
-        node.agent.auto_start = agent.auto_start;
-        node.agent.tools = agent.tools.clone();
-
-        Ok(node)
+        self.agents.create_node(index, x, y, agent_id)
     }
 
-    /// # Errors
-    /// Returns an error if the agent store cannot be read.
     pub fn list_agents(&self) -> Result<Vec<AgentDefinitionSummary>, BackendError> {
-        Ok(self
-            .agent_store
-            .load()?
-            .into_iter()
-            .map(|agent| AgentDefinitionSummary {
-                id: agent.id,
-                name: agent.name,
-                model: agent.model,
-            })
-            .collect())
+        self.agents.list()
     }
 
-    /// # Errors
-    /// Returns an error if skill discovery fails.
     pub fn list_skills(&self) -> Result<Vec<SkillSummary>, BackendError> {
-        let settings = self.settings_store.load()?;
-        skill_store::discover(&settings.skill_search_paths).map_err(BackendError::from)
+        self.settings.list_skills()
     }
 
-    /// # Errors
-    /// Returns an error if the settings file cannot be read.
     pub fn load_settings(&self) -> Result<AppSettings, BackendError> {
-        self.settings_store.load().map_err(BackendError::from)
+        self.settings.load()
     }
 
-    /// # Errors
-    /// Returns an error if the settings file cannot be written.
     pub fn save_settings(&self, settings: &AppSettings) -> Result<(), BackendError> {
-        self.settings_store
-            .save(settings)
-            .map_err(BackendError::from)
+        self.settings.save(settings)
     }
 
-    /// # Errors
-    /// Returns an error if the credential store cannot be read.
     pub fn load_provider_api_key(&self, provider_id: &str) -> Result<Option<String>, BackendError> {
-        let provider_id = ProviderId::from(provider_id);
-        Ok(self
-            .settings_store
-            .credential_store()
-            .get(&key_ref_for_provider(&provider_id))?)
+        self.settings.load_provider_api_key(provider_id)
     }
 
-    /// # Errors
-    /// Returns an error if the credential store cannot be written.
     pub fn save_provider_api_key(
         &self,
         provider_id: &str,
         api_key: &str,
     ) -> Result<(), BackendError> {
-        let provider_id = ProviderId::from(provider_id);
-        let key_ref = key_ref_for_provider(&provider_id);
-        let api_key = api_key.trim();
-        if api_key.is_empty() {
-            self.settings_store.credential_store().delete(&key_ref)?;
-        } else {
-            self.settings_store
-                .credential_store()
-                .set(&key_ref, api_key)?;
-        }
-        Ok(())
+        self.settings.save_provider_api_key(provider_id, api_key)
     }
 
-    /// # Errors
-    /// Returns an error if the credential store cannot delete the key.
     pub fn delete_provider_api_key(&self, provider_id: &str) -> Result<(), BackendError> {
-        let provider_id = ProviderId::from(provider_id);
-        self.settings_store
-            .credential_store()
-            .delete(&key_ref_for_provider(&provider_id))?;
-        Ok(())
+        self.settings.delete_provider_api_key(provider_id)
     }
 
     #[must_use]
@@ -411,135 +161,51 @@ impl AppBackend {
         settings: &AppSettings,
         transient_api_key: Option<&str>,
     ) -> ProviderReadiness {
-        match resolve_provider_config(
-            settings,
-            transient_api_key,
-            &self.env,
-            self.settings_store.credential_store(),
-        ) {
-            Ok(_) => ProviderReadiness {
-                ready: true,
-                provider: active_provider_label(settings),
-                message: "Ready".to_string(),
-                env_var: active_provider_env_var(settings)
-                    .unwrap_or_default()
-                    .to_string(),
-            },
-            Err(ProviderConfigError::MissingApiKey { provider, env_var }) => ProviderReadiness {
-                ready: false,
-                provider,
-                message: format!("API key missing (set it in Settings or {env_var})"),
-                env_var,
-            },
-            Err(error) => ProviderReadiness {
-                ready: false,
-                provider: active_provider_label(settings),
-                message: error.to_string(),
-                env_var: active_provider_env_var(settings)
-                    .unwrap_or_default()
-                    .to_string(),
-            },
-        }
+        self.settings
+            .resolve_provider_readiness(settings, transient_api_key)
     }
 
-    /// # Errors
-    /// Returns an error if the workflow fails validation.
     pub fn validate_workflow(
         &self,
         workflow: &Workflow,
     ) -> Result<WorkflowValidationSummary, BackendError> {
-        validate_workflow(workflow)?;
-        let layers = execution_layers(workflow)?;
-        Ok(WorkflowValidationSummary {
-            layer_count: layers.len(),
-            layers: layers
-                .into_iter()
-                .map(|layer| layer.into_iter().map(|id| id.to_string()).collect())
-                .collect(),
-        })
+        self.settings.validate_workflow(workflow)
     }
 
-    /// # Errors
-    /// Returns an error if the project store cannot be read or written during cleanup.
     pub fn load_projects(&self) -> Result<Vec<Project>, BackendError> {
-        let mut projects = self.project_store.load()?;
-        if cleanup_stored_projects(&mut projects) {
-            self.project_store.save(&projects)?;
-        }
-        Ok(projects)
+        self.projects.load()
     }
 
-    /// # Errors
-    /// Returns an error if the project store cannot be read.
     pub fn list_projects(&self) -> Result<Vec<Project>, BackendError> {
-        self.load_projects()
+        self.projects.list()
     }
 
-    /// # Errors
-    /// Returns an error if the project store cannot be written.
     pub fn save_projects(&self, projects: &[Project]) -> Result<(), BackendError> {
-        self.project_store
-            .save(projects)
-            .map_err(BackendError::from)
+        self.projects.save(projects)
     }
 
-    /// # Errors
-    /// Returns an error if the path is invalid, already registered, or the store cannot be written.
     pub fn create_project_from_directory(&self, path: String) -> Result<Project, BackendError> {
-        let mut projects = self.load_projects()?;
-        validate_unique_project_path(&projects, &path).map_err(BackendError::ProjectOperation)?;
-        let project =
-            create_project_from_path(&path).map_err(BackendError::ProjectOperation)?;
-        projects.push(project.clone());
-        self.save_projects(&projects)?;
-        Ok(project)
+        self.projects.create_from_directory(path)
     }
 
-    /// # Errors
-    /// Returns an error if the project is missing or the store cannot be written.
     pub fn assign_workflow_to_project(
         &self,
         project_id: &str,
         workflow_id: &str,
     ) -> Result<Vec<Project>, BackendError> {
-        let workflow = self.load_workflow(workflow_id)?;
-        let mut projects = self.project_store.load()?;
-        cleanup_stored_projects(&mut projects);
-        let project_path = projects
-            .iter()
-            .find(|project| project.id == project_id)
-            .map(|project| project.path.clone())
-            .ok_or_else(|| BackendError::ProjectNotFound(project_id.to_string()))?;
-        assign_workflow(&mut projects, project_id, workflow_id)
-            .map_err(BackendError::ProjectOperation)?;
-        save_project_workflow(Path::new(&project_path), &workflow)?;
-        self.save_projects(&projects)?;
-        Ok(projects)
+        self.workflows
+            .assign_to_project(&self.projects, project_id, workflow_id)
     }
 
-    /// # Errors
-    /// Returns an error if the store cannot be read or written.
     pub fn unassign_workflow_from_project(
         &self,
         project_id: &str,
         workflow_id: &str,
     ) -> Result<Vec<Project>, BackendError> {
-        let mut projects = self.project_store.load()?;
-        cleanup_stored_projects(&mut projects);
-        let project_path = projects
-            .iter()
-            .find(|project| project.id == project_id)
-            .map(|project| project.path.clone())
-            .ok_or_else(|| BackendError::ProjectNotFound(project_id.to_string()))?;
-        unassign_workflow_from_project(&mut projects, project_id, workflow_id)
-            .map_err(BackendError::ProjectOperation)?;
-        delete_project_workflow(Path::new(&project_path), workflow_id)?;
-        self.save_projects(&projects)?;
-        Ok(projects)
+        self.workflows
+            .unassign_from_project(&self.projects, project_id, workflow_id)
     }
 
-    /// # Errors
-    /// Returns an error if the workflow fails validation or provider configuration fails.
     pub async fn start_run(
         &self,
         workflow: Workflow,
@@ -548,186 +214,54 @@ impl AppBackend {
         settings: &AppSettings,
         transient_api_key: Option<&str>,
     ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
-        validate_workflow(&workflow)?;
-        let resolved_cwd = resolve_execution_cwd(execution_cwd.as_deref())
-            .map_err(BackendError::InvalidExecutionCwd)?;
-        let provider_settings = workflow
-            .settings
-            .provider_id
-            .as_ref()
-            .filter(|provider_id| !provider_id.trim().is_empty())
-            .map(|provider_id| {
-                let mut settings = settings.clone();
-                settings.active_provider = ProviderId::from(provider_id.as_str());
-                settings
-            });
-        let provider_settings = provider_settings.as_ref().unwrap_or(settings);
-        let provider_config = resolve_provider_config(
-            provider_settings,
-            transient_api_key,
-            &self.env,
-            self.settings_store.credential_store(),
-        )?;
-        let ai = create_provider(provider_config);
-
-        let agents = self.agent_store.load()?;
-        let agent_snapshots = resolve_callable_agent_snapshots(&workflow, &agents);
-        let (handle, event_rx, action_tx) = spawn_interactive_workflow_run(
-            &self.runtime,
-            workflow.clone(),
-            entrypoint,
-            resolved_cwd,
-            ai,
-            agent_snapshots,
-        );
-
-        let mut session = self.run_session.lock().await;
-        if let Some(existing) = session.handle.take() {
-            existing.abort();
-        }
-        let initial_state = WorkflowRunState::running_for_workflow(&workflow);
-        session.workflow = Some(workflow);
-        session.run_state = Some(initial_state.clone());
-        session.action_tx = Some(action_tx);
-        session.handle = Some(handle);
-        Ok((initial_state, event_rx))
+        self.runs
+            .start_run(RunStartParams {
+                workflow,
+                entrypoint,
+                execution_cwd,
+                settings,
+                transient_api_key,
+                agent_store: self.agents.store(),
+                settings_store: self.settings.store(),
+                env: self.settings.env(),
+            })
+            .await
     }
 
-    /// # Errors
-    /// Returns an error if there is no active run.
     pub async fn apply_execution_event(
         &self,
         event: ExecutionEvent,
     ) -> Result<WorkflowRunState, BackendError> {
-        let mut session = self.run_session.lock().await;
-        let workflow = session.workflow.clone().ok_or(BackendError::NoActiveRun)?;
-        let run_state = session
-            .run_state
-            .as_mut()
-            .ok_or(BackendError::NoActiveRun)?;
-        apply_event_to_run_state(&workflow, run_state, event);
-        let finished = !run_state.active;
-        let snapshot = run_state.clone();
-        if finished {
-            session.action_tx = None;
-            session.handle = None;
-        }
-        Ok(snapshot)
+        self.runs.apply_execution_event(event).await
     }
 
-    /// # Errors
-    /// Returns an error if there is no active run or the wrong node is selected.
     pub async fn submit_user_input(
         &self,
         node_id: &str,
         text: String,
     ) -> Result<WorkflowRunState, BackendError> {
-        let mut session = self.run_session.lock().await;
-        let expected = session
-            .run_state
-            .as_ref()
-            .ok_or(BackendError::NoActiveRun)?
-            .awaiting_node_id
-            .clone()
-            .ok_or(BackendError::NoAwaitingInput)?;
-        if expected != node_id {
-            return Err(BackendError::WrongAwaitingNode {
-                expected,
-                received: NodeId(node_id.to_string()),
-            });
-        }
-        session
-            .action_tx
-            .as_ref()
-            .ok_or(BackendError::NoActiveRun)?
-            .send(ExecutionAction::ProvideInput(text.clone()))
-            .map_err(|_| BackendError::RunChannelClosed)?;
-        let run_state = session
-            .run_state
-            .as_mut()
-            .ok_or(BackendError::NoActiveRun)?;
-        record_user_input(run_state, node_id, text);
-        Ok(run_state.clone())
+        self.runs.submit_user_input(node_id, text).await
     }
 
-    /// # Errors
-    /// Returns an error if there is no active run or the wrong approval is selected.
     pub async fn submit_tool_approval(
         &self,
         approval_id: &str,
         allow: bool,
     ) -> Result<WorkflowRunState, BackendError> {
-        let mut session = self.run_session.lock().await;
-        let expected = session
-            .run_state
-            .as_ref()
-            .ok_or(BackendError::NoActiveRun)?
-            .pending_approvals
-            .first()
-            .cloned()
-            .ok_or(BackendError::NoPendingApproval)?;
-        if expected.approval_id != approval_id {
-            return Err(BackendError::WrongApprovalId {
-                expected: expected.approval_id,
-                received: approval_id.to_string(),
-            });
-        }
-        session
-            .action_tx
-            .as_ref()
-            .ok_or(BackendError::NoActiveRun)?
-            .send(ExecutionAction::ResolveApproval {
-                approval_id: approval_id.to_string(),
-                allow,
-            })
-            .map_err(|_| BackendError::RunChannelClosed)?;
-        let run_state = session
-            .run_state
-            .as_mut()
-            .ok_or(BackendError::NoActiveRun)?;
-        run_state.pending_approvals.clear();
-        Ok(run_state.clone())
+        self.runs.submit_tool_approval(approval_id, allow).await
     }
 
-    /// Returns an error because conversational paused nodes advance via `submit_user_input`.
     pub async fn complete_manual_node(&self) -> Result<WorkflowRunState, BackendError> {
-        let session = self.run_session.lock().await;
-        let run_state = session
-            .run_state
-            .as_ref()
-            .ok_or(BackendError::NoActiveRun)?;
-        if run_state.awaiting_node_id.is_some() {
-            return Err(BackendError::NoAwaitingInput);
-        }
-        Err(BackendError::NoAwaitingInput)
+        self.runs.complete_manual_node().await
     }
 
-    #[must_use]
     pub async fn get_run_state(&self) -> Option<WorkflowRunState> {
-        self.run_session.lock().await.run_state.clone()
+        self.runs.get_run_state().await
     }
 
     pub async fn clear_run_trace(&self) -> Result<Option<WorkflowRunState>, BackendError> {
-        let mut session = self.run_session.lock().await;
-        let workflow = session.workflow.clone();
-        let run_state = session.run_state.as_mut();
-        match (workflow, run_state) {
-            (Some(workflow), Some(run_state)) => {
-                let mut cleared = WorkflowRunState::idle_for_workflow(&workflow);
-                cleared.chat_logs = run_state.chat_logs.clone();
-                cleared.outputs = run_state.outputs.clone();
-                *run_state = cleared;
-                Ok(Some(run_state.clone()))
-            }
-            _ => Ok(None),
-        }
+        self.runs.clear_run_trace().await
     }
-}
-
-fn default_workflow(name: &str) -> Workflow {
-    let mut workflow = Workflow::new(name);
-    workflow.nodes.push(Node::agent("Idea", 80.0, 120.0));
-    workflow
 }
 
 #[cfg(test)]
@@ -735,7 +269,11 @@ fn default_workflow(name: &str) -> Workflow {
 mod tests {
     use super::*;
     use crate::credential_store::CredentialStore;
+    use crate::execution::{ExecutionAction, ExecutionEvent};
     use crate::settings_store::{ProviderProfile, ProviderTransport};
+    use providers::ProviderId;
+    use crate::workflow_catalog::default_workflow;
+    use domain::{Node, NodeId};
     use tempfile::tempdir;
 
     fn backend() -> (AppBackend, tempfile::TempDir) {
@@ -835,6 +373,7 @@ mod tests {
         assert_eq!(items[0].id, first.id);
         assert_eq!(loaded, vec![first]);
     }
+
     #[test]
     fn create_agent_node_without_template_uses_default_node() {
         let (backend, _dir) = backend();
@@ -927,7 +466,7 @@ mod tests {
     #[test]
     fn start_run_returns_initial_state_and_manual_events() {
         let (backend, _dir) = backend();
-        backend.runtime.block_on(async {
+        backend.runs.runtime().block_on(async {
             let mut workflow = Workflow::new("Manual run");
             let mut node = Node::agent("Review", 0.0, 0.0);
             node.id = NodeId("review".to_string());
@@ -955,30 +494,22 @@ mod tests {
                     if node_id == "review" && label == "Review"
             ));
 
-            let handle = {
-                let mut session = backend.run_session.lock().await;
-                session.handle.take()
-            };
-            if let Some(handle) = handle {
-                handle.abort();
-            }
+            backend.runs.test_abort_handle().await;
         });
     }
 
     #[test]
     fn submit_user_input_updates_snapshot_and_sends_action() {
         let (backend, _dir) = backend();
-        backend.runtime.block_on(async {
+        backend.runs.runtime().block_on(async {
             let workflow = default_workflow("Workflow");
             let (action_tx, mut action_rx) = tokio::sync::mpsc::unbounded_channel();
-            {
-                let mut session = backend.run_session.lock().await;
-                let mut run_state = WorkflowRunState::running_for_workflow(&workflow);
-                run_state.awaiting_node_id = Some(NodeId("idea".to_string()));
-                session.workflow = Some(workflow);
-                session.run_state = Some(run_state);
-                session.action_tx = Some(action_tx);
-            }
+            let mut run_state = WorkflowRunState::running_for_workflow(&workflow);
+            run_state.awaiting_node_id = Some(NodeId("idea".to_string()));
+            backend
+                .runs
+                .test_seed_session(workflow, run_state, action_tx)
+                .await;
 
             let run_state = backend
                 .submit_user_input("idea", "Continue with approvals".to_string())
@@ -1010,28 +541,26 @@ mod tests {
     #[test]
     fn submit_tool_approval_updates_snapshot_and_sends_action() {
         let (backend, _dir) = backend();
-        backend.runtime.block_on(async {
+        backend.runs.runtime().block_on(async {
             let workflow = default_workflow("Workflow");
             let (action_tx, mut action_rx) = tokio::sync::mpsc::unbounded_channel();
-            {
-                let mut session = backend.run_session.lock().await;
-                let mut run_state = WorkflowRunState::running_for_workflow(&workflow);
-                run_state.pending_approvals = vec![domain::PendingToolApproval {
-                    approval_id: "approval-1".to_string(),
-                    node_id: "idea".to_string(),
-                    node_label: "Idea".to_string(),
-                    tool_call: domain::ToolCall {
-                        id: "call-1".to_string(),
-                        name: "read".to_string(),
-                        arguments: serde_json::json!({ "path": "README.md" }),
-                        intent: None,
-                    },
-                    tier: domain::ToolTier::Read,
-                }];
-                session.workflow = Some(workflow);
-                session.run_state = Some(run_state);
-                session.action_tx = Some(action_tx);
-            }
+            let mut run_state = WorkflowRunState::running_for_workflow(&workflow);
+            run_state.pending_approvals = vec![domain::PendingToolApproval {
+                approval_id: "approval-1".to_string(),
+                node_id: "idea".to_string(),
+                node_label: "Idea".to_string(),
+                tool_call: domain::ToolCall {
+                    id: "call-1".to_string(),
+                    name: "read".to_string(),
+                    arguments: serde_json::json!({ "path": "README.md" }),
+                    intent: None,
+                },
+                tier: domain::ToolTier::Read,
+            }];
+            backend
+                .runs
+                .test_seed_session(workflow, run_state, action_tx)
+                .await;
 
             let run_state = backend
                 .submit_tool_approval("approval-1", true)

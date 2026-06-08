@@ -1,8 +1,10 @@
-use domain::AgentNodeConfig;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+
+/// Persisted saved-agent record; canonical type is [`domain::CallableAgent`].
+pub use domain::CallableAgent as AgentDefinition;
 
 const CURRENT_DATA_DIR_SLUG: &str = "openflow";
 const LEGACY_DATA_DIR_SLUG: &str = "step-through-agentic-workflow";
@@ -21,41 +23,6 @@ fn legacy_store_path(path: &Path) -> Option<PathBuf> {
             .with_file_name(LEGACY_DATA_DIR_SLUG)
             .join(AGENTS_FILE_NAME),
     )
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct AgentDefinition {
-    pub id: String,
-    pub name: String,
-    #[serde(default, alias = "systemPrompt")]
-    pub system_prompt: String,
-    #[serde(default, alias = "taskPrompt")]
-    pub task_prompt: String,
-    #[serde(default)]
-    pub model: String,
-    #[serde(alias = "outputSchema")]
-    pub output_schema: serde_json::Value,
-    #[serde(default, alias = "autoStart")]
-    pub auto_start: bool,
-    #[serde(default)]
-    pub tools: domain::NodeToolConfig,
-}
-
-impl AgentDefinition {
-    #[must_use]
-    pub fn new(name: impl Into<String>) -> Self {
-        let defaults = AgentNodeConfig::default();
-        Self {
-            id: uuid::Uuid::new_v4().to_string(),
-            name: name.into(),
-            system_prompt: defaults.system_prompt,
-            task_prompt: defaults.task_prompt,
-            model: defaults.model,
-            output_schema: defaults.output_schema,
-            auto_start: defaults.auto_start,
-            tools: defaults.tools,
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -137,6 +104,7 @@ impl FileAgentStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use domain::AgentNodeConfig;
     use tempfile::tempdir;
 
     #[test]

@@ -15,13 +15,10 @@ mod events;
 mod headless;
 mod subagents;
 
-use crate::agent_store::AgentDefinition;
 use crate::state::{RunTraceEntry, ToolArtifactSummary, ToolCallSummary};
-use domain::{
-    AiPort, ChatMessage, ChatRole, NodeId, RunReport, SubagentSummary, ToolCall, Workflow,
-};
+use domain::{AiPort, CallableAgent, ChatMessage, NodeId, RunReport, RunTelemetry, Workflow};
 use serde_json::Value;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use thiserror::Error;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -29,124 +26,8 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 pub use events::{apply_event_to_run_state, record_user_input};
 pub use headless::run_workflow_headless;
 
-/// Collect snapshotted agent definitions referenced by workflow node settings.
-#[must_use]
-pub fn resolve_callable_agent_snapshots(
-    workflow: &Workflow,
-    agents: &[AgentDefinition],
-) -> BTreeMap<String, AgentDefinition> {
-    let mut requested = HashSet::new();
-    for node in &workflow.nodes {
-        if node.agent.allow_all_callable_agents {
-            for agent in agents {
-                requested.insert(agent.id.clone());
-            }
-        } else {
-            for id in &node.agent.callable_agents {
-                if !id.trim().is_empty() {
-                    requested.insert(id.clone());
-                }
-            }
-        }
-    }
-    agents
-        .iter()
-        .filter(|agent| requested.contains(&agent.id))
-        .map(|agent| (agent.id.clone(), agent.clone()))
-        .collect()
-}
-
-#[derive(Debug, Clone)]
-pub enum ExecutionEvent {
-    NodeQueued {
-        node_id: NodeId,
-        label: String,
-    },
-    NodeStarted {
-        node_id: NodeId,
-        label: String,
-    },
-    ChatMessage {
-        node_id: NodeId,
-        role: ChatRole,
-        content: String,
-    },
-    NodeAwaitingInput {
-        node_id: NodeId,
-        label: String,
-        context: String,
-        is_initial: bool,
-    },
-    ToolCallProposed {
-        node_id: NodeId,
-        label: String,
-        tool_call: ToolCall,
-    },
-    ToolApprovalRequested {
-        request: domain::PendingToolApproval,
-    },
-    ToolApproved {
-        approval_id: String,
-        node_id: NodeId,
-        tool_call_id: String,
-        tool_name: String,
-    },
-    ToolDenied {
-        approval_id: String,
-        node_id: NodeId,
-        tool_call_id: String,
-        tool_name: String,
-        reason: String,
-    },
-    ToolStarted {
-        node_id: NodeId,
-        tool_call_id: String,
-        tool_name: String,
-        arguments: Value,
-    },
-    ToolCompleted {
-        node_id: NodeId,
-        tool_call_id: String,
-        tool_name: String,
-        content: String,
-        is_error: bool,
-        output_meta: Option<domain::ToolOutputMeta>,
-        artifact_ids: Vec<String>,
-    },
-    ToolArtifactCreated {
-        node_id: NodeId,
-        artifact: ToolArtifactSummary,
-    },
-    NodeCompleted {
-        node_id: NodeId,
-        label: String,
-        output: Value,
-    },
-    NodeFailed {
-        node_id: NodeId,
-        label: String,
-        error: String,
-    },
-    Finished(RunReport),
-    Error(String),
-    SubagentsDeclared {
-        node_id: NodeId,
-        summaries: Vec<SubagentSummary>,
-    },
-    SubagentStarted {
-        node_id: NodeId,
-        subagent_id: String,
-    },
-    SubagentCompleted {
-        node_id: NodeId,
-        subagent_id: String,
-    },
-    SubagentFailed {
-        node_id: NodeId,
-        subagent_id: String,
-        error: String,
-    },
-}
+/// Interactive run telemetry; canonical type is [`domain::RunTelemetry`].
+pub type ExecutionEvent = RunTelemetry;
 
 pub enum ExecutionAction {
     ProvideInput(String),
@@ -225,7 +106,7 @@ pub fn spawn_interactive_workflow_run<A>(
     entrypoint: Option<String>,
     execution_cwd: PathBuf,
     ai: A,
-    agent_snapshots: BTreeMap<String, AgentDefinition>,
+    agent_snapshots: BTreeMap<String, CallableAgent>,
 ) -> (
     tokio::task::JoinHandle<()>,
     UnboundedReceiver<ExecutionEvent>,

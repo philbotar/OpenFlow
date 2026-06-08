@@ -1,6 +1,8 @@
 //! Outbound ports owned by the domain.
 
-use crate::{AgentTranscriptItem, NodeId, NodeToolConfig, ToolCall, ToolDefinition, WorkflowId};
+use crate::conversation::AgentTranscriptItem;
+use crate::graph::{NodeId, WorkflowId};
+use crate::tools::{NodeToolConfig, ToolCall, ToolDefinition};
 use async_trait::async_trait;
 use serde_json::Value;
 use thiserror::Error;
@@ -62,6 +64,15 @@ impl AgentError {
     pub const fn is_retryable(&self) -> bool {
         matches!(self, Self::Transient(_))
     }
+
+    #[must_use]
+    pub fn is_malformed_submit_output(&self) -> bool {
+        matches!(
+            self,
+            Self::Failed(message)
+                if message.contains("final output tool arguments were not valid JSON")
+        )
+    }
 }
 
 #[async_trait]
@@ -88,5 +99,10 @@ mod tests {
         assert!(AgentError::Transient("timeout".to_string()).is_retryable());
         assert!(!AgentError::Permanent("auth".to_string()).is_retryable());
         assert!(!AgentError::Failed("unknown".to_string()).is_retryable());
+        assert!(AgentError::Failed(
+            "OpenAI-compatible final output tool arguments were not valid JSON: missing field `output`"
+                .to_string()
+        )
+        .is_malformed_submit_output());
     }
 }

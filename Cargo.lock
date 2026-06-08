@@ -740,10 +740,7 @@ name = "domain"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "dirs",
  "futures",
- "log",
- "parking_lot",
  "serde",
  "serde_json",
  "tempfile",
@@ -2410,6 +2407,7 @@ dependencies = [
  "domain",
  "glob",
  "keyring",
+ "log",
  "parking_lot",
  "providers",
  "regex",

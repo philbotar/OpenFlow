@@ -116,6 +116,8 @@ export function Sidebar() {
                 ctx.handleSwitchWorkflow(workflowId);
               }}
               onRenameWorkflow={ctx.handleStartWorkflowNameEdit}
+              onCreateWorkflow={() => void ctx.handleCreateWorkflow(project.id)}
+              onAddExistingWorkflow={() => ctx.handleOpenAssignWorkflowPicker(project.id)}
               setWorkflowNameInputRef={ctx.setWorkflowNameInputRef}
               setWorkflowNameDraft={ctx.setWorkflowNameDraft}
               onWorkflowNameCommit={ctx.handleWorkflowNameCommit}

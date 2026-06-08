@@ -1,4 +1,4 @@
-use crate::agent_store::AgentDefinition;
+use domain::CallableAgent;
 use crate::state::WorkflowRunState;
 use domain::{AiPort, Workflow};
 use std::collections::{BTreeMap, VecDeque};
@@ -18,7 +18,7 @@ pub async fn run_workflow_headless<A>(
     ai: A,
     manual_inputs: Vec<ManualInput>,
     approvals: Vec<ApprovalResponse>,
-    agent_snapshots: BTreeMap<String, AgentDefinition>,
+    agent_snapshots: BTreeMap<String, CallableAgent>,
 ) -> Result<WorkflowRunSnapshot, WorkflowExecutionError>
 where
     A: AiPort + Send + Sync + 'static,

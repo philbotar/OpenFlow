@@ -1,0 +1,198 @@
+use crate::api::WorkflowListItem;
+use crate::error::BackendError;
+use crate::flow_store::{
+    delete_project_workflow, discover_project_workflows, save_project_workflow,
+    save_project_workflows,
+};
+use crate::project_registry::ProjectRegistry;
+use crate::project_store::{
+    assign_workflow, cleanup_stored_projects, unassign_workflow_from_project, Project,
+};
+use crate::storage::FileWorkflowStore;
+use domain::{Node, Workflow};
+use std::collections::{BTreeMap, HashSet};
+use std::path::Path;
+
+#[derive(Debug)]
+pub struct WorkflowCatalog {
+    store: FileWorkflowStore,
+}
+
+impl WorkflowCatalog {
+    #[must_use]
+    pub fn new(store: FileWorkflowStore) -> Self {
+        Self { store }
+    }
+
+    /// # Errors
+    /// Returns an error if workflow stores cannot be read.
+    pub fn load_all(&self, projects: &ProjectRegistry) -> Result<Vec<Workflow>, BackendError> {
+        let mut by_id = BTreeMap::<String, Workflow>::new();
+        for workflow in self.store.load()? {
+            by_id.insert(workflow.id.to_string(), workflow);
+        }
+        for project in projects.load()? {
+            for workflow in discover_project_workflows(Path::new(&project.path))? {
+                by_id.insert(workflow.id.to_string(), workflow);
+            }
+        }
+        Ok(by_id.into_values().collect())
+    }
+
+    /// # Errors
+    /// Returns an error if the workflow store cannot be read.
+    pub fn list(&self, projects: &ProjectRegistry) -> Result<Vec<WorkflowListItem>, BackendError> {
+        Ok(self
+            .load_all(projects)?
+            .into_iter()
+            .map(|workflow| WorkflowListItem {
+                id: workflow.id.to_string(),
+                name: workflow.name,
+            })
+            .collect())
+    }
+
+    /// # Errors
+    /// Returns an error if the workflow store cannot be read or the workflow does not exist.
+    pub fn load_one(
+        &self,
+        projects: &ProjectRegistry,
+        workflow_id: &str,
+    ) -> Result<Workflow, BackendError> {
+        self.load_all(projects)?
+            .into_iter()
+            .find(|workflow| workflow.id == workflow_id)
+            .ok_or_else(|| BackendError::WorkflowNotFound(workflow_id.to_string()))
+    }
+
+    /// # Errors
+    /// Returns an error if the workflow store cannot be written.
+    pub fn create(&self, name: String) -> Result<Workflow, BackendError> {
+        let mut workflows = self.store.load()?;
+        let workflow = default_workflow(name.as_str());
+        workflows.push(workflow.clone());
+        self.store.save(&workflows)?;
+        Ok(workflow)
+    }
+
+    /// # Errors
+    /// Returns an error if workflow stores cannot be written.
+    pub fn save_one(
+        &self,
+        projects: &ProjectRegistry,
+        workflow: Workflow,
+    ) -> Result<Workflow, BackendError> {
+        let mut workflows = self.load_all(projects)?;
+        if let Some(existing) = workflows.iter_mut().find(|item| item.id == workflow.id) {
+            *existing = workflow.clone();
+        } else {
+            workflows.push(workflow.clone());
+        }
+        self.save_all(projects, &workflows)?;
+        Ok(workflow)
+    }
+
+    /// # Errors
+    /// Returns an error if workflow stores cannot be written.
+    pub fn save_all(
+        &self,
+        projects: &ProjectRegistry,
+        workflows: &[Workflow],
+    ) -> Result<(), BackendError> {
+        let project_list = projects.load()?;
+        let assigned_ids: HashSet<String> = project_list
+            .iter()
+            .flat_map(|project| project.workflow_ids.iter().cloned())
+            .collect();
+
+        let app_workflows: Vec<Workflow> = workflows
+            .iter()
+            .filter(|workflow| !assigned_ids.contains(&*workflow.id))
+            .cloned()
+            .collect();
+        self.store.save(&app_workflows)?;
+
+        for project in &project_list {
+            let project_workflows: Vec<Workflow> = workflows
+                .iter()
+                .filter(|workflow| project.workflow_ids.iter().any(|id| id == &*workflow.id))
+                .cloned()
+                .collect();
+            save_project_workflows(Path::new(&project.path), &project_workflows)?;
+        }
+
+        Ok(())
+    }
+
+    /// # Errors
+    /// Returns an error if the workflow store cannot be written or the workflow does not exist.
+    pub fn rename(
+        &self,
+        projects: &ProjectRegistry,
+        workflow_id: &str,
+        name: String,
+    ) -> Result<WorkflowListItem, BackendError> {
+        let mut workflows = self.load_all(projects)?;
+        let workflow = workflows
+            .iter_mut()
+            .find(|item| item.id == workflow_id)
+            .ok_or_else(|| BackendError::WorkflowNotFound(workflow_id.to_string()))?;
+        workflow.name = name.clone();
+        self.save_all(projects, &workflows)?;
+        Ok(WorkflowListItem {
+            id: workflow_id.to_string(),
+            name,
+        })
+    }
+
+    /// # Errors
+    /// Returns an error if the project is missing or stores cannot be written.
+    pub fn assign_to_project(
+        &self,
+        projects: &ProjectRegistry,
+        project_id: &str,
+        workflow_id: &str,
+    ) -> Result<Vec<Project>, BackendError> {
+        let workflow = self.load_one(projects, workflow_id)?;
+        let mut project_list = projects.store().load()?;
+        cleanup_stored_projects(&mut project_list);
+        let project_path = project_list
+            .iter()
+            .find(|project| project.id == project_id)
+            .map(|project| project.path.clone())
+            .ok_or_else(|| BackendError::ProjectNotFound(project_id.to_string()))?;
+        assign_workflow(&mut project_list, project_id, workflow_id)
+            .map_err(BackendError::ProjectOperation)?;
+        save_project_workflow(Path::new(&project_path), &workflow)?;
+        projects.save(&project_list)?;
+        Ok(project_list)
+    }
+
+    /// # Errors
+    /// Returns an error if the store cannot be read or written.
+    pub fn unassign_from_project(
+        &self,
+        projects: &ProjectRegistry,
+        project_id: &str,
+        workflow_id: &str,
+    ) -> Result<Vec<Project>, BackendError> {
+        let mut project_list = projects.store().load()?;
+        cleanup_stored_projects(&mut project_list);
+        let project_path = project_list
+            .iter()
+            .find(|project| project.id == project_id)
+            .map(|project| project.path.clone())
+            .ok_or_else(|| BackendError::ProjectNotFound(project_id.to_string()))?;
+        unassign_workflow_from_project(&mut project_list, project_id, workflow_id)
+            .map_err(BackendError::ProjectOperation)?;
+        delete_project_workflow(Path::new(&project_path), workflow_id)?;
+        projects.save(&project_list)?;
+        Ok(project_list)
+    }
+}
+
+pub(crate) fn default_workflow(name: &str) -> Workflow {
+    let mut workflow = Workflow::new(name);
+    workflow.nodes.push(Node::agent("Idea", 80.0, 120.0));
+    workflow
+}

@@ -1,34 +1,20 @@
-use crate::agent_store::AgentDefinition;
-use crate::state::ToolArtifactSummary;
 use crate::tools::{ArtifactStore, ToolRegistry, ToolRunner, ToolRunnerError};
 use domain::{
-    filter_tool_turn_assistant_message, AgentNeedUserInput, AgentRequest, AgentToolCallBatch,
-    AgentTranscriptItem, AgentTurnOutcome, AiPort, ChatRole, EnginePollResult, InteractiveEngine,
-    NodeId, SubagentDeclaration, SubagentStatus, SubagentSummary, Workflow,
+    advance_subagent_invoke, build_predefined_subagent_summaries, filter_tool_turn_assistant_message,
+    handle_declare_subagents, is_subagent_runtime_builtin, start_subagent_invoke,
+    subagent_runtime_builtin_denied, AgentNeedUserInput, AgentRequest, AgentToolCallBatch,
+    AgentTurnOutcome, AiPort, CallableAgent, ChatRole, EnginePollResult, InteractiveEngine,
+    NodeId, RunTelemetry, SubagentInvokeStep, SubagentStartOutcome, SubagentSummary, ToolCall,
+    Workflow,
+    CALL_SUBAGENT_TOOL, DECLARE_SUBAGENTS_TOOL,
 };
-use serde_json::Value;
 use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use uuid::Uuid;
 
-use super::subagents::{
-    adhoc_subagent_base_index, append_shared_context, augment_call_subagent_tool_description,
-    agent_purpose, build_adhoc_subagent_summaries, build_predefined_subagent_summaries,
-    merge_subagent_summaries_into_map,
-};
+use super::subagents::{augment_call_subagent_tool_description, merge_subagent_summaries_into_map};
 use super::{ExecutionAction, ExecutionEvent};
-
-#[derive(serde::Deserialize)]
-struct SubagentDeclarationBatch {
-    subagents: Vec<SubagentDeclaration>,
-}
-
-#[derive(serde::Deserialize)]
-struct CallSubagentArgs {
-    subagent_id: String,
-    input: String,
-}
 pub(super) async fn drive_interactive_workflow<A>(
     workflow: Workflow,
     entrypoint: Option<String>,
@@ -36,7 +22,7 @@ pub(super) async fn drive_interactive_workflow<A>(
     ai: A,
     event_tx: UnboundedSender<ExecutionEvent>,
     mut action_rx: UnboundedReceiver<ExecutionAction>,
-    agent_snapshots: BTreeMap<String, AgentDefinition>,
+    agent_snapshots: BTreeMap<String, CallableAgent>,
 ) where
     A: AiPort,
 {
@@ -226,447 +212,34 @@ pub(super) async fn drive_interactive_workflow<A>(
                     .unwrap_or_default();
                 let mut results = Vec::new();
                 for tool_call in tool_calls {
-                    // Handle runtime builtin: openflow_declare_subagents
-                    if tool_call.name == "openflow_declare_subagents" {
-                        let _ = event_tx.send(ExecutionEvent::ToolCallProposed {
-                            node_id: node_id.clone(),
-                            label: label.clone(),
-                            tool_call: tool_call.clone(),
-                        });
-                        let declarations =
-                            match serde_json::value::from_value::<SubagentDeclarationBatch>(
-                                tool_call.arguments.clone(),
-                            ) {
-                                Ok(batch) => batch.subagents,
-                                Err(_) => Vec::new(),
-                            };
-                        let base_index = adhoc_subagent_base_index(&node_id, &declared_subagents);
-                        let summaries =
-                            build_adhoc_subagent_summaries(&node_id, &declarations, base_index);
-                        merge_subagent_summaries_into_map(&mut declared_subagents, &summaries);
-                        let _ = event_tx.send(ExecutionEvent::SubagentsDeclared {
-                            node_id: node_id.clone(),
-                            summaries: summaries.clone(),
-                        });
-                        let declared_json: Vec<Value> = summaries
-                            .iter()
-                            .map(|s| serde_json::to_value(s).unwrap_or_default())
-                            .collect();
-                        let result_content = serde_json::json!({
-                            "declared": declared_json,
-                            "message": "Subagents declared and ready for invocation."
-                        })
-                        .to_string();
-                        let tool_result = domain::ToolResult {
-                            tool_call_id: tool_call.id.clone(),
-                            tool_name: tool_call.name.clone(),
-                            content: result_content.clone(),
-                            is_error: false,
-                            artifact_ids: Vec::new(),
-                            output_meta: None,
-                        };
-                        let _ = event_tx.send(ExecutionEvent::ToolStarted {
-                            node_id: node_id.clone(),
-                            tool_call_id: tool_call.id.clone(),
-                            tool_name: tool_call.name.clone(),
-                            arguments: tool_call.arguments.clone(),
-                        });
-                        let _ = event_tx.send(ExecutionEvent::ToolCompleted {
-                            node_id: node_id.clone(),
-                            tool_call_id: tool_call.id.clone(),
-                            tool_name: tool_call.name.clone(),
-                            content: result_content.clone(),
-                            is_error: false,
-                            output_meta: None,
-                            artifact_ids: Vec::new(),
-                        });
-                        results.push(tool_result);
+                    if tool_call.name == DECLARE_SUBAGENTS_TOOL {
+                        results.push(run_declare_subagents_tool(
+                            &event_tx,
+                            &node_id,
+                            &label,
+                            &tool_call,
+                            &mut declared_subagents,
+                        ));
                         continue;
                     }
-                    // Handle runtime builtin: openflow_call_subagent
-                    if tool_call.name == "openflow_call_subagent" {
-                        let _ = event_tx.send(ExecutionEvent::ToolCallProposed {
-                            node_id: node_id.clone(),
-                            label: label.clone(),
-                            tool_call: tool_call.clone(),
-                        });
-                        let call_args = match serde_json::value::from_value::<CallSubagentArgs>(
-                            tool_call.arguments.clone(),
-                        ) {
-                            Ok(args) => args,
-                            Err(err) => {
-                                let result_content = serde_json::json!({
-                                    "error": format!("Invalid arguments for openflow_call_subagent: {err}")
-                                }).to_string();
-                                let tool_result = domain::ToolResult {
-                                    tool_call_id: tool_call.id.clone(),
-                                    tool_name: tool_call.name.clone(),
-                                    content: result_content.clone(),
-                                    is_error: true,
-                                    artifact_ids: Vec::new(),
-                                    output_meta: None,
-                                };
-                                let _ = event_tx.send(ExecutionEvent::ToolStarted {
-                                    node_id: node_id.clone(),
-                                    tool_call_id: tool_call.id.clone(),
-                                    tool_name: tool_call.name.clone(),
-                                    arguments: tool_call.arguments.clone(),
-                                });
-                                let _ = event_tx.send(ExecutionEvent::ToolCompleted {
-                                    node_id: node_id.clone(),
-                                    tool_call_id: tool_call.id.clone(),
-                                    tool_name: tool_call.name.clone(),
-                                    content: result_content,
-                                    is_error: true,
-                                    output_meta: None,
-                                    artifact_ids: Vec::new(),
-                                });
-                                results.push(tool_result);
-                                continue;
-                            }
-                        };
-                        let subagent =
-                            if let Some(summary) = declared_subagents.get(&call_args.subagent_id) {
-                                Some(summary.clone())
-                            } else {
-                                agent_snapshots.get(&call_args.subagent_id).map(|agent| {
-                                    SubagentSummary {
-                                        id: agent.id.clone(),
-                                        name: agent.name.clone(),
-                                        purpose: agent_purpose(agent),
-                                        status: SubagentStatus::Declared,
-                                    }
-                                })
-                            };
-                        let Some(subagent) = subagent else {
-                            let result_content = serde_json::json!({
-                                "error": format!("Subagent '{}' not found. Declare subagents before invoking them.", call_args.subagent_id)
-                            }).to_string();
-                            let tool_result = domain::ToolResult {
-                                tool_call_id: tool_call.id.clone(),
-                                tool_name: tool_call.name.clone(),
-                                content: result_content.clone(),
-                                is_error: true,
-                                artifact_ids: Vec::new(),
-                                output_meta: None,
-                            };
-                            let _ = event_tx.send(ExecutionEvent::ToolStarted {
-                                node_id: node_id.clone(),
-                                tool_call_id: tool_call.id.clone(),
-                                tool_name: tool_call.name.clone(),
-                                arguments: tool_call.arguments.clone(),
-                            });
-                            let _ = event_tx.send(ExecutionEvent::ToolCompleted {
-                                node_id: node_id.clone(),
-                                tool_call_id: tool_call.id.clone(),
-                                tool_name: tool_call.name.clone(),
-                                content: result_content,
-                                is_error: true,
-                                output_meta: None,
-                                artifact_ids: Vec::new(),
-                            });
-                            results.push(tool_result);
-                            continue;
-                        };
-                        if subagent.status != SubagentStatus::Declared
-                            && subagent.status != SubagentStatus::Completed
-                        {
-                            let result_content = serde_json::json!({
-                                "error": format!("Subagent '{}' is {} and cannot be invoked. Only declared or completed subagents can be called.", call_args.subagent_id, serde_json::to_value(&subagent.status).unwrap_or_default())
-                            }).to_string();
-                            let tool_result = domain::ToolResult {
-                                tool_call_id: tool_call.id.clone(),
-                                tool_name: tool_call.name.clone(),
-                                content: result_content.clone(),
-                                is_error: true,
-                                artifact_ids: Vec::new(),
-                                output_meta: None,
-                            };
-                            let _ = event_tx.send(ExecutionEvent::ToolStarted {
-                                node_id: node_id.clone(),
-                                tool_call_id: tool_call.id.clone(),
-                                tool_name: tool_call.name.clone(),
-                                arguments: tool_call.arguments.clone(),
-                            });
-                            let _ = event_tx.send(ExecutionEvent::ToolCompleted {
-                                node_id: node_id.clone(),
-                                tool_call_id: tool_call.id.clone(),
-                                tool_name: tool_call.name.clone(),
-                                content: result_content,
-                                is_error: true,
-                                output_meta: None,
-                                artifact_ids: Vec::new(),
-                            });
-                            results.push(tool_result);
-                            continue;
-                        }
-                        // Transition subagent to Active
-                        declared_subagents.insert(
-                            subagent.id.clone(),
-                            SubagentSummary {
-                                status: SubagentStatus::Active,
-                                ..subagent.clone()
-                            },
+                    if tool_call.name == CALL_SUBAGENT_TOOL {
+                        results.push(
+                            run_call_subagent_tool(
+                                &ai,
+                                &tool_runner,
+                                &event_tx,
+                                SubagentCallParams {
+                                    workflow: &workflow,
+                                    node_id: &node_id,
+                                    label: &label,
+                                    tool_call: &tool_call,
+                                    node_config: &node_config,
+                                    declared_subagents: &mut declared_subagents,
+                                    agent_snapshots: &agent_snapshots,
+                                },
+                            )
+                            .await,
                         );
-                        let _ = event_tx.send(ExecutionEvent::SubagentStarted {
-                            node_id: node_id.clone(),
-                            subagent_id: subagent.id.clone(),
-                        });
-                        let _ = event_tx.send(ExecutionEvent::ToolStarted {
-                            node_id: node_id.clone(),
-                            tool_call_id: tool_call.id.clone(),
-                            tool_name: tool_call.name.clone(),
-                            arguments: tool_call.arguments.clone(),
-                        });
-                        // Build subagent request from saved agent or ad-hoc declaration
-                        let Some(parent_node) = workflow.nodes.iter().find(|n| n.id == node_id) else {
-                            let result_content = serde_json::json!({
-                                "error": format!("Parent node '{node_id}' not found in workflow")
-                            })
-                            .to_string();
-                            let tool_result = domain::ToolResult {
-                                tool_call_id: tool_call.id.clone(),
-                                tool_name: tool_call.name.clone(),
-                                content: result_content.clone(),
-                                is_error: true,
-                                artifact_ids: Vec::new(),
-                                output_meta: None,
-                            };
-                            let _ = event_tx.send(ExecutionEvent::ToolStarted {
-                                node_id: node_id.clone(),
-                                tool_call_id: tool_call.id.clone(),
-                                tool_name: tool_call.name.clone(),
-                                arguments: tool_call.arguments.clone(),
-                            });
-                            let _ = event_tx.send(ExecutionEvent::ToolCompleted {
-                                node_id: node_id.clone(),
-                                tool_call_id: tool_call.id.clone(),
-                                tool_name: tool_call.name.clone(),
-                                content: result_content,
-                                is_error: true,
-                                output_meta: None,
-                                artifact_ids: Vec::new(),
-                            });
-                            results.push(tool_result);
-                            continue;
-                        };
-                        let (sub_node_config, sub_request) = if let Some(agent_def) =
-                            agent_snapshots.get(&call_args.subagent_id)
-                        {
-                            let sub_node_config = agent_def.tools.clone();
-                            let sub_available_tools = tool_runner
-                                .registry()
-                                .definitions_for_subagent(&sub_node_config);
-                            let system_prompt =
-                                append_shared_context(&workflow, &agent_def.system_prompt);
-                            let sub_transcript = vec![AgentTranscriptItem::UserMessage {
-                                content: format!(
-                                    "You are the saved agent \"{}\".\n\nTask: {}",
-                                    agent_def.name, call_args.input
-                                ),
-                            }];
-                            let sub_request = AgentRequest {
-                                workflow_id: workflow.id.clone(),
-                                node_id: NodeId(subagent.id.clone()),
-                                node_label: subagent.name.clone(),
-                                model: agent_def.model.clone(),
-                                system_prompt,
-                                task_prompt: call_args.input.clone(),
-                                input: serde_json::json!(null),
-                                output_schema: agent_def.output_schema.clone(),
-                                tool_config: sub_node_config.clone(),
-                                available_tools: sub_available_tools,
-                                transcript: sub_transcript,
-                            };
-                            (sub_node_config, sub_request)
-                        } else {
-                            let sub_node_config = node_config.clone();
-                            let sub_available_tools = tool_runner
-                                .registry()
-                                .definitions_for_subagent(&sub_node_config);
-                            let sub_transcript = vec![AgentTranscriptItem::UserMessage {
-                                    content: format!(
-                                        "You are a subagent named \"{}\" with the purpose: \"{}\"\n\nTask: {}",
-                                        subagent.name, subagent.purpose, call_args.input
-                                    ),
-                                }];
-                            let system_prompt = append_shared_context(
-                                &workflow,
-                                &format!("You are {}. {}", subagent.name, subagent.purpose),
-                            );
-                            let sub_request = AgentRequest {
-                                workflow_id: workflow.id.clone(),
-                                node_id: NodeId(subagent.id.clone()),
-                                node_label: subagent.name.clone(),
-                                model: parent_node.agent.model.clone(),
-                                system_prompt,
-                                task_prompt: call_args.input.clone(),
-                                input: serde_json::json!(null),
-                                output_schema: Value::Null,
-                                tool_config: sub_node_config.clone(),
-                                available_tools: sub_available_tools,
-                                transcript: sub_transcript,
-                            };
-                            (sub_node_config, sub_request)
-                        };
-                        // Execute subagent in a mini-loop
-                        let max_rounds = sub_node_config.max_tool_rounds;
-                        let mut sub_transcript = sub_request.transcript.clone();
-                        let mut sub_outcome = ai.invoke(sub_request.clone()).await;
-                        let mut sub_round = 0u8;
-                        let sub_result_content = loop {
-                            match sub_outcome {
-                                Ok(AgentTurnOutcome::Completed(success)) => {
-                                    declared_subagents.insert(
-                                        subagent.id.clone(),
-                                        SubagentSummary {
-                                            status: SubagentStatus::Completed,
-                                            ..subagent.clone()
-                                        },
-                                    );
-                                    let _ = event_tx.send(ExecutionEvent::SubagentCompleted {
-                                        node_id: node_id.clone(),
-                                        subagent_id: subagent.id.clone(),
-                                    });
-                                    break serde_json::json!({
-                                        "output": success.output,
-                                        "message": format!("Subagent '{}' completed.", subagent.name)
-                                    }).to_string();
-                                }
-                                Ok(AgentTurnOutcome::ToolCalls(batch)) => {
-                                    if sub_round >= max_rounds {
-                                        declared_subagents.insert(
-                                            subagent.id.clone(),
-                                            SubagentSummary {
-                                                status: SubagentStatus::Failed,
-                                                ..subagent.clone()
-                                            },
-                                        );
-                                        let _ = event_tx.send(ExecutionEvent::SubagentFailed {
-                                            node_id: node_id.clone(),
-                                            subagent_id: subagent.id.clone(),
-                                            error: "Max tool rounds exceeded".to_string(),
-                                        });
-                                        break serde_json::json!({
-                                            "error": format!("Subagent '{}' exceeded maximum tool rounds ({})", subagent.name, max_rounds)
-                                        }).to_string();
-                                    }
-                                    sub_round += 1;
-                                    if let Some(msg) = &batch.assistant_message {
-                                        sub_transcript.push(
-                                            AgentTranscriptItem::AssistantMessage {
-                                                content: msg.clone(),
-                                            },
-                                        );
-                                    }
-                                    for tc in &batch.tool_calls {
-                                        let is_runtime_builtin = tc.name
-                                            == "openflow_declare_subagents"
-                                            || tc.name == "openflow_call_subagent";
-                                        if is_runtime_builtin {
-                                            sub_transcript.push(AgentTranscriptItem::ToolResult {
-                                                result: domain::ToolResult {
-                                                    tool_call_id: tc.id.clone(),
-                                                    tool_name: tc.name.clone(),
-                                                    content: serde_json::json!({
-                                                        "error": "Subagent cannot invoke runtime builtin tools."
-                                                    }).to_string(),
-                                                    is_error: true,
-                                                    artifact_ids: Vec::new(),
-                                                    output_meta: None,
-                                                },
-                                            });
-                                            continue;
-                                        }
-                                        // Auto-approve and execute
-                                        match tool_runner.execute(tc.clone()).await {
-                                            Ok(record) => {
-                                                sub_transcript.push(
-                                                    AgentTranscriptItem::ToolResult {
-                                                        result: record.result.clone(),
-                                                    },
-                                                );
-                                            }
-                                            Err(err) => {
-                                                let error_content = err.to_string();
-                                                sub_transcript.push(
-                                                    AgentTranscriptItem::ToolResult {
-                                                        result: domain::ToolResult {
-                                                            tool_call_id: tc.id.clone(),
-                                                            tool_name: tc.name.clone(),
-                                                            content: error_content,
-                                                            is_error: true,
-                                                            artifact_ids: Vec::new(),
-                                                            output_meta: None,
-                                                        },
-                                                    },
-                                                );
-                                            }
-                                        }
-                                    }
-                                    let next_request = AgentRequest {
-                                        transcript: sub_transcript.clone(),
-                                        ..sub_request.clone()
-                                    };
-                                    sub_outcome = ai.invoke(next_request).await;
-                                    continue;
-                                }
-                                Ok(AgentTurnOutcome::NeedsUserInput(_)) => {
-                                    declared_subagents.insert(
-                                        subagent.id.clone(),
-                                        SubagentSummary {
-                                            status: SubagentStatus::Failed,
-                                            ..subagent.clone()
-                                        },
-                                    );
-                                    let _ = event_tx.send(ExecutionEvent::SubagentFailed {
-                                        node_id: node_id.clone(),
-                                        subagent_id: subagent.id.clone(),
-                                        error: "Subagent requires user input (not supported)"
-                                            .to_string(),
-                                    });
-                                    break serde_json::json!({
-                                        "error": format!("Subagent '{}' requires user input, which is not supported in subagent context.", subagent.name)
-                                    }).to_string();
-                                }
-                                Err(err) => {
-                                    declared_subagents.insert(
-                                        subagent.id.clone(),
-                                        SubagentSummary {
-                                            status: SubagentStatus::Failed,
-                                            ..subagent.clone()
-                                        },
-                                    );
-                                    let _ = event_tx.send(ExecutionEvent::SubagentFailed {
-                                        node_id: node_id.clone(),
-                                        subagent_id: subagent.id.clone(),
-                                        error: err.to_string(),
-                                    });
-                                    break serde_json::json!({
-                                        "error": format!("Subagent '{}' failed: {}", subagent.name, err)
-                                    }).to_string();
-                                }
-                            }
-                        };
-                        let is_subagent_error = sub_result_content.contains("\"error\"");
-                        let tool_result = domain::ToolResult {
-                            tool_call_id: tool_call.id.clone(),
-                            tool_name: tool_call.name.clone(),
-                            content: sub_result_content.clone(),
-                            is_error: is_subagent_error,
-                            artifact_ids: Vec::new(),
-                            output_meta: None,
-                        };
-                        let _ = event_tx.send(ExecutionEvent::ToolCompleted {
-                            node_id: node_id.clone(),
-                            tool_call_id: tool_call.id.clone(),
-                            tool_name: tool_call.name.clone(),
-                            content: sub_result_content,
-                            is_error: is_subagent_error,
-                            output_meta: None,
-                            artifact_ids: Vec::new(),
-                        });
-                        results.push(tool_result);
                         continue;
                     }
                     if proposed_tool_calls.insert(tool_call.id.clone()) {
@@ -702,12 +275,10 @@ pub(super) async fn drive_interactive_workflow<A>(
                             if let Some(artifact) = record.artifact.clone() {
                                 let _ = event_tx.send(ExecutionEvent::ToolArtifactCreated {
                                     node_id: node_id.clone(),
-                                    artifact: ToolArtifactSummary {
-                                        artifact_id: artifact.artifact_id.clone(),
-                                        tool_name: artifact.tool_name.clone(),
-                                        path: artifact.path.clone(),
-                                        size_bytes: artifact.size_bytes,
-                                    },
+                                    artifact_id: artifact.artifact_id.clone(),
+                                    tool_name: artifact.tool_name.clone(),
+                                    path: artifact.path.clone(),
+                                    size_bytes: artifact.size_bytes,
                                 });
                             }
                             let _ = event_tx.send(ExecutionEvent::ToolCompleted {
@@ -754,6 +325,173 @@ pub(super) async fn drive_interactive_workflow<A>(
     }
 }
 
+fn send_run_telemetry(event_tx: &UnboundedSender<ExecutionEvent>, events: impl IntoIterator<Item = RunTelemetry>) {
+    for event in events {
+        let _ = event_tx.send(event);
+    }
+}
+
+fn run_declare_subagents_tool(
+    event_tx: &UnboundedSender<ExecutionEvent>,
+    node_id: &NodeId,
+    label: &str,
+    tool_call: &ToolCall,
+    declared_subagents: &mut BTreeMap<String, SubagentSummary>,
+) -> domain::ToolResult {
+    let _ = event_tx.send(ExecutionEvent::ToolCallProposed {
+        node_id: node_id.clone(),
+        label: label.to_string(),
+        tool_call: tool_call.clone(),
+    });
+    let outcome = handle_declare_subagents(node_id, tool_call, declared_subagents);
+    let _ = event_tx.send(ExecutionEvent::SubagentsDeclared {
+        node_id: node_id.clone(),
+        summaries: outcome.summaries.clone(),
+    });
+    let _ = event_tx.send(ExecutionEvent::ToolStarted {
+        node_id: node_id.clone(),
+        tool_call_id: tool_call.id.clone(),
+        tool_name: tool_call.name.clone(),
+        arguments: tool_call.arguments.clone(),
+    });
+    let _ = event_tx.send(ExecutionEvent::ToolCompleted {
+        node_id: node_id.clone(),
+        tool_call_id: tool_call.id.clone(),
+        tool_name: tool_call.name.clone(),
+        content: outcome.tool_result.content.clone(),
+        is_error: false,
+        output_meta: None,
+        artifact_ids: Vec::new(),
+    });
+    outcome.tool_result
+}
+
+struct SubagentCallParams<'a> {
+    workflow: &'a Workflow,
+    node_id: &'a NodeId,
+    label: &'a str,
+    tool_call: &'a ToolCall,
+    node_config: &'a domain::NodeToolConfig,
+    declared_subagents: &'a mut BTreeMap<String, SubagentSummary>,
+    agent_snapshots: &'a BTreeMap<String, CallableAgent>,
+}
+
+async fn run_call_subagent_tool<A: AiPort>(
+    ai: &A,
+    tool_runner: &ToolRunner,
+    event_tx: &UnboundedSender<ExecutionEvent>,
+    params: SubagentCallParams<'_>,
+) -> domain::ToolResult {
+    let SubagentCallParams {
+        workflow,
+        node_id,
+        label,
+        tool_call,
+        node_config,
+        declared_subagents,
+        agent_snapshots,
+    } = params;
+    let _ = event_tx.send(ExecutionEvent::ToolCallProposed {
+        node_id: node_id.clone(),
+        label: label.to_string(),
+        tool_call: tool_call.clone(),
+    });
+    let available_tools = tool_runner.registry().definitions_for_subagent(node_config);
+    let (mut session, startup_telemetry) = match start_subagent_invoke(
+        workflow,
+        node_id,
+        tool_call,
+        declared_subagents,
+        agent_snapshots,
+        available_tools,
+    ) {
+        SubagentStartOutcome::Started(session, telemetry) => (*session, telemetry),
+        SubagentStartOutcome::Failed(tool_result) => {
+            let _ = event_tx.send(ExecutionEvent::ToolStarted {
+                node_id: node_id.clone(),
+                tool_call_id: tool_call.id.clone(),
+                tool_name: tool_call.name.clone(),
+                arguments: tool_call.arguments.clone(),
+            });
+            let _ = event_tx.send(ExecutionEvent::ToolCompleted {
+                node_id: node_id.clone(),
+                tool_call_id: tool_call.id.clone(),
+                tool_name: tool_call.name.clone(),
+                content: tool_result.content.clone(),
+                is_error: true,
+                output_meta: None,
+                artifact_ids: Vec::new(),
+            });
+            return tool_result;
+        }
+    };
+    send_run_telemetry(event_tx, startup_telemetry);
+    let _ = event_tx.send(ExecutionEvent::ToolStarted {
+        node_id: node_id.clone(),
+        tool_call_id: tool_call.id.clone(),
+        tool_name: tool_call.name.clone(),
+        arguments: tool_call.arguments.clone(),
+    });
+
+    let mut outcome = ai.invoke(session.request.clone()).await;
+    loop {
+        let tool_results = if let Ok(AgentTurnOutcome::ToolCalls(batch)) = &outcome {
+            execute_subagent_tool_batch(tool_runner, batch).await
+        } else {
+            Vec::new()
+        };
+        match advance_subagent_invoke(session, outcome, tool_results) {
+            SubagentInvokeStep::NeedAi(next_session) => {
+                session = next_session;
+                outcome = ai.invoke(session.request.clone()).await;
+            }
+            SubagentInvokeStep::Done {
+                tool_result,
+                subagent,
+                telemetry,
+            } => {
+                declared_subagents.insert(subagent.id.clone(), subagent);
+                send_run_telemetry(event_tx, telemetry);
+                let _ = event_tx.send(ExecutionEvent::ToolCompleted {
+                    node_id: node_id.clone(),
+                    tool_call_id: tool_call.id.clone(),
+                    tool_name: tool_call.name.clone(),
+                    content: tool_result.content.clone(),
+                    is_error: tool_result.is_error,
+                    output_meta: None,
+                    artifact_ids: Vec::new(),
+                });
+                return tool_result;
+            }
+        }
+    }
+}
+
+async fn execute_subagent_tool_batch(
+    tool_runner: &ToolRunner,
+    batch: &AgentToolCallBatch,
+) -> Vec<domain::ToolResult> {
+    let mut results = Vec::new();
+    for tool_call in &batch.tool_calls {
+        if is_subagent_runtime_builtin(&tool_call.name) {
+            results.push(subagent_runtime_builtin_denied(tool_call));
+            continue;
+        }
+        match tool_runner.execute(tool_call.clone()).await {
+            Ok(record) => results.push(record.result),
+            Err(err) => results.push(domain::ToolResult {
+                tool_call_id: tool_call.id.clone(),
+                tool_name: tool_call.name.clone(),
+                content: err.to_string(),
+                is_error: true,
+                artifact_ids: Vec::new(),
+                output_meta: None,
+            }),
+        }
+    }
+    results
+}
+
 async fn wait_for_approval(
     action_rx: &mut UnboundedReceiver<ExecutionAction>,
     approval_id: &str,
@@ -795,11 +533,12 @@ fn emit_assistant_message(
         AgentTurnOutcome::Completed(success) => success.assistant_message.clone(),
         AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
             assistant_message, ..
-        }) => filter_tool_turn_assistant_message(assistant_message.clone()),
+        }) => assistant_message.clone(),
         AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
             assistant_message, ..
         }) => Some(assistant_message.clone()),
     };
+    let message = filter_tool_turn_assistant_message(message);
     if let Some(content) = message.filter(|value| !value.trim().is_empty()) {
         let _ = event_tx.send(ExecutionEvent::ChatMessage {
             node_id: NodeId(node_id.to_string()),

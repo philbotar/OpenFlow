@@ -1,4 +1,4 @@
-//! Workflow graph model: nodes, edges, run artifacts, and serde DTOs shared across crates.
+//! Workflow graph: nodes, edges, and per-workflow settings.
 
 #![allow(clippy::use_self, clippy::derive_partial_eq_without_eq)]
 
@@ -268,67 +268,6 @@ pub struct NodePosition {
     pub y: f32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-/// Serialized as `snake_case`; legacy `PascalCase` values remain accepted for saved run logs.
-#[serde(rename_all = "snake_case")]
-pub enum ChatRole {
-    #[serde(alias = "System")]
-    System,
-    #[serde(alias = "Thinking")]
-    Thinking,
-    #[serde(alias = "User")]
-    User,
-    #[serde(alias = "Assistant")]
-    Assistant,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ChatMessage {
-    pub role: ChatRole,
-    pub content: String,
-    #[serde(
-        default,
-        rename = "toolCallId",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub tool_call_id: Option<String>,
-}
-
-impl ChatMessage {
-    #[must_use]
-    pub fn text(role: ChatRole, content: impl Into<String>) -> Self {
-        Self {
-            role,
-            content: content.into(),
-            tool_call_id: None,
-        }
-    }
-
-    #[must_use]
-    pub fn tool_marker(tool_call_id: impl Into<String>) -> Self {
-        Self {
-            role: ChatRole::Thinking,
-            content: String::new(),
-            tool_call_id: Some(tool_call_id.into()),
-        }
-    }
-}
-
-/// True when assistant text only echoes structured tool invocation markup.
-#[must_use]
-pub fn is_redundant_tool_call_markup(content: &str) -> bool {
-    let trimmed = content.trim();
-    trimmed.starts_with("<tool_call")
-        || trimmed.starts_with("```tool_call")
-        || (trimmed.contains("<function=") && trimmed.contains("</tool_call>"))
-}
-
-/// Drop assistant text that duplicates structured tool calls in chat/transcript.
-#[must_use]
-pub fn filter_tool_turn_assistant_message(message: Option<String>) -> Option<String> {
-    message.filter(|content| !is_redundant_tool_call_markup(content))
-}
-
 /// Per-node agent invocation settings: prompts, model, tools, and callable subagents.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AgentNodeConfig {
@@ -388,43 +327,6 @@ impl Edge {
             to: to.into(),
         }
     }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct NodeRunOutput {
-    pub node_id: NodeId,
-    pub output: Value,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-/// Serialized as `snake_case`; legacy `PascalCase` values remain accepted for saved run reports.
-#[serde(rename_all = "snake_case")]
-pub enum RunEventKind {
-    #[serde(alias = "Queued")]
-    Queued,
-    #[serde(alias = "Started")]
-    Started,
-    #[serde(alias = "Retrying")]
-    Retrying,
-    #[serde(alias = "Completed")]
-    Completed,
-    #[serde(alias = "Failed")]
-    Failed,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct RunEvent {
-    pub node_id: NodeId,
-    pub kind: RunEventKind,
-    pub message: String,
-    pub output: Option<Value>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct RunReport {
-    pub workflow_id: WorkflowId,
-    pub events: Vec<RunEvent>,
-    pub outputs: Vec<NodeRunOutput>,
 }
 
 #[cfg(test)]
@@ -495,69 +397,14 @@ mod tests {
     }
 
     #[test]
-    fn chat_message_serde_roundtrip() {
-        let msg = ChatMessage::text(ChatRole::Thinking, "Preparing request...");
-        let json = serde_json::to_string(&msg).unwrap();
-        let back: ChatMessage = serde_json::from_str(&json).unwrap();
-        assert_eq!(msg, back);
-
-        let marker = ChatMessage::tool_marker("call-1");
-        let marker_json = serde_json::to_string(&marker).unwrap();
-        assert!(marker_json.contains("\"toolCallId\":\"call-1\""));
-        let marker_back: ChatMessage = serde_json::from_str(&marker_json).unwrap();
-        assert_eq!(marker, marker_back);
-    }
-
-    #[test]
-    fn redundant_tool_call_markup_detects_xml_echoes() {
-        assert!(is_redundant_tool_call_markup(
-            "<tool_call>\n<function=search>\n</function>\n</tool_call>"
-        ));
-        assert!(!is_redundant_tool_call_markup(
-            "Let me search the repo for TODOs."
-        ));
-    }
-
-    #[test]
-    fn filter_tool_turn_assistant_message_keeps_human_text() {
-        assert_eq!(
-            filter_tool_turn_assistant_message(Some("Checking README.".to_string())),
-            Some("Checking README.".to_string())
-        );
-        assert_eq!(
-            filter_tool_turn_assistant_message(Some(
-                "<tool_call><function=read></function></tool_call>".to_string()
-            )),
-            None
-        );
-    }
-
-    #[test]
-    fn changed_enums_serialize_as_snake_case_and_accept_legacy_pascal_case() {
+    fn node_kind_serializes_snake_case_and_accepts_legacy_pascal_case() {
         assert_eq!(
             serde_json::to_value(NodeKind::Agent).unwrap(),
             json!("agent")
         );
         assert_eq!(
-            serde_json::to_value(ChatRole::Assistant).unwrap(),
-            json!("assistant")
-        );
-        assert_eq!(
-            serde_json::to_value(RunEventKind::Retrying).unwrap(),
-            json!("retrying")
-        );
-
-        assert_eq!(
             serde_json::from_value::<NodeKind>(json!("Agent")).unwrap(),
             NodeKind::Agent
-        );
-        assert_eq!(
-            serde_json::from_value::<ChatRole>(json!("Assistant")).unwrap(),
-            ChatRole::Assistant
-        );
-        assert_eq!(
-            serde_json::from_value::<RunEventKind>(json!("Completed")).unwrap(),
-            RunEventKind::Completed
         );
     }
 }

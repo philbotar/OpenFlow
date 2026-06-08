@@ -1,11 +1,19 @@
-use crate::tools::{override_policy_for_call, requires_approval, tool_tier_for_call};
-use crate::{
-    execution_layers, filter_tool_turn_assistant_message,
-    runner::{build_node_input, build_upstream_map, workflow_system_prompt}, AgentError,
-    AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTranscriptItem, AgentTurnOutcome,
-    AgentTurnSuccess, ApprovalMode, ChatMessage, ChatRole, NodeId, NodeRunOutput, RunError,
-    RunEvent, RunEventKind, RunReport, ToolCall, ToolDecision, ToolResult, Workflow,
-    WorkflowValidationError,
+use crate::conversation::{
+    filter_tool_turn_assistant_message, AgentTranscriptItem, ChatMessage, ChatRole,
+};
+use crate::execution::node_invocation::{
+    build_agent_request, build_upstream_map, NodeInvocationContext,
+};
+use crate::execution::{NodeRunOutput, RunError, RunEvent, RunEventKind, RunReport};
+use crate::graph::validation::{execution_layers, WorkflowValidationError};
+use crate::graph::{Node, NodeId, Workflow};
+use crate::ports::{
+    AgentError, AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTurnOutcome,
+    AgentTurnSuccess,
+};
+use crate::tools::{
+    override_policy_for_call, requires_approval, tool_tier_for_call, ApprovalMode, ToolCall,
+    ToolDecision, ToolResult,
 };
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -83,9 +91,12 @@ pub struct InteractiveEngine {
     pending_tool_batch: Option<PendingToolBatch>,
     tool_rounds_by_node: BTreeMap<NodeId, u8>,
     retries_by_node: BTreeMap<NodeId, u8>,
+    submit_output_retries_by_node: BTreeMap<NodeId, u8>,
     entrypoint_text: Option<String>,
     terminal_error: Option<RunError>,
 }
+
+const MAX_MALFORMED_SUBMIT_OUTPUT_RETRIES: u8 = 3;
 
 impl InteractiveEngine {
     /// # Errors
@@ -118,6 +129,7 @@ impl InteractiveEngine {
             pending_tool_batch: None,
             tool_rounds_by_node: BTreeMap::new(),
             retries_by_node: BTreeMap::new(),
+            submit_output_retries_by_node: BTreeMap::new(),
             entrypoint_text,
             terminal_error: None,
         })
@@ -138,7 +150,7 @@ impl InteractiveEngine {
             .cloned()
     }
 
-    fn find_node(&self, node_id: &str) -> Option<&crate::Node> {
+    fn find_node(&self, node_id: &str) -> Option<&Node> {
         self.node_index
             .get(node_id)
             .and_then(|index| self.workflow.nodes.get(*index))
@@ -271,6 +283,36 @@ impl InteractiveEngine {
             }
             Err(error) => {
                 let node_id = NodeId(node_id.to_string());
+                if error.is_malformed_submit_output() {
+                    let retry_count = self
+                        .submit_output_retries_by_node
+                        .entry(node_id.clone())
+                        .or_default();
+                    if *retry_count < MAX_MALFORMED_SUBMIT_OUTPUT_RETRIES {
+                        *retry_count += 1;
+                        self.transcripts
+                            .entry(node_id.clone())
+                            .or_default()
+                            .push(AgentTranscriptItem::UserMessage {
+                                content: format!(
+                                    "Your openflow_submit_node_output call was invalid ({error}). \
+                                     Call openflow_submit_node_output again with arguments shaped as \
+                                     {{\"output\": <object matching the node output schema>, \"assistant_message\": null}}. \
+                                     Put schema fields under \"output\", not at the top level."
+                                ),
+                            });
+                        self.events.push(RunEvent {
+                            node_id: node_id.clone(),
+                            kind: RunEventKind::Retrying,
+                            message: format!(
+                                "retrying after malformed submit-output tool call ({}/{MAX_MALFORMED_SUBMIT_OUTPUT_RETRIES})",
+                                *retry_count
+                            ),
+                            output: None,
+                        });
+                        return;
+                    }
+                }
                 if error.is_retryable() {
                     let retry_count = self.retries_by_node.entry(node_id.clone()).or_default();
                     if *retry_count < self.workflow.settings.retry_policy.max_attempts {
@@ -527,33 +569,15 @@ impl InteractiveEngine {
                 node_id: NodeId(node_id.to_string()),
                 message: "node must exist".to_string(),
             })?;
-        if node.agent.model.trim().is_empty() {
-            return Err(RunError::NodeFailed {
-                node_id: node.id.clone(),
-                message: format!(
-                    "node \"{}\" has no model configured — select a model in the inspector before running",
-                    node.label
-                ),
-            });
-        }
-        Ok(AgentRequest {
-            workflow_id: self.workflow.id.clone(),
-            node_id: node.id.clone(),
-            node_label: node.label.clone(),
-            model: node.agent.model.clone(),
-            system_prompt: workflow_system_prompt(&self.workflow, node),
-            task_prompt: node.agent.task_prompt.clone(),
-            input: build_node_input(
-                &node.id,
-                &self.upstream_map,
-                &self.outputs,
-                self.entrypoint_text.as_deref(),
-            ),
-            output_schema: node.agent.output_schema.clone(),
-            tool_config: node.agent.tools.clone(),
-            available_tools: Vec::new(),
-            transcript: self.transcript(&node.id).to_vec(),
-        })
+        let ctx = NodeInvocationContext {
+            workflow: &self.workflow,
+            upstream_map: &self.upstream_map,
+            outputs: &self.outputs,
+            entrypoint_text: self.entrypoint_text.as_deref(),
+            transcript: self.transcript(&node.id),
+            available_tools: &[],
+        };
+        build_agent_request(&ctx, node, true)
     }
 
     fn assemble_context(&self, node_id: &str) -> String {
@@ -650,7 +674,7 @@ impl crate::ports::inbound::ToolApprovalPort for InteractiveEngine {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
-    use crate::Node;
+    use crate::graph::Node;
     use serde_json::json;
 
     fn node(id: &str) -> Node {
@@ -1080,6 +1104,48 @@ mod tests {
         engine.on_ai_complete("idea", Err(AgentError::Permanent("schema".to_string())));
 
         assert!(matches!(engine.poll(), EnginePollResult::Failed(_)));
+    }
+
+    #[test]
+    fn malformed_submit_output_retries_then_succeeds() {
+        let mut workflow = Workflow::new("submit-retry");
+        workflow.nodes = vec![node("idea")];
+        let mut engine = InteractiveEngine::new(workflow, None).unwrap();
+
+        assert!(matches!(engine.poll(), EnginePollResult::CallAi { .. }));
+        engine.on_ai_complete(
+            "idea",
+            Err(AgentError::Failed(
+                "OpenAI-compatible final output tool arguments were not valid JSON: missing field `output`"
+                    .to_string(),
+            )),
+        );
+
+        let EnginePollResult::CallAi { request, .. } = engine.poll() else {
+            panic!("expected retry AI call");
+        };
+        assert!(matches!(
+            request.transcript.last(),
+            Some(AgentTranscriptItem::UserMessage { content })
+                if content.contains("openflow_submit_node_output")
+        ));
+
+        engine.on_ai_complete(
+            "idea",
+            Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                output: json!({"summary": "ok"}),
+                raw_text: "{}".to_string(),
+                assistant_message: None,
+            })),
+        );
+
+        let EnginePollResult::Completed(report) = engine.poll() else {
+            panic!("expected completed report");
+        };
+        assert!(report.events.iter().any(|event| {
+            event.kind == RunEventKind::Retrying
+                && event.message.contains("malformed submit-output")
+        }));
     }
 
     #[test]

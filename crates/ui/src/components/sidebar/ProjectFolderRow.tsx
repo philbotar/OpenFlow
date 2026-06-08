@@ -1,8 +1,9 @@
 import ChevronRight from "lucide-solid/icons/chevron-right";
 import Folder from "lucide-solid/icons/folder";
-import { For, Show } from "solid-js";
+import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import type { Project, Workflow } from "../../lib/types";
 import { ICON_STROKE_WIDTH } from "../../lib/utils";
+import { SidebarIcon } from "../SidebarIcon";
 import { SidebarListRow } from "./SidebarListRow";
 
 export type ProjectFolderRowProps = {
@@ -18,6 +19,8 @@ export type ProjectFolderRowProps = {
   onSelectProject: () => void;
   onSelectWorkflow: (workflowId: string) => void;
   onRenameWorkflow: (workflowId: string, name: string) => void;
+  onCreateWorkflow: () => void;
+  onAddExistingWorkflow: () => void;
   setWorkflowNameInputRef: (el: HTMLInputElement | undefined) => void;
   setWorkflowNameDraft: (value: string) => void;
   onWorkflowNameCommit: () => void;
@@ -25,6 +28,33 @@ export type ProjectFolderRowProps = {
 };
 
 export function ProjectFolderRow(props: ProjectFolderRowProps) {
+  const [menuOpen, setMenuOpen] = createSignal(false);
+  let menuAnchor: HTMLDivElement | undefined;
+
+  const closeMenu = () => setMenuOpen(false);
+
+  createEffect(() => {
+    if (!menuOpen()) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (menuAnchor?.contains(target)) return;
+      closeMenu();
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeMenu();
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    onCleanup(() => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    });
+  });
+
   return (
     <div class="project-folder-group">
       <div
@@ -59,6 +89,50 @@ export function ProjectFolderRow(props: ProjectFolderRowProps) {
             {props.project.name}
           </span>
         </button>
+        <div class="project-folder-menu-anchor" ref={menuAnchor}>
+          <button
+            type="button"
+            class="sidebar-icon-button project-folder-action"
+            title="Add workflow"
+            aria-label={`Add workflow to ${props.project.name}`}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen()}
+            onClick={(event) => {
+              event.stopPropagation();
+              setMenuOpen((open) => !open);
+            }}
+          >
+            <SidebarIcon name="plus" />
+          </button>
+          <Show when={menuOpen()}>
+            <div class="project-folder-menu" role="menu">
+              <button
+                type="button"
+                class="project-folder-menu-item"
+                role="menuitem"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  closeMenu();
+                  props.onCreateWorkflow();
+                }}
+              >
+                New workflow
+              </button>
+              <button
+                type="button"
+                class="project-folder-menu-item"
+                role="menuitem"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  closeMenu();
+                  props.onAddExistingWorkflow();
+                }}
+              >
+                Add existing…
+              </button>
+            </div>
+          </Show>
+        </div>
       </div>
       <Show when={props.expanded}>
         <div class="project-workflow-list">

@@ -2,6 +2,7 @@ import { Show } from "solid-js";
 import { Toaster } from "solid-sonner";
 import { AppProvider } from "./context/AppProvider";
 import { useAppContext } from "./context/AppContext";
+import { WorkflowPickerModal } from "./components/WorkflowPickerModal";
 import { Sidebar } from "./components/sidebar";
 import { AppHeader } from "./components/AppHeader";
 import { SettingsScreen } from "./screens/SettingsScreen";
@@ -49,6 +50,7 @@ function App() {
         }}
       />
       <div class="app-shell">
+        <WorkflowPickerModal />
         <Sidebar />
         <main class="main-shell">
           <AppHeader />

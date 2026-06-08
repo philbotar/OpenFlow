@@ -1,8 +1,10 @@
 use crate::state::{
-    AgentStatus, RunTraceEntry, ToolCallSummary, TraceStatus, WorkflowRunState,
+    AgentStatus, RunTraceEntry, ToolArtifactSummary, ToolCallSummary, TraceStatus,
+    WorkflowRunState,
 };
 use domain::{
-    ChatMessage, ChatRole, NodeId, SubagentStatus, ToolCallStatus, Workflow,
+    summary_from_node_output, ChatMessage, ChatRole, NodeId, SubagentStatus, ToolCallStatus,
+    Workflow,
 };
 
 use super::ExecutionEvent;
@@ -217,10 +219,22 @@ pub fn apply_event_to_run_state(
                 is_error,
             );
         }
-        ExecutionEvent::ToolArtifactCreated { artifact, .. } => {
-            state
-                .tool_artifacts
-                .insert(artifact.artifact_id.clone(), artifact);
+        ExecutionEvent::ToolArtifactCreated {
+            artifact_id,
+            tool_name,
+            path,
+            size_bytes,
+            ..
+        } => {
+            state.tool_artifacts.insert(
+                artifact_id.clone(),
+                ToolArtifactSummary {
+                    artifact_id,
+                    tool_name,
+                    path,
+                    size_bytes,
+                },
+            );
         }
         ExecutionEvent::NodeCompleted {
             node_id,
@@ -242,11 +256,13 @@ pub fn apply_event_to_run_state(
                 message: "completed".to_string(),
                 output: Some(output.clone()),
             });
-            state
-                .chat_logs
-                .entry(node_id)
-                .or_default()
-                .push(ChatMessage::text(ChatRole::Assistant, output.to_string()));
+            if let Some(summary) = summary_from_node_output(&output) {
+                state
+                    .chat_logs
+                    .entry(node_id)
+                    .or_default()
+                    .push(ChatMessage::node_completed(summary));
+            }
         }
         ExecutionEvent::NodeFailed {
             node_id,

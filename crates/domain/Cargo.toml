@@ -14,10 +14,7 @@ name = "domain"
 
 [dependencies]
 async-trait.workspace = true
-dirs.workspace = true
 futures.workspace = true
-log = "0.4"
-parking_lot.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

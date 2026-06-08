@@ -56,7 +56,7 @@ async fn invoke_responses(
     });
 
     let payload = post_json(http, config, auth, &config.responses_path, body, "OpenAI").await?;
-    parse_responses_output(&payload)
+    parse_responses_output(&payload, Some(&request.output_schema))
 }
 
 async fn invoke_chat_completions(
@@ -91,7 +91,11 @@ async fn invoke_chat_completions(
         "OpenAI-compatible",
     )
     .await?;
-    parse_chat_completion_output(&payload, should_allow_user_input(&request))
+    parse_chat_completion_output(
+        &payload,
+        should_allow_user_input(&request),
+        Some(&request.output_schema),
+    )
 }
 
 async fn post_json(
@@ -230,13 +234,13 @@ mod tests {
                     { "role": "system", "content": "You are precise." },
                     {
                         "role": "user",
-                        "content": "Node: Idea\nTask:\nSummarize the kickoff.\n\nUpstream input JSON:\n{\"entrypoint\":{\"text\":\"ORCHID-91\"},\"upstream\":[]}\n\nWhen you are ready to finish, call openflow_submit_node_output exactly once."
+                        "content": "Node: Idea\nTask:\nSummarize the kickoff.\n\nUpstream input JSON:\n{\"entrypoint\":{\"text\":\"ORCHID-91\"},\"upstream\":[]}\n\nWhen you are ready to finish, call openflow_submit_node_output exactly once with arguments shaped as {\"output\": <object matching the node output schema>, \"assistant_message\": null}."
                     }
                 ],
                 "tools": [{
                     "type": "function",
                     "name": "openflow_submit_node_output",
-                    "description": "Submit the final structured node output when the task is complete.",
+                    "description": "Submit the final structured node output when the task is complete. Required shape: {\"output\": {...schema fields...}, \"assistant_message\": null|string}. Schema fields must be nested under \"output\", not at the top level.",
                     "parameters": {
                         "type": "object",
                         "additionalProperties": false,
@@ -296,7 +300,7 @@ mod tests {
                     { "role": "system", "content": "You are precise." },
                     {
                         "role": "user",
-                        "content": "Node: Idea\nTask:\nSummarize the kickoff.\n\nUpstream input JSON:\n{\"entrypoint\":{\"text\":\"ORCHID-91\"},\"upstream\":[]}\n\nUse tools when they materially improve correctness. When you are ready to finish, call openflow_submit_node_output exactly once."
+                        "content": "Node: Idea\nTask:\nSummarize the kickoff.\n\nUpstream input JSON:\n{\"entrypoint\":{\"text\":\"ORCHID-91\"},\"upstream\":[]}\n\nUse tools when they materially improve correctness. When you are ready to finish, call openflow_submit_node_output exactly once with arguments shaped as {\"output\": <object matching the node output schema>, \"assistant_message\": null}."
                     }
                 ],
                 "tools": [
@@ -320,7 +324,7 @@ mod tests {
                         "type": "function",
                         "function": {
                             "name": "openflow_submit_node_output",
-                            "description": "Submit the final structured node output when the task is complete.",
+                            "description": "Submit the final structured node output when the task is complete. Required shape: {\"output\": {...schema fields...}, \"assistant_message\": null|string}. Schema fields must be nested under \"output\", not at the top level.",
                             "parameters": {
                                 "type": "object",
                                 "additionalProperties": false,

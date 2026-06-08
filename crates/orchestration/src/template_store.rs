@@ -5,65 +5,16 @@
     clippy::uninlined_format_args
 )]
 
-use crate::model::AgentNodeConfig;
-use crate::template::{default_templates, Template};
+use domain::{default_templates, AgentNodeConfig, Template, TemplateStore, TemplateStoreError};
 use log::{debug, info, warn};
 use parking_lot::RwLock;
 use serde::Deserialize;
 use std::collections::HashSet;
-use std::io;
 use std::path::{Path, PathBuf};
-use thiserror::Error;
 
 const CURRENT_DATA_DIR_SLUG: &str = "openflow";
 const LEGACY_DATA_DIR_SLUG: &str = "step-through-agentic-workflow";
 const TEMPLATES_FILE_NAME: &str = "templates.json";
-
-/// Errors from template store read/write operations.
-#[derive(Debug, Error)]
-pub enum TemplateStoreError {
-    #[error("cannot determine local data directory")]
-    DataDirUnavailable,
-    #[error("cannot create directory: {path}")]
-    CannotCreateDir {
-        path: String,
-        #[source]
-        source: io::Error,
-    },
-    #[error("cannot read templates file: {path}")]
-    CannotRead {
-        path: String,
-        #[source]
-        source: io::Error,
-    },
-    #[error("cannot write templates to: {path}")]
-    CannotWrite {
-        path: String,
-        #[source]
-        source: io::Error,
-    },
-    #[error("cannot serialize templates")]
-    Serialize(#[from] serde_json::Error),
-    #[error("template not found: {id}")]
-    NotFound { id: String },
-}
-
-/// Persistence contract for node templates.
-pub trait TemplateStore {
-    fn list(&self) -> Vec<Template>;
-
-    /// # Errors
-    /// Returns an error when the template cannot be persisted.
-    fn add(&self, template: Template) -> Result<(), TemplateStoreError>;
-
-    /// # Errors
-    /// Returns an error when the template cannot be removed from disk.
-    fn remove(&self, id: &str) -> Result<(), TemplateStoreError>;
-
-    /// # Errors
-    /// Returns [`TemplateStoreError::NotFound`] when no template matches `template.id`.
-    fn update(&self, template: Template) -> Result<(), TemplateStoreError>;
-}
 
 pub struct FileTemplateStore {
     templates: RwLock<Vec<Template>>,
@@ -89,9 +40,11 @@ impl FileTemplateStore {
             .join(LEGACY_DATA_DIR_SLUG)
             .join(TEMPLATES_FILE_NAME);
         if legacy_path.exists() {
-            std::fs::create_dir_all(&dir).map_err(|source| TemplateStoreError::CannotCreateDir {
-                path: dir.display().to_string(),
-                source,
+            std::fs::create_dir_all(&dir).map_err(|source| {
+                TemplateStoreError::CannotCreateDir {
+                    path: dir.display().to_string(),
+                    source,
+                }
             })?;
             let templates = Self::load_existing_at(&legacy_path, &path)?;
             return Ok(Self {
@@ -132,7 +85,10 @@ impl FileTemplateStore {
         })
     }
 
-    fn load_existing_at(source_path: &Path, write_path: &Path) -> Result<Vec<Template>, TemplateStoreError> {
+    fn load_existing_at(
+        source_path: &Path,
+        write_path: &Path,
+    ) -> Result<Vec<Template>, TemplateStoreError> {
         debug!("loading templates from {}", source_path.display());
         let data = std::fs::read_to_string(source_path).map_err(|source| {
             TemplateStoreError::CannotRead {
@@ -334,9 +290,7 @@ mod tests {
     fn update_missing_template_returns_not_found() {
         let (store, _dir) = empty_template_store();
 
-        let err = store
-            .update(template("builtin.simple-agent"))
-            .unwrap_err();
+        let err = store.update(template("builtin.simple-agent")).unwrap_err();
 
         assert!(matches!(err, TemplateStoreError::NotFound { .. }));
         assert_eq!(store.list().len(), 0);
