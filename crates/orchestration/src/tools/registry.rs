@@ -65,7 +65,7 @@ impl ToolRegistry {
         defs
     }
 
-    /// Tool definitions for subagent contexts — excludes openflow_call_subagent
+    /// Tool definitions for subagent contexts — excludes `openflow_call_subagent`
     /// to prevent recursive invocation.
     #[must_use]
     pub fn definitions_for_subagent(&self, config: &NodeToolConfig) -> Vec<ToolDefinition> {
@@ -256,6 +256,7 @@ mod tests {
         let mut config = NodeToolConfig::default();
         config.catalog.tools = vec![domain::ToolRef {
             name: "read".to_string(),
+            tier: Some(domain::ToolTier::Read),
         }];
         let definitions = registry.definitions_for(&config);
         // read + openflow_declare_subagents + openflow_call_subagent

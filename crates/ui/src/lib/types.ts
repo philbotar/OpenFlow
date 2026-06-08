@@ -47,7 +47,7 @@ export interface Workflow {
 export interface Node {
   id: NodeId;
   label: string;
-  kind: "Agent";
+  kind: "agent" | "Agent";
   position: NodePosition;
   agent: AgentNodeConfig;
 }
@@ -64,6 +64,7 @@ export type ApprovalMode = "always_ask" | "write" | "yolo";
 
 export interface ToolRef {
   name: string;
+  tier?: ToolTier | null;
 }
 
 export interface ToolCatalogSelection {
@@ -111,7 +112,15 @@ export interface Edge {
   to: NodeId;
 }
 
-export type ChatRole = "System" | "Thinking" | "User" | "Assistant";
+export type ChatRole =
+  | "system"
+  | "thinking"
+  | "user"
+  | "assistant"
+  | "System"
+  | "Thinking"
+  | "User"
+  | "Assistant";
 
 export interface ChatMessage {
   role: ChatRole;
@@ -190,7 +199,17 @@ export interface ToolArtifactSummary {
 
 export interface RunEvent {
   node_id: NodeId;
-  kind: "Queued" | "Started" | "Completed" | "Failed";
+  kind:
+    | "queued"
+    | "started"
+    | "retrying"
+    | "completed"
+    | "failed"
+    | "Queued"
+    | "Started"
+    | "Retrying"
+    | "Completed"
+    | "Failed";
   message: string;
   output: unknown | null;
 }

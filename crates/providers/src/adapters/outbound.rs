@@ -7,6 +7,8 @@ use crate::ports::outbound::ProviderInvokeResult;
 use domain::AgentRequest;
 use reqwest::Client;
 
+/// # Errors
+/// Returns an error when auth, transport, provider status, or response mapping fails.
 pub async fn invoke_openai_compatible(
     http: &Client,
     config: &OpenAiCompatibleConfig,
@@ -16,6 +18,8 @@ pub async fn invoke_openai_compatible(
     crate::openai_compat::invoke(http, config, auth, request).await
 }
 
+/// # Errors
+/// Returns an error when auth, transport, provider status, or response mapping fails.
 pub async fn invoke_anthropic(
     http: &Client,
     config: &AnthropicConfig,

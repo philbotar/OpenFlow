@@ -1,6 +1,6 @@
 //! Inbound ports owned by the domain.
 
-use crate::NodeId;
+use crate::{EngineInputError, NodeId};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HumanInput {
@@ -15,9 +15,13 @@ pub struct ToolApprovalInput {
 }
 
 pub trait HumanInputPort {
-    fn submit_human_input(&mut self, input: HumanInput) -> Result<(), String>;
+    /// # Errors
+    /// Returns an error when the engine is not awaiting this node's human input.
+    fn submit_human_input(&mut self, input: HumanInput) -> Result<(), EngineInputError>;
 }
 
 pub trait ToolApprovalPort {
-    fn submit_tool_approval(&mut self, input: ToolApprovalInput) -> Result<(), String>;
+    /// # Errors
+    /// Returns an error when the engine has no matching pending tool approval.
+    fn submit_tool_approval(&mut self, input: ToolApprovalInput) -> Result<(), EngineInputError>;
 }

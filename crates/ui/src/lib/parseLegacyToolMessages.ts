@@ -14,6 +14,14 @@ export function isLegacyToolGroup(item: ConversationItem): item is LegacyToolGro
   return "toolName" in item;
 }
 
+function isThinkingRole(role: ChatMessage["role"]): boolean {
+  return role === "thinking" || role === "Thinking";
+}
+
+function isSystemRole(role: ChatMessage["role"]): boolean {
+  return role === "system" || role === "System";
+}
+
 export function groupLegacyToolMessages(messages: ChatMessage[]): ConversationItem[] {
   const result: ConversationItem[] = [];
   let index = 0;
@@ -28,7 +36,7 @@ export function groupLegacyToolMessages(messages: ChatMessage[]): ConversationIt
     }
 
     const requestMatch = message.content.match(/^Tool request: ([^\n]+)/);
-    if (requestMatch && message.role === "Thinking") {
+    if (requestMatch && isThinkingRole(message.role)) {
       const toolName = requestMatch[1].trim();
       const argsMarker = "\nArguments:\n";
       const argsIndex = message.content.indexOf(argsMarker);
@@ -52,7 +60,7 @@ export function groupLegacyToolMessages(messages: ChatMessage[]): ConversationIt
         const resultMatch = next.content.match(/^Tool result: ([^\n]+)\n([\s\S]*)$/);
         if (resultMatch && resultMatch[1].trim() === toolName) {
           output = resultMatch[2];
-          isError = next.role === "System";
+          isError = isSystemRole(next.role);
           cursor += 1;
           break;
         }
@@ -69,7 +77,7 @@ export function groupLegacyToolMessages(messages: ChatMessage[]): ConversationIt
     }
 
     const runningMatch = message.content.match(/^Running tool: ([^\n]+)$/);
-    if (runningMatch && message.role === "Thinking") {
+    if (runningMatch && isThinkingRole(message.role)) {
       result.push({
         toolName: runningMatch[1].trim(),
         argumentsText: null,
@@ -87,8 +95,8 @@ export function groupLegacyToolMessages(messages: ChatMessage[]): ConversationIt
         toolName: resultMatch[1].trim(),
         argumentsText: null,
         output: resultMatch[2],
-        status: message.role === "System" ? "failed" : "completed",
-        isError: message.role === "System",
+        status: isSystemRole(message.role) ? "failed" : "completed",
+        isError: isSystemRole(message.role),
       });
       index += 1;
       continue;

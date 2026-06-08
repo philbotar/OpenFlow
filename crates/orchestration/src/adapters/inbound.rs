@@ -11,27 +11,27 @@ use domain::{Node, Workflow};
 
 impl OrchestrationCommandsPort for AppBackend {
     fn list_workflows(&self) -> Result<Vec<WorkflowListItem>, BackendError> {
-        AppBackend::list_workflows(self)
+        Self::list_workflows(self)
     }
 
     fn load_all_workflows(&self) -> Result<Vec<Workflow>, BackendError> {
-        AppBackend::load_all_workflows(self)
+        Self::load_all_workflows(self)
     }
 
     fn load_workflow(&self, workflow_id: &str) -> Result<Workflow, BackendError> {
-        AppBackend::load_workflow(self, workflow_id)
+        Self::load_workflow(self, workflow_id)
     }
 
     fn create_workflow(&self, name: String) -> Result<Workflow, BackendError> {
-        AppBackend::create_workflow(self, name)
+        Self::create_workflow(self, name)
     }
 
     fn save_workflow(&self, workflow: Workflow) -> Result<Workflow, BackendError> {
-        AppBackend::save_workflow(self, workflow)
+        Self::save_workflow(self, workflow)
     }
 
     fn save_workflows(&self, workflows: &[Workflow]) -> Result<(), BackendError> {
-        AppBackend::save_workflows(self, workflows)
+        Self::save_workflows(self, workflows)
     }
 
     fn rename_workflow(
@@ -39,30 +39,30 @@ impl OrchestrationCommandsPort for AppBackend {
         workflow_id: &str,
         name: String,
     ) -> Result<WorkflowListItem, BackendError> {
-        AppBackend::rename_workflow(self, workflow_id, name)
+        Self::rename_workflow(self, workflow_id, name)
     }
 
     fn validate_workflow(
         &self,
         workflow: &Workflow,
     ) -> Result<WorkflowValidationSummary, BackendError> {
-        AppBackend::validate_workflow(self, workflow)
+        Self::validate_workflow(self, workflow)
     }
 
     fn list_agents(&self) -> Result<Vec<AgentDefinitionSummary>, BackendError> {
-        AppBackend::list_agents(self)
+        Self::list_agents(self)
     }
 
     fn load_agents(&self) -> Result<Vec<AgentDefinition>, BackendError> {
-        AppBackend::load_agents(self)
+        Self::load_agents(self)
     }
 
     fn create_agent_definition(&self, name: String) -> Result<AgentDefinition, BackendError> {
-        AppBackend::create_agent_definition(self, name)
+        Self::create_agent_definition(self, name)
     }
 
     fn save_agents(&self, agents: &[AgentDefinition]) -> Result<(), BackendError> {
-        AppBackend::save_agents(self, agents)
+        Self::save_agents(self, agents)
     }
 
     fn create_agent_node(
@@ -72,27 +72,27 @@ impl OrchestrationCommandsPort for AppBackend {
         y: f32,
         agent_id: Option<&str>,
     ) -> Result<Node, BackendError> {
-        AppBackend::create_agent_node(self, index, x, y, agent_id)
+        Self::create_agent_node(self, index, x, y, agent_id)
     }
 
     fn load_settings(&self) -> Result<AppSettings, BackendError> {
-        AppBackend::load_settings(self)
+        Self::load_settings(self)
     }
 
     fn save_settings(&self, settings: &AppSettings) -> Result<(), BackendError> {
-        AppBackend::save_settings(self, settings)
+        Self::save_settings(self, settings)
     }
 
     fn load_provider_api_key(&self, provider_id: &str) -> Result<Option<String>, BackendError> {
-        AppBackend::load_provider_api_key(self, provider_id)
+        Self::load_provider_api_key(self, provider_id)
     }
 
     fn save_provider_api_key(&self, provider_id: &str, api_key: &str) -> Result<(), BackendError> {
-        AppBackend::save_provider_api_key(self, provider_id, api_key)
+        Self::save_provider_api_key(self, provider_id, api_key)
     }
 
     fn delete_provider_api_key(&self, provider_id: &str) -> Result<(), BackendError> {
-        AppBackend::delete_provider_api_key(self, provider_id)
+        Self::delete_provider_api_key(self, provider_id)
     }
 
     fn resolve_provider_readiness(
@@ -100,6 +100,6 @@ impl OrchestrationCommandsPort for AppBackend {
         settings: &AppSettings,
         transient_api_key: Option<&str>,
     ) -> ProviderReadiness {
-        AppBackend::resolve_provider_readiness(self, settings, transient_api_key)
+        Self::resolve_provider_readiness(self, settings, transient_api_key)
     }
 }

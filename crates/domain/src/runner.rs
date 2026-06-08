@@ -1,7 +1,8 @@
 use crate::{
-    AiPort, EnginePollResult, InteractiveEngine, NodeId, RunReport, Workflow,
-    WorkflowValidationError,
+    execution_layers, AgentRequest, AgentTranscriptItem, AgentTurnOutcome, AiPort, Node, NodeId,
+    NodeRunOutput, RunEvent, RunEventKind, RunReport, Workflow, WorkflowValidationError,
 };
+use futures::future::try_join_all;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
 use thiserror::Error;
@@ -39,32 +40,187 @@ where
         workflow: &Workflow,
         entrypoint_text: Option<&str>,
     ) -> Result<RunReport, RunError> {
-        let mut engine =
-            InteractiveEngine::new(workflow.clone(), entrypoint_text.map(ToString::to_string))?;
+        let layers = execution_layers(workflow)?;
+        let upstream_map = build_upstream_map(workflow);
+        let mut outputs = BTreeMap::new();
+        let mut events = Vec::new();
 
+        for layer in layers {
+            let layer_results = try_join_all(layer.iter().map(|node_id| {
+                self.invoke_headless_node(
+                    workflow,
+                    node_id,
+                    &upstream_map,
+                    &outputs,
+                    entrypoint_text,
+                )
+            }))
+            .await?;
+            for result in layer_results {
+                events.extend(result.events);
+                outputs.insert(result.node_id, result.output);
+            }
+        }
+
+        Ok(RunReport {
+            workflow_id: workflow.id.clone(),
+            events,
+            outputs: outputs
+                .into_iter()
+                .map(|(node_id, output)| NodeRunOutput { node_id, output })
+                .collect(),
+        })
+    }
+
+    async fn invoke_headless_node(
+        &self,
+        workflow: &Workflow,
+        node_id: &NodeId,
+        upstream_map: &HashMap<NodeId, Vec<NodeId>>,
+        outputs: &BTreeMap<NodeId, Value>,
+        entrypoint_text: Option<&str>,
+    ) -> Result<HeadlessNodeResult, RunError> {
+        let node = workflow
+            .nodes
+            .iter()
+            .find(|node| node.id == *node_id)
+            .ok_or_else(|| RunError::NodeFailed {
+                node_id: node_id.clone(),
+                message: "node id from layers not found in workflow".to_string(),
+            })?;
+        if !node.agent.auto_start {
+            return Err(RunError::NodeFailed {
+                node_id: node_id.clone(),
+                message: "headless runner cannot satisfy human input".to_string(),
+            });
+        }
+
+        let mut events = vec![RunEvent {
+            node_id: node_id.clone(),
+            kind: RunEventKind::Queued,
+            message: "queued".to_string(),
+            output: None,
+        }];
+        let mut retries = 0;
         loop {
-            match engine.poll() {
-                EnginePollResult::CallAi { node_id, request } => {
-                    let result = self.ai.invoke((*request).clone()).await;
-                    engine.on_ai_complete(&node_id, result);
-                }
-                EnginePollResult::AwaitInput { node_id, .. } => {
-                    return Err(RunError::NodeFailed {
-                        node_id,
-                        message: "headless runner cannot satisfy human input".to_string(),
+            events.push(RunEvent {
+                node_id: node_id.clone(),
+                kind: RunEventKind::Started,
+                message: "invoking model".to_string(),
+                output: None,
+            });
+            let request =
+                build_agent_request(workflow, node, upstream_map, outputs, entrypoint_text);
+            match self.ai.invoke(request).await {
+                Ok(AgentTurnOutcome::Completed(success)) => {
+                    events.push(RunEvent {
+                        node_id: node_id.clone(),
+                        kind: RunEventKind::Completed,
+                        message: "completed".to_string(),
+                        output: Some(success.output.clone()),
+                    });
+                    return Ok(HeadlessNodeResult {
+                        node_id: node_id.clone(),
+                        output: success.output,
+                        events,
                     });
                 }
-                EnginePollResult::AwaitToolApproval { node_id, .. } => {
+                Ok(AgentTurnOutcome::ToolCalls(_)) => {
                     return Err(RunError::NodeFailed {
-                        node_id,
+                        node_id: node_id.clone(),
                         message: "headless runner cannot satisfy tool execution".to_string(),
                     });
                 }
-                EnginePollResult::Completed(report) => return Ok(report),
-                EnginePollResult::Failed(error) => return Err(error),
+                Ok(AgentTurnOutcome::NeedsUserInput(_)) => {
+                    return Err(RunError::NodeFailed {
+                        node_id: node_id.clone(),
+                        message: "headless runner cannot satisfy human input".to_string(),
+                    });
+                }
+                Err(error) => {
+                    if error.is_retryable() && retries < workflow.settings.retry_policy.max_attempts
+                    {
+                        retries += 1;
+                        events.push(RunEvent {
+                            node_id: node_id.clone(),
+                            kind: RunEventKind::Retrying,
+                            message: format!(
+                                "retrying after transient failure; backoff_ms={}",
+                                workflow.settings.retry_policy.backoff_ms
+                            ),
+                            output: None,
+                        });
+                        continue;
+                    }
+                    events.push(RunEvent {
+                        node_id: node_id.clone(),
+                        kind: RunEventKind::Failed,
+                        message: error.to_string(),
+                        output: None,
+                    });
+                    return Err(RunError::NodeFailed {
+                        node_id: node_id.clone(),
+                        message: error.to_string(),
+                    });
+                }
             }
         }
     }
+}
+
+struct HeadlessNodeResult {
+    node_id: NodeId,
+    output: Value,
+    events: Vec<RunEvent>,
+}
+
+fn build_upstream_map(workflow: &Workflow) -> HashMap<NodeId, Vec<NodeId>> {
+    let mut upstream_map: HashMap<NodeId, Vec<NodeId>> = workflow
+        .nodes
+        .iter()
+        .map(|node| (node.id.clone(), Vec::new()))
+        .collect();
+    for edge in &workflow.edges {
+        upstream_map
+            .entry(edge.to.clone())
+            .or_default()
+            .push(edge.from.clone());
+    }
+    for ids in upstream_map.values_mut() {
+        ids.sort();
+    }
+    upstream_map
+}
+
+fn build_agent_request(
+    workflow: &Workflow,
+    node: &Node,
+    upstream_map: &HashMap<NodeId, Vec<NodeId>>,
+    outputs: &BTreeMap<NodeId, Value>,
+    entrypoint_text: Option<&str>,
+) -> AgentRequest {
+    AgentRequest {
+        workflow_id: workflow.id.clone(),
+        node_id: node.id.clone(),
+        node_label: node.label.clone(),
+        model: node.agent.model.clone(),
+        system_prompt: workflow_system_prompt(workflow, node),
+        task_prompt: node.agent.task_prompt.clone(),
+        input: build_node_input(&node.id, upstream_map, outputs, entrypoint_text),
+        output_schema: node.agent.output_schema.clone(),
+        tool_config: node.agent.tools.clone(),
+        available_tools: Vec::new(),
+        transcript: Vec::<AgentTranscriptItem>::new(),
+    }
+}
+
+fn workflow_system_prompt(workflow: &Workflow, node: &Node) -> String {
+    let base = node.agent.system_prompt.clone();
+    let shared = workflow.settings.shared_context.trim();
+    if shared.is_empty() {
+        return base;
+    }
+    format!("{base}\n\n--- Workflow context ---\n{shared}")
 }
 
 pub(crate) fn build_node_input(
@@ -117,6 +273,7 @@ mod tests {
     };
     use async_trait::async_trait;
     use parking_lot::Mutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
     #[derive(Clone, Default)]
@@ -177,7 +334,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rejects_invalid_workflow_before_openai_call() {
+    async fn rejects_invalid_workflow_before_model_call() {
         let workflow = Workflow::new("empty");
         let runner = WorkflowRunner::new(RecordingAi::default());
 
@@ -191,6 +348,7 @@ mod tests {
         let mut idea = node("idea");
         idea.agent.tools.catalog.tools = vec![ToolRef {
             name: "read".to_string(),
+            tier: Some(crate::ToolTier::Read),
         }];
         workflow.nodes = vec![idea];
 
@@ -333,6 +491,44 @@ mod tests {
             RunError::NodeFailed { ref node_id, ref message }
                 if node_id == "idea" && message == "synthetic failure for idea"
         ));
+    }
+
+    #[tokio::test]
+    async fn independent_siblings_invoked_concurrently() {
+        #[derive(Clone, Default)]
+        struct ConcurrentAi {
+            current: Arc<AtomicUsize>,
+            max_seen: Arc<AtomicUsize>,
+        }
+
+        #[async_trait]
+        impl AiPort for ConcurrentAi {
+            async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+                let current = self.current.fetch_add(1, Ordering::SeqCst) + 1;
+                self.max_seen.fetch_max(current, Ordering::SeqCst);
+                for _ in 0..10 {
+                    tokio::task::yield_now().await;
+                }
+                self.current.fetch_sub(1, Ordering::SeqCst);
+                Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    output: json!({
+                        "summary": format!("output from {}", request.node_id)
+                    }),
+                    raw_text: "{}".to_string(),
+                    assistant_message: None,
+                }))
+            }
+        }
+
+        let mut workflow = Workflow::new("parallel");
+        workflow.nodes = vec![node("alpha"), node("beta")];
+        let ai = ConcurrentAi::default();
+        let max_seen = ai.max_seen.clone();
+        let runner = WorkflowRunner::new(ai);
+
+        runner.run(&workflow).await.unwrap();
+
+        assert_eq!(max_seen.load(Ordering::SeqCst), 2);
     }
 
     #[test]

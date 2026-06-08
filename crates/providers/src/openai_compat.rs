@@ -107,7 +107,7 @@ async fn post_json(
     let response = request
         .send()
         .await
-        .map_err(|error| AgentError::Failed(format!("{label} request failed: {error}")))?;
+        .map_err(|error| AgentError::Transient(format!("{label} request failed: {error}")))?;
 
     let status = response.status();
     let payload: Value = response
@@ -116,9 +116,12 @@ async fn post_json(
         .map_err(|error| AgentError::Failed(format!("{label} response JSON failed: {error}")))?;
 
     if !status.is_success() {
-        return Err(AgentError::Failed(format!(
-            "{label} returned HTTP {status}: {payload}"
-        )));
+        let message = format!("{label} returned HTTP {status}: {payload}");
+        return if status.as_u16() == 429 || status.is_server_error() {
+            Err(AgentError::Transient(message))
+        } else {
+            Err(AgentError::Permanent(message))
+        };
     }
 
     Ok(payload)

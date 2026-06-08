@@ -14,11 +14,6 @@ use crate::execution::{
     apply_event_to_run_state, record_user_input, resolve_callable_agent_snapshots,
     resolve_execution_cwd, spawn_interactive_workflow_run, ExecutionAction, ExecutionEvent,
 };
-use crate::provider_config::{
-    active_provider_env_var, active_provider_label, resolve_provider_config, ProviderConfigError,
-    ProviderEnv,
-};
-use crate::settings_store::{key_ref_for_provider, AppSettings, FileSettingsStore};
 use crate::flow_store::{
     delete_project_workflow, discover_project_workflows, save_project_workflow,
     save_project_workflows,
@@ -27,8 +22,11 @@ use crate::project_store::{
     assign_workflow, cleanup_stored_projects, create_project_from_path,
     unassign_workflow_from_project, validate_unique_project_path, FileProjectStore, Project,
 };
-use std::collections::{BTreeMap, HashSet};
-use std::path::Path;
+use crate::provider_config::{
+    active_provider_env_var, active_provider_label, resolve_provider_config, ProviderConfigError,
+    ProviderEnv,
+};
+use crate::settings_store::{key_ref_for_provider, AppSettings, FileSettingsStore};
 use crate::skill_store::{self, SkillSummary};
 use crate::state::WorkflowRunState;
 use crate::storage::FileWorkflowStore;
@@ -37,7 +35,9 @@ use domain::{
 };
 use providers::{create_provider, ProviderId};
 use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, HashSet};
 use std::io;
+use std::path::Path;
 use thiserror::Error;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::sync::Mutex;
@@ -481,7 +481,9 @@ impl AppBackend {
     /// # Errors
     /// Returns an error if the project store cannot be written.
     pub fn save_projects(&self, projects: &[Project]) -> Result<(), BackendError> {
-        self.project_store.save(projects).map_err(BackendError::from)
+        self.project_store
+            .save(projects)
+            .map_err(BackendError::from)
     }
 
     /// # Errors
@@ -573,8 +575,8 @@ impl AppBackend {
         transient_api_key: Option<&str>,
     ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
         validate_workflow(&workflow)?;
-        let resolved_cwd = resolve_execution_cwd(execution_cwd.as_deref())
-            .map_err(BackendError::Execution)?;
+        let resolved_cwd =
+            resolve_execution_cwd(execution_cwd.as_deref()).map_err(BackendError::Execution)?;
         let provider_settings = workflow
             .settings
             .provider_id
@@ -887,6 +889,7 @@ mod tests {
         agent.auto_start = false;
         agent.tools.catalog.tools = vec![domain::ToolRef {
             name: "search".to_string(),
+            tier: Some(domain::ToolTier::Read),
         }];
         agent.tools.max_tool_rounds = 7;
         backend
@@ -912,6 +915,7 @@ mod tests {
             node.agent.tools.catalog.tools,
             vec![domain::ToolRef {
                 name: "search".to_string(),
+                tier: Some(domain::ToolTier::Read),
             }]
         );
         assert_eq!(node.agent.tools.max_tool_rounds, 7);

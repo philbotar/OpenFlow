@@ -46,6 +46,22 @@ impl Template {
         }
     }
 
+    fn with_id(
+        id: impl Into<String>,
+        display_name: impl Into<String>,
+        description: impl Into<String>,
+        default_config: AgentNodeConfig,
+        locked_fields: HashSet<String>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            display_name: display_name.into(),
+            description: description.into(),
+            default_config,
+            locked_fields,
+        }
+    }
+
     /// Instantiate a new `Node` from this template at the given canvas position.
     /// The node gets the template's default config and the template's display_name as its label.
     #[must_use]
@@ -80,9 +96,10 @@ impl Template {
 #[must_use]
 pub fn default_templates() -> Vec<Template> {
     vec![
-        Template::new(
+        Template::with_id(
+            "builtin.simple-agent",
             "Simple Agent",
-            "A basic agent node with a concise agent promot and minimal output schema. Good starting point for most tasks.",
+            "A basic agent node with a concise agent prompt and minimal output schema. Good starting point for most tasks.",
             AgentNodeConfig {
                 system_prompt: "You are a focused AI agent in a node workflow.".to_string(),
                 task_prompt: "Return a concise JSON object for this node.".to_string(),
@@ -102,7 +119,8 @@ pub fn default_templates() -> Vec<Template> {
             },
             HashSet::new(),
         ),
-        Template::new(
+        Template::with_id(
+            "builtin.code-reviewer",
             "Code Reviewer",
             "An agent configured to review code and provide structured feedback with severity ratings.",
             AgentNodeConfig {
@@ -143,7 +161,8 @@ pub fn default_templates() -> Vec<Template> {
                 locked
             },
         ),
-        Template::new(
+        Template::with_id(
+            "builtin.document-summarizer",
             "Document Summarizer",
             "An agent that reads content and produces a structured summary with key points.",
             AgentNodeConfig {
@@ -177,7 +196,8 @@ pub fn default_templates() -> Vec<Template> {
                 locked
             },
         ),
-        Template::new(
+        Template::with_id(
+            "builtin.classifier",
             "Classifier",
             "An agent that classifies input into predefined categories with confidence scores.",
             AgentNodeConfig {
@@ -205,7 +225,8 @@ pub fn default_templates() -> Vec<Template> {
                 locked
             },
         ),
-        Template::new(
+        Template::with_id(
+            "builtin.manual-start-node",
             "Manual Start Node",
             "An agent that must be manually triggered (auto_start: false). Useful for approval gates or human-in-the-loop steps.",
             AgentNodeConfig {
@@ -321,5 +342,30 @@ mod tests {
             templates.len(),
             "all default templates must have unique generated IDs"
         );
+    }
+
+    #[test]
+    fn default_templates_have_stable_builtin_ids_and_real_configs() {
+        let templates = default_templates();
+        let ids: Vec<&str> = templates
+            .iter()
+            .map(|template| template.id.as_str())
+            .collect();
+        assert_eq!(
+            ids,
+            vec![
+                "builtin.simple-agent",
+                "builtin.code-reviewer",
+                "builtin.document-summarizer",
+                "builtin.classifier",
+                "builtin.manual-start-node",
+            ]
+        );
+        assert!(templates
+            .iter()
+            .all(|template| !template.description.contains("promot")));
+        assert!(templates
+            .iter()
+            .any(|template| !template.locked_fields.is_empty()));
     }
 }

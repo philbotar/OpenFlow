@@ -58,7 +58,10 @@ impl Project {
 
 /// Returns the first project that contains `workflow_id`, if any.
 #[must_use]
-pub fn find_project_for_workflow<'a>(projects: &'a [Project], workflow_id: &str) -> Option<&'a Project> {
+pub fn find_project_for_workflow<'a>(
+    projects: &'a [Project],
+    workflow_id: &str,
+) -> Option<&'a Project> {
     projects
         .iter()
         .find(|project| project.workflow_ids.iter().any(|id| id == workflow_id))
@@ -257,20 +260,17 @@ mod tests {
 
     #[test]
     fn assign_workflow_allows_multiple_project_memberships() {
-        let mut projects = vec![
-            Project::new("/tmp/a", "A"),
-            Project::new("/tmp/b", "B"),
-        ];
+        let mut projects = vec![Project::new("/tmp/a", "A"), Project::new("/tmp/b", "B")];
         let workflow_id = "wf-1";
-        let project_a_id = projects[0].id.clone();
-        let project_b_id = projects[1].id.clone();
+        let alpha_project_id = projects[0].id.clone();
+        let beta_project_id = projects[1].id.clone();
 
-        assign_workflow(&mut projects, &project_a_id, workflow_id).unwrap();
-        assign_workflow(&mut projects, &project_b_id, workflow_id).unwrap();
+        assign_workflow(&mut projects, &alpha_project_id, workflow_id).unwrap();
+        assign_workflow(&mut projects, &beta_project_id, workflow_id).unwrap();
         assert_eq!(projects[0].workflow_ids, vec![workflow_id.to_string()]);
         assert_eq!(projects[1].workflow_ids, vec![workflow_id.to_string()]);
 
-        unassign_workflow_from_project(&mut projects, &project_a_id, workflow_id).unwrap();
+        unassign_workflow_from_project(&mut projects, &alpha_project_id, workflow_id).unwrap();
         assert!(projects[0].workflow_ids.is_empty());
         assert_eq!(projects[1].workflow_ids, vec![workflow_id.to_string()]);
     }

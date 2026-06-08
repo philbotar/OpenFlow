@@ -12,9 +12,7 @@ const WORKFLOW_FILE_SUFFIX: &str = ".workflow.json";
 /// Returns `{project_root}/.flow/workflows`.
 #[must_use]
 pub fn flow_workflows_dir(project_root: &Path) -> PathBuf {
-    project_root
-        .join(FLOW_DIR_NAME)
-        .join(WORKFLOWS_DIR_NAME)
+    project_root.join(FLOW_DIR_NAME).join(WORKFLOWS_DIR_NAME)
 }
 
 fn workflow_file_path(project_root: &Path, workflow_id: &str) -> PathBuf {
@@ -51,10 +49,7 @@ pub fn discover_project_workflows(project_root: &Path) -> io::Result<Vec<Workflo
         let workflow: Workflow = serde_json::from_str(&text).map_err(|error| {
             io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!(
-                    "workflow file {} invalid: {error}",
-                    path.display()
-                ),
+                format!("workflow file {} invalid: {error}", path.display()),
             )
         })?;
         by_id.insert(workflow.id.to_string(), workflow);

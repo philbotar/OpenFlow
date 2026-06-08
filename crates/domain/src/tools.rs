@@ -37,6 +37,8 @@ pub enum ApprovalMode {
 #[serde(rename_all = "camelCase")]
 pub struct ToolRef {
     pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tier: Option<ToolTier>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -103,8 +105,67 @@ fn default_tool_refs() -> Vec<ToolRef> {
         .into_iter()
         .map(|name| ToolRef {
             name: name.to_string(),
+            tier: Some(ToolTier::Read),
         })
         .collect()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolDecision {
+    AutoAllow,
+    Prompt,
+    Deny,
+}
+
+#[must_use]
+pub const fn requires_approval(
+    mode: ApprovalMode,
+    tier: ToolTier,
+    override_policy: Option<ToolPolicy>,
+) -> ToolDecision {
+    if let Some(policy) = override_policy {
+        return match policy {
+            ToolPolicy::Allow => ToolDecision::AutoAllow,
+            ToolPolicy::Prompt => ToolDecision::Prompt,
+            ToolPolicy::Deny => ToolDecision::Deny,
+        };
+    }
+
+    match mode {
+        ApprovalMode::Yolo => ToolDecision::AutoAllow,
+        ApprovalMode::Write => match tier {
+            ToolTier::Read => ToolDecision::AutoAllow,
+            ToolTier::Write | ToolTier::Exec => ToolDecision::Prompt,
+        },
+        ApprovalMode::AlwaysAsk => ToolDecision::Prompt,
+    }
+}
+
+#[must_use]
+pub fn tool_tier_for_call(config: &NodeToolConfig, tool_name: &str) -> ToolTier {
+    config
+        .catalog
+        .tools
+        .iter()
+        .find(|tool| tool.name == tool_name)
+        .and_then(|tool| tool.tier)
+        .unwrap_or_else(|| default_tier_for_tool_name(tool_name))
+}
+
+#[must_use]
+pub fn override_policy_for_call(config: &NodeToolConfig, tool_name: &str) -> Option<ToolPolicy> {
+    config
+        .overrides
+        .iter()
+        .find(|entry| entry.tool_name == tool_name)
+        .map(|entry| entry.policy)
+}
+
+fn default_tier_for_tool_name(tool_name: &str) -> ToolTier {
+    match tool_name {
+        "read" | "search" | "find" | "ast_grep" => ToolTier::Read,
+        _ => ToolTier::Write,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -253,6 +314,61 @@ mod tests {
     fn approval_mode_serializes_snake_case() {
         let value = serde_json::to_value(ApprovalMode::AlwaysAsk).unwrap();
         assert_eq!(value, json!("always_ask"));
+    }
+
+    #[test]
+    fn requires_approval_honours_modes_tiers_and_overrides() {
+        for tier in [ToolTier::Read, ToolTier::Write, ToolTier::Exec] {
+            assert_eq!(
+                requires_approval(ApprovalMode::Yolo, tier, None),
+                ToolDecision::AutoAllow
+            );
+            assert_eq!(
+                requires_approval(ApprovalMode::AlwaysAsk, tier, None),
+                ToolDecision::Prompt
+            );
+            assert_eq!(
+                requires_approval(ApprovalMode::Write, tier, Some(ToolPolicy::Allow)),
+                ToolDecision::AutoAllow
+            );
+            assert_eq!(
+                requires_approval(ApprovalMode::Yolo, tier, Some(ToolPolicy::Prompt)),
+                ToolDecision::Prompt
+            );
+            assert_eq!(
+                requires_approval(ApprovalMode::Yolo, tier, Some(ToolPolicy::Deny)),
+                ToolDecision::Deny
+            );
+        }
+
+        assert_eq!(
+            requires_approval(ApprovalMode::Write, ToolTier::Read, None),
+            ToolDecision::AutoAllow
+        );
+        assert_eq!(
+            requires_approval(ApprovalMode::Write, ToolTier::Write, None),
+            ToolDecision::Prompt
+        );
+        assert_eq!(
+            requires_approval(ApprovalMode::Write, ToolTier::Exec, None),
+            ToolDecision::Prompt
+        );
+    }
+
+    #[test]
+    fn tool_tier_falls_back_for_legacy_name_only_refs() {
+        let config = NodeToolConfig {
+            catalog: ToolCatalogSelection {
+                tools: vec![ToolRef {
+                    name: "read".to_string(),
+                    tier: None,
+                }],
+            },
+            ..NodeToolConfig::default()
+        };
+
+        assert_eq!(tool_tier_for_call(&config, "read"), ToolTier::Read);
+        assert_eq!(tool_tier_for_call(&config, "custom_write"), ToolTier::Write);
     }
 
     #[test]

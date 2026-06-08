@@ -49,8 +49,19 @@ pub enum AgentTurnOutcome {
 
 #[derive(Debug, Error)]
 pub enum AgentError {
+    #[error("transient: {0}")]
+    Transient(String),
+    #[error("permanent: {0}")]
+    Permanent(String),
     #[error("{0}")]
     Failed(String),
+}
+
+impl AgentError {
+    #[must_use]
+    pub const fn is_retryable(&self) -> bool {
+        matches!(self, Self::Transient(_))
+    }
 }
 
 #[async_trait]
@@ -65,5 +76,17 @@ where
 {
     async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
         (**self).invoke(request).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn agent_error_retryable_classification() {
+        assert!(AgentError::Transient("timeout".to_string()).is_retryable());
+        assert!(!AgentError::Permanent("auth".to_string()).is_retryable());
+        assert!(!AgentError::Failed("unknown".to_string()).is_retryable());
     }
 }

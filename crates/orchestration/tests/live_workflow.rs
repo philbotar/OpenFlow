@@ -293,6 +293,7 @@ async fn live_chat_completions_tool_enabled_workflow_completes() {
     );
     node.agent.tools.catalog.tools = vec![ToolRef {
         name: "read".to_string(),
+        tier: Some(domain::ToolTier::Read),
     }];
     workflow.nodes = vec![node];
 

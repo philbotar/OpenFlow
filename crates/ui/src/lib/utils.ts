@@ -44,11 +44,15 @@ export function chatRoleLabel(
   nodeLabel: string | null | undefined,
 ): string {
   switch (role) {
+    case "system":
     case "System":
       return "System";
+    case "thinking":
     case "Thinking":
+    case "assistant":
     case "Assistant":
       return nodeLabel?.trim() || "Node";
+    case "user":
     case "User":
       return "You";
   }

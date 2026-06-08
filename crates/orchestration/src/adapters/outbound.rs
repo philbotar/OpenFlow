@@ -15,49 +15,49 @@ use std::io;
 
 impl WorkflowStoragePort for FileWorkflowStore {
     fn load_workflows(&self) -> Result<Vec<Workflow>, io::Error> {
-        FileWorkflowStore::load(self)
+        Self::load(self)
     }
 
     fn save_workflows(&self, workflows: &[Workflow]) -> Result<(), io::Error> {
-        FileWorkflowStore::save(self, workflows)
+        Self::save(self, workflows)
     }
 }
 
 impl AgentStoragePort for FileAgentStore {
     fn load_agents(&self) -> Result<Vec<AgentDefinition>, io::Error> {
-        FileAgentStore::load(self)
+        Self::load(self)
     }
 
     fn save_agents(&self, agents: &[AgentDefinition]) -> Result<(), io::Error> {
-        FileAgentStore::save(self, agents)
+        Self::save(self, agents)
     }
 }
 
 impl SettingsStoragePort for FileSettingsStore {
     fn load_settings(&self) -> Result<AppSettings, io::Error> {
-        FileSettingsStore::load(self)
+        Self::load(self)
     }
 
     fn save_settings(&self, settings: &AppSettings) -> Result<(), io::Error> {
-        FileSettingsStore::save(self, settings)
+        Self::save(self, settings)
     }
 
     fn credential_store(&self) -> &CredentialStore {
-        FileSettingsStore::credential_store(self)
+        Self::credential_store(self)
     }
 }
 
 impl CredentialLookupPort for CredentialStore {
     fn get(&self, key_ref: &str) -> Result<Option<String>, CredentialStoreError> {
-        CredentialStore::get(self, key_ref)
+        Self::get(self, key_ref)
     }
 
     fn set(&self, key_ref: &str, value: &str) -> Result<(), CredentialStoreError> {
-        CredentialStore::set(self, key_ref, value)
+        Self::set(self, key_ref, value)
     }
 
     fn delete(&self, key_ref: &str) -> Result<(), CredentialStoreError> {
-        CredentialStore::delete(self, key_ref)
+        Self::delete(self, key_ref)
     }
 }
 

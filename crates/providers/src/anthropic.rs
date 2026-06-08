@@ -98,7 +98,7 @@ async fn post_json(
     let response = request
         .send()
         .await
-        .map_err(|error| AgentError::Failed(format!("Anthropic request failed: {error}")))?;
+        .map_err(|error| AgentError::Transient(format!("Anthropic request failed: {error}")))?;
 
     let status = response.status();
     let payload: Value = response
@@ -112,9 +112,12 @@ async fn post_json(
             429 => "Anthropic rate limit exceeded",
             _ => "Anthropic returned",
         };
-        return Err(AgentError::Failed(format!(
-            "{prefix} HTTP {status}: {payload}"
-        )));
+        let message = format!("{prefix} HTTP {status}: {payload}");
+        return if status.as_u16() == 429 || status.is_server_error() {
+            Err(AgentError::Transient(message))
+        } else {
+            Err(AgentError::Permanent(message))
+        };
     }
 
     Ok(payload)
@@ -399,9 +402,9 @@ mod tests {
 
     #[tokio::test]
     async fn messages_errors_map_auth_and_rate_limit_statuses() {
-        for (status, expected) in [
-            (401, "Anthropic authentication failed"),
-            (429, "Anthropic rate limit exceeded"),
+        for (status, expected, retryable) in [
+            (401, "Anthropic authentication failed", false),
+            (429, "Anthropic rate limit exceeded", true),
         ] {
             let server = MockServer::start().await;
             Mock::given(method("POST"))
@@ -414,6 +417,7 @@ mod tests {
 
             let error = client(server.uri()).invoke(request()).await.unwrap_err();
             assert!(error.to_string().contains(expected));
+            assert_eq!(error.is_retryable(), retryable);
             assert!(!error.to_string().contains("test-key"));
         }
     }

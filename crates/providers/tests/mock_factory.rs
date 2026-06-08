@@ -1,7 +1,7 @@
 //! Integration tests for providers port traits using mock implementations.
 //!
-//! These tests verify the ProviderFactoryPort contract in isolation by
-//! providing a mock factory that returns canned AiPort implementations.
+//! These tests verify the `ProviderFactoryPort` contract in isolation by
+//! providing a mock factory that returns canned `AiPort` implementations.
 
 use async_trait::async_trait;
 use domain::{AgentError, AgentRequest, AgentTurnOutcome, AgentTurnSuccess, AiPort};

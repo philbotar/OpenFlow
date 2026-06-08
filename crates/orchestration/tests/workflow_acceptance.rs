@@ -257,20 +257,20 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
     let mut node = agent("tool-node", "Tool node");
     node.agent.tools.catalog.tools = vec![ToolRef {
         name: "read".to_string(),
+        tier: Some(domain::ToolTier::Read),
     }];
     node.agent.tools.approval_mode = Some(ApprovalMode::AlwaysAsk);
     workflow.nodes = vec![node];
 
-    let first_attempt =
-        run_workflow_headless(
-            workflow.clone(),
-            None,
-            ToolAi::default(),
-            vec![],
-            vec![],
-            BTreeMap::new(),
-        )
-        .await;
+    let first_attempt = run_workflow_headless(
+        workflow.clone(),
+        None,
+        ToolAi::default(),
+        vec![],
+        vec![],
+        BTreeMap::new(),
+    )
+    .await;
     assert!(matches!(
         first_attempt,
         Err(orchestration::execution::WorkflowExecutionError::MissingApproval(_))

@@ -27,7 +27,9 @@ struct SkillFrontmatter {
 
 fn resolve_home_dir() -> Option<PathBuf> {
     dirs::home_dir().or_else(|| {
-        std::env::var_os("HOME").map(PathBuf::from).filter(|path| path.is_absolute())
+        std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute())
     })
 }
 
@@ -178,7 +180,10 @@ mod tests {
         );
 
         let skills = discover_from_roots(&[root.path().to_path_buf()]).expect("discover");
-        assert_eq!(skills[0].description.trim(), "Ultra-compressed communication mode.");
+        assert_eq!(
+            skills[0].description.trim(),
+            "Ultra-compressed communication mode."
+        );
     }
 
     #[test]
@@ -204,8 +209,8 @@ mod tests {
 
     #[test]
     fn ignores_missing_roots() {
-        let skills =
-            discover_from_roots(&[PathBuf::from("/tmp/does-not-exist-skill-root")]).expect("discover");
+        let skills = discover_from_roots(&[PathBuf::from("/tmp/does-not-exist-skill-root")])
+            .expect("discover");
         assert!(skills.is_empty());
     }
 

@@ -17,3 +17,4 @@ crates/agent-workflow-desktop/node_modules*
 */crates/ui/node_modules
 *node_modules/*
 node_modules/
+.cursor/

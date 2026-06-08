@@ -34,7 +34,7 @@ impl TraceStatus {
     const fn from_run_event_kind(kind: &RunEventKind) -> Self {
         match kind {
             RunEventKind::Queued => Self::Queued,
-            RunEventKind::Started => Self::Running,
+            RunEventKind::Started | RunEventKind::Retrying => Self::Running,
             RunEventKind::Completed => Self::Completed,
             RunEventKind::Failed => Self::Failed,
         }
@@ -315,7 +315,7 @@ impl AppState {
             for event in &report.events {
                 let status = match event.kind {
                     RunEventKind::Queued => AgentStatus::Queued,
-                    RunEventKind::Started => AgentStatus::Started,
+                    RunEventKind::Started | RunEventKind::Retrying => AgentStatus::Started,
                     RunEventKind::Completed => AgentStatus::Completed,
                     RunEventKind::Failed => AgentStatus::Failed,
                 };
@@ -702,7 +702,7 @@ mod tests {
             node_id: id.clone(),
             node_label: "Idea".to_string(),
             status: TraceStatus::Running,
-            message: "started OpenAI node call".to_string(),
+            message: "invoking model".to_string(),
             output: None,
         });
         state.select_trace_event(0);

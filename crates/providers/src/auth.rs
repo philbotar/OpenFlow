@@ -66,7 +66,7 @@ fn apply_bearer_auth(
         .filter(|key| !key.is_empty())
     else {
         return if required {
-            Err(AgentError::Failed(format!("{label} API key missing")))
+            Err(AgentError::Permanent(format!("{label} API key missing")))
         } else {
             Ok(request)
         };
@@ -87,7 +87,7 @@ fn apply_header_auth(
         .filter(|key| !key.is_empty())
     else {
         return if required {
-            Err(AgentError::Failed(format!("{label} API key missing")))
+            Err(AgentError::Permanent(format!("{label} API key missing")))
         } else {
             Ok(request)
         };

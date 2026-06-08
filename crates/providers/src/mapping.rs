@@ -320,7 +320,7 @@ pub fn parse_compatible_tool_call(call: &Value) -> Result<ToolCall, AgentError> 
         .ok_or_else(|| {
             AgentError::Failed("OpenAI-compatible tool call missing function.arguments".to_string())
         })?;
-        
+
     Ok(ToolCall {
         id: call_id.to_string(),
         name: name.to_string(),

@@ -251,7 +251,10 @@ impl Node {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Serialized as `snake_case`; legacy `PascalCase` values remain accepted for saved workflows.
+#[serde(rename_all = "snake_case")]
 pub enum NodeKind {
+    #[serde(alias = "Agent")]
     Agent,
 }
 
@@ -262,10 +265,16 @@ pub struct NodePosition {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Serialized as `snake_case`; legacy `PascalCase` values remain accepted for saved run logs.
+#[serde(rename_all = "snake_case")]
 pub enum ChatRole {
+    #[serde(alias = "System")]
     System,
+    #[serde(alias = "Thinking")]
     Thinking,
+    #[serde(alias = "User")]
     User,
+    #[serde(alias = "Assistant")]
     Assistant,
 }
 
@@ -273,7 +282,11 @@ pub enum ChatRole {
 pub struct ChatMessage {
     pub role: ChatRole,
     pub content: String,
-    #[serde(default, rename = "toolCallId", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "toolCallId",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub tool_call_id: Option<String>,
 }
 
@@ -355,58 +368,6 @@ impl Default for AgentNodeConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct NodeTemplate {
-    pub id: String,
-    pub name: String,
-    pub description: String,
-    pub config: AgentNodeConfig,
-}
-
-impl NodeTemplate {
-    #[must_use]
-    pub fn builtin_defaults() -> Vec<NodeTemplate> {
-        vec![
-            NodeTemplate {
-                id: "builtin.task-runner".to_string(),
-                name: "Task Runner".to_string(),
-                description: "Executes a single focused task".to_string(),
-                config: AgentNodeConfig::default(),
-            },
-            NodeTemplate {
-                id: "builtin.code-assistant".to_string(),
-                name: "Code Assistant".to_string(),
-                description: "Writes and reviews code".to_string(),
-                config: AgentNodeConfig::default(),
-            },
-            NodeTemplate {
-                id: "builtin.writer".to_string(),
-                name: "Writer".to_string(),
-                description: "Generates prose, docs, and content".to_string(),
-                config: AgentNodeConfig::default(),
-            },
-            NodeTemplate {
-                id: "builtin.analyst".to_string(),
-                name: "Analyst".to_string(),
-                description: "Analyzes data and provides insights".to_string(),
-                config: AgentNodeConfig::default(),
-            },
-            NodeTemplate {
-                id: "builtin.translator".to_string(),
-                name: "Translator".to_string(),
-                description: "Translates between formats and languages".to_string(),
-                config: AgentNodeConfig::default(),
-            },
-            NodeTemplate {
-                id: "builtin.ideator".to_string(),
-                name: "Ideator".to_string(),
-                description: "Generates creative ideas and approaches".to_string(),
-                config: AgentNodeConfig::default(),
-            },
-        ]
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Edge {
     pub id: EdgeId,
@@ -431,10 +392,18 @@ pub struct NodeRunOutput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Serialized as `snake_case`; legacy `PascalCase` values remain accepted for saved run reports.
+#[serde(rename_all = "snake_case")]
 pub enum RunEventKind {
+    #[serde(alias = "Queued")]
     Queued,
+    #[serde(alias = "Started")]
     Started,
+    #[serde(alias = "Retrying")]
+    Retrying,
+    #[serde(alias = "Completed")]
     Completed,
+    #[serde(alias = "Failed")]
     Failed,
 }
 
@@ -515,10 +484,7 @@ mod tests {
             ..AgentNodeConfig::default()
         };
         let value = serde_json::to_value(&config).unwrap();
-        assert_eq!(
-            value["callableAgents"],
-            json!(["agent-1", "agent-2"])
-        );
+        assert_eq!(value["callableAgents"], json!(["agent-1", "agent-2"]));
         let back: AgentNodeConfig = serde_json::from_value(value).unwrap();
         assert_eq!(back.callable_agents, config.callable_agents);
     }
@@ -542,7 +508,9 @@ mod tests {
         assert!(is_redundant_tool_call_markup(
             "<tool_call>\n<function=search>\n</function>\n</tool_call>"
         ));
-        assert!(!is_redundant_tool_call_markup("Let me search the repo for TODOs."));
+        assert!(!is_redundant_tool_call_markup(
+            "Let me search the repo for TODOs."
+        ));
     }
 
     #[test]
@@ -560,44 +528,31 @@ mod tests {
     }
 
     #[test]
-    fn builtin_defaults_has_six_templates() {
-        let templates = NodeTemplate::builtin_defaults();
-        assert_eq!(templates.len(), 6);
-    }
+    fn changed_enums_serialize_as_snake_case_and_accept_legacy_pascal_case() {
+        assert_eq!(
+            serde_json::to_value(NodeKind::Agent).unwrap(),
+            json!("agent")
+        );
+        assert_eq!(
+            serde_json::to_value(ChatRole::Assistant).unwrap(),
+            json!("assistant")
+        );
+        assert_eq!(
+            serde_json::to_value(RunEventKind::Retrying).unwrap(),
+            json!("retrying")
+        );
 
-    #[test]
-    fn builtin_defaults_all_have_builtin_prefix() {
-        for template in NodeTemplate::builtin_defaults() {
-            assert!(
-                template.id.starts_with("builtin."),
-                "expected id to start with 'builtin.': {}",
-                template.id
-            );
-        }
-    }
-
-    #[test]
-    fn builtin_defaults_have_unique_ids() {
-        let ids: Vec<String> = NodeTemplate::builtin_defaults()
-            .into_iter()
-            .map(|t| t.id)
-            .collect();
-        let mut deduped = ids.clone();
-        deduped.sort();
-        deduped.dedup();
-        assert_eq!(ids.len(), deduped.len());
-    }
-
-    #[test]
-    fn node_template_serialization_roundtrip() {
-        let template = NodeTemplate {
-            id: "builtin.writer".to_string(),
-            name: "Writer".to_string(),
-            description: "Generates prose, docs, and content".to_string(),
-            config: AgentNodeConfig::default(),
-        };
-        let json = serde_json::to_string(&template).unwrap();
-        let back: NodeTemplate = serde_json::from_str(&json).unwrap();
-        assert_eq!(template, back);
+        assert_eq!(
+            serde_json::from_value::<NodeKind>(json!("Agent")).unwrap(),
+            NodeKind::Agent
+        );
+        assert_eq!(
+            serde_json::from_value::<ChatRole>(json!("Assistant")).unwrap(),
+            ChatRole::Assistant
+        );
+        assert_eq!(
+            serde_json::from_value::<RunEventKind>(json!("Completed")).unwrap(),
+            RunEventKind::Completed
+        );
     }
 }

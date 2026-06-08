@@ -14,15 +14,12 @@ use crate::agent_store::AgentDefinition;
 use crate::state::{
     AgentStatus, RunTraceEntry, ToolArtifactSummary, ToolCallSummary, TraceStatus, WorkflowRunState,
 };
-use crate::tools::{
-    resolve_tool_policy, ApprovalDecision, ArtifactStore, ToolApprovalRequest, ToolRegistry,
-    ToolRunner, ToolRunnerError,
-};
+use crate::tools::{ArtifactStore, ToolRegistry, ToolRunner, ToolRunnerError};
 use domain::{
     filter_tool_turn_assistant_message, AgentNeedUserInput, AgentRequest, AgentToolCallBatch,
     AgentTranscriptItem, AgentTurnOutcome, AiPort, ChatMessage, ChatRole, EnginePollResult,
-    InteractiveEngine, Node, NodeId, RunReport, SubagentDeclaration, SubagentStatus, SubagentSummary,
-    ToolCall, ToolCallStatus, ToolDefinition, ToolOutputMeta, Workflow,
+    InteractiveEngine, Node, NodeId, RunReport, SubagentDeclaration, SubagentStatus,
+    SubagentSummary, ToolCall, ToolCallStatus, ToolDefinition, ToolOutputMeta, Workflow,
 };
 use serde_json::Value;
 use std::collections::{BTreeMap, HashSet, VecDeque};
@@ -340,7 +337,10 @@ pub enum WorkflowExecutionError {
 }
 
 pub fn resolve_execution_cwd(execution_cwd: Option<&str>) -> Result<PathBuf, String> {
-    match execution_cwd.map(str::trim).filter(|value| !value.is_empty()) {
+    match execution_cwd
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
         None => Ok(std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))),
         Some(path) => {
             let expanded = expand_tilde(path);
@@ -428,9 +428,9 @@ async fn drive_interactive_workflow<A>(
         }
     };
     let tool_runner = ToolRunner::new(tool_registry, execution_cwd, artifacts);
-    let mut exec_approval_granted = false;
     let mut declared_subagents: BTreeMap<String, SubagentSummary> = BTreeMap::new();
     let mut predefined_registered: HashSet<NodeId> = HashSet::new();
+    let mut proposed_tool_calls: HashSet<String> = HashSet::new();
 
     loop {
         match engine.poll() {
@@ -440,13 +440,9 @@ async fn drive_interactive_workflow<A>(
             } => {
                 if !predefined_registered.contains(&node_id) {
                     if let Some(node) = workflow.nodes.iter().find(|node| node.id == node_id) {
-                        let summaries =
-                            build_predefined_subagent_summaries(node, &agent_snapshots);
+                        let summaries = build_predefined_subagent_summaries(node, &agent_snapshots);
                         if !summaries.is_empty() {
-                            merge_subagent_summaries_into_map(
-                                &mut declared_subagents,
-                                &summaries,
-                            );
+                            merge_subagent_summaries_into_map(&mut declared_subagents, &summaries);
                             let _ = event_tx.send(ExecutionEvent::SubagentsDeclared {
                                 node_id: node_id.clone(),
                                 summaries,
@@ -511,7 +507,7 @@ async fn drive_interactive_workflow<A>(
                     match action_rx.recv().await {
                         Some(ExecutionAction::ProvideInput(text)) => {
                             if let Err(error) = engine.on_human_input(&awaiting_node_id, &text) {
-                                let _ = event_tx.send(ExecutionEvent::Error(error));
+                                let _ = event_tx.send(ExecutionEvent::Error(error.to_string()));
                                 return;
                             }
                             break;
@@ -522,6 +518,72 @@ async fn drive_interactive_workflow<A>(
                 }
             }
             EnginePollResult::AwaitToolApproval {
+                approval_id,
+                node_id,
+                label,
+                tool_calls,
+            } => {
+                let mut approval_request = None;
+                for tool_call in &tool_calls {
+                    if proposed_tool_calls.insert(tool_call.id.clone()) {
+                        let _ = event_tx.send(ExecutionEvent::ToolCallProposed {
+                            node_id: node_id.clone(),
+                            label: label.clone(),
+                            tool_call: tool_call.clone(),
+                        });
+                    }
+                    let tier = tool_runner
+                        .registry()
+                        .get(&tool_call.name)
+                        .map(|registered| registered.definition.tier)
+                        .unwrap_or_else(|_| {
+                            workflow
+                                .nodes
+                                .iter()
+                                .find(|node| node.id == node_id)
+                                .map(|node| {
+                                    domain::tool_tier_for_call(&node.agent.tools, &tool_call.name)
+                                })
+                                .unwrap_or(domain::ToolTier::Write)
+                        });
+                    if approval_request.is_none() {
+                        approval_request = Some(domain::PendingToolApproval {
+                            approval_id: approval_id.clone(),
+                            node_id: node_id.to_string(),
+                            node_label: label.clone(),
+                            tool_call: tool_call.clone(),
+                            tier,
+                        });
+                    }
+                }
+                if let Some(request) = approval_request {
+                    let _ = event_tx.send(ExecutionEvent::ToolApprovalRequested { request });
+                }
+                let approved = wait_for_approval(&mut action_rx, &approval_id).await;
+                if let Err(error) = engine.on_tool_decision(&approval_id, approved) {
+                    let _ = event_tx.send(ExecutionEvent::Error(error.to_string()));
+                    return;
+                }
+                for tool_call in &tool_calls {
+                    if approved {
+                        let _ = event_tx.send(ExecutionEvent::ToolApproved {
+                            approval_id: approval_id.clone(),
+                            node_id: node_id.clone(),
+                            tool_call_id: tool_call.id.clone(),
+                            tool_name: tool_call.name.clone(),
+                        });
+                    } else {
+                        let _ = event_tx.send(ExecutionEvent::ToolDenied {
+                            approval_id: approval_id.clone(),
+                            node_id: node_id.clone(),
+                            tool_call_id: tool_call.id.clone(),
+                            tool_name: tool_call.name.clone(),
+                            reason: "denied by user".to_string(),
+                        });
+                    }
+                }
+            }
+            EnginePollResult::RunTools {
                 node_id,
                 label,
                 tool_calls,
@@ -548,13 +610,9 @@ async fn drive_interactive_workflow<A>(
                                 Ok(batch) => batch.subagents,
                                 Err(_) => Vec::new(),
                             };
-                        let base_index =
-                            adhoc_subagent_base_index(&node_id, &declared_subagents);
-                        let summaries = build_adhoc_subagent_summaries(
-                            &node_id,
-                            &declarations,
-                            base_index,
-                        );
+                        let base_index = adhoc_subagent_base_index(&node_id, &declared_subagents);
+                        let summaries =
+                            build_adhoc_subagent_summaries(&node_id, &declarations, base_index);
                         merge_subagent_summaries_into_map(&mut declared_subagents, &summaries);
                         let _ = event_tx.send(ExecutionEvent::SubagentsDeclared {
                             node_id: node_id.clone(),
@@ -637,20 +695,19 @@ async fn drive_interactive_workflow<A>(
                                 continue;
                             }
                         };
-                        let subagent = if let Some(summary) =
-                            declared_subagents.get(&call_args.subagent_id)
-                        {
-                            Some(summary.clone())
-                        } else {
-                            agent_snapshots.get(&call_args.subagent_id).map(|agent| {
-                                SubagentSummary {
-                                    id: agent.id.clone(),
-                                    name: agent.name.clone(),
-                                    purpose: agent_purpose(agent),
-                                    status: SubagentStatus::Declared,
-                                }
-                            })
-                        };
+                        let subagent =
+                            if let Some(summary) = declared_subagents.get(&call_args.subagent_id) {
+                                Some(summary.clone())
+                            } else {
+                                agent_snapshots.get(&call_args.subagent_id).map(|agent| {
+                                    SubagentSummary {
+                                        id: agent.id.clone(),
+                                        name: agent.name.clone(),
+                                        purpose: agent_purpose(agent),
+                                        status: SubagentStatus::Declared,
+                                    }
+                                })
+                            };
                         let Some(subagent) = subagent else {
                             let result_content = serde_json::json!({
                                 "error": format!("Subagent '{}' not found. Declare subagents before invoking them.", call_args.subagent_id)
@@ -737,64 +794,65 @@ async fn drive_interactive_workflow<A>(
                             .iter()
                             .find(|n| n.id == node_id)
                             .expect("node exists in workflow");
-                        let (sub_node_config, sub_request) =
-                            if let Some(agent_def) = agent_snapshots.get(&call_args.subagent_id) {
-                                let sub_node_config = agent_def.tools.clone();
-                                let sub_available_tools = tool_runner
-                                    .registry()
-                                    .definitions_for_subagent(&sub_node_config);
-                                let system_prompt =
-                                    append_shared_context(&workflow, &agent_def.system_prompt);
-                                let sub_transcript = vec![AgentTranscriptItem::UserMessage {
-                                    content: format!(
-                                        "You are the saved agent \"{}\".\n\nTask: {}",
-                                        agent_def.name, call_args.input
-                                    ),
-                                }];
-                                let sub_request = AgentRequest {
-                                    workflow_id: workflow.id.clone(),
-                                    node_id: NodeId(subagent.id.clone()),
-                                    node_label: subagent.name.clone(),
-                                    model: agent_def.model.clone(),
-                                    system_prompt,
-                                    task_prompt: call_args.input.clone(),
-                                    input: serde_json::json!(null),
-                                    output_schema: agent_def.output_schema.clone(),
-                                    tool_config: sub_node_config.clone(),
-                                    available_tools: sub_available_tools,
-                                    transcript: sub_transcript,
-                                };
-                                (sub_node_config, sub_request)
-                            } else {
-                                let sub_node_config = node_config.clone();
-                                let sub_available_tools = tool_runner
-                                    .registry()
-                                    .definitions_for_subagent(&sub_node_config);
-                                let sub_transcript = vec![AgentTranscriptItem::UserMessage {
+                        let (sub_node_config, sub_request) = if let Some(agent_def) =
+                            agent_snapshots.get(&call_args.subagent_id)
+                        {
+                            let sub_node_config = agent_def.tools.clone();
+                            let sub_available_tools = tool_runner
+                                .registry()
+                                .definitions_for_subagent(&sub_node_config);
+                            let system_prompt =
+                                append_shared_context(&workflow, &agent_def.system_prompt);
+                            let sub_transcript = vec![AgentTranscriptItem::UserMessage {
+                                content: format!(
+                                    "You are the saved agent \"{}\".\n\nTask: {}",
+                                    agent_def.name, call_args.input
+                                ),
+                            }];
+                            let sub_request = AgentRequest {
+                                workflow_id: workflow.id.clone(),
+                                node_id: NodeId(subagent.id.clone()),
+                                node_label: subagent.name.clone(),
+                                model: agent_def.model.clone(),
+                                system_prompt,
+                                task_prompt: call_args.input.clone(),
+                                input: serde_json::json!(null),
+                                output_schema: agent_def.output_schema.clone(),
+                                tool_config: sub_node_config.clone(),
+                                available_tools: sub_available_tools,
+                                transcript: sub_transcript,
+                            };
+                            (sub_node_config, sub_request)
+                        } else {
+                            let sub_node_config = node_config.clone();
+                            let sub_available_tools = tool_runner
+                                .registry()
+                                .definitions_for_subagent(&sub_node_config);
+                            let sub_transcript = vec![AgentTranscriptItem::UserMessage {
                                     content: format!(
                                         "You are a subagent named \"{}\" with the purpose: \"{}\"\n\nTask: {}",
                                         subagent.name, subagent.purpose, call_args.input
                                     ),
                                 }];
-                                let system_prompt = append_shared_context(
-                                    &workflow,
-                                    &format!("You are {}. {}", subagent.name, subagent.purpose),
-                                );
-                                let sub_request = AgentRequest {
-                                    workflow_id: workflow.id.clone(),
-                                    node_id: NodeId(subagent.id.clone()),
-                                    node_label: subagent.name.clone(),
-                                    model: parent_node.agent.model.clone(),
-                                    system_prompt,
-                                    task_prompt: call_args.input.clone(),
-                                    input: serde_json::json!(null),
-                                    output_schema: Value::Null,
-                                    tool_config: sub_node_config.clone(),
-                                    available_tools: sub_available_tools,
-                                    transcript: sub_transcript,
-                                };
-                                (sub_node_config, sub_request)
+                            let system_prompt = append_shared_context(
+                                &workflow,
+                                &format!("You are {}. {}", subagent.name, subagent.purpose),
+                            );
+                            let sub_request = AgentRequest {
+                                workflow_id: workflow.id.clone(),
+                                node_id: NodeId(subagent.id.clone()),
+                                node_label: subagent.name.clone(),
+                                model: parent_node.agent.model.clone(),
+                                system_prompt,
+                                task_prompt: call_args.input.clone(),
+                                input: serde_json::json!(null),
+                                output_schema: Value::Null,
+                                tool_config: sub_node_config.clone(),
+                                available_tools: sub_available_tools,
+                                transcript: sub_transcript,
                             };
+                            (sub_node_config, sub_request)
+                        };
                         // Execute subagent in a mini-loop
                         let max_rounds = sub_node_config.max_tool_rounds;
                         let mut sub_transcript = sub_request.transcript.clone();
@@ -955,64 +1013,16 @@ async fn drive_interactive_workflow<A>(
                         results.push(tool_result);
                         continue;
                     }
-                    let _ = event_tx.send(ExecutionEvent::ToolCallProposed {
-                        node_id: node_id.clone(),
-                        label: label.clone(),
-                        tool_call: tool_call.clone(),
-                    });
-                    let registered = match tool_runner.registry().get(&tool_call.name) {
-                        Ok(registered) => registered,
-                        Err(error) => {
-                            let record = tool_runner
-                                .denied(tool_call.clone(), format!("Tool unavailable: {error}"));
-                            let _ = event_tx.send(ExecutionEvent::ToolCompleted {
-                                node_id: node_id.clone(),
-                                tool_call_id: record.result.tool_call_id.clone(),
-                                tool_name: record.result.tool_name.clone(),
-                                content: record.result.content.clone(),
-                                is_error: true,
-                                output_meta: None,
-                                artifact_ids: Vec::new(),
-                            });
-                            results.push(record.result);
-                            continue;
-                        }
-                    };
-                    let decision = resolve_tool_policy(
-                        &node_config,
-                        &tool_call.name,
-                        registered.definition.tier,
-                        exec_approval_granted,
-                    );
-                    let approved = match decision {
-                        ApprovalDecision::Allow => true,
-                        ApprovalDecision::Deny => false,
-                        ApprovalDecision::Prompt => {
-                            let request = ToolApprovalRequest {
-                                approval_id: Uuid::new_v4().to_string(),
-                                node_id: node_id.clone(),
-                                node_label: label.clone(),
-                                tool_call: tool_call.clone(),
-                                tier: registered.definition.tier,
-                            };
-                            let approval_id = request.approval_id.clone();
-                            let _ = event_tx.send(ExecutionEvent::ToolApprovalRequested {
-                                request: request.to_pending(),
-                            });
-                            wait_for_approval(&mut action_rx, &approval_id).await
-                        }
-                    };
-
-                    if !approved {
-                        let reason = format!("Tool call denied for {}", tool_call.name);
-                        let record = tool_runner.denied(tool_call.clone(), reason.clone());
-                        let _ = event_tx.send(ExecutionEvent::ToolDenied {
-                            approval_id: String::new(),
+                    if proposed_tool_calls.insert(tool_call.id.clone()) {
+                        let _ = event_tx.send(ExecutionEvent::ToolCallProposed {
                             node_id: node_id.clone(),
-                            tool_call_id: tool_call.id.clone(),
-                            tool_name: tool_call.name.clone(),
-                            reason,
+                            label: label.clone(),
+                            tool_call: tool_call.clone(),
                         });
+                    }
+                    if let Err(error) = tool_runner.registry().get(&tool_call.name) {
+                        let record = tool_runner
+                            .denied(tool_call.clone(), format!("Tool unavailable: {error}"));
                         let _ = event_tx.send(ExecutionEvent::ToolCompleted {
                             node_id: node_id.clone(),
                             tool_call_id: record.result.tool_call_id.clone(),
@@ -1024,10 +1034,6 @@ async fn drive_interactive_workflow<A>(
                         });
                         results.push(record.result);
                         continue;
-                    }
-
-                    if registered.definition.tier == domain::ToolTier::Exec {
-                        exec_approval_granted = true;
                     }
                     let _ = event_tx.send(ExecutionEvent::ToolStarted {
                         node_id: node_id.clone(),
@@ -1076,7 +1082,7 @@ async fn drive_interactive_workflow<A>(
                     }
                 }
                 if let Err(error) = engine.on_tool_results(&node_id, results) {
-                    let _ = event_tx.send(ExecutionEvent::Error(error));
+                    let _ = event_tx.send(ExecutionEvent::Error(error.to_string()));
                     return;
                 }
             }
@@ -1293,7 +1299,7 @@ pub fn apply_event_to_run_state(
                 node_id,
                 node_label: label,
                 status: TraceStatus::Running,
-                message: "started OpenAI node call".to_string(),
+                message: "invoking model".to_string(),
                 output: None,
             });
         }
@@ -1550,10 +1556,7 @@ pub fn apply_event_to_run_state(
             state.pending_approvals.clear();
             state.last_error = Some(error);
         }
-        ExecutionEvent::SubagentsDeclared {
-            node_id,
-            summaries,
-        } => {
+        ExecutionEvent::SubagentsDeclared { node_id, summaries } => {
             let count = summaries.len();
             let entry = state.subagents_by_node.entry(node_id.clone()).or_default();
             for summary in summaries {
@@ -1741,7 +1744,9 @@ mod tests {
             .content
             .contains("Approval required for tool 'read'."));
         assert_eq!(
-            state.tool_calls_by_node[&NodeId("first".to_string())][0].last_output.as_deref(),
+            state.tool_calls_by_node[&NodeId("first".to_string())][0]
+                .last_output
+                .as_deref(),
             Some("done")
         );
     }
@@ -1785,6 +1790,7 @@ mod tests {
         let mut workflow = workflow();
         workflow.nodes[0].agent.tools.catalog.tools = vec![ToolRef {
             name: "read".to_string(),
+            tier: Some(domain::ToolTier::Read),
         }];
         let snapshot = run_workflow_headless(
             workflow,
@@ -1830,6 +1836,7 @@ mod tests {
         let mut workflow = workflow();
         workflow.nodes[0].agent.tools.catalog.tools = vec![ToolRef {
             name: "read".to_string(),
+            tier: Some(domain::ToolTier::Read),
         }];
         workflow.nodes[0].agent.tools.approval_mode = Some(domain::ApprovalMode::AlwaysAsk);
         let error = run_workflow_headless(
@@ -1840,8 +1847,8 @@ mod tests {
             Vec::new(),
             BTreeMap::new(),
         )
-            .await
-            .unwrap_err();
+        .await
+        .unwrap_err();
         assert!(matches!(error, WorkflowExecutionError::MissingApproval(_)));
     }
 
@@ -2096,10 +2103,7 @@ mod tests {
             "missing".to_string(),
             "agent-b".to_string(),
         ];
-        let agents = vec![
-            AgentDefinition::new("Alpha"),
-            AgentDefinition::new("Beta"),
-        ];
+        let agents = [AgentDefinition::new("Alpha"), AgentDefinition::new("Beta")];
         let mut agent_a = agents[0].clone();
         agent_a.id = "agent-a".to_string();
         let mut agent_b = agents[1].clone();
@@ -2116,10 +2120,7 @@ mod tests {
     fn resolve_callable_agent_snapshots_includes_all_agents_when_allow_all() {
         let mut workflow = workflow();
         workflow.nodes[0].agent.allow_all_callable_agents = true;
-        let agents = vec![
-            AgentDefinition::new("Alpha"),
-            AgentDefinition::new("Beta"),
-        ];
+        let agents = [AgentDefinition::new("Alpha"), AgentDefinition::new("Beta")];
         let mut agent_a = agents[0].clone();
         agent_a.id = "agent-a".to_string();
         let mut agent_b = agents[1].clone();

@@ -32,11 +32,13 @@ pub struct MockBackend {
 }
 
 impl MockBackend {
+    #[must_use]
     pub fn with_workflow(mut self, workflow: Workflow) -> Self {
         self.workflows.push(workflow);
         self
     }
 
+    #[must_use]
     pub fn with_agent(mut self, agent: AgentDefinition) -> Self {
         self.agents.push(agent);
         self
@@ -66,7 +68,7 @@ impl WorkflowRepository for MockBackend {
             .iter()
             .find(|w| w.id == workflow_id)
             .cloned()
-            .ok_or(BackendError::WorkflowNotFound(workflow_id.to_string()))
+            .ok_or_else(|| BackendError::WorkflowNotFound(workflow_id.to_string()))
     }
 
     fn create_workflow(&self, name: String) -> Result<Workflow, BackendError> {
