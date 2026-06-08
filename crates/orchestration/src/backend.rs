@@ -228,6 +228,20 @@ impl AppBackend {
             .await
     }
 
+    /// Stops the active workflow run cooperatively.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when there is no run session to stop.
+    pub async fn stop_run(&self) -> Result<WorkflowRunState, BackendError> {
+        self.runs.stop_run().await
+    }
+
+    #[must_use]
+    pub async fn is_run_active(&self) -> bool {
+        self.runs.is_run_active().await
+    }
+
     pub async fn apply_execution_event(
         &self,
         event: ExecutionEvent,
@@ -494,7 +508,28 @@ mod tests {
                     if node_id == "review" && label == "Review"
             ));
 
-            backend.runs.test_abort_handle().await;
+            let stopped = backend.stop_run().await.expect("stop run");
+            assert!(!stopped.active);
+            assert!(stopped.last_error.is_none());
+        });
+    }
+
+    #[test]
+    fn stop_run_is_idempotent_when_inactive() {
+        let (backend, _dir) = backend();
+        backend.runs.runtime().block_on(async {
+            let workflow = default_workflow("Workflow");
+            let run_state = WorkflowRunState::idle_for_workflow(&workflow);
+            backend
+                .runs
+                .test_seed_session(workflow.clone(), run_state.clone(), {
+                    let (tx, _) = tokio::sync::mpsc::unbounded_channel();
+                    tx
+                })
+                .await;
+
+            let snapshot = backend.stop_run().await.expect("stop inactive run");
+            assert!(!snapshot.active);
         });
     }
 
@@ -534,6 +569,7 @@ mod tests {
                 ExecutionAction::ResolveApproval { .. } => {
                     panic!("unexpected approval action");
                 }
+                ExecutionAction::Stop => panic!("unexpected stop action"),
             }
         });
     }
@@ -576,6 +612,7 @@ mod tests {
                 ExecutionAction::ProvideInput(_) => {
                     panic!("unexpected input action");
                 }
+                ExecutionAction::Stop => panic!("unexpected stop action"),
             }
         });
     }

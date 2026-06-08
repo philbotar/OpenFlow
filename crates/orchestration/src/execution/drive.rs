@@ -1,4 +1,4 @@
-use crate::tools::{ArtifactStore, ToolRegistry, ToolRunner, ToolRunnerError};
+use crate::tools::{ArtifactStore, ToolExecutionRecord, ToolRegistry, ToolRunner, ToolRunnerError};
 use domain::{
     advance_subagent_invoke, build_predefined_subagent_summaries, filter_tool_turn_assistant_message,
     handle_declare_subagents, is_subagent_runtime_builtin, start_subagent_invoke,
@@ -11,10 +11,13 @@ use domain::{
 use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use super::subagents::{augment_call_subagent_tool_description, merge_subagent_summaries_into_map};
 use super::{ExecutionAction, ExecutionEvent};
+
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn drive_interactive_workflow<A>(
     workflow: Workflow,
     entrypoint: Option<String>,
@@ -23,6 +26,7 @@ pub(super) async fn drive_interactive_workflow<A>(
     event_tx: UnboundedSender<ExecutionEvent>,
     mut action_rx: UnboundedReceiver<ExecutionAction>,
     agent_snapshots: BTreeMap<String, CallableAgent>,
+    cancel_token: CancellationToken,
 ) where
     A: AiPort,
 {
@@ -43,12 +47,22 @@ pub(super) async fn drive_interactive_workflow<A>(
             return;
         }
     };
-    let tool_runner = ToolRunner::new(tool_registry, execution_cwd, artifacts);
+    let tool_runner = ToolRunner::new(
+        tool_registry,
+        execution_cwd,
+        artifacts,
+        cancel_token.clone(),
+    );
     let mut declared_subagents: BTreeMap<String, SubagentSummary> = BTreeMap::new();
     let mut predefined_registered: HashSet<NodeId> = HashSet::new();
     let mut proposed_tool_calls: HashSet<String> = HashSet::new();
+    let mut aborted_emitted = false;
 
     loop {
+        if cancel_token.is_cancelled() {
+            abort_run(&event_tx, &mut aborted_emitted);
+            return;
+        }
         match engine.poll() {
             EnginePollResult::CallAi {
                 node_id,
@@ -78,7 +92,12 @@ pub(super) async fn drive_interactive_workflow<A>(
                     );
                 }
                 send_node_start_events(&event_tx, &request);
-                let result = ai.invoke((*request).clone()).await;
+                let Some(result) =
+                    invoke_ai_or_cancel(&ai, (*request).clone(), &cancel_token, &event_tx, &mut aborted_emitted)
+                        .await
+                else {
+                    return;
+                };
                 if let Ok(outcome) = &result {
                     emit_assistant_message(&event_tx, &node_id, outcome);
                 }
@@ -119,18 +138,19 @@ pub(super) async fn drive_interactive_workflow<A>(
                     context,
                     is_initial,
                 });
-                loop {
-                    match action_rx.recv().await {
-                        Some(ExecutionAction::ProvideInput(text)) => {
-                            if let Err(error) = engine.on_human_input(&awaiting_node_id, &text) {
-                                let _ = event_tx.send(ExecutionEvent::Error(error.to_string()));
-                                return;
-                            }
-                            break;
-                        }
-                        Some(ExecutionAction::ResolveApproval { .. }) => continue,
-                        None => return,
-                    }
+                let Some(text) = wait_for_input(
+                    &mut action_rx,
+                    &cancel_token,
+                    &event_tx,
+                    &mut aborted_emitted,
+                )
+                .await
+                else {
+                    return;
+                };
+                if let Err(error) = engine.on_human_input(&awaiting_node_id, &text) {
+                    let _ = event_tx.send(ExecutionEvent::Error(error.to_string()));
+                    return;
                 }
             }
             EnginePollResult::AwaitToolApproval {
@@ -175,7 +195,17 @@ pub(super) async fn drive_interactive_workflow<A>(
                 if let Some(request) = approval_request {
                     let _ = event_tx.send(ExecutionEvent::ToolApprovalRequested { request });
                 }
-                let approved = wait_for_approval(&mut action_rx, &approval_id).await;
+                let Some(approved) = wait_for_approval(
+                    &mut action_rx,
+                    &approval_id,
+                    &cancel_token,
+                    &event_tx,
+                    &mut aborted_emitted,
+                )
+                .await
+                else {
+                    return;
+                };
                 if let Err(error) = engine.on_tool_decision(&approval_id, approved) {
                     let _ = event_tx.send(ExecutionEvent::Error(error.to_string()));
                     return;
@@ -223,23 +253,27 @@ pub(super) async fn drive_interactive_workflow<A>(
                         continue;
                     }
                     if tool_call.name == CALL_SUBAGENT_TOOL {
-                        results.push(
-                            run_call_subagent_tool(
-                                &ai,
-                                &tool_runner,
-                                &event_tx,
-                                SubagentCallParams {
-                                    workflow: &workflow,
-                                    node_id: &node_id,
-                                    label: &label,
-                                    tool_call: &tool_call,
-                                    node_config: &node_config,
-                                    declared_subagents: &mut declared_subagents,
-                                    agent_snapshots: &agent_snapshots,
-                                },
-                            )
-                            .await,
-                        );
+                        let Some(subagent_result) = run_call_subagent_tool(
+                            &ai,
+                            &tool_runner,
+                            &event_tx,
+                            SubagentCallParams {
+                                workflow: &workflow,
+                                node_id: &node_id,
+                                label: &label,
+                                tool_call: &tool_call,
+                                node_config: &node_config,
+                                declared_subagents: &mut declared_subagents,
+                                agent_snapshots: &agent_snapshots,
+                            },
+                            &cancel_token,
+                            &mut aborted_emitted,
+                        )
+                        .await
+                        else {
+                            return;
+                        };
+                        results.push(subagent_result);
                         continue;
                     }
                     if proposed_tool_calls.insert(tool_call.id.clone()) {
@@ -270,8 +304,16 @@ pub(super) async fn drive_interactive_workflow<A>(
                         tool_name: tool_call.name.clone(),
                         arguments: tool_call.arguments.clone(),
                     });
-                    match tool_runner.execute(tool_call.clone()).await {
-                        Ok(record) => {
+                    match execute_tool_or_cancel(
+                        &tool_runner,
+                        tool_call.clone(),
+                        &cancel_token,
+                        &event_tx,
+                        &mut aborted_emitted,
+                    )
+                    .await
+                    {
+                        Some(Ok(record)) => {
                             if let Some(artifact) = record.artifact.clone() {
                                 let _ = event_tx.send(ExecutionEvent::ToolArtifactCreated {
                                     node_id: node_id.clone(),
@@ -292,7 +334,7 @@ pub(super) async fn drive_interactive_workflow<A>(
                             });
                             results.push(record.result);
                         }
-                        Err(error) => {
+                        Some(Err(error)) => {
                             let record =
                                 tool_runner.denied(tool_call.clone(), render_tool_error(error));
                             let _ = event_tx.send(ExecutionEvent::ToolCompleted {
@@ -306,6 +348,7 @@ pub(super) async fn drive_interactive_workflow<A>(
                             });
                             results.push(record.result);
                         }
+                        None => return,
                     }
                 }
                 if let Err(error) = engine.on_tool_results(&node_id, results) {
@@ -381,7 +424,9 @@ async fn run_call_subagent_tool<A: AiPort>(
     tool_runner: &ToolRunner,
     event_tx: &UnboundedSender<ExecutionEvent>,
     params: SubagentCallParams<'_>,
-) -> domain::ToolResult {
+    cancel_token: &CancellationToken,
+    aborted_emitted: &mut bool,
+) -> Option<domain::ToolResult> {
     let SubagentCallParams {
         workflow,
         node_id,
@@ -422,7 +467,7 @@ async fn run_call_subagent_tool<A: AiPort>(
                 output_meta: None,
                 artifact_ids: Vec::new(),
             });
-            return tool_result;
+            return Some(tool_result);
         }
     };
     send_run_telemetry(event_tx, startup_telemetry);
@@ -433,17 +478,32 @@ async fn run_call_subagent_tool<A: AiPort>(
         arguments: tool_call.arguments.clone(),
     });
 
-    let mut outcome = ai.invoke(session.request.clone()).await;
+    let mut outcome = invoke_ai_or_cancel(
+        ai,
+        session.request.clone(),
+        cancel_token,
+        event_tx,
+        aborted_emitted,
+    )
+    .await?;
     loop {
         let tool_results = if let Ok(AgentTurnOutcome::ToolCalls(batch)) = &outcome {
-            execute_subagent_tool_batch(tool_runner, batch).await
+            execute_subagent_tool_batch(tool_runner, batch, cancel_token, event_tx, aborted_emitted)
+                .await?
         } else {
             Vec::new()
         };
         match advance_subagent_invoke(session, outcome, tool_results) {
             SubagentInvokeStep::NeedAi(next_session) => {
                 session = next_session;
-                outcome = ai.invoke(session.request.clone()).await;
+                outcome = invoke_ai_or_cancel(
+                    ai,
+                    session.request.clone(),
+                    cancel_token,
+                    event_tx,
+                    aborted_emitted,
+                )
+                .await?;
             }
             SubagentInvokeStep::Done {
                 tool_result,
@@ -461,7 +521,7 @@ async fn run_call_subagent_tool<A: AiPort>(
                     output_meta: None,
                     artifact_ids: Vec::new(),
                 });
-                return tool_result;
+                return Some(tool_result);
             }
         }
     }
@@ -470,16 +530,27 @@ async fn run_call_subagent_tool<A: AiPort>(
 async fn execute_subagent_tool_batch(
     tool_runner: &ToolRunner,
     batch: &AgentToolCallBatch,
-) -> Vec<domain::ToolResult> {
+    cancel_token: &CancellationToken,
+    event_tx: &UnboundedSender<ExecutionEvent>,
+    aborted_emitted: &mut bool,
+) -> Option<Vec<domain::ToolResult>> {
     let mut results = Vec::new();
     for tool_call in &batch.tool_calls {
         if is_subagent_runtime_builtin(&tool_call.name) {
             results.push(subagent_runtime_builtin_denied(tool_call));
             continue;
         }
-        match tool_runner.execute(tool_call.clone()).await {
-            Ok(record) => results.push(record.result),
-            Err(err) => results.push(domain::ToolResult {
+        match execute_tool_or_cancel(
+            tool_runner,
+            tool_call.clone(),
+            cancel_token,
+            event_tx,
+            aborted_emitted,
+        )
+        .await
+        {
+            Some(Ok(record)) => results.push(record.result),
+            Some(Err(err)) => results.push(domain::ToolResult {
                 tool_call_id: tool_call.id.clone(),
                 tool_name: tool_call.name.clone(),
                 content: err.to_string(),
@@ -487,24 +558,107 @@ async fn execute_subagent_tool_batch(
                 artifact_ids: Vec::new(),
                 output_meta: None,
             }),
+            None => return None,
         }
     }
-    results
+    Some(results)
+}
+
+fn abort_run(event_tx: &UnboundedSender<ExecutionEvent>, aborted_emitted: &mut bool) {
+    if *aborted_emitted {
+        return;
+    }
+    *aborted_emitted = true;
+    let _ = event_tx.send(ExecutionEvent::Aborted);
+}
+
+async fn invoke_ai_or_cancel<A: AiPort>(
+    ai: &A,
+    request: AgentRequest,
+    cancel_token: &CancellationToken,
+    event_tx: &UnboundedSender<ExecutionEvent>,
+    aborted_emitted: &mut bool,
+) -> Option<Result<AgentTurnOutcome, domain::AgentError>> {
+    tokio::select! {
+        biased;
+        _ = cancel_token.cancelled() => {
+            abort_run(event_tx, aborted_emitted);
+            None
+        }
+        result = ai.invoke(request) => Some(result),
+    }
+}
+
+async fn execute_tool_or_cancel(
+    tool_runner: &ToolRunner,
+    tool_call: ToolCall,
+    cancel_token: &CancellationToken,
+    event_tx: &UnboundedSender<ExecutionEvent>,
+    aborted_emitted: &mut bool,
+) -> Option<Result<ToolExecutionRecord, ToolRunnerError>> {
+    tokio::select! {
+        biased;
+        _ = cancel_token.cancelled() => {
+            abort_run(event_tx, aborted_emitted);
+            None
+        }
+        result = tool_runner.execute(tool_call) => Some(result),
+    }
+}
+
+async fn wait_for_input(
+    action_rx: &mut UnboundedReceiver<ExecutionAction>,
+    cancel_token: &CancellationToken,
+    event_tx: &UnboundedSender<ExecutionEvent>,
+    aborted_emitted: &mut bool,
+) -> Option<String> {
+    loop {
+        tokio::select! {
+            biased;
+            _ = cancel_token.cancelled() => {
+                abort_run(event_tx, aborted_emitted);
+                return None;
+            }
+            action = action_rx.recv() => match action {
+                Some(ExecutionAction::Stop) => {
+                    abort_run(event_tx, aborted_emitted);
+                    return None;
+                }
+                Some(ExecutionAction::ProvideInput(text)) => return Some(text),
+                Some(ExecutionAction::ResolveApproval { .. }) => continue,
+                None => return None,
+            }
+        }
+    }
 }
 
 async fn wait_for_approval(
     action_rx: &mut UnboundedReceiver<ExecutionAction>,
     approval_id: &str,
-) -> bool {
+    cancel_token: &CancellationToken,
+    event_tx: &UnboundedSender<ExecutionEvent>,
+    aborted_emitted: &mut bool,
+) -> Option<bool> {
     loop {
-        match action_rx.recv().await {
-            Some(ExecutionAction::ResolveApproval {
-                approval_id: received,
-                allow,
-            }) if received == approval_id => return allow,
-            Some(ExecutionAction::ProvideInput(_)) => continue,
-            Some(ExecutionAction::ResolveApproval { .. }) => continue,
-            None => return false,
+        tokio::select! {
+            biased;
+            _ = cancel_token.cancelled() => {
+                abort_run(event_tx, aborted_emitted);
+                return None;
+            }
+            action = action_rx.recv() => match action {
+                Some(ExecutionAction::Stop) => {
+                    abort_run(event_tx, aborted_emitted);
+                    return None;
+                }
+                Some(ExecutionAction::ResolveApproval {
+                    approval_id: received,
+                    allow,
+                }) if received == approval_id => return Some(allow),
+                Some(ExecutionAction::ProvideInput(_)) => continue,
+                Some(ExecutionAction::ResolveApproval { .. }) => continue,
+                None => return Some(false),
+            }
         }
     }
 }

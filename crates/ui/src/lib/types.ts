@@ -139,7 +139,8 @@ export type AgentStatus =
   | "awaiting_tool_approval"
   | "running_tool"
   | "completed"
-  | "failed";
+  | "failed"
+  | "stopped";
 
 export type SubagentStatus = "declared" | "active" | "completed" | "failed";
 
@@ -150,7 +151,13 @@ export interface SubagentSummary {
   status: SubagentStatus;
 }
 
-export type TraceStatus = "queued" | "running" | "paused" | "failed" | "completed";
+export type TraceStatus =
+  | "queued"
+  | "running"
+  | "paused"
+  | "failed"
+  | "stopped"
+  | "completed";
 
 export interface RunTraceEntry {
   nodeId: NodeId;

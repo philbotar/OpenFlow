@@ -86,6 +86,7 @@ pub enum RunTelemetry {
         error: String,
     },
     Finished(RunReport),
+    Aborted,
     Error(String),
     SubagentsDeclared {
         node_id: NodeId,

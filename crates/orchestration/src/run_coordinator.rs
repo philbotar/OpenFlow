@@ -10,8 +10,10 @@ use crate::settings_store::{AppSettings, FileSettingsStore};
 use crate::state::WorkflowRunState;
 use domain::{validate_workflow, NodeId, Workflow};
 use providers::{create_provider, ProviderId};
+use std::time::Duration;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::sync::Mutex;
+use tokio_util::sync::CancellationToken;
 
 #[derive(Debug)]
 struct RunSession {
@@ -19,6 +21,12 @@ struct RunSession {
     run_state: Option<WorkflowRunState>,
     action_tx: Option<UnboundedSender<ExecutionAction>>,
     handle: Option<tokio::task::JoinHandle<()>>,
+    cancel_token: Option<CancellationToken>,
+}
+
+enum TerminationMode {
+    Replaced,
+    UserStop,
 }
 
 pub struct RunStartParams<'a> {
@@ -48,6 +56,7 @@ impl RunCoordinator {
                 run_state: None,
                 action_tx: None,
                 handle: None,
+                cancel_token: None,
             }),
         }
     }
@@ -93,7 +102,10 @@ impl RunCoordinator {
 
         let agents = agent_store.load()?;
         let agent_snapshots = resolve_callable_agent_snapshots(&workflow, &agents);
-        let (handle, event_rx, action_tx) = spawn_interactive_workflow_run(
+
+        self.terminate_active_run(TerminationMode::Replaced).await;
+
+        let (handle, event_rx, action_tx, cancel_token) = spawn_interactive_workflow_run(
             &self.runtime,
             workflow.clone(),
             entrypoint,
@@ -103,15 +115,92 @@ impl RunCoordinator {
         );
 
         let mut session = self.session.lock().await;
-        if let Some(existing) = session.handle.take() {
-            existing.abort();
-        }
         let initial_state = WorkflowRunState::running_for_workflow(&workflow);
         session.workflow = Some(workflow);
         session.run_state = Some(initial_state.clone());
         session.action_tx = Some(action_tx);
         session.handle = Some(handle);
+        session.cancel_token = Some(cancel_token);
         Ok((initial_state, event_rx))
+    }
+
+    /// Stops the active workflow run cooperatively.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error only if the stop signal cannot be sent on the run channel.
+    pub async fn stop_run(&self) -> Result<WorkflowRunState, BackendError> {
+        let should_terminate = {
+            let session = self.session.lock().await;
+            match (&session.handle, &session.run_state, &session.workflow) {
+                (Some(_), Some(run_state), _) if run_state.active => true,
+                (None, Some(run_state), _) if run_state.active => false,
+                (_, Some(run_state), _) => return Ok(run_state.clone()),
+                (Some(_), None, _) => true,
+                (None, None, Some(workflow)) => {
+                    return Ok(WorkflowRunState::idle_for_workflow(workflow));
+                }
+                (None, None, None) => return Err(BackendError::NoActiveRun),
+            }
+        };
+
+        if should_terminate {
+            if let Some(snapshot) = self.terminate_active_run(TerminationMode::UserStop).await {
+                return Ok(snapshot);
+            }
+        }
+
+        let session = self.session.lock().await;
+        if let Some(run_state) = session.run_state.clone() {
+            if !run_state.active {
+                return Ok(run_state);
+            }
+        }
+        if let Some(workflow) = session.workflow.clone() {
+            return Ok(WorkflowRunState::idle_for_workflow(&workflow));
+        }
+        Err(BackendError::NoActiveRun)
+    }
+
+    async fn terminate_active_run(&self, mode: TerminationMode) -> Option<WorkflowRunState> {
+        let (handle, action_tx, cancel_token) = {
+            let mut session = self.session.lock().await;
+            if session.handle.is_none() && session.cancel_token.is_none() {
+                return None;
+            }
+            (
+                session.handle.take(),
+                session.action_tx.take(),
+                session.cancel_token.take(),
+            )
+        };
+
+        if let Some(tx) = action_tx {
+            let _ = tx.send(ExecutionAction::Stop);
+        }
+        if let Some(token) = cancel_token {
+            token.cancel();
+        }
+
+        if let Some(mut handle) = handle {
+            match tokio::time::timeout(Duration::from_secs(2), &mut handle).await {
+                Ok(_) => {}
+                Err(_) => {
+                    handle.abort();
+                }
+            }
+        }
+
+        if matches!(mode, TerminationMode::UserStop) {
+            let mut session = self.session.lock().await;
+            let workflow = session.workflow.clone()?;
+            let run_state = session.run_state.as_mut()?;
+            if run_state.active {
+                apply_event_to_run_state(&workflow, run_state, ExecutionEvent::Aborted);
+            }
+            return Some(run_state.clone());
+        }
+        None
     }
 
     /// # Errors
@@ -132,6 +221,7 @@ impl RunCoordinator {
         if finished {
             session.action_tx = None;
             session.handle = None;
+            session.cancel_token = None;
         }
         Ok(snapshot)
     }
@@ -228,6 +318,16 @@ impl RunCoordinator {
         self.session.lock().await.run_state.clone()
     }
 
+    #[must_use]
+    pub async fn is_run_active(&self) -> bool {
+        self.session
+            .lock()
+            .await
+            .run_state
+            .as_ref()
+            .is_some_and(|state| state.active)
+    }
+
     pub async fn clear_run_trace(&self) -> Result<Option<WorkflowRunState>, BackendError> {
         let mut session = self.session.lock().await;
         let workflow = session.workflow.clone();
@@ -247,14 +347,6 @@ impl RunCoordinator {
     #[cfg(test)]
     pub(crate) fn runtime(&self) -> &tokio::runtime::Runtime {
         &self.runtime
-    }
-
-    #[cfg(test)]
-    pub(crate) async fn test_abort_handle(&self) {
-        let mut session = self.session.lock().await;
-        if let Some(handle) = session.handle.take() {
-            handle.abort();
-        }
     }
 
     #[cfg(test)]

@@ -26,10 +26,10 @@ Domain supports entrypoint injection (`run_with_entrypoint` → `InteractiveEngi
 
 | Item | Priority | Status |
 | --- | --- | --- |
-| `stop_run` command — abort execution handle, clear channels, mark run inactive | High | Planned |
-| Wire stop/cancel to UI (stop button during active runs) | High | Planned |
-| Handle window close (`CloseRequested`) — abort active run before exit | High | Planned |
-| Graceful shutdown — cancel in-flight AI calls and tool subprocesses on close | Medium | Planned |
+| `stop_run` command — abort execution handle, clear channels, mark run inactive | High | Done |
+| Wire stop/cancel to UI (stop button during active runs) | High | Done |
+| Handle window close (`CloseRequested`) — abort active run before exit | High | Done |
+| Graceful shutdown — cancel in-flight AI calls and tool subprocesses on close | Medium | Done |
 | Clean up temp artifact dirs (`openflow-run-*`) on completion or abort | Medium | Planned |
 | Store event bridge task handle for independent cancellation | Medium | Planned |
 | Unify on one Tokio runtime — see `docs/architecture/threading-concurrency.md` | Medium | Planned |
@@ -88,14 +88,15 @@ Today a failed tool call becomes a single `is_error: true` [`ToolResult`](crates
 | Workflow version control (per-change revert) | Planned | |
 | Run persistence, history, and replay | Planned | |
 | Programmatic / non-AI nodes (API nodes) | Planned | |
-| Hide or constrain tool-use output in chat | Planned | |
+| Thinking level per node | Planned | See [Thinking & chat presentation](#thinking--chat-presentation) |
+| Thinking blocks in chat UI | Planned | See [Thinking & chat presentation](#thinking--chat-presentation) |
+| Collapsible tool bubbles (expand for output) | Planned | See [Thinking & chat presentation](#thinking--chat-presentation) |
 | Terminal tab in bottom dock panel | Planned | Interactive shell alongside Overview, Chat, Run trace |
 | Chat bar markdown rendering | Planned | |
 | System-level notifications | Planned | |
 | Agent questions & todos — in-run UI | Planned | See [Agent questions & todos](#agent-questions--todos) |
 | Queued chat input during active runs | Planned | See [Agent questions & todos](#agent-questions--todos) |
 | Composio / n8n-style external node connectors | Planned | |
-| Per-node thinking amount | Planned | |
 | Accessibility & keyboard shortcuts | Planned | See [Accessibility](#accessibility) |
 
 ### Accessibility
@@ -112,6 +113,35 @@ Keyboard QoL exists for run, save, delete, and zoom (`AppProvider` global handle
 | Canvas and run status — screen-reader labels | Low | Planned |
 
 **Target:** Every primary panel toggle (sidebar, dock, inspector) has a documented shortcut; shortcuts skip when focus is in a text field.
+
+### Thinking & chat presentation
+
+Providers expose extended reasoning (Anthropic thinking blocks, OpenAI reasoning effort, etc.), but the app has no per-node knob and no first-class UI for model reasoning. `ChatRole::Thinking` today is reused for legacy tool-line parsing and pause context — not provider reasoning. Tool bubbles always show full output in a fixed-height scroll region.
+
+| Layer | Gap |
+| --- | --- |
+| `crates/domain/src/graph/workflow.rs` | No `thinking_level` (or budget) on `AgentNodeConfig` / `CallableAgent` |
+| `crates/domain/src/ports/outbound.rs` | `AgentRequest` has no thinking/reasoning field for adapters |
+| `crates/providers/src/` | Wire payloads omit provider-specific reasoning params; responses do not parse thinking blocks into transcript items |
+| `crates/domain/src/conversation/mod.rs` | No dedicated transcript item for provider reasoning (distinct from `ChatRole::Thinking` log lines) |
+| `crates/orchestration/src/execution/events.rs` | Run projection does not emit structured thinking events to chat |
+| `crates/ui/src/forms/` | Inspector has no thinking-level control (off / low / medium / high or provider-aligned presets) |
+| `crates/ui/src/components/conversation/` | No collapsible thinking block component; `PlainMessage` renders thinking role like assistant text |
+| `crates/ui/src/components/conversation/ToolBubble.tsx` | Tool output always expanded; no collapsed summary of what the tool did |
+
+| Item | Priority | Status |
+| --- | --- | --- |
+| Thinking level schema — `thinking_level` on agent node + saved agent; optional workflow default | High | Planned |
+| Inspector control — pick thinking level per node; inherit workflow default when unset | High | Planned |
+| Provider wiring — map level to Anthropic/OpenAI-compat reasoning params; parse thinking blocks from responses | High | Planned |
+| Thinking transcript items — `AgentTranscriptItem::ReasoningBlock` (or equivalent) in domain + run projection | High | Planned |
+| Thinking block UI — collapsible reasoning bubble in chat; collapsed by default; distinct from assistant messages | High | Planned |
+| Collapsible tool bubbles — collapsed row shows tool name + one-line outcome; expand for args and full output | High | Planned |
+| Streaming thinking — append reasoning tokens into the thinking bubble during active turns | Medium | Planned |
+| Hide legacy thinking tool lines — stop using `ChatRole::Thinking` for tool request/result prose once structured bubbles land | Medium | Planned |
+| Per-run thinking override — transient level tweak from chat chrome without editing the workflow | Low | Planned |
+
+**Target:** Users choose how much model reasoning each node uses. Provider thinking appears as collapsible blocks in chat. Tool invocations show a compact “what it did” line until expanded.
 
 ### Agent questions & todos
 
@@ -215,7 +245,7 @@ Structural cleanup by workspace section. Keep domain logic in `domain`, transpor
 | Thin Tauri adapter — commands delegate to orchestration; event bridge only | Done |
 | Remove unused port/adapter scaffolding | Done |
 | Wire entrypoint through `start_run` IPC | Planned |
-| `stop_run` command + window-close abort | Planned |
+| `stop_run` command + window-close abort | Done |
 | Typed command DTOs — reduce inline structs in `lib.rs` | Planned |
 
 ### UI (`crates/ui`)

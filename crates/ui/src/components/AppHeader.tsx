@@ -70,15 +70,31 @@ export function AppHeader() {
             >
               <SidebarIcon name="validate" />
             </button>
-            <button
-              class="topbar-icon-button topbar-icon-button-primary"
-              onClick={() => void ctx.handleRun()}
-              title="Run"
-              aria-label="Run workflow"
-              data-tauri-drag-region="false"
+            <Show
+              when={ctx.runState()?.active}
+              fallback={
+                <button
+                  class="topbar-icon-button topbar-icon-button-primary"
+                  onClick={() => void ctx.handleRun()}
+                  title="Run"
+                  aria-label="Run workflow"
+                  data-tauri-drag-region="false"
+                >
+                  <SidebarIcon name="run" />
+                </button>
+              }
             >
-              <SidebarIcon name="run" />
-            </button>
+              <button
+                class="topbar-icon-button topbar-icon-button-danger"
+                onClick={() => void ctx.handleStopRun()}
+                disabled={ctx.stoppingRun()}
+                title="Stop"
+                aria-label="Stop workflow"
+                data-tauri-drag-region="false"
+              >
+                <SidebarIcon name="stop" />
+              </button>
+            </Show>
           </div>
         </Show>
       </div>

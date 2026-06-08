@@ -22,6 +22,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use thiserror::Error;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio_util::sync::CancellationToken;
 
 pub use events::{apply_event_to_run_state, record_user_input};
 pub use headless::run_workflow_headless;
@@ -32,6 +33,7 @@ pub type ExecutionEvent = RunTelemetry;
 pub enum ExecutionAction {
     ProvideInput(String),
     ResolveApproval { approval_id: String, allow: bool },
+    Stop,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -111,12 +113,15 @@ pub fn spawn_interactive_workflow_run<A>(
     tokio::task::JoinHandle<()>,
     UnboundedReceiver<ExecutionEvent>,
     UnboundedSender<ExecutionAction>,
+    CancellationToken,
 )
 where
     A: AiPort + Send + Sync + 'static,
 {
     let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel();
     let (action_tx, action_rx) = tokio::sync::mpsc::unbounded_channel();
+    let cancel_token = CancellationToken::new();
+    let drive_cancel_token = cancel_token.clone();
     let handle = runtime.spawn(async move {
         drive::drive_interactive_workflow(
             workflow,
@@ -126,10 +131,11 @@ where
             event_tx,
             action_rx,
             agent_snapshots,
+            drive_cancel_token,
         )
         .await;
     });
-    (handle, event_rx, action_tx)
+    (handle, event_rx, action_tx, cancel_token)
 }
 
 #[cfg(test)]

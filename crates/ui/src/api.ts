@@ -139,6 +139,10 @@ export function startRun(
   });
 }
 
+export function stopRun() {
+  return invoke<WorkflowRunState>("stop_run");
+}
+
 export function submitUserInput(nodeId: string, text: string) {
   return invoke<WorkflowRunState>("submit_user_input", { nodeId, text });
 }

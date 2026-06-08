@@ -23,6 +23,8 @@ function labelForStatus(status: AgentStatus): string {
       return "Done";
     case "failed":
       return "Failed";
+    case "stopped":
+      return "Stopped";
     default:
       return "Idle";
   }

@@ -4,7 +4,7 @@ use crate::tools::ToolRegistry;
 use async_trait::async_trait;
 use domain::{
     AgentRequest, AgentToolCallBatch, AgentTurnOutcome, AgentTurnSuccess, NodeToolConfig,
-    SubagentStatus, SubagentSummary, ToolCall, ToolRef, ToolTier,
+    SubagentStatus, SubagentSummary, ToolCall, ToolCallStatus, ToolRef, ToolTier,
 };
 use parking_lot::Mutex;
 use serde_json::json;
@@ -18,6 +18,48 @@ fn workflow() -> Workflow {
     workflow.nodes = vec![first];
     workflow
 }
+#[test]
+fn reducer_aborted_deactivates_run_and_marks_in_progress_tools() {
+    let workflow = workflow();
+    let mut state = WorkflowRunState::running_for_workflow(&workflow);
+    apply_event_to_run_state(
+        &workflow,
+        &mut state,
+        ExecutionEvent::ToolCallProposed {
+            node_id: NodeId("first".to_string()),
+            label: "First".to_string(),
+            tool_call: ToolCall {
+                id: "call-1".to_string(),
+                name: "read".to_string(),
+                arguments: json!({ "path": "README.md" }),
+                intent: None,
+            },
+        },
+    );
+    apply_event_to_run_state(
+        &workflow,
+        &mut state,
+        ExecutionEvent::ToolStarted {
+            node_id: NodeId("first".to_string()),
+            tool_call_id: "call-1".to_string(),
+            tool_name: "read".to_string(),
+            arguments: json!({ "path": "README.md" }),
+        },
+    );
+    apply_event_to_run_state(&workflow, &mut state, ExecutionEvent::Aborted);
+
+    assert!(!state.active);
+    assert!(state.last_error.is_none());
+    let calls = &state.tool_calls_by_node[&NodeId("first".to_string())];
+    assert_eq!(calls[0].status, ToolCallStatus::Aborted);
+    assert_eq!(
+        state.status_by_node.get(&NodeId("first".to_string())),
+        Some(&crate::state::AgentStatus::Stopped)
+    );
+    assert_eq!(state.run_trace[0].status, TraceStatus::Stopped);
+    assert_eq!(state.run_trace[0].message, "Stopped");
+}
+
 #[test]
 fn reducer_node_completed_pushes_summary_completion_message() {
     let workflow = workflow();
@@ -55,7 +97,7 @@ fn reducer_node_completed_skips_chat_when_summary_missing() {
         },
     );
 
-    assert!(state.chat_logs.get(&NodeId("first".to_string())).is_none());
+    assert!(!state.chat_logs.contains_key(&NodeId("first".to_string())));
 }
 
 #[test]

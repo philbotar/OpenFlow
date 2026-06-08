@@ -302,6 +302,37 @@ pub fn apply_event_to_run_state(
             state.pending_approvals.clear();
             state.last_report = Some(report);
         }
+        ExecutionEvent::Aborted => {
+            state.active = false;
+            state.awaiting_node_id = None;
+            state.active_manual_node_id = None;
+            state.active_tool_call_id = None;
+            state.pending_approvals.clear();
+            abort_in_progress_tools(state);
+            if let Some((node_id, label)) = running_node_snapshot(state) {
+                state
+                    .status_by_node
+                    .insert(node_id.clone(), AgentStatus::Stopped);
+                if let Some(entry) = state.run_trace.iter_mut().rev().find(|entry| {
+                    entry.node_id == node_id
+                        && matches!(
+                            entry.status,
+                            TraceStatus::Running | TraceStatus::Paused | TraceStatus::Queued
+                        )
+                }) {
+                    entry.status = TraceStatus::Stopped;
+                    entry.message = "Stopped".to_string();
+                } else {
+                    state.run_trace.push(RunTraceEntry {
+                        node_id,
+                        node_label: label,
+                        status: TraceStatus::Stopped,
+                        message: "Stopped".to_string(),
+                        output: None,
+                    });
+                }
+            }
+        }
         ExecutionEvent::Error(error) => {
             state.active = false;
             state.awaiting_node_id = None;
@@ -385,6 +416,47 @@ pub fn apply_event_to_run_state(
                 ));
         }
     }
+}
+
+fn abort_in_progress_tools(state: &mut WorkflowRunState) {
+    for calls in state.tool_calls_by_node.values_mut() {
+        for call in calls.iter_mut() {
+            if matches!(
+                call.status,
+                ToolCallStatus::Running
+                    | ToolCallStatus::Proposed
+                    | ToolCallStatus::AwaitingApproval
+            ) {
+                call.status = ToolCallStatus::Aborted;
+            }
+        }
+    }
+}
+
+fn running_node_snapshot(state: &WorkflowRunState) -> Option<(NodeId, String)> {
+    state
+        .status_by_node
+        .iter()
+        .find(|(_, status)| {
+            matches!(
+                status,
+                AgentStatus::Started
+                    | AgentStatus::RunningTool
+                    | AgentStatus::AwaitingInput
+                    | AgentStatus::AwaitingToolApproval
+                    | AgentStatus::Queued
+            )
+        })
+        .map(|(node_id, _)| {
+            let label = state
+                .run_trace
+                .iter()
+                .rev()
+                .find(|entry| entry.node_id == *node_id)
+                .map(|entry| entry.node_label.clone())
+                .unwrap_or_else(|| node_id.0.clone());
+            (node_id.clone(), label)
+        })
 }
 
 fn update_tool_status(

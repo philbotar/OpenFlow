@@ -18,9 +18,9 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::LazyLock;
 use thiserror::Error;
+use tokio_util::sync::CancellationToken;
 use walkdir::WalkDir;
 
 static LINE_SELECTOR: LazyLock<Regex> =
@@ -38,6 +38,7 @@ pub struct ToolRunner {
     http: Client,
     cwd: PathBuf,
     artifacts: ArtifactStore,
+    cancel_token: CancellationToken,
 }
 
 #[derive(Debug, Error)]
@@ -53,12 +54,18 @@ pub enum ToolRunnerError {
 }
 
 impl ToolRunner {
-    pub fn new(registry: ToolRegistry, cwd: PathBuf, artifacts: ArtifactStore) -> Self {
+    pub fn new(
+        registry: ToolRegistry,
+        cwd: PathBuf,
+        artifacts: ArtifactStore,
+        cancel_token: CancellationToken,
+    ) -> Self {
         Self {
             registry,
             http: Client::new(),
             cwd,
             artifacts,
+            cancel_token,
         }
     }
 
@@ -74,7 +81,8 @@ impl ToolRunner {
         let registered = self.registry.get(&call.name)?;
         let raw_output = match registered.kind {
             BuiltinToolKind::Read => self.read(call.arguments.clone()).await?,
-            BuiltinToolKind::Search | BuiltinToolKind::Find | BuiltinToolKind::AstGrep => {
+            BuiltinToolKind::AstGrep => self.ast_grep(call.arguments.clone()).await?,
+            BuiltinToolKind::Search | BuiltinToolKind::Find => {
                 self.run_blocking(registered.kind, call.arguments.clone())
                     .await?
             }
@@ -89,6 +97,75 @@ impl ToolRunner {
         self.finalize_record(call, raw_output)
     }
 
+    async fn ast_grep(&self, args: Value) -> Result<String, ToolRunnerError> {
+        #[derive(Deserialize)]
+        struct AstGrepArgs {
+            pat: String,
+            paths: Vec<String>,
+        }
+        let args: AstGrepArgs = serde_json::from_value(args).map_err(|error| {
+            ToolRunnerError::Tool(ToolError::Failed(format!("invalid ast_grep args: {error}")))
+        })?;
+        let mut command = tokio::process::Command::new("ast-grep");
+        command
+            .arg("scan")
+            .arg("--pattern")
+            .arg(&args.pat)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        for path in &args.paths {
+            command.arg(path);
+        }
+        let mut child = command.spawn().map_err(|error| {
+            ToolRunnerError::Tool(ToolError::Failed(format!("ast_grep failed: {error}")))
+        })?;
+        let mut stdout_pipe = child.stdout.take().ok_or_else(|| {
+            ToolRunnerError::Tool(ToolError::Failed(
+                "ast_grep stdout unavailable".to_string(),
+            ))
+        })?;
+        let mut stderr_pipe = child.stderr.take().ok_or_else(|| {
+            ToolRunnerError::Tool(ToolError::Failed(
+                "ast_grep stderr unavailable".to_string(),
+            ))
+        })?;
+        tokio::select! {
+            biased;
+            _ = self.cancel_token.cancelled() => {
+                let _ = child.kill().await;
+                Err(ToolRunnerError::Tool(ToolError::Failed(
+                    "ast_grep cancelled".to_string(),
+                )))
+            }
+            result = async {
+                let mut stdout_bytes = Vec::new();
+                let mut stderr_bytes = Vec::new();
+                let (stdout_res, stderr_res, status) = tokio::join!(
+                    tokio::io::AsyncReadExt::read_to_end(&mut stdout_pipe, &mut stdout_bytes),
+                    tokio::io::AsyncReadExt::read_to_end(&mut stderr_pipe, &mut stderr_bytes),
+                    child.wait(),
+                );
+                stdout_res.map_err(|error| {
+                    ToolRunnerError::Tool(ToolError::Failed(format!("ast_grep read failed: {error}")))
+                })?;
+                stderr_res.map_err(|error| {
+                    ToolRunnerError::Tool(ToolError::Failed(format!(
+                        "ast_grep stderr read failed: {error}"
+                    )))
+                })?;
+                let status = status.map_err(|error| {
+                    ToolRunnerError::Tool(ToolError::Failed(format!("ast_grep failed: {error}")))
+                })?;
+                if !status.success() {
+                    return Err(ToolRunnerError::Tool(ToolError::Failed(
+                        String::from_utf8_lossy(&stderr_bytes).trim().to_string(),
+                    )));
+                }
+                Ok(String::from_utf8_lossy(&stdout_bytes).to_string())
+            } => result,
+        }
+    }
+
     async fn run_blocking(
         &self,
         kind: BuiltinToolKind,
@@ -100,7 +177,9 @@ impl ToolRunner {
             match kind {
                 BuiltinToolKind::Search => ops.search(args),
                 BuiltinToolKind::Find => ops.find(args),
-                BuiltinToolKind::AstGrep => ops.ast_grep(args),
+                BuiltinToolKind::AstGrep => Err(ToolError::Failed(
+                    "ast_grep must use async runner".to_string(),
+                )),
                 _ => Err(ToolError::Failed(
                     "blocking runner received a non-blocking tool".to_string(),
                 )),
@@ -288,30 +367,6 @@ impl BlockingToolOps {
         Ok(matches.into_iter().take(200).collect::<Vec<_>>().join("\n"))
     }
 
-    fn ast_grep(&self, args: Value) -> Result<String, ToolError> {
-        #[derive(Deserialize)]
-        struct AstGrepArgs {
-            pat: String,
-            paths: Vec<String>,
-        }
-        let args: AstGrepArgs = serde_json::from_value(args)
-            .map_err(|error| ToolError::Failed(format!("invalid ast_grep args: {error}")))?;
-        let mut command = Command::new("ast-grep");
-        command.arg("scan").arg("--pattern").arg(args.pat);
-        for path in args.paths {
-            command.arg(path);
-        }
-        let output = command
-            .output()
-            .map_err(|error| ToolError::Failed(format!("ast_grep failed: {error}")))?;
-        if !output.status.success() {
-            return Err(ToolError::Failed(
-                String::from_utf8_lossy(&output.stderr).trim().to_string(),
-            ));
-        }
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
-    }
-
     fn resolve_local(&self, path: &str) -> PathBuf {
         let path = PathBuf::from(path);
         if path.is_absolute() {
@@ -434,7 +489,12 @@ mod tests {
     fn runner(root: &Path) -> ToolRunner {
         let registry = ToolRegistry::new();
         let artifacts = ArtifactStore::new(root.join("artifacts")).unwrap();
-        ToolRunner::new(registry, root.to_path_buf(), artifacts)
+        ToolRunner::new(
+            registry,
+            root.to_path_buf(),
+            artifacts,
+            CancellationToken::new(),
+        )
     }
 
     #[tokio::test]

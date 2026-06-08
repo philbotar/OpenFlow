@@ -147,6 +147,8 @@ export interface AppContextValue {
   // ── Run handlers ──────────────────────────────────────────────────────────
   handleValidate: () => Promise<void>;
   handleRun: () => Promise<void>;
+  handleStopRun: () => Promise<void>;
+  stoppingRun: Accessor<boolean>;
   handleClearRunTrace: () => Promise<void>;
   handleSubmitChat: () => Promise<void>;
   handleRefreshSkills: () => Promise<void>;

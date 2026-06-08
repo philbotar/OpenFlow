@@ -271,6 +271,17 @@ async fn start_run(
     Ok(initial_state)
 }
 
+/// Tauri command: Stop the active workflow run.
+#[tauri::command]
+async fn stop_run(
+    backend: tauri::State<'_, AppBackend>,
+    app: tauri::AppHandle,
+) -> Result<WorkflowRunState, CommandError> {
+    let run_state = backend.stop_run().await?;
+    let _ = app.emit("run-state", run_state.clone());
+    Ok(run_state)
+}
+
 /// Tauri command: Submit user input to a node.
 #[tauri::command]
 async fn submit_user_input(
@@ -395,12 +406,24 @@ pub fn run() {
             validate_workflow,
             create_agent_node,
             start_run,
+            stop_run,
             submit_user_input,
             submit_tool_approval,
             complete_manual_node,
             get_run_state,
             clear_run_trace,
         ])
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                let app_handle = window.app_handle().clone();
+                tauri::async_runtime::block_on(async move {
+                    let backend = app_handle.state::<AppBackend>();
+                    if backend.is_run_active().await {
+                        let _ = backend.stop_run().await;
+                    }
+                });
+            }
+        })
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
             window.open_devtools();

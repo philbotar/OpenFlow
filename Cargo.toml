@@ -31,7 +31,8 @@ keyring = { version = "3.6.3", features = ["apple-native", "windows-native", "li
 thiserror = "2.0.18"
 tauri = "2.0"
 tauri-build = { version = "2.0", features = [] }
-tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread", "sync"] }
+tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread", "sync", "time", "process"] }
+tokio-util = { version = "0.7.18", features = ["rt"] }
 uuid = { version = "1.23.1", features = ["v4", "serde"] }
 wiremock = "0.6.5"
 

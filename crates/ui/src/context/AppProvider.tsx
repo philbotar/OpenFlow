@@ -741,9 +741,11 @@ export function AppProvider(props: ParentProps) {
     }
   };
 
+  const [stoppingRun, setStoppingRun] = createSignal(false);
+
   const handleRun = async () => {
     const workflow = activeWorkflow();
-    if (!workflow || !applySchemaEditor()) return;
+    if (!workflow || !applySchemaEditor() || stoppingRun()) return;
     try {
       const nextRunState = await desktop.startRun(
         activeWorkflow()!,
@@ -757,6 +759,20 @@ export function AppProvider(props: ParentProps) {
       clearStatusToast();
     } catch (error) {
       setError(normalizeError(error));
+    }
+  };
+
+  const handleStopRun = async () => {
+    if (!runState()?.active || stoppingRun()) return;
+    setStoppingRun(true);
+    try {
+      const nextRunState = await desktop.stopRun();
+      setRunState(nextRunState);
+      clearStatusToast();
+    } catch (error) {
+      setError(normalizeError(error));
+    } finally {
+      setStoppingRun(false);
     }
   };
 
@@ -966,6 +982,11 @@ export function AppProvider(props: ParentProps) {
     if (command && event.key === "Enter") {
       event.preventDefault();
       void handleRun();
+      return;
+    }
+    if (command && event.key === ".") {
+      event.preventDefault();
+      void handleStopRun();
       return;
     }
     if (
@@ -1224,6 +1245,8 @@ export function AppProvider(props: ParentProps) {
     closeAddNodePicker,
     handleValidate,
     handleRun,
+    handleStopRun,
+    stoppingRun,
     handleClearRunTrace,
     handleSubmitChat,
     handleRefreshSkills,

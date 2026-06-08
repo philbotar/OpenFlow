@@ -4,6 +4,7 @@ use domain::{AiPort, Workflow};
 use std::collections::{BTreeMap, VecDeque};
 
 use super::drive::drive_interactive_workflow;
+use tokio_util::sync::CancellationToken;
 use super::events::{apply_event_to_run_state, record_user_input};
 use super::{
     resolve_execution_cwd, ApprovalResponse, ExecutionAction, ExecutionEvent, ManualInput,
@@ -26,6 +27,7 @@ where
     let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
     let (action_tx, action_rx) = tokio::sync::mpsc::unbounded_channel();
     let execution_cwd = resolve_execution_cwd(None).map_err(WorkflowExecutionError::Execution)?;
+    let cancel_token = CancellationToken::new();
     let handle = tokio::spawn(drive_interactive_workflow(
         workflow.clone(),
         entrypoint,
@@ -34,6 +36,7 @@ where
         event_tx,
         action_rx,
         agent_snapshots,
+        cancel_token,
     ));
     let mut manual_inputs = VecDeque::from(manual_inputs);
     let mut approvals = VecDeque::from(approvals);

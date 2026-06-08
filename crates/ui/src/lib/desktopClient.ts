@@ -61,6 +61,7 @@ export interface UiDesktopOutboundPort {
 		executionCwd?: string | null,
 		transientApiKey?: string | null,
 	) => Promise<WorkflowRunState>;
+	stopRun: () => Promise<WorkflowRunState>;
 	submitUserInput: (nodeId: string, text: string) => Promise<WorkflowRunState>;
 	submitToolApproval: (approvalId: string, allow: boolean) => Promise<WorkflowRunState>;
 	completeManualNode: () => Promise<WorkflowRunState>;
@@ -98,6 +99,7 @@ export function createUiDesktopOutboundAdapter(): UiDesktopOutboundPort {
 		validateWorkflow: desktopApi.validateWorkflow,
 		createAgentNode: desktopApi.createAgentNode,
 		startRun: desktopApi.startRun,
+		stopRun: desktopApi.stopRun,
 		submitUserInput: desktopApi.submitUserInput,
 		submitToolApproval: desktopApi.submitToolApproval,
 		completeManualNode: desktopApi.completeManualNode,

@@ -536,6 +536,10 @@ select:focus-visible {
   color: var(--text);
 }
 
+.topbar-icon-button-danger {
+  color: var(--danger, #c44);
+}
+
 .topbar-icon-button-active {
   background: var(--accent-soft);
   color: var(--text);
@@ -1108,6 +1112,10 @@ label span {
   background: var(--danger);
 }
 
+.workflow-flow-handle.status-stopped {
+  background: #8b8f9a;
+}
+
 .node-status-row {
   display: flex;
   align-items: center;
@@ -1146,6 +1154,10 @@ label span {
 
 .status-failed {
   background: var(--danger);
+}
+
+.status-stopped {
+  background: #8b8f9a;
 }
 
 .node-subagent-list {
@@ -2199,6 +2211,11 @@ select.text-input:hover {
 .trace-pill.failed {
   background: var(--danger-soft);
   color: #8f3340;
+}
+
+.trace-pill.stopped {
+  background: #eceef2;
+  color: #5c6370;
 }
 
 .trace-pill.paused {
