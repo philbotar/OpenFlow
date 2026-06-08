@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use thiserror::Error;
 
+use super::auto_generated::assert_editable_file;
 use super::diff::{normalize_create_content, parse_diff_hunks, DiffHunk};
 use super::errors::ApplyPatchError;
 use super::path::resolve_writable;
@@ -1842,12 +1843,18 @@ fn apply_create(
     })
 }
 
+fn guard_editable(path: &Path, display_path: &str) -> Result<(), PatchError> {
+    assert_editable_file(path, display_path)
+        .map_err(|error| PatchError::Apply(ApplyPatchError(error.0)))
+}
+
 fn apply_delete(
     input: &PatchInput,
     options: &PatchOptions,
     fs: &dyn PatchFileSystem,
     absolute_path: &Path,
 ) -> Result<PatchApplyResult, PatchError> {
+    guard_editable(absolute_path, &input.path)?;
     let old_content = read_existing_patch_file(fs, absolute_path, &input.path)
         .map_err(PatchError::Apply)?;
 
@@ -1872,6 +1879,14 @@ fn apply_update(
     absolute_path: &Path,
     dest_path: &Path,
 ) -> Result<PatchApplyResult, PatchError> {
+    guard_editable(absolute_path, &input.path)?;
+    let is_move = input.rename.is_some() && dest_path != absolute_path;
+    if is_move {
+        if let Some(rename) = input.rename.as_deref() {
+            guard_editable(dest_path, rename)?;
+        }
+    }
+
     let diff = input.diff.as_ref().ok_or_else(|| {
         PatchError::Apply(ApplyPatchError(
             "Update operation requires diff (hunks)".to_string(),
@@ -1919,7 +1934,6 @@ fn apply_update(
     .map_err(PatchError::Apply)?;
 
     let final_content = format!("{bom}{}", restore_line_endings(&new_content, line_ending));
-    let is_move = input.rename.is_some() && dest_path != absolute_path;
     let content_changed = original_content != final_content;
 
     if !options.dry_run {

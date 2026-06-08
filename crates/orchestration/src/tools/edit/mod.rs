@@ -1,5 +1,6 @@
 pub mod apply_patch;
 pub mod apply_patch_tool;
+pub mod auto_generated;
 pub mod diff;
 pub mod edit_tool;
 pub mod errors;
