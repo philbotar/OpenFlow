@@ -2,7 +2,7 @@
 
 How async tasks, runtimes, and I/O interact in Step-through-agentic-workflow — and where the current design creates risk or limits throughput.
 
-Related: [architecture-contract.md](./architecture-contract.md)
+Related: [`contract.md`](contract.md)
 
 ## Executive summary
 

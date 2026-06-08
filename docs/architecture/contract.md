@@ -15,6 +15,7 @@ This contract defines layer responsibilities and dependency rules for Step-throu
 3. Orchestration
 - Scope: run lifecycle, coordination, retries, approval loops, event fanout.
 - Code: crates/orchestration.
+- Composition root: `AppBackend` wires catalog modules (`WorkflowCatalog`, `AgentLibrary`, `ProjectRegistry`, `SettingsFacade`, `RunCoordinator`). Backend delegates; it does not embed merge/split or session logic.
 
 4. Domain Engine
 - Scope: workflow model, invariants, transitions, execution semantics, ports.
@@ -64,16 +65,17 @@ This contract defines layer responsibilities and dependency rules for Step-throu
 ## Port Rule
 
 1. Orchestration must depend on interfaces, not provider internals.
-- Provider-specific branching belongs in Provider Adapters.
-- Domain defines provider interaction contracts (for example AiPort).
+- Provider-specific branching belongs in the `providers` crate.
+- Domain defines provider interaction contracts (`AiPort`).
+- UI depends on `UiDesktopOutboundPort`, not raw Tauri invoke details.
+- Add a new port only when a consumer is typed on that interface.
 
 ## Testability Rule
 
 1. Every layer must be testable at its seam.
-- UI tests mock Desktop Adapter.
-- Desktop Adapter tests mock Orchestration.
-- Orchestration tests mock Domain ports and provider ports.
-- Provider Adapter tests verify contract compliance and mapping.
+- UI tests mock `UiDesktopOutboundPort`.
+- Orchestration tests use inline `impl AiPort` stubs or acceptance fixtures.
+- Provider tests verify wire mapping and `AiClient` contract compliance.
 
 ## Change Review Checklist
 

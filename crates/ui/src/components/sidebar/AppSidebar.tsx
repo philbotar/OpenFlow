@@ -89,42 +89,46 @@ export function Sidebar() {
           </div>
           <WorkflowRows />
         </div>
-        <div class="sidebar-section-header">
-          <div class="sidebar-section-label">Projects</div>
-          <SidebarIconButton
-            icon="plus"
-            label="Add project"
-            class="sidebar-section-action"
-            onClick={() => void ctx.handleAddProject()}
-          />
-        </div>
-        <For each={ctx.projects()}>
-          {(project) => (
-            <ProjectFolderRow
-              project={project}
-              workflows={ctx.workflowsForProject(project)}
-              expanded={ctx.isProjectExpanded(project.id)}
-              selected={ctx.selectedProjectId() === project.id}
-              activeWorkflowId={ctx.activeWorkflowId()}
-              screen={ctx.screen()}
-              editingWorkflowId={ctx.editingWorkflowId()}
-              workflowNameDraft={ctx.workflowNameDraft()}
-              onToggleExpand={() => ctx.handleToggleProjectExpanded(project.id)}
-              onSelectProject={() => ctx.handleSelectProject(project.id)}
-              onSelectWorkflow={(workflowId) => {
-                ctx.handleSelectProject(project.id);
-                ctx.handleSwitchWorkflow(workflowId);
-              }}
-              onRenameWorkflow={ctx.handleStartWorkflowNameEdit}
-              onCreateWorkflow={() => void ctx.handleCreateWorkflow(project.id)}
-              onAddExistingWorkflow={() => ctx.handleOpenAssignWorkflowPicker(project.id)}
-              setWorkflowNameInputRef={ctx.setWorkflowNameInputRef}
-              setWorkflowNameDraft={ctx.setWorkflowNameDraft}
-              onWorkflowNameCommit={ctx.handleWorkflowNameCommit}
-              onWorkflowNameKeyDown={ctx.handleWorkflowNameKeyDown}
+        <div class="sidebar-section-group sidebar-projects-section">
+          <div class="sidebar-section-header">
+            <div class="sidebar-section-label">Projects</div>
+            <SidebarIconButton
+              icon="plus"
+              label="Add project"
+              class="sidebar-section-action"
+              onClick={() => void ctx.handleAddProject()}
             />
-          )}
-        </For>
+          </div>
+          <div class="sidebar-projects-scroll">
+            <For each={ctx.projects()}>
+              {(project) => (
+                <ProjectFolderRow
+                  project={project}
+                  workflows={ctx.workflowsForProject(project)}
+                  expanded={ctx.isProjectExpanded(project.id)}
+                  selected={ctx.selectedProjectId() === project.id}
+                  activeWorkflowId={ctx.activeWorkflowId()}
+                  screen={ctx.screen()}
+                  editingWorkflowId={ctx.editingWorkflowId()}
+                  workflowNameDraft={ctx.workflowNameDraft()}
+                  onToggleExpand={() => ctx.handleToggleProjectExpanded(project.id)}
+                  onSelectProject={() => ctx.handleSelectProject(project.id)}
+                  onSelectWorkflow={(workflowId) => {
+                    ctx.handleSelectProject(project.id);
+                    ctx.handleSwitchWorkflow(workflowId);
+                  }}
+                  onRenameWorkflow={ctx.handleStartWorkflowNameEdit}
+                  onCreateWorkflow={() => void ctx.handleCreateWorkflow(project.id)}
+                  onAddExistingWorkflow={() => ctx.handleOpenAssignWorkflowPicker(project.id)}
+                  setWorkflowNameInputRef={ctx.setWorkflowNameInputRef}
+                  setWorkflowNameDraft={ctx.setWorkflowNameDraft}
+                  onWorkflowNameCommit={ctx.handleWorkflowNameCommit}
+                  onWorkflowNameKeyDown={ctx.handleWorkflowNameKeyDown}
+                />
+              )}
+            </For>
+          </div>
+        </div>
       </SidebarList>
       <div class="sidebar-footer">
         <div class="settings-nav-menu">

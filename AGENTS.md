@@ -14,24 +14,25 @@ Single-file orientation for contributors and coding agents.
 3. Start docs at `docs/README.md` — see [Documentation](#documentation) for the full tree.
 4. Coding patterns: `docs/contributing/coding-patterns.md`.
 5. Workflow verification: `docs/contributing/testing-workflows.md`.
-6. Domain vocabulary: `UBIQUITOUS_LANGUAGE.md`.
+6. Domain vocabulary: `docs/glossary.md`.
 
-## Standard Module Layout
+## Boundary Seams
 
-Use this structure consistently in each section crate so seam changes stay mechanical:
+Add a port/trait only when a consumer is typed on that interface. Otherwise call the concrete type directly.
 
-- `src/ports/inbound.*`
-- `src/ports/outbound.*`
-- `src/adapters/inbound.*`
-- `src/adapters/outbound.*`
-
-Ports are contracts owned by the section. Adapters are concrete implementations and transport wiring.
+| Seam | Location |
+| --- | --- |
+| LLM invocation (`AiPort`, `AgentRequest`) | `crates/domain/src/ports/outbound.rs` |
+| Human input / tool approval | `crates/domain/src/ports/inbound.rs` |
+| Provider client (`AiClient: AiPort`) | `crates/providers/src/client.rs` |
+| UI → desktop IPC | `crates/ui/src/lib/desktopClient.ts` (`UiDesktopOutboundPort`) |
 
 ## Documentation
 
 ```text
 docs/
 ├── README.md
+├── glossary.md
 ├── contributing/
 │   ├── README.md
 │   ├── coding-patterns.md
@@ -50,7 +51,7 @@ docs/
 | `docs/contributing/testing-workflows.md` | Acceptance tests, live-AI smoke |
 | `docs/architecture/contract.md` | Layer boundaries and dependency rules |
 | `docs/architecture/threading-concurrency.md` | Runtimes, async I/O, parallelism |
-| `UBIQUITOUS_LANGUAGE.md` | Domain terms and naming |
+| `docs/glossary.md` | Domain terms and naming |
 
 ## Repo Map
 
@@ -59,15 +60,16 @@ docs/
 | Path | Purpose | Change Here When... |
 | --- | --- | --- |
 | `Cargo.toml` | Workspace members and shared dependencies | Adding crates or shared dep versions |
-| `crates/domain/src/model.rs` | Workflow model, `WorkflowSettings`, node config | Changing schema or defaults |
-| `crates/domain/src/validation.rs` | DAG validation + execution layers | Changing graph rules or scheduling |
-| `crates/domain/src/runner.rs` | Non-interactive workflow execution | Changing batch run semantics |
-| `crates/domain/src/interactive.rs` | Interactive engine poll loop + pauses | Changing pause/resume behavior |
-| `crates/domain/src/template.rs` | Node template defaults and locked fields | Changing template definitions |
-| `crates/domain/src/template_store.rs` | Template persistence (`openflow/templates.json`) | Changing template file format |
+| `crates/domain/src/graph/` | Workflow model, `WorkflowSettings`, node config, `CallableAgent`, DAG validation | Changing schema, graph rules, or scheduling |
+| `crates/domain/src/execution/workflow_runner.rs` | Non-interactive `WorkflowRunner` | Changing batch run semantics |
+| `crates/domain/src/execution/interactive_engine.rs` | Interactive engine poll loop + pauses | Changing pause/resume behavior |
+| `crates/domain/src/execution/subagent_runtime.rs` | Subagent declare/call builtins + turn machine | Changing subagent invocation semantics |
+| `crates/domain/src/execution/telemetry.rs` | `RunTelemetry` interactive event enum | Changing run event vocabulary |
+| `crates/domain/src/execution/node_invocation.rs` | Shared `AgentRequest` assembly | Changing upstream input or prompt wiring |
+| `crates/domain/src/template/` | `Template`, locked fields, builtins | Changing template definitions |
+| `crates/orchestration/src/template_store.rs` | Template persistence (`openflow/templates.json`) | Changing template file format |
 | `crates/domain/src/ports/outbound.rs` | `AiPort`, `AgentRequest`, turn outcomes | Changing LLM invocation contract |
 | `crates/domain/src/ports/inbound.rs` | Human input and tool approval ports | Adding engine input contracts |
-| `crates/domain/src/adapters/outbound.rs` | `ScriptedAiAdapter` for tests | Adding domain test doubles |
 
 ### Providers
 
@@ -83,8 +85,13 @@ docs/
 
 | Path | Purpose | Change Here When... |
 | --- | --- | --- |
-| `crates/orchestration/src/backend.rs` | `AppBackend`, bootstrap, IPC-facing ops | Changing app-level commands or load/save |
-| `crates/orchestration/src/execution.rs` | Run lifecycle, shared context, callable agents, cwd | Changing execution semantics |
+| `crates/orchestration/src/backend.rs` | Thin `AppBackend` orchestrator; delegates to catalog modules | Adding/remapping desktop IPC commands |
+| `crates/orchestration/src/workflow_catalog.rs` | Workflow CRUD, app/project merge, assign/unassign | Changing workflow persistence rules |
+| `crates/orchestration/src/agent_library.rs` | Saved agent CRUD, `create_agent_node` | Changing callable agent library behavior |
+| `crates/orchestration/src/project_registry.rs` | Project load/save/create | Changing project registration |
+| `crates/orchestration/src/settings_facade.rs` | Settings, keys, skills, validation summaries | Changing settings or provider readiness UX |
+| `crates/orchestration/src/run_coordinator.rs` | Active run session, start/submit/apply events | Changing run lifecycle coordination |
+| `crates/orchestration/src/execution/` | Drive loop, event projection, subagents, cwd | Changing execution host semantics |
 | `crates/orchestration/src/state.rs` | Run/edit state, trace, chat logs | Changing run state or editor mutations |
 | `crates/orchestration/src/storage.rs` | App workflows (`workflows.json`) | Changing app workflow persistence |
 | `crates/orchestration/src/flow_store.rs` | Project workflows (`.flow/workflows/`) | Changing repo workflow file layout |
@@ -101,8 +108,6 @@ docs/
 | Path | Purpose | Change Here When... |
 | --- | --- | --- |
 | `crates/desktop/src/lib.rs` | Tauri commands/events and app bootstrap | Changing frontend/backend IPC |
-| `crates/desktop/src/ports/` | Desktop seam declarations | Adding desktop contracts |
-| `crates/desktop/src/adapters/` | Tauri transport adapters | Wiring invoke/event to orchestration |
 | `crates/ui/src/App.tsx` | Thin shell: provider, sidebar, header, router | Changing top-level layout |
 | `crates/ui/src/context/` | `AppProvider`, `AppContext` | Changing app state or run listeners |
 | `crates/ui/src/screens/` | `EditorScreen`, `AgentsScreen`, `SettingsScreen` | Changing full-page routes |
@@ -111,6 +116,7 @@ docs/
 | `crates/ui/src/canvas/` | Workflow graph rendering | Changing canvas look/behavior |
 | `crates/ui/src/forms/` | Node/agent configuration editors | Changing inspector forms |
 | `crates/ui/src/api.ts` | Typed Tauri invoke/event wrappers | Changing RPC names or payloads |
+| `crates/ui/src/lib/desktopClient.ts` | `UiDesktopOutboundPort` + factory for swappable desktop backend | Changing how UI talks to Tauri |
 | `crates/ui/src/lib/types.ts` | Frontend DTO mirror types | Changing command payload shapes |
 | `crates/ui/src/styles/index.css` | Global styles and layout tokens | Changing spacing, inspector, dock CSS |
 
@@ -126,8 +132,8 @@ docs/
 | --- | --- |
 | Add a workflow rule or validation | `domain/src/validation.rs`, tests in same file |
 | Add a new provider adapter | Implement `AiPort` in `providers/`, wire via `create_provider` |
-| Add or change a seam contract | `*/src/ports/inbound.*`, `*/src/ports/outbound.*` in owning section |
-| Add or change a concrete integration | `*/src/adapters/inbound.*`, `*/src/adapters/outbound.*` in owning section |
+| Add or change `AiPort` or engine input contracts | `domain/src/ports/` |
+| Add or change UI desktop seam | `ui/src/lib/desktopClient.ts` |
 | Change run execution semantics | `orchestration/src/execution.rs`, `domain/src/interactive.rs` |
 | Change shared context or workflow settings | `domain/src/model.rs`, `orchestration/src/execution.rs`, `ui/src/panels/WorkflowSettingsPanel.tsx` |
 | Change project/workflow linking | `orchestration/src/project_store.rs`, `flow_store.rs`, `backend.rs`, `ui/src/components/sidebar/` |
@@ -186,4 +192,4 @@ See `docs/contributing/testing-workflows.md` for layered test commands.
 - `docs/architecture/README.md`
 - `docs/architecture/contract.md`
 - `docs/architecture/threading-concurrency.md`
-- `UBIQUITOUS_LANGUAGE.md`
+- `docs/glossary.md`

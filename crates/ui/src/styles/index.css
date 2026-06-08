@@ -147,10 +147,13 @@ select:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  min-height: 0;
+  height: 100%;
   padding: 16px 12px 18px;
   background: linear-gradient(180deg, rgba(248, 246, 241, 0.94), rgba(242, 238, 230, 0.94));
   border-right: 1px solid var(--border);
   backdrop-filter: blur(18px);
+  overflow: hidden;
 }
 
 .sidebar-brand {
@@ -302,6 +305,27 @@ select:focus-visible {
 
 .sidebar-list {
   display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.sidebar-section-group {
+  flex-shrink: 0;
+}
+
+.sidebar-projects-section {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.sidebar-projects-scroll {
+  display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 2px;
   min-height: 0;

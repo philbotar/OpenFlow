@@ -1,6 +1,6 @@
 # Testing Workflows
 
-Purpose: explain how to verify workflow behavior without manually clicking through the desktop app.
+How to verify workflow behavior without manually clicking through the desktop app.
 
 ## Local Dev Loops
 
@@ -14,9 +14,11 @@ Purpose: explain how to verify workflow behavior without manually clicking throu
 
 | Layer | Command | What It Proves |
 | --- | --- | --- |
-| Unit tests | `cargo test --workspace` | Domain rules, tool approval resolution, app state, persistence, provider config, OpenAI-compatible and Anthropic wire mapping |
+| Unit tests | `cargo test --workspace` | Domain rules, tool approval resolution, app/project/agent stores, provider config, shared-context and callable-agent helpers, OpenAI-compatible and Anthropic wire mapping, `jsonrepair-rs` tool-argument recovery |
+| Desktop command tests | `cargo test -p desktop` | Tauri command wiring for bootstrap, projects, agents, workflows |
 | Deterministic workflow acceptance | `cargo test -p orchestration --test workflow_acceptance -- --nocapture` | A whole workflow can run headlessly with scripted AI outputs, tool calls, and approval pauses |
 | Live AI smoke | `STEP_WORKFLOW_LIVE_AI=1 STEP_WORKFLOW_LIVE_API_KEY=... STEP_WORKFLOW_LIVE_MODEL=... cargo test -p orchestration --test live_workflow -- --ignored --nocapture` | A real BYOK provider can complete a small workflow and satisfy schema-level rules |
+
 ## Acceptance Rules
 
 The deterministic acceptance tests should prove:
@@ -30,6 +32,18 @@ The deterministic acceptance tests should prove:
 7. Run trace entries expose queued, running, paused, completed, or failed state transitions.
 8. Chat logs capture system, thinking, user, and assistant messages where relevant, including paused-node follow-up turns and approval prompts.
 
+Unit tests in `orchestration/src/execution.rs` should additionally prove:
+
+9. `WorkflowSettings.shared_context` is appended to node and subagent system prompts.
+10. `domain::resolve_callable_agent_snapshots` honors `callable_agents` and `allow_all_callable_agents`.
+11. `resolve_execution_cwd` falls back to process cwd when unset and rejects invalid directories.
+
+Store and backend tests should prove:
+
+12. `AppBackend::load_all_workflows` merges app-store and project-discovered workflows.
+13. Project assign/unassign updates `projects.json` and routes saves to the correct store.
+14. Legacy `step-through-agentic-workflow` data-dir files migrate into `openflow` on first read for agents, projects, and templates.
+
 ## Live AI Rules
 
 Live AI smoke tests must avoid exact prose assertions. Model output changes naturally, so assert contracts instead:
@@ -41,28 +55,23 @@ Live AI smoke tests must avoid exact prose assertions. Model output changes natu
 5. Required fields are non-empty.
 6. A sentinel value such as `ORCHID-91` is preserved exactly across nodes.
 
-## Ports vs Adapters Test Placement
-
-Use the same testing split across all sections (`domain`, `providers`, `orchestration`, `desktop`, `ui`) now that each section has:
-
-- `src/ports/inbound.*`
-- `src/ports/outbound.*`
-- `src/adapters/inbound.*`
-- `src/adapters/outbound.*`
+## Seam Test Placement
 
 Guidelines:
 
-1. Ports tests verify contract behavior and invariants, not transport details.
-2. Adapter tests verify translation and wiring to concrete dependencies (HTTP, file system, keychain, Tauri invoke/event, etc.).
-3. Prefer fast unit tests for port contracts and deterministic adapter behavior.
-4. Use integration tests when an adapter interacts with external systems or runtime boundaries.
-5. Keep contract assertions stable; adapter assertions may include protocol-specific mapping details.
+1. Test `AiPort` contract behavior with inline `impl AiPort` stubs in the owning test module (see `workflow_acceptance.rs`, `runner.rs` tests).
+2. Test provider wire mapping in `providers/src/mapping.rs`, `openai_compat.rs`, and `anthropic.rs`.
+3. Test UI desktop seam by mocking `UiDesktopOutboundPort` when adding AppProvider behavior tests.
+4. End-to-end behavior remains in existing acceptance/live workflows.
 
-Practical placement:
+## Frontend Test Placement
 
-1. Contract-focused tests near `ports/*` modules.
-2. Mapping/wiring tests near `adapters/*` modules.
-3. End-to-end behavior remains in existing acceptance/live workflows.
+| Area | Location | What to test |
+| --- | --- | --- |
+| DTO helpers | `crates/ui/src/lib/*.test.ts` | Project grouping, execution cwd display, workflow utilities |
+| Legacy tool message parsing | `crates/ui/src/lib/parseLegacyToolMessages.test.ts` | Grouping old plain-text tool lines into tool bubbles |
+| Component behavior | `crates/ui/src/**/*.test.tsx` | Callable agent editor, app shell routing |
+| Canvas | `crates/ui/src/canvas/*.test.ts` | Graph interaction contracts |
 
 ## When To Run Each Layer
 
@@ -75,10 +84,26 @@ cargo clippy-max
 cargo test --workspace
 ```
 
-Run this when changing execution behavior, node input shaping, manual pauses, tool approvals, tool result routing, run trace, or chat logs:
+Run this when changing execution behavior, node input shaping, shared context, callable agents, execution cwd, manual pauses, tool approvals, tool result routing, run trace, or chat logs:
+
 ```bash
 cargo test -p orchestration --test workflow_acceptance -- --nocapture
+cargo test -p orchestration execution::
 ```
+
+Run this when changing project/workflow persistence or bootstrap:
+
+```bash
+cargo test -p orchestration project_store flow_store backend agent_store
+cargo test -p desktop
+```
+
+Run this when changing provider wire mapping or tool-argument parsing:
+
+```bash
+cargo test -p providers
+```
+
 Run this only when intentionally checking a real provider/model:
 
 ```bash
