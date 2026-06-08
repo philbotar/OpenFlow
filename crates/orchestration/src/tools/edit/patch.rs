@@ -2,12 +2,13 @@
 
 use std::collections::{HashMap, HashSet};
 use std::io;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use thiserror::Error;
 
 use super::diff::{normalize_create_content, parse_diff_hunks, DiffHunk};
 use super::errors::ApplyPatchError;
+use super::path::resolve_writable;
 use super::normalize::{
     adjust_indentation, convert_leading_tabs_to_spaces, count_leading_whitespace,
     detect_line_ending, get_leading_whitespace, leading_whitespace_byte_len,
@@ -145,57 +146,6 @@ struct HunkVariant {
     old_lines: Vec<String>,
     new_lines: Vec<String>,
     kind: HunkVariantKind,
-}
-
-fn is_subpath(path: &Path, base: &Path) -> bool {
-    path.strip_prefix(base).is_ok()
-}
-
-fn resolve_path_confined(cwd: &Path, p: &str) -> Result<PathBuf, ApplyPatchError> {
-    if p.trim().is_empty() {
-        return Err(ApplyPatchError("path must not be empty".to_string()));
-    }
-
-    let canonical_cwd = cwd
-        .canonicalize()
-        .map_err(|error| ApplyPatchError(format!("invalid cwd: {error}")))?;
-
-    let relative = Path::new(p);
-    if relative.is_absolute() {
-        let resolved = relative
-            .canonicalize()
-            .map_err(|error| ApplyPatchError(format!("invalid path {p}: {error}")))?;
-        if !is_subpath(&resolved, &canonical_cwd) {
-            return Err(ApplyPatchError(format!(
-                "path escapes execution folder: {p}"
-            )));
-        }
-        return Ok(resolved);
-    }
-
-    let mut resolved = canonical_cwd.clone();
-    for component in relative.components() {
-        match component {
-            Component::Normal(name) => resolved.push(name),
-            Component::ParentDir => {
-                if !resolved.pop() {
-                    return Err(ApplyPatchError(format!(
-                        "path escapes execution folder: {p}"
-                    )));
-                }
-            }
-            Component::CurDir => {}
-            Component::RootDir | Component::Prefix(_) => {}
-        }
-    }
-
-    if !is_subpath(&resolved, &canonical_cwd) {
-        return Err(ApplyPatchError(format!(
-            "path escapes execution folder: {p}"
-        )));
-    }
-
-    Ok(resolved)
 }
 
 fn is_blank_line(line: &str) -> bool {
@@ -1816,9 +1766,9 @@ pub fn apply_patch_entry(
     fs: &dyn PatchFileSystem,
 ) -> Result<PatchApplyResult, PatchError> {
     let absolute_path =
-        resolve_path_confined(&options.cwd, &input.path).map_err(PatchError::Apply)?;
+        resolve_writable(&options.cwd, &input.path).map_err(|e| PatchError::Apply(ApplyPatchError(e.0)))?;
     let dest_path = if let Some(rename) = &input.rename {
-        resolve_path_confined(&options.cwd, rename).map_err(PatchError::Apply)?
+        resolve_writable(&options.cwd, rename).map_err(|e| PatchError::Apply(ApplyPatchError(e.0)))?
     } else {
         absolute_path.clone()
     };

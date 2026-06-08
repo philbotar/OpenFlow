@@ -4,11 +4,13 @@
 
 ### Fixed
 
+- **File edit engine (Tier C):** `resolve_writable` canonicalizes existing path segments so relative paths cannot escape the execution folder via symlinks; `EditIo::write_text` matches patch trailing-newline policy for existing files; notebook paths rejected on `exists`.
 - **File edit engine (Tier B):** patch paths are confined to the execution folder; create rejects existing files; create/delete/move verify disk state; move verifies destination before deleting source and rolls back destination on source delete failure.
 - **File edit engine (Tier B):** patch post-write verification now fails on unreadable writes, checks expected bytes on disk (including no-op and rename), reports duplicate exact sequence matches, and slices leading whitespace by byte length.
 
 ### Added
 
+- **File edit engine (Tier C):** `tools::edit::path` (`resolve_writable` jail) and `tools::edit::io` (`EditIo` read/write with BOM/LF restore, notebook rejection); patch engine uses shared path jail.
 - **File edit engine (Tier B):** `tools::edit::apply_patch` — Codex envelope parser (`parse_apply_patch`, `expand_apply_patch_to_inputs`, heredoc strip); 16 OMP-parity tests.
 
 - **File edit engine (Tier B):** `tools::edit::patch` — OMP-parity patch applicator (`apply_patch_entry`) with fuzzy hunk matching, create/update/delete/rename, BOM/line-ending restore, and post-write byte verification (`PatchVerifyError`); 7 unit tests including path confinement, create guard, round-trip CRUD, and move rollback.

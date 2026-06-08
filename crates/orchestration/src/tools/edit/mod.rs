@@ -1,8 +1,10 @@
 pub mod apply_patch;
 pub mod diff;
 pub mod errors;
+pub mod io;
 pub mod normalize;
 pub mod patch;
+pub mod path;
 pub mod replace;
 pub mod replace_sequence;
 
@@ -18,6 +20,8 @@ pub use normalize::{
 pub use apply_patch::{
     expand_apply_patch_to_inputs, parse_apply_patch, parse_apply_patch_streaming,
 };
+pub use io::{EditIo, EditIoError};
+pub use path::{resolve_writable, PathEscapeError};
 pub use patch::{
     apply_patch_entry, PatchApplyResult, PatchError, PatchFileSystem, PatchInput, PatchOp,
     PatchOptions, PatchVerifyError, StdPatchFileSystem,
