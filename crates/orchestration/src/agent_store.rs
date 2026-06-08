@@ -116,6 +116,7 @@ impl FileAgentStore {
         let stored = StoredAgents {
             agents: agents.to_vec(),
         };
+
         let text = serde_json::to_string_pretty(&stored).map_err(|error| {
             io::Error::new(
                 io::ErrorKind::InvalidData,

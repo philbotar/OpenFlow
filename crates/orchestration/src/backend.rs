@@ -487,31 +487,6 @@ impl AppBackend {
     }
 
     /// # Errors
-    /// Returns an error if the project store cannot be read or written.
-    pub fn upsert_project(&self, project: Project) -> Result<Project, BackendError> {
-        let mut projects = self.load_projects()?;
-        if let Some(existing) = projects.iter_mut().find(|item| item.id == project.id) {
-            *existing = project.clone();
-        } else {
-            projects.push(project.clone());
-        }
-        self.save_projects(&projects)?;
-        Ok(project)
-    }
-
-    /// # Errors
-    /// Returns an error if the project is missing or the store cannot be written.
-    pub fn delete_project(&self, project_id: &str) -> Result<(), BackendError> {
-        let mut projects = self.load_projects()?;
-        let original_len = projects.len();
-        projects.retain(|project| project.id != project_id);
-        if projects.len() == original_len {
-            return Err(BackendError::ProjectNotFound(project_id.to_string()));
-        }
-        self.save_projects(&projects)
-    }
-
-    /// # Errors
     /// Returns an error if the path is invalid, already registered, or the store cannot be written.
     pub fn create_project_from_directory(&self, path: String) -> Result<Project, BackendError> {
         let mut projects = self.load_projects()?;

@@ -23,7 +23,6 @@
 pub mod adapters;
 pub mod agent_store;
 pub mod backend;
-pub mod canvas_math;
 pub mod credential_store;
 pub mod execution;
 pub mod flow_store;

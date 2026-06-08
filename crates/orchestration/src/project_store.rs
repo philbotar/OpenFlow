@@ -56,17 +56,6 @@ impl Project {
     }
 }
 
-/// Returns the first project that contains `workflow_id`, if any.
-#[must_use]
-pub fn find_project_for_workflow<'a>(
-    projects: &'a [Project],
-    workflow_id: &str,
-) -> Option<&'a Project> {
-    projects
-        .iter()
-        .find(|project| project.workflow_ids.iter().any(|id| id == workflow_id))
-}
-
 /// Drops legacy global pseudo-project rows and deduplicates membership ids.
 pub fn cleanup_stored_projects(projects: &mut Vec<Project>) {
     projects.retain(|project| project.id != "global" && !project.path.is_empty());
