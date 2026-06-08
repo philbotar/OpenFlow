@@ -64,7 +64,6 @@ const settings: AppSettings = {
       chat_completions_path: "v1/chat/completions",
       known_models: ["gpt-4o-mini"],
       default_model: "gpt-4o-mini",
-      key_ref: "provider:openai:api-key",
       editable: false,
     },
     custom_openai_compatible: {
@@ -75,7 +74,6 @@ const settings: AppSettings = {
       chat_completions_path: "v1/chat/completions",
       known_models: ["llama3.1"],
       default_model: "llama3.1",
-      key_ref: "provider:custom_openai_compatible:api-key",
       editable: true,
     },
   },

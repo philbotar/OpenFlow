@@ -90,7 +90,6 @@ const SETTINGS: AppSettings = {
       chat_completions_path: "chat/completions",
       known_models: ["gpt-4.1-mini"],
       default_model: "gpt-4.1-mini",
-      key_ref: "provider:openai:api-key",
       editable: false,
     },
     custom_openai_compatible: {
@@ -101,7 +100,6 @@ const SETTINGS: AppSettings = {
       chat_completions_path: "chat/completions",
       known_models: ["compatible-model"],
       default_model: "compatible-model",
-      key_ref: "provider:custom_openai_compatible:api-key",
       editable: true,
     },
   },
@@ -809,7 +807,7 @@ describe("App settings persistence", () => {
         expect.objectContaining({
           providers: expect.objectContaining({
             custom_openai_compatible: expect.objectContaining({
-              key_ref: "provider:custom_openai_compatible:api-key",
+              base_url: "https://example.invalid/v1",
             }),
           }),
         }),

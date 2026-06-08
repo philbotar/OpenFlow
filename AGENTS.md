@@ -100,7 +100,6 @@ docs/
 | `crates/orchestration/src/skill_store.rs` | Skill discovery (read-only) | Changing skill search roots |
 | `crates/orchestration/src/settings_store.rs` | App settings (`settings.json`) | Changing settings schema |
 | `crates/orchestration/src/provider_config.rs` | Provider readiness and key resolution | Changing key precedence or env fallback |
-| `crates/orchestration/src/credential_store.rs` | OS keychain integration | Changing credential storage |
 | `crates/orchestration/src/tools/` | Tool registry, approval, runner | Changing tool catalog or execution |
 
 ### Desktop and UI
@@ -160,11 +159,11 @@ docs/
 | Saved agents | `{data_local}/openflow/agents.json` (migrates from legacy slug) |
 | Node templates | `{data_local}/openflow/templates.json` (migrates from legacy slug) |
 | Project workflows | `{project}/.flow/workflows/{workflowId}.workflow.json` |
-| Provider API keys | OS credential store via key refs in settings |
+| Provider API keys | Plaintext in `settings.json` (`ProviderProfile.api_key`) |
 
 `AppBackend::load_all_workflows` merges app-store and project-discovered workflows (project files win on ID collision).
 
-API key resolution order (highest to lowest): transient input panel → OS credential store → provider env var fallback (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, etc.).
+API key resolution order (highest to lowest): transient input panel → stored settings key (`ProviderProfile.api_key`) → provider env var fallback (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, etc.).
 
 ## Verification Commands
 

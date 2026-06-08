@@ -6,7 +6,7 @@ use crate::execution::{
 };
 use domain::resolve_callable_agent_snapshots;
 use crate::provider_config::{resolve_provider_config, ProviderEnv};
-use crate::settings_store::{AppSettings, FileSettingsStore};
+use crate::settings_store::{merge_preserved_api_keys, AppSettings, FileSettingsStore};
 use crate::state::WorkflowRunState;
 use domain::{validate_workflow, NodeId, Workflow};
 use providers::{create_provider, ProviderId};
@@ -81,23 +81,19 @@ impl RunCoordinator {
         validate_workflow(&workflow)?;
         let resolved_cwd = resolve_execution_cwd(execution_cwd.as_deref())
             .map_err(BackendError::InvalidExecutionCwd)?;
-        let provider_settings = workflow
+        let persisted_settings = settings_store.load()?;
+        let mut provider_settings = settings.clone();
+        merge_preserved_api_keys(&mut provider_settings, &persisted_settings);
+        if let Some(provider_id) = workflow
             .settings
             .provider_id
             .as_ref()
             .filter(|provider_id| !provider_id.trim().is_empty())
-            .map(|provider_id| {
-                let mut settings = settings.clone();
-                settings.active_provider = ProviderId::from(provider_id.as_str());
-                settings
-            });
-        let provider_settings = provider_settings.as_ref().unwrap_or(settings);
-        let provider_config = resolve_provider_config(
-            provider_settings,
-            transient_api_key,
-            env,
-            settings_store.credential_store(),
-        )?;
+        {
+            provider_settings.active_provider = ProviderId::from(provider_id.as_str());
+        }
+        let provider_config =
+            resolve_provider_config(&provider_settings, transient_api_key, env)?;
         let ai = create_provider(provider_config);
 
         let agents = agent_store.load()?;

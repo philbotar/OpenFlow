@@ -30,6 +30,7 @@ Domain supports entrypoint injection (`run_with_entrypoint` → `InteractiveEngi
 | Wire stop/cancel to UI (stop button during active runs) | High | Done |
 | Handle window close (`CloseRequested`) — abort active run before exit | High | Done |
 | Graceful shutdown — cancel in-flight AI calls and tool subprocesses on close | Medium | Done |
+| User stop shows `stopped` on canvas, overview, and trace (not `failed`) | Medium | Done |
 | Clean up temp artifact dirs (`openflow-run-*`) on completion or abort | Medium | Planned |
 | Store event bridge task handle for independent cancellation | Medium | Planned |
 | Unify on one Tokio runtime — see `docs/architecture/threading-concurrency.md` | Medium | Planned |
@@ -38,6 +39,14 @@ Domain supports entrypoint injection (`run_with_entrypoint` → `InteractiveEngi
 | Warn on close when a run is still active | Low | Planned |
 
 **Deferred** until cron, retry loops, and repo workflows land: background job start/stop/resume, multi-run orchestration.
+
+### Provider API key storage — plaintext in settings
+
+| Item | Priority | Status |
+| --- | --- | --- |
+| Persist keys in `settings.json` (`ProviderProfile.api_key`) | High | Done |
+| Settings UI plaintext risk notice | High | Done |
+| Env var fallback unchanged | High | Done |
 
 ### Tool invocation retry and resilience
 
@@ -235,7 +244,7 @@ Structural cleanup by workspace section. Keep domain logic in `domain`, transpor
 | Typed `BackendError`; `spawn_blocking` tool I/O; dead-code removal | Done |
 | Unify on one Tokio runtime — see near-term run lifecycle | Planned |
 | Tool runner error taxonomy + retry loop (T19–T20) | Planned |
-| `RunCoordinator` / session lifecycle — stop handle, channel cleanup | Planned |
+| `RunCoordinator` / session lifecycle — stop handle, channel cleanup | Done |
 | Store catalog split audit — merge overlapping workflow/project helpers | Planned |
 
 ### Desktop (`crates/desktop`)
@@ -255,6 +264,7 @@ Structural cleanup by workspace section. Keep domain logic in `domain`, transpor
 | Split shell — `context/`, `screens/`, `panels/`, `components/`, `forms/` | Done |
 | `UiDesktopOutboundPort` in `lib/desktopClient.ts` | Done |
 | Reusable sidebar primitives; shared Agents screen list rows | Done |
+| Run stop button + `stopRun` IPC wiring | Done |
 | Slim `AppProvider` — extract run listeners, zoom, dock resize into hooks/modules | Planned |
 | Typed run-state selectors — reduce `AppContext` surface | Planned |
 | Canvas host boundary — keep React Flow isolated from Solid app state | Planned |
@@ -325,7 +335,7 @@ Remediation for modeled-but-unwired behavior and correctness gaps in `crates/dom
 
 ## Suggested execution order
 
-1. Entrypoint wiring + run lifecycle (stop/cancel/shutdown)
+1. ~~Entrypoint wiring + run lifecycle (stop/cancel/shutdown)~~ — stop/cancel/shutdown done; entrypoint wiring remains
 2. Domain P0 path (T1–T6, T19–T21, T9, T10) — includes tool retry and resilient failure handling
 3. Product: branching join semantics, MCP, cron/retry execution
 4. Domain polish (T11–T18) and remaining product features

@@ -55,7 +55,7 @@ Add a port/trait only when a consumer is typed on that interface. Current seams:
 | Settings | `{data_local}/step-through-agentic-workflow/settings.json` | `orchestration/src/settings_store.rs` |
 | Node templates | `{data_local}/openflow/templates.json` (migrates from legacy slug) | `orchestration/src/template_store.rs` |
 | Project workflows | `{project}/.flow/workflows/{workflowId}.workflow.json` | `orchestration/src/flow_store.rs` |
-| Provider API keys | OS credential store via key refs in settings | `orchestration/src/credential_store.rs` |
+| Provider API keys | Plaintext in `settings.json` (`ProviderProfile.api_key`) | `orchestration/src/settings_store.rs` |
 | Skills | Discovered at runtime from Cursor/Claude skill dirs (not persisted) | `orchestration/src/skill_store.rs` |
 
 `AppBackend::load_all_workflows` merges app-store workflows with project-discovered workflows (project files win on ID collision).

@@ -265,7 +265,6 @@ export interface ProviderProfile {
   chat_completions_path: string;
   known_models: string[];
   default_model: string | null;
-  key_ref: string;
   editable: boolean;
 }
 

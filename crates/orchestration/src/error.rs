@@ -1,4 +1,3 @@
-use crate::credential_store::CredentialStoreError;
 use crate::provider_config::ProviderConfigError;
 use domain::{NodeId, WorkflowValidationError};
 use std::io;
@@ -8,8 +7,6 @@ use thiserror::Error;
 pub enum BackendError {
     #[error(transparent)]
     Io(#[from] io::Error),
-    #[error(transparent)]
-    Credential(#[from] CredentialStoreError),
     #[error(transparent)]
     Validation(#[from] WorkflowValidationError),
     #[error(transparent)]

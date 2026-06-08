@@ -187,22 +187,21 @@ flowchart TB
     UI["UI invoke()"] --> Router{Tauri command type}
 
     Router -->|async fn| AsyncCmd["start_run, submit_user_input,<br/>submit_tool_approval, bootstrap_app"]
-    Router -->|sync fn| SyncCmd["load_workflows, save_workflow,<br/>save_settings, keychain ops, etc."]
+    Router -->|sync fn| SyncCmd["load_workflows, save_workflow,<br/>save_settings, provider key ops, etc."]
 
     AsyncCmd --> TauriAsync["tauri async_runtime"]
     SyncCmd --> SyncThread["blocking thread pool"]
 
     SyncCmd --> Disk["fs::read/write workflows.json"]
-    SyncCmd --> KC["keyring get/set password"]
     AsyncCmd --> Mutex["lock RunSession"]
 ```
 
-Sync commands call straight into orchestration stores (`crates/orchestration/src/storage.rs`, `settings_store.rs`, `credential_store.rs`).
+Sync commands call straight into orchestration stores (`crates/orchestration/src/storage.rs`, `settings_store.rs`).
 
 ### Impact
 
 - Saving workflows while a run is active competes for disk I/O on a blocking pool thread — usually fine, but large files can delay command responses.
-- Keychain access in provider API key commands is sync and can be slow.
+- Provider API key load/save reads and writes `settings.json` synchronously.
 - UI awaits `invoke()` — long sync commands make the app feel frozen.
 
 Only a handful of commands are `async fn`. The rest block a Tauri worker.

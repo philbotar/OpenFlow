@@ -282,7 +282,6 @@ impl AppBackend {
 #[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
-    use crate::credential_store::CredentialStore;
     use crate::execution::{ExecutionAction, ExecutionEvent};
     use crate::settings_store::{ProviderProfile, ProviderTransport};
     use providers::ProviderId;
@@ -292,15 +291,11 @@ mod tests {
 
     fn backend() -> (AppBackend, tempfile::TempDir) {
         let dir = tempdir().expect("tempdir");
-        let credential_store = CredentialStore::in_memory();
         let backend = AppBackend::new(
             FileWorkflowStore::new(dir.path().join("workflows.json")),
             FileAgentStore::new(dir.path().join("agents.json")),
             FileProjectStore::new(dir.path().join("projects.json")),
-            FileSettingsStore::with_credential_store(
-                dir.path().join("settings.json"),
-                credential_store,
-            ),
+            FileSettingsStore::new(dir.path().join("settings.json")),
             ProviderEnv::from_pairs([
                 ("OPENAI_API_KEY", "openai-key"),
                 ("OPENAI_COMPATIBLE_API_KEY", "compatible-key"),
@@ -462,12 +457,11 @@ mod tests {
             },
         );
 
-        let credential_store = CredentialStore::in_memory();
         let readiness = AppBackend::new(
             FileWorkflowStore::new("/tmp/unused-workflows.json"),
             FileAgentStore::new("/tmp/unused-agents.json"),
             FileProjectStore::new("/tmp/unused-projects.json"),
-            FileSettingsStore::with_credential_store("/tmp/unused-settings.json", credential_store),
+            FileSettingsStore::new("/tmp/unused-settings.json"),
             ProviderEnv::default(),
             tokio::runtime::Runtime::new().expect("runtime"),
         )

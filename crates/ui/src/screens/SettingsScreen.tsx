@@ -13,8 +13,9 @@ export function SettingsScreen() {
             <div class="eyebrow">Authentication</div>
             <h3>Provider API key</h3>
             <p>
-              Saved in the OS credential store for the selected provider. Environment
-              variables still act as fallback.
+              Stored in plaintext in your local settings file for the selected provider.
+              Protect this machine and settings file accordingly. Environment variables
+              still act as fallback.
             </p>
           </div>
           <input

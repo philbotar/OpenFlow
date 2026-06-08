@@ -344,7 +344,6 @@ function cloneProviderProfile(profile: ProviderProfile): ProviderProfile {
     chat_completions_path: profile.chat_completions_path,
     known_models: [...profile.known_models],
     default_model: profile.default_model,
-    key_ref: profile.key_ref,
     editable: profile.editable,
   };
 }

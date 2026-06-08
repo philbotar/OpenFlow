@@ -28,7 +28,6 @@ export const EMPTY_SETTINGS: AppSettings = {
       chat_completions_path: "v1/chat/completions",
       known_models: ["gpt-4o", "gpt-4o-mini", "gpt-4.5", "o3"],
       default_model: "gpt-4o-mini",
-      key_ref: "provider:openai:api-key",
       editable: false,
     },
     custom_openai_compatible: {
@@ -39,7 +38,6 @@ export const EMPTY_SETTINGS: AppSettings = {
       chat_completions_path: "v1/chat/completions",
       known_models: ["model-name"],
       default_model: "model-name",
-      key_ref: "provider:custom_openai_compatible:api-key",
       editable: true,
     },
     anthropic: {
@@ -50,7 +48,6 @@ export const EMPTY_SETTINGS: AppSettings = {
       chat_completions_path: "v1/chat/completions",
       known_models: ["claude-3-5-sonnet-latest", "claude-3-5-haiku-latest"],
       default_model: "claude-3-5-sonnet-latest",
-      key_ref: "provider:anthropic:api-key",
       editable: false,
     },
   },

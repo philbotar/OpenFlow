@@ -4,7 +4,7 @@ use crate::provider_config::{
     active_provider_env_var, active_provider_label, resolve_provider_config, ProviderConfigError,
     ProviderEnv,
 };
-use crate::settings_store::{key_ref_for_provider, AppSettings, FileSettingsStore};
+use crate::settings_store::{merge_preserved_api_keys, AppSettings, FileSettingsStore};
 use crate::skill_store::{self, SkillSummary};
 use domain::{execution_layers, validate_workflow, Workflow};
 use providers::ProviderId;
@@ -31,7 +31,7 @@ impl SettingsFacade {
     /// # Errors
     /// Returns an error if the settings file cannot be read.
     pub fn load(&self) -> Result<AppSettings, BackendError> {
-        self.store.load().map_err(BackendError::from)
+        Ok(self.store.load()?.redacted())
     }
 
     /// # Errors
@@ -41,41 +41,52 @@ impl SettingsFacade {
     }
 
     /// # Errors
-    /// Returns an error if the credential store cannot be read.
+    /// Returns an error if the settings file cannot be read.
     pub fn load_provider_api_key(&self, provider_id: &str) -> Result<Option<String>, BackendError> {
+        let settings = self.store.load()?;
         let provider_id = ProviderId::from(provider_id);
-        Ok(self
-            .store
-            .credential_store()
-            .get(&key_ref_for_provider(&provider_id))?)
+        Ok(
+            settings
+                .providers
+                .get(&provider_id)
+                .and_then(|profile| {
+                    let key = profile.api_key.trim();
+                    if key.is_empty() {
+                        None
+                    } else {
+                        Some(key.to_string())
+                    }
+                }),
+        )
     }
 
     /// # Errors
-    /// Returns an error if the credential store cannot be written.
+    /// Returns an error if the settings file cannot be written.
     pub fn save_provider_api_key(
         &self,
         provider_id: &str,
         api_key: &str,
     ) -> Result<(), BackendError> {
+        let mut settings = self.store.load()?;
         let provider_id = ProviderId::from(provider_id);
-        let key_ref = key_ref_for_provider(&provider_id);
-        let api_key = api_key.trim();
-        if api_key.is_empty() {
-            self.store.credential_store().delete(&key_ref)?;
-        } else {
-            self.store.credential_store().set(&key_ref, api_key)?;
-        }
+        let profile = settings
+            .providers
+            .get_mut(&provider_id)
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("provider {provider_id} not found"),
+                )
+            })?;
+        profile.api_key = api_key.trim().to_string();
+        self.store.save(&settings)?;
         Ok(())
     }
 
     /// # Errors
-    /// Returns an error if the credential store cannot delete the key.
+    /// Returns an error if the settings file cannot be written.
     pub fn delete_provider_api_key(&self, provider_id: &str) -> Result<(), BackendError> {
-        let provider_id = ProviderId::from(provider_id);
-        self.store
-            .credential_store()
-            .delete(&key_ref_for_provider(&provider_id))?;
-        Ok(())
+        self.save_provider_api_key(provider_id, "")
     }
 
     #[must_use]
@@ -84,12 +95,20 @@ impl SettingsFacade {
         settings: &AppSettings,
         transient_api_key: Option<&str>,
     ) -> ProviderReadiness {
-        match resolve_provider_config(
-            settings,
-            transient_api_key,
-            &self.env,
-            self.store.credential_store(),
-        ) {
+        let Ok(persisted) = self.store.load() else {
+            return ProviderReadiness {
+                ready: false,
+                provider: active_provider_label(settings),
+                message: "Failed to load settings".to_string(),
+                env_var: active_provider_env_var(settings)
+                    .unwrap_or_default()
+                    .to_string(),
+            };
+        };
+        let mut merged = settings.clone();
+        merge_preserved_api_keys(&mut merged, &persisted);
+
+        match resolve_provider_config(&merged, transient_api_key, &self.env) {
             Ok(_) => ProviderReadiness {
                 ready: true,
                 provider: active_provider_label(settings),

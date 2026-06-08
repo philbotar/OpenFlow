@@ -1,6 +1,5 @@
 #![allow(clippy::derive_partial_eq_without_eq, clippy::must_use_candidate)]
 
-use crate::credential_store::{CredentialStore, CredentialStoreError};
 use providers::{
     builtin_provider_specs, provider_spec, ProviderId, ProviderKind, ProviderSpec, WireApi,
 };
@@ -24,8 +23,8 @@ pub struct ProviderProfile {
     pub known_models: Vec<String>,
     #[serde(default)]
     pub default_model: Option<String>,
-    #[serde(default)]
-    pub key_ref: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub api_key: String,
     #[serde(default)]
     pub editable: bool,
     #[serde(skip)]
@@ -38,11 +37,6 @@ fn default_responses_path() -> String {
 
 fn default_chat_completions_path() -> String {
     "v1/chat/completions".to_string()
-}
-
-#[must_use]
-pub fn key_ref_for_provider(provider_id: &ProviderId) -> String {
-    format!("provider:{}:api-key", provider_id.as_str())
 }
 
 impl ProviderProfile {
@@ -72,7 +66,7 @@ impl ProviderProfile {
                 .map(|model| (*model).to_string())
                 .collect(),
             default_model: Some(spec.default_model.to_string()),
-            key_ref: key_ref_for_provider(&ProviderId::from(spec.id)),
+            api_key: String::new(),
             editable: spec.editable,
             new_model_input: String::new(),
         }
@@ -94,7 +88,7 @@ impl ProviderProfile {
             })
     }
 
-    fn fallback(id: &str, display_name: &str) -> Self {
+    fn fallback(_id: &str, display_name: &str) -> Self {
         Self {
             display_name: display_name.to_string(),
             base_url: "https://api.openai.com".to_string(),
@@ -103,16 +97,13 @@ impl ProviderProfile {
             chat_completions_path: default_chat_completions_path(),
             known_models: vec!["gpt-4o-mini".to_string()],
             default_model: Some("gpt-4o-mini".to_string()),
-            key_ref: key_ref_for_provider(&ProviderId::from(id)),
+            api_key: String::new(),
             editable: false,
             new_model_input: String::new(),
         }
     }
 
-    fn normalize(&mut self, provider_id: &ProviderId, spec: Option<&ProviderSpec>) {
-        if self.key_ref.trim().is_empty() {
-            self.key_ref = key_ref_for_provider(provider_id);
-        }
+    fn normalize(&mut self, spec: Option<&ProviderSpec>) {
         if let Some(spec) = spec {
             if self.display_name.trim().is_empty() {
                 self.display_name = spec.display_name.to_string();
@@ -180,6 +171,15 @@ impl AppSettings {
         ids
     }
 
+    #[must_use]
+    pub fn redacted(&self) -> Self {
+        let mut copy = self.clone();
+        for profile in copy.providers.values_mut() {
+            profile.api_key.clear();
+        }
+        copy
+    }
+
     fn normalized(mut self) -> Self {
         for spec in builtin_provider_specs() {
             let id = ProviderId::from(spec.id);
@@ -191,7 +191,7 @@ impl AppSettings {
         for id in ids {
             let spec = provider_spec(&id);
             if let Some(profile) = self.providers.get_mut(&id) {
-                profile.normalize(&id, spec);
+                profile.normalize(spec);
             }
         }
         if !self.providers.contains_key(&self.active_provider) {
@@ -215,257 +215,30 @@ impl Default for AppSettings {
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct LegacyKnownModelsSettings {
-    known_models: Vec<String>,
-}
-
-impl From<LegacyKnownModelsSettings> for AppSettings {
-    fn from(value: LegacyKnownModelsSettings) -> Self {
-        let mut settings = Self::default();
-        if !value.known_models.is_empty() {
-            if let Some(profile) = settings.providers.get_mut(&ProviderId::from("openai")) {
-                profile.known_models = value.known_models;
+pub(crate) fn merge_preserved_api_keys(incoming: &mut AppSettings, existing: &AppSettings) {
+    for (id, profile) in &mut incoming.providers {
+        if profile.api_key.trim().is_empty() {
+            if let Some(existing_profile) = existing.providers.get(id) {
+                profile.api_key = existing_profile.api_key.clone();
             }
         }
-        settings
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct LegacyFixedSettings {
-    active_provider: Option<LegacyProviderKind>,
-    openai: Option<LegacyProviderProfile>,
-    #[serde(rename = "openai_compatible")]
-    compatible: Option<LegacyProviderProfile>,
+fn parse_settings_json(text: &str) -> Result<AppSettings, serde_json::Error> {
+    serde_json::from_str::<AppSettings>(text).map(AppSettings::normalized)
 }
-
-#[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum LegacyProviderKind {
-    OpenAi,
-    OpenAiCompatible,
-}
-
-#[derive(Debug, Deserialize)]
-struct LegacyProviderProfile {
-    display_name: String,
-    base_url: String,
-    transport: ProviderTransport,
-    #[serde(default = "default_responses_path")]
-    responses_path: String,
-    #[serde(default = "default_chat_completions_path")]
-    chat_completions_path: String,
-    known_models: Vec<String>,
-    #[serde(default)]
-    default_model: Option<String>,
-    #[serde(default)]
-    api_key: String,
-}
-
-struct MigratedSettings {
-    settings: AppSettings,
-    migrated_secret: bool,
-}
-
-impl LegacyProviderProfile {
-    fn into_profile(self, provider_id: &ProviderId, fallback: ProviderProfile) -> ProviderProfile {
-        ProviderProfile {
-            display_name: if self.display_name.trim().is_empty() {
-                fallback.display_name
-            } else {
-                self.display_name
-            },
-            base_url: if self.base_url.trim().is_empty() {
-                fallback.base_url
-            } else {
-                self.base_url
-            },
-            transport: self.transport,
-            responses_path: self.responses_path,
-            chat_completions_path: self.chat_completions_path,
-            known_models: if self.known_models.is_empty() {
-                fallback.known_models
-            } else {
-                self.known_models
-            },
-            default_model: self.default_model.or(fallback.default_model),
-            key_ref: key_ref_for_provider(provider_id),
-            editable: fallback.editable,
-            new_model_input: String::new(),
-        }
-    }
-}
-
-fn migrate_settings_json(
-    text: &str,
-    credential_store: &CredentialStore,
-) -> Result<MigratedSettings, SettingsParseError> {
-    let current_error = match serde_json::from_str::<AppSettings>(text) {
-        Ok(settings) => {
-            let mut value = serde_json::from_str::<serde_json::Value>(text)
-                .map_err(SettingsParseError::JsonValue)?;
-            let migrated_secret = migrate_provider_map_secrets(&mut value, credential_store)
-                .map_err(SettingsParseError::Credential)?;
-            return Ok(MigratedSettings {
-                settings: settings.normalized(),
-                migrated_secret,
-            });
-        }
-        Err(error) => error,
-    };
-
-    let fixed_error = match serde_json::from_str::<LegacyFixedSettings>(text) {
-        Ok(legacy) if legacy.openai.is_some() || legacy.compatible.is_some() => {
-            return migrate_legacy_fixed_settings(legacy, credential_store)
-                .map_err(SettingsParseError::Credential);
-        }
-        Ok(_) => serde_json::Error::io(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "not legacy fixed provider settings",
-        )),
-        Err(error) => error,
-    };
-
-    serde_json::from_str::<LegacyKnownModelsSettings>(text)
-        .map(|legacy| MigratedSettings {
-            settings: AppSettings::from(legacy),
-            migrated_secret: false,
-        })
-        .map_err(|known_error| SettingsParseError::Schemas {
-            current: current_error,
-            fixed: fixed_error,
-            known: known_error,
-        })
-}
-
-fn migrate_provider_map_secrets(
-    value: &mut serde_json::Value,
-    credential_store: &CredentialStore,
-) -> Result<bool, CredentialStoreError> {
-    let Some(providers) = value
-        .get_mut("providers")
-        .and_then(serde_json::Value::as_object_mut)
-    else {
-        return Ok(false);
-    };
-    let mut migrated_secret = false;
-    for (provider_id, profile) in providers {
-        let Some(profile) = profile.as_object_mut() else {
-            continue;
-        };
-        let api_key = profile
-            .remove("api_key")
-            .and_then(|value| value.as_str().map(str::to_string))
-            .unwrap_or_default();
-        if !api_key.trim().is_empty() {
-            let provider_id = ProviderId::from(provider_id.as_str());
-            credential_store.set(&key_ref_for_provider(&provider_id), api_key.trim())?;
-            migrated_secret = true;
-        }
-    }
-    Ok(migrated_secret)
-}
-
-fn migrate_legacy_fixed_settings(
-    legacy: LegacyFixedSettings,
-    credential_store: &CredentialStore,
-) -> Result<MigratedSettings, CredentialStoreError> {
-    let mut settings = AppSettings::default();
-    let mut migrated_secret = false;
-
-    if let Some(openai) = legacy.openai {
-        let provider_id = ProviderId::from("openai");
-        let api_key = openai.api_key.trim().to_string();
-        settings.providers.insert(
-            provider_id.clone(),
-            openai.into_profile(&provider_id, ProviderProfile::openai_default()),
-        );
-        if !api_key.is_empty() {
-            credential_store.set(&key_ref_for_provider(&provider_id), &api_key)?;
-            migrated_secret = true;
-        }
-    }
-
-    if let Some(compatible) = legacy.compatible {
-        let provider_id = ProviderId::from("custom_openai_compatible");
-        let api_key = compatible.api_key.trim().to_string();
-        settings.providers.insert(
-            provider_id.clone(),
-            compatible.into_profile(&provider_id, ProviderProfile::compatible_default()),
-        );
-        if !api_key.is_empty() {
-            credential_store.set(&key_ref_for_provider(&provider_id), &api_key)?;
-            migrated_secret = true;
-        }
-    }
-
-    settings.active_provider = match legacy.active_provider.unwrap_or(LegacyProviderKind::OpenAi) {
-        LegacyProviderKind::OpenAi => ProviderId::from("openai"),
-        LegacyProviderKind::OpenAiCompatible => ProviderId::from("custom_openai_compatible"),
-    };
-
-    Ok(MigratedSettings {
-        settings: settings.normalized(),
-        migrated_secret,
-    })
-}
-
-#[derive(Debug)]
-enum SettingsParseError {
-    JsonValue(serde_json::Error),
-    Credential(CredentialStoreError),
-    Schemas {
-        current: serde_json::Error,
-        fixed: serde_json::Error,
-        known: serde_json::Error,
-    },
-}
-
-impl std::fmt::Display for SettingsParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::JsonValue(error) => write!(f, "settings JSON invalid: {error}"),
-            Self::Credential(error) => write!(f, "settings credential migration failed: {error}"),
-            Self::Schemas {
-                current,
-                fixed,
-                known,
-            } => write!(
-                f,
-                "settings JSON invalid: current schema: {current}; legacy provider schema: {fixed}; legacy known-model schema: {known}"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for SettingsParseError {}
 
 #[derive(Debug, Clone)]
 pub struct FileSettingsStore {
     path: PathBuf,
-    credential_store: CredentialStore,
 }
 
 impl FileSettingsStore {
     pub fn new(path: impl Into<PathBuf>) -> Self {
-        Self::with_credential_store(path, CredentialStore::system())
-    }
-
-    #[must_use]
-    pub fn with_credential_store(
-        path: impl Into<PathBuf>,
-        credential_store: CredentialStore,
-    ) -> Self {
         Self {
             path: path.into(),
-            credential_store,
         }
-    }
-
-    #[must_use]
-    pub fn credential_store(&self) -> &CredentialStore {
-        &self.credential_store
     }
 
     #[must_use]
@@ -477,23 +250,34 @@ impl FileSettingsStore {
     }
 
     /// # Errors
-    /// Returns an error if the settings file cannot be read, parsed, migrated, or sanitized.
+    /// Returns an error if the settings file cannot be read or parsed.
     pub fn load(&self) -> io::Result<AppSettings> {
         if !self.path.exists() {
             return Ok(AppSettings::default());
         }
         let text = fs::read_to_string(&self.path)?;
-        let migrated = migrate_settings_json(&text, &self.credential_store)
-            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error.to_string()))?;
-        if migrated.migrated_secret {
-            self.save(&migrated.settings)?;
-        }
-        Ok(migrated.settings)
+        parse_settings_json(&text).map_err(|error| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("settings JSON invalid: {error}"),
+            )
+        })
     }
 
     /// # Errors
     /// Returns an error if the settings cannot be serialized or written to disk.
     pub fn save(&self, settings: &AppSettings) -> io::Result<()> {
+        let mut to_save = settings.clone();
+        if self.path.exists() {
+            let text = fs::read_to_string(&self.path)?;
+            if let Ok(existing) = parse_settings_json(&text) {
+                merge_preserved_api_keys(&mut to_save, &existing);
+            }
+        }
+        self.write(&to_save)
+    }
+
+    fn write(&self, settings: &AppSettings) -> io::Result<()> {
         if let Some(parent) = self.path.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -518,10 +302,6 @@ impl FileSettingsStore {
 mod tests {
     use super::*;
     use tempfile::tempdir;
-
-    fn memory_store(path: impl Into<PathBuf>) -> FileSettingsStore {
-        FileSettingsStore::with_credential_store(path, CredentialStore::in_memory())
-    }
 
     #[test]
     fn default_settings_include_builtin_provider_profiles() {
@@ -548,7 +328,7 @@ mod tests {
         assert_eq!(openai.responses_path, "v1/responses");
         assert_eq!(openai.chat_completions_path, "v1/chat/completions");
         assert_eq!(openai.default_model.as_deref(), Some("gpt-4o-mini"));
-        assert_eq!(openai.key_ref, "provider:openai:api-key");
+        assert!(openai.api_key.is_empty());
         assert!(!openai.editable);
         let custom = settings
             .providers
@@ -556,6 +336,21 @@ mod tests {
             .expect("custom profile");
         assert!(custom.editable);
         assert!(custom.known_models.contains(&"model-name".to_string()));
+    }
+
+    #[test]
+    fn redacted_settings_clear_api_keys() {
+        let mut settings = AppSettings::default();
+        settings
+            .providers
+            .get_mut(&ProviderId::from("openai"))
+            .expect("openai profile")
+            .api_key = "sk-secret".to_string();
+
+        let redacted = settings.redacted();
+
+        assert!(settings.active_profile().api_key == "sk-secret");
+        assert!(redacted.active_profile().api_key.is_empty());
     }
 
     #[test]
@@ -592,104 +387,47 @@ mod tests {
     }
 
     #[test]
-    fn loads_legacy_known_models_into_openai_profile() {
+    fn save_from_redacted_snapshot_preserves_existing_api_keys() {
         let dir = tempdir().unwrap();
-        let path = dir.path().join("settings.json");
-        fs::write(
-            &path,
-            r#"{
-  "known_models": ["legacy-a", "legacy-b"]
-}"#,
-        )
-        .unwrap();
-        let store = memory_store(path);
+        let store = FileSettingsStore::new(dir.path().join("settings.json"));
+        let mut settings = AppSettings::default();
+        settings
+            .providers
+            .get_mut(&ProviderId::from("openai"))
+            .expect("openai profile")
+            .api_key = "sk-persisted".to_string();
+        store.save(&settings).unwrap();
 
-        let settings = store.load().unwrap();
+        let mut redacted = store.load().unwrap().redacted();
+        redacted
+            .providers
+            .get_mut(&ProviderId::from("openai"))
+            .expect("openai profile")
+            .known_models
+            .push("new-model".to_string());
+        store.save(&redacted).unwrap();
 
-        assert_eq!(settings.active_provider, ProviderId::from("openai"));
+        let loaded = store.load().unwrap();
         assert_eq!(
-            settings
+            loaded
                 .providers
                 .get(&ProviderId::from("openai"))
                 .expect("openai profile")
-                .known_models,
-            vec!["legacy-a".to_string(), "legacy-b".to_string()]
+                .api_key,
+            "sk-persisted"
         );
-    }
-
-    #[test]
-    fn migrates_legacy_fixed_profiles_and_removes_plaintext_keys() {
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("settings.json");
-        fs::write(
-            &path,
-            r#"{
-  "active_provider": "open_ai_compatible",
-  "openai": {
-    "display_name": "ChatGPT / OpenAI",
-    "base_url": "https://api.openai.com",
-    "transport": "responses",
-    "responses_path": "v1/responses",
-    "chat_completions_path": "v1/chat/completions",
-    "known_models": ["legacy-openai"],
-    "default_model": "legacy-openai",
-    "api_key": " sk-openai "
-  },
-  "openai_compatible": {
-    "display_name": "Compatible",
-    "base_url": "https://vendor.example.test/v1-root",
-    "transport": "chat_completions",
-    "responses_path": "custom/responses",
-    "chat_completions_path": "chat/completions",
-    "known_models": ["vendor-model"],
-    "default_model": "vendor-model",
-    "api_key": " vendor-key "
-  }
-}"#,
-        )
-        .unwrap();
-        let store = memory_store(path);
-
-        let settings = store.load().unwrap();
-        let raw = fs::read_to_string(store.path()).unwrap();
-
-        assert_eq!(
-            settings.active_provider,
-            ProviderId::from("custom_openai_compatible")
-        );
-        let custom = settings
+        assert!(loaded
             .providers
-            .get(&ProviderId::from("custom_openai_compatible"))
-            .expect("custom profile");
-        assert_eq!(custom.base_url, "https://vendor.example.test/v1-root");
-        assert_eq!(custom.transport, ProviderTransport::ChatCompletions);
-        assert_eq!(custom.responses_path, "custom/responses");
-        assert_eq!(custom.chat_completions_path, "chat/completions");
-        assert_eq!(custom.known_models, vec!["vendor-model".to_string()]);
-        assert_eq!(custom.default_model.as_deref(), Some("vendor-model"));
-        assert!(!raw.contains("api_key"));
-        assert_eq!(
-            store
-                .credential_store()
-                .get("provider:openai:api-key")
-                .unwrap()
-                .as_deref(),
-            Some("sk-openai")
-        );
-        assert_eq!(
-            store
-                .credential_store()
-                .get("provider:custom_openai_compatible:api-key")
-                .unwrap()
-                .as_deref(),
-            Some("vendor-key")
-        );
+            .get(&ProviderId::from("openai"))
+            .expect("openai profile")
+            .known_models
+            .contains(&"new-model".to_string()));
     }
 
     #[test]
-    fn saves_provider_settings_without_transient_or_secret_fields() {
+    fn saves_provider_settings_without_transient_fields() {
         let dir = tempdir().unwrap();
-        let store = memory_store(dir.path().join("settings.json"));
+        let store = FileSettingsStore::new(dir.path().join("settings.json"));
         let mut settings = AppSettings {
             active_provider: ProviderId::from("custom_openai_compatible"),
             ..Default::default()
@@ -710,7 +448,6 @@ mod tests {
         assert!(raw.contains("\"active_provider\""));
         assert!(raw.contains("\"providers\""));
         assert!(!raw.contains("draft-model"));
-        assert!(!raw.contains("api_key"));
         assert_eq!(
             loaded
                 .providers
@@ -725,7 +462,7 @@ mod tests {
     #[test]
     fn missing_settings_file_loads_default_settings() {
         let dir = tempdir().unwrap();
-        let store = memory_store(dir.path().join("settings.json"));
+        let store = FileSettingsStore::new(dir.path().join("settings.json"));
 
         let settings = store.load().unwrap();
 
@@ -737,7 +474,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().join("settings.json");
         fs::write(&path, "{not json").unwrap();
-        let store = memory_store(path);
+        let store = FileSettingsStore::new(path);
 
         let error = store.load().unwrap_err();
 
@@ -749,7 +486,7 @@ mod tests {
     fn atomic_save_does_not_leave_temp_file() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("settings.json");
-        let store = memory_store(&path);
+        let store = FileSettingsStore::new(&path);
         let settings = AppSettings::default();
 
         store.save(&settings).unwrap();
@@ -761,7 +498,7 @@ mod tests {
     #[test]
     fn settings_roundtrip_restores_identical_state() {
         let dir = tempdir().unwrap();
-        let store = memory_store(dir.path().join("settings.json"));
+        let store = FileSettingsStore::new(dir.path().join("settings.json"));
         let mut settings = AppSettings {
             active_provider: ProviderId::from("anthropic"),
             ..Default::default()

@@ -1,4 +1,3 @@
-use crate::credential_store::{CredentialStore, CredentialStoreError};
 use crate::settings_store::AppSettings;
 use providers::{
     provider_spec, AiClientConfig, AnthropicConfig, AuthConfig, AuthSpec, OpenAiCompatibleConfig,
@@ -51,14 +50,6 @@ pub enum ProviderConfigError {
     UnsupportedProvider { provider: String },
     #[error("{provider} API key missing (set it in Settings or {env_var})")]
     MissingApiKey { provider: String, env_var: String },
-    #[error("credential lookup failed: {0}")]
-    Credential(String),
-}
-
-impl From<CredentialStoreError> for ProviderConfigError {
-    fn from(error: CredentialStoreError) -> Self {
-        Self::Credential(error.to_string())
-    }
 }
 
 /// # Errors
@@ -67,7 +58,6 @@ pub fn resolve_provider_config(
     settings: &AppSettings,
     transient_api_key: Option<&str>,
     env: &ProviderEnv,
-    credential_store: &CredentialStore,
 ) -> Result<AiClientConfig, ProviderConfigError> {
     let provider_id = settings.active_provider.clone();
     let spec =
@@ -77,11 +67,10 @@ pub fn resolve_provider_config(
     let profile = settings.active_profile();
     let api_key = resolve_api_key(
         transient_api_key,
-        profile.key_ref.as_str(),
+        profile.api_key.as_str(),
         spec.display_name,
         spec.auth,
         env,
-        credential_store,
     )?;
     let auth = auth_config(spec.auth, api_key.clone());
     let adapter = match spec.kind {
@@ -122,18 +111,14 @@ pub fn active_provider_label(settings: &AppSettings) -> String {
 
 fn resolve_api_key(
     transient_api_key: Option<&str>,
-    key_ref: &str,
+    stored_api_key: &str,
     provider_label: &str,
     auth: AuthSpec,
     env: &ProviderEnv,
-    credential_store: &CredentialStore,
 ) -> Result<Option<String>, ProviderConfigError> {
-    let credential_key = credential_store
-        .get(key_ref)?
-        .and_then(|key| trimmed(Some(&key)).map(str::to_string));
     let api_key = trimmed(transient_api_key)
         .map(str::to_string)
-        .or(credential_key)
+        .or_else(|| trimmed(Some(stored_api_key)).map(str::to_string))
         .or_else(|| {
             auth.env_var()
                 .and_then(|env_var| env.get(env_var))
@@ -169,24 +154,17 @@ fn trimmed(value: Option<&str>) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::credential_store::CredentialStore;
     use crate::settings_store::{ProviderProfile, ProviderTransport};
     use providers::{ProviderAdapterConfig, ProviderId, WireApi};
-
-    fn store() -> CredentialStore {
-        CredentialStore::in_memory()
-    }
 
     #[test]
     fn openai_provider_uses_ui_key_before_env_key() {
         let settings = AppSettings::default();
-        let store = store();
 
         let resolved = resolve_provider_config(
             &settings,
             Some(" sk-ui "),
             &ProviderEnv::from_pairs([("OPENAI_API_KEY", "sk-env")]),
-            &store,
         )
         .unwrap();
 
@@ -209,13 +187,15 @@ mod tests {
     }
 
     #[test]
-    fn credential_store_key_is_used_when_no_transient_or_env() {
-        let settings = AppSettings::default();
-        let store = store();
-        store.set("provider:openai:api-key", " sk-stored ").unwrap();
+    fn stored_settings_key_is_used_when_no_transient_or_env() {
+        let mut settings = AppSettings::default();
+        settings
+            .providers
+            .get_mut(&ProviderId::from("openai"))
+            .expect("openai profile")
+            .api_key = " sk-stored ".to_string();
 
-        let resolved =
-            resolve_provider_config(&settings, None, &ProviderEnv::default(), &store).unwrap();
+        let resolved = resolve_provider_config(&settings, None, &ProviderEnv::default()).unwrap();
 
         assert_eq!(
             resolved.auth,
@@ -227,16 +207,18 @@ mod tests {
     }
 
     #[test]
-    fn credential_store_key_takes_priority_over_env() {
-        let settings = AppSettings::default();
-        let store = store();
-        store.set("provider:openai:api-key", "sk-stored").unwrap();
+    fn stored_settings_key_takes_priority_over_env() {
+        let mut settings = AppSettings::default();
+        settings
+            .providers
+            .get_mut(&ProviderId::from("openai"))
+            .expect("openai profile")
+            .api_key = "sk-stored".to_string();
 
         let resolved = resolve_provider_config(
             &settings,
             None,
             &ProviderEnv::from_pairs([("OPENAI_API_KEY", "sk-env")]),
-            &store,
         )
         .unwrap();
 
@@ -265,7 +247,6 @@ mod tests {
                 ..ProviderProfile::compatible_default()
             },
         );
-        let store = store();
 
         let resolved = resolve_provider_config(
             &settings,
@@ -274,7 +255,6 @@ mod tests {
                 ("OPENAI_API_KEY", "sk-openai"),
                 ("OPENAI_COMPATIBLE_API_KEY", " vendor-key "),
             ]),
-            &store,
         )
         .unwrap();
 
@@ -304,13 +284,11 @@ mod tests {
             active_provider: ProviderId::from("anthropic"),
             ..Default::default()
         };
-        let store = store();
 
         let resolved = resolve_provider_config(
             &settings,
             None,
             &ProviderEnv::from_pairs([("ANTHROPIC_API_KEY", " anthropic-key ")]),
-            &store,
         )
         .unwrap();
 
@@ -337,9 +315,8 @@ mod tests {
             active_provider: ProviderId::from("ollama"),
             ..Default::default()
         };
-        let store = store();
 
-        let resolved = resolve_provider_config(&settings, None, &ProviderEnv::default(), &store)
+        let resolved = resolve_provider_config(&settings, None, &ProviderEnv::default())
             .expect("ollama config without key");
 
         assert_eq!(resolved.auth, AuthConfig::NoneAllowed);
@@ -356,13 +333,11 @@ mod tests {
             active_provider: ProviderId::from("custom_openai_compatible"),
             ..Default::default()
         };
-        let store = store();
 
         let error = resolve_provider_config(
             &settings,
             None,
             &ProviderEnv::from_pairs([("OPENAI_API_KEY", "sk-openai")]),
-            &store,
         )
         .unwrap_err();
 

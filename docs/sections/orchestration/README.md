@@ -33,7 +33,7 @@ desktop → AppBackend (thin orchestrator)
 | `agent_store.rs`, `project_store.rs`, `settings_store.rs` | JSON persistence |
 | `template_store.rs` | `FileTemplateStore` (`TemplateStore` adapter) |
 | `tools/` | Builtin tool registry and filesystem runner |
-| `provider_config.rs`, `credential_store.rs` | Provider readiness and key resolution |
+| `provider_config.rs`, `settings_store.rs` | Provider readiness and API key resolution |
 
 ## Why it is structured this way
 

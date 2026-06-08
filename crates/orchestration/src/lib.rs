@@ -24,7 +24,6 @@ pub mod agent_library;
 pub mod agent_store;
 pub mod api;
 pub mod backend;
-pub mod credential_store;
 pub mod error;
 pub mod project_registry;
 pub mod run_coordinator;

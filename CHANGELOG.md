@@ -4,7 +4,8 @@
 
 ### Added
 
-- **Run stop/cancel:** `stop_run` IPC command with cooperative cancellation (`CancellationToken`, `ExecutionAction::Stop`, `RunTelemetry::Aborted`); editor top-bar Stop button (Cmd+.); window close aborts active runs; `ast-grep` subprocess kill on cancel; user stops show **stopped** (not failed) on canvas, overview, and trace.
+- **Provider API key storage:** persist keys in plaintext on `ProviderProfile.api_key` in `settings.json`; Settings screen documents on-disk risk; env-var fallback unchanged.
+- **Run stop/cancel:** `stop_run` IPC command with cooperative cancellation (`CancellationToken`, `ExecutionAction::Stop`, `RunTelemetry::Aborted`); editor top-bar Stop button (Cmd+.) when a run is active; window close aborts active runs; `ast-grep` subprocess kill on cancel.
 - **Project workflow menu:** per-project **+** button (shown on hover) with **New workflow** and **Add existing…**; existing workflows open a picker modal to link app or other-project workflows.
 - **`docs/glossary.md`:** canonical domain glossary (module map, corrected enum names, WorkflowRunner vs InteractiveEngine); root `UBIQUITOUS_LANGUAGE.md` redirects here.
 - **ROADMAP.md:** consolidate `TODO.md`, `todooo.md`, and `FEATURE_LIST.md` into a single prioritized roadmap (near-term engineering, product features, domain hardening phases).
@@ -16,6 +17,7 @@
 - **ROADMAP.md:** add Refactor section — per-crate Done/Planned structural cleanup for domain, providers, orchestration, desktop, and ui.
 - **ROADMAP.md:** add File edit tooling section — write/patch builtins, approval, diff preview, changed-files ledger; consolidate prior file-changer rows.
 - **ROADMAP.md:** add Thinking & chat presentation section — per-node thinking level, collapsible thinking blocks in chat, collapsible tool bubbles (summary collapsed, expand for full output); replace generic “hide tool output” and “per-node thinking amount” rows.
+- **ROADMAP.md:** add near-term Provider API key storage — switch from OS keychain to plaintext in settings to avoid macOS unlock popup on every launch.
 - **Workflow settings (v1):** portable `WorkflowSettings.shared_context` on each workflow, injected into every node's system prompt at run time; gear panel in the editor top bar to edit it.
 - **Execution folder:** run-time folder derived from the linked project's path (or process cwd for independent workflows); read-only "Run in" chip in the top bar.
 - **Projects sidebar:** folder-backed project groups with nested workflows, native folder picker (`Add project`), and per-project **+** dialog to create or link workflows. App workflows stay in the local store; project workflows are saved under `{project}/.flow/workflows/*.workflow.json` (skills-style repo layout).
@@ -27,6 +29,7 @@
 
 ### Removed
 
+- **OS keychain API key storage:** delete `credential_store` and `keyring` dependency; drop `key_ref` and legacy settings schema migrations for provider keys.
 - **Planning docs:** delete `TODO.md`, `todooo.md`, and `FEATURE_LIST.md` (content moved to `ROADMAP.md`).
 
 ### Fixed
@@ -40,6 +43,7 @@
 
 ### Changed
 
+- **User-initiated stop presentation:** `TraceStatus::Stopped` and `AgentStatus::Stopped` replace failed styling for aborted runs — canvas nodes, overview feed, and trace list show **stopped** (neutral gray), not failed.
 - **Sidebar layout:** Projects section fills remaining sidebar height; project list scrolls independently below Workflows.
 - **Subagent runtime in domain:** add `subagent_runtime` (declare/call builtins, `SubagentInvokeSession` turn machine) and `subagents` helpers; `drive.rs` delegates I/O only (~530 lines, down from ~810).
 - **Unified run telemetry:** `domain::RunTelemetry` is the canonical interactive event enum; `orchestration::ExecutionEvent` is a type alias; `merge_shared_context` replaces duplicate orchestration helper.
