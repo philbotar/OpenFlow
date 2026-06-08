@@ -4,10 +4,10 @@ use crate::execution::{
     apply_event_to_run_state, record_user_input, resolve_execution_cwd,
     spawn_interactive_workflow_run, ExecutionAction, ExecutionEvent,
 };
-use domain::resolve_callable_agent_snapshots;
 use crate::provider_config::{resolve_provider_config, ProviderEnv};
 use crate::settings_store::{merge_preserved_api_keys, AppSettings, FileSettingsStore};
 use crate::state::WorkflowRunState;
+use domain::resolve_callable_agent_snapshots;
 use domain::{validate_workflow, NodeId, Workflow};
 use providers::{create_provider, ProviderId};
 use std::time::Duration;
@@ -92,8 +92,7 @@ impl RunCoordinator {
         {
             provider_settings.active_provider = ProviderId::from(provider_id.as_str());
         }
-        let provider_config =
-            resolve_provider_config(&provider_settings, transient_api_key, env)?;
+        let provider_config = resolve_provider_config(&provider_settings, transient_api_key, env)?;
         let ai = create_provider(provider_config);
 
         let agents = agent_store.load()?;

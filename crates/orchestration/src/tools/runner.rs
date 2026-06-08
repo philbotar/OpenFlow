@@ -120,14 +120,10 @@ impl ToolRunner {
             ToolRunnerError::Tool(ToolError::Failed(format!("ast_grep failed: {error}")))
         })?;
         let mut stdout_pipe = child.stdout.take().ok_or_else(|| {
-            ToolRunnerError::Tool(ToolError::Failed(
-                "ast_grep stdout unavailable".to_string(),
-            ))
+            ToolRunnerError::Tool(ToolError::Failed("ast_grep stdout unavailable".to_string()))
         })?;
         let mut stderr_pipe = child.stderr.take().ok_or_else(|| {
-            ToolRunnerError::Tool(ToolError::Failed(
-                "ast_grep stderr unavailable".to_string(),
-            ))
+            ToolRunnerError::Tool(ToolError::Failed("ast_grep stderr unavailable".to_string()))
         })?;
         tokio::select! {
             biased;

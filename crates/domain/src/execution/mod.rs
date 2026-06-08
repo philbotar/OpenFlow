@@ -21,8 +21,9 @@ pub use subagent_runtime::{
     DECLARE_SUBAGENTS_TOOL,
 };
 pub use subagents::{
-    adhoc_subagent_base_index, augment_call_subagent_tool_description, build_adhoc_subagent_summaries,
-    merge_subagent_summaries, subagents_for_node, CALL_SUBAGENT_TOOL,
+    adhoc_subagent_base_index, augment_call_subagent_tool_description,
+    build_adhoc_subagent_summaries, merge_subagent_summaries, subagents_for_node,
+    CALL_SUBAGENT_TOOL,
 };
 pub use telemetry::RunTelemetry;
 pub use workflow_runner::WorkflowRunner;

@@ -1,12 +1,11 @@
 use crate::tools::{ArtifactStore, ToolExecutionRecord, ToolRegistry, ToolRunner, ToolRunnerError};
 use domain::{
-    advance_subagent_invoke, build_predefined_subagent_summaries, filter_tool_turn_assistant_message,
-    handle_declare_subagents, is_subagent_runtime_builtin, start_subagent_invoke,
-    subagent_runtime_builtin_denied, AgentNeedUserInput, AgentRequest, AgentToolCallBatch,
-    AgentTurnOutcome, AiPort, CallableAgent, ChatRole, EnginePollResult, InteractiveEngine,
-    NodeId, RunTelemetry, SubagentInvokeStep, SubagentStartOutcome, SubagentSummary, ToolCall,
-    Workflow,
-    CALL_SUBAGENT_TOOL, DECLARE_SUBAGENTS_TOOL,
+    advance_subagent_invoke, build_predefined_subagent_summaries,
+    filter_tool_turn_assistant_message, handle_declare_subagents, is_subagent_runtime_builtin,
+    start_subagent_invoke, subagent_runtime_builtin_denied, AgentNeedUserInput, AgentRequest,
+    AgentToolCallBatch, AgentTurnOutcome, AiPort, CallableAgent, ChatRole, EnginePollResult,
+    InteractiveEngine, NodeId, RunTelemetry, SubagentInvokeStep, SubagentStartOutcome,
+    SubagentSummary, ToolCall, Workflow, CALL_SUBAGENT_TOOL, DECLARE_SUBAGENTS_TOOL,
 };
 use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
@@ -92,9 +91,14 @@ pub(super) async fn drive_interactive_workflow<A>(
                     );
                 }
                 send_node_start_events(&event_tx, &request);
-                let Some(result) =
-                    invoke_ai_or_cancel(&ai, (*request).clone(), &cancel_token, &event_tx, &mut aborted_emitted)
-                        .await
+                let Some(result) = invoke_ai_or_cancel(
+                    &ai,
+                    (*request).clone(),
+                    &cancel_token,
+                    &event_tx,
+                    &mut aborted_emitted,
+                )
+                .await
                 else {
                     return;
                 };
@@ -368,7 +372,10 @@ pub(super) async fn drive_interactive_workflow<A>(
     }
 }
 
-fn send_run_telemetry(event_tx: &UnboundedSender<ExecutionEvent>, events: impl IntoIterator<Item = RunTelemetry>) {
+fn send_run_telemetry(
+    event_tx: &UnboundedSender<ExecutionEvent>,
+    events: impl IntoIterator<Item = RunTelemetry>,
+) {
     for event in events {
         let _ = event_tx.send(event);
     }

@@ -45,19 +45,14 @@ impl SettingsFacade {
     pub fn load_provider_api_key(&self, provider_id: &str) -> Result<Option<String>, BackendError> {
         let settings = self.store.load()?;
         let provider_id = ProviderId::from(provider_id);
-        Ok(
-            settings
-                .providers
-                .get(&provider_id)
-                .and_then(|profile| {
-                    let key = profile.api_key.trim();
-                    if key.is_empty() {
-                        None
-                    } else {
-                        Some(key.to_string())
-                    }
-                }),
-        )
+        Ok(settings.providers.get(&provider_id).and_then(|profile| {
+            let key = profile.api_key.trim();
+            if key.is_empty() {
+                None
+            } else {
+                Some(key.to_string())
+            }
+        }))
     }
 
     /// # Errors
@@ -69,15 +64,12 @@ impl SettingsFacade {
     ) -> Result<(), BackendError> {
         let mut settings = self.store.load()?;
         let provider_id = ProviderId::from(provider_id);
-        let profile = settings
-            .providers
-            .get_mut(&provider_id)
-            .ok_or_else(|| {
-                std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    format!("provider {provider_id} not found"),
-                )
-            })?;
+        let profile = settings.providers.get_mut(&provider_id).ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("provider {provider_id} not found"),
+            )
+        })?;
         profile.api_key = api_key.trim().to_string();
         self.store.save(&settings)?;
         Ok(())

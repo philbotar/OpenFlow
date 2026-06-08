@@ -1,15 +1,15 @@
-use domain::CallableAgent;
 use crate::state::WorkflowRunState;
+use domain::CallableAgent;
 use domain::{AiPort, Workflow};
 use std::collections::{BTreeMap, VecDeque};
 
 use super::drive::drive_interactive_workflow;
-use tokio_util::sync::CancellationToken;
 use super::events::{apply_event_to_run_state, record_user_input};
 use super::{
     resolve_execution_cwd, ApprovalResponse, ExecutionAction, ExecutionEvent, ManualInput,
     WorkflowExecutionError, WorkflowRunSnapshot,
 };
+use tokio_util::sync::CancellationToken;
 
 /// # Errors
 /// Returns an error if the workflow execution fails.

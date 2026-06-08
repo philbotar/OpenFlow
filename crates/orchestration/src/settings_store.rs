@@ -236,9 +236,7 @@ pub struct FileSettingsStore {
 
 impl FileSettingsStore {
     pub fn new(path: impl Into<PathBuf>) -> Self {
-        Self {
-            path: path.into(),
-        }
+        Self { path: path.into() }
     }
 
     #[must_use]

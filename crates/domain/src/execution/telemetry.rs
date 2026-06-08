@@ -1,9 +1,9 @@
 //! Rich run telemetry events for interactive execution (UI projection and replay).
 
+use super::artifacts::RunReport;
 use crate::conversation::ChatRole;
 use crate::graph::NodeId;
 use crate::tools::{PendingToolApproval, SubagentSummary, ToolCall, ToolOutputMeta};
-use super::artifacts::RunReport;
 use serde_json::Value;
 
 /// Atomic telemetry event during an interactive run.

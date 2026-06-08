@@ -284,9 +284,9 @@ mod tests {
     use super::*;
     use crate::execution::{ExecutionAction, ExecutionEvent};
     use crate::settings_store::{ProviderProfile, ProviderTransport};
-    use providers::ProviderId;
     use crate::workflow_catalog::default_workflow;
     use domain::{Node, NodeId};
+    use providers::ProviderId;
     use tempfile::tempdir;
 
     fn backend() -> (AppBackend, tempfile::TempDir) {

@@ -202,11 +202,16 @@ pub fn normalize_submit_output_arguments(value: Value, output_schema: Option<&Va
     let schema_keys = output_schema
         .and_then(|schema| schema.get("properties"))
         .and_then(Value::as_object)
-        .map(|properties| properties.keys().cloned().collect::<std::collections::HashSet<_>>());
+        .map(|properties| {
+            properties
+                .keys()
+                .cloned()
+                .collect::<std::collections::HashSet<_>>()
+        });
 
-    let should_wrap = schema_keys.as_ref().is_none_or(|keys| {
-        !map.is_empty() && map.keys().all(|key| keys.contains(key))
-    });
+    let should_wrap = schema_keys
+        .as_ref()
+        .is_none_or(|keys| !map.is_empty() && map.keys().all(|key| keys.contains(key)));
     if !should_wrap {
         if let Some(assistant_message) = assistant_message {
             map.insert("assistant_message".to_string(), assistant_message);
@@ -236,15 +241,11 @@ pub fn parse_internal_tool_outcome(
             }
 
             let raw = try_parse_or_recover_json(arguments).map_err(|error| {
-                AgentError::Failed(format!(
-                    "{label} {MALFORMED_SUBMIT_OUTPUT_MARKER}: {error}"
-                ))
+                AgentError::Failed(format!("{label} {MALFORMED_SUBMIT_OUTPUT_MARKER}: {error}"))
             })?;
             let normalized = normalize_submit_output_arguments(raw, output_schema);
             let args: SubmitOutputArgs = serde_json::from_value(normalized).map_err(|error| {
-                AgentError::Failed(format!(
-                    "{label} {MALFORMED_SUBMIT_OUTPUT_MARKER}: {error}"
-                ))
+                AgentError::Failed(format!("{label} {MALFORMED_SUBMIT_OUTPUT_MARKER}: {error}"))
             })?;
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
                 output: args.output,
@@ -672,7 +673,10 @@ mod tests {
         let AgentTurnOutcome::Completed(success) = outcome else {
             panic!("expected completed outcome");
         };
-        assert_eq!(success.output, json!({"summary": "done without closing brace"}));
+        assert_eq!(
+            success.output,
+            json!({"summary": "done without closing brace"})
+        );
     }
 
     #[test]
@@ -693,14 +697,9 @@ mod tests {
             "properties": { "summary": { "type": "string" } },
             "required": ["summary"]
         });
-        let outcome = parse_internal_tool_outcome(
-            SUBMIT_OUTPUT_TOOL,
-            arguments,
-            None,
-            "test",
-            Some(&schema),
-        )
-        .expect("expected outcome");
+        let outcome =
+            parse_internal_tool_outcome(SUBMIT_OUTPUT_TOOL, arguments, None, "test", Some(&schema))
+                .expect("expected outcome");
         let AgentTurnOutcome::Completed(success) = outcome else {
             panic!("expected completed outcome");
         };

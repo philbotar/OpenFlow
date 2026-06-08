@@ -247,9 +247,7 @@ mod tests {
             "I'll capture the upstream message."
         );
         assert_eq!(
-            strip_tool_call_markup(
-                "```tool_call\n<function=read>\n</function>\n```"
-            ),
+            strip_tool_call_markup("```tool_call\n<function=read>\n</function>\n```"),
             ""
         );
     }

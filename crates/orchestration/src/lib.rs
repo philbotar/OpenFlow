@@ -25,20 +25,20 @@ pub mod agent_store;
 pub mod api;
 pub mod backend;
 pub mod error;
-pub mod project_registry;
-pub mod run_coordinator;
-pub mod settings_facade;
-pub mod workflow_catalog;
 pub mod execution;
 pub mod flow_store;
+pub mod project_registry;
 pub mod project_store;
 pub mod provider_config;
+pub mod run_coordinator;
+pub mod settings_facade;
 pub mod settings_store;
 pub mod skill_store;
 pub mod state;
 pub mod storage;
 pub mod template_store;
 pub mod tools;
+pub mod workflow_catalog;
 
 // Re-exports of domain types consumed by downstream layers
 pub use domain::{

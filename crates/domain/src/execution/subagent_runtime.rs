@@ -2,10 +2,10 @@
 
 use crate::conversation::{filter_tool_turn_assistant_message, AgentTranscriptItem};
 use crate::execution::node_invocation::merge_shared_context;
+use crate::execution::subagents::CALL_SUBAGENT_TOOL;
 use crate::execution::subagents::{
     adhoc_subagent_base_index, build_adhoc_subagent_summaries, merge_subagent_summaries,
 };
-use crate::execution::subagents::CALL_SUBAGENT_TOOL;
 use crate::execution::telemetry::RunTelemetry;
 use crate::graph::callable_agent::CallableAgent;
 use crate::graph::{Node, NodeId, Workflow};
@@ -41,9 +41,10 @@ pub fn handle_declare_subagents(
     tool_call: &ToolCall,
     declared_subagents: &mut BTreeMap<String, SubagentSummary>,
 ) -> DeclareSubagentsOutcome {
-    let declarations = serde_json::from_value::<SubagentDeclarationBatch>(tool_call.arguments.clone())
-        .map(|batch| batch.subagents)
-        .unwrap_or_default();
+    let declarations =
+        serde_json::from_value::<SubagentDeclarationBatch>(tool_call.arguments.clone())
+            .map(|batch| batch.subagents)
+            .unwrap_or_default();
     let base_index = adhoc_subagent_base_index(node_id, declared_subagents);
     let summaries = build_adhoc_subagent_summaries(node_id, &declarations, base_index);
     merge_subagent_summaries(declared_subagents, &summaries);
@@ -111,14 +112,11 @@ fn resolve_subagent_summary(
     declared_subagents: &BTreeMap<String, SubagentSummary>,
     agent_snapshots: &BTreeMap<String, CallableAgent>,
 ) -> Option<SubagentSummary> {
-    declared_subagents
-        .get(subagent_id)
-        .cloned()
-        .or_else(|| {
-            agent_snapshots
-                .get(subagent_id)
-                .map(CallableAgent::to_subagent_summary)
-        })
+    declared_subagents.get(subagent_id).cloned().or_else(|| {
+        agent_snapshots
+            .get(subagent_id)
+            .map(CallableAgent::to_subagent_summary)
+    })
 }
 
 /// Begin a subagent invocation; returns an error tool result when the call cannot start.
@@ -140,11 +138,9 @@ pub fn start_subagent_invoke(
         }
     };
 
-    let Some(mut subagent) = resolve_subagent_summary(
-        &call_args.subagent_id,
-        declared_subagents,
-        agent_snapshots,
-    ) else {
+    let Some(mut subagent) =
+        resolve_subagent_summary(&call_args.subagent_id, declared_subagents, agent_snapshots)
+    else {
         return SubagentStartOutcome::Failed(tool_error_result(
             tool_call,
             format!(
@@ -175,19 +171,24 @@ pub fn start_subagent_invoke(
         ));
     };
 
-    let (sub_node_config, sub_request) = if let Some(agent_def) =
-        agent_snapshots.get(&call_args.subagent_id)
-    {
-        build_saved_agent_request(workflow, agent_def, &subagent, &call_args.input, available_tools)
-    } else {
-        build_adhoc_agent_request(
-            workflow,
-            parent_node,
-            &subagent,
-            &call_args.input,
-            available_tools,
-        )
-    };
+    let (sub_node_config, sub_request) =
+        if let Some(agent_def) = agent_snapshots.get(&call_args.subagent_id) {
+            build_saved_agent_request(
+                workflow,
+                agent_def,
+                &subagent,
+                &call_args.input,
+                available_tools,
+            )
+        } else {
+            build_adhoc_agent_request(
+                workflow,
+                parent_node,
+                &subagent,
+                &call_args.input,
+                available_tools,
+            )
+        };
 
     let telemetry = vec![RunTelemetry::SubagentStarted {
         node_id: parent_node_id.clone(),
@@ -472,7 +473,9 @@ mod tests {
                     content: "Reading notes".to_string(),
                 },
                 AgentTranscriptItem::ToolCall { call: tool_call },
-                AgentTranscriptItem::ToolResult { result: tool_result },
+                AgentTranscriptItem::ToolResult {
+                    result: tool_result
+                },
             ]
         );
     }

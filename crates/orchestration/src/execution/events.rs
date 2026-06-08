@@ -1,6 +1,5 @@
 use crate::state::{
-    AgentStatus, RunTraceEntry, ToolArtifactSummary, ToolCallSummary, TraceStatus,
-    WorkflowRunState,
+    AgentStatus, RunTraceEntry, ToolArtifactSummary, ToolCallSummary, TraceStatus, WorkflowRunState,
 };
 use domain::{
     summary_from_node_output, ChatMessage, ChatRole, NodeId, SubagentStatus, ToolCallStatus,
