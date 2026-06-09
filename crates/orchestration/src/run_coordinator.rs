@@ -13,6 +13,7 @@ use domain::resolve_callable_agent_snapshots;
 use domain::{validate_workflow, NodeId, Workflow};
 use providers::{create_provider, ProviderId};
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::sync::Mutex;
@@ -23,6 +24,7 @@ struct RunSession {
     workflow: Option<Workflow>,
     run_state: Option<WorkflowRunState>,
     execution_cwd: Option<PathBuf>,
+    snapshot_store: Option<Arc<crate::tools::edit::hashline::snapshots::InMemorySnapshotStore>>,
     action_tx: Option<UnboundedSender<ExecutionAction>>,
     handle: Option<tokio::task::JoinHandle<()>>,
     cancel_token: Option<CancellationToken>,
@@ -59,6 +61,7 @@ impl RunCoordinator {
                 workflow: None,
                 run_state: None,
                 execution_cwd: None,
+                snapshot_store: None,
                 action_tx: None,
                 handle: None,
                 cancel_token: None,
@@ -105,6 +108,8 @@ impl RunCoordinator {
 
         self.terminate_active_run(TerminationMode::Replaced).await;
 
+        let snapshot_store =
+            Arc::new(crate::tools::edit::hashline::snapshots::InMemorySnapshotStore::new());
         let (handle, event_rx, action_tx, cancel_token) = spawn_interactive_workflow_run(
             &self.runtime,
             workflow.clone(),
@@ -112,6 +117,7 @@ impl RunCoordinator {
             resolved_cwd.clone(),
             ai,
             agent_snapshots,
+            snapshot_store.clone(),
         );
 
         let mut session = self.session.lock().await;
@@ -119,6 +125,7 @@ impl RunCoordinator {
         session.workflow = Some(workflow);
         session.run_state = Some(initial_state.clone());
         session.execution_cwd = Some(resolved_cwd);
+        session.snapshot_store = Some(snapshot_store);
         session.action_tx = Some(action_tx);
         session.handle = Some(handle);
         session.cancel_token = Some(cancel_token);
@@ -221,6 +228,7 @@ impl RunCoordinator {
         let snapshot = run_state.clone();
         if finished {
             session.execution_cwd = None;
+            session.snapshot_store = None;
             session.action_tx = None;
             session.handle = None;
             session.cancel_token = None;
@@ -329,16 +337,32 @@ impl RunCoordinator {
         tool_name: String,
         arguments: serde_json::Value,
     ) -> Result<FileEditPreview, BackendError> {
-        let cwd = self
-            .session
-            .lock()
-            .await
+        let session = self.session.lock().await;
+        let cwd = session
             .execution_cwd
             .clone()
             .ok_or(BackendError::NoActiveRun)?;
+        let snapshot_store = session
+            .snapshot_store
+            .clone()
+            .ok_or(BackendError::NoActiveRun)?;
+        let pending = session
+            .run_state
+            .as_ref()
+            .ok_or(BackendError::NoActiveRun)?
+            .pending_approvals
+            .first()
+            .ok_or(BackendError::NoPendingApproval)?;
+        if pending.tool_call.name != tool_name || pending.tool_call.arguments != arguments {
+            return Err(BackendError::PreviewFailed(
+                "preview does not match the pending tool approval".to_string(),
+            ));
+        }
         let tool_name_for_task = tool_name.clone();
         self.runtime
-            .spawn_blocking(move || preview_file_edit(cwd, &tool_name_for_task, &arguments))
+            .spawn_blocking(move || {
+                preview_file_edit(cwd, &tool_name_for_task, &arguments, snapshot_store)
+            })
             .await
             .map_err(|error| BackendError::PreviewFailed(error.to_string()))?
             .map_err(BackendError::PreviewFailed)

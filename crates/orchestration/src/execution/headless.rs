@@ -3,6 +3,7 @@ use domain::CallableAgent;
 use domain::{AiPort, Workflow};
 use std::collections::{BTreeMap, VecDeque};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use super::drive::drive_interactive_workflow;
 use super::events::{apply_event_to_run_state, record_user_input};
@@ -37,6 +38,8 @@ where
         None => resolve_execution_cwd(None).map_err(WorkflowExecutionError::Execution)?,
     };
     let cancel_token = CancellationToken::new();
+    let snapshot_store =
+        Arc::new(crate::tools::edit::hashline::snapshots::InMemorySnapshotStore::new());
     let handle = tokio::spawn(drive_interactive_workflow(
         workflow.clone(),
         entrypoint,
@@ -45,6 +48,7 @@ where
         event_tx,
         action_rx,
         agent_snapshots,
+        snapshot_store,
         cancel_token,
     ));
     let mut manual_inputs = VecDeque::from(manual_inputs);

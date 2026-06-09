@@ -23,6 +23,40 @@ pub struct FileChangeRecord {
     pub timestamp_ms: u64,
 }
 
+/// Dedup key for the current on-disk path represented by a change record.
+#[must_use]
+pub fn effective_change_path(record: &FileChangeRecord) -> &str {
+    if record.op == FileChangeOp::Rename {
+        record.rename_to.as_deref().unwrap_or(&record.path)
+    } else {
+        &record.path
+    }
+}
+
+/// Merge a file-change record into `by_path`, keeping the latest timestamp per effective path.
+/// Rename records drop a stale entry keyed by the source path.
+pub fn merge_file_change_record(
+    by_path: &mut std::collections::BTreeMap<String, FileChangeRecord>,
+    record: FileChangeRecord,
+) {
+    if record.op == FileChangeOp::Rename {
+        if let Some(existing) = by_path.get(&record.path) {
+            if record.timestamp_ms >= existing.timestamp_ms {
+                by_path.remove(&record.path);
+            }
+        }
+    }
+    let key = effective_change_path(&record).to_string();
+    by_path
+        .entry(key)
+        .and_modify(|existing| {
+            if record.timestamp_ms >= existing.timestamp_ms {
+                *existing = record.clone();
+            }
+        })
+        .or_insert(record);
+}
+
 #[must_use]
 pub fn summarize_diff(diff: &str, max_lines: usize) -> String {
     let lines: Vec<&str> = diff.lines().take(max_lines).collect();
@@ -36,6 +70,46 @@ pub fn summarize_diff(diff: &str, max_lines: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn merge_file_change_record_prefers_rename_destination() {
+        let mut by_path = std::collections::BTreeMap::new();
+        merge_file_change_record(
+            &mut by_path,
+            FileChangeRecord {
+                path: "old.rs".to_string(),
+                op: FileChangeOp::Update,
+                rename_to: None,
+                diff_summary: None,
+                timestamp_ms: 1,
+            },
+        );
+        merge_file_change_record(
+            &mut by_path,
+            FileChangeRecord {
+                path: "old.rs".to_string(),
+                op: FileChangeOp::Rename,
+                rename_to: Some("new.rs".to_string()),
+                diff_summary: None,
+                timestamp_ms: 2,
+            },
+        );
+        merge_file_change_record(
+            &mut by_path,
+            FileChangeRecord {
+                path: "new.rs".to_string(),
+                op: FileChangeOp::Update,
+                rename_to: None,
+                diff_summary: None,
+                timestamp_ms: 3,
+            },
+        );
+        assert_eq!(by_path.len(), 1);
+        assert_eq!(
+            by_path.get("new.rs").expect("entry").op,
+            FileChangeOp::Update
+        );
+    }
 
     #[test]
     fn summarize_diff_truncates_long_output() {

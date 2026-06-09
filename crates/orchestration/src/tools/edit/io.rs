@@ -57,6 +57,89 @@ impl EditIo {
         resolve_writable(&self.cwd, user_path)
     }
 
+    /// Read raw on-disk bytes as UTF-8 (BOM and line endings preserved).
+    pub fn read_raw(&self, user_path: &str) -> Result<String, EditIoError> {
+        if is_notebook_path(user_path) {
+            return Err(EditIoError::NotebookNotSupported(user_path.to_string()));
+        }
+
+        let absolute = self.resolve(user_path)?;
+        if absolute.exists() {
+            assert_editable_file(&absolute, user_path)?;
+        }
+        fs::read_to_string(&absolute).map_err(|error| {
+            if error.kind() == io::ErrorKind::NotFound {
+                EditIoError::NotFound(user_path.to_string())
+            } else {
+                EditIoError::Io {
+                    operation: "read",
+                    path: user_path.to_string(),
+                    source: error,
+                }
+            }
+        })
+    }
+
+    /// Reject updates to generated files before hashline patching.
+    pub fn preflight_update(&self, user_path: &str) -> Result<(), EditIoError> {
+        if is_notebook_path(user_path) {
+            return Err(EditIoError::NotebookNotSupported(user_path.to_string()));
+        }
+        let absolute = self.resolve(user_path)?;
+        if absolute.exists() {
+            assert_editable_file(&absolute, user_path)?;
+        }
+        Ok(())
+    }
+
+    /// Write on-disk bytes verbatim (used by hashline after BOM/line-ending restore).
+    pub fn write_persisted(
+        &self,
+        user_path: &str,
+        content: &str,
+        diff_summary: Option<String>,
+    ) -> Result<(), EditIoError> {
+        if is_notebook_path(user_path) {
+            return Err(EditIoError::NotebookNotSupported(user_path.to_string()));
+        }
+
+        let absolute = self.resolve(user_path)?;
+        let file_existed = absolute.exists();
+        if file_existed {
+            assert_editable_file(&absolute, user_path)?;
+        }
+        if let Some(parent) = absolute.parent() {
+            if !parent.as_os_str().is_empty() {
+                fs::create_dir_all(parent).map_err(|source| EditIoError::Io {
+                    operation: "mkdir",
+                    path: user_path.to_string(),
+                    source,
+                })?;
+            }
+        }
+
+        fs::write(&absolute, content).map_err(|source| EditIoError::Io {
+            operation: "write",
+            path: user_path.to_string(),
+            source,
+        })?;
+
+        if let Some(ledger) = &self.ledger {
+            ledger.record(
+                user_path,
+                if file_existed {
+                    FileChangeOp::Update
+                } else {
+                    FileChangeOp::Create
+                },
+                None,
+                diff_summary,
+            );
+        }
+
+        Ok(())
+    }
+
     /// Read a text file as LF-normalized UTF-8 (BOM stripped).
     pub fn read_text(&self, user_path: &str) -> Result<String, EditIoError> {
         if is_notebook_path(user_path) {

@@ -10,4 +10,6 @@ pub use config::{
     ToolOutputMeta, ToolPolicy, ToolPolicyOverride, ToolRef, ToolResult, ToolTier, ToolTruncation,
     ToolTruncationStrategy,
 };
-pub use file_change::{summarize_diff, FileChangeOp, FileChangeRecord};
+pub use file_change::{
+    effective_change_path, merge_file_change_record, summarize_diff, FileChangeOp, FileChangeRecord,
+};

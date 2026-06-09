@@ -4,6 +4,8 @@ pub mod auto_generated;
 pub mod diff;
 pub mod edit_tool;
 pub mod errors;
+pub mod file_snapshot_store;
+pub mod hashline;
 pub mod io;
 pub mod ledger;
 pub mod normalize;

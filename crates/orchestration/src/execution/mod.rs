@@ -110,6 +110,7 @@ pub fn spawn_interactive_workflow_run<A>(
     execution_cwd: PathBuf,
     ai: A,
     agent_snapshots: BTreeMap<String, CallableAgent>,
+    snapshot_store: std::sync::Arc<crate::tools::edit::hashline::snapshots::InMemorySnapshotStore>,
 ) -> (
     tokio::task::JoinHandle<()>,
     UnboundedReceiver<ExecutionEvent>,
@@ -132,6 +133,7 @@ where
             event_tx,
             action_rx,
             agent_snapshots,
+            snapshot_store,
             drive_cancel_token,
         )
         .await;

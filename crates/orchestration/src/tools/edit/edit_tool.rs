@@ -1,6 +1,7 @@
-//! Thin `edit` (replace-mode) tool handler (Tier C).
+//! `edit` tool handler — replace mode and hashline mode (Tier C).
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use serde::Deserialize;
 use serde_json::Value;
@@ -9,6 +10,8 @@ use domain::summarize_diff;
 
 use super::diff::{generate_diff_string, replace_text, ReplaceOptions};
 use super::errors::EditMatchError;
+use super::hashline::execute::execute_hashline;
+use super::hashline::snapshots::InMemorySnapshotStore;
 use super::io::{EditIo, EditIoError};
 use super::ledger::FileChangeLedger;
 use super::replace::{find_match, FindMatchOptions, DEFAULT_FUZZY_THRESHOLD};
@@ -28,11 +31,23 @@ struct EditEntry {
     all: bool,
 }
 
+#[derive(Debug, Deserialize)]
+struct HashlineArgs {
+    input: String,
+}
+
 pub fn execute_edit(
     cwd: PathBuf,
     args: Value,
     ledger: FileChangeLedger,
+    snapshots: Arc<InMemorySnapshotStore>,
 ) -> Result<String, ToolError> {
+    if args.get("input").is_some() {
+        let args: HashlineArgs = serde_json::from_value(args)
+            .map_err(|error| ToolError::Failed(format!("invalid hashline edit args: {error}")))?;
+        return execute_hashline(cwd, args.input, ledger, snapshots);
+    }
+
     let args: EditArgs = serde_json::from_value(args)
         .map_err(|error| ToolError::Failed(format!("invalid edit args: {error}")))?;
     if args.edits.is_empty() {

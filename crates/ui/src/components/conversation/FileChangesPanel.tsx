@@ -19,12 +19,26 @@ function opLabel(op: FileChangeRecord["op"]): string {
   }
 }
 
+function effectiveChangePath(record: FileChangeRecord): string {
+  if (record.op === "rename" && record.renameTo) {
+    return record.renameTo;
+  }
+  return record.path;
+}
+
 function latestChangesByPath(records: FileChangeRecord[]): FileChangeRecord[] {
   const byPath = new Map<string, FileChangeRecord>();
   for (const record of records) {
-    const existing = byPath.get(record.path);
+    if (record.op === "rename") {
+      const stale = byPath.get(record.path);
+      if (!stale || record.timestampMs >= stale.timestampMs) {
+        byPath.delete(record.path);
+      }
+    }
+    const key = effectiveChangePath(record);
+    const existing = byPath.get(key);
     if (!existing || record.timestampMs >= existing.timestampMs) {
-      byPath.set(record.path, record);
+      byPath.set(key, record);
     }
   }
   return [...byPath.values()];

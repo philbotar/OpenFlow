@@ -26,6 +26,11 @@ struct EditArgs {
 }
 
 #[derive(Debug, Deserialize)]
+struct HashlineEditArgs {
+    input: String,
+}
+
+#[derive(Debug, Deserialize)]
 struct EditEntry {
     old_text: String,
     new_text: String,
@@ -43,10 +48,11 @@ pub fn preview_file_edit(
     cwd: PathBuf,
     tool_name: &str,
     args: &Value,
+    snapshots: std::sync::Arc<super::hashline::snapshots::InMemorySnapshotStore>,
 ) -> Result<FileEditPreview, String> {
     match tool_name {
         "write" => preview_write(cwd, args),
-        "edit" => preview_edit(cwd, args),
+        "edit" => preview_edit(cwd, args, snapshots),
         "apply_patch" => preview_apply_patch(cwd, args),
         other => Err(format!("tool '{other}' does not support file edit preview")),
     }
@@ -81,7 +87,15 @@ fn preview_write(cwd: PathBuf, args: &Value) -> Result<FileEditPreview, String> 
     })
 }
 
-fn preview_edit(cwd: PathBuf, args: &Value) -> Result<FileEditPreview, String> {
+fn preview_edit(
+    cwd: PathBuf,
+    args: &Value,
+    snapshots: std::sync::Arc<super::hashline::snapshots::InMemorySnapshotStore>,
+) -> Result<FileEditPreview, String> {
+    if args.get("input").is_some() {
+        return preview_hashline_edit(cwd, args, snapshots);
+    }
+
     let args: EditArgs = serde_json::from_value(args.clone())
         .map_err(|error| format!("invalid edit args: {error}"))?;
     if args.edits.is_empty() {
@@ -122,6 +136,63 @@ fn preview_edit(cwd: PathBuf, args: &Value) -> Result<FileEditPreview, String> {
             diff.diff,
             None,
         )],
+        error: None,
+    })
+}
+
+fn preview_hashline_edit(
+    cwd: PathBuf,
+    args: &Value,
+    snapshots: std::sync::Arc<super::hashline::snapshots::InMemorySnapshotStore>,
+) -> Result<FileEditPreview, String> {
+    let args: HashlineEditArgs = serde_json::from_value(args.clone())
+        .map_err(|error| format!("invalid hashline edit args: {error}"))?;
+    use super::hashline::execute::EditHashlineFs;
+    use super::hashline::input::Patch;
+    use super::hashline::patcher::{Patcher, PatcherOptions};
+    use super::hashline::types::SplitOptions;
+
+    let cwd_display = cwd.to_string_lossy().into_owned();
+    let patch = Patch::parse(
+        &args.input,
+        SplitOptions {
+            cwd: Some(cwd_display),
+            path: None,
+        },
+    )?;
+    if patch.sections.is_empty() {
+        return Err("No hashline sections found in input.".to_string());
+    }
+
+    let fs = EditHashlineFs::new(EditIo::new(cwd));
+    let patcher = Patcher::new(PatcherOptions {
+        fs,
+        snapshots,
+        block_resolver: None,
+    });
+    patcher.preflight(&patch)?;
+
+    let mut entries = Vec::new();
+    for section in &patch.sections {
+        let mut section = section.clone();
+        let prepared = patcher.prepare(&mut section)?;
+        if prepared.is_noop() {
+            return Err(format!(
+                "Edits to {} resulted in no changes being made.",
+                section.path
+            ));
+        }
+        let diff = generate_diff_string(&prepared.normalized, &prepared.apply_result.text, 2);
+        entries.push(preview_entry(
+            &section.path,
+            FileChangeOp::Update,
+            diff.diff,
+            None,
+        ));
+    }
+
+    Ok(FileEditPreview {
+        entries,
         error: None,
     })
 }
@@ -217,6 +288,10 @@ mod tests {
     use super::*;
     use std::fs;
 
+    fn empty_snapshots() -> Arc<crate::tools::edit::hashline::snapshots::InMemorySnapshotStore> {
+        Arc::new(crate::tools::edit::hashline::snapshots::InMemorySnapshotStore::new())
+    }
+
     #[test]
     fn preview_write_shows_create_diff() {
         let temp = tempfile::tempdir().expect("tempdir");
@@ -224,6 +299,7 @@ mod tests {
             temp.path().to_path_buf(),
             "write",
             &serde_json::json!({"path": "new.txt", "content": "hello\n"}),
+            empty_snapshots(),
         )
         .expect("preview");
 
@@ -241,6 +317,7 @@ mod tests {
             temp.path().to_path_buf(),
             "write",
             &serde_json::json!({"path": "note.txt", "content": "new\n"}),
+            empty_snapshots(),
         )
         .expect("preview");
 
@@ -260,6 +337,7 @@ mod tests {
                 "path": "note.txt",
                 "edits": [{"old_text": "beta", "new_text": "gamma"}]
             }),
+            empty_snapshots(),
         )
         .expect("preview");
 

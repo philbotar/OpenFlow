@@ -10,6 +10,7 @@ use domain::{
 };
 use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
+use std::sync::Arc;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -26,6 +27,7 @@ pub(super) async fn drive_interactive_workflow<A>(
     event_tx: UnboundedSender<ExecutionEvent>,
     mut action_rx: UnboundedReceiver<ExecutionAction>,
     agent_snapshots: BTreeMap<String, CallableAgent>,
+    snapshot_store: Arc<crate::tools::edit::hashline::snapshots::InMemorySnapshotStore>,
     cancel_token: CancellationToken,
 ) where
     A: AiPort,
@@ -52,6 +54,7 @@ pub(super) async fn drive_interactive_workflow<A>(
         execution_cwd,
         artifacts,
         cancel_token.clone(),
+        snapshot_store,
     );
     let mut declared_subagents: BTreeMap<String, SubagentSummary> = BTreeMap::new();
     let mut predefined_registered: HashSet<NodeId> = HashSet::new();

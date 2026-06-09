@@ -18,7 +18,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 use walkdir::WalkDir;
@@ -40,6 +40,7 @@ pub struct ToolRunner {
     cwd: PathBuf,
     artifacts: ArtifactStore,
     cancel_token: CancellationToken,
+    snapshot_store: Arc<crate::tools::edit::hashline::snapshots::InMemorySnapshotStore>,
 }
 
 struct BlockingRunOutcome {
@@ -65,6 +66,7 @@ impl ToolRunner {
         cwd: PathBuf,
         artifacts: ArtifactStore,
         cancel_token: CancellationToken,
+        snapshot_store: Arc<crate::tools::edit::hashline::snapshots::InMemorySnapshotStore>,
     ) -> Self {
         Self {
             registry,
@@ -72,7 +74,14 @@ impl ToolRunner {
             cwd,
             artifacts,
             cancel_token,
+            snapshot_store,
         }
+    }
+
+    pub fn snapshot_store(
+        &self,
+    ) -> Arc<crate::tools::edit::hashline::snapshots::InMemorySnapshotStore> {
+        self.snapshot_store.clone()
     }
 
     pub fn registry(&self) -> &ToolRegistry {
@@ -188,9 +197,10 @@ impl ToolRunner {
         args: Value,
     ) -> Result<BlockingRunOutcome, ToolRunnerError> {
         let cwd = self.cwd.clone();
+        let snapshots = self.snapshot_store.clone();
         tokio::task::spawn_blocking(move || {
             let ledger = crate::tools::edit::ledger::FileChangeLedger::new();
-            let ops = BlockingToolOps::new(cwd, ledger.clone());
+            let ops = BlockingToolOps::new(cwd, ledger.clone(), snapshots);
             let output = match kind {
                 BuiltinToolKind::Search => ops.search(args),
                 BuiltinToolKind::Find => ops.find(args),
@@ -277,9 +287,14 @@ impl ToolRunner {
         }
 
         let cwd = self.cwd.clone();
+        let snapshots = self.snapshot_store.clone();
         tokio::task::spawn_blocking(move || {
-            BlockingToolOps::new(cwd, crate::tools::edit::ledger::FileChangeLedger::new())
-                .read_local(&args.path)
+            BlockingToolOps::new(
+                cwd,
+                crate::tools::edit::ledger::FileChangeLedger::new(),
+                snapshots,
+            )
+            .read_local(&args.path)
         })
         .await
         .map_err(|error| ToolRunnerError::BlockingTask(error.to_string()))?
@@ -310,11 +325,20 @@ impl ToolRunner {
 struct BlockingToolOps {
     cwd: PathBuf,
     ledger: crate::tools::edit::ledger::FileChangeLedger,
+    snapshots: Arc<crate::tools::edit::hashline::snapshots::InMemorySnapshotStore>,
 }
 
 impl BlockingToolOps {
-    fn new(cwd: PathBuf, ledger: crate::tools::edit::ledger::FileChangeLedger) -> Self {
-        Self { cwd, ledger }
+    fn new(
+        cwd: PathBuf,
+        ledger: crate::tools::edit::ledger::FileChangeLedger,
+        snapshots: Arc<crate::tools::edit::hashline::snapshots::InMemorySnapshotStore>,
+    ) -> Self {
+        Self {
+            cwd,
+            ledger,
+            snapshots,
+        }
     }
 
     fn read_local(&self, path: &str) -> Result<String, ToolError> {
@@ -327,6 +351,15 @@ impl BlockingToolOps {
         }
         let text = fs::read_to_string(&absolute)
             .map_err(|error| ToolError::Failed(format!("read failed for {}: {error}", path)))?;
+        if let Ok(canonical) =
+            crate::tools::edit::file_snapshot_store::canonical_snapshot_path(&self.cwd, &path)
+        {
+            let _ = crate::tools::edit::file_snapshot_store::record_file_snapshot(
+                self.snapshots.as_ref(),
+                &canonical,
+                &text,
+            );
+        }
         Ok(apply_read_selector(&path, &text, selector.as_deref()))
     }
 
@@ -393,7 +426,12 @@ impl BlockingToolOps {
     }
 
     fn edit(&self, args: Value) -> Result<String, ToolError> {
-        crate::tools::edit::edit_tool::execute_edit(self.cwd.clone(), args, self.ledger.clone())
+        crate::tools::edit::edit_tool::execute_edit(
+            self.cwd.clone(),
+            args,
+            self.ledger.clone(),
+            self.snapshots.clone(),
+        )
     }
 
     fn apply_patch(&self, args: Value) -> Result<String, ToolError> {
@@ -549,6 +587,7 @@ mod tests {
             root.to_path_buf(),
             artifacts,
             CancellationToken::new(),
+            Arc::new(crate::tools::edit::hashline::snapshots::InMemorySnapshotStore::new()),
         )
     }
 

@@ -197,29 +197,41 @@ fn edit_tool() -> RegisteredTool {
         definition: ToolDefinition {
             name: "edit".to_string(),
             description:
-                "Replace exact or fuzzy-matched text in a file under the execution folder."
+                "Edit files under the execution folder: replace-mode (`path` + `edits`) or hashline-mode (`input` with `¶path#TAG` sections)."
                     .to_string(),
             input_schema: serde_json::json!({
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {
-                    "path": { "type": "string" },
-                    "edits": {
-                        "type": "array",
-                        "minItems": 1,
-                        "items": {
-                            "type": "object",
-                            "additionalProperties": false,
-                            "properties": {
-                                "old_text": { "type": "string" },
-                                "new_text": { "type": "string" },
-                                "all": { "type": "boolean" }
-                            },
-                            "required": ["old_text", "new_text"]
-                        }
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "path": { "type": "string" },
+                            "edits": {
+                                "type": "array",
+                                "minItems": 1,
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "properties": {
+                                        "old_text": { "type": "string" },
+                                        "new_text": { "type": "string" },
+                                        "all": { "type": "boolean" }
+                                    },
+                                    "required": ["old_text", "new_text"]
+                                }
+                            }
+                        },
+                        "required": ["path", "edits"]
+                    },
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "input": { "type": "string" }
+                        },
+                        "required": ["input"]
                     }
-                },
-                "required": ["path", "edits"]
+                ]
             }),
             tier: ToolTier::Write,
             concurrency: ToolConcurrency::Exclusive,

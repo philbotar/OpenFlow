@@ -4,7 +4,7 @@ use crate::conversation::AgentTranscriptItem;
 use crate::execution::RunError;
 use crate::graph::{Node, NodeId, Workflow};
 use crate::ports::AgentRequest;
-use crate::tools::{FileChangeRecord, ToolDefinition};
+use crate::tools::{merge_file_change_record, FileChangeRecord, ToolDefinition};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -56,14 +56,7 @@ pub fn upstream_changed_files(
     for upstream_id in transitive_upstream_ids(node_id, upstream_by_node) {
         if let Some(records) = changed_files_by_node.get(&upstream_id) {
             for record in records {
-                by_path
-                    .entry(record.path.clone())
-                    .and_modify(|existing| {
-                        if record.timestamp_ms >= existing.timestamp_ms {
-                            *existing = record.clone();
-                        }
-                    })
-                    .or_insert_with(|| record.clone());
+                merge_file_change_record(&mut by_path, record.clone());
             }
         }
     }
@@ -273,6 +266,36 @@ mod tests {
                 "timestampMs": 1
             }])
         );
+    }
+
+    #[test]
+    fn upstream_changed_files_dedupes_renames_by_destination() {
+        let upstream_map =
+            HashMap::from([(NodeId("join".to_string()), vec![NodeId("alpha".into())])]);
+        let mut changed_files_by_node = BTreeMap::new();
+        changed_files_by_node.insert(
+            NodeId("alpha".into()),
+            vec![
+                FileChangeRecord {
+                    path: "old.rs".to_string(),
+                    op: crate::tools::FileChangeOp::Rename,
+                    rename_to: Some("new.rs".to_string()),
+                    diff_summary: None,
+                    timestamp_ms: 1,
+                },
+                FileChangeRecord {
+                    path: "new.rs".to_string(),
+                    op: crate::tools::FileChangeOp::Update,
+                    rename_to: None,
+                    diff_summary: None,
+                    timestamp_ms: 2,
+                },
+            ],
+        );
+
+        let files = upstream_changed_files("join", &upstream_map, &changed_files_by_node);
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, "new.rs");
     }
 
     #[test]

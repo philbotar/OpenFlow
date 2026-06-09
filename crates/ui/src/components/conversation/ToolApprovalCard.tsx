@@ -50,6 +50,21 @@ export function ToolApprovalCard() {
     },
   );
 
+  const canApproveFileEdit = () => {
+    const approval = ctx.selectedPendingApproval();
+    if (!approval || !isFileEditTool(approval.toolCall.name)) {
+      return true;
+    }
+    if (preview.loading || preview.error) {
+      return false;
+    }
+    const result = preview();
+    if (!result || result.error) {
+      return false;
+    }
+    return (result.entries?.length ?? 0) > 0;
+  };
+
   return (
     <Show when={ctx.selectedPendingApproval()}>
       {(approval) => (
@@ -108,6 +123,7 @@ export function ToolApprovalCard() {
             </button>
             <button
               class="primary-button"
+              disabled={!canApproveFileEdit()}
               onClick={() => void ctx.handleToolApproval(true)}
             >
               Approve
