@@ -115,4 +115,11 @@ pub enum RunTelemetry {
         subagent_id: String,
         error: String,
     },
+    /// Completed phase timing for performance diagnosis (AI invoke, tool run, etc.).
+    PhaseTimed {
+        phase: String,
+        label: String,
+        node_id: Option<NodeId>,
+        duration_ms: u64,
+    },
 }

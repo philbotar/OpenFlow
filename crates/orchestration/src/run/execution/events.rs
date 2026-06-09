@@ -5,6 +5,7 @@ use engine::{
     summary_from_node_output, ChatMessage, ChatRole, NodeId, SubagentStatus, ToolCallStatus,
     Workflow,
 };
+use serde_json::json;
 
 use super::ExecutionEvent;
 
@@ -425,6 +426,47 @@ pub fn apply_event_to_run_state(
                     format!("Subagent {} failed: {}", subagent_id, error),
                 ));
         }
+        ExecutionEvent::PhaseTimed {
+            phase,
+            label,
+            node_id,
+            duration_ms,
+        } => {
+            let message = format_phase_timed_message(&phase, &label, duration_ms);
+            state.run_trace.push(RunTraceEntry {
+                node_id: node_id.unwrap_or_else(|| NodeId("—".to_string())),
+                node_label: label,
+                status: TraceStatus::Completed,
+                message,
+                output: Some(json!({ "phase": phase, "durationMs": duration_ms })),
+            });
+        }
+    }
+}
+
+fn format_phase_timed_message(phase: &str, label: &str, duration_ms: u64) -> String {
+    let duration = if duration_ms >= 1000 {
+        format!("{:.1}s", duration_ms as f64 / 1000.0)
+    } else {
+        format!("{duration_ms}ms")
+    };
+    format!("{phase}: {label} · {duration}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn phase_timed_message_formats_milliseconds_and_seconds() {
+        assert_eq!(
+            format_phase_timed_message("ai_invoke", "Planner", 842),
+            "ai_invoke: Planner · 842ms"
+        );
+        assert_eq!(
+            format_phase_timed_message("tool", "search", 2400),
+            "tool: search · 2.4s"
+        );
     }
 }
 

@@ -2,6 +2,7 @@ mod drive;
 mod events;
 mod headless;
 mod subagents;
+mod timing;
 mod tool_port;
 
 use crate::lsp::LspSettings;

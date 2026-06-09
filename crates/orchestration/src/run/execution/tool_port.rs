@@ -9,10 +9,12 @@ use engine::{
 };
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_util::sync::CancellationToken;
 
 use super::subagents::{augment_call_subagent_tool_description, merge_subagent_summaries_into_map};
+use super::timing::emit_phase_timed;
 use super::ExecutionEvent;
 
 pub struct ToolPortImpl<A> {
@@ -372,14 +374,27 @@ where
         request: engine::AgentRequest,
     ) -> Option<Result<AgentTurnOutcome, engine::AgentError>> {
         let ai = Arc::clone(&self.ai);
-        tokio::select! {
+        let label = format!("subagent · {}", request.node_label);
+        let node_id = request.node_id.clone();
+        let started = Instant::now();
+        let result = tokio::select! {
             biased;
             _ = self.cancel_token.cancelled() => {
                 abort_run(&self.event_tx, &self.aborted_emitted);
                 None
             }
             result = ai.invoke(request) => Some(result),
+        };
+        if result.is_some() {
+            emit_phase_timed(
+                &self.event_tx,
+                "ai_invoke",
+                &label,
+                Some(node_id),
+                started,
+            );
         }
+        result
     }
 
     async fn execute_tool_or_cancel(
@@ -388,17 +403,29 @@ where
         node_id: &NodeId,
     ) -> Option<Result<ToolExecutionRecord, ToolRunnerError>> {
         let tool_runner = Arc::clone(&self.tool_runner);
+        let tool_name = tool_call.name.clone();
         let ctx = ToolExecutionContext {
             node_id: node_id.clone(),
         };
-        tokio::select! {
+        let started = Instant::now();
+        let result = tokio::select! {
             biased;
             _ = self.cancel_token.cancelled() => {
                 abort_run(&self.event_tx, &self.aborted_emitted);
                 None
             }
             result = tool_runner.execute(tool_call, Some(ctx)) => Some(result),
+        };
+        if result.is_some() {
+            emit_phase_timed(
+                &self.event_tx,
+                "tool",
+                &tool_name,
+                Some(node_id.clone()),
+                started,
+            );
         }
+        result
     }
 }
 

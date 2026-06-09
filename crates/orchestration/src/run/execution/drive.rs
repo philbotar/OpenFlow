@@ -7,10 +7,12 @@ use engine::{
 };
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
+use super::timing::emit_phase_timed;
 use super::tool_port::ToolPortImpl;
 use super::{ExecutionAction, ExecutionEvent, InteractiveWorkflowRunParams};
 
@@ -332,7 +334,15 @@ where
         send_node_start_events(&self.event_tx, &request);
         let node_id = request.node_id.clone();
         let label = request.node_label.clone();
+        let started = Instant::now();
         let result = self.inner.invoke(request).await;
+        emit_phase_timed(
+            &self.event_tx,
+            "ai_invoke",
+            &label,
+            Some(node_id.clone()),
+            started,
+        );
         if let Ok(outcome) = &result {
             emit_assistant_message(&self.event_tx, &node_id, outcome);
             if let AgentTurnOutcome::Completed(AgentTurnSuccess { output, .. }) = outcome {
