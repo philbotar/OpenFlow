@@ -442,6 +442,7 @@ impl RunCoordinator {
             .map_err(|error| BackendError::GitFailed(error.to_string()))?
             .map_err(BackendError::GitFailed)?;
 
+        let batch_node_id = batch.node_id.clone();
         if let Some(pending) = pending_engine_reverts {
             pending.lock().push(batch);
         }
@@ -454,6 +455,9 @@ impl RunCoordinator {
         run_state
             .changed_files
             .retain(|record| record.batch_id.as_deref() != Some(batch_id.as_str()));
+        if let Some(records) = run_state.changed_files_by_node.get_mut(batch_node_id.as_str()) {
+            records.retain(|record| record.batch_id.as_deref() != Some(batch_id.as_str()));
+        }
         run_state
             .edit_batches
             .retain(|entry| entry.batch_id != batch_id);

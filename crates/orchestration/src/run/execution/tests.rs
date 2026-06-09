@@ -573,4 +573,10 @@ fn file_changed_event_appends_to_run_state() {
     );
     assert_eq!(state.changed_files.len(), 1);
     assert_eq!(state.changed_files[0].path, "src/main.rs");
+    let node_files = state
+        .changed_files_by_node
+        .get(&NodeId("first".to_string()))
+        .expect("per-node ledger");
+    assert_eq!(node_files.len(), 1);
+    assert_eq!(node_files[0].path, "src/main.rs");
 }

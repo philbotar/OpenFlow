@@ -218,8 +218,13 @@ pub fn apply_event_to_run_state(
                 is_error,
             );
         }
-        ExecutionEvent::FileChanged { record, .. } => {
-            state.changed_files.push(record);
+        ExecutionEvent::FileChanged { node_id, record } => {
+            state.changed_files.push(record.clone());
+            state
+                .changed_files_by_node
+                .entry(node_id)
+                .or_default()
+                .push(record);
         }
         ExecutionEvent::EditBatchRecorded { batch, .. } => {
             state.edit_batches.push(batch);

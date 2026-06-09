@@ -3,6 +3,8 @@ import type {
   AppSettings,
   Edge,
   EdgeId,
+  EditBatch,
+  FileChangeRecord,
   Node,
   NodeId,
   NodeToolConfig,
@@ -170,8 +172,29 @@ export function createIdleRunState(workflow: Workflow): WorkflowRunState {
     runTrace: [],
     outputs: {},
     changedFiles: [],
+    changedFilesByNode: {},
     editBatches: [],
   };
+}
+
+export function nodeChangedFiles(
+  runState: WorkflowRunState | null,
+  nodeId: NodeId | null,
+): FileChangeRecord[] {
+  if (!runState || !nodeId) {
+    return [];
+  }
+  return runState.changedFilesByNode[nodeId] ?? [];
+}
+
+export function nodeEditBatches(
+  runState: WorkflowRunState | null,
+  nodeId: NodeId | null,
+): EditBatch[] {
+  if (!runState || !nodeId) {
+    return [];
+  }
+  return runState.editBatches.filter((batch) => batch.nodeId === nodeId);
 }
 
 export function selectedNode(

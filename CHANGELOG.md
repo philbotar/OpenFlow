@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Docs
+
+- **Roadmap:** Refactor section — track removal of legacy snake_case ↔ camelCase / PascalCase serde aliases after T16 casing unification.
+
 ### Added
 
 - **Orchestration domain/adapter separation:** port traits for project workflows (`ProjectWorkflowStore`), skills (`SkillCatalog`), and project bindings (`project/domain.rs`); settings types in `settings/model.rs`, provider resolution in `settings/provider.rs`; `backend/` wires all `File*Store` adapters; fix duplicate module compilation via `lib.rs` aliases for `tools`, storage, and `lsp`.
@@ -27,6 +31,8 @@
 
 ### Fixed
 
+- **Subagent runtime test:** `advance_subagent_invoke_records_tool_calls_before_results` catch-all arm now panics on unexpected variants instead of asserting an impossible `NeedAi` match.
+- **File changes panel:** scope "Changed files" and revertible batches to the selected node (`changedFilesByNode` in run state; `FileChangesPanel` filters by `selectedNodeId`).
 - **Verify pipeline:** run `cargo fmt`; remove duplicate `run`/`tool` module roots in `orchestration` `lib.rs` (keep flat `#[path]` re-exports); load `tool/errors.rs` as `tool_errors`; satisfy clippy `panic`/`expect_used` in engine tests; bundle multi-arg constructors into `AppBackendDeps` and `InteractiveWorkflowRunParams` instead of crate-wide `too_many_arguments` allow.
 - **Git diff / undo (Phase 9):** batch revert removes only matching `batch_id` records; syncs `InteractiveEngine` and hashline snapshots; deletes created paths before restoring sources; skips non-UTF-8 snapshot capture; keeps execution cwd after run end for post-run git diff.
 - **LSP writethrough (Phase 8):** `diagnostics_on_write` no longer appends a false error while the language-server client is unimplemented.

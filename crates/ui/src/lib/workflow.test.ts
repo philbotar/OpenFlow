@@ -5,6 +5,8 @@ import {
   cloneWorkflow,
   createEmptyToolConfig,
   isChatComposerBusy,
+  nodeChangedFiles,
+  nodeEditBatches,
   projectWorkflowCanvasGraph,
   projectWorkflowCanvasStatusByNode,
   projectWorkflowCanvasSubagentsByNode,
@@ -110,6 +112,7 @@ const runState: WorkflowRunState = {
   ],
   outputs: {},
   changedFiles: [],
+  changedFilesByNode: {},
   editBatches: [],
 };
 
@@ -267,5 +270,51 @@ describe("workflow helpers", () => {
     const result = projectWorkflowCanvasSubagentsByNode(runState, null);
     expect(result).not.toBeNull();
     expect(Object.keys(result!)).toHaveLength(0);
+  });
+
+  test("nodeChangedFiles and nodeEditBatches scope to selected node", () => {
+    const state: WorkflowRunState = {
+      ...runState,
+      changedFilesByNode: {
+        "node-1": [
+          {
+            path: "a.ts",
+            op: "update",
+            timestampMs: 1,
+          },
+        ],
+        "node-2": [
+          {
+            path: "b.ts",
+            op: "create",
+            timestampMs: 2,
+          },
+        ],
+      },
+      editBatches: [
+        {
+          batchId: "batch-1",
+          nodeId: "node-1",
+          toolCallId: "tc-1",
+          toolName: "write",
+          timestampMs: 1,
+          snapshots: [],
+        },
+        {
+          batchId: "batch-2",
+          nodeId: "node-2",
+          toolCallId: "tc-2",
+          toolName: "edit",
+          timestampMs: 2,
+          snapshots: [],
+        },
+      ],
+    };
+
+    expect(nodeChangedFiles(state, "node-1").map((record) => record.path)).toEqual(["a.ts"]);
+    expect(nodeChangedFiles(state, "node-2").map((record) => record.path)).toEqual(["b.ts"]);
+    expect(nodeChangedFiles(state, null)).toEqual([]);
+    expect(nodeEditBatches(state, "node-1").map((batch) => batch.batchId)).toEqual(["batch-1"]);
+    expect(nodeEditBatches(state, "node-2").map((batch) => batch.batchId)).toEqual(["batch-2"]);
   });
 });

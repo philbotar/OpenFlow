@@ -290,6 +290,7 @@ export interface WorkflowRunState {
   runTrace: RunTraceEntry[];
   outputs: Record<NodeId, unknown>;
   changedFiles: FileChangeRecord[];
+  changedFilesByNode: Record<NodeId, FileChangeRecord[]>;
   editBatches: EditBatch[];
 }
 

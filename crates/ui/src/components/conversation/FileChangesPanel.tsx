@@ -2,6 +2,7 @@ import { createSignal, For, Show } from "solid-js";
 import { createUiDesktopOutboundAdapter } from "../../port";
 import { useAppContext } from "../../context/AppContext";
 import type { EditBatch, FileChangeRecord } from "../../lib/types";
+import { nodeChangedFiles, nodeEditBatches } from "../../lib/workflow";
 
 const desktop = createUiDesktopOutboundAdapter();
 
@@ -163,8 +164,9 @@ function EditBatchRow(props: { batch: EditBatch }) {
 
 export function FileChangesPanel() {
   const ctx = useAppContext();
-  const changedFiles = () => latestChangesByPath(ctx.runState()?.changedFiles ?? []);
-  const editBatches = () => ctx.runState()?.editBatches ?? [];
+  const changedFiles = () =>
+    latestChangesByPath(nodeChangedFiles(ctx.runState(), ctx.selectedNodeId()));
+  const editBatches = () => nodeEditBatches(ctx.runState(), ctx.selectedNodeId());
 
   return (
     <Show when={changedFiles().length > 0 || editBatches().length > 0}>

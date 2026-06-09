@@ -210,6 +210,8 @@ Agents can **read** project files via the `read`, `search`, `find`, and `ast_gre
 
 Structural cleanup by workspace section. Keep domain logic in `domain`, transport in `providers`, runtime in `orchestration`, Tauri IPC in `desktop`, and frontend in `ui`. See `docs/architecture/contract.md`.
 
+**Serde casing:** Engine persistence uses `snake_case`; IPC/UI DTOs use `camelCase`. Legacy `PascalCase` enum values and field aliases (`#[serde(alias = …)]`) remain for older saved workflows, run logs, and agent definitions. Unify on one convention (T16), then drop the old snake_case ↔ camelCase / PascalCase compatibility shims.
+
 ### Domain (`crates/domain`)
 
 | Item | Status |
@@ -223,6 +225,7 @@ Structural cleanup by workspace section. Keep domain logic in `domain`, transpor
 | Make `HumanInputPort` / `ToolApprovalPort` load-bearing (T14) | Planned |
 | Move `ScriptedAiAdapter` to outbound placement (T15) | Planned |
 | Unify serde casing on wire types (T16) | Planned |
+| Remove legacy snake_case ↔ camelCase / PascalCase serde aliases — `ChatRole`, `NodeKind`, `CallableAgent` fields, run report enums; after T16 | Planned |
 | Trim blanket clippy allows — `clippy -- -D warnings` clean (T18) | Planned |
 
 ### Providers (`crates/providers`)
@@ -328,6 +331,7 @@ Remediation for modeled-but-unwired behavior and correctness gaps in `crates/dom
 | --- | --- | --- |
 | T15 Fix hexagonal file placement | P2 | Move `ScriptedAiAdapter` to outbound |
 | T16 Unify serde casing + typo fix | P2 | Wire-format change; keep back-compat aliases |
+| T16b Remove legacy casing shims | P2 | Drop `#[serde(alias = …)]` and PascalCase enum accepts after T16 migration |
 | T17 Concurrent layer siblings (runner only) | Stretch | Per D3; after phases 1–3 |
 | T18 Trim blanket clippy allows | P2 | Last; `clippy -- -D warnings` clean |
 
