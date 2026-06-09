@@ -1,7 +1,7 @@
 //! Integration tests for provider `AiPort` mocks.
 
 use async_trait::async_trait;
-use domain::{AgentError, AgentRequest, AgentTurnOutcome, AgentTurnSuccess, AiPort};
+use engine::{AgentError, AgentRequest, AgentTurnOutcome, AgentTurnSuccess, AiPort};
 
 // ── Mock AiPort ────────────────────────────────────────────────
 
@@ -55,7 +55,7 @@ fn sample_request() -> AgentRequest {
         task_prompt: String::new(),
         input: serde_json::json!({}),
         output_schema: serde_json::json!({}),
-        tool_config: domain::NodeToolConfig::default(),
+        tool_config: engine::NodeToolConfig::default(),
         available_tools: Vec::new(),
         transcript: Vec::new(),
     }

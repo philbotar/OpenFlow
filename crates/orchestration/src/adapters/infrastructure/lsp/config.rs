@@ -1,6 +1,6 @@
 //! LSP writethrough settings (env + persisted app settings).
 
-use crate::settings_store::LspSettings as PersistedLspSettings;
+use crate::settings::model::LspSettings as PersistedLspSettings;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LspSettings {

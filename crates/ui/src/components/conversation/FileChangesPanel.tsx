@@ -1,5 +1,5 @@
 import { createSignal, For, Show } from "solid-js";
-import { createUiDesktopOutboundAdapter } from "../../lib/desktopClient";
+import { createUiDesktopOutboundAdapter } from "../../port";
 import { useAppContext } from "../../context/AppContext";
 import type { EditBatch, FileChangeRecord } from "../../lib/types";
 

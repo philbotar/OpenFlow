@@ -1,4 +1,4 @@
-use domain::AgentError;
+use engine::AgentError;
 use reqwest::RequestBuilder;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

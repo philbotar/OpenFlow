@@ -736,20 +736,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "domain"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "futures",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "uuid",
-]
-
-[[package]]
 name = "dpi"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -827,6 +813,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "75030f3c4f45dafd7586dd6780965a8c7e8e285a5ecb86713e63a79c5b2766f3"
 dependencies = [
  "cfg-if",
+]
+
+[[package]]
+name = "engine"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "futures",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "uuid",
 ]
 
 [[package]]
@@ -2379,7 +2380,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "dirs",
- "domain",
+ "engine",
  "glob",
  "log",
  "parking_lot",
@@ -2681,7 +2682,7 @@ name = "providers"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "domain",
+ "engine",
  "jsonrepair-rs",
  "reqwest",
  "serde",

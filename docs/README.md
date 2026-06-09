@@ -7,7 +7,7 @@ Standards and architecture references for contributors and coding agents.
 ```text
 docs/
 ├── README.md                          # This index
-├── glossary.md                        # Domain vocabulary (ubiquitous language)
+├── glossary.md                        # Engine vocabulary (ubiquitous language)
 ├── contributing/
 │   ├── README.md                      # How to change code in this repo
 │   ├── coding-patterns.md             # Architecture rules and conventions
@@ -48,13 +48,14 @@ docs/
 
 ## Active Crates
 
-| Section | Owns |
+| Crate | Question it answers |
 | --- | --- |
-| `crates/domain` | Workflow model, validation, batch/interactive execution, templates, domain ports (`AiPort`, human/tool input) |
-| `crates/providers` | OpenAI/Anthropic wire mapping, tool-argument repair (`jsonrepair-rs`), auth |
-| `crates/orchestration` | `AppBackend`, run execution, app/project/agent/skill stores, provider config, tool registry |
-| `crates/desktop` | Tauri commands/events, bootstrap payload, `AppBackend` wiring |
-| `crates/ui` | Solid shell, screens, sidebar/canvas/inspector, typed invoke wrappers |
+| `crates/engine` | What is a valid workflow, and how does a run behave? |
+| `crates/orchestration` | How does the desktop app store, load, wire, and host runs? |
+| `crates/providers` | How do we talk to OpenAI/Anthropic? |
+| `crates/ui` / `crates/desktop` | How does the user interact? |
+
+See [`architecture/contract.md`](architecture/contract.md) for layer boundaries and dependency rules.
 
 ## Dev Entry Points
 

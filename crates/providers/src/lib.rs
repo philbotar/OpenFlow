@@ -9,7 +9,7 @@ mod spec;
 
 pub use auth::AuthConfig;
 pub use client::{AiClient, AiClientConfig, AnthropicConfig, ProviderAdapterConfig};
-pub use domain::AiPort;
+pub use engine::AiPort;
 pub use openai_compat::OpenAiCompatibleConfig;
 pub use spec::{
     builtin_provider_specs, provider_spec, AnthropicSpec, AuthSpec, OpenAiCompatibleSpec,

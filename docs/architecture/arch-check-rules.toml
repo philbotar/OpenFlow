@@ -1,0 +1,98 @@
+# Architecture checks consumed by scripts/check-architecture.sh.
+# Phase A = Tier 2 (inter-crate). Phase B = Tier 3 (seams + orchestration layout).
+# See docs/architecture/contract.md.
+
+version = 3
+
+# ── Tier 2 (Phase A): inter-crate boundaries ───────────────────
+
+[workspace_deps]
+engine = []
+providers = ["engine"]
+orchestration = ["engine", "providers"]
+desktop = ["orchestration"]
+
+[manifests]
+engine = "crates/engine/Cargo.toml"
+providers = "crates/providers/Cargo.toml"
+orchestration = "crates/orchestration/Cargo.toml"
+desktop = "crates/desktop/Cargo.toml"
+
+[engine_forbidden_deps]
+names = ["reqwest", "tauri", "tauri-build"]
+
+[legacy_crate_aliases]
+names = ["domain", "workflow_core"]
+
+[[forbidden_use]]
+crate = "engine"
+ban = ["orchestration", "providers", "desktop"]
+
+[[forbidden_use]]
+crate = "providers"
+ban = ["orchestration", "desktop"]
+
+[[forbidden_use]]
+crate = "orchestration"
+ban = ["desktop"]
+
+[[forbidden_use]]
+crate = "desktop"
+ban = ["engine", "providers"]
+
+# ── Tier 3 (Phase B): submodule + layout seams ─────────────────
+
+# orchestration/src may import only these symbols from providers:: (not AiClient).
+[orchestration_providers_allowlist]
+symbols = [
+    "create_provider",
+    "ProviderId",
+    "ProviderKind",
+    "ProviderSpec",
+    "WireApi",
+    "builtin_provider_specs",
+    "provider_spec",
+    "AiClientConfig",
+    "AnthropicConfig",
+    "AuthConfig",
+    "AuthSpec",
+    "OpenAiCompatibleConfig",
+    "ProviderAdapterConfig",
+    "AnthropicSpec",
+    "OpenAiCompatibleSpec",
+]
+# Concrete provider client — use create_provider + dyn AiPort instead.
+ban_symbols = ["AiClient"]
+
+# Only these orchestration paths may construct InteractiveEngine / WorkflowRunner.
+[[engine_construction]]
+crate = "orchestration"
+pattern = "InteractiveEngine::new"
+allowed_path_prefixes = ["crates/orchestration/src/run/execution/"]
+
+[[engine_construction]]
+crate = "orchestration"
+pattern = "WorkflowRunner::new"
+allowed_path_prefixes = ["crates/orchestration/src/run/execution/"]
+
+# Domain folders must not import adapters or flat store module paths.
+[orchestration_domain]
+folders = ["agent", "workflow", "project", "settings", "tool"]
+forbidden_use_prefixes = ["crate::adapters::"]
+forbidden_crate_modules = [
+    "agent_store",
+    "flow_store",
+    "storage",
+    "project_store",
+    "settings_store",
+    "skill_store",
+    "template_store",
+]
+
+# UI: @tauri-apps/* imports only in the desktop seam files (tests may mock).
+[ui_tauri_seam]
+allowed_files = [
+    "crates/ui/src/api.ts",
+    "crates/ui/src/port.ts",
+]
+allowed_globs = ["crates/ui/src/**/*.test.ts", "crates/ui/src/**/*.test.tsx"]

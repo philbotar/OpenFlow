@@ -1,27 +1,23 @@
-#![allow(
-    clippy::assigning_clones,
-    clippy::derive_partial_eq_without_eq,
-    clippy::missing_errors_doc,
-    clippy::missing_panics_doc,
-    clippy::needless_pass_by_value,
-    clippy::significant_drop_tightening,
-    clippy::uninlined_format_args
-)]
-
+use crate::adapters::storage::agent_store::FileAgentStore;
+use crate::agent::ports::AgentStore;
 use crate::agent_library::AgentLibrary;
-use crate::agent_store::{AgentDefinition, FileAgentStore};
 use crate::execution::ExecutionEvent;
+use crate::flow_store::FileProjectWorkflowStore;
+use crate::project::ports::{Project, ProjectStore};
 use crate::project_registry::ProjectRegistry;
-use crate::project_store::{FileProjectStore, Project};
-use crate::provider_config::ProviderEnv;
+use crate::project_store::FileProjectStore;
 use crate::run_coordinator::{RunCoordinator, RunStartParams};
+use crate::settings::model::AppSettings;
+use crate::settings::ports::{SettingsStore, SkillCatalog, SkillSummary};
+use crate::settings::provider::ProviderEnv;
 use crate::settings_facade::SettingsFacade;
-use crate::settings_store::{AppSettings, FileSettingsStore};
-use crate::skill_store::SkillSummary;
+use crate::settings_store::FileSettingsStore;
+use crate::skill_store::FileSkillCatalog;
 use crate::state::WorkflowRunState;
 use crate::storage::FileWorkflowStore;
+use crate::workflow::ports::{ProjectWorkflowStore, WorkflowStore};
 use crate::workflow_catalog::WorkflowCatalog;
-use domain::{Node, Workflow};
+use engine::{CallableAgent, Node, Workflow};
 use tokio::sync::mpsc::UnboundedReceiver;
 
 pub use crate::api::{
@@ -30,7 +26,17 @@ pub use crate::api::{
 };
 pub use crate::error::BackendError;
 
-#[derive(Debug)]
+pub struct AppBackendDeps {
+    pub workflow_store: Box<dyn WorkflowStore>,
+    pub project_workflow_store: Box<dyn ProjectWorkflowStore>,
+    pub agent_store: Box<dyn AgentStore>,
+    pub project_store: Box<dyn ProjectStore>,
+    pub settings_store: Box<dyn SettingsStore>,
+    pub skill_catalog: Box<dyn SkillCatalog>,
+    pub env: ProviderEnv,
+    pub runtime: tokio::runtime::Runtime,
+}
+
 pub struct AppBackend {
     workflows: WorkflowCatalog,
     agents: AgentLibrary,
@@ -41,33 +47,28 @@ pub struct AppBackend {
 
 impl AppBackend {
     #[must_use]
-    pub fn new(
-        workflow_store: FileWorkflowStore,
-        agent_store: FileAgentStore,
-        project_store: FileProjectStore,
-        settings_store: FileSettingsStore,
-        env: ProviderEnv,
-        runtime: tokio::runtime::Runtime,
-    ) -> Self {
+    pub fn new(deps: AppBackendDeps) -> Self {
         Self {
-            workflows: WorkflowCatalog::new(workflow_store),
-            agents: AgentLibrary::new(agent_store),
-            projects: ProjectRegistry::new(project_store),
-            settings: SettingsFacade::new(settings_store, env),
-            runs: RunCoordinator::new(runtime),
+            workflows: WorkflowCatalog::new(deps.workflow_store, deps.project_workflow_store),
+            agents: AgentLibrary::new(deps.agent_store),
+            projects: ProjectRegistry::new(deps.project_store),
+            settings: SettingsFacade::new(deps.settings_store, deps.skill_catalog, deps.env),
+            runs: RunCoordinator::new(deps.runtime),
         }
     }
 
     #[must_use]
     pub fn with_default_paths() -> Self {
-        Self::new(
-            FileWorkflowStore::new(FileWorkflowStore::default_path()),
-            FileAgentStore::new(FileAgentStore::default_path()),
-            FileProjectStore::new(FileProjectStore::default_path()),
-            FileSettingsStore::new(FileSettingsStore::default_path()),
-            ProviderEnv::from_system(),
-            tokio::runtime::Runtime::new().expect("failed to create tokio runtime"),
-        )
+        Self::new(AppBackendDeps {
+            workflow_store: Box::new(FileWorkflowStore::new(FileWorkflowStore::default_path())),
+            project_workflow_store: Box::new(FileProjectWorkflowStore),
+            agent_store: Box::new(FileAgentStore::new(FileAgentStore::default_path())),
+            project_store: Box::new(FileProjectStore::new(FileProjectStore::default_path())),
+            settings_store: Box::new(FileSettingsStore::new(FileSettingsStore::default_path())),
+            skill_catalog: Box::new(FileSkillCatalog),
+            env: ProviderEnv::from_system(),
+            runtime: tokio::runtime::Runtime::new().expect("failed to create tokio runtime"),
+        })
     }
 
     pub fn list_workflows(&self) -> Result<Vec<WorkflowListItem>, BackendError> {
@@ -102,15 +103,15 @@ impl AppBackend {
         self.workflows.rename(&self.projects, workflow_id, name)
     }
 
-    pub fn load_agents(&self) -> Result<Vec<AgentDefinition>, BackendError> {
+    pub fn load_agents(&self) -> Result<Vec<CallableAgent>, BackendError> {
         self.agents.load()
     }
 
-    pub fn save_agents(&self, agents: &[AgentDefinition]) -> Result<(), BackendError> {
+    pub fn save_agents(&self, agents: &[CallableAgent]) -> Result<(), BackendError> {
         self.agents.save(agents)
     }
 
-    pub fn create_agent_definition(&self, name: String) -> Result<AgentDefinition, BackendError> {
+    pub fn create_agent_definition(&self, name: String) -> Result<CallableAgent, BackendError> {
         self.agents.create(name)
     }
 
@@ -306,25 +307,27 @@ impl AppBackend {
 mod tests {
     use super::*;
     use crate::execution::{ExecutionAction, ExecutionEvent};
-    use crate::settings_store::{ProviderProfile, ProviderTransport};
+    use crate::settings::model::{ProviderProfile, ProviderTransport};
     use crate::workflow_catalog::default_workflow;
-    use domain::{Node, NodeId};
+    use engine::{Node, NodeId};
     use providers::ProviderId;
     use tempfile::tempdir;
 
     fn backend() -> (AppBackend, tempfile::TempDir) {
         let dir = tempdir().expect("tempdir");
-        let backend = AppBackend::new(
-            FileWorkflowStore::new(dir.path().join("workflows.json")),
-            FileAgentStore::new(dir.path().join("agents.json")),
-            FileProjectStore::new(dir.path().join("projects.json")),
-            FileSettingsStore::new(dir.path().join("settings.json")),
-            ProviderEnv::from_pairs([
+        let backend = AppBackend::new(AppBackendDeps {
+            workflow_store: Box::new(FileWorkflowStore::new(dir.path().join("workflows.json"))),
+            project_workflow_store: Box::new(FileProjectWorkflowStore),
+            agent_store: Box::new(FileAgentStore::new(dir.path().join("agents.json"))),
+            project_store: Box::new(FileProjectStore::new(dir.path().join("projects.json"))),
+            settings_store: Box::new(FileSettingsStore::new(dir.path().join("settings.json"))),
+            skill_catalog: Box::new(FileSkillCatalog),
+            env: ProviderEnv::from_pairs([
                 ("OPENAI_API_KEY", "openai-key"),
                 ("OPENAI_COMPATIBLE_API_KEY", "compatible-key"),
             ]),
-            tokio::runtime::Runtime::new().expect("runtime"),
-        );
+            runtime: tokio::runtime::Runtime::new().expect("runtime"),
+        });
         (backend, dir)
     }
 
@@ -417,7 +420,7 @@ mod tests {
         assert_eq!(node.label, "Agent 3");
         assert_eq!(node.position.x, 32.0);
         assert_eq!(node.position.y, 48.0);
-        assert_eq!(node.agent, domain::AgentNodeConfig::default());
+        assert_eq!(node.agent, engine::AgentNodeConfig::default());
     }
 
     #[test]
@@ -432,9 +435,9 @@ mod tests {
         agent.output_schema =
             serde_json::json!({ "type": "object", "properties": { "ok": { "type": "boolean" } } });
         agent.auto_start = false;
-        agent.tools.catalog.tools = vec![domain::ToolRef {
+        agent.tools.catalog.tools = vec![engine::ToolRef {
             name: "search".to_string(),
-            tier: Some(domain::ToolTier::Read),
+            tier: Some(engine::ToolTier::Read),
         }];
         agent.tools.max_tool_rounds = 7;
         backend
@@ -458,9 +461,9 @@ mod tests {
         assert!(!node.agent.auto_start);
         assert_eq!(
             node.agent.tools.catalog.tools,
-            vec![domain::ToolRef {
+            vec![engine::ToolRef {
                 name: "search".to_string(),
-                tier: Some(domain::ToolTier::Read),
+                tier: Some(engine::ToolTier::Read),
             }]
         );
         assert_eq!(node.agent.tools.max_tool_rounds, 7);
@@ -480,14 +483,16 @@ mod tests {
             },
         );
 
-        let readiness = AppBackend::new(
-            FileWorkflowStore::new("/tmp/unused-workflows.json"),
-            FileAgentStore::new("/tmp/unused-agents.json"),
-            FileProjectStore::new("/tmp/unused-projects.json"),
-            FileSettingsStore::new("/tmp/unused-settings.json"),
-            ProviderEnv::default(),
-            tokio::runtime::Runtime::new().expect("runtime"),
-        )
+        let readiness = AppBackend::new(AppBackendDeps {
+            workflow_store: Box::new(FileWorkflowStore::new("/tmp/unused-workflows.json")),
+            project_workflow_store: Box::new(FileProjectWorkflowStore),
+            agent_store: Box::new(FileAgentStore::new("/tmp/unused-agents.json")),
+            project_store: Box::new(FileProjectStore::new("/tmp/unused-projects.json")),
+            settings_store: Box::new(FileSettingsStore::new("/tmp/unused-settings.json")),
+            skill_catalog: Box::new(FileSkillCatalog),
+            env: ProviderEnv::default(),
+            runtime: tokio::runtime::Runtime::new().expect("runtime"),
+        })
         .resolve_provider_readiness(&settings, None);
 
         assert!(!readiness.ready);
@@ -598,17 +603,17 @@ mod tests {
             let workflow = default_workflow("Workflow");
             let (action_tx, mut action_rx) = tokio::sync::mpsc::unbounded_channel();
             let mut run_state = WorkflowRunState::running_for_workflow(&workflow);
-            run_state.pending_approvals = vec![domain::PendingToolApproval {
+            run_state.pending_approvals = vec![engine::PendingToolApproval {
                 approval_id: "approval-1".to_string(),
                 node_id: "idea".to_string(),
                 node_label: "Idea".to_string(),
-                tool_call: domain::ToolCall {
+                tool_call: engine::ToolCall {
                     id: "call-1".to_string(),
                     name: "read".to_string(),
                     arguments: serde_json::json!({ "path": "README.md" }),
                     intent: None,
                 },
-                tier: domain::ToolTier::Read,
+                tier: engine::ToolTier::Read,
             }];
             backend
                 .runs

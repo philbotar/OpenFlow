@@ -7,196 +7,261 @@ WORKSPACE_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$WORKSPACE_DIR"
 
 exec python3 - "$WORKSPACE_DIR" <<'PY'
+import fnmatch
 import re
 import sys
 import tomllib
 from pathlib import Path
 
 WORKSPACE_DIR = Path(sys.argv[1])
+RULES_PATH = WORKSPACE_DIR / "docs" / "architecture" / "arch-check-rules.toml"
 ERRORS = 0
 
-ALLOWED = {
-    "domain": set(),
-    "providers": {"domain"},
-    "orchestration": {"domain", "providers"},
-    "desktop": {"orchestration"},
+
+def error(message: str) -> None:
+    global ERRORS
+    print(f"error: {message}")
+    ERRORS += 1
+
+
+with RULES_PATH.open("rb") as f:
+    rules = tomllib.load(f)
+
+manifests: dict[str, str] = rules["manifests"]
+workspace_deps: dict[str, list[str]] = rules["workspace_deps"]
+engine_forbidden: list[str] = rules["engine_forbidden_deps"]["names"]
+legacy_aliases: list[str] = rules["legacy_crate_aliases"]["names"]
+forbidden_use: dict[str, list[str]] = {
+    entry["crate"]: entry["ban"] for entry in rules["forbidden_use"]
 }
 
-CRATE_MANIFESTS = {
-    "domain": WORKSPACE_DIR / "crates" / "domain" / "Cargo.toml",
-    "providers": WORKSPACE_DIR / "crates" / "providers" / "Cargo.toml",
-    "orchestration": WORKSPACE_DIR / "crates" / "orchestration" / "Cargo.toml",
-    "desktop": WORKSPACE_DIR / "crates" / "desktop" / "src-tauri" / "Cargo.toml",
-}
+# ── Tier 1: Cargo.toml workspace-member edges ───────────────────
+for crate, rel_manifest in manifests.items():
+    manifest = WORKSPACE_DIR / rel_manifest
+    if not manifest.is_file():
+        error(f"missing manifest for crate '{crate}': {rel_manifest}")
+        continue
 
-# Verify workspace dependency direction
-for crate, manifest in CRATE_MANIFESTS.items():
     with manifest.open("rb") as f:
         data = tomllib.load(f)
-    deps = data.get("dependencies", {})
-    allowed = ALLOWED[crate]
-    for name, spec in deps.items():
-        if isinstance(spec, dict) and "path" in spec:
-            target = spec.get("package", name)
-            if target in CRATE_MANIFESTS and target not in allowed:
-                print(
-                    f"error: {crate} depends on workspace member '{target}', "
-                    f"but only allowed: {sorted(allowed)}"
+
+    allowed = set(workspace_deps.get(crate, []))
+    for name, spec in data.get("dependencies", {}).items():
+        if not isinstance(spec, dict) or "path" not in spec:
+            continue
+        target = spec.get("package", name)
+        if target in manifests and target not in allowed:
+            error(
+                f"{crate} depends on workspace member '{target}' "
+                f"({rel_manifest}), but allowed: {sorted(allowed)}"
+            )
+
+# ── Engine forbidden external dependencies ──────────────────────
+engine_manifest = WORKSPACE_DIR / manifests["engine"]
+if engine_manifest.is_file():
+    with engine_manifest.open("rb") as f:
+        engine_data = tomllib.load(f)
+    engine_deps = engine_data.get("dependencies", {})
+    for dep in engine_forbidden:
+        if dep in engine_deps:
+            error(
+                f"engine must not depend on '{dep}' "
+                f"(transport/GUI concern; see engine_forbidden_deps)"
+            )
+
+# ── Collect Rust sources per workspace crate ────────────────────
+def rust_sources(crate: str, *, include_tests: bool = True) -> list[Path]:
+    crate_root = WORKSPACE_DIR / Path(manifests[crate]).parent
+    paths: list[Path] = []
+    src = crate_root / "src"
+    if src.is_dir():
+        paths.extend(sorted(src.rglob("*.rs")))
+    if include_tests:
+        tests = crate_root / "tests"
+        if tests.is_dir():
+            paths.extend(sorted(tests.rglob("*.rs")))
+    return paths
+
+
+USE_LINE = re.compile(r"^\s*(pub\s+)?use\s+")
+EXTERN_LINE = re.compile(r"^\s*(pub\s+)?extern\s+crate\s+")
+
+
+def banned_roots_on_line(line: str, banned: list[str]) -> list[str]:
+    stripped = line.strip()
+    if not (USE_LINE.match(stripped) or EXTERN_LINE.match(stripped)):
+        return []
+    hits: list[str] = []
+    for name in banned:
+        if (
+            re.search(rf"^use\s+{re.escape(name)}(?:\s*;|::)", stripped)
+            or re.search(rf"\bextern\s+crate\s+{re.escape(name)}\b", stripped)
+            or re.search(rf"\b{re.escape(name)}::", stripped)
+        ):
+            hits.append(name)
+    return hits
+
+
+def legacy_roots_on_line(line: str, legacy: list[str]) -> list[str]:
+    """Match legacy crate roots only (not submodules named `domain`)."""
+    stripped = line.strip()
+    if not (USE_LINE.match(stripped) or EXTERN_LINE.match(stripped)):
+        return []
+    hits: list[str] = []
+    for name in legacy:
+        if (
+            re.search(rf"^use\s+{re.escape(name)}::", stripped)
+            or re.search(rf"^use\s+{re.escape(name)}\s*;", stripped)
+            or re.search(rf"\bextern\s+crate\s+{re.escape(name)}\b", stripped)
+            or re.search(rf"(?:^use\s+.*\{{|,)\s*{re.escape(name)}::", stripped)
+        ):
+            hits.append(name)
+    return hits
+
+
+# ── Tier 2: forbidden cross-crate `use` per crate ─────────────
+for crate, banned in forbidden_use.items():
+    for file in rust_sources(crate):
+        text = file.read_text(encoding="utf-8")
+        for lineno, line in enumerate(text.splitlines(), start=1):
+            hits = banned_roots_on_line(line, banned)
+            hits.extend(legacy_roots_on_line(line, legacy_aliases))
+            for name in dict.fromkeys(hits):
+                rel = file.relative_to(WORKSPACE_DIR)
+                error(
+                    f"{crate}: forbidden import '{name}'\n"
+                    f"  {rel}:{lineno}: {line.strip()}"
                 )
-                ERRORS += 1
 
-# Verify domain has no forbidden external deps
-FORBIDDEN = {"reqwest", "tauri"}
-domain_manifest = CRATE_MANIFESTS["domain"]
-with domain_manifest.open("rb") as f:
-    data = tomllib.load(f)
-deps = data.get("dependencies", {})
-for dep in FORBIDDEN:
-    if dep in deps:
-        print(f"error: domain must not depend on '{dep}' (GUI/framework concern)")
-        ERRORS += 1
+# ── Tier 3 (Phase B) ────────────────────────────────────────────
 
-# Enforce that migrated UI seam files are not placeholders.
-UI_SEAM_FILES = [
-    WORKSPACE_DIR / "crates" / "ui" / "src" / "ports" / "inbound.ts",
-    WORKSPACE_DIR / "crates" / "ui" / "src" / "ports" / "outbound.ts",
-    WORKSPACE_DIR / "crates" / "ui" / "src" / "adapters" / "inbound.ts",
-    WORKSPACE_DIR / "crates" / "ui" / "src" / "adapters" / "outbound.ts",
-]
+def rel_posix(path: Path) -> str:
+    return path.relative_to(WORKSPACE_DIR).as_posix()
 
-RUST_SEAM_FILES = [
-    WORKSPACE_DIR / "crates" / "domain" / "src" / "ports" / "inbound.rs",
-    WORKSPACE_DIR / "crates" / "domain" / "src" / "ports" / "outbound.rs",
-    WORKSPACE_DIR / "crates" / "domain" / "src" / "adapters" / "inbound.rs",
-    WORKSPACE_DIR / "crates" / "domain" / "src" / "adapters" / "outbound.rs",
-    WORKSPACE_DIR / "crates" / "providers" / "src" / "ports" / "inbound.rs",
-    WORKSPACE_DIR / "crates" / "providers" / "src" / "ports" / "outbound.rs",
-    WORKSPACE_DIR / "crates" / "providers" / "src" / "adapters" / "inbound.rs",
-    WORKSPACE_DIR / "crates" / "providers" / "src" / "adapters" / "outbound.rs",
-    WORKSPACE_DIR / "crates" / "orchestration" / "src" / "ports" / "inbound.rs",
-    WORKSPACE_DIR / "crates" / "orchestration" / "src" / "ports" / "outbound.rs",
-    WORKSPACE_DIR / "crates" / "orchestration" / "src" / "adapters" / "inbound.rs",
-    WORKSPACE_DIR / "crates" / "orchestration" / "src" / "adapters" / "outbound.rs",
-]
 
-for seam_file in UI_SEAM_FILES:
-    text = seam_file.read_text(encoding="utf-8")
-    if "Placeholder" in text or re.search(r"=\s*never\s*;", text):
-        print(f"error: UI seam file still contains placeholder content: {seam_file}")
-        ERRORS += 1
-        continue
+# orchestration → providers symbol allowlist (src/ only)
+if "orchestration_providers_allowlist" in rules:
+    cfg = rules["orchestration_providers_allowlist"]
+    allowed_symbols = set(cfg["symbols"])
+    ban_symbols = set(cfg.get("ban_symbols", []))
+    brace_import = re.compile(r"^\s*use\s+providers::\{([^}]+)\}")
+    single_import = re.compile(r"^\s*use\s+providers::(\w+)")
 
-    meaningful_lines = [
-        line.strip()
-        for line in text.splitlines()
-        if line.strip() and not line.strip().startswith("//")
-    ]
-    if not meaningful_lines:
-        print(f"error: UI seam file is effectively empty: {seam_file}")
-        ERRORS += 1
-        continue
+    def providers_symbols_on_line(line: str) -> list[str]:
+        stripped = line.strip()
+        match = brace_import.match(stripped)
+        if match:
+            parts = []
+            for part in match.group(1).split(","):
+                token = part.strip()
+                if not token or token == "self":
+                    continue
+                parts.append(token.split("::")[0])
+            return parts
+        match = single_import.match(stripped)
+        if match:
+            return [match.group(1)]
+        return []
 
-    has_exported_api = any(
-        re.search(r"^export\s+(interface|type|function|const)\s+", line)
-        for line in meaningful_lines
-    )
-    if not has_exported_api:
-        print(f"error: UI seam file lacks exported API surface: {seam_file}")
-        ERRORS += 1
-
-for seam_file in RUST_SEAM_FILES:
-    text = seam_file.read_text(encoding="utf-8")
-    if "placeholder" in text.lower():
-        print(f"error: Rust seam file still contains placeholder content: {seam_file}")
-        ERRORS += 1
-        continue
-
-    meaningful_lines = [
-        line.strip()
-        for line in text.splitlines()
-        if line.strip() and not line.strip().startswith("//")
-    ]
-    if not meaningful_lines:
-        print(f"error: Rust seam file is effectively empty: {seam_file}")
-        ERRORS += 1
-        continue
-
-    has_api_shape = any(
-        re.search(r"^(pub\s+)?(async\s+)?(trait|struct|enum|type|fn)\s+", line)
-        or re.search(r"^impl\s+", line)
-        for line in meaningful_lines
-    )
-    if not has_api_shape:
-        print(f"error: Rust seam file lacks API surface: {seam_file}")
-        ERRORS += 1
-
-# ── Import-level boundary checks (Tier 2) ──────────────────────
-IMPORT_RULES = [
-    # providers may only import from domain's ports module, not domain internals
-    {
-        "label": "providers → domain: only ports module",
-        "root": WORKSPACE_DIR / "crates" / "providers" / "src",
-        "banned_paths": [
-            "workflow_core::model",
-            "workflow_core::validation",
-            "workflow_core::runner",
-            "workflow_core::interactive",
-            "workflow_core::template",
-            "workflow_core::template_store",
-            "workflow_core::tools",
-            "workflow_core::adapters",
-        ],
-    },
-    # orchestration may not import provider adapter/port internals directly
-    {
-        "label": "orchestration → providers: only crate-root API",
-        "root": WORKSPACE_DIR / "crates" / "orchestration" / "src",
-        "banned_paths": [
-            "ai::adapters",
-            "ai::ports",
-        ],
-    },
-]
-
-for rule in IMPORT_RULES:
-    rule_root = rule["root"]
-    if not rule_root.is_dir():
-        continue
-    for file in sorted(rule_root.rglob("*.rs")):
+    for file in rust_sources("orchestration", include_tests=False):
         text = file.read_text(encoding="utf-8")
-        for line in text.splitlines():
-            stripped = line.strip()
-            for banned in rule["banned_paths"]:
-                # Check both `use banned::path` and `use crate::{banned::path, ...}`
-                if f"use {banned}" in stripped or re.search(
-                    rf'\b{re.escape(banned)}::\b', stripped
-                ):
-                    rel = file.relative_to(WORKSPACE_DIR)
-                    print(
-                        f"error: {rule['label']}\n"
-                        f"  {rel}:{line}\n"
-                        f"  imports from banned path '{banned}'"
+        for lineno, line in enumerate(text.splitlines(), start=1):
+            for symbol in providers_symbols_on_line(line):
+                if symbol in ban_symbols:
+                    error(
+                        "orchestration: banned providers import "
+                        f"'{symbol}' (use create_provider)\n"
+                        f"  {rel_posix(file)}:{lineno}: {line.strip()}"
                     )
-                    ERRORS += 1
+                elif symbol not in allowed_symbols:
+                    error(
+                        "orchestration: providers import "
+                        f"'{symbol}' not in allowlist\n"
+                        f"  {rel_posix(file)}:{lineno}: {line.strip()}"
+                    )
 
-# Belt-and-suspenders: desktop must not reference workflow_core anywhere
-DESKTOP_DIRS = [
-    WORKSPACE_DIR / "crates" / "desktop" / "src-tauri" / "src",
-    WORKSPACE_DIR / "crates" / "desktop" / "src-tauri" / "tests",
-]
-for desk_dir in DESKTOP_DIRS:
-    if not desk_dir.is_dir():
-        continue
-    for file in sorted(desk_dir.rglob("*.rs")):
+# Engine construction locality
+for rule in rules.get("engine_construction", []):
+    crate = rule["crate"]
+    pattern = rule["pattern"]
+    allowed = [p.rstrip("/") + "/" for p in rule["allowed_path_prefixes"]]
+    for file in rust_sources(crate):
+        rel = rel_posix(file)
+        if not any(rel.startswith(prefix) for prefix in allowed):
+            text = file.read_text(encoding="utf-8")
+            for lineno, line in enumerate(text.splitlines(), start=1):
+                if pattern in line and not line.strip().startswith("//"):
+                    error(
+                        f"{crate}: '{pattern}' only allowed under "
+                        f"{rule['allowed_path_prefixes']}\n"
+                        f"  {rel}:{lineno}: {line.strip()}"
+                    )
+
+# Orchestration domain folders must not import adapters or flat store modules.
+if "orchestration_domain" in rules:
+    cfg = rules["orchestration_domain"]
+    forbidden_prefixes = cfg.get("forbidden_use_prefixes", [])
+    forbidden_modules = cfg.get("forbidden_crate_modules", [])
+    orch_src = WORKSPACE_DIR / "crates" / "orchestration" / "src"
+    for folder in cfg["folders"]:
+        domain_dir = orch_src / folder
+        if not domain_dir.is_dir():
+            continue
+        for file in sorted(domain_dir.rglob("*.rs")):
+            text = file.read_text(encoding="utf-8")
+            for lineno, line in enumerate(text.splitlines(), start=1):
+                stripped = line.strip()
+                if not USE_LINE.match(stripped):
+                    continue
+                for prefix in forbidden_prefixes:
+                    if prefix in stripped:
+                        error(
+                            f"orchestration domain '{folder}': forbidden adapter import\n"
+                            f"  {rel_posix(file)}:{lineno}: {stripped}"
+                        )
+                for module in forbidden_modules:
+                    if re.search(
+                        rf"^use\s+crate::{re.escape(module)}(?:\s*;|::)",
+                        stripped,
+                    ) or re.search(
+                        rf"(?:^use\s+.*\{{|,)\s*crate::{re.escape(module)}::",
+                        stripped,
+                    ):
+                        error(
+                            f"orchestration domain '{folder}': forbidden store import "
+                            f"'{module}' (use a port trait; wire adapter in backend/)\n"
+                            f"  {rel_posix(file)}:{lineno}: {stripped}"
+                        )
+
+# UI @tauri-apps seam
+if "ui_tauri_seam" in rules:
+    cfg = rules["ui_tauri_seam"]
+    allowed_files = set(cfg["allowed_files"])
+    allowed_globs = cfg.get("allowed_globs", [])
+    ui_src = WORKSPACE_DIR / "crates" / "ui" / "src"
+    tauri_import = re.compile(r"""from\s+['"]@tauri-apps/""")
+    for file in sorted(ui_src.rglob("*")):
+        if file.suffix not in {".ts", ".tsx"}:
+            continue
+        rel = rel_posix(file)
+        if rel in allowed_files:
+            continue
+        if any(fnmatch.fnmatch(rel, pattern) for pattern in allowed_globs):
+            continue
         text = file.read_text(encoding="utf-8")
-        if "workflow_core" in text:
-            rel = file.relative_to(WORKSPACE_DIR)
-            print(f"error: desktop must not reference 'workflow_core' (use app_backend re-exports): {rel}")
-            ERRORS += 1
+        for lineno, line in enumerate(text.splitlines(), start=1):
+            if tauri_import.search(line):
+                error(
+                    "ui: @tauri-apps import outside desktop seam "
+                    f"(allowed: {sorted(allowed_files)})\n"
+                    f"  {rel}:{lineno}: {line.strip()}"
+                )
 
 if ERRORS:
-    print(f"Architecture check failed with {ERRORS} error(s).")
+    print(f"\nArchitecture check failed with {ERRORS} error(s).")
+    print(f"Rules: {RULES_PATH.relative_to(WORKSPACE_DIR)}")
     sys.exit(1)
 
 print("Architecture check passed.")
+print(f"Rules: {RULES_PATH.relative_to(WORKSPACE_DIR)}")
 PY

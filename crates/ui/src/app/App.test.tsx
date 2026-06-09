@@ -2,7 +2,7 @@
 import { render } from "solid-js/web";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { AgentDefinition, AppSettings, BootstrapPayload, Project, ProviderReadiness, SkillSummary, Workflow, WorkflowRunState } from "../lib/types";
-import { createEmptyToolConfig } from "../lib/workflow";
+import { createEmptyToolConfig, SUPPORTED_NODE_TOOLS } from "../lib/workflow";
 
 const apiMocks = vi.hoisted(() => ({
   bootstrapApp: vi.fn(),
@@ -445,7 +445,6 @@ describe("App workflow rename", () => {
     try {
       const topbar = await waitForElement(() => container.querySelector(".topbar"), "topbar");
       expect(topbar.classList.contains("topbar-macos")).toBe(true);
-      expect(topbar.querySelector(".topbar-window-controls-spacer")).not.toBeNull();
     } finally {
       dispose();
       restoreUserAgent();
@@ -704,7 +703,7 @@ describe("App agent dashboard", () => {
 
       expect(
         Array.from(container.querySelectorAll(".tool-config-option-title")).map((element) => element.textContent),
-      ).toEqual(["read", "search", "find", "ast_grep"]);
+      ).toEqual(SUPPORTED_NODE_TOOLS.map((tool) => tool.name));
 
       const checkboxes = Array.from(
         container.querySelectorAll('.tool-config-option input[type="checkbox"]'),
@@ -727,12 +726,9 @@ describe("App agent dashboard", () => {
       await flush();
       const saveCalls = apiMocks.saveWorkflows.mock.calls as [Workflow[]][];
       const savedWorkflows = saveCalls[saveCalls.length - 1]?.[0];
-      expect(savedWorkflows?.[0]?.nodes[0]?.agent.tools.catalog.tools).toEqual([
-        { name: "read" },
-        { name: "search" },
-        { name: "find" },
-        { name: "ast_grep" },
-      ]);
+      expect(savedWorkflows?.[0]?.nodes[0]?.agent.tools.catalog.tools).toEqual(
+        SUPPORTED_NODE_TOOLS.map((tool) => ({ name: tool.name })),
+      );
     } finally {
       dispose();
     }

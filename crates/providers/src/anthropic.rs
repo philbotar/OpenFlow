@@ -4,7 +4,7 @@ use crate::mapping::{
     all_tool_specs, build_node_context, parse_internal_tool_outcome, parse_plain_json_completion,
     should_allow_user_input, ToolSpec, REQUEST_INPUT_TOOL, SUBMIT_OUTPUT_TOOL,
 };
-use domain::{
+use engine::{
     AgentError, AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTranscriptItem,
     AgentTurnOutcome, ToolCall,
 };
@@ -247,14 +247,14 @@ fn parse_anthropic_tool_call(block: &Value) -> Result<ToolCall, AgentError> {
 mod tests {
     use super::*;
     use crate::{AiClient, AiClientConfig, ProviderAdapterConfig, ProviderId};
-    use domain::{AiPort, ToolDefinition};
+    use engine::{AiPort, ToolDefinition};
     use wiremock::matchers::{body_json, header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn request() -> AgentRequest {
         AgentRequest {
-            workflow_id: domain::WorkflowId("wf-1".to_string()),
-            node_id: domain::NodeId("idea".to_string()),
+            workflow_id: engine::WorkflowId("wf-1".to_string()),
+            node_id: engine::NodeId("idea".to_string()),
             node_label: "Idea".to_string(),
             model: "claude-3-5-sonnet-latest".to_string(),
             system_prompt: "You are precise.".to_string(),
@@ -268,7 +268,7 @@ mod tests {
                 },
                 "required": ["summary"]
             }),
-            tool_config: domain::NodeToolConfig::default(),
+            tool_config: engine::NodeToolConfig::default(),
             available_tools: Vec::new(),
             transcript: Vec::new(),
         }
@@ -385,8 +385,8 @@ mod tests {
                 },
                 "required": ["path"]
             }),
-            tier: domain::ToolTier::Read,
-            concurrency: domain::ToolConcurrency::Shared,
+            tier: engine::ToolTier::Read,
+            concurrency: engine::ToolConcurrency::Shared,
         }];
 
         let outcome = client(server.uri()).invoke(request).await.unwrap();

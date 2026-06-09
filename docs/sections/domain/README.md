@@ -1,6 +1,6 @@
 # Domain
 
-`crates/domain`
+`crates/engine`
 
 ## What it does
 

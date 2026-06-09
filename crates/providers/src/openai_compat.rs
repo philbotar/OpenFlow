@@ -4,7 +4,7 @@ use crate::mapping::{
     tool_payload, transcript_to_chat_messages, transcript_to_responses_input,
 };
 use crate::spec::WireApi;
-use domain::{AgentError, AgentRequest, AgentTurnOutcome};
+use engine::{AgentError, AgentRequest, AgentTurnOutcome};
 use reqwest::Client;
 use serde_json::{json, Value};
 
@@ -157,7 +157,7 @@ fn endpoint(base_url: &str, path: &str) -> String {
 mod tests {
     use super::*;
     use crate::{AiClient, AiClientConfig, ProviderAdapterConfig, ProviderId};
-    use domain::{
+    use engine::{
         AgentToolCallBatch, AgentTranscriptItem, AgentTurnSuccess, AiPort, ToolCall, ToolDefinition,
     };
     use wiremock::matchers::{body_json, header, method, path};
@@ -165,8 +165,8 @@ mod tests {
 
     fn request() -> AgentRequest {
         AgentRequest {
-            workflow_id: domain::WorkflowId("wf-1".to_string()),
-            node_id: domain::NodeId("idea".to_string()),
+            workflow_id: engine::WorkflowId("wf-1".to_string()),
+            node_id: engine::NodeId("idea".to_string()),
             node_label: "Idea".to_string(),
             model: "test-model".to_string(),
             system_prompt: "You are precise.".to_string(),
@@ -180,7 +180,7 @@ mod tests {
                 },
                 "required": ["summary"]
             }),
-            tool_config: domain::NodeToolConfig::default(),
+            tool_config: engine::NodeToolConfig::default(),
             available_tools: Vec::new(),
             transcript: Vec::new(),
         }
@@ -379,8 +379,8 @@ mod tests {
                 },
                 "required": ["path"]
             }),
-            tier: domain::ToolTier::Read,
-            concurrency: domain::ToolConcurrency::Shared,
+            tier: engine::ToolTier::Read,
+            concurrency: engine::ToolConcurrency::Shared,
         }];
 
         let outcome = client(server.uri(), WireApi::ChatCompletions)
@@ -448,7 +448,7 @@ mod tests {
                 },
             },
             AgentTranscriptItem::ToolResult {
-                result: domain::ToolResult {
+                result: engine::ToolResult {
                     tool_call_id: "call-1".to_string(),
                     tool_name: "read".to_string(),
                     content: "# Overview".to_string(),
@@ -469,8 +469,8 @@ mod tests {
                 },
                 "required": ["path"]
             }),
-            tier: domain::ToolTier::Read,
-            concurrency: domain::ToolConcurrency::Shared,
+            tier: engine::ToolTier::Read,
+            concurrency: engine::ToolConcurrency::Shared,
         }];
 
         Mock::given(method("POST"))
@@ -498,7 +498,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             outcome,
-            AgentTurnOutcome::NeedsUserInput(domain::AgentNeedUserInput {
+            AgentTurnOutcome::NeedsUserInput(engine::AgentNeedUserInput {
                 raw_text: "{\"assistant_message\":\"Which approver is mandatory?\"}".to_string(),
                 assistant_message: "Which approver is mandatory?".to_string(),
             })
@@ -565,8 +565,8 @@ mod tests {
                 },
                 "required": ["path"]
             }),
-            tier: domain::ToolTier::Read,
-            concurrency: domain::ToolConcurrency::Shared,
+            tier: engine::ToolTier::Read,
+            concurrency: engine::ToolConcurrency::Shared,
         }];
 
         let outcome = client(server.uri(), WireApi::ChatCompletions)

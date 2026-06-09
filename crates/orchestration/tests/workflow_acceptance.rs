@@ -1,7 +1,5 @@
-#![allow(clippy::significant_drop_tightening)]
-
 use async_trait::async_trait;
-use domain::{
+use engine::{
     AgentError, AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTurnOutcome,
     AgentTurnSuccess, AiPort, ApprovalMode, Edge, Node, NodeId, ToolCall, ToolRef, Workflow,
 };
@@ -139,7 +137,7 @@ async fn manual_node_pauses_accepts_input_and_feeds_downstream_node() {
             match &*request.node_id {
                 "human-review" => {
                     let asked_already = request.transcript.iter().any(|item| {
-                        matches!(item, domain::AgentTranscriptItem::AssistantMessage { .. })
+                        matches!(item, engine::AgentTranscriptItem::AssistantMessage { .. })
                     });
                     if !asked_already {
                         return Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
@@ -152,7 +150,7 @@ async fn manual_node_pauses_accepts_input_and_feeds_downstream_node() {
                         .iter()
                         .rev()
                         .find_map(|item| match item {
-                            domain::AgentTranscriptItem::UserMessage { content } => {
+                            engine::AgentTranscriptItem::UserMessage { content } => {
                                 Some(content.clone())
                             }
                             _ => None,
@@ -245,7 +243,7 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
             let saw_tool_result = request
                 .transcript
                 .iter()
-                .any(|item| matches!(item, domain::AgentTranscriptItem::ToolResult { .. }));
+                .any(|item| matches!(item, engine::AgentTranscriptItem::ToolResult { .. }));
             assert!(saw_tool_result);
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
                 output: json!({"summary": "tool verified ORCHID-91"}),
@@ -259,7 +257,7 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
     let mut node = agent("tool-node", "Tool node");
     node.agent.tools.catalog.tools = vec![ToolRef {
         name: "read".to_string(),
-        tier: Some(domain::ToolTier::Read),
+        tier: Some(engine::ToolTier::Read),
     }];
     node.agent.tools.approval_mode = Some(ApprovalMode::AlwaysAsk);
     workflow.nodes = vec![node];
@@ -331,7 +329,7 @@ async fn write_tool_requires_approval_and_mutates_file_after_allow() {
             let saw_tool_result = request
                 .transcript
                 .iter()
-                .any(|item| matches!(item, domain::AgentTranscriptItem::ToolResult { .. }));
+                .any(|item| matches!(item, engine::AgentTranscriptItem::ToolResult { .. }));
             assert!(saw_tool_result);
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
                 output: json!({"summary": "draft saved ORCHID-91"}),
@@ -345,7 +343,7 @@ async fn write_tool_requires_approval_and_mutates_file_after_allow() {
     let mut node = agent("write-node", "Write node");
     node.agent.tools.catalog.tools = vec![ToolRef {
         name: "write".to_string(),
-        tier: Some(domain::ToolTier::Write),
+        tier: Some(engine::ToolTier::Write),
     }];
     node.agent.tools.approval_mode = Some(ApprovalMode::AlwaysAsk);
     workflow.nodes = vec![node];

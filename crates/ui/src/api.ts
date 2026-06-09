@@ -1,5 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import type { OpenDialogOptions } from "@tauri-apps/plugin-dialog";
 import type {
   AgentDefinition,
   AgentDefinitionSummary,
@@ -185,4 +188,14 @@ export function clearRunTrace() {
 
 export function listenToRunState(handler: (runState: WorkflowRunState) => void) {
   return listen<WorkflowRunState>(RUN_STATE_EVENT, (event) => handler(event.payload));
+}
+
+/** Native app window handle (Tauri seam — do not import @tauri-apps in components). */
+export function getAppWindow() {
+  return getCurrentWindow();
+}
+
+/** Native file/folder picker (Tauri seam). */
+export function openNativeDialog(options?: OpenDialogOptions) {
+  return openDialog(options);
 }

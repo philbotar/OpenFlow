@@ -9,12 +9,16 @@ Single-file orientation for contributors and coding agents.
 
 ## 30-Second Intake
 
-1. This is a Rust workspace with five sections: `domain`, `providers`, `orchestration`, `desktop`, `ui`.
-2. Core rule: keep domain logic in `domain`; keep API transport/auth quirks in `providers`; keep runtime/state/storage in `orchestration`; keep Tauri adapter code in `desktop`; keep frontend code in `ui`.
+1. This is a Rust workspace with five sections: `engine`, `providers`, `orchestration`, `desktop`, `ui`.
+2. Core rule: keep engine logic in `engine`; keep API transport/auth quirks in `providers`; keep runtime/state/storage in `orchestration`; keep Tauri adapter code in `desktop`; keep frontend code in `ui`.
+   - **engine** — valid workflow + run behavior
+   - **orchestration** — store, load, wire, host runs
+   - **providers** — LLM transport
+   - **ui** / **desktop** — user interaction
 3. Start docs at `docs/README.md` — see [Documentation](#documentation) for the full tree.
 4. Coding patterns: `docs/contributing/coding-patterns.md`.
 5. Workflow verification: `docs/contributing/testing-workflows.md`.
-6. Domain vocabulary: `docs/glossary.md`.
+6. Engine vocabulary: `docs/glossary.md`.
 
 ## Boundary Seams
 
@@ -22,10 +26,11 @@ Add a port/trait only when a consumer is typed on that interface. Otherwise call
 
 | Seam | Location |
 | --- | --- |
-| LLM invocation (`AiPort`, `AgentRequest`) | `crates/domain/src/ports/outbound.rs` |
-| Human input / tool approval | `crates/domain/src/ports/inbound.rs` |
+| LLM invocation (`AiPort`, `AgentRequest`) | `crates/engine/src/ports/outbound.rs` |
+| Tool and subagent execution (`ToolPort`) | `crates/engine/src/ports/outbound.rs` → `crates/orchestration/src/run/application/execution/tool_port.rs` |
+| Human input / tool approval | `crates/engine/src/ports/inbound.rs` |
 | Provider client (`AiClient: AiPort`) | `crates/providers/src/client.rs` |
-| UI → desktop IPC | `crates/ui/src/lib/desktopClient.ts` (`UiDesktopOutboundPort`) |
+| UI → desktop IPC | `crates/ui/src/port.ts` (`UiDesktopOutboundPort`) |
 
 ## Documentation
 
@@ -51,25 +56,25 @@ docs/
 | `docs/contributing/testing-workflows.md` | Acceptance tests, live-AI smoke |
 | `docs/architecture/contract.md` | Layer boundaries and dependency rules |
 | `docs/architecture/threading-concurrency.md` | Runtimes, async I/O, parallelism |
-| `docs/glossary.md` | Domain terms and naming |
+| `docs/glossary.md` | Engine terms and naming |
 
 ## Repo Map
 
-### Workspace and domain
+### Workspace and engine
 
 | Path | Purpose | Change Here When... |
 | --- | --- | --- |
 | `Cargo.toml` | Workspace members and shared dependencies | Adding crates or shared dep versions |
-| `crates/domain/src/graph/` | Workflow model, `WorkflowSettings`, node config, `CallableAgent`, DAG validation | Changing schema, graph rules, or scheduling |
-| `crates/domain/src/execution/workflow_runner.rs` | Non-interactive `WorkflowRunner` | Changing batch run semantics |
-| `crates/domain/src/execution/interactive_engine.rs` | Interactive engine poll loop + pauses | Changing pause/resume behavior |
-| `crates/domain/src/execution/subagent_runtime.rs` | Subagent declare/call builtins + turn machine | Changing subagent invocation semantics |
-| `crates/domain/src/execution/telemetry.rs` | `RunTelemetry` interactive event enum | Changing run event vocabulary |
-| `crates/domain/src/execution/node_invocation.rs` | Shared `AgentRequest` assembly | Changing upstream input or prompt wiring |
-| `crates/domain/src/template/` | `Template`, locked fields, builtins | Changing template definitions |
+| `crates/engine/src/graph/` | Workflow model, `WorkflowSettings`, node config, `CallableAgent`, DAG validation | Changing schema, graph rules, or scheduling |
+| `crates/engine/src/execution/workflow_runner.rs` | Non-interactive `WorkflowRunner` | Changing batch run semantics |
+| `crates/engine/src/execution/interactive_engine.rs` | Interactive engine `poll()` + `run()` loop | Changing pause/resume or self-driving run behavior |
+| `crates/engine/src/execution/subagent_runtime.rs` | Subagent declare/call builtins + turn machine | Changing subagent invocation semantics |
+| `crates/engine/src/execution/telemetry.rs` | `RunTelemetry` interactive event enum | Changing run event vocabulary |
+| `crates/engine/src/execution/node_invocation.rs` | Shared `AgentRequest` assembly | Changing upstream input or prompt wiring |
+| `crates/engine/src/template/` | `Template`, locked fields, builtins | Changing template definitions |
 | `crates/orchestration/src/template_store.rs` | Template persistence (`openflow/templates.json`) | Changing template file format |
-| `crates/domain/src/ports/outbound.rs` | `AiPort`, `AgentRequest`, turn outcomes | Changing LLM invocation contract |
-| `crates/domain/src/ports/inbound.rs` | Human input and tool approval ports | Adding engine input contracts |
+| `crates/engine/src/ports/outbound.rs` | `AiPort`, `AgentRequest`, turn outcomes | Changing LLM invocation contract |
+| `crates/engine/src/ports/inbound.rs` | Human input and tool approval ports | Adding engine input contracts |
 
 ### Providers
 
@@ -91,7 +96,7 @@ docs/
 | `crates/orchestration/src/project_registry.rs` | Project load/save/create | Changing project registration |
 | `crates/orchestration/src/settings_facade.rs` | Settings, keys, skills, validation summaries | Changing settings or provider readiness UX |
 | `crates/orchestration/src/run_coordinator.rs` | Active run session, start/submit/apply events | Changing run lifecycle coordination |
-| `crates/orchestration/src/execution/` | Drive loop, event projection, subagents, cwd | Changing execution host semantics |
+| `crates/orchestration/src/run/application/execution/` | `drive.rs`, `tool_port.rs`, event projection, cwd | Changing execution host semantics |
 | `crates/orchestration/src/state.rs` | Run/edit state, trace, chat logs | Changing run state or editor mutations |
 | `crates/orchestration/src/storage.rs` | App workflows (`workflows.json`) | Changing app workflow persistence |
 | `crates/orchestration/src/flow_store.rs` | Project workflows (`.flow/workflows/`) | Changing repo workflow file layout |
@@ -115,7 +120,7 @@ docs/
 | `crates/ui/src/canvas/` | Workflow graph rendering | Changing canvas look/behavior |
 | `crates/ui/src/forms/` | Node/agent configuration editors | Changing inspector forms |
 | `crates/ui/src/api.ts` | Typed Tauri invoke/event wrappers | Changing RPC names or payloads |
-| `crates/ui/src/lib/desktopClient.ts` | `UiDesktopOutboundPort` + factory for swappable desktop backend | Changing how UI talks to Tauri |
+| `crates/ui/src/port.ts` | `UiDesktopOutboundPort` + factory for swappable desktop backend | Changing how UI talks to Tauri |
 | `crates/ui/src/lib/types.ts` | Frontend DTO mirror types | Changing command payload shapes |
 | `crates/ui/src/styles/index.css` | Global styles and layout tokens | Changing spacing, inspector, dock CSS |
 
@@ -129,12 +134,13 @@ docs/
 
 | Goal | Primary Files |
 | --- | --- |
-| Add a workflow rule or validation | `domain/src/validation.rs`, tests in same file |
+| Add a workflow rule or validation | `engine/src/graph/validation.rs`, tests in same file |
 | Add a new provider adapter | Implement `AiPort` in `providers/`, wire via `create_provider` |
-| Add or change `AiPort` or engine input contracts | `domain/src/ports/` |
-| Add or change UI desktop seam | `ui/src/lib/desktopClient.ts` |
-| Change run execution semantics | `orchestration/src/execution.rs`, `domain/src/interactive.rs` |
-| Change shared context or workflow settings | `domain/src/model.rs`, `orchestration/src/execution.rs`, `ui/src/panels/WorkflowSettingsPanel.tsx` |
+| Add or change `AiPort`, `ToolPort`, or engine input contracts | `engine/src/ports/` |
+| Add or change UI desktop seam | `ui/src/port.ts` |
+| Change run execution semantics | `orchestration/src/run/application/execution/drive.rs`, `engine/src/execution/interactive_engine.rs` |
+| Change tool/subagent execution wiring | `orchestration/src/run/application/execution/tool_port.rs` |
+| Change shared context or workflow settings | `engine/src/graph/workflow.rs`, `orchestration/src/run/application/execution/`, `ui/src/panels/WorkflowSettingsPanel.tsx` |
 | Change project/workflow linking | `orchestration/src/project_store.rs`, `flow_store.rs`, `backend.rs`, `ui/src/components/sidebar/` |
 | Change saved agents or callable subagents | `orchestration/src/agent_store.rs`, `execution.rs`, `ui/src/forms/CallableAgentsEditor.tsx` |
 | Change skill discovery or invocation UX | `orchestration/src/skill_store.rs`, `ui/src/components/conversation/` |

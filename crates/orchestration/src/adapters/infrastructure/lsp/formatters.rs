@@ -114,7 +114,10 @@ fn run_with_timeout(
         if start.elapsed() >= timeout {
             let _ = child.kill();
             let _ = child.wait();
-            return Err(format!("formatter timed out after {}ms", timeout.as_millis()));
+            return Err(format!(
+                "formatter timed out after {}ms",
+                timeout.as_millis()
+            ));
         }
         std::thread::sleep(Duration::from_millis(25));
     }

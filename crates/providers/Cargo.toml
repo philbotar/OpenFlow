@@ -18,7 +18,7 @@ reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 jsonrepair-rs.workspace = true
-domain = { path = "../domain", version = "0.1.0" }
+engine = { path = "../engine", version = "0.1.0" }
 
 [dev-dependencies]
 tokio.workspace = true

@@ -7,8 +7,8 @@ import {
 } from "solid-js";
 import type { ParentProps } from "solid-js";
 import { toast } from "solid-sonner";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { bindRunStateEvents, createUiDesktopOutboundAdapter } from "../lib/desktopClient";
+import { getAppWindow, openNativeDialog } from "../api";
+import { bindRunStateEvents, createUiDesktopOutboundAdapter } from "../port";
 import { resolveChatSubmission } from "../lib/chatCommands";
 import type {
   AgentDefinition,
@@ -42,7 +42,6 @@ import {
   type WorkflowCanvasStatusByNode,
   type WorkflowCanvasSubagentsByNode,
 } from "../lib/workflow";
-import { open } from "@tauri-apps/plugin-dialog";
 import {
   executionCwdForWorkflow,
   findProjectForWorkflow,
@@ -449,7 +448,7 @@ export function AppProvider(props: ParentProps) {
 
   const handleAddProject = async () => {
     try {
-      const selected = await open({
+      const selected = await openNativeDialog({
         directory: true,
         multiple: false,
         title: "Select project folder",
@@ -1078,7 +1077,7 @@ export function AppProvider(props: ParentProps) {
     applyUiZoom(uiZoom());
 
     try {
-      const appWindow = getCurrentWindow();
+      const appWindow = getAppWindow();
       const initialMaximized = await appWindow.isMaximized();
       setIsMaximized(initialMaximized);
       unlistenMaximized = await appWindow.onResized(() => {

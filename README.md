@@ -114,7 +114,7 @@ Clarify idea -> Create plan -> Final brief
 
 ## Ownership
 
-- `crates/domain`: domain model, validation, execution ordering, runner, AI port.
+- `crates/engine`: domain model, validation, execution ordering, runner, AI port.
 - `crates/providers`: provider adapters for OpenAI-compatible APIs and Anthropic direct.
 - `crates/orchestration`: runtime orchestration, local persistence, app state.
 - `crates/ui`: frontend shell and interaction layer.

@@ -4,7 +4,7 @@ use crate::openai_compat;
 use crate::openai_compat::OpenAiCompatibleConfig;
 use crate::spec::ProviderId;
 use async_trait::async_trait;
-use domain::{AgentError, AgentRequest, AgentTurnOutcome, AiPort};
+use engine::{AgentError, AgentRequest, AgentTurnOutcome, AiPort};
 use reqwest::Client;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

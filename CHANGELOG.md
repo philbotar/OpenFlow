@@ -2,8 +2,32 @@
 
 ## Unreleased
 
+### Added
+
+- **Orchestration domain/adapter separation:** port traits for project workflows (`ProjectWorkflowStore`), skills (`SkillCatalog`), and project bindings (`project/domain.rs`); settings types in `settings/model.rs`, provider resolution in `settings/provider.rs`; `backend/` wires all `File*Store` adapters; fix duplicate module compilation via `lib.rs` aliases for `tools`, storage, and `lsp`.
+- **CI architecture checks (Phase C):** domain folders must not import flat store modules (`agent_store`, `flow_store`, …); legacy `domain` crate alias matcher excludes `project::domain` submodules.
+- **CI architecture checks (Phase B / Tier 3):** extend [`docs/architecture/arch-check-rules.toml`](docs/architecture/arch-check-rules.toml) — `orchestration → providers` symbol allowlist (`AiClient` banned), engine invocation locality (`InteractiveEngine::new` only in `run/execution/`), orchestration domain folders must not `use crate::adapters::`, UI `@tauri-apps/*` seam (`api.ts` / `port.ts` only).
+- **UI Tauri seam:** `getAppWindow` / `openNativeDialog` wrappers in `api.ts`; `AppProvider` no longer imports `@tauri-apps` directly.
+- **CI architecture checks (Phase A):** [`docs/architecture/arch-check-rules.toml`](docs/architecture/arch-check-rules.toml) — Tier 2 baseline rules (workspace `Cargo.toml` graph, forbidden cross-crate `use`, engine transport/GUI dep denylist, legacy `domain`/`workflow_core` bans). [`scripts/check-architecture.sh`](scripts/check-architecture.sh) reads the TOML; fixed for `engine` rename and current crate paths.
+- **Docs:** one-line crate role summary in [`docs/architecture/contract.md`](docs/architecture/contract.md), [`AGENTS.md`](AGENTS.md), and [`docs/README.md`](docs/README.md) — engine = valid workflow + run behavior; orchestration = store/load/wire/host; providers = LLM transport; ui/desktop = user interaction.
+- **Engine `ToolPort`:** outbound port for tool and subagent execution; `ToolPortImpl` in orchestration handles filesystem tools, declare/call subagent builtins, and file-change telemetry.
+- **Engine `InteractiveEngine::run()`:** self-driving async loop over `poll()`; returns `EngineRunResult` (`NeedsInput`, `NeedsApproval`, `Completed`, `Failed`, `Cancelled`) for orchestration to handle.
+- **Docs:** add [`docs/file-structure.md`](docs/file-structure.md) — full repository directory tree (source and docs; excludes build artifacts).
+
+### Changed
+
+- **Verify pipeline:** `scripts/verify.sh` runs UI vitest (`npm --prefix crates/ui run test`) after `cargo test --workspace`; auto-installs UI deps when `node_modules` is missing.
+- **Rename `domain` → `engine`:** crate directory, Cargo package name, and all `use engine::` imports across orchestration, providers, and desktop; flat `engine::` re-exports preserved for downstream crates.
+- **Orchestration `drive.rs`:** thin loop around `engine.run()` — handles input/approval waits and events only; tool execution moved to `tool_port.rs`.
+- **Architecture docs:** [`docs/architecture/contract.md`](docs/architecture/contract.md) and [`docs/architecture/README.md`](docs/architecture/README.md) updated for Engine layer, `ToolPort`, and self-driving run loop.
+
+- **UI port:** move `UiDesktopOutboundPort` from `crates/ui/src/lib/desktopClient.ts` to `crates/ui/src/port.ts` at the UI root alongside `api.ts`.
+- **Orchestration layout:** reorganize `crates/orchestration/src` into entity-grouped hexarc folders (`workflow/`, `agent/`, `project/`, `run/`, `settings/`, `template/`, `skill/`, `adapters/infrastructure/`); `lib.rs` `#[path]` re-exports preserve existing module paths; flatten adapter-only `template/` and `skill/` (no `adapters/` subfolder).
+- **Docs:** add [`docs/sections/orchestration/layout.md`](docs/sections/orchestration/layout.md) — explains entity folders, hexarc roles, disk vs Rust module paths, and where to add code.
+
 ### Fixed
 
+- **Verify pipeline:** run `cargo fmt`; remove duplicate `run`/`tool` module roots in `orchestration` `lib.rs` (keep flat `#[path]` re-exports); load `tool/errors.rs` as `tool_errors`; satisfy clippy `panic`/`expect_used` in engine tests; bundle multi-arg constructors into `AppBackendDeps` and `InteractiveWorkflowRunParams` instead of crate-wide `too_many_arguments` allow.
 - **Git diff / undo (Phase 9):** batch revert removes only matching `batch_id` records; syncs `InteractiveEngine` and hashline snapshots; deletes created paths before restoring sources; skips non-UTF-8 snapshot capture; keeps execution cwd after run end for post-run git diff.
 - **LSP writethrough (Phase 8):** `diagnostics_on_write` no longer appends a false error while the language-server client is unimplemented.
 - **LSP writethrough (Phase 8):** `LspSettings::from_persisted` applies env overrides (`PI_LSP_*`) after persisted app settings so operational env toggles are not discarded.
@@ -19,6 +43,7 @@
 
 ### Added
 
+- **Cursor skill:** `.cursor/skills/rust-hexarc-organizer` — OpenFlow hexarc guide (entity grouping, service/repository roles, inbound/outbound adapters, domain model and error boundaries; integrates [howtocodeit.com hexarc guide](https://www.howtocodeit.com/guides/master-hexagonal-architecture-in-rust)).
 - **Hashline patch engine (Phase 7):** mechanical Rust port of `@oh-my-pi/hashline` at `orchestration::tools::edit::hashline` — tokenizer, parser, applier, snapshot store, sync `Patcher`, `XxHash32` (seed 0) 4-hex tags; `edit` tool hashline mode (`{ input }` with `¶path#TAG`); per-run snapshot store on `ToolRunner` (recorded on `read`); hashline dry-run preview; 7 patcher/execute tests.
 - **LSP writethrough (Phase 8):** `orchestration::lsp` module — CLI format-on-write (`rustfmt`, `prettier`, `gofmt`, `black`, `stylua`); wired through `EditIo`, `apply_patch`, and hashline writes; diagnostics appended to tool results; settings in `AppSettings.lsp` + env (`PI_LSP_FORMAT_ON_WRITE`, `PI_LSP_ENABLED`, `PI_LSP_DIAGNOSTICS_ON_WRITE`); full language-server client deferred.
 - **Git diff / undo (Phase 9):** `orchestration::git` wraps `git diff` / `restore` scoped to execution cwd; pre-edit `EditBatch` snapshots on write/edit/apply_patch; `git_diff_file` and `revert_edit_batch` IPC; `FileChangesPanel` shows git diff per file and one-click batch revert.

@@ -1,88 +1,66 @@
-#![allow(
-    clippy::assigning_clones,
-    clippy::derive_partial_eq_without_eq,
-    clippy::manual_let_else,
-    clippy::map_unwrap_or,
-    clippy::match_same_arms,
-    clippy::missing_const_for_fn,
-    clippy::missing_errors_doc,
-    clippy::missing_panics_doc,
-    clippy::multiple_crate_versions,
-    clippy::must_use_candidate,
-    clippy::needless_continue,
-    clippy::needless_pass_by_value,
-    clippy::redundant_clone,
-    clippy::redundant_closure_for_method_calls,
-    clippy::significant_drop_tightening,
-    clippy::suboptimal_flops,
-    clippy::too_many_lines,
-    clippy::uninlined_format_args,
-    clippy::unused_self
-)]
-
+pub mod adapters;
+pub mod agent;
 pub mod api;
-pub mod error;
-
-#[path = "backend/mod.rs"]
 pub mod backend;
+pub mod error;
+pub mod project;
+pub mod settings;
+pub mod workflow;
 
-#[path = "workflow/application/catalog.rs"]
-pub mod workflow_catalog;
-
-#[path = "workflow/adapters/flow_store.rs"]
-pub mod flow_store;
-
-#[path = "workflow/adapters/storage.rs"]
-pub mod storage;
-
-#[path = "agent/application/library.rs"]
+// Re-expose public domain modules
+#[path = "agent/library.rs"]
 pub mod agent_library;
 
-#[path = "agent/adapters/store.rs"]
-pub mod agent_store;
+#[path = "workflow/catalog.rs"]
+pub mod workflow_catalog;
 
-#[path = "project/application/registry.rs"]
+#[path = "project/registry.rs"]
 pub mod project_registry;
 
-#[path = "project/adapters/store.rs"]
-pub mod project_store;
-
-#[path = "run/application/coordinator.rs"]
+#[path = "run/coordinator.rs"]
 pub mod run_coordinator;
 
-#[path = "run/application/execution/mod.rs"]
+#[path = "run/execution/mod.rs"]
 pub mod execution;
 
 #[path = "run/state/mod.rs"]
 pub mod state;
 
-#[path = "settings/application/facade.rs"]
+#[path = "settings/facade.rs"]
 pub mod settings_facade;
 
-#[path = "settings/adapters/store.rs"]
-pub mod settings_store;
+// Tool application modules (domain-level)
+#[path = "tool/errors.rs"]
+pub(crate) mod tool_errors;
 
-#[path = "settings/adapters/provider_config.rs"]
-pub mod provider_config;
+#[path = "tool/registry.rs"]
+pub mod tool_registry;
 
-#[path = "template/store.rs"]
-pub mod template_store;
+#[path = "tool/runner.rs"]
+pub mod tool_runner;
 
-#[path = "skill/store.rs"]
-pub mod skill_store;
+#[path = "tool/output.rs"]
+pub mod tool_output;
 
-#[path = "adapters/infrastructure/tools/mod.rs"]
-pub mod tools;
+// Storage adapters (internal); aliases avoid compiling storage modules twice.
+pub(crate) use adapters::storage::project_store;
+pub(crate) use adapters::storage::settings_store;
+pub(crate) use adapters::storage::skill_store;
+pub(crate) use adapters::storage::workflow_storage as storage;
+pub(crate) use adapters::storage::workflow_store as flow_store;
 
-#[path = "adapters/infrastructure/lsp/mod.rs"]
-pub mod lsp;
+// Tool implementation (adapters - internal); alias avoids compiling tool_impl twice.
+pub(crate) use adapters::tool_impl as tools;
 
-#[path = "adapters/infrastructure/git/mod.rs"]
-pub mod git;
+// Infrastructure adapters; aliases avoid compiling infrastructure modules twice.
+pub use adapters::infrastructure::git;
+pub use adapters::infrastructure::lsp;
 
-// Re-exports of domain types consumed by downstream layers
-pub use domain::{
+// Re-exports of engine types consumed by downstream layers
+pub use engine::CallableAgent as AgentDefinition;
+pub use engine::{
     CallableAgent, Node, RunTelemetry, Template, TemplateStore, TemplateStoreError, Workflow,
 };
-pub use project_store::Project;
-pub use template_store::FileTemplateStore;
+pub use project::ports::Project;
+pub use settings::model::{AppSettings, SkillSummary};
+pub use settings::ports::{LspSettings, ProviderProfile};

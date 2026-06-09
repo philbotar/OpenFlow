@@ -26,9 +26,9 @@ Also read before larger changes:
 
 Add a port/trait only when a consumer is typed on that interface. Current seams:
 
-- `crates/domain/src/ports/` — `AiPort`, human input, tool approval
+- `crates/engine/src/ports/` — `AiPort`, human input, tool approval
 - `crates/providers/src/client.rs` — `AiClient` implements `AiPort`
-- `crates/ui/src/lib/desktopClient.ts` — `UiDesktopOutboundPort` for swappable desktop backend
+- `crates/ui/src/port.ts` — `UiDesktopOutboundPort` for swappable desktop backend
 
 ## UI Layout
 

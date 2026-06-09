@@ -1,4 +1,4 @@
-use domain::{ChatMessage, NodeId, RunReport, SubagentSummary, Workflow};
+use engine::{ChatMessage, NodeId, RunReport, SubagentSummary, Workflow};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -43,7 +43,7 @@ pub struct RunTraceEntry {
 pub struct ToolCallSummary {
     pub tool_call_id: String,
     pub tool_name: String,
-    pub status: domain::ToolCallStatus,
+    pub status: engine::ToolCallStatus,
     pub arguments: Value,
     pub last_output: Option<String>,
     pub is_error: bool,
@@ -66,7 +66,7 @@ pub struct WorkflowRunState {
     pub awaiting_node_id: Option<NodeId>,
     pub active_manual_node_id: Option<NodeId>,
     pub active_tool_call_id: Option<String>,
-    pub pending_approvals: Vec<domain::PendingToolApproval>,
+    pub pending_approvals: Vec<engine::PendingToolApproval>,
     pub tool_calls_by_node: BTreeMap<NodeId, Vec<ToolCallSummary>>,
     pub tool_artifacts: BTreeMap<String, ToolArtifactSummary>,
     pub exec_approval_granted: bool,
@@ -77,9 +77,9 @@ pub struct WorkflowRunState {
     pub chat_logs: BTreeMap<NodeId, Vec<ChatMessage>>,
     pub run_trace: Vec<RunTraceEntry>,
     pub outputs: BTreeMap<NodeId, Value>,
-    pub changed_files: Vec<domain::FileChangeRecord>,
+    pub changed_files: Vec<engine::FileChangeRecord>,
     #[serde(default)]
-    pub edit_batches: Vec<domain::EditBatch>,
+    pub edit_batches: Vec<engine::EditBatch>,
 }
 
 impl WorkflowRunState {

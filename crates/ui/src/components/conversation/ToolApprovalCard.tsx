@@ -1,5 +1,5 @@
 import { createResource, For, Show } from "solid-js";
-import { createUiDesktopOutboundAdapter } from "../../lib/desktopClient";
+import { createUiDesktopOutboundAdapter } from "../../port";
 import { useAppContext } from "../../context/AppContext";
 import { prettyJson } from "../../lib/workflow";
 import { isFileEditTool } from "./FileChangesPanel";

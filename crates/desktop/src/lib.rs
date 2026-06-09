@@ -1,13 +1,11 @@
 #![allow(clippy::cargo, clippy::nursery, clippy::pedantic)]
 
-use orchestration::agent_store::AgentDefinition;
 use orchestration::backend::{
     AppBackend, BackendError, FileEditPreview, ProviderReadiness, WorkflowListItem,
     WorkflowValidationSummary,
 };
-use orchestration::settings_store::AppSettings;
-use orchestration::skill_store::SkillSummary;
 use orchestration::state::WorkflowRunState;
+use orchestration::{AgentDefinition, AppSettings, SkillSummary};
 use orchestration::{Project, Workflow};
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};

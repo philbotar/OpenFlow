@@ -12,7 +12,7 @@ Patterns we follow in this repo.
 6. Domain crate must not depend on HTTP clients or async runtimes beyond what's needed for tests.
 7. `orchestration` must call domain APIs; do not duplicate domain rules in `orchestration`.
 8. Add a port/trait only when a consumer is typed on that interface; otherwise call the concrete type directly.
-9. Real seams today: `domain/src/ports/` (`AiPort`, human/tool input), `providers/src/client.rs` (`AiClient`), `ui/src/lib/desktopClient.ts` (`UiDesktopOutboundPort`).
+9. Real seams today: `domain/src/ports/` (`AiPort`, human/tool input), `providers/src/client.rs` (`AiClient`), `ui/src/port.ts` (`UiDesktopOutboundPort`).
 
 ## Ownership By Concern
 
@@ -28,7 +28,7 @@ Patterns we follow in this repo.
 | Human input / tool approval inbound ports | `crates/domain/src/ports/inbound.rs` |
 | LLM transport mapping and tool-arg repair | `crates/providers/src/mapping.rs`, `openai_compat.rs`, `anthropic.rs` |
 | Provider client (`AiClient`, `create_provider`) | `crates/providers/src/client.rs`, `lib.rs` |
-| UI desktop seam | `crates/ui/src/lib/desktopClient.ts` |
+| UI desktop seam | `crates/ui/src/port.ts` |
 | App backend composition and IPC surface | `crates/orchestration/src/backend.rs` |
 | Run execution, shared context, callable agents, execution cwd | `crates/orchestration/src/execution.rs` |
 | Mutable run/edit state transitions | `crates/orchestration/src/state.rs` |

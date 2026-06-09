@@ -1,0 +1,134 @@
+mod drive;
+mod events;
+mod headless;
+mod subagents;
+mod tool_port;
+
+use crate::lsp::LspSettings;
+use crate::state::{RunTraceEntry, ToolArtifactSummary, ToolCallSummary};
+use engine::{
+    AiPort, CallableAgent, ChatMessage, EditBatch, NodeId, RunReport, RunTelemetry, Workflow,
+};
+use serde_json::Value;
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+use std::sync::Arc;
+use thiserror::Error;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio_util::sync::CancellationToken;
+
+pub use events::{apply_event_to_run_state, record_user_input};
+pub use headless::run_workflow_headless;
+
+/// Interactive run telemetry; canonical type is [`engine::RunTelemetry`].
+pub type ExecutionEvent = RunTelemetry;
+
+pub enum ExecutionAction {
+    ProvideInput(String),
+    ResolveApproval { approval_id: String, allow: bool },
+    Stop,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ManualInput {
+    pub node_id: NodeId,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApprovalResponse {
+    pub approval_id: String,
+    pub allow: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct WorkflowRunSnapshot {
+    pub report: RunReport,
+    pub run_trace: Vec<RunTraceEntry>,
+    pub chat_logs: BTreeMap<NodeId, Vec<ChatMessage>>,
+    pub outputs: BTreeMap<NodeId, Value>,
+    pub pending_approvals: Vec<engine::PendingToolApproval>,
+    pub tool_calls_by_node: BTreeMap<NodeId, Vec<ToolCallSummary>>,
+    pub tool_artifacts: BTreeMap<String, ToolArtifactSummary>,
+    pub changed_files: Vec<engine::FileChangeRecord>,
+    pub edit_batches: Vec<engine::EditBatch>,
+}
+
+#[derive(Debug, Error)]
+pub enum WorkflowExecutionError {
+    #[error("{0}")]
+    Execution(String),
+    #[error("node {node_id} failed: {message}")]
+    NodeFailed { node_id: NodeId, message: String },
+    #[error("node {0} requested manual input but no scripted input was provided")]
+    MissingManualInput(NodeId),
+    #[error("tool approval {0} was requested but no scripted approval was provided")]
+    MissingApproval(String),
+}
+
+pub fn resolve_execution_cwd(execution_cwd: Option<&str>) -> Result<PathBuf, String> {
+    match execution_cwd
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        None => Ok(std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))),
+        Some(path) => {
+            let expanded = expand_tilde(path);
+            let canonical = expanded.canonicalize().map_err(|error| {
+                format!("execution folder is not a valid directory ({path}): {error}")
+            })?;
+            if !canonical.is_dir() {
+                return Err(format!("execution folder is not a directory: {path}"));
+            }
+            Ok(canonical)
+        }
+    }
+}
+
+fn expand_tilde(path: &str) -> PathBuf {
+    if path == "~" {
+        return dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    }
+    if let Some(rest) = path.strip_prefix("~/") {
+        return dirs::home_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join(rest);
+    }
+    PathBuf::from(path)
+}
+
+pub struct InteractiveWorkflowRunParams<A> {
+    pub workflow: Workflow,
+    pub entrypoint: Option<String>,
+    pub execution_cwd: PathBuf,
+    pub ai: A,
+    pub agent_snapshots: BTreeMap<String, CallableAgent>,
+    pub snapshot_store: Arc<crate::tools::edit::hashline::snapshots::InMemorySnapshotStore>,
+    pub lsp: LspSettings,
+    pub pending_engine_reverts: Arc<parking_lot::Mutex<Vec<EditBatch>>>,
+}
+
+pub fn spawn_interactive_workflow_run<A>(
+    runtime: &tokio::runtime::Runtime,
+    params: InteractiveWorkflowRunParams<A>,
+) -> (
+    tokio::task::JoinHandle<()>,
+    UnboundedReceiver<ExecutionEvent>,
+    UnboundedSender<ExecutionAction>,
+    CancellationToken,
+)
+where
+    A: AiPort + Send + Sync + 'static,
+{
+    let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (action_tx, action_rx) = tokio::sync::mpsc::unbounded_channel();
+    let cancel_token = CancellationToken::new();
+    let drive_cancel_token = cancel_token.clone();
+    let handle = runtime.spawn(async move {
+        drive::drive_interactive_workflow(params, event_tx, action_rx, drive_cancel_token).await;
+    });
+    (handle, event_rx, action_tx, cancel_token)
+}
+
+#[cfg(test)]
+mod tests;

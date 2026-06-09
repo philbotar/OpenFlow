@@ -18,9 +18,9 @@ sections/
 
 | Folder | Crate | Start here in code |
 | --- | --- | --- |
-| [`domain/`](domain/) | `crates/domain` | `src/lib.rs`, `src/model.rs` |
+| [`domain/`](domain/) | `crates/engine` | `src/lib.rs`, `src/model.rs` |
 | [`providers/`](providers/) | `crates/providers` | `src/lib.rs`, `src/client.rs` |
-| [`orchestration/`](orchestration/) | `crates/orchestration` | `src/backend.rs`, `src/execution.rs` |
+| [`orchestration/`](orchestration/) | `crates/orchestration` | `src/backend/mod.rs`, [`layout.md`](orchestration/layout.md) |
 | [`desktop/`](desktop/) | `crates/desktop` | `src/lib.rs` |
 | [`ui/`](ui/) | `crates/ui` | `src/App.tsx`, `src/context/` |
 
