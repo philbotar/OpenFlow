@@ -1,12 +1,16 @@
-use crate::tools::{ArtifactStore, ToolExecutionRecord, ToolRegistry, ToolRunner, ToolRunnerError};
+use crate::tools::{
+    ArtifactStore, ToolExecutionContext, ToolExecutionRecord, ToolRegistry, ToolRunner,
+    ToolRunnerError,
+};
+use crate::lsp::LspSettings;
 use domain::{
     advance_subagent_invoke, build_predefined_subagent_summaries,
     filter_tool_turn_assistant_message, handle_declare_subagents, is_subagent_runtime_builtin,
     start_subagent_invoke, subagent_runtime_builtin_denied, AgentNeedUserInput, AgentRequest,
-    AgentToolCallBatch, AgentTurnOutcome, AiPort, CallableAgent, ChatRole, EnginePollResult,
-    FileChangeRecord, InteractiveEngine, NodeId, RunTelemetry, SubagentInvokeStep,
-    SubagentStartOutcome, SubagentSummary, ToolCall, Workflow, CALL_SUBAGENT_TOOL,
-    DECLARE_SUBAGENTS_TOOL,
+    AgentToolCallBatch, AgentTurnOutcome, AiPort, CallableAgent, ChatRole, EditBatch,
+    EnginePollResult, FileChangeRecord, InteractiveEngine, NodeId, RunTelemetry,
+    SubagentInvokeStep, SubagentStartOutcome, SubagentSummary, ToolCall, Workflow,
+    CALL_SUBAGENT_TOOL, DECLARE_SUBAGENTS_TOOL,
 };
 use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
@@ -29,6 +33,8 @@ pub(super) async fn drive_interactive_workflow<A>(
     agent_snapshots: BTreeMap<String, CallableAgent>,
     snapshot_store: Arc<crate::tools::edit::hashline::snapshots::InMemorySnapshotStore>,
     cancel_token: CancellationToken,
+    lsp: LspSettings,
+    pending_engine_reverts: Arc<parking_lot::Mutex<Vec<EditBatch>>>,
 ) where
     A: AiPort,
 {
@@ -55,6 +61,7 @@ pub(super) async fn drive_interactive_workflow<A>(
         artifacts,
         cancel_token.clone(),
         snapshot_store,
+        lsp,
     );
     let mut declared_subagents: BTreeMap<String, SubagentSummary> = BTreeMap::new();
     let mut predefined_registered: HashSet<NodeId> = HashSet::new();
@@ -66,6 +73,11 @@ pub(super) async fn drive_interactive_workflow<A>(
             abort_run(&event_tx, &mut aborted_emitted);
             return;
         }
+        apply_pending_engine_reverts(
+            &pending_engine_reverts,
+            &mut engine,
+            &tool_runner,
+        );
         match engine.poll() {
             EnginePollResult::CallAi {
                 node_id,
@@ -316,6 +328,7 @@ pub(super) async fn drive_interactive_workflow<A>(
                     match execute_tool_or_cancel(
                         &tool_runner,
                         tool_call.clone(),
+                        &node_id,
                         &cancel_token,
                         &event_tx,
                         &mut aborted_emitted,
@@ -337,6 +350,7 @@ pub(super) async fn drive_interactive_workflow<A>(
                                 &event_tx,
                                 &node_id,
                                 &record.file_changes,
+                                record.edit_batch,
                             );
                             let _ = event_tx.send(ExecutionEvent::ToolCompleted {
                                 node_id: node_id.clone(),
@@ -437,12 +451,35 @@ struct SubagentCallParams<'a> {
     agent_snapshots: &'a BTreeMap<String, CallableAgent>,
 }
 
+fn apply_pending_engine_reverts(
+    pending: &Arc<parking_lot::Mutex<Vec<EditBatch>>>,
+    engine: &mut InteractiveEngine,
+    tool_runner: &ToolRunner,
+) {
+    let batches = pending.lock().drain(..).collect::<Vec<_>>();
+    for batch in batches {
+        engine.revert_file_changes_for_batch(&batch.batch_id, &NodeId(batch.node_id.clone()));
+        crate::tools::edit::batch::sync_hashline_snapshots_after_revert(
+            tool_runner.cwd(),
+            tool_runner.snapshot_store().as_ref(),
+            &batch,
+        );
+    }
+}
+
 fn record_tool_file_changes(
     engine: &mut InteractiveEngine,
     event_tx: &UnboundedSender<ExecutionEvent>,
     node_id: &NodeId,
     file_changes: &[FileChangeRecord],
+    edit_batch: Option<EditBatch>,
 ) {
+    if let Some(batch) = edit_batch {
+        let _ = event_tx.send(ExecutionEvent::EditBatchRecorded {
+            node_id: node_id.clone(),
+            batch,
+        });
+    }
     if file_changes.is_empty() {
         return;
     }
@@ -590,6 +627,7 @@ async fn execute_subagent_tool_batch(
         match execute_tool_or_cancel(
             tool_runner,
             tool_call.clone(),
+            node_id,
             cancel_token,
             event_tx,
             aborted_emitted,
@@ -597,7 +635,13 @@ async fn execute_subagent_tool_batch(
         .await
         {
             Some(Ok(record)) => {
-                record_tool_file_changes(engine, event_tx, node_id, &record.file_changes);
+                record_tool_file_changes(
+                    engine,
+                    event_tx,
+                    node_id,
+                    &record.file_changes,
+                    record.edit_batch,
+                );
                 results.push(record.result);
             }
             Some(Err(err)) => results.push(domain::ToolResult {
@@ -642,17 +686,21 @@ async fn invoke_ai_or_cancel<A: AiPort>(
 async fn execute_tool_or_cancel(
     tool_runner: &ToolRunner,
     tool_call: ToolCall,
+    node_id: &NodeId,
     cancel_token: &CancellationToken,
     event_tx: &UnboundedSender<ExecutionEvent>,
     aborted_emitted: &mut bool,
 ) -> Option<Result<ToolExecutionRecord, ToolRunnerError>> {
+    let ctx = ToolExecutionContext {
+        node_id: node_id.clone(),
+    };
     tokio::select! {
         biased;
         _ = cancel_token.cancelled() => {
             abort_run(event_tx, aborted_emitted);
             None
         }
-        result = tool_runner.execute(tool_call) => Some(result),
+        result = tool_runner.execute(tool_call, Some(ctx)) => Some(result),
     }
 }
 

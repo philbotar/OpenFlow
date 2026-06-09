@@ -1574,17 +1574,80 @@ select.text-input:hover {
   font-size: 12px;
 }
 
-.file-change-row-header {
-  width: 100%;
-  border: 0;
-  background: transparent;
-  padding: 0;
-  text-align: left;
+.file-change-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.file-change-action {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.92);
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--accent, #2563eb);
   cursor: pointer;
 }
 
-.file-change-row-header:disabled {
+.file-change-action:disabled {
+  opacity: 0.6;
   cursor: default;
+}
+
+.file-change-error {
+  margin: 0;
+  font-size: 11px;
+  color: #b91c1c;
+}
+
+.edit-batches-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.edit-batches-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.edit-batch-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.edit-batch-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.edit-batch-tool {
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.edit-batch-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.edit-batch-revert {
+  margin-left: auto;
+  font-size: 11px;
+  padding: 4px 10px;
 }
 
 .file-change-op {
@@ -1597,12 +1660,6 @@ select.text-input:hover {
 .file-change-rename {
   font-family: var(--font-mono, ui-monospace, monospace);
   color: var(--text-muted);
-}
-
-.file-change-toggle {
-  margin-left: auto;
-  color: var(--accent, #2563eb);
-  font-size: 11px;
 }
 
 .file-edit-diff {

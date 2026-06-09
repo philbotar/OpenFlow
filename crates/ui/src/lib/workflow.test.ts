@@ -110,6 +110,7 @@ const runState: WorkflowRunState = {
   ],
   outputs: {},
   changedFiles: [],
+  editBatches: [],
 };
 
 describe("workflow helpers", () => {

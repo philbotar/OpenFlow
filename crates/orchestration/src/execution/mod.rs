@@ -58,6 +58,7 @@ pub struct WorkflowRunSnapshot {
     pub tool_calls_by_node: BTreeMap<NodeId, Vec<ToolCallSummary>>,
     pub tool_artifacts: BTreeMap<String, ToolArtifactSummary>,
     pub changed_files: Vec<domain::FileChangeRecord>,
+    pub edit_batches: Vec<domain::EditBatch>,
 }
 
 #[derive(Debug, Error)]
@@ -111,6 +112,8 @@ pub fn spawn_interactive_workflow_run<A>(
     ai: A,
     agent_snapshots: BTreeMap<String, CallableAgent>,
     snapshot_store: std::sync::Arc<crate::tools::edit::hashline::snapshots::InMemorySnapshotStore>,
+    lsp: crate::lsp::LspSettings,
+    pending_engine_reverts: std::sync::Arc<parking_lot::Mutex<Vec<domain::EditBatch>>>,
 ) -> (
     tokio::task::JoinHandle<()>,
     UnboundedReceiver<ExecutionEvent>,
@@ -135,6 +138,8 @@ where
             agent_snapshots,
             snapshot_store,
             drive_cancel_token,
+            lsp,
+            pending_engine_reverts,
         )
         .await;
     });

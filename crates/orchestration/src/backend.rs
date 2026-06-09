@@ -276,10 +276,24 @@ impl AppBackend {
 
     pub async fn preview_file_edit(
         &self,
+        approval_id: &str,
         tool_name: String,
         arguments: serde_json::Value,
     ) -> Result<FileEditPreview, BackendError> {
-        self.runs.preview_file_edit(tool_name, arguments).await
+        self.runs
+            .preview_file_edit(approval_id, tool_name, arguments)
+            .await
+    }
+
+    pub async fn git_diff_file(&self, path: String) -> Result<String, BackendError> {
+        self.runs.git_diff_file(path).await
+    }
+
+    pub async fn revert_edit_batch(
+        &self,
+        batch_id: String,
+    ) -> Result<WorkflowRunState, BackendError> {
+        self.runs.revert_edit_batch(batch_id).await
     }
 
     pub async fn clear_run_trace(&self) -> Result<Option<WorkflowRunState>, BackendError> {

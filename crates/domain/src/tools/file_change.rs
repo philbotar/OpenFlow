@@ -20,6 +20,8 @@ pub struct FileChangeRecord {
     pub rename_to: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub diff_summary: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub batch_id: Option<String>,
     pub timestamp_ms: u64,
 }
 
@@ -81,6 +83,7 @@ mod tests {
                 op: FileChangeOp::Update,
                 rename_to: None,
                 diff_summary: None,
+                batch_id: None,
                 timestamp_ms: 1,
             },
         );
@@ -91,6 +94,7 @@ mod tests {
                 op: FileChangeOp::Rename,
                 rename_to: Some("new.rs".to_string()),
                 diff_summary: None,
+                batch_id: None,
                 timestamp_ms: 2,
             },
         );
@@ -101,6 +105,7 @@ mod tests {
                 op: FileChangeOp::Update,
                 rename_to: None,
                 diff_summary: None,
+                batch_id: None,
                 timestamp_ms: 3,
             },
         );

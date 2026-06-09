@@ -36,7 +36,7 @@ pub use ports::{
 pub use template::{default_templates, Template, TemplateStore, TemplateStoreError};
 pub use tools::{
     override_policy_for_call, requires_approval, summarize_diff, tool_tier_for_call, ApprovalMode,
-    FileChangeOp, FileChangeRecord, NodeToolConfig, PendingToolApproval, SubagentDeclaration,
+    FileChangeOp, FileChangeRecord, EditBatch, FileSnapshot, NodeToolConfig, PendingToolApproval, SubagentDeclaration,
     SubagentStatus, SubagentSummary, ToolCall, ToolCallStatus, ToolCatalogSelection,
     ToolConcurrency, ToolDecision, ToolDefinition, ToolOutputMeta, ToolPolicy, ToolPolicyOverride,
     ToolRef, ToolResult, ToolTier, ToolTruncation, ToolTruncationStrategy,

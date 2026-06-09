@@ -28,6 +28,7 @@ impl FileChangeLedger {
             op,
             rename_to,
             diff_summary,
+            batch_id: None,
             timestamp_ms: now_millis(),
         };
         self.inner

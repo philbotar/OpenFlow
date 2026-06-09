@@ -287,6 +287,7 @@ fn map_io_error(error: super::io::EditIoError) -> String {
 mod tests {
     use super::*;
     use std::fs;
+    use std::sync::Arc;
 
     fn empty_snapshots() -> Arc<crate::tools::edit::hashline::snapshots::InMemorySnapshotStore> {
         Arc::new(crate::tools::edit::hashline::snapshots::InMemorySnapshotStore::new())

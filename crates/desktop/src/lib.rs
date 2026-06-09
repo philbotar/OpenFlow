@@ -276,10 +276,34 @@ async fn start_run(
 #[tauri::command]
 async fn preview_file_edit(
     backend: tauri::State<'_, AppBackend>,
+    approval_id: String,
     tool_name: String,
     arguments: serde_json::Value,
 ) -> Result<FileEditPreview, CommandError> {
-    Ok(backend.preview_file_edit(tool_name, arguments).await?)
+    Ok(backend
+        .preview_file_edit(&approval_id, tool_name, arguments)
+        .await?)
+}
+
+/// Tauri command: Return `git diff` for a file under the active run cwd.
+#[tauri::command]
+async fn git_diff_file(
+    backend: tauri::State<'_, AppBackend>,
+    path: String,
+) -> Result<String, CommandError> {
+    Ok(backend.git_diff_file(path).await?)
+}
+
+/// Tauri command: Restore files from a recorded edit batch.
+#[tauri::command]
+async fn revert_edit_batch(
+    backend: tauri::State<'_, AppBackend>,
+    app: tauri::AppHandle,
+    batch_id: String,
+) -> Result<WorkflowRunState, CommandError> {
+    let run_state = backend.revert_edit_batch(batch_id).await?;
+    let _ = app.emit("run-state", run_state.clone());
+    Ok(run_state)
 }
 
 /// Tauri command: Stop the active workflow run.
@@ -418,6 +442,8 @@ pub fn run() {
             create_agent_node,
             start_run,
             preview_file_edit,
+            git_diff_file,
+            revert_edit_batch,
             stop_run,
             submit_user_input,
             submit_tool_approval,

@@ -51,4 +51,9 @@ export const EMPTY_SETTINGS: AppSettings = {
       editable: false,
     },
   },
+  lsp: {
+    enabled: true,
+    format_on_write: false,
+    diagnostics_on_write: false,
+  },
 };

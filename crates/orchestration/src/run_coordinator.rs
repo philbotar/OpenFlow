@@ -25,6 +25,8 @@ struct RunSession {
     run_state: Option<WorkflowRunState>,
     execution_cwd: Option<PathBuf>,
     snapshot_store: Option<Arc<crate::tools::edit::hashline::snapshots::InMemorySnapshotStore>>,
+    lsp_settings: Option<crate::lsp::LspSettings>,
+    pending_engine_reverts: Option<Arc<parking_lot::Mutex<Vec<domain::EditBatch>>>>,
     action_tx: Option<UnboundedSender<ExecutionAction>>,
     handle: Option<tokio::task::JoinHandle<()>>,
     cancel_token: Option<CancellationToken>,
@@ -62,6 +64,8 @@ impl RunCoordinator {
                 run_state: None,
                 execution_cwd: None,
                 snapshot_store: None,
+                lsp_settings: None,
+                pending_engine_reverts: None,
                 action_tx: None,
                 handle: None,
                 cancel_token: None,
@@ -110,6 +114,8 @@ impl RunCoordinator {
 
         let snapshot_store =
             Arc::new(crate::tools::edit::hashline::snapshots::InMemorySnapshotStore::new());
+        let lsp_settings = crate::lsp::LspSettings::from_persisted(&persisted_settings.lsp);
+        let pending_engine_reverts = Arc::new(parking_lot::Mutex::new(Vec::new()));
         let (handle, event_rx, action_tx, cancel_token) = spawn_interactive_workflow_run(
             &self.runtime,
             workflow.clone(),
@@ -118,6 +124,8 @@ impl RunCoordinator {
             ai,
             agent_snapshots,
             snapshot_store.clone(),
+            lsp_settings.clone(),
+            pending_engine_reverts.clone(),
         );
 
         let mut session = self.session.lock().await;
@@ -126,6 +134,8 @@ impl RunCoordinator {
         session.run_state = Some(initial_state.clone());
         session.execution_cwd = Some(resolved_cwd);
         session.snapshot_store = Some(snapshot_store);
+        session.lsp_settings = Some(lsp_settings);
+        session.pending_engine_reverts = Some(pending_engine_reverts);
         session.action_tx = Some(action_tx);
         session.handle = Some(handle);
         session.cancel_token = Some(cancel_token);
@@ -227,8 +237,9 @@ impl RunCoordinator {
         let finished = !run_state.active;
         let snapshot = run_state.clone();
         if finished {
-            session.execution_cwd = None;
             session.snapshot_store = None;
+            session.lsp_settings = None;
+            session.pending_engine_reverts = None;
             session.action_tx = None;
             session.handle = None;
             session.cancel_token = None;
@@ -334,6 +345,7 @@ impl RunCoordinator {
     /// Returns an error when there is no active run or preview computation fails.
     pub async fn preview_file_edit(
         &self,
+        approval_id: &str,
         tool_name: String,
         arguments: serde_json::Value,
     ) -> Result<FileEditPreview, BackendError> {
@@ -346,13 +358,24 @@ impl RunCoordinator {
             .snapshot_store
             .clone()
             .ok_or(BackendError::NoActiveRun)?;
-        let pending = session
+        let run_state = session
             .run_state
             .as_ref()
-            .ok_or(BackendError::NoActiveRun)?
+            .ok_or(BackendError::NoActiveRun)?;
+        let pending = run_state
             .pending_approvals
-            .first()
-            .ok_or(BackendError::NoPendingApproval)?;
+            .iter()
+            .find(|pending| pending.approval_id == approval_id)
+            .ok_or_else(|| {
+                if run_state.pending_approvals.is_empty() {
+                    BackendError::NoPendingApproval
+                } else {
+                    BackendError::WrongApprovalId {
+                        expected: run_state.pending_approvals[0].approval_id.clone(),
+                        received: approval_id.to_string(),
+                    }
+                }
+            })?;
         if pending.tool_call.name != tool_name || pending.tool_call.arguments != arguments {
             return Err(BackendError::PreviewFailed(
                 "preview does not match the pending tool approval".to_string(),
@@ -366,6 +389,69 @@ impl RunCoordinator {
             .await
             .map_err(|error| BackendError::PreviewFailed(error.to_string()))?
             .map_err(BackendError::PreviewFailed)
+    }
+
+    /// Return `git diff` for a file under the active run's execution folder.
+    pub async fn git_diff_file(&self, path: String) -> Result<String, BackendError> {
+        let cwd = self
+            .session
+            .lock()
+            .await
+            .execution_cwd
+            .clone()
+            .ok_or(BackendError::NoExecutionCwd)?;
+        self.runtime
+            .spawn_blocking(move || crate::git::diff_file(&cwd, &path))
+            .await
+            .map_err(|error| BackendError::GitFailed(error.to_string()))?
+            .map_err(|error| BackendError::GitFailed(error.to_string()))
+    }
+
+    /// Restore files from a recorded edit batch and update run state.
+    pub async fn revert_edit_batch(
+        &self,
+        batch_id: String,
+    ) -> Result<WorkflowRunState, BackendError> {
+        let (cwd, batch, pending_engine_reverts) = {
+            let session = self.session.lock().await;
+            let cwd = session
+                .execution_cwd
+                .clone()
+                .ok_or(BackendError::NoExecutionCwd)?;
+            let run_state = session.run_state.as_ref().ok_or(BackendError::NoActiveRun)?;
+            let batch = run_state
+                .edit_batches
+                .iter()
+                .find(|batch| batch.batch_id == batch_id)
+                .cloned()
+                .ok_or_else(|| BackendError::EditBatchNotFound(batch_id.clone()))?;
+            let pending_engine_reverts = session.pending_engine_reverts.clone();
+            (cwd, batch, pending_engine_reverts)
+        };
+
+        let batch_for_revert = batch.clone();
+        self.runtime
+            .spawn_blocking(move || {
+                crate::tools::edit::batch::revert_edit_batch(&cwd, &batch_for_revert)
+            })
+            .await
+            .map_err(|error| BackendError::GitFailed(error.to_string()))?
+            .map_err(BackendError::GitFailed)?;
+
+        if let Some(pending) = pending_engine_reverts {
+            pending.lock().push(batch);
+        }
+
+        let mut session = self.session.lock().await;
+        let run_state = session
+            .run_state
+            .as_mut()
+            .ok_or(BackendError::NoActiveRun)?;
+        run_state
+            .changed_files
+            .retain(|record| record.batch_id.as_deref() != Some(batch_id.as_str()));
+        run_state.edit_batches.retain(|entry| entry.batch_id != batch_id);
+        Ok(run_state.clone())
     }
 
     #[must_use]

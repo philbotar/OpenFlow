@@ -566,6 +566,7 @@ fn file_changed_event_appends_to_run_state() {
                 op: domain::FileChangeOp::Update,
                 rename_to: None,
                 diff_summary: None,
+                batch_id: None,
                 timestamp_ms: 1,
             },
         },

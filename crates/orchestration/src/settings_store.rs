@@ -127,12 +127,38 @@ impl ProviderProfile {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LspSettings {
+    #[serde(default = "default_lsp_enabled")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub format_on_write: bool,
+    #[serde(default)]
+    pub diagnostics_on_write: bool,
+}
+
+fn default_lsp_enabled() -> bool {
+    true
+}
+
+impl Default for LspSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            format_on_write: false,
+            diagnostics_on_write: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppSettings {
     pub active_provider: ProviderId,
     pub providers: BTreeMap<ProviderId, ProviderProfile>,
     #[serde(default)]
     pub skill_search_paths: Vec<String>,
+    #[serde(default)]
+    pub lsp: LspSettings,
 }
 
 impl AppSettings {
@@ -211,6 +237,7 @@ impl Default for AppSettings {
             active_provider: ProviderId::from("openai"),
             providers,
             skill_search_paths: Vec::new(),
+            lsp: LspSettings::default(),
         }
     }
 }

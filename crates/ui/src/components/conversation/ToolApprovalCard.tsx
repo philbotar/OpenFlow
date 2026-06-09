@@ -31,6 +31,7 @@ export function ToolApprovalCard() {
         return null;
       }
       return {
+        approvalId: approval.approvalId,
         toolName: approval.toolCall.name,
         arguments: approval.toolCall.arguments,
       };
@@ -40,7 +41,11 @@ export function ToolApprovalCard() {
         return null;
       }
       try {
-        return await desktop.previewFileEdit(input.toolName, input.arguments);
+        return await desktop.previewFileEdit(
+          input.approvalId,
+          input.toolName,
+          input.arguments,
+        );
       } catch (error) {
         return {
           entries: [],

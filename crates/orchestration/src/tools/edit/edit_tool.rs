@@ -6,8 +6,6 @@ use std::sync::Arc;
 use serde::Deserialize;
 use serde_json::Value;
 
-use domain::summarize_diff;
-
 use super::diff::{generate_diff_string, replace_text, ReplaceOptions};
 use super::errors::EditMatchError;
 use super::hashline::execute::execute_hashline;
@@ -15,6 +13,7 @@ use super::hashline::snapshots::InMemorySnapshotStore;
 use super::io::{EditIo, EditIoError};
 use super::ledger::FileChangeLedger;
 use super::replace::{find_match, FindMatchOptions, DEFAULT_FUZZY_THRESHOLD};
+use crate::lsp::{append_writethrough_to_output, LspSettings};
 use crate::tools::errors::ToolError;
 
 #[derive(Debug, Deserialize)]
@@ -41,11 +40,12 @@ pub fn execute_edit(
     args: Value,
     ledger: FileChangeLedger,
     snapshots: Arc<InMemorySnapshotStore>,
+    lsp: LspSettings,
 ) -> Result<String, ToolError> {
     if args.get("input").is_some() {
         let args: HashlineArgs = serde_json::from_value(args)
             .map_err(|error| ToolError::Failed(format!("invalid hashline edit args: {error}")))?;
-        return execute_hashline(cwd, args.input, ledger, snapshots);
+        return execute_hashline(cwd, args.input, ledger, snapshots, lsp);
     }
 
     let args: EditArgs = serde_json::from_value(args)
@@ -56,7 +56,7 @@ pub fn execute_edit(
         ));
     }
 
-    let io = EditIo::new(cwd).with_ledger(ledger);
+    let io = EditIo::new(cwd).with_ledger(ledger).with_lsp_settings(lsp);
     let original = io.read_text(&args.path).map_err(map_io_error)?;
     let mut content = original.clone();
     let options = ReplaceOptions {
@@ -111,10 +111,11 @@ pub fn execute_edit(
         )));
     }
 
-    let diff = generate_diff_string(&original, &content, 2);
-    let diff_summary = summarize_diff(&diff.diff, 8);
-    io.write_text(&args.path, &content, Some(diff_summary))
+    let outcome = io
+        .write_text(&args.path, &content)
         .map_err(map_io_error)?;
+    let final_content = outcome.disk_normalized.unwrap_or(content);
+    let diff = generate_diff_string(&original, &final_content, 2);
     let summary = if total_replacements > 1 {
         format!(
             "Successfully replaced {total_replacements} occurrences in {}.",
@@ -123,7 +124,11 @@ pub fn execute_edit(
     } else {
         format!("Updated {}", args.path)
     };
-    Ok(format!("{summary}\n\n{}", diff.diff))
+    let mut output = format!("{summary}\n\n{}", diff.diff);
+    if let Some(diagnostics) = outcome.diagnostics {
+        output = append_writethrough_to_output(&output, std::slice::from_ref(&diagnostics));
+    }
+    Ok(output)
 }
 
 fn allow_fuzzy() -> bool {

@@ -1,6 +1,7 @@
 //! Tool catalog, approval policy, and tool call types for agent nodes.
 
 mod config;
+mod edit_batch;
 mod file_change;
 
 pub use config::{
@@ -10,6 +11,7 @@ pub use config::{
     ToolOutputMeta, ToolPolicy, ToolPolicyOverride, ToolRef, ToolResult, ToolTier, ToolTruncation,
     ToolTruncationStrategy,
 };
+pub use edit_batch::{EditBatch, FileSnapshot};
 pub use file_change::{
     effective_change_path, merge_file_change_record, summarize_diff, FileChangeOp, FileChangeRecord,
 };

@@ -10,6 +10,8 @@ use thiserror::Error;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WriteResult {
     pub text: String,
+    /// LF-normalized on-disk content after write (and optional format-on-write).
+    pub normalized: String,
 }
 
 #[derive(Debug, Error)]
@@ -103,6 +105,7 @@ impl HashlineFilesystem for InMemoryFilesystem {
         self.set(path, content);
         Ok(WriteResult {
             text: content.to_string(),
+            normalized: content.to_string(),
         })
     }
 

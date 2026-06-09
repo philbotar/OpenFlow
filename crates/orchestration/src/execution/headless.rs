@@ -40,6 +40,7 @@ where
     let cancel_token = CancellationToken::new();
     let snapshot_store =
         Arc::new(crate::tools::edit::hashline::snapshots::InMemorySnapshotStore::new());
+    let pending_engine_reverts = Arc::new(parking_lot::Mutex::new(Vec::new()));
     let handle = tokio::spawn(drive_interactive_workflow(
         workflow.clone(),
         entrypoint,
@@ -50,6 +51,8 @@ where
         agent_snapshots,
         snapshot_store,
         cancel_token,
+        crate::lsp::LspSettings::from_env(),
+        pending_engine_reverts,
     ));
     let mut manual_inputs = VecDeque::from(manual_inputs);
     let mut approvals = VecDeque::from(approvals);
@@ -140,5 +143,6 @@ where
         tool_calls_by_node: state.tool_calls_by_node,
         tool_artifacts: state.tool_artifacts,
         changed_files: state.changed_files,
+        edit_batches: state.edit_batches,
     })
 }

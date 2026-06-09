@@ -27,6 +27,8 @@ pub mod backend;
 pub mod error;
 pub mod execution;
 pub mod flow_store;
+pub mod git;
+pub mod lsp;
 pub mod project_registry;
 pub mod project_store;
 pub mod provider_config;

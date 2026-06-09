@@ -133,6 +133,10 @@ export function cloneSettings(settings: AppSettings): AppSettings {
         cloneProviderProfile(profile),
       ]),
     ),
+    skill_search_paths: settings.skill_search_paths
+      ? [...settings.skill_search_paths]
+      : undefined,
+    lsp: settings.lsp ? { ...settings.lsp } : undefined,
   };
 }
 
@@ -166,6 +170,7 @@ export function createIdleRunState(workflow: Workflow): WorkflowRunState {
     runTrace: [],
     outputs: {},
     changedFiles: [],
+    editBatches: [],
   };
 }
 

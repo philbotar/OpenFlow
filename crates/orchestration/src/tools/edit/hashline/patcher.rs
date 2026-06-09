@@ -199,7 +199,7 @@ impl<F: HashlineFilesystem, S: SnapshotStore> Patcher<F, S> {
             .fs
             .write_text(&section.path, &persisted)
             .map_err(|e| e.to_string())?;
-        let file_hash = self.record_full_snapshot(&canonical_path, &after);
+        let file_hash = self.record_full_snapshot(&canonical_path, &write.normalized);
         let op = if exists {
             PatchOp::Update
         } else {
@@ -210,7 +210,7 @@ impl<F: HashlineFilesystem, S: SnapshotStore> Patcher<F, S> {
             canonical_path,
             op,
             before: normalized,
-            after,
+            after: write.normalized.clone(),
             persisted: persisted.clone(),
             written: write.text,
             file_hash: file_hash.clone(),

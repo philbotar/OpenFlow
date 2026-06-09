@@ -78,6 +78,8 @@ pub struct WorkflowRunState {
     pub run_trace: Vec<RunTraceEntry>,
     pub outputs: BTreeMap<NodeId, Value>,
     pub changed_files: Vec<domain::FileChangeRecord>,
+    #[serde(default)]
+    pub edit_batches: Vec<domain::EditBatch>,
 }
 
 impl WorkflowRunState {
@@ -105,6 +107,7 @@ impl WorkflowRunState {
             run_trace: Vec::new(),
             outputs: BTreeMap::new(),
             changed_files: Vec::new(),
+            edit_batches: Vec::new(),
         }
     }
 

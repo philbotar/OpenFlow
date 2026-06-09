@@ -221,6 +221,9 @@ pub fn apply_event_to_run_state(
         ExecutionEvent::FileChanged { record, .. } => {
             state.changed_files.push(record);
         }
+        ExecutionEvent::EditBatchRecorded { batch, .. } => {
+            state.edit_batches.push(batch);
+        }
         ExecutionEvent::ToolArtifactCreated {
             artifact_id,
             tool_name,

@@ -16,8 +16,8 @@ use super::errors::ApplyPatchError;
 use super::ledger::FileChangeLedger;
 use super::patch::{
     apply_patch_entry, PatchApplyResult, PatchError, PatchInput, PatchOp, PatchOptions,
-    StdPatchFileSystem,
 };
+use crate::lsp::{append_writethrough_to_output, LspSettings, WritethroughPatchFileSystem};
 use super::replace::DEFAULT_FUZZY_THRESHOLD;
 use crate::tools::errors::ToolError;
 
@@ -30,6 +30,7 @@ pub fn execute_apply_patch(
     cwd: PathBuf,
     args: Value,
     ledger: FileChangeLedger,
+    lsp: LspSettings,
 ) -> Result<String, ToolError> {
     let args: ApplyPatchArgs = serde_json::from_value(args)
         .map_err(|error| ToolError::Failed(format!("invalid apply_patch args: {error}")))?;
@@ -41,11 +42,11 @@ pub fn execute_apply_patch(
         allow_fuzzy: allow_fuzzy(),
         fuzzy_threshold: fuzzy_threshold(),
     };
-    let fs = StdPatchFileSystem;
+    let fs = WritethroughPatchFileSystem::new(lsp);
     let mut lines = Vec::new();
 
     for input in inputs {
-        let result = match apply_patch_entry(&input, &options, &fs) {
+        let mut result = match apply_patch_entry(&input, &options, &fs) {
             Ok(result) => result,
             Err(error) => {
                 let prefix = if lines.is_empty() {
@@ -59,6 +60,9 @@ pub fn execute_apply_patch(
                 )));
             }
         };
+        if let Some(normalized) = fs.normalized_content(&result.dest_path) {
+            result.new_content = Some(normalized);
+        }
         lines.push(summarize_patch(&input, &result));
 
         let diff_summary = patch_diff_summary(&result);
@@ -77,7 +81,12 @@ pub fn execute_apply_patch(
         }
     }
 
-    Ok(lines.join("\n\n"))
+    let mut output = lines.join("\n\n");
+    let diagnostics = fs.take_diagnostics();
+    if !diagnostics.is_empty() {
+        output = append_writethrough_to_output(&output, &diagnostics);
+    }
+    Ok(output)
 }
 
 fn patch_diff_summary(result: &PatchApplyResult) -> Option<String> {

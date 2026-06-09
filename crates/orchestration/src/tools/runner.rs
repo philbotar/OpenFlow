@@ -11,7 +11,8 @@
 use crate::tools::errors::ToolError;
 use crate::tools::output::{ArtifactStore, ToolArtifactRecord};
 use crate::tools::registry::{BuiltinToolKind, ToolRegistry, ToolRegistryError};
-use domain::{FileChangeRecord, ToolCall, ToolResult};
+use crate::lsp::LspSettings;
+use domain::{EditBatch, FileChangeRecord, ToolCall, ToolResult};
 use regex::{Regex, RegexBuilder};
 use reqwest::Client;
 use serde::Deserialize;
@@ -31,6 +32,12 @@ pub struct ToolExecutionRecord {
     pub result: ToolResult,
     pub artifact: Option<ToolArtifactRecord>,
     pub file_changes: Vec<FileChangeRecord>,
+    pub edit_batch: Option<EditBatch>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ToolExecutionContext {
+    pub node_id: domain::NodeId,
 }
 
 #[derive(Debug)]
@@ -41,11 +48,19 @@ pub struct ToolRunner {
     artifacts: ArtifactStore,
     cancel_token: CancellationToken,
     snapshot_store: Arc<crate::tools::edit::hashline::snapshots::InMemorySnapshotStore>,
+    lsp: LspSettings,
 }
 
 struct BlockingRunOutcome {
     output: Result<String, ToolError>,
     file_changes: Vec<FileChangeRecord>,
+    edit_batch: Option<EditBatch>,
+}
+
+struct BlockingBatchContext {
+    node_id: String,
+    tool_call_id: String,
+    tool_name: String,
 }
 
 #[derive(Debug, Error)]
@@ -67,6 +82,7 @@ impl ToolRunner {
         artifacts: ArtifactStore,
         cancel_token: CancellationToken,
         snapshot_store: Arc<crate::tools::edit::hashline::snapshots::InMemorySnapshotStore>,
+        lsp: LspSettings,
     ) -> Self {
         Self {
             registry,
@@ -75,6 +91,7 @@ impl ToolRunner {
             artifacts,
             cancel_token,
             snapshot_store,
+            lsp,
         }
     }
 
@@ -92,38 +109,60 @@ impl ToolRunner {
         &self.artifacts
     }
 
-    pub async fn execute(&self, call: ToolCall) -> Result<ToolExecutionRecord, ToolRunnerError> {
+    pub fn cwd(&self) -> &Path {
+        &self.cwd
+    }
+
+    pub async fn execute(
+        &self,
+        call: ToolCall,
+        ctx: Option<ToolExecutionContext>,
+    ) -> Result<ToolExecutionRecord, ToolRunnerError> {
         let registered = self.registry.get(&call.name)?;
-        let (raw_output, file_changes) = match registered.kind {
-            BuiltinToolKind::Read => (self.read(call.arguments.clone()).await?, Vec::new()),
-            BuiltinToolKind::AstGrep => (self.ast_grep(call.arguments.clone()).await?, Vec::new()),
+        match registered.kind {
+            BuiltinToolKind::Read => {
+                let raw = self.read(call.arguments.clone()).await?;
+                self.finalize_record(call, raw, Vec::new(), None)
+            }
+            BuiltinToolKind::AstGrep => {
+                let raw = self.ast_grep(call.arguments.clone()).await?;
+                self.finalize_record(call, raw, Vec::new(), None)
+            }
             BuiltinToolKind::Search
             | BuiltinToolKind::Find
             | BuiltinToolKind::Write
             | BuiltinToolKind::Edit
             | BuiltinToolKind::ApplyPatch => {
+                let batch_ctx = ctx.map(|context| BlockingBatchContext {
+                    node_id: context.node_id.0,
+                    tool_call_id: call.id.clone(),
+                    tool_name: call.name.clone(),
+                });
                 let outcome = self
-                    .run_blocking(registered.kind, call.arguments.clone())
+                    .run_blocking(registered.kind, call.arguments.clone(), batch_ctx)
                     .await?;
-                return match outcome.output {
-                    Ok(raw) => self.finalize_record(call, raw, outcome.file_changes),
-                    Err(error) if outcome.file_changes.is_empty() => {
+                match outcome.output {
+                    Ok(raw) => {
+                        self.finalize_record(call, raw, outcome.file_changes, outcome.edit_batch)
+                    }
+                    Err(error) if outcome.file_changes.is_empty() && outcome.edit_batch.is_none() => {
                         Err(ToolRunnerError::Tool(error))
                     }
-                    Err(error) => {
-                        Ok(self.failed_record(call, error.to_string(), outcome.file_changes))
-                    }
-                };
+                    Err(error) => Ok(self.failed_record(
+                        call,
+                        error.to_string(),
+                        outcome.file_changes,
+                        outcome.edit_batch,
+                    )),
+                }
             }
             BuiltinToolKind::DeclareSubagents | BuiltinToolKind::CallSubagent => {
-                return Err(ToolRunnerError::InvalidArguments(format!(
+                Err(ToolRunnerError::InvalidArguments(format!(
                     "Tool '{}' is a runtime builtin and should not reach the filesystem runner",
                     call.name
-                )));
+                )))
             }
-        };
-
-        self.finalize_record(call, raw_output, file_changes)
+        }
     }
 
     async fn ast_grep(&self, args: Value) -> Result<String, ToolRunnerError> {
@@ -195,12 +234,24 @@ impl ToolRunner {
         &self,
         kind: BuiltinToolKind,
         args: Value,
+        batch_ctx: Option<BlockingBatchContext>,
     ) -> Result<BlockingRunOutcome, ToolRunnerError> {
         let cwd = self.cwd.clone();
         let snapshots = self.snapshot_store.clone();
+        let lsp = self.lsp.clone();
         tokio::task::spawn_blocking(move || {
+            let edit_batch = batch_ctx.and_then(|context| {
+                crate::tools::edit::batch::capture_edit_batch(
+                    &cwd,
+                    &context.node_id,
+                    &context.tool_call_id,
+                    &context.tool_name,
+                    kind,
+                    &args,
+                )
+            });
             let ledger = crate::tools::edit::ledger::FileChangeLedger::new();
-            let ops = BlockingToolOps::new(cwd, ledger.clone(), snapshots);
+            let ops = BlockingToolOps::new(cwd, ledger.clone(), snapshots, lsp);
             let output = match kind {
                 BuiltinToolKind::Search => ops.search(args),
                 BuiltinToolKind::Find => ops.find(args),
@@ -214,9 +265,16 @@ impl ToolRunner {
                     "blocking runner received a non-blocking tool".to_string(),
                 )),
             };
+            let mut file_changes = ledger.take();
+            if let Some(ref batch) = edit_batch {
+                for change in &mut file_changes {
+                    change.batch_id = Some(batch.batch_id.clone());
+                }
+            }
             BlockingRunOutcome {
                 output,
-                file_changes: ledger.take(),
+                file_changes,
+                edit_batch,
             }
         })
         .await
@@ -228,6 +286,7 @@ impl ToolRunner {
         call: ToolCall,
         raw_output: String,
         file_changes: Vec<FileChangeRecord>,
+        edit_batch: Option<EditBatch>,
     ) -> Result<ToolExecutionRecord, ToolRunnerError> {
         let (content, artifact, output_meta) = self.artifacts.store_text(&call.name, raw_output)?;
         Ok(ToolExecutionRecord {
@@ -244,11 +303,12 @@ impl ToolRunner {
             },
             artifact,
             file_changes,
+            edit_batch,
         })
     }
 
     pub fn denied(&self, call: ToolCall, reason: impl Into<String>) -> ToolExecutionRecord {
-        self.failed_record(call, reason, Vec::new())
+        self.failed_record(call, reason, Vec::new(), None)
     }
 
     fn failed_record(
@@ -256,6 +316,7 @@ impl ToolRunner {
         call: ToolCall,
         reason: impl Into<String>,
         file_changes: Vec<FileChangeRecord>,
+        edit_batch: Option<EditBatch>,
     ) -> ToolExecutionRecord {
         ToolExecutionRecord {
             result: ToolResult {
@@ -268,6 +329,7 @@ impl ToolRunner {
             },
             artifact: None,
             file_changes,
+            edit_batch,
         }
     }
 
@@ -288,11 +350,13 @@ impl ToolRunner {
 
         let cwd = self.cwd.clone();
         let snapshots = self.snapshot_store.clone();
+        let lsp = self.lsp.clone();
         tokio::task::spawn_blocking(move || {
             BlockingToolOps::new(
                 cwd,
                 crate::tools::edit::ledger::FileChangeLedger::new(),
                 snapshots,
+                lsp,
             )
             .read_local(&args.path)
         })
@@ -326,6 +390,7 @@ struct BlockingToolOps {
     cwd: PathBuf,
     ledger: crate::tools::edit::ledger::FileChangeLedger,
     snapshots: Arc<crate::tools::edit::hashline::snapshots::InMemorySnapshotStore>,
+    lsp: LspSettings,
 }
 
 impl BlockingToolOps {
@@ -333,11 +398,13 @@ impl BlockingToolOps {
         cwd: PathBuf,
         ledger: crate::tools::edit::ledger::FileChangeLedger,
         snapshots: Arc<crate::tools::edit::hashline::snapshots::InMemorySnapshotStore>,
+        lsp: LspSettings,
     ) -> Self {
         Self {
             cwd,
             ledger,
             snapshots,
+            lsp,
         }
     }
 
@@ -422,7 +489,12 @@ impl BlockingToolOps {
     }
 
     fn write(&self, args: Value) -> Result<String, ToolError> {
-        crate::tools::edit::write::execute_write(self.cwd.clone(), args, self.ledger.clone())
+        crate::tools::edit::write::execute_write(
+            self.cwd.clone(),
+            args,
+            self.ledger.clone(),
+            self.lsp.clone(),
+        )
     }
 
     fn edit(&self, args: Value) -> Result<String, ToolError> {
@@ -431,6 +503,7 @@ impl BlockingToolOps {
             args,
             self.ledger.clone(),
             self.snapshots.clone(),
+            self.lsp.clone(),
         )
     }
 
@@ -439,6 +512,7 @@ impl BlockingToolOps {
             self.cwd.clone(),
             args,
             self.ledger.clone(),
+            self.lsp.clone(),
         )
     }
 
@@ -588,6 +662,7 @@ mod tests {
             artifacts,
             CancellationToken::new(),
             Arc::new(crate::tools::edit::hashline::snapshots::InMemorySnapshotStore::new()),
+            LspSettings::default(),
         )
     }
 
@@ -597,12 +672,13 @@ mod tests {
         fs::write(dir.path().join("note.txt"), "a\nb\nc\n").unwrap();
         let runner = runner(dir.path());
         let record = runner
-            .execute(ToolCall {
+            .execute(
+                ToolCall {
                 id: "call-1".to_string(),
                 name: "read".to_string(),
                 arguments: serde_json::json!({"path": "note.txt:2-3"}),
                 intent: None,
-            })
+            }, None)
             .await
             .unwrap();
         assert!(record.result.content.contains("2:b"));
@@ -615,12 +691,13 @@ mod tests {
         fs::write(dir.path().join("note.txt"), "alpha\nbeta\n").unwrap();
         let runner = runner(dir.path());
         let record = runner
-            .execute(ToolCall {
+            .execute(
+                ToolCall {
                 id: "call-2".to_string(),
                 name: "search".to_string(),
                 arguments: serde_json::json!({"pattern": "beta", "paths": "note.txt"}),
                 intent: None,
-            })
+            }, None)
             .await
             .unwrap();
         assert!(record.result.content.contains("note.txt:2:beta"));
@@ -631,12 +708,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let runner = runner(dir.path());
         let record = runner
-            .execute(ToolCall {
+            .execute(
+                ToolCall {
                 id: "call-write".to_string(),
                 name: "write".to_string(),
                 arguments: serde_json::json!({"path": "new.txt", "content": "hello\n"}),
                 intent: None,
-            })
+            }, None)
             .await
             .unwrap();
         assert!(record.result.content.contains("Created new.txt"));
@@ -656,7 +734,8 @@ mod tests {
         fs::write(dir.path().join("note.txt"), "alpha\nbeta\n").unwrap();
         let runner = runner(dir.path());
         let record = runner
-            .execute(ToolCall {
+            .execute(
+                ToolCall {
                 id: "call-edit".to_string(),
                 name: "edit".to_string(),
                 arguments: serde_json::json!({
@@ -664,7 +743,7 @@ mod tests {
                     "edits": [{"old_text": "beta", "new_text": "gamma"}]
                 }),
                 intent: None,
-            })
+            }, None)
             .await
             .unwrap();
         assert!(record.result.content.contains("Updated note.txt"));
@@ -682,12 +761,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let runner = runner(dir.path());
         let error = runner
-            .execute(ToolCall {
+            .execute(
+                ToolCall {
                 id: "call-escape".to_string(),
                 name: "write".to_string(),
                 arguments: serde_json::json!({"path": "../escape.txt", "content": "nope"}),
                 intent: None,
-            })
+            }, None)
             .await
             .unwrap_err();
         assert!(error.to_string().contains("path escapes execution folder"));
@@ -699,12 +779,13 @@ mod tests {
         fs::write(dir.path().join("note.txt"), "alpha\n").unwrap();
         let runner = runner(dir.path());
         let error = runner
-            .execute(ToolCall {
+            .execute(
+                ToolCall {
                 id: "call-noop".to_string(),
                 name: "write".to_string(),
                 arguments: serde_json::json!({"path": "note.txt", "content": "alpha\n"}),
                 intent: None,
-            })
+            }, None)
             .await
             .unwrap_err();
         assert!(error.to_string().contains("No changes would be made"));
@@ -720,7 +801,8 @@ mod tests {
         fs::write(dir.path().join("note.txt"), "alpha\n").unwrap();
         let runner = runner(dir.path());
         let error = runner
-            .execute(ToolCall {
+            .execute(
+                ToolCall {
                 id: "call-edit-escape".to_string(),
                 name: "edit".to_string(),
                 arguments: serde_json::json!({
@@ -728,7 +810,7 @@ mod tests {
                     "edits": [{"old_text": "alpha", "new_text": "beta"}]
                 }),
                 intent: None,
-            })
+            }, None)
             .await
             .unwrap_err();
         assert!(error.to_string().contains("path escapes execution folder"));
@@ -740,12 +822,13 @@ mod tests {
         let runner = runner(dir.path());
         let patch = "*** Begin Patch\n*** Add File: new.txt\n+hello\n*** End Patch\n";
         let record = runner
-            .execute(ToolCall {
+            .execute(
+                ToolCall {
                 id: "call-patch".to_string(),
                 name: "apply_patch".to_string(),
                 arguments: serde_json::json!({"input": patch}),
                 intent: None,
-            })
+            }, None)
             .await
             .unwrap();
         assert!(record.result.content.contains("Created new.txt"));
@@ -765,12 +848,13 @@ mod tests {
         let runner = runner(dir.path());
         let patch = "*** Begin Patch\n*** Add File: good.txt\n+hello\n*** Update File: missing.txt\n@ old\n-old\n+new\n*** End Patch\n";
         let record = runner
-            .execute(ToolCall {
+            .execute(
+                ToolCall {
                 id: "call-partial".to_string(),
                 name: "apply_patch".to_string(),
                 arguments: serde_json::json!({"input": patch}),
                 intent: None,
-            })
+            }, None)
             .await
             .unwrap();
         assert!(record.result.is_error);
@@ -783,12 +867,13 @@ mod tests {
         );
 
         let write_record = runner
-            .execute(ToolCall {
+            .execute(
+                ToolCall {
                 id: "call-after-partial".to_string(),
                 name: "write".to_string(),
                 arguments: serde_json::json!({"path": "after.txt", "content": "ok\n"}),
                 intent: None,
-            })
+            }, None)
             .await
             .unwrap();
         assert!(!write_record.result.is_error);

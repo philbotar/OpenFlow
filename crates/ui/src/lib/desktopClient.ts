@@ -13,6 +13,7 @@ import type {
 	WorkflowRunState,
 	WorkflowValidationSummary,
 	FileEditPreview,
+	EditBatch,
 } from "./types";
 
 export type RunStateListener = (runState: WorkflowRunState) => void;
@@ -63,7 +64,13 @@ export interface UiDesktopOutboundPort {
 		transientApiKey?: string | null,
 	) => Promise<WorkflowRunState>;
 	stopRun: () => Promise<WorkflowRunState>;
-	previewFileEdit: (toolName: string, toolArguments: unknown) => Promise<FileEditPreview>;
+	previewFileEdit: (
+		approvalId: string,
+		toolName: string,
+		toolArguments: unknown,
+	) => Promise<FileEditPreview>;
+	gitDiffFile: (path: string) => Promise<string>;
+	revertEditBatch: (batchId: string) => Promise<WorkflowRunState>;
 	submitUserInput: (nodeId: string, text: string) => Promise<WorkflowRunState>;
 	submitToolApproval: (approvalId: string, allow: boolean) => Promise<WorkflowRunState>;
 	completeManualNode: () => Promise<WorkflowRunState>;
@@ -103,6 +110,8 @@ export function createUiDesktopOutboundAdapter(): UiDesktopOutboundPort {
 		startRun: desktopApi.startRun,
 		stopRun: desktopApi.stopRun,
 		previewFileEdit: desktopApi.previewFileEdit,
+		gitDiffFile: desktopApi.gitDiffFile,
+		revertEditBatch: desktopApi.revertEditBatch,
 		submitUserInput: desktopApi.submitUserInput,
 		submitToolApproval: desktopApi.submitToolApproval,
 		completeManualNode: desktopApi.completeManualNode,

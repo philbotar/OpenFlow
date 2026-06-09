@@ -254,7 +254,23 @@ export interface FileChangeRecord {
   op: FileChangeOp;
   renameTo?: string | null;
   diffSummary?: string | null;
+  batchId?: string | null;
   timestampMs: number;
+}
+
+export interface FileSnapshot {
+  path: string;
+  existed: boolean;
+  content?: string | null;
+}
+
+export interface EditBatch {
+  batchId: string;
+  nodeId: string;
+  toolCallId: string;
+  toolName: string;
+  timestampMs: number;
+  snapshots: FileSnapshot[];
 }
 
 export interface WorkflowRunState {
@@ -274,6 +290,7 @@ export interface WorkflowRunState {
   runTrace: RunTraceEntry[];
   outputs: Record<NodeId, unknown>;
   changedFiles: FileChangeRecord[];
+  editBatches: EditBatch[];
 }
 
 export type ProviderId = string;
@@ -291,10 +308,17 @@ export interface ProviderProfile {
   editable: boolean;
 }
 
+export interface LspSettings {
+  enabled: boolean;
+  format_on_write: boolean;
+  diagnostics_on_write: boolean;
+}
+
 export interface AppSettings {
   active_provider: ProviderId;
   providers: Record<ProviderId, ProviderProfile>;
   skill_search_paths?: string[];
+  lsp?: LspSettings;
 }
 
 export interface SkillSummary {

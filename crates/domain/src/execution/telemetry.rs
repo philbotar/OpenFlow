@@ -4,7 +4,7 @@ use super::artifacts::RunReport;
 use crate::conversation::ChatRole;
 use crate::graph::NodeId;
 use crate::tools::{
-    FileChangeRecord, PendingToolApproval, SubagentSummary, ToolCall, ToolOutputMeta,
+    EditBatch, FileChangeRecord, PendingToolApproval, SubagentSummary, ToolCall, ToolOutputMeta,
 };
 use serde_json::Value;
 
@@ -80,6 +80,10 @@ pub enum RunTelemetry {
     FileChanged {
         node_id: NodeId,
         record: FileChangeRecord,
+    },
+    EditBatchRecorded {
+        node_id: NodeId,
+        batch: EditBatch,
     },
     NodeCompleted {
         node_id: NodeId,

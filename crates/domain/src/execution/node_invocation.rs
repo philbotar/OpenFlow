@@ -245,6 +245,7 @@ mod tests {
                 op: crate::tools::FileChangeOp::Update,
                 rename_to: None,
                 diff_summary: Some("+1|fn main()".to_string()),
+                batch_id: None,
                 timestamp_ms: 1,
             }],
         );
@@ -281,6 +282,7 @@ mod tests {
                     op: crate::tools::FileChangeOp::Rename,
                     rename_to: Some("new.rs".to_string()),
                     diff_summary: None,
+                    batch_id: None,
                     timestamp_ms: 1,
                 },
                 FileChangeRecord {
@@ -288,6 +290,7 @@ mod tests {
                     op: crate::tools::FileChangeOp::Update,
                     rename_to: None,
                     diff_summary: None,
+                    batch_id: None,
                     timestamp_ms: 2,
                 },
             ],
@@ -312,6 +315,7 @@ mod tests {
                 op: crate::tools::FileChangeOp::Update,
                 rename_to: None,
                 diff_summary: None,
+                batch_id: None,
                 timestamp_ms: 1,
             }],
         );

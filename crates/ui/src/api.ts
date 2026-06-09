@@ -143,11 +143,24 @@ export function stopRun() {
   return invoke<WorkflowRunState>("stop_run");
 }
 
-export function previewFileEdit(toolName: string, toolArguments: unknown) {
+export function previewFileEdit(
+  approvalId: string,
+  toolName: string,
+  toolArguments: unknown,
+) {
   return invoke<import("./lib/types").FileEditPreview>("preview_file_edit", {
+    approvalId,
     toolName,
     arguments: toolArguments,
   });
+}
+
+export function gitDiffFile(path: string) {
+  return invoke<string>("git_diff_file", { path });
+}
+
+export function revertEditBatch(batchId: string) {
+  return invoke<WorkflowRunState>("revert_edit_batch", { batchId });
 }
 
 export function submitUserInput(nodeId: string, text: string) {

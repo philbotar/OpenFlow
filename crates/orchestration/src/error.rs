@@ -23,6 +23,8 @@ pub enum BackendError {
     ProjectOperation(String),
     #[error("workflow run is not active")]
     NoActiveRun,
+    #[error("no execution folder is bound to the current session")]
+    NoExecutionCwd,
     #[error("workflow run is not awaiting input")]
     NoAwaitingInput,
     #[error("workflow run has no pending tool approval")]
@@ -35,4 +37,8 @@ pub enum BackendError {
     RunChannelClosed,
     #[error("file edit preview failed: {0}")]
     PreviewFailed(String),
+    #[error("git operation failed: {0}")]
+    GitFailed(String),
+    #[error("edit batch {0} not found")]
+    EditBatchNotFound(String),
 }

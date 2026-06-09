@@ -480,6 +480,12 @@ impl InteractiveEngine {
             .extend(records);
     }
 
+    pub fn revert_file_changes_for_batch(&mut self, batch_id: &str, node_id: &NodeId) {
+        if let Some(records) = self.changed_files_by_node.get_mut(node_id) {
+            records.retain(|record| record.batch_id.as_deref() != Some(batch_id));
+        }
+    }
+
     /// # Errors
     /// Returns an error if no tool calls are pending or the wrong node id is provided.
     pub fn on_tool_results(
@@ -695,6 +701,44 @@ mod tests {
         node.id = NodeId(id.to_string());
         node.agent.model = "test-model".to_string();
         node
+    }
+
+    #[test]
+    fn revert_file_changes_for_batch_removes_only_matching_records() {
+        let mut workflow = Workflow::new("revert");
+        workflow.nodes = vec![node("idea")];
+        let mut engine = InteractiveEngine::new(workflow, None).unwrap();
+        let node_id = NodeId("idea".to_string());
+        engine.record_file_changes(
+            &node_id,
+            vec![
+                FileChangeRecord {
+                    path: "a.txt".to_string(),
+                    op: crate::tools::FileChangeOp::Update,
+                    rename_to: None,
+                    diff_summary: None,
+                    batch_id: Some("batch-1".to_string()),
+                    timestamp_ms: 1,
+                },
+                FileChangeRecord {
+                    path: "a.txt".to_string(),
+                    op: crate::tools::FileChangeOp::Update,
+                    rename_to: None,
+                    diff_summary: None,
+                    batch_id: Some("batch-2".to_string()),
+                    timestamp_ms: 2,
+                },
+            ],
+        );
+
+        engine.revert_file_changes_for_batch("batch-1", &node_id);
+
+        let records = engine
+            .changed_files_by_node
+            .get(&node_id)
+            .expect("records");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].batch_id.as_deref(), Some("batch-2"));
     }
 
     #[test]

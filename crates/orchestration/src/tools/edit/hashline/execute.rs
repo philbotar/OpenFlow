@@ -1,28 +1,36 @@
 //! Hashline mode runner for the `edit` tool.
 
+use parking_lot::Mutex;
 use std::path::PathBuf;
 use std::sync::Arc;
-
-use domain::summarize_diff;
 
 use super::fs::{HashlineFilesystem, WriteResult};
 use super::input::Patch;
 use super::patcher::{PatchOp, Patcher, PatcherOptions};
 use super::snapshots::InMemorySnapshotStore;
 use super::types::SplitOptions;
+use crate::lsp::{append_writethrough_to_output, LspSettings};
 use crate::tools::edit::diff::generate_diff_string;
-use crate::tools::edit::io::{EditIo, EditIoError};
+use crate::tools::edit::io::{EditIo, EditIoError, WriteTextOutcome};
 use crate::tools::edit::ledger::FileChangeLedger;
 use crate::tools::edit::normalize::{normalize_to_lf, strip_bom};
 use crate::tools::errors::ToolError;
 
 pub struct EditHashlineFs {
     io: EditIo,
+    writethrough: Mutex<Vec<crate::lsp::FileDiagnosticsResult>>,
 }
 
 impl EditHashlineFs {
     pub fn new(io: EditIo) -> Self {
-        Self { io }
+        Self {
+            io,
+            writethrough: Mutex::new(Vec::new()),
+        }
+    }
+
+    pub fn take_writethrough(&self) -> Vec<crate::lsp::FileDiagnosticsResult> {
+        self.writethrough.lock().drain(..).collect()
     }
 }
 
@@ -36,19 +44,21 @@ impl HashlineFilesystem for EditHashlineFs {
         path: &str,
         content: &str,
     ) -> Result<WriteResult, Box<dyn std::error::Error + Send + Sync>> {
-        let before = self.io.read_text(path).ok();
-        let stripped = strip_bom(content);
-        let after_normalized = normalize_to_lf(&stripped.text);
-        let diff_summary = before.as_ref().map(|old| {
-            let diff = generate_diff_string(old, &after_normalized, 2);
-            summarize_diff(&diff.diff, 8)
-        });
-        self.io
-            .write_persisted(path, content, diff_summary)
+        let outcome: WriteTextOutcome = self
+            .io
+            .write_persisted(path, content)
             .map_err(map_io_boxed)?;
-        Ok(WriteResult {
-            text: content.to_string(),
-        })
+        if let Some(diagnostics) = outcome.diagnostics {
+            self.writethrough.lock().push(diagnostics);
+        }
+        let stripped = strip_bom(content);
+        let fallback_normalized = normalize_to_lf(&stripped.text);
+        let normalized = outcome.disk_normalized.unwrap_or(fallback_normalized);
+        let text = self
+            .io
+            .read_raw(path)
+            .unwrap_or_else(|_| content.to_string());
+        Ok(WriteResult { text, normalized })
     }
 
     fn canonical_path(&self, path: &str) -> String {
@@ -81,6 +91,7 @@ pub fn execute_hashline(
     input: String,
     ledger: FileChangeLedger,
     snapshots: Arc<InMemorySnapshotStore>,
+    lsp: LspSettings,
 ) -> Result<String, ToolError> {
     let cwd_display = cwd.to_string_lossy().into_owned();
     let patch = Patch::parse(
@@ -97,7 +108,9 @@ pub fn execute_hashline(
         ));
     }
 
-    let io = EditIo::new(cwd).with_ledger(ledger);
+    let io = EditIo::new(cwd)
+        .with_ledger(ledger)
+        .with_lsp_settings(lsp);
     let fs = EditHashlineFs::new(io);
     let patcher = Patcher::new(PatcherOptions {
         fs,
@@ -106,6 +119,7 @@ pub fn execute_hashline(
     });
 
     let applied = patcher.apply(&patch).map_err(ToolError::Failed)?;
+    let writethrough = patcher.fs.take_writethrough();
     let mut parts = Vec::new();
     for section in applied.sections {
         if section.op == PatchOp::Noop {
@@ -124,7 +138,11 @@ pub fn execute_hashline(
         }
         parts.push(block);
     }
-    Ok(parts.join("\n\n"))
+    let mut output = parts.join("\n\n");
+    if !writethrough.is_empty() {
+        output = append_writethrough_to_output(&output, &writethrough);
+    }
+    Ok(output)
 }
 
 #[cfg(test)]
@@ -143,7 +161,10 @@ mod tests {
         let ledger = FileChangeLedger::new();
         let snapshots = Arc::new(InMemorySnapshotStore::new());
         let output =
-            execute_hashline(temp.path().to_path_buf(), input, ledger, snapshots).expect("apply");
+            execute_hashline(temp.path().to_path_buf(), input, ledger, snapshots, LspSettings {
+                enabled: false,
+                ..Default::default()
+            }).expect("apply");
         assert!(output.contains(&format!("¶{path}#")));
         let text = fs::read_to_string(temp.path().join(path)).expect("read");
         assert_eq!(text, "gamma\nbeta\n");
