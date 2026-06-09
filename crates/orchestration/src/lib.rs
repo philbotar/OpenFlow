@@ -33,6 +33,9 @@ pub mod settings_facade;
 #[path = "tool/errors.rs"]
 pub(crate) mod tool_errors;
 
+#[path = "tool/ports.rs"]
+pub(crate) mod tool_ports;
+
 #[path = "tool/registry.rs"]
 pub mod tool_registry;
 

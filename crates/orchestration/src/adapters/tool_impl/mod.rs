@@ -2,6 +2,7 @@
 
 pub mod edit;
 pub mod errors;
+pub mod grep;
 
 // Re-export modules from tool application layer for backward compatibility
 pub mod output {

@@ -1,10 +1,9 @@
-#[path = "grep.rs"]
-mod grep;
-
 use crate::lsp::LspSettings;
 use crate::tool_errors::ToolError;
 use crate::tool_output::{ArtifactStore, ToolArtifactRecord};
+use crate::tool_ports::ContentSearch;
 use crate::tool_registry::{BuiltinToolKind, ToolRegistry, ToolRegistryError};
+use crate::tools::grep::RipgrepSearch;
 use engine::{EditBatch, FileChangeRecord, ToolCall, ToolResult};
 use regex::Regex;
 use reqwest::Client;
@@ -447,7 +446,7 @@ impl BlockingToolOps {
     }
 
     fn search(&self, args: Value) -> Result<String, ToolError> {
-        grep::search(&self.cwd, args)
+        RipgrepSearch::new(self.cwd.clone()).search(args)
     }
 
     fn write(&self, args: Value) -> Result<String, ToolError> {

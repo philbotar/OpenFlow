@@ -4,7 +4,7 @@
 
 ### Added
 
-- **Ripgrep-backed search tool:** replace naive WalkDir+regex `search` with `grep-searcher` + `ignore` (gitignore-aware walks, binary skip, 500-match cap); optional `gitignore` arg (default true).
+- **Ripgrep-backed search tool:** replace naive WalkDir+regex `search` with `grep-searcher` + `ignore` in `adapters/tool_impl/grep.rs` behind `tool_ports::ContentSearch`; gitignore-aware walks, binary skip, 500-match cap; optional `gitignore` arg (default true).
 - **Run performance timing:** `RunTelemetry::PhaseTimed` records AI invoke and tool execution durations; entries appear in Run trace (`ai_invoke: … · 3.2s`) and `[perf]` lines in the desktop log.
 - **macOS app bundle:** enable Tauri bundling (`bundle.active`, `app` target); `npm --prefix crates/desktop run build` produces `OpenFlow.app`; README documents install and Gatekeeper steps; gate `open_devtools` to debug builds so release bundle compiles.
 
@@ -45,7 +45,7 @@
 
 - **Subagent runtime test:** `advance_subagent_invoke_records_tool_calls_before_results` catch-all arm now panics on unexpected variants instead of asserting an impossible `NeedAi` match.
 - **File changes panel:** scope "Changed files" and revertible batches to the selected node (`changedFilesByNode` in run state; `FileChangesPanel` filters by `selectedNodeId`).
-- **Verify pipeline:** run `cargo fmt`; remove duplicate `run`/`tool` module roots in `orchestration` `lib.rs` (keep flat `#[path]` re-exports); load `tool/errors.rs` as `tool_errors`; satisfy clippy `panic`/`expect_used` in engine tests; bundle multi-arg constructors into `AppBackendDeps` and `InteractiveWorkflowRunParams` instead of crate-wide `too_many_arguments` allow.
+- **Verify pipeline:** derive `Default` for `NodeToolConfig`; move `events.rs` test module after production items (clippy `items_after_test_module`).
 - **Git diff / undo (Phase 9):** batch revert removes only matching `batch_id` records; syncs `InteractiveEngine` and hashline snapshots; deletes created paths before restoring sources; skips non-UTF-8 snapshot capture; keeps execution cwd after run end for post-run git diff.
 - **LSP writethrough (Phase 8):** `diagnostics_on_write` no longer appends a false error while the language-server client is unimplemented.
 - **LSP writethrough (Phase 8):** `LspSettings::from_persisted` applies env overrides (`PI_LSP_*`) after persisted app settings so operational env toggles are not discarded.

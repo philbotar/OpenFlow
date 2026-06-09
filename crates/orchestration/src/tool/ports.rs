@@ -1,19 +1,9 @@
-use std::path::Path;
+//! Outbound ports for tool execution (application layer contracts).
 
-pub trait PatchFileSystem: Send + Sync {
-    fn read(&self, path: &Path) -> std::io::Result<String>;
-    fn write(&self, path: &Path, content: &str) -> std::io::Result<()>;
-    fn exists(&self, path: &Path) -> bool;
-}
+use crate::tool_errors::ToolError;
+use serde_json::Value;
 
-pub trait SnapshotStore: Send + Sync {
-    fn get(&self, path: &Path) -> Option<String>;
-    fn set(&self, path: &Path, content: String);
-    fn clear(&self, path: &Path);
-}
-
-pub trait HashlineFilesystem: Send + Sync {
-    fn read(&self, path: &Path) -> std::io::Result<String>;
-    fn write(&self, path: &Path, content: &str) -> std::io::Result<()>;
-    fn exists(&self, path: &Path) -> bool;
+/// Regex content search over files under the execution cwd.
+pub trait ContentSearch: Send + Sync {
+    fn search(&self, args: Value) -> Result<String, ToolError>;
 }

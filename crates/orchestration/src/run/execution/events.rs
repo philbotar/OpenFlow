@@ -453,23 +453,6 @@ fn format_phase_timed_message(phase: &str, label: &str, duration_ms: u64) -> Str
     format!("{phase}: {label} · {duration}")
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn phase_timed_message_formats_milliseconds_and_seconds() {
-        assert_eq!(
-            format_phase_timed_message("ai_invoke", "Planner", 842),
-            "ai_invoke: Planner · 842ms"
-        );
-        assert_eq!(
-            format_phase_timed_message("tool", "search", 2400),
-            "tool: search · 2.4s"
-        );
-    }
-}
-
 fn abort_in_progress_tools(state: &mut WorkflowRunState) {
     for calls in state.tool_calls_by_node.values_mut() {
         for call in calls.iter_mut() {
@@ -542,4 +525,21 @@ pub fn record_user_input(state: &mut WorkflowRunState, node_id: &str, text: Stri
         .push(ChatMessage::text(ChatRole::User, text));
     state.awaiting_node_id = None;
     state.active_manual_node_id = None;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn phase_timed_message_formats_milliseconds_and_seconds() {
+        assert_eq!(
+            format_phase_timed_message("ai_invoke", "Planner", 842),
+            "ai_invoke: Planner · 842ms"
+        );
+        assert_eq!(
+            format_phase_timed_message("tool", "search", 2400),
+            "tool: search · 2.4s"
+        );
+    }
 }

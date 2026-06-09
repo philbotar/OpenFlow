@@ -69,7 +69,7 @@ pub struct ToolPolicyOverride {
 }
 
 /// Tool catalog and approval settings attached to an agent node.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NodeToolConfig {
     #[serde(default)]
@@ -84,16 +84,6 @@ impl NodeToolConfig {
     #[must_use]
     pub const fn is_enabled(&self) -> bool {
         !self.catalog.tools.is_empty()
-    }
-}
-
-impl Default for NodeToolConfig {
-    fn default() -> Self {
-        Self {
-            catalog: ToolCatalogSelection::default(),
-            approval_mode: None,
-            overrides: Vec::new(),
-        }
     }
 }
 
