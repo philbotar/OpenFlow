@@ -1,9 +1,12 @@
+#[path = "grep.rs"]
+mod grep;
+
 use crate::lsp::LspSettings;
 use crate::tool_errors::ToolError;
 use crate::tool_output::{ArtifactStore, ToolArtifactRecord};
 use crate::tool_registry::{BuiltinToolKind, ToolRegistry, ToolRegistryError};
 use engine::{EditBatch, FileChangeRecord, ToolCall, ToolResult};
-use regex::{Regex, RegexBuilder};
+use regex::Regex;
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::Value;
@@ -444,42 +447,7 @@ impl BlockingToolOps {
     }
 
     fn search(&self, args: Value) -> Result<String, ToolError> {
-        #[derive(Deserialize)]
-        struct SearchArgs {
-            pattern: String,
-            paths: StringOrMany,
-            #[serde(default)]
-            i: Option<bool>,
-        }
-        let args: SearchArgs = serde_json::from_value(args)
-            .map_err(|error| ToolError::Failed(format!("invalid search args: {error}")))?;
-        let regex = RegexBuilder::new(&args.pattern)
-            .case_insensitive(args.i.unwrap_or(false))
-            .build()
-            .map_err(|error| ToolError::Failed(format!("invalid search regex: {error}")))?;
-        let mut results = Vec::new();
-        for path in args.paths.into_vec() {
-            for file in self.expand_files(&path)? {
-                let text = match fs::read_to_string(&file) {
-                    Ok(text) => text,
-                    Err(_) => continue,
-                };
-                let matches = text
-                    .lines()
-                    .enumerate()
-                    .filter(|(_, line)| regex.is_match(line))
-                    .map(|(index, line)| format!("{}:{}:{}", file.display(), index + 1, line))
-                    .collect::<Vec<_>>();
-                if !matches.is_empty() {
-                    results.extend(matches);
-                }
-            }
-        }
-        if results.is_empty() {
-            Ok("No matches found".to_string())
-        } else {
-            Ok(results.join("\n"))
-        }
+        grep::search(&self.cwd, args)
     }
 
     fn write(&self, args: Value) -> Result<String, ToolError> {
@@ -535,15 +503,6 @@ impl BlockingToolOps {
         } else {
             self.cwd.join(path)
         }
-    }
-
-    fn expand_files(&self, pattern: &str) -> Result<Vec<PathBuf>, ToolError> {
-        self.expand_paths(pattern).map(|paths| {
-            paths
-                .into_iter()
-                .filter(|path| path.is_file())
-                .collect::<Vec<_>>()
-        })
     }
 
     fn expand_paths(&self, pattern: &str) -> Result<Vec<PathBuf>, ToolError> {

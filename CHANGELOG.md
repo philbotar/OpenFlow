@@ -4,6 +4,7 @@
 
 ### Added
 
+- **Ripgrep-backed search tool:** replace naive WalkDir+regex `search` with `grep-searcher` + `ignore` (gitignore-aware walks, binary skip, 500-match cap); optional `gitignore` arg (default true).
 - **Run performance timing:** `RunTelemetry::PhaseTimed` records AI invoke and tool execution durations; entries appear in Run trace (`ai_invoke: … · 3.2s`) and `[perf]` lines in the desktop log.
 - **macOS app bundle:** enable Tauri bundling (`bundle.active`, `app` target); `npm --prefix crates/desktop run build` produces `OpenFlow.app`; README documents install and Gatekeeper steps; gate `open_devtools` to debug builds so release bundle compiles.
 

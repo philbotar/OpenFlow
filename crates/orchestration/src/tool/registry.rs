@@ -114,7 +114,7 @@ fn search_tool() -> RegisteredTool {
     RegisteredTool {
         definition: ToolDefinition {
             name: "search".to_string(),
-            description: "Search files by regular expression across one or more paths.".to_string(),
+            description: "Search file contents by regular expression across one or more paths. Uses ripgrep (gitignore-aware by default).".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "additionalProperties": false,
@@ -129,7 +129,8 @@ fn search_tool() -> RegisteredTool {
                             }
                         ]
                     },
-                    "i": { "type": ["boolean", "null"] }
+                    "i": { "type": ["boolean", "null"] },
+                    "gitignore": { "type": ["boolean", "null"] }
                 },
                 "required": ["pattern", "paths"]
             }),
