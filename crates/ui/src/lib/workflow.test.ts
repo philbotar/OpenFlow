@@ -109,6 +109,7 @@ const runState: WorkflowRunState = {
     },
   ],
   outputs: {},
+  changedFiles: [],
 };
 
 describe("workflow helpers", () => {

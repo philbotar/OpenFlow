@@ -182,7 +182,10 @@ fn patch_verify_error_carries_absolute_resolved_path() {
 
     assert_eq!(
         resolved_path,
-        temp.path().join(rel_path).canonicalize().expect("canonical")
+        temp.path()
+            .join(rel_path)
+            .canonicalize()
+            .expect("canonical")
     );
 }
 

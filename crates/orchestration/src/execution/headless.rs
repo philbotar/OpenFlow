@@ -135,5 +135,6 @@ where
         pending_approvals: state.pending_approvals,
         tool_calls_by_node: state.tool_calls_by_node,
         tool_artifacts: state.tool_artifacts,
+        changed_files: state.changed_files,
     })
 }

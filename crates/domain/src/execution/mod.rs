@@ -12,7 +12,7 @@ pub use artifacts::{NodeRunOutput, RunError, RunEvent, RunEventKind, RunReport};
 pub use interactive_engine::{EngineInputError, EnginePollResult, InteractiveEngine};
 pub use node_invocation::{
     build_agent_request, build_node_input, build_upstream_map, merge_shared_context,
-    workflow_system_prompt, NodeInvocationContext,
+    upstream_changed_files, workflow_system_prompt, NodeInvocationContext,
 };
 pub use subagent_runtime::{
     advance_subagent_invoke, handle_declare_subagents, is_subagent_runtime_builtin,

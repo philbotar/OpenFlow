@@ -1,4 +1,5 @@
 use crate::agent_store::FileAgentStore;
+use crate::api::FileEditPreview;
 use crate::error::BackendError;
 use crate::execution::{
     apply_event_to_run_state, record_user_input, resolve_execution_cwd,
@@ -7,9 +8,11 @@ use crate::execution::{
 use crate::provider_config::{resolve_provider_config, ProviderEnv};
 use crate::settings_store::{merge_preserved_api_keys, AppSettings, FileSettingsStore};
 use crate::state::WorkflowRunState;
+use crate::tools::edit::preview::preview_file_edit;
 use domain::resolve_callable_agent_snapshots;
 use domain::{validate_workflow, NodeId, Workflow};
 use providers::{create_provider, ProviderId};
+use std::path::PathBuf;
 use std::time::Duration;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::sync::Mutex;
@@ -19,6 +22,7 @@ use tokio_util::sync::CancellationToken;
 struct RunSession {
     workflow: Option<Workflow>,
     run_state: Option<WorkflowRunState>,
+    execution_cwd: Option<PathBuf>,
     action_tx: Option<UnboundedSender<ExecutionAction>>,
     handle: Option<tokio::task::JoinHandle<()>>,
     cancel_token: Option<CancellationToken>,
@@ -54,6 +58,7 @@ impl RunCoordinator {
             session: Mutex::new(RunSession {
                 workflow: None,
                 run_state: None,
+                execution_cwd: None,
                 action_tx: None,
                 handle: None,
                 cancel_token: None,
@@ -104,7 +109,7 @@ impl RunCoordinator {
             &self.runtime,
             workflow.clone(),
             entrypoint,
-            resolved_cwd,
+            resolved_cwd.clone(),
             ai,
             agent_snapshots,
         );
@@ -113,6 +118,7 @@ impl RunCoordinator {
         let initial_state = WorkflowRunState::running_for_workflow(&workflow);
         session.workflow = Some(workflow);
         session.run_state = Some(initial_state.clone());
+        session.execution_cwd = Some(resolved_cwd);
         session.action_tx = Some(action_tx);
         session.handle = Some(handle);
         session.cancel_token = Some(cancel_token);
@@ -214,6 +220,7 @@ impl RunCoordinator {
         let finished = !run_state.active;
         let snapshot = run_state.clone();
         if finished {
+            session.execution_cwd = None;
             session.action_tx = None;
             session.handle = None;
             session.cancel_token = None;
@@ -311,6 +318,30 @@ impl RunCoordinator {
     #[must_use]
     pub async fn get_run_state(&self) -> Option<WorkflowRunState> {
         self.session.lock().await.run_state.clone()
+    }
+
+    /// Dry-run a write-tier tool call and return numbered diffs for approval UI.
+    ///
+    /// # Errors
+    /// Returns an error when there is no active run or preview computation fails.
+    pub async fn preview_file_edit(
+        &self,
+        tool_name: String,
+        arguments: serde_json::Value,
+    ) -> Result<FileEditPreview, BackendError> {
+        let cwd = self
+            .session
+            .lock()
+            .await
+            .execution_cwd
+            .clone()
+            .ok_or(BackendError::NoActiveRun)?;
+        let tool_name_for_task = tool_name.clone();
+        self.runtime
+            .spawn_blocking(move || preview_file_edit(cwd, &tool_name_for_task, &arguments))
+            .await
+            .map_err(|error| BackendError::PreviewFailed(error.to_string()))?
+            .map_err(BackendError::PreviewFailed)
     }
 
     #[must_use]

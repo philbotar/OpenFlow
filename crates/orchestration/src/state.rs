@@ -77,6 +77,7 @@ pub struct WorkflowRunState {
     pub chat_logs: BTreeMap<NodeId, Vec<ChatMessage>>,
     pub run_trace: Vec<RunTraceEntry>,
     pub outputs: BTreeMap<NodeId, Value>,
+    pub changed_files: Vec<domain::FileChangeRecord>,
 }
 
 impl WorkflowRunState {
@@ -103,6 +104,7 @@ impl WorkflowRunState {
             chat_logs: BTreeMap::new(),
             run_trace: Vec::new(),
             outputs: BTreeMap::new(),
+            changed_files: Vec::new(),
         }
     }
 

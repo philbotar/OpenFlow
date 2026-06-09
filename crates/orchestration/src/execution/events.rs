@@ -218,6 +218,9 @@ pub fn apply_event_to_run_state(
                 is_error,
             );
         }
+        ExecutionEvent::FileChanged { record, .. } => {
+            state.changed_files.push(record);
+        }
         ExecutionEvent::ToolArtifactCreated {
             artifact_id,
             tool_name,

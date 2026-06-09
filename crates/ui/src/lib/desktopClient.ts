@@ -12,6 +12,7 @@ import type {
 	WorkflowListItem,
 	WorkflowRunState,
 	WorkflowValidationSummary,
+	FileEditPreview,
 } from "./types";
 
 export type RunStateListener = (runState: WorkflowRunState) => void;
@@ -62,6 +63,7 @@ export interface UiDesktopOutboundPort {
 		transientApiKey?: string | null,
 	) => Promise<WorkflowRunState>;
 	stopRun: () => Promise<WorkflowRunState>;
+	previewFileEdit: (toolName: string, toolArguments: unknown) => Promise<FileEditPreview>;
 	submitUserInput: (nodeId: string, text: string) => Promise<WorkflowRunState>;
 	submitToolApproval: (approvalId: string, allow: boolean) => Promise<WorkflowRunState>;
 	completeManualNode: () => Promise<WorkflowRunState>;
@@ -100,6 +102,7 @@ export function createUiDesktopOutboundAdapter(): UiDesktopOutboundPort {
 		createAgentNode: desktopApi.createAgentNode,
 		startRun: desktopApi.startRun,
 		stopRun: desktopApi.stopRun,
+		previewFileEdit: desktopApi.previewFileEdit,
 		submitUserInput: desktopApi.submitUserInput,
 		submitToolApproval: desktopApi.submitToolApproval,
 		completeManualNode: desktopApi.completeManualNode,

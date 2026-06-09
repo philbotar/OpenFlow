@@ -1,6 +1,8 @@
 //! Ported OMP `parseApplyPatch` tests from `apply-patch.test.ts`.
 
-use super::apply_patch::{expand_apply_patch_to_inputs, parse_apply_patch, parse_apply_patch_streaming};
+use super::apply_patch::{
+    expand_apply_patch_to_inputs, parse_apply_patch, parse_apply_patch_streaming,
+};
 use super::errors::ParseError;
 use super::patch::{PatchInput, PatchOp};
 
@@ -75,7 +77,10 @@ fn parses_full_patch_with_all_operations() {
     assert_eq!(result[2].path, "path/update.py");
     assert_eq!(result[2].op, PatchOp::Update);
     assert_eq!(result[2].rename.as_deref(), Some("path/update2.py"));
-    assert!(result[2].diff.as_ref().is_some_and(|d| d.contains("-    pass")));
+    assert!(result[2]
+        .diff
+        .as_ref()
+        .is_some_and(|d| d.contains("-    pass")));
 }
 
 #[test]
@@ -103,8 +108,10 @@ fn returns_patch_input_shape_for_add() {
 
 #[test]
 fn maps_update_with_rename() {
-    let result = parse_apply_patch(&wrap("*** Update File: a.py\n*** Move to: b.py\n@@\n-old\n+new"))
-        .expect("parse");
+    let result = parse_apply_patch(&wrap(
+        "*** Update File: a.py\n*** Move to: b.py\n@@\n-old\n+new",
+    ))
+    .expect("parse");
     assert_eq!(result[0].path, "a.py");
     assert_eq!(result[0].op, PatchOp::Update);
     assert_eq!(result[0].rename.as_deref(), Some("b.py"));
@@ -151,12 +158,10 @@ fn unknown_file_directive_is_rejected() {
 fn preserves_end_of_file_marker_inside_update_body() {
     let result = parse_apply_patch(&wrap("*** Update File: a.py\n@@\n-x\n+y\n*** End of File"))
         .expect("parse");
-    assert!(
-        result[0]
-            .diff
-            .as_ref()
-            .is_some_and(|d| d.contains("*** End of File"))
-    );
+    assert!(result[0]
+        .diff
+        .as_ref()
+        .is_some_and(|d| d.contains("*** End of File")));
 }
 
 #[test]
@@ -190,9 +195,7 @@ fn streaming_parser_allows_empty_update_hunk() {
 
 #[test]
 fn update_body_preserves_spaced_pseudo_header_lines() {
-    let patch = wrap(
-        "*** Update File: a.py\n@@\n *** Update File: not-a-header\n+done",
-    );
+    let patch = wrap("*** Update File: a.py\n@@\n *** Update File: not-a-header\n+done");
     let result = parse_apply_patch(&patch).expect("parse");
     let diff = result[0].diff.as_ref().expect("diff");
     assert!(diff.contains("*** Update File: not-a-header"));

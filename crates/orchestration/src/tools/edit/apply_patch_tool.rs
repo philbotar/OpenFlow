@@ -8,9 +8,12 @@ use std::path::PathBuf;
 use serde::Deserialize;
 use serde_json::Value;
 
+use domain::{summarize_diff, FileChangeOp};
+
 use super::apply_patch::expand_apply_patch_to_inputs;
 use super::diff::generate_diff_string;
 use super::errors::ApplyPatchError;
+use super::ledger::FileChangeLedger;
 use super::patch::{
     apply_patch_entry, PatchApplyResult, PatchError, PatchInput, PatchOp, PatchOptions,
     StdPatchFileSystem,
@@ -23,10 +26,13 @@ struct ApplyPatchArgs {
     input: String,
 }
 
-pub fn execute_apply_patch(cwd: PathBuf, args: Value) -> Result<String, ToolError> {
-    let args: ApplyPatchArgs = serde_json::from_value(args).map_err(|error| {
-        ToolError::Failed(format!("invalid apply_patch args: {error}"))
-    })?;
+pub fn execute_apply_patch(
+    cwd: PathBuf,
+    args: Value,
+    ledger: FileChangeLedger,
+) -> Result<String, ToolError> {
+    let args: ApplyPatchArgs = serde_json::from_value(args)
+        .map_err(|error| ToolError::Failed(format!("invalid apply_patch args: {error}")))?;
 
     let inputs = expand_apply_patch_to_inputs(&args.input).map_err(map_apply_patch_error)?;
     let options = PatchOptions {
@@ -39,20 +45,82 @@ pub fn execute_apply_patch(cwd: PathBuf, args: Value) -> Result<String, ToolErro
     let mut lines = Vec::new();
 
     for input in inputs {
-        let result = apply_patch_entry(&input, &options, &fs).map_err(map_patch_error)?;
+        let result = match apply_patch_entry(&input, &options, &fs) {
+            Ok(result) => result,
+            Err(error) => {
+                let prefix = if lines.is_empty() {
+                    String::new()
+                } else {
+                    format!("{}\n\n", lines.join("\n\n"))
+                };
+                return Err(ToolError::Failed(format!(
+                    "{prefix}{}",
+                    map_patch_error(error)
+                )));
+            }
+        };
         lines.push(summarize_patch(&input, &result));
 
-        if let (Some(old), Some(new)) = (&result.old_content, &result.new_content) {
-            if old != new {
-                let diff = generate_diff_string(old, new, 2);
-                if !diff.diff.is_empty() {
-                    lines.push(diff.diff);
-                }
-            }
+        let diff_summary = patch_diff_summary(&result);
+        if let Some(ref diff) = diff_summary {
+            lines.push(diff.clone());
+        }
+
+        let (op, rename_to) = patch_change_op(&input);
+        if should_record_patch_change(&input, &result) {
+            ledger.record(
+                input.path.clone(),
+                op,
+                rename_to,
+                diff_summary.map(|diff| summarize_diff(&diff, 8)),
+            );
         }
     }
 
     Ok(lines.join("\n\n"))
+}
+
+fn patch_diff_summary(result: &PatchApplyResult) -> Option<String> {
+    let diff = match (&result.old_content, &result.new_content) {
+        (None, Some(new)) => generate_diff_string("", new, 2).diff,
+        (Some(old), Some(new)) if old != new => generate_diff_string(old, new, 2).diff,
+        (Some(old), None) => generate_diff_string(old, "", 2).diff,
+        _ => String::new(),
+    };
+    if diff.is_empty() {
+        None
+    } else {
+        Some(diff)
+    }
+}
+
+fn should_record_patch_change(input: &PatchInput, result: &PatchApplyResult) -> bool {
+    match input.op {
+        PatchOp::Create | PatchOp::Delete => true,
+        PatchOp::Update => {
+            if input.rename.is_some() {
+                return true;
+            }
+            matches!(
+                (&result.old_content, &result.new_content),
+                (Some(old), Some(new)) if old != new
+            )
+        }
+    }
+}
+
+fn patch_change_op(input: &PatchInput) -> (FileChangeOp, Option<String>) {
+    match input.op {
+        PatchOp::Create => (FileChangeOp::Create, None),
+        PatchOp::Delete => (FileChangeOp::Delete, None),
+        PatchOp::Update => {
+            if let Some(rename) = input.rename.clone() {
+                (FileChangeOp::Rename, Some(rename))
+            } else {
+                (FileChangeOp::Update, None)
+            }
+        }
+    }
 }
 
 fn summarize_patch(input: &PatchInput, _result: &PatchApplyResult) -> String {

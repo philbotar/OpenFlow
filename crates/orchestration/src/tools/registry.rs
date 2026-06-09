@@ -196,8 +196,9 @@ fn edit_tool() -> RegisteredTool {
     RegisteredTool {
         definition: ToolDefinition {
             name: "edit".to_string(),
-            description: "Replace exact or fuzzy-matched text in a file under the execution folder."
-                .to_string(),
+            description:
+                "Replace exact or fuzzy-matched text in a file under the execution folder."
+                    .to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "additionalProperties": false,
@@ -231,8 +232,9 @@ fn apply_patch_tool() -> RegisteredTool {
     RegisteredTool {
         definition: ToolDefinition {
             name: "apply_patch".to_string(),
-            description: "Apply a Codex *** Begin Patch envelope to files under the execution folder."
-                .to_string(),
+            description:
+                "Apply a Codex *** Begin Patch envelope to files under the execution folder."
+                    .to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "additionalProperties": false,

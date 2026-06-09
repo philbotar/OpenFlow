@@ -33,4 +33,6 @@ pub enum BackendError {
     WrongApprovalId { expected: String, received: String },
     #[error("workflow run channel closed")]
     RunChannelClosed,
+    #[error("file edit preview failed: {0}")]
+    PreviewFailed(String),
 }

@@ -304,6 +304,7 @@ function makeAwaitingRunState(workflow: Workflow): WorkflowRunState {
     },
     runTrace: [],
     outputs: {},
+    changedFiles: [],
   };
 }
 

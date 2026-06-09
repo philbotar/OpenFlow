@@ -4,9 +4,9 @@ use crate::conversation::AgentTranscriptItem;
 use crate::execution::RunError;
 use crate::graph::{Node, NodeId, Workflow};
 use crate::ports::AgentRequest;
-use crate::tools::ToolDefinition;
+use crate::tools::{FileChangeRecord, ToolDefinition};
 use serde_json::{json, Value};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 /// Resolved upstream adjacency for a workflow graph.
 #[must_use]
@@ -45,6 +45,51 @@ pub fn workflow_system_prompt(workflow: &Workflow, node: &Node) -> String {
     merge_shared_context(workflow, &node.agent.system_prompt)
 }
 
+/// Collect file-change records from all transitive upstream nodes (deduped by path, latest timestamp wins).
+#[must_use]
+pub fn upstream_changed_files(
+    node_id: &str,
+    upstream_by_node: &HashMap<NodeId, Vec<NodeId>>,
+    changed_files_by_node: &BTreeMap<NodeId, Vec<FileChangeRecord>>,
+) -> Vec<FileChangeRecord> {
+    let mut by_path: BTreeMap<String, FileChangeRecord> = BTreeMap::new();
+    for upstream_id in transitive_upstream_ids(node_id, upstream_by_node) {
+        if let Some(records) = changed_files_by_node.get(&upstream_id) {
+            for record in records {
+                by_path
+                    .entry(record.path.clone())
+                    .and_modify(|existing| {
+                        if record.timestamp_ms >= existing.timestamp_ms {
+                            *existing = record.clone();
+                        }
+                    })
+                    .or_insert_with(|| record.clone());
+            }
+        }
+    }
+    by_path.into_values().collect()
+}
+
+fn transitive_upstream_ids(
+    node_id: &str,
+    upstream_by_node: &HashMap<NodeId, Vec<NodeId>>,
+) -> Vec<NodeId> {
+    let mut visited = BTreeSet::new();
+    let mut stack: Vec<NodeId> = upstream_by_node.get(node_id).cloned().unwrap_or_default();
+    let mut collected = Vec::new();
+    while let Some(id) = stack.pop() {
+        if !visited.insert(id.clone()) {
+            continue;
+        }
+        collected.push(id.clone());
+        if let Some(parents) = upstream_by_node.get(&id) {
+            stack.extend(parents.iter().cloned());
+        }
+    }
+    collected.sort();
+    collected
+}
+
 /// Build the JSON input payload for a node from upstream outputs and optional entrypoint text.
 #[must_use]
 pub fn build_node_input(
@@ -52,6 +97,7 @@ pub fn build_node_input(
     upstream_by_node: &HashMap<NodeId, Vec<NodeId>>,
     outputs_by_node: &BTreeMap<NodeId, Value>,
     entrypoint_text: Option<&str>,
+    changed_files_by_node: &BTreeMap<NodeId, Vec<FileChangeRecord>>,
 ) -> Value {
     let upstream = upstream_by_node
         .get(node_id)
@@ -66,19 +112,26 @@ pub fn build_node_input(
             })
         })
         .collect::<Vec<_>>();
+    let changed_files = upstream_changed_files(node_id, upstream_by_node, changed_files_by_node);
 
     if upstream.is_empty() {
         if let Some(text) = entrypoint_text.filter(|text| !text.trim().is_empty()) {
-            return json!({
+            let mut payload = json!({
                 "entrypoint": { "text": text },
                 "upstream": []
             });
+            if !changed_files.is_empty() {
+                payload["changed_files"] = json!(changed_files);
+            }
+            return payload;
         }
     }
 
-    json!({
-        "upstream": upstream
-    })
+    let mut payload = json!({ "upstream": upstream });
+    if !changed_files.is_empty() {
+        payload["changed_files"] = json!(changed_files);
+    }
+    payload
 }
 
 /// Snapshot of runtime state needed to build an [`AgentRequest`].
@@ -86,6 +139,7 @@ pub struct NodeInvocationContext<'a> {
     pub workflow: &'a Workflow,
     pub upstream_map: &'a HashMap<NodeId, Vec<NodeId>>,
     pub outputs: &'a BTreeMap<NodeId, Value>,
+    pub changed_files_by_node: &'a BTreeMap<NodeId, Vec<FileChangeRecord>>,
     pub entrypoint_text: Option<&'a str>,
     pub transcript: &'a [AgentTranscriptItem],
     pub available_tools: &'a [ToolDefinition],
@@ -115,7 +169,13 @@ pub fn build_agent_request(
         model: node.agent.model.clone(),
         system_prompt: workflow_system_prompt(ctx.workflow, node),
         task_prompt: node.agent.task_prompt.clone(),
-        input: build_node_input(&node.id, ctx.upstream_map, ctx.outputs, ctx.entrypoint_text),
+        input: build_node_input(
+            &node.id,
+            ctx.upstream_map,
+            ctx.outputs,
+            ctx.entrypoint_text,
+            ctx.changed_files_by_node,
+        ),
         output_schema: node.agent.output_schema.clone(),
         tool_config: node.agent.tools.clone(),
         available_tools: ctx.available_tools.to_vec(),
@@ -136,6 +196,7 @@ mod tests {
             &HashMap::from([(NodeId("idea".to_string()), Vec::new())]),
             &BTreeMap::new(),
             Some("   "),
+            &BTreeMap::new(),
         );
         assert_eq!(input, json!({"upstream": []}));
     }
@@ -165,7 +226,7 @@ mod tests {
         outputs.insert(NodeId("alpha".into()), json!({"summary": "from alpha"}));
         outputs.insert(NodeId("beta".into()), json!({"summary": "from beta"}));
 
-        let input = build_node_input("join", &upstream_map, &outputs, None);
+        let input = build_node_input("join", &upstream_map, &outputs, None, &BTreeMap::new());
         assert_eq!(
             input,
             json!({
@@ -175,5 +236,72 @@ mod tests {
                 ]
             })
         );
+    }
+
+    #[test]
+    fn downstream_input_includes_upstream_changed_files() {
+        let upstream_map =
+            HashMap::from([(NodeId("join".to_string()), vec![NodeId("alpha".into())])]);
+        let mut outputs = BTreeMap::new();
+        outputs.insert(NodeId("alpha".into()), json!({"summary": "done"}));
+        let mut changed_files_by_node = BTreeMap::new();
+        changed_files_by_node.insert(
+            NodeId("alpha".into()),
+            vec![FileChangeRecord {
+                path: "src/main.rs".to_string(),
+                op: crate::tools::FileChangeOp::Update,
+                rename_to: None,
+                diff_summary: Some("+1|fn main()".to_string()),
+                timestamp_ms: 1,
+            }],
+        );
+
+        let input = build_node_input(
+            "join",
+            &upstream_map,
+            &outputs,
+            None,
+            &changed_files_by_node,
+        );
+
+        assert_eq!(
+            input["changed_files"],
+            json!([{
+                "path": "src/main.rs",
+                "op": "update",
+                "diffSummary": "+1|fn main()",
+                "timestampMs": 1
+            }])
+        );
+    }
+
+    #[test]
+    fn transitive_upstream_changed_files_reach_multi_hop_downstream() {
+        let upstream_map = HashMap::from([
+            (NodeId("beta".to_string()), vec![NodeId("alpha".into())]),
+            (NodeId("gamma".to_string()), vec![NodeId("beta".into())]),
+        ]);
+        let mut changed_files_by_node = BTreeMap::new();
+        changed_files_by_node.insert(
+            NodeId("alpha".into()),
+            vec![FileChangeRecord {
+                path: "src/main.rs".to_string(),
+                op: crate::tools::FileChangeOp::Update,
+                rename_to: None,
+                diff_summary: None,
+                timestamp_ms: 1,
+            }],
+        );
+
+        let input = build_node_input(
+            "gamma",
+            &upstream_map,
+            &BTreeMap::new(),
+            None,
+            &changed_files_by_node,
+        );
+
+        assert_eq!(input["changed_files"].as_array().map(Vec::len), Some(1));
+        assert_eq!(input["changed_files"][0]["path"], "src/main.rs");
     }
 }

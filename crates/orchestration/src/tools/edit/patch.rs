@@ -9,14 +9,14 @@ use thiserror::Error;
 use super::auto_generated::assert_editable_file;
 use super::diff::{normalize_create_content, parse_diff_hunks, DiffHunk};
 use super::errors::ApplyPatchError;
-use super::path::resolve_writable;
 use super::normalize::{
     adjust_indentation, convert_leading_tabs_to_spaces, count_leading_whitespace,
-    detect_line_ending, get_leading_whitespace, leading_whitespace_byte_len,
-    normalize_to_lf, restore_line_endings, strip_bom, BomResult,
+    detect_line_ending, get_leading_whitespace, leading_whitespace_byte_len, normalize_to_lf,
+    restore_line_endings, strip_bom, BomResult,
 };
+use super::path::resolve_writable;
 use super::replace::{
-    find_match, FindMatchOptions, DOMINANT_FUZZY_MIN_CONFIDENCE, DEFAULT_FUZZY_THRESHOLD,
+    find_match, FindMatchOptions, DEFAULT_FUZZY_THRESHOLD, DOMINANT_FUZZY_MIN_CONFIDENCE,
 };
 use super::replace_sequence::{
     find_closest_sequence_match, find_context_line, seek_sequence, ContextMatchStrategy,
@@ -520,7 +520,10 @@ fn trim_common_context(old_lines: &[String], new_lines: &[String]) -> Option<Hun
     })
 }
 
-fn collapse_consecutive_shared_lines(old_lines: &[String], new_lines: &[String]) -> Option<HunkVariant> {
+fn collapse_consecutive_shared_lines(
+    old_lines: &[String],
+    new_lines: &[String],
+) -> Option<HunkVariant> {
     let shared: HashSet<&str> = old_lines
         .iter()
         .filter(|line| new_lines.contains(line))
@@ -588,7 +591,11 @@ fn collapse_repeated_blocks(old_lines: &[String], new_lines: &[String]) -> Optio
                 i += 1;
             }
         }
-        if changed { output } else { lines.to_vec() }
+        if changed {
+            output
+        } else {
+            lines.to_vec()
+        }
     };
 
     let collapsed_old = collapse(old_lines);
@@ -633,20 +640,38 @@ fn build_fallback_variants(hunk: &DiffHunk) -> Vec<HunkVariant> {
 
     let trimmed = trim_common_context(&base.old_lines, &base.new_lines);
     let deduped = collapse_consecutive_shared_lines(
-        trimmed.as_ref().map(|v| v.old_lines.as_slice()).unwrap_or(&base.old_lines),
-        trimmed.as_ref().map(|v| v.new_lines.as_slice()).unwrap_or(&base.new_lines),
+        trimmed
+            .as_ref()
+            .map(|v| v.old_lines.as_slice())
+            .unwrap_or(&base.old_lines),
+        trimmed
+            .as_ref()
+            .map(|v| v.new_lines.as_slice())
+            .unwrap_or(&base.new_lines),
     );
     let collapsed = collapse_repeated_blocks(
         deduped.as_ref().map(|v| v.old_lines.as_slice()).unwrap_or(
-            trimmed.as_ref().map(|v| v.old_lines.as_slice()).unwrap_or(&base.old_lines),
+            trimmed
+                .as_ref()
+                .map(|v| v.old_lines.as_slice())
+                .unwrap_or(&base.old_lines),
         ),
         deduped.as_ref().map(|v| v.new_lines.as_slice()).unwrap_or(
-            trimmed.as_ref().map(|v| v.new_lines.as_slice()).unwrap_or(&base.new_lines),
+            trimmed
+                .as_ref()
+                .map(|v| v.new_lines.as_slice())
+                .unwrap_or(&base.new_lines),
         ),
     );
     let single_line = reduce_to_single_line_change(
-        trimmed.as_ref().map(|v| v.old_lines.as_slice()).unwrap_or(&base.old_lines),
-        trimmed.as_ref().map(|v| v.new_lines.as_slice()).unwrap_or(&base.new_lines),
+        trimmed
+            .as_ref()
+            .map(|v| v.old_lines.as_slice())
+            .unwrap_or(&base.old_lines),
+        trimmed
+            .as_ref()
+            .map(|v| v.new_lines.as_slice())
+            .unwrap_or(&base.new_lines),
     );
 
     let mut variants = Vec::new();
@@ -680,7 +705,10 @@ fn build_fallback_variants(hunk: &DiffHunk) -> Vec<HunkVariant> {
         .collect()
 }
 
-fn filter_fallback_variants(variants: Vec<HunkVariant>, allow_aggressive: bool) -> Vec<HunkVariant> {
+fn filter_fallback_variants(
+    variants: Vec<HunkVariant>,
+    allow_aggressive: bool,
+) -> Vec<HunkVariant> {
     if allow_aggressive {
         return variants;
     }
@@ -751,9 +779,10 @@ fn format_sequence_match_previews(
         .iter()
         .map(|index| format_sequence_match_preview(lines, *index))
         .collect();
-    let more_msg = match_count.filter(|&c| c > indices.len()).map(|c| {
-        format!(" (showing first {} of {c})", indices.len())
-    }).unwrap_or_default();
+    let more_msg = match_count
+        .filter(|&c| c > indices.len())
+        .map(|c| format!(" (showing first {} of {c})", indices.len()))
+        .unwrap_or_default();
     Some(format!("{}{}", previews.join("\n\n"), more_msg))
 }
 
@@ -900,8 +929,7 @@ fn find_hierarchical_context(
             return outer_result;
         }
         if let Some(outer_idx) = outer_result.index {
-            let inner_result =
-                find_context_line(lines, inner, outer_idx + 1, allow_fuzzy, false);
+            let inner_result = find_context_line(lines, inner, outer_idx + 1, allow_fuzzy, false);
             if inner_result.index.is_some() {
                 if inner_result.match_count.unwrap_or(0) > 1 {
                     return ContextLineResult {
@@ -1062,7 +1090,10 @@ fn attempt_sequence_fallback(
         false,
         allow_fuzzy,
     );
-    if let Some(fallback_index) = fallback.index.filter(|_| fallback.match_count.unwrap_or(1) <= 1) {
+    if let Some(fallback_index) = fallback
+        .index
+        .filter(|_| fallback.match_count.unwrap_or(1) <= 1)
+    {
         let next_index = fallback_index + 1;
         if next_index <= lines.len().saturating_sub(hunk.old_lines.len()) {
             let second = seek_sequence(lines, &hunk.old_lines, next_index, false, allow_fuzzy);
@@ -1073,7 +1104,8 @@ fn attempt_sequence_fallback(
         return Some(fallback_index);
     }
 
-    for variant in filter_fallback_variants(build_fallback_variants(hunk), allow_aggressive_fallbacks)
+    for variant in
+        filter_fallback_variants(build_fallback_variants(hunk), allow_aggressive_fallbacks)
     {
         if variant.old_lines.is_empty() {
             continue;
@@ -1141,11 +1173,14 @@ fn apply_character_match(
     if match_outcome.matched.is_none() && allow_fuzzy {
         let relaxed = fuzzy_threshold.min(CHARACTER_RELAXED_THRESHOLD);
         if relaxed < fuzzy_threshold {
-            let relaxed_outcome =
-                find_match(&normalized_content, &normalized_old_text, &FindMatchOptions {
+            let relaxed_outcome = find_match(
+                &normalized_content,
+                &normalized_old_text,
+                &FindMatchOptions {
                     allow_fuzzy: true,
                     threshold: Some(relaxed),
-                });
+                },
+            );
             if relaxed_outcome.matched.is_some() {
                 match_outcome = relaxed_outcome;
             }
@@ -1153,7 +1188,8 @@ fn apply_character_match(
     }
 
     if match_outcome.occurrences.unwrap_or(0) > 1 {
-        let previews = format_character_occurrence_previews(&normalized_content, &normalized_old_text);
+        let previews =
+            format_character_occurrence_previews(&normalized_content, &normalized_old_text);
         let more_msg = if match_outcome.occurrences.unwrap() > MAX_OCCURRENCE_PREVIEWS {
             format!(
                 " (showing first {MAX_OCCURRENCE_PREVIEWS} of {})",
@@ -1263,9 +1299,8 @@ fn compute_replacements(
         }
 
         let line_hint = hunk.old_start_line;
-        let allow_aggressive_fallbacks = hunk.change_context.is_some()
-            || line_hint.is_some()
-            || hunk.is_end_of_file;
+        let allow_aggressive_fallbacks =
+            hunk.change_context.is_some() || line_hint.is_some() || hunk.is_end_of_file;
         let fallback_variants =
             filter_fallback_variants(build_fallback_variants(hunk), allow_aggressive_fallbacks);
 
@@ -1301,7 +1336,10 @@ fn compute_replacements(
                     line_index = fallback;
                 } else if result.match_count.unwrap_or(0) > 1 {
                     let display_context = if change_context.contains('\n') {
-                        change_context.split('\n').next_back().unwrap_or(change_context)
+                        change_context
+                            .split('\n')
+                            .next_back()
+                            .unwrap_or(change_context)
                     } else {
                         change_context.as_str()
                     };
@@ -1335,10 +1373,9 @@ fn compute_replacements(
                 } else {
                     Some(change_context.trim())
                 };
-                let is_hierarchical = change_context.contains('\n')
-                    || change_context.split_whitespace().count() > 2;
-                if first_old_line
-                    .is_some_and(|l| Some(l.trim()) == final_context)
+                let is_hierarchical =
+                    change_context.contains('\n') || change_context.split_whitespace().count() > 2;
+                if first_old_line.is_some_and(|l| Some(l.trim()) == final_context)
                     || is_hierarchical
                 {
                     line_index = idx;
@@ -1392,9 +1429,7 @@ fn compute_replacements(
         );
         let mut new_slice = hunk.new_lines.clone();
 
-        if search_result.index.is_none()
-            && pattern.last().is_some_and(|l| l.is_empty())
-        {
+        if search_result.index.is_none() && pattern.last().is_some_and(|l| l.is_empty()) {
             pattern.pop();
             if new_slice.last().is_some_and(|l| l.is_empty()) {
                 new_slice.pop();
@@ -1468,10 +1503,7 @@ fn compute_replacements(
                 .filter(|line| line.trim() == trimmed)
                 .count();
             if occurrence_count > 1 {
-                let has_shared_duplicate = hunk
-                    .new_lines
-                    .iter()
-                    .any(|line| line.trim() == trimmed);
+                let has_shared_duplicate = hunk.new_lines.iter().any(|line| line.trim() == trimmed);
                 if let Some(ctx_idx) = context_index {
                     if let Some(context_match) = find_context_relative_match(
                         original_lines,
@@ -1674,21 +1706,22 @@ fn apply_hunks_to_content(
         {
             let (content, warnings) =
                 apply_character_match(original_content, path, hunk, fuzzy_threshold, allow_fuzzy)?;
-            return Ok((apply_trailing_newline_policy(&content, had_final_newline), warnings));
+            return Ok((
+                apply_trailing_newline_policy(&content, had_final_newline),
+                warnings,
+            ));
         }
     }
 
-    let mut original_lines: Vec<String> = original_content.split('\n').map(str::to_string).collect();
+    let mut original_lines: Vec<String> =
+        original_content.split('\n').map(str::to_string).collect();
     let mut stripped_trailing_empty = false;
-    if had_final_newline
-        && original_lines.last().is_some_and(|l| l.is_empty())
-    {
+    if had_final_newline && original_lines.last().is_some_and(|l| l.is_empty()) {
         original_lines.pop();
         stripped_trailing_empty = true;
     }
 
-    let (replacements, warnings) =
-        compute_replacements(&original_lines, path, hunks, allow_fuzzy)?;
+    let (replacements, warnings) = compute_replacements(&original_lines, path, hunks, allow_fuzzy)?;
     let mut new_lines = apply_replacements(&original_lines, &replacements);
 
     if stripped_trailing_empty {
@@ -1696,7 +1729,10 @@ fn apply_hunks_to_content(
     }
 
     let content = new_lines.join("\n");
-    Ok((apply_trailing_newline_policy(&content, had_final_newline), warnings))
+    Ok((
+        apply_trailing_newline_policy(&content, had_final_newline),
+        warnings,
+    ))
 }
 
 fn bytes_unchanged(pre: &[u8], post: &[u8]) -> bool {
@@ -1712,9 +1748,7 @@ fn verify_written_file(
     content_changed: bool,
 ) -> Result<(), PatchVerifyError> {
     let post_edit_bytes = fs.read_binary(written_path).map_err(|e| PatchVerifyError {
-        message: format!(
-            "edit completed but could not verify write to {relative_path}: {e}"
-        ),
+        message: format!("edit completed but could not verify write to {relative_path}: {e}"),
         relative_path: relative_path.to_string(),
         resolved_path: written_path.to_path_buf(),
     })?;
@@ -1766,10 +1800,11 @@ pub fn apply_patch_entry(
     options: &PatchOptions,
     fs: &dyn PatchFileSystem,
 ) -> Result<PatchApplyResult, PatchError> {
-    let absolute_path =
-        resolve_writable(&options.cwd, &input.path).map_err(|e| PatchError::Apply(ApplyPatchError(e.0)))?;
+    let absolute_path = resolve_writable(&options.cwd, &input.path)
+        .map_err(|e| PatchError::Apply(ApplyPatchError(e.0)))?;
     let dest_path = if let Some(rename) = &input.rename {
-        resolve_writable(&options.cwd, rename).map_err(|e| PatchError::Apply(ApplyPatchError(e.0)))?
+        resolve_writable(&options.cwd, rename)
+            .map_err(|e| PatchError::Apply(ApplyPatchError(e.0)))?
     } else {
         absolute_path.clone()
     };
@@ -1817,22 +1852,14 @@ fn apply_create(
         }
         if let Some(parent) = absolute_path.parent() {
             if !parent.as_os_str().is_empty() {
-                fs.mkdir_all(parent).map_err(|e| {
-                    PatchError::Apply(ApplyPatchError(e.to_string()))
-                })?;
+                fs.mkdir_all(parent)
+                    .map_err(|e| PatchError::Apply(ApplyPatchError(e.to_string())))?;
             }
         }
         fs.write(absolute_path, &content)
             .map_err(|e| PatchError::Apply(ApplyPatchError(e.to_string())))?;
-        verify_written_file(
-            fs,
-            absolute_path,
-            &input.path,
-            None,
-            &content,
-            true,
-        )
-        .map_err(PatchError::Verify)?;
+        verify_written_file(fs, absolute_path, &input.path, None, &content, true)
+            .map_err(PatchError::Verify)?;
     }
 
     Ok(PatchApplyResult {
@@ -1855,8 +1882,8 @@ fn apply_delete(
     absolute_path: &Path,
 ) -> Result<PatchApplyResult, PatchError> {
     guard_editable(absolute_path, &input.path)?;
-    let old_content = read_existing_patch_file(fs, absolute_path, &input.path)
-        .map_err(PatchError::Apply)?;
+    let old_content =
+        read_existing_patch_file(fs, absolute_path, &input.path).map_err(PatchError::Apply)?;
 
     if !options.dry_run {
         fs.delete(absolute_path)
@@ -1899,8 +1926,8 @@ fn apply_update(
         None
     };
 
-    let original_content = read_existing_patch_file(fs, absolute_path, &input.path)
-        .map_err(PatchError::Apply)?;
+    let original_content =
+        read_existing_patch_file(fs, absolute_path, &input.path).map_err(PatchError::Apply)?;
 
     let BomResult {
         mut bom,
@@ -1943,9 +1970,8 @@ fn apply_update(
 
             if let Some(parent) = dest_path.parent() {
                 if !parent.as_os_str().is_empty() {
-                    fs.mkdir_all(parent).map_err(|e| {
-                        PatchError::Apply(ApplyPatchError(e.to_string()))
-                    })?;
+                    fs.mkdir_all(parent)
+                        .map_err(|e| PatchError::Apply(ApplyPatchError(e.to_string())))?;
                 }
             }
             fs.write(dest_path, &final_content)

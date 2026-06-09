@@ -235,6 +235,28 @@ export interface RunReport {
   outputs: NodeRunOutput[];
 }
 
+export type FileChangeOp = "create" | "update" | "delete" | "rename";
+
+export interface FileEditPreviewEntry {
+  path: string;
+  op: FileChangeOp;
+  diff: string;
+  renameTo?: string | null;
+}
+
+export interface FileEditPreview {
+  entries: FileEditPreviewEntry[];
+  error?: string;
+}
+
+export interface FileChangeRecord {
+  path: string;
+  op: FileChangeOp;
+  renameTo?: string | null;
+  diffSummary?: string | null;
+  timestampMs: number;
+}
+
 export interface WorkflowRunState {
   active: boolean;
   awaitingNodeId: NodeId | null;
@@ -251,6 +273,7 @@ export interface WorkflowRunState {
   chatLogs: Record<NodeId, ChatMessage[]>;
   runTrace: RunTraceEntry[];
   outputs: Record<NodeId, unknown>;
+  changedFiles: FileChangeRecord[];
 }
 
 export type ProviderId = string;

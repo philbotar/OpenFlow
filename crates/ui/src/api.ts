@@ -143,6 +143,13 @@ export function stopRun() {
   return invoke<WorkflowRunState>("stop_run");
 }
 
+export function previewFileEdit(toolName: string, toolArguments: unknown) {
+  return invoke<import("./lib/types").FileEditPreview>("preview_file_edit", {
+    toolName,
+    arguments: toolArguments,
+  });
+}
+
 export function submitUserInput(nodeId: string, text: string) {
   return invoke<WorkflowRunState>("submit_user_input", { nodeId, text });
 }

@@ -57,6 +57,7 @@ pub struct WorkflowRunSnapshot {
     pub pending_approvals: Vec<domain::PendingToolApproval>,
     pub tool_calls_by_node: BTreeMap<NodeId, Vec<ToolCallSummary>>,
     pub tool_artifacts: BTreeMap<String, ToolArtifactSummary>,
+    pub changed_files: Vec<domain::FileChangeRecord>,
 }
 
 #[derive(Debug, Error)]

@@ -17,10 +17,11 @@ pub use execution::{
     advance_subagent_invoke, augment_call_subagent_tool_description, build_agent_request,
     build_node_input, build_upstream_map, handle_declare_subagents, is_subagent_runtime_builtin,
     merge_shared_context, merge_subagent_summaries, start_subagent_invoke,
-    subagent_runtime_builtin_denied, workflow_system_prompt, CallSubagentArgs, EngineInputError,
-    EnginePollResult, InteractiveEngine, NodeInvocationContext, NodeRunOutput, RunError, RunEvent,
-    RunEventKind, RunReport, RunTelemetry, SubagentInvokeSession, SubagentInvokeStep,
-    SubagentStartOutcome, WorkflowRunner, CALL_SUBAGENT_TOOL, DECLARE_SUBAGENTS_TOOL,
+    subagent_runtime_builtin_denied, upstream_changed_files, workflow_system_prompt,
+    CallSubagentArgs, EngineInputError, EnginePollResult, InteractiveEngine, NodeInvocationContext,
+    NodeRunOutput, RunError, RunEvent, RunEventKind, RunReport, RunTelemetry,
+    SubagentInvokeSession, SubagentInvokeStep, SubagentStartOutcome, WorkflowRunner,
+    CALL_SUBAGENT_TOOL, DECLARE_SUBAGENTS_TOOL,
 };
 pub use graph::{
     build_predefined_subagent_summaries, execution_layers, resolve_callable_agent_snapshots,
@@ -34,9 +35,9 @@ pub use ports::{
 };
 pub use template::{default_templates, Template, TemplateStore, TemplateStoreError};
 pub use tools::{
-    override_policy_for_call, requires_approval, tool_tier_for_call, ApprovalMode, NodeToolConfig,
-    PendingToolApproval, SubagentDeclaration, SubagentStatus, SubagentSummary, ToolCall,
-    ToolCallStatus, ToolCatalogSelection, ToolConcurrency, ToolDecision, ToolDefinition,
-    ToolOutputMeta, ToolPolicy, ToolPolicyOverride, ToolRef, ToolResult, ToolTier, ToolTruncation,
-    ToolTruncationStrategy,
+    override_policy_for_call, requires_approval, summarize_diff, tool_tier_for_call, ApprovalMode,
+    FileChangeOp, FileChangeRecord, NodeToolConfig, PendingToolApproval, SubagentDeclaration,
+    SubagentStatus, SubagentSummary, ToolCall, ToolCallStatus, ToolCatalogSelection,
+    ToolConcurrency, ToolDecision, ToolDefinition, ToolOutputMeta, ToolPolicy, ToolPolicyOverride,
+    ToolRef, ToolResult, ToolTier, ToolTruncation, ToolTruncationStrategy,
 };

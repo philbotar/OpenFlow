@@ -4,8 +4,9 @@ use domain::{
     filter_tool_turn_assistant_message, handle_declare_subagents, is_subagent_runtime_builtin,
     start_subagent_invoke, subagent_runtime_builtin_denied, AgentNeedUserInput, AgentRequest,
     AgentToolCallBatch, AgentTurnOutcome, AiPort, CallableAgent, ChatRole, EnginePollResult,
-    InteractiveEngine, NodeId, RunTelemetry, SubagentInvokeStep, SubagentStartOutcome,
-    SubagentSummary, ToolCall, Workflow, CALL_SUBAGENT_TOOL, DECLARE_SUBAGENTS_TOOL,
+    FileChangeRecord, InteractiveEngine, NodeId, RunTelemetry, SubagentInvokeStep,
+    SubagentStartOutcome, SubagentSummary, ToolCall, Workflow, CALL_SUBAGENT_TOOL,
+    DECLARE_SUBAGENTS_TOOL,
 };
 use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
@@ -260,6 +261,7 @@ pub(super) async fn drive_interactive_workflow<A>(
                         let Some(subagent_result) = run_call_subagent_tool(
                             &ai,
                             &tool_runner,
+                            &mut engine,
                             &event_tx,
                             SubagentCallParams {
                                 workflow: &workflow,
@@ -327,12 +329,18 @@ pub(super) async fn drive_interactive_workflow<A>(
                                     size_bytes: artifact.size_bytes,
                                 });
                             }
+                            record_tool_file_changes(
+                                &mut engine,
+                                &event_tx,
+                                &node_id,
+                                &record.file_changes,
+                            );
                             let _ = event_tx.send(ExecutionEvent::ToolCompleted {
                                 node_id: node_id.clone(),
                                 tool_call_id: record.result.tool_call_id.clone(),
                                 tool_name: record.result.tool_name.clone(),
                                 content: record.result.content.clone(),
-                                is_error: false,
+                                is_error: record.result.is_error,
                                 output_meta: record.result.output_meta.clone(),
                                 artifact_ids: record.result.artifact_ids.clone(),
                             });
@@ -426,9 +434,28 @@ struct SubagentCallParams<'a> {
     agent_snapshots: &'a BTreeMap<String, CallableAgent>,
 }
 
+fn record_tool_file_changes(
+    engine: &mut InteractiveEngine,
+    event_tx: &UnboundedSender<ExecutionEvent>,
+    node_id: &NodeId,
+    file_changes: &[FileChangeRecord],
+) {
+    if file_changes.is_empty() {
+        return;
+    }
+    engine.record_file_changes(node_id, file_changes.to_vec());
+    for change in file_changes {
+        let _ = event_tx.send(ExecutionEvent::FileChanged {
+            node_id: node_id.clone(),
+            record: change.clone(),
+        });
+    }
+}
+
 async fn run_call_subagent_tool<A: AiPort>(
     ai: &A,
     tool_runner: &ToolRunner,
+    engine: &mut InteractiveEngine,
     event_tx: &UnboundedSender<ExecutionEvent>,
     params: SubagentCallParams<'_>,
     cancel_token: &CancellationToken,
@@ -495,8 +522,16 @@ async fn run_call_subagent_tool<A: AiPort>(
     .await?;
     loop {
         let tool_results = if let Ok(AgentTurnOutcome::ToolCalls(batch)) = &outcome {
-            execute_subagent_tool_batch(tool_runner, batch, cancel_token, event_tx, aborted_emitted)
-                .await?
+            execute_subagent_tool_batch(
+                tool_runner,
+                engine,
+                node_id,
+                batch,
+                cancel_token,
+                event_tx,
+                aborted_emitted,
+            )
+            .await?
         } else {
             Vec::new()
         };
@@ -536,6 +571,8 @@ async fn run_call_subagent_tool<A: AiPort>(
 
 async fn execute_subagent_tool_batch(
     tool_runner: &ToolRunner,
+    engine: &mut InteractiveEngine,
+    node_id: &NodeId,
     batch: &AgentToolCallBatch,
     cancel_token: &CancellationToken,
     event_tx: &UnboundedSender<ExecutionEvent>,
@@ -556,7 +593,10 @@ async fn execute_subagent_tool_batch(
         )
         .await
         {
-            Some(Ok(record)) => results.push(record.result),
+            Some(Ok(record)) => {
+                record_tool_file_changes(engine, event_tx, node_id, &record.file_changes);
+                results.push(record.result);
+            }
             Some(Err(err)) => results.push(domain::ToolResult {
                 tool_call_id: tool_call.id.clone(),
                 tool_name: tool_call.name.clone(),

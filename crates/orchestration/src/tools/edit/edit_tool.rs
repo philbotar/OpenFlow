@@ -5,9 +5,12 @@ use std::path::PathBuf;
 use serde::Deserialize;
 use serde_json::Value;
 
+use domain::summarize_diff;
+
 use super::diff::{generate_diff_string, replace_text, ReplaceOptions};
 use super::errors::EditMatchError;
 use super::io::{EditIo, EditIoError};
+use super::ledger::FileChangeLedger;
 use super::replace::{find_match, FindMatchOptions, DEFAULT_FUZZY_THRESHOLD};
 use crate::tools::errors::ToolError;
 
@@ -25,14 +28,20 @@ struct EditEntry {
     all: bool,
 }
 
-pub fn execute_edit(cwd: PathBuf, args: Value) -> Result<String, ToolError> {
+pub fn execute_edit(
+    cwd: PathBuf,
+    args: Value,
+    ledger: FileChangeLedger,
+) -> Result<String, ToolError> {
     let args: EditArgs = serde_json::from_value(args)
         .map_err(|error| ToolError::Failed(format!("invalid edit args: {error}")))?;
     if args.edits.is_empty() {
-        return Err(ToolError::Failed("edits must contain at least one entry".to_string()));
+        return Err(ToolError::Failed(
+            "edits must contain at least one entry".to_string(),
+        ));
     }
 
-    let io = EditIo::new(cwd);
+    let io = EditIo::new(cwd).with_ledger(ledger);
     let original = io.read_text(&args.path).map_err(map_io_error)?;
     let mut content = original.clone();
     let options = ReplaceOptions {
@@ -87,8 +96,10 @@ pub fn execute_edit(cwd: PathBuf, args: Value) -> Result<String, ToolError> {
         )));
     }
 
-    io.write_text(&args.path, &content).map_err(map_io_error)?;
     let diff = generate_diff_string(&original, &content, 2);
+    let diff_summary = summarize_diff(&diff.diff, 8);
+    io.write_text(&args.path, &content, Some(diff_summary))
+        .map_err(map_io_error)?;
     let summary = if total_replacements > 1 {
         format!(
             "Successfully replaced {total_replacements} occurrences in {}.",

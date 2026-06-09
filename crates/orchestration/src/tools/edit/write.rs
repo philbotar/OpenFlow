@@ -5,8 +5,11 @@ use std::path::PathBuf;
 use serde::Deserialize;
 use serde_json::Value;
 
+use domain::summarize_diff;
+
 use super::diff::generate_diff_string;
 use super::io::{EditIo, EditIoError};
+use super::ledger::FileChangeLedger;
 use crate::tools::errors::ToolError;
 
 #[derive(Debug, Deserialize)]
@@ -15,14 +18,16 @@ struct WriteArgs {
     content: String,
 }
 
-pub fn execute_write(cwd: PathBuf, args: Value) -> Result<String, ToolError> {
+pub fn execute_write(
+    cwd: PathBuf,
+    args: Value,
+    ledger: FileChangeLedger,
+) -> Result<String, ToolError> {
     let args: WriteArgs = serde_json::from_value(args)
         .map_err(|error| ToolError::Failed(format!("invalid write args: {error}")))?;
-    let io = EditIo::new(cwd);
+    let io = EditIo::new(cwd).with_ledger(ledger);
 
-    let existed = io
-        .exists(&args.path)
-        .map_err(map_io_error)?;
+    let existed = io.exists(&args.path).map_err(map_io_error)?;
 
     if existed {
         let old_content = io.read_text(&args.path).map_err(map_io_error)?;
@@ -35,15 +40,29 @@ pub fn execute_write(cwd: PathBuf, args: Value) -> Result<String, ToolError> {
                 args.path
             )));
         }
-        io.write_text(&args.path, &args.content)
-            .map_err(map_io_error)?;
         let diff = generate_diff_string(&old_content, &new_content, 2);
+        let diff_summary = summarize_diff(&diff.diff, 8);
+        io.write_text(&args.path, &args.content, Some(diff_summary))
+            .map_err(map_io_error)?;
         return Ok(format!("Updated {}\n\n{}", args.path, diff.diff));
     }
 
-    io.write_text_create(&args.path, &args.content)
+    write_create_with_summary(&io, &args.path, &args.content)
+}
+
+fn write_create_with_summary(io: &EditIo, path: &str, content: &str) -> Result<String, ToolError> {
+    let mut payload = content.to_string();
+    if !payload.ends_with('\n') {
+        payload.push('\n');
+    }
+    let normalized = io
+        .preview_text_after_write(path, &payload)
         .map_err(map_io_error)?;
-    Ok(format!("Created {}", args.path))
+    let diff = generate_diff_string("", &normalized, 2);
+    let diff_summary = summarize_diff(&diff.diff, 8);
+    io.write_text(path, &payload, Some(diff_summary))
+        .map_err(map_io_error)?;
+    Ok(format!("Created {path}\n\n{}", diff.diff))
 }
 
 fn map_io_error(error: EditIoError) -> ToolError {

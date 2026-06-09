@@ -12,8 +12,8 @@ use crate::ports::{
     AgentTurnSuccess,
 };
 use crate::tools::{
-    override_policy_for_call, requires_approval, tool_tier_for_call, ApprovalMode, ToolCall,
-    ToolDecision, ToolResult,
+    override_policy_for_call, requires_approval, tool_tier_for_call, ApprovalMode,
+    FileChangeRecord, ToolCall, ToolDecision, ToolResult,
 };
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -83,6 +83,7 @@ pub struct InteractiveEngine {
     layer_idx: usize,
     node_idx: usize,
     outputs: BTreeMap<NodeId, Value>,
+    changed_files_by_node: BTreeMap<NodeId, Vec<FileChangeRecord>>,
     transcripts: BTreeMap<NodeId, Vec<AgentTranscriptItem>>,
     events: Vec<RunEvent>,
     queued_nodes: BTreeSet<NodeId>,
@@ -121,6 +122,7 @@ impl InteractiveEngine {
             layer_idx: 0,
             node_idx: 0,
             outputs: BTreeMap::new(),
+            changed_files_by_node: BTreeMap::new(),
             transcripts: BTreeMap::new(),
             events: Vec::new(),
             queued_nodes: BTreeSet::new(),
@@ -468,6 +470,16 @@ impl InteractiveEngine {
         Ok(())
     }
 
+    pub fn record_file_changes(&mut self, node_id: &NodeId, records: Vec<FileChangeRecord>) {
+        if records.is_empty() {
+            return;
+        }
+        self.changed_files_by_node
+            .entry(node_id.clone())
+            .or_default()
+            .extend(records);
+    }
+
     /// # Errors
     /// Returns an error if no tool calls are pending or the wrong node id is provided.
     pub fn on_tool_results(
@@ -573,6 +585,7 @@ impl InteractiveEngine {
             workflow: &self.workflow,
             upstream_map: &self.upstream_map,
             outputs: &self.outputs,
+            changed_files_by_node: &self.changed_files_by_node,
             entrypoint_text: self.entrypoint_text.as_deref(),
             transcript: self.transcript(&node.id),
             available_tools: &[],

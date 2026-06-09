@@ -25,7 +25,8 @@ use domain::{Node, Workflow};
 use tokio::sync::mpsc::UnboundedReceiver;
 
 pub use crate::api::{
-    AgentDefinitionSummary, ProviderReadiness, WorkflowListItem, WorkflowValidationSummary,
+    AgentDefinitionSummary, FileEditPreview, ProviderReadiness, WorkflowListItem,
+    WorkflowValidationSummary,
 };
 pub use crate::error::BackendError;
 
@@ -271,6 +272,14 @@ impl AppBackend {
 
     pub async fn get_run_state(&self) -> Option<WorkflowRunState> {
         self.runs.get_run_state().await
+    }
+
+    pub async fn preview_file_edit(
+        &self,
+        tool_name: String,
+        arguments: serde_json::Value,
+    ) -> Result<FileEditPreview, BackendError> {
+        self.runs.preview_file_edit(tool_name, arguments).await
     }
 
     pub async fn clear_run_trace(&self) -> Result<Option<WorkflowRunState>, BackendError> {

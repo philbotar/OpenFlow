@@ -2,7 +2,8 @@
 
 use orchestration::agent_store::AgentDefinition;
 use orchestration::backend::{
-    AppBackend, BackendError, ProviderReadiness, WorkflowListItem, WorkflowValidationSummary,
+    AppBackend, BackendError, FileEditPreview, ProviderReadiness, WorkflowListItem,
+    WorkflowValidationSummary,
 };
 use orchestration::settings_store::AppSettings;
 use orchestration::skill_store::SkillSummary;
@@ -271,6 +272,16 @@ async fn start_run(
     Ok(initial_state)
 }
 
+/// Tauri command: Preview write-tier file edits before approval.
+#[tauri::command]
+async fn preview_file_edit(
+    backend: tauri::State<'_, AppBackend>,
+    tool_name: String,
+    arguments: serde_json::Value,
+) -> Result<FileEditPreview, CommandError> {
+    Ok(backend.preview_file_edit(tool_name, arguments).await?)
+}
+
 /// Tauri command: Stop the active workflow run.
 #[tauri::command]
 async fn stop_run(
@@ -406,6 +417,7 @@ pub fn run() {
             validate_workflow,
             create_agent_node,
             start_run,
+            preview_file_edit,
             stop_run,
             submit_user_input,
             submit_tool_approval,

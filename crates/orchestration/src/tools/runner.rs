@@ -11,7 +11,7 @@
 use crate::tools::errors::ToolError;
 use crate::tools::output::{ArtifactStore, ToolArtifactRecord};
 use crate::tools::registry::{BuiltinToolKind, ToolRegistry, ToolRegistryError};
-use domain::{ToolCall, ToolResult};
+use domain::{FileChangeRecord, ToolCall, ToolResult};
 use regex::{Regex, RegexBuilder};
 use reqwest::Client;
 use serde::Deserialize;
@@ -30,6 +30,7 @@ static LINE_SELECTOR: LazyLock<Regex> =
 pub struct ToolExecutionRecord {
     pub result: ToolResult,
     pub artifact: Option<ToolArtifactRecord>,
+    pub file_changes: Vec<FileChangeRecord>,
 }
 
 #[derive(Debug)]
@@ -39,6 +40,11 @@ pub struct ToolRunner {
     cwd: PathBuf,
     artifacts: ArtifactStore,
     cancel_token: CancellationToken,
+}
+
+struct BlockingRunOutcome {
+    output: Result<String, ToolError>,
+    file_changes: Vec<FileChangeRecord>,
 }
 
 #[derive(Debug, Error)]
@@ -79,16 +85,26 @@ impl ToolRunner {
 
     pub async fn execute(&self, call: ToolCall) -> Result<ToolExecutionRecord, ToolRunnerError> {
         let registered = self.registry.get(&call.name)?;
-        let raw_output = match registered.kind {
-            BuiltinToolKind::Read => self.read(call.arguments.clone()).await?,
-            BuiltinToolKind::AstGrep => self.ast_grep(call.arguments.clone()).await?,
+        let (raw_output, file_changes) = match registered.kind {
+            BuiltinToolKind::Read => (self.read(call.arguments.clone()).await?, Vec::new()),
+            BuiltinToolKind::AstGrep => (self.ast_grep(call.arguments.clone()).await?, Vec::new()),
             BuiltinToolKind::Search
             | BuiltinToolKind::Find
             | BuiltinToolKind::Write
             | BuiltinToolKind::Edit
             | BuiltinToolKind::ApplyPatch => {
-                self.run_blocking(registered.kind, call.arguments.clone())
-                    .await?
+                let outcome = self
+                    .run_blocking(registered.kind, call.arguments.clone())
+                    .await?;
+                return match outcome.output {
+                    Ok(raw) => self.finalize_record(call, raw, outcome.file_changes),
+                    Err(error) if outcome.file_changes.is_empty() => {
+                        Err(ToolRunnerError::Tool(error))
+                    }
+                    Err(error) => {
+                        Ok(self.failed_record(call, error.to_string(), outcome.file_changes))
+                    }
+                };
             }
             BuiltinToolKind::DeclareSubagents | BuiltinToolKind::CallSubagent => {
                 return Err(ToolRunnerError::InvalidArguments(format!(
@@ -98,7 +114,7 @@ impl ToolRunner {
             }
         };
 
-        self.finalize_record(call, raw_output)
+        self.finalize_record(call, raw_output, file_changes)
     }
 
     async fn ast_grep(&self, args: Value) -> Result<String, ToolRunnerError> {
@@ -170,11 +186,12 @@ impl ToolRunner {
         &self,
         kind: BuiltinToolKind,
         args: Value,
-    ) -> Result<String, ToolRunnerError> {
+    ) -> Result<BlockingRunOutcome, ToolRunnerError> {
         let cwd = self.cwd.clone();
         tokio::task::spawn_blocking(move || {
-            let ops = BlockingToolOps::new(cwd);
-            match kind {
+            let ledger = crate::tools::edit::ledger::FileChangeLedger::new();
+            let ops = BlockingToolOps::new(cwd, ledger.clone());
+            let output = match kind {
                 BuiltinToolKind::Search => ops.search(args),
                 BuiltinToolKind::Find => ops.find(args),
                 BuiltinToolKind::Write => ops.write(args),
@@ -186,17 +203,21 @@ impl ToolRunner {
                 _ => Err(ToolError::Failed(
                     "blocking runner received a non-blocking tool".to_string(),
                 )),
+            };
+            BlockingRunOutcome {
+                output,
+                file_changes: ledger.take(),
             }
         })
         .await
-        .map_err(|error| ToolRunnerError::BlockingTask(error.to_string()))?
-        .map_err(ToolRunnerError::from)
+        .map_err(|error| ToolRunnerError::BlockingTask(error.to_string()))
     }
 
     fn finalize_record(
         &self,
         call: ToolCall,
         raw_output: String,
+        file_changes: Vec<FileChangeRecord>,
     ) -> Result<ToolExecutionRecord, ToolRunnerError> {
         let (content, artifact, output_meta) = self.artifacts.store_text(&call.name, raw_output)?;
         Ok(ToolExecutionRecord {
@@ -212,10 +233,20 @@ impl ToolRunner {
                 output_meta,
             },
             artifact,
+            file_changes,
         })
     }
 
     pub fn denied(&self, call: ToolCall, reason: impl Into<String>) -> ToolExecutionRecord {
+        self.failed_record(call, reason, Vec::new())
+    }
+
+    fn failed_record(
+        &self,
+        call: ToolCall,
+        reason: impl Into<String>,
+        file_changes: Vec<FileChangeRecord>,
+    ) -> ToolExecutionRecord {
         ToolExecutionRecord {
             result: ToolResult {
                 tool_call_id: call.id,
@@ -226,6 +257,7 @@ impl ToolRunner {
                 output_meta: None,
             },
             artifact: None,
+            file_changes,
         }
     }
 
@@ -245,10 +277,13 @@ impl ToolRunner {
         }
 
         let cwd = self.cwd.clone();
-        tokio::task::spawn_blocking(move || BlockingToolOps::new(cwd).read_local(&args.path))
-            .await
-            .map_err(|error| ToolRunnerError::BlockingTask(error.to_string()))?
-            .map_err(ToolRunnerError::from)
+        tokio::task::spawn_blocking(move || {
+            BlockingToolOps::new(cwd, crate::tools::edit::ledger::FileChangeLedger::new())
+                .read_local(&args.path)
+        })
+        .await
+        .map_err(|error| ToolRunnerError::BlockingTask(error.to_string()))?
+        .map_err(ToolRunnerError::from)
     }
 
     async fn read_url(&self, url: &str) -> Result<String, ToolError> {
@@ -274,11 +309,12 @@ impl ToolRunner {
 
 struct BlockingToolOps {
     cwd: PathBuf,
+    ledger: crate::tools::edit::ledger::FileChangeLedger,
 }
 
 impl BlockingToolOps {
-    fn new(cwd: PathBuf) -> Self {
-        Self { cwd }
+    fn new(cwd: PathBuf, ledger: crate::tools::edit::ledger::FileChangeLedger) -> Self {
+        Self { cwd, ledger }
     }
 
     fn read_local(&self, path: &str) -> Result<String, ToolError> {
@@ -353,15 +389,19 @@ impl BlockingToolOps {
     }
 
     fn write(&self, args: Value) -> Result<String, ToolError> {
-        crate::tools::edit::write::execute_write(self.cwd.clone(), args)
+        crate::tools::edit::write::execute_write(self.cwd.clone(), args, self.ledger.clone())
     }
 
     fn edit(&self, args: Value) -> Result<String, ToolError> {
-        crate::tools::edit::edit_tool::execute_edit(self.cwd.clone(), args)
+        crate::tools::edit::edit_tool::execute_edit(self.cwd.clone(), args, self.ledger.clone())
     }
 
     fn apply_patch(&self, args: Value) -> Result<String, ToolError> {
-        crate::tools::edit::apply_patch_tool::execute_apply_patch(self.cwd.clone(), args)
+        crate::tools::edit::apply_patch_tool::execute_apply_patch(
+            self.cwd.clone(),
+            args,
+            self.ledger.clone(),
+        )
     }
 
     fn find(&self, args: Value) -> Result<String, ToolError> {
@@ -565,6 +605,10 @@ mod tests {
             fs::read_to_string(dir.path().join("new.txt")).unwrap(),
             "hello\n"
         );
+        assert_eq!(record.file_changes.len(), 1);
+        assert_eq!(record.file_changes[0].path, "new.txt");
+        assert_eq!(record.file_changes[0].op, domain::FileChangeOp::Create);
+        assert!(record.file_changes[0].diff_summary.is_some());
     }
 
     #[tokio::test]
@@ -589,6 +633,9 @@ mod tests {
             fs::read_to_string(dir.path().join("note.txt")).unwrap(),
             "alpha\ngamma\n"
         );
+        assert_eq!(record.file_changes.len(), 1);
+        assert_eq!(record.file_changes[0].path, "note.txt");
+        assert_eq!(record.file_changes[0].op, domain::FileChangeOp::Update);
     }
 
     #[tokio::test]
@@ -604,9 +651,7 @@ mod tests {
             })
             .await
             .unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("path escapes execution folder"));
+        assert!(error.to_string().contains("path escapes execution folder"));
     }
 
     #[tokio::test]
@@ -647,9 +692,7 @@ mod tests {
             })
             .await
             .unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("path escapes execution folder"));
+        assert!(error.to_string().contains("path escapes execution folder"));
     }
 
     #[tokio::test]
@@ -671,5 +714,46 @@ mod tests {
             fs::read_to_string(dir.path().join("new.txt")).unwrap(),
             "hello\n"
         );
+        assert_eq!(record.file_changes.len(), 1);
+        assert_eq!(record.file_changes[0].path, "new.txt");
+        assert_eq!(record.file_changes[0].op, domain::FileChangeOp::Create);
+        assert!(record.file_changes[0].diff_summary.is_some());
+    }
+
+    #[tokio::test]
+    async fn partial_apply_patch_returns_file_changes_without_ledger_leak() {
+        let dir = tempfile::tempdir().unwrap();
+        let runner = runner(dir.path());
+        let patch = "*** Begin Patch\n*** Add File: good.txt\n+hello\n*** Update File: missing.txt\n@ old\n-old\n+new\n*** End Patch\n";
+        let record = runner
+            .execute(ToolCall {
+                id: "call-partial".to_string(),
+                name: "apply_patch".to_string(),
+                arguments: serde_json::json!({"input": patch}),
+                intent: None,
+            })
+            .await
+            .unwrap();
+        assert!(record.result.is_error);
+        assert!(record.result.content.contains("Created good.txt"));
+        assert_eq!(record.file_changes.len(), 1);
+        assert_eq!(record.file_changes[0].path, "good.txt");
+        assert_eq!(
+            fs::read_to_string(dir.path().join("good.txt")).unwrap(),
+            "hello\n"
+        );
+
+        let write_record = runner
+            .execute(ToolCall {
+                id: "call-after-partial".to_string(),
+                name: "write".to_string(),
+                arguments: serde_json::json!({"path": "after.txt", "content": "ok\n"}),
+                intent: None,
+            })
+            .await
+            .unwrap();
+        assert!(!write_record.result.is_error);
+        assert_eq!(write_record.file_changes.len(), 1);
+        assert_eq!(write_record.file_changes[0].path, "after.txt");
     }
 }

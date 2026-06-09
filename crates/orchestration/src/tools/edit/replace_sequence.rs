@@ -90,7 +90,12 @@ fn collect_indexed_matches(
     }
 }
 
-fn matches_at(lines: &[String], pattern: &[String], i: usize, compare: &dyn Fn(&str, &str) -> bool) -> bool {
+fn matches_at(
+    lines: &[String],
+    pattern: &[String],
+    i: usize,
+    compare: &dyn Fn(&str, &str) -> bool,
+) -> bool {
     pattern
         .iter()
         .enumerate()
@@ -184,9 +189,8 @@ pub fn seek_sequence(
     let run_exact_passes = |from: usize, to: usize| -> Option<SequenceSearchResult> {
         macro_rules! try_pass {
             ($compare:expr, $confidence:expr, $strategy:expr, $ambiguous:expr) => {
-                let matches = collect_indexed_matches(from, to, |i| {
-                    matches_at(lines, pattern, i, &$compare)
-                });
+                let matches =
+                    collect_indexed_matches(from, to, |i| matches_at(lines, pattern, i, &$compare));
                 if let Some(index) = matches.first_match {
                     return Some(SequenceSearchResult {
                         index: Some(index),
@@ -207,7 +211,12 @@ pub fn seek_sequence(
             };
         }
 
-        try_pass!(|a: &str, b: &str| a == b, 1.0, SequenceMatchStrategy::Exact, true);
+        try_pass!(
+            |a: &str, b: &str| a == b,
+            1.0,
+            SequenceMatchStrategy::Exact,
+            true
+        );
         try_pass!(
             |a: &str, b: &str| a.trim_end() == b.trim_end(),
             0.99,
@@ -237,8 +246,18 @@ pub fn seek_sequence(
             return None;
         }
 
-        try_pass!(line_starts_with_pattern, 0.965, SequenceMatchStrategy::Prefix, true);
-        try_pass!(line_includes_pattern, 0.94, SequenceMatchStrategy::Substring, true);
+        try_pass!(
+            line_starts_with_pattern,
+            0.965,
+            SequenceMatchStrategy::Prefix,
+            true
+        );
+        try_pass!(
+            line_includes_pattern,
+            0.94,
+            SequenceMatchStrategy::Substring,
+            true
+        );
 
         None
     };
@@ -432,8 +451,9 @@ pub fn find_context_line(
         };
     }
 
-    let trim_matches =
-        collect_indexed_matches(start_from, end_index, |i| lines[i].trim() == trimmed_context);
+    let trim_matches = collect_indexed_matches(start_from, end_index, |i| {
+        lines[i].trim() == trimmed_context
+    });
     if let Some(index) = trim_matches.first_match {
         return ContextLineResult {
             index: Some(index),

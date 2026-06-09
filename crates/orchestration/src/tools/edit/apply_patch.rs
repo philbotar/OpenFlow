@@ -36,9 +36,7 @@ pub fn parse_apply_patch_streaming(patch_text: &str) -> Vec<PatchInput> {
 pub fn expand_apply_patch_to_inputs(input: &str) -> Result<Vec<PatchInput>, ApplyPatchError> {
     let hunks = parse_apply_patch(input).map_err(|err| ApplyPatchError(err.to_string()))?;
     if hunks.is_empty() {
-        return Err(ApplyPatchError(
-            "No files were modified.".to_string(),
-        ));
+        return Err(ApplyPatchError("No files were modified.".to_string()));
     }
     Ok(hunks)
 }
@@ -69,7 +67,9 @@ fn parse_apply_patch_with_options(
         ));
     }
 
-    let has_end_marker = lines.last().is_some_and(|line| line.trim() == END_PATCH_MARKER);
+    let has_end_marker = lines
+        .last()
+        .is_some_and(|line| line.trim() == END_PATCH_MARKER);
     if !has_end_marker && !streaming {
         return Err(ParseError::new(
             "The last line of the patch must be '*** End Patch'",

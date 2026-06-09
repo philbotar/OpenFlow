@@ -551,3 +551,25 @@ fn subagents_declared_event_appends_without_replacing() {
     assert_eq!(subs[0].id, "saved-agent-1");
     assert_eq!(subs[1].id, "first-subagent-1");
 }
+
+#[test]
+fn file_changed_event_appends_to_run_state() {
+    let workflow = workflow();
+    let mut state = WorkflowRunState::running_for_workflow(&workflow);
+    apply_event_to_run_state(
+        &workflow,
+        &mut state,
+        ExecutionEvent::FileChanged {
+            node_id: NodeId("first".to_string()),
+            record: domain::FileChangeRecord {
+                path: "src/main.rs".to_string(),
+                op: domain::FileChangeOp::Update,
+                rename_to: None,
+                diff_summary: None,
+                timestamp_ms: 1,
+            },
+        },
+    );
+    assert_eq!(state.changed_files.len(), 1);
+    assert_eq!(state.changed_files[0].path, "src/main.rs");
+}

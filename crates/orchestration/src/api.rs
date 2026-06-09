@@ -1,3 +1,4 @@
+use domain::FileChangeOp;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -29,4 +30,22 @@ pub struct AgentDefinitionSummary {
     pub id: String,
     pub name: String,
     pub model: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileEditPreviewEntry {
+    pub path: String,
+    pub op: FileChangeOp,
+    pub diff: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rename_to: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileEditPreview {
+    pub entries: Vec<FileEditPreviewEntry>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }

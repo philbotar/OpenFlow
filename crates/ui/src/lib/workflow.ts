@@ -165,6 +165,7 @@ export function createIdleRunState(workflow: Workflow): WorkflowRunState {
     chatLogs,
     runTrace: [],
     outputs: {},
+    changedFiles: [],
   };
 }
 

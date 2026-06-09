@@ -3,7 +3,9 @@
 use super::artifacts::RunReport;
 use crate::conversation::ChatRole;
 use crate::graph::NodeId;
-use crate::tools::{PendingToolApproval, SubagentSummary, ToolCall, ToolOutputMeta};
+use crate::tools::{
+    FileChangeRecord, PendingToolApproval, SubagentSummary, ToolCall, ToolOutputMeta,
+};
 use serde_json::Value;
 
 /// Atomic telemetry event during an interactive run.
@@ -74,6 +76,10 @@ pub enum RunTelemetry {
         tool_name: String,
         path: String,
         size_bytes: usize,
+    },
+    FileChanged {
+        node_id: NodeId,
+        record: FileChangeRecord,
     },
     NodeCompleted {
         node_id: NodeId,
