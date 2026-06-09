@@ -81,6 +81,7 @@ Today a failed tool call becomes a single `is_error: true` [`ToolResult`](crates
 | Skill invocation | Done | Invoke path works |
 | Skill discovery settings — unified skills section in Settings | Planned | Currently scans Cursor, Codex, Claude roots |
 | Show skill description above invoke UI | Done | `SkillDescriptionPreview` above composer when `/skill` tokens are present |
+| File references — attach project files to chat and entrypoint input | Planned | See [File references](#file-references) |
 | Branching — nodes wait for all upstream outputs before continuing | Planned | |
 | MCP integration | Planned | |
 | Remove `Context:` / `Task:` labels from chat | Planned | |
@@ -89,7 +90,7 @@ Today a failed tool call becomes a single `is_error: true` [`ToolResult`](crates
 | Tool invocation retry | Planned | Retry transient tool failures before surfacing to model; see near-term section |
 | Resilient tool failure handling | Planned | Failed tool calls feed transcript and continue agent loop; no run abort/crash |
 | Error logging stored locally; agent loop to propose fixes | Planned | |
-| File edit tooling — agent tools to read/write/patch project files | Planned | See [File edit tooling](#file-edit-tooling) |
+| File edit tooling — read/write-tier builtins, approval, diff preview, changed-files ledger | Done | See [File edit tooling](#file-edit-tooling) |
 | Remove per-node JSON output schema editing | Planned | Overkill for current scope; keep internal defaults, drop inspector/agents UI |
 | Shared node context tool/option | Planned | |
 | Natural language workflow definition | Planned | |
@@ -179,30 +180,74 @@ Agents can already ask for free-text input via `openflow_request_user_input` (`A
 
 **Target:** Users can type ahead during active runs; queued input drains when the agent pauses. Structured questions and todos render in-run and sync back to the model each turn.
 
-### File edit tooling
+### File references
 
-Agents can **read** project files via the `read`, `search`, `find`, and `ast_grep` builtins (`crates/orchestration/src/tools/`). There is no write, patch, or create path; edits cannot be applied during a run.
+Users can invoke skills with `/skill` tokens in the chat composer (`crates/ui/src/lib/chatCommands.ts`), but there is no way to attach project files to a message. Agents must discover files via read-tier tools instead of receiving user-selected context up front.
 
 | Layer | Gap |
 | --- | --- |
-| `crates/orchestration/src/tools/registry.rs` | Read-only builtins; no `write`, `edit`, or `apply_patch` tool |
-| `crates/orchestration/src/tools/runner.rs` | No filesystem mutation; `ToolRunner` scoped to cwd with no change tracking |
-| `crates/domain/src/tools/config.rs` | `ToolTier` has no write tier wired to approval policy for file edits |
-| `crates/orchestration/src/state.rs` | Run state has no pending file-change ledger or diff preview |
-| `crates/ui/src/components/conversation/` | No diff preview, accept/reject, or changed-files panel in chat |
+| `crates/ui/src/lib/chatCommands.ts` | Resolves `/` skill tokens only; no `@` path tokens or referenced-file list |
+| `crates/ui/src/components/conversation/` | No file picker combobox, reference pills, or content preview above composer |
+| `crates/ui/src/api.ts` / `crates/desktop/src/lib.rs` | `submit_user_input` and `start_run` accept plain `text` only — no structured file refs |
+| `crates/orchestration/src/run/coordinator.rs` | No read-and-resolve step for referenced paths under execution cwd |
+| `crates/engine/src/execution/interactive_engine.rs` | `on_user_input` records a single string; no `referenced_files` block in transcript or node input |
+| `crates/engine/src/execution/node_invocation.rs` | `entrypoint` is `{ "text": "..." }` only — no attached file payloads |
 
 | Item | Priority | Status |
 | --- | --- | --- |
-| `write` / `edit` / `apply_patch` builtins — create, overwrite, and unified-diff patch under execution cwd | High | Planned |
-| Path safety — reject escapes outside project/execution cwd; optional allowlist per workflow | High | Planned |
-| Tool approval — prompt before write-tier edits (reuse `ToolTier` + approval policy) | High | Planned |
-| Changed-files ledger — track paths touched per run; surface in run state and UI | Medium | Planned |
-| Diff preview in chat — show before/after hunks; accept or reject pending edits | Medium | Planned |
-| Pass file-change context through node outputs and downstream agents | Medium | Planned |
-| Git diff integration — show `git diff` for changed files; optional commit/stage helpers | Low | Planned |
-| Undo / revert last agent edit batch per node | Low | Planned |
+| `@` token UX — combobox over linked-project files (reuse skill combobox pattern); optional browse dialog | High | Planned |
+| Reference resolution — read file content under execution cwd on submit; reject paths outside project jail | High | Planned |
+| Structured submit payload — `referenced_files: [{ path, content \| excerpt }]` alongside message text | High | Planned |
+| Transcript shape — persist references in `AgentTranscriptItem::UserMessage` and chat log projection | Medium | Planned |
+| Composer chrome — pills for attached paths; expandable preview (path + line range + size cap) | Medium | Planned |
+| Entrypoint attachments — same reference model on run start (with entrypoint wiring) | Medium | Planned |
+| Line-range refs — `@path:10-40` or selection-from-editor hook | Low | Planned |
+| Reference budget — max files, max bytes, truncate with notice in formatted submit text | Low | Planned |
 
-**Target:** Agents propose file edits as tool calls; user approves when policy requires; changes apply under the linked project cwd and appear in chat as reviewable diffs.
+**Target:** Type `@` in the composer (or pick files before run) to attach project paths. Resolved content is injected into the user message or entrypoint JSON so the agent sees explicit file context without an extra `read` tool round.
+
+### File edit tooling
+
+Agents read and mutate project files under the execution cwd via builtins in `crates/orchestration/src/tool/`. Each tool has a **risk tier** (`read`, `write`, or `exec`) that drives default approval behavior when the node uses `ApprovalMode::Write` (the default).
+
+**Tier assignment** — persisted on each `ToolRef` in the node catalog (`agent.tools.catalog.tools`). Read builtins declare `"tier": "read"` explicitly; write builtins omit `tier` and resolve to `write` via `default_tier_for_tool_name` in `crates/engine/src/tools/config.rs`:
+
+```json
+{ "name": "read", "tier": "read" },
+{ "name": "search", "tier": "read" },
+{ "name": "find", "tier": "read" },
+{ "name": "ast_grep", "tier": "read" },
+{ "name": "write" },
+{ "name": "edit" },
+{ "name": "apply_patch" }
+```
+
+Under `ApprovalMode::Write`, **read** tier auto-allows; **write** and **exec** tier prompt before execution. Per-tool `overrides` (`allow` / `prompt` / `deny`) and node `approval_mode` (`always_ask`, `write`, `yolo`) override the default. See `ToolTier` and `requires_approval` in `crates/engine/src/tools/config.rs`.
+
+| Layer | Role |
+| --- | --- |
+| `crates/orchestration/src/tool/registry.rs` | Builtin catalog — read tier: `read`, `search`, `find`, `ast_grep`; write tier: `write`, `edit`, `apply_patch` |
+| `crates/orchestration/src/tool/runner.rs` | `ToolRunner` executes builtins under execution cwd; drains `FileChangeRecord` ledger after write-tier calls |
+| `crates/engine/src/tools/config.rs` | `ToolTier`, `ToolRef.tier`, `ApprovalMode`, per-call tier resolution and approval policy |
+| `crates/engine/src/execution/interactive_engine.rs` | Batches tool calls; pauses on write-tier approval via `AwaitToolApproval` |
+| `crates/orchestration/src/run/state/` | `changed_files` / `changedFilesByNode` ledger; `EditBatch` snapshots for revert |
+| `crates/ui/src/components/conversation/` | `ToolApprovalCard` diff preview; `FileChangesPanel` per-node changed files + git diff + batch revert |
+
+| Item | Priority | Status |
+| --- | --- | --- |
+| `write` / `edit` / `apply_patch` builtins — create, overwrite, hashline edit, and unified-diff patch under execution cwd | High | Done |
+| Path safety — `resolve_writable` jail; reject escapes outside execution cwd | High | Done |
+| Tool approval — prompt before write-tier edits (`ToolTier` + `ApprovalMode` + overrides) | High | Done |
+| Changed-files ledger — track paths touched per run; surface in run state and UI | Medium | Done |
+| Diff preview in chat — dry-run hunks before approve; `FileChangesPanel` diff summaries | Medium | Done |
+| Pass file-change context through node outputs and downstream agents | Medium | Done |
+| Git diff integration — `git_diff_file` IPC; per-file diff in `FileChangesPanel` | Low | Done |
+| Undo / revert last agent edit batch per node — `revert_edit_batch` IPC | Low | Done |
+| Per-workflow path allowlist (beyond execution-cwd jail) | Low | Planned |
+| Git stage / commit helpers from changed-files panel | Low | Planned |
+| Full LSP language-server client (format-on-write via CLI exists) | Low | Planned |
+
+**Target:** Agents propose file edits as write-tier tool calls; user approves when policy requires; changes apply under the linked project cwd and appear in chat as reviewable diffs. Read-tier discovery tools run without approval under default `write` approval mode.
 
 ---
 
@@ -288,7 +333,7 @@ Remediation for modeled-but-unwired behavior and correctness gaps in `crates/dom
 | D1 Templates | `model::NodeTemplate` vs `template::Template` — which is canonical? | Keep `template::Template`; persist it in `FileTemplateStore` |
 | D2 `available_tools` | Domain resolves tool names, or adapter owns registry? | Confirm against provider crate; document if adapter-owned |
 | D3 Parallelism | Concurrent sibling nodes in same execution layer? | Stretch; skip unless needed for demo |
-| D4 Max tool rounds | Fail whole workflow vs. fail node only? | Default: keep current terminal behavior |
+| D4 Max tool rounds | Cap tool-calling rounds per node? | Removed — agents call tools until `openflow_submit_node_output` |
 | D5 Tool failure | Retry then feed error to model, or fail node/run immediately? | Default: retry transient tools per policy, then `is_error` result; never abort run for one tool call |
 
 ### Phase 1 — Foundations
@@ -303,7 +348,7 @@ Remediation for modeled-but-unwired behavior and correctness gaps in `crates/dom
 
 | Task | Severity | Summary |
 | --- | --- | --- |
-| T4 Wire tool-approval policy | P0 | Honor `ApprovalMode`, `ToolTier`, `ToolPolicy` in engine |
+| T4 Wire tool-approval policy | P0 | Honor `ApprovalMode`, `ToolTier`, `ToolPolicy` in engine — Done |
 | T5 Tool deny / decision resume | P0 | `on_tool_decision`, `approval_id` on `AwaitToolApproval` |
 | T6 Implement `retry_policy` | P0 | Retry transient **AI** failures per node; needs T1 |
 | T19 Tool error taxonomy | P0 | `Transient` / `Permanent` on `ToolError` / `ToolRunnerError`; `is_retryable()` |

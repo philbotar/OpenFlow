@@ -439,7 +439,7 @@ mod tests {
             name: "search".to_string(),
             tier: Some(engine::ToolTier::Read),
         }];
-        agent.tools.max_tool_rounds = 7;
+        agent.tools.approval_mode = Some(engine::ApprovalMode::AlwaysAsk);
         backend
             .save_agents(std::slice::from_ref(&agent))
             .expect("save agent");
@@ -466,7 +466,10 @@ mod tests {
                 tier: Some(engine::ToolTier::Read),
             }]
         );
-        assert_eq!(node.agent.tools.max_tool_rounds, 7);
+        assert_eq!(
+            node.agent.tools.approval_mode,
+            Some(engine::ApprovalMode::AlwaysAsk)
+        );
     }
 
     #[test]

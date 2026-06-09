@@ -19,9 +19,9 @@ pub struct ToolSpec {
 
 pub fn build_node_context(request: &AgentRequest) -> String {
     let tool_instruction = if request.available_tools.is_empty() {
-        "When you are ready to finish, call openflow_submit_node_output exactly once with arguments shaped as {\"output\": <object matching the node output schema>, \"assistant_message\": null}.".to_string()
+        "You are done only after openflow_submit_node_output succeeds. Call it exactly once with arguments shaped as {\"output\": <object matching the node output schema>, \"assistant_message\": null}. Until then, the workflow stays on this node.".to_string()
     } else {
-        "Use tools when they materially improve correctness. When you are ready to finish, call openflow_submit_node_output exactly once with arguments shaped as {\"output\": <object matching the node output schema>, \"assistant_message\": null}."
+        "Use tools when they materially improve correctness. You are done only after openflow_submit_node_output succeeds — call it exactly once with arguments shaped as {\"output\": <object matching the node output schema>, \"assistant_message\": null}. Until then, the workflow stays on this node."
             .to_string()
     };
     format!(

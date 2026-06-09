@@ -87,10 +87,13 @@ pub fn summary_from_node_output(output: &Value) -> Option<String> {
 
 fn consume_tool_call_fence_block(content: &str) -> usize {
     const OPEN: &str = "```tool_call";
+
     if !content.starts_with(OPEN) {
         return 0;
     }
+
     let mut consumed = OPEN.len();
+
     if let Some(rest) = content.get(consumed..) {
         if let Some(stripped) = rest.strip_prefix("\r\n") {
             consumed += rest.len() - stripped.len();
@@ -98,20 +101,24 @@ fn consume_tool_call_fence_block(content: &str) -> usize {
             consumed += rest.len() - stripped.len();
         }
     }
+
     if let Some(rest) = content.get(consumed..) {
         if let Some(close) = rest.find("```") {
             return consumed + close + 3;
         }
     }
+
     content.len()
 }
 
 fn consume_tool_call_xml_block(content: &str) -> usize {
     const OPEN: &str = "<tool_call";
     const CLOSE: &str = "</tool_call>";
+
     if !content.starts_with(OPEN) {
         return 0;
     }
+
     content
         .find(CLOSE)
         .map(|index| index + CLOSE.len())
@@ -147,15 +154,18 @@ pub fn strip_tool_call_markup(content: &str) -> String {
         let (start, is_xml) = next;
         result.push_str(&rest[..start]);
         let block = &rest[start..];
+
         let consumed = if is_xml {
             consume_tool_call_xml_block(block)
         } else {
             consume_tool_call_fence_block(block)
         };
+
         if consumed == 0 {
             result.push_str(rest);
             break;
         }
+
         rest = &rest[start + consumed..];
     }
 
@@ -166,9 +176,11 @@ pub fn strip_tool_call_markup(content: &str) -> String {
 #[must_use]
 pub fn is_redundant_tool_call_markup(content: &str) -> bool {
     let trimmed = content.trim();
+
     if trimmed.is_empty() {
         return false;
     }
+    
     strip_tool_call_markup(trimmed).is_empty()
 }
 

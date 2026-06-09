@@ -78,8 +78,6 @@ pub struct NodeToolConfig {
     pub approval_mode: Option<ApprovalMode>,
     #[serde(default)]
     pub overrides: Vec<ToolPolicyOverride>,
-    #[serde(default = "default_max_tool_rounds")]
-    pub max_tool_rounds: u8,
 }
 
 impl NodeToolConfig {
@@ -95,13 +93,8 @@ impl Default for NodeToolConfig {
             catalog: ToolCatalogSelection::default(),
             approval_mode: None,
             overrides: Vec::new(),
-            max_tool_rounds: default_max_tool_rounds(),
         }
     }
-}
-
-const fn default_max_tool_rounds() -> u8 {
-    8
 }
 
 fn default_tool_refs() -> Vec<ToolRef> {
@@ -294,7 +287,6 @@ mod tests {
     fn node_tool_config_defaults_enable_retrieval_tools() {
         let config = NodeToolConfig::default();
         assert!(config.is_enabled());
-        assert_eq!(config.max_tool_rounds, 8);
         assert_eq!(config.approval_mode, None);
         assert_eq!(config.catalog.tools, default_tool_refs());
     }

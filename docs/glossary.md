@@ -26,7 +26,6 @@ For where terms live in code, see [Domain modules](#domain-modules) and [`docs/s
 | **AgentNodeConfig** | Configuration for an agent node: model, prompts, tools, auto-start, callable agents | Node config, agent config |
 | **NodePosition** | Coordinates for rendering a node on the canvas | Position, coordinates |
 | **AutoStart** | Whether a node begins when its execution layer is reached (`auto_start: true`), or pauses for human input (`false`) | Auto-execute |
-| **MaxToolRounds** | Maximum tool-calling rounds a node may perform (`NodeToolConfig.max_tool_rounds`) | Tool rounds limit |
 | **CallableAgent** | A saved agent definition a node may invoke as a subagent during a run (`domain::graph::CallableAgent`) | Saved subagent, AgentDefinition |
 | **CallableAgentSelection** | Agent IDs on `AgentNodeConfig.callable_agents`; snapshotted at run start | Allowed agents, callable agents |
 | **AllowAllCallableAgents** | When true, every saved agent is snapshotted at run start instead of `callable_agents` | Allow all agents |
@@ -43,7 +42,7 @@ For where terms live in code, see [Domain modules](#domain-modules) and [`docs/s
 
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
-| **NodeToolConfig** | Tool catalog selection, approval mode, overrides, and max tool rounds for a node | Tool settings, tool setup |
+| **NodeToolConfig** | Tool catalog selection, approval mode, and overrides for a node | Tool settings, tool setup |
 | **ApprovalMode** | Node-level tool approval strategy: `always_ask`, `write` (prompt on write/exec tiers), or `yolo` (auto-allow) | Approval policy |
 | **ToolTier** | Risk tier for a tool: `read`, `write`, or `exec` | Tool level, access tier |
 | **ToolConcurrency** | Whether tool calls share or exclude concurrent access: `shared` or `exclusive` | Parallelism, execution mode |

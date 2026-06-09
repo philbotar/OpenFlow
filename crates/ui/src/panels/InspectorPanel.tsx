@@ -110,11 +110,6 @@ export function InspectorPanel() {
                   tools.approvalMode = value;
                 })
               }
-              onMaxToolRoundsChange={(value) =>
-                ctx.updateCurrentNodeToolConfig((tools) => {
-                  tools.maxToolRounds = Math.min(32, Math.max(1, value));
-                })
-              }
             />
 
             <CallableAgentsEditor

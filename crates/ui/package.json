@@ -8,7 +8,8 @@
     "build": "vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "tauri": "sh -c 'cmd=\"$1\"; shift; exec tauri \"$cmd\" -c ../desktop/tauri.conf.json \"$@\"' --"
+    "tauri": "sh -c 'cmd=\"$1\"; shift; exec tauri \"$cmd\" -c ../desktop/tauri.conf.json \"$@\"' --",
+    "build:app": "sh -c 'exec tauri build -c ../desktop/tauri.conf.json \"$@\"' --"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

@@ -461,8 +461,10 @@ pub fn run() {
             }
         })
         .setup(|app| {
-            let window = app.get_webview_window("main").unwrap();
-            window.open_devtools();
+            #[cfg(debug_assertions)]
+            app.get_webview_window("main").unwrap().open_devtools();
+            #[cfg(not(debug_assertions))]
+            let _ = app;
             Ok(())
         })
         .run(tauri::generate_context!())

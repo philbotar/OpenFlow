@@ -111,7 +111,6 @@ pub struct InteractiveEngine {
     started_invocations_by_node: BTreeMap<NodeId, u8>,
     awaiting_node: Option<NodeId>,
     pending_tool_batch: Option<PendingToolBatch>,
-    tool_rounds_by_node: BTreeMap<NodeId, u8>,
     retries_by_node: BTreeMap<NodeId, u8>,
     submit_output_retries_by_node: BTreeMap<NodeId, u8>,
     entrypoint_text: Option<String>,
@@ -150,7 +149,6 @@ impl InteractiveEngine {
             started_invocations_by_node: BTreeMap::new(),
             awaiting_node: None,
             pending_tool_batch: None,
-            tool_rounds_by_node: BTreeMap::new(),
             retries_by_node: BTreeMap::new(),
             submit_output_retries_by_node: BTreeMap::new(),
             entrypoint_text,
@@ -239,6 +237,18 @@ impl InteractiveEngine {
         };
         let node_id = node.id.clone();
         let node_label = node.label.clone();
+
+        if let Some(missing) = self.missing_upstream_outputs(&node_id) {
+            let upstream_list = missing
+                .iter()
+                .map(|id| id.to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            return self.fail_internal(
+                &node_id,
+                &format!("upstream output missing from: {upstream_list}"),
+            );
+        }
 
         if node.agent.auto_start || !self.transcript(&node_id).is_empty() {
             if self.queued_nodes.insert(node_id.clone()) {
@@ -458,31 +468,13 @@ impl InteractiveEngine {
     }
 
     fn apply_tool_calls(&mut self, node_id: &str, batch: AgentToolCallBatch) {
-        let max_tool_rounds = if let Some(node) = self.find_node(node_id) {
-            node.agent.tools.max_tool_rounds
-        } else {
+        if self.find_node(node_id).is_none() {
             self.terminal_error = Some(RunError::NodeFailed {
                 node_id: NodeId(node_id.to_string()),
                 message: "tool-call node no longer exists".to_string(),
             });
             return;
-        };
-        let round_count = self
-            .tool_rounds_by_node
-            .entry(NodeId(node_id.to_string()))
-            .or_default();
-        if *round_count >= max_tool_rounds {
-            let message = format!("node exceeded max tool rounds ({max_tool_rounds})");
-            self.events.push(RunEvent {
-                node_id: NodeId(node_id.to_string()),
-                kind: RunEventKind::Failed,
-                message,
-                output: None,
-            });
-            self.advance();
-            return;
         }
-        *round_count += 1;
 
         let config = self
             .find_node(node_id)
@@ -707,6 +699,21 @@ impl InteractiveEngine {
             let _ = write!(context, "\nTask: {}", node.agent.task_prompt);
         }
         context
+    }
+
+    fn missing_upstream_outputs(&self, node_id: &NodeId) -> Option<Vec<NodeId>> {
+        let missing = self
+            .upstream_map
+            .get(node_id)?
+            .iter()
+            .filter(|upstream_id| !self.outputs.contains_key(*upstream_id))
+            .cloned()
+            .collect::<Vec<_>>();
+        if missing.is_empty() {
+            None
+        } else {
+            Some(missing)
+        }
     }
 
     fn fail_internal(&mut self, node_id: &NodeId, message: &str) -> EnginePollResult {
@@ -1416,38 +1423,6 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(started.len(), 1);
         assert_eq!(started[0].message, "invoking model");
-    }
-
-    #[test]
-    fn max_tool_rounds_failure_is_node_local() {
-        let mut workflow = Workflow::new("tool rounds");
-        let mut first = node("first");
-        first.agent.tools.max_tool_rounds = 0;
-        workflow.nodes = vec![first, node("second")];
-        let mut engine = InteractiveEngine::new(workflow, None).unwrap();
-
-        assert!(matches!(
-            engine.poll(),
-            EnginePollResult::CallAi { ref node_id, .. } if node_id == "first"
-        ));
-        engine.on_ai_complete(
-            "first",
-            Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
-                raw_text: "{}".to_string(),
-                assistant_message: None,
-                tool_calls: vec![ToolCall {
-                    id: "call-1".to_string(),
-                    name: "read".to_string(),
-                    arguments: json!({"path": "README.md"}),
-                    intent: None,
-                }],
-            })),
-        );
-
-        assert!(matches!(
-            engine.poll(),
-            EnginePollResult::CallAi { ref node_id, .. } if node_id == "second"
-        ));
     }
 
     #[test]

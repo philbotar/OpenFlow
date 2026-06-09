@@ -17,7 +17,6 @@ const agents: AgentDefinition[] = [
       catalog: { tools: [] },
       approvalMode: null,
       overrides: [],
-      maxToolRounds: 8,
     },
   },
 ];

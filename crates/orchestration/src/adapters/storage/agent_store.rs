@@ -189,7 +189,6 @@ mod tests {
                     "tools": [{ "name": "read" }]
                 },
                 "approvalMode": "write",
-                "maxToolRounds": 2,
                 "overrides": []
             }
         }))
@@ -202,7 +201,6 @@ mod tests {
         assert!(agent.auto_start);
         assert_eq!(agent.tools.catalog.tools[0].name, "read");
         assert_eq!(agent.tools.approval_mode, Some(engine::ApprovalMode::Write));
-        assert_eq!(agent.tools.max_tool_rounds, 2);
     }
 
     #[test]

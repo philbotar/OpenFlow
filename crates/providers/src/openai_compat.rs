@@ -234,7 +234,7 @@ mod tests {
                     { "role": "system", "content": "You are precise." },
                     {
                         "role": "user",
-                        "content": "Node: Idea\nTask:\nSummarize the kickoff.\n\nUpstream input JSON:\n{\"entrypoint\":{\"text\":\"ORCHID-91\"},\"upstream\":[]}\n\nWhen you are ready to finish, call openflow_submit_node_output exactly once with arguments shaped as {\"output\": <object matching the node output schema>, \"assistant_message\": null}."
+                        "content": "Node: Idea\nTask:\nSummarize the kickoff.\n\nUpstream input JSON:\n{\"entrypoint\":{\"text\":\"ORCHID-91\"},\"upstream\":[]}\n\nYou are done only after openflow_submit_node_output succeeds. Call it exactly once with arguments shaped as {\"output\": <object matching the node output schema>, \"assistant_message\": null}. Until then, the workflow stays on this node."
                     }
                 ],
                 "tools": [{
@@ -300,7 +300,7 @@ mod tests {
                     { "role": "system", "content": "You are precise." },
                     {
                         "role": "user",
-                        "content": "Node: Idea\nTask:\nSummarize the kickoff.\n\nUpstream input JSON:\n{\"entrypoint\":{\"text\":\"ORCHID-91\"},\"upstream\":[]}\n\nUse tools when they materially improve correctness. When you are ready to finish, call openflow_submit_node_output exactly once with arguments shaped as {\"output\": <object matching the node output schema>, \"assistant_message\": null}."
+                        "content": "Node: Idea\nTask:\nSummarize the kickoff.\n\nUpstream input JSON:\n{\"entrypoint\":{\"text\":\"ORCHID-91\"},\"upstream\":[]}\n\nUse tools when they materially improve correctness. You are done only after openflow_submit_node_output succeeds — call it exactly once with arguments shaped as {\"output\": <object matching the node output schema>, \"assistant_message\": null}. Until then, the workflow stays on this node."
                     }
                 ],
                 "tools": [

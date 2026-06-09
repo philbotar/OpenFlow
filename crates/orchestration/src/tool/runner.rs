@@ -17,6 +17,8 @@ use walkdir::WalkDir;
 static LINE_SELECTOR: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\d+(?:-\d+)?$").expect("line selector regex is valid"));
 
+const DEFAULT_READ_LINE_LIMIT: usize = 300;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ToolExecutionRecord {
     pub result: ToolResult,
@@ -620,12 +622,21 @@ fn apply_read_selector(label: &str, text: &str, selector: Option<&str>) -> Strin
             format!("¶{label}\n{}", slice.join("\n"))
         }
         None => {
-            let lines = text
-                .lines()
-                .take(300)
+            let all_lines: Vec<_> = text.lines().collect();
+            let total_lines = all_lines.len();
+            let shown = all_lines
+                .iter()
+                .take(DEFAULT_READ_LINE_LIMIT)
                 .enumerate()
-                .map(|(index, line)| format!("{}:{}", index + 1, line));
-            format!("¶{label}\n{}", lines.collect::<Vec<_>>().join("\n"))
+                .map(|(index, line)| format!("{}:{}", index + 1, line))
+                .collect::<Vec<_>>();
+            let mut output = format!("¶{label}\n{}", shown.join("\n"));
+            if total_lines > DEFAULT_READ_LINE_LIMIT {
+                output.push_str(&format!(
+                    "\n… truncated at line {DEFAULT_READ_LINE_LIMIT} of {total_lines}; use :{{start}}-{{end}} or :raw to read more …"
+                ));
+            }
+            output
         }
     }
 }
@@ -677,6 +688,39 @@ mod tests {
             .unwrap();
         assert!(record.result.content.contains("2:b"));
         assert!(record.result.content.contains("3:c"));
+    }
+
+    #[tokio::test]
+    async fn read_file_without_selector_announces_truncation() {
+        let dir = tempfile::tempdir().unwrap();
+        let lines = (1..=305)
+            .map(|index| format!("line-{index}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(dir.path().join("big.txt"), lines).unwrap();
+        let runner = runner(dir.path());
+        let record = runner
+            .execute(
+                ToolCall {
+                    id: "call-trunc".to_string(),
+                    name: "read".to_string(),
+                    arguments: serde_json::json!({"path": "big.txt"}),
+                    intent: None,
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert!(record.result.content.contains("300:line-300"));
+        assert!(!record.result.content.contains("301:line-301"));
+        assert!(record
+            .result
+            .content
+            .contains("truncated at line 300 of 305"));
+        assert!(record
+            .result
+            .content
+            .contains("use :{start}-{end} or :raw to read more"));
     }
 
     #[tokio::test]

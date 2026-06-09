@@ -2,8 +2,14 @@
 
 ## Unreleased
 
+### Added
+
+- **macOS app bundle:** enable Tauri bundling (`bundle.active`, `app` target); `npm --prefix crates/desktop run build` produces `OpenFlow.app`; README documents install and Gatekeeper steps; gate `open_devtools` to debug builds so release bundle compiles.
+
 ### Docs
 
+- **Roadmap:** File references section — `@` file attachments in chat/entrypoint, structured submit payload, path jail, composer pills; mirrors `/skill` invocation pattern.
+- **Roadmap:** File edit tooling section — mark builtins, approval, ledger, diff preview, and git revert as Done; document `ToolRef.tier` (`read` explicit, `write` default for `write`/`edit`/`apply_patch`); mark T4 tool-approval policy Done.
 - **Roadmap:** Refactor section — track removal of legacy snake_case ↔ camelCase / PascalCase serde aliases after T16 casing unification.
 
 ### Added
@@ -20,7 +26,7 @@
 
 ### Changed
 
-- **Verify pipeline:** `scripts/verify.sh` runs UI vitest (`npm --prefix crates/ui run test`) after `cargo test --workspace`; auto-installs UI deps when `node_modules` is missing.
+- **Read tool:** default reads keep a 300-line cap but now emit an explicit truncation notice with total line count and selector hints (`:start-end`, `:raw`); tool description documents the limit.
 - **Rename `domain` → `engine`:** crate directory, Cargo package name, and all `use engine::` imports across orchestration, providers, and desktop; flat `engine::` re-exports preserved for downstream crates.
 - **Orchestration `drive.rs`:** thin loop around `engine.run()` — handles input/approval waits and events only; tool execution moved to `tool_port.rs`.
 - **Architecture docs:** [`docs/architecture/contract.md`](docs/architecture/contract.md) and [`docs/architecture/README.md`](docs/architecture/README.md) updated for Engine layer, `ToolPort`, and self-driving run loop.
@@ -30,6 +36,9 @@
 - **Docs:** add [`docs/sections/orchestration/layout.md`](docs/sections/orchestration/layout.md) — explains entity folders, hexarc roles, disk vs Rust module paths, and where to add code.
 
 ### Fixed
+
+- **Node completion:** append `NODE_COMPLETION_CONTRACT` to every agent system prompt; strengthen provider task-context wording so nodes finish only via `openflow_submit_node_output`. Downstream nodes fail fast when upstream output is missing.
+- **Remove max tool rounds:** drop `NodeToolConfig.max_tool_rounds` / `maxToolRounds` from engine, UI, and workflows; agents may call tools until they submit node output.
 
 - **Subagent runtime test:** `advance_subagent_invoke_records_tool_calls_before_results` catch-all arm now panics on unexpected variants instead of asserting an impossible `NeedAi` match.
 - **File changes panel:** scope "Changed files" and revertible batches to the selected node (`changedFilesByNode` in run state; `FileChangesPanel` filters by `selectedNodeId`).

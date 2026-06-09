@@ -94,7 +94,7 @@ fn read_tool() -> RegisteredTool {
     RegisteredTool {
         definition: ToolDefinition {
             name: "read".to_string(),
-            description: "Read a local file, directory listing, or URL. Use path selectors like :10-20 or :raw when needed.".to_string(),
+            description: "Read a local file, directory listing, or URL. Default output is numbered lines capped at 300; use path selectors like :10-20 for a line range or :raw for full content.".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "additionalProperties": false,

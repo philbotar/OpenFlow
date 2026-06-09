@@ -6,7 +6,6 @@ export function ToolConfigEditor(props: {
   config: NodeToolConfig;
   onToolEnabledChange: (toolName: string, enabled: boolean) => void;
   onApprovalModeChange: (value: ApprovalMode | null) => void;
-  onMaxToolRoundsChange: (value: number) => void;
   defaultOpen?: boolean;
 }) {
   const [open, setOpen] = createSignal(props.defaultOpen ?? false);
@@ -67,21 +66,6 @@ export function ToolConfigEditor(props: {
                 <option value="write">Read tools auto-approve</option>
                 <option value="yolo">Read and write auto-approve</option>
               </select>
-            </label>
-            <label>
-              <span>Max tool rounds</span>
-              <input
-                class="text-input"
-                type="number"
-                min="1"
-                max="32"
-                value={props.config.maxToolRounds}
-                onInput={(event) =>
-                  props.onMaxToolRoundsChange(
-                    Number.parseInt(event.currentTarget.value, 10) || 1,
-                  )
-                }
-              />
             </label>
           </div>
         </div>

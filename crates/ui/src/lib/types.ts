@@ -81,7 +81,6 @@ export interface NodeToolConfig {
   catalog: ToolCatalogSelection;
   approvalMode: ApprovalMode | null;
   overrides: ToolPolicyOverride[];
-  maxToolRounds: number;
 }
 
 export interface AgentNodeConfig {

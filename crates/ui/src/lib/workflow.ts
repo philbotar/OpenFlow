@@ -76,7 +76,6 @@ export function createEmptyToolConfig(): NodeToolConfig {
     catalog: { tools: SUPPORTED_NODE_TOOLS.map((tool) => ({ name: tool.name })) },
     approvalMode: "write",
     overrides: [],
-    maxToolRounds: 8,
   };
 }
 export type WorkflowCanvasGraphNode = {

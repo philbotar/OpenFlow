@@ -80,8 +80,6 @@ pub enum SubagentStartOutcome {
 pub struct SubagentInvokeSession {
     pub subagent: SubagentSummary,
     pub request: AgentRequest,
-    pub max_tool_rounds: u8,
-    round: u8,
     pub tool_call_id: String,
     pub parent_node_id: NodeId,
 }
@@ -171,7 +169,7 @@ pub fn start_subagent_invoke(
         ));
     };
 
-    let (sub_node_config, sub_request) =
+    let sub_request =
         if let Some(agent_def) = agent_snapshots.get(&call_args.subagent_id) {
             build_saved_agent_request(
                 workflow,
@@ -199,8 +197,6 @@ pub fn start_subagent_invoke(
         Box::new(SubagentInvokeSession {
             subagent,
             request: sub_request,
-            max_tool_rounds: sub_node_config.max_tool_rounds,
-            round: 0,
             tool_call_id: tool_call.id.clone(),
             parent_node_id: parent_node_id.clone(),
         }),
@@ -214,7 +210,7 @@ fn build_saved_agent_request(
     subagent: &SubagentSummary,
     input: &str,
     available_tools: Vec<crate::ToolDefinition>,
-) -> (crate::NodeToolConfig, AgentRequest) {
+) -> AgentRequest {
     let sub_node_config = agent.tools.clone();
     let system_prompt = merge_shared_context(workflow, &agent.system_prompt);
     let sub_transcript = vec![AgentTranscriptItem::UserMessage {
@@ -223,7 +219,7 @@ fn build_saved_agent_request(
             agent.name
         ),
     }];
-    let request = AgentRequest {
+    AgentRequest {
         workflow_id: workflow.id.clone(),
         node_id: NodeId(subagent.id.clone()),
         node_label: subagent.name.clone(),
@@ -232,11 +228,10 @@ fn build_saved_agent_request(
         task_prompt: input.to_string(),
         input: Value::Null,
         output_schema: agent.output_schema.clone(),
-        tool_config: sub_node_config.clone(),
+        tool_config: sub_node_config,
         available_tools,
         transcript: sub_transcript,
-    };
-    (sub_node_config, request)
+    }
 }
 
 fn build_adhoc_agent_request(
@@ -245,7 +240,7 @@ fn build_adhoc_agent_request(
     subagent: &SubagentSummary,
     input: &str,
     available_tools: Vec<crate::ToolDefinition>,
-) -> (crate::NodeToolConfig, AgentRequest) {
+) -> AgentRequest {
     let sub_node_config = parent_node.agent.tools.clone();
     let sub_transcript = vec![AgentTranscriptItem::UserMessage {
         content: format!(
@@ -257,7 +252,7 @@ fn build_adhoc_agent_request(
         workflow,
         &format!("You are {}. {}", subagent.name, subagent.purpose),
     );
-    let request = AgentRequest {
+    AgentRequest {
         workflow_id: workflow.id.clone(),
         node_id: NodeId(subagent.id.clone()),
         node_label: subagent.name.clone(),
@@ -266,11 +261,10 @@ fn build_adhoc_agent_request(
         task_prompt: input.to_string(),
         input: Value::Null,
         output_schema: Value::Null,
-        tool_config: sub_node_config.clone(),
+        tool_config: sub_node_config,
         available_tools,
         transcript: sub_transcript,
-    };
-    (sub_node_config, request)
+    }
 }
 
 /// Advance a subagent session after the host invokes the model.
@@ -282,15 +276,6 @@ pub fn advance_subagent_invoke(
     match outcome {
         Ok(AgentTurnOutcome::Completed(success)) => complete_subagent(session, success),
         Ok(AgentTurnOutcome::ToolCalls(batch)) => {
-            if session.round >= session.max_tool_rounds {
-                let name = session.subagent.name.clone();
-                let max_rounds = session.max_tool_rounds;
-                return complete_subagent_failed(
-                    session,
-                    format!("Subagent '{name}' exceeded maximum tool rounds ({max_rounds})"),
-                );
-            }
-            session.round += 1;
             let mut transcript = session.request.transcript.clone();
             if let Some(message) = filter_tool_turn_assistant_message(batch.assistant_message)
                 .filter(|message| !message.trim().is_empty())
@@ -427,8 +412,6 @@ mod tests {
                     content: "Do work".to_string(),
                 }],
             },
-            max_tool_rounds: 3,
-            round: 0,
             tool_call_id: "parent-call".to_string(),
             parent_node_id: NodeId("node-1".to_string()),
         }

@@ -124,11 +124,6 @@ export function AgentsScreen() {
                       draft.tools.approvalMode = value;
                     })
                   }
-                  onMaxToolRoundsChange={(value) =>
-                    ctx.updateSelectedAgent((draft) => {
-                      draft.tools.maxToolRounds = Math.min(32, Math.max(1, value));
-                    })
-                  }
                 />
                 <div class="button-row end">
                   <button

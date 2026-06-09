@@ -39,10 +39,24 @@ pub fn merge_shared_context(workflow: &Workflow, base: &str) -> String {
     }
 }
 
+/// Appended to every agent system prompt — defines when a node is complete.
+pub const NODE_COMPLETION_CONTRACT: &str = "\
+--- Node completion ---\n\
+This node is not complete until you call openflow_submit_node_output exactly once with \
+structured output matching the node output schema.\n\
+Plain assistant text does not finish the node; the workflow does not advance until \
+openflow_submit_node_output succeeds.\n\
+Call openflow_request_user_input when you need human input before you can finish.";
+
 /// Merge per-workflow shared context into a node's system prompt.
 #[must_use]
 pub fn workflow_system_prompt(workflow: &Workflow, node: &Node) -> String {
-    merge_shared_context(workflow, &node.agent.system_prompt)
+    let base = merge_shared_context(workflow, &node.agent.system_prompt);
+    if base.contains("--- Node completion ---") {
+        base
+    } else {
+        format!("{base}\n\n{NODE_COMPLETION_CONTRACT}")
+    }
 }
 
 /// Collect file-change records from all transitive upstream nodes (deduped by path, latest timestamp wins).
@@ -181,6 +195,15 @@ pub fn build_agent_request(
 mod tests {
     use super::*;
     use crate::graph::{Edge, Workflow};
+
+    #[test]
+    fn workflow_system_prompt_includes_completion_contract() {
+        let workflow = Workflow::new("completion");
+        let node = crate::graph::Node::agent("idea", 0.0, 0.0);
+        let prompt = workflow_system_prompt(&workflow, &node);
+        assert!(prompt.contains("--- Node completion ---"));
+        assert!(prompt.contains("openflow_submit_node_output"));
+    }
 
     #[test]
     fn blank_entrypoint_is_not_injected_into_root_input() {

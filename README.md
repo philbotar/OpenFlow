@@ -56,6 +56,28 @@ OpenAI defaults to `POST /v1/responses`; other OpenAI-compatible providers defau
 npm --prefix crates/desktop run start -- dev
 ```
 
+## Build macOS app
+
+Produce a standalone `OpenFlow.app` (no Node or dev server at runtime):
+
+```bash
+npm --prefix crates/ui ci   # first time only
+npm --prefix crates/desktop run build
+```
+
+Output: `target/release/bundle/macos/OpenFlow.app`
+
+Install locally:
+
+```bash
+cp -r target/release/bundle/macos/OpenFlow.app /Applications/
+open /Applications/OpenFlow.app
+```
+
+Unsigned local builds are blocked by Gatekeeper on first launch. Right-click → **Open**, or run `xattr -cr /Applications/OpenFlow.app`.
+
+Faster debug bundle (for bundle-only iteration): `npm --prefix crates/ui run tauri build -- --debug` → `target/debug/bundle/macos/OpenFlow.app`.
+
 ## Test
 
 Default verification:
