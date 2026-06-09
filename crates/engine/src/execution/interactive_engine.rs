@@ -846,9 +846,9 @@ mod tests {
         let EnginePollResult::CallAi { request, .. } = engine.poll() else {
             panic!("expected CallAi");
         };
-        assert!(request.system_prompt.contains("--- Workflow context ---"));
+        assert!(request.system_content().contains("--- Workflow context ---"));
         assert!(request
-            .system_prompt
+            .system_content()
             .contains("Always follow the style guide."));
     }
 

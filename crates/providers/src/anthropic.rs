@@ -22,7 +22,7 @@ pub async fn invoke(
     let body = json!({
         "model": request.model,
         "max_tokens": DEFAULT_MAX_TOKENS,
-        "system": request.system_prompt,
+        "system": request.system_content(),
         "messages": transcript_to_anthropic_messages(&request),
         "tools": all_tool_specs(&request)
             .into_iter()
@@ -257,7 +257,7 @@ mod tests {
             node_id: engine::NodeId("idea".to_string()),
             node_label: "Idea".to_string(),
             model: "claude-3-5-sonnet-latest".to_string(),
-            system_prompt: "You are precise.".to_string(),
+            system_messages: vec!["You are precise.".to_string()],
             task_prompt: "Summarize the kickoff.".to_string(),
             input: json!({"entrypoint": {"text": "ORCHID-91"}, "upstream": []}),
             output_schema: json!({
@@ -304,7 +304,7 @@ mod tests {
                 "system": "You are precise.",
                 "messages": [{
                     "role": "user",
-                    "content": "Node: Idea\nTask:\nSummarize the kickoff.\n\nUpstream input JSON:\n{\"entrypoint\":{\"text\":\"ORCHID-91\"},\"upstream\":[]}\n\nYou are done only after openflow_submit_node_output succeeds. Call it exactly once with arguments shaped as {\"output\": <object matching the node output schema>, \"assistant_message\": null}. Until then, the workflow stays on this node."
+                    "content": "Node: Idea\nTask:\nSummarize the kickoff.\n\nUpstream input JSON:\n{\"entrypoint\":{\"text\":\"ORCHID-91\"},\"upstream\":[]}"
                 }],
                 "tools": [{
                     "name": "openflow_submit_node_output",

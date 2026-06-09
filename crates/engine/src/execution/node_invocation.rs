@@ -39,24 +39,57 @@ pub fn merge_shared_context(workflow: &Workflow, base: &str) -> String {
     }
 }
 
-/// Appended to every agent system prompt — defines when a node is complete.
-pub const NODE_COMPLETION_CONTRACT: &str = "\
---- Node completion ---\n\
-This node is not complete until you call openflow_submit_node_output exactly once with \
-structured output matching the node output schema.\n\
-Plain assistant text does not finish the node; the workflow does not advance until \
-openflow_submit_node_output succeeds.\n\
-Call openflow_request_user_input when you need human input before you can finish.";
+/// Pre-system runtime contract prepended to every workflow agent's system prompt.
+pub const NODE_RUNTIME_PREAMBLE: &str = "\
+--- OpenFlow runtime ---\n\
+You are one agent node in a workflow graph. Downstream nodes start only after you \
+successfully submit this node's output.\n\
+\n\
+## When this node is done\n\
+- The node is incomplete until you call openflow_submit_node_output exactly once.\n\
+- Plain assistant text does not finish the node and does not advance the workflow.\n\
+- Call submit only when: (1) the task prompt is satisfied, (2) output matches the node \
+output schema, (3) you do not need more human input.\n\
+\n\
+## How to finish and advance to the next node\n\
+Call openflow_submit_node_output with:\n\
+{\"output\": <object matching the output schema>, \"assistant_message\": <string or null>}\n\
+Put every schema field under \"output\", not at the top level. After a successful submit, \
+the host stores your output and may run downstream nodes that depend on this one.\n\
+\n\
+## When to pause for a human\n\
+Call openflow_request_user_input with {\"assistant_message\": \"<one clear question>\"} \
+when you cannot complete the task without human clarification. After the human replies, \
+continue working toward submit.\n\
+\n\
+## Other tools\n\
+Use catalog tools when they improve correctness. Tool errors are returned to you; recover \
+and keep working toward submit unless the task is impossible.\n\
+\n\
+## Do not\n\
+- Stop with prose only and expect the workflow to continue.\n\
+- Call submit before the task is actually complete.\n\
+- Assume downstream nodes have started before submit succeeds.";
 
-/// Merge per-workflow shared context into a node's system prompt.
+/// Assemble ordered system messages for a workflow agent node (engine-owned; providers do not edit).
 #[must_use]
-pub fn workflow_system_prompt(workflow: &Workflow, node: &Node) -> String {
-    let base = merge_shared_context(workflow, &node.agent.system_prompt);
-    if base.contains("--- Node completion ---") {
-        base
-    } else {
-        format!("{base}\n\n{NODE_COMPLETION_CONTRACT}")
+pub fn build_system_messages(workflow: &Workflow, node: &Node) -> Vec<String> {
+    let mut messages = Vec::new();
+    if !node.agent.system_prompt.contains("--- OpenFlow runtime ---") {
+        messages.push(NODE_RUNTIME_PREAMBLE.to_string());
     }
+    let node_prompt = node.agent.system_prompt.trim();
+    if !node_prompt.is_empty() {
+        messages.push(node_prompt.to_string());
+    }
+    let shared = workflow.settings.shared_context.trim();
+    if !shared.is_empty() {
+        messages.push(format!("--- Workflow context ---\n{shared}"));
+    }
+    if messages.is_empty() {
+        messages.push(NODE_RUNTIME_PREAMBLE.to_string());
+    }
+    messages
 }
 
 /// Collect file-change records from all transitive upstream nodes (deduped by path, latest timestamp wins).
@@ -174,7 +207,7 @@ pub fn build_agent_request(
         node_id: node.id.clone(),
         node_label: node.label.clone(),
         model: node.agent.model.clone(),
-        system_prompt: workflow_system_prompt(ctx.workflow, node),
+        system_messages: build_system_messages(ctx.workflow, node),
         task_prompt: node.agent.task_prompt.clone(),
         input: build_node_input(
             &node.id,
@@ -197,12 +230,25 @@ mod tests {
     use crate::graph::{Edge, Workflow};
 
     #[test]
-    fn workflow_system_prompt_includes_completion_contract() {
+    fn build_system_messages_prepends_runtime_preamble() {
         let workflow = Workflow::new("completion");
+        let mut node = crate::graph::Node::agent("idea", 0.0, 0.0);
+        node.agent.system_prompt = "You are a planner.".to_string();
+        let messages = build_system_messages(&workflow, &node);
+        assert!(messages[0].contains("--- OpenFlow runtime ---"));
+        assert!(messages[1].contains("You are a planner."));
+        assert!(messages[0].contains("openflow_submit_node_output"));
+    }
+
+    #[test]
+    fn build_system_messages_appends_shared_context_last() {
+        let mut workflow = Workflow::new("shared");
+        workflow.settings.shared_context = "Use the style guide.".to_string();
         let node = crate::graph::Node::agent("idea", 0.0, 0.0);
-        let prompt = workflow_system_prompt(&workflow, &node);
-        assert!(prompt.contains("--- Node completion ---"));
-        assert!(prompt.contains("openflow_submit_node_output"));
+        let messages = build_system_messages(&workflow, &node);
+        assert!(messages[1].contains("focused AI agent"));
+        assert!(messages[2].contains("--- Workflow context ---"));
+        assert!(messages[2].contains("Use the style guide."));
     }
 
     #[test]

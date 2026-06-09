@@ -37,7 +37,8 @@
 
 ### Fixed
 
-- **Node completion:** append `NODE_COMPLETION_CONTRACT` to every agent system prompt; strengthen provider task-context wording so nodes finish only via `openflow_submit_node_output`. Downstream nodes fail fast when upstream output is missing.
+- **Node runtime preamble:** engine assembles `AgentRequest.system_messages` (`NODE_RUNTIME_PREAMBLE`, node prompt, workflow context); providers only call `system_content()` for wire transport. Task context user message is node/task/upstream only.
+- **Node completion:** downstream nodes fail fast when upstream output is missing.
 - **Remove max tool rounds:** drop `NodeToolConfig.max_tool_rounds` / `maxToolRounds` from engine, UI, and workflows; agents may call tools until they submit node output.
 
 - **Subagent runtime test:** `advance_subagent_invoke_records_tool_calls_before_results` catch-all arm now panics on unexpected variants instead of asserting an impossible `NeedAi` match.

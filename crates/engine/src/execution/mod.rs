@@ -14,7 +14,7 @@ pub use interactive_engine::{
 };
 pub use node_invocation::{
     build_agent_request, build_node_input, build_upstream_map, merge_shared_context,
-    upstream_changed_files, workflow_system_prompt, NodeInvocationContext,
+    build_system_messages, upstream_changed_files, NodeInvocationContext, NODE_RUNTIME_PREAMBLE,
 };
 pub use subagent_runtime::{
     advance_subagent_invoke, handle_declare_subagents, is_subagent_runtime_builtin,

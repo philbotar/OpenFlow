@@ -169,7 +169,7 @@ mod tests {
             node_id: engine::NodeId("idea".to_string()),
             node_label: "Idea".to_string(),
             model: "test-model".to_string(),
-            system_prompt: "You are precise.".to_string(),
+            system_messages: vec!["You are precise.".to_string()],
             task_prompt: "Summarize the kickoff.".to_string(),
             input: json!({"entrypoint": {"text": "ORCHID-91"}, "upstream": []}),
             output_schema: json!({
@@ -234,7 +234,7 @@ mod tests {
                     { "role": "system", "content": "You are precise." },
                     {
                         "role": "user",
-                        "content": "Node: Idea\nTask:\nSummarize the kickoff.\n\nUpstream input JSON:\n{\"entrypoint\":{\"text\":\"ORCHID-91\"},\"upstream\":[]}\n\nYou are done only after openflow_submit_node_output succeeds. Call it exactly once with arguments shaped as {\"output\": <object matching the node output schema>, \"assistant_message\": null}. Until then, the workflow stays on this node."
+                        "content": "Node: Idea\nTask:\nSummarize the kickoff.\n\nUpstream input JSON:\n{\"entrypoint\":{\"text\":\"ORCHID-91\"},\"upstream\":[]}"
                     }
                 ],
                 "tools": [{
@@ -300,7 +300,7 @@ mod tests {
                     { "role": "system", "content": "You are precise." },
                     {
                         "role": "user",
-                        "content": "Node: Idea\nTask:\nSummarize the kickoff.\n\nUpstream input JSON:\n{\"entrypoint\":{\"text\":\"ORCHID-91\"},\"upstream\":[]}\n\nUse tools when they materially improve correctness. You are done only after openflow_submit_node_output succeeds — call it exactly once with arguments shaped as {\"output\": <object matching the node output schema>, \"assistant_message\": null}. Until then, the workflow stays on this node."
+                        "content": "Node: Idea\nTask:\nSummarize the kickoff.\n\nUpstream input JSON:\n{\"entrypoint\":{\"text\":\"ORCHID-91\"},\"upstream\":[]}"
                     }
                 ],
                 "tools": [

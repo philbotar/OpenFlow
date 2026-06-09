@@ -18,15 +18,9 @@ pub struct ToolSpec {
 }
 
 pub fn build_node_context(request: &AgentRequest) -> String {
-    let tool_instruction = if request.available_tools.is_empty() {
-        "You are done only after openflow_submit_node_output succeeds. Call it exactly once with arguments shaped as {\"output\": <object matching the node output schema>, \"assistant_message\": null}. Until then, the workflow stays on this node.".to_string()
-    } else {
-        "Use tools when they materially improve correctness. You are done only after openflow_submit_node_output succeeds — call it exactly once with arguments shaped as {\"output\": <object matching the node output schema>, \"assistant_message\": null}. Until then, the workflow stays on this node."
-            .to_string()
-    };
     format!(
-        "Node: {}\nTask:\n{}\n\nUpstream input JSON:\n{}\n\n{}",
-        request.node_label, request.task_prompt, request.input, tool_instruction
+        "Node: {}\nTask:\n{}\n\nUpstream input JSON:\n{}",
+        request.node_label, request.task_prompt, request.input
     )
 }
 
@@ -111,7 +105,7 @@ pub fn tool_payload(tool: &ToolSpec) -> Value {
 
 pub fn transcript_to_responses_input(request: &AgentRequest) -> Result<Vec<Value>, AgentError> {
     let mut input = vec![
-        json!({ "role": "system", "content": request.system_prompt }),
+        json!({ "role": "system", "content": request.system_content() }),
         json!({ "role": "user", "content": build_node_context(request) }),
     ];
 
@@ -146,7 +140,7 @@ pub fn transcript_to_responses_input(request: &AgentRequest) -> Result<Vec<Value
 
 pub fn transcript_to_chat_messages(request: &AgentRequest) -> Result<Vec<Value>, AgentError> {
     let mut messages = vec![
-        json!({ "role": "system", "content": request.system_prompt }),
+        json!({ "role": "system", "content": request.system_content() }),
         json!({ "role": "user", "content": build_node_context(request) }),
     ];
 

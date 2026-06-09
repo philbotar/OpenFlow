@@ -13,13 +13,22 @@ pub struct AgentRequest {
     pub node_id: NodeId,
     pub node_label: String,
     pub model: String,
-    pub system_prompt: String,
+    /// Ordered system instruction bodies assembled by the engine; providers map to wire format as-is.
+    pub system_messages: Vec<String>,
     pub task_prompt: String,
     pub input: Value,
     pub output_schema: Value,
     pub tool_config: NodeToolConfig,
     pub available_tools: Vec<ToolDefinition>,
     pub transcript: Vec<AgentTranscriptItem>,
+}
+
+impl AgentRequest {
+    /// Join [`Self::system_messages`] for providers that accept a single system string.
+    #[must_use]
+    pub fn system_content(&self) -> String {
+        self.system_messages.join("\n\n")
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
