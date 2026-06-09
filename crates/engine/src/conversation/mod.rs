@@ -180,7 +180,7 @@ pub fn is_redundant_tool_call_markup(content: &str) -> bool {
     if trimmed.is_empty() {
         return false;
     }
-    
+
     strip_tool_call_markup(trimmed).is_empty()
 }
 

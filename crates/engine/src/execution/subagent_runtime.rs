@@ -169,24 +169,23 @@ pub fn start_subagent_invoke(
         ));
     };
 
-    let sub_request =
-        if let Some(agent_def) = agent_snapshots.get(&call_args.subagent_id) {
-            build_saved_agent_request(
-                workflow,
-                agent_def,
-                &subagent,
-                &call_args.input,
-                available_tools,
-            )
-        } else {
-            build_adhoc_agent_request(
-                workflow,
-                parent_node,
-                &subagent,
-                &call_args.input,
-                available_tools,
-            )
-        };
+    let sub_request = if let Some(agent_def) = agent_snapshots.get(&call_args.subagent_id) {
+        build_saved_agent_request(
+            workflow,
+            agent_def,
+            &subagent,
+            &call_args.input,
+            available_tools,
+        )
+    } else {
+        build_adhoc_agent_request(
+            workflow,
+            parent_node,
+            &subagent,
+            &call_args.input,
+            available_tools,
+        )
+    };
 
     let telemetry = vec![RunTelemetry::SubagentStarted {
         node_id: parent_node_id.clone(),

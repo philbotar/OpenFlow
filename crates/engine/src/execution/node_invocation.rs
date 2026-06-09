@@ -75,7 +75,11 @@ and keep working toward submit unless the task is impossible.\n\
 #[must_use]
 pub fn build_system_messages(workflow: &Workflow, node: &Node) -> Vec<String> {
     let mut messages = Vec::new();
-    if !node.agent.system_prompt.contains("--- OpenFlow runtime ---") {
+    if !node
+        .agent
+        .system_prompt
+        .contains("--- OpenFlow runtime ---")
+    {
         messages.push(NODE_RUNTIME_PREAMBLE.to_string());
     }
     let node_prompt = node.agent.system_prompt.trim();

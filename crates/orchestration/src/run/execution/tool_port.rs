@@ -386,13 +386,7 @@ where
             result = ai.invoke(request) => Some(result),
         };
         if result.is_some() {
-            emit_phase_timed(
-                &self.event_tx,
-                "ai_invoke",
-                &label,
-                Some(node_id),
-                started,
-            );
+            emit_phase_timed(&self.event_tx, "ai_invoke", &label, Some(node_id), started);
         }
         result
     }

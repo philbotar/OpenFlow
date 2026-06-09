@@ -57,20 +57,14 @@ impl MatchSink {
 impl Sink for MatchSink {
     type Error = io::Error;
 
-    fn matched(
-        &mut self,
-        _searcher: &Searcher,
-        mat: &SinkMatch<'_>,
-    ) -> Result<bool, Self::Error> {
+    fn matched(&mut self, _searcher: &Searcher, mat: &SinkMatch<'_>) -> Result<bool, Self::Error> {
         if self.limit_reached {
             return Ok(false);
         }
         let line_number = mat.line_number().unwrap_or(0);
         let line = String::from_utf8_lossy(mat.bytes()).trim_end().to_string();
-        self.lines.push(format!(
-            "{}:{}:{}",
-            self.display_path, line_number, line
-        ));
+        self.lines
+            .push(format!("{}:{}:{}", self.display_path, line_number, line));
         if self.lines.len() >= self.max_matches {
             self.limit_reached = true;
             return Ok(false);
@@ -85,7 +79,9 @@ pub fn search(cwd: &Path, args: serde_json::Value) -> Result<String, ToolError> 
         .map_err(|error| ToolError::Failed(format!("invalid search args: {error}")))?;
     let pattern = args.pattern.trim();
     if pattern.is_empty() {
-        return Err(ToolError::Failed("search pattern must not be empty".to_string()));
+        return Err(ToolError::Failed(
+            "search pattern must not be empty".to_string(),
+        ));
     }
 
     let matcher = RegexMatcherBuilder::new()
@@ -115,14 +111,8 @@ pub fn search(cwd: &Path, args: serde_json::Value) -> Result<String, ToolError> 
                 limit_reached = true;
                 break;
             }
-            let (lines, truncated) = search_target(
-                cwd,
-                &mut searcher,
-                &matcher,
-                &target,
-                gitignore,
-                remaining,
-            )?;
+            let (lines, truncated) =
+                search_target(cwd, &mut searcher, &matcher, &target, gitignore, remaining)?;
             if truncated {
                 limit_reached = true;
             }
@@ -177,7 +167,9 @@ fn search_file(
     let mut sink = MatchSink::new(display_path, max_matches);
     searcher
         .search_path(matcher, path, &mut sink)
-        .map_err(|error| ToolError::Failed(format!("search failed for {}: {error}", path.display())))?;
+        .map_err(|error| {
+            ToolError::Failed(format!("search failed for {}: {error}", path.display()))
+        })?;
     Ok((sink.lines, sink.limit_reached))
 }
 
@@ -231,9 +223,7 @@ fn resolve_search_targets(cwd: &Path, pattern: &str) -> Result<Vec<PathBuf>, Too
     for entry in glob::glob(&glob_pattern)
         .map_err(|error| ToolError::Failed(format!("invalid glob pattern: {error}")))?
     {
-        matches.push(
-            entry.map_err(|error| ToolError::Failed(format!("glob failed: {error}")))?,
-        );
+        matches.push(entry.map_err(|error| ToolError::Failed(format!("glob failed: {error}")))?);
     }
     Ok(matches)
 }
@@ -279,6 +269,11 @@ mod tests {
     #[test]
     fn respects_gitignore() {
         let (_dir, cwd) = fixture();
+        std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(&cwd)
+            .status()
+            .expect("git init for gitignore test");
         fs::write(cwd.join(".gitignore"), "ignored.txt\n").unwrap();
         fs::write(cwd.join("ignored.txt"), "secret_match\n").unwrap();
         fs::write(cwd.join("visible.txt"), "secret_match\n").unwrap();
@@ -316,28 +311,26 @@ mod tests {
         )
         .unwrap();
         assert!(output.contains("truncated"));
-        assert_eq!(output.lines().filter(|line| line.contains("many.txt:")).count(), MAX_SEARCH_MATCHES);
+        assert_eq!(
+            output
+                .lines()
+                .filter(|line| line.contains("many.txt:"))
+                .count(),
+            MAX_SEARCH_MATCHES
+        );
     }
 
     #[test]
     fn invalid_regex() {
         let (_dir, cwd) = fixture();
-        let error = search(
-            &cwd,
-            serde_json::json!({"pattern": "[", "paths": "."}),
-        )
-        .unwrap_err();
+        let error = search(&cwd, serde_json::json!({"pattern": "[", "paths": "."})).unwrap_err();
         assert!(error.to_string().contains("invalid search regex"));
     }
 
     #[test]
     fn empty_pattern_errors() {
         let (_dir, cwd) = fixture();
-        let error = search(
-            &cwd,
-            serde_json::json!({"pattern": "  ", "paths": "."}),
-        )
-        .unwrap_err();
+        let error = search(&cwd, serde_json::json!({"pattern": "  ", "paths": "."})).unwrap_err();
         assert!(error.to_string().contains("must not be empty"));
     }
 }
