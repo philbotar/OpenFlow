@@ -1,92 +1,167 @@
 # Architecture Contract
 
-This contract defines layer responsibilities and dependency rules for Step-through-agentic-workflow.
+Step-through uses **Hexagonal Architecture with Layers** — nested ports-and-adapters where each layer is both an adapter (for the layer above) and a provider of services (to the layer below).
 
-## Layer Model
+```
+┌─────────────────────────────────────────────────┐
+│  UI (crates/ui)                                 │
+│  Presentation — visual state, interaction       │
+└──────────────────┬──────────────────────────────┘
+                   │
+                   │ implements Desktop inbound port
+                   │ (invokes Tauri commands)
+                   ▼
+┌──────────────────────────────────────────────────┐
+│  Desktop (crates/desktop)                        │
+│  Tauri Adapter — IPC transport, DTO mapping      │
+└──────────────────┬───────────────────────────────┘
+                   │
+                   │ implements Orchestration inbound port
+                   │ (calls AppBackend)
+                   ▼
+┌──────────────────────────────────────────────────┐
+│  Orchestration (crates/orchestration)            │
+│  Application — run lifecycle, coordination       │
+└──────────────────┬───────────────────────────────┘
+          ╱        │        ╲
+    entity/    backend/   adapters/
+    services   composition   drivers
+         │        │            │
+         └────────┼────────────┘
+                  │
+        ┌─────────┴──────────┐
+        │ implements         │
+        │ domain ports       │
+        ▼                    ▼
+    Domain (hex)        Providers (adapter)
+    Business logic      LLM transport
+```
 
-1. UI
-- Scope: visual state, interaction, rendering.
-- Code: crates/ui/src.
+## Layer Definitions
 
-2. Desktop Adapter
-- Scope: Tauri transport adapter only (invoke/event wiring, serialization mapping).
-- Code: crates/desktop/src-tauri.
+### 1. **Domain (crates/domain)**
+- **Role:** Hexagon — pure business logic
+- **Scope:** Workflow model, invariants, transitions, execution semantics, ports (inbound + outbound)
+- **Public interface:** Traits in `ports/` + model types
+- **Dependencies:** None upward; only serialization, async traits
 
-3. Orchestration
-- Scope: run lifecycle, coordination, retries, approval loops, event fanout.
-- Code: crates/orchestration.
-- Composition root: `AppBackend` wires catalog modules (`WorkflowCatalog`, `AgentLibrary`, `ProjectRegistry`, `SettingsFacade`, `RunCoordinator`). Backend delegates; it does not embed merge/split or session logic.
+### 2. **Providers (crates/providers)**
+- **Role:** Outbound adapter — implements `domain::AiPort`
+- **Scope:** LLM protocol/auth/transport
+- **Public interface:** `create_provider()` → `Box<dyn AiPort>`
+- **Dependencies:** `domain` types, HTTP client, serde
 
-4. Domain Engine
-- Scope: workflow model, invariants, transitions, execution semantics, ports.
-- Code: crates/domain.
+### 3. **Orchestration (crates/orchestration)**
+- **Role:** Inbound adapter for Domain; outbound provider for Desktop
+- **Scope:** Run lifecycle, session state, coordination, approval loops, event fanout
+- **Sub-roles:**
+  - `backend/` — composition root; wires services and adapters
+  - `{entity}/application/` — service; coordinates domain + ports
+  - `{entity}/adapters/` — repository; persistence and file I/O
+  - `adapters/infrastructure/` — drivers; tool/git/LSP execution
+- **Public interface:** `AppBackend` — façade that Desktop calls
+- **Dependencies:** `domain` + `providers`, no upward
 
-5. Provider Adapters
-- Scope: concrete model-provider protocol/auth/transport implementations.
-- Code: crates/providers.
+### 4. **Desktop (crates/desktop)**
+- **Role:** Inbound adapter for UI; calls Orchestration
+- **Scope:** Tauri transport only — IPC wiring, command serialization, DTOs
+- **Public interface:** Tauri command handlers that map to Orchestration calls
+- **Dependencies:** `orchestration::AppBackend`, no upward
+
+### 5. **UI (crates/ui)**
+- **Role:** Presentation layer; implements Desktop's command interface
+- **Scope:** Visual state, interaction, rendering
+- **Public interface:** React components, TypeScript types
+- **Dependencies:** Tauri invoke client (to Desktop), no upward
 
 ## State Ownership
 
-1. Orchestration owns runtime execution state.
-- Active session/run state.
-- Tool approval queues.
-- Retry/backoff and lifecycle control.
+### Orchestration
+- Active session/run state (approval queues, retry counters, execution trace)
+- Runtime coordination (what step to run next, when to pause for approval)
+- NOT: business logic (domain owns that)
 
-2. Domain owns state model and invariants.
-- Types and legal transitions.
-- Validation and execution rules.
+### Domain
+- Model types and invariants (Workflow, Node, ToolCall, ToolResult)
+- Legal transitions and validation rules
+- Execution semantics (when does an engine advance, what are error states)
 
-3. Persistence/infrastructure owns durable state.
-- Workflow/settings/templates files.
-- Credential storage integration.
+### Infrastructure / Persistence
+- Durable state (workflows.json, settings.json, agent definitions)
+- Credentials, cache
+- NOT: runtime session state (that's orchestration)
 
-## Dependency Rules (Allowed)
+## Dependency Rules
 
-1. UI -> Desktop Adapter.
-2. Desktop Adapter -> Orchestration.
-3. Orchestration -> Domain Engine.
-4. Orchestration -> Provider Adapters via Domain-defined ports.
-5. Provider Adapters -> Domain Engine (implements AiPort and related contracts).
+**Allowed (dependencies point inward):**
+- UI → Desktop (invoke Tauri commands)
+- Desktop → Orchestration (call `AppBackend` methods)
+- Orchestration → Domain (use model types, call engine)
+- Orchestration → Providers (via `Box<dyn AiPort>`, no concrete types)
+- Providers → Domain (implements `AiPort` trait)
 
-## Dependency Rules (Forbidden)
+**Forbidden:**
+- UI → Domain or Providers (bypass orchestration)
+- UI → Orchestration directly (go through Desktop)
+- Desktop → Domain or Providers (go through Orchestration)
+- Desktop → Orchestration internals (`{entity}/application/adapters/`); only `AppBackend` public façade
+- Orchestration → UI or Desktop (upward)
+- Domain → anything outward (no imports of provider, orchestration, UI, desktop)
+- Providers → UI or Desktop
 
-1. UI must not call Domain Engine or Provider Adapters directly.
-2. Desktop Adapter must not call Domain Engine directly.
-3. Desktop Adapter must not contain orchestration policy.
-4. Domain Engine must not import Provider Adapter transport/auth details.
-5. Provider Adapters must not depend on UI/Desktop modules.
+**Rationale:** Each layer is an adapter for the layer above it and depends only on the layer below.
 
 ## Engine Invocation Rule
 
-1. Engine calls are orchestrator-only.
-- Only Orchestration may invoke InteractiveEngine/runner entry points.
-- UI/Desktop/Providers do not invoke engine entry points.
+- Only `orchestration/run/application/coordinator.rs` may invoke `InteractiveEngine` or `WorkflowRunner`.
+- UI never calls engine directly.
+- Desktop never calls engine directly.
+- Providers never call engine.
+- This rule prevents accidental state machine violations and ensures orchestration owns the run lifecycle.
 
 ## Port Rule
 
-1. Orchestration must depend on interfaces, not provider internals.
-- Provider-specific branching belongs in the `providers` crate.
-- Domain defines provider interaction contracts (`AiPort`).
-- UI depends on `UiDesktopOutboundPort`, not raw Tauri invoke details.
-- Add a new port only when a consumer is typed on that interface.
+Domain defines ports (traits) for:
+- **Inbound:** What orchestration must implement for domain (e.g., `HumanInputPort`, `ToolApprovalPort`)
+- **Outbound:** What domain requires from external systems (e.g., `AiPort`)
+
+Orchestration implements both inbound ports and calls outbound ports via `Box<dyn>`.
+
+Provider-specific branching stays in `providers/`. Domain does not know which LLM is being called.
+
+UI-to-Desktop contract via `UiDesktopOutboundPort` (TypeScript trait). Add a new port only when code is typed on `dyn ThatPort`.
 
 ## Testability Rule
 
-1. Every layer must be testable at its seam.
-- UI tests mock `UiDesktopOutboundPort`.
-- Orchestration tests use inline `impl AiPort` stubs or acceptance fixtures.
-- Provider tests verify wire mapping and `AiClient` contract compliance.
+- **UI tests:** Mock `UiDesktopOutboundPort` (Tauri invoke mock)
+- **Desktop tests:** Mock `AppBackend` methods
+- **Orchestration tests:** Inline `impl AiPort` stubs; use acceptance fixtures for critical paths
+- **Provider tests:** Verify wire format mapping; test `AiClient` contract compliance
+- **Domain tests:** Colocated unit tests for engine and model invariants
+
+## Adapter Pattern (Nested Hexagons)
+
+Each layer implements the layer above's "inbound port":
+- UI implements Desktop's command interface (which commands are available)
+- Desktop implements Orchestration's façade interface (which methods Desktop can call)
+- Orchestration implements Domain's requirements (which ports orchestration provides for engine)
+
+This is **nested ports-and-adapters**, not pure hex-arc, but follows the same dependency-points-inward principle.
 
 ## Change Review Checklist
 
 1. Does this change add a dependency that violates allowed/forbidden rules?
-2. Does UI/Desktop bypass Orchestration to call engine/provider code?
+2. Does UI/Desktop bypass layers to call domain/provider code?
 3. Did provider-specific logic leak into Orchestration or Domain?
 4. Does any new runtime state live outside Orchestration without justification?
-5. Are new public interfaces declared at the correct seam?
+5. Are new public interfaces declared at the correct seam (Desktop vs Orchestration vs Domain)?
+6. Does Domain remain free of I/O or external crate imports?
+7. Do Desktop/UI contain only transport logic, not orchestration or domain rules?
 
-## Decision Notes
+## Design Notes
 
-1. "Orchestration holds all state" means runtime execution state, not all domain data forever.
-2. Domain remains provider-agnostic and transport-agnostic.
-3. Provider Adapters remain swappable without changing orchestration behavior.
+1. **Nested adapters:** UI → Desktop → Orchestration → Domain. Each layer is an adapter for the layer above.
+2. **Orchestration is thick:** It owns run state, approval/retry loops, event fanout. Not a thin layer.
+3. **Domain is pure:** No I/O, no provider knowledge, no runtime state. Only model, rules, and ports.
+4. **Providers are swappable:** Orchestration depends on `dyn AiPort`, not concrete implementations.
+5. **Desktop is thin:** Only Tauri IPC and DTO mapping. All logic lives in Orchestration or Domain.
