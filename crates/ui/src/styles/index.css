@@ -2560,21 +2560,27 @@ select.text-input:hover {
   grid-template-rows: 0fr;
   transition: grid-template-rows 200ms ease;
   width: 100%;
+  min-height: 0;
 }
 
 .tool-line-output-wrapper--expanded {
   grid-template-rows: 1fr;
+  max-height: 10rem;
 }
 
 .tool-line-output {
+  min-height: 0;
   overflow: hidden;
-  max-height: 10rem;
   font-size: 0.82rem;
   line-height: 1.5;
   color: var(--text-muted);
   white-space: pre-wrap;
   word-break: break-word;
   padding-left: 18px;
+}
+
+.tool-line-output-wrapper--expanded .tool-line-output {
+  overflow-y: auto;
 }
 
 .tool-line-output--error {

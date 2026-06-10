@@ -73,6 +73,8 @@ export function ConversationContent(allProps: ConversationContentProps) {
   const { class: className, conversation, setRef, children, ...rest } = allProps;
   let ref: HTMLDivElement | undefined;
   let ro: ResizeObserver | undefined;
+  let mo: MutationObserver | undefined;
+  let rafId: number | undefined;
 
   const handleRef = (el: HTMLDivElement | undefined) => {
     ref = el;
@@ -88,8 +90,19 @@ export function ConversationContent(allProps: ConversationContentProps) {
       if (conversation.isAtBottom()) conversation.scrollToBottom(false);
     });
     ro.observe(ref);
+    mo = new MutationObserver(() => {
+      if (!conversation.isAtBottom()) return;
+      if (rafId != null) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = undefined;
+        conversation.scrollToBottom(true);
+      });
+    });
+    mo.observe(ref, { childList: true, subtree: true, characterData: true });
     onCleanup(() => {
       ro?.disconnect();
+      mo?.disconnect();
+      if (rafId != null) cancelAnimationFrame(rafId);
       setRef?.(undefined);
     });
   });

@@ -19,3 +19,4 @@ crates/agent-workflow-desktop/node_modules*
 node_modules/
 .cursor/
 .flow/
+.openflow/

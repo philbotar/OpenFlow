@@ -1,6 +1,6 @@
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { ToolCallStatus } from "../../lib/types";
-import { toolBubbleOutputText } from "./toolBubbleState";
+import { toolBubbleOutputText, toolBubbleRowStatusText } from "./toolBubbleState";
 
 const SCROLL_THRESHOLD = 48;
 
@@ -43,13 +43,15 @@ export function ToolBubble(props: ToolBubbleProps) {
   const [isExpanded, setIsExpanded] = createSignal(false);
   let resizeObserver: ResizeObserver | undefined;
 
-  const statusText = () =>
+  const rowStatusText = () => toolBubbleRowStatusText(props.status);
+
+  const outputText = () =>
     toolBubbleOutputText(props.status, props.output, props.arguments, props.isError ?? false);
 
   const icon = () => statusIcon(props.status);
 
   const hasOutput = () =>
-    isTerminal(props.status) && !!statusText().trim();
+    isTerminal(props.status) && !!props.output?.trim();
 
   const scrollOutputToBottom = (smooth: boolean) => {
     if (!outputEl) return;
@@ -76,7 +78,7 @@ export function ToolBubble(props: ToolBubbleProps) {
   });
 
   createEffect(() => {
-    statusText();
+    outputText();
     if (isAtBottom()) scrollOutputToBottom(false);
   });
 
@@ -87,7 +89,8 @@ export function ToolBubble(props: ToolBubbleProps) {
         {icon().label}
       </span>
       <span class="tool-line-name">
-        {props.toolName} {statusText()}
+        {props.toolName}
+        <Show when={rowStatusText()}> {rowStatusText()}</Show>
       </span>
 
       {/* Hover-only chevron */}
@@ -112,7 +115,7 @@ export function ToolBubble(props: ToolBubbleProps) {
           role="log"
           aria-live="polite"
         >
-          {hasOutput() ? statusText() : ""}
+          {hasOutput() ? outputText() : ""}
         </div>
       </div>
     </div>

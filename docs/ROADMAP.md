@@ -126,6 +126,7 @@ Assistant token streaming is wired (`ChatMessageDelta` → chat log). Next chat 
 | System-level notifications | Planned | |
 | Agent questions & todos — in-run UI | Planned | See [Agent questions & todos](#agent-questions--todos) |
 | Queued chat input during active runs | Planned | See [Agent questions & todos](#agent-questions--todos) |
+| Global chat — unified pane across node progression | Planned | See [Global chat](#global-chat) |
 | Composio / n8n-style external node connectors | Planned | |
 | Accessibility & keyboard shortcuts | Planned | See [Accessibility](#accessibility) |
 
@@ -225,6 +226,31 @@ Agents can already ask for free-text input via `openflow_request_user_input` (`A
 | Persist todos per workflow run; optional export under project `.flow/` | Low | Planned |
 
 **Target:** Users can type ahead during active runs; queued input drains when the agent pauses. Structured questions and todos render in-run and sync back to the model each turn.
+
+### Global chat
+
+Today the dock Chat tab shows only the **selected** node's `chatLogs` entry (`AppProvider.chatMessages` keys off `selectedNodeId`). Advancing the workflow or selecting another node swaps the transcript; prior node conversation disappears from view unless you re-select that node. Parallel siblings at the same execution layer each have their own log, but the UI exposes one node at a time.
+
+| Layer | Gap |
+| --- | --- |
+| `crates/ui/src/context/AppProvider.tsx` | `chatMessages` is per selected node; no merged run-wide transcript |
+| `crates/ui/src/components/conversation/ConversationMessages.tsx` | Renders a single node's log; no node header or layer ordering |
+| `crates/ui/src/components/conversation/ConversationComposer.tsx` | Composer targets selected node only; no per-awaiting-node reply affordance |
+| `crates/orchestration/src/run/state/` | `chatLogs` is `Record<NodeId, ChatMessage[]>`; no global projection or execution-layer index |
+| `crates/ui/src/context/AppProvider.tsx` | `chatEnabledMemo` requires selected node ∈ `awaitingNodeIds` — global pane cannot accept input for a sibling without selecting it |
+
+| Item | Priority | Status |
+| --- | --- | --- |
+| Unified transcript — merge all node `chatLogs` into one scrollable pane for the active run | High | Planned |
+| Persist on progression — keep showing prior nodes' messages as the run advances; do not clear or hide when focus moves | High | Planned |
+| Execution-layer ordering — stack messages by DAG depth: earlier layer on top, later layer below (node 1 text above node 2, etc.) | High | Planned |
+| Node attribution — label or chrome per segment so users know which agent spoke | Medium | Planned |
+| Parallel reply bubbles — when two+ nodes at the same layer await input, show separate composer targets (one bubble per awaiting node) | High | Planned |
+| Route submit to correct node — `submit_user_input` keyed by target node id from the reply bubble, not canvas selection | High | Planned |
+| Optional canvas sync — selecting a node scrolls global chat to that node's segment (highlight only; pane stays unified) | Low | Planned |
+| Run start / entrypoint — global pane shows entrypoint user message at top before first node output | Medium | Planned |
+
+**Target:** One continuous chat pane for the whole run. As nodes complete and downstream nodes start, earlier conversation stays visible in layer order. When parallel nodes at the same depth pause for input, each gets its own reply bubble in the composer area so you can answer both without switching canvas selection.
 
 ### File references
 

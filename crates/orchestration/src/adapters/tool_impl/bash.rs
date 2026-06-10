@@ -85,14 +85,8 @@ struct BashArgs {
 /// Clamp timeout to the allowed bash range (default 300s, max 3600s).
 #[must_use]
 pub fn clamp_bash_timeout(raw: Option<u64>) -> u64 {
-    let timeout = raw.unwrap_or(DEFAULT_TIMEOUT_SECS);
-    if timeout < MIN_TIMEOUT_SECS {
-        MIN_TIMEOUT_SECS
-    } else if timeout > MAX_TIMEOUT_SECS {
-        MAX_TIMEOUT_SECS
-    } else {
-        timeout
-    }
+    raw.unwrap_or(DEFAULT_TIMEOUT_SECS)
+        .clamp(MIN_TIMEOUT_SECS, MAX_TIMEOUT_SECS)
 }
 
 pub async fn execute_bash(

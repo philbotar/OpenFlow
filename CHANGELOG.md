@@ -4,13 +4,17 @@
 
 ### Added
 
+- **Testing conventions:** standardised test placement rules — inline `#[cfg(test)] mod tests` by default, sibling `foo_tests.rs`/`tests.rs` extraction past ~150 lines, crate-level `tests/` for integration, Vitest siblings for frontend — documented in `docs/contributing/testing-workflows.md` and enforced via `.cursor/rules/testing-conventions.mdc`.
 - **Bash tool:** agent `bash` builtin (oh-my-pi–aligned) — `command`, optional `cwd`/`env`/`timeout`; non-interactive env defaults; merged stdout/stderr; wall-time and exit-code notices; `ToolTier::Exec` with critical-pattern approval override; opt-in via node tool config.
+- **ROADMAP.md:** [Global chat](docs/ROADMAP.md#global-chat) — unified chat pane across node progression; execution-layer message ordering; separate reply bubbles for parallel awaiting nodes.
 - **ROADMAP.md:** [Canvas run feedback](docs/ROADMAP.md#canvas-run-feedback) — scrollable in-node subagent list; colored status icons per agent state (thinking, done, etc.).
 - **Node status labels:** canvas nodes show descriptive statuses — Thinking, Waiting for Input, Awaiting Approval, Running Tool, and more — with matching colors for each state.
 - **Chat markdown:** assistant, user, system, and thinking messages render as Markdown (`solid-markdown`) with styled headings, lists, code blocks, tables, and links.
 
 ### Changed
 
+- **Backend test split:** extract the 365-line inline test module from `backend/mod.rs` into sibling `backend/tests.rs` per the new testing conventions; fix `clamp_bash_timeout` to use `u64::clamp` (clippy `manual_clamp`).
+- **Tool bubble row:** collapsed row shows tool name and status label only; actual tool output appears in the expanded panel; expanded output scrolls within a capped height.
 - **File changes panel:** collapsible header (file count + chevron) so long change lists do not cover the chat composer; expanded list scrolls inside a capped height.
 - **Architecture cleanup:** rename workflow storage adapters to `app_workflow_store.rs` / `project_workflow_store.rs`; remove orchestration `#[path]` flat module aliases — import paths match folder layout (`run::execution`, `workflow::catalog`, etc.); delete stale `docs/file-structure.md`; fix provider layout docs (flat `providers/src/`).
 - **Architecture enforcement:** `crates/engine/clippy.toml` I/O bans; `crates/workspace-checks` runs `check-architecture.sh` via `cargo test --workspace`; engine public API snapshot + `scripts/check-engine-public-api.sh` in `verify.sh`.

@@ -2,6 +2,33 @@
 
 How to verify workflow behavior without manually clicking through the desktop app.
 
+## Test Placement Conventions
+
+Mirrored in `.cursor/rules/testing-conventions.mdc` so agents apply them automatically.
+
+### Rust unit tests
+
+1. **Default: inline.** Unit tests live in a `#[cfg(test)] mod tests { ... }` block at the bottom of the source file they test.
+2. **Extract when large.** If the test module exceeds ~150 lines, move it to a sibling file:
+   - `foo.rs` → `foo_tests.rs` in the same directory, declared as `#[cfg(test)] mod foo_tests;` (see `adapters/tool_impl/edit/patch_tests.rs`).
+   - `mod.rs` → `tests.rs` in the same directory, declared as `#[cfg(test)] mod tests;` (see `run/execution/tests.rs`).
+3. **Always gate.** Every extracted test module declaration carries `#[cfg(test)]` so test code never compiles into release builds.
+4. No other variants: no `*_test.rs`, no `test_*.rs`, no `tests/` directories inside `src/`.
+
+### Rust integration / acceptance tests
+
+- Crate-level `tests/` directory (e.g. `crates/orchestration/tests/workflow_acceptance.rs`).
+- Live-network tests are `#[ignore]` and env-gated (`STEP_WORKFLOW_LIVE_AI=1`).
+
+### Frontend (TypeScript) tests
+
+- Vitest files sit next to the source they test: `foo.ts` → `foo.test.ts`, `Foo.tsx` → `Foo.test.tsx`.
+- No `__tests__/` directories.
+
+### Migration
+
+Files predating this convention are brought into conformance opportunistically — when materially editing a file whose tests violate the rules, fix the placement in the same change. No mass migrations.
+
 ## Local Dev Loops
 
 | Goal | Command | What It Proves |

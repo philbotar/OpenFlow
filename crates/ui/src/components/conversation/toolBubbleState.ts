@@ -9,14 +9,8 @@ export function resolveToolSummary(
   return runState.toolCallsByNode[nodeId]?.find((call) => call.toolCallId === toolCallId);
 }
 
-export function toolBubbleOutputText(
-  status: ToolCallStatus,
-  output: string | null | undefined,
-  _args: unknown,
-  isError: boolean,
-): string {
-  if (output?.trim()) return output;
-
+/** Status label for the collapsed tool row — never includes tool output. */
+export function toolBubbleRowStatusText(status: ToolCallStatus): string {
   switch (status) {
     case "proposed":
       return "Preparing…";
@@ -35,4 +29,15 @@ export function toolBubbleOutputText(
     default:
       return "";
   }
+}
+
+/** Full output for the expanded panel — actual tool output when present. */
+export function toolBubbleOutputText(
+  status: ToolCallStatus,
+  output: string | null | undefined,
+  _args: unknown,
+  _isError: boolean,
+): string {
+  if (output?.trim()) return output;
+  return toolBubbleRowStatusText(status);
 }
