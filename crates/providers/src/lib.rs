@@ -5,6 +5,7 @@ pub(crate) mod auth;
 mod client;
 pub(crate) mod mapping;
 pub(crate) mod openai_compat;
+mod sse;
 mod spec;
 
 pub use auth::AuthConfig;

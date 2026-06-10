@@ -34,7 +34,7 @@ pub struct AppBackendDeps {
     pub settings_store: Box<dyn SettingsStore>,
     pub skill_catalog: Box<dyn SkillCatalog>,
     pub env: ProviderEnv,
-    pub runtime: tokio::runtime::Runtime,
+    pub runtime_handle: tokio::runtime::Handle,
 }
 
 pub struct AppBackend {
@@ -43,23 +43,26 @@ pub struct AppBackend {
     projects: ProjectRegistry,
     settings: SettingsFacade,
     runs: RunCoordinator,
+    /// Keeps an owned runtime alive for tests and non-Tauri entrypoints.
+    _owned_runtime: Option<tokio::runtime::Runtime>,
 }
 
 impl AppBackend {
     #[must_use]
-    pub fn new(deps: AppBackendDeps) -> Self {
+    pub fn new(deps: AppBackendDeps, owned_runtime: Option<tokio::runtime::Runtime>) -> Self {
         Self {
             workflows: WorkflowCatalog::new(deps.workflow_store, deps.project_workflow_store),
             agents: AgentLibrary::new(deps.agent_store),
             projects: ProjectRegistry::new(deps.project_store),
             settings: SettingsFacade::new(deps.settings_store, deps.skill_catalog, deps.env),
-            runs: RunCoordinator::new(deps.runtime),
+            runs: RunCoordinator::new(deps.runtime_handle),
+            _owned_runtime: owned_runtime,
         }
     }
 
     #[must_use]
-    pub fn with_default_paths() -> Self {
-        Self::new(AppBackendDeps {
+    pub fn default_deps(runtime_handle: tokio::runtime::Handle) -> AppBackendDeps {
+        AppBackendDeps {
             workflow_store: Box::new(FileWorkflowStore::new(FileWorkflowStore::default_path())),
             project_workflow_store: Box::new(FileProjectWorkflowStore),
             agent_store: Box::new(FileAgentStore::new(FileAgentStore::default_path())),
@@ -67,8 +70,31 @@ impl AppBackend {
             settings_store: Box::new(FileSettingsStore::new(FileSettingsStore::default_path())),
             skill_catalog: Box::new(FileSkillCatalog),
             env: ProviderEnv::from_system(),
-            runtime: tokio::runtime::Runtime::new().expect("failed to create tokio runtime"),
-        })
+            runtime_handle,
+        }
+    }
+
+    #[must_use]
+    pub fn with_runtime_handle(runtime_handle: tokio::runtime::Handle) -> Self {
+        Self::new(Self::default_deps(runtime_handle), None)
+    }
+
+    #[must_use]
+    pub fn with_default_paths() -> Self {
+        let runtime = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
+        let handle = runtime.handle().clone();
+        Self::new(Self::default_deps(handle), Some(runtime))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn block_on_test<F>(&self, future: F) -> F::Output
+    where
+        F: std::future::Future,
+    {
+        self._owned_runtime
+            .as_ref()
+            .expect("test backend must own a runtime")
+            .block_on(future)
     }
 
     pub fn list_workflows(&self) -> Result<Vec<WorkflowListItem>, BackendError> {
@@ -315,19 +341,23 @@ mod tests {
 
     fn backend() -> (AppBackend, tempfile::TempDir) {
         let dir = tempdir().expect("tempdir");
-        let backend = AppBackend::new(AppBackendDeps {
-            workflow_store: Box::new(FileWorkflowStore::new(dir.path().join("workflows.json"))),
-            project_workflow_store: Box::new(FileProjectWorkflowStore),
-            agent_store: Box::new(FileAgentStore::new(dir.path().join("agents.json"))),
-            project_store: Box::new(FileProjectStore::new(dir.path().join("projects.json"))),
-            settings_store: Box::new(FileSettingsStore::new(dir.path().join("settings.json"))),
-            skill_catalog: Box::new(FileSkillCatalog),
-            env: ProviderEnv::from_pairs([
-                ("OPENAI_API_KEY", "openai-key"),
-                ("OPENAI_COMPATIBLE_API_KEY", "compatible-key"),
-            ]),
-            runtime: tokio::runtime::Runtime::new().expect("runtime"),
-        });
+        let runtime = tokio::runtime::Runtime::new().expect("runtime");
+        let backend = AppBackend::new(
+            AppBackendDeps {
+                workflow_store: Box::new(FileWorkflowStore::new(dir.path().join("workflows.json"))),
+                project_workflow_store: Box::new(FileProjectWorkflowStore),
+                agent_store: Box::new(FileAgentStore::new(dir.path().join("agents.json"))),
+                project_store: Box::new(FileProjectStore::new(dir.path().join("projects.json"))),
+                settings_store: Box::new(FileSettingsStore::new(dir.path().join("settings.json"))),
+                skill_catalog: Box::new(FileSkillCatalog),
+                env: ProviderEnv::from_pairs([
+                    ("OPENAI_API_KEY", "openai-key"),
+                    ("OPENAI_COMPATIBLE_API_KEY", "compatible-key"),
+                ]),
+                runtime_handle: runtime.handle().clone(),
+            },
+            Some(runtime),
+        );
         (backend, dir)
     }
 
@@ -486,16 +516,20 @@ mod tests {
             },
         );
 
-        let readiness = AppBackend::new(AppBackendDeps {
-            workflow_store: Box::new(FileWorkflowStore::new("/tmp/unused-workflows.json")),
-            project_workflow_store: Box::new(FileProjectWorkflowStore),
-            agent_store: Box::new(FileAgentStore::new("/tmp/unused-agents.json")),
-            project_store: Box::new(FileProjectStore::new("/tmp/unused-projects.json")),
-            settings_store: Box::new(FileSettingsStore::new("/tmp/unused-settings.json")),
-            skill_catalog: Box::new(FileSkillCatalog),
-            env: ProviderEnv::default(),
-            runtime: tokio::runtime::Runtime::new().expect("runtime"),
-        })
+        let runtime = tokio::runtime::Runtime::new().expect("runtime");
+        let readiness = AppBackend::new(
+            AppBackendDeps {
+                workflow_store: Box::new(FileWorkflowStore::new("/tmp/unused-workflows.json")),
+                project_workflow_store: Box::new(FileProjectWorkflowStore),
+                agent_store: Box::new(FileAgentStore::new("/tmp/unused-agents.json")),
+                project_store: Box::new(FileProjectStore::new("/tmp/unused-projects.json")),
+                settings_store: Box::new(FileSettingsStore::new("/tmp/unused-settings.json")),
+                skill_catalog: Box::new(FileSkillCatalog),
+                env: ProviderEnv::default(),
+                runtime_handle: runtime.handle().clone(),
+            },
+            Some(runtime),
+        )
         .resolve_provider_readiness(&settings, None);
 
         assert!(!readiness.ready);
@@ -505,7 +539,7 @@ mod tests {
     #[test]
     fn start_run_returns_initial_state_and_manual_events() {
         let (backend, _dir) = backend();
-        backend.runs.runtime().block_on(async {
+        backend.block_on_test(async {
             let mut workflow = Workflow::new("Manual run");
             let mut node = Node::agent("Review", 0.0, 0.0);
             node.id = NodeId("review".to_string());
@@ -542,7 +576,7 @@ mod tests {
     #[test]
     fn stop_run_is_idempotent_when_inactive() {
         let (backend, _dir) = backend();
-        backend.runs.runtime().block_on(async {
+        backend.block_on_test(async {
             let workflow = default_workflow("Workflow");
             let run_state = WorkflowRunState::idle_for_workflow(&workflow);
             backend
@@ -561,11 +595,12 @@ mod tests {
     #[test]
     fn submit_user_input_updates_snapshot_and_sends_action() {
         let (backend, _dir) = backend();
-        backend.runs.runtime().block_on(async {
+        backend.block_on_test(async {
             let workflow = default_workflow("Workflow");
             let (action_tx, mut action_rx) = tokio::sync::mpsc::unbounded_channel();
             let mut run_state = WorkflowRunState::running_for_workflow(&workflow);
             run_state.awaiting_node_id = Some(NodeId("idea".to_string()));
+            run_state.awaiting_node_ids = vec![NodeId("idea".to_string())];
             backend
                 .runs
                 .test_seed_session(workflow, run_state, action_tx)
@@ -588,7 +623,8 @@ mod tests {
                 "Continue with approvals"
             );
             match action_rx.recv().await.expect("action") {
-                ExecutionAction::ProvideInput(text) => {
+                ExecutionAction::ProvideInput { node_id, text } => {
+                    assert_eq!(node_id, NodeId("idea".to_string()));
                     assert_eq!(text, "Continue with approvals");
                 }
                 ExecutionAction::ResolveApproval { .. } => {
@@ -602,7 +638,7 @@ mod tests {
     #[test]
     fn submit_tool_approval_updates_snapshot_and_sends_action() {
         let (backend, _dir) = backend();
-        backend.runs.runtime().block_on(async {
+        backend.block_on_test(async {
             let workflow = default_workflow("Workflow");
             let (action_tx, mut action_rx) = tokio::sync::mpsc::unbounded_channel();
             let mut run_state = WorkflowRunState::running_for_workflow(&workflow);
@@ -634,7 +670,7 @@ mod tests {
                     assert_eq!(approval_id, "approval-1");
                     assert!(allow);
                 }
-                ExecutionAction::ProvideInput(_) => {
+                ExecutionAction::ProvideInput { .. } => {
                     panic!("unexpected input action");
                 }
                 ExecutionAction::Stop => panic!("unexpected stop action"),

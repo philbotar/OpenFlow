@@ -92,6 +92,7 @@ export interface AppContextValue {
   currentNodeOutput: Accessor<unknown>;
   chatMessages: Accessor<ChatMessage[]>;
   selectedPendingApproval: Accessor<PendingToolApproval | null>;
+  selectedNodePendingApproval: Accessor<PendingToolApproval | null>;
   chatEnabledMemo: Accessor<boolean>;
   chatComposerBusyMemo: Accessor<boolean>;
   chatSubmission: Accessor<ChatSubmissionResolution>;

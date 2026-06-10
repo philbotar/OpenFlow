@@ -28,6 +28,10 @@ pub enum ChatMessageKind {
 pub struct ChatMessage {
     pub role: ChatRole,
     pub content: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(default, rename = "streaming")]
+    pub streaming: bool,
     #[serde(
         default,
         rename = "toolCallId",
@@ -48,6 +52,20 @@ impl ChatMessage {
         Self {
             role,
             content: content.into(),
+            id: None,
+            streaming: false,
+            tool_call_id: None,
+            message_kind: None,
+        }
+    }
+
+    #[must_use]
+    pub fn streaming_assistant(id: impl Into<String>, content: impl Into<String>) -> Self {
+        Self {
+            role: ChatRole::Assistant,
+            content: content.into(),
+            id: Some(id.into()),
+            streaming: true,
             tool_call_id: None,
             message_kind: None,
         }
@@ -58,6 +76,8 @@ impl ChatMessage {
         Self {
             role: ChatRole::Thinking,
             content: String::new(),
+            id: None,
+            streaming: false,
             tool_call_id: Some(tool_call_id.into()),
             message_kind: None,
         }
@@ -68,6 +88,8 @@ impl ChatMessage {
         Self {
             role: ChatRole::Assistant,
             content: summary.into(),
+            id: None,
+            streaming: false,
             tool_call_id: None,
             message_kind: Some(ChatMessageKind::NodeCompleted),
         }

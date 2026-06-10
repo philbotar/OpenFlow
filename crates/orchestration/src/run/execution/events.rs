@@ -28,10 +28,13 @@ pub fn apply_event_to_run_state(
             });
         }
         ExecutionEvent::NodeStarted { node_id, label } => {
-            state.awaiting_node_id = None;
-            state.active_manual_node_id = None;
-            state.active_tool_call_id = None;
-            state.pending_approvals.clear();
+            remove_awaiting_node(state, &node_id);
+            state
+                .pending_approvals
+                .retain(|approval| approval.node_id != node_id.0);
+            if state.active_manual_node_id.as_ref() == Some(&node_id) {
+                state.active_manual_node_id = None;
+            }
             state
                 .status_by_node
                 .insert(node_id.clone(), AgentStatus::Started);
@@ -54,6 +57,28 @@ pub fn apply_event_to_run_state(
                 .or_default()
                 .push(ChatMessage::text(role, content));
         }
+        ExecutionEvent::ChatMessageDelta {
+            node_id,
+            message_id,
+            delta,
+            finalize,
+        } => {
+            let logs = state.chat_logs.entry(node_id).or_default();
+            if let Some(message) = logs
+                .iter_mut()
+                .rev()
+                .find(|message| message.id.as_deref() == Some(message_id.as_str()))
+            {
+                if !delta.is_empty() {
+                    message.content.push_str(&delta);
+                }
+                if finalize {
+                    message.streaming = false;
+                }
+            } else if !finalize {
+                logs.push(ChatMessage::streaming_assistant(message_id, delta));
+            }
+        }
         ExecutionEvent::NodeAwaitingInput {
             node_id,
             label,
@@ -63,7 +88,7 @@ pub fn apply_event_to_run_state(
             state
                 .status_by_node
                 .insert(node_id.clone(), AgentStatus::AwaitingInput);
-            state.awaiting_node_id = Some(node_id.clone());
+            add_awaiting_node(state, node_id.clone());
             state.active_manual_node_id = None;
             state.run_trace.push(RunTraceEntry {
                 node_id: node_id.clone(),
@@ -108,9 +133,15 @@ pub fn apply_event_to_run_state(
                 .push(ChatMessage::tool_marker(tool_call.id.clone()));
         }
         ExecutionEvent::ToolApprovalRequested { request } => {
-            state.awaiting_node_id = None;
+            remove_awaiting_node(state, &NodeId(request.node_id.clone()));
             state.active_tool_call_id = Some(request.tool_call.id.clone());
-            state.pending_approvals = vec![request.clone()];
+            if !state
+                .pending_approvals
+                .iter()
+                .any(|pending| pending.approval_id == request.approval_id)
+            {
+                state.pending_approvals.push(request.clone());
+            }
             state.status_by_node.insert(
                 NodeId(request.node_id.clone()),
                 AgentStatus::AwaitingToolApproval,
@@ -140,11 +171,12 @@ pub fn apply_event_to_run_state(
             );
         }
         ExecutionEvent::ToolApproved {
+            approval_id,
             node_id,
             tool_call_id,
             ..
         } => {
-            state.pending_approvals.clear();
+            remove_pending_approval(state, &approval_id);
             update_tool_status(
                 state,
                 &node_id,
@@ -155,12 +187,13 @@ pub fn apply_event_to_run_state(
             );
         }
         ExecutionEvent::ToolDenied {
+            approval_id,
             node_id,
             tool_call_id,
             reason,
             ..
         } => {
-            state.pending_approvals.clear();
+            remove_pending_approval(state, &approval_id);
             update_tool_status(
                 state,
                 &node_id,
@@ -252,10 +285,14 @@ pub fn apply_event_to_run_state(
             label,
             output,
         } => {
-            state.awaiting_node_id = None;
-            state.active_manual_node_id = None;
+            remove_awaiting_node(state, &node_id);
+            state
+                .pending_approvals
+                .retain(|approval| approval.node_id != node_id.0);
+            if state.active_manual_node_id.as_ref() == Some(&node_id) {
+                state.active_manual_node_id = None;
+            }
             state.active_tool_call_id = None;
-            state.pending_approvals.clear();
             state
                 .status_by_node
                 .insert(node_id.clone(), AgentStatus::Completed);
@@ -281,10 +318,14 @@ pub fn apply_event_to_run_state(
             error,
         } => {
             state.active = false;
-            state.awaiting_node_id = None;
-            state.active_manual_node_id = None;
+            remove_awaiting_node(state, &node_id);
+            state
+                .pending_approvals
+                .retain(|approval| approval.node_id != node_id.0);
+            if state.active_manual_node_id.as_ref() == Some(&node_id) {
+                state.active_manual_node_id = None;
+            }
             state.active_tool_call_id = None;
-            state.pending_approvals.clear();
             state
                 .status_by_node
                 .insert(node_id.clone(), AgentStatus::Failed);
@@ -308,6 +349,7 @@ pub fn apply_event_to_run_state(
         ExecutionEvent::Finished(report) => {
             state.active = false;
             state.awaiting_node_id = None;
+            state.awaiting_node_ids.clear();
             state.active_manual_node_id = None;
             state.active_tool_call_id = None;
             state.pending_approvals.clear();
@@ -316,6 +358,7 @@ pub fn apply_event_to_run_state(
         ExecutionEvent::Aborted => {
             state.active = false;
             state.awaiting_node_id = None;
+            state.awaiting_node_ids.clear();
             state.active_manual_node_id = None;
             state.active_tool_call_id = None;
             state.pending_approvals.clear();
@@ -347,6 +390,7 @@ pub fn apply_event_to_run_state(
         ExecutionEvent::Error(error) => {
             state.active = false;
             state.awaiting_node_id = None;
+            state.awaiting_node_ids.clear();
             state.active_manual_node_id = None;
             state.active_tool_call_id = None;
             state.pending_approvals.clear();
@@ -517,13 +561,35 @@ fn update_tool_status(
     }
 }
 
+fn add_awaiting_node(state: &mut WorkflowRunState, node_id: NodeId) {
+    if !state.awaiting_node_ids.contains(&node_id) {
+        state.awaiting_node_ids.push(node_id.clone());
+    }
+    if state.awaiting_node_id.is_none() {
+        state.awaiting_node_id = Some(node_id);
+    }
+}
+
+fn remove_awaiting_node(state: &mut WorkflowRunState, node_id: &NodeId) {
+    state.awaiting_node_ids.retain(|id| id != node_id);
+    if state.awaiting_node_id.as_ref() == Some(node_id) {
+        state.awaiting_node_id = state.awaiting_node_ids.first().cloned();
+    }
+}
+
+fn remove_pending_approval(state: &mut WorkflowRunState, approval_id: &str) {
+    state
+        .pending_approvals
+        .retain(|approval| approval.approval_id != approval_id);
+}
+
 pub fn record_user_input(state: &mut WorkflowRunState, node_id: &str, text: String) {
     state
         .chat_logs
         .entry(NodeId(node_id.to_string()))
         .or_default()
         .push(ChatMessage::text(ChatRole::User, text));
-    state.awaiting_node_id = None;
+    remove_awaiting_node(state, &NodeId(node_id.to_string()));
     state.active_manual_node_id = None;
 }
 

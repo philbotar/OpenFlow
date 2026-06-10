@@ -230,6 +230,7 @@ fn build_saved_agent_request(
         tool_config: sub_node_config,
         available_tools,
         transcript: sub_transcript,
+        model_attempt: 1,
     }
 }
 
@@ -263,6 +264,7 @@ fn build_adhoc_agent_request(
         tool_config: sub_node_config,
         available_tools,
         transcript: sub_transcript,
+        model_attempt: 1,
     }
 }
 
@@ -410,6 +412,7 @@ mod tests {
                 transcript: vec![AgentTranscriptItem::UserMessage {
                     content: "Do work".to_string(),
                 }],
+                model_attempt: 1,
             },
             tool_call_id: "parent-call".to_string(),
             parent_node_id: NodeId("node-1".to_string()),

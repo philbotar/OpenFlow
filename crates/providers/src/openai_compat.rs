@@ -3,8 +3,12 @@ use crate::mapping::{
     all_tool_specs, parse_chat_completion_output, parse_responses_output, should_allow_user_input,
     tool_payload, transcript_to_chat_messages, transcript_to_responses_input,
 };
+use crate::sse::{stream_sse_data_lines, ChatCompletionStreamAggregator};
 use crate::spec::WireApi;
-use engine::{AgentError, AgentRequest, AgentTurnOutcome};
+use engine::{
+    emit_assistant_deltas_from_outcome, AgentError, AgentRequest, AgentTurnOutcome, AiStreamEvent,
+    AiStreamSink,
+};
 use reqwest::Client;
 use serde_json::{json, Value};
 
@@ -40,6 +44,25 @@ pub async fn invoke(
     }
 }
 
+pub async fn invoke_stream(
+    http: &Client,
+    config: &OpenAiCompatibleConfig,
+    auth: &AuthConfig,
+    request: AgentRequest,
+    sink: &dyn AiStreamSink,
+) -> Result<AgentTurnOutcome, AgentError> {
+    match config.wire_api {
+        WireApi::ChatCompletions => {
+            invoke_chat_completions_stream(http, config, auth, request, sink).await
+        }
+        WireApi::Responses => {
+            let outcome = invoke_responses(http, config, auth, request).await?;
+            emit_assistant_deltas_from_outcome(sink, &outcome);
+            Ok(outcome)
+        }
+    }
+}
+
 async fn invoke_responses(
     http: &Client,
     config: &OpenAiCompatibleConfig,
@@ -59,16 +82,11 @@ async fn invoke_responses(
     parse_responses_output(&payload, Some(&request.output_schema))
 }
 
-async fn invoke_chat_completions(
-    http: &Client,
-    config: &OpenAiCompatibleConfig,
-    auth: &AuthConfig,
-    request: AgentRequest,
-) -> Result<AgentTurnOutcome, AgentError> {
-    let body = json!({
+fn chat_completions_body(request: &AgentRequest) -> Result<Value, AgentError> {
+    Ok(json!({
         "model": request.model,
-        "messages": transcript_to_chat_messages(&request)?,
-        "tools": all_tool_specs(&request)
+        "messages": transcript_to_chat_messages(request)?,
+        "tools": all_tool_specs(request)
             .into_iter()
             .map(|tool| json!({
                 "type": "function",
@@ -80,8 +98,16 @@ async fn invoke_chat_completions(
                 }
             }))
             .collect::<Vec<_>>()
-    });
+    }))
+}
 
+async fn invoke_chat_completions(
+    http: &Client,
+    config: &OpenAiCompatibleConfig,
+    auth: &AuthConfig,
+    request: AgentRequest,
+) -> Result<AgentTurnOutcome, AgentError> {
+    let body = chat_completions_body(&request)?;
     let payload = post_json(
         http,
         config,
@@ -91,6 +117,43 @@ async fn invoke_chat_completions(
         "OpenAI-compatible",
     )
     .await?;
+    parse_chat_completion_output(
+        &payload,
+        should_allow_user_input(&request),
+        Some(&request.output_schema),
+    )
+}
+
+async fn invoke_chat_completions_stream(
+    http: &Client,
+    config: &OpenAiCompatibleConfig,
+    auth: &AuthConfig,
+    request: AgentRequest,
+    sink: &dyn AiStreamSink,
+) -> Result<AgentTurnOutcome, AgentError> {
+    let mut body = chat_completions_body(&request)?;
+    body["stream"] = Value::Bool(true);
+    let http_request = http.post(endpoint(&config.base_url, &config.chat_completions_path));
+    let http_request = apply_auth(http_request, auth, "OpenAI-compatible")?.json(&body);
+    let response = http_request
+        .send()
+        .await
+        .map_err(|error| AgentError::Transient(format!("OpenAI-compatible request failed: {error}")))?;
+    let mut aggregator = ChatCompletionStreamAggregator::default();
+    let mut last_content_len = 0usize;
+    stream_sse_data_lines(response, "OpenAI-compatible", |event| {
+        aggregator.apply_chunk(&event);
+        if aggregator.content.len() > last_content_len {
+            let delta = aggregator.content[last_content_len..].to_string();
+            last_content_len = aggregator.content.len();
+            if !delta.is_empty() {
+                sink.on_stream_event(AiStreamEvent::AssistantDelta { content: delta });
+            }
+        }
+        Ok(())
+    })
+    .await?;
+    let payload = aggregator.into_completion_payload();
     parse_chat_completion_output(
         &payload,
         should_allow_user_input(&request),
@@ -183,6 +246,7 @@ mod tests {
             tool_config: engine::NodeToolConfig::default(),
             available_tools: Vec::new(),
             transcript: Vec::new(),
+            model_attempt: 1,
         }
     }
 

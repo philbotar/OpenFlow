@@ -1552,6 +1552,36 @@ select.text-input:hover {
   gap: 8px;
 }
 
+.tool-approval-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tool-approval-queue {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tool-approval-queue-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.tool-approval-queue-item.active {
+  border-color: var(--accent, #2563eb);
+  background: rgba(37, 99, 235, 0.08);
+}
+
 .file-edit-preview {
   display: flex;
   flex-direction: column;
@@ -1686,6 +1716,12 @@ select.text-input:hover {
   margin: 0;
   font-size: 12px;
   color: #b91c1c;
+}
+
+.file-edit-preview-warning {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: #b45309;
 }
 
 .file-changes-list {

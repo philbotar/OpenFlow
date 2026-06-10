@@ -5,12 +5,13 @@ use engine::{
     is_subagent_runtime_builtin, start_subagent_invoke, subagent_runtime_builtin_denied,
     AgentToolCallBatch, AgentTurnOutcome, AiPort, CallableAgent, InteractiveEngine, NodeId,
     NodeToolConfig, RunTelemetry, SubagentInvokeStep, SubagentStartOutcome, SubagentSummary,
-    ToolCall, ToolPort, ToolResult, Workflow, CALL_SUBAGENT_TOOL, DECLARE_SUBAGENTS_TOOL,
+    ToolCall, ToolConcurrency, ToolPort, ToolResult, Workflow, CALL_SUBAGENT_TOOL,
+    DECLARE_SUBAGENTS_TOOL,
 };
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::{mpsc::UnboundedSender, Semaphore};
 use tokio_util::sync::CancellationToken;
 
 use super::subagents::{augment_call_subagent_tool_description, merge_subagent_summaries_into_map};
@@ -28,6 +29,7 @@ pub struct ToolPortImpl<A> {
     cancel_token: CancellationToken,
     event_tx: UnboundedSender<ExecutionEvent>,
     aborted_emitted: parking_lot::Mutex<bool>,
+    exclusive_semaphores: parking_lot::Mutex<BTreeMap<String, Arc<Semaphore>>>,
 }
 
 impl<A> ToolPortImpl<A>
@@ -60,6 +62,7 @@ where
             cancel_token,
             event_tx,
             aborted_emitted: parking_lot::Mutex::new(false),
+            exclusive_semaphores: parking_lot::Mutex::new(BTreeMap::new()),
         }
     }
 
@@ -119,10 +122,33 @@ where
             .map(|node| node.agent.tools.clone())
             .unwrap_or_default();
         let mut results = Vec::with_capacity(calls.len());
-        for tool_call in calls {
+        let mut index = 0usize;
+        while index < calls.len() {
             if self.cancel_token.is_cancelled() {
                 break;
             }
+            if self.is_parallel_shared_tool(&calls[index]) {
+                let start = index;
+                while index < calls.len() && self.is_parallel_shared_tool(&calls[index]) {
+                    index += 1;
+                }
+                match self
+                    .run_parallel_regular_tools(
+                        engine,
+                        node_id,
+                        label,
+                        &calls[start..index],
+                    )
+                    .await
+                {
+                    Some(batch_results) => results.extend(batch_results),
+                    None => break,
+                }
+                continue;
+            }
+
+            let tool_call = calls[index].clone();
+            index += 1;
             let result = if tool_call.name == DECLARE_SUBAGENTS_TOOL {
                 self.run_declare_subagents(node_id, label, &tool_call)
             } else if tool_call.name == CALL_SUBAGENT_TOOL {
@@ -152,6 +178,124 @@ impl<A> ToolPortImpl<A>
 where
     A: AiPort + Send + Sync + 'static,
 {
+    fn is_parallel_shared_tool(&self, tool_call: &ToolCall) -> bool {
+        if tool_call.name == DECLARE_SUBAGENTS_TOOL || tool_call.name == CALL_SUBAGENT_TOOL {
+            return false;
+        }
+        self.tool_runner
+            .registry()
+            .get(&tool_call.name)
+            .map(|registered| registered.definition.concurrency == ToolConcurrency::Shared)
+            .unwrap_or(false)
+    }
+
+    async fn run_parallel_regular_tools(
+        &self,
+        engine: &mut InteractiveEngine,
+        node_id: &NodeId,
+        label: &str,
+        tool_calls: &[ToolCall],
+    ) -> Option<Vec<ToolResult>> {
+        let mut results: Vec<Option<ToolResult>> = vec![None; tool_calls.len()];
+        let mut runnable_indices = Vec::new();
+
+        for (index, tool_call) in tool_calls.iter().enumerate() {
+            self.propose_tool_call(node_id, label, tool_call);
+            if self.tool_runner.registry().get(&tool_call.name).is_err() {
+                let record = self.tool_runner.denied(
+                    tool_call.clone(),
+                    format!("Tool unavailable: {}", tool_call.name),
+                );
+                self.emit_tool_completed(node_id, tool_call, &record.result);
+                results[index] = Some(record.result);
+            } else {
+                self.emit_tool_started(node_id, tool_call);
+                runnable_indices.push(index);
+            }
+        }
+
+        let mut join_handles = Vec::with_capacity(runnable_indices.len());
+        for &index in &runnable_indices {
+            let tool_call = &tool_calls[index];
+            let tool_runner = Arc::clone(&self.tool_runner);
+            let cancel_token = self.cancel_token.clone();
+            let node_id_for_task = node_id.clone();
+            let call = tool_call.clone();
+            let exclusive_permit = self.exclusive_permit(&call.name).await;
+            join_handles.push(tokio::spawn(async move {
+                let _permit = exclusive_permit;
+                let ctx = ToolExecutionContext {
+                    node_id: node_id_for_task,
+                };
+                tokio::select! {
+                    biased;
+                    _ = cancel_token.cancelled() => None,
+                    result = tool_runner.execute(call, Some(ctx)) => Some(result),
+                }
+            }));
+        }
+        for (index, handle) in runnable_indices.into_iter().zip(join_handles) {
+            let tool_call = &tool_calls[index];
+            let outcome = match handle.await {
+                Ok(value) => value,
+                Err(_) => return None,
+            };
+            match outcome {
+                Some(Ok(record)) => {
+                    if let Some(artifact) = record.artifact.clone() {
+                        let _ = self.event_tx.send(ExecutionEvent::ToolArtifactCreated {
+                            node_id: node_id.clone(),
+                            artifact_id: artifact.artifact_id.clone(),
+                            tool_name: artifact.tool_name.clone(),
+                            path: artifact.path.clone(),
+                            size_bytes: artifact.size_bytes,
+                        });
+                    }
+                    self.record_tool_file_changes(engine, node_id, &record);
+                    self.emit_tool_completed(node_id, tool_call, &record.result);
+                    results[index] = Some(record.result);
+                }
+                Some(Err(error)) => {
+                    let record = self
+                        .tool_runner
+                        .denied(tool_call.clone(), render_tool_error(error));
+                    self.emit_tool_completed(node_id, tool_call, &record.result);
+                    results[index] = Some(record.result);
+                }
+                None => return None,
+            }
+        }
+        Some(
+            results
+                .into_iter()
+                .map(|result| {
+                    result.expect("every parallel tool call is denied or executed")
+                })
+                .collect(),
+        )
+    }
+
+    async fn exclusive_permit(&self, tool_name: &str) -> Option<tokio::sync::OwnedSemaphorePermit> {
+        let concurrency = self
+            .tool_runner
+            .registry()
+            .get(tool_name)
+            .ok()?
+            .definition
+            .concurrency;
+        if concurrency != ToolConcurrency::Exclusive {
+            return None;
+        }
+        let semaphore = {
+            let mut semaphores = self.exclusive_semaphores.lock();
+            semaphores
+                .entry(tool_name.to_string())
+                .or_insert_with(|| Arc::new(Semaphore::new(1)))
+                .clone()
+        };
+        semaphore.acquire_owned().await.ok()
+    }
+
     fn run_declare_subagents(
         &self,
         node_id: &NodeId,
@@ -402,6 +546,7 @@ where
             node_id: node_id.clone(),
         };
         let started = Instant::now();
+        let exclusive_permit = self.exclusive_permit(&tool_name).await;
         let result = tokio::select! {
             biased;
             _ = self.cancel_token.cancelled() => {
@@ -410,6 +555,7 @@ where
             }
             result = tool_runner.execute(tool_call, Some(ctx)) => Some(result),
         };
+        drop(exclusive_permit);
         if result.is_some() {
             emit_phase_timed(
                 &self.event_tx,

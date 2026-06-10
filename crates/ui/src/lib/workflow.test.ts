@@ -4,7 +4,9 @@ import {
   cloneSettings,
   cloneWorkflow,
   createEmptyToolConfig,
+  canSendChat,
   isChatComposerBusy,
+  pendingApprovalForNode,
   nodeChangedFiles,
   nodeEditBatches,
   projectWorkflowCanvasGraph,
@@ -189,6 +191,31 @@ describe("workflow helpers", () => {
     const next = projectWorkflowCanvasStatusByNode(updated, previous);
 
     expect(next).toEqual(previous);
+  });
+
+  test("canSendChat ignores approvals on other nodes", () => {
+    const multiplexState: WorkflowRunState = {
+      ...runState,
+      awaitingNodeIds: ["node-2"],
+      pendingApprovals: [
+        {
+          approvalId: "approval-1",
+          nodeId: "node-1",
+          nodeLabel: "Plan",
+          toolCall: {
+            id: "call-1",
+            name: "write",
+            arguments: { path: "out.txt", content: "hi" },
+            intent: null,
+          },
+          tier: "write",
+        },
+      ],
+    };
+
+    expect(pendingApprovalForNode(multiplexState, "node-2")).toBeUndefined();
+    expect(canSendChat(multiplexState, "node-2", true, "continue")).toBe(true);
+    expect(canSendChat(multiplexState, "node-1", true, "continue")).toBe(false);
   });
 
   test("isChatComposerBusy only returns true while the selected node is started or running a tool", () => {

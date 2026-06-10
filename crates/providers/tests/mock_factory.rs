@@ -58,6 +58,7 @@ fn sample_request() -> AgentRequest {
         tool_config: engine::NodeToolConfig::default(),
         available_tools: Vec::new(),
         transcript: Vec::new(),
+        model_attempt: 1,
     }
 }
 

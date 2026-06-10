@@ -5,13 +5,25 @@ use crate::mapping::{
     should_allow_user_input, ToolSpec, REQUEST_INPUT_TOOL, SUBMIT_OUTPUT_TOOL,
 };
 use engine::{
-    AgentError, AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTranscriptItem,
-    AgentTurnOutcome, ToolCall,
+    emit_assistant_deltas_from_outcome, AgentError, AgentNeedUserInput, AgentRequest,
+    AgentToolCallBatch, AgentTranscriptItem, AgentTurnOutcome, AiStreamSink, ToolCall,
 };
 use reqwest::Client;
 use serde_json::{json, Value};
 
 const DEFAULT_MAX_TOKENS: u16 = 4096;
+
+pub async fn invoke_stream(
+    http: &Client,
+    config: &AnthropicConfig,
+    auth: &AuthConfig,
+    request: AgentRequest,
+    sink: &dyn AiStreamSink,
+) -> Result<AgentTurnOutcome, AgentError> {
+    let outcome = invoke(http, config, auth, request).await?;
+    emit_assistant_deltas_from_outcome(sink, &outcome);
+    Ok(outcome)
+}
 
 pub async fn invoke(
     http: &Client,
@@ -271,6 +283,7 @@ mod tests {
             tool_config: engine::NodeToolConfig::default(),
             available_tools: Vec::new(),
             transcript: Vec::new(),
+            model_attempt: 1,
         }
     }
 

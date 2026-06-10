@@ -1,6 +1,6 @@
 //! Outbound ports owned by the engine.
 
-use crate::conversation::AgentTranscriptItem;
+use crate::conversation::{filter_tool_turn_assistant_message, AgentTranscriptItem};
 use crate::graph::{NodeId, WorkflowId};
 use crate::tools::{NodeToolConfig, ToolCall, ToolDefinition, ToolResult};
 use async_trait::async_trait;
@@ -21,6 +21,8 @@ pub struct AgentRequest {
     pub tool_config: NodeToolConfig,
     pub available_tools: Vec<ToolDefinition>,
     pub transcript: Vec<AgentTranscriptItem>,
+    /// 1-based model invocation attempt for this node (retries increment).
+    pub model_attempt: u8,
 }
 
 impl AgentRequest {
@@ -84,9 +86,43 @@ impl AgentError {
     }
 }
 
+/// Streaming event emitted during [`AiPort::invoke_stream`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AiStreamEvent {
+    AssistantDelta { content: String },
+}
+
+/// Receives streaming events from provider adapters during an AI invocation.
+pub trait AiStreamSink: Send + Sync {
+    fn on_stream_event(&self, event: AiStreamEvent);
+}
+
 #[async_trait]
 pub trait AiPort: Send + Sync {
     async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError>;
+
+    async fn invoke_stream(
+        &self,
+        request: AgentRequest,
+        sink: &dyn AiStreamSink,
+    ) -> Result<AgentTurnOutcome, AgentError> {
+        let outcome = self.invoke(request).await?;
+        emit_assistant_deltas_from_outcome(sink, &outcome);
+        Ok(outcome)
+    }
+}
+
+/// Emit a single assistant delta from a completed turn (fallback when streaming is unavailable).
+pub fn emit_assistant_deltas_from_outcome(sink: &dyn AiStreamSink, outcome: &AgentTurnOutcome) {
+    let message = match outcome {
+        AgentTurnOutcome::Completed(success) => success.assistant_message.clone(),
+        AgentTurnOutcome::ToolCalls(batch) => batch.assistant_message.clone(),
+        AgentTurnOutcome::NeedsUserInput(need) => Some(need.assistant_message.clone()),
+    };
+    let message = filter_tool_turn_assistant_message(message);
+    if let Some(content) = message.filter(|value| !value.trim().is_empty()) {
+        sink.on_stream_event(AiStreamEvent::AssistantDelta { content });
+    }
 }
 
 #[async_trait]
@@ -96,6 +132,14 @@ where
 {
     async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
         (**self).invoke(request).await
+    }
+
+    async fn invoke_stream(
+        &self,
+        request: AgentRequest,
+        sink: &dyn AiStreamSink,
+    ) -> Result<AgentTurnOutcome, AgentError> {
+        (**self).invoke_stream(request, sink).await
     }
 }
 

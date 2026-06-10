@@ -4,7 +4,7 @@ use crate::openai_compat;
 use crate::openai_compat::OpenAiCompatibleConfig;
 use crate::spec::ProviderId;
 use async_trait::async_trait;
-use engine::{AgentError, AgentRequest, AgentTurnOutcome, AiPort};
+use engine::{AgentError, AgentRequest, AgentTurnOutcome, AiPort, AiStreamSink};
 use reqwest::Client;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -86,6 +86,22 @@ impl AiPort for AiClient {
             }
             ProviderAdapterConfig::Anthropic(config) => {
                 anthropic::invoke(&self.http, config, &self.config.auth, request).await
+            }
+        }
+    }
+
+    async fn invoke_stream(
+        &self,
+        request: AgentRequest,
+        sink: &dyn AiStreamSink,
+    ) -> Result<AgentTurnOutcome, AgentError> {
+        match &self.config.adapter {
+            ProviderAdapterConfig::OpenAiCompatible(config) => {
+                openai_compat::invoke_stream(&self.http, config, &self.config.auth, request, sink)
+                    .await
+            }
+            ProviderAdapterConfig::Anthropic(config) => {
+                anthropic::invoke_stream(&self.http, config, &self.config.auth, request, sink).await
             }
         }
     }

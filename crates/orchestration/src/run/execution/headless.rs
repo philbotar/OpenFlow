@@ -65,64 +65,84 @@ where
             &event,
             ExecutionEvent::NodeAwaitingInput { node_id, .. }
                 if manual_inputs
-                    .front()
-                    .map(|next| next.node_id == *node_id)
-                    .unwrap_or(false)
+                    .iter()
+                    .any(|next| next.node_id == *node_id)
         );
         let awaiting_approval = matches!(
             &event,
             ExecutionEvent::ToolApprovalRequested { request }
-                if approvals
-                    .front()
-                    .map(|next| next.approval_id.is_empty() || next.approval_id == request.approval_id)
-                    .unwrap_or(false)
+                if approvals.iter().any(|next| {
+                    next.approval_id.is_empty() || next.approval_id == request.approval_id
+                })
         );
 
-        apply_event_to_run_state(&workflow, &mut state, event);
+        apply_event_to_run_state(&workflow, &mut state, event.clone());
 
-        if awaiting_input {
-            let input = manual_inputs.pop_front().unwrap();
-            action_tx
-                .send(ExecutionAction::ProvideInput(input.text.clone()))
-                .map_err(|_| WorkflowExecutionError::Execution("run channel closed".to_string()))?;
-            record_user_input(&mut state, &input.node_id, input.text);
+        if let ExecutionEvent::NodeAwaitingInput { node_id, .. } = &event {
+            if awaiting_input {
+                let position = manual_inputs
+                    .iter()
+                    .position(|next| next.node_id == *node_id)
+                    .expect("awaiting input matched queue");
+                let input = manual_inputs.remove(position).expect("input queue entry");
+                action_tx
+                    .send(ExecutionAction::ProvideInput {
+                        node_id: input.node_id.clone(),
+                        text: input.text.clone(),
+                    })
+                    .map_err(|_| {
+                        WorkflowExecutionError::Execution("run channel closed".to_string())
+                    })?;
+                record_user_input(&mut state, &input.node_id, input.text);
+            }
         }
-        if awaiting_approval {
-            let approval = approvals.pop_front().unwrap();
-            let approval_id = if approval.approval_id.is_empty() {
+        if let ExecutionEvent::ToolApprovalRequested { request } = &event {
+            if awaiting_approval {
+                let position = approvals
+                    .iter()
+                    .position(|next| {
+                        next.approval_id.is_empty() || next.approval_id == request.approval_id
+                    })
+                    .expect("awaiting approval matched queue");
+                let approval = approvals.remove(position).expect("approval queue entry");
+                let approval_id = if approval.approval_id.is_empty() {
+                    request.approval_id.clone()
+                } else {
+                    approval.approval_id
+                };
+                action_tx
+                    .send(ExecutionAction::ResolveApproval {
+                        approval_id: approval_id.clone(),
+                        allow: approval.allow,
+                    })
+                    .map_err(|_| {
+                        WorkflowExecutionError::Execution("run channel closed".to_string())
+                    })?;
                 state
                     .pending_approvals
-                    .first()
-                    .map(|item| item.approval_id.clone())
-                    .unwrap_or_default()
-            } else {
-                approval.approval_id
-            };
-            action_tx
-                .send(ExecutionAction::ResolveApproval {
-                    approval_id,
-                    allow: approval.allow,
-                })
-                .map_err(|_| WorkflowExecutionError::Execution("run channel closed".to_string()))?;
-            state.pending_approvals.clear();
+                    .retain(|pending| pending.approval_id != approval_id);
+            }
         }
 
         if !state.active {
             break;
         }
 
-        if let Some(node_id) = state.awaiting_node_id.clone() {
-            if manual_inputs.front().map(|item| item.node_id.clone()) != Some(node_id.clone()) {
-                return Err(WorkflowExecutionError::MissingManualInput(node_id));
+        for node_id in &state.awaiting_node_ids {
+            if !manual_inputs
+                .iter()
+                .any(|item| item.node_id == *node_id)
+            {
+                return Err(WorkflowExecutionError::MissingManualInput(node_id.clone()));
             }
         }
-        if let Some(approval) = state.pending_approvals.first() {
-            let matches_next = approvals.front().is_some_and(|item| {
-                item.approval_id.is_empty() || item.approval_id == approval.approval_id
+        for pending in &state.pending_approvals {
+            let matches_next = approvals.iter().any(|item| {
+                item.approval_id.is_empty() || item.approval_id == pending.approval_id
             });
             if !matches_next {
                 return Err(WorkflowExecutionError::MissingApproval(
-                    approval.approval_id.clone(),
+                    pending.approval_id.clone(),
                 ));
             }
         }

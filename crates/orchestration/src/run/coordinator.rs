@@ -49,15 +49,15 @@ pub struct RunStartParams<'a> {
 
 #[derive(Debug)]
 pub struct RunCoordinator {
-    runtime: tokio::runtime::Runtime,
+    runtime_handle: tokio::runtime::Handle,
     session: Mutex<RunSession>,
 }
 
 impl RunCoordinator {
     #[must_use]
-    pub fn new(runtime: tokio::runtime::Runtime) -> Self {
+    pub fn new(runtime_handle: tokio::runtime::Handle) -> Self {
         Self {
-            runtime,
+            runtime_handle,
             session: Mutex::new(RunSession {
                 workflow: None,
                 run_state: None,
@@ -90,7 +90,12 @@ impl RunCoordinator {
         } = params;
 
         validate_workflow(&workflow)?;
-        let resolved_cwd = resolve_execution_cwd(execution_cwd.as_deref())
+        let cwd_arg = execution_cwd.clone();
+        let resolved_cwd = self
+            .runtime_handle
+            .spawn_blocking(move || resolve_execution_cwd(cwd_arg.as_deref()))
+            .await
+            .map_err(|error| BackendError::PreviewFailed(error.to_string()))?
             .map_err(BackendError::InvalidExecutionCwd)?;
         let persisted_settings = settings_store.load()?;
         let mut provider_settings = settings.clone();
@@ -116,7 +121,7 @@ impl RunCoordinator {
         let lsp_settings = crate::lsp::LspSettings::from_persisted(&persisted_settings.lsp);
         let pending_engine_reverts = Arc::new(parking_lot::Mutex::new(Vec::new()));
         let (handle, event_rx, action_tx, cancel_token) = spawn_interactive_workflow_run(
-            &self.runtime,
+            &self.runtime_handle,
             InteractiveWorkflowRunParams {
                 workflow: workflow.clone(),
                 entrypoint,
@@ -256,24 +261,32 @@ impl RunCoordinator {
         text: String,
     ) -> Result<WorkflowRunState, BackendError> {
         let mut session = self.session.lock().await;
-        let expected = session
+        let run_state = session
             .run_state
             .as_ref()
-            .ok_or(BackendError::NoActiveRun)?
-            .awaiting_node_id
-            .clone()
-            .ok_or(BackendError::NoAwaitingInput)?;
-        if expected != node_id {
+            .ok_or(BackendError::NoActiveRun)?;
+        let node_id_key = NodeId(node_id.to_string());
+        if !run_state.awaiting_node_ids.contains(&node_id_key)
+            && run_state.awaiting_node_id.as_ref() != Some(&node_id_key)
+        {
+            let expected = run_state
+                .awaiting_node_id
+                .clone()
+                .or_else(|| run_state.awaiting_node_ids.first().cloned())
+                .ok_or(BackendError::NoAwaitingInput)?;
             return Err(BackendError::WrongAwaitingNode {
                 expected,
-                received: NodeId(node_id.to_string()),
+                received: node_id_key,
             });
         }
         session
             .action_tx
             .as_ref()
             .ok_or(BackendError::NoActiveRun)?
-            .send(ExecutionAction::ProvideInput(text.clone()))
+            .send(ExecutionAction::ProvideInput {
+                node_id: node_id_key,
+                text: text.clone(),
+            })
             .map_err(|_| BackendError::RunChannelClosed)?;
         let run_state = session
             .run_state
@@ -291,20 +304,25 @@ impl RunCoordinator {
         allow: bool,
     ) -> Result<WorkflowRunState, BackendError> {
         let mut session = self.session.lock().await;
-        let expected = session
+        let run_state = session
             .run_state
             .as_ref()
-            .ok_or(BackendError::NoActiveRun)?
+            .ok_or(BackendError::NoActiveRun)?;
+        let expected = run_state
             .pending_approvals
-            .first()
+            .iter()
+            .find(|pending| pending.approval_id == approval_id)
             .cloned()
-            .ok_or(BackendError::NoPendingApproval)?;
-        if expected.approval_id != approval_id {
-            return Err(BackendError::WrongApprovalId {
-                expected: expected.approval_id,
-                received: approval_id.to_string(),
-            });
-        }
+            .ok_or_else(|| {
+                if run_state.pending_approvals.is_empty() {
+                    BackendError::NoPendingApproval
+                } else {
+                    BackendError::WrongApprovalId {
+                        expected: run_state.pending_approvals[0].approval_id.clone(),
+                        received: approval_id.to_string(),
+                    }
+                }
+            })?;
         session
             .action_tx
             .as_ref()
@@ -318,7 +336,9 @@ impl RunCoordinator {
             .run_state
             .as_mut()
             .ok_or(BackendError::NoActiveRun)?;
-        run_state.pending_approvals.clear();
+        run_state
+            .pending_approvals
+            .retain(|pending| pending.approval_id != expected.approval_id);
         Ok(run_state.clone())
     }
 
@@ -329,7 +349,7 @@ impl RunCoordinator {
             .run_state
             .as_ref()
             .ok_or(BackendError::NoActiveRun)?;
-        if run_state.awaiting_node_id.is_some() {
+        if run_state.awaiting_node_id.is_some() || !run_state.awaiting_node_ids.is_empty() {
             return Err(BackendError::NoAwaitingInput);
         }
         Err(BackendError::NoAwaitingInput)
@@ -348,7 +368,7 @@ impl RunCoordinator {
         &self,
         approval_id: &str,
         tool_name: String,
-        arguments: serde_json::Value,
+        _arguments: serde_json::Value,
     ) -> Result<FileEditPreview, BackendError> {
         let session = self.session.lock().await;
         let cwd = session
@@ -377,15 +397,17 @@ impl RunCoordinator {
                     }
                 }
             })?;
-        if pending.tool_call.name != tool_name || pending.tool_call.arguments != arguments {
+        if pending.tool_call.name != tool_name {
             return Err(BackendError::PreviewFailed(
                 "preview does not match the pending tool approval".to_string(),
             ));
         }
-        let tool_name_for_task = tool_name.clone();
-        self.runtime
+        // Use the pending approval's stored arguments — UI round-trips can change JSON shape.
+        let tool_name_for_task = pending.tool_call.name.clone();
+        let preview_arguments = pending.tool_call.arguments.clone();
+        self.runtime_handle
             .spawn_blocking(move || {
-                preview_file_edit(cwd, &tool_name_for_task, &arguments, snapshot_store)
+                preview_file_edit(cwd, &tool_name_for_task, &preview_arguments, snapshot_store)
             })
             .await
             .map_err(|error| BackendError::PreviewFailed(error.to_string()))?
@@ -401,7 +423,7 @@ impl RunCoordinator {
             .execution_cwd
             .clone()
             .ok_or(BackendError::NoExecutionCwd)?;
-        self.runtime
+        self.runtime_handle
             .spawn_blocking(move || crate::git::diff_file(&cwd, &path))
             .await
             .map_err(|error| BackendError::GitFailed(error.to_string()))?
@@ -434,7 +456,7 @@ impl RunCoordinator {
         };
 
         let batch_for_revert = batch.clone();
-        self.runtime
+        self.runtime_handle
             .spawn_blocking(move || {
                 crate::tools::edit::batch::revert_edit_batch(&cwd, &batch_for_revert)
             })
@@ -494,9 +516,10 @@ impl RunCoordinator {
     }
 
     #[cfg(test)]
+    #[must_use]
     #[allow(dead_code)]
-    pub(crate) fn runtime(&self) -> &tokio::runtime::Runtime {
-        &self.runtime
+    pub(crate) fn runtime_handle(&self) -> &tokio::runtime::Handle {
+        &self.runtime_handle
     }
 
     #[cfg(test)]

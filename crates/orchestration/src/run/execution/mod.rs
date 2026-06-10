@@ -1,9 +1,12 @@
+mod ai_adapter;
 mod drive;
 mod events;
 mod headless;
 mod subagents;
 mod timing;
 mod tool_port;
+
+pub use ai_adapter::AiInvocationAdapter;
 
 use crate::lsp::LspSettings;
 use crate::state::{RunTraceEntry, ToolArtifactSummary, ToolCallSummary};
@@ -25,7 +28,7 @@ pub use headless::run_workflow_headless;
 pub type ExecutionEvent = RunTelemetry;
 
 pub enum ExecutionAction {
-    ProvideInput(String),
+    ProvideInput { node_id: NodeId, text: String },
     ResolveApproval { approval_id: String, allow: bool },
     Stop,
 }
@@ -110,7 +113,7 @@ pub struct InteractiveWorkflowRunParams<A> {
 }
 
 pub fn spawn_interactive_workflow_run<A>(
-    runtime: &tokio::runtime::Runtime,
+    runtime_handle: &tokio::runtime::Handle,
     params: InteractiveWorkflowRunParams<A>,
 ) -> (
     tokio::task::JoinHandle<()>,
@@ -125,7 +128,7 @@ where
     let (action_tx, action_rx) = tokio::sync::mpsc::unbounded_channel();
     let cancel_token = CancellationToken::new();
     let drive_cancel_token = cancel_token.clone();
-    let handle = runtime.spawn(async move {
+    let handle = runtime_handle.spawn(async move {
         drive::drive_interactive_workflow(params, event_tx, action_rx, drive_cancel_token).await;
     });
     (handle, event_rx, action_tx, cancel_token)

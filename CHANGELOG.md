@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Fixed
+
+- **Tool approval:** file-edit preview uses server-stored tool arguments (avoids UI JSON round-trip mismatch); Approve stays enabled when preview fails (warning shown); `submit_tool_approval` emits `run-state` for consistent UI updates.
+- **Multiplex chat:** composer only blocks on approvals for the selected node, not another node's pending approval.
+- **Parallel tool batches:** return one result per tool call; unknown tools no longer default to parallel execution.
+- **Headless runs:** match manual inputs and approvals by node/approval id in the queue, not only the front entry.
+- **Live SSE:** stream chat-completion chunks as they arrive; decode SSE lines from byte buffers for valid UTF-8.
+- **Streaming cleanup:** finalize or clear streaming chat bubbles on AI errors; dedupe node lifecycle events per `model_attempt`.
+- **Cancel:** parallel model invocations abort promptly when the run is cancelled.
+
+### Added
+
+- **Assistant streaming:** `AiPort::invoke_stream` + `AiStreamSink`; OpenAI Chat Completions SSE transport; `RunTelemetry::ChatMessageDelta` + `ChatMessage.id`/`streaming` for incremental token updates in chat.
+- **Parallel shared tools:** `ToolPortImpl` runs contiguous `ToolConcurrency::Shared` batches concurrently; `Exclusive` tools use per-name semaphores.
+- **Parallel DAG layers:** `InteractiveEngine` runs all ready nodes in a layer concurrently (`join_all`); multiplex pauses via `EngineRunResult::NeedsInteraction` (multiple awaiting inputs + approval batches).
+- **Multiplex run UI:** `awaitingNodeIds` + stacked `pendingApprovals` in run state; chat composer targets any awaiting node; approval queue switches focus by node.
+- **Single Tokio runtime (desktop):** `AppBackend` takes an injected `Handle`; Tauri `setup` passes `async_runtime` handle; tests keep an owned runtime via `with_default_paths`.
+- **Cursor rule:** `.cursor/rules/hexagonal-architecture.mdc` — always-on guidance for crate layers, orchestration folder layout, port seams, glossary naming, and `check-architecture.sh` verification.
+- **Roadmap:** [Project rules](docs/ROADMAP.md#project-rules) — per-linked-project agent guidance (`.flow/rules/`), discovery, run-time injection into shared context.
+
 ### Added
 
 - **Ripgrep-backed search tool:** replace naive WalkDir+regex `search` with `grep-searcher` + `ignore` in `adapters/tool_impl/grep.rs` behind `tool_ports::ContentSearch`; gitignore-aware walks, binary skip, 500-match cap; optional `gitignore` arg (default true).
@@ -10,6 +30,7 @@
 
 ### Docs
 
+- **Roadmap:** near-term [Chat presentation — thinking bubbles & tool cleanup](docs/ROADMAP.md#chat-presentation--thinking-bubbles--tool-cleanup) — collapsible thinking bubbles, compact tool rows, args one-liner; expand Thinking & chat presentation gap table and execution order.
 - **Roadmap:** File references section — `@` file attachments in chat/entrypoint, structured submit payload, path jail, composer pills; mirrors `/skill` invocation pattern.
 - **Roadmap:** File edit tooling section — mark builtins, approval, ledger, diff preview, and git revert as Done; document `ToolRef.tier` (`read` explicit, `write` default for `write`/`edit`/`apply_patch`); mark T4 tool-approval policy Done.
 - **Roadmap:** Refactor section — track removal of legacy snake_case ↔ camelCase / PascalCase serde aliases after T16 casing unification.
@@ -23,11 +44,12 @@
 - **CI architecture checks (Phase A):** [`docs/architecture/arch-check-rules.toml`](docs/architecture/arch-check-rules.toml) — Tier 2 baseline rules (workspace `Cargo.toml` graph, forbidden cross-crate `use`, engine transport/GUI dep denylist, legacy `domain`/`workflow_core` bans). [`scripts/check-architecture.sh`](scripts/check-architecture.sh) reads the TOML; fixed for `engine` rename and current crate paths.
 - **Docs:** one-line crate role summary in [`docs/architecture/contract.md`](docs/architecture/contract.md), [`AGENTS.md`](AGENTS.md), and [`docs/README.md`](docs/README.md) — engine = valid workflow + run behavior; orchestration = store/load/wire/host; providers = LLM transport; ui/desktop = user interaction.
 - **Engine `ToolPort`:** outbound port for tool and subagent execution; `ToolPortImpl` in orchestration handles filesystem tools, declare/call subagent builtins, and file-change telemetry.
-- **Engine `InteractiveEngine::run()`:** self-driving async loop over `poll()`; returns `EngineRunResult` (`NeedsInput`, `NeedsApproval`, `Completed`, `Failed`, `Cancelled`) for orchestration to handle.
+- **Engine `InteractiveEngine::run()`:** self-driving async loop; returns `EngineRunResult` (`NeedsInteraction`, `Completed`, `Failed`, `Cancelled`) for orchestration to handle.
 - **Docs:** add [`docs/file-structure.md`](docs/file-structure.md) — full repository directory tree (source and docs; excludes build artifacts).
 
 ### Changed
 
+- **Runtime I/O:** `resolve_execution_cwd` and large artifact spills run on `spawn_blocking`; `AiInvocationAdapter` centralizes telemetry, timing, and streaming for main + subagent invokes.
 - **Read tool:** default reads keep a 300-line cap but now emit an explicit truncation notice with total line count and selector hints (`:start-end`, `:raw`); tool description documents the limit.
 - **Rename `domain` → `engine`:** crate directory, Cargo package name, and all `use engine::` imports across orchestration, providers, and desktop; flat `engine::` re-exports preserved for downstream crates.
 - **Orchestration `drive.rs`:** thin loop around `engine.run()` — handles input/approval waits and events only; tool execution moved to `tool_port.rs`.
@@ -39,6 +61,7 @@
 
 ### Fixed
 
+- **Parallel shared tools:** unavailable tools in a parallel batch no longer short-circuit the batch; denied results are recorded per call and remaining shared tools still run.
 - **Node runtime preamble:** engine assembles `AgentRequest.system_messages` (`NODE_RUNTIME_PREAMBLE`, node prompt, workflow context); providers only call `system_content()` for wire transport. Task context user message is node/task/upstream only.
 - **Node completion:** downstream nodes fail fast when upstream output is missing.
 - **Remove max tool rounds:** drop `NodeToolConfig.max_tool_rounds` / `maxToolRounds` from engine, UI, and workflows; agents may call tools until they submit node output.

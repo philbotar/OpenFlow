@@ -191,16 +191,36 @@ export function AppProvider(props: ParentProps) {
     if (!nodeId) return [];
     return runState()?.chatLogs[nodeId] ?? [];
   });
-  const selectedPendingApproval = createMemo(() => {
+  const selectedNodePendingApproval = createMemo(() => {
     const nodeId = selectedNodeId();
     const approvals = runState()?.pendingApprovals ?? [];
-    if (!nodeId) return approvals[0] ?? null;
-    return approvals.find((approval) => approval.nodeId === nodeId) ?? approvals[0] ?? null;
+    if (!nodeId) {
+      return null;
+    }
+    return approvals.find((approval) => approval.nodeId === nodeId) ?? null;
+  });
+  const selectedPendingApproval = createMemo(() => {
+    const nodeApproval = selectedNodePendingApproval();
+    if (nodeApproval) {
+      return nodeApproval;
+    }
+    const approvals = runState()?.pendingApprovals ?? [];
+    return approvals[0] ?? null;
+  });
+  const awaitingNodeIdsMemo = createMemo(() => {
+    const state = runState();
+    if (!state) {
+      return [] as string[];
+    }
+    if (state.awaitingNodeIds && state.awaitingNodeIds.length > 0) {
+      return state.awaitingNodeIds;
+    }
+    return state.awaitingNodeId ? [state.awaitingNodeId] : [];
   });
   const chatEnabledMemo = createMemo(
     () =>
       runState()?.active === true &&
-      runState()?.awaitingNodeId === selectedNodeId() &&
+      awaitingNodeIdsMemo().includes(selectedNodeId() ?? "") &&
       (readiness()?.ready ?? false),
   );
   const chatComposerBusyMemo = createMemo(() =>
@@ -221,7 +241,7 @@ export function AppProvider(props: ParentProps) {
   );
   const canSendChatMemo = createMemo(
     () =>
-      !selectedPendingApproval() &&
+      !selectedNodePendingApproval() &&
       chatEnabledMemo() &&
       chatSubmission().submittedText !== "",
   );
@@ -1099,18 +1119,32 @@ export function AppProvider(props: ParentProps) {
                 `${nextRunState.pendingApprovals[0].nodeLabel} needs tool approval`,
                 { id: STATUS_TOAST_ID },
               );
-            } else if (nextRunState.awaitingNodeId) {
-              const label =
-                activeWorkflow()?.nodes.find((n) => n.id === nextRunState.awaitingNodeId)
-                  ?.label ?? "Node";
-              setSelectedEdgeId(null);
-              setSelectedNodeId(nextRunState.awaitingNodeId);
-              setEditingNodeId(null);
-              setNodeLabelDraft("");
-              setDockOpen(true);
-              setBottomTab("chat");
-              setDockHeight((current) => clampDockHeight(current, "chat"));
-              toast(`${label} is waiting for input`, { id: STATUS_TOAST_ID });
+            } else {
+              const awaitingIds =
+                nextRunState.awaitingNodeIds && nextRunState.awaitingNodeIds.length > 0
+                  ? nextRunState.awaitingNodeIds
+                  : nextRunState.awaitingNodeId
+                    ? [nextRunState.awaitingNodeId]
+                    : [];
+              const focusId =
+                awaitingIds.find((id) => !selectedNodeId() || id === selectedNodeId()) ??
+                awaitingIds[0];
+              if (focusId) {
+                const label =
+                  activeWorkflow()?.nodes.find((n) => n.id === focusId)?.label ?? "Node";
+                if (!selectedNodeId() || !awaitingIds.includes(selectedNodeId()!)) {
+                  setSelectedEdgeId(null);
+                  setSelectedNodeId(focusId);
+                  setEditingNodeId(null);
+                  setNodeLabelDraft("");
+                  setDockOpen(true);
+                  setBottomTab("chat");
+                  setDockHeight((current) => clampDockHeight(current, "chat"));
+                }
+                const suffix =
+                  awaitingIds.length > 1 ? ` (+${awaitingIds.length - 1} more)` : "";
+                toast(`${label} is waiting for input${suffix}`, { id: STATUS_TOAST_ID });
+              }
             }
             if (nextRunState.lastError) {
               setError(nextRunState.lastError);
@@ -1199,6 +1233,7 @@ export function AppProvider(props: ParentProps) {
     currentNodeOutput,
     chatMessages,
     selectedPendingApproval,
+    selectedNodePendingApproval,
     chatEnabledMemo,
     chatComposerBusyMemo,
     chatSubmission,

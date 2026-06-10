@@ -3,6 +3,7 @@ pub mod outbound;
 
 pub use inbound::{HumanInput, HumanInputPort, ToolApprovalInput, ToolApprovalPort};
 pub use outbound::{
-    AgentError, AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTurnOutcome,
-    AgentTurnSuccess, AiPort, ToolPort,
+    emit_assistant_deltas_from_outcome, AgentError, AgentNeedUserInput, AgentRequest,
+    AgentToolCallBatch, AgentTurnOutcome, AgentTurnSuccess, AiPort, AiStreamEvent, AiStreamSink,
+    ToolPort,
 };

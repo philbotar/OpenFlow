@@ -4,7 +4,7 @@ use crate::tool_output::{ArtifactStore, ToolArtifactRecord};
 use crate::tool_ports::ContentSearch;
 use crate::tool_registry::{BuiltinToolKind, ToolRegistry, ToolRegistryError};
 use crate::tools::grep::RipgrepSearch;
-use engine::{EditBatch, FileChangeRecord, ToolCall, ToolResult};
+use engine::{EditBatch, FileChangeRecord, ToolCall, ToolOutputMeta, ToolResult};
 use regex::Regex;
 use reqwest::Client;
 use serde::Deserialize;
@@ -117,10 +117,12 @@ impl ToolRunner {
             BuiltinToolKind::Read => {
                 let raw = self.read(call.arguments.clone()).await?;
                 self.finalize_record(call, raw, Vec::new(), None)
+                    .await
             }
             BuiltinToolKind::AstGrep => {
                 let raw = self.ast_grep(call.arguments.clone()).await?;
                 self.finalize_record(call, raw, Vec::new(), None)
+                    .await
             }
             BuiltinToolKind::Search
             | BuiltinToolKind::Find
@@ -138,6 +140,7 @@ impl ToolRunner {
                 match outcome.output {
                     Ok(raw) => {
                         self.finalize_record(call, raw, outcome.file_changes, outcome.edit_batch)
+                            .await
                     }
                     Err(error)
                         if outcome.file_changes.is_empty() && outcome.edit_batch.is_none() =>
@@ -277,14 +280,14 @@ impl ToolRunner {
         .map_err(|error| ToolRunnerError::BlockingTask(error.to_string()))
     }
 
-    fn finalize_record(
+    async fn finalize_record(
         &self,
         call: ToolCall,
         raw_output: String,
         file_changes: Vec<FileChangeRecord>,
         edit_batch: Option<EditBatch>,
     ) -> Result<ToolExecutionRecord, ToolRunnerError> {
-        let (content, artifact, output_meta) = self.artifacts.store_text(&call.name, raw_output)?;
+        let (content, artifact, output_meta) = self.store_output_text(&call.name, raw_output).await?;
         Ok(ToolExecutionRecord {
             result: ToolResult {
                 tool_call_id: call.id,
@@ -301,6 +304,26 @@ impl ToolRunner {
             file_changes,
             edit_batch,
         })
+    }
+
+    async fn store_output_text(
+        &self,
+        tool_name: &str,
+        raw_output: String,
+    ) -> Result<(String, Option<ToolArtifactRecord>, Option<ToolOutputMeta>), ToolRunnerError> {
+        const INLINE_LIMIT: usize = 50_000;
+        if raw_output.len() <= INLINE_LIMIT {
+            return self
+                .artifacts
+                .store_text(tool_name, raw_output)
+                .map_err(ToolRunnerError::Tool);
+        }
+        let tool_name = tool_name.to_string();
+        let artifacts = self.artifacts.clone();
+        tokio::task::spawn_blocking(move || artifacts.store_text(&tool_name, raw_output))
+            .await
+            .map_err(|error| ToolRunnerError::BlockingTask(error.to_string()))?
+            .map_err(ToolRunnerError::Tool)
     }
 
     pub fn denied(&self, call: ToolCall, reason: impl Into<String>) -> ToolExecutionRecord {

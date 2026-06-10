@@ -60,18 +60,55 @@ export function ToolApprovalCard() {
     if (!approval || !isFileEditTool(approval.toolCall.name)) {
       return true;
     }
-    if (preview.loading || preview.error) {
-      return false;
-    }
-    const result = preview();
-    if (!result || result.error) {
-      return false;
-    }
-    return (result.entries?.length ?? 0) > 0;
+    return !preview.loading;
   };
 
+  const previewWarning = () => {
+    const approval = ctx.selectedPendingApproval();
+    if (!approval || !isFileEditTool(approval.toolCall.name) || preview.loading) {
+      return null;
+    }
+    if (preview.error) {
+      return String(preview.error);
+    }
+    const result = preview();
+    if (result?.error) {
+      return result.error;
+    }
+    if ((result?.entries?.length ?? 0) === 0) {
+      return "Preview returned no diff. You can still approve, but review the tool arguments first.";
+    }
+    return null;
+  };
+
+  const pendingApprovals = () => ctx.runState()?.pendingApprovals ?? [];
+
   return (
-    <Show when={ctx.selectedPendingApproval()}>
+    <Show when={pendingApprovals().length > 0}>
+      <div class="tool-approval-stack">
+        <Show when={pendingApprovals().length > 1}>
+          <div class="tool-approval-queue">
+            <div class="eyebrow">
+              {pendingApprovals().length} approvals pending
+            </div>
+            <For each={pendingApprovals()}>
+              {(item) => (
+                <button
+                  type="button"
+                  class="tool-approval-queue-item"
+                  classList={{
+                    active: item.approvalId === ctx.selectedPendingApproval()?.approvalId,
+                  }}
+                  onClick={() => ctx.handleSelectNode(item.nodeId)}
+                >
+                  <span>{item.nodeLabel}</span>
+                  <span>{item.toolCall.name}</span>
+                </button>
+              )}
+            </For>
+          </div>
+        </Show>
+        <Show when={ctx.selectedPendingApproval()}>
       {(approval) => (
         <div class="tool-approval-card">
           <div class="eyebrow">Approval required</div>
@@ -119,6 +156,12 @@ export function ToolApprovalCard() {
             </div>
           </Show>
 
+          <Show when={previewWarning()}>
+            {(message) => (
+              <p class="file-edit-preview-warning">{message()}</p>
+            )}
+          </Show>
+
           <div class="tool-approval-actions">
             <button
               class="secondary-button"
@@ -136,6 +179,8 @@ export function ToolApprovalCard() {
           </div>
         </div>
       )}
+        </Show>
+      </div>
     </Show>
   );
 }

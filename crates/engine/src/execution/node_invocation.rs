@@ -224,6 +224,7 @@ pub fn build_agent_request(
         tool_config: node.agent.tools.clone(),
         available_tools: ctx.available_tools.to_vec(),
         transcript: ctx.transcript.to_vec(),
+        model_attempt: 1,
     })
 }
 

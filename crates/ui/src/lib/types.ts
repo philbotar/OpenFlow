@@ -126,6 +126,8 @@ export type ChatMessageKind = "node_completed";
 export interface ChatMessage {
   role: ChatRole;
   content: string;
+  id?: string;
+  streaming?: boolean;
   toolCallId?: string;
   messageKind?: ChatMessageKind;
 }
@@ -275,6 +277,7 @@ export interface EditBatch {
 export interface WorkflowRunState {
   active: boolean;
   awaitingNodeId: NodeId | null;
+  awaitingNodeIds?: NodeId[];
   activeManualNodeId: NodeId | null;
   activeToolCallId: string | null;
   pendingApprovals: PendingToolApproval[];

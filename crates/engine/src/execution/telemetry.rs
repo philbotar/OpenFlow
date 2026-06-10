@@ -28,6 +28,12 @@ pub enum RunTelemetry {
         role: ChatRole,
         content: String,
     },
+    ChatMessageDelta {
+        node_id: NodeId,
+        message_id: String,
+        delta: String,
+        finalize: bool,
+    },
     NodeAwaitingInput {
         node_id: NodeId,
         label: String,

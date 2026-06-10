@@ -329,10 +329,13 @@ async fn submit_user_input(
 #[tauri::command]
 async fn submit_tool_approval(
     backend: tauri::State<'_, AppBackend>,
+    app: tauri::AppHandle,
     approval_id: String,
     allow: bool,
 ) -> Result<WorkflowRunState, CommandError> {
-    Ok(backend.submit_tool_approval(&approval_id, allow).await?)
+    let run_state = backend.submit_tool_approval(&approval_id, allow).await?;
+    let _ = app.emit("run-state", run_state.clone());
+    Ok(run_state)
 }
 
 /// Tauri command: Complete a manual node.
@@ -403,12 +406,9 @@ fn unassign_workflow_from_project(
 }
 
 pub fn run() {
-    let backend = AppBackend::with_default_paths();
-
     let builder = tauri::Builder::default();
 
     builder
-        .manage(backend)
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
@@ -461,10 +461,10 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            let runtime_handle = tauri::async_runtime::handle().inner().clone();
+            app.manage(AppBackend::with_runtime_handle(runtime_handle));
             #[cfg(debug_assertions)]
             app.get_webview_window("main").unwrap().open_devtools();
-            #[cfg(not(debug_assertions))]
-            let _ = app;
             Ok(())
         })
         .run(tauri::generate_context!())

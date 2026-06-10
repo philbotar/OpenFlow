@@ -64,6 +64,8 @@ pub struct ToolArtifactSummary {
 pub struct WorkflowRunState {
     pub active: bool,
     pub awaiting_node_id: Option<NodeId>,
+    #[serde(default)]
+    pub awaiting_node_ids: Vec<NodeId>,
     pub active_manual_node_id: Option<NodeId>,
     pub active_tool_call_id: Option<String>,
     pub pending_approvals: Vec<engine::PendingToolApproval>,
@@ -95,6 +97,7 @@ impl WorkflowRunState {
         Self {
             active: true,
             awaiting_node_id: None,
+            awaiting_node_ids: Vec::new(),
             active_manual_node_id: None,
             active_tool_call_id: None,
             pending_approvals: Vec::new(),

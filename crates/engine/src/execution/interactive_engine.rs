@@ -15,6 +15,7 @@ use crate::tools::{
     override_policy_for_call, requires_approval, tool_tier_for_call, ApprovalMode,
     FileChangeRecord, ToolCall, ToolDecision, ToolResult,
 };
+use futures::future::join_all;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write;
@@ -56,20 +57,31 @@ pub enum EnginePollResult {
     Failed(RunError),
 }
 
+/// Pause payload when a node needs human text input.
+#[derive(Debug, Clone)]
+pub struct EngineAwaitInput {
+    pub node_id: NodeId,
+    pub label: String,
+    pub context: String,
+    pub is_initial: bool,
+}
+
+/// Pause payload when a node needs tool approval.
+#[derive(Debug, Clone)]
+pub struct EngineAwaitApproval {
+    pub approval_id: String,
+    pub node_id: NodeId,
+    pub label: String,
+    pub tool_calls: Vec<ToolCall>,
+}
+
 /// Terminal or pause outcome from [`InteractiveEngine::run`].
 #[derive(Debug, Clone)]
 pub enum EngineRunResult {
-    NeedsInput {
-        node_id: NodeId,
-        label: String,
-        context: String,
-        is_initial: bool,
-    },
-    NeedsApproval {
-        approval_id: String,
-        node_id: NodeId,
-        label: String,
-        tool_calls: Vec<ToolCall>,
+    /// One or more nodes paused for human input and/or tool approval.
+    NeedsInteraction {
+        inputs: Vec<EngineAwaitInput>,
+        approvals: Vec<EngineAwaitApproval>,
     },
     Completed(RunReport),
     Failed(RunError),
@@ -102,15 +114,15 @@ pub struct InteractiveEngine {
     node_index: HashMap<NodeId, usize>,
     layers: Vec<Vec<NodeId>>,
     layer_idx: usize,
-    node_idx: usize,
     outputs: BTreeMap<NodeId, Value>,
     changed_files_by_node: BTreeMap<NodeId, Vec<FileChangeRecord>>,
     transcripts: BTreeMap<NodeId, Vec<AgentTranscriptItem>>,
     events: Vec<RunEvent>,
     queued_nodes: BTreeSet<NodeId>,
     started_invocations_by_node: BTreeMap<NodeId, u8>,
-    awaiting_node: Option<NodeId>,
-    pending_tool_batch: Option<PendingToolBatch>,
+    awaiting_nodes: BTreeSet<NodeId>,
+    in_flight_ai: BTreeSet<NodeId>,
+    pending_tool_batches: BTreeMap<String, PendingToolBatch>,
     retries_by_node: BTreeMap<NodeId, u8>,
     submit_output_retries_by_node: BTreeMap<NodeId, u8>,
     entrypoint_text: Option<String>,
@@ -140,15 +152,15 @@ impl InteractiveEngine {
             node_index,
             layers,
             layer_idx: 0,
-            node_idx: 0,
             outputs: BTreeMap::new(),
             changed_files_by_node: BTreeMap::new(),
             transcripts: BTreeMap::new(),
             events: Vec::new(),
             queued_nodes: BTreeSet::new(),
             started_invocations_by_node: BTreeMap::new(),
-            awaiting_node: None,
-            pending_tool_batch: None,
+            awaiting_nodes: BTreeSet::new(),
+            in_flight_ai: BTreeSet::new(),
+            pending_tool_batches: BTreeMap::new(),
             retries_by_node: BTreeMap::new(),
             submit_output_retries_by_node: BTreeMap::new(),
             entrypoint_text,
@@ -156,19 +168,53 @@ impl InteractiveEngine {
         })
     }
 
-    fn advance(&mut self) {
-        self.node_idx += 1;
-        if self.node_idx >= self.layers.get(self.layer_idx).map_or(0, Vec::len) {
-            self.node_idx = 0;
-            self.layer_idx += 1;
-        }
-    }
-
-    fn current_node_id(&self) -> Option<NodeId> {
+    fn current_layer_nodes(&self) -> &[NodeId] {
         self.layers
             .get(self.layer_idx)
-            .and_then(|layer| layer.get(self.node_idx))
-            .cloned()
+            .map_or(&[] as &[NodeId], Vec::as_slice)
+    }
+
+    fn current_layer_complete(&self) -> bool {
+        self.current_layer_nodes()
+            .iter()
+            .all(|node_id| self.outputs.contains_key(node_id))
+    }
+
+    fn node_has_pending_tools(&self, node_id: &NodeId) -> bool {
+        self.pending_tool_batches
+            .values()
+            .any(|batch| batch.node_id == *node_id)
+    }
+
+    fn is_node_blocked(&self, node_id: &NodeId) -> bool {
+        self.outputs.contains_key(node_id)
+            || self.awaiting_nodes.contains(node_id)
+            || self.in_flight_ai.contains(node_id)
+            || self.node_has_pending_tools(node_id)
+    }
+
+    fn schedule_manual_nodes_in_layer(&mut self) {
+        for node_id in self.current_layer_nodes().to_vec() {
+            if self.is_node_blocked(&node_id) {
+                continue;
+            }
+            let Some(node) = self.find_node(&node_id) else {
+                continue;
+            };
+            if node.agent.auto_start || !self.transcript(&node_id).is_empty() {
+                continue;
+            }
+            if self.queued_nodes.insert(node_id.clone()) {
+                self.events.push(RunEvent {
+                    node_id: node_id.clone(),
+                    kind: RunEventKind::Queued,
+                    message: "queued".to_string(),
+                    output: None,
+                });
+            }
+            self.awaiting_nodes.insert(node_id.clone());
+            self.transcripts.entry(node_id.clone()).or_default();
+        }
     }
 
     fn find_node(&self, node_id: &str) -> Option<&Node> {
@@ -188,27 +234,14 @@ impl InteractiveEngine {
             return EnginePollResult::Failed(error);
         }
 
-        if let Some(awaiting_id) = &self.awaiting_node {
-            let Some(node) = self.find_node(awaiting_id) else {
-                let awaiting_id = awaiting_id.clone();
-                return self.fail_internal(&awaiting_id, "awaiting node no longer exists");
-            };
-            return EnginePollResult::AwaitInput {
-                node_id: node.id.clone(),
-                label: node.label.clone(),
-                context: self.assemble_context(&node.id),
-                is_initial: self.conversation_history(&node.id).is_empty(),
-            };
-        }
-
-        if let Some(pending) = &self.pending_tool_batch {
+        if let Some((approval_id, pending)) = self.pending_tool_batches.iter().next() {
             let Some(node) = self.find_node(&pending.node_id) else {
                 let node_id = pending.node_id.clone();
                 return self.fail_internal(&node_id, "pending tool node no longer exists");
             };
             if pending.requires_approval {
                 return EnginePollResult::AwaitToolApproval {
-                    approval_id: pending.approval_id.clone(),
+                    approval_id: approval_id.clone(),
                     node_id: node.id.clone(),
                     label: node.label.clone(),
                     tool_calls: pending.tool_calls.clone(),
@@ -221,70 +254,94 @@ impl InteractiveEngine {
             };
         }
 
-        let Some(node_id) = self.current_node_id() else {
-            return EnginePollResult::Completed(RunReport {
-                workflow_id: self.workflow.id.clone(),
-                events: std::mem::take(&mut self.events),
-                outputs: std::mem::take(&mut self.outputs)
-                    .into_iter()
-                    .map(|(node_id, output)| NodeRunOutput { node_id, output })
-                    .collect(),
-            });
-        };
-
-        let Some(node) = self.find_node(&node_id) else {
-            return self.fail_internal(&node_id, "node id from layers not found in workflow");
-        };
-        let node_id = node.id.clone();
-        let node_label = node.label.clone();
-
-        if let Some(missing) = self.missing_upstream_outputs(&node_id) {
-            let upstream_list = missing
-                .iter()
-                .map(|id| id.to_string())
-                .collect::<Vec<_>>()
-                .join(", ");
-            return self.fail_internal(
-                &node_id,
-                &format!("upstream output missing from: {upstream_list}"),
-            );
-        }
-
-        if node.agent.auto_start || !self.transcript(&node_id).is_empty() {
-            if self.queued_nodes.insert(node_id.clone()) {
-                self.events.push(RunEvent {
-                    node_id: node_id.clone(),
-                    kind: RunEventKind::Queued,
-                    message: "queued".to_string(),
-                    output: None,
-                });
-            }
-            self.emit_started_for_current_attempt(&node_id);
-            return EnginePollResult::CallAi {
-                node_id: node_id.clone(),
-                request: Box::new(match self.build_request(&node_id) {
-                    Ok(r) => r,
-                    Err(e) => return EnginePollResult::Failed(e),
-                }),
+        self.schedule_manual_nodes_in_layer();
+        if let Some(awaiting_id) = self.awaiting_nodes.iter().next() {
+            let Some(node) = self.find_node(awaiting_id) else {
+                let awaiting_id = awaiting_id.clone();
+                return self.fail_internal(&awaiting_id, "awaiting node no longer exists");
+            };
+            return EnginePollResult::AwaitInput {
+                node_id: node.id.clone(),
+                label: node.label.clone(),
+                context: self.assemble_context(&node.id),
+                is_initial: self.conversation_history(&node.id).is_empty(),
             };
         }
 
-        if self.queued_nodes.insert(node_id.clone()) {
-            self.events.push(RunEvent {
-                node_id: node_id.clone(),
-                kind: RunEventKind::Queued,
-                message: "queued".to_string(),
-                output: None,
+        if self.current_layer_complete() {
+            self.layer_idx += 1;
+            if self.layer_idx >= self.layers.len() {
+                return EnginePollResult::Completed(RunReport {
+                    workflow_id: self.workflow.id.clone(),
+                    events: std::mem::take(&mut self.events),
+                    outputs: std::mem::take(&mut self.outputs)
+                        .into_iter()
+                        .map(|(node_id, output)| NodeRunOutput { node_id, output })
+                        .collect(),
+                });
+            }
+        }
+
+        for node_id in self.current_layer_nodes().to_vec() {
+            if self.is_node_blocked(&node_id) {
+                continue;
+            }
+            let Some(node) = self.find_node(&node_id) else {
+                return self.fail_internal(&node_id, "node id from layers not found in workflow");
+            };
+            if let Some(missing) = self.missing_upstream_outputs(&node_id) {
+                let upstream_list = missing
+                    .iter()
+                    .map(|id| id.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                return self.fail_internal(
+                    &node_id,
+                    &format!("upstream output missing from: {upstream_list}"),
+                );
+            }
+            if node.agent.auto_start || !self.transcript(&node_id).is_empty() {
+                if self.queued_nodes.insert(node_id.clone()) {
+                    self.events.push(RunEvent {
+                        node_id: node_id.clone(),
+                        kind: RunEventKind::Queued,
+                        message: "queued".to_string(),
+                        output: None,
+                    });
+                }
+                self.emit_started_for_current_attempt(&node_id);
+                let request = match self.build_request(&node_id) {
+                    Ok(r) => r,
+                    Err(e) => return EnginePollResult::Failed(e),
+                };
+                self.in_flight_ai.insert(node_id.clone());
+                return EnginePollResult::CallAi {
+                    node_id: node_id.clone(),
+                    request: Box::new(request),
+                };
+            }
+        }
+
+        if !self.in_flight_ai.is_empty() {
+            return EnginePollResult::Failed(RunError::NodeFailed {
+                node_id: self
+                    .in_flight_ai
+                    .iter()
+                    .next()
+                    .cloned()
+                    .unwrap_or_else(|| NodeId("engine".to_string())),
+                message: "layer stalled waiting for in-flight model calls".to_string(),
             });
         }
-        self.awaiting_node = Some(node_id.clone());
-        self.transcripts.entry(node_id.clone()).or_default();
-        EnginePollResult::AwaitInput {
-            node_id: node_id.clone(),
-            label: node_label,
-            context: self.assemble_context(&node_id),
-            is_initial: true,
-        }
+
+        EnginePollResult::Failed(RunError::NodeFailed {
+            node_id: self
+                .current_layer_nodes()
+                .first()
+                .cloned()
+                .unwrap_or_else(|| NodeId("engine".to_string())),
+            message: "no runnable nodes in current layer".to_string(),
+        })
     }
 
     /// Drive the engine until it needs host interaction or reaches a terminal state.
@@ -295,66 +352,172 @@ impl InteractiveEngine {
         cancel: &CancellationToken,
     ) -> EngineRunResult {
         loop {
-            match self.poll() {
-                EnginePollResult::CallAi {
-                    node_id,
-                    mut request,
-                } => {
+            if cancel.is_cancelled() {
+                return EngineRunResult::Cancelled;
+            }
+
+            while let Some((node_id, label, tool_calls)) = self.next_run_tools_action() {
+                let results = tools
+                    .execute_batch(self, &node_id, &label, tool_calls)
+                    .await;
+                if cancel.is_cancelled() {
+                    return EngineRunResult::Cancelled;
+                }
+                if let Err(error) = self.on_tool_results(&node_id, results) {
+                    return EngineRunResult::Failed(RunError::NodeFailed {
+                        node_id,
+                        message: error.to_string(),
+                    });
+                }
+            }
+
+            let ai_actions = self.gather_call_ai_actions();
+            if !ai_actions.is_empty() {
+                let mut augmented = Vec::with_capacity(ai_actions.len());
+                for (node_id, mut request) in ai_actions {
                     tools.augment_request(&node_id, &mut request);
-                    let outcome = tokio::select! {
-                        result = ai.invoke(*request) => result,
-                        _ = cancel.cancelled() => return EngineRunResult::Cancelled,
-                    };
+                    augmented.push((node_id, request));
+                }
+                let outcomes = tokio::select! {
+                    biased;
+                    () = cancel.cancelled() => return EngineRunResult::Cancelled,
+                    outcomes = join_all(augmented.into_iter().map(|(node_id, request)| async {
+                        let outcome = ai.invoke(request).await;
+                        (node_id, outcome)
+                    })) => outcomes,
+                };
+                for (node_id, outcome) in outcomes {
                     self.on_ai_complete(&node_id, outcome);
                 }
-                EnginePollResult::RunTools {
-                    node_id,
-                    label,
-                    tool_calls,
-                } => {
-                    let results = tools
-                        .execute_batch(self, &node_id, &label, tool_calls)
-                        .await;
-                    if cancel.is_cancelled() {
-                        return EngineRunResult::Cancelled;
-                    }
-                    if let Err(error) = self.on_tool_results(&node_id, results) {
-                        return EngineRunResult::Failed(RunError::NodeFailed {
-                            node_id,
-                            message: error.to_string(),
-                        });
-                    }
+                if let Some(error) = self.terminal_error.clone() {
+                    return EngineRunResult::Failed(error);
                 }
-                EnginePollResult::AwaitInput {
-                    node_id,
-                    label,
-                    context,
-                    is_initial,
-                } => {
-                    return EngineRunResult::NeedsInput {
-                        node_id,
-                        label,
-                        context,
-                        is_initial,
-                    };
+                continue;
+            }
+
+            let inputs = self.gather_await_inputs();
+            let approvals = self.gather_await_approvals();
+            if !inputs.is_empty() || !approvals.is_empty() {
+                return EngineRunResult::NeedsInteraction { inputs, approvals };
+            }
+
+            if self.current_layer_complete() {
+                self.layer_idx += 1;
+                if self.layer_idx >= self.layers.len() {
+                    return EngineRunResult::Completed(RunReport {
+                        workflow_id: self.workflow.id.clone(),
+                        events: std::mem::take(&mut self.events),
+                        outputs: std::mem::take(&mut self.outputs)
+                            .into_iter()
+                            .map(|(node_id, output)| NodeRunOutput { node_id, output })
+                            .collect(),
+                    });
                 }
-                EnginePollResult::AwaitToolApproval {
-                    approval_id,
-                    node_id,
-                    label,
-                    tool_calls,
-                } => {
-                    return EngineRunResult::NeedsApproval {
-                        approval_id,
-                        node_id,
-                        label,
-                        tool_calls,
-                    };
+                continue;
+            }
+
+            return EngineRunResult::Failed(RunError::NodeFailed {
+                node_id: self
+                    .current_layer_nodes()
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| NodeId("engine".to_string())),
+                message: "no runnable nodes in current layer".to_string(),
+            });
+        }
+    }
+
+    fn next_run_tools_action(&mut self) -> Option<(NodeId, String, Vec<ToolCall>)> {
+        let approval_id = self
+            .pending_tool_batches
+            .iter()
+            .find(|(_, batch)| !batch.requires_approval)
+            .map(|(approval_id, _)| approval_id.clone())?;
+        let batch = self.pending_tool_batches.get(&approval_id)?;
+        let node = self.find_node(&batch.node_id)?;
+        Some((
+            batch.node_id.clone(),
+            node.label.clone(),
+            batch.tool_calls.clone(),
+        ))
+    }
+
+    fn gather_call_ai_actions(&mut self) -> Vec<(NodeId, AgentRequest)> {
+        let mut actions = Vec::new();
+        for node_id in self.current_layer_nodes().to_vec() {
+            if self.is_node_blocked(&node_id) {
+                continue;
+            }
+            let Some(node) = self.find_node(&node_id) else {
+                continue;
+            };
+            if let Some(missing) = self.missing_upstream_outputs(&node_id) {
+                let upstream_list = missing
+                    .iter()
+                    .map(|id| id.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                self.terminal_error = Some(RunError::NodeFailed {
+                    node_id: node_id.clone(),
+                    message: format!("upstream output missing from: {upstream_list}"),
+                });
+                break;
+            }
+            if !node.agent.auto_start && self.transcript(&node_id).is_empty() {
+                continue;
+            }
+            if self.queued_nodes.insert(node_id.clone()) {
+                self.events.push(RunEvent {
+                    node_id: node_id.clone(),
+                    kind: RunEventKind::Queued,
+                    message: "queued".to_string(),
+                    output: None,
+                });
+            }
+            self.emit_started_for_current_attempt(&node_id);
+            self.in_flight_ai.insert(node_id.clone());
+            match self.build_request(&node_id) {
+                Ok(request) => actions.push((node_id, request)),
+                Err(error) => {
+                    self.in_flight_ai.remove(&node_id);
+                    self.terminal_error = Some(error);
+                    break;
                 }
-                EnginePollResult::Completed(report) => return EngineRunResult::Completed(report),
-                EnginePollResult::Failed(error) => return EngineRunResult::Failed(error),
             }
         }
+        actions
+    }
+
+    fn gather_await_inputs(&mut self) -> Vec<EngineAwaitInput> {
+        self.schedule_manual_nodes_in_layer();
+        self.awaiting_nodes
+            .iter()
+            .filter_map(|awaiting_id| {
+                let node = self.find_node(awaiting_id)?;
+                Some(EngineAwaitInput {
+                    node_id: node.id.clone(),
+                    label: node.label.clone(),
+                    context: self.assemble_context(&node.id),
+                    is_initial: self.conversation_history(&node.id).is_empty(),
+                })
+            })
+            .collect()
+    }
+
+    fn gather_await_approvals(&self) -> Vec<EngineAwaitApproval> {
+        self.pending_tool_batches
+            .values()
+            .filter(|batch| batch.requires_approval)
+            .filter_map(|batch| {
+                let node = self.find_node(&batch.node_id)?;
+                Some(EngineAwaitApproval {
+                    approval_id: batch.approval_id.clone(),
+                    node_id: node.id.clone(),
+                    label: node.label.clone(),
+                    tool_calls: batch.tool_calls.clone(),
+                })
+            })
+            .collect()
     }
 
     /// Apply a model turn outcome for the node currently awaiting completion.
@@ -362,15 +525,17 @@ impl InteractiveEngine {
     /// Misrouted completions (wrong `node_id` or no active node) set a terminal workflow error
     /// instead of panicking.
     pub fn on_ai_complete(&mut self, node_id: &str, result: Result<AgentTurnOutcome, AgentError>) {
-        let Some(expected) = self.current_node_id() else {
-            self.reject_misrouted_completion(node_id, "no node is awaiting model completion");
-            return;
-        };
-        if expected != node_id {
-            self.reject_misrouted_completion(
-                node_id,
-                &format!("expected model completion for {expected}, got {node_id}"),
-            );
+        let node_id_key = NodeId(node_id.to_string());
+        if !self.in_flight_ai.remove(&node_id_key) {
+            let message = self
+                .in_flight_ai
+                .iter()
+                .next()
+                .map(|expected| {
+                    format!("expected model completion for {expected}, got {node_id}")
+                })
+                .unwrap_or_else(|| "no node is awaiting model completion".to_string());
+            self.reject_misrouted_completion(node_id, &message);
             return;
         }
 
@@ -421,7 +586,7 @@ impl InteractiveEngine {
                     if *retry_count < self.workflow.settings.retry_policy.max_attempts {
                         *retry_count += 1;
                         self.events.push(RunEvent {
-                            node_id,
+                            node_id: node_id.clone(),
                             kind: RunEventKind::Retrying,
                             message: format!(
                                 "retrying after transient failure; backoff_ms={}",
@@ -464,7 +629,6 @@ impl InteractiveEngine {
             message: "completed".to_string(),
             output: Some(success.output),
         });
-        self.advance();
     }
 
     fn apply_tool_calls(&mut self, node_id: &str, batch: AgentToolCallBatch) {
@@ -512,12 +676,16 @@ impl InteractiveEngine {
         if pending_calls.is_empty() {
             return;
         }
-        self.pending_tool_batch = Some(PendingToolBatch {
-            approval_id: Uuid::new_v4().to_string(),
-            node_id: NodeId(node_id.to_string()),
-            tool_calls: pending_calls,
-            requires_approval: requires_approval_for_batch,
-        });
+        let approval_id = Uuid::new_v4().to_string();
+        self.pending_tool_batches.insert(
+            approval_id.clone(),
+            PendingToolBatch {
+                approval_id,
+                node_id: NodeId(node_id.to_string()),
+                tool_calls: pending_calls,
+                requires_approval: requires_approval_for_batch,
+            },
+        );
     }
 
     fn apply_user_input_request(&mut self, node_id: &str, input: AgentNeedUserInput) {
@@ -527,23 +695,25 @@ impl InteractiveEngine {
             .push(AgentTranscriptItem::AssistantMessage {
                 content: input.assistant_message,
             });
-        self.awaiting_node = Some(NodeId(node_id.to_string()));
+        self.awaiting_nodes.insert(NodeId(node_id.to_string()));
     }
 
     /// # Errors
     /// Returns an error if no node is awaiting input or the wrong node id is provided.
     pub fn on_human_input(&mut self, node_id: &str, text: &str) -> Result<(), EngineInputError> {
-        let expected = self
-            .awaiting_node
-            .as_ref()
-            .ok_or(EngineInputError::NoNodeAwaiting)?;
-        if expected != node_id {
+        let node_id_key = NodeId(node_id.to_string());
+        if !self.awaiting_nodes.remove(&node_id_key) {
+            let expected = self
+                .awaiting_nodes
+                .iter()
+                .next()
+                .cloned()
+                .ok_or(EngineInputError::NoNodeAwaiting)?;
             return Err(EngineInputError::WrongNode {
-                expected: expected.clone(),
-                got: NodeId(node_id.to_string()),
+                expected,
+                got: node_id_key,
             });
         }
-        self.awaiting_node = None;
         self.transcripts
             .entry(NodeId(node_id.to_string()))
             .or_default()
@@ -576,19 +746,12 @@ impl InteractiveEngine {
         node_id: &str,
         results: Vec<ToolResult>,
     ) -> Result<(), EngineInputError> {
-        let pending = self
-            .pending_tool_batch
-            .as_ref()
+        let approval_id = self
+            .pending_tool_batches
+            .iter()
+            .find(|(_, batch)| batch.node_id == node_id && !batch.requires_approval)
+            .map(|(approval_id, _)| approval_id.clone())
             .ok_or(EngineInputError::NoPendingTools)?;
-        if pending.requires_approval {
-            return Err(EngineInputError::NoPendingTools);
-        }
-        if pending.node_id != node_id {
-            return Err(EngineInputError::WrongNode {
-                expected: pending.node_id.clone(),
-                got: NodeId(node_id.to_string()),
-            });
-        }
         let transcript = self
             .transcripts
             .entry(NodeId(node_id.to_string()))
@@ -596,7 +759,7 @@ impl InteractiveEngine {
         for result in results {
             transcript.push(AgentTranscriptItem::ToolResult { result });
         }
-        self.pending_tool_batch = None;
+        self.pending_tool_batches.remove(&approval_id);
         Ok(())
     }
 
@@ -608,14 +771,11 @@ impl InteractiveEngine {
         allow: bool,
     ) -> Result<(), EngineInputError> {
         let pending = self
-            .pending_tool_batch
-            .as_mut()
-            .ok_or(EngineInputError::NoPendingTools)?;
+            .pending_tool_batches
+            .get_mut(approval_id)
+            .ok_or_else(|| EngineInputError::UnknownApproval(approval_id.to_string()))?;
         if !pending.requires_approval {
             return Err(EngineInputError::NoPendingTools);
-        }
-        if pending.approval_id != approval_id {
-            return Err(EngineInputError::UnknownApproval(approval_id.to_string()));
         }
         if allow {
             pending.requires_approval = false;
@@ -631,7 +791,7 @@ impl InteractiveEngine {
             })
             .collect::<Vec<_>>();
         self.transcripts.entry(node_id).or_default().extend(denied);
-        self.pending_tool_batch = None;
+        self.pending_tool_batches.remove(approval_id);
         Ok(())
     }
 
@@ -679,7 +839,14 @@ impl InteractiveEngine {
             transcript: self.transcript(&node.id),
             available_tools: &[],
         };
-        build_agent_request(&ctx, node, true)
+        let mut request = build_agent_request(&ctx, node, true)?;
+        request.model_attempt = self.model_attempt_for(&node.id);
+        Ok(request)
+    }
+
+    fn model_attempt_for(&self, node_id: &NodeId) -> u8 {
+        let retries = self.retries_by_node.get(node_id).copied().unwrap_or(0);
+        retries.saturating_add(1)
     }
 
     fn assemble_context(&self, node_id: &str) -> String {
@@ -998,6 +1165,7 @@ mod tests {
         engine
             .on_human_input("idea", "Need a smaller launch scope")
             .unwrap();
+        assert!(matches!(engine.poll(), EnginePollResult::CallAi { .. }));
         engine.on_ai_complete(
             "idea",
             Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
@@ -1107,6 +1275,7 @@ mod tests {
         engine
             .on_human_input("idea", "Workflow execution with approvals")
             .unwrap();
+        assert!(matches!(engine.poll(), EnginePollResult::CallAi { .. }));
         engine.on_ai_complete(
             "idea",
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
@@ -1405,7 +1574,6 @@ mod tests {
         let mut engine = InteractiveEngine::new(workflow, None).unwrap();
 
         assert!(matches!(engine.poll(), EnginePollResult::CallAi { .. }));
-        assert!(matches!(engine.poll(), EnginePollResult::CallAi { .. }));
         engine.on_ai_complete(
             "idea",
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
@@ -1476,5 +1644,42 @@ mod tests {
         .unwrap();
 
         assert!(matches!(engine.poll(), EnginePollResult::CallAi { .. }));
+    }
+
+    #[test]
+    fn parallel_sibling_nodes_start_ai_together_in_layer() {
+        let mut workflow = Workflow::new("parallel");
+        workflow.nodes = vec![node("plan"), node("risk")];
+        let mut engine = InteractiveEngine::new(workflow, None).unwrap();
+
+        let first = engine.poll();
+        let second = engine.poll();
+        assert!(matches!(
+            first,
+            EnginePollResult::CallAi { ref node_id, .. } if node_id == "plan"
+        ));
+        assert!(matches!(
+            second,
+            EnginePollResult::CallAi { ref node_id, .. } if node_id == "risk"
+        ));
+
+        engine.on_ai_complete(
+            "plan",
+            Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                output: json!({"plan": "a"}),
+                raw_text: "{}".to_string(),
+                assistant_message: None,
+            })),
+        );
+        engine.on_ai_complete(
+            "risk",
+            Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                output: json!({"risk": "b"}),
+                raw_text: "{}".to_string(),
+                assistant_message: None,
+            })),
+        );
+
+        assert!(matches!(engine.poll(), EnginePollResult::Completed(_)));
     }
 }

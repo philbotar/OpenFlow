@@ -144,11 +144,11 @@ export function ConversationComposer() {
             onKeyUp={(event) => syncCaret(event.currentTarget)}
             onKeyDown={handleKeyDown}
             placeholder={
-              ctx.selectedPendingApproval()
+              ctx.selectedNodePendingApproval()
                 ? "Resolve the pending tool approval above."
                 : "Continue paused node. Type / for skills."
             }
-            disabled={!ctx.chatEnabledMemo() || !!ctx.selectedPendingApproval()}
+            disabled={!ctx.chatEnabledMemo() || !!ctx.selectedNodePendingApproval()}
           />
           <Show when={ctx.chatSubmission().invokedSkills.length > 0}>
             <span

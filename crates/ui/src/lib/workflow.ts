@@ -157,6 +157,7 @@ export function createIdleRunState(workflow: Workflow): WorkflowRunState {
   return {
     active: false,
     awaitingNodeId: null,
+    awaitingNodeIds: [],
     activeManualNodeId: null,
     activeToolCallId: null,
     pendingApprovals: [],
@@ -322,6 +323,29 @@ export function prettyJson(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
+export function isNodeAwaitingInput(
+  runState: WorkflowRunState | null,
+  nodeId: NodeId | null,
+): boolean {
+  if (!runState || !nodeId) {
+    return false;
+  }
+  if (runState.awaitingNodeIds?.includes(nodeId)) {
+    return true;
+  }
+  return runState.awaitingNodeId === nodeId;
+}
+
+export function pendingApprovalForNode(
+  runState: WorkflowRunState | null,
+  nodeId: NodeId | null,
+) {
+  if (!runState?.pendingApprovals || !nodeId) {
+    return undefined;
+  }
+  return runState.pendingApprovals.find((approval) => approval.nodeId === nodeId);
+}
+
 export function canSendChat(
   runState: WorkflowRunState | null,
   selectedNodeId: NodeId | null,
@@ -330,7 +354,8 @@ export function canSendChat(
 ): boolean {
   return (
     runState?.active === true &&
-    runState.awaitingNodeId === selectedNodeId &&
+    isNodeAwaitingInput(runState, selectedNodeId) &&
+    !pendingApprovalForNode(runState, selectedNodeId) &&
     readinessReady &&
     text.trim() !== ""
   );

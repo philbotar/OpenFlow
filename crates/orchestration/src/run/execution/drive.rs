@@ -1,18 +1,15 @@
 use crate::tools::{ArtifactStore, ToolRegistry, ToolRunner};
-use async_trait::async_trait;
 use engine::{
-    filter_tool_turn_assistant_message, AgentError, AgentNeedUserInput, AgentRequest,
-    AgentToolCallBatch, AgentTurnOutcome, AgentTurnSuccess, AiPort, ChatRole, EditBatch,
-    EngineRunResult, InteractiveEngine, NodeId, PendingToolApproval, ToolCall, ToolTier, Workflow,
+    AiPort, EditBatch, EngineRunResult, InteractiveEngine, NodeId, PendingToolApproval, ToolCall,
+    ToolTier, Workflow,
 };
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 use std::sync::Arc;
-use std::time::Instant;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use super::timing::emit_phase_timed;
+use super::ai_adapter::AiInvocationAdapter;
 use super::tool_port::ToolPortImpl;
 use super::{ExecutionAction, ExecutionEvent, InteractiveWorkflowRunParams};
 
@@ -61,18 +58,15 @@ pub(super) async fn drive_interactive_workflow<A>(
     ));
     let workflow = Arc::new(workflow);
     let ai = Arc::new(ai);
+    let ai_adapter = Arc::new(AiInvocationAdapter::new(Arc::clone(&ai), event_tx.clone()));
     let tool_port = ToolPortImpl::new(
         Arc::clone(&tool_runner),
         Arc::clone(&workflow),
         Arc::new(agent_snapshots),
-        Arc::clone(&ai),
+        Arc::clone(&ai_adapter),
         cancel_token.clone(),
         event_tx.clone(),
     );
-    let telemetry_ai = TelemetryAiPort {
-        inner: ai,
-        event_tx: event_tx.clone(),
-    };
     let mut proposed_tool_calls: HashSet<String> = HashSet::new();
     let mut aborted_emitted = false;
 
@@ -86,89 +80,113 @@ pub(super) async fn drive_interactive_workflow<A>(
             &mut engine,
             tool_port.tool_runner(),
         );
-        let run_result = engine.run(&telemetry_ai, &tool_port, &cancel_token).await;
+        let run_result = engine.run(&*ai_adapter, &tool_port, &cancel_token).await;
         match run_result {
-            EngineRunResult::NeedsInput {
-                node_id,
-                label,
-                context,
-                is_initial,
-            } => {
-                let awaiting_node_id = node_id.clone();
-                if is_initial {
-                    let _ = event_tx.send(ExecutionEvent::NodeQueued {
-                        node_id: node_id.clone(),
-                        label: label.clone(),
+            EngineRunResult::NeedsInteraction { inputs, approvals } => {
+                for input in &inputs {
+                    if input.is_initial {
+                        let _ = event_tx.send(ExecutionEvent::NodeQueued {
+                            node_id: input.node_id.clone(),
+                            label: input.label.clone(),
+                        });
+                    }
+                    let _ = event_tx.send(ExecutionEvent::NodeAwaitingInput {
+                        node_id: input.node_id.clone(),
+                        label: input.label.clone(),
+                        context: input.context.clone(),
+                        is_initial: input.is_initial,
                     });
                 }
-                let _ = event_tx.send(ExecutionEvent::NodeAwaitingInput {
-                    node_id,
-                    label,
-                    context,
-                    is_initial,
-                });
-                let Some(text) = wait_for_input(
-                    &mut action_rx,
-                    &cancel_token,
-                    &event_tx,
-                    &mut aborted_emitted,
-                )
-                .await
-                else {
-                    return;
-                };
-                if let Err(error) = engine.on_human_input(&awaiting_node_id, &text) {
-                    let _ = event_tx.send(ExecutionEvent::Error(error.to_string()));
-                    return;
+                let mut approval_tool_calls: HashMap<String, Vec<ToolCall>> = HashMap::new();
+                let mut approval_nodes: HashMap<String, NodeId> = HashMap::new();
+                for approval in &approvals {
+                    approval_tool_calls.insert(
+                        approval.approval_id.clone(),
+                        approval.tool_calls.clone(),
+                    );
+                    approval_nodes.insert(approval.approval_id.clone(), approval.node_id.clone());
+                    emit_approval_request(ApprovalRequestEmit {
+                        event_tx: &event_tx,
+                        workflow: &workflow,
+                        tool_runner: tool_port.tool_runner(),
+                        approval_id: &approval.approval_id,
+                        node_id: &approval.node_id,
+                        label: &approval.label,
+                        tool_calls: &approval.tool_calls,
+                        proposed_tool_calls: &mut proposed_tool_calls,
+                    });
                 }
-            }
-            EngineRunResult::NeedsApproval {
-                approval_id,
-                node_id,
-                label,
-                tool_calls,
-            } => {
-                emit_approval_request(ApprovalRequestEmit {
-                    event_tx: &event_tx,
-                    workflow: &workflow,
-                    tool_runner: tool_port.tool_runner(),
-                    approval_id: &approval_id,
-                    node_id: &node_id,
-                    label: &label,
-                    tool_calls: &tool_calls,
-                    proposed_tool_calls: &mut proposed_tool_calls,
-                });
-                let Some(approved) = wait_for_approval(
-                    &mut action_rx,
-                    &approval_id,
-                    &cancel_token,
-                    &event_tx,
-                    &mut aborted_emitted,
-                )
-                .await
-                else {
-                    return;
-                };
-                if let Err(error) = engine.on_tool_decision(&approval_id, approved) {
-                    let _ = event_tx.send(ExecutionEvent::Error(error.to_string()));
-                    return;
-                }
-                for tool_call in &tool_calls {
-                    if approved {
-                        let _ = event_tx.send(ExecutionEvent::ToolApproved {
-                            approval_id: approval_id.clone(),
-                            node_id: node_id.clone(),
-                            tool_call_id: tool_call.id.clone(),
-                            tool_name: tool_call.name.clone(),
-                        });
-                    } else {
-                        let _ = event_tx.send(ExecutionEvent::ToolDenied {
-                            approval_id: approval_id.clone(),
-                            node_id: node_id.clone(),
-                            tool_call_id: tool_call.id.clone(),
-                            tool_name: tool_call.name.clone(),
-                            reason: "denied by user".to_string(),
-                        });
+
+                let mut pending_inputs: HashSet<NodeId> =
+                    inputs.iter().map(|input| input.node_id.clone()).collect();
+                let mut pending_approvals: HashSet<String> = approvals
+                    .iter()
+                    .map(|approval| approval.approval_id.clone())
+                    .collect();
+
+                while !pending_inputs.is_empty() || !pending_approvals.is_empty() {
+                    if cancel_token.is_cancelled() {
+                        abort_run(&event_tx, &mut aborted_emitted);
+                        return;
+                    }
+                    let Some(action) = action_rx.recv().await else {
+                        return;
+                    };
+                    match action {
+                        ExecutionAction::Stop => {
+                            abort_run(&event_tx, &mut aborted_emitted);
+                            return;
+                        }
+                        ExecutionAction::ProvideInput { node_id, text } => {
+                            if !pending_inputs.contains(&node_id) {
+                                let _ = event_tx.send(ExecutionEvent::Error(format!(
+                                    "ignored input for node {node_id}: not in current interaction pause"
+                                )));
+                                return;
+                            }
+                            if let Err(error) = engine.on_human_input(&node_id, &text) {
+                                let _ = event_tx.send(ExecutionEvent::Error(error.to_string()));
+                                return;
+                            }
+                            pending_inputs.remove(&node_id);
+                        }
+                        ExecutionAction::ResolveApproval { approval_id, allow } => {
+                            if !pending_approvals.contains(&approval_id) {
+                                let _ = event_tx.send(ExecutionEvent::Error(format!(
+                                    "ignored approval {approval_id}: not in current interaction pause"
+                                )));
+                                return;
+                            }
+                            if let Err(error) = engine.on_tool_decision(&approval_id, allow) {
+                                let _ = event_tx.send(ExecutionEvent::Error(error.to_string()));
+                                return;
+                            }
+                            let node_id = approval_nodes
+                                .get(&approval_id)
+                                .cloned()
+                                .unwrap_or_else(|| NodeId("unknown".to_string()));
+                            if let Some(tool_calls) = approval_tool_calls.get(&approval_id) {
+                                for tool_call in tool_calls {
+                                    if allow {
+                                        let _ = event_tx.send(ExecutionEvent::ToolApproved {
+                                            approval_id: approval_id.clone(),
+                                            node_id: node_id.clone(),
+                                            tool_call_id: tool_call.id.clone(),
+                                            tool_name: tool_call.name.clone(),
+                                        });
+                                    } else {
+                                        let _ = event_tx.send(ExecutionEvent::ToolDenied {
+                                            approval_id: approval_id.clone(),
+                                            node_id: node_id.clone(),
+                                            tool_call_id: tool_call.id.clone(),
+                                            tool_name: tool_call.name.clone(),
+                                            reason: "denied by user".to_string(),
+                                        });
+                                    }
+                                }
+                            }
+                            pending_approvals.remove(&approval_id);
+                        }
                     }
                 }
             }
@@ -263,131 +281,3 @@ fn abort_run(event_tx: &UnboundedSender<ExecutionEvent>, aborted_emitted: &mut b
     let _ = event_tx.send(ExecutionEvent::Aborted);
 }
 
-async fn wait_for_input(
-    action_rx: &mut UnboundedReceiver<ExecutionAction>,
-    cancel_token: &CancellationToken,
-    event_tx: &UnboundedSender<ExecutionEvent>,
-    aborted_emitted: &mut bool,
-) -> Option<String> {
-    loop {
-        tokio::select! {
-            biased;
-            _ = cancel_token.cancelled() => {
-                abort_run(event_tx, aborted_emitted);
-                return None;
-            }
-            action = action_rx.recv() => match action {
-                Some(ExecutionAction::Stop) => {
-                    abort_run(event_tx, aborted_emitted);
-                    return None;
-                }
-                Some(ExecutionAction::ProvideInput(text)) => return Some(text),
-                Some(ExecutionAction::ResolveApproval { .. }) => continue,
-                None => return None,
-            }
-        }
-    }
-}
-
-async fn wait_for_approval(
-    action_rx: &mut UnboundedReceiver<ExecutionAction>,
-    approval_id: &str,
-    cancel_token: &CancellationToken,
-    event_tx: &UnboundedSender<ExecutionEvent>,
-    aborted_emitted: &mut bool,
-) -> Option<bool> {
-    loop {
-        tokio::select! {
-            biased;
-            _ = cancel_token.cancelled() => {
-                abort_run(event_tx, aborted_emitted);
-                return None;
-            }
-            action = action_rx.recv() => match action {
-                Some(ExecutionAction::Stop) => {
-                    abort_run(event_tx, aborted_emitted);
-                    return None;
-                }
-                Some(ExecutionAction::ResolveApproval {
-                    approval_id: received,
-                    allow,
-                }) if received == approval_id => return Some(allow),
-                Some(ExecutionAction::ProvideInput(_)) => continue,
-                Some(ExecutionAction::ResolveApproval { .. }) => continue,
-                None => return Some(false),
-            }
-        }
-    }
-}
-
-struct TelemetryAiPort<A> {
-    inner: Arc<A>,
-    event_tx: UnboundedSender<ExecutionEvent>,
-}
-
-#[async_trait]
-impl<A> AiPort for TelemetryAiPort<A>
-where
-    A: AiPort + Send + Sync,
-{
-    async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
-        send_node_start_events(&self.event_tx, &request);
-        let node_id = request.node_id.clone();
-        let label = request.node_label.clone();
-        let started = Instant::now();
-        let result = self.inner.invoke(request).await;
-        emit_phase_timed(
-            &self.event_tx,
-            "ai_invoke",
-            &label,
-            Some(node_id.clone()),
-            started,
-        );
-        if let Ok(outcome) = &result {
-            emit_assistant_message(&self.event_tx, &node_id, outcome);
-            if let AgentTurnOutcome::Completed(AgentTurnSuccess { output, .. }) = outcome {
-                let _ = self.event_tx.send(ExecutionEvent::NodeCompleted {
-                    node_id,
-                    label,
-                    output: output.clone(),
-                });
-            }
-        }
-        result
-    }
-}
-
-fn send_node_start_events(event_tx: &UnboundedSender<ExecutionEvent>, request: &AgentRequest) {
-    let _ = event_tx.send(ExecutionEvent::NodeQueued {
-        node_id: request.node_id.clone(),
-        label: request.node_label.clone(),
-    });
-    let _ = event_tx.send(ExecutionEvent::NodeStarted {
-        node_id: request.node_id.clone(),
-        label: request.node_label.clone(),
-    });
-}
-
-fn emit_assistant_message(
-    event_tx: &UnboundedSender<ExecutionEvent>,
-    node_id: &str,
-    outcome: &AgentTurnOutcome,
-) {
-    let message = match outcome {
-        AgentTurnOutcome::Completed(success) => success.assistant_message.clone(),
-        AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
-            assistant_message, ..
-        }) => assistant_message.clone(),
-        AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
-            assistant_message, ..
-        }) => Some(assistant_message.clone()),
-    };
-    let message = filter_tool_turn_assistant_message(message);
-    if let Some(content) = message.filter(|value| !value.trim().is_empty()) {
-        let _ = event_tx.send(ExecutionEvent::ChatMessage {
-            node_id: NodeId(node_id.to_string()),
-            role: ChatRole::Assistant,
-            content,
-        });
-    }
-}
