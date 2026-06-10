@@ -1,5 +1,4 @@
 import type { NodeId, ToolCallSummary, ToolCallStatus, WorkflowRunState } from "../../lib/types";
-import { prettyJson } from "../../lib/workflow";
 
 export function resolveToolSummary(
   nodeId: NodeId | null | undefined,
@@ -13,14 +12,14 @@ export function resolveToolSummary(
 export function toolBubbleOutputText(
   status: ToolCallStatus,
   output: string | null | undefined,
-  args: unknown,
+  _args: unknown,
   isError: boolean,
 ): string {
   if (output?.trim()) return output;
 
   switch (status) {
     case "proposed":
-      return formatArgumentsPreview(args);
+      return "Preparing…";
     case "awaiting_approval":
       return "Awaiting approval…";
     case "running":
@@ -28,16 +27,12 @@ export function toolBubbleOutputText(
     case "blocked":
       return "Tool blocked.";
     case "failed":
-      return isError ? "Tool failed." : "Tool failed.";
+      return "Tool failed.";
+    case "aborted":
+      return "Tool aborted.";
     case "completed":
       return "";
     default:
       return "";
   }
-}
-
-function formatArgumentsPreview(args: unknown): string {
-  if (args === undefined || args === null) return "Preparing tool call…";
-  const json = prettyJson(args).trim();
-  return json ? `Arguments:\n${json}` : "Preparing tool call…";
 }

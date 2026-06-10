@@ -122,6 +122,15 @@ impl ToolRunner {
                 let raw = self.ast_grep(call.arguments.clone()).await?;
                 self.finalize_record(call, raw, Vec::new(), None).await
             }
+            BuiltinToolKind::Bash => {
+                let outcome = crate::tools::bash::execute_bash(
+                    &self.cwd,
+                    call.arguments.clone(),
+                    &self.cancel_token,
+                )
+                .await?;
+                self.finalize_bash_record(call, outcome).await
+            }
             BuiltinToolKind::Search
             | BuiltinToolKind::Find
             | BuiltinToolKind::Write
@@ -276,6 +285,31 @@ impl ToolRunner {
         })
         .await
         .map_err(|error| ToolRunnerError::BlockingTask(error.to_string()))
+    }
+
+    async fn finalize_bash_record(
+        &self,
+        call: ToolCall,
+        outcome: crate::tools::bash::BashExecutionOutcome,
+    ) -> Result<ToolExecutionRecord, ToolRunnerError> {
+        let (content, artifact, output_meta) =
+            self.store_output_text(&call.name, outcome.output).await?;
+        Ok(ToolExecutionRecord {
+            result: ToolResult {
+                tool_call_id: call.id,
+                tool_name: call.name,
+                content,
+                is_error: outcome.is_error,
+                artifact_ids: artifact
+                    .as_ref()
+                    .map(|record| vec![record.artifact_id.clone()])
+                    .unwrap_or_default(),
+                output_meta,
+            },
+            artifact,
+            file_changes: Vec::new(),
+            edit_batch: None,
+        })
     }
 
     async fn finalize_record(

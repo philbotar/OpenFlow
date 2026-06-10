@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
 /** @jsxRuntime automatic */
 import { Handle, Position } from "@xyflow/react";
+import { labelForAgentStatus } from "../lib/agentStatus";
 import type { AgentStatus, SubagentSummary } from "../lib/types";
 
 const MAX_VISIBLE_SUBAGENTS = 3;
@@ -10,25 +11,6 @@ export type WorkflowNodeData = {
   status: AgentStatus;
   subagents: SubagentSummary[];
 };
-
-function labelForStatus(status: AgentStatus): string {
-  switch (status) {
-    case "queued":
-      return "Queued";
-    case "started":
-      return "Running";
-    case "awaiting_input":
-      return "Waiting";
-    case "completed":
-      return "Done";
-    case "failed":
-      return "Failed";
-    case "stopped":
-      return "Stopped";
-    default:
-      return "Idle";
-  }
-}
 
 function subagentStatusDotClass(status: SubagentSummary["status"]): string {
   switch (status) {
@@ -67,7 +49,7 @@ export function WorkflowNode({
       <div className={`workflow-flow-node workflow-flow-node-${status}`}>
         <div className="node-status-row">
           <span className={`node-dot status-${status}`} />
-          <span className="node-status-label">{labelForStatus(status)}</span>
+          <span className="node-status-label">{labelForAgentStatus(status)}</span>
         </div>
         <strong>{data.label}</strong>
         {subagents.length > 0 && (

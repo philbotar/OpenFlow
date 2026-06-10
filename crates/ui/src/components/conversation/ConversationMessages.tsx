@@ -66,9 +66,8 @@ function PlainMessage(props: { message: ChatMessage }) {
     <Message
       from={chatRoleToMessageFrom(props.message.role)}
       label={messageLabel(props.message.role, ctx.currentNode()?.label)}
-    >
-      {props.message.content}
-    </Message>
+      content={props.message.content}
+    />
   );
 }
 

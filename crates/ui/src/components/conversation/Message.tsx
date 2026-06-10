@@ -1,4 +1,5 @@
 import type { ComponentProps, JSX } from "solid-js";
+import { MarkdownContent } from "./MarkdownContent";
 
 // ── Message ──────────────────────────────────────────────────────────
 
@@ -7,18 +8,20 @@ export type MessageRole = "user" | "assistant" | "system" | "thinking";
 interface MessageProps extends ComponentProps<"div"> {
   from: MessageRole;
   label: string;
-  children?: JSX.Element;
+  content: string;
 }
 
 export function Message(allProps: MessageProps) {
-  const { class: className, from, label, children, ...rest } = allProps;
+  const { class: className, from, label, content, ...rest } = allProps;
   return (
     <div
       class={`chat-row message message-${from} role-${from} ${className ?? ""}`}
       {...rest}
     >
       <div class={`chat-role ${from === "system" ? "is-system" : ""}`}>{label}</div>
-      <pre class="message-content">{children}</pre>
+      <div class="message-content">
+        <MarkdownContent content={content} />
+      </div>
     </div>
   );
 }

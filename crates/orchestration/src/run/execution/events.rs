@@ -79,40 +79,19 @@ pub fn apply_event_to_run_state(
                 logs.push(ChatMessage::streaming_assistant(message_id, delta));
             }
         }
-        ExecutionEvent::NodeAwaitingInput {
-            node_id,
-            label,
-            context,
-            ..
-        } => {
+        ExecutionEvent::NodeAwaitingInput { node_id, label, .. } => {
             state
                 .status_by_node
                 .insert(node_id.clone(), AgentStatus::AwaitingInput);
             add_awaiting_node(state, node_id.clone());
             state.active_manual_node_id = None;
             state.run_trace.push(RunTraceEntry {
-                node_id: node_id.clone(),
-                node_label: label.clone(),
+                node_id,
+                node_label: label,
                 status: TraceStatus::Paused,
                 message: "paused for human input".to_string(),
                 output: None,
             });
-            state
-                .chat_logs
-                .entry(node_id.clone())
-                .or_default()
-                .push(ChatMessage::text(
-                    ChatRole::System,
-                    format!("Node '{label}' is awaiting human input."),
-                ));
-            state
-                .chat_logs
-                .entry(node_id)
-                .or_default()
-                .push(ChatMessage::text(
-                    ChatRole::Thinking,
-                    format!("Context:\n{context}"),
-                ));
         }
         ExecutionEvent::ToolCallProposed {
             node_id, tool_call, ..
@@ -202,6 +181,7 @@ pub fn apply_event_to_run_state(
                 Some(reason),
                 true,
             );
+            restore_active_node_status(state, &node_id);
         }
         ExecutionEvent::ToolStarted {
             node_id,
@@ -251,6 +231,7 @@ pub fn apply_event_to_run_state(
                 Some(content),
                 is_error,
             );
+            restore_active_node_status(state, &node_id);
         }
         ExecutionEvent::FileChanged { node_id, record } => {
             state.changed_files.push(record.clone());
@@ -584,13 +565,38 @@ fn remove_pending_approval(state: &mut WorkflowRunState, approval_id: &str) {
 }
 
 pub fn record_user_input(state: &mut WorkflowRunState, node_id: &str, text: String) {
+    let node_id = NodeId(node_id.to_string());
     state
         .chat_logs
-        .entry(NodeId(node_id.to_string()))
+        .entry(node_id.clone())
         .or_default()
         .push(ChatMessage::text(ChatRole::User, text));
-    remove_awaiting_node(state, &NodeId(node_id.to_string()));
+    remove_awaiting_node(state, &node_id);
     state.active_manual_node_id = None;
+    state.status_by_node.insert(node_id, AgentStatus::Started);
+}
+
+fn restore_active_node_status(state: &mut WorkflowRunState, node_id: &NodeId) {
+    if state.awaiting_node_ids.contains(node_id) || state.awaiting_node_id.as_ref() == Some(node_id)
+    {
+        state
+            .status_by_node
+            .insert(node_id.clone(), AgentStatus::AwaitingInput);
+        return;
+    }
+    if state
+        .pending_approvals
+        .iter()
+        .any(|approval| approval.node_id == node_id.0)
+    {
+        state
+            .status_by_node
+            .insert(node_id.clone(), AgentStatus::AwaitingToolApproval);
+        return;
+    }
+    state
+        .status_by_node
+        .insert(node_id.clone(), AgentStatus::Started);
 }
 
 #[cfg(test)]

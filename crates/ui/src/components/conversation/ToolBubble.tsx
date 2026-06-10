@@ -12,13 +12,44 @@ export interface ToolBubbleProps {
   isError?: boolean;
 }
 
+function statusIcon(status: ToolCallStatus): { class: string; label: string } {
+  switch (status) {
+    case "proposed":
+      return { class: "tool-line-status--muted", label: "" };
+    case "running":
+      return { class: "tool-line-status--running", label: "" };
+    case "completed":
+      return { class: "tool-line-status--success", label: "✓" };
+    case "failed":
+      return { class: "tool-line-status--error", label: "✗" };
+    case "aborted":
+      return { class: "tool-line-status--error", label: "✗" };
+    case "blocked":
+      return { class: "tool-line-status--muted", label: "⊘" };
+    case "awaiting_approval":
+      return { class: "tool-line-status--warning", label: "⏳" };
+    default:
+      return { class: "tool-line-status--muted", label: "" };
+  }
+}
+
+function isTerminal(status: ToolCallStatus): boolean {
+  return status === "completed" || status === "failed" || status === "aborted";
+}
+
 export function ToolBubble(props: ToolBubbleProps) {
   let outputEl: HTMLDivElement | undefined;
   const [isAtBottom, setIsAtBottom] = createSignal(true);
+  const [isExpanded, setIsExpanded] = createSignal(false);
   let resizeObserver: ResizeObserver | undefined;
 
-  const bodyText = () =>
+  const statusText = () =>
     toolBubbleOutputText(props.status, props.output, props.arguments, props.isError ?? false);
+
+  const icon = () => statusIcon(props.status);
+
+  const hasOutput = () =>
+    isTerminal(props.status) && !!statusText().trim();
 
   const scrollOutputToBottom = (smooth: boolean) => {
     if (!outputEl) return;
@@ -45,34 +76,43 @@ export function ToolBubble(props: ToolBubbleProps) {
   });
 
   createEffect(() => {
-    bodyText();
+    statusText();
     if (isAtBottom()) scrollOutputToBottom(false);
   });
 
   return (
-    <div
-      class={`tool-bubble-row ${props.isError ? "tool-bubble-row--error" : ""}`}
-      data-tool-name={props.toolName}
-    >
-      <div class={`tool-bubble ${props.isError ? "tool-bubble--error" : ""}`}>
-        <div class="tool-bubble-header">Tool Invocation: {props.toolName}</div>
+    <div class="tool-line" data-tool-name={props.toolName}>
+      {/* Status icon + tool name line */}
+      <span class={`tool-line-status ${icon().class}`}>
+        {icon().label}
+      </span>
+      <span class="tool-line-name">
+        {props.toolName} {statusText()}
+      </span>
+
+      {/* Hover-only chevron */}
+      <Show when={hasOutput()}>
+        <button
+          class={`tool-line-chevron ${isExpanded() ? "tool-line-chevron--expanded" : ""}`}
+          onClick={() => setIsExpanded((prev) => !prev)}
+          aria-label="Toggle output"
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M4.5 3L7.5 6L4.5 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+      </Show>
+
+      {/* Expandable output area */}
+      <div class={`tool-line-output-wrapper ${isExpanded() && hasOutput() ? "tool-line-output-wrapper--expanded" : ""}`}>
         <div
           ref={outputEl}
-          class="tool-bubble-output"
+          class={`tool-line-output ${props.isError ? "tool-line-output--error" : ""}`}
           onScroll={onOutputScroll}
           role="log"
           aria-live="polite"
         >
-          <Show
-            when={bodyText()}
-            fallback={
-              <Show when={props.status === "running"}>
-                <span class="tool-bubble-placeholder">Running…</span>
-              </Show>
-            }
-          >
-            {bodyText()}
-          </Show>
+          {hasOutput() ? statusText() : ""}
         </div>
       </div>
     </div>

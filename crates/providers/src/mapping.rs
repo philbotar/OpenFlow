@@ -56,15 +56,16 @@ pub fn submit_output_tool(request: &AgentRequest) -> ToolSpec {
 pub fn request_input_tool() -> ToolSpec {
     ToolSpec {
         name: REQUEST_INPUT_TOOL.to_string(),
-        description: "Ask the human for one specific missing input before the node can continue."
-            .to_string(),
+        description:
+            "Pause the node and ask the human one direct clarifying question before continuing."
+                .to_string(),
         parameters: json!({
             "type": "object",
             "additionalProperties": false,
             "properties": {
                 "assistant_message": {
                     "type": "string",
-                    "description": "The exact follow-up question or clarification needed from the human."
+                    "description": "The exact question for the human (typically ending with ?). Must not be preamble, narration, or a plan — ask the question directly."
                 }
             },
             "required": ["assistant_message"]

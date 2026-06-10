@@ -58,9 +58,10 @@ Put every schema field under \"output\", not at the top level. After a successfu
 the host stores your output and may run downstream nodes that depend on this one.\n\
 \n\
 ## When to pause for a human\n\
-Call openflow_request_user_input with {\"assistant_message\": \"<one clear question>\"} \
-when you cannot complete the task without human clarification. After the human replies, \
-continue working toward submit.\n\
+Call openflow_request_user_input with {\"assistant_message\": \"<one direct question>\"} \
+when you cannot complete the task without human clarification. assistant_message must be \
+the question itself (usually ending with ?), not preamble or narration about asking. After \
+the human replies, continue working toward submit.\n\
 \n\
 ## Other tools\n\
 Use catalog tools when they improve correctness. Tool errors are returned to you; recover \

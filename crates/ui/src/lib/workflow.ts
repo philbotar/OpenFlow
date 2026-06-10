@@ -67,6 +67,10 @@ export const SUPPORTED_NODE_TOOLS = [
     name: "apply_patch",
     description: "Apply a Codex patch envelope to files under the execution folder.",
   },
+  {
+    name: "bash",
+    description: "Run shell commands (git, cargo, npm, etc.) in the execution folder.",
+  },
 ] as const;
 
 

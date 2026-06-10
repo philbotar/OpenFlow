@@ -11,6 +11,7 @@ pub enum BuiltinToolKind {
     Write,
     Edit,
     ApplyPatch,
+    Bash,
     DeclareSubagents,
     CallSubagent,
 }
@@ -43,6 +44,7 @@ impl ToolRegistry {
         register(&mut tools, write_tool());
         register(&mut tools, edit_tool());
         register(&mut tools, apply_patch_tool());
+        register(&mut tools, bash_tool());
         register(&mut tools, declare_subagents_tool());
         register(&mut tools, call_subagent_tool());
         Self { tools }
@@ -236,6 +238,42 @@ fn edit_tool() -> RegisteredTool {
             concurrency: ToolConcurrency::Exclusive,
         },
         kind: BuiltinToolKind::Edit,
+    }
+}
+
+fn bash_tool() -> RegisteredTool {
+    RegisteredTool {
+        definition: ToolDefinition {
+            name: "bash".to_string(),
+            description: "Execute a bash command in the execution folder. Use `cwd` for the working directory (not `cd dir && …`). Prefer dedicated read/search/find/edit/write tools when they suffice. Returns merged stdout/stderr, wall time, and exit code.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "Command to execute"
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "description": "Timeout in seconds (default 300, max 3600)"
+                    },
+                    "env": {
+                        "type": "object",
+                        "additionalProperties": { "type": "string" },
+                        "description": "Extra environment variables"
+                    },
+                    "cwd": {
+                        "type": "string",
+                        "description": "Working directory under the execution folder"
+                    }
+                },
+                "required": ["command"]
+            }),
+            tier: ToolTier::Exec,
+            concurrency: ToolConcurrency::Exclusive,
+        },
+        kind: BuiltinToolKind::Bash,
     }
 }
 

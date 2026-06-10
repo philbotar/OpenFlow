@@ -77,6 +77,7 @@ Assistant token streaming is wired (`ChatMessageDelta` → chat log). Next chat 
 | Thinking bubble UI — collapsible reasoning block in chat; distinct from assistant messages; collapsed by default | High | Planned |
 | Provider thinking in transcript — parse reasoning blocks from Anthropic/OpenAI responses; project to chat (not legacy `ChatRole::Thinking` tool lines) | High | Planned |
 | Collapsible tool bubbles — collapsed row shows tool name + one-line outcome; expand for args and full output | High | Planned |
+| Pretty tool names — human-readable labels in chat (e.g. Read, Search, Edit file) instead of raw builtin ids (`read`, `ast_grep`, `openflow_call_subagent`) | Medium | Planned |
 | Tool row chrome — drop `Tool Invocation:` header; status chip (running / completed / failed); chevron expand | Medium | Planned |
 | Args summary — one-line path/query preview when collapsed; full formatted JSON only when expanded | Medium | Planned |
 | Streaming thinking — append reasoning tokens into the thinking bubble during active turns | Medium | Planned |
@@ -91,6 +92,8 @@ Assistant token streaming is wired (`ChatMessageDelta` → chat log). Next chat 
 | --- | --- | --- |
 | Workflow settings (`shared_context`, schedule/retry/provider schema) | Done | Gear panel in editor |
 | Subagent integration — list on agent node, node settings picker | Done | Saved + ad-hoc subagents |
+| Canvas subagent list — scrollable in-node list (no truncate) | Planned | See [Canvas run feedback](#canvas-run-feedback) |
+| Canvas node status icons — colored icons per state (thinking, done, etc.) | Planned | See [Canvas run feedback](#canvas-run-feedback) |
 | Callable agents (`openflow_call_subagent`) | Done | Snapshotted at run start |
 | Project-backed workflows (`.flow/workflows/`) | Done | Sidebar project groups |
 | Skill invocation | Done | Invoke path works |
@@ -108,7 +111,7 @@ Assistant token streaming is wired (`ChatMessageDelta` → chat log). Next chat 
 | Error logging stored locally; agent loop to propose fixes | Planned | |
 | File edit tooling — read/write-tier builtins, approval, diff preview, changed-files ledger | Done | See [File edit tooling](#file-edit-tooling) |
 | Remove per-node JSON output schema editing | Planned | Overkill for current scope; keep internal defaults, drop inspector/agents UI |
-| Shared node context tool/option | Planned | |
+| Pass read files to downstream nodes | Planned | See [Upstream read-file context](#upstream-read-file-context) |
 | Natural language workflow definition | Planned | |
 | Standalone macOS app packaging | Planned | |
 | Workflow version control (per-change revert) | Planned | |
@@ -117,6 +120,7 @@ Assistant token streaming is wired (`ChatMessageDelta` → chat log). Next chat 
 | Thinking level per node | Planned | See [Thinking & chat presentation](#thinking--chat-presentation) |
 | Thinking bubbles in chat UI | Planned | Collapsible provider reasoning; near-term [Chat presentation](#chat-presentation--thinking-bubbles--tool-cleanup) |
 | Tool invocation display cleanup | Planned | Compact collapsed rows; expand for args/output; near-term [Chat presentation](#chat-presentation--thinking-bubbles--tool-cleanup) |
+| Pretty tool names in chat | Planned | Human-readable labels for builtins and subagents; near-term [Chat presentation](#chat-presentation--thinking-bubbles--tool-cleanup) |
 | Terminal tab in bottom dock panel | Planned | Interactive shell alongside Overview, Chat, Run trace |
 | Chat bar markdown rendering | Planned | |
 | System-level notifications | Planned | |
@@ -124,6 +128,27 @@ Assistant token streaming is wired (`ChatMessageDelta` → chat log). Next chat 
 | Queued chat input during active runs | Planned | See [Agent questions & todos](#agent-questions--todos) |
 | Composio / n8n-style external node connectors | Planned | |
 | Accessibility & keyboard shortcuts | Planned | See [Accessibility](#accessibility) |
+
+### Canvas run feedback
+
+During a run, agent nodes show a status row and optional subagent rows. Subagents are capped at three visible entries with a `+N more` overflow line; status is a colored dot plus text label (`WorkflowNode.react.tsx`, `agentStatus.ts`).
+
+| Layer | Gap |
+| --- | --- |
+| `crates/ui/src/canvas/WorkflowNode.react.tsx` | `MAX_VISIBLE_SUBAGENTS = 3` truncates the list; no scroll container |
+| `crates/ui/src/styles/index.css` | `.node-subagent-list` is static; no max-height / overflow-y |
+| `crates/ui/src/canvas/WorkflowNode.react.tsx` | Status is dot + text only — no distinct icon per `AgentStatus` |
+| `crates/ui/src/lib/agentStatus.ts` | Labels only; no icon or color token mapping for canvas chrome |
+
+| Item | Priority | Status |
+| --- | --- | --- |
+| Scrollable subagent list — show all in-run subagents inside the node; max-height + `overflow-y: auto`; drop `+N more` truncation | High | Planned |
+| Subagent row polish — keep status dot + name; optional purpose tooltip; readable at small node widths | Medium | Planned |
+| Status icons — replace or augment the dot with a distinct colored icon per state (thinking, waiting for input, awaiting approval, running tool, done, failed, stopped) | High | Planned |
+| Icon + label pairing — icon at a glance; text label on hover or when node is selected / zoomed in | Medium | Planned |
+| Handle chrome — match icon color on left/right handles for quick scan across the graph | Low | Planned |
+
+**Target:** Glance at the canvas and tell what each node is doing from icon color and shape. Open a busy agent node and scroll its full subagent roster without losing entries behind a `+N more` line.
 
 ### Accessibility
 
@@ -153,7 +178,7 @@ Providers expose extended reasoning (Anthropic thinking blocks, OpenAI reasoning
 | `crates/orchestration/src/execution/events.rs` | Run projection does not emit structured thinking events to chat |
 | `crates/ui/src/forms/` | Inspector has no thinking-level control (off / low / medium / high or provider-aligned presets) |
 | `crates/ui/src/components/conversation/` | No collapsible thinking block component; `PlainMessage` renders thinking role like assistant text |
-| `crates/ui/src/components/conversation/ToolBubble.tsx` | Always expanded fixed-height scroll pane; `Tool Invocation:` header; proposed state dumps raw args JSON |
+| `crates/ui/src/components/conversation/ToolBubble.tsx` | Always expanded fixed-height scroll pane; `Tool Invocation:` header; raw builtin ids (`read`, `openflow_call_subagent`) with no display-name mapping |
 | `crates/ui/src/components/conversation/ConversationMessages.tsx` | No `ThinkingBubble`; tool markers and legacy thinking lines share the same bubble path |
 | `crates/ui/src/lib/parseLegacyToolMessages.ts` | Legacy `ChatRole::Thinking` grouped as tool bubbles — conflates provider reasoning with tool I/O |
 
@@ -165,6 +190,7 @@ Providers expose extended reasoning (Anthropic thinking blocks, OpenAI reasoning
 | Thinking transcript items — `AgentTranscriptItem::ReasoningBlock` (or equivalent) in domain + run projection | High | Planned |
 | `ThinkingBubble` component — collapsible reasoning bubble; muted styling; collapsed by default | High | Planned |
 | Collapsible tool bubbles — collapsed row shows tool name + one-line outcome; expand for args and full output | High | Planned |
+| Pretty tool names — map builtin/subagent ids to short human labels in `ToolBubble`, `ToolApprovalCard`, and trace rows | Medium | Planned |
 | Tool row chrome — icon + name + status chip; remove `Tool Invocation:` label; chevron toggle | Medium | Planned |
 | Args one-liner — path/query/file summary when collapsed; `prettyJson` args only when expanded | Medium | Planned |
 | Streaming thinking — append reasoning tokens into the thinking bubble during active turns | Medium | Planned |
@@ -291,6 +317,34 @@ Under `ApprovalMode::Write`, **read** tier auto-allows; **write** and **exec** t
 | Full LSP language-server client (format-on-write via CLI exists) | Low | Planned |
 
 **Target:** Agents propose file edits as write-tier tool calls; user approves when policy requires; changes apply under the linked project cwd and appear in chat as reviewable diffs. Read-tier discovery tools run without approval under default `write` approval mode.
+
+### Upstream read-file context
+
+Downstream nodes receive upstream `output` JSON and transitive `changed_files` (write-tier mutations), but not which files upstream agents **read** via `read`, `search`, `find`, or `ast_grep`. A reviewer or implementer node must re-discover the same paths instead of inheriting gathered context.
+
+| Layer | Gap |
+| --- | --- |
+| `crates/orchestration/src/tool/runner.rs` | Read-tier tool results are not recorded in a per-node ledger (only write-tier drains `FileChangeRecord`) |
+| `crates/engine/src/tools/` | No `ReadFileRecord` (or equivalent) — only `FileChangeRecord` for mutations |
+| `crates/engine/src/execution/interactive_engine.rs` | No `read_files_by_node` map; `record_file_changes` is write-only |
+| `crates/engine/src/execution/node_invocation.rs` | `build_node_input` injects `changed_files` but no `read_files` block for transitive upstream reads |
+| `crates/orchestration/src/run/state/` | Run state has no `readFilesByNode` projection for UI or trace |
+| `crates/ui/src/` | No panel or trace row showing files consulted upstream of the active node |
+
+| Item | Priority | Status |
+| --- | --- | --- |
+| Read-file ledger — record paths (and optional line ranges) from read-tier tool calls per node | High | Planned |
+| Transitive merge — dedupe by path; latest read wins (mirror `upstream_changed_files`) | High | Planned |
+| Downstream input — add `read_files` to node input JSON alongside `upstream` and `changed_files` | High | Planned |
+| Snapshot policy — path-only by default; optional excerpt/hashline tag when under byte budget | Medium | Planned |
+| Run state projection — `readFilesByNode` in `WorkflowRunState` + run trace entries | Medium | Planned |
+| Workflow setting — opt in/out per workflow (`pass_read_files_to_downstream`, default on) | Medium | Planned |
+| UI — show upstream read files in inspector or overview when a downstream node is selected | Low | Planned |
+| Include read files in node `output` on submit — optional explicit list from `openflow_submit_node_output` | Low | Planned |
+
+**Target:** When node A reads `src/foo.rs` and hands off to node B, B's `AgentRequest.input` includes those paths (and optional excerpts) so B understands what A already inspected — without repeating read-tool rounds.
+
+**Reference:** Write-path precedent — `upstream_changed_files` + `changed_files` in `crates/engine/src/execution/node_invocation.rs`; ledger drain in `crates/orchestration/src/tool/runner.rs`.
 
 ---
 

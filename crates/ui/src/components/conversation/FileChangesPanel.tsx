@@ -1,3 +1,4 @@
+import ChevronRight from "lucide-solid/icons/chevron-right";
 import { createSignal, For, Show } from "solid-js";
 import { createUiDesktopOutboundAdapter } from "../../port";
 import { useAppContext } from "../../context/AppContext";
@@ -162,27 +163,64 @@ function EditBatchRow(props: { batch: EditBatch }) {
   );
 }
 
+function panelSummaryLabel(fileCount: number, batchCount: number): string {
+  const filePart =
+    fileCount > 0 ? `${fileCount} file${fileCount === 1 ? "" : "s"}` : null;
+  const batchPart =
+    batchCount > 0
+      ? `${batchCount} revertible batch${batchCount === 1 ? "" : "es"}`
+      : null;
+  return [filePart, batchPart].filter(Boolean).join(", ");
+}
+
 export function FileChangesPanel() {
   const ctx = useAppContext();
+  const [expanded, setExpanded] = createSignal(true);
   const changedFiles = () =>
     latestChangesByPath(nodeChangedFiles(ctx.runState(), ctx.selectedNodeId()));
   const editBatches = () => nodeEditBatches(ctx.runState(), ctx.selectedNodeId());
+  const fileCount = () => changedFiles().length;
+  const batchCount = () => editBatches().length;
 
   return (
-    <Show when={changedFiles().length > 0 || editBatches().length > 0}>
-      <div class="file-changes-panel">
-        <div class="eyebrow">Changed files</div>
-        <Show when={editBatches().length > 0}>
-          <div class="edit-batches-section">
-            <div class="edit-batches-label">Revertible batches</div>
-            <For each={editBatches()}>
-              {(batch) => <EditBatchRow batch={batch} />}
-            </For>
-          </div>
-        </Show>
-        <Show when={changedFiles().length > 0}>
-          <div class="file-changes-list">
-            <For each={changedFiles()}>{(record) => <FileChangeRow record={record} />}</For>
+    <Show when={fileCount() > 0 || batchCount() > 0}>
+      <div
+        class="file-changes-panel"
+        classList={{ "is-collapsed": !expanded() }}
+      >
+        <button
+          type="button"
+          class="file-changes-panel-header"
+          aria-expanded={expanded()}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          <ChevronRight
+            class="file-changes-chevron"
+            classList={{ expanded: expanded() }}
+            aria-hidden="true"
+            size={14}
+          />
+          <span class="file-changes-panel-title">
+            {panelSummaryLabel(fileCount(), batchCount())}
+          </span>
+        </button>
+        <Show when={expanded()}>
+          <div class="file-changes-panel-body">
+            <Show when={batchCount() > 0}>
+              <div class="edit-batches-section">
+                <div class="edit-batches-label">Revertible batches</div>
+                <For each={editBatches()}>
+                  {(batch) => <EditBatchRow batch={batch} />}
+                </For>
+              </div>
+            </Show>
+            <Show when={fileCount() > 0}>
+              <div class="file-changes-list">
+                <For each={changedFiles()}>
+                  {(record) => <FileChangeRow record={record} />}
+                </For>
+              </div>
+            </Show>
           </div>
         </Show>
       </div>

@@ -7,12 +7,41 @@ use engine::{
     ChatRole, NodeId,
 };
 use parking_lot::Mutex;
+use serde_json::json;
 use std::collections::BTreeMap;
+use std::io::Write;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc::UnboundedSender;
 use uuid::Uuid;
+
+// #region agent log
+fn agent_debug_log(hypothesis_id: &str, location: &str, message: &str, data: serde_json::Value) {
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0);
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("/Users/philipbotar/Developer/Step-through-agentic-workflow/.cursor/debug-74ef61.log")
+    {
+        let _ = writeln!(
+            file,
+            "{}",
+            json!({
+                "sessionId": "74ef61",
+                "hypothesisId": hypothesis_id,
+                "location": location,
+                "message": message,
+                "data": data,
+                "timestamp": timestamp,
+            })
+        );
+    }
+}
+// #endregion
 
 pub struct AiInvocationAdapter<A> {
     inner: Arc<A>,
@@ -38,6 +67,7 @@ struct StreamSink {
     node_id: NodeId,
     message_id: String,
     streamed: Arc<AtomicBool>,
+    streamed_content: Arc<Mutex<String>>,
 }
 
 impl AiStreamSink for StreamSink {
@@ -47,6 +77,7 @@ impl AiStreamSink for StreamSink {
             return;
         }
         self.streamed.store(true, Ordering::Relaxed);
+        self.streamed_content.lock().push_str(&content);
         let _ = self.event_tx.send(ExecutionEvent::ChatMessageDelta {
             node_id: self.node_id.clone(),
             message_id: self.message_id.clone(),
@@ -67,11 +98,13 @@ where
         let label = request.node_label.clone();
         let message_id = Uuid::new_v4().to_string();
         let streamed = Arc::new(AtomicBool::new(false));
+        let streamed_content = Arc::new(Mutex::new(String::new()));
         let sink = StreamSink {
             event_tx: self.event_tx.clone(),
             node_id: node_id.clone(),
             message_id: message_id.clone(),
             streamed: Arc::clone(&streamed),
+            streamed_content: Arc::clone(&streamed_content),
         };
         let started = Instant::now();
         let result = self.inner.invoke_stream(request, &sink).await;
@@ -82,11 +115,40 @@ where
             Some(node_id.clone()),
             started,
         );
-        if streamed.load(Ordering::Relaxed) {
+        let did_stream = streamed.load(Ordering::Relaxed);
+        if did_stream {
             finalize_stream_message(&self.event_tx, &node_id, &message_id);
         }
         if let Ok(outcome) = &result {
-            if !streamed.load(Ordering::Relaxed) {
+            // #region agent log
+            let (outcome_kind, assistant_message) = match outcome {
+                AgentTurnOutcome::Completed(success) => {
+                    ("completed", success.assistant_message.clone())
+                }
+                AgentTurnOutcome::ToolCalls(batch) => {
+                    ("tool_calls", batch.assistant_message.clone())
+                }
+                AgentTurnOutcome::NeedsUserInput(input) => {
+                    ("needs_user_input", Some(input.assistant_message.clone()))
+                }
+            };
+            let streamed_text = streamed_content.lock().clone();
+            let will_emit = should_emit_assistant_message(did_stream, outcome, &streamed_text);
+            agent_debug_log(
+                "H1",
+                "ai_adapter.rs:invoke",
+                "ai invoke outcome",
+                json!({
+                    "nodeId": node_id.0,
+                    "outcomeKind": outcome_kind,
+                    "didStream": did_stream,
+                    "willEmitAssistantMessage": will_emit,
+                    "assistantMessage": assistant_message,
+                    "streamedTextPreview": streamed_text.chars().take(200).collect::<String>(),
+                }),
+            );
+            // #endregion
+            if will_emit {
                 emit_assistant_message(&self.event_tx, &node_id, outcome);
             }
             if let AgentTurnOutcome::Completed(AgentTurnSuccess { output, .. }) = outcome {
@@ -130,12 +192,8 @@ fn finalize_stream_message(
     });
 }
 
-fn emit_assistant_message(
-    event_tx: &UnboundedSender<ExecutionEvent>,
-    node_id: &str,
-    outcome: &AgentTurnOutcome,
-) {
-    let message = match outcome {
+fn assistant_message_for_outcome(outcome: &AgentTurnOutcome) -> Option<String> {
+    match outcome {
         AgentTurnOutcome::Completed(success) => success.assistant_message.clone(),
         AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
             assistant_message, ..
@@ -143,9 +201,46 @@ fn emit_assistant_message(
         AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
             assistant_message, ..
         }) => Some(assistant_message.clone()),
+    }
+}
+
+fn should_emit_assistant_message(
+    did_stream: bool,
+    outcome: &AgentTurnOutcome,
+    streamed_text: &str,
+) -> bool {
+    if !did_stream {
+        return true;
+    }
+    let Some(content) = filter_tool_turn_assistant_message(assistant_message_for_outcome(outcome))
+    else {
+        return false;
     };
-    let message = filter_tool_turn_assistant_message(message);
-    if let Some(content) = message.filter(|value| !value.trim().is_empty()) {
+    let trimmed = content.trim();
+    !trimmed.is_empty() && !streamed_text.contains(trimmed)
+}
+
+fn emit_assistant_message(
+    event_tx: &UnboundedSender<ExecutionEvent>,
+    node_id: &str,
+    outcome: &AgentTurnOutcome,
+) {
+    let message = assistant_message_for_outcome(outcome);
+    let filtered = filter_tool_turn_assistant_message(message.clone());
+    // #region agent log
+    agent_debug_log(
+        "H2",
+        "ai_adapter.rs:emit_assistant_message",
+        "assistant message emit decision",
+        json!({
+            "nodeId": node_id,
+            "rawMessage": message,
+            "filteredMessage": filtered,
+            "willEmit": filtered.as_ref().is_some_and(|value| !value.trim().is_empty()),
+        }),
+    );
+    // #endregion
+    if let Some(content) = filtered.filter(|value| !value.trim().is_empty()) {
         let _ = event_tx.send(ExecutionEvent::ChatMessage {
             node_id: NodeId(node_id.to_string()),
             role: ChatRole::Assistant,

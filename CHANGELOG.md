@@ -2,13 +2,23 @@
 
 ## Unreleased
 
+### Added
+
+- **Bash tool:** agent `bash` builtin (oh-my-pi–aligned) — `command`, optional `cwd`/`env`/`timeout`; non-interactive env defaults; merged stdout/stderr; wall-time and exit-code notices; `ToolTier::Exec` with critical-pattern approval override; opt-in via node tool config.
+- **ROADMAP.md:** [Canvas run feedback](docs/ROADMAP.md#canvas-run-feedback) — scrollable in-node subagent list; colored status icons per agent state (thinking, done, etc.).
+- **Node status labels:** canvas nodes show descriptive statuses — Thinking, Waiting for Input, Awaiting Approval, Running Tool, and more — with matching colors for each state.
+- **Chat markdown:** assistant, user, system, and thinking messages render as Markdown (`solid-markdown`) with styled headings, lists, code blocks, tables, and links.
+
 ### Changed
 
+- **File changes panel:** collapsible header (file count + chevron) so long change lists do not cover the chat composer; expanded list scrolls inside a capped height.
 - **Architecture cleanup:** rename workflow storage adapters to `app_workflow_store.rs` / `project_workflow_store.rs`; remove orchestration `#[path]` flat module aliases — import paths match folder layout (`run::execution`, `workflow::catalog`, etc.); delete stale `docs/file-structure.md`; fix provider layout docs (flat `providers/src/`).
 - **Architecture enforcement:** `crates/engine/clippy.toml` I/O bans; `crates/workspace-checks` runs `check-architecture.sh` via `cargo test --workspace`; engine public API snapshot + `scripts/check-engine-public-api.sh` in `verify.sh`.
 
 ### Fixed
 
+- **Awaiting-input chat noise:** stop projecting system "awaiting human input" and upstream `Context:` blocks into the conversation when a node pauses — status pill and run trace still show the pause.
+- **Human-input questions:** when the model streams a preamble then calls `openflow_request_user_input`, emit the tool's `assistant_message` to chat if it was not already streamed; reject non-question `assistant_message` values (preamble/narration) and retry the model turn before pausing — clarifying questions no longer disappear after "let me confirm one detail".
 - **Tool approval:** file-edit preview uses server-stored tool arguments (avoids UI JSON round-trip mismatch); Approve stays enabled when preview fails (warning shown); `submit_tool_approval` emits `run-state` for consistent UI updates.
 - **Multiplex chat:** composer only blocks on approvals for the selected node, not another node's pending approval.
 - **Parallel tool batches:** return one result per tool call; unknown tools no longer default to parallel execution.
@@ -19,6 +29,7 @@
 
 ### Added
 
+- **ROADMAP.md:** pretty tool names in chat — human-readable labels for builtins and subagents instead of raw ids.
 - **Assistant streaming:** `AiPort::invoke_stream` + `AiStreamSink`; OpenAI Chat Completions SSE transport; `RunTelemetry::ChatMessageDelta` + `ChatMessage.id`/`streaming` for incremental token updates in chat.
 - **Parallel shared tools:** `ToolPortImpl` runs contiguous `ToolConcurrency::Shared` batches concurrently; `Exclusive` tools use per-name semaphores.
 - **Parallel DAG layers:** `InteractiveEngine` runs all ready nodes in a layer concurrently (`join_all`); multiplex pauses via `EngineRunResult::NeedsInteraction` (multiple awaiting inputs + approval batches).
@@ -35,6 +46,7 @@
 
 ### Docs
 
+- **Roadmap:** [Upstream read-file context](docs/ROADMAP.md#upstream-read-file-context) — propagate read-tier tool paths (and optional excerpts) to downstream nodes via `read_files` in node input; per-node ledger, transitive merge, workflow opt-in.
 - **Roadmap:** near-term [Chat presentation — thinking bubbles & tool cleanup](docs/ROADMAP.md#chat-presentation--thinking-bubbles--tool-cleanup) — collapsible thinking bubbles, compact tool rows, args one-liner; expand Thinking & chat presentation gap table and execution order.
 - **Roadmap:** File references section — `@` file attachments in chat/entrypoint, structured submit payload, path jail, composer pills; mirrors `/skill` invocation pattern.
 - **Roadmap:** File edit tooling section — mark builtins, approval, ledger, diff preview, and git revert as Done; document `ToolRef.tier` (`read` explicit, `write` default for `write`/`edit`/`apply_patch`); mark T4 tool-approval policy Done.

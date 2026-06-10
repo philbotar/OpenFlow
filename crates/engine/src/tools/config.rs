@@ -151,8 +151,24 @@ pub fn override_policy_for_call(config: &NodeToolConfig, tool_name: &str) -> Opt
 fn default_tier_for_tool_name(tool_name: &str) -> ToolTier {
     match tool_name {
         "read" | "search" | "find" | "ast_grep" => ToolTier::Read,
+        "bash" => ToolTier::Exec,
         _ => ToolTier::Write,
     }
+}
+
+#[must_use]
+pub fn tool_decision_for_call(config: &NodeToolConfig, call: &ToolCall) -> ToolDecision {
+    if call.name == "bash" {
+        if let Some(command) = call.arguments.get("command").and_then(Value::as_str) {
+            if super::bash_policy::is_critical_bash_command(command) {
+                return ToolDecision::Prompt;
+            }
+        }
+    }
+    let tier = tool_tier_for_call(config, &call.name);
+    let override_policy = override_policy_for_call(config, &call.name);
+    let approval_mode = config.approval_mode.unwrap_or(ApprovalMode::Write);
+    requires_approval(approval_mode, tier, override_policy)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -330,6 +346,21 @@ mod tests {
             requires_approval(ApprovalMode::Write, ToolTier::Exec, None),
             ToolDecision::Prompt
         );
+    }
+
+    #[test]
+    fn tool_decision_for_call_prompts_on_critical_bash_even_in_yolo() {
+        let config = NodeToolConfig {
+            approval_mode: Some(ApprovalMode::Yolo),
+            ..NodeToolConfig::default()
+        };
+        let call = ToolCall {
+            id: "call-bash".to_string(),
+            name: "bash".to_string(),
+            arguments: json!({"command": "rm -rf /"}),
+            intent: None,
+        };
+        assert_eq!(tool_decision_for_call(&config, &call), ToolDecision::Prompt);
     }
 
     #[test]

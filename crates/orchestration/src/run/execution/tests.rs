@@ -3,12 +3,89 @@ use crate::run::state::{TraceStatus, WorkflowRunState};
 use crate::tools::ToolRegistry;
 use async_trait::async_trait;
 use engine::{
-    AgentRequest, AgentToolCallBatch, AgentTurnOutcome, AgentTurnSuccess, NodeToolConfig,
-    SubagentStatus, SubagentSummary, ToolCall, ToolCallStatus, ToolRef, ToolTier,
+    AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTurnOutcome, AgentTurnSuccess,
+    AiStreamEvent, AiStreamSink, ChatRole, NodeToolConfig, SubagentStatus, SubagentSummary,
+    ToolCall, ToolCallStatus, ToolRef, ToolTier,
 };
 use parking_lot::Mutex;
 use serde_json::json;
 use std::sync::Arc;
+
+fn sample_agent_request() -> AgentRequest {
+    AgentRequest {
+        workflow_id: "wf-1".into(),
+        node_id: "choose-feature".into(),
+        node_label: "Choose feature".to_string(),
+        model: "test-model".to_string(),
+        system_messages: Vec::new(),
+        task_prompt: String::new(),
+        input: json!({}),
+        output_schema: json!({}),
+        tool_config: NodeToolConfig::default(),
+        available_tools: Vec::new(),
+        transcript: Vec::new(),
+        model_attempt: 1,
+    }
+}
+
+#[tokio::test]
+async fn adapter_emits_clarifying_question_after_streamed_preamble() {
+    struct StreamingNeedsInputAi;
+
+    #[async_trait]
+    impl engine::AiPort for StreamingNeedsInputAi {
+        async fn invoke(
+            &self,
+            _request: AgentRequest,
+        ) -> Result<AgentTurnOutcome, engine::AgentError> {
+            panic!("AiInvocationAdapter should call invoke_stream");
+        }
+
+        async fn invoke_stream(
+            &self,
+            _request: AgentRequest,
+            sink: &dyn AiStreamSink,
+        ) -> Result<AgentTurnOutcome, engine::AgentError> {
+            sink.on_stream_event(AiStreamEvent::AssistantDelta {
+                content: "That's clear! Let me confirm one detail before proceeding:".to_string(),
+            });
+            Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
+                raw_text: "{}".to_string(),
+                assistant_message: "Should tool rows animate like Cursor's shimmer?".to_string(),
+            }))
+        }
+    }
+
+    let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
+    let adapter = AiInvocationAdapter::new(Arc::new(StreamingNeedsInputAi), event_tx);
+    adapter
+        .invoke(sample_agent_request())
+        .await
+        .expect("invoke succeeds");
+
+    let mut streamed_preamble = false;
+    let mut emitted_question = false;
+    while let Ok(event) = event_rx.try_recv() {
+        match event {
+            ExecutionEvent::ChatMessageDelta { delta, .. } if !delta.is_empty() => {
+                streamed_preamble |= delta.contains("confirm one detail");
+            }
+            ExecutionEvent::ChatMessage { role, content, .. }
+                if role == ChatRole::Assistant
+                    && content.contains("Should tool rows animate like Cursor's shimmer?") =>
+            {
+                emitted_question = true;
+            }
+            _ => {}
+        }
+    }
+
+    assert!(streamed_preamble, "expected streamed preamble delta");
+    assert!(
+        emitted_question,
+        "expected clarifying question ChatMessage after streamed preamble"
+    );
+}
 
 fn workflow() -> Workflow {
     let mut workflow = Workflow::new("trace");
@@ -98,6 +175,73 @@ fn reducer_node_completed_skips_chat_when_summary_missing() {
     );
 
     assert!(!state.chat_logs.contains_key(&NodeId("first".to_string())));
+}
+
+#[test]
+fn reducer_tool_completed_restores_thinking_status() {
+    let workflow = workflow();
+    let mut state = WorkflowRunState::running_for_workflow(&workflow);
+    let node_id = NodeId("first".to_string());
+    apply_event_to_run_state(
+        &workflow,
+        &mut state,
+        ExecutionEvent::NodeStarted {
+            node_id: node_id.clone(),
+            label: "First".to_string(),
+        },
+    );
+    apply_event_to_run_state(
+        &workflow,
+        &mut state,
+        ExecutionEvent::ToolStarted {
+            node_id: node_id.clone(),
+            tool_call_id: "call-1".to_string(),
+            tool_name: "read".to_string(),
+            arguments: json!({ "path": "README.md" }),
+        },
+    );
+    apply_event_to_run_state(
+        &workflow,
+        &mut state,
+        ExecutionEvent::ToolCompleted {
+            node_id: node_id.clone(),
+            tool_call_id: "call-1".to_string(),
+            tool_name: "read".to_string(),
+            content: "done".to_string(),
+            is_error: false,
+            output_meta: None,
+            artifact_ids: Vec::new(),
+        },
+    );
+
+    assert_eq!(
+        state.status_by_node.get(&node_id),
+        Some(&crate::run::state::AgentStatus::Started)
+    );
+}
+
+#[test]
+fn record_user_input_restores_thinking_status() {
+    let workflow = workflow();
+    let mut state = WorkflowRunState::running_for_workflow(&workflow);
+    let node_id = NodeId("first".to_string());
+    apply_event_to_run_state(
+        &workflow,
+        &mut state,
+        ExecutionEvent::NodeAwaitingInput {
+            node_id: node_id.clone(),
+            label: "First".to_string(),
+            context: "Need more detail".to_string(),
+            is_initial: false,
+        },
+    );
+    record_user_input(&mut state, "first", "Continue".to_string());
+
+    assert!(!state.awaiting_node_ids.contains(&node_id));
+    assert_eq!(
+        state.status_by_node.get(&node_id),
+        Some(&crate::run::state::AgentStatus::Started)
+    );
 }
 
 #[test]

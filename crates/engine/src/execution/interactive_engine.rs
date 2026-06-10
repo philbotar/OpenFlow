@@ -1,5 +1,6 @@
 use crate::conversation::{
-    filter_tool_turn_assistant_message, AgentTranscriptItem, ChatMessage, ChatRole,
+    filter_tool_turn_assistant_message, is_clarifying_question, AgentTranscriptItem, ChatMessage,
+    ChatRole,
 };
 use crate::execution::node_invocation::{
     build_agent_request, build_upstream_map, NodeInvocationContext,
@@ -11,10 +12,9 @@ use crate::ports::{
     AgentError, AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTurnOutcome,
     AgentTurnSuccess, AiPort, ToolPort,
 };
-use crate::tools::{
-    override_policy_for_call, requires_approval, tool_tier_for_call, ApprovalMode,
-    FileChangeRecord, ToolCall, ToolDecision, ToolResult,
-};
+#[cfg(test)]
+use crate::tools::ApprovalMode;
+use crate::tools::{tool_decision_for_call, FileChangeRecord, ToolCall, ToolDecision, ToolResult};
 use futures::future::join_all;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -125,11 +125,16 @@ pub struct InteractiveEngine {
     pending_tool_batches: BTreeMap<String, PendingToolBatch>,
     retries_by_node: BTreeMap<NodeId, u8>,
     submit_output_retries_by_node: BTreeMap<NodeId, u8>,
+    request_input_retries_by_node: BTreeMap<NodeId, u8>,
     entrypoint_text: Option<String>,
     terminal_error: Option<RunError>,
 }
 
 const MAX_MALFORMED_SUBMIT_OUTPUT_RETRIES: u8 = 3;
+const MAX_MALFORMED_REQUEST_INPUT_RETRIES: u8 = 3;
+const MALFORMED_REQUEST_INPUT_FEEDBACK: &str = "Your openflow_request_user_input call must set \
+    assistant_message to one direct clarifying question for the human (typically ending with ?). \
+    Do not send preamble, narration, or plans — ask the question in assistant_message now.";
 
 impl InteractiveEngine {
     /// # Errors
@@ -163,6 +168,7 @@ impl InteractiveEngine {
             pending_tool_batches: BTreeMap::new(),
             retries_by_node: BTreeMap::new(),
             submit_output_retries_by_node: BTreeMap::new(),
+            request_input_retries_by_node: BTreeMap::new(),
             entrypoint_text,
             terminal_error: None,
         })
@@ -545,7 +551,34 @@ impl InteractiveEngine {
                 self.apply_tool_calls(node_id, batch);
             }
             Ok(AgentTurnOutcome::NeedsUserInput(input)) => {
-                self.apply_user_input_request(node_id, input);
+                if is_clarifying_question(&input.assistant_message) {
+                    self.apply_user_input_request(node_id, input);
+                } else {
+                    let retry_count = self
+                        .request_input_retries_by_node
+                        .entry(node_id_key.clone())
+                        .or_default();
+                    if *retry_count < MAX_MALFORMED_REQUEST_INPUT_RETRIES {
+                        *retry_count += 1;
+                        self.transcripts
+                            .entry(node_id_key.clone())
+                            .or_default()
+                            .push(AgentTranscriptItem::UserMessage {
+                                content: MALFORMED_REQUEST_INPUT_FEEDBACK.to_string(),
+                            });
+                        self.events.push(RunEvent {
+                            node_id: node_id_key,
+                            kind: RunEventKind::Retrying,
+                            message: format!(
+                                "retrying after non-question request-user-input ({}/{MAX_MALFORMED_REQUEST_INPUT_RETRIES})",
+                                *retry_count
+                            ),
+                            output: None,
+                        });
+                        return;
+                    }
+                    self.apply_user_input_request(node_id, input);
+                }
             }
             Err(error) => {
                 let node_id = NodeId(node_id.to_string());
@@ -642,7 +675,6 @@ impl InteractiveEngine {
             .find_node(node_id)
             .map(|node| node.agent.tools.clone())
             .unwrap_or_default();
-        let approval_mode = config.approval_mode.unwrap_or(ApprovalMode::Write);
         let transcript = self
             .transcripts
             .entry(NodeId(node_id.to_string()))
@@ -656,9 +688,7 @@ impl InteractiveEngine {
         let mut requires_approval_for_batch = false;
         for call in batch.tool_calls {
             transcript.push(AgentTranscriptItem::ToolCall { call: call.clone() });
-            let tier = tool_tier_for_call(&config, &call.name);
-            let override_policy = override_policy_for_call(&config, &call.name);
-            match requires_approval(approval_mode, tier, override_policy) {
+            match tool_decision_for_call(&config, &call) {
                 ToolDecision::AutoAllow => pending_calls.push(call),
                 ToolDecision::Prompt => {
                     requires_approval_for_batch = true;
@@ -687,6 +717,27 @@ impl InteractiveEngine {
     }
 
     fn apply_user_input_request(&mut self, node_id: &str, input: AgentNeedUserInput) {
+        // #region agent log
+        {
+            use std::io::Write;
+            use std::time::{SystemTime, UNIX_EPOCH};
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|duration| duration.as_millis())
+                .unwrap_or(0);
+            if let Ok(mut file) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open("/Users/philipbotar/Developer/Step-through-agentic-workflow/.cursor/debug-74ef61.log")
+            {
+                let _ = writeln!(
+                    file,
+                    r#"{{"sessionId":"74ef61","hypothesisId":"H3","location":"interactive_engine.rs:apply_user_input_request","message":"transcript assistant message stored","data":{{"nodeId":"{node_id}","assistantMessage":{}}},"timestamp":{timestamp}}}"#,
+                    serde_json::to_string(&input.assistant_message).unwrap_or_else(|_| "\"\"".to_string())
+                );
+            }
+        }
+        // #endregion
         self.transcripts
             .entry(NodeId(node_id.to_string()))
             .or_default()
@@ -1148,6 +1199,54 @@ mod tests {
             vec![AgentTranscriptItem::UserMessage {
                 content: "Need a smaller launch scope".to_string(),
             }]
+        );
+    }
+
+    #[test]
+    fn non_question_request_input_retries_before_pauses() {
+        let mut workflow = Workflow::new("manual");
+        let mut idea = node("idea");
+        idea.agent.auto_start = false;
+        workflow.nodes = vec![idea];
+        let mut engine = InteractiveEngine::new(workflow, None).unwrap();
+
+        assert!(matches!(engine.poll(), EnginePollResult::AwaitInput { .. }));
+        engine
+            .on_human_input("idea", "Need a smaller launch scope")
+            .unwrap();
+        assert!(matches!(engine.poll(), EnginePollResult::CallAi { .. }));
+
+        engine.on_ai_complete(
+            "idea",
+            Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
+                raw_text: "{}".to_string(),
+                assistant_message:
+                    "Let me check the existing animation patterns before I ask anything:"
+                        .to_string(),
+            })),
+        );
+        assert!(matches!(engine.poll(), EnginePollResult::CallAi { .. }));
+        assert!(!engine.awaiting_nodes.contains(&NodeId("idea".to_string())));
+
+        engine.on_ai_complete(
+            "idea",
+            Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
+                raw_text: "{}".to_string(),
+                assistant_message: "Should the loading indicator use a shimmer or a spinner?"
+                    .to_string(),
+            })),
+        );
+
+        assert!(matches!(
+            engine.poll(),
+            EnginePollResult::AwaitInput { ref node_id, is_initial: false, .. } if node_id == "idea"
+        ));
+        assert_eq!(
+            engine.conversation_history("idea").last(),
+            Some(&ChatMessage::text(
+                ChatRole::Assistant,
+                "Should the loading indicator use a shimmer or a spinner?".to_string(),
+            ))
         );
     }
 
