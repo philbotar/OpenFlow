@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Changed
+
+- **Architecture cleanup:** rename workflow storage adapters to `app_workflow_store.rs` / `project_workflow_store.rs`; remove orchestration `#[path]` flat module aliases — import paths match folder layout (`run::execution`, `workflow::catalog`, etc.); delete stale `docs/file-structure.md`; fix provider layout docs (flat `providers/src/`).
+- **Architecture enforcement:** `crates/engine/clippy.toml` I/O bans; `crates/workspace-checks` runs `check-architecture.sh` via `cargo test --workspace`; engine public API snapshot + `scripts/check-engine-public-api.sh` in `verify.sh`.
+
 ### Fixed
 
 - **Tool approval:** file-edit preview uses server-stored tool arguments (avoids UI JSON round-trip mismatch); Approve stays enabled when preview fails (warning shown); `submit_tool_approval` emits `run-state` for consistent UI updates.
@@ -19,7 +24,7 @@
 - **Parallel DAG layers:** `InteractiveEngine` runs all ready nodes in a layer concurrently (`join_all`); multiplex pauses via `EngineRunResult::NeedsInteraction` (multiple awaiting inputs + approval batches).
 - **Multiplex run UI:** `awaitingNodeIds` + stacked `pendingApprovals` in run state; chat composer targets any awaiting node; approval queue switches focus by node.
 - **Single Tokio runtime (desktop):** `AppBackend` takes an injected `Handle`; Tauri `setup` passes `async_runtime` handle; tests keep an owned runtime via `with_default_paths`.
-- **Cursor rule:** `.cursor/rules/hexagonal-architecture.mdc` — always-on guidance for crate layers, orchestration folder layout, port seams, glossary naming, and `check-architecture.sh` verification.
+- **Cursor rules:** `.cursor/rules/hexagonal-core.mdc` (always-on) + scoped `hexagonal-engine.mdc` / `hexagonal-orchestration.mdc` — crate layers, folder layout, port seams, glossary naming, and `check-architecture.sh` verification.
 - **Roadmap:** [Project rules](docs/ROADMAP.md#project-rules) — per-linked-project agent guidance (`.flow/rules/`), discovery, run-time injection into shared context.
 
 ### Added

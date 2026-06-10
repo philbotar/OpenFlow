@@ -73,7 +73,7 @@ Persisted as `openflow/agents.json` (project root).
 
 ### `agent/library.rs` — Agent Library
 
-**Module:** `crate::agent_library` (re-exported from `lib.rs`)
+**Module:** `crate::agent::library`
 
 Responsibility: CRUD & metadata for agents.
 
@@ -210,7 +210,7 @@ Agents are one of seven **domain concepts** in orchestration, each following the
 | Domain | Logic | Adapter |
 |--------|-------|---------|
 | **agent** | `agent/library.rs` | `adapters/storage/agent_store.rs` |
-| **workflow** | `workflow/catalog.rs` | `adapters/storage/workflow_store.rs` |
+| **workflow** | `workflow/catalog.rs` | `adapters/storage/{app,project}_workflow_store.rs` |
 | **project** | `project/registry.rs` | `adapters/storage/project_store.rs` |
 | **tool** | `tool/{registry,runner,output}.rs` | `adapters/tool_impl/` |
 | **run** | `run/coordinator.rs` + `run/state/` + `run/execution/` | State projection (no persistence) |

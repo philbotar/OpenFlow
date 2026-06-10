@@ -3,7 +3,7 @@ use engine::{
     AiPort, EditBatch, EngineRunResult, InteractiveEngine, NodeId, PendingToolApproval, ToolCall,
     ToolTier, Workflow,
 };
-use std::collections::{HashSet, HashMap};
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio_util::sync::CancellationToken;
@@ -100,10 +100,8 @@ pub(super) async fn drive_interactive_workflow<A>(
                 let mut approval_tool_calls: HashMap<String, Vec<ToolCall>> = HashMap::new();
                 let mut approval_nodes: HashMap<String, NodeId> = HashMap::new();
                 for approval in &approvals {
-                    approval_tool_calls.insert(
-                        approval.approval_id.clone(),
-                        approval.tool_calls.clone(),
-                    );
+                    approval_tool_calls
+                        .insert(approval.approval_id.clone(), approval.tool_calls.clone());
                     approval_nodes.insert(approval.approval_id.clone(), approval.node_id.clone());
                     emit_approval_request(ApprovalRequestEmit {
                         event_tx: &event_tx,
@@ -280,4 +278,3 @@ fn abort_run(event_tx: &UnboundedSender<ExecutionEvent>, aborted_emitted: &mut b
     *aborted_emitted = true;
     let _ = event_tx.send(ExecutionEvent::Aborted);
 }
-

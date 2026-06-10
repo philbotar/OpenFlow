@@ -9,7 +9,7 @@ mod tool_port;
 pub use ai_adapter::AiInvocationAdapter;
 
 use crate::lsp::LspSettings;
-use crate::state::{RunTraceEntry, ToolArtifactSummary, ToolCallSummary};
+use crate::run::state::{RunTraceEntry, ToolArtifactSummary, ToolCallSummary};
 use engine::{
     AiPort, CallableAgent, ChatMessage, EditBatch, NodeId, RunReport, RunTelemetry, Workflow,
 };

@@ -1,0 +1,10 @@
+disallowed-methods = [
+    { path = "std::fs::read", reason = "engine is I/O-free; go through ToolPort" },
+    { path = "std::fs::read_to_string", reason = "engine is I/O-free; go through ToolPort" },
+    { path = "std::fs::write", reason = "engine is I/O-free; go through ToolPort" },
+    { path = "std::process::Command::new", reason = "engine is I/O-free; go through ToolPort" },
+]
+disallowed-types = [
+    { path = "std::fs::File", reason = "engine is I/O-free" },
+    { path = "std::net::TcpStream", reason = "engine is I/O-free" },
+]

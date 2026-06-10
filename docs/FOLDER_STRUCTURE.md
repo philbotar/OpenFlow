@@ -55,7 +55,8 @@ workflow/application/catalog.rs ← extra level
 adapters/
 ├── storage/                ← persistence implementations
 │   ├── agent_store.rs
-│   ├── workflow_store.rs
+│   ├── app_workflow_store.rs
+│   ├── project_workflow_store.rs
 │   └── ...
 ├── infrastructure/         ← external systems (LSP, Git, HTTP, DB clients)
 │   ├── lsp/
@@ -172,7 +173,8 @@ orchestration/src/
 ├── adapters/
 │   ├── storage/                        ← all persistence
 │   │   ├── agent_store.rs
-│   │   ├── workflow_store.rs
+│   │   ├── app_workflow_store.rs
+│   ├── project_workflow_store.rs
 │   │   ├── project_store.rs
 │   │   ├── settings_store.rs
 │   │   ├── skill_store.rs
@@ -204,23 +206,18 @@ orchestration/src/
 **Structure:**
 ```
 providers/src/
-├── adapters/
-│   ├── anthropic/
-│   │   ├── client.rs
-│   │   ├── model_list.rs
-│   │   └── mod.rs
-│   ├── openai/
-│   │   └── ...
-│   └── mod.rs
-│
-├── factory.rs                          ← single public factory function
-├── lib.rs                              ← exports factory only
-└── error.rs
+├── anthropic.rs                        ← Anthropic transport
+├── openai_compat.rs                    ← OpenAI-compatible transport
+├── client.rs                           ← AiClient implementing AiPort
+├── mapping.rs                          ← transcript/tool-arg mapping
+├── sse.rs                              ← SSE stream parsing
+├── lib.rs                              ← create_provider() factory
+└── ...
 ```
 
 **Rules:**
-- Single public entry point: `create_provider()` factory function
-- All concrete provider implementations in `adapters/`
+- Single public entry point: `create_provider()` factory function in `lib.rs`
+- New provider → add `providers/src/{name}.rs` and wire in `create_provider()`
 - Never expose concrete provider types to consumers
 - Implement `engine::ports::AiPort` trait
 
@@ -276,7 +273,7 @@ engine (core domain)
   ↑
   └─ orchestration (domains + adapters)
        ├─ agent/library → adapters/storage/agent_store
-       ├─ workflow/catalog → adapters/storage/workflow_store
+       ├─ workflow/catalog → adapters/storage/{app,project}_workflow_store
        └─ tool/runner → adapters/tool_impl/
           
 providers (adapters)

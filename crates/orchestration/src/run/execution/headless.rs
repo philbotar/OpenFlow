@@ -1,4 +1,4 @@
-use crate::state::WorkflowRunState;
+use crate::run::state::WorkflowRunState;
 use engine::CallableAgent;
 use engine::{AiPort, Workflow};
 use std::collections::{BTreeMap, VecDeque};
@@ -129,17 +129,14 @@ where
         }
 
         for node_id in &state.awaiting_node_ids {
-            if !manual_inputs
-                .iter()
-                .any(|item| item.node_id == *node_id)
-            {
+            if !manual_inputs.iter().any(|item| item.node_id == *node_id) {
                 return Err(WorkflowExecutionError::MissingManualInput(node_id.clone()));
             }
         }
         for pending in &state.pending_approvals {
-            let matches_next = approvals.iter().any(|item| {
-                item.approval_id.is_empty() || item.approval_id == pending.approval_id
-            });
+            let matches_next = approvals
+                .iter()
+                .any(|item| item.approval_id.is_empty() || item.approval_id == pending.approval_id);
             if !matches_next {
                 return Err(WorkflowExecutionError::MissingApproval(
                     pending.approval_id.clone(),

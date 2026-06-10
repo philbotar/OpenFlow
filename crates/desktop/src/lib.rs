@@ -4,7 +4,7 @@ use orchestration::backend::{
     AppBackend, BackendError, FileEditPreview, ProviderReadiness, WorkflowListItem,
     WorkflowValidationSummary,
 };
-use orchestration::state::WorkflowRunState;
+use orchestration::run::state::WorkflowRunState;
 use orchestration::{AgentDefinition, AppSettings, SkillSummary};
 use orchestration::{Project, Workflow};
 use serde::{Deserialize, Serialize};

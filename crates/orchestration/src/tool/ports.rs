@@ -1,6 +1,6 @@
 //! Outbound ports for tool execution (application layer contracts).
 
-use crate::tool_errors::ToolError;
+use crate::tool::errors::ToolError;
 use serde_json::Value;
 
 /// Regex content search over files under the execution cwd.

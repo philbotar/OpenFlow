@@ -531,9 +531,7 @@ impl InteractiveEngine {
                 .in_flight_ai
                 .iter()
                 .next()
-                .map(|expected| {
-                    format!("expected model completion for {expected}, got {node_id}")
-                })
+                .map(|expected| format!("expected model completion for {expected}, got {node_id}"))
                 .unwrap_or_else(|| "no node is awaiting model completion".to_string());
             self.reject_misrouted_completion(node_id, &message);
             return;

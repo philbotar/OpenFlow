@@ -68,6 +68,21 @@ Today a failed tool call becomes a single `is_error: true` [`ToolResult`](crates
 
 **Depends on:** T1 (error taxonomy pattern), T6 (retry policy wiring). See T19–T21 in domain hardening.
 
+### Chat presentation — thinking bubbles & tool cleanup
+
+Assistant token streaming is wired (`ChatMessageDelta` → chat log). Next chat polish: show provider reasoning as first-class thinking bubbles and replace always-expanded tool panes with compact, expandable rows.
+
+| Item | Priority | Status |
+| --- | --- | --- |
+| Thinking bubble UI — collapsible reasoning block in chat; distinct from assistant messages; collapsed by default | High | Planned |
+| Provider thinking in transcript — parse reasoning blocks from Anthropic/OpenAI responses; project to chat (not legacy `ChatRole::Thinking` tool lines) | High | Planned |
+| Collapsible tool bubbles — collapsed row shows tool name + one-line outcome; expand for args and full output | High | Planned |
+| Tool row chrome — drop `Tool Invocation:` header; status chip (running / completed / failed); chevron expand | Medium | Planned |
+| Args summary — one-line path/query preview when collapsed; full formatted JSON only when expanded | Medium | Planned |
+| Streaming thinking — append reasoning tokens into the thinking bubble during active turns | Medium | Planned |
+
+**Reference:** [`ToolBubble.tsx`](crates/ui/src/components/conversation/ToolBubble.tsx) (always expanded today); full spec in [Thinking & chat presentation](#thinking--chat-presentation).
+
 ---
 
 ## Product features
@@ -82,6 +97,7 @@ Today a failed tool call becomes a single `is_error: true` [`ToolResult`](crates
 | Skill discovery settings — unified skills section in Settings | Planned | Currently scans Cursor, Codex, Claude roots |
 | Show skill description above invoke UI | Done | `SkillDescriptionPreview` above composer when `/skill` tokens are present |
 | File references — attach project files to chat and entrypoint input | Planned | See [File references](#file-references) |
+| Project rules — per-linked-project agent guidance | Planned | See [Project rules](#project-rules) |
 | Branching — nodes wait for all upstream outputs before continuing | Planned | |
 | MCP integration | Planned | |
 | Remove `Context:` / `Task:` labels from chat | Planned | |
@@ -99,8 +115,8 @@ Today a failed tool call becomes a single `is_error: true` [`ToolResult`](crates
 | Run persistence, history, and replay | Planned | |
 | Programmatic / non-AI nodes (API nodes) | Planned | |
 | Thinking level per node | Planned | See [Thinking & chat presentation](#thinking--chat-presentation) |
-| Thinking blocks in chat UI | Planned | See [Thinking & chat presentation](#thinking--chat-presentation) |
-| Collapsible tool bubbles (expand for output) | Planned | See [Thinking & chat presentation](#thinking--chat-presentation) |
+| Thinking bubbles in chat UI | Planned | Collapsible provider reasoning; near-term [Chat presentation](#chat-presentation--thinking-bubbles--tool-cleanup) |
+| Tool invocation display cleanup | Planned | Compact collapsed rows; expand for args/output; near-term [Chat presentation](#chat-presentation--thinking-bubbles--tool-cleanup) |
 | Terminal tab in bottom dock panel | Planned | Interactive shell alongside Overview, Chat, Run trace |
 | Chat bar markdown rendering | Planned | |
 | System-level notifications | Planned | |
@@ -137,7 +153,9 @@ Providers expose extended reasoning (Anthropic thinking blocks, OpenAI reasoning
 | `crates/orchestration/src/execution/events.rs` | Run projection does not emit structured thinking events to chat |
 | `crates/ui/src/forms/` | Inspector has no thinking-level control (off / low / medium / high or provider-aligned presets) |
 | `crates/ui/src/components/conversation/` | No collapsible thinking block component; `PlainMessage` renders thinking role like assistant text |
-| `crates/ui/src/components/conversation/ToolBubble.tsx` | Tool output always expanded; no collapsed summary of what the tool did |
+| `crates/ui/src/components/conversation/ToolBubble.tsx` | Always expanded fixed-height scroll pane; `Tool Invocation:` header; proposed state dumps raw args JSON |
+| `crates/ui/src/components/conversation/ConversationMessages.tsx` | No `ThinkingBubble`; tool markers and legacy thinking lines share the same bubble path |
+| `crates/ui/src/lib/parseLegacyToolMessages.ts` | Legacy `ChatRole::Thinking` grouped as tool bubbles — conflates provider reasoning with tool I/O |
 
 | Item | Priority | Status |
 | --- | --- | --- |
@@ -145,13 +163,15 @@ Providers expose extended reasoning (Anthropic thinking blocks, OpenAI reasoning
 | Inspector control — pick thinking level per node; inherit workflow default when unset | High | Planned |
 | Provider wiring — map level to Anthropic/OpenAI-compat reasoning params; parse thinking blocks from responses | High | Planned |
 | Thinking transcript items — `AgentTranscriptItem::ReasoningBlock` (or equivalent) in domain + run projection | High | Planned |
-| Thinking block UI — collapsible reasoning bubble in chat; collapsed by default; distinct from assistant messages | High | Planned |
+| `ThinkingBubble` component — collapsible reasoning bubble; muted styling; collapsed by default | High | Planned |
 | Collapsible tool bubbles — collapsed row shows tool name + one-line outcome; expand for args and full output | High | Planned |
+| Tool row chrome — icon + name + status chip; remove `Tool Invocation:` label; chevron toggle | Medium | Planned |
+| Args one-liner — path/query/file summary when collapsed; `prettyJson` args only when expanded | Medium | Planned |
 | Streaming thinking — append reasoning tokens into the thinking bubble during active turns | Medium | Planned |
 | Hide legacy thinking tool lines — stop using `ChatRole::Thinking` for tool request/result prose once structured bubbles land | Medium | Planned |
 | Per-run thinking override — transient level tweak from chat chrome without editing the workflow | Low | Planned |
 
-**Target:** Users choose how much model reasoning each node uses. Provider thinking appears as collapsible blocks in chat. Tool invocations show a compact “what it did” line until expanded.
+**Target:** Users choose how much model reasoning each node uses. Provider thinking appears as collapsible blocks in chat. Tool invocations show a compact “what it did” line until expanded — no always-on scroll panes or raw-args dumps in the default view.
 
 ### Agent questions & todos
 
@@ -205,6 +225,29 @@ Users can invoke skills with `/skill` tokens in the chat composer (`crates/ui/sr
 | Reference budget — max files, max bytes, truncate with notice in formatted submit text | Low | Planned |
 
 **Target:** Type `@` in the composer (or pick files before run) to attach project paths. Resolved content is injected into the user message or entrypoint JSON so the agent sees explicit file context without an extra `read` tool round.
+
+### Project rules
+
+Linked projects should carry agent guidance (coding standards, architecture, naming) that applies during runs — analogous to Cursor `.cursor/rules/`, but scoped to the bound repo under `.flow/`.
+
+| Layer | Gap |
+| --- | --- |
+| `{project}/.flow/` | No rules file or directory convention |
+| `crates/orchestration/src/project/` | Project registry does not discover or load rules |
+| `crates/engine/src/graph/workflow.rs` | `WorkflowSettings.shared_context` is manual; no auto-merge from project rules |
+| `crates/orchestration/src/run/application/execution/` | Run start does not inject project rules into node system prompts |
+| `crates/ui/src/` | No editor or picker for project rules in linked-project settings |
+
+| Item | Priority | Status |
+| --- | --- | --- |
+| Rules storage — `.flow/rules/` (or single `.flow/rules.md`) under linked project | High | Planned |
+| Discovery on project load — list rules files; surface in project settings | High | Planned |
+| Run injection — merge project rules into `shared_context` (or per-node system prompt) at run start | High | Planned |
+| Optional enable/disable per workflow — inherit project rules by default; workflow can opt out | Medium | Planned |
+| Rules editor in UI — create/edit markdown rules from linked-project panel | Medium | Planned |
+| Import from `.cursor/rules/` — one-click copy or symlink convention for Cursor users | Low | Planned |
+
+**Target:** Bind a project folder; agents automatically follow that project's rules on every run without pasting them into workflow shared context by hand.
 
 ### File edit tooling
 
@@ -385,7 +428,8 @@ Remediation for modeled-but-unwired behavior and correctness gaps in `crates/dom
 ## Suggested execution order
 
 1. ~~Entrypoint wiring + run lifecycle (stop/cancel/shutdown)~~ — stop/cancel/shutdown done; entrypoint wiring remains
-2. Domain P0 path (T1–T6, T19–T21, T9, T10) — includes tool retry and resilient failure handling
-3. Product: branching join semantics, MCP, cron/retry execution
-4. Domain polish (T11–T18) and remaining product features
-5. Refactor polish — `AppProvider` slim-down, desktop IPC DTOs, orchestration catalog audit
+2. Chat presentation — thinking bubbles + collapsible tool rows (near-term section)
+3. Domain P0 path (T1–T6, T19–T21, T9, T10) — includes tool retry and resilient failure handling
+4. Product: branching join semantics, MCP, cron/retry execution
+5. Domain polish (T11–T18) and remaining product features
+6. Refactor polish — `AppProvider` slim-down, desktop IPC DTOs, orchestration catalog audit

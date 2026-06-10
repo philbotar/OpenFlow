@@ -3,8 +3,8 @@ use crate::mapping::{
     all_tool_specs, parse_chat_completion_output, parse_responses_output, should_allow_user_input,
     tool_payload, transcript_to_chat_messages, transcript_to_responses_input,
 };
-use crate::sse::{stream_sse_data_lines, ChatCompletionStreamAggregator};
 use crate::spec::WireApi;
+use crate::sse::{stream_sse_data_lines, ChatCompletionStreamAggregator};
 use engine::{
     emit_assistant_deltas_from_outcome, AgentError, AgentRequest, AgentTurnOutcome, AiStreamEvent,
     AiStreamSink,
@@ -135,10 +135,9 @@ async fn invoke_chat_completions_stream(
     body["stream"] = Value::Bool(true);
     let http_request = http.post(endpoint(&config.base_url, &config.chat_completions_path));
     let http_request = apply_auth(http_request, auth, "OpenAI-compatible")?.json(&body);
-    let response = http_request
-        .send()
-        .await
-        .map_err(|error| AgentError::Transient(format!("OpenAI-compatible request failed: {error}")))?;
+    let response = http_request.send().await.map_err(|error| {
+        AgentError::Transient(format!("OpenAI-compatible request failed: {error}"))
+    })?;
     let mut aggregator = ChatCompletionStreamAggregator::default();
     let mut last_content_len = 0usize;
     stream_sse_data_lines(response, "OpenAI-compatible", |event| {

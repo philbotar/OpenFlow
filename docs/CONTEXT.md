@@ -5,7 +5,7 @@ Domain terms for the Step-through-agentic-workflow architecture.
 | Term | Definition |
 |---|---|
 | **Composition root** | The crate responsible for constructing and wiring all dependencies. Here, orchestration is the composition root — `AppBackend` delegates to `WorkflowCatalog`, `AgentLibrary`, `ProjectRegistry`, `SettingsFacade`, and `RunCoordinator`. Provider construction uses the factory pattern (`create_provider`). |
-| **WorkflowCatalog** | Orchestration module: workflow CRUD, app/project merge (project wins on ID collision), assign/unassign. Adapters: `FileWorkflowStore`, `flow_store`. |
+| **WorkflowCatalog** | Orchestration module: workflow CRUD, app/project merge (project wins on ID collision), assign/unassign. Adapters: `app_workflow_store`, `project_workflow_store`. |
 | **RunCoordinator** | Orchestration module: active run session, action channel, `start_run` / `submit_*` / event projection entry points. |
 | **CallableAgent** | Engine type (`engine::CallableAgent`): saved agent snapshotted at run start for subagent invocation. Persisted as `openflow/agents.json`; orchestration alias `AgentDefinition`. |
 | **RunTelemetry** | Domain enum for interactive run events (chat, tools, subagents). Orchestration type alias `ExecutionEvent`; projected into `WorkflowRunState` by `events.rs`. |
@@ -14,7 +14,7 @@ Domain terms for the Step-through-agentic-workflow architecture.
 | **Dependency graph** | `engine → (none)`, `providers → engine`, `orchestration → engine + providers`, `desktop → orchestration`, `ui → desktop`. |
 | **Allowed import scope** | Target-state submodule limits on cross-crate imports (e.g. `orchestration → providers`: factory + config types only). Not enforced in baseline CI; deferred to Phase B after code matches. |
 | **Architecture check rollout** | **Phase A (Tier 2):** inter-crate Cargo graph + forbidden `use`. **Phase B (Tier 3):** providers allowlist, engine invocation locality, domain `adapters::` ban, UI Tauri seam. **Phase C (Tier 3 continued):** domain folders must not import flat `*_store` modules — use port traits; `backend/` wires adapters. **Deferred:** `tool/` → `lsp` ban; `pub(crate)` on all concrete adapters. |
-| **Port trait** | Domain module depends on a trait (e.g. `WorkflowStore`, `SkillCatalog`); `backend/` constructs `File*Store` impls. Replaces direct `use crate::flow_store::` in catalog code. |
+| **Port trait** | Domain module depends on a trait (e.g. `WorkflowStore`, `SkillCatalog`); `backend/` constructs `File*Store` impls. Replaces direct adapter imports in catalog code. |
 | **Architecture rules file** | Machine-readable CI source of truth for Phase A checks (e.g. `docs/architecture/arch-check-rules.toml`): workspace `Cargo.toml` allowlists, forbidden cross-crate `use` tables, engine forbidden external deps. `scripts/check-architecture.sh` reads it; `contract.md` links to it. Phase A scope: Rust workspace crates only (`engine`, `providers`, `orchestration`, `desktop`); UI/TypeScript rules deferred to Phase B. |
 | **Engine forbidden deps** | External crates the engine hexagon must not depend on (Phase A denylist in architecture rules file): transport/GUI deps such as `reqwest`, `tauri`, `tauri-build`. Distinct from workspace-member edges. |
 | **Legacy crate alias** | Pre-rename package paths (`domain`, `workflow_core`) that must not appear in Rust `use` statements. Phase A CI bans them workspace-wide to catch rename regressions. |
@@ -50,7 +50,8 @@ Flat structure for domains with application-level logic:
 #### `adapters/storage/`
 Persistence implementations (CRUD adapters for each domain):
 - `agent_store.rs` - Agent file persistence
-- `workflow_store.rs` - Workflow CRUD (was: `flow_store.rs` + `storage.rs`)
+- `app_workflow_store.rs` - App-level workflow persistence (`workflows.json`)
+- `project_workflow_store.rs` - Project workflow files (`.flow/workflows/`)
 - `project_store.rs` - Project file persistence
 - `settings_store.rs` - Settings file persistence + `provider_config.rs`
 - `skill_store.rs` - Skill catalog persistence
@@ -76,7 +77,7 @@ External system integration (don't modify for business logic):
 ### Module Exposure (lib.rs)
 
 Top-level `pub mod` declarations in `lib.rs` re-export modules for consumers:
-- Domain applications: `agent_library`, `workflow_catalog`, etc.
+- Domain modules: `agent::library`, `workflow::catalog`, etc.
 - Stores: `agent_store`, `workflow_store`, etc. (from `adapters/storage/`)
 - Tool modules: `tool`, `tool_registry`, `tool_runner`, `tool_output`
 - Infrastructure: `lsp`, `git`

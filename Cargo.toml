@@ -4,6 +4,7 @@ members = [
     "crates/providers",
     "crates/orchestration",
     "crates/desktop",
+    "crates/workspace-checks",
 ]
 resolver = "2"
 

@@ -1,6 +1,6 @@
 use engine::{Edge, Node, NodeId, ToolRef, Workflow};
-use orchestration::execution::run_workflow_headless;
-use orchestration::state::TraceStatus;
+use orchestration::run::execution::run_workflow_headless;
+use orchestration::run::state::TraceStatus;
 use providers::{
     AiClient, AiClientConfig, AuthConfig, OpenAiCompatibleConfig, ProviderAdapterConfig,
     ProviderId, WireApi,

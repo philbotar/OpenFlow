@@ -30,16 +30,16 @@ Patterns we follow in this repo.
 | Provider client (`AiClient`, `create_provider`) | `crates/providers/src/client.rs`, `lib.rs` |
 | UI desktop seam | `crates/ui/src/port.ts` |
 | App backend composition and IPC surface | `crates/orchestration/src/backend.rs` |
-| Run execution, shared context, callable agents, execution cwd | `crates/orchestration/src/execution.rs` |
-| Mutable run/edit state transitions | `crates/orchestration/src/state.rs` |
-| App workflow file store | `crates/orchestration/src/storage.rs` |
-| Project metadata and workflow bindings | `crates/orchestration/src/project_store.rs` |
-| Project workflow files (`.flow/workflows/`) | `crates/orchestration/src/flow_store.rs` |
-| Saved agent definitions | `crates/orchestration/src/agent_store.rs` |
-| Skill discovery (read-only) | `crates/orchestration/src/skill_store.rs` |
-| Provider readiness and API-key resolution | `crates/orchestration/src/provider_config.rs` |
-| Settings persistence | `crates/orchestration/src/settings_store.rs` |
-| Tool registry and approval | `crates/orchestration/src/tools/` |
+| Run execution, shared context, callable agents, execution cwd | `crates/orchestration/src/run/execution/` |
+| Mutable run/edit state transitions | `crates/orchestration/src/run/state/` |
+| App workflow file store | `crates/orchestration/src/adapters/storage/app_workflow_store.rs` |
+| Project metadata and workflow bindings | `crates/orchestration/src/adapters/storage/project_store.rs` |
+| Project workflow files (`.flow/workflows/`) | `crates/orchestration/src/adapters/storage/project_workflow_store.rs` |
+| Saved agent definitions | `crates/orchestration/src/adapters/storage/agent_store.rs` |
+| Skill discovery (read-only) | `crates/orchestration/src/adapters/storage/skill_store.rs` |
+| Provider readiness and API-key resolution | `crates/orchestration/src/settings/provider.rs` |
+| Settings persistence | `crates/orchestration/src/adapters/storage/settings_store.rs` |
+| Tool registry and approval | `crates/orchestration/src/tool/` |
 | Tauri command/event surface | `crates/desktop/src/lib.rs` |
 | Frontend invoke wrappers and UI state wiring | `crates/ui/src/api.ts`, `crates/ui/src/context/` |
 | Frontend DTO types | `crates/ui/src/lib/types.ts` |
@@ -111,6 +111,23 @@ See [`testing-workflows.md`](testing-workflows.md) for acceptance and live-AI ve
 1. Desktop app: `npm --prefix crates/desktop run start -- dev`
 2. Frontend only: `npm --prefix crates/ui run dev`
 3. Frontend typecheck: `npm --prefix crates/ui run typecheck`
+
+## Test file layout
+
+| Pattern | When | Example |
+| --- | --- | --- |
+| Sibling `*_tests.rs` | Large ported or multi-case suites | `adapters/tool_impl/edit/patch_tests.rs` declared in parent `mod.rs` |
+| Inline `#[cfg(test)] mod tests` | Small unit tests colocated with one source file | `adapters/tool_impl/edit/io.rs` |
+| Folder `tests.rs` | Integration tests for a module subtree | `run/execution/tests.rs` |
+
+Declare sibling test modules in the parent `mod.rs`:
+
+```rust
+#[cfg(test)]
+mod patch_tests;
+```
+
+Do not mix patterns within one file — pick sibling file or inline block, not both.
 
 ## Change Checklist
 

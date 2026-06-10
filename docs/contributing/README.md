@@ -49,14 +49,14 @@ Add a port/trait only when a consumer is typed on that interface. Current seams:
 
 | Data | Location | Owning module |
 | --- | --- | --- |
-| App workflows | `{data_local}/step-through-agentic-workflow/workflows.json` | `orchestration/src/storage.rs` |
-| Projects | `{data_local}/openflow/projects.json` (migrates from legacy slug) | `orchestration/src/project_store.rs` |
-| Saved agents | `{data_local}/openflow/agents.json` (migrates from legacy slug) | `orchestration/src/agent_store.rs` |
-| Settings | `{data_local}/step-through-agentic-workflow/settings.json` | `orchestration/src/settings_store.rs` |
-| Node templates | `{data_local}/openflow/templates.json` (migrates from legacy slug) | `orchestration/src/template_store.rs` |
-| Project workflows | `{project}/.flow/workflows/{workflowId}.workflow.json` | `orchestration/src/flow_store.rs` |
-| Provider API keys | Plaintext in `settings.json` (`ProviderProfile.api_key`) | `orchestration/src/settings_store.rs` |
-| Skills | Discovered at runtime from Cursor/Claude skill dirs (not persisted) | `orchestration/src/skill_store.rs` |
+| App workflows | `{data_local}/step-through-agentic-workflow/workflows.json` | `orchestration/src/adapters/storage/app_workflow_store.rs` |
+| Projects | `{data_local}/openflow/projects.json` (migrates from legacy slug) | `orchestration/src/adapters/storage/project_store.rs` |
+| Saved agents | `{data_local}/openflow/agents.json` (migrates from legacy slug) | `orchestration/src/adapters/storage/agent_store.rs` |
+| Settings | `{data_local}/step-through-agentic-workflow/settings.json` | `orchestration/src/adapters/storage/settings_store.rs` |
+| Node templates | `{data_local}/openflow/templates.json` (migrates from legacy slug) | `orchestration/src/adapters/storage/template_store.rs` |
+| Project workflows | `{project}/.flow/workflows/{workflowId}.workflow.json` | `orchestration/src/adapters/storage/project_workflow_store.rs` |
+| Provider API keys | Plaintext in `settings.json` (`ProviderProfile.api_key`) | `orchestration/src/adapters/storage/settings_store.rs` |
+| Skills | Discovered at runtime from Cursor/Claude skill dirs (not persisted) | `orchestration/src/adapters/storage/skill_store.rs` |
 
 `AppBackend::load_all_workflows` merges app-store workflows with project-discovered workflows (project files win on ID collision).
 
@@ -67,6 +67,9 @@ cargo fmt --all --check
 cargo clippy --workspace --all-targets
 cargo clippy-max
 cargo test --workspace
+./scripts/check-engine-public-api.sh
 ```
+
+Intentional changes to engine's public surface require updating `crates/engine/tests/snapshots/public_api.txt` (`cargo +nightly public-api` from `crates/engine/`).
 
 See [`testing-workflows.md`](testing-workflows.md) for layered test commands.

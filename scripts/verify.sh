@@ -10,6 +10,7 @@ fi
 cargo fmt --all --check
 cargo clippy --workspace --all-targets
 cargo test --workspace
+./scripts/check-engine-public-api.sh
 
 if ! command -v npm >/dev/null 2>&1; then
 	echo "error: npm is required to run UI tests (crates/ui)" >&2

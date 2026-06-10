@@ -29,12 +29,16 @@ where
     let mut stream = response.bytes_stream();
     let mut buffer: Vec<u8> = Vec::new();
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk
-            .map_err(|error| AgentError::Transient(format!("{label} stream read failed: {error}")))?;
+        let chunk = chunk.map_err(|error| {
+            AgentError::Transient(format!("{label} stream read failed: {error}"))
+        })?;
         buffer.extend_from_slice(&chunk);
         while let Some(pos) = buffer.iter().position(|&byte| byte == b'\n') {
             let mut line_bytes = buffer.drain(..=pos).collect::<Vec<_>>();
-            while line_bytes.last().is_some_and(|byte| *byte == b'\n' || *byte == b'\r') {
+            while line_bytes
+                .last()
+                .is_some_and(|byte| *byte == b'\n' || *byte == b'\r')
+            {
                 line_bytes.pop();
             }
             let line = std::str::from_utf8(&line_bytes).map_err(|error| {
@@ -82,24 +86,15 @@ impl ChatCompletionStreamAggregator {
         }
         if let Some(calls) = delta.get("tool_calls").and_then(Value::as_array) {
             for call in calls {
-                let index = call
-                    .get("index")
-                    .and_then(Value::as_u64)
-                    .unwrap_or(0) as usize;
+                let index = call.get("index").and_then(Value::as_u64).unwrap_or(0) as usize;
                 let entry = self.tool_calls.entry(index).or_default();
                 if let Some(id) = call.get("id").and_then(Value::as_str) {
                     entry.id = Some(id.to_string());
                 }
-                if let Some(name) = call
-                    .pointer("/function/name")
-                    .and_then(Value::as_str)
-                {
+                if let Some(name) = call.pointer("/function/name").and_then(Value::as_str) {
                     entry.name = Some(name.to_string());
                 }
-                if let Some(args) = call
-                    .pointer("/function/arguments")
-                    .and_then(Value::as_str)
-                {
+                if let Some(args) = call.pointer("/function/arguments").and_then(Value::as_str) {
                     entry.arguments.push_str(args);
                 }
             }
@@ -143,12 +138,9 @@ mod tests {
 
     #[test]
     fn utf8_line_decoding_preserves_multibyte_characters() {
-        let payload = "data: {\"choices\":[{\"delta\":{\"content\":\"é\"}}]}\n";
-        let line = payload
-            .trim_end_matches('\n')
-            .strip_prefix("data: ")
-            .expect("data line");
-        let event: Value = serde_json::from_str(line).expect("json");
+        let event = serde_json::json!({
+            "choices": [{ "delta": { "content": "é" } }]
+        });
         let mut aggregator = ChatCompletionStreamAggregator::default();
         aggregator.apply_chunk(&event);
         assert_eq!(aggregator.content, "é");

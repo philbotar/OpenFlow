@@ -1,8 +1,8 @@
 use crate::lsp::LspSettings;
-use crate::tool_errors::ToolError;
-use crate::tool_output::{ArtifactStore, ToolArtifactRecord};
-use crate::tool_ports::ContentSearch;
-use crate::tool_registry::{BuiltinToolKind, ToolRegistry, ToolRegistryError};
+use crate::tool::errors::ToolError;
+use crate::tool::output::{ArtifactStore, ToolArtifactRecord};
+use crate::tool::ports::ContentSearch;
+use crate::tool::registry::{BuiltinToolKind, ToolRegistry, ToolRegistryError};
 use crate::tools::grep::RipgrepSearch;
 use engine::{EditBatch, FileChangeRecord, ToolCall, ToolOutputMeta, ToolResult};
 use regex::Regex;
@@ -116,13 +116,11 @@ impl ToolRunner {
         match registered.kind {
             BuiltinToolKind::Read => {
                 let raw = self.read(call.arguments.clone()).await?;
-                self.finalize_record(call, raw, Vec::new(), None)
-                    .await
+                self.finalize_record(call, raw, Vec::new(), None).await
             }
             BuiltinToolKind::AstGrep => {
                 let raw = self.ast_grep(call.arguments.clone()).await?;
-                self.finalize_record(call, raw, Vec::new(), None)
-                    .await
+                self.finalize_record(call, raw, Vec::new(), None).await
             }
             BuiltinToolKind::Search
             | BuiltinToolKind::Find
@@ -287,7 +285,8 @@ impl ToolRunner {
         file_changes: Vec<FileChangeRecord>,
         edit_batch: Option<EditBatch>,
     ) -> Result<ToolExecutionRecord, ToolRunnerError> {
-        let (content, artifact, output_meta) = self.store_output_text(&call.name, raw_output).await?;
+        let (content, artifact, output_meta) =
+            self.store_output_text(&call.name, raw_output).await?;
         Ok(ToolExecutionRecord {
             result: ToolResult {
                 tool_call_id: call.id,

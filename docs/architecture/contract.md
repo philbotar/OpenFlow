@@ -52,7 +52,7 @@ Step-through uses **Hexagonal Architecture with Layers** — nested ports-and-ad
 
 ### 1. **Engine (crates/engine)**
 - **Role:** Hexagon — workflow execution engine
-- **Scope:** Workflow model, state machine, ports (`AiPort`, `ToolPort`, `HumanInputPort`, `ToolApprovalPort`); self-driving `InteractiveEngine::run()` calls `AiPort` and `ToolPort` internally; surfaces only interaction pauses (`NeedsInput`, `NeedsApproval`) to orchestration
+- **Scope:** Workflow model, state machine, ports (`AiPort`, `ToolPort`, `HumanInputPort`, `ToolApprovalPort`); self-driving `InteractiveEngine::run()` calls `AiPort` and `ToolPort` internally; surfaces only interaction pauses (`NeedsInteraction`) to orchestration
 - **Public interface:** Traits in `ports/` + model types
 - **Dependencies:** None upward; only serialization, async traits, tokio
 
@@ -147,7 +147,7 @@ Deferred: `tool/` → `lsp` narrowing; `providers → engine` submodule allowlis
 ## Engine Invocation Rule
 
 - Only `orchestration/run/execution/` may construct `InteractiveEngine` or `WorkflowRunner`.
-- Interactive runs call `InteractiveEngine::run()`; orchestration handles only `NeedsInput`, `NeedsApproval`, and terminal outcomes.
+- Interactive runs call `InteractiveEngine::run()`; orchestration handles only `NeedsInteraction` and terminal outcomes.
 - Tool and subagent execution goes through `ToolPortImpl` (`engine::ToolPort`).
 - UI, Desktop, and Providers never call the engine directly.
 

@@ -133,12 +133,7 @@ where
                     index += 1;
                 }
                 match self
-                    .run_parallel_regular_tools(
-                        engine,
-                        node_id,
-                        label,
-                        &calls[start..index],
-                    )
+                    .run_parallel_regular_tools(engine, node_id, label, &calls[start..index])
                     .await
                 {
                     Some(batch_results) => results.extend(batch_results),
@@ -268,9 +263,7 @@ where
         Some(
             results
                 .into_iter()
-                .map(|result| {
-                    result.expect("every parallel tool call is denied or executed")
-                })
+                .map(|result| result.expect("every parallel tool call is denied or executed"))
                 .collect(),
         )
     }

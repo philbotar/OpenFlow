@@ -1,7 +1,7 @@
 use crate::api::WorkflowListItem;
 use crate::error::BackendError;
 use crate::project::ports::Project;
-use crate::project_registry::ProjectRegistry;
+use crate::project::registry::ProjectRegistry;
 use crate::workflow::ports::{ProjectWorkflowStore, WorkflowStore};
 use engine::{Node, Workflow};
 use std::collections::{BTreeMap, HashSet};

@@ -1,22 +1,22 @@
 use crate::adapters::storage::agent_store::FileAgentStore;
+use crate::adapters::storage::app_workflow_store::FileWorkflowStore;
+use crate::adapters::storage::project_store::FileProjectStore;
+use crate::adapters::storage::project_workflow_store::FileProjectWorkflowStore;
+use crate::adapters::storage::settings_store::FileSettingsStore;
+use crate::adapters::storage::skill_store::FileSkillCatalog;
+use crate::agent::library::AgentLibrary;
 use crate::agent::ports::AgentStore;
-use crate::agent_library::AgentLibrary;
-use crate::execution::ExecutionEvent;
-use crate::flow_store::FileProjectWorkflowStore;
 use crate::project::ports::{Project, ProjectStore};
-use crate::project_registry::ProjectRegistry;
-use crate::project_store::FileProjectStore;
-use crate::run_coordinator::{RunCoordinator, RunStartParams};
+use crate::project::registry::ProjectRegistry;
+use crate::run::coordinator::{RunCoordinator, RunStartParams};
+use crate::run::execution::ExecutionEvent;
+use crate::run::state::WorkflowRunState;
+use crate::settings::facade::SettingsFacade;
 use crate::settings::model::AppSettings;
 use crate::settings::ports::{SettingsStore, SkillCatalog, SkillSummary};
 use crate::settings::provider::ProviderEnv;
-use crate::settings_facade::SettingsFacade;
-use crate::settings_store::FileSettingsStore;
-use crate::skill_store::FileSkillCatalog;
-use crate::state::WorkflowRunState;
-use crate::storage::FileWorkflowStore;
+use crate::workflow::catalog::WorkflowCatalog;
 use crate::workflow::ports::{ProjectWorkflowStore, WorkflowStore};
-use crate::workflow_catalog::WorkflowCatalog;
 use engine::{CallableAgent, Node, Workflow};
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -332,9 +332,9 @@ impl AppBackend {
 #[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
-    use crate::execution::{ExecutionAction, ExecutionEvent};
+    use crate::run::execution::{ExecutionAction, ExecutionEvent};
     use crate::settings::model::{ProviderProfile, ProviderTransport};
-    use crate::workflow_catalog::default_workflow;
+    use crate::workflow::catalog::default_workflow;
     use engine::{Node, NodeId};
     use providers::ProviderId;
     use tempfile::tempdir;

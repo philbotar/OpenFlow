@@ -1,4 +1,4 @@
-use crate::tool_errors::ToolError;
+use crate::tool::errors::ToolError;
 use engine::{ToolOutputMeta, ToolTruncation, ToolTruncationStrategy};
 use std::fs;
 use std::path::{Path, PathBuf};

@@ -7,6 +7,7 @@ Standards and architecture references for contributors and coding agents.
 ```text
 docs/
 ├── README.md                          # This index
+├── FOLDER_STRUCTURE.md                # Normative hexagonal folder layout
 ├── glossary.md                        # Engine vocabulary (ubiquitous language)
 ├── contributing/
 │   ├── README.md                      # How to change code in this repo
@@ -42,6 +43,7 @@ docs/
 | Section | Index |
 | --- | --- |
 | Glossary | [`glossary.md`](glossary.md) |
+| Folder layout | [`FOLDER_STRUCTURE.md`](FOLDER_STRUCTURE.md) |
 | App sections (what & why) | [`sections/README.md`](sections/README.md) |
 | Contributing | [`contributing/README.md`](contributing/README.md) |
 | Architecture | [`architecture/README.md`](architecture/README.md) |

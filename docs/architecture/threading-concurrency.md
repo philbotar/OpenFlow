@@ -133,9 +133,9 @@ Subagent execution is a **nested loop inside the same task**, sharing `ai`, `too
 
 ## Blocking I/O on async threads
 
-There is **no** `spawn_blocking`, `rayon`, or dedicated I/O thread pool anywhere in the repo.
+`ToolRunner` and `RunCoordinator` use **`spawn_blocking`** for search/find/write/edit/patch, local reads, preview/git/revert, execution cwd resolution, and large artifact spills. Desktop and orchestration share one **injected Tokio `Handle`** (Tauri runtime in production).
 
-`ToolRunner::execute` is `async`, but most work is **synchronous**:
+`ToolRunner::execute` is `async`, but most filesystem work is **synchronous inside blocking tasks**:
 
 ```mermaid
 flowchart LR

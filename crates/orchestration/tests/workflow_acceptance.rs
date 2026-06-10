@@ -3,8 +3,8 @@ use engine::{
     AgentError, AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTurnOutcome,
     AgentTurnSuccess, AiPort, ApprovalMode, Edge, Node, NodeId, ToolCall, ToolRef, Workflow,
 };
-use orchestration::execution::{run_workflow_headless, ApprovalResponse, ManualInput};
-use orchestration::state::TraceStatus;
+use orchestration::run::execution::{run_workflow_headless, ApprovalResponse, ManualInput};
+use orchestration::run::state::TraceStatus;
 use parking_lot::Mutex;
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -274,7 +274,7 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
     .await;
     assert!(matches!(
         first_attempt,
-        Err(orchestration::execution::WorkflowExecutionError::MissingApproval(_))
+        Err(orchestration::run::execution::WorkflowExecutionError::MissingApproval(_))
     ));
 
     let snapshot = run_workflow_headless(
@@ -360,7 +360,7 @@ async fn write_tool_requires_approval_and_mutates_file_after_allow() {
     .await;
     assert!(matches!(
         first_attempt,
-        Err(orchestration::execution::WorkflowExecutionError::MissingApproval(_))
+        Err(orchestration::run::execution::WorkflowExecutionError::MissingApproval(_))
     ));
     assert!(!target.exists());
 

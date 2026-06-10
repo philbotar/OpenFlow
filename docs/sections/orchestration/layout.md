@@ -2,31 +2,17 @@
 
 `crates/orchestration/src` is grouped by **glossary entity** (workflow, agent, project, run, settings, template, skill), then by **hexagonal role** inside each entity.
 
-Physical folders show where code lives. Rust module paths stayed flat on purpose so existing `use crate::workflow_catalog` imports still work.
+Rust import paths match the folder layout (e.g. `orchestration::workflow::catalog`, `orchestration::run::execution`).
 
 ---
 
-## Two views of the same tree
+## Module paths
 
 | What you see on disk | What Rust sees in code |
 | --- | --- |
-| `workflow/application/catalog.rs` | `orchestration::workflow_catalog` |
-| `run/application/coordinator.rs` | `orchestration::run_coordinator` |
-| `adapters/infrastructure/tools/runner.rs` | `orchestration::tools::runner` |
-
-`lib.rs` wires disk paths to module names with `#[path = "..."]`:
-
-```rust
-#[path = "workflow/application/catalog.rs"]
-pub mod workflow_catalog;
-```
-
-So:
-
-- **Browse by entity** → open folders under `workflow/`, `run/`, etc.
-- **Jump to a symbol** → use the old flat name (`workflow_catalog`, `execution`, `tools::edit`).
-
-This is a migration step. Files moved first; import paths can be updated later.
+| `workflow/catalog.rs` | `orchestration::workflow::catalog` |
+| `run/coordinator.rs` | `orchestration::run::coordinator` |
+| `adapters/tool_impl/` | `orchestration::tools` (internal alias) |
 
 ---
 
@@ -84,9 +70,10 @@ orchestration/src/
 ├── workflow/
 │   ├── application/
 │   │   └── catalog.rs     # WorkflowCatalog — merge, assign, CRUD rules
-│   └── adapters/
-│       ├── storage.rs     # FileWorkflowStore — app workflows.json
-│       └── flow_store.rs  # project .flow/workflows/*.workflow.json
+├── adapters/
+│   └── storage/
+│       ├── app_workflow_store.rs     # FileWorkflowStore — app workflows.json
+│       └── project_workflow_store.rs # FileProjectWorkflowStore — .flow/workflows/
 │
 ├── agent/
 │   ├── application/
@@ -134,9 +121,9 @@ orchestration/src/
 
 | File | Module path | Responsibility |
 | --- | --- | --- |
-| `workflow/application/catalog.rs` | `workflow_catalog` | Merge app + project workflows; assign/unassign to projects; rename/split rules |
-| `workflow/adapters/storage.rs` | `storage` | Persist app-level `workflows.json` |
-| `workflow/adapters/flow_store.rs` | `flow_store` | Discover and save per-project workflow files |
+| `workflow/catalog.rs` | `workflow::catalog` | Merge app + project workflows; assign/unassign to projects; rename/split rules |
+| `adapters/storage/app_workflow_store.rs` | `adapters::storage::app_workflow_store` | Persist app-level `workflows.json` |
+| `adapters/storage/project_workflow_store.rs` | `adapters::storage::project_workflow_store` | Discover and save per-project workflow files |
 
 Catalog owns merge policy. Stores only read/write bytes.
 
@@ -249,8 +236,8 @@ Avoid: entity `adapters/` calling another entity's `application/`. Cross-entity 
 
 | Store module | On-disk path |
 | --- | --- |
-| `storage` | `{data_local}/step-through-agentic-workflow/workflows.json` |
-| `flow_store` | `{project}/.flow/workflows/{id}.workflow.json` |
+| `app_workflow_store` | `{data_local}/step-through-agentic-workflow/workflows.json` |
+| `project_workflow_store` | `{project}/.flow/workflows/{id}.workflow.json` |
 | `agent_store` | `{data_local}/openflow/agents.json` |
 | `project_store` | `{data_local}/openflow/projects.json` |
 | `settings_store` | `{data_local}/step-through-agentic-workflow/settings.json` |

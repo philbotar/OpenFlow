@@ -90,22 +90,22 @@ docs/
 
 | Path | Purpose | Change Here When... |
 | --- | --- | --- |
-| `crates/orchestration/src/backend.rs` | Thin `AppBackend` orchestrator; delegates to catalog modules | Adding/remapping desktop IPC commands |
-| `crates/orchestration/src/workflow_catalog.rs` | Workflow CRUD, app/project merge, assign/unassign | Changing workflow persistence rules |
-| `crates/orchestration/src/agent_library.rs` | Saved agent CRUD, `create_agent_node` | Changing callable agent library behavior |
-| `crates/orchestration/src/project_registry.rs` | Project load/save/create | Changing project registration |
-| `crates/orchestration/src/settings_facade.rs` | Settings, keys, skills, validation summaries | Changing settings or provider readiness UX |
-| `crates/orchestration/src/run_coordinator.rs` | Active run session, start/submit/apply events | Changing run lifecycle coordination |
-| `crates/orchestration/src/run/application/execution/` | `drive.rs`, `tool_port.rs`, event projection, cwd | Changing execution host semantics |
-| `crates/orchestration/src/state.rs` | Run/edit state, trace, chat logs | Changing run state or editor mutations |
-| `crates/orchestration/src/storage.rs` | App workflows (`workflows.json`) | Changing app workflow persistence |
-| `crates/orchestration/src/flow_store.rs` | Project workflows (`.flow/workflows/`) | Changing repo workflow file layout |
-| `crates/orchestration/src/project_store.rs` | Projects (`openflow/projects.json`) | Changing project bindings |
-| `crates/orchestration/src/agent_store.rs` | Saved agents (`openflow/agents.json`) | Changing agent definitions storage |
-| `crates/orchestration/src/skill_store.rs` | Skill discovery (read-only) | Changing skill search roots |
-| `crates/orchestration/src/settings_store.rs` | App settings (`settings.json`) | Changing settings schema |
-| `crates/orchestration/src/provider_config.rs` | Provider readiness and key resolution | Changing key precedence or env fallback |
-| `crates/orchestration/src/tools/` | Tool registry, approval, runner | Changing tool catalog or execution |
+| `crates/orchestration/src/backend/mod.rs` | Thin `AppBackend` orchestrator; delegates to catalog modules | Adding/remapping desktop IPC commands |
+| `crates/orchestration/src/workflow/catalog.rs` | Workflow CRUD, app/project merge, assign/unassign | Changing workflow persistence rules |
+| `crates/orchestration/src/agent/library.rs` | Saved agent CRUD, `create_agent_node` | Changing callable agent library behavior |
+| `crates/orchestration/src/project/registry.rs` | Project load/save/create | Changing project registration |
+| `crates/orchestration/src/settings/facade.rs` | Settings, keys, skills, validation summaries | Changing settings or provider readiness UX |
+| `crates/orchestration/src/run/coordinator.rs` | Active run session, start/submit/apply events | Changing run lifecycle coordination |
+| `crates/orchestration/src/run/execution/` | `drive.rs`, `tool_port.rs`, event projection, cwd | Changing execution host semantics |
+| `crates/orchestration/src/run/state/` | Run/edit state, trace, chat logs | Changing run state or editor mutations |
+| `crates/orchestration/src/adapters/storage/app_workflow_store.rs` | App workflows (`workflows.json`) | Changing app workflow persistence |
+| `crates/orchestration/src/adapters/storage/project_workflow_store.rs` | Project workflows (`.flow/workflows/`) | Changing repo workflow file layout |
+| `crates/orchestration/src/adapters/storage/project_store.rs` | Projects (`openflow/projects.json`) | Changing project bindings |
+| `crates/orchestration/src/adapters/storage/agent_store.rs` | Saved agents (`openflow/agents.json`) | Changing agent definitions storage |
+| `crates/orchestration/src/adapters/storage/skill_store.rs` | Skill discovery (read-only) | Changing skill search roots |
+| `crates/orchestration/src/adapters/storage/settings_store.rs` | App settings (`settings.json`) | Changing settings schema |
+| `crates/orchestration/src/settings/provider.rs` | Provider readiness and key resolution | Changing key precedence or env fallback |
+| `crates/orchestration/src/tool/` | Tool registry, approval, runner | Changing tool catalog or execution |
 
 ### Desktop and UI
 
@@ -138,12 +138,12 @@ docs/
 | Add a new provider adapter | Implement `AiPort` in `providers/`, wire via `create_provider` |
 | Add or change `AiPort`, `ToolPort`, or engine input contracts | `engine/src/ports/` |
 | Add or change UI desktop seam | `ui/src/port.ts` |
-| Change run execution semantics | `orchestration/src/run/application/execution/drive.rs`, `engine/src/execution/interactive_engine.rs` |
-| Change tool/subagent execution wiring | `orchestration/src/run/application/execution/tool_port.rs` |
-| Change shared context or workflow settings | `engine/src/graph/workflow.rs`, `orchestration/src/run/application/execution/`, `ui/src/panels/WorkflowSettingsPanel.tsx` |
-| Change project/workflow linking | `orchestration/src/project_store.rs`, `flow_store.rs`, `backend.rs`, `ui/src/components/sidebar/` |
-| Change saved agents or callable subagents | `orchestration/src/agent_store.rs`, `execution.rs`, `ui/src/forms/CallableAgentsEditor.tsx` |
-| Change skill discovery or invocation UX | `orchestration/src/skill_store.rs`, `ui/src/components/conversation/` |
+| Change run execution semantics | `orchestration/src/run/execution/drive.rs`, `engine/src/execution/interactive_engine.rs` |
+| Change tool/subagent execution wiring | `orchestration/src/run/execution/tool_port.rs` |
+| Change shared context or workflow settings | `engine/src/graph/workflow.rs`, `orchestration/src/run/execution/`, `ui/src/panels/WorkflowSettingsPanel.tsx` |
+| Change project/workflow linking | `orchestration/src/adapters/storage/project_store.rs`, `project_workflow_store.rs`, `backend/mod.rs`, `ui/src/components/sidebar/` |
+| Change saved agents or callable subagents | `orchestration/src/adapters/storage/agent_store.rs`, `agent/library.rs`, `ui/src/forms/CallableAgentsEditor.tsx` |
+| Change skill discovery or invocation UX | `orchestration/src/adapters/storage/skill_store.rs`, `ui/src/components/conversation/` |
 | Change canvas look/behavior | `ui/src/canvas/`, `ui/src/styles/index.css` |
 | Change inspector or editor panels | `ui/src/panels/`, `ui/src/screens/EditorScreen.tsx` |
 | Change settings UX or toasts | `ui/src/screens/SettingsScreen.tsx`, `ui/src/api.ts`, `settings_store.rs` |

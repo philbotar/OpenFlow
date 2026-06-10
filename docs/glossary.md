@@ -140,13 +140,14 @@ Persistence adapters outside domain:
 | --- | --- |
 | `orchestration/template_store.rs` | FileTemplateStore |
 | `orchestration/project_store.rs` | Project |
-| `orchestration/flow_store.rs` | Project workflow files |
+| `orchestration/adapters/storage/project_workflow_store.rs` | Project workflow files (`.flow/workflows/`) |
+| `orchestration/adapters/storage/app_workflow_store.rs` | App-level workflows (`workflows.json`) |
 
 Orchestration composition modules (see `docs/sections/orchestration/README.md`):
 
 | Module | Terms |
 | --- | --- |
-| `orchestration/workflow_catalog.rs` | Workflow merge/split, project assign |
+| `orchestration/workflow/catalog.rs` | Workflow merge/split, project assign |
 | `orchestration/agent_library.rs` | CallableAgent library CRUD (`FileAgentStore` adapter) |
 | `orchestration/agent_store.rs` | `AgentDefinition` type alias for persisted `CallableAgent` JSON |
 | `orchestration/run_coordinator.rs` | Run session, Pause/Resume host path |

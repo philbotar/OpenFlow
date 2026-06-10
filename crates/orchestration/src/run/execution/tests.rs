@@ -1,5 +1,5 @@
 use super::*;
-use crate::state::{TraceStatus, WorkflowRunState};
+use crate::run::state::{TraceStatus, WorkflowRunState};
 use crate::tools::ToolRegistry;
 use async_trait::async_trait;
 use engine::{
@@ -54,7 +54,7 @@ fn reducer_aborted_deactivates_run_and_marks_in_progress_tools() {
     assert_eq!(calls[0].status, ToolCallStatus::Aborted);
     assert_eq!(
         state.status_by_node.get(&NodeId("first".to_string())),
-        Some(&crate::state::AgentStatus::Stopped)
+        Some(&crate::run::state::AgentStatus::Stopped)
     );
     assert_eq!(state.run_trace[0].status, TraceStatus::Stopped);
     assert_eq!(state.run_trace[0].message, "Stopped");

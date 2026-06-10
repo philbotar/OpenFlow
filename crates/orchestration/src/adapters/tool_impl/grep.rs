@@ -1,6 +1,6 @@
 //! Ripgrep-backed content search adapter (`grep-searcher` + `ignore`).
 
-use crate::tool_errors::ToolError;
+use crate::tool::errors::ToolError;
 use grep_regex::RegexMatcherBuilder;
 use grep_searcher::{BinaryDetection, Searcher, SearcherBuilder, Sink, SinkMatch};
 use ignore::WalkBuilder;
@@ -9,7 +9,7 @@ use serde_json::Value;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use crate::tool_ports::ContentSearch;
+use crate::tool::ports::ContentSearch;
 
 pub const MAX_SEARCH_MATCHES: usize = 500;
 

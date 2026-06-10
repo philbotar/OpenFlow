@@ -17,9 +17,7 @@ desktop → AppBackend (backend/)
 
 ## Source layout
 
-Source is grouped by **entity** (`workflow/`, `agent/`, `project/`, `run/`, `settings/`, `template/`, `skill/`) and **hexarc role** (`application/` = service, `adapters/` = repository).
-
-Rust module paths are still flat (`orchestration::workflow_catalog`, `orchestration::execution`) via `#[path]` in `lib.rs` — disk layout and import paths are intentionally different during migration.
+Source is grouped by **entity** (`workflow/`, `agent/`, `project/`, `run/`, `settings/`, `tool/`) with centralized `adapters/` for I/O. Rust import paths match the folder layout (e.g. `orchestration::run::execution`, `orchestration::workflow::catalog`).
 
 **Full walkthrough:** [`layout.md`](layout.md)
 
@@ -28,20 +26,20 @@ Rust module paths are still flat (`orchestration::workflow_catalog`, `orchestrat
 | Module path | On disk | Owns |
 | --- | --- | --- |
 | `backend` | `backend/mod.rs` | `AppBackend` — delegates to catalog modules; stable IPC surface |
-| `workflow_catalog` | `workflow/application/catalog.rs` | App + project workflow merge/split, assign/unassign |
-| `agent_library` | `agent/application/library.rs` | Callable agent CRUD, `create_agent_node` |
-| `project_registry` | `project/application/registry.rs` | Project load/save/create |
-| `settings_facade` | `settings/application/facade.rs` | Settings, provider keys, skills, validation summary |
-| `run_coordinator` | `run/application/coordinator.rs` | `start_run`, `submit_*`, session mutex |
-| `execution/` | `run/application/execution/` | Drive loop, event projection, headless acceptance |
-| `state` | `run/state/mod.rs` | `WorkflowRunState` — UI run snapshot |
+| `workflow::catalog` | `workflow/catalog.rs` | App + project workflow merge/split, assign/unassign |
+| `agent::library` | `agent/library.rs` | Callable agent CRUD, `create_agent_node` |
+| `project::registry` | `project/registry.rs` | Project load/save/create |
+| `settings::facade` | `settings/facade.rs` | Settings, provider keys, skills, validation summary |
+| `run::coordinator` | `run/coordinator.rs` | `start_run`, `submit_*`, session mutex |
+| `run::execution` | `run/execution/` | Drive loop, event projection, headless acceptance |
+| `run::state` | `run/state/mod.rs` | `WorkflowRunState` — UI run snapshot |
+| `tool::{registry,runner,output}` | `tool/` | Tool catalog, execution, artifacts |
 | `api` | `api.rs` | IPC DTOs |
 | `error` | `error.rs` | `BackendError` |
-| `storage`, `flow_store` | `workflow/adapters/` | Workflow file adapters |
-| `agent_store`, `project_store`, `settings_store` | `{entity}/adapters/` | JSON persistence |
-| `template_store`, `skill_store` | `template/store.rs`, `skill/store.rs` | Templates and skill discovery |
-| `tools/`, `lsp/`, `git` | `adapters/infrastructure/` | Runtime tool/LSP/git I/O |
-| `provider_config` | `settings/adapters/provider_config.rs` | Provider readiness and API key resolution |
+| `adapters::storage::*` | `adapters/storage/` | JSON persistence (`app_workflow_store`, `project_workflow_store`, …) |
+| `tools` (internal) | `adapters/tool_impl/` | Runtime tool I/O (edit, grep, …) |
+| `lsp`, `git` | `adapters/infrastructure/` | LSP and Git integration |
+| `settings::provider` | `settings/provider.rs` | Provider readiness and API key resolution |
 
 ## Why it is structured this way
 

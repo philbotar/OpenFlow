@@ -103,12 +103,7 @@ where
 
 fn maybe_send_node_start_events<A>(adapter: &AiInvocationAdapter<A>, request: &AgentRequest) {
     let mut lifecycle = adapter.lifecycle_by_node.lock();
-    if lifecycle
-        .get(&request.node_id)
-        .copied()
-        .unwrap_or(0)
-        >= request.model_attempt
-    {
+    if lifecycle.get(&request.node_id).copied().unwrap_or(0) >= request.model_attempt {
         return;
     }
     lifecycle.insert(request.node_id.clone(), request.model_attempt);
