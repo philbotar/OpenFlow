@@ -147,6 +147,22 @@ fn consume_tool_call_xml_block(content: &str) -> usize {
         .unwrap_or(content.len())
 }
 
+fn strip_trailing_partial_tool_call_prefix(content: &str) -> String {
+    const PREFIXES: [&str; 2] = ["```tool_call", "<tool_call"];
+
+    for prefix in PREFIXES {
+        for len in (1..prefix.len()).rev() {
+            if let Some(partial) = prefix.get(..len) {
+                if let Some(stripped) = content.strip_suffix(partial) {
+                    return stripped.to_string();
+                }
+            }
+        }
+    }
+
+    content.to_string()
+}
+
 /// Remove echoed tool-invocation markup while keeping any leading human text.
 #[must_use]
 pub fn strip_tool_call_markup(content: &str) -> String {
@@ -191,7 +207,9 @@ pub fn strip_tool_call_markup(content: &str) -> String {
         rest = &rest[start + consumed..];
     }
 
-    result.trim().to_string()
+    strip_trailing_partial_tool_call_prefix(&result)
+        .trim()
+        .to_string()
 }
 
 /// True when assistant text only echoes structured tool invocation markup.
@@ -316,6 +334,12 @@ mod tests {
             strip_tool_call_markup("```tool_call\n<function=read>\n</function>\n```"),
             ""
         );
+        assert_eq!(
+            strip_tool_call_markup("Now searching.<tool_call>\n<function=search>\n"),
+            "Now searching."
+        );
+        assert_eq!(strip_tool_call_markup("Planning.<tool_cal"), "Planning.");
+        assert_eq!(strip_tool_call_markup("<tool"), "");
     }
 
     #[test]

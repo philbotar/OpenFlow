@@ -16,6 +16,7 @@ import {
   buildFlowNodes,
   forEachNodePositionChange,
   forEachRemovedEdge,
+  withoutNodeRemovals,
   isValidCanvasConnection,
   reconcileFlowNodes,
   selectionIdsFromChange,
@@ -96,6 +97,7 @@ describe("WorkflowCanvas adapter helpers", () => {
       id: "node-1",
       position: { x: 96, y: 96 },
       selected: false,
+      deletable: false,
       data: { label: "Plan", status: "completed" },
       width: 320,
       height: 88,
@@ -164,6 +166,19 @@ describe("WorkflowCanvas adapter helpers", () => {
       selected: true,
       data: { label: "Plan", status: "started" },
     });
+  });
+
+  test("withoutNodeRemovals drops remove changes", () => {
+    const changes: NodeChange<WorkflowCanvasNode>[] = [
+      { id: "node-1", type: "select", selected: true },
+      { id: "node-2", type: "remove" },
+      { id: "node-1", type: "position", position: { x: 128, y: 128 }, positionAbsolute: { x: 128, y: 128 }, dragging: false },
+    ];
+
+    expect(withoutNodeRemovals(changes)).toEqual([
+      { id: "node-1", type: "select", selected: true },
+      { id: "node-1", type: "position", position: { x: 128, y: 128 }, positionAbsolute: { x: 128, y: 128 }, dragging: false },
+    ]);
   });
 
   test("forEachNodePositionChange ignores in-flight drag updates", () => {

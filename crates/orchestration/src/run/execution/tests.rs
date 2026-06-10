@@ -178,6 +178,102 @@ fn reducer_node_completed_skips_chat_when_summary_missing() {
 }
 
 #[test]
+fn reducer_stream_finalize_strips_echoed_tool_call_markup() {
+    let workflow = workflow();
+    let mut state = WorkflowRunState::running_for_workflow(&workflow);
+    let node_id = NodeId("first".to_string());
+    let message_id = "stream-1".to_string();
+    let echoed = concat!(
+        "I'll submit the audit now.",
+        "<tool_call>\n<function=openflow_submit_node_output>\n",
+        "<parameter=output>{\"summary\":\"done\"}</parameter>\n",
+        "</function>\n</tool_call>"
+    );
+
+    apply_event_to_run_state(
+        &workflow,
+        &mut state,
+        ExecutionEvent::ChatMessageDelta {
+            node_id: node_id.clone(),
+            message_id: message_id.clone(),
+            delta: echoed.to_string(),
+            finalize: false,
+        },
+    );
+    apply_event_to_run_state(
+        &workflow,
+        &mut state,
+        ExecutionEvent::ChatMessageDelta {
+            node_id: node_id.clone(),
+            message_id: message_id.clone(),
+            delta: String::new(),
+            finalize: true,
+        },
+    );
+
+    let chat = &state.chat_logs[&node_id];
+    assert_eq!(chat.len(), 1);
+    assert_eq!(chat[0].content, "I'll submit the audit now.");
+    assert!(!chat[0].streaming);
+}
+
+#[test]
+fn reducer_stream_finalize_drops_markup_only_messages() {
+    let workflow = workflow();
+    let mut state = WorkflowRunState::running_for_workflow(&workflow);
+    let node_id = NodeId("first".to_string());
+    let message_id = "stream-2".to_string();
+    let echoed = "<tool_call>\n<function=search>\n</function>\n</tool_call>";
+
+    apply_event_to_run_state(
+        &workflow,
+        &mut state,
+        ExecutionEvent::ChatMessageDelta {
+            node_id: node_id.clone(),
+            message_id: message_id.clone(),
+            delta: echoed.to_string(),
+            finalize: false,
+        },
+    );
+    apply_event_to_run_state(
+        &workflow,
+        &mut state,
+        ExecutionEvent::ChatMessageDelta {
+            node_id: node_id.clone(),
+            message_id,
+            delta: String::new(),
+            finalize: true,
+        },
+    );
+
+    assert!(!state.chat_logs.contains_key(&node_id));
+}
+
+#[test]
+fn reducer_stream_delta_strips_tool_call_markup_before_finalize() {
+    let workflow = workflow();
+    let mut state = WorkflowRunState::running_for_workflow(&workflow);
+    let node_id = NodeId("first".to_string());
+    let message_id = "stream-3".to_string();
+
+    apply_event_to_run_state(
+        &workflow,
+        &mut state,
+        ExecutionEvent::ChatMessageDelta {
+            node_id: node_id.clone(),
+            message_id: message_id.clone(),
+            delta: "Planning.<tool_cal".to_string(),
+            finalize: false,
+        },
+    );
+
+    let chat = &state.chat_logs[&node_id];
+    assert_eq!(chat.len(), 1);
+    assert_eq!(chat[0].content, "Planning.");
+    assert!(chat[0].streaming);
+}
+
+#[test]
 fn reducer_tool_completed_restores_thinking_status() {
     let workflow = workflow();
     let mut state = WorkflowRunState::running_for_workflow(&workflow);

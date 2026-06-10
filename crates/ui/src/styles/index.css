@@ -2506,6 +2506,11 @@ select.text-input:hover {
   text-overflow: ellipsis;
 }
 
+.tool-line-target {
+  color: var(--text);
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
 .tool-line-status {
   flex-shrink: 0;
   width: 1.2em;
@@ -2725,6 +2730,7 @@ select.text-input:hover {
 .workflow-row-main {
   flex: 1;
   min-width: 0;
+  overflow: hidden;
   padding: 0;
   background: transparent;
   color: inherit;
@@ -2733,9 +2739,11 @@ select.text-input:hover {
 
 .workflow-row-details {
   min-width: 0;
+  overflow: hidden;
 }
 
 .workflow-row-title {
+  display: block;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2772,6 +2780,7 @@ select.text-input:hover {
 }
 
 .workflow-row-action {
+  flex-shrink: 0;
   opacity: 0;
   visibility: hidden;
   transition: opacity 150ms ease, visibility 150ms ease;

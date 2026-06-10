@@ -1,4 +1,5 @@
 import { createMemo, For, Show } from "solid-js";
+import { stripToolCallMarkup } from "../../lib/stripToolCallMarkup";
 import { useAppContext } from "../../context/AppContext";
 import type { ChatMessage } from "../../lib/types";
 import {
@@ -62,12 +63,15 @@ function MarkerToolBubble(props: { message: ChatMessage }) {
 
 function PlainMessage(props: { message: ChatMessage }) {
   const ctx = useAppContext();
+  const content = createMemo(() => stripToolCallMarkup(props.message.content));
   return (
-    <Message
-      from={chatRoleToMessageFrom(props.message.role)}
-      label={messageLabel(props.message.role, ctx.currentNode()?.label)}
-      content={props.message.content}
-    />
+    <Show when={content().trim()}>
+      <Message
+        from={chatRoleToMessageFrom(props.message.role)}
+        label={messageLabel(props.message.role, ctx.currentNode()?.label)}
+        content={content()}
+      />
+    </Show>
   );
 }
 

@@ -92,6 +92,7 @@ export function buildFlowNodes(
     },
     draggable: true,
     selectable: true,
+    deletable: false,
     width: NODE_WIDTH,
     height: NODE_HEIGHT,
   }));
@@ -191,6 +192,12 @@ export function reconcileFlowEdges(
   });
 }
 
+export function withoutNodeRemovals(
+  changes: NodeChange<WorkflowCanvasNode>[],
+): NodeChange<WorkflowCanvasNode>[] {
+  return changes.filter((change) => change.type !== "remove");
+}
+
 export function forEachNodePositionChange(
   changes: NodeChange<WorkflowCanvasNode>[],
   onPositionChange: (nodeId: NodeId, x: number, y: number) => void,
@@ -263,11 +270,18 @@ export function WorkflowCanvas(props: WorkflowCanvasProps) {
 
   const handleNodesChange = useCallback(
     (changes: NodeChange<WorkflowCanvasNode>[]) => {
-      onNodesChange(changes);
-      forEachNodePositionChange(changes, props.onUpdateNodePosition);
+      const allowedChanges = withoutNodeRemovals(changes);
+      if (allowedChanges.length === 0) {
+        return;
+      }
+
+      onNodesChange(allowedChanges);
+      forEachNodePositionChange(allowedChanges, props.onUpdateNodePosition);
     },
     [onNodesChange, props.onUpdateNodePosition],
   );
+
+  const handleBeforeDelete = useCallback(() => Promise.resolve(false), []);
 
   const handleEdgesChange = useCallback(
     (changes: EdgeChange<WorkflowCanvasEdge>[]) => {
@@ -321,6 +335,7 @@ export function WorkflowCanvas(props: WorkflowCanvasProps) {
         onReconnect={handleReconnect}
         onPaneClick={handlePaneClick}
         onSelectionChange={handleSelectionChange}
+        onBeforeDelete={handleBeforeDelete}
         deleteKeyCode={null}
         fitView={false}
         minZoom={0.4}

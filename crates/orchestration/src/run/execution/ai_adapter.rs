@@ -217,7 +217,9 @@ fn should_emit_assistant_message(
         return false;
     };
     let trimmed = content.trim();
-    !trimmed.is_empty() && !streamed_text.contains(trimmed)
+    let stripped_streamed =
+        filter_tool_turn_assistant_message(Some(streamed_text.to_string())).unwrap_or_default();
+    !trimmed.is_empty() && !stripped_streamed.contains(trimmed)
 }
 
 fn emit_assistant_message(

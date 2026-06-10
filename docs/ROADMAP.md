@@ -1,12 +1,106 @@
 # Roadmap
 
-Prioritized work across product features, orchestration lifecycle, and domain engine hardening.
+A single prioritized queue. Work top to bottom — each numbered item is meant to be a self-contained chunk you can finish before moving on. Detailed specs for the larger items live in [Detailed specs](#detailed-specs) below; domain task IDs (T1–T21) are specced in [Domain engine hardening](#domain-engine-hardening).
 
 **Status:** Done · In progress · Planned
 
 ---
 
-## Near term
+## The queue
+
+### Tier 1 — Finish what's started
+
+| # | Item | Status | Details |
+| --- | --- | --- | --- |
+| 1 | **Chat presentation** — thinking bubbles, collapsible tool rows, pretty tool names, args one-liners | In progress | [Chat presentation](#chat-presentation--thinking-bubbles--tool-cleanup) |
+| 2 | **Entrypoint wiring** — pass entrypoint text from UI through `start_run` to root node input | Planned | [Entrypoint wiring](#wire-entrypoint-text-through-the-desktop-run-path) |
+
+Entrypoint wiring is small but blocks attachments (#14) and any "kick off a run with instructions" flow — do it early.
+
+### Tier 2 — Reliability core
+
+Make runs survivable before adding features on top. A failed tool call or transient provider error should never kill a run.
+
+| # | Item | Status | Details |
+| --- | --- | --- | --- |
+| 3 | **Error taxonomy + AI retry** — T1 (`AgentError` transient/permanent), T2 (collapse templates), T3 (node lookup index), T5 (tool deny/decision resume), T6 (`retry_policy` for AI failures) | Planned | [Phase 1–2](#phase-1--foundations) |
+| 4 | **Tool retry & resilient failure** — T19 (tool error taxonomy), T20 (tool invocation retry), T21 (failed tools feed transcript and resume `CallAi`; never abort the run) | Planned | [Tool retry](#tool-invocation-retry-and-resilience) |
+| 5 | **Transcript & event correctness** — T9 (strip redundant tool-call XML), T10 (validate node id in `on_ai_complete`), T11 (run-event semantics), T12 (template store persistence errors) | Planned | [Phase 2–3](#phase-2--functional-gaps) |
+| 6 | **Run lifecycle leftovers** — clean up `openflow-run-*` temp dirs, store event-bridge task handle, decide run persistence policy (dies with app vs. resume) | Planned | [Run lifecycle](#run-lifecycle) |
+| 7 | **Secure key storage** — move provider API keys from plaintext `settings.json` to macOS Keychain (keep env-var fallback); migrate existing keys on first launch | Planned | *New* |
+
+### Tier 3 — Daily-driver UX
+
+The things you hit every single run.
+
+| # | Item | Status | Details |
+| --- | --- | --- | --- |
+| 8 | **Canvas run feedback** — colored status icons per agent state; scrollable in-node subagent list (drop `+N more`) | Planned | [Canvas run feedback](#canvas-run-feedback) |
+| 9 | **Thinking levels** — `thinking_level` schema (node + workflow default), gear-panel + inspector controls, provider reasoning param wiring, thinking transcript items | Planned | [Thinking & chat presentation](#thinking--chat-presentation) |
+| 10 | **Pre-run workflow validation** — validate before `start_run`: dangling edges, cycles, missing provider/model/key, empty prompts; surface as canvas badges + blocking dialog | Planned | *New* |
+| 11 | **Project rules** — `.flow/rules/` under linked projects; discovered on load, merged into shared context at run start | Planned | [Project rules](#project-rules) |
+| 12 | **Input queue + structured questions** — type ahead during active runs (buffer per node, drain on `AwaitInput`); option-card questions via extended `openflow_request_user_input` | Planned | [Agent questions & todos](#agent-questions--todos) |
+| 13 | **Token & cost tracking** — per-turn usage from provider responses; per-node and per-run totals in trace and overview; rough cost estimate per model | Planned | *New* |
+
+### Tier 4 — Context & attachments
+
+Getting the right context into and out of agents.
+
+| # | Item | Status | Details |
+| --- | --- | --- | --- |
+| 14 | **Attachments & file references** — attach button, `@` token combobox, drag-drop; resolved content in submit payload and entrypoint | Planned | [Attachments](#attachments--file-references) |
+| 15 | **Upstream read-file context** — read-tier ledger per node; `read_files` in downstream node input alongside `changed_files` | Planned | [Upstream read-file context](#upstream-read-file-context) |
+| 16 | **Context used panel** — per-turn ledger of shared context, rules, skills, attachments, upstream artifacts; composer panel + per-turn attribution | Planned | [Context used](#context-used) |
+| 17 | **Global chat** — unified run-wide transcript in execution-layer order; per-awaiting-node reply bubbles for parallel pauses | Planned | [Global chat](#global-chat) |
+
+### Tier 5 — Power features
+
+| # | Item | Status | Details |
+| --- | --- | --- | --- |
+| 18 | **Branching join semantics** — nodes wait for all upstream outputs before continuing | Planned | |
+| 19 | **In-run todos** — `openflow_update_todos` builtin; run-state projection; dock/chat chrome UI | Planned | [Agent questions & todos](#agent-questions--todos) |
+| 20 | **MCP integration** — connect external MCP servers as tool sources on agent nodes | Planned | |
+| 21 | **Cron / scheduled runs + workflow retry loop** — execute the schedule/retry schema fields that already exist | Planned | |
+| 22 | **Run persistence, history, and replay** — store completed runs; browse and replay; depends on persistence policy decision (#6) | Planned | |
+| 23 | **Programmatic / non-AI nodes** — API-call and transform nodes between agent nodes | Planned | |
+| 24 | **External connectors** — Composio / n8n-style integration nodes | Planned | |
+
+### Tier 6 — Polish & distribution
+
+| # | Item | Status | Details |
+| --- | --- | --- | --- |
+| 25 | **Canvas editing QoL** — undo/redo for graph edits, duplicate node, copy/paste between workflows | Planned | *New* |
+| 26 | **Accessibility & keyboard shortcuts** — panel toggles, focus management, shortcut reference overlay | Planned | [Accessibility](#accessibility) |
+| 27 | **Onboarding & templates** — first-run empty state, 2–3 bundled example workflows, "new from template" | Planned | *New* |
+| 28 | **macOS distribution** — code signing, notarization, auto-update (Tauri updater); bundle already builds | Planned | *New (expands packaging)* |
+| 29 | **Serde casing unification** — T16 (one wire convention) then T16b (drop legacy aliases/shims) | Planned | [Phase 4](#phase-4--cleanup) |
+| 30 | **Cleanup pass** — T13–T15, T18 (clippy `-D warnings`), refactor polish: slim `AppProvider`, typed desktop DTOs, store catalog audit, provider module audit | Planned | [Refactor](#refactor) |
+
+### Backlog (unsequenced)
+
+Small or speculative items — pick up opportunistically or when a tier item touches the same code:
+
+- Remove `Context:` / `Task:` labels from chat
+- Skill discovery settings — unified skills section in Settings (currently scans Cursor/Codex/Claude roots)
+- Remove per-node JSON output schema editing (keep internal defaults)
+- Chat composer markdown rendering
+- System-level notifications (run complete, agent question while unfocused)
+- Terminal tab in bottom dock
+- Sidebar search across workflows and agents
+- Warn on close: unsaved changes / active run
+- Per-workflow path allowlist beyond execution-cwd jail
+- Git stage/commit helpers from changed-files panel
+- Full LSP language-server client
+- Error logging stored locally; agent loop to propose fixes
+- Workflow version control (per-change revert)
+- Natural language workflow definition
+- T7 node-local max-tool-rounds (only if D4 changes), T17 concurrent layer siblings in headless runner (stretch)
+
+**Deferred** until cron, retry loops, and repo workflows land: background job start/stop/resume, multi-run orchestration.
+
+---
+
+## Detailed specs
 
 ### Wire entrypoint text through the desktop run path
 
@@ -31,22 +125,21 @@ Domain supports entrypoint injection (`run_with_entrypoint` → `InteractiveEngi
 | Handle window close (`CloseRequested`) — abort active run before exit | High | Done |
 | Graceful shutdown — cancel in-flight AI calls and tool subprocesses on close | Medium | Done |
 | User stop shows `stopped` on canvas, overview, and trace (not `failed`) | Medium | Done |
+| Unify on one Tokio runtime — `AppBackend` takes injected `Handle` | Medium | Done |
 | Clean up temp artifact dirs (`openflow-run-*`) on completion or abort | Medium | Planned |
 | Store event bridge task handle for independent cancellation | Medium | Planned |
-| Unify on one Tokio runtime — see `docs/architecture/threading-concurrency.md` | Medium | Planned |
 | Decide and document run persistence policy (dies with app vs. resume after restart) | Medium | Planned |
 | Warn on close when workflows have unsaved changes | Low | Planned |
 | Warn on close when a run is still active | Low | Planned |
 
-**Deferred** until cron, retry loops, and repo workflows land: background job start/stop/resume, multi-run orchestration.
-
-### Provider API key storage — plaintext in settings
+### Provider API key storage
 
 | Item | Priority | Status |
 | --- | --- | --- |
 | Persist keys in `settings.json` (`ProviderProfile.api_key`) | High | Done |
 | Settings UI plaintext risk notice | High | Done |
 | Env var fallback unchanged | High | Done |
+| macOS Keychain storage — keys out of plaintext; migrate on first launch (#7) | High | Planned |
 
 ### Tool invocation retry and resilience
 
@@ -74,61 +167,15 @@ Assistant token streaming is wired (`ChatMessageDelta` → chat log). Next chat 
 
 | Item | Priority | Status |
 | --- | --- | --- |
+| Collapsible tool bubbles — collapsed row shows tool name + one-line outcome; expand for args and full output | High | In progress |
 | Thinking bubble UI — collapsible reasoning block in chat; distinct from assistant messages; collapsed by default | High | Planned |
 | Provider thinking in transcript — parse reasoning blocks from Anthropic/OpenAI responses; project to chat (not legacy `ChatRole::Thinking` tool lines) | High | Planned |
-| Collapsible tool bubbles — collapsed row shows tool name + one-line outcome; expand for args and full output | High | Planned |
 | Pretty tool names — human-readable labels in chat (e.g. Read, Search, Edit file) instead of raw builtin ids (`read`, `ast_grep`, `openflow_call_subagent`) | Medium | Planned |
 | Tool row chrome — drop `Tool Invocation:` header; status chip (running / completed / failed); chevron expand | Medium | Planned |
 | Args summary — one-line path/query preview when collapsed; full formatted JSON only when expanded | Medium | Planned |
 | Streaming thinking — append reasoning tokens into the thinking bubble during active turns | Medium | Planned |
 
-**Reference:** [`ToolBubble.tsx`](crates/ui/src/components/conversation/ToolBubble.tsx) (always expanded today); full spec in [Thinking & chat presentation](#thinking--chat-presentation).
-
----
-
-## Product features
-
-| Feature | Status | Notes |
-| --- | --- | --- |
-| Workflow settings (`shared_context`, schedule/retry/provider schema) | Done | Gear panel in editor |
-| Subagent integration — list on agent node, node settings picker | Done | Saved + ad-hoc subagents |
-| Canvas subagent list — scrollable in-node list (no truncate) | Planned | See [Canvas run feedback](#canvas-run-feedback) |
-| Canvas node status icons — colored icons per state (thinking, done, etc.) | Planned | See [Canvas run feedback](#canvas-run-feedback) |
-| Callable agents (`openflow_call_subagent`) | Done | Snapshotted at run start |
-| Project-backed workflows (`.flow/workflows/`) | Done | Sidebar project groups |
-| Skill invocation | Done | Invoke path works |
-| Skill discovery settings — unified skills section in Settings | Planned | Currently scans Cursor, Codex, Claude roots |
-| Show skill description above invoke UI | Done | `SkillDescriptionPreview` above composer when `/skill` tokens are present |
-| File references — attach project files to chat and entrypoint input | Planned | See [File references](#file-references) |
-| Project rules — per-linked-project agent guidance | Planned | See [Project rules](#project-rules) |
-| Branching — nodes wait for all upstream outputs before continuing | Planned | |
-| MCP integration | Planned | |
-| Remove `Context:` / `Task:` labels from chat | Planned | |
-| Cron / scheduled workflow runs | Planned | Schema field exists; execution TBD |
-| Retry loop (workflow-level automation) | Planned | Schema field exists; execution TBD |
-| Tool invocation retry | Planned | Retry transient tool failures before surfacing to model; see near-term section |
-| Resilient tool failure handling | Planned | Failed tool calls feed transcript and continue agent loop; no run abort/crash |
-| Error logging stored locally; agent loop to propose fixes | Planned | |
-| File edit tooling — read/write-tier builtins, approval, diff preview, changed-files ledger | Done | See [File edit tooling](#file-edit-tooling) |
-| Remove per-node JSON output schema editing | Planned | Overkill for current scope; keep internal defaults, drop inspector/agents UI |
-| Pass read files to downstream nodes | Planned | See [Upstream read-file context](#upstream-read-file-context) |
-| Natural language workflow definition | Planned | |
-| Standalone macOS app packaging | Planned | |
-| Workflow version control (per-change revert) | Planned | |
-| Run persistence, history, and replay | Planned | |
-| Programmatic / non-AI nodes (API nodes) | Planned | |
-| Thinking level per node | Planned | See [Thinking & chat presentation](#thinking--chat-presentation) |
-| Thinking bubbles in chat UI | Planned | Collapsible provider reasoning; near-term [Chat presentation](#chat-presentation--thinking-bubbles--tool-cleanup) |
-| Tool invocation display cleanup | Planned | Compact collapsed rows; expand for args/output; near-term [Chat presentation](#chat-presentation--thinking-bubbles--tool-cleanup) |
-| Pretty tool names in chat | Planned | Human-readable labels for builtins and subagents; near-term [Chat presentation](#chat-presentation--thinking-bubbles--tool-cleanup) |
-| Terminal tab in bottom dock panel | Planned | Interactive shell alongside Overview, Chat, Run trace |
-| Chat bar markdown rendering | Planned | |
-| System-level notifications | Planned | |
-| Agent questions & todos — in-run UI | Planned | See [Agent questions & todos](#agent-questions--todos) |
-| Queued chat input during active runs | Planned | See [Agent questions & todos](#agent-questions--todos) |
-| Global chat — unified pane across node progression | Planned | See [Global chat](#global-chat) |
-| Composio / n8n-style external node connectors | Planned | |
-| Accessibility & keyboard shortcuts | Planned | See [Accessibility](#accessibility) |
+**Reference:** [`ToolBubble.tsx`](crates/ui/src/components/conversation/ToolBubble.tsx); full spec in [Thinking & chat presentation](#thinking--chat-presentation).
 
 ### Canvas run feedback
 
@@ -172,10 +219,10 @@ Providers expose extended reasoning (Anthropic thinking blocks, OpenAI reasoning
 
 | Layer | Gap |
 | --- | --- |
-| `crates/domain/src/graph/workflow.rs` | No `thinking_level` (or budget) on `AgentNodeConfig` / `CallableAgent` |
-| `crates/domain/src/ports/outbound.rs` | `AgentRequest` has no thinking/reasoning field for adapters |
+| `crates/engine/src/graph/workflow.rs` | No `thinking_level` (or budget) on `AgentNodeConfig` / `CallableAgent` or `WorkflowSettings` default |
+| `crates/engine/src/ports/outbound.rs` | `AgentRequest` has no thinking/reasoning field for adapters |
 | `crates/providers/src/` | Wire payloads omit provider-specific reasoning params; responses do not parse thinking blocks into transcript items |
-| `crates/domain/src/conversation/mod.rs` | No dedicated transcript item for provider reasoning (distinct from `ChatRole::Thinking` log lines) |
+| `crates/engine/src/conversation/mod.rs` | No dedicated transcript item for provider reasoning (distinct from `ChatRole::Thinking` log lines) |
 | `crates/orchestration/src/execution/events.rs` | Run projection does not emit structured thinking events to chat |
 | `crates/ui/src/forms/` | Inspector has no thinking-level control (off / low / medium / high or provider-aligned presets) |
 | `crates/ui/src/components/conversation/` | No collapsible thinking block component; `PlainMessage` renders thinking role like assistant text |
@@ -185,12 +232,13 @@ Providers expose extended reasoning (Anthropic thinking blocks, OpenAI reasoning
 
 | Item | Priority | Status |
 | --- | --- | --- |
-| Thinking level schema — `thinking_level` on agent node + saved agent; optional workflow default | High | Planned |
+| Thinking level schema — `thinking_level` on agent node + saved agent; optional `WorkflowSettings.thinking_level` default | High | Planned |
+| Workflow settings control — pick default thinking level in gear panel (off / low / medium / high or provider-aligned presets) | High | Planned |
 | Inspector control — pick thinking level per node; inherit workflow default when unset | High | Planned |
 | Provider wiring — map level to Anthropic/OpenAI-compat reasoning params; parse thinking blocks from responses | High | Planned |
 | Thinking transcript items — `AgentTranscriptItem::ReasoningBlock` (or equivalent) in domain + run projection | High | Planned |
 | `ThinkingBubble` component — collapsible reasoning bubble; muted styling; collapsed by default | High | Planned |
-| Collapsible tool bubbles — collapsed row shows tool name + one-line outcome; expand for args and full output | High | Planned |
+| Collapsible tool bubbles — collapsed row shows tool name + one-line outcome; expand for args and full output | High | In progress |
 | Pretty tool names — map builtin/subagent ids to short human labels in `ToolBubble`, `ToolApprovalCard`, and trace rows | Medium | Planned |
 | Tool row chrome — icon + name + status chip; remove `Tool Invocation:` label; chevron toggle | Medium | Planned |
 | Args one-liner — path/query/file summary when collapsed; `prettyJson` args only when expanded | Medium | Planned |
@@ -252,14 +300,14 @@ Today the dock Chat tab shows only the **selected** node's `chatLogs` entry (`Ap
 
 **Target:** One continuous chat pane for the whole run. As nodes complete and downstream nodes start, earlier conversation stays visible in layer order. When parallel nodes at the same depth pause for input, each gets its own reply bubble in the composer area so you can answer both without switching canvas selection.
 
-### File references
+### Attachments & file references
 
-Users can invoke skills with `/skill` tokens in the chat composer (`crates/ui/src/lib/chatCommands.ts`), but there is no way to attach project files to a message. Agents must discover files via read-tier tools instead of receiving user-selected context up front.
+Users can invoke skills with `/skill` tokens in the chat composer (`crates/ui/src/lib/chatCommands.ts`), but there is no attach affordance for project files or media. Agents must discover files via read-tier tools instead of receiving user-selected context up front.
 
 | Layer | Gap |
 | --- | --- |
 | `crates/ui/src/lib/chatCommands.ts` | Resolves `/` skill tokens only; no `@` path tokens or referenced-file list |
-| `crates/ui/src/components/conversation/` | No file picker combobox, reference pills, or content preview above composer |
+| `crates/ui/src/components/conversation/` | No attach button, file picker combobox, reference pills, drag-drop target, or content preview above composer |
 | `crates/ui/src/api.ts` / `crates/desktop/src/lib.rs` | `submit_user_input` and `start_run` accept plain `text` only — no structured file refs |
 | `crates/orchestration/src/run/coordinator.rs` | No read-and-resolve step for referenced paths under execution cwd |
 | `crates/engine/src/execution/interactive_engine.rs` | `on_user_input` records a single string; no `referenced_files` block in transcript or node input |
@@ -267,16 +315,43 @@ Users can invoke skills with `/skill` tokens in the chat composer (`crates/ui/sr
 
 | Item | Priority | Status |
 | --- | --- | --- |
+| Attach button — paperclip in composer opens file picker over linked-project tree | High | Planned |
 | `@` token UX — combobox over linked-project files (reuse skill combobox pattern); optional browse dialog | High | Planned |
+| Drag-and-drop — drop files onto composer to attach (paths resolved under execution cwd jail) | Medium | Planned |
 | Reference resolution — read file content under execution cwd on submit; reject paths outside project jail | High | Planned |
 | Structured submit payload — `referenced_files: [{ path, content \| excerpt }]` alongside message text | High | Planned |
 | Transcript shape — persist references in `AgentTranscriptItem::UserMessage` and chat log projection | Medium | Planned |
-| Composer chrome — pills for attached paths; expandable preview (path + line range + size cap) | Medium | Planned |
+| Composer chrome — pills for attached paths; expandable preview (path + line range + size cap); remove via × | Medium | Planned |
 | Entrypoint attachments — same reference model on run start (with entrypoint wiring) | Medium | Planned |
+| Image attachments — paste or pick images; encode for vision-capable providers when model supports it | Medium | Planned |
 | Line-range refs — `@path:10-40` or selection-from-editor hook | Low | Planned |
 | Reference budget — max files, max bytes, truncate with notice in formatted submit text | Low | Planned |
 
-**Target:** Type `@` in the composer (or pick files before run) to attach project paths. Resolved content is injected into the user message or entrypoint JSON so the agent sees explicit file context without an extra `read` tool round.
+**Target:** Attach project files via button, `@` token, or drag-drop before send (or on run start). Resolved content is injected into the user message or entrypoint JSON so the agent sees explicit file context without an extra `read` tool round. Images attach when the selected model supports vision.
+
+### Context used
+
+Users cannot see what context was assembled for each agent turn. `WorkflowSettings.shared_context`, project rules, skills, attachments, upstream outputs, and read-file ledgers are merged in `build_node_input` / system prompts, but only fragments appear in chat (and raw `Context:` blocks are being removed from the conversation view). There is no structured breakdown of what the model actually received.
+
+| Layer | Gap |
+| --- | --- |
+| `crates/engine/src/execution/node_invocation.rs` | `AgentRequest` assembly has no `context_used` snapshot alongside `input` |
+| `crates/orchestration/src/run/execution/events.rs` | Run projection does not emit per-turn context breakdown to UI or trace |
+| `crates/orchestration/src/run/state/` | No `contextUsedByNode` (or equivalent) in `WorkflowRunState` |
+| `crates/ui/src/components/conversation/` | No "Context used" panel on composer or per assistant turn |
+| `crates/ui/src/panels/` | Inspector / overview do not preview injected context for the selected node before run |
+
+| Item | Priority | Status |
+| --- | --- | --- |
+| Context ledger — record sources per `CallAi`: `shared_context`, project rules, skills, attachments, upstream, `changed_files`, `read_files` | High | Planned |
+| Structured payload — `context_used: [{ kind, label, bytes?, paths? }]` on run state and optional trace row | High | Planned |
+| Composer panel — collapsible "Context used" above chat input during a run; lists what the active node will send on next turn | High | Planned |
+| Per-turn attribution — expandable block on assistant messages showing context snapshot for that invocation | Medium | Planned |
+| Pre-run preview — inspector or overview shows merged context for selected node before `start_run` | Medium | Planned |
+| Token / byte estimate — optional size per source; warn when over workflow budget | Low | Planned |
+| Link to source — click path/skill/rule row to open file or settings | Low | Planned |
+
+**Target:** Before and during a run, open "Context used" and see exactly which workflow settings, rules, skills, attachments, and upstream artifacts were injected into the active node's next (or last) model call — without dumping raw prompt text into chat.
 
 ### Project rules
 
@@ -413,7 +488,7 @@ Structural cleanup by workspace section. Keep domain logic in `domain`, transpor
 | `execution/` split (`drive`, `events`, `headless`, `subagents`) | Done |
 | Move `FileTemplateStore` from domain; alias `ExecutionEvent` → `RunTelemetry` | Done |
 | Typed `BackendError`; `spawn_blocking` tool I/O; dead-code removal | Done |
-| Unify on one Tokio runtime — see near-term run lifecycle | Planned |
+| Unify on one Tokio runtime — `AppBackend` takes injected `Handle` | Done |
 | Tool runner error taxonomy + retry loop (T19–T20) | Planned |
 | `RunCoordinator` / session lifecycle — stop handle, channel cleanup | Done |
 | Store catalog split audit — merge overlapping workflow/project helpers | Planned |
@@ -447,7 +522,7 @@ Structural cleanup by workspace section. Keep domain logic in `domain`, transpor
 
 ## Domain engine hardening
 
-Remediation for modeled-but-unwired behavior and correctness gaps in `crates/domain`. Full task specs (files, acceptance, guardrails) lived in the prior remediation plan; phases below are the execution order.
+Remediation for modeled-but-unwired behavior and correctness gaps in `crates/domain`. Full task specs (files, acceptance, guardrails) lived in the prior remediation plan; phases below are the execution order. These tasks are sequenced into the queue above (items #3–#5, #29–#30).
 
 ### Decisions (resolve before coding)
 
@@ -481,7 +556,7 @@ Remediation for modeled-but-unwired behavior and correctness gaps in `crates/dom
 | T8 Resolve `available_tools` | P1 | Populate or document per D2 |
 | T9 Apply `filter_tool_turn_assistant_message` | P1 | Strip redundant tool-call XML from transcripts |
 
-**High-value P0 path:** T1 → T2 → T4 → T5 → T6 → T19 → T20 → T21 → T9 → T10.
+**High-value P0 path:** T1 → T2 → T5 → T6 → T19 → T20 → T21 → T9 → T10.
 
 ### Phase 3 — Correctness and consistency
 
@@ -502,14 +577,3 @@ Remediation for modeled-but-unwired behavior and correctness gaps in `crates/dom
 | T16b Remove legacy casing shims | P2 | Drop `#[serde(alias = …)]` and PascalCase enum accepts after T16 migration |
 | T17 Concurrent layer siblings (runner only) | Stretch | Per D3; after phases 1–3 |
 | T18 Trim blanket clippy allows | P2 | Last; `clippy -- -D warnings` clean |
-
----
-
-## Suggested execution order
-
-1. ~~Entrypoint wiring + run lifecycle (stop/cancel/shutdown)~~ — stop/cancel/shutdown done; entrypoint wiring remains
-2. Chat presentation — thinking bubbles + collapsible tool rows (near-term section)
-3. Domain P0 path (T1–T6, T19–T21, T9, T10) — includes tool retry and resilient failure handling
-4. Product: branching join semantics, MCP, cron/retry execution
-5. Domain polish (T11–T18) and remaining product features
-6. Refactor polish — `AppProvider` slim-down, desktop IPC DTOs, orchestration catalog audit

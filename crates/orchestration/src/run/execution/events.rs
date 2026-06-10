@@ -2,8 +2,8 @@ use crate::run::state::{
     AgentStatus, RunTraceEntry, ToolArtifactSummary, ToolCallSummary, TraceStatus, WorkflowRunState,
 };
 use engine::{
-    summary_from_node_output, ChatMessage, ChatRole, NodeId, SubagentStatus, ToolCallStatus,
-    Workflow,
+    strip_tool_call_markup, summary_from_node_output, ChatMessage, ChatRole, NodeId,
+    SubagentStatus, ToolCallStatus, Workflow,
 };
 use serde_json::json;
 
@@ -63,7 +63,8 @@ pub fn apply_event_to_run_state(
             delta,
             finalize,
         } => {
-            let logs = state.chat_logs.entry(node_id).or_default();
+            let logs = state.chat_logs.entry(node_id.clone()).or_default();
+            let mut drop_message_id: Option<String> = None;
             if let Some(message) = logs
                 .iter_mut()
                 .rev()
@@ -71,12 +72,28 @@ pub fn apply_event_to_run_state(
             {
                 if !delta.is_empty() {
                     message.content.push_str(&delta);
+                    if !finalize {
+                        message.content = strip_tool_call_markup(&message.content);
+                    }
                 }
                 if finalize {
                     message.streaming = false;
+                    message.content = strip_tool_call_markup(&message.content);
+                    if message.content.trim().is_empty() {
+                        drop_message_id = Some(message_id.clone());
+                    }
                 }
             } else if !finalize {
-                logs.push(ChatMessage::streaming_assistant(message_id, delta));
+                logs.push(ChatMessage::streaming_assistant(
+                    message_id,
+                    strip_tool_call_markup(&delta),
+                ));
+            }
+            if let Some(id) = drop_message_id {
+                logs.retain(|message| message.id.as_deref() != Some(id.as_str()));
+            }
+            if logs.is_empty() {
+                state.chat_logs.remove(&node_id);
             }
         }
         ExecutionEvent::NodeAwaitingInput { node_id, label, .. } => {

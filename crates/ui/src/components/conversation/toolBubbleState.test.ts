@@ -2,9 +2,31 @@ import { describe, expect, it } from "vitest";
 import type { NodeId, ToolCallStatus, WorkflowRunState } from "../../lib/types";
 import {
   resolveToolSummary,
-  toolBubbleOutputText,
   toolBubbleRowStatusText,
+  toolBubbleTargetText,
 } from "./toolBubbleState";
+
+describe("toolBubbleTargetText", () => {
+  it("extracts file path for read", () => {
+    expect(toolBubbleTargetText("read", { path: "crates/ui/src/App.tsx" })).toBe(
+      "crates/ui/src/App.tsx",
+    );
+  });
+
+  it("extracts search pattern and paths", () => {
+    expect(
+      toolBubbleTargetText("search", { pattern: "TODO", paths: "crates/ui" }),
+    ).toBe("TODO in crates/ui");
+  });
+
+  it("extracts bash command", () => {
+    expect(toolBubbleTargetText("bash", { command: "cargo test" })).toBe("cargo test");
+  });
+
+  it("returns empty when args are missing", () => {
+    expect(toolBubbleTargetText("read", null)).toBe("");
+  });
+});
 
 describe("toolBubbleRowStatusText", () => {
   it("returns status labels without tool output", () => {
@@ -15,23 +37,6 @@ describe("toolBubbleRowStatusText", () => {
     expect(toolBubbleRowStatusText("failed")).toBe("Tool failed.");
     expect(toolBubbleRowStatusText("aborted")).toBe("Tool aborted.");
     expect(toolBubbleRowStatusText("completed")).toBe("");
-  });
-});
-
-describe("toolBubbleOutputText", () => {
-  it("returns output text when output is non-empty", () => {
-    expect(toolBubbleOutputText("completed", "some result", undefined, false)).toBe("some result");
-  });
-
-  it("falls back to row status when output is empty", () => {
-    expect(toolBubbleOutputText("proposed", null, { foo: "bar" }, false)).toBe("Preparing…");
-    expect(toolBubbleOutputText("running", null, undefined, false)).toBe("Running…");
-    expect(toolBubbleOutputText("completed", null, undefined, false)).toBe("");
-    expect(toolBubbleOutputText("failed", null, undefined, true)).toBe("Tool failed.");
-  });
-
-  it("prefers output over status text when output is present", () => {
-    expect(toolBubbleOutputText("failed", "custom error", undefined, true)).toBe("custom error");
   });
 });
 

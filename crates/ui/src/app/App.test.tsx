@@ -1037,7 +1037,7 @@ describe("App chat slash commands", () => {
     }
   });
 
-  test("renders tool request and tool result details in chat", async () => {
+  test("renders compact tool line with invocation target in chat", async () => {
     const workflow = makeWorkflow("workflow-1", "Workflow One");
     workflow.nodes[0].label = "Idea";
     const runState = makeAwaitingRunState(workflow);
@@ -1066,14 +1066,12 @@ describe("App chat slash commands", () => {
     await flush();
 
     try {
-      const bubble = container.querySelector(".tool-bubble");
-      expect(bubble).not.toBeNull();
-      expect(bubble?.querySelector(".tool-bubble-header")?.textContent).toBe(
-        "Tool Invocation: read",
-      );
-      expect(bubble?.querySelector(".tool-bubble-output")?.textContent).toContain(
-        "¶README.md",
-      );
+      const line = container.querySelector(".tool-line");
+      expect(line).not.toBeNull();
+      expect(line?.getAttribute("data-tool-name")).toBe("read");
+      expect(line?.querySelector(".tool-line-name")?.textContent).toContain("read");
+      expect(line?.querySelector(".tool-line-target")?.textContent).toBe("README.md");
+      expect(line?.querySelector(".tool-line-output")).toBeNull();
     } finally {
       dispose();
     }

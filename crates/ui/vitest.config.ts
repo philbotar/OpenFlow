@@ -14,6 +14,9 @@ export default defineConfig({
       exclude: SOLID_FILES,
     }),
   ],
+  optimizeDeps: {
+    include: ["remark-parse", "remark-rehype", "unified"],
+  },
   resolve: {
     conditions: ["browser"],
   },

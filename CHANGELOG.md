@@ -4,8 +4,12 @@
 
 ### Added
 
+- **ROADMAP.md restructure:** single prioritized queue (30 sequenced items across 6 tiers + unsequenced backlog) replacing category tables; detail specs preserved below the queue. New items: macOS Keychain key storage, pre-run workflow validation, token & cost tracking, canvas editing QoL (undo/redo, duplicate node), onboarding & templates, macOS distribution (signing, notarization, auto-update). Status corrections: chat presentation marked In progress; single Tokio runtime marked Done.
 - **Testing conventions:** standardised test placement rules — inline `#[cfg(test)] mod tests` by default, sibling `foo_tests.rs`/`tests.rs` extraction past ~150 lines, crate-level `tests/` for integration, Vitest siblings for frontend — documented in `docs/contributing/testing-workflows.md` and enforced via `.cursor/rules/testing-conventions.mdc`.
 - **Bash tool:** agent `bash` builtin (oh-my-pi–aligned) — `command`, optional `cwd`/`env`/`timeout`; non-interactive env defaults; merged stdout/stderr; wall-time and exit-code notices; `ToolTier::Exec` with critical-pattern approval override; opt-in via node tool config.
+- **ROADMAP.md:** [Context used](docs/ROADMAP.md#context-used) — structured per-turn context breakdown in composer and chat; ledger of shared context, rules, skills, attachments, and upstream artifacts.
+- **ROADMAP.md:** [Attachments & file references](docs/ROADMAP.md#attachments--file-references) — attach button, drag-drop, and image paste; expands prior file-references plan.
+- **ROADMAP.md:** model thinking settings — workflow default in gear panel plus per-node inspector override (Thinking & chat presentation).
 - **ROADMAP.md:** [Global chat](docs/ROADMAP.md#global-chat) — unified chat pane across node progression; execution-layer message ordering; separate reply bubbles for parallel awaiting nodes.
 - **ROADMAP.md:** [Canvas run feedback](docs/ROADMAP.md#canvas-run-feedback) — scrollable in-node subagent list; colored status icons per agent state (thinking, done, etc.).
 - **Node status labels:** canvas nodes show descriptive statuses — Thinking, Waiting for Input, Awaiting Approval, Running Tool, and more — with matching colors for each state.
@@ -13,14 +17,19 @@
 
 ### Changed
 
+- **Sidebar list rows:** long workflow and agent titles truncate with ellipsis before the rename (pencil) action; full title on hover via `title` attribute.
 - **Backend test split:** extract the 365-line inline test module from `backend/mod.rs` into sibling `backend/tests.rs` per the new testing conventions; fix `clamp_bash_timeout` to use `u64::clamp` (clippy `manual_clamp`).
-- **Tool bubble row:** collapsed row shows tool name and status label only; actual tool output appears in the expanded panel; expanded output scrolls within a capped height.
+- **Tool bubble row:** collapsed row shows tool name plus invocation target (file path, search pattern, command) from arguments — not tool output; status label only when target is not yet known.
+- **Tool-call XML in chat:** strip `<tool_call>` / ` ```tool_call ` markup from streamed assistant messages on every delta (UI + backend); hide partial `<tool_call` prefixes while streaming; drop empty bubbles that were only tool markup.
 - **File changes panel:** collapsible header (file count + chevron) so long change lists do not cover the chat composer; expanded list scrolls inside a capped height.
 - **Architecture cleanup:** rename workflow storage adapters to `app_workflow_store.rs` / `project_workflow_store.rs`; remove orchestration `#[path]` flat module aliases — import paths match folder layout (`run::execution`, `workflow::catalog`, etc.); delete stale `docs/file-structure.md`; fix provider layout docs (flat `providers/src/`).
 - **Architecture enforcement:** `crates/engine/clippy.toml` I/O bans; `crates/workspace-checks` runs `check-architecture.sh` via `cargo test --workspace`; engine public API snapshot + `scripts/check-engine-public-api.sh` in `verify.sh`.
 
 ### Fixed
 
+- **Canvas node deletion:** block React Flow from removing nodes in the canvas UI (`deletable: false`, `onBeforeDelete`, filter `remove` changes); use the inspector Delete button to remove nodes from the workflow.
+- **Tauri / WebKit dev startup:** pre-bundle `remark-parse`, `remark-rehype`, and `unified` in Vite `optimizeDeps` so `solid-markdown` chat rendering no longer throws `Importing binding name 'default' cannot be resolved by star export entries` in Safari/WebKit (macOS desktop dev).
+- **Streamed tool-call markup:** strip echoed `<tool_call>` / ` ```tool_call ` blocks when an assistant streaming message finalizes; drop markup-only rows so `openflow_submit_node_output` JSON no longer appears in chat.
 - **Awaiting-input chat noise:** stop projecting system "awaiting human input" and upstream `Context:` blocks into the conversation when a node pauses — status pill and run trace still show the pause.
 - **Human-input questions:** when the model streams a preamble then calls `openflow_request_user_input`, emit the tool's `assistant_message` to chat if it was not already streamed; reject non-question `assistant_message` values (preamble/narration) and retry the model turn before pausing — clarifying questions no longer disappear after "let me confirm one detail".
 - **Tool approval:** file-edit preview uses server-stored tool arguments (avoids UI JSON round-trip mismatch); Approve stays enabled when preview fails (warning shown); `submit_tool_approval` emits `run-state` for consistent UI updates.

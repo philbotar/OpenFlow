@@ -22,7 +22,9 @@ export function SidebarListRow(props: SidebarListRowProps) {
       >
         <button type="button" class="workflow-row-main" onClick={() => props.onSelect()}>
           <div class="workflow-row-details">
-            <span class="workflow-row-title">{props.title}</span>
+            <span class="workflow-row-title" title={props.title}>
+              {props.title}
+            </span>
           </div>
         </button>
       </Show>
