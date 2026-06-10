@@ -5,12 +5,14 @@
 //! - Runner: tool execution and orchestration
 //! - Output: artifact storage and tool result handling
 
+pub mod cache;
 pub mod errors;
 pub mod output;
 pub mod ports;
 pub mod registry;
 pub mod runner;
 
+pub use cache::ToolResultCache;
 pub use output::{ArtifactStore, ToolArtifactRecord};
 pub use registry::{ToolRegistry, ToolRegistryError};
 pub use runner::{ToolExecutionContext, ToolExecutionRecord, ToolRunner, ToolRunnerError};

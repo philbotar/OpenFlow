@@ -219,8 +219,10 @@ where
             let exclusive_permit = self.exclusive_permit(&call.name).await;
             join_handles.push(tokio::spawn(async move {
                 let _permit = exclusive_permit;
+                let conversation_id = node_id_for_task.0.clone();
                 let ctx = ToolExecutionContext {
                     node_id: node_id_for_task,
+                    conversation_id,
                 };
                 tokio::select! {
                     biased;
@@ -325,7 +327,7 @@ where
         }
         self.emit_tool_started(node_id, &tool_call);
         match self
-            .execute_tool_or_cancel(tool_call.clone(), node_id)
+            .execute_tool_or_cancel(tool_call.clone(), node_id, &node_id.0)
             .await
         {
             Some(Ok(record)) => {
@@ -387,10 +389,13 @@ where
         send_run_telemetry(&self.event_tx, startup_telemetry);
         self.emit_tool_started(node_id, tool_call);
 
+        // Subagents share the parent's node id but have their own transcript,
+        // so they get a distinct conversation id for the tool result cache.
+        let conversation_id = format!("subagent:{}", uuid::Uuid::new_v4());
         let mut outcome = self.invoke_ai_or_cancel(session.request.clone()).await?;
         loop {
             let tool_results = if let Ok(AgentTurnOutcome::ToolCalls(batch)) = &outcome {
-                self.execute_subagent_tool_batch(engine, node_id, batch)
+                self.execute_subagent_tool_batch(engine, node_id, &conversation_id, batch)
                     .await?
             } else {
                 Vec::new()
@@ -420,6 +425,7 @@ where
         &self,
         engine: &mut InteractiveEngine,
         node_id: &NodeId,
+        conversation_id: &str,
         batch: &AgentToolCallBatch,
     ) -> Option<Vec<ToolResult>> {
         let mut results = Vec::new();
@@ -429,7 +435,7 @@ where
                 continue;
             }
             match self
-                .execute_tool_or_cancel(tool_call.clone(), node_id)
+                .execute_tool_or_cancel(tool_call.clone(), node_id, conversation_id)
                 .await
             {
                 Some(Ok(record)) => {
@@ -532,11 +538,13 @@ where
         &self,
         tool_call: ToolCall,
         node_id: &NodeId,
+        conversation_id: &str,
     ) -> Option<Result<ToolExecutionRecord, ToolRunnerError>> {
         let tool_runner = Arc::clone(&self.tool_runner);
         let tool_name = tool_call.name.clone();
         let ctx = ToolExecutionContext {
             node_id: node_id.clone(),
+            conversation_id: conversation_id.to_string(),
         };
         let started = Instant::now();
         let exclusive_permit = self.exclusive_permit(&tool_name).await;

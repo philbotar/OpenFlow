@@ -261,6 +261,10 @@ fn apply_pending_engine_reverts(
     tool_runner: &ToolRunner,
 ) {
     let batches = pending.lock().drain(..).collect::<Vec<_>>();
+    if !batches.is_empty() {
+        // Reverts change files without passing through write tools.
+        tool_runner.bump_cache_epoch();
+    }
     for batch in batches {
         engine.revert_file_changes_for_batch(&batch.batch_id, &NodeId(batch.node_id.clone()));
         crate::tools::edit::batch::sync_hashline_snapshots_after_revert(
