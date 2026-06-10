@@ -1,7 +1,7 @@
 use crate::tools::{ArtifactStore, ToolRegistry, ToolRunner};
 use engine::{
-    AiPort, EditBatch, EngineRunResult, InteractiveEngine, NodeId, PendingToolApproval, ToolCall,
-    ToolTier, Workflow,
+    AiPort, EditBatch, EngineRunResult, InteractiveEngine, NodeId, PendingToolApproval, RunError,
+    ToolCall, ToolTier, Workflow,
 };
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use super::ai_adapter::AiInvocationAdapter;
 use super::tool_port::ToolPortImpl;
-use super::{ExecutionAction, ExecutionEvent, InteractiveWorkflowRunParams};
+use super::{send_or_log, ExecutionAction, ExecutionEvent, InteractiveWorkflowRunParams};
 
 pub(super) async fn drive_interactive_workflow<A>(
     params: InteractiveWorkflowRunParams<A>,
@@ -30,11 +30,12 @@ pub(super) async fn drive_interactive_workflow<A>(
         snapshot_store,
         lsp,
         pending_engine_reverts,
+        node_interrupts,
     } = params;
     let mut engine = match InteractiveEngine::new(workflow.clone(), entrypoint) {
         Ok(engine) => engine,
         Err(error) => {
-            let _ = event_tx.send(ExecutionEvent::Error(error.to_string()));
+            send_or_log(&event_tx, ExecutionEvent::Error(error.to_string()));
             return;
         }
     };
@@ -44,7 +45,7 @@ pub(super) async fn drive_interactive_workflow<A>(
     let artifacts = match ArtifactStore::new(artifact_root) {
         Ok(store) => store,
         Err(error) => {
-            let _ = event_tx.send(ExecutionEvent::Error(error.to_string()));
+            send_or_log(&event_tx, ExecutionEvent::Error(error.to_string()));
             return;
         }
     };
@@ -58,7 +59,13 @@ pub(super) async fn drive_interactive_workflow<A>(
     ));
     let workflow = Arc::new(workflow);
     let ai = Arc::new(ai);
-    let ai_adapter = Arc::new(AiInvocationAdapter::new(Arc::clone(&ai), event_tx.clone()));
+    let node_interrupts_for_tools = node_interrupts.clone();
+    let ai_adapter = Arc::new(AiInvocationAdapter::new(
+        Arc::clone(&ai),
+        event_tx.clone(),
+        node_interrupts,
+        cancel_token.clone(),
+    ));
     let tool_port = ToolPortImpl::new(
         Arc::clone(&tool_runner),
         Arc::clone(&workflow),
@@ -66,9 +73,11 @@ pub(super) async fn drive_interactive_workflow<A>(
         Arc::clone(&ai_adapter),
         cancel_token.clone(),
         event_tx.clone(),
+        node_interrupts_for_tools,
     );
     let mut proposed_tool_calls: HashSet<String> = HashSet::new();
     let mut aborted_emitted = false;
+    let mut emitted_retryables: HashSet<(NodeId, u8)> = HashSet::new();
 
     loop {
         if cancel_token.is_cancelled() {
@@ -82,20 +91,30 @@ pub(super) async fn drive_interactive_workflow<A>(
         );
         let run_result = engine.run(&*ai_adapter, &tool_port, &cancel_token).await;
         match run_result {
-            EngineRunResult::NeedsInteraction { inputs, approvals } => {
+            EngineRunResult::NeedsInteraction {
+                inputs,
+                approvals,
+                retryables,
+            } => {
                 for input in &inputs {
                     if input.is_initial {
-                        let _ = event_tx.send(ExecutionEvent::NodeQueued {
+                        send_or_log(
+                            &event_tx,
+                            ExecutionEvent::NodeQueued {
+                                node_id: input.node_id.clone(),
+                                label: input.label.clone(),
+                            },
+                        );
+                    }
+                    send_or_log(
+                        &event_tx,
+                        ExecutionEvent::NodeAwaitingInput {
                             node_id: input.node_id.clone(),
                             label: input.label.clone(),
-                        });
-                    }
-                    let _ = event_tx.send(ExecutionEvent::NodeAwaitingInput {
-                        node_id: input.node_id.clone(),
-                        label: input.label.clone(),
-                        context: input.context.clone(),
-                        is_initial: input.is_initial,
-                    });
+                            context: input.context.clone(),
+                            is_initial: input.is_initial,
+                        },
+                    );
                 }
                 let mut approval_tool_calls: HashMap<String, Vec<ToolCall>> = HashMap::new();
                 let mut approval_nodes: HashMap<String, NodeId> = HashMap::new();
@@ -115,19 +134,53 @@ pub(super) async fn drive_interactive_workflow<A>(
                     });
                 }
 
+                for retryable in &retryables {
+                    let attempt = engine.model_attempt_for_node(&retryable.node_id);
+                    if !emitted_retryables.insert((retryable.node_id.clone(), attempt)) {
+                        continue;
+                    }
+                    if retryable.interrupted {
+                        send_or_log(
+                            &event_tx,
+                            ExecutionEvent::NodeInterrupted {
+                                node_id: retryable.node_id.clone(),
+                                label: retryable.label.clone(),
+                            },
+                        );
+                    } else {
+                        send_or_log(
+                            &event_tx,
+                            ExecutionEvent::NodeErrored {
+                                node_id: retryable.node_id.clone(),
+                                label: retryable.label.clone(),
+                                error: retryable.error.clone(),
+                            },
+                        );
+                    }
+                }
+
                 let mut pending_inputs: HashSet<NodeId> =
                     inputs.iter().map(|input| input.node_id.clone()).collect();
                 let mut pending_approvals: HashSet<String> = approvals
                     .iter()
                     .map(|approval| approval.approval_id.clone())
                     .collect();
+                let mut pending_retryables: HashSet<NodeId> = retryables
+                    .iter()
+                    .map(|retryable| retryable.node_id.clone())
+                    .collect();
 
-                while !pending_inputs.is_empty() || !pending_approvals.is_empty() {
+                while !pending_inputs.is_empty()
+                    || !pending_approvals.is_empty()
+                    || !pending_retryables.is_empty()
+                {
                     if cancel_token.is_cancelled() {
                         abort_run(&event_tx, &mut aborted_emitted);
                         return;
                     }
                     let Some(action) = action_rx.recv().await else {
+                        log::warn!("execution action channel closed; aborting run");
+                        abort_run(&event_tx, &mut aborted_emitted);
                         return;
                     };
                     match action {
@@ -137,26 +190,32 @@ pub(super) async fn drive_interactive_workflow<A>(
                         }
                         ExecutionAction::ProvideInput { node_id, text } => {
                             if !pending_inputs.contains(&node_id) {
-                                let _ = event_tx.send(ExecutionEvent::Error(format!(
-                                    "ignored input for node {node_id}: not in current interaction pause"
-                                )));
+                                send_or_log(
+                                    &event_tx,
+                                    ExecutionEvent::Error(format!(
+                                        "ignored input for node {node_id}: not in current interaction pause"
+                                    )),
+                                );
                                 return;
                             }
                             if let Err(error) = engine.on_human_input(&node_id, &text) {
-                                let _ = event_tx.send(ExecutionEvent::Error(error.to_string()));
+                                send_or_log(&event_tx, ExecutionEvent::Error(error.to_string()));
                                 return;
                             }
                             pending_inputs.remove(&node_id);
                         }
                         ExecutionAction::ResolveApproval { approval_id, allow } => {
                             if !pending_approvals.contains(&approval_id) {
-                                let _ = event_tx.send(ExecutionEvent::Error(format!(
-                                    "ignored approval {approval_id}: not in current interaction pause"
-                                )));
+                                send_or_log(
+                                    &event_tx,
+                                    ExecutionEvent::Error(format!(
+                                        "ignored approval {approval_id}: not in current interaction pause"
+                                    )),
+                                );
                                 return;
                             }
                             if let Err(error) = engine.on_tool_decision(&approval_id, allow) {
-                                let _ = event_tx.send(ExecutionEvent::Error(error.to_string()));
+                                send_or_log(&event_tx, ExecutionEvent::Error(error.to_string()));
                                 return;
                             }
                             let node_id = approval_nodes
@@ -166,36 +225,77 @@ pub(super) async fn drive_interactive_workflow<A>(
                             if let Some(tool_calls) = approval_tool_calls.get(&approval_id) {
                                 for tool_call in tool_calls {
                                     if allow {
-                                        let _ = event_tx.send(ExecutionEvent::ToolApproved {
-                                            approval_id: approval_id.clone(),
-                                            node_id: node_id.clone(),
-                                            tool_call_id: tool_call.id.clone(),
-                                            tool_name: tool_call.name.clone(),
-                                        });
+                                        send_or_log(
+                                            &event_tx,
+                                            ExecutionEvent::ToolApproved {
+                                                approval_id: approval_id.clone(),
+                                                node_id: node_id.clone(),
+                                                tool_call_id: tool_call.id.clone(),
+                                                tool_name: tool_call.name.clone(),
+                                            },
+                                        );
                                     } else {
-                                        let _ = event_tx.send(ExecutionEvent::ToolDenied {
-                                            approval_id: approval_id.clone(),
-                                            node_id: node_id.clone(),
-                                            tool_call_id: tool_call.id.clone(),
-                                            tool_name: tool_call.name.clone(),
-                                            reason: "denied by user".to_string(),
-                                        });
+                                        send_or_log(
+                                            &event_tx,
+                                            ExecutionEvent::ToolDenied {
+                                                approval_id: approval_id.clone(),
+                                                node_id: node_id.clone(),
+                                                tool_call_id: tool_call.id.clone(),
+                                                tool_name: tool_call.name.clone(),
+                                                reason: "denied by user".to_string(),
+                                            },
+                                        );
                                     }
                                 }
                             }
                             pending_approvals.remove(&approval_id);
                         }
+                        ExecutionAction::RetryNode { node_id } => {
+                            if !pending_retryables.contains(&node_id) {
+                                send_or_log(
+                                    &event_tx,
+                                    ExecutionEvent::Error(format!(
+                                        "ignored retry for node {node_id}: not in current interaction pause"
+                                    )),
+                                );
+                                return;
+                            }
+                            if let Err(error) = engine.retry_node(&node_id.0) {
+                                send_or_log(&event_tx, ExecutionEvent::Error(error.to_string()));
+                                return;
+                            }
+                            pending_retryables.remove(&node_id);
+                        }
                     }
                 }
             }
             EngineRunResult::Completed(report) => {
-                let _ = event_tx.send(ExecutionEvent::Finished(report));
+                send_or_log(&event_tx, ExecutionEvent::Finished(report));
                 return;
             }
-            EngineRunResult::Failed(error) => {
-                let _ = event_tx.send(ExecutionEvent::Error(error.to_string()));
-                return;
-            }
+            EngineRunResult::Failed(error) => match error {
+                RunError::NodeFailed { node_id, message } => {
+                    let label = workflow
+                        .nodes
+                        .iter()
+                        .find(|node| node.id == node_id)
+                        .map(|node| node.label.clone())
+                        .unwrap_or_else(|| node_id.to_string());
+                    send_or_log(
+                        &event_tx,
+                        ExecutionEvent::NodeFailed {
+                            node_id,
+                            label,
+                            error: message,
+                        },
+                    );
+                    return;
+                }
+                other => {
+                    send_or_log(&event_tx, ExecutionEvent::Error(other.to_string()));
+                    return;
+                }
+            },
             EngineRunResult::Cancelled => {
                 abort_run(&event_tx, &mut aborted_emitted);
                 return;
@@ -219,11 +319,14 @@ fn emit_approval_request(ctx: ApprovalRequestEmit<'_>) {
     let mut approval_request = None;
     for tool_call in ctx.tool_calls {
         if ctx.proposed_tool_calls.insert(tool_call.id.clone()) {
-            let _ = ctx.event_tx.send(ExecutionEvent::ToolCallProposed {
-                node_id: ctx.node_id.clone(),
-                label: ctx.label.to_string(),
-                tool_call: tool_call.clone(),
-            });
+            send_or_log(
+                ctx.event_tx,
+                ExecutionEvent::ToolCallProposed {
+                    node_id: ctx.node_id.clone(),
+                    label: ctx.label.to_string(),
+                    tool_call: tool_call.clone(),
+                },
+            );
         }
         let tier = ctx
             .tool_runner
@@ -249,9 +352,10 @@ fn emit_approval_request(ctx: ApprovalRequestEmit<'_>) {
         }
     }
     if let Some(request) = approval_request {
-        let _ = ctx
-            .event_tx
-            .send(ExecutionEvent::ToolApprovalRequested { request });
+        send_or_log(
+            ctx.event_tx,
+            ExecutionEvent::ToolApprovalRequested { request },
+        );
     }
 }
 
@@ -262,7 +366,6 @@ fn apply_pending_engine_reverts(
 ) {
     let batches = pending.lock().drain(..).collect::<Vec<_>>();
     if !batches.is_empty() {
-        // Reverts change files without passing through write tools.
         tool_runner.bump_cache_epoch();
     }
     for batch in batches {
@@ -280,5 +383,5 @@ fn abort_run(event_tx: &UnboundedSender<ExecutionEvent>, aborted_emitted: &mut b
         return;
     }
     *aborted_emitted = true;
-    let _ = event_tx.send(ExecutionEvent::Aborted);
+    send_or_log(event_tx, ExecutionEvent::Aborted);
 }

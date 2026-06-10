@@ -33,7 +33,7 @@ export function CallableAgentsEditor(props: {
         </button>
       </div>
       <Show when={open()}>
-        <div class="tool-config-body">
+        <div class="tool-config-body collapsible-body-enter">
           <label class="tool-config-option callable-agents-allow-all">
             <span class="tool-config-option-copy">
               <span class="tool-config-option-title">Allow all agents</span>

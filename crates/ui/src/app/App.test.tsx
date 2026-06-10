@@ -1031,7 +1031,8 @@ describe("App chat slash commands", () => {
 
     try {
       const labels = Array.from(container.querySelectorAll(".chat-role")).map((element) => element.textContent);
-      expect(labels).toEqual(["System", "Agent 2", "Agent 2"]);
+      expect(labels).toEqual(["System", "Agent 2"]);
+      expect(container.querySelector(".thinking-bubble-label")?.textContent).toContain("Thinking");
     } finally {
       dispose();
     }

@@ -9,7 +9,8 @@ use super::drive::drive_interactive_workflow;
 use super::events::{apply_event_to_run_state, record_user_input};
 use super::{
     resolve_execution_cwd, ApprovalResponse, ExecutionAction, ExecutionEvent,
-    InteractiveWorkflowRunParams, ManualInput, WorkflowExecutionError, WorkflowRunSnapshot,
+    InteractiveWorkflowRunParams, ManualInput, NodeInterrupts, WorkflowExecutionError,
+    WorkflowRunSnapshot,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -41,6 +42,7 @@ where
     let snapshot_store =
         Arc::new(crate::tools::edit::hashline::snapshots::InMemorySnapshotStore::new());
     let pending_engine_reverts = Arc::new(parking_lot::Mutex::new(Vec::new()));
+    let node_interrupts: NodeInterrupts = Arc::new(parking_lot::Mutex::new(BTreeMap::new()));
     let handle = tokio::spawn(drive_interactive_workflow(
         InteractiveWorkflowRunParams {
             workflow: workflow.clone(),
@@ -51,6 +53,7 @@ where
             snapshot_store,
             lsp: crate::lsp::LspSettings::from_env(),
             pending_engine_reverts,
+            node_interrupts,
         },
         event_tx,
         action_rx,
@@ -77,6 +80,19 @@ where
         );
 
         apply_event_to_run_state(&workflow, &mut state, event.clone());
+
+        if matches!(
+            &event,
+            ExecutionEvent::NodeErrored { .. } | ExecutionEvent::NodeInterrupted { .. }
+        ) && state.active
+        {
+            let node_id = match &event {
+                ExecutionEvent::NodeErrored { node_id, .. }
+                | ExecutionEvent::NodeInterrupted { node_id, .. } => node_id.clone(),
+                _ => unreachable!(),
+            };
+            return Err(WorkflowExecutionError::MissingRetry(node_id));
+        }
 
         if let ExecutionEvent::NodeAwaitingInput { node_id, .. } = &event {
             if awaiting_input {

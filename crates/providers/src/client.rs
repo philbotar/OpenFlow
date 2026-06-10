@@ -56,6 +56,13 @@ impl AiClientConfig {
     }
 }
 
+/// Time allowed to establish a connection to the provider.
+const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+/// Time allowed between reads on a response. Converts a stalled SSE stream
+/// (provider stops sending, dead TCP path after sleep/wake) into a transient
+/// error the retry policy can handle, instead of hanging the node forever.
+const READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
 #[derive(Debug, Clone)]
 pub struct AiClient {
     http: Client,
@@ -65,10 +72,12 @@ pub struct AiClient {
 impl AiClient {
     #[must_use]
     pub fn with_config(config: AiClientConfig) -> Self {
-        Self {
-            http: Client::new(),
-            config,
-        }
+        let http = Client::builder()
+            .connect_timeout(CONNECT_TIMEOUT)
+            .read_timeout(READ_TIMEOUT)
+            .build()
+            .unwrap_or_else(|_| Client::new());
+        Self { http, config }
     }
 
     #[must_use]

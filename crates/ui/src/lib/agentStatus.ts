@@ -19,6 +19,8 @@ export function labelForAgentStatus(status: AgentStatus): string {
       return "Done";
     case "failed":
       return "Failed";
+    case "interrupted":
+      return "Interrupted";
     case "stopped":
       return "Stopped";
     default:

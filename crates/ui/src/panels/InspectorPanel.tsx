@@ -1,15 +1,27 @@
-import { Show } from "solid-js";
+import { createEffect, Show } from "solid-js";
 import { useAppContext } from "../context/AppContext";
 import { AgentConfigForm } from "../forms/AgentConfigForm";
 import { CallableAgentsEditor } from "../forms/CallableAgentsEditor";
 import { ToolConfigEditor } from "../forms/ToolConfigEditor";
+import { AnimatedPanel } from "../components/AnimatedPanel";
 import { SidebarIcon } from "../components/SidebarIcon";
 
 export function InspectorPanel() {
   const ctx = useAppContext();
+  let labelInput: HTMLInputElement | undefined;
+
+  createEffect(() => {
+    const nodeId = ctx.editingNodeId();
+    if (!nodeId) return;
+    queueMicrotask(() => {
+      if (ctx.editingNodeId() !== nodeId || !labelInput) return;
+      labelInput.focus();
+      labelInput.setSelectionRange(0, labelInput.value.length);
+    });
+  });
 
   return (
-    <aside class="inspector-panel">
+    <AnimatedPanel class="inspector-panel">
       <Show when={ctx.currentNode()}>
         {(node) => (
           <>
@@ -22,6 +34,7 @@ export function InspectorPanel() {
                     fallback={<h3>{node().label}</h3>}
                   >
                     <input
+                      ref={labelInput}
                       class="text-input inspector-title-input"
                       value={ctx.nodeLabelDraft()}
                       onInput={(event) => ctx.setNodeLabelDraft(event.currentTarget.value)}
@@ -36,7 +49,6 @@ export function InspectorPanel() {
                         }
                       }}
                       aria-label="Node label"
-                      autofocus
                     />
                   </Show>
                   <div class="panel-header-actions">
@@ -148,6 +160,6 @@ export function InspectorPanel() {
           </>
         )}
       </Show>
-    </aside>
+    </AnimatedPanel>
   );
 }

@@ -1,3 +1,4 @@
+import { splitProps } from "solid-js";
 import type { ComponentProps, JSX } from "solid-js";
 import { MarkdownContent } from "./MarkdownContent";
 
@@ -9,18 +10,32 @@ interface MessageProps extends ComponentProps<"div"> {
   from: MessageRole;
   label: string;
   content: string;
+  streaming?: boolean;
 }
 
 export function Message(allProps: MessageProps) {
-  const { class: className, from, label, content, ...rest } = allProps;
+  // Don't destructure props: it breaks Solid reactivity, forcing a full
+  // component recreation (and markdown re-parse) for every content update.
+  const [local, rest] = splitProps(allProps, [
+    "class",
+    "from",
+    "label",
+    "content",
+    "streaming",
+  ]);
   return (
     <div
-      class={`chat-row message message-${from} role-${from} ${className ?? ""}`}
+      class={`chat-row message message-${local.from} role-${local.from} conversation-item-enter ${local.class ?? ""}`}
       {...rest}
     >
-      <div class={`chat-role ${from === "system" ? "is-system" : ""}`}>{label}</div>
-      <div class="message-content">
-        <MarkdownContent content={content} />
+      <div class={`chat-role ${local.from === "system" ? "is-system" : ""}`}>
+        {local.label}
+      </div>
+      <div
+        class="message-content"
+        classList={{ "message-streaming-caret": Boolean(local.streaming) }}
+      >
+        <MarkdownContent content={local.content} />
       </div>
     </div>
   );
@@ -33,10 +48,10 @@ interface MessageContentProps extends ComponentProps<"div"> {
 }
 
 export function MessageContent(allProps: MessageContentProps) {
-  const { class: className, children, ...rest } = allProps;
+  const [local, rest] = splitProps(allProps, ["class", "children"]);
   return (
-    <div class={`message-content ${className ?? ""}`} {...rest}>
-      {children}
+    <div class={`message-content ${local.class ?? ""}`} {...rest}>
+      {local.children}
     </div>
   );
 }

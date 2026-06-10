@@ -16,7 +16,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::subagents::{augment_call_subagent_tool_description, merge_subagent_summaries_into_map};
 use super::timing::emit_phase_timed;
-use super::ExecutionEvent;
+use super::{send_or_log, ExecutionEvent, NodeInterrupts};
 
 pub struct ToolPortImpl<A> {
     tool_runner: Arc<ToolRunner>,
@@ -28,6 +28,7 @@ pub struct ToolPortImpl<A> {
     proposed_tool_calls: parking_lot::Mutex<HashSet<String>>,
     cancel_token: CancellationToken,
     event_tx: UnboundedSender<ExecutionEvent>,
+    node_interrupts: NodeInterrupts,
     aborted_emitted: parking_lot::Mutex<bool>,
     exclusive_semaphores: parking_lot::Mutex<BTreeMap<String, Arc<Semaphore>>>,
 }
@@ -43,6 +44,7 @@ where
         ai: Arc<A>,
         cancel_token: CancellationToken,
         event_tx: UnboundedSender<ExecutionEvent>,
+        node_interrupts: NodeInterrupts,
     ) -> Self {
         let mut declared_subagents = BTreeMap::new();
         for node in &workflow.nodes {
@@ -61,6 +63,7 @@ where
             proposed_tool_calls: parking_lot::Mutex::new(HashSet::new()),
             cancel_token,
             event_tx,
+            node_interrupts,
             aborted_emitted: parking_lot::Mutex::new(false),
             exclusive_semaphores: parking_lot::Mutex::new(BTreeMap::new()),
         }
@@ -125,6 +128,10 @@ where
         let mut index = 0usize;
         while index < calls.len() {
             if self.cancel_token.is_cancelled() {
+                break;
+            }
+            if self.node_interrupt_is_cancelled(node_id) {
+                engine.mark_node_interrupted(&node_id.0);
                 break;
             }
             if self.is_parallel_shared_tool(&calls[index]) {
@@ -327,7 +334,7 @@ where
         }
         self.emit_tool_started(node_id, &tool_call);
         match self
-            .execute_tool_or_cancel(tool_call.clone(), node_id, &node_id.0)
+            .execute_tool_or_cancel(engine, tool_call.clone(), node_id, &node_id.0)
             .await
         {
             Some(Ok(record)) => {
@@ -435,7 +442,7 @@ where
                 continue;
             }
             match self
-                .execute_tool_or_cancel(tool_call.clone(), node_id, conversation_id)
+                .execute_tool_or_cancel(engine, tool_call.clone(), node_id, conversation_id)
                 .await
             {
                 Some(Ok(record)) => {
@@ -477,15 +484,18 @@ where
     }
 
     fn emit_tool_completed(&self, node_id: &NodeId, _tool_call: &ToolCall, result: &ToolResult) {
-        let _ = self.event_tx.send(ExecutionEvent::ToolCompleted {
-            node_id: node_id.clone(),
-            tool_call_id: result.tool_call_id.clone(),
-            tool_name: result.tool_name.clone(),
-            content: result.content.clone(),
-            is_error: result.is_error,
-            output_meta: result.output_meta.clone(),
-            artifact_ids: result.artifact_ids.clone(),
-        });
+        send_or_log(
+            &self.event_tx,
+            ExecutionEvent::ToolCompleted {
+                node_id: node_id.clone(),
+                tool_call_id: result.tool_call_id.clone(),
+                tool_name: result.tool_name.clone(),
+                content: result.content.clone(),
+                is_error: result.is_error,
+                output_meta: result.output_meta.clone(),
+                artifact_ids: result.artifact_ids.clone(),
+            },
+        );
     }
 
     fn record_tool_file_changes(
@@ -534,8 +544,21 @@ where
         result
     }
 
+    fn node_interrupt_token(&self, node_id: &NodeId) -> Option<CancellationToken> {
+        self.node_interrupts
+            .lock()
+            .get(node_id)
+            .map(|(_, token)| token.clone())
+    }
+
+    fn node_interrupt_is_cancelled(&self, node_id: &NodeId) -> bool {
+        self.node_interrupt_token(node_id)
+            .is_some_and(|token| token.is_cancelled())
+    }
+
     async fn execute_tool_or_cancel(
         &self,
+        engine: &mut InteractiveEngine,
         tool_call: ToolCall,
         node_id: &NodeId,
         conversation_id: &str,
@@ -548,13 +571,32 @@ where
         };
         let started = Instant::now();
         let exclusive_permit = self.exclusive_permit(&tool_name).await;
-        let result = tokio::select! {
-            biased;
-            _ = self.cancel_token.cancelled() => {
-                abort_run(&self.event_tx, &self.aborted_emitted);
-                None
+        let node_token = self.node_interrupt_token(node_id);
+        let result = match node_token {
+            Some(node_token) => {
+                tokio::select! {
+                    biased;
+                    _ = self.cancel_token.cancelled() => {
+                        abort_run(&self.event_tx, &self.aborted_emitted);
+                        None
+                    }
+                    _ = node_token.cancelled() => {
+                        engine.mark_node_interrupted(&node_id.0);
+                        None
+                    }
+                    result = tool_runner.execute(tool_call, Some(ctx)) => Some(result),
+                }
             }
-            result = tool_runner.execute(tool_call, Some(ctx)) => Some(result),
+            None => {
+                tokio::select! {
+                    biased;
+                    _ = self.cancel_token.cancelled() => {
+                        abort_run(&self.event_tx, &self.aborted_emitted);
+                        None
+                    }
+                    result = tool_runner.execute(tool_call, Some(ctx)) => Some(result),
+                }
+            }
         };
         drop(exclusive_permit);
         if result.is_some() {

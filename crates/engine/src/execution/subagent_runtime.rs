@@ -231,6 +231,8 @@ fn build_saved_agent_request(
         available_tools,
         transcript: sub_transcript,
         model_attempt: 1,
+        reasoning_effort: None,
+        reasoning_budget_tokens: None,
     }
 }
 
@@ -265,6 +267,8 @@ fn build_adhoc_agent_request(
         available_tools,
         transcript: sub_transcript,
         model_attempt: 1,
+        reasoning_effort: None,
+        reasoning_budget_tokens: None,
     }
 }
 
@@ -413,6 +417,8 @@ mod tests {
                     content: "Do work".to_string(),
                 }],
                 model_attempt: 1,
+                reasoning_effort: None,
+                reasoning_budget_tokens: None,
             },
             tool_call_id: "parent-call".to_string(),
             parent_node_id: NodeId("node-1".to_string()),

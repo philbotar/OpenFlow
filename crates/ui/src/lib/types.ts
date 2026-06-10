@@ -92,6 +92,18 @@ export interface AgentNodeConfig {
   tools: NodeToolConfig;
   callable_agents: string[];
   allow_all_callable_agents: boolean;
+  reasoning_effort?: string | null;
+  reasoning_budget_tokens?: number | null;
+  /** Wire alias from persisted workflow JSON. */
+  reasoningEffort?: string | null;
+  /** Wire alias from persisted workflow JSON. */
+  reasoningBudgetTokens?: number | null;
+}
+
+export interface ReasoningEffortOption {
+  value: string;
+  label: string;
+  uses_budget_tokens: boolean;
 }
 
 export interface AgentDefinition {
@@ -141,6 +153,7 @@ export type AgentStatus =
   | "running_tool"
   | "completed"
   | "failed"
+  | "interrupted"
   | "stopped";
 
 export type SubagentStatus = "declared" | "active" | "completed" | "failed";
@@ -309,6 +322,13 @@ export interface ProviderProfile {
   known_models: string[];
   default_model: string | null;
   editable: boolean;
+  reasoning_effort_options?: ReasoningEffortOption[];
+  default_reasoning_budget_tokens?: Record<string, number>;
+  default_reasoning_effort?: string | null;
+  /** Wire aliases from persisted settings JSON. */
+  reasoningEffortOptions?: ReasoningEffortOption[];
+  defaultReasoningBudgetTokens?: Record<string, number>;
+  defaultReasoningEffort?: string | null;
 }
 
 export interface LspSettings {

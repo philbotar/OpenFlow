@@ -1,4 +1,5 @@
 import type {
+  AgentNodeConfig,
   AgentStatus,
   AppSettings,
   Edge,
@@ -9,6 +10,7 @@ import type {
   NodeId,
   NodeToolConfig,
   ProviderProfile,
+  ReasoningEffortOption,
   SubagentSummary,
   Workflow,
   WorkflowRunState,
@@ -147,6 +149,53 @@ export function cloneSettings(settings: AppSettings): AppSettings {
 
 export function activeProfile(settings: AppSettings): ProviderProfile {
   return settings.providers[settings.active_provider] ?? Object.values(settings.providers)[0];
+}
+
+export function reasoningEffortOptions(profile: ProviderProfile): ReasoningEffortOption[] {
+  return profile.reasoning_effort_options ?? profile.reasoningEffortOptions ?? [];
+}
+
+export function defaultReasoningBudgetTokens(
+  profile: ProviderProfile,
+): Record<string, number> {
+  return (
+    profile.default_reasoning_budget_tokens ?? profile.defaultReasoningBudgetTokens ?? {}
+  );
+}
+
+export function defaultReasoningEffort(profile: ProviderProfile): string | null {
+  return profile.default_reasoning_effort ?? profile.defaultReasoningEffort ?? null;
+}
+
+export function reasoningBudgetForEffort(
+  profile: ProviderProfile,
+  effort: string,
+): number | undefined {
+  const option = reasoningEffortOptions(profile).find((entry) => entry.value === effort);
+  if (!option?.uses_budget_tokens) {
+    return undefined;
+  }
+  return defaultReasoningBudgetTokens(profile)[effort];
+}
+
+export function agentReasoningEffort(agent: AgentNodeConfig): string | null {
+  return agent.reasoning_effort ?? agent.reasoningEffort ?? null;
+}
+
+export function withDefaultReasoningFromProfile(
+  agent: AgentNodeConfig,
+  profile: ProviderProfile,
+): AgentNodeConfig {
+  const effort = defaultReasoningEffort(profile);
+  if (!effort || agentReasoningEffort(agent)) {
+    return agent;
+  }
+  const budget = reasoningBudgetForEffort(profile, effort);
+  return {
+    ...agent,
+    reasoning_effort: effort,
+    reasoning_budget_tokens: budget ?? null,
+  };
 }
 
 export function createIdleRunState(workflow: Workflow): WorkflowRunState {
@@ -392,6 +441,9 @@ function cloneNode(node: Node): Node {
       tools: structuredClone(node.agent.tools),
       callable_agents: [...(node.agent.callable_agents ?? [])],
       allow_all_callable_agents: node.agent.allow_all_callable_agents ?? false,
+      reasoning_effort: agentReasoningEffort(node.agent),
+      reasoning_budget_tokens:
+        node.agent.reasoning_budget_tokens ?? node.agent.reasoningBudgetTokens ?? null,
     },
   };
 }
@@ -405,6 +457,8 @@ function cloneEdge(edge: Edge): Edge {
 }
 
 function cloneProviderProfile(profile: ProviderProfile): ProviderProfile {
+  const reasoningOptions = reasoningEffortOptions(profile);
+  const budgetTokens = defaultReasoningBudgetTokens(profile);
   return {
     display_name: profile.display_name,
     base_url: profile.base_url,
@@ -414,6 +468,9 @@ function cloneProviderProfile(profile: ProviderProfile): ProviderProfile {
     known_models: [...profile.known_models],
     default_model: profile.default_model,
     editable: profile.editable,
+    reasoning_effort_options: reasoningOptions.map((option) => ({ ...option })),
+    default_reasoning_budget_tokens: { ...budgetTokens },
+    default_reasoning_effort: defaultReasoningEffort(profile),
   };
 }
 

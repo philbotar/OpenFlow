@@ -83,7 +83,7 @@ async fn invoke_responses(
 }
 
 fn chat_completions_body(request: &AgentRequest) -> Result<Value, AgentError> {
-    Ok(json!({
+    let mut body = json!({
         "model": request.model,
         "messages": transcript_to_chat_messages(request)?,
         "tools": all_tool_specs(request)
@@ -98,7 +98,18 @@ fn chat_completions_body(request: &AgentRequest) -> Result<Value, AgentError> {
                 }
             }))
             .collect::<Vec<_>>()
-    }))
+    });
+    if let Some(effort) = request
+        .reasoning_effort
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        body["reasoning_effort"] = Value::String(effort.to_string());
+    }
+    if let Some(budget) = request.reasoning_budget_tokens {
+        body["reasoning"] = json!({ "max_tokens": budget });
+    }
+    Ok(body)
 }
 
 async fn invoke_chat_completions(
@@ -140,8 +151,16 @@ async fn invoke_chat_completions_stream(
     })?;
     let mut aggregator = ChatCompletionStreamAggregator::default();
     let mut last_content_len = 0usize;
+    let mut last_reasoning_len = 0usize;
     stream_sse_data_lines(response, "OpenAI-compatible", |event| {
         aggregator.apply_chunk(&event);
+        if aggregator.reasoning.len() > last_reasoning_len {
+            let delta = aggregator.reasoning[last_reasoning_len..].to_string();
+            last_reasoning_len = aggregator.reasoning.len();
+            if !delta.is_empty() {
+                sink.on_stream_event(AiStreamEvent::ThinkingDelta { content: delta });
+            }
+        }
         if aggregator.content.len() > last_content_len {
             let delta = aggregator.content[last_content_len..].to_string();
             last_content_len = aggregator.content.len();
@@ -246,6 +265,8 @@ mod tests {
             available_tools: Vec::new(),
             transcript: Vec::new(),
             model_attempt: 1,
+            reasoning_effort: None,
+            reasoning_budget_tokens: None,
         }
     }
 
@@ -591,6 +612,16 @@ mod tests {
         assert!(error
             .to_string()
             .contains("OpenAI function_call arguments were not valid JSON"));
+    }
+
+    #[test]
+    fn chat_completions_body_forwards_reasoning_effort_fields() {
+        let mut request = request();
+        request.reasoning_effort = Some("adaptive".to_string());
+        request.reasoning_budget_tokens = Some(40960);
+        let body = chat_completions_body(&request).unwrap();
+        assert_eq!(body["reasoning_effort"], json!("adaptive"));
+        assert_eq!(body["reasoning"]["max_tokens"], json!(40960));
     }
 
     #[tokio::test]

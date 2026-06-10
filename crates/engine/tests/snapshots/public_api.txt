@@ -152,6 +152,7 @@ pub engine::conversation::ChatMessage::tool_call_id: core::option::Option<alloc:
 impl engine::conversation::ChatMessage
 pub fn engine::conversation::ChatMessage::node_completed(impl core::convert::Into<alloc::string::String>) -> Self
 pub fn engine::conversation::ChatMessage::streaming_assistant(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>) -> Self
+pub fn engine::conversation::ChatMessage::streaming_thinking(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>) -> Self
 pub fn engine::conversation::ChatMessage::text(engine::conversation::ChatRole, impl core::convert::Into<alloc::string::String>) -> Self
 pub fn engine::conversation::ChatMessage::tool_marker(impl core::convert::Into<alloc::string::String>) -> Self
 impl core::clone::Clone for engine::conversation::ChatMessage
@@ -439,6 +440,7 @@ pub mod engine::execution::interactive_engine
 pub enum engine::execution::interactive_engine::EngineInputError
 pub engine::execution::interactive_engine::EngineInputError::NoNodeAwaiting
 pub engine::execution::interactive_engine::EngineInputError::NoPendingTools
+pub engine::execution::interactive_engine::EngineInputError::NodeNotRetryable(engine::graph::workflow::NodeId)
 pub engine::execution::interactive_engine::EngineInputError::UnknownApproval(alloc::string::String)
 pub engine::execution::interactive_engine::EngineInputError::WrongNode
 pub engine::execution::interactive_engine::EngineInputError::WrongNode::expected: engine::graph::workflow::NodeId
@@ -545,6 +547,7 @@ pub engine::execution::interactive_engine::EngineRunResult::Failed(engine::execu
 pub engine::execution::interactive_engine::EngineRunResult::NeedsInteraction
 pub engine::execution::interactive_engine::EngineRunResult::NeedsInteraction::approvals: alloc::vec::Vec<engine::execution::interactive_engine::EngineAwaitApproval>
 pub engine::execution::interactive_engine::EngineRunResult::NeedsInteraction::inputs: alloc::vec::Vec<engine::execution::interactive_engine::EngineAwaitInput>
+pub engine::execution::interactive_engine::EngineRunResult::NeedsInteraction::retryables: alloc::vec::Vec<engine::execution::interactive_engine::EngineRetryableNode>
 impl core::clone::Clone for engine::execution::interactive_engine::EngineRunResult
 pub fn engine::execution::interactive_engine::EngineRunResult::clone(&self) -> engine::execution::interactive_engine::EngineRunResult
 impl core::fmt::Debug for engine::execution::interactive_engine::EngineRunResult
@@ -654,9 +657,53 @@ impl<T> core::clone::CloneToUninit for engine::execution::interactive_engine::En
 pub unsafe fn engine::execution::interactive_engine::EngineAwaitInput::clone_to_uninit(&self, *mut u8)
 impl<T> core::convert::From<T> for engine::execution::interactive_engine::EngineAwaitInput
 pub fn engine::execution::interactive_engine::EngineAwaitInput::from(T) -> T
+pub struct engine::execution::interactive_engine::EngineRetryableNode
+pub engine::execution::interactive_engine::EngineRetryableNode::error: alloc::string::String
+pub engine::execution::interactive_engine::EngineRetryableNode::interrupted: bool
+pub engine::execution::interactive_engine::EngineRetryableNode::label: alloc::string::String
+pub engine::execution::interactive_engine::EngineRetryableNode::node_id: engine::graph::workflow::NodeId
+impl core::clone::Clone for engine::execution::interactive_engine::EngineRetryableNode
+pub fn engine::execution::interactive_engine::EngineRetryableNode::clone(&self) -> engine::execution::interactive_engine::EngineRetryableNode
+impl core::cmp::Eq for engine::execution::interactive_engine::EngineRetryableNode
+impl core::cmp::PartialEq for engine::execution::interactive_engine::EngineRetryableNode
+pub fn engine::execution::interactive_engine::EngineRetryableNode::eq(&self, &engine::execution::interactive_engine::EngineRetryableNode) -> bool
+impl core::fmt::Debug for engine::execution::interactive_engine::EngineRetryableNode
+pub fn engine::execution::interactive_engine::EngineRetryableNode::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::execution::interactive_engine::EngineRetryableNode
+impl core::marker::Freeze for engine::execution::interactive_engine::EngineRetryableNode
+impl core::marker::Send for engine::execution::interactive_engine::EngineRetryableNode
+impl core::marker::Sync for engine::execution::interactive_engine::EngineRetryableNode
+impl core::marker::Unpin for engine::execution::interactive_engine::EngineRetryableNode
+impl core::marker::UnsafeUnpin for engine::execution::interactive_engine::EngineRetryableNode
+impl core::panic::unwind_safe::RefUnwindSafe for engine::execution::interactive_engine::EngineRetryableNode
+impl core::panic::unwind_safe::UnwindSafe for engine::execution::interactive_engine::EngineRetryableNode
+impl<T, U> core::convert::Into<U> for engine::execution::interactive_engine::EngineRetryableNode where U: core::convert::From<T>
+pub fn engine::execution::interactive_engine::EngineRetryableNode::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::execution::interactive_engine::EngineRetryableNode where U: core::convert::Into<T>
+pub type engine::execution::interactive_engine::EngineRetryableNode::Error = core::convert::Infallible
+pub fn engine::execution::interactive_engine::EngineRetryableNode::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::execution::interactive_engine::EngineRetryableNode where U: core::convert::TryFrom<T>
+pub type engine::execution::interactive_engine::EngineRetryableNode::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::execution::interactive_engine::EngineRetryableNode::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::execution::interactive_engine::EngineRetryableNode where T: core::clone::Clone
+pub type engine::execution::interactive_engine::EngineRetryableNode::Owned = T
+pub fn engine::execution::interactive_engine::EngineRetryableNode::clone_into(&self, &mut T)
+pub fn engine::execution::interactive_engine::EngineRetryableNode::to_owned(&self) -> T
+impl<T> core::any::Any for engine::execution::interactive_engine::EngineRetryableNode where T: 'static + ?core::marker::Sized
+pub fn engine::execution::interactive_engine::EngineRetryableNode::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::execution::interactive_engine::EngineRetryableNode where T: ?core::marker::Sized
+pub fn engine::execution::interactive_engine::EngineRetryableNode::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::execution::interactive_engine::EngineRetryableNode where T: ?core::marker::Sized
+pub fn engine::execution::interactive_engine::EngineRetryableNode::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::execution::interactive_engine::EngineRetryableNode where T: core::clone::Clone
+pub unsafe fn engine::execution::interactive_engine::EngineRetryableNode::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::execution::interactive_engine::EngineRetryableNode
+pub fn engine::execution::interactive_engine::EngineRetryableNode::from(T) -> T
 pub struct engine::execution::interactive_engine::InteractiveEngine
 impl engine::execution::interactive_engine::InteractiveEngine
 pub fn engine::execution::interactive_engine::InteractiveEngine::conversation_history(&self, &str) -> alloc::vec::Vec<engine::conversation::ChatMessage>
+pub fn engine::execution::interactive_engine::InteractiveEngine::mark_node_interrupted(&mut self, &str)
+pub fn engine::execution::interactive_engine::InteractiveEngine::model_attempt_for_node(&self, &engine::graph::workflow::NodeId) -> u8
 pub fn engine::execution::interactive_engine::InteractiveEngine::new(engine::graph::workflow::Workflow, core::option::Option<alloc::string::String>) -> core::result::Result<Self, engine::graph::validation::WorkflowValidationError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::node_output(&self, &str) -> core::option::Option<serde_json::value::Value>
 pub fn engine::execution::interactive_engine::InteractiveEngine::on_ai_complete(&mut self, &str, core::result::Result<engine::ports::outbound::AgentTurnOutcome, engine::ports::outbound::AgentError>)
@@ -665,6 +712,7 @@ pub fn engine::execution::interactive_engine::InteractiveEngine::on_tool_decisio
 pub fn engine::execution::interactive_engine::InteractiveEngine::on_tool_results(&mut self, &str, alloc::vec::Vec<engine::ToolResult>) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::poll(&mut self) -> engine::execution::interactive_engine::EnginePollResult
 pub fn engine::execution::interactive_engine::InteractiveEngine::record_file_changes(&mut self, &engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>)
+pub fn engine::execution::interactive_engine::InteractiveEngine::retry_node(&mut self, &str) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::revert_file_changes_for_batch(&mut self, &str, &engine::graph::workflow::NodeId)
 pub async fn engine::execution::interactive_engine::InteractiveEngine::run<A: engine::ports::outbound::AiPort, T: engine::ports::outbound::ToolPort>(&mut self, &A, &T, &tokio_util::sync::cancellation_token::CancellationToken) -> engine::execution::interactive_engine::EngineRunResult
 pub fn engine::execution::interactive_engine::InteractiveEngine::transcript(&self, &str) -> &[engine::conversation::AgentTranscriptItem]
@@ -948,6 +996,7 @@ pub engine::execution::telemetry::RunTelemetry::ChatMessageDelta::delta: alloc::
 pub engine::execution::telemetry::RunTelemetry::ChatMessageDelta::finalize: bool
 pub engine::execution::telemetry::RunTelemetry::ChatMessageDelta::message_id: alloc::string::String
 pub engine::execution::telemetry::RunTelemetry::ChatMessageDelta::node_id: engine::graph::workflow::NodeId
+pub engine::execution::telemetry::RunTelemetry::ChatMessageDelta::role: engine::conversation::ChatRole
 pub engine::execution::telemetry::RunTelemetry::EditBatchRecorded
 pub engine::execution::telemetry::RunTelemetry::EditBatchRecorded::batch: engine::EditBatch
 pub engine::execution::telemetry::RunTelemetry::EditBatchRecorded::node_id: engine::graph::workflow::NodeId
@@ -965,10 +1014,17 @@ pub engine::execution::telemetry::RunTelemetry::NodeCompleted
 pub engine::execution::telemetry::RunTelemetry::NodeCompleted::label: alloc::string::String
 pub engine::execution::telemetry::RunTelemetry::NodeCompleted::node_id: engine::graph::workflow::NodeId
 pub engine::execution::telemetry::RunTelemetry::NodeCompleted::output: serde_json::value::Value
+pub engine::execution::telemetry::RunTelemetry::NodeErrored
+pub engine::execution::telemetry::RunTelemetry::NodeErrored::error: alloc::string::String
+pub engine::execution::telemetry::RunTelemetry::NodeErrored::label: alloc::string::String
+pub engine::execution::telemetry::RunTelemetry::NodeErrored::node_id: engine::graph::workflow::NodeId
 pub engine::execution::telemetry::RunTelemetry::NodeFailed
 pub engine::execution::telemetry::RunTelemetry::NodeFailed::error: alloc::string::String
 pub engine::execution::telemetry::RunTelemetry::NodeFailed::label: alloc::string::String
 pub engine::execution::telemetry::RunTelemetry::NodeFailed::node_id: engine::graph::workflow::NodeId
+pub engine::execution::telemetry::RunTelemetry::NodeInterrupted
+pub engine::execution::telemetry::RunTelemetry::NodeInterrupted::label: alloc::string::String
+pub engine::execution::telemetry::RunTelemetry::NodeInterrupted::node_id: engine::graph::workflow::NodeId
 pub engine::execution::telemetry::RunTelemetry::NodeQueued
 pub engine::execution::telemetry::RunTelemetry::NodeQueued::label: alloc::string::String
 pub engine::execution::telemetry::RunTelemetry::NodeQueued::node_id: engine::graph::workflow::NodeId
@@ -1094,6 +1150,7 @@ pub fn engine::execution::workflow_runner::WorkflowRunner<A>::from(T) -> T
 pub enum engine::execution::EngineInputError
 pub engine::execution::EngineInputError::NoNodeAwaiting
 pub engine::execution::EngineInputError::NoPendingTools
+pub engine::execution::EngineInputError::NodeNotRetryable(engine::graph::workflow::NodeId)
 pub engine::execution::EngineInputError::UnknownApproval(alloc::string::String)
 pub engine::execution::EngineInputError::WrongNode
 pub engine::execution::EngineInputError::WrongNode::expected: engine::graph::workflow::NodeId
@@ -1200,6 +1257,7 @@ pub engine::execution::EngineRunResult::Failed(engine::execution::artifacts::Run
 pub engine::execution::EngineRunResult::NeedsInteraction
 pub engine::execution::EngineRunResult::NeedsInteraction::approvals: alloc::vec::Vec<engine::execution::interactive_engine::EngineAwaitApproval>
 pub engine::execution::EngineRunResult::NeedsInteraction::inputs: alloc::vec::Vec<engine::execution::interactive_engine::EngineAwaitInput>
+pub engine::execution::EngineRunResult::NeedsInteraction::retryables: alloc::vec::Vec<engine::execution::interactive_engine::EngineRetryableNode>
 impl core::clone::Clone for engine::execution::interactive_engine::EngineRunResult
 pub fn engine::execution::interactive_engine::EngineRunResult::clone(&self) -> engine::execution::interactive_engine::EngineRunResult
 impl core::fmt::Debug for engine::execution::interactive_engine::EngineRunResult
@@ -1338,6 +1396,7 @@ pub engine::execution::RunTelemetry::ChatMessageDelta::delta: alloc::string::Str
 pub engine::execution::RunTelemetry::ChatMessageDelta::finalize: bool
 pub engine::execution::RunTelemetry::ChatMessageDelta::message_id: alloc::string::String
 pub engine::execution::RunTelemetry::ChatMessageDelta::node_id: engine::graph::workflow::NodeId
+pub engine::execution::RunTelemetry::ChatMessageDelta::role: engine::conversation::ChatRole
 pub engine::execution::RunTelemetry::EditBatchRecorded
 pub engine::execution::RunTelemetry::EditBatchRecorded::batch: engine::EditBatch
 pub engine::execution::RunTelemetry::EditBatchRecorded::node_id: engine::graph::workflow::NodeId
@@ -1355,10 +1414,17 @@ pub engine::execution::RunTelemetry::NodeCompleted
 pub engine::execution::RunTelemetry::NodeCompleted::label: alloc::string::String
 pub engine::execution::RunTelemetry::NodeCompleted::node_id: engine::graph::workflow::NodeId
 pub engine::execution::RunTelemetry::NodeCompleted::output: serde_json::value::Value
+pub engine::execution::RunTelemetry::NodeErrored
+pub engine::execution::RunTelemetry::NodeErrored::error: alloc::string::String
+pub engine::execution::RunTelemetry::NodeErrored::label: alloc::string::String
+pub engine::execution::RunTelemetry::NodeErrored::node_id: engine::graph::workflow::NodeId
 pub engine::execution::RunTelemetry::NodeFailed
 pub engine::execution::RunTelemetry::NodeFailed::error: alloc::string::String
 pub engine::execution::RunTelemetry::NodeFailed::label: alloc::string::String
 pub engine::execution::RunTelemetry::NodeFailed::node_id: engine::graph::workflow::NodeId
+pub engine::execution::RunTelemetry::NodeInterrupted
+pub engine::execution::RunTelemetry::NodeInterrupted::label: alloc::string::String
+pub engine::execution::RunTelemetry::NodeInterrupted::node_id: engine::graph::workflow::NodeId
 pub engine::execution::RunTelemetry::NodeQueued
 pub engine::execution::RunTelemetry::NodeQueued::label: alloc::string::String
 pub engine::execution::RunTelemetry::NodeQueued::node_id: engine::graph::workflow::NodeId
@@ -1678,9 +1744,53 @@ impl<T> core::clone::CloneToUninit for engine::execution::interactive_engine::En
 pub unsafe fn engine::execution::interactive_engine::EngineAwaitInput::clone_to_uninit(&self, *mut u8)
 impl<T> core::convert::From<T> for engine::execution::interactive_engine::EngineAwaitInput
 pub fn engine::execution::interactive_engine::EngineAwaitInput::from(T) -> T
+pub struct engine::execution::EngineRetryableNode
+pub engine::execution::EngineRetryableNode::error: alloc::string::String
+pub engine::execution::EngineRetryableNode::interrupted: bool
+pub engine::execution::EngineRetryableNode::label: alloc::string::String
+pub engine::execution::EngineRetryableNode::node_id: engine::graph::workflow::NodeId
+impl core::clone::Clone for engine::execution::interactive_engine::EngineRetryableNode
+pub fn engine::execution::interactive_engine::EngineRetryableNode::clone(&self) -> engine::execution::interactive_engine::EngineRetryableNode
+impl core::cmp::Eq for engine::execution::interactive_engine::EngineRetryableNode
+impl core::cmp::PartialEq for engine::execution::interactive_engine::EngineRetryableNode
+pub fn engine::execution::interactive_engine::EngineRetryableNode::eq(&self, &engine::execution::interactive_engine::EngineRetryableNode) -> bool
+impl core::fmt::Debug for engine::execution::interactive_engine::EngineRetryableNode
+pub fn engine::execution::interactive_engine::EngineRetryableNode::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::execution::interactive_engine::EngineRetryableNode
+impl core::marker::Freeze for engine::execution::interactive_engine::EngineRetryableNode
+impl core::marker::Send for engine::execution::interactive_engine::EngineRetryableNode
+impl core::marker::Sync for engine::execution::interactive_engine::EngineRetryableNode
+impl core::marker::Unpin for engine::execution::interactive_engine::EngineRetryableNode
+impl core::marker::UnsafeUnpin for engine::execution::interactive_engine::EngineRetryableNode
+impl core::panic::unwind_safe::RefUnwindSafe for engine::execution::interactive_engine::EngineRetryableNode
+impl core::panic::unwind_safe::UnwindSafe for engine::execution::interactive_engine::EngineRetryableNode
+impl<T, U> core::convert::Into<U> for engine::execution::interactive_engine::EngineRetryableNode where U: core::convert::From<T>
+pub fn engine::execution::interactive_engine::EngineRetryableNode::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::execution::interactive_engine::EngineRetryableNode where U: core::convert::Into<T>
+pub type engine::execution::interactive_engine::EngineRetryableNode::Error = core::convert::Infallible
+pub fn engine::execution::interactive_engine::EngineRetryableNode::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::execution::interactive_engine::EngineRetryableNode where U: core::convert::TryFrom<T>
+pub type engine::execution::interactive_engine::EngineRetryableNode::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::execution::interactive_engine::EngineRetryableNode::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::execution::interactive_engine::EngineRetryableNode where T: core::clone::Clone
+pub type engine::execution::interactive_engine::EngineRetryableNode::Owned = T
+pub fn engine::execution::interactive_engine::EngineRetryableNode::clone_into(&self, &mut T)
+pub fn engine::execution::interactive_engine::EngineRetryableNode::to_owned(&self) -> T
+impl<T> core::any::Any for engine::execution::interactive_engine::EngineRetryableNode where T: 'static + ?core::marker::Sized
+pub fn engine::execution::interactive_engine::EngineRetryableNode::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::execution::interactive_engine::EngineRetryableNode where T: ?core::marker::Sized
+pub fn engine::execution::interactive_engine::EngineRetryableNode::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::execution::interactive_engine::EngineRetryableNode where T: ?core::marker::Sized
+pub fn engine::execution::interactive_engine::EngineRetryableNode::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::execution::interactive_engine::EngineRetryableNode where T: core::clone::Clone
+pub unsafe fn engine::execution::interactive_engine::EngineRetryableNode::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::execution::interactive_engine::EngineRetryableNode
+pub fn engine::execution::interactive_engine::EngineRetryableNode::from(T) -> T
 pub struct engine::execution::InteractiveEngine
 impl engine::execution::interactive_engine::InteractiveEngine
 pub fn engine::execution::interactive_engine::InteractiveEngine::conversation_history(&self, &str) -> alloc::vec::Vec<engine::conversation::ChatMessage>
+pub fn engine::execution::interactive_engine::InteractiveEngine::mark_node_interrupted(&mut self, &str)
+pub fn engine::execution::interactive_engine::InteractiveEngine::model_attempt_for_node(&self, &engine::graph::workflow::NodeId) -> u8
 pub fn engine::execution::interactive_engine::InteractiveEngine::new(engine::graph::workflow::Workflow, core::option::Option<alloc::string::String>) -> core::result::Result<Self, engine::graph::validation::WorkflowValidationError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::node_output(&self, &str) -> core::option::Option<serde_json::value::Value>
 pub fn engine::execution::interactive_engine::InteractiveEngine::on_ai_complete(&mut self, &str, core::result::Result<engine::ports::outbound::AgentTurnOutcome, engine::ports::outbound::AgentError>)
@@ -1689,6 +1799,7 @@ pub fn engine::execution::interactive_engine::InteractiveEngine::on_tool_decisio
 pub fn engine::execution::interactive_engine::InteractiveEngine::on_tool_results(&mut self, &str, alloc::vec::Vec<engine::ToolResult>) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::poll(&mut self) -> engine::execution::interactive_engine::EnginePollResult
 pub fn engine::execution::interactive_engine::InteractiveEngine::record_file_changes(&mut self, &engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>)
+pub fn engine::execution::interactive_engine::InteractiveEngine::retry_node(&mut self, &str) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::revert_file_changes_for_batch(&mut self, &str, &engine::graph::workflow::NodeId)
 pub async fn engine::execution::interactive_engine::InteractiveEngine::run<A: engine::ports::outbound::AiPort, T: engine::ports::outbound::ToolPort>(&mut self, &A, &T, &tokio_util::sync::cancellation_token::CancellationToken) -> engine::execution::interactive_engine::EngineRunResult
 pub fn engine::execution::interactive_engine::InteractiveEngine::transcript(&self, &str) -> &[engine::conversation::AgentTranscriptItem]
@@ -2140,6 +2251,9 @@ pub engine::graph::workflow::AgentNodeConfig::auto_start: bool
 pub engine::graph::workflow::AgentNodeConfig::callable_agents: alloc::vec::Vec<alloc::string::String>
 pub engine::graph::workflow::AgentNodeConfig::model: alloc::string::String
 pub engine::graph::workflow::AgentNodeConfig::output_schema: serde_json::value::Value
+pub engine::graph::workflow::AgentNodeConfig::provider_id: core::option::Option<alloc::string::String>
+pub engine::graph::workflow::AgentNodeConfig::reasoning_budget_tokens: core::option::Option<u32>
+pub engine::graph::workflow::AgentNodeConfig::reasoning_effort: core::option::Option<alloc::string::String>
 pub engine::graph::workflow::AgentNodeConfig::system_prompt: alloc::string::String
 pub engine::graph::workflow::AgentNodeConfig::task_prompt: alloc::string::String
 pub engine::graph::workflow::AgentNodeConfig::tools: engine::NodeToolConfig
@@ -2832,6 +2946,9 @@ pub engine::graph::AgentNodeConfig::auto_start: bool
 pub engine::graph::AgentNodeConfig::callable_agents: alloc::vec::Vec<alloc::string::String>
 pub engine::graph::AgentNodeConfig::model: alloc::string::String
 pub engine::graph::AgentNodeConfig::output_schema: serde_json::value::Value
+pub engine::graph::AgentNodeConfig::provider_id: core::option::Option<alloc::string::String>
+pub engine::graph::AgentNodeConfig::reasoning_budget_tokens: core::option::Option<u32>
+pub engine::graph::AgentNodeConfig::reasoning_effort: core::option::Option<alloc::string::String>
 pub engine::graph::AgentNodeConfig::system_prompt: alloc::string::String
 pub engine::graph::AgentNodeConfig::task_prompt: alloc::string::String
 pub engine::graph::AgentNodeConfig::tools: engine::NodeToolConfig
@@ -3572,9 +3689,11 @@ pub fn engine::execution::interactive_engine::InteractiveEngine::submit_tool_app
 pub mod engine::ports::outbound
 pub enum engine::ports::outbound::AgentError
 pub engine::ports::outbound::AgentError::Failed(alloc::string::String)
+pub engine::ports::outbound::AgentError::Interrupted
 pub engine::ports::outbound::AgentError::Permanent(alloc::string::String)
 pub engine::ports::outbound::AgentError::Transient(alloc::string::String)
 impl engine::ports::outbound::AgentError
+pub const fn engine::ports::outbound::AgentError::is_interrupted(&self) -> bool
 pub fn engine::ports::outbound::AgentError::is_malformed_submit_output(&self) -> bool
 pub const fn engine::ports::outbound::AgentError::is_retryable(&self) -> bool
 impl core::error::Error for engine::ports::outbound::AgentError
@@ -3651,6 +3770,8 @@ pub fn engine::ports::outbound::AgentTurnOutcome::from(T) -> T
 pub enum engine::ports::outbound::AiStreamEvent
 pub engine::ports::outbound::AiStreamEvent::AssistantDelta
 pub engine::ports::outbound::AiStreamEvent::AssistantDelta::content: alloc::string::String
+pub engine::ports::outbound::AiStreamEvent::ThinkingDelta
+pub engine::ports::outbound::AiStreamEvent::ThinkingDelta::content: alloc::string::String
 impl core::clone::Clone for engine::ports::outbound::AiStreamEvent
 pub fn engine::ports::outbound::AiStreamEvent::clone(&self) -> engine::ports::outbound::AiStreamEvent
 impl core::cmp::Eq for engine::ports::outbound::AiStreamEvent
@@ -3736,6 +3857,8 @@ pub engine::ports::outbound::AgentRequest::model_attempt: u8
 pub engine::ports::outbound::AgentRequest::node_id: engine::graph::workflow::NodeId
 pub engine::ports::outbound::AgentRequest::node_label: alloc::string::String
 pub engine::ports::outbound::AgentRequest::output_schema: serde_json::value::Value
+pub engine::ports::outbound::AgentRequest::reasoning_budget_tokens: core::option::Option<u32>
+pub engine::ports::outbound::AgentRequest::reasoning_effort: core::option::Option<alloc::string::String>
 pub engine::ports::outbound::AgentRequest::system_messages: alloc::vec::Vec<alloc::string::String>
 pub engine::ports::outbound::AgentRequest::task_prompt: alloc::string::String
 pub engine::ports::outbound::AgentRequest::tool_config: engine::NodeToolConfig
@@ -3879,9 +4002,11 @@ pub fn alloc::boxed::Box<T>::execute_batch<'life0, 'life1, 'life2, 'life3, 'asyn
 pub fn engine::ports::outbound::emit_assistant_deltas_from_outcome(&dyn engine::ports::outbound::AiStreamSink, &engine::ports::outbound::AgentTurnOutcome)
 pub enum engine::ports::AgentError
 pub engine::ports::AgentError::Failed(alloc::string::String)
+pub engine::ports::AgentError::Interrupted
 pub engine::ports::AgentError::Permanent(alloc::string::String)
 pub engine::ports::AgentError::Transient(alloc::string::String)
 impl engine::ports::outbound::AgentError
+pub const fn engine::ports::outbound::AgentError::is_interrupted(&self) -> bool
 pub fn engine::ports::outbound::AgentError::is_malformed_submit_output(&self) -> bool
 pub const fn engine::ports::outbound::AgentError::is_retryable(&self) -> bool
 impl core::error::Error for engine::ports::outbound::AgentError
@@ -3958,6 +4083,8 @@ pub fn engine::ports::outbound::AgentTurnOutcome::from(T) -> T
 pub enum engine::ports::AiStreamEvent
 pub engine::ports::AiStreamEvent::AssistantDelta
 pub engine::ports::AiStreamEvent::AssistantDelta::content: alloc::string::String
+pub engine::ports::AiStreamEvent::ThinkingDelta
+pub engine::ports::AiStreamEvent::ThinkingDelta::content: alloc::string::String
 impl core::clone::Clone for engine::ports::outbound::AiStreamEvent
 pub fn engine::ports::outbound::AiStreamEvent::clone(&self) -> engine::ports::outbound::AiStreamEvent
 impl core::cmp::Eq for engine::ports::outbound::AiStreamEvent
@@ -4043,6 +4170,8 @@ pub engine::ports::AgentRequest::model_attempt: u8
 pub engine::ports::AgentRequest::node_id: engine::graph::workflow::NodeId
 pub engine::ports::AgentRequest::node_label: alloc::string::String
 pub engine::ports::AgentRequest::output_schema: serde_json::value::Value
+pub engine::ports::AgentRequest::reasoning_budget_tokens: core::option::Option<u32>
+pub engine::ports::AgentRequest::reasoning_effort: core::option::Option<alloc::string::String>
 pub engine::ports::AgentRequest::system_messages: alloc::vec::Vec<alloc::string::String>
 pub engine::ports::AgentRequest::task_prompt: alloc::string::String
 pub engine::ports::AgentRequest::tool_config: engine::NodeToolConfig
@@ -5580,9 +5709,11 @@ pub fn engine::tools::tool_decision_for_call(&engine::NodeToolConfig, &engine::T
 pub fn engine::tools::tool_tier_for_call(&engine::NodeToolConfig, &str) -> engine::ToolTier
 pub enum engine::AgentError
 pub engine::AgentError::Failed(alloc::string::String)
+pub engine::AgentError::Interrupted
 pub engine::AgentError::Permanent(alloc::string::String)
 pub engine::AgentError::Transient(alloc::string::String)
 impl engine::ports::outbound::AgentError
+pub const fn engine::ports::outbound::AgentError::is_interrupted(&self) -> bool
 pub fn engine::ports::outbound::AgentError::is_malformed_submit_output(&self) -> bool
 pub const fn engine::ports::outbound::AgentError::is_retryable(&self) -> bool
 impl core::error::Error for engine::ports::outbound::AgentError
@@ -5710,6 +5841,8 @@ pub fn engine::ports::outbound::AgentTurnOutcome::from(T) -> T
 pub enum engine::AiStreamEvent
 pub engine::AiStreamEvent::AssistantDelta
 pub engine::AiStreamEvent::AssistantDelta::content: alloc::string::String
+pub engine::AiStreamEvent::ThinkingDelta
+pub engine::AiStreamEvent::ThinkingDelta::content: alloc::string::String
 impl core::clone::Clone for engine::ports::outbound::AiStreamEvent
 pub fn engine::ports::outbound::AiStreamEvent::clone(&self) -> engine::ports::outbound::AiStreamEvent
 impl core::cmp::Eq for engine::ports::outbound::AiStreamEvent
@@ -5890,6 +6023,7 @@ impl<T> serde_core::de::DeserializeOwned for engine::conversation::ChatRole wher
 pub enum engine::EngineInputError
 pub engine::EngineInputError::NoNodeAwaiting
 pub engine::EngineInputError::NoPendingTools
+pub engine::EngineInputError::NodeNotRetryable(engine::graph::workflow::NodeId)
 pub engine::EngineInputError::UnknownApproval(alloc::string::String)
 pub engine::EngineInputError::WrongNode
 pub engine::EngineInputError::WrongNode::expected: engine::graph::workflow::NodeId
@@ -5996,6 +6130,7 @@ pub engine::EngineRunResult::Failed(engine::execution::artifacts::RunError)
 pub engine::EngineRunResult::NeedsInteraction
 pub engine::EngineRunResult::NeedsInteraction::approvals: alloc::vec::Vec<engine::execution::interactive_engine::EngineAwaitApproval>
 pub engine::EngineRunResult::NeedsInteraction::inputs: alloc::vec::Vec<engine::execution::interactive_engine::EngineAwaitInput>
+pub engine::EngineRunResult::NeedsInteraction::retryables: alloc::vec::Vec<engine::execution::interactive_engine::EngineRetryableNode>
 impl core::clone::Clone for engine::execution::interactive_engine::EngineRunResult
 pub fn engine::execution::interactive_engine::EngineRunResult::clone(&self) -> engine::execution::interactive_engine::EngineRunResult
 impl core::fmt::Debug for engine::execution::interactive_engine::EngineRunResult
@@ -6226,6 +6361,7 @@ pub engine::RunTelemetry::ChatMessageDelta::delta: alloc::string::String
 pub engine::RunTelemetry::ChatMessageDelta::finalize: bool
 pub engine::RunTelemetry::ChatMessageDelta::message_id: alloc::string::String
 pub engine::RunTelemetry::ChatMessageDelta::node_id: engine::graph::workflow::NodeId
+pub engine::RunTelemetry::ChatMessageDelta::role: engine::conversation::ChatRole
 pub engine::RunTelemetry::EditBatchRecorded
 pub engine::RunTelemetry::EditBatchRecorded::batch: engine::EditBatch
 pub engine::RunTelemetry::EditBatchRecorded::node_id: engine::graph::workflow::NodeId
@@ -6243,10 +6379,17 @@ pub engine::RunTelemetry::NodeCompleted
 pub engine::RunTelemetry::NodeCompleted::label: alloc::string::String
 pub engine::RunTelemetry::NodeCompleted::node_id: engine::graph::workflow::NodeId
 pub engine::RunTelemetry::NodeCompleted::output: serde_json::value::Value
+pub engine::RunTelemetry::NodeErrored
+pub engine::RunTelemetry::NodeErrored::error: alloc::string::String
+pub engine::RunTelemetry::NodeErrored::label: alloc::string::String
+pub engine::RunTelemetry::NodeErrored::node_id: engine::graph::workflow::NodeId
 pub engine::RunTelemetry::NodeFailed
 pub engine::RunTelemetry::NodeFailed::error: alloc::string::String
 pub engine::RunTelemetry::NodeFailed::label: alloc::string::String
 pub engine::RunTelemetry::NodeFailed::node_id: engine::graph::workflow::NodeId
+pub engine::RunTelemetry::NodeInterrupted
+pub engine::RunTelemetry::NodeInterrupted::label: alloc::string::String
+pub engine::RunTelemetry::NodeInterrupted::node_id: engine::graph::workflow::NodeId
 pub engine::RunTelemetry::NodeQueued
 pub engine::RunTelemetry::NodeQueued::label: alloc::string::String
 pub engine::RunTelemetry::NodeQueued::node_id: engine::graph::workflow::NodeId
@@ -6889,6 +7032,9 @@ pub engine::AgentNodeConfig::auto_start: bool
 pub engine::AgentNodeConfig::callable_agents: alloc::vec::Vec<alloc::string::String>
 pub engine::AgentNodeConfig::model: alloc::string::String
 pub engine::AgentNodeConfig::output_schema: serde_json::value::Value
+pub engine::AgentNodeConfig::provider_id: core::option::Option<alloc::string::String>
+pub engine::AgentNodeConfig::reasoning_budget_tokens: core::option::Option<u32>
+pub engine::AgentNodeConfig::reasoning_effort: core::option::Option<alloc::string::String>
 pub engine::AgentNodeConfig::system_prompt: alloc::string::String
 pub engine::AgentNodeConfig::task_prompt: alloc::string::String
 pub engine::AgentNodeConfig::tools: engine::NodeToolConfig
@@ -6944,6 +7090,8 @@ pub engine::AgentRequest::model_attempt: u8
 pub engine::AgentRequest::node_id: engine::graph::workflow::NodeId
 pub engine::AgentRequest::node_label: alloc::string::String
 pub engine::AgentRequest::output_schema: serde_json::value::Value
+pub engine::AgentRequest::reasoning_budget_tokens: core::option::Option<u32>
+pub engine::AgentRequest::reasoning_effort: core::option::Option<alloc::string::String>
 pub engine::AgentRequest::system_messages: alloc::vec::Vec<alloc::string::String>
 pub engine::AgentRequest::task_prompt: alloc::string::String
 pub engine::AgentRequest::tool_config: engine::NodeToolConfig
@@ -7174,6 +7322,7 @@ pub engine::ChatMessage::tool_call_id: core::option::Option<alloc::string::Strin
 impl engine::conversation::ChatMessage
 pub fn engine::conversation::ChatMessage::node_completed(impl core::convert::Into<alloc::string::String>) -> Self
 pub fn engine::conversation::ChatMessage::streaming_assistant(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>) -> Self
+pub fn engine::conversation::ChatMessage::streaming_thinking(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>) -> Self
 pub fn engine::conversation::ChatMessage::text(engine::conversation::ChatRole, impl core::convert::Into<alloc::string::String>) -> Self
 pub fn engine::conversation::ChatMessage::tool_marker(impl core::convert::Into<alloc::string::String>) -> Self
 impl core::clone::Clone for engine::conversation::ChatMessage
@@ -7461,6 +7610,48 @@ impl<T> core::clone::CloneToUninit for engine::execution::interactive_engine::En
 pub unsafe fn engine::execution::interactive_engine::EngineAwaitInput::clone_to_uninit(&self, *mut u8)
 impl<T> core::convert::From<T> for engine::execution::interactive_engine::EngineAwaitInput
 pub fn engine::execution::interactive_engine::EngineAwaitInput::from(T) -> T
+pub struct engine::EngineRetryableNode
+pub engine::EngineRetryableNode::error: alloc::string::String
+pub engine::EngineRetryableNode::interrupted: bool
+pub engine::EngineRetryableNode::label: alloc::string::String
+pub engine::EngineRetryableNode::node_id: engine::graph::workflow::NodeId
+impl core::clone::Clone for engine::execution::interactive_engine::EngineRetryableNode
+pub fn engine::execution::interactive_engine::EngineRetryableNode::clone(&self) -> engine::execution::interactive_engine::EngineRetryableNode
+impl core::cmp::Eq for engine::execution::interactive_engine::EngineRetryableNode
+impl core::cmp::PartialEq for engine::execution::interactive_engine::EngineRetryableNode
+pub fn engine::execution::interactive_engine::EngineRetryableNode::eq(&self, &engine::execution::interactive_engine::EngineRetryableNode) -> bool
+impl core::fmt::Debug for engine::execution::interactive_engine::EngineRetryableNode
+pub fn engine::execution::interactive_engine::EngineRetryableNode::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::execution::interactive_engine::EngineRetryableNode
+impl core::marker::Freeze for engine::execution::interactive_engine::EngineRetryableNode
+impl core::marker::Send for engine::execution::interactive_engine::EngineRetryableNode
+impl core::marker::Sync for engine::execution::interactive_engine::EngineRetryableNode
+impl core::marker::Unpin for engine::execution::interactive_engine::EngineRetryableNode
+impl core::marker::UnsafeUnpin for engine::execution::interactive_engine::EngineRetryableNode
+impl core::panic::unwind_safe::RefUnwindSafe for engine::execution::interactive_engine::EngineRetryableNode
+impl core::panic::unwind_safe::UnwindSafe for engine::execution::interactive_engine::EngineRetryableNode
+impl<T, U> core::convert::Into<U> for engine::execution::interactive_engine::EngineRetryableNode where U: core::convert::From<T>
+pub fn engine::execution::interactive_engine::EngineRetryableNode::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::execution::interactive_engine::EngineRetryableNode where U: core::convert::Into<T>
+pub type engine::execution::interactive_engine::EngineRetryableNode::Error = core::convert::Infallible
+pub fn engine::execution::interactive_engine::EngineRetryableNode::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::execution::interactive_engine::EngineRetryableNode where U: core::convert::TryFrom<T>
+pub type engine::execution::interactive_engine::EngineRetryableNode::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::execution::interactive_engine::EngineRetryableNode::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::execution::interactive_engine::EngineRetryableNode where T: core::clone::Clone
+pub type engine::execution::interactive_engine::EngineRetryableNode::Owned = T
+pub fn engine::execution::interactive_engine::EngineRetryableNode::clone_into(&self, &mut T)
+pub fn engine::execution::interactive_engine::EngineRetryableNode::to_owned(&self) -> T
+impl<T> core::any::Any for engine::execution::interactive_engine::EngineRetryableNode where T: 'static + ?core::marker::Sized
+pub fn engine::execution::interactive_engine::EngineRetryableNode::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::execution::interactive_engine::EngineRetryableNode where T: ?core::marker::Sized
+pub fn engine::execution::interactive_engine::EngineRetryableNode::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::execution::interactive_engine::EngineRetryableNode where T: ?core::marker::Sized
+pub fn engine::execution::interactive_engine::EngineRetryableNode::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::execution::interactive_engine::EngineRetryableNode where T: core::clone::Clone
+pub unsafe fn engine::execution::interactive_engine::EngineRetryableNode::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::execution::interactive_engine::EngineRetryableNode
+pub fn engine::execution::interactive_engine::EngineRetryableNode::from(T) -> T
 pub struct engine::FileChangeRecord
 pub engine::FileChangeRecord::batch_id: core::option::Option<alloc::string::String>
 pub engine::FileChangeRecord::diff_summary: core::option::Option<alloc::string::String>
@@ -7599,6 +7790,8 @@ pub fn engine::ports::inbound::HumanInput::from(T) -> T
 pub struct engine::InteractiveEngine
 impl engine::execution::interactive_engine::InteractiveEngine
 pub fn engine::execution::interactive_engine::InteractiveEngine::conversation_history(&self, &str) -> alloc::vec::Vec<engine::conversation::ChatMessage>
+pub fn engine::execution::interactive_engine::InteractiveEngine::mark_node_interrupted(&mut self, &str)
+pub fn engine::execution::interactive_engine::InteractiveEngine::model_attempt_for_node(&self, &engine::graph::workflow::NodeId) -> u8
 pub fn engine::execution::interactive_engine::InteractiveEngine::new(engine::graph::workflow::Workflow, core::option::Option<alloc::string::String>) -> core::result::Result<Self, engine::graph::validation::WorkflowValidationError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::node_output(&self, &str) -> core::option::Option<serde_json::value::Value>
 pub fn engine::execution::interactive_engine::InteractiveEngine::on_ai_complete(&mut self, &str, core::result::Result<engine::ports::outbound::AgentTurnOutcome, engine::ports::outbound::AgentError>)
@@ -7607,6 +7800,7 @@ pub fn engine::execution::interactive_engine::InteractiveEngine::on_tool_decisio
 pub fn engine::execution::interactive_engine::InteractiveEngine::on_tool_results(&mut self, &str, alloc::vec::Vec<engine::ToolResult>) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::poll(&mut self) -> engine::execution::interactive_engine::EnginePollResult
 pub fn engine::execution::interactive_engine::InteractiveEngine::record_file_changes(&mut self, &engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>)
+pub fn engine::execution::interactive_engine::InteractiveEngine::retry_node(&mut self, &str) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::revert_file_changes_for_batch(&mut self, &str, &engine::graph::workflow::NodeId)
 pub async fn engine::execution::interactive_engine::InteractiveEngine::run<A: engine::ports::outbound::AiPort, T: engine::ports::outbound::ToolPort>(&mut self, &A, &T, &tokio_util::sync::cancellation_token::CancellationToken) -> engine::execution::interactive_engine::EngineRunResult
 pub fn engine::execution::interactive_engine::InteractiveEngine::transcript(&self, &str) -> &[engine::conversation::AgentTranscriptItem]

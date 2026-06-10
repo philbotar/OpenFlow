@@ -19,6 +19,7 @@ categories = ["development-tools", "gui"]
 
 [workspace.dependencies]
 async-trait = "0.1.89"
+bytes = "1"
 dirs = "6.0.0"
 futures = "0.3.32"
 parking_lot = "0.12.5"

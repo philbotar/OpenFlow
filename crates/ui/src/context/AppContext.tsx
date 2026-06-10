@@ -18,6 +18,7 @@ import type {
   Workflow,
   WorkflowRunState,
 } from "../lib/types";
+import type { ResolvedTheme, ThemePreference } from "../lib/theme";
 import type { ChatSubmissionResolution } from "../lib/chatCommands";
 import type {
   WorkflowCanvasGraph,
@@ -61,6 +62,11 @@ export interface AppContextValue {
   isMaximized: Accessor<boolean>;
   availableSkills: Accessor<SkillSummary[]>;
   skillById: Accessor<Map<string, SkillSummary>>;
+  appReady: Accessor<boolean>;
+  startingRun: Accessor<boolean>;
+  themePreference: Accessor<ThemePreference>;
+  resolvedTheme: Accessor<ResolvedTheme>;
+  shortcutsModalOpen: Accessor<boolean>;
 
   // ── Signal setters (form inputs + simple UI state) ────────────────────────
   setWorkflowNameDraft: Setter<string>;
@@ -149,7 +155,12 @@ export interface AppContextValue {
   handleValidate: () => Promise<void>;
   handleRun: () => Promise<void>;
   handleStopRun: () => Promise<void>;
+  handleInterruptNode: (nodeId: NodeId) => Promise<void>;
+  handleRetryNode: (nodeId: NodeId) => Promise<void>;
   stoppingRun: Accessor<boolean>;
+  handleSetThemePreference: (preference: ThemePreference) => void;
+  openShortcutsModal: () => void;
+  closeShortcutsModal: () => void;
   handleClearRunTrace: () => Promise<void>;
   handleSubmitChat: () => Promise<void>;
   handleRefreshSkills: () => Promise<void>;

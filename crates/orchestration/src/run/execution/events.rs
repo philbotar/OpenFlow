@@ -60,6 +60,7 @@ pub fn apply_event_to_run_state(
         ExecutionEvent::ChatMessageDelta {
             node_id,
             message_id,
+            role,
             delta,
             finalize,
         } => {
@@ -71,23 +72,28 @@ pub fn apply_event_to_run_state(
                 .find(|message| message.id.as_deref() == Some(message_id.as_str()))
             {
                 if !delta.is_empty() {
+                    // Accumulate raw while streaming; the UI strips markup for
+                    // display. Stripping the stored content on every delta is
+                    // O(n²) over the stream and lossy when markup spans delta
+                    // boundaries.
                     message.content.push_str(&delta);
-                    if !finalize {
-                        message.content = strip_tool_call_markup(&message.content);
-                    }
                 }
                 if finalize {
                     message.streaming = false;
-                    message.content = strip_tool_call_markup(&message.content);
+                    if message.role == ChatRole::Assistant {
+                        message.content = strip_tool_call_markup(&message.content);
+                    }
                     if message.content.trim().is_empty() {
                         drop_message_id = Some(message_id.clone());
                     }
                 }
             } else if !finalize {
-                logs.push(ChatMessage::streaming_assistant(
-                    message_id,
-                    strip_tool_call_markup(&delta),
-                ));
+                let message = if role == ChatRole::Thinking {
+                    ChatMessage::streaming_thinking(message_id, delta)
+                } else {
+                    ChatMessage::streaming_assistant(message_id, delta)
+                };
+                logs.push(message);
             }
             if let Some(id) = drop_message_id {
                 logs.retain(|message| message.id.as_deref() != Some(id.as_str()));
@@ -309,6 +315,67 @@ pub fn apply_event_to_run_state(
                     .or_default()
                     .push(ChatMessage::node_completed(summary));
             }
+        }
+        ExecutionEvent::NodeInterrupted { node_id, label } => {
+            remove_awaiting_node(state, &node_id);
+            state
+                .pending_approvals
+                .retain(|approval| approval.node_id != node_id.0);
+            if state.active_manual_node_id.as_ref() == Some(&node_id) {
+                state.active_manual_node_id = None;
+            }
+            state.active_tool_call_id = None;
+            state
+                .status_by_node
+                .insert(node_id.clone(), AgentStatus::Interrupted);
+            state.run_trace.push(RunTraceEntry {
+                node_id: node_id.clone(),
+                node_label: label,
+                status: TraceStatus::Paused,
+                message: "interrupted by user".to_string(),
+                output: None,
+            });
+            state
+                .chat_logs
+                .entry(node_id)
+                .or_default()
+                .push(ChatMessage::text(
+                    ChatRole::System,
+                    "Interrupted by user.".to_string(),
+                ));
+        }
+        ExecutionEvent::NodeErrored {
+            node_id,
+            label,
+            error,
+        } => {
+            remove_awaiting_node(state, &node_id);
+            state
+                .pending_approvals
+                .retain(|approval| approval.node_id != node_id.0);
+            if state.active_manual_node_id.as_ref() == Some(&node_id) {
+                state.active_manual_node_id = None;
+            }
+            state.active_tool_call_id = None;
+            state
+                .status_by_node
+                .insert(node_id.clone(), AgentStatus::Failed);
+            state.run_trace.push(RunTraceEntry {
+                node_id: node_id.clone(),
+                node_label: label,
+                status: TraceStatus::Failed,
+                message: error.clone(),
+                output: None,
+            });
+            state.last_error = Some(error.clone());
+            state
+                .chat_logs
+                .entry(node_id)
+                .or_default()
+                .push(ChatMessage::text(
+                    ChatRole::System,
+                    format!("Failed: {error}"),
+                ));
         }
         ExecutionEvent::NodeFailed {
             node_id,

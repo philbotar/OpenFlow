@@ -2,6 +2,7 @@ import { createResource, For, Show } from "solid-js";
 import { createUiDesktopOutboundAdapter } from "../../port";
 import { useAppContext } from "../../context/AppContext";
 import { prettyJson } from "../../lib/workflow";
+import { Spinner } from "../Spinner";
 import { isFileEditTool } from "./FileChangesPanel";
 
 const desktop = createUiDesktopOutboundAdapter();
@@ -127,7 +128,10 @@ export function ToolApprovalCard() {
             <div class="file-edit-preview">
               <div class="eyebrow">Preview</div>
               <Show when={preview.loading}>
-                <p class="file-edit-preview-status">Computing diff…</p>
+                <p class="file-edit-preview-status loading-inline">
+                  <Spinner size="sm" />
+                  Computing diff…
+                </p>
               </Show>
               <Show when={preview.error}>
                 <p class="file-edit-preview-error">{String(preview.error)}</p>

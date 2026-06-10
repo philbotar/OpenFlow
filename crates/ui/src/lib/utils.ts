@@ -49,6 +49,7 @@ export function chatRoleLabel(
       return "System";
     case "thinking":
     case "Thinking":
+      return "Thinking";
     case "assistant":
     case "Assistant":
       return nodeLabel?.trim() || "Node";

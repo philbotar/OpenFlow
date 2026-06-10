@@ -11,6 +11,8 @@ type WorkflowCanvasHostProps = {
   selectedEdgeId: EdgeId | null;
   statusByNode: WorkflowCanvasStatusByNode | null;
   subagentsByNode: WorkflowCanvasSubagentsByNode | null;
+  runActive?: boolean;
+  colorMode?: "light" | "dark";
   onSelectNode: (nodeId: NodeId | null) => void;
   onSelectEdge: (edgeId: EdgeId | null) => void;
   onUpdateNodePosition: (nodeId: NodeId, x: number, y: number) => void;
@@ -18,6 +20,8 @@ type WorkflowCanvasHostProps = {
   onReconnectEdge: (edgeId: EdgeId, from: NodeId, to: NodeId) => void;
   onDeleteEdge: (edgeId: EdgeId) => void;
   onAddNode: () => void;
+  onInterruptNode?: (nodeId: NodeId) => void;
+  onRetryNode?: (nodeId: NodeId) => void;
 };
 
 function WorkflowCanvasHost(props: WorkflowCanvasHostProps) {
@@ -36,6 +40,8 @@ function WorkflowCanvasHost(props: WorkflowCanvasHostProps) {
         selectedEdgeId: props.selectedEdgeId,
         statusByNode: props.statusByNode,
         subagentsByNode: props.subagentsByNode,
+        runActive: props.runActive,
+        colorMode: props.colorMode,
         onSelectNode: props.onSelectNode,
         onSelectEdge: props.onSelectEdge,
         onUpdateNodePosition: props.onUpdateNodePosition,
@@ -43,6 +49,8 @@ function WorkflowCanvasHost(props: WorkflowCanvasHostProps) {
         onReconnectEdge: props.onReconnectEdge,
         onDeleteEdge: props.onDeleteEdge,
         onAddNode: props.onAddNode,
+        onInterruptNode: props.onInterruptNode,
+        onRetryNode: props.onRetryNode,
       }),
     );
   });

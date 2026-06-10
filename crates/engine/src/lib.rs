@@ -20,10 +20,10 @@ pub use execution::{
     is_subagent_runtime_builtin, merge_shared_context, merge_subagent_summaries,
     start_subagent_invoke, subagent_runtime_builtin_denied, upstream_changed_files,
     CallSubagentArgs, EngineAwaitApproval, EngineAwaitInput, EngineInputError, EnginePollResult,
-    EngineRunResult, InteractiveEngine, NodeInvocationContext, NodeRunOutput, RunError, RunEvent,
-    RunEventKind, RunReport, RunTelemetry, SubagentInvokeSession, SubagentInvokeStep,
-    SubagentStartOutcome, WorkflowRunner, CALL_SUBAGENT_TOOL, DECLARE_SUBAGENTS_TOOL,
-    NODE_RUNTIME_PREAMBLE,
+    EngineRetryableNode, EngineRunResult, InteractiveEngine, NodeInvocationContext, NodeRunOutput,
+    RunError, RunEvent, RunEventKind, RunReport, RunTelemetry, SubagentInvokeSession,
+    SubagentInvokeStep, SubagentStartOutcome, WorkflowRunner, CALL_SUBAGENT_TOOL,
+    DECLARE_SUBAGENTS_TOOL, NODE_RUNTIME_PREAMBLE,
 };
 pub use graph::{
     build_predefined_subagent_summaries, execution_layers, resolve_callable_agent_snapshots,

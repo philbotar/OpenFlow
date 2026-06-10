@@ -41,4 +41,8 @@ pub enum BackendError {
     GitFailed(String),
     #[error("edit batch {0} not found")]
     EditBatchNotFound(String),
+    #[error("node {0} cannot be interrupted in its current state")]
+    NodeNotInterruptible(String),
+    #[error("node {0} is not retryable")]
+    NodeNotRetryable(String),
 }

@@ -6,6 +6,7 @@ import {
   onMount,
 } from "solid-js";
 import type { ParentProps } from "solid-js";
+import { createStore, reconcile } from "solid-js/store";
 import { toast } from "solid-sonner";
 import { getAppWindow, openNativeDialog } from "../api";
 import { bindRunStateEvents, createUiDesktopOutboundAdapter } from "../port";
@@ -38,6 +39,7 @@ import {
   removeSelectedNode,
   replaceWorkflow,
   selectedNode,
+  withDefaultReasoningFromProfile,
   type WorkflowCanvasGraph,
   type WorkflowCanvasStatusByNode,
   type WorkflowCanvasSubagentsByNode,
@@ -70,6 +72,13 @@ import {
   shouldCollapseDock,
   STATUS_TOAST_ID,
 } from "../lib/utils";
+import {
+  applyTheme,
+  readStoredTheme,
+  resolveTheme,
+  writeStoredTheme,
+  type ThemePreference,
+} from "../lib/theme";
 import { AppContext } from "./AppContext";
 
 export function AppProvider(props: ParentProps) {
@@ -88,7 +97,22 @@ export function AppProvider(props: ParentProps) {
   const [selectedEdgeId, setSelectedEdgeId] = createSignal<EdgeId | null>(null);
   const [screen, setScreen] = createSignal<"editor" | "settings" | "agents">("editor");
   const [settings, setSettings] = createSignal<AppSettings>(cloneSettings(EMPTY_SETTINGS));
-  const [runState, setRunState] = createSignal<WorkflowRunState | null>(null);
+  // Run state arrives as a freshly-deserialized snapshot on every execution
+  // event (including each streaming token). Holding it in a store and applying
+  // updates with `reconcile` preserves object identity for unchanged messages,
+  // so the conversation <For> reuses rows instead of re-parsing every
+  // message's markdown per token.
+  const [runStateStore, setRunStateStore] = createStore<{
+    current: WorkflowRunState | null;
+  }>({ current: null });
+  const runState = () => runStateStore.current;
+  const setRunState = (next: WorkflowRunState | null) => {
+    if (next === null || runStateStore.current === null) {
+      setRunStateStore("current", next);
+      return;
+    }
+    setRunStateStore("current", reconcile(next, { key: "id" }));
+  };
   const [readiness, setReadiness] = createSignal<{
     ready: boolean;
     provider: string;
@@ -122,6 +146,13 @@ export function AppProvider(props: ParentProps) {
     createSignal<string | null>(null);
   const [isMaximized, setIsMaximized] = createSignal(false);
   const [availableSkills, setAvailableSkills] = createSignal<SkillSummary[]>([]);
+  const [appReady, setAppReady] = createSignal(false);
+  const [startingRun, setStartingRun] = createSignal(false);
+  const [themePreference, setThemePreference] = createSignal<ThemePreference>(
+    readStoredTheme(globalThis.localStorage),
+  );
+  const [shortcutsModalOpen, setShortcutsModalOpen] = createSignal(false);
+  const resolvedTheme = createMemo(() => resolveTheme(themePreference()));
 
   // ── Mutable refs (not signals) ────────────────────────────────────────────
   let workflowNameInput: HTMLInputElement | undefined;
@@ -265,7 +296,6 @@ export function AppProvider(props: ParentProps) {
 
   // ── Dock ──────────────────────────────────────────────────────────────────
   const handleSelectBottomTab = (tab: BottomTab) => {
-    console.log(`Selecting bottom tab: ${tab}`);
     setBottomTab(tab);
     setDockOpen(true);
     setDockHeight((current) => clampDockHeight(current, tab));
@@ -709,11 +739,12 @@ export function AppProvider(props: ParentProps) {
         placement.y,
         agentId,
       );
-      const defaultModel = activeProfileMemo().default_model;
-      const nextNode =
-        defaultModel && !node.agent.model
-          ? { ...node, agent: { ...node.agent, model: defaultModel } }
-          : node;
+      const profile = activeProfileMemo();
+      let nextAgent = withDefaultReasoningFromProfile(node.agent, profile);
+      if (profile.default_model && !nextAgent.model) {
+        nextAgent = { ...nextAgent, model: profile.default_model };
+      }
+      const nextNode = { ...node, agent: nextAgent };
       updateActiveWorkflow((draft) => {
         draft.nodes.push(nextNode);
       });
@@ -764,7 +795,8 @@ export function AppProvider(props: ParentProps) {
 
   const handleRun = async () => {
     const workflow = activeWorkflow();
-    if (!workflow || !applySchemaEditor() || stoppingRun()) return;
+    if (!workflow || !applySchemaEditor() || stoppingRun() || startingRun()) return;
+    setStartingRun(true);
     try {
       const nextRunState = await desktop.startRun(
         activeWorkflow()!,
@@ -778,8 +810,19 @@ export function AppProvider(props: ParentProps) {
       clearStatusToast();
     } catch (error) {
       setError(normalizeError(error));
+    } finally {
+      setStartingRun(false);
     }
   };
+
+  const handleSetThemePreference = (preference: ThemePreference) => {
+    setThemePreference(preference);
+    writeStoredTheme(globalThis.localStorage, preference);
+    applyTheme(resolveTheme(preference));
+  };
+
+  const openShortcutsModal = () => setShortcutsModalOpen(true);
+  const closeShortcutsModal = () => setShortcutsModalOpen(false);
 
   const handleStopRun = async () => {
     if (!runState()?.active || stoppingRun()) return;
@@ -792,6 +835,24 @@ export function AppProvider(props: ParentProps) {
       setError(normalizeError(error));
     } finally {
       setStoppingRun(false);
+    }
+  };
+
+  const handleInterruptNode = async (nodeId: NodeId) => {
+    if (!runState()?.active) return;
+    try {
+      await desktop.interruptNode(nodeId);
+    } catch (error) {
+      setError(normalizeError(error));
+    }
+  };
+
+  const handleRetryNode = async (nodeId: NodeId) => {
+    if (!runState()?.active) return;
+    try {
+      await desktop.retryNode(nodeId);
+    } catch (error) {
+      setError(normalizeError(error));
     }
   };
 
@@ -1008,6 +1069,11 @@ export function AppProvider(props: ParentProps) {
       void handleStopRun();
       return;
     }
+    if (event.key === "?" && !isTextInputTarget(event.target)) {
+      event.preventDefault();
+      openShortcutsModal();
+      return;
+    }
     if (
       (event.key === "Delete" || event.key === "Backspace") &&
       !isTextInputTarget(event.target) &&
@@ -1037,6 +1103,10 @@ export function AppProvider(props: ParentProps) {
         if (nextReadiness) setReadiness(nextReadiness);
       })
       .catch((error) => setError(normalizeError(error)));
+  });
+
+  createEffect(() => {
+    applyTheme(resolvedTheme());
   });
 
   createEffect(() => {
@@ -1162,9 +1232,19 @@ export function AppProvider(props: ParentProps) {
         data.settings,
         data.runState,
       );
+      setAppReady(true);
     } catch (error) {
       setError(normalizeError(error));
     }
+
+    const media = globalThis.matchMedia?.("(prefers-color-scheme: dark)");
+    const handleSystemThemeChange = () => {
+      if (themePreference() === "system") {
+        applyTheme(resolveTheme("system"));
+      }
+    };
+    media?.addEventListener("change", handleSystemThemeChange);
+    onCleanup(() => media?.removeEventListener("change", handleSystemThemeChange));
   });
 
   // ── Context value ─────────────────────────────────────────────────────────
@@ -1204,6 +1284,11 @@ export function AppProvider(props: ParentProps) {
     isMaximized,
     availableSkills,
     skillById,
+    appReady,
+    startingRun,
+    themePreference,
+    resolvedTheme,
+    shortcutsModalOpen,
     // Setters
     setWorkflowNameDraft,
     setAgentNameDraft,
@@ -1280,7 +1365,12 @@ export function AppProvider(props: ParentProps) {
     handleValidate,
     handleRun,
     handleStopRun,
+    handleInterruptNode,
+    handleRetryNode,
     stoppingRun,
+    handleSetThemePreference,
+    openShortcutsModal,
+    closeShortcutsModal,
     handleClearRunTrace,
     handleSubmitChat,
     handleRefreshSkills,

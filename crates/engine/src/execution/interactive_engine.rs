@@ -75,13 +75,23 @@ pub struct EngineAwaitApproval {
     pub tool_calls: Vec<ToolCall>,
 }
 
+/// Pause payload when a node failed or was interrupted and can be retried.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EngineRetryableNode {
+    pub node_id: NodeId,
+    pub label: String,
+    pub error: String,
+    pub interrupted: bool,
+}
+
 /// Terminal or pause outcome from [`InteractiveEngine::run`].
 #[derive(Debug, Clone)]
 pub enum EngineRunResult {
-    /// One or more nodes paused for human input and/or tool approval.
+    /// One or more nodes paused for human input, tool approval, and/or retry.
     NeedsInteraction {
         inputs: Vec<EngineAwaitInput>,
         approvals: Vec<EngineAwaitApproval>,
+        retryables: Vec<EngineRetryableNode>,
     },
     Completed(RunReport),
     Failed(RunError),
@@ -98,6 +108,8 @@ pub enum EngineInputError {
     NoPendingTools,
     #[error("unknown approval id {0}")]
     UnknownApproval(String),
+    #[error("node {0} is not retryable")]
+    NodeNotRetryable(NodeId),
 }
 
 #[derive(Debug, Clone)]
@@ -128,6 +140,8 @@ pub struct InteractiveEngine {
     request_input_retries_by_node: BTreeMap<NodeId, u8>,
     entrypoint_text: Option<String>,
     terminal_error: Option<RunError>,
+    interrupted_nodes: BTreeSet<NodeId>,
+    failed_nodes: BTreeMap<NodeId, String>,
 }
 
 const MAX_MALFORMED_SUBMIT_OUTPUT_RETRIES: u8 = 3;
@@ -171,6 +185,8 @@ impl InteractiveEngine {
             request_input_retries_by_node: BTreeMap::new(),
             entrypoint_text,
             terminal_error: None,
+            interrupted_nodes: BTreeSet::new(),
+            failed_nodes: BTreeMap::new(),
         })
     }
 
@@ -197,6 +213,8 @@ impl InteractiveEngine {
             || self.awaiting_nodes.contains(node_id)
             || self.in_flight_ai.contains(node_id)
             || self.node_has_pending_tools(node_id)
+            || self.interrupted_nodes.contains(node_id)
+            || self.failed_nodes.contains_key(node_id)
     }
 
     fn schedule_manual_nodes_in_layer(&mut self) {
@@ -238,6 +256,12 @@ impl InteractiveEngine {
     pub fn poll(&mut self) -> EnginePollResult {
         if let Some(error) = self.terminal_error.clone() {
             return EnginePollResult::Failed(error);
+        }
+        if let Some((node_id, message)) = self.failed_nodes.iter().next() {
+            return EnginePollResult::Failed(RunError::NodeFailed {
+                node_id: node_id.clone(),
+                message: message.clone(),
+            });
         }
 
         if let Some((approval_id, pending)) = self.pending_tool_batches.iter().next() {
@@ -369,6 +393,9 @@ impl InteractiveEngine {
                 if cancel.is_cancelled() {
                     return EngineRunResult::Cancelled;
                 }
+                if self.interrupted_nodes.contains(&node_id) {
+                    continue;
+                }
                 if let Err(error) = self.on_tool_results(&node_id, results) {
                     return EngineRunResult::Failed(RunError::NodeFailed {
                         node_id,
@@ -403,8 +430,13 @@ impl InteractiveEngine {
 
             let inputs = self.gather_await_inputs();
             let approvals = self.gather_await_approvals();
-            if !inputs.is_empty() || !approvals.is_empty() {
-                return EngineRunResult::NeedsInteraction { inputs, approvals };
+            let retryables = self.gather_retryable_nodes();
+            if !inputs.is_empty() || !approvals.is_empty() || !retryables.is_empty() {
+                return EngineRunResult::NeedsInteraction {
+                    inputs,
+                    approvals,
+                    retryables,
+                };
             }
 
             if self.current_layer_complete() {
@@ -526,6 +558,31 @@ impl InteractiveEngine {
             .collect()
     }
 
+    fn gather_retryable_nodes(&self) -> Vec<EngineRetryableNode> {
+        let mut retryables = Vec::new();
+        for node_id in &self.interrupted_nodes {
+            if let Some(node) = self.find_node(&node_id.0) {
+                retryables.push(EngineRetryableNode {
+                    node_id: node_id.clone(),
+                    label: node.label.clone(),
+                    error: "interrupted by user".to_string(),
+                    interrupted: true,
+                });
+            }
+        }
+        for (node_id, error) in &self.failed_nodes {
+            if let Some(node) = self.find_node(&node_id.0) {
+                retryables.push(EngineRetryableNode {
+                    node_id: node_id.clone(),
+                    label: node.label.clone(),
+                    error: error.clone(),
+                    interrupted: false,
+                });
+            }
+        }
+        retryables
+    }
+
     /// Apply a model turn outcome for the node currently awaiting completion.
     ///
     /// Misrouted completions (wrong `node_id` or no active node) set a terminal workflow error
@@ -582,6 +639,16 @@ impl InteractiveEngine {
             }
             Err(error) => {
                 let node_id = NodeId(node_id.to_string());
+                if error.is_interrupted() {
+                    self.interrupted_nodes.insert(node_id.clone());
+                    self.events.push(RunEvent {
+                        node_id,
+                        kind: RunEventKind::Failed,
+                        message: "interrupted by user".to_string(),
+                        output: None,
+                    });
+                    return;
+                }
                 if error.is_malformed_submit_output() {
                     let retry_count = self
                         .submit_output_retries_by_node
@@ -628,19 +695,54 @@ impl InteractiveEngine {
                         return;
                     }
                 }
-                let run_error = RunError::NodeFailed {
-                    node_id: node_id.clone(),
-                    message: error.to_string(),
-                };
                 self.events.push(RunEvent {
-                    node_id,
+                    node_id: node_id.clone(),
                     kind: RunEventKind::Failed,
                     message: error.to_string(),
                     output: None,
                 });
-                self.terminal_error = Some(run_error);
+                self.failed_nodes.insert(node_id, error.to_string());
             }
         }
+    }
+
+    /// Current 1-based model invocation attempt for `node_id` (retries increment).
+    #[must_use]
+    pub fn model_attempt_for_node(&self, node_id: &NodeId) -> u8 {
+        self.model_attempt_for(node_id)
+    }
+
+    /// Mark a node interrupted by the user while tools are executing.
+    pub fn mark_node_interrupted(&mut self, node_id: &str) {
+        let node_id = NodeId(node_id.to_string());
+        if self.interrupted_nodes.contains(&node_id) {
+            return;
+        }
+        self.pending_tool_batches
+            .retain(|_, batch| batch.node_id != node_id);
+        self.interrupted_nodes.insert(node_id.clone());
+        self.events.push(RunEvent {
+            node_id,
+            kind: RunEventKind::Failed,
+            message: "interrupted by user".to_string(),
+            output: None,
+        });
+    }
+
+    /// Retry a failed or interrupted node without clearing its transcript.
+    ///
+    /// # Errors
+    /// Returns [`EngineInputError::NodeNotRetryable`] when the node is not paused for retry.
+    pub fn retry_node(&mut self, node_id: &str) -> Result<(), EngineInputError> {
+        let node_id = NodeId(node_id.to_string());
+        if !self.failed_nodes.contains_key(&node_id) && !self.interrupted_nodes.contains(&node_id) {
+            return Err(EngineInputError::NodeNotRetryable(node_id));
+        }
+        self.failed_nodes.remove(&node_id);
+        self.interrupted_nodes.remove(&node_id);
+        let retry_count = self.retries_by_node.entry(node_id).or_default();
+        *retry_count += 1;
+        Ok(())
     }
 
     fn apply_completion(&mut self, node_id: &str, success: AgentTurnSuccess) {
@@ -717,27 +819,6 @@ impl InteractiveEngine {
     }
 
     fn apply_user_input_request(&mut self, node_id: &str, input: AgentNeedUserInput) {
-        // #region agent log
-        {
-            use std::io::Write;
-            use std::time::{SystemTime, UNIX_EPOCH};
-            let timestamp = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|duration| duration.as_millis())
-                .unwrap_or(0);
-            if let Ok(mut file) = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open("/Users/philipbotar/Developer/Step-through-agentic-workflow/.cursor/debug-74ef61.log")
-            {
-                let _ = writeln!(
-                    file,
-                    r#"{{"sessionId":"74ef61","hypothesisId":"H3","location":"interactive_engine.rs:apply_user_input_request","message":"transcript assistant message stored","data":{{"nodeId":"{node_id}","assistantMessage":{}}},"timestamp":{timestamp}}}"#,
-                    serde_json::to_string(&input.assistant_message).unwrap_or_else(|_| "\"\"".to_string())
-                );
-            }
-        }
-        // #endregion
         self.transcripts
             .entry(NodeId(node_id.to_string()))
             .or_default()
@@ -1514,7 +1595,7 @@ mod tests {
     }
 
     #[test]
-    fn permanent_failure_does_not_retry() {
+    fn permanent_failure_pauses_for_manual_retry() {
         let mut workflow = Workflow::new("retry");
         workflow.settings.retry_policy.max_attempts = 3;
         workflow.nodes = vec![node("idea")];
@@ -1524,6 +1605,51 @@ mod tests {
         engine.on_ai_complete("idea", Err(AgentError::Permanent("schema".to_string())));
 
         assert!(matches!(engine.poll(), EnginePollResult::Failed(_)));
+        assert!(matches!(engine.poll(), EnginePollResult::Failed(_)));
+        engine.retry_node("idea").expect("manual retry");
+        assert!(matches!(engine.poll(), EnginePollResult::CallAi { .. }));
+    }
+
+    #[test]
+    fn interrupted_error_is_retryable_without_terminal_failure() {
+        let mut workflow = Workflow::new("interrupt");
+        workflow.nodes = vec![node("idea")];
+        let mut engine = InteractiveEngine::new(workflow, None).unwrap();
+
+        assert!(matches!(engine.poll(), EnginePollResult::CallAi { .. }));
+        engine.on_ai_complete("idea", Err(AgentError::Interrupted));
+
+        engine.retry_node("idea").expect("retry after interrupt");
+        let EnginePollResult::CallAi { request, .. } = engine.poll() else {
+            panic!("expected AI retry with preserved transcript machinery");
+        };
+        assert_eq!(request.model_attempt, 2);
+    }
+
+    #[test]
+    fn retry_node_preserves_transcript_and_bumps_attempt() {
+        let mut workflow = Workflow::new("transcript");
+        workflow.nodes = vec![node("idea")];
+        let mut engine = InteractiveEngine::new(workflow, None).unwrap();
+
+        assert!(matches!(engine.poll(), EnginePollResult::CallAi { .. }));
+        engine.on_ai_complete(
+            "idea",
+            Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
+                raw_text: "{}".to_string(),
+                assistant_message: "What scope?".to_string(),
+            })),
+        );
+        engine.on_human_input("idea", "full app").expect("input");
+        assert!(matches!(engine.poll(), EnginePollResult::CallAi { .. }));
+        engine.on_ai_complete("idea", Err(AgentError::Permanent("boom".to_string())));
+        let len_before = engine.transcript("idea").len();
+        engine.retry_node("idea").expect("retry");
+        let EnginePollResult::CallAi { request, .. } = engine.poll() else {
+            panic!("expected retry AI call");
+        };
+        assert_eq!(request.transcript.len(), len_before);
+        assert_eq!(request.model_attempt, 2);
     }
 
     #[test]

@@ -265,6 +265,14 @@ impl AppBackend {
         self.runs.stop_run().await
     }
 
+    pub async fn interrupt_node(&self, node_id: &str) -> Result<WorkflowRunState, BackendError> {
+        self.runs.interrupt_node(node_id).await
+    }
+
+    pub async fn retry_node(&self, node_id: &str) -> Result<WorkflowRunState, BackendError> {
+        self.runs.retry_node(node_id).await
+    }
+
     #[must_use]
     pub async fn is_run_active(&self) -> bool {
         self.runs.is_run_active().await

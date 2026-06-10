@@ -1,37 +1,55 @@
 use engine::AgentError;
+use futures::Stream;
 use futures::StreamExt;
 use reqwest::Response;
 use serde_json::Value;
 use std::collections::BTreeMap;
+use std::time::Duration;
+use tokio::time::timeout;
+
+#[cfg(test)]
+const IDLE_CHUNK_TIMEOUT: Duration = Duration::from_millis(50);
+#[cfg(not(test))]
+const IDLE_CHUNK_TIMEOUT: Duration = Duration::from_secs(90);
 
 pub async fn stream_sse_data_lines<F>(
     response: Response,
     label: &str,
-    mut on_data: F,
+    on_data: F,
 ) -> Result<(), AgentError>
 where
     F: FnMut(Value) -> Result<(), AgentError>,
 {
     let status = response.status();
     if !status.is_success() {
-        let body = response
-            .text()
-            .await
-            .unwrap_or_else(|_| "<unavailable>".to_string());
-        let message = format!("{label} returned HTTP {status}: {body}");
-        return if status.as_u16() == 429 || status.is_server_error() {
-            Err(AgentError::Transient(message))
-        } else {
-            Err(AgentError::Permanent(message))
-        };
+        return stream_sse_http_error(response, label).await;
     }
+    stream_sse_data_lines_from(response.bytes_stream(), label, on_data).await
+}
 
-    let mut stream = response.bytes_stream();
+async fn stream_sse_data_lines_from<S, F>(
+    mut stream: S,
+    label: &str,
+    mut on_data: F,
+) -> Result<(), AgentError>
+where
+    S: Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Unpin,
+    F: FnMut(Value) -> Result<(), AgentError>,
+{
     let mut buffer: Vec<u8> = Vec::new();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|error| {
-            AgentError::Transient(format!("{label} stream read failed: {error}"))
-        })?;
+    loop {
+        let chunk = match timeout(IDLE_CHUNK_TIMEOUT, stream.next()).await {
+            Ok(Some(chunk)) => chunk.map_err(|error| {
+                AgentError::Transient(format!("{label} stream read failed: {error}"))
+            })?,
+            Ok(None) => break,
+            Err(_) => {
+                return Err(AgentError::Transient(format!(
+                    "{label} stream stalled: no data for {}s",
+                    IDLE_CHUNK_TIMEOUT.as_secs()
+                )));
+            }
+        };
         buffer.extend_from_slice(&chunk);
         while let Some(pos) = buffer.iter().position(|&byte| byte == b'\n') {
             let mut line_bytes = buffer.drain(..=pos).collect::<Vec<_>>();
@@ -58,9 +76,24 @@ where
     Ok(())
 }
 
+async fn stream_sse_http_error(response: Response, label: &str) -> Result<(), AgentError> {
+    let status = response.status();
+    let body = response
+        .text()
+        .await
+        .unwrap_or_else(|_| "<unavailable>".to_string());
+    let message = format!("{label} returned HTTP {status}: {body}");
+    if status.as_u16() == 429 || status.is_server_error() {
+        Err(AgentError::Transient(message))
+    } else {
+        Err(AgentError::Permanent(message))
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct ChatCompletionStreamAggregator {
     pub content: String,
+    pub reasoning: String,
     tool_calls: BTreeMap<usize, StreamingToolCall>,
 }
 
@@ -82,6 +115,13 @@ impl ChatCompletionStreamAggregator {
         if let Some(text) = delta.get("content").and_then(Value::as_str) {
             if !text.is_empty() {
                 self.content.push_str(text);
+            }
+        }
+        for key in ["reasoning_content", "reasoning"] {
+            if let Some(text) = delta.get(key).and_then(Value::as_str) {
+                if !text.is_empty() {
+                    self.reasoning.push_str(text);
+                }
             }
         }
         if let Some(calls) = delta.get("tool_calls").and_then(Value::as_array) {
@@ -135,6 +175,28 @@ impl ChatCompletionStreamAggregator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bytes::Bytes;
+    use futures::stream;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+    struct YieldOnceThenStall {
+        yielded: bool,
+    }
+
+    impl Stream for YieldOnceThenStall {
+        type Item = Result<Bytes, reqwest::Error>;
+
+        fn poll_next(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            if self.yielded {
+                Poll::Pending
+            } else {
+                self.yielded = true;
+                Poll::Ready(Some(Ok(Bytes::from(
+                    "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n",
+                ))))
+            }
+        }
+    }
 
     #[test]
     fn utf8_line_decoding_preserves_multibyte_characters() {
@@ -144,5 +206,37 @@ mod tests {
         let mut aggregator = ChatCompletionStreamAggregator::default();
         aggregator.apply_chunk(&event);
         assert_eq!(aggregator.content, "é");
+    }
+
+    #[test]
+    fn aggregator_accumulates_reasoning_content_deltas() {
+        let mut aggregator = ChatCompletionStreamAggregator::default();
+        aggregator.apply_chunk(&serde_json::json!({
+            "choices": [{ "delta": { "reasoning_content": "Step 1. " } }]
+        }));
+        aggregator.apply_chunk(&serde_json::json!({
+            "choices": [{ "delta": { "reasoning": "Step 2." } }]
+        }));
+        assert_eq!(aggregator.reasoning, "Step 1. Step 2.");
+    }
+
+    #[tokio::test]
+    async fn idle_timeout_returns_transient_error_when_stream_stalls() {
+        let stream = YieldOnceThenStall { yielded: false };
+        let result = stream_sse_data_lines_from(stream, "test", |_| Ok(())).await;
+        assert!(matches!(
+            result,
+            Err(AgentError::Transient(ref message)) if message.contains("stream stalled")
+        ));
+    }
+
+    #[tokio::test]
+    async fn completes_when_stream_ends_after_chunk() {
+        let stream = stream::iter(vec![Ok(Bytes::from(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n",
+        ))]);
+        assert!(stream_sse_data_lines_from(stream, "test", |_| Ok(()))
+            .await
+            .is_ok());
     }
 }

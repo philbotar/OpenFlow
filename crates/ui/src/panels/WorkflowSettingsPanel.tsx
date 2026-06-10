@@ -1,10 +1,11 @@
 import { useAppContext } from "../context/AppContext";
+import { AnimatedPanel } from "../components/AnimatedPanel";
 
 export function WorkflowSettingsPanel() {
   const ctx = useAppContext();
 
   return (
-    <aside class="inspector-panel workflow-settings-panel">
+    <AnimatedPanel class="inspector-panel workflow-settings-panel">
       <div class="panel-header">
         <div class="panel-header-copy">
           <div class="eyebrow">Workflow</div>
@@ -29,6 +30,6 @@ export function WorkflowSettingsPanel() {
         />
       </label>
 
-    </aside>
+    </AnimatedPanel>
   );
 }

@@ -141,8 +141,15 @@ describe("WorkflowCanvas adapter helpers", () => {
         selected: true,
         reconnectable: true,
         deletable: true,
+        animated: false,
       }),
     ]);
+  });
+
+  test("buildFlowEdges animates edges while a run is active", () => {
+    const edges = buildFlowEdges(graph, null, true, "dark");
+    expect(edges[0].animated).toBe(true);
+    expect(edges[0].style).toEqual({ stroke: "#4b5568", strokeWidth: 2 });
   });
 
   test("reconcileFlowNodes keeps local drag position while applying external state", () => {

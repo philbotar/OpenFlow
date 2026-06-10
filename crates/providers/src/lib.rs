@@ -14,7 +14,7 @@ pub use engine::AiPort;
 pub use openai_compat::OpenAiCompatibleConfig;
 pub use spec::{
     builtin_provider_specs, provider_spec, AnthropicSpec, AuthSpec, OpenAiCompatibleSpec,
-    ProviderId, ProviderKind, ProviderSpec, WireApi,
+    ProviderId, ProviderKind, ProviderSpec, ReasoningEffortOption, WireApi,
 };
 
 pub type OpenAiClient = AiClient;

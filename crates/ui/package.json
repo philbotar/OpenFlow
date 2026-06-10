@@ -16,6 +16,7 @@
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "@xyflow/react": "^12.9.3",
     "lucide-solid": "^1.17.0",
+    "motion": "^12.40.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "solid-js": "^1.9.9",

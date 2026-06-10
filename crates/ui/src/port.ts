@@ -63,6 +63,8 @@ export interface UiDesktopOutboundPort {
 		transientApiKey?: string | null,
 	) => Promise<WorkflowRunState>;
 	stopRun: () => Promise<WorkflowRunState>;
+	interruptNode: (nodeId: string) => Promise<WorkflowRunState>;
+	retryNode: (nodeId: string) => Promise<WorkflowRunState>;
 	previewFileEdit: (
 		approvalId: string,
 		toolName: string,
@@ -108,6 +110,8 @@ export function createUiDesktopOutboundAdapter(): UiDesktopOutboundPort {
 		createAgentNode: desktopApi.createAgentNode,
 		startRun: desktopApi.startRun,
 		stopRun: desktopApi.stopRun,
+		interruptNode: desktopApi.interruptNode,
+		retryNode: desktopApi.retryNode,
 		previewFileEdit: desktopApi.previewFileEdit,
 		gitDiffFile: desktopApi.gitDiffFile,
 		revertEditBatch: desktopApi.revertEditBatch,

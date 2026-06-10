@@ -1,4 +1,5 @@
-import { Show } from "solid-js";
+import { createSignal, Show } from "solid-js";
+import ChevronRight from "lucide-solid/icons/chevron-right";
 import type { ToolCallStatus } from "../../lib/types";
 import { toolBubbleRowStatusText, toolBubbleTargetText } from "./toolBubbleState";
 
@@ -32,26 +33,65 @@ function statusIcon(status: ToolCallStatus): { class: string; label: string } {
 }
 
 export function ToolBubble(props: ToolBubbleProps) {
+  const [expanded, setExpanded] = createSignal(false);
   const targetText = () => toolBubbleTargetText(props.toolName, props.arguments);
   const rowStatusText = () => toolBubbleRowStatusText(props.status);
   const icon = () => statusIcon(props.status);
+  const hasOutput = () => Boolean(props.output?.trim());
+  const expandable = () => hasOutput();
 
   return (
-    <div class="tool-line" data-tool-name={props.toolName}>
-      <span class={`tool-line-status ${icon().class}`}>
-        {icon().label}
-      </span>
-      <span class="tool-line-name">
-        {props.toolName}
-        <Show when={targetText()}>
-          {" "}
-          <span class="tool-line-target">{targetText()}</span>
+    <div
+      class="tool-line"
+      classList={{ "tool-line--expandable": expandable() }}
+      data-tool-name={props.toolName}
+    >
+      <div
+        class="tool-line-status-row"
+        onClick={() => {
+          if (expandable()) {
+            setExpanded((value) => !value);
+          }
+        }}
+      >
+        <span class={`tool-line-status ${icon().class}`}>{icon().label}</span>
+        <span class="tool-line-name">
+          {props.toolName}
+          <Show when={targetText()}>
+            {" "}
+            <span class="tool-line-target">{targetText()}</span>
+          </Show>
+          <Show when={!targetText() && rowStatusText()}>
+            {" "}
+            {rowStatusText()}
+          </Show>
+        </span>
+        <Show when={expandable()}>
+          <button
+            type="button"
+            class="tool-line-chevron"
+            classList={{ "tool-line-chevron--expanded": expanded() }}
+            aria-expanded={expanded()}
+            aria-label={expanded() ? "Collapse tool output" : "Expand tool output"}
+            onClick={(event) => {
+              event.stopPropagation();
+              setExpanded((value) => !value);
+            }}
+          >
+            <ChevronRight width={14} height={14} />
+          </button>
         </Show>
-        <Show when={!targetText() && rowStatusText()}>
-          {" "}
-          {rowStatusText()}
-        </Show>
-      </span>
+      </div>
+      <Show when={expandable() && expanded()}>
+        <div class="tool-line-output-wrapper tool-line-output-wrapper--expanded">
+          <pre
+            class="tool-line-output"
+            classList={{ "tool-line-output--error": props.isError }}
+          >
+            {props.output}
+          </pre>
+        </div>
+      </Show>
     </div>
   );
 }

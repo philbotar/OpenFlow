@@ -72,6 +72,18 @@ impl ChatMessage {
     }
 
     #[must_use]
+    pub fn streaming_thinking(id: impl Into<String>, content: impl Into<String>) -> Self {
+        Self {
+            role: ChatRole::Thinking,
+            content: content.into(),
+            id: Some(id.into()),
+            streaming: true,
+            tool_call_id: None,
+            message_kind: None,
+        }
+    }
+
+    #[must_use]
     pub fn tool_marker(tool_call_id: impl Into<String>) -> Self {
         Self {
             role: ChatRole::Thinking,

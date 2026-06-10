@@ -31,6 +31,7 @@ pub enum RunTelemetry {
     ChatMessageDelta {
         node_id: NodeId,
         message_id: String,
+        role: ChatRole,
         delta: String,
         finalize: bool,
     },
@@ -97,6 +98,17 @@ pub enum RunTelemetry {
         output: Value,
     },
     NodeFailed {
+        node_id: NodeId,
+        label: String,
+        error: String,
+    },
+    /// Node was interrupted by the user; run stays active and the node is retryable.
+    NodeInterrupted {
+        node_id: NodeId,
+        label: String,
+    },
+    /// Node failed but the run stays active; the node is retryable.
+    NodeErrored {
         node_id: NodeId,
         label: String,
         error: String,

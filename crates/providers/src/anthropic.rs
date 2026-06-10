@@ -284,6 +284,8 @@ mod tests {
             available_tools: Vec::new(),
             transcript: Vec::new(),
             model_attempt: 1,
+            reasoning_effort: None,
+            reasoning_budget_tokens: None,
         }
     }
 

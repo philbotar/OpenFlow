@@ -32,6 +32,8 @@ export function EditorScreen() {
             selectedEdgeId={ctx.selectedEdgeId()}
             statusByNode={ctx.canvasStatusByNode()}
             subagentsByNode={ctx.canvasSubagentsByNode()}
+            runActive={Boolean(ctx.runState()?.active)}
+            colorMode={ctx.resolvedTheme()}
             onSelectNode={ctx.handleSelectNode}
             onSelectEdge={ctx.handleSelectEdge}
             onUpdateNodePosition={ctx.handleCanvasNodePosition}
@@ -39,6 +41,8 @@ export function EditorScreen() {
             onReconnectEdge={ctx.handleReconnectEdge}
             onDeleteEdge={ctx.handleDeleteEdge}
             onAddNode={() => ctx.handleOpenAddNodePicker()}
+            onInterruptNode={(nodeId) => void ctx.handleInterruptNode(nodeId)}
+            onRetryNode={(nodeId) => void ctx.handleRetryNode(nodeId)}
           />
         </section>
 

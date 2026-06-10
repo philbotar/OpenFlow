@@ -252,17 +252,42 @@ async fn start_run(
         .await?;
     let app_handle = app.clone();
 
+    // Streaming produces one execution event per token; emitting the full run
+    // state for each would flood the IPC channel with O(state size) payloads.
+    // Coalesce whatever arrives within a short window into a single emit.
+    const RUN_STATE_COALESCE_WINDOW: std::time::Duration = std::time::Duration::from_millis(30);
+
     tauri::async_runtime::spawn(async move {
-        while let Some(event) = event_rx.recv().await {
+        let mut failed = false;
+        while !failed {
+            let Some(event) = event_rx.recv().await else {
+                break;
+            };
             let backend = app_handle.state::<AppBackend>();
-            match backend.apply_execution_event(event).await {
-                Ok(run_state) => {
-                    let _ = app_handle.emit("run-state", run_state.clone());
-                    if !run_state.active {
-                        break;
-                    }
-                }
+            let mut run_state = match backend.apply_execution_event(event).await {
+                Ok(state) => state,
                 Err(_) => break,
+            };
+            let deadline = tokio::time::Instant::now() + RUN_STATE_COALESCE_WINDOW;
+            while run_state.active {
+                tokio::select! {
+                    () = tokio::time::sleep_until(deadline) => break,
+                    maybe_event = event_rx.recv() => match maybe_event {
+                        Some(event) => match backend.apply_execution_event(event).await {
+                            Ok(state) => run_state = state,
+                            Err(_) => {
+                                failed = true;
+                                break;
+                            }
+                        },
+                        None => break,
+                    },
+                }
+            }
+            let active = run_state.active;
+            let _ = app_handle.emit("run-state", run_state);
+            if !active {
+                break;
             }
         }
     });
@@ -313,6 +338,24 @@ async fn stop_run(
     let run_state = backend.stop_run().await?;
     let _ = app.emit("run-state", run_state.clone());
     Ok(run_state)
+}
+
+/// Tauri command: Interrupt an in-flight AI call for a single node.
+#[tauri::command]
+async fn interrupt_node(
+    backend: tauri::State<'_, AppBackend>,
+    node_id: String,
+) -> Result<WorkflowRunState, CommandError> {
+    Ok(backend.interrupt_node(&node_id).await?)
+}
+
+/// Tauri command: Retry a failed or interrupted node.
+#[tauri::command]
+async fn retry_node(
+    backend: tauri::State<'_, AppBackend>,
+    node_id: String,
+) -> Result<WorkflowRunState, CommandError> {
+    Ok(backend.retry_node(&node_id).await?)
 }
 
 /// Tauri command: Submit user input to a node.
@@ -443,6 +486,8 @@ pub fn run() {
             git_diff_file,
             revert_edit_batch,
             stop_run,
+            interrupt_node,
+            retry_node,
             submit_user_input,
             submit_tool_approval,
             complete_manual_node,

@@ -4,6 +4,11 @@
 
 ### Added
 
+- **Settings reasoning effort:** per-provider default reasoning effort and budget token controls in Settings; applied to new nodes and at run time when a node has no override.
+- **Review-driven tests:** interrupt during slow bash tool emits `NodeInterrupted`; parallel retry does not re-emit sibling `NodeAwaitingInput`; headless runs return `MissingRetry` on retryable node failure; chat-completions body forwards `reasoning_effort` / budget fields.
+- **Per-node interrupt and retry:** interrupt a thinking/running-tool node without stopping the run (`interrupt_node`); retry failed or interrupted nodes with transcript preserved (`retry_node`); canvas stop/retry actions on node status row; `AgentStatus::Interrupted` and retryable `NodeErrored` / `NodeInterrupted` telemetry while the run stays active.
+- **UI polish overhaul:** `motion` animation library; motion tokens and `prefers-reduced-motion` support; animated modals (fade + scale) with focus trap and Escape-to-close; inspector panel slide-in; screen crossfade; dock height transition; canvas node pulse on `started` / `running_tool` and animated edges during runs; streaming caret and thinking-bubble shimmer; tool output expand/collapse; shared `Spinner` and bootstrap skeleton; keyboard shortcut cheatsheet (`?` or sidebar); dark mode (system/light/dark) in Settings; header button shortcut tooltips.
+- **Provider thinking in node chat:** stream `reasoning_content` / `reasoning` from OpenAI-compatible APIs into collapsible `ThinkingBubble` rows in the selected node's conversation (collapsed preview by default; expand for full reasoning).
 - **ROADMAP.md restructure:** single prioritized queue (30 sequenced items across 6 tiers + unsequenced backlog) replacing category tables; detail specs preserved below the queue. New items: macOS Keychain key storage, pre-run workflow validation, token & cost tracking, canvas editing QoL (undo/redo, duplicate node), onboarding & templates, macOS distribution (signing, notarization, auto-update). Status corrections: chat presentation marked In progress; single Tokio runtime marked Done.
 - **Testing conventions:** standardised test placement rules — inline `#[cfg(test)] mod tests` by default, sibling `foo_tests.rs`/`tests.rs` extraction past ~150 lines, crate-level `tests/` for integration, Vitest siblings for frontend — documented in `docs/contributing/testing-workflows.md` and enforced via `.cursor/rules/testing-conventions.mdc`.
 - **Bash tool:** agent `bash` builtin (oh-my-pi–aligned) — `command`, optional `cwd`/`env`/`timeout`; non-interactive env defaults; merged stdout/stderr; wall-time and exit-code notices; `ToolTier::Exec` with critical-pattern approval override; opt-in via node tool config.
@@ -17,6 +22,14 @@
 
 ### Changed
 
+- **Tool interrupt:** per-node cancel token stops in-flight tool execution and marks the node interrupted without aborting the run.
+- **Headless runs:** `NodeErrored` / `NodeInterrupted` return `WorkflowExecutionError::MissingRetry` instead of hanging.
+- **Drive retry loop:** retrying one node no longer breaks out of the interaction wait while siblings still await input or approval.
+- **OpenAI chat-completions:** forward `reasoning_effort` and `reasoning.max_tokens` from `AgentRequest` when set.
+- **Dark mode form fields:** inspector, settings, and agent editor text inputs and textareas use theme-aware `--input-bg` instead of a hardcoded white background.
+- **Dark mode dock and canvas:** bottom dock tab bar, chat composer, overview/trace panels, and React Flow controls/nodes use theme variables; canvas board and xyflow `colorMode` no longer fight custom light-only overrides.
+- **Dark mode secondary chrome:** top bar, dock tab strip, and chat composer use a warmer navy palette aligned with the sidebar; composer is lifted above the dock body instead of near-black.
+- **Dark mode sidebar selection:** workflow and project folder hover/active states use subtle translucent overlays instead of bright light-gray fills.
 - **Sidebar list rows:** long workflow and agent titles truncate with ellipsis before the rename (pencil) action; full title on hover via `title` attribute.
 - **Backend test split:** extract the 365-line inline test module from `backend/mod.rs` into sibling `backend/tests.rs` per the new testing conventions; fix `clamp_bash_timeout` to use `u64::clamp` (clippy `manual_clamp`).
 - **Tool bubble row:** collapsed row shows tool name plus invocation target (file path, search pattern, command) from arguments — not tool output; status label only when target is not yet known.
@@ -27,6 +40,9 @@
 
 ### Fixed
 
+- **Settings dark mode:** main shell, settings panel, and Save button no longer use light/white backgrounds when dark theme is active.
+- **AI loading hang:** SSE streams time out after 90s without data (`AgentError::Transient`); terminal `RunError::NodeFailed` from the drive loop emits `NodeFailed` (not `Error`) so nodes no longer stick on Started; dropped execution events are logged; action-channel close aborts the run cooperatively.
+- **User chat XML:** stop stripping `<tool_call>` markup from user messages in the conversation pane; tool-call echo cleanup now applies only to assistant and thinking rows.
 - **Canvas node deletion:** block React Flow from removing nodes in the canvas UI (`deletable: false`, `onBeforeDelete`, filter `remove` changes); use the inspector Delete button to remove nodes from the workflow.
 - **Tauri / WebKit dev startup:** pre-bundle `remark-parse`, `remark-rehype`, and `unified` in Vite `optimizeDeps` so `solid-markdown` chat rendering no longer throws `Importing binding name 'default' cannot be resolved by star export entries` in Safari/WebKit (macOS desktop dev).
 - **Streamed tool-call markup:** strip echoed `<tool_call>` / ` ```tool_call ` blocks when an assistant streaming message finalizes; drop markup-only rows so `openflow_submit_node_output` JSON no longer appears in chat.

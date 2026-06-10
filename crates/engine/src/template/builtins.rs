@@ -28,6 +28,9 @@ pub fn default_templates() -> Vec<Template> {
                 tools: AgentNodeConfig::default().tools,
                 callable_agents: Vec::new(),
                 allow_all_callable_agents: false,
+                reasoning_effort: None,
+                reasoning_budget_tokens: None,
+                provider_id: None,
             },
             HashSet::new(),
         ),
@@ -66,6 +69,9 @@ pub fn default_templates() -> Vec<Template> {
                 tools: AgentNodeConfig::default().tools,
                 callable_agents: Vec::new(),
                 allow_all_callable_agents: false,
+                reasoning_effort: None,
+                reasoning_budget_tokens: None,
+                provider_id: None,
             },
             {
                 let mut locked = HashSet::new();
@@ -101,6 +107,9 @@ pub fn default_templates() -> Vec<Template> {
                 tools: AgentNodeConfig::default().tools,
                 callable_agents: Vec::new(),
                 allow_all_callable_agents: false,
+                reasoning_effort: None,
+                reasoning_budget_tokens: None,
+                provider_id: None,
             },
             {
                 let mut locked = HashSet::new();
@@ -130,6 +139,9 @@ pub fn default_templates() -> Vec<Template> {
                 tools: AgentNodeConfig::default().tools,
                 callable_agents: Vec::new(),
                 allow_all_callable_agents: false,
+                reasoning_effort: None,
+                reasoning_budget_tokens: None,
+                provider_id: None,
             },
             {
                 let mut locked = HashSet::new();
@@ -158,6 +170,9 @@ pub fn default_templates() -> Vec<Template> {
                 tools: AgentNodeConfig::default().tools,
                 callable_agents: Vec::new(),
                 allow_all_callable_agents: false,
+                reasoning_effort: None,
+                reasoning_budget_tokens: None,
+                provider_id: None,
             },
             {
                 let mut locked = HashSet::new();

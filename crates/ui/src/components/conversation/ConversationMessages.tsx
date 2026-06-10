@@ -1,10 +1,12 @@
+import MessageCircle from "lucide-solid/icons/message-circle";
 import { createMemo, For, Show } from "solid-js";
-import { stripToolCallMarkup } from "../../lib/stripToolCallMarkup";
+import { displayChatContent } from "../../lib/stripToolCallMarkup";
 import { useAppContext } from "../../context/AppContext";
 import type { ChatMessage } from "../../lib/types";
 import {
   groupLegacyToolMessages,
   isLegacyToolGroup,
+  isProviderThinkingMessage,
   type ConversationItem,
   type LegacyToolGroup,
 } from "../../lib/parseLegacyToolMessages";
@@ -17,6 +19,7 @@ import {
 } from "./Conversation";
 import { Message } from "./Message";
 import { NodeCompletedBubble } from "./NodeCompletedBubble";
+import { ThinkingBubble } from "./ThinkingBubble";
 import { ToolBubble } from "./ToolBubble";
 import { resolveToolSummary } from "./toolBubbleState";
 
@@ -63,13 +66,16 @@ function MarkerToolBubble(props: { message: ChatMessage }) {
 
 function PlainMessage(props: { message: ChatMessage }) {
   const ctx = useAppContext();
-  const content = createMemo(() => stripToolCallMarkup(props.message.content));
+  const content = createMemo(() =>
+    displayChatContent(props.message.role, props.message.content),
+  );
   return (
     <Show when={content().trim()}>
       <Message
         from={chatRoleToMessageFrom(props.message.role)}
         label={messageLabel(props.message.role, ctx.currentNode()?.label)}
         content={content()}
+        streaming={props.message.streaming}
       />
     </Show>
   );
@@ -85,6 +91,9 @@ function ConversationItemView(props: { item: ConversationItem }) {
   if (props.item.toolCallId) {
     return <MarkerToolBubble message={props.item} />;
   }
+  if (isProviderThinkingMessage(props.item)) {
+    return <ThinkingBubble message={props.item} />;
+  }
   return <PlainMessage message={props.item} />;
 }
 
@@ -99,7 +108,11 @@ export function ConversationMessages() {
           <ConversationContent conversation={conversation}>
             <Show
               when={ctx.chatMessages().length > 0}
-              fallback={<ConversationEmptyState />}
+              fallback={
+                <ConversationEmptyState
+                  icon={<MessageCircle class="conversation-empty-icon-svg" width={22} height={22} />}
+                />
+              }
             >
               <For each={conversationItems()}>
                 {(item) => <ConversationItemView item={item} />}

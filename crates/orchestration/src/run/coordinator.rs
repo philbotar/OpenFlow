@@ -3,8 +3,10 @@ use crate::error::BackendError;
 use crate::run::execution::{
     apply_event_to_run_state, record_user_input, resolve_execution_cwd,
     spawn_interactive_workflow_run, ExecutionAction, ExecutionEvent, InteractiveWorkflowRunParams,
+    NodeInterrupts,
 };
-use crate::run::state::WorkflowRunState;
+use crate::run::reasoning_defaults::apply_provider_reasoning_defaults;
+use crate::run::state::{AgentStatus, WorkflowRunState};
 use crate::settings::model::{merge_preserved_api_keys, AppSettings};
 use crate::settings::provider::{resolve_provider_config, ProviderEnv};
 use crate::tools::edit::preview::preview_file_edit;
@@ -29,6 +31,7 @@ struct RunSession {
     action_tx: Option<UnboundedSender<ExecutionAction>>,
     handle: Option<tokio::task::JoinHandle<()>>,
     cancel_token: Option<CancellationToken>,
+    node_interrupts: Option<NodeInterrupts>,
 }
 
 enum TerminationMode {
@@ -68,6 +71,7 @@ impl RunCoordinator {
                 action_tx: None,
                 handle: None,
                 cancel_token: None,
+                node_interrupts: None,
             }),
         }
     }
@@ -111,6 +115,9 @@ impl RunCoordinator {
         let provider_config = resolve_provider_config(&provider_settings, transient_api_key, env)?;
         let ai = create_provider(provider_config);
 
+        let mut workflow = workflow;
+        apply_provider_reasoning_defaults(&mut workflow, provider_settings.active_profile());
+
         let agents = agent_store.load()?;
         let agent_snapshots = resolve_callable_agent_snapshots(&workflow, &agents);
 
@@ -120,7 +127,9 @@ impl RunCoordinator {
             Arc::new(crate::tools::edit::hashline::snapshots::InMemorySnapshotStore::new());
         let lsp_settings = crate::lsp::LspSettings::from_persisted(&persisted_settings.lsp);
         let pending_engine_reverts = Arc::new(parking_lot::Mutex::new(Vec::new()));
-        let (handle, event_rx, action_tx, cancel_token) = spawn_interactive_workflow_run(
+        let node_interrupts: NodeInterrupts =
+            Arc::new(parking_lot::Mutex::new(std::collections::BTreeMap::new()));
+        let (handle, event_rx, action_tx, cancel_token, _) = spawn_interactive_workflow_run(
             &self.runtime_handle,
             InteractiveWorkflowRunParams {
                 workflow: workflow.clone(),
@@ -131,6 +140,7 @@ impl RunCoordinator {
                 snapshot_store: snapshot_store.clone(),
                 lsp: lsp_settings.clone(),
                 pending_engine_reverts: pending_engine_reverts.clone(),
+                node_interrupts: node_interrupts.clone(),
             },
         );
 
@@ -145,7 +155,65 @@ impl RunCoordinator {
         session.action_tx = Some(action_tx);
         session.handle = Some(handle);
         session.cancel_token = Some(cancel_token);
+        session.node_interrupts = Some(node_interrupts);
         Ok((initial_state, event_rx))
+    }
+
+    /// Cancel the in-flight AI invocation for a running node without stopping the run.
+    ///
+    /// # Errors
+    /// Returns an error when there is no active run or the node is not interruptible.
+    pub async fn interrupt_node(&self, node_id: &str) -> Result<WorkflowRunState, BackendError> {
+        let session = self.session.lock().await;
+        let run_state = session
+            .run_state
+            .as_ref()
+            .ok_or(BackendError::NoActiveRun)?;
+        let node_id_key = NodeId(node_id.to_string());
+        let status = run_state
+            .status_by_node
+            .get(&node_id_key)
+            .copied()
+            .unwrap_or(AgentStatus::Idle);
+        if !matches!(status, AgentStatus::Started | AgentStatus::RunningTool) {
+            return Err(BackendError::NodeNotInterruptible(node_id.to_string()));
+        }
+        if let Some(interrupts) = &session.node_interrupts {
+            if let Some((_, token)) = interrupts.lock().get(&node_id_key) {
+                token.cancel();
+            }
+        }
+        Ok(run_state.clone())
+    }
+
+    /// Retry a failed or interrupted node, preserving its transcript.
+    ///
+    /// # Errors
+    /// Returns an error when there is no active run or the node is not retryable.
+    pub async fn retry_node(&self, node_id: &str) -> Result<WorkflowRunState, BackendError> {
+        let session = self.session.lock().await;
+        let run_state = session
+            .run_state
+            .as_ref()
+            .ok_or(BackendError::NoActiveRun)?;
+        let node_id_key = NodeId(node_id.to_string());
+        let status = run_state
+            .status_by_node
+            .get(&node_id_key)
+            .copied()
+            .unwrap_or(AgentStatus::Idle);
+        if !matches!(status, AgentStatus::Failed | AgentStatus::Interrupted) {
+            return Err(BackendError::NodeNotRetryable(node_id.to_string()));
+        }
+        session
+            .action_tx
+            .as_ref()
+            .ok_or(BackendError::NoActiveRun)?
+            .send(ExecutionAction::RetryNode {
+                node_id: node_id_key,
+            })
+            .map_err(|_| BackendError::RunChannelClosed)?;
+        Ok(run_state.clone())
     }
 
     /// Stops the active workflow run cooperatively.
@@ -249,6 +317,7 @@ impl RunCoordinator {
             session.action_tx = None;
             session.handle = None;
             session.cancel_token = None;
+            session.node_interrupts = None;
         }
         Ok(snapshot)
     }

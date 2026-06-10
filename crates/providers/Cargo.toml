@@ -14,14 +14,17 @@ name = "providers"
 
 [dependencies]
 async-trait.workspace = true
+bytes.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 jsonrepair-rs.workspace = true
 engine = { path = "../engine", version = "0.1.0" }
 futures.workspace = true
+tokio = { workspace = true, features = ["time"] }
 
 [dev-dependencies]
+bytes.workspace = true
 tokio.workspace = true
 wiremock.workspace = true
 

@@ -298,6 +298,7 @@ fn submit_user_input_updates_snapshot_and_sends_action() {
                 panic!("unexpected approval action");
             }
             ExecutionAction::Stop => panic!("unexpected stop action"),
+            ExecutionAction::RetryNode { .. } => panic!("unexpected retry action"),
         }
     });
 }
@@ -341,6 +342,7 @@ fn submit_tool_approval_updates_snapshot_and_sends_action() {
                 panic!("unexpected input action");
             }
             ExecutionAction::Stop => panic!("unexpected stop action"),
+            ExecutionAction::RetryNode { .. } => panic!("unexpected retry action"),
         }
     });
 }

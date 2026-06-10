@@ -146,6 +146,14 @@ export function stopRun() {
   return invoke<WorkflowRunState>("stop_run");
 }
 
+export function interruptNode(nodeId: string) {
+  return invoke<WorkflowRunState>("interrupt_node", { nodeId });
+}
+
+export function retryNode(nodeId: string) {
+  return invoke<WorkflowRunState>("retry_node", { nodeId });
+}
+
 export function previewFileEdit(
   approvalId: string,
   toolName: string,

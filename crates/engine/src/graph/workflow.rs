@@ -284,6 +284,19 @@ pub struct AgentNodeConfig {
     pub callable_agents: Vec<String>,
     #[serde(default, rename = "allowAllCallableAgents")]
     pub allow_all_callable_agents: bool,
+    /// Opaque reasoning effort level passed through to the provider (e.g. "none", "adaptive", "low", "medium", "high").
+    #[serde(default, rename = "reasoningEffort", alias = "reasoning_effort")]
+    pub reasoning_effort: Option<String>,
+    /// Optional budget token count for reasoning effort, forwarded to the provider.
+    #[serde(
+        default,
+        rename = "reasoningBudgetTokens",
+        alias = "reasoning_budget_tokens"
+    )]
+    pub reasoning_budget_tokens: Option<u32>,
+    /// Optional provider ID override at the node level.
+    #[serde(default, rename = "providerId")]
+    pub provider_id: Option<String>,
 }
 
 const fn default_auto_start() -> bool {
@@ -308,6 +321,9 @@ impl Default for AgentNodeConfig {
             tools: NodeToolConfig::default(),
             callable_agents: Vec::new(),
             allow_all_callable_agents: false,
+            reasoning_effort: None,
+            reasoning_budget_tokens: None,
+            provider_id: None,
         }
     }
 }
@@ -406,5 +422,45 @@ mod tests {
             serde_json::from_value::<NodeKind>(json!("Agent")).unwrap(),
             NodeKind::Agent
         );
+    }
+
+    #[test]
+    fn agent_node_config_serde_roundtrip_with_reasoning_effort() {
+        let config = AgentNodeConfig {
+            reasoning_effort: Some("adaptive".to_string()),
+            reasoning_budget_tokens: Some(40960),
+            provider_id: Some("anthropic".to_string()),
+            ..AgentNodeConfig::default()
+        };
+        let value = serde_json::to_value(&config).unwrap();
+        assert_eq!(value["reasoningEffort"], json!("adaptive"));
+        assert_eq!(value["reasoningBudgetTokens"], json!(40960));
+        assert_eq!(value["providerId"], json!("anthropic"));
+        let back: AgentNodeConfig = serde_json::from_value(value).unwrap();
+        assert_eq!(back.reasoning_effort, config.reasoning_effort);
+        assert_eq!(back.reasoning_budget_tokens, config.reasoning_budget_tokens);
+        assert_eq!(back.provider_id, config.provider_id);
+    }
+
+    #[test]
+    fn agent_node_config_serde_backfills_without_reasoning_effort() {
+        let config: AgentNodeConfig = serde_json::from_value(json!({
+            "system_prompt": "sys",
+            "task_prompt": "task",
+            "model": "gpt-test",
+            "output_schema": { "type": "object" }
+        }))
+        .unwrap();
+        assert!(config.reasoning_effort.is_none());
+        assert!(config.reasoning_budget_tokens.is_none());
+        assert!(config.provider_id.is_none());
+    }
+
+    #[test]
+    fn agent_node_config_default_has_no_reasoning_effort() {
+        let config = AgentNodeConfig::default();
+        assert!(config.reasoning_effort.is_none());
+        assert!(config.reasoning_budget_tokens.is_none());
+        assert!(config.provider_id.is_none());
     }
 }

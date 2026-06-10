@@ -13,6 +13,7 @@ use crate::run::state::{RunTraceEntry, ToolArtifactSummary, ToolCallSummary};
 use engine::{
     AiPort, CallableAgent, ChatMessage, EditBatch, NodeId, RunReport, RunTelemetry, Workflow,
 };
+use parking_lot::Mutex;
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -27,9 +28,19 @@ pub use headless::run_workflow_headless;
 /// Interactive run telemetry; canonical type is [`engine::RunTelemetry`].
 pub type ExecutionEvent = RunTelemetry;
 
+/// Per-node interrupt tokens keyed by node id and model attempt.
+pub type NodeInterrupts = Arc<Mutex<BTreeMap<NodeId, (u8, CancellationToken)>>>;
+
+pub fn send_or_log(event_tx: &UnboundedSender<ExecutionEvent>, event: ExecutionEvent) {
+    if let Err(error) = event_tx.send(event) {
+        log::warn!("failed to send execution event; run consumer dropped: {error:?}");
+    }
+}
+
 pub enum ExecutionAction {
     ProvideInput { node_id: NodeId, text: String },
     ResolveApproval { approval_id: String, allow: bool },
+    RetryNode { node_id: NodeId },
     Stop,
 }
 
@@ -68,6 +79,8 @@ pub enum WorkflowExecutionError {
     MissingManualInput(NodeId),
     #[error("tool approval {0} was requested but no scripted approval was provided")]
     MissingApproval(String),
+    #[error("node {0} failed or was interrupted and requires manual retry but no scripted retry was provided")]
+    MissingRetry(NodeId),
 }
 
 pub fn resolve_execution_cwd(execution_cwd: Option<&str>) -> Result<PathBuf, String> {
@@ -110,6 +123,7 @@ pub struct InteractiveWorkflowRunParams<A> {
     pub snapshot_store: Arc<crate::tools::edit::hashline::snapshots::InMemorySnapshotStore>,
     pub lsp: LspSettings,
     pub pending_engine_reverts: Arc<parking_lot::Mutex<Vec<EditBatch>>>,
+    pub node_interrupts: NodeInterrupts,
 }
 
 pub fn spawn_interactive_workflow_run<A>(
@@ -120,6 +134,7 @@ pub fn spawn_interactive_workflow_run<A>(
     UnboundedReceiver<ExecutionEvent>,
     UnboundedSender<ExecutionAction>,
     CancellationToken,
+    NodeInterrupts,
 )
 where
     A: AiPort + Send + Sync + 'static,
@@ -128,10 +143,11 @@ where
     let (action_tx, action_rx) = tokio::sync::mpsc::unbounded_channel();
     let cancel_token = CancellationToken::new();
     let drive_cancel_token = cancel_token.clone();
+    let node_interrupts = params.node_interrupts.clone();
     let handle = runtime_handle.spawn(async move {
         drive::drive_interactive_workflow(params, event_tx, action_rx, drive_cancel_token).await;
     });
-    (handle, event_rx, action_tx, cancel_token)
+    (handle, event_rx, action_tx, cancel_token, node_interrupts)
 }
 
 #[cfg(test)]

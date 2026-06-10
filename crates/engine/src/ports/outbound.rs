@@ -23,6 +23,10 @@ pub struct AgentRequest {
     pub transcript: Vec<AgentTranscriptItem>,
     /// 1-based model invocation attempt for this node (retries increment).
     pub model_attempt: u8,
+    /// Opaque reasoning effort level forwarded to the provider.
+    pub reasoning_effort: Option<String>,
+    /// Optional reasoning budget token count forwarded to the provider.
+    pub reasoning_budget_tokens: Option<u32>,
 }
 
 impl AgentRequest {
@@ -68,12 +72,19 @@ pub enum AgentError {
     Permanent(String),
     #[error("{0}")]
     Failed(String),
+    #[error("interrupted")]
+    Interrupted,
 }
 
 impl AgentError {
     #[must_use]
     pub const fn is_retryable(&self) -> bool {
         matches!(self, Self::Transient(_))
+    }
+
+    #[must_use]
+    pub const fn is_interrupted(&self) -> bool {
+        matches!(self, Self::Interrupted)
     }
 
     #[must_use]
@@ -90,6 +101,7 @@ impl AgentError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AiStreamEvent {
     AssistantDelta { content: String },
+    ThinkingDelta { content: String },
 }
 
 /// Receives streaming events from provider adapters during an AI invocation.
@@ -188,6 +200,8 @@ mod tests {
         assert!(AgentError::Transient("timeout".to_string()).is_retryable());
         assert!(!AgentError::Permanent("auth".to_string()).is_retryable());
         assert!(!AgentError::Failed("unknown".to_string()).is_retryable());
+        assert!(!AgentError::Interrupted.is_retryable());
+        assert!(AgentError::Interrupted.is_interrupted());
         assert!(AgentError::Failed(
             "OpenAI-compatible final output tool arguments were not valid JSON: missing field `output`"
                 .to_string()

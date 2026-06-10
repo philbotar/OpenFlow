@@ -10,6 +10,9 @@ export type WorkflowNodeData = {
   label: string;
   status: AgentStatus;
   subagents: SubagentSummary[];
+  runActive?: boolean;
+  onInterrupt?: (nodeId: string) => void;
+  onRetry?: (nodeId: string) => void;
 };
 
 function subagentStatusDotClass(status: SubagentSummary["status"]): string {
@@ -38,6 +41,14 @@ export function WorkflowNode({
   const subagents = data.subagents ?? [];
   const visible = subagents.slice(0, MAX_VISIBLE_SUBAGENTS);
   const overflow = subagents.length - MAX_VISIBLE_SUBAGENTS;
+  const canInterrupt =
+    data.runActive &&
+    (status === "started" || status === "running_tool") &&
+    Boolean(data.onInterrupt);
+  const canRetry =
+    data.runActive &&
+    (status === "failed" || status === "interrupted") &&
+    Boolean(data.onRetry);
 
   return (
     <>
@@ -50,6 +61,34 @@ export function WorkflowNode({
         <div className="node-status-row">
           <span className={`node-dot status-${status}`} />
           <span className="node-status-label">{labelForAgentStatus(status)}</span>
+          {canInterrupt && (
+            <button
+              type="button"
+              className="node-action-btn node-action-stop"
+              title="Interrupt node"
+              aria-label="Interrupt node"
+              onClick={(event) => {
+                event.stopPropagation();
+                data.onInterrupt?.(id);
+              }}
+            >
+              ■
+            </button>
+          )}
+          {canRetry && (
+            <button
+              type="button"
+              className="node-action-btn node-action-retry"
+              title="Retry node"
+              aria-label="Retry node"
+              onClick={(event) => {
+                event.stopPropagation();
+                data.onRetry?.(id);
+              }}
+            >
+              ↻
+            </button>
+          )}
         </div>
         <strong>{data.label}</strong>
         {subagents.length > 0 && (

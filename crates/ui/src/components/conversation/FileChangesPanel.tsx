@@ -2,6 +2,7 @@ import ChevronRight from "lucide-solid/icons/chevron-right";
 import { createSignal, For, Show } from "solid-js";
 import { createUiDesktopOutboundAdapter } from "../../port";
 import { useAppContext } from "../../context/AppContext";
+import { Spinner } from "../Spinner";
 import type { EditBatch, FileChangeRecord } from "../../lib/types";
 import { nodeChangedFiles, nodeEditBatches } from "../../lib/workflow";
 
@@ -102,11 +103,15 @@ function FileChangeRow(props: { record: FileChangeRecord }) {
             disabled={gitLoading()}
             onClick={() => void loadGitDiff()}
           >
-            {gitLoading()
-              ? "Loading…"
-              : gitDiffOpen()
-                ? "Hide git diff"
-                : "Git diff"}
+            <Show
+              when={gitLoading()}
+              fallback={gitDiffOpen() ? "Hide git diff" : "Git diff"}
+            >
+              <span class="loading-inline">
+                <Spinner size="sm" />
+                Loading…
+              </span>
+            </Show>
           </button>
         </div>
       </div>

@@ -7,6 +7,7 @@ import Plus from "lucide-solid/icons/plus";
 import Save from "lucide-solid/icons/save";
 import Settings2 from "lucide-solid/icons/settings-2";
 import Trash2 from "lucide-solid/icons/trash-2";
+import CircleHelp from "lucide-solid/icons/circle-help";
 import { ICON_STROKE_WIDTH } from "../lib/utils";
 
 export type SidebarIconName =
@@ -18,7 +19,8 @@ export type SidebarIconName =
   | "validate"
   | "run"
   | "stop"
-  | "trash";
+  | "trash"
+  | "help";
 
 export function SidebarIcon(props: { name: SidebarIconName }) {
   switch (props.name) {
@@ -97,6 +99,15 @@ export function SidebarIcon(props: { name: SidebarIconName }) {
     case "trash":
       return (
         <Trash2
+          class="sidebar-icon"
+          aria-hidden="true"
+          absoluteStrokeWidth
+          strokeWidth={ICON_STROKE_WIDTH}
+        />
+      );
+    case "help":
+      return (
+        <CircleHelp
           class="sidebar-icon"
           aria-hidden="true"
           absoluteStrokeWidth

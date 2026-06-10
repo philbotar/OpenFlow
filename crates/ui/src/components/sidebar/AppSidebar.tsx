@@ -87,7 +87,18 @@ export function Sidebar() {
               onClick={() => void ctx.handleCreateWorkflow()}
             />
           </div>
-          <WorkflowRows />
+          <Show
+            when={ctx.appReady()}
+            fallback={
+              <div class="sidebar-skeleton" aria-hidden="true">
+                <span class="skeleton-line" />
+                <span class="skeleton-line" />
+                <span class="skeleton-line" />
+              </div>
+            }
+          >
+            <WorkflowRows />
+          </Show>
         </div>
         <div class="sidebar-section-group sidebar-projects-section">
           <div class="sidebar-section-header">
@@ -132,6 +143,11 @@ export function Sidebar() {
       </SidebarList>
       <div class="sidebar-footer">
         <div class="settings-nav-menu">
+          <SidebarNavButton
+            icon="help"
+            label="Shortcuts"
+            onClick={() => ctx.openShortcutsModal()}
+          />
           <SidebarNavButton
             icon="settings"
             label={ctx.screen() === "settings" ? "Back to editor" : "Settings"}

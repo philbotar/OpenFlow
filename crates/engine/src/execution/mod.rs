@@ -10,8 +10,8 @@ pub mod workflow_runner;
 
 pub use artifacts::{NodeRunOutput, RunError, RunEvent, RunEventKind, RunReport};
 pub use interactive_engine::{
-    EngineAwaitApproval, EngineAwaitInput, EngineInputError, EnginePollResult, EngineRunResult,
-    InteractiveEngine,
+    EngineAwaitApproval, EngineAwaitInput, EngineInputError, EnginePollResult, EngineRetryableNode,
+    EngineRunResult, InteractiveEngine,
 };
 pub use node_invocation::{
     build_agent_request, build_node_input, build_system_messages, build_upstream_map,

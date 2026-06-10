@@ -117,6 +117,67 @@ pub struct ProviderSpec {
     pub editable: bool,
 }
 
+/// A single reasoning effort option that a provider supports, with metadata for the UI.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReasoningEffortOption {
+    pub value: String,
+    pub label: String,
+    pub uses_budget_tokens: bool,
+}
+
+impl ProviderSpec {
+    /// Returns the built-in reasoning effort options for this provider kind.
+    #[must_use]
+    pub fn default_reasoning_effort_options(&self) -> Vec<ReasoningEffortOption> {
+        match self.kind {
+            ProviderKind::Anthropic(_) => vec![
+                ReasoningEffortOption {
+                    value: "none".to_string(),
+                    label: "None".to_string(),
+                    uses_budget_tokens: false,
+                },
+                ReasoningEffortOption {
+                    value: "adaptive".to_string(),
+                    label: "Adaptive".to_string(),
+                    uses_budget_tokens: false,
+                },
+                ReasoningEffortOption {
+                    value: "low".to_string(),
+                    label: "Low".to_string(),
+                    uses_budget_tokens: true,
+                },
+                ReasoningEffortOption {
+                    value: "medium".to_string(),
+                    label: "Medium".to_string(),
+                    uses_budget_tokens: true,
+                },
+                ReasoningEffortOption {
+                    value: "high".to_string(),
+                    label: "High".to_string(),
+                    uses_budget_tokens: true,
+                },
+            ],
+            ProviderKind::OpenAiCompatible(_) => vec![
+                ReasoningEffortOption {
+                    value: "low".to_string(),
+                    label: "Low".to_string(),
+                    uses_budget_tokens: false,
+                },
+                ReasoningEffortOption {
+                    value: "medium".to_string(),
+                    label: "Medium".to_string(),
+                    uses_budget_tokens: false,
+                },
+                ReasoningEffortOption {
+                    value: "high".to_string(),
+                    label: "High".to_string(),
+                    uses_budget_tokens: false,
+                },
+            ],
+        }
+    }
+}
+
 const RESPONSES_PATH: &str = "v1/responses";
 const CHAT_COMPLETIONS_PATH: &str = "v1/chat/completions";
 const ANTHROPIC_MESSAGES_PATH: &str = "v1/messages";
@@ -388,10 +449,60 @@ mod tests {
 
     #[test]
     fn local_providers_do_not_require_api_keys() {
-        let ollama = provider_spec(&ProviderId::from("ollama")).expect("ollama spec");
-        let lmstudio = provider_spec(&ProviderId::from("lmstudio")).expect("lmstudio spec");
+        let ollama = provider_spec(&ProviderId::from("ollama"));
+        let lmstudio = provider_spec(&ProviderId::from("lmstudio"));
+        assert!(ollama.is_some() && lmstudio.is_some());
+        let Some(ollama) = ollama else {
+            return;
+        };
+        let Some(lmstudio) = lmstudio else {
+            return;
+        };
 
         assert!(!ollama.auth.requires_key());
         assert!(!lmstudio.auth.requires_key());
+    }
+}
+
+#[cfg(test)]
+mod reasoning_effort_tests {
+    use super::*;
+
+    #[test]
+    fn default_reasoning_effort_options_anthropic() {
+        let spec = provider_spec(&ProviderId::from("anthropic"));
+        assert!(spec.is_some());
+        let Some(spec) = spec else {
+            return;
+        };
+        let options = spec.default_reasoning_effort_options();
+        assert_eq!(options.len(), 5);
+        assert_eq!(options[0].value, "none");
+        assert!(!options[0].uses_budget_tokens);
+        assert_eq!(options[1].value, "adaptive");
+        assert!(!options[1].uses_budget_tokens);
+        assert_eq!(options[2].value, "low");
+        assert!(options[2].uses_budget_tokens);
+        assert_eq!(options[3].value, "medium");
+        assert!(options[3].uses_budget_tokens);
+        assert_eq!(options[4].value, "high");
+        assert!(options[4].uses_budget_tokens);
+    }
+
+    #[test]
+    fn default_reasoning_effort_options_openai_compat() {
+        let spec = provider_spec(&ProviderId::from("openai"));
+        assert!(spec.is_some());
+        let Some(spec) = spec else {
+            return;
+        };
+        let options = spec.default_reasoning_effort_options();
+        assert_eq!(options.len(), 3);
+        assert_eq!(options[0].value, "low");
+        assert!(!options[0].uses_budget_tokens);
+        assert_eq!(options[1].value, "medium");
+        assert!(!options[1].uses_budget_tokens);
+        assert_eq!(options[2].value, "high");
+        assert!(!options[2].uses_budget_tokens);
     }
 }

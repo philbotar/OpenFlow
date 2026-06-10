@@ -3,13 +3,18 @@ use crate::run::state::{TraceStatus, WorkflowRunState};
 use crate::tools::ToolRegistry;
 use async_trait::async_trait;
 use engine::{
-    AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTurnOutcome, AgentTurnSuccess,
-    AiStreamEvent, AiStreamSink, ChatRole, NodeToolConfig, SubagentStatus, SubagentSummary,
-    ToolCall, ToolCallStatus, ToolRef, ToolTier,
+    AgentError, AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTurnOutcome,
+    AgentTurnSuccess, AiPort, AiStreamEvent, AiStreamSink, ApprovalMode, ChatRole, NodeToolConfig,
+    SubagentStatus, SubagentSummary, ToolCall, ToolCallStatus, ToolRef, ToolTier, Workflow,
 };
 use parking_lot::Mutex;
 use serde_json::json;
+use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::time::Duration;
+use tempfile::TempDir;
+use tokio::time::timeout;
+use tokio_util::sync::CancellationToken;
 
 fn sample_agent_request() -> AgentRequest {
     AgentRequest {
@@ -25,6 +30,8 @@ fn sample_agent_request() -> AgentRequest {
         available_tools: Vec::new(),
         transcript: Vec::new(),
         model_attempt: 1,
+        reasoning_effort: None,
+        reasoning_budget_tokens: None,
     }
 }
 
@@ -57,7 +64,13 @@ async fn adapter_emits_clarifying_question_after_streamed_preamble() {
     }
 
     let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
-    let adapter = AiInvocationAdapter::new(Arc::new(StreamingNeedsInputAi), event_tx);
+    let node_interrupts = Arc::new(parking_lot::Mutex::new(BTreeMap::new()));
+    let adapter = AiInvocationAdapter::new(
+        Arc::new(StreamingNeedsInputAi),
+        event_tx,
+        node_interrupts,
+        CancellationToken::new(),
+    );
     adapter
         .invoke(sample_agent_request())
         .await
@@ -196,6 +209,7 @@ fn reducer_stream_finalize_strips_echoed_tool_call_markup() {
         ExecutionEvent::ChatMessageDelta {
             node_id: node_id.clone(),
             message_id: message_id.clone(),
+            role: ChatRole::Assistant,
             delta: echoed.to_string(),
             finalize: false,
         },
@@ -206,6 +220,7 @@ fn reducer_stream_finalize_strips_echoed_tool_call_markup() {
         ExecutionEvent::ChatMessageDelta {
             node_id: node_id.clone(),
             message_id: message_id.clone(),
+            role: ChatRole::Assistant,
             delta: String::new(),
             finalize: true,
         },
@@ -231,6 +246,7 @@ fn reducer_stream_finalize_drops_markup_only_messages() {
         ExecutionEvent::ChatMessageDelta {
             node_id: node_id.clone(),
             message_id: message_id.clone(),
+            role: ChatRole::Assistant,
             delta: echoed.to_string(),
             finalize: false,
         },
@@ -241,6 +257,7 @@ fn reducer_stream_finalize_drops_markup_only_messages() {
         ExecutionEvent::ChatMessageDelta {
             node_id: node_id.clone(),
             message_id,
+            role: ChatRole::Assistant,
             delta: String::new(),
             finalize: true,
         },
@@ -250,7 +267,10 @@ fn reducer_stream_finalize_drops_markup_only_messages() {
 }
 
 #[test]
-fn reducer_stream_delta_strips_tool_call_markup_before_finalize() {
+fn reducer_stream_delta_keeps_raw_content_before_finalize() {
+    // Mid-stream content stays raw: the UI strips markup for display
+    // (`stripToolCallMarkup` mirror), and stripping the stored content per
+    // delta is lossy when markup spans delta boundaries.
     let workflow = workflow();
     let mut state = WorkflowRunState::running_for_workflow(&workflow);
     let node_id = NodeId("first".to_string());
@@ -262,6 +282,7 @@ fn reducer_stream_delta_strips_tool_call_markup_before_finalize() {
         ExecutionEvent::ChatMessageDelta {
             node_id: node_id.clone(),
             message_id: message_id.clone(),
+            role: ChatRole::Assistant,
             delta: "Planning.<tool_cal".to_string(),
             finalize: false,
         },
@@ -269,8 +290,76 @@ fn reducer_stream_delta_strips_tool_call_markup_before_finalize() {
 
     let chat = &state.chat_logs[&node_id];
     assert_eq!(chat.len(), 1);
-    assert_eq!(chat[0].content, "Planning.");
+    assert_eq!(chat[0].content, "Planning.<tool_cal");
     assert!(chat[0].streaming);
+}
+
+#[test]
+fn reducer_stream_finalize_strips_markup_split_across_deltas() {
+    let workflow = workflow();
+    let mut state = WorkflowRunState::running_for_workflow(&workflow);
+    let node_id = NodeId("first".to_string());
+    let message_id = "stream-4".to_string();
+
+    for (delta, finalize) in [
+        ("Answer.<tool_call name=", false),
+        ("\"x\">stuff</tool_call>", false),
+        ("", true),
+    ] {
+        apply_event_to_run_state(
+            &workflow,
+            &mut state,
+            ExecutionEvent::ChatMessageDelta {
+                node_id: node_id.clone(),
+                message_id: message_id.clone(),
+                role: ChatRole::Assistant,
+                delta: delta.to_string(),
+                finalize,
+            },
+        );
+    }
+
+    let chat = &state.chat_logs[&node_id];
+    assert_eq!(chat.len(), 1);
+    assert_eq!(chat[0].content, "Answer.");
+    assert!(!chat[0].streaming);
+}
+
+#[test]
+fn reducer_stream_thinking_delta_uses_thinking_role() {
+    let workflow = workflow();
+    let mut state = WorkflowRunState::running_for_workflow(&workflow);
+    let node_id = NodeId("first".to_string());
+    let message_id = "think-1".to_string();
+
+    apply_event_to_run_state(
+        &workflow,
+        &mut state,
+        ExecutionEvent::ChatMessageDelta {
+            node_id: node_id.clone(),
+            message_id: message_id.clone(),
+            role: ChatRole::Thinking,
+            delta: "Let me reason step by step.".to_string(),
+            finalize: false,
+        },
+    );
+    apply_event_to_run_state(
+        &workflow,
+        &mut state,
+        ExecutionEvent::ChatMessageDelta {
+            node_id: node_id.clone(),
+            message_id,
+            role: ChatRole::Thinking,
+            delta: String::new(),
+            finalize: true,
+        },
+    );
+
+    let chat = &state.chat_logs[&node_id];
+    assert_eq!(chat.len(), 1);
+    assert_eq!(chat[0].role, ChatRole::Thinking);
+    assert_eq!(chat[0].content, "Let me reason step by step.");
+    assert!(!chat[0].streaming);
 }
 
 #[test]
@@ -509,6 +598,52 @@ async fn headless_run_requires_scripted_approval_for_prompted_tool() {
     .await
     .unwrap_err();
     assert!(matches!(error, WorkflowExecutionError::MissingApproval(_)));
+}
+
+#[test]
+fn reducer_node_interrupted_keeps_run_active() {
+    let workflow = workflow();
+    let mut state = WorkflowRunState::running_for_workflow(&workflow);
+
+    apply_event_to_run_state(
+        &workflow,
+        &mut state,
+        ExecutionEvent::NodeInterrupted {
+            node_id: NodeId("first".to_string()),
+            label: "First".to_string(),
+        },
+    );
+
+    assert!(state.active);
+    assert_eq!(
+        state.status_by_node[&NodeId("first".to_string())],
+        crate::run::state::AgentStatus::Interrupted
+    );
+    assert_eq!(state.run_trace[0].status, TraceStatus::Paused);
+}
+
+#[test]
+fn reducer_node_errored_keeps_run_active() {
+    let workflow = workflow();
+    let mut state = WorkflowRunState::running_for_workflow(&workflow);
+
+    apply_event_to_run_state(
+        &workflow,
+        &mut state,
+        ExecutionEvent::NodeErrored {
+            node_id: NodeId("first".to_string()),
+            label: "First".to_string(),
+            error: "boom".to_string(),
+        },
+    );
+
+    assert!(state.active);
+    assert_eq!(
+        state.status_by_node[&NodeId("first".to_string())],
+        crate::run::state::AgentStatus::Failed
+    );
+    assert_eq!(state.last_error.as_deref(), Some("boom"));
+    assert_eq!(state.run_trace[0].status, TraceStatus::Failed);
 }
 
 #[test]
@@ -819,4 +954,228 @@ fn file_changed_event_appends_to_run_state() {
         .expect("per-node ledger");
     assert_eq!(node_files.len(), 1);
     assert_eq!(node_files[0].path, "src/main.rs");
+}
+
+fn parallel_pause_workflow() -> Workflow {
+    let mut workflow = Workflow::new("parallel-pause");
+    let mut wait = engine::Node::agent("Wait", 0.0, 0.0);
+    wait.id = NodeId("wait".to_string());
+    wait.agent.auto_start = false;
+    let mut fail = engine::Node::agent("Fail", 200.0, 0.0);
+    fail.id = NodeId("fail".to_string());
+    fail.agent.auto_start = true;
+    fail.agent.model = "test-model".to_string();
+    workflow.nodes = vec![wait, fail];
+    workflow
+}
+
+fn interactive_run_params<A>(
+    workflow: Workflow,
+    execution_cwd: std::path::PathBuf,
+    ai: A,
+) -> InteractiveWorkflowRunParams<A>
+where
+    A: AiPort + Send + Sync + 'static,
+{
+    InteractiveWorkflowRunParams {
+        workflow,
+        entrypoint: None,
+        execution_cwd,
+        ai,
+        agent_snapshots: BTreeMap::new(),
+        snapshot_store: Arc::new(
+            crate::tools::edit::hashline::snapshots::InMemorySnapshotStore::new(),
+        ),
+        lsp: crate::lsp::LspSettings::from_env(),
+        pending_engine_reverts: Arc::new(parking_lot::Mutex::new(Vec::new())),
+        node_interrupts: Arc::new(parking_lot::Mutex::new(BTreeMap::new())),
+    }
+}
+
+#[tokio::test]
+async fn interrupt_during_slow_tool_emits_node_interrupted() {
+    #[derive(Clone)]
+    struct BashSleepAi;
+
+    #[async_trait]
+    impl AiPort for BashSleepAi {
+        async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            self.invoke_stream(request, &NoopStreamSink).await
+        }
+
+        async fn invoke_stream(
+            &self,
+            _request: AgentRequest,
+            _sink: &dyn AiStreamSink,
+        ) -> Result<AgentTurnOutcome, AgentError> {
+            Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+                raw_text: String::new(),
+                assistant_message: None,
+                tool_calls: vec![ToolCall {
+                    id: "call-sleep".to_string(),
+                    name: "bash".to_string(),
+                    arguments: json!({"command": "sleep 30", "timeout": 30}),
+                    intent: None,
+                }],
+            }))
+        }
+    }
+
+    struct NoopStreamSink;
+
+    impl AiStreamSink for NoopStreamSink {
+        fn on_stream_event(&self, _event: AiStreamEvent) {}
+    }
+
+    let temp = TempDir::new().expect("tempdir");
+    let mut workflow = workflow();
+    workflow.nodes[0].agent.tools.catalog.tools = vec![ToolRef {
+        name: "bash".to_string(),
+        tier: Some(ToolTier::Exec),
+    }];
+    workflow.nodes[0].agent.tools.approval_mode = Some(ApprovalMode::Yolo);
+    let node_id = workflow.nodes[0].id.clone();
+    let params = interactive_run_params(workflow, temp.path().to_path_buf(), BashSleepAi);
+    let node_interrupts = params.node_interrupts.clone();
+    let (handle, mut event_rx, _action_tx, _cancel, _) =
+        spawn_interactive_workflow_run(&tokio::runtime::Handle::current(), params);
+
+    let mut tool_started = false;
+    let mut interrupted = false;
+    while let Ok(Some(event)) = timeout(Duration::from_secs(10), event_rx.recv()).await {
+        match event {
+            ExecutionEvent::ToolStarted { node_id: id, .. } if id == node_id => {
+                tool_started = true;
+                if let Some((_, token)) = node_interrupts.lock().get(&node_id) {
+                    token.cancel();
+                }
+            }
+            ExecutionEvent::NodeInterrupted { node_id: id, .. } if id == node_id => {
+                interrupted = true;
+                break;
+            }
+            ExecutionEvent::Finished(_) | ExecutionEvent::Aborted => break,
+            ExecutionEvent::NodeFailed { node_id: id, .. } if id == node_id => break,
+            _ => {}
+        }
+    }
+
+    handle.abort();
+    assert!(tool_started, "expected bash tool to start before interrupt");
+    assert!(
+        interrupted,
+        "expected NodeInterrupted after per-node cancel"
+    );
+}
+
+#[tokio::test]
+async fn retrying_failed_node_does_not_re_emit_sibling_input_pause() {
+    #[derive(Clone)]
+    struct FailOnlyAi;
+
+    #[async_trait]
+    impl AiPort for FailOnlyAi {
+        async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            self.invoke_stream(request, &NoopStreamSink).await
+        }
+
+        async fn invoke_stream(
+            &self,
+            request: AgentRequest,
+            _sink: &dyn AiStreamSink,
+        ) -> Result<AgentTurnOutcome, AgentError> {
+            assert_eq!(request.node_id.0, "fail");
+            Err(AgentError::Permanent("boom".to_string()))
+        }
+    }
+
+    struct NoopStreamSink;
+
+    impl AiStreamSink for NoopStreamSink {
+        fn on_stream_event(&self, _event: AiStreamEvent) {}
+    }
+
+    let temp = TempDir::new().expect("tempdir");
+    let workflow = parallel_pause_workflow();
+    let (handle, mut event_rx, action_tx, _cancel, _) = spawn_interactive_workflow_run(
+        &tokio::runtime::Handle::current(),
+        interactive_run_params(workflow, temp.path().to_path_buf(), FailOnlyAi),
+    );
+
+    let mut wait_input_events = 0usize;
+    let mut sent_retry = false;
+
+    while let Ok(Some(event)) = timeout(Duration::from_secs(5), event_rx.recv()).await {
+        match event {
+            ExecutionEvent::NodeAwaitingInput { node_id, .. } if node_id.0 == "wait" => {
+                wait_input_events += 1;
+            }
+            ExecutionEvent::NodeErrored { node_id, .. } if node_id.0 == "fail" && !sent_retry => {
+                sent_retry = true;
+                action_tx
+                    .send(ExecutionAction::RetryNode {
+                        node_id: NodeId("fail".to_string()),
+                    })
+                    .expect("retry action");
+            }
+            ExecutionEvent::NodeErrored { node_id, .. } if node_id.0 == "fail" && sent_retry => {
+                break;
+            }
+            _ => {}
+        }
+        if wait_input_events > 1 {
+            break;
+        }
+    }
+
+    handle.abort();
+    assert!(sent_retry, "expected fail node to error before retry");
+    assert_eq!(
+        wait_input_events, 1,
+        "retry must not re-emit NodeAwaitingInput for the sibling wait node"
+    );
+}
+
+#[tokio::test]
+async fn headless_run_errors_on_retryable_node_failure_instead_of_hanging() {
+    #[derive(Clone)]
+    struct PermanentFailAi;
+
+    #[async_trait]
+    impl AiPort for PermanentFailAi {
+        async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            self.invoke_stream(request, &NoopStreamSink).await
+        }
+
+        async fn invoke_stream(
+            &self,
+            _request: AgentRequest,
+            _sink: &dyn AiStreamSink,
+        ) -> Result<AgentTurnOutcome, AgentError> {
+            Err(AgentError::Permanent("boom".to_string()))
+        }
+    }
+
+    struct NoopStreamSink;
+
+    impl AiStreamSink for NoopStreamSink {
+        fn on_stream_event(&self, _event: AiStreamEvent) {}
+    }
+
+    let error = run_workflow_headless(
+        workflow(),
+        None,
+        PermanentFailAi,
+        Vec::new(),
+        Vec::new(),
+        BTreeMap::new(),
+        None,
+    )
+    .await
+    .expect_err("permanent failure should surface as MissingRetry");
+
+    assert!(matches!(
+        error,
+        WorkflowExecutionError::MissingRetry(node_id) if node_id.0 == "first"
+    ));
 }

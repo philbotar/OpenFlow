@@ -30,7 +30,7 @@ export function ToolConfigEditor(props: {
         </button>
       </div>
       <Show when={open()}>
-        <div class="tool-config-body">
+        <div class="tool-config-body collapsible-body-enter">
           <div class="tool-config-list" role="group" aria-label="Enabled node tools">
             <For each={SUPPORTED_NODE_TOOLS}>
               {(tool) => (

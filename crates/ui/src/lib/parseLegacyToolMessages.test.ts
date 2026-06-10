@@ -1,6 +1,10 @@
 import { describe, expect, test } from "vitest";
 import type { ChatMessage } from "./types";
-import { groupLegacyToolMessages, isLegacyToolGroup } from "./parseLegacyToolMessages";
+import {
+  groupLegacyToolMessages,
+  isLegacyToolGroup,
+  isProviderThinkingMessage,
+} from "./parseLegacyToolMessages";
 
 describe("groupLegacyToolMessages", () => {
   test("groups request, running, and result lines for the same tool", () => {
@@ -35,6 +39,28 @@ describe("groupLegacyToolMessages", () => {
     expect(isLegacyToolGroup(items[0])).toBe(false);
     if (isLegacyToolGroup(items[0])) return;
     expect(items[0].toolCallId).toBe("call-1");
+  });
+
+  test("detects provider reasoning vs legacy tool thinking lines", () => {
+    expect(
+      isProviderThinkingMessage({
+        role: "Thinking",
+        content: "Let me work through the dependencies first.",
+      }),
+    ).toBe(true);
+    expect(
+      isProviderThinkingMessage({
+        role: "Thinking",
+        content: "Tool request: read\nArguments:\n{}",
+      }),
+    ).toBe(false);
+    expect(
+      isProviderThinkingMessage({
+        role: "Thinking",
+        content: "",
+        toolCallId: "call-1",
+      }),
+    ).toBe(false);
   });
 
   test("leaves unrelated chat messages untouched", () => {

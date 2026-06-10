@@ -1,5 +1,6 @@
 use providers::{
-    builtin_provider_specs, provider_spec, ProviderId, ProviderKind, ProviderSpec, WireApi,
+    builtin_provider_specs, provider_spec, ProviderId, ProviderKind, ProviderSpec,
+    ReasoningEffortOption, WireApi,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -24,6 +25,24 @@ pub struct ProviderProfile {
     pub editable: bool,
     #[serde(skip)]
     pub new_model_input: String,
+    #[serde(
+        default,
+        rename = "reasoningEffortOptions",
+        alias = "reasoning_effort_options"
+    )]
+    pub reasoning_effort_options: Vec<ReasoningEffortOption>,
+    #[serde(
+        default,
+        rename = "defaultReasoningBudgetTokens",
+        alias = "default_reasoning_budget_tokens"
+    )]
+    pub default_reasoning_budget_tokens: BTreeMap<String, u32>,
+    #[serde(
+        default,
+        rename = "defaultReasoningEffort",
+        alias = "default_reasoning_effort"
+    )]
+    pub default_reasoning_effort: Option<String>,
 }
 
 fn default_responses_path() -> String {
@@ -64,6 +83,9 @@ impl ProviderProfile {
             api_key: String::new(),
             editable: spec.editable,
             new_model_input: String::new(),
+            reasoning_effort_options: spec.default_reasoning_effort_options(),
+            default_reasoning_budget_tokens: Self::default_budget_tokens_for_spec(spec),
+            default_reasoning_effort: None,
         }
     }
 
@@ -95,6 +117,9 @@ impl ProviderProfile {
             api_key: String::new(),
             editable: false,
             new_model_input: String::new(),
+            reasoning_effort_options: Vec::new(),
+            default_reasoning_budget_tokens: BTreeMap::new(),
+            default_reasoning_effort: None,
         }
     }
 
@@ -117,8 +142,29 @@ impl ProviderProfile {
                 self.default_model = Some(spec.default_model.to_string());
             }
             self.editable = spec.editable;
+            if self.reasoning_effort_options.is_empty() {
+                self.reasoning_effort_options = spec.default_reasoning_effort_options();
+            }
+            if self.default_reasoning_budget_tokens.is_empty() {
+                self.default_reasoning_budget_tokens = Self::default_budget_tokens_for_spec(spec);
+            }
         }
         self.new_model_input.clear();
+    }
+
+    /// Build the default budget token map for a provider spec.
+    #[must_use]
+    fn default_budget_tokens_for_spec(spec: &ProviderSpec) -> BTreeMap<String, u32> {
+        match spec.kind {
+            ProviderKind::Anthropic(_) => {
+                let mut map = BTreeMap::new();
+                map.insert("low".to_string(), 10_240);
+                map.insert("medium".to_string(), 40_960);
+                map.insert("high".to_string(), 128_000);
+                map
+            }
+            _ => BTreeMap::new(),
+        }
     }
 }
 
@@ -254,5 +300,88 @@ pub fn merge_preserved_api_keys(incoming: &mut AppSettings, existing: &AppSettin
                 profile.api_key = existing_profile.api_key.clone();
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn provider_profile_serde_roundtrip_with_reasoning_effort_options() {
+        let profile = ProviderProfile {
+            reasoning_effort_options: vec![ReasoningEffortOption {
+                value: "adaptive".to_string(),
+                label: "Adaptive".to_string(),
+                uses_budget_tokens: false,
+            }],
+            default_reasoning_budget_tokens: {
+                let mut m = BTreeMap::new();
+                m.insert("low".to_string(), 10_240);
+                m
+            },
+            default_reasoning_effort: Some("adaptive".to_string()),
+            ..ProviderProfile::from_spec(provider_spec(&ProviderId::from("anthropic")).unwrap())
+        };
+        let value = serde_json::to_value(&profile).unwrap();
+        assert!(value["reasoningEffortOptions"].is_array());
+        assert_eq!(value["reasoningEffortOptions"][0]["value"], "adaptive");
+        assert_eq!(value["defaultReasoningBudgetTokens"]["low"], 10_240);
+        assert_eq!(value["defaultReasoningEffort"], "adaptive");
+        let back: ProviderProfile = serde_json::from_value(value).unwrap();
+        assert_eq!(back.reasoning_effort_options.len(), 1);
+        assert_eq!(back.default_reasoning_effort.as_deref(), Some("adaptive"));
+        assert_eq!(
+            back.default_reasoning_budget_tokens.get("low"),
+            Some(&10_240)
+        );
+    }
+
+    #[test]
+    fn provider_profile_backfills_from_spec_when_empty() {
+        // Simulate a profile saved before reasoning effort fields existed
+        let value = serde_json::json!({
+            "display_name": "Anthropic",
+            "base_url": "https://api.anthropic.com",
+            "transport": "chat_completions",
+            "responses_path": "v1/responses",
+            "chat_completions_path": "v1/chat/completions",
+            "known_models": ["claude-3-5-sonnet-latest"],
+            "default_model": "claude-3-5-sonnet-latest",
+            "api_key": "",
+            "editable": false
+        });
+        let mut profile: ProviderProfile = serde_json::from_value(value).unwrap();
+        assert!(profile.reasoning_effort_options.is_empty());
+        assert!(profile.default_reasoning_budget_tokens.is_empty());
+
+        let spec = provider_spec(&ProviderId::from("anthropic")).unwrap();
+        profile.normalize(Some(spec));
+        assert!(!profile.reasoning_effort_options.is_empty());
+        assert_eq!(profile.reasoning_effort_options.len(), 5);
+        assert_eq!(
+            profile.default_reasoning_budget_tokens.get("high"),
+            Some(&128_000)
+        );
+    }
+
+    #[test]
+    fn provider_profile_preserves_user_added_options() {
+        let mut profile =
+            ProviderProfile::from_spec(provider_spec(&ProviderId::from("anthropic")).unwrap());
+        // Add a custom user option
+        profile
+            .reasoning_effort_options
+            .push(ReasoningEffortOption {
+                value: "custom".to_string(),
+                label: "Custom".to_string(),
+                uses_budget_tokens: true,
+            });
+        let original_len = profile.reasoning_effort_options.len();
+
+        // Normalize should NOT overwrite user options
+        let spec = provider_spec(&ProviderId::from("anthropic")).unwrap();
+        profile.normalize(Some(spec));
+        assert_eq!(profile.reasoning_effort_options.len(), original_len);
     }
 }

@@ -36,6 +36,8 @@ type WorkflowCanvasProps = {
   selectedEdgeId: EdgeId | null;
   statusByNode: WorkflowCanvasStatusByNode | null;
   subagentsByNode: WorkflowCanvasSubagentsByNode | null;
+  runActive?: boolean;
+  colorMode?: "light" | "dark";
   onSelectNode: (nodeId: NodeId | null) => void;
   onSelectEdge: (edgeId: EdgeId | null) => void;
   onUpdateNodePosition: (nodeId: NodeId, x: number, y: number) => void;
@@ -43,12 +45,17 @@ type WorkflowCanvasProps = {
   onReconnectEdge: (edgeId: EdgeId, from: NodeId, to: NodeId) => void;
   onDeleteEdge: (edgeId: EdgeId) => void;
   onAddNode: () => void;
+  onInterruptNode?: (nodeId: NodeId) => void;
+  onRetryNode?: (nodeId: NodeId) => void;
 };
 
 export type WorkflowCanvasNodeData = {
   label: string;
   status: AgentStatus;
   subagents: SubagentSummary[];
+  runActive?: boolean;
+  onInterrupt?: (nodeId: string) => void;
+  onRetry?: (nodeId: string) => void;
 };
 
 export type WorkflowCanvasNode = FlowNode<WorkflowCanvasNodeData, "workflowNode">;
@@ -58,23 +65,37 @@ const NODE_TYPES = {
   workflowNode: WorkflowNode,
 };
 
-const DEFAULT_EDGE_OPTIONS = {
-  markerEnd: {
-    type: MarkerType.ArrowClosed,
-    color: "#c3cbda",
-  },
-  reconnectable: true,
-  style: {
-    stroke: "#c3cbda",
-    strokeWidth: 2,
-  },
-};
+function edgeStrokeForTheme(colorMode: "light" | "dark") {
+  return colorMode === "dark" ? "#4b5568" : "#c3cbda";
+}
+
+function backgroundDotForTheme(colorMode: "light" | "dark") {
+  return colorMode === "dark" ? "rgba(255, 255, 255, 0.08)" : "rgba(24, 24, 27, 0.14)";
+}
+
+function defaultEdgeOptions(colorMode: "light" | "dark") {
+  const stroke = edgeStrokeForTheme(colorMode);
+  return {
+    markerEnd: {
+      type: MarkerType.ArrowClosed,
+      color: stroke,
+    },
+    reconnectable: true,
+    style: {
+      stroke,
+      strokeWidth: 2,
+    },
+  };
+}
 
 export function buildFlowNodes(
   graph: WorkflowCanvasGraph | null,
   selectedNodeId: NodeId | null,
   statusByNode: WorkflowCanvasStatusByNode | null,
   subagentsByNode: WorkflowCanvasSubagentsByNode | null,
+  runActive = false,
+  onInterruptNode?: (nodeId: NodeId) => void,
+  onRetryNode?: (nodeId: NodeId) => void,
 ): WorkflowCanvasNode[] {
   if (!graph) {
     return [];
@@ -89,6 +110,9 @@ export function buildFlowNodes(
       label: node.label,
       status: statusForNode(statusByNode, node.id),
       subagents: subagentsByNode?.[node.id] ?? [],
+      runActive,
+      onInterrupt: onInterruptNode ? (nodeId: string) => onInterruptNode(nodeId) : undefined,
+      onRetry: onRetryNode ? (nodeId: string) => onRetryNode(nodeId) : undefined,
     },
     draggable: true,
     selectable: true,
@@ -101,10 +125,14 @@ export function buildFlowNodes(
 export function buildFlowEdges(
   graph: WorkflowCanvasGraph | null,
   selectedEdgeId: EdgeId | null,
+  runActive = false,
+  colorMode: "light" | "dark" = "light",
 ): WorkflowCanvasEdge[] {
   if (!graph) {
     return [];
   }
+
+  const edgeOptions = defaultEdgeOptions(colorMode);
 
   return graph.edges.map((edge) => ({
     id: edge.id,
@@ -113,8 +141,9 @@ export function buildFlowEdges(
     selected: selectedEdgeId === edge.id,
     reconnectable: true,
     deletable: true,
-    markerEnd: DEFAULT_EDGE_OPTIONS.markerEnd,
-    style: DEFAULT_EDGE_OPTIONS.style,
+    animated: runActive,
+    markerEnd: edgeOptions.markerEnd,
+    style: edgeOptions.style,
   }));
 }
 
@@ -237,13 +266,33 @@ export function isValidCanvasConnection(connection: { source: string | null; tar
 
 export function WorkflowCanvas(props: WorkflowCanvasProps) {
   const externalNodes = useMemo<WorkflowCanvasNode[]>(
-    () => buildFlowNodes(props.graph, props.selectedNodeId, props.statusByNode, props.subagentsByNode),
-    [props.graph, props.selectedNodeId, props.statusByNode, props.subagentsByNode],
+    () =>
+      buildFlowNodes(
+        props.graph,
+        props.selectedNodeId,
+        props.statusByNode,
+        props.subagentsByNode,
+        props.runActive,
+        props.onInterruptNode,
+        props.onRetryNode,
+      ),
+    [
+      props.graph,
+      props.selectedNodeId,
+      props.statusByNode,
+      props.subagentsByNode,
+      props.runActive,
+      props.onInterruptNode,
+      props.onRetryNode,
+    ],
   );
 
+  const colorMode = props.colorMode ?? "light";
+  const runActive = props.runActive ?? false;
+
   const externalEdges = useMemo<WorkflowCanvasEdge[]>(
-    () => buildFlowEdges(props.graph, props.selectedEdgeId),
-    [props.graph, props.selectedEdgeId],
+    () => buildFlowEdges(props.graph, props.selectedEdgeId, runActive, colorMode),
+    [props.graph, props.selectedEdgeId, runActive, colorMode],
   );
 
   // Use xyflow hooks for state management
@@ -328,7 +377,8 @@ export function WorkflowCanvas(props: WorkflowCanvasProps) {
         nodes={nodes}
         edges={edges}
         nodeTypes={NODE_TYPES}
-        defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
+        colorMode={colorMode}
+        defaultEdgeOptions={defaultEdgeOptions(colorMode)}
         onNodesChange={handleNodesChange}
         onEdgesChange={handleEdgesChange}
         onConnect={handleConnect}
@@ -347,7 +397,12 @@ export function WorkflowCanvas(props: WorkflowCanvasProps) {
         snapToGrid={true}
         snapGrid={[16, 16]}
       >
-        <Background gap={22} size={1.5} color="rgba(24, 24, 27, 0.14)" variant={BackgroundVariant.Dots} />
+        <Background
+          gap={22}
+          size={1.5}
+          color={backgroundDotForTheme(colorMode)}
+          variant={BackgroundVariant.Dots}
+        />
         <Panel position="top-left" className="workflow-flow-panel">
           <button type="button" className="secondary-button small workflow-flow-add-button" onClick={handleAddNode}>
             Add node

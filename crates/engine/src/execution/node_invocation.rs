@@ -226,6 +226,8 @@ pub fn build_agent_request(
         available_tools: ctx.available_tools.to_vec(),
         transcript: ctx.transcript.to_vec(),
         model_attempt: 1,
+        reasoning_effort: node.agent.reasoning_effort.clone(),
+        reasoning_budget_tokens: node.agent.reasoning_budget_tokens,
     })
 }
 
@@ -405,5 +407,28 @@ mod tests {
 
         assert_eq!(input["changed_files"].as_array().map(Vec::len), Some(1));
         assert_eq!(input["changed_files"][0]["path"], "src/main.rs");
+    }
+
+    #[test]
+    fn build_agent_request_copies_reasoning_effort_fields() {
+        let mut workflow = Workflow::new("test");
+        let mut node = crate::graph::Node::agent("idea", 0.0, 0.0);
+        node.agent.model = "gpt-4o".to_string();
+        node.agent.reasoning_effort = Some("adaptive".to_string());
+        node.agent.reasoning_budget_tokens = Some(40960);
+        workflow.nodes.push(node.clone());
+        let upstream_map = build_upstream_map(&workflow);
+        let ctx = NodeInvocationContext {
+            workflow: &workflow,
+            upstream_map: &upstream_map,
+            outputs: &BTreeMap::new(),
+            changed_files_by_node: &BTreeMap::new(),
+            entrypoint_text: None,
+            transcript: &[],
+            available_tools: &[],
+        };
+        let request = build_agent_request(&ctx, &node, true).unwrap();
+        assert_eq!(request.reasoning_effort, Some("adaptive".to_string()));
+        assert_eq!(request.reasoning_budget_tokens, Some(40960));
     }
 }

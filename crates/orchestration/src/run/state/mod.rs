@@ -14,6 +14,7 @@ pub enum AgentStatus {
     RunningTool,
     Completed,
     Failed,
+    Interrupted,
     Stopped,
 }
 

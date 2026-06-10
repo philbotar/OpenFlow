@@ -1,3 +1,5 @@
+import type { ChatRole } from "./types";
+
 /** Mirror of `engine::conversation::strip_tool_call_markup`. */
 
 function consumeToolCallFenceBlock(content: string): number {
@@ -77,4 +79,18 @@ export function stripToolCallMarkup(content: string): string {
   }
 
   return stripTrailingPartialToolCallPrefix(result).trim();
+}
+
+function shouldStripToolCallMarkup(role: ChatRole): boolean {
+  return (
+    role === "assistant" ||
+    role === "Assistant" ||
+    role === "thinking" ||
+    role === "Thinking"
+  );
+}
+
+/** Chat display text: strip tool-call echo markup for assistant/thinking only. */
+export function displayChatContent(role: ChatRole, content: string): string {
+  return shouldStripToolCallMarkup(role) ? stripToolCallMarkup(content) : content;
 }
