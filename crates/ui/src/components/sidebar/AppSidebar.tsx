@@ -150,10 +150,10 @@ export function Sidebar() {
           />
           <SidebarNavButton
             icon="settings"
-            label={ctx.screen() === "settings" ? "Back to editor" : "Settings"}
+            label="Settings"
             onClick={() => {
               ctx.closeAddNodePicker();
-              ctx.setScreen(ctx.screen() === "settings" ? "editor" : "settings");
+              ctx.setScreen("settings");
             }}
           />
           <div class="settings-nav-popup" aria-hidden="true">

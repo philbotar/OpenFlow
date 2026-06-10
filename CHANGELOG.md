@@ -4,7 +4,7 @@
 
 ### Added
 
-- **Settings reasoning effort:** per-provider default reasoning effort and budget token controls in Settings; applied to new nodes and at run time when a node has no override.
+- **Reasoning effort controls:** per-provider default in Settings plus per-node override in the inspector (effort level and budget tokens).
 - **Review-driven tests:** interrupt during slow bash tool emits `NodeInterrupted`; parallel retry does not re-emit sibling `NodeAwaitingInput`; headless runs return `MissingRetry` on retryable node failure; chat-completions body forwards `reasoning_effort` / budget fields.
 - **Per-node interrupt and retry:** interrupt a thinking/running-tool node without stopping the run (`interrupt_node`); retry failed or interrupted nodes with transcript preserved (`retry_node`); canvas stop/retry actions on node status row; `AgentStatus::Interrupted` and retryable `NodeErrored` / `NodeInterrupted` telemetry while the run stays active.
 - **UI polish overhaul:** `motion` animation library; motion tokens and `prefers-reduced-motion` support; animated modals (fade + scale) with focus trap and Escape-to-close; inspector panel slide-in; screen crossfade; dock height transition; canvas node pulse on `started` / `running_tool` and animated edges during runs; streaming caret and thinking-bubble shimmer; tool output expand/collapse; shared `Spinner` and bootstrap skeleton; keyboard shortcut cheatsheet (`?` or sidebar); dark mode (system/light/dark) in Settings; header button shortcut tooltips.
@@ -22,6 +22,9 @@
 
 ### Changed
 
+- **Inspector panel:** collapsible sections (Agent, Output schema, Tools, Callable agents) via `InspectorSection`; schema and Apply button grouped; header actions stay visible; Agent open by default.
+- **Dark mode tool/agent cards:** inspector tool and callable-agent option bubbles use theme surfaces instead of hardcoded light gray.
+- **Settings screen:** full-page shell replaces sidebar and top bar; left nav (Appearance, Authentication, Provider, Reasoning, Models) with section content on the right; Back to editor in settings nav; toast offset adjusts when top bar is hidden.
 - **Tool interrupt:** per-node cancel token stops in-flight tool execution and marks the node interrupted without aborting the run.
 - **Headless runs:** `NodeErrored` / `NodeInterrupted` return `WorkflowExecutionError::MissingRetry` instead of hanging.
 - **Drive retry loop:** retrying one node no longer breaks out of the interaction wait while siblings still await input or approval.

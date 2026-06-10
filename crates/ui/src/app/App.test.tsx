@@ -337,6 +337,28 @@ function topbarTitle(container: HTMLElement) {
   return title.textContent ?? "";
 }
 
+function settingsNavButton(container: HTMLElement, label: string) {
+  const button = Array.from(container.querySelectorAll(".settings-nav-button")).find(
+    (element) => element.textContent?.trim() === label,
+  ) as HTMLButtonElement | undefined;
+  if (!button) {
+    throw new Error(`settings nav button missing: ${label}`);
+  }
+  return button;
+}
+
+async function openSettingsScreen(container: HTMLElement) {
+  const settingsButton = await waitForElement(
+    () =>
+      Array.from(container.querySelectorAll(".sidebar-nav-button")).find((element) =>
+        element.textContent?.includes("Settings"),
+      ) as HTMLButtonElement | null,
+    "settings button",
+  );
+  settingsButton.click();
+  await flush();
+}
+
 function setUserAgent(userAgent: string) {
   const descriptor = Object.getOwnPropertyDescriptor(window.navigator, "userAgent");
   Object.defineProperty(window.navigator, "userAgent", {
@@ -692,29 +714,32 @@ describe("App agent dashboard", () => {
         Array.from(container.querySelectorAll("span")).some((element) => element.textContent === "Max tool rounds"),
       ).toBe(false);
 
-      const showToolsButton = await waitForElement(
+      const toolsSectionHeader = await waitForElement(
         () =>
-          Array.from(container.querySelectorAll("button")).find(
-            (element) => element.textContent === "Show tools",
+          Array.from(container.querySelectorAll(".inspector-section-header")).find((element) =>
+            element.textContent?.includes("Tools"),
           ) as HTMLButtonElement | null,
-        "show tools button",
+        "tools section header",
       );
-      showToolsButton.click();
+      toolsSectionHeader.click();
       await flush();
 
       expect(
-        Array.from(container.querySelectorAll(".tool-config-option-title")).map((element) => element.textContent),
+        Array.from(
+          container.querySelectorAll(
+            '[aria-label="Enabled node tools"] .tool-config-option-title',
+          ),
+        ).map((element) => element.textContent),
       ).toEqual(SUPPORTED_NODE_TOOLS.map((tool) => tool.name));
 
       const checkboxes = Array.from(
-        container.querySelectorAll('.tool-config-option input[type="checkbox"]'),
+        container.querySelectorAll(
+          '[aria-label="Enabled node tools"] input[type="checkbox"]',
+        ),
       ) as HTMLInputElement[];
       expect(checkboxes.every((element) => element.checked)).toBe(true);
 
-      const hideToolsButton = Array.from(container.querySelectorAll("button")).find(
-        (element) => element.textContent === "Hide tools",
-      ) as HTMLButtonElement | undefined;
-      hideToolsButton?.click();
+      toolsSectionHeader.click();
       await flush();
 
       expect(
@@ -747,17 +772,54 @@ describe("App settings persistence", () => {
     installDefaultApiMocks();
   });
 
+  test("renders full-page settings without sidebar or topbar", async () => {
+    const { container, dispose } = await mountApp(
+      makeBootstrapPayload([makeWorkflow("workflow-1", "Workflow One")]),
+    );
+
+    try {
+      await openSettingsScreen(container);
+
+      expect(container.querySelector(".sidebar")).toBeNull();
+      expect(container.querySelector(".topbar")).toBeNull();
+      expect(container.querySelector(".settings-shell")).not.toBeNull();
+      expect(container.querySelector(".settings-nav")).not.toBeNull();
+    } finally {
+      dispose();
+    }
+  });
+
+  test("returns to editor chrome from settings back button", async () => {
+    const { container, dispose } = await mountApp(
+      makeBootstrapPayload([makeWorkflow("workflow-1", "Workflow One")]),
+    );
+
+    try {
+      await openSettingsScreen(container);
+      const backButton = await waitForElement(
+        () => container.querySelector(".settings-back-button") as HTMLButtonElement | null,
+        "settings back button",
+      );
+      backButton.click();
+      await flush();
+
+      expect(container.querySelector(".sidebar")).not.toBeNull();
+      expect(container.querySelector(".topbar")).not.toBeNull();
+      expect(container.querySelector(".settings-shell")).toBeNull();
+    } finally {
+      dispose();
+    }
+  });
+
   test("loads and saves provider API keys per provider", async () => {
     const { container, dispose } = await mountApp(
       makeBootstrapPayload([makeWorkflow("workflow-1", "Workflow One")]),
     );
 
     try {
-      const settingsButton = await waitForElement(
-        () => Array.from(container.querySelectorAll(".sidebar-nav-button")).find((element) => element.textContent?.includes("Settings")) as HTMLButtonElement | null,
-        "settings button",
-      );
-      settingsButton.click();
+      await openSettingsScreen(container);
+
+      settingsNavButton(container, "Authentication").click();
       await flush();
 
       const apiKeyInput = await waitForElement(
@@ -765,6 +827,9 @@ describe("App settings persistence", () => {
         "provider api key input",
       ) as HTMLInputElement;
       expect(apiKeyInput.value).toBe("stored-openai-key");
+
+      settingsNavButton(container, "Provider").click();
+      await flush();
 
       const providerSelect = Array.from(container.querySelectorAll("select")).find(
         (element) => Array.from(element.options).some((option) => option.value === "custom_openai_compatible"),
@@ -774,13 +839,22 @@ describe("App settings persistence", () => {
       providerSelect!.dispatchEvent(new Event("change", { bubbles: true }));
       await flush();
 
-      await waitForElement(
-        () => (apiKeyInput.value === "stored-compatible-key" ? apiKeyInput : null),
-        "compatible provider api key",
-      );
+      settingsNavButton(container, "Authentication").click();
+      await flush();
 
-      apiKeyInput.value = "updated-compatible-key";
-      apiKeyInput.dispatchEvent(new Event("input", { bubbles: true }));
+      const compatibleApiKeyInput = await waitForElement(
+        () => {
+          const input = container.querySelector('input[type="password"]') as HTMLInputElement | null;
+          return input?.value === "stored-compatible-key" ? input : null;
+        },
+        "compatible provider api key",
+      ) as HTMLInputElement;
+
+      compatibleApiKeyInput.value = "updated-compatible-key";
+      compatibleApiKeyInput.dispatchEvent(new Event("input", { bubbles: true }));
+      await flush();
+
+      settingsNavButton(container, "Models").click();
       await flush();
 
       const saveButton = Array.from(container.querySelectorAll("button")).find(

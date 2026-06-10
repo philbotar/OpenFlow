@@ -20,11 +20,6 @@ function ScreenRouter() {
           <EditorScreen />
         </div>
       </Show>
-      <Show when={ctx.screen() === "settings"}>
-        <div class="screen-view" data-screen="settings">
-          <SettingsScreen />
-        </div>
-      </Show>
       <Show when={ctx.screen() === "agents"}>
         <div class="screen-view" data-screen="agents">
           <AgentsScreen />
@@ -34,47 +29,72 @@ function ScreenRouter() {
   );
 }
 
+function AppToaster() {
+  const ctx = useAppContext();
+  const topOffset = () => (ctx.screen() === "settings" ? "16px" : "72px");
+
+  return (
+    <Toaster
+      position="top-right"
+      offset={{ top: topOffset(), right: "16px" }}
+      visibleToasts={1}
+      richColors
+      closeButton
+      duration={BANNER_DISMISS_MS}
+      style={{
+        "--width": "min(400px, calc(100vw - 32px))",
+        "z-index": "9999",
+        zoom: "var(--ui-zoom)",
+      }}
+      toastOptions={{
+        classNames: {
+          toast: "app-toast",
+          title: "app-toast-title",
+          closeButton: "app-toast-close-button",
+        },
+      }}
+    />
+  );
+}
+
 function AppChrome() {
   const ctx = useAppContext();
+  const isSettings = () => ctx.screen() === "settings";
+
   return (
-    <div class="app-shell">
-      <WorkflowPickerModal />
-      <ShortcutsModal
-        open={ctx.shortcutsModalOpen()}
-        onClose={ctx.closeShortcutsModal}
-      />
-      <Sidebar />
-      <main class="main-shell">
-        <AppHeader />
-        <ScreenRouter />
-      </main>
-    </div>
+    <>
+      <AppToaster />
+      <div
+        class="app-shell"
+        classList={{ "app-shell--settings": isSettings() }}
+      >
+        <WorkflowPickerModal />
+        <ShortcutsModal
+          open={ctx.shortcutsModalOpen()}
+          onClose={ctx.closeShortcutsModal}
+        />
+        <Show
+          when={isSettings()}
+          fallback={
+            <>
+              <Sidebar />
+              <main class="main-shell">
+                <AppHeader />
+                <ScreenRouter />
+              </main>
+            </>
+          }
+        >
+          <SettingsScreen />
+        </Show>
+      </div>
+    </>
   );
 }
 
 function App() {
   return (
     <AppProvider>
-      <Toaster
-        position="top-right"
-        offset={{ top: "72px", right: "16px" }}
-        visibleToasts={1}
-        richColors
-        closeButton
-        duration={BANNER_DISMISS_MS}
-        style={{
-          "--width": "min(400px, calc(100vw - 32px))",
-          "z-index": "9999",
-          zoom: "var(--ui-zoom)",
-        }}
-        toastOptions={{
-          classNames: {
-            toast: "app-toast",
-            title: "app-toast-title",
-            closeButton: "app-toast-close-button",
-          },
-        }}
-      />
       <AppChrome />
     </AppProvider>
   );

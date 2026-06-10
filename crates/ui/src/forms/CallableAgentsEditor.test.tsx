@@ -44,7 +44,6 @@ describe("CallableAgentsEditor", () => {
           agents={agents}
           onAllowAllChange={() => {}}
           onToggle={() => {}}
-          defaultOpen
         />
       ),
       container,
@@ -64,7 +63,6 @@ describe("CallableAgentsEditor", () => {
           agents={agents}
           onAllowAllChange={() => {}}
           onToggle={onToggle}
-          defaultOpen
         />
       ),
       container,
@@ -86,7 +84,6 @@ describe("CallableAgentsEditor", () => {
           agents={agents}
           onAllowAllChange={onAllowAllChange}
           onToggle={() => {}}
-          defaultOpen
         />
       ),
       container,
@@ -108,7 +105,6 @@ describe("CallableAgentsEditor", () => {
           agents={agents}
           onAllowAllChange={() => {}}
           onToggle={() => {}}
-          defaultOpen
         />
       ),
       container,

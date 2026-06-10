@@ -182,6 +182,11 @@ export function agentReasoningEffort(agent: AgentNodeConfig): string | null {
   return agent.reasoning_effort ?? agent.reasoningEffort ?? null;
 }
 
+export function agentReasoningBudgetTokens(agent: AgentNodeConfig): number | null {
+  const budget = agent.reasoning_budget_tokens ?? agent.reasoningBudgetTokens;
+  return budget ?? null;
+}
+
 export function withDefaultReasoningFromProfile(
   agent: AgentNodeConfig,
   profile: ProviderProfile,
