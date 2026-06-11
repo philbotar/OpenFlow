@@ -4,6 +4,7 @@
 
 ### Added
 
+- **AI retry policy:** default 3 auto-retry attempts with exponential backoff (base `backoff_ms`, capped at 30s) in `InteractiveEngine::run` and `WorkflowRunner`; cancellation-aware backoff sleep; gear-panel controls for max attempts and backoff; `RetryPolicy::delay_for_attempt`.
 - **Reasoning effort controls:** per-provider default in Settings plus per-node override in the inspector (effort level and budget tokens).
 - **Review-driven tests:** interrupt during slow bash tool emits `NodeInterrupted`; parallel retry does not re-emit sibling `NodeAwaitingInput`; headless runs return `MissingRetry` on retryable node failure; chat-completions body forwards `reasoning_effort` / budget fields.
 - **Per-node interrupt and retry:** interrupt a thinking/running-tool node without stopping the run (`interrupt_node`); retry failed or interrupted nodes with transcript preserved (`retry_node`); canvas stop/retry actions on node status row; `AgentStatus::Interrupted` and retryable `NodeErrored` / `NodeInterrupted` telemetry while the run stays active.

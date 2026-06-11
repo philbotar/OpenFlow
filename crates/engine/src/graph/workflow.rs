@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::fmt;
 use std::ops::Deref;
+use std::time::Duration;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -168,7 +169,7 @@ impl std::borrow::Borrow<str> for WorkflowId {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RetryPolicy {
     #[serde(default = "default_retry_max_attempts")]
     pub max_attempts: u8,
@@ -176,8 +177,32 @@ pub struct RetryPolicy {
     pub backoff_ms: u64,
 }
 
+impl Default for RetryPolicy {
+    fn default() -> Self {
+        Self {
+            max_attempts: default_retry_max_attempts(),
+            backoff_ms: default_retry_backoff_ms(),
+        }
+    }
+}
+
+impl RetryPolicy {
+    pub const MAX_BACKOFF_MS: u64 = 30_000;
+
+    /// Exponential backoff for `attempt` (1-based retry counter after increment).
+    #[must_use]
+    pub fn delay_for_attempt(&self, attempt: u8) -> Duration {
+        let exp = u32::from(attempt.saturating_sub(1)).min(16);
+        let delay_ms = self
+            .backoff_ms
+            .saturating_mul(1 << exp)
+            .min(Self::MAX_BACKOFF_MS);
+        Duration::from_millis(delay_ms)
+    }
+}
+
 const fn default_retry_max_attempts() -> u8 {
-    0
+    3
 }
 
 const fn default_retry_backoff_ms() -> u64 {
@@ -462,5 +487,34 @@ mod tests {
         assert!(config.reasoning_effort.is_none());
         assert!(config.reasoning_budget_tokens.is_none());
         assert!(config.provider_id.is_none());
+    }
+
+    #[test]
+    fn retry_policy_default_matches_serde_defaults() {
+        assert_eq!(
+            RetryPolicy::default(),
+            RetryPolicy {
+                max_attempts: 3,
+                backoff_ms: 1_000,
+            }
+        );
+        let parsed: RetryPolicy = serde_json::from_value(json!({})).unwrap();
+        assert_eq!(parsed, RetryPolicy::default());
+    }
+
+    #[test]
+    fn retry_policy_delay_for_attempt_exponential_with_cap() {
+        let policy = RetryPolicy {
+            max_attempts: 3,
+            backoff_ms: 1_000,
+        };
+        assert_eq!(policy.delay_for_attempt(0), Duration::from_millis(1_000));
+        assert_eq!(policy.delay_for_attempt(1), Duration::from_millis(1_000));
+        assert_eq!(policy.delay_for_attempt(2), Duration::from_millis(2_000));
+        assert_eq!(policy.delay_for_attempt(3), Duration::from_millis(4_000));
+        assert_eq!(
+            policy.delay_for_attempt(10),
+            Duration::from_millis(RetryPolicy::MAX_BACKOFF_MS)
+        );
     }
 }

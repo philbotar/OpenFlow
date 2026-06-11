@@ -148,15 +148,17 @@ where
                     if error.is_retryable() && retries < workflow.settings.retry_policy.max_attempts
                     {
                         retries += 1;
+                        let delay = workflow.settings.retry_policy.delay_for_attempt(retries);
                         events.push(RunEvent {
                             node_id: node_id.clone(),
                             kind: RunEventKind::Retrying,
                             message: format!(
                                 "retrying after transient failure; backoff_ms={}",
-                                workflow.settings.retry_policy.backoff_ms
+                                delay.as_millis()
                             ),
                             output: None,
                         });
+                        tokio::time::sleep(delay).await;
                         continue;
                     }
                     events.push(RunEvent {
@@ -357,6 +359,49 @@ mod tests {
             RunError::NodeFailed { ref node_id, ref message }
                 if node_id == "idea" && message == "synthetic failure for idea"
         ));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn transient_failure_retries_after_backoff() {
+        struct TransientOnceAi {
+            calls: Arc<AtomicUsize>,
+        }
+
+        #[async_trait]
+        impl AiPort for TransientOnceAi {
+            async fn invoke(&self, _request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+                if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                    return Err(AgentError::Transient("timeout".to_string()));
+                }
+                Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    output: json!({
+                        "summary": format!("output from {}", _request.node_id)
+                    }),
+                    raw_text: "{}".to_string(),
+                    assistant_message: None,
+                }))
+            }
+        }
+
+        let mut workflow = Workflow::new("retry");
+        workflow.settings.retry_policy.max_attempts = 1;
+        workflow.settings.retry_policy.backoff_ms = 750;
+        workflow.nodes = vec![node("idea")];
+        let ai = TransientOnceAi {
+            calls: Arc::new(AtomicUsize::new(0)),
+        };
+        let calls = ai.calls.clone();
+        let runner = WorkflowRunner::new(ai);
+        let started = tokio::time::Instant::now();
+
+        let report = runner.run(&workflow).await.unwrap();
+
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        assert_eq!(report.outputs.len(), 1);
+        assert!(started.elapsed() >= std::time::Duration::from_millis(750));
+        assert!(report.events.iter().any(|event| {
+            event.kind == RunEventKind::Retrying && event.message.contains("backoff_ms=750")
+        }));
     }
 
     #[tokio::test]

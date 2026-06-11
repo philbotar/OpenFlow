@@ -2585,12 +2585,15 @@ impl<T> serde_core::de::DeserializeOwned for engine::graph::workflow::NodePositi
 pub struct engine::graph::workflow::RetryPolicy
 pub engine::graph::workflow::RetryPolicy::backoff_ms: u64
 pub engine::graph::workflow::RetryPolicy::max_attempts: u8
+impl engine::graph::workflow::RetryPolicy
+pub const engine::graph::workflow::RetryPolicy::MAX_BACKOFF_MS: u64
+pub fn engine::graph::workflow::RetryPolicy::delay_for_attempt(&self, u8) -> core::time::Duration
 impl core::clone::Clone for engine::graph::workflow::RetryPolicy
 pub fn engine::graph::workflow::RetryPolicy::clone(&self) -> engine::graph::workflow::RetryPolicy
 impl core::cmp::PartialEq for engine::graph::workflow::RetryPolicy
 pub fn engine::graph::workflow::RetryPolicy::eq(&self, &engine::graph::workflow::RetryPolicy) -> bool
 impl core::default::Default for engine::graph::workflow::RetryPolicy
-pub fn engine::graph::workflow::RetryPolicy::default() -> engine::graph::workflow::RetryPolicy
+pub fn engine::graph::workflow::RetryPolicy::default() -> Self
 impl core::fmt::Debug for engine::graph::workflow::RetryPolicy
 pub fn engine::graph::workflow::RetryPolicy::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for engine::graph::workflow::RetryPolicy
@@ -3335,12 +3338,15 @@ impl<T> serde_core::de::DeserializeOwned for engine::graph::workflow::NodePositi
 pub struct engine::graph::RetryPolicy
 pub engine::graph::RetryPolicy::backoff_ms: u64
 pub engine::graph::RetryPolicy::max_attempts: u8
+impl engine::graph::workflow::RetryPolicy
+pub const engine::graph::workflow::RetryPolicy::MAX_BACKOFF_MS: u64
+pub fn engine::graph::workflow::RetryPolicy::delay_for_attempt(&self, u8) -> core::time::Duration
 impl core::clone::Clone for engine::graph::workflow::RetryPolicy
 pub fn engine::graph::workflow::RetryPolicy::clone(&self) -> engine::graph::workflow::RetryPolicy
 impl core::cmp::PartialEq for engine::graph::workflow::RetryPolicy
 pub fn engine::graph::workflow::RetryPolicy::eq(&self, &engine::graph::workflow::RetryPolicy) -> bool
 impl core::default::Default for engine::graph::workflow::RetryPolicy
-pub fn engine::graph::workflow::RetryPolicy::default() -> engine::graph::workflow::RetryPolicy
+pub fn engine::graph::workflow::RetryPolicy::default() -> Self
 impl core::fmt::Debug for engine::graph::workflow::RetryPolicy
 pub fn engine::graph::workflow::RetryPolicy::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for engine::graph::workflow::RetryPolicy
@@ -8171,12 +8177,15 @@ impl<T> serde_core::de::DeserializeOwned for engine::PendingToolApproval where T
 pub struct engine::RetryPolicy
 pub engine::RetryPolicy::backoff_ms: u64
 pub engine::RetryPolicy::max_attempts: u8
+impl engine::graph::workflow::RetryPolicy
+pub const engine::graph::workflow::RetryPolicy::MAX_BACKOFF_MS: u64
+pub fn engine::graph::workflow::RetryPolicy::delay_for_attempt(&self, u8) -> core::time::Duration
 impl core::clone::Clone for engine::graph::workflow::RetryPolicy
 pub fn engine::graph::workflow::RetryPolicy::clone(&self) -> engine::graph::workflow::RetryPolicy
 impl core::cmp::PartialEq for engine::graph::workflow::RetryPolicy
 pub fn engine::graph::workflow::RetryPolicy::eq(&self, &engine::graph::workflow::RetryPolicy) -> bool
 impl core::default::Default for engine::graph::workflow::RetryPolicy
-pub fn engine::graph::workflow::RetryPolicy::default() -> engine::graph::workflow::RetryPolicy
+pub fn engine::graph::workflow::RetryPolicy::default() -> Self
 impl core::fmt::Debug for engine::graph::workflow::RetryPolicy
 pub fn engine::graph::workflow::RetryPolicy::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for engine::graph::workflow::RetryPolicy

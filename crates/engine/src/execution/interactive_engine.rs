@@ -19,6 +19,7 @@ use futures::future::join_all;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write;
+use std::time::Duration;
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -136,6 +137,7 @@ pub struct InteractiveEngine {
     in_flight_ai: BTreeSet<NodeId>,
     pending_tool_batches: BTreeMap<String, PendingToolBatch>,
     retries_by_node: BTreeMap<NodeId, u8>,
+    pending_retry_delay: Option<Duration>,
     submit_output_retries_by_node: BTreeMap<NodeId, u8>,
     request_input_retries_by_node: BTreeMap<NodeId, u8>,
     entrypoint_text: Option<String>,
@@ -181,6 +183,7 @@ impl InteractiveEngine {
             in_flight_ai: BTreeSet::new(),
             pending_tool_batches: BTreeMap::new(),
             retries_by_node: BTreeMap::new(),
+            pending_retry_delay: None,
             submit_output_retries_by_node: BTreeMap::new(),
             request_input_retries_by_node: BTreeMap::new(),
             entrypoint_text,
@@ -424,6 +427,13 @@ impl InteractiveEngine {
                 }
                 if let Some(error) = self.terminal_error.clone() {
                     return EngineRunResult::Failed(error);
+                }
+                if let Some(delay) = self.pending_retry_delay.take() {
+                    tokio::select! {
+                        biased;
+                        () = cancel.cancelled() => return EngineRunResult::Cancelled,
+                        () = tokio::time::sleep(delay) => {}
+                    }
                 }
                 continue;
             }
@@ -683,12 +693,21 @@ impl InteractiveEngine {
                     let retry_count = self.retries_by_node.entry(node_id.clone()).or_default();
                     if *retry_count < self.workflow.settings.retry_policy.max_attempts {
                         *retry_count += 1;
+                        let delay = self
+                            .workflow
+                            .settings
+                            .retry_policy
+                            .delay_for_attempt(*retry_count);
+                        self.pending_retry_delay = Some(
+                            self.pending_retry_delay
+                                .map_or(delay, |existing| existing.max(delay)),
+                        );
                         self.events.push(RunEvent {
                             node_id: node_id.clone(),
                             kind: RunEventKind::Retrying,
                             message: format!(
                                 "retrying after transient failure; backoff_ms={}",
-                                self.workflow.settings.retry_policy.backoff_ms
+                                delay.as_millis()
                             ),
                             output: None,
                         });
@@ -1089,13 +1108,113 @@ impl crate::ports::inbound::ToolApprovalPort for InteractiveEngine {
 mod tests {
     use super::*;
     use crate::graph::Node;
+    use async_trait::async_trait;
     use serde_json::json;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
 
     fn node(id: &str) -> Node {
         let mut node = Node::agent(id, 0.0, 0.0);
         node.id = NodeId(id.to_string());
         node.agent.model = "test-model".to_string();
         node
+    }
+
+    struct NoopToolPort;
+
+    #[async_trait]
+    impl ToolPort for NoopToolPort {
+        async fn execute_batch(
+            &self,
+            _engine: &mut InteractiveEngine,
+            _node_id: &NodeId,
+            _label: &str,
+            calls: Vec<ToolCall>,
+        ) -> Vec<ToolResult> {
+            calls
+                .into_iter()
+                .map(|call| ToolResult {
+                    tool_call_id: call.id,
+                    tool_name: call.name,
+                    content: "noop".to_string(),
+                    is_error: false,
+                    artifact_ids: Vec::new(),
+                    output_meta: None,
+                })
+                .collect()
+        }
+
+        fn augment_request(&self, _node_id: &NodeId, _request: &mut AgentRequest) {}
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn run_sleeps_backoff_before_transient_retry() {
+        struct TransientOnceAi {
+            calls: Arc<AtomicUsize>,
+        }
+
+        #[async_trait]
+        impl AiPort for TransientOnceAi {
+            async fn invoke(&self, _request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+                if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                    return Err(AgentError::Transient("timeout".to_string()));
+                }
+                Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    output: json!({"summary": "ok"}),
+                    raw_text: "{}".to_string(),
+                    assistant_message: None,
+                }))
+            }
+        }
+
+        let mut workflow = Workflow::new("backoff");
+        workflow.settings.retry_policy.max_attempts = 1;
+        workflow.settings.retry_policy.backoff_ms = 500;
+        workflow.nodes = vec![node("idea")];
+        let mut engine = InteractiveEngine::new(workflow, None).unwrap();
+        let ai = TransientOnceAi {
+            calls: Arc::new(AtomicUsize::new(0)),
+        };
+        let calls = ai.calls.clone();
+        let cancel = CancellationToken::new();
+        let started = tokio::time::Instant::now();
+
+        let result = engine.run(&ai, &NoopToolPort, &cancel).await;
+
+        assert!(matches!(result, EngineRunResult::Completed(_)));
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        assert!(started.elapsed() >= Duration::from_millis(500));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn run_cancel_during_backoff_returns_cancelled() {
+        struct AlwaysTransientAi;
+
+        #[async_trait]
+        impl AiPort for AlwaysTransientAi {
+            async fn invoke(&self, _request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+                Err(AgentError::Transient("timeout".to_string()))
+            }
+        }
+
+        let mut workflow = Workflow::new("cancel");
+        workflow.settings.retry_policy.max_attempts = 3;
+        workflow.settings.retry_policy.backoff_ms = 5_000;
+        workflow.nodes = vec![node("idea")];
+        let mut engine = InteractiveEngine::new(workflow, None).unwrap();
+        let cancel = CancellationToken::new();
+        let cancel_handle = cancel.clone();
+        let started = tokio::time::Instant::now();
+        let handle =
+            tokio::spawn(
+                async move { engine.run(&AlwaysTransientAi, &NoopToolPort, &cancel).await },
+            );
+        tokio::task::yield_now().await;
+        cancel_handle.cancel();
+        let result = handle.await.expect("run task");
+
+        assert!(matches!(result, EngineRunResult::Cancelled));
+        assert!(started.elapsed() < Duration::from_millis(5_000));
     }
 
     #[test]

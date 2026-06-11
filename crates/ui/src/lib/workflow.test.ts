@@ -119,6 +119,15 @@ const runState: WorkflowRunState = {
 };
 
 describe("workflow helpers", () => {
+  test("cloneWorkflow fills default retry policy when missing", () => {
+    const cloned = cloneWorkflow(workflow);
+
+    expect(cloned.settings.retry_policy).toEqual({
+      max_attempts: 3,
+      backoff_ms: 1_000,
+    });
+  });
+
   test("cloneWorkflow detaches nested workflow state", () => {
     const cloned = cloneWorkflow(workflow);
 

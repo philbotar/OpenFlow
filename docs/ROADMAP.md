@@ -23,7 +23,7 @@ Make runs survivable before adding features on top. A failed tool call or transi
 
 | # | Item | Status | Details |
 | --- | --- | --- | --- |
-| 3 | **Error taxonomy + AI retry** — T1 (`AgentError` transient/permanent), T2 (collapse templates), T3 (node lookup index), T5 (tool deny/decision resume), T6 (`retry_policy` for AI failures) | Planned | [Phase 1–2](#phase-1--foundations) |
+| 3 | **Error taxonomy + AI retry** — T1 (`AgentError` transient/permanent), T2 (collapse templates), T3 (node lookup index), T5 (tool deny/decision resume), T6 (`retry_policy` with exponential backoff, default 3 attempts) | Done | [Phase 1–2](#phase-1--foundations) |
 | 4 | **Tool retry & resilient failure** — T19 (tool error taxonomy), T20 (tool invocation retry), T21 (failed tools feed transcript and resume `CallAi`; never abort the run) | Planned | [Tool retry](#tool-invocation-retry-and-resilience) |
 | 5 | **Transcript & event correctness** — T9 (strip redundant tool-call XML), T10 (validate node id in `on_ai_complete`), T11 (run-event semantics), T12 (template store persistence errors) | Planned | [Phase 2–3](#phase-2--functional-gaps) |
 | 6 | **Run lifecycle leftovers** — clean up `openflow-run-*` temp dirs, store event-bridge task handle, decide run persistence policy (dies with app vs. resume) | Planned | [Run lifecycle](#run-lifecycle) |
@@ -463,8 +463,8 @@ Structural cleanup by workspace section. Keep domain logic in `domain`, transpor
 | Shared `node_invocation` for `WorkflowRunner` and `InteractiveEngine` | Done |
 | `subagent_runtime`, `CallableAgent`, canonical `RunTelemetry` | Done |
 | Remove unused port scaffolding; typed template errors; reduce `InteractiveEngine::poll` cloning | Done |
-| Collapse `model::NodeTemplate` vs `template::Template` (T2) | Planned |
-| Node lookup index — `HashMap<NodeId, usize>` (T3) | Planned |
+| Collapse `model::NodeTemplate` vs `template::Template` (T2) | Done |
+| Node lookup index — `HashMap<NodeId, usize>` (T3) | Done |
 | Make `HumanInputPort` / `ToolApprovalPort` load-bearing (T14) | Planned |
 | Move `ScriptedAiAdapter` to outbound placement (T15) | Planned |
 | Unify serde casing on wire types (T16) | Planned |
@@ -538,17 +538,17 @@ Remediation for modeled-but-unwired behavior and correctness gaps in `crates/dom
 
 | Task | Severity | Summary |
 | --- | --- | --- |
-| T1 Error taxonomy on `AgentError` | P0 | `Transient` / `Permanent` / `Failed`; `is_retryable()` for retry logic |
-| T2 Collapse template systems | P0 | Single canonical type per D1 |
-| T3 Node lookup index | P1 | `HashMap<NodeId, usize>` in engine; drop O(n²) scans |
+| T1 Error taxonomy on `AgentError` | P0 | `Transient` / `Permanent` / `Failed`; `is_retryable()` for retry logic — Done |
+| T2 Collapse template systems | P0 | Single canonical type per D1 — Done |
+| T3 Node lookup index | P1 | `HashMap<NodeId, usize>` in engine; drop O(n²) scans — Done |
 
 ### Phase 2 — Functional gaps
 
 | Task | Severity | Summary |
 | --- | --- | --- |
 | T4 Wire tool-approval policy | P0 | Honor `ApprovalMode`, `ToolTier`, `ToolPolicy` in engine — Done |
-| T5 Tool deny / decision resume | P0 | `on_tool_decision`, `approval_id` on `AwaitToolApproval` |
-| T6 Implement `retry_policy` | P0 | Retry transient **AI** failures per node; needs T1 |
+| T5 Tool deny / decision resume | P0 | `on_tool_decision`, `approval_id` on `AwaitToolApproval` — Done |
+| T6 Implement `retry_policy` | P0 | Retry transient **AI** failures per node with exponential backoff (default 3 attempts) — Done |
 | T19 Tool error taxonomy | P0 | `Transient` / `Permanent` on `ToolError` / `ToolRunnerError`; `is_retryable()` |
 | T20 Tool invocation retry | P0 | Honor `retry_policy` (or tool-specific override) in `drive.rs` before `ToolCompleted` error |
 | T21 Resilient tool failure path | P0 | Failed tools → transcript → `CallAi`; no `ExecutionEvent::Error` / drive exit for tool failures |
