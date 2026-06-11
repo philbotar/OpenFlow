@@ -1,9 +1,12 @@
-import { For, Show } from "solid-js";
+import { createMemo, For, Show } from "solid-js";
 import { useAppContext } from "../../context/AppContext";
+import type { NodeId } from "../../lib/types";
 
-export function SkillDescriptionPreview() {
+export function SkillDescriptionPreview(props: { nodeId: NodeId }) {
   const ctx = useAppContext();
-  const invokedSkills = () => ctx.chatSubmission().invokedSkills;
+  const invokedSkills = createMemo(
+    () => ctx.chatSubmissionFor(props.nodeId).invokedSkills,
+  );
 
   return (
     <Show when={invokedSkills().length > 0}>

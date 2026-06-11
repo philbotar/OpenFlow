@@ -5,10 +5,12 @@ import {
   cloneWorkflow,
   createEmptyToolConfig,
   canSendChat,
+  executionLayers,
   isChatComposerBusy,
   pendingApprovalForNode,
   nodeChangedFiles,
   nodeEditBatches,
+  projectChatLayout,
   projectWorkflowCanvasGraph,
   projectWorkflowCanvasStatusByNode,
   projectWorkflowCanvasSubagentsByNode,
@@ -352,5 +354,163 @@ describe("workflow helpers", () => {
     expect(nodeChangedFiles(state, null)).toEqual([]);
     expect(nodeEditBatches(state, "node-1").map((batch) => batch.batchId)).toEqual(["batch-1"]);
     expect(nodeEditBatches(state, "node-2").map((batch) => batch.batchId)).toEqual(["batch-2"]);
+  });
+});
+
+function makeDiamondWorkflow(): Workflow {
+  return {
+    id: "diamond",
+    name: "Diamond",
+    nodes: [
+      {
+        id: "node-a",
+        label: "A",
+        kind: "Agent",
+        position: { x: 0, y: 0 },
+        agent: workflow.nodes[0].agent,
+      },
+      {
+        id: "node-b",
+        label: "B",
+        kind: "Agent",
+        position: { x: 0, y: 0 },
+        agent: workflow.nodes[1].agent,
+      },
+      {
+        id: "node-c",
+        label: "C",
+        kind: "Agent",
+        position: { x: 0, y: 0 },
+        agent: workflow.nodes[1].agent,
+      },
+      {
+        id: "node-d",
+        label: "D",
+        kind: "Agent",
+        position: { x: 0, y: 0 },
+        agent: workflow.nodes[1].agent,
+      },
+    ],
+    edges: [
+      { id: "edge-ab", from: "node-a", to: "node-b" },
+      { id: "edge-ac", from: "node-a", to: "node-c" },
+      { id: "edge-bd", from: "node-b", to: "node-d" },
+      { id: "edge-cd", from: "node-c", to: "node-d" },
+    ],
+    settings: workflow.settings,
+  };
+}
+
+describe("executionLayers", () => {
+  test("linear chain yields one node per layer", () => {
+    expect(executionLayers(workflow)).toEqual([["node-1"], ["node-2"]]);
+  });
+
+  test("diamond workflow layers siblings in declaration order", () => {
+    expect(executionLayers(makeDiamondWorkflow())).toEqual([
+      ["node-a"],
+      ["node-b", "node-c"],
+      ["node-d"],
+    ]);
+  });
+
+  test("appends cycle leftovers as a final layer", () => {
+    const cyclic = cloneWorkflow(workflow);
+    cyclic.edges.push({ id: "edge-cycle", from: "node-2", to: "node-1" });
+    const layers = executionLayers(cyclic);
+    expect(layers).toEqual([["node-1", "node-2"]]);
+  });
+});
+
+describe("projectChatLayout", () => {
+  test("classifies live and settled nodes in layer order", () => {
+    const diamond = makeDiamondWorkflow();
+    const state: WorkflowRunState = {
+      ...runState,
+      active: true,
+      awaitingNodeIds: ["node-b", "node-c"],
+      awaitingNodeId: "node-b",
+      statusByNode: {
+        "node-a": "completed",
+        "node-b": "awaiting_input",
+        "node-c": "awaiting_input",
+        "node-d": "idle",
+      },
+      chatLogs: {
+        "node-a": [{ role: "Assistant", content: "upstream done" }],
+        "node-b": [{ role: "User", content: "branch b" }],
+        "node-c": [],
+      },
+    };
+
+    const layout = projectChatLayout(diamond, state);
+    expect(layout.settled.map((segment) => segment.nodeId)).toEqual(["node-a"]);
+    expect(layout.live.map((segment) => segment.nodeId)).toEqual(["node-b", "node-c"]);
+    expect(layout.live[1]?.messages).toEqual([]);
+  });
+
+  test("inactive run moves everything to settled", () => {
+    const state: WorkflowRunState = {
+      ...runState,
+      active: false,
+      statusByNode: {
+        "node-1": "completed",
+        "node-2": "awaiting_input",
+      },
+      chatLogs: {
+        "node-1": [{ role: "Assistant", content: "one" }],
+        "node-2": [{ role: "User", content: "two" }],
+      },
+    };
+
+    const layout = projectChatLayout(workflow, state);
+    expect(layout.live).toEqual([]);
+    expect(layout.settled.map((segment) => segment.nodeId)).toEqual(["node-1", "node-2"]);
+  });
+
+  test("appends deleted-node logs after workflow nodes", () => {
+    const state: WorkflowRunState = {
+      ...runState,
+      active: false,
+      statusByNode: {
+        "node-1": "completed",
+        "node-2": "completed",
+        "deleted-node": "completed",
+      },
+      chatLogs: {
+        "node-1": [{ role: "Assistant", content: "one" }],
+        "deleted-node": [{ role: "Assistant", content: "orphan" }],
+      },
+    };
+
+    const layout = projectChatLayout(workflow, state);
+    expect(layout.settled.map((segment) => segment.nodeId)).toEqual([
+      "node-1",
+      "deleted-node",
+    ]);
+    expect(layout.settled[1]?.label).toBe("deleted-node");
+  });
+
+  test("preserves per-node message order", () => {
+    const state: WorkflowRunState = {
+      ...runState,
+      active: false,
+      statusByNode: {
+        "node-1": "completed",
+        "node-2": "completed",
+      },
+      chatLogs: {
+        "node-1": [
+          { role: "System", content: "first" },
+          { role: "Assistant", content: "second" },
+        ],
+      },
+    };
+
+    const layout = projectChatLayout(workflow, state);
+    expect(layout.settled[0]?.messages.map((message) => message.content)).toEqual([
+      "first",
+      "second",
+    ]);
   });
 });

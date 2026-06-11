@@ -2,6 +2,7 @@ import type {
   AgentNodeConfig,
   AgentStatus,
   AppSettings,
+  ChatMessage,
   Edge,
   EdgeId,
   EditBatch,
@@ -429,6 +430,138 @@ export function isChatComposerBusy(
 
   const status = runState.statusByNode[selectedNodeId];
   return status === "started" || status === "running_tool";
+}
+
+const LIVE_AGENT_STATUSES: ReadonlySet<AgentStatus> = new Set([
+  "queued",
+  "started",
+  "running_tool",
+  "awaiting_input",
+  "awaiting_tool_approval",
+]);
+
+export type TranscriptSegment = {
+  nodeId: NodeId;
+  label: string;
+  messages: ChatMessage[];
+  status: AgentStatus;
+};
+
+export type ChatLayoutProjection = {
+  settled: TranscriptSegment[];
+  live: TranscriptSegment[];
+};
+
+/** Kahn topological layering; preserves workflow.nodes declaration order within each layer. */
+export function executionLayers(workflow: Workflow): NodeId[][] {
+  const nodeIds = workflow.nodes.map((node) => node.id);
+  const nodeSet = new Set(nodeIds);
+  const declarationOrder = new Map(nodeIds.map((id, index) => [id, index]));
+  const incoming = new Map<NodeId, number>();
+  const outgoing = new Map<NodeId, NodeId[]>();
+
+  for (const id of nodeIds) {
+    incoming.set(id, 0);
+    outgoing.set(id, []);
+  }
+
+  for (const edge of workflow.edges) {
+    if (!nodeSet.has(edge.from) || !nodeSet.has(edge.to)) {
+      continue;
+    }
+    incoming.set(edge.to, (incoming.get(edge.to) ?? 0) + 1);
+    outgoing.get(edge.from)!.push(edge.to);
+  }
+
+  const layers: NodeId[][] = [];
+  const visited = new Set<NodeId>();
+  let ready = nodeIds.filter((id) => incoming.get(id) === 0);
+
+  while (ready.length > 0) {
+    layers.push([...ready]);
+    for (const id of ready) {
+      visited.add(id);
+    }
+
+    const nextReady: NodeId[] = [];
+    for (const id of ready) {
+      for (const child of outgoing.get(id) ?? []) {
+        const remaining = (incoming.get(child) ?? 0) - 1;
+        incoming.set(child, remaining);
+        if (remaining === 0 && !visited.has(child) && !nextReady.includes(child)) {
+          nextReady.push(child);
+        }
+      }
+    }
+
+    nextReady.sort(
+      (left, right) => (declarationOrder.get(left) ?? 0) - (declarationOrder.get(right) ?? 0),
+    );
+    ready = nextReady;
+  }
+
+  const leftovers = nodeIds.filter((id) => !visited.has(id));
+  if (leftovers.length > 0) {
+    layers.push(leftovers);
+  }
+
+  return layers;
+}
+
+function isLiveAgentStatus(runState: WorkflowRunState, status: AgentStatus): boolean {
+  return runState.active === true && LIVE_AGENT_STATUSES.has(status);
+}
+
+function buildTranscriptSegment(
+  nodeId: NodeId,
+  label: string,
+  messages: ChatMessage[],
+  status: AgentStatus,
+): TranscriptSegment {
+  return { nodeId, label, messages, status };
+}
+
+export function projectChatLayout(
+  workflow: Workflow | undefined,
+  runState: WorkflowRunState | null,
+): ChatLayoutProjection {
+  if (!runState) {
+    return { settled: [], live: [] };
+  }
+
+  const labels = new Map<NodeId, string>();
+  const workflowNodeIds = new Set<NodeId>();
+  if (workflow) {
+    for (const node of workflow.nodes) {
+      labels.set(node.id, node.label);
+      workflowNodeIds.add(node.id);
+    }
+  }
+
+  const layers = workflow ? executionLayers(workflow) : [];
+  const orderedNodeIds = layers.flat();
+  const deletedNodeIds = Object.keys(runState.chatLogs).filter((id) => !workflowNodeIds.has(id));
+  const traversalOrder = [...orderedNodeIds, ...deletedNodeIds];
+
+  const settled: TranscriptSegment[] = [];
+  const live: TranscriptSegment[] = [];
+
+  for (const nodeId of traversalOrder) {
+    const messages = runState.chatLogs[nodeId] ?? [];
+    const status = statusForNode(runState.statusByNode, nodeId);
+    const label = labels.get(nodeId) ?? nodeId;
+    const segment = buildTranscriptSegment(nodeId, label, messages, status);
+
+    if (isLiveAgentStatus(runState, status)) {
+      live.push(segment);
+      continue;
+    }
+    if (messages.length > 0) {
+      settled.push(segment);
+    }
+  }
+
+  return { settled, live };
 }
 
 function cloneNode(node: Node): Node {

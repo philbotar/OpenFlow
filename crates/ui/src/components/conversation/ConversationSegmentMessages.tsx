@@ -1,0 +1,116 @@
+import { createMemo, For, Show } from "solid-js";
+import { displayChatContent } from "../../lib/stripToolCallMarkup";
+import { useAppContext } from "../../context/AppContext";
+import type { ChatMessage } from "../../lib/types";
+import {
+  groupLegacyToolMessages,
+  isLegacyToolGroup,
+  isProviderThinkingMessage,
+  type ConversationItem,
+  type LegacyToolGroup,
+} from "../../lib/parseLegacyToolMessages";
+import { chatRoleToMessageFrom, messageLabel } from "./chatRole";
+import { Message } from "./Message";
+import { NodeCompletedBubble } from "./NodeCompletedBubble";
+import { ThinkingBubble } from "./ThinkingBubble";
+import { ToolBubble } from "./ToolBubble";
+import { resolveToolSummary } from "./toolBubbleState";
+
+function parseLegacyArguments(argumentsText: string | null): unknown {
+  if (!argumentsText?.trim()) return undefined;
+  try {
+    return JSON.parse(argumentsText) as unknown;
+  } catch {
+    return argumentsText;
+  }
+}
+
+function LegacyToolBubble(props: { group: LegacyToolGroup }) {
+  return (
+    <ToolBubble
+      toolName={props.group.toolName}
+      status={props.group.status}
+      output={props.group.output}
+      arguments={parseLegacyArguments(props.group.argumentsText)}
+      isError={props.group.isError}
+    />
+  );
+}
+
+function MarkerToolBubble(props: { message: ChatMessage; nodeId: string }) {
+  const ctx = useAppContext();
+  const summary = () =>
+    resolveToolSummary(props.nodeId, props.message.toolCallId!, ctx.runState());
+
+  return (
+    <ToolBubble
+      toolName={summary()?.toolName ?? "Tool"}
+      status={summary()?.status ?? "proposed"}
+      output={summary()?.lastOutput}
+      arguments={summary()?.arguments}
+      isError={summary()?.isError}
+    />
+  );
+}
+
+function PlainMessage(props: { message: ChatMessage; label: string }) {
+  const content = createMemo(() =>
+    displayChatContent(props.message.role, props.message.content),
+  );
+  return (
+    <Show when={content().trim()}>
+      <Message
+        from={chatRoleToMessageFrom(props.message.role)}
+        label={messageLabel(props.message.role, props.label)}
+        content={content()}
+        streaming={props.message.streaming}
+      />
+    </Show>
+  );
+}
+
+function ConversationItemView(props: {
+  item: ConversationItem;
+  nodeId: string;
+  label: string;
+}) {
+  if (isLegacyToolGroup(props.item)) {
+    return <LegacyToolBubble group={props.item} />;
+  }
+  if (props.item.messageKind === "node_completed") {
+    return <NodeCompletedBubble summary={props.item.content} />;
+  }
+  if (props.item.toolCallId) {
+    return <MarkerToolBubble message={props.item} nodeId={props.nodeId} />;
+  }
+  if (isProviderThinkingMessage(props.item)) {
+    return <ThinkingBubble message={props.item} />;
+  }
+  return <PlainMessage message={props.item} label={props.label} />;
+}
+
+export function ConversationSegmentMessages(props: {
+  nodeId: string;
+  label: string;
+  messages: ChatMessage[];
+  emptyLabel?: string;
+}) {
+  const conversationItems = createMemo(() => groupLegacyToolMessages(props.messages));
+
+  return (
+    <Show
+      when={props.messages.length > 0}
+      fallback={
+        props.emptyLabel !== undefined ? (
+          <p class="chat-live-starting">{props.emptyLabel || "Starting…"}</p>
+        ) : null
+      }
+    >
+      <For each={conversationItems()}>
+        {(item) => (
+          <ConversationItemView item={item} nodeId={props.nodeId} label={props.label} />
+        )}
+      </For>
+    </Show>
+  );
+}

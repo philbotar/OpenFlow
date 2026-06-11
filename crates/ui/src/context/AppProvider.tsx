@@ -27,11 +27,13 @@ import {
   activeProfile,
   cloneSettings,
   cloneWorkflow,
+  canSendChat,
   createIdleRunState,
   nextNodePlacement,
   isChatComposerBusy,
   nodeOutput,
   prettyJson,
+  projectChatLayout,
   projectWorkflowCanvasGraph,
   projectWorkflowCanvasStatusByNode,
   projectWorkflowCanvasSubagentsByNode,
@@ -124,7 +126,13 @@ export function AppProvider(props: ParentProps) {
   const [dockHeight, setDockHeight] = createSignal(DEFAULT_DOCK_HEIGHT);
   const [selectedTraceIndex, setSelectedTraceIndex] = createSignal<number | null>(null);
   const [schemaText, setSchemaText] = createSignal("");
-  const [chatInput, setChatInput] = createSignal("");
+  const [chatDrafts, setChatDrafts] = createStore<Record<string, string>>({});
+  const [chatFilterNodeId, setChatFilterNodeId] = createSignal<NodeId | null>(null);
+  const [chatFocusNode, setChatFocusNode] = createSignal<{
+    nodeId: NodeId;
+    tick: number;
+  } | null>(null);
+  let chatFocusTick = 0;
   const [newModelInputByProvider, setNewModelInputByProvider] = createSignal<
     Record<AiProviderKind, string>
   >({} as Record<AiProviderKind, string>);
@@ -217,27 +225,13 @@ export function AppProvider(props: ParentProps) {
   });
   const hasRunTraceMemo = createMemo(() => (runState()?.runTrace.length ?? 0) > 0);
   const currentNodeOutput = createMemo(() => nodeOutput(runState(), selectedNodeId()));
-  const chatMessages = createMemo(() => {
-    const nodeId = selectedNodeId();
-    if (!nodeId) return [];
-    return runState()?.chatLogs[nodeId] ?? [];
-  });
-  const selectedNodePendingApproval = createMemo(() => {
-    const nodeId = selectedNodeId();
-    const approvals = runState()?.pendingApprovals ?? [];
-    if (!nodeId) {
-      return null;
-    }
-    return approvals.find((approval) => approval.nodeId === nodeId) ?? null;
-  });
-  const selectedPendingApproval = createMemo(() => {
-    const nodeApproval = selectedNodePendingApproval();
-    if (nodeApproval) {
-      return nodeApproval;
-    }
-    const approvals = runState()?.pendingApprovals ?? [];
-    return approvals[0] ?? null;
-  });
+  const chatLayout = createMemo(() =>
+    projectChatLayout(activeWorkflow(), runState()),
+  );
+  const chatDraft = (nodeId: NodeId) => chatDrafts[nodeId] ?? "";
+  const setChatDraft = (nodeId: NodeId, text: string) => {
+    setChatDrafts(nodeId, text);
+  };
   const awaitingNodeIdsMemo = createMemo(() => {
     const state = runState();
     if (!state) {
@@ -248,15 +242,6 @@ export function AppProvider(props: ParentProps) {
     }
     return state.awaitingNodeId ? [state.awaitingNodeId] : [];
   });
-  const chatEnabledMemo = createMemo(
-    () =>
-      runState()?.active === true &&
-      awaitingNodeIdsMemo().includes(selectedNodeId() ?? "") &&
-      (readiness()?.ready ?? false),
-  );
-  const chatComposerBusyMemo = createMemo(() =>
-    isChatComposerBusy(runState(), selectedNodeId()),
-  );
   const skillIdsMemo = createMemo(
     () => new Set(availableSkills().map((skill) => skill.id)),
   );
@@ -267,15 +252,17 @@ export function AppProvider(props: ParentProps) {
     }
     return map;
   });
-  const chatSubmission = createMemo(() =>
-    resolveChatSubmission(chatInput(), skillIdsMemo()),
-  );
-  const canSendChatMemo = createMemo(
-    () =>
-      !selectedNodePendingApproval() &&
-      chatEnabledMemo() &&
-      chatSubmission().submittedText !== "",
-  );
+  const chatSubmissionFor = (nodeId: NodeId) =>
+    resolveChatSubmission(chatDraft(nodeId), skillIdsMemo());
+  const canSendChatFor = (nodeId: NodeId) =>
+    canSendChat(
+      runState(),
+      nodeId,
+      readiness()?.ready ?? false,
+      chatSubmissionFor(nodeId).submittedText,
+    );
+  const composerBusyFor = (nodeId: NodeId) =>
+    isChatComposerBusy(runState(), nodeId);
 
   // ── Toast helpers ─────────────────────────────────────────────────────────
   const clearStatusToast = () => toast.dismiss(STATUS_TOAST_ID);
@@ -866,16 +853,15 @@ export function AppProvider(props: ParentProps) {
     }
   };
 
-  const handleSubmitChat = async () => {
-    const nodeId = selectedNodeId();
-    if (!nodeId || !canSendChatMemo()) return;
+  const handleSubmitChat = async (nodeId: NodeId) => {
+    if (!canSendChatFor(nodeId)) return;
     try {
       const nextRunState = await desktop.submitUserInput(
         nodeId,
-        chatSubmission().submittedText,
+        chatSubmissionFor(nodeId).submittedText,
       );
       setRunState(nextRunState);
-      setChatInput("");
+      setChatDraft(nodeId, "");
     } catch (error) {
       setError(normalizeError(error));
     }
@@ -889,15 +875,18 @@ export function AppProvider(props: ParentProps) {
     }
   };
 
-  const handleToolApproval = async (allow: boolean) => {
-    const approval = selectedPendingApproval();
-    if (!approval) return;
+  const handleToolApproval = async (approvalId: string, allow: boolean) => {
     try {
-      const nextRunState = await desktop.submitToolApproval(approval.approvalId, allow);
+      const nextRunState = await desktop.submitToolApproval(approvalId, allow);
       setRunState(nextRunState);
     } catch (error) {
       setError(normalizeError(error));
     }
+  };
+
+  const focusChatNode = (nodeId: NodeId) => {
+    chatFocusTick += 1;
+    setChatFocusNode({ nodeId, tick: chatFocusTick });
   };
 
   const handleSelectNode = (nodeId: NodeId | null) => {
@@ -905,6 +894,9 @@ export function AppProvider(props: ParentProps) {
     setSelectedNodeId(nodeId);
     setEditingNodeId(null);
     setNodeLabelDraft("");
+    if (nodeId && bottomTab() === "chat") {
+      focusChatNode(nodeId);
+    }
   };
 
   const handleSelectEdge = (edgeId: EdgeId | null) => {
@@ -1023,10 +1015,10 @@ export function AppProvider(props: ParentProps) {
     handleCancelNodeLabelEdit();
   };
 
-  const handleChatInputKeyDown = (event: KeyboardEvent) => {
+  const handleChatInputKeyDown = (event: KeyboardEvent, nodeId: NodeId) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      void handleSubmitChat();
+      void handleSubmitChat(nodeId);
     }
   };
 
@@ -1178,17 +1170,12 @@ export function AppProvider(props: ParentProps) {
           handleRunStateUpdate: (nextRunState) => {
             setRunState(nextRunState);
             if (nextRunState.pendingApprovals.length > 0) {
-              setSelectedEdgeId(null);
-              setSelectedNodeId(nextRunState.pendingApprovals[0].nodeId);
-              setEditingNodeId(null);
-              setNodeLabelDraft("");
+              const approval = nextRunState.pendingApprovals[0];
+              focusChatNode(approval.nodeId);
               setDockOpen(true);
               setBottomTab("chat");
               setDockHeight((current) => clampDockHeight(current, "chat"));
-              toast(
-                `${nextRunState.pendingApprovals[0].nodeLabel} needs tool approval`,
-                { id: STATUS_TOAST_ID },
-              );
+              toast(`${approval.nodeLabel} needs tool approval`, { id: STATUS_TOAST_ID });
             } else {
               const awaitingIds =
                 nextRunState.awaitingNodeIds && nextRunState.awaitingNodeIds.length > 0
@@ -1196,21 +1183,14 @@ export function AppProvider(props: ParentProps) {
                   : nextRunState.awaitingNodeId
                     ? [nextRunState.awaitingNodeId]
                     : [];
-              const focusId =
-                awaitingIds.find((id) => !selectedNodeId() || id === selectedNodeId()) ??
-                awaitingIds[0];
+              const focusId = awaitingIds[0];
               if (focusId) {
                 const label =
                   activeWorkflow()?.nodes.find((n) => n.id === focusId)?.label ?? "Node";
-                if (!selectedNodeId() || !awaitingIds.includes(selectedNodeId()!)) {
-                  setSelectedEdgeId(null);
-                  setSelectedNodeId(focusId);
-                  setEditingNodeId(null);
-                  setNodeLabelDraft("");
-                  setDockOpen(true);
-                  setBottomTab("chat");
-                  setDockHeight((current) => clampDockHeight(current, "chat"));
-                }
+                focusChatNode(focusId);
+                setDockOpen(true);
+                setBottomTab("chat");
+                setDockHeight((current) => clampDockHeight(current, "chat"));
                 const suffix =
                   awaitingIds.length > 1 ? ` (+${awaitingIds.length - 1} more)` : "";
                 toast(`${label} is waiting for input${suffix}`, { id: STATUS_TOAST_ID });
@@ -1265,7 +1245,8 @@ export function AppProvider(props: ParentProps) {
     dockHeight,
     selectedTraceIndex,
     schemaText,
-    chatInput,
+    chatFilterNodeId,
+    chatFocusNode,
     newModelInputByProvider,
     providerKeyInputByProvider,
     uiZoom,
@@ -1292,7 +1273,9 @@ export function AppProvider(props: ParentProps) {
     // Setters
     setWorkflowNameDraft,
     setAgentNameDraft,
-    setChatInput,
+    setChatFilterNodeId,
+    chatDraft,
+    setChatDraft,
     setNewModelInputByProvider,
     setProviderKeyInputByProvider,
     setNodeLabelDraft,
@@ -1316,13 +1299,10 @@ export function AppProvider(props: ParentProps) {
     selectedTrace,
     hasRunTraceMemo,
     currentNodeOutput,
-    chatMessages,
-    selectedPendingApproval,
-    selectedNodePendingApproval,
-    chatEnabledMemo,
-    chatComposerBusyMemo,
-    chatSubmission,
-    canSendChatMemo,
+    chatLayout,
+    chatSubmissionFor,
+    canSendChatFor,
+    composerBusyFor,
     // Ref setters
     setWorkflowNameInputRef,
     setAgentNameInputRef,

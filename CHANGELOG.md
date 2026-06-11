@@ -4,6 +4,8 @@
 
 ### Added
 
+- **Global chat:** settled run history in execution-layer order above a live strip of per-node columns; per-node composers and approval cards; node filter chips; canvas selection no longer steals focus on pause (`projectChatLayout`, `LiveNodeColumn`, `ConversationSegmentMessages`).
+- **ROADMAP.md:** [Run checkpoint, history, and replay](docs/ROADMAP.md#run-checkpoint-history-and-replay) — persist checkpoints to disk, run history UI, resume paused runs, read-only replay, and fork-from-checkpoint; expands queue item #22 and ties to persistence policy (#6).
 - **AI retry policy:** default 3 auto-retry attempts with exponential backoff (base `backoff_ms`, capped at 30s) in `InteractiveEngine::run` and `WorkflowRunner`; cancellation-aware backoff sleep; gear-panel controls for max attempts and backoff; `RetryPolicy::delay_for_attempt`.
 - **Reasoning effort controls:** per-provider default in Settings plus per-node override in the inspector (effort level and budget tokens).
 - **Review-driven tests:** interrupt during slow bash tool emits `NodeInterrupted`; parallel retry does not re-emit sibling `NodeAwaitingInput`; headless runs return `MissingRetry` on retryable node failure; chat-completions body forwards `reasoning_effort` / budget fields.

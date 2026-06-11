@@ -6,20 +6,35 @@ import {
   getActiveSlashToken,
   matchSkillsForSlashQuery,
 } from "../../lib/chatCommands";
+import type { NodeId } from "../../lib/types";
 import type { SkillSummary } from "../../lib/types";
+import { pendingApprovalForNode } from "../../lib/workflow";
 import { SkillCommandCombobox } from "./SkillCommandCombobox";
 import { SkillDescriptionPreview } from "./SkillDescriptionPreview";
 
-const COMBOBOX_LISTBOX_ID = "chat-skill-command-listbox";
-
-export function ConversationComposer() {
+export function ConversationComposer(props: {
+  nodeId: NodeId;
+  label: string;
+  disabled?: boolean;
+}) {
   const ctx = useAppContext();
   let textareaRef: HTMLTextAreaElement | undefined;
   const [caretPosition, setCaretPosition] = createSignal(0);
   const [highlightedIndex, setHighlightedIndex] = createSignal(0);
+  const listboxId = () => `chat-skill-command-listbox-${props.nodeId}`;
+
+  const draft = () => ctx.chatDraft(props.nodeId);
+  const submission = () => ctx.chatSubmissionFor(props.nodeId);
+  const chatEnabled = () =>
+    !props.disabled &&
+    ctx.runState()?.active === true &&
+    (ctx.runState()?.awaitingNodeIds?.includes(props.nodeId) ||
+      ctx.runState()?.awaitingNodeId === props.nodeId) &&
+    (ctx.readiness()?.ready ?? false);
+  const pendingApproval = () => pendingApprovalForNode(ctx.runState(), props.nodeId);
 
   const activeSlashToken = createMemo(() =>
-    getActiveSlashToken(ctx.chatInput(), caretPosition()),
+    getActiveSlashToken(draft(), caretPosition()),
   );
   const suggestions = createMemo(() => {
     const token = activeSlashToken();
@@ -29,7 +44,7 @@ export function ConversationComposer() {
     return matchSkillsForSlashQuery(ctx.availableSkills(), token.query);
   });
   const comboboxOpen = createMemo(
-    () => !!activeSlashToken() && suggestions().length > 0 && ctx.chatEnabledMemo(),
+    () => !!activeSlashToken() && suggestions().length > 0 && chatEnabled(),
   );
 
   const syncCaret = (target: HTMLTextAreaElement) => {
@@ -43,12 +58,12 @@ export function ConversationComposer() {
     }
 
     const { value, caret } = applySlashTokenCompletion(
-      ctx.chatInput(),
+      draft(),
       token.replaceStart,
       token.replaceEnd,
       skill.id,
     );
-    ctx.setChatInput(value);
+    ctx.setChatDraft(props.nodeId, value);
     setHighlightedIndex(0);
     requestAnimationFrame(() => {
       if (!textareaRef) {
@@ -61,7 +76,7 @@ export function ConversationComposer() {
   };
 
   const handleInput = (event: InputEvent & { currentTarget: HTMLTextAreaElement }) => {
-    ctx.setChatInput(event.currentTarget.value);
+    ctx.setChatDraft(props.nodeId, event.currentTarget.value);
     syncCaret(event.currentTarget);
     setHighlightedIndex(0);
   };
@@ -91,8 +106,9 @@ export function ConversationComposer() {
         event.preventDefault();
         const token = activeSlashToken();
         if (token) {
-          ctx.setChatInput(
-            `${ctx.chatInput().slice(0, token.replaceStart)}${ctx.chatInput().slice(token.replaceEnd)}`,
+          ctx.setChatDraft(
+            props.nodeId,
+            `${draft().slice(0, token.replaceStart)}${draft().slice(token.replaceEnd)}`,
           );
           const caret = token.replaceStart;
           requestAnimationFrame(() => {
@@ -105,38 +121,38 @@ export function ConversationComposer() {
       }
     }
 
-    ctx.handleChatInputKeyDown(event);
+    ctx.handleChatInputKeyDown(event, props.nodeId);
   };
 
   return (
     <div class="chat-composer">
-      <SkillDescriptionPreview />
+      <SkillDescriptionPreview nodeId={props.nodeId} />
       <div class="chat-composer-input-shell">
         <SkillCommandCombobox
           open={comboboxOpen()}
           suggestions={suggestions()}
           highlightedIndex={highlightedIndex()}
           query={activeSlashToken()?.query ?? ""}
-          listboxId={COMBOBOX_LISTBOX_ID}
+          listboxId={listboxId()}
           onSelect={applySkill}
           onHighlight={setHighlightedIndex}
         />
         <div
           class="chat-composer-pill"
-          classList={{ "is-busy": ctx.chatComposerBusyMemo() }}
+          classList={{ "is-busy": ctx.composerBusyFor(props.nodeId) }}
         >
           <textarea
             ref={textareaRef}
             class="text-area composer-input"
             rows={1}
-            value={ctx.chatInput()}
+            value={draft()}
             role="combobox"
             aria-autocomplete="list"
             aria-expanded={comboboxOpen()}
-            aria-controls={comboboxOpen() ? COMBOBOX_LISTBOX_ID : undefined}
+            aria-controls={comboboxOpen() ? listboxId() : undefined}
             aria-activedescendant={
               comboboxOpen()
-                ? `${COMBOBOX_LISTBOX_ID}-option-${highlightedIndex()}`
+                ? `${listboxId()}-option-${highlightedIndex()}`
                 : undefined
             }
             onInput={handleInput}
@@ -144,30 +160,30 @@ export function ConversationComposer() {
             onKeyUp={(event) => syncCaret(event.currentTarget)}
             onKeyDown={handleKeyDown}
             placeholder={
-              ctx.selectedNodePendingApproval()
-                ? "Resolve the pending tool approval above."
-                : "Continue paused node. Type / for skills."
+              props.disabled
+                ? "Start a run to chat with agents."
+                : pendingApproval()
+                  ? "Resolve the pending tool approval above."
+                  : `Reply to ${props.label}… Type / for skills.`
             }
-            disabled={!ctx.chatEnabledMemo() || !!ctx.selectedNodePendingApproval()}
+            disabled={!chatEnabled() || !!pendingApproval()}
           />
-          <Show when={ctx.chatSubmission().invokedSkills.length > 0}>
+          <Show when={submission().invokedSkills.length > 0}>
             <span
               class="composer-skill-pill"
-              title={`Sending with skills: ${ctx
-                .chatSubmission()
+              title={`Sending with skills: ${submission()
                 .invokedSkills.map((skill) => `/${skill}`)
                 .join(", ")}`}
             >
-              {ctx
-                .chatSubmission()
+              {submission()
                 .invokedSkills.map((skill) => `/${skill}`)
                 .join(", ")}
             </span>
           </Show>
           <button
             class="primary-button composer-send-button"
-            onClick={() => void ctx.handleSubmitChat()}
-            disabled={!ctx.canSendChatMemo()}
+            onClick={() => void ctx.handleSubmitChat(props.nodeId)}
+            disabled={!ctx.canSendChatFor(props.nodeId)}
             title="Send to paused node"
             aria-label="Send to paused node"
           >

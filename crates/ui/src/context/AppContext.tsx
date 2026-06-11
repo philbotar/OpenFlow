@@ -5,10 +5,8 @@ import type {
   AiProviderKind,
   AppSettings,
   BottomTab,
-  ChatMessage,
   EdgeId,
   NodeId,
-  PendingToolApproval,
   ProviderProfile,
   ProviderReadiness,
   RunTraceEntry,
@@ -21,6 +19,7 @@ import type {
 import type { ResolvedTheme, ThemePreference } from "../lib/theme";
 import type { ChatSubmissionResolution } from "../lib/chatCommands";
 import type {
+  ChatLayoutProjection,
   WorkflowCanvasGraph,
   WorkflowCanvasStatusByNode,
   WorkflowCanvasSubagentsByNode,
@@ -43,7 +42,6 @@ export interface AppContextValue {
   dockHeight: Accessor<number>;
   selectedTraceIndex: Accessor<number | null>;
   schemaText: Accessor<string>;
-  chatInput: Accessor<string>;
   newModelInputByProvider: Accessor<Record<AiProviderKind, string>>;
   providerKeyInputByProvider: Accessor<Record<AiProviderKind, string>>;
   uiZoom: Accessor<number>;
@@ -67,11 +65,14 @@ export interface AppContextValue {
   themePreference: Accessor<ThemePreference>;
   resolvedTheme: Accessor<ResolvedTheme>;
   shortcutsModalOpen: Accessor<boolean>;
+  chatFilterNodeId: Accessor<NodeId | null>;
+  chatFocusNode: Accessor<{ nodeId: NodeId; tick: number } | null>;
 
   // ── Signal setters (form inputs + simple UI state) ────────────────────────
   setWorkflowNameDraft: Setter<string>;
   setAgentNameDraft: Setter<string>;
-  setChatInput: Setter<string>;
+  setChatFilterNodeId: Setter<NodeId | null>;
+  setChatDraft: (nodeId: NodeId, text: string) => void;
   setNewModelInputByProvider: Setter<Record<AiProviderKind, string>>;
   setProviderKeyInputByProvider: Setter<Record<AiProviderKind, string>>;
   setNodeLabelDraft: Setter<string>;
@@ -96,13 +97,11 @@ export interface AppContextValue {
   selectedTrace: Accessor<RunTraceEntry | null>;
   hasRunTraceMemo: Accessor<boolean>;
   currentNodeOutput: Accessor<unknown>;
-  chatMessages: Accessor<ChatMessage[]>;
-  selectedPendingApproval: Accessor<PendingToolApproval | null>;
-  selectedNodePendingApproval: Accessor<PendingToolApproval | null>;
-  chatEnabledMemo: Accessor<boolean>;
-  chatComposerBusyMemo: Accessor<boolean>;
-  chatSubmission: Accessor<ChatSubmissionResolution>;
-  canSendChatMemo: Accessor<boolean>;
+  chatLayout: Accessor<ChatLayoutProjection>;
+  chatDraft: (nodeId: NodeId) => string;
+  chatSubmissionFor: (nodeId: NodeId) => ChatSubmissionResolution;
+  canSendChatFor: (nodeId: NodeId) => boolean;
+  composerBusyFor: (nodeId: NodeId) => boolean;
 
   // ── Ref setters ───────────────────────────────────────────────────────────
   setWorkflowNameInputRef: (el: HTMLInputElement | undefined) => void;
@@ -162,9 +161,9 @@ export interface AppContextValue {
   openShortcutsModal: () => void;
   closeShortcutsModal: () => void;
   handleClearRunTrace: () => Promise<void>;
-  handleSubmitChat: () => Promise<void>;
+  handleSubmitChat: (nodeId: NodeId) => Promise<void>;
   handleRefreshSkills: () => Promise<void>;
-  handleToolApproval: (allow: boolean) => Promise<void>;
+  handleToolApproval: (approvalId: string, allow: boolean) => Promise<void>;
 
   // ── Node label edit handlers ──────────────────────────────────────────────
   handleStartNodeLabelEdit: (nodeId: NodeId, currentLabel: string) => void;
@@ -178,7 +177,7 @@ export interface AppContextValue {
   handleWorkflowNameKeyDown: (event: KeyboardEvent) => void;
 
   // ── Input / keyboard handlers ─────────────────────────────────────────────
-  handleChatInputKeyDown: (event: KeyboardEvent) => void;
+  handleChatInputKeyDown: (event: KeyboardEvent, nodeId: NodeId) => void;
 
   // ── Workflow settings handlers ────────────────────────────────────────────
   handleToggleWorkflowSettings: () => void;

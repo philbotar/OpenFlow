@@ -310,6 +310,90 @@ function makeAwaitingRunState(workflow: Workflow): WorkflowRunState {
   };
 }
 
+function makeParallelWorkflow(): Workflow {
+  const base = makeWorkflow("workflow-parallel", "Parallel");
+  const agent = base.nodes[0].agent;
+  return {
+    ...base,
+    nodes: [
+      { ...base.nodes[0], id: "node-a", label: "Plan" },
+      {
+        id: "node-b",
+        label: "Branch B",
+        kind: "Agent",
+        position: { x: 200, y: 80 },
+        agent,
+      },
+      {
+        id: "node-c",
+        label: "Branch C",
+        kind: "Agent",
+        position: { x: 200, y: 200 },
+        agent,
+      },
+      {
+        id: "node-d",
+        label: "Join",
+        kind: "Agent",
+        position: { x: 400, y: 140 },
+        agent,
+      },
+    ],
+    edges: [
+      { id: "edge-ab", from: "node-a", to: "node-b" },
+      { id: "edge-ac", from: "node-a", to: "node-c" },
+      { id: "edge-bd", from: "node-b", to: "node-d" },
+      { id: "edge-cd", from: "node-c", to: "node-d" },
+    ],
+  };
+}
+
+function makeParallelAwaitingRunState(workflow: Workflow): WorkflowRunState {
+  const [a, b, c, d] = workflow.nodes;
+  return {
+    active: true,
+    awaitingNodeIds: [b.id, c.id],
+    awaitingNodeId: b.id,
+    activeManualNodeId: null,
+    activeToolCallId: null,
+    pendingApprovals: [],
+    toolCallsByNode: {},
+    toolArtifacts: {},
+    execApprovalGranted: false,
+    statusByNode: {
+      [a.id]: "completed",
+      [b.id]: "awaiting_input",
+      [c.id]: "awaiting_input",
+      [d.id]: "idle",
+    },
+    subagentsByNode: {},
+    lastReport: null,
+    lastError: null,
+    chatLogs: {
+      [a.id]: [{ role: "Assistant", content: "plan complete" }],
+      [b.id]: [],
+      [c.id]: [],
+    },
+    runTrace: [],
+    outputs: {},
+    changedFiles: [],
+    changedFilesByNode: {},
+    editBatches: [],
+  };
+}
+
+async function openChatTab(container: HTMLElement) {
+  const chatTab = await waitForElement(
+    () =>
+      Array.from(container.querySelectorAll(".dock-tab-switcher button")).find(
+        (btn) => btn.textContent === "Chat",
+      ) as HTMLButtonElement | null,
+    "chat tab",
+  );
+  chatTab.click();
+  await flush();
+}
+
 function flush() {
   return new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
@@ -914,15 +998,10 @@ describe("App chat slash commands", () => {
       settings: SETTINGS,
       runState,
     });
-    const chatTab = await waitForElement(
-      () => Array.from(container.querySelectorAll(".dock-tab-switcher button")).find((btn) => btn.textContent === "Chat") as HTMLButtonElement | null,
-      "chat tab",
-    );
-    chatTab.click();
-    await flush();
+    await openChatTab(container);
     try {
       const textarea = await waitForElement(
-        () => container.querySelector(".chat-composer-pill textarea"),
+        () => container.querySelector(".chat-live-column .chat-composer-pill textarea"),
         "chat textarea",
       );
       (textarea as HTMLTextAreaElement).value = "/systematic-debugging Investigate ORCHID-91";
@@ -955,16 +1034,11 @@ describe("App chat slash commands", () => {
       settings: SETTINGS,
       runState,
     });
-    const chatTab = await waitForElement(
-      () => Array.from(container.querySelectorAll(".dock-tab-switcher button")).find((btn) => btn.textContent === "Chat") as HTMLButtonElement | null,
-      "chat tab",
-    );
-    chatTab.click();
-    await flush();
+    await openChatTab(container);
 
     try {
       const textarea = await waitForElement(
-        () => container.querySelector(".chat-composer-pill textarea"),
+        () => container.querySelector(".chat-live-column .chat-composer-pill textarea"),
         "chat textarea",
       );
       (textarea as HTMLTextAreaElement).value = "/systematic-debugging Investigate ORCHID-91";
@@ -992,16 +1066,11 @@ describe("App chat slash commands", () => {
       settings: SETTINGS,
       runState,
     });
-    const chatTab = await waitForElement(
-      () => Array.from(container.querySelectorAll(".dock-tab-switcher button")).find((btn) => btn.textContent === "Chat") as HTMLButtonElement | null,
-      "chat tab",
-    );
-    chatTab.click();
-    await flush();
+    await openChatTab(container);
 
     try {
       const textarea = await waitForElement(
-        () => container.querySelector(".chat-composer-pill textarea"),
+        () => container.querySelector(".chat-live-column .chat-composer-pill textarea"),
         "chat textarea",
       ) as HTMLTextAreaElement;
       textarea.value = "/sys";
@@ -1031,16 +1100,11 @@ describe("App chat slash commands", () => {
       settings: SETTINGS,
       runState,
     });
-    const chatTab = await waitForElement(
-      () => Array.from(container.querySelectorAll(".dock-tab-switcher button")).find((btn) => btn.textContent === "Chat") as HTMLButtonElement | null,
-      "chat tab",
-    );
-    chatTab.click();
-    await flush();
+    await openChatTab(container);
 
     try {
       const textarea = await waitForElement(
-        () => container.querySelector(".chat-composer-pill textarea"),
+        () => container.querySelector(".chat-live-column .chat-composer-pill textarea"),
         "chat textarea",
       );
       (textarea as HTMLTextAreaElement).value = "Approved";
@@ -1064,12 +1128,7 @@ describe("App chat slash commands", () => {
       settings: SETTINGS,
       runState,
     });
-    const chatTab = await waitForElement(
-      () => Array.from(container.querySelectorAll(".dock-tab-switcher button")).find((btn) => btn.textContent === "Chat") as HTMLButtonElement | null,
-      "chat tab",
-    );
-    chatTab.click();
-    await flush();
+    await openChatTab(container);
 
     try {
       expect(container.querySelector(".composer-settings-button")).toBeNull();
@@ -1096,12 +1155,7 @@ describe("App chat slash commands", () => {
       settings: SETTINGS,
       runState,
     });
-    const chatTab = await waitForElement(
-      () => Array.from(container.querySelectorAll(".dock-tab-switcher button")).find((btn) => btn.textContent === "Chat") as HTMLButtonElement | null,
-      "chat tab",
-    );
-    chatTab.click();
-    await flush();
+    await openChatTab(container);
 
     try {
       const labels = Array.from(container.querySelectorAll(".chat-role")).map((element) => element.textContent);
@@ -1133,12 +1187,7 @@ describe("App chat slash commands", () => {
       settings: SETTINGS,
       runState,
     });
-    const chatTab = await waitForElement(
-      () => Array.from(container.querySelectorAll(".dock-tab-switcher button")).find((btn) => btn.textContent === "Chat") as HTMLButtonElement | null,
-      "chat tab",
-    );
-    chatTab.click();
-    await flush();
+    await openChatTab(container);
 
     try {
       const line = container.querySelector(".tool-line");
@@ -1147,6 +1196,270 @@ describe("App chat slash commands", () => {
       expect(line?.querySelector(".tool-line-name")?.textContent).toContain("read");
       expect(line?.querySelector(".tool-line-target")?.textContent).toBe("README.md");
       expect(line?.querySelector(".tool-line-output")).toBeNull();
+    } finally {
+      dispose();
+    }
+  });
+});
+
+describe("Global chat layout", () => {
+  let runStateListener: ((state: WorkflowRunState) => void) | undefined;
+
+  afterEach(() => {
+    document.body.innerHTML = "";
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    runStateListener = undefined;
+  });
+
+  beforeEach(() => {
+    installDefaultApiMocks();
+    apiMocks.listenToRunState.mockImplementation(async (handler) => {
+      runStateListener = handler;
+      return () => {};
+    });
+  });
+
+  test("renders two live columns for parallel awaiting siblings", async () => {
+    const workflow = makeParallelWorkflow();
+    const runState = makeParallelAwaitingRunState(workflow);
+    const { container, dispose } = await mountApp({
+      workflows: [workflow],
+      agents: [makeAgent("agent-1", "Research Agent")],
+      skills: FIXTURE_SKILLS,
+      settings: SETTINGS,
+      runState,
+    });
+    await openChatTab(container);
+
+    try {
+      const columns = container.querySelectorAll(".chat-live-column");
+      expect(columns.length).toBe(2);
+      expect(columns[0]?.querySelector(".chat-live-column-label")?.textContent).toBe("Branch B");
+      expect(columns[1]?.querySelector(".chat-live-column-label")?.textContent).toBe("Branch C");
+      expect(container.querySelectorAll(".chat-live-column .chat-composer-pill textarea").length).toBe(2);
+    } finally {
+      dispose();
+    }
+  });
+
+  test("submits from column B without clearing column A draft", async () => {
+    const workflow = makeParallelWorkflow();
+    const runState = makeParallelAwaitingRunState(workflow);
+    apiMocks.submitUserInput.mockResolvedValue(runState);
+    const { container, dispose } = await mountApp({
+      workflows: [workflow],
+      agents: [makeAgent("agent-1", "Research Agent")],
+      skills: FIXTURE_SKILLS,
+      settings: SETTINGS,
+      runState,
+    });
+    await openChatTab(container);
+
+    try {
+      await waitForElement(
+        () => container.querySelectorAll(".chat-live-column .chat-composer-pill textarea")[1] ?? null,
+        "column B textarea",
+      );
+      const textareas = container.querySelectorAll(
+        ".chat-live-column .chat-composer-pill textarea",
+      );
+      const columnA = textareas[0] as HTMLTextAreaElement;
+      const columnB = textareas[1] as HTMLTextAreaElement;
+      columnA.value = "keep me";
+      columnA.dispatchEvent(new Event("input", { bubbles: true }));
+      columnB.value = "branch c reply";
+      columnB.dispatchEvent(new Event("input", { bubbles: true }));
+      columnB
+        .closest(".chat-composer")
+        ?.querySelector(".primary-button")
+        ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await flush();
+
+      expect(apiMocks.submitUserInput).toHaveBeenCalledWith("node-c", "branch c reply");
+      expect(columnA.value).toBe("keep me");
+      expect(columnB.value).toBe("");
+    } finally {
+      dispose();
+    }
+  });
+
+  test("keeps completed upstream messages in settled history", async () => {
+    const workflow = makeParallelWorkflow();
+    const runState = makeParallelAwaitingRunState(workflow);
+    const { container, dispose } = await mountApp({
+      workflows: [workflow],
+      agents: [makeAgent("agent-1", "Research Agent")],
+      skills: FIXTURE_SKILLS,
+      settings: SETTINGS,
+      runState,
+    });
+    await openChatTab(container);
+
+    try {
+      const settledHeader = container.querySelector('.chat-segment[data-node-id="node-a"] .eyebrow');
+      expect(settledHeader?.textContent).toBe("Plan");
+      expect(container.querySelector(".chat-live-strip")).not.toBeNull();
+    } finally {
+      dispose();
+    }
+  });
+
+  test("run-state awaiting update opens chat without changing canvas selection", async () => {
+    const workflow = makeParallelWorkflow();
+    const runState = makeParallelAwaitingRunState(workflow);
+    runState.awaitingNodeIds = [];
+    runState.awaitingNodeId = null;
+    runState.statusByNode["node-b"] = "idle";
+    runState.statusByNode["node-c"] = "idle";
+    const { container, dispose } = await mountApp({
+      workflows: [workflow],
+      agents: [makeAgent("agent-1", "Research Agent")],
+      skills: FIXTURE_SKILLS,
+      settings: SETTINGS,
+      runState,
+    });
+
+    try {
+      const inspectorTitle = () =>
+        container.querySelector(".inspector-panel .panel-header-title-row")?.textContent;
+      expect(inspectorTitle()).toContain("Plan");
+      runStateListener?.({
+        ...runState,
+        awaitingNodeIds: ["node-b"],
+        awaitingNodeId: "node-b",
+        statusByNode: {
+          ...runState.statusByNode,
+          "node-b": "awaiting_input",
+        },
+      });
+      await flush();
+      const chatTab = Array.from(container.querySelectorAll(".dock-tab-switcher button")).find(
+        (button) => button.textContent === "Chat",
+      );
+      expect(chatTab?.classList.contains("active")).toBe(true);
+      expect(inspectorTitle()).toContain("Plan");
+    } finally {
+      dispose();
+    }
+  });
+
+  test("moves completed node from live strip into settled history", async () => {
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    workflow.nodes.push({
+      id: "workflow-1-node-2",
+      label: "Downstream",
+      kind: "Agent",
+      position: { x: 320, y: 140 },
+      agent: workflow.nodes[0].agent,
+    });
+    workflow.edges.push({
+      id: "edge-2",
+      from: workflow.nodes[0].id,
+      to: "workflow-1-node-2",
+    });
+    const runState = makeAwaitingRunState(workflow);
+    runState.statusByNode[workflow.nodes[0].id] = "completed";
+    runState.statusByNode["workflow-1-node-2"] = "awaiting_input";
+    runState.awaitingNodeId = "workflow-1-node-2";
+    runState.awaitingNodeIds = ["workflow-1-node-2"];
+    runState.chatLogs[workflow.nodes[0].id] = [{ role: "Assistant", content: "upstream done" }];
+    runState.chatLogs["workflow-1-node-2"] = [];
+    const { container, dispose } = await mountApp({
+      workflows: [workflow],
+      agents: [makeAgent("agent-1", "Research Agent")],
+      skills: FIXTURE_SKILLS,
+      settings: SETTINGS,
+      runState,
+    });
+    await openChatTab(container);
+
+    try {
+      expect(container.querySelectorAll(".chat-live-column").length).toBe(1);
+      expect(container.querySelector('.chat-segment[data-node-id="' + workflow.nodes[0].id + '"]')).not.toBeNull();
+    } finally {
+      dispose();
+    }
+  });
+
+  test("renders approval card inside owning live column", async () => {
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    const runState = makeAwaitingRunState(workflow);
+    runState.statusByNode[workflow.nodes[0].id] = "awaiting_tool_approval";
+    runState.awaitingNodeId = null;
+    runState.pendingApprovals = [
+      {
+        approvalId: "approval-1",
+        nodeId: workflow.nodes[0].id,
+        nodeLabel: workflow.nodes[0].label,
+        toolCall: {
+          id: "call-1",
+          name: "grep",
+          arguments: { pattern: "todo" },
+          intent: null,
+        },
+        tier: "read",
+      },
+    ];
+    apiMocks.submitToolApproval.mockResolvedValue(runState);
+    const { container, dispose } = await mountApp({
+      workflows: [workflow],
+      agents: [makeAgent("agent-1", "Research Agent")],
+      skills: FIXTURE_SKILLS,
+      settings: SETTINGS,
+      runState,
+    });
+    await openChatTab(container);
+
+    try {
+      const card = container.querySelector(".chat-live-column .tool-approval-card");
+      expect(card).not.toBeNull();
+      card?.querySelector(".primary-button")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await flush();
+      expect(apiMocks.submitToolApproval).toHaveBeenCalledWith("approval-1", true);
+    } finally {
+      dispose();
+    }
+  });
+
+  test("filter chips narrow settled history", async () => {
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    workflow.nodes.push({
+      id: "workflow-1-node-2",
+      label: "Second",
+      kind: "Agent",
+      position: { x: 320, y: 140 },
+      agent: workflow.nodes[0].agent,
+    });
+    const runState = makeAwaitingRunState(workflow);
+    runState.active = false;
+    runState.awaitingNodeId = null;
+    runState.statusByNode = {
+      [workflow.nodes[0].id]: "completed",
+      "workflow-1-node-2": "completed",
+    };
+    runState.chatLogs = {
+      [workflow.nodes[0].id]: [{ role: "Assistant", content: "first" }],
+      "workflow-1-node-2": [{ role: "Assistant", content: "second" }],
+    };
+    const { container, dispose } = await mountApp({
+      workflows: [workflow],
+      agents: [makeAgent("agent-1", "Research Agent")],
+      skills: FIXTURE_SKILLS,
+      settings: SETTINGS,
+      runState,
+    });
+    await openChatTab(container);
+
+    try {
+      const chips = container.querySelectorAll(".chat-filter-chip");
+      expect(chips.length).toBeGreaterThan(1);
+      (chips[1] as HTMLButtonElement).click();
+      await flush();
+      expect(container.querySelectorAll(".chat-segment").length).toBe(1);
+      (chips[0] as HTMLButtonElement).click();
+      await flush();
+      expect(container.querySelectorAll(".chat-segment").length).toBe(2);
     } finally {
       dispose();
     }

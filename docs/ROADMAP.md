@@ -26,7 +26,7 @@ Make runs survivable before adding features on top. A failed tool call or transi
 | 3 | **Error taxonomy + AI retry** — T1 (`AgentError` transient/permanent), T2 (collapse templates), T3 (node lookup index), T5 (tool deny/decision resume), T6 (`retry_policy` with exponential backoff, default 3 attempts) | Done | [Phase 1–2](#phase-1--foundations) |
 | 4 | **Tool retry & resilient failure** — T19 (tool error taxonomy), T20 (tool invocation retry), T21 (failed tools feed transcript and resume `CallAi`; never abort the run) | Planned | [Tool retry](#tool-invocation-retry-and-resilience) |
 | 5 | **Transcript & event correctness** — T9 (strip redundant tool-call XML), T10 (validate node id in `on_ai_complete`), T11 (run-event semantics), T12 (template store persistence errors) | Planned | [Phase 2–3](#phase-2--functional-gaps) |
-| 6 | **Run lifecycle leftovers** — clean up `openflow-run-*` temp dirs, store event-bridge task handle, decide run persistence policy (dies with app vs. resume) | Planned | [Run lifecycle](#run-lifecycle) |
+| 6 | **Run lifecycle leftovers** — clean up `openflow-run-*` temp dirs, store event-bridge task handle, decide checkpoint/persistence policy (in-memory only vs. disk checkpoints vs. resume after restart) | Planned | [Run lifecycle](#run-lifecycle) |
 | 7 | **Secure key storage** — move provider API keys from plaintext `settings.json` to macOS Keychain (keep env-var fallback); migrate existing keys on first launch | Planned | *New* |
 
 ### Tier 3 — Daily-driver UX
@@ -51,7 +51,7 @@ Getting the right context into and out of agents.
 | 14 | **Attachments & file references** — attach button, `@` token combobox, drag-drop; resolved content in submit payload and entrypoint | Planned | [Attachments](#attachments--file-references) |
 | 15 | **Upstream read-file context** — read-tier ledger per node; `read_files` in downstream node input alongside `changed_files` | Planned | [Upstream read-file context](#upstream-read-file-context) |
 | 16 | **Context used panel** — per-turn ledger of shared context, rules, skills, attachments, upstream artifacts; composer panel + per-turn attribution | Planned | [Context used](#context-used) |
-| 17 | **Global chat** — unified run-wide transcript in execution-layer order; per-awaiting-node reply bubbles for parallel pauses | Planned | [Global chat](#global-chat) |
+| 17 | **Global chat** — unified run-wide transcript in execution-layer order; per-awaiting-node reply bubbles for parallel pauses | Done | [Global chat](#global-chat) |
 
 ### Tier 5 — Power features
 
@@ -61,7 +61,7 @@ Getting the right context into and out of agents.
 | 19 | **In-run todos** — `openflow_update_todos` builtin; run-state projection; dock/chat chrome UI | Planned | [Agent questions & todos](#agent-questions--todos) |
 | 20 | **MCP integration** — connect external MCP servers as tool sources on agent nodes | Planned | |
 | 21 | **Cron / scheduled runs + workflow retry loop** — execute the schedule/retry schema fields that already exist | Planned | |
-| 22 | **Run persistence, history, and replay** — store completed runs; browse and replay; depends on persistence policy decision (#6) | Planned | |
+| 22 | **Run checkpoint, history, and replay** — persist run checkpoints to disk; browse run history; resume paused runs or replay from a checkpoint (read-only trace or forked re-execution); depends on persistence policy (#6) | Planned | [Run checkpoint & replay](#run-checkpoint-history-and-replay) |
 | 23 | **Programmatic / non-AI nodes** — API-call and transform nodes between agent nodes | Planned | |
 | 24 | **External connectors** — Composio / n8n-style integration nodes | Planned | |
 
@@ -128,9 +128,60 @@ Domain supports entrypoint injection (`run_with_entrypoint` → `InteractiveEngi
 | Unify on one Tokio runtime — `AppBackend` takes injected `Handle` | Medium | Done |
 | Clean up temp artifact dirs (`openflow-run-*`) on completion or abort | Medium | Planned |
 | Store event bridge task handle for independent cancellation | Medium | Planned |
-| Decide and document run persistence policy (dies with app vs. resume after restart) | Medium | Planned |
+| Decide and document checkpoint/persistence policy — in-memory only, auto-checkpoint on pause/layer, manual checkpoint, resume after restart | Medium | Planned |
+| Auto-checkpoint on run pause (`AwaitInput`, `AwaitToolApproval`) and layer completion | Medium | Planned |
+| Persist artifact dir refs alongside checkpoint (not only ephemeral `openflow-run-*`) | Medium | Planned |
 | Warn on close when workflows have unsaved changes | Low | Planned |
 | Warn on close when a run is still active | Low | Planned |
+| Offer to save checkpoint on close when a run is paused or in progress | Low | Planned |
+
+### Run checkpoint, history, and replay
+
+Runs today live entirely in memory: `RunCoordinator` holds `WorkflowRunState`; `InteractiveEngine` holds transcripts, scheduling, and pause state; tool artifacts sit under ephemeral `openflow-run-*` temp dirs. Closing the app or losing the process drops all of it. `WorkflowRunSnapshot` (headless path) captures projection fields after a finished run but is not persisted or reloadable. There is no run history, no resume, and no replay from an earlier point.
+
+| Layer | Gap |
+| --- | --- |
+| `crates/engine/src/execution/interactive_engine.rs` | Engine state (transcripts, completed nodes, pending retries, layer cursor) is not serializable; no `restore_from_checkpoint` |
+| `crates/orchestration/src/run/coordinator.rs` | `RunSession` is in-memory only; no run store; `start_run` always creates a fresh engine |
+| `crates/orchestration/src/run/state/` | `WorkflowRunState` is a UI projection — sufficient for browse/replay UI but not alone for resume |
+| `crates/orchestration/src/run/execution/drive.rs` | No checkpoint hook on pause/completion; artifact root is always a new temp dir |
+| `crates/orchestration/src/adapters/storage/` | No `RunCheckpointStore` — no `{project}/.flow/runs/` (or app-data) layout |
+| `crates/desktop/src/lib.rs` | No IPC for list/load/resume/replay runs |
+| `crates/ui/src/` | No run history panel; no "resume" or "replay from here" affordances |
+
+**Decisions (resolve before coding — ties to #6):**
+
+| ID | Question | Recommendation |
+| --- | --- | --- |
+| R1 | What is the unit of persistence? | One **run record** per execution attempt; **checkpoints** are append-only snapshots inside that record |
+| R2 | Where do runs live? | Project-scoped: `{project}/.flow/runs/{run_id}/`; app-only workflows use app data dir mirror |
+| R3 | What does a checkpoint contain? | **Minimum resume set:** workflow id + content hash at run start, entrypoint, execution cwd, serialized `InteractiveEngine` snapshot, `WorkflowRunState`, artifact manifest (paths under run dir). **Browse-only** checkpoints may omit engine snapshot and store event log + projection only |
+| R4 | When to auto-checkpoint? | On each engine pause (`AwaitInput`, `AwaitToolApproval`), on layer completion, and on terminal outcome; optional debounced checkpoint during long `CallAi` streams |
+| R5 | Replay vs resume? | **Resume** continues the same run id from latest checkpoint (reconstruct engine + drive). **Replay (read-only)** renders stored trace/chat without invoking providers. **Replay (fork)** starts a new run id seeded from a checkpoint (copy artifacts + engine snapshot); user edits workflow before fork if desired |
+| R6 | Provider re-invocation on fork? | Default fork **re-executes** from checkpoint cursor (calls providers again). Optional later: "trace replay" mode that never calls AI (depends on storing enough transcript to simulate turns) |
+
+| Item | Priority | Status |
+| --- | --- | --- |
+| Persistence policy ADR — document R1–R6; choose resume-after-restart vs history-only for v1 | High | Planned |
+| Run record schema — `run.json` metadata + `checkpoints/{seq}.json` + `artifacts/` per run dir | High | Planned |
+| `InteractiveEngine` snapshot — serialize/deserialize resume-critical fields; round-trip tests | High | Planned |
+| `RunCheckpointStore` — create run, append checkpoint, list by workflow/project, load latest | High | Planned |
+| Auto-checkpoint in drive loop — on pause, layer done, completed/failed/stopped | High | Planned |
+| Manual checkpoint — IPC + UI action during active run | Medium | Planned |
+| Resume run — `resume_run(run_id)` reconstructs engine, artifacts, and drive from latest checkpoint | High | Planned |
+| Run history UI — list past runs for workflow/project; status, started/finished, checkpoint count | High | Planned |
+| Read-only replay — open completed run: trace, chat, outputs, changed files without execution | High | Planned |
+| Fork from checkpoint — `replay_run(checkpoint_id)` starts new run seeded from snapshot; optional workflow diff warning | Medium | Planned |
+| Replay from node — fork from checkpoint taken after a specific node completed (extends `retry_node` with persistence) | Medium | Planned |
+| App restart — detect incomplete run records on launch; offer resume or discard | Medium | Planned |
+| Prune/retention — max runs per workflow, max checkpoint depth, delete run dir on discard | Low | Planned |
+| Export run — zip run dir for sharing or CI artifacts | Low | Planned |
+
+**Target:** Every meaningful pause and layer boundary writes a durable checkpoint under the linked project. You can close the app, reopen, and resume a paused run. Completed and in-progress runs appear in history. Open any past run to inspect trace and chat read-only, or fork a new run from an earlier checkpoint without re-entering context by hand.
+
+**Depends on:** #6 (persistence policy). **Unlocks:** #21 (scheduled runs need durable run records), deferred multi-run orchestration, audit/compliance use cases.
+
+**Reference:** Live projection — `WorkflowRunState` in `crates/orchestration/src/run/state/mod.rs`; headless snapshot — `WorkflowRunSnapshot` in `crates/orchestration/src/run/execution/mod.rs`; artifact temp dirs — `drive.rs` (`openflow-run-{uuid}`).
 
 ### Provider API key storage
 
@@ -289,16 +340,18 @@ Today the dock Chat tab shows only the **selected** node's `chatLogs` entry (`Ap
 
 | Item | Priority | Status |
 | --- | --- | --- |
-| Unified transcript — merge all node `chatLogs` into one scrollable pane for the active run | High | Planned |
-| Persist on progression — keep showing prior nodes' messages as the run advances; do not clear or hide when focus moves | High | Planned |
-| Execution-layer ordering — stack messages by DAG depth: earlier layer on top, later layer below (node 1 text above node 2, etc.) | High | Planned |
-| Node attribution — label or chrome per segment so users know which agent spoke | Medium | Planned |
-| Parallel reply bubbles — when two+ nodes at the same layer await input, show separate composer targets (one bubble per awaiting node) | High | Planned |
-| Route submit to correct node — `submit_user_input` keyed by target node id from the reply bubble, not canvas selection | High | Planned |
-| Optional canvas sync — selecting a node scrolls global chat to that node's segment (highlight only; pane stays unified) | Low | Planned |
-| Run start / entrypoint — global pane shows entrypoint user message at top before first node output | Medium | Planned |
+| Unified transcript — merge all node `chatLogs` into one scrollable pane for the active run | High | Done |
+| Persist on progression — keep showing prior nodes' messages as the run advances; do not clear or hide when focus moves | High | Done |
+| Execution-layer ordering — stack messages by DAG depth: earlier layer on top, later layer below (node 1 text above node 2, etc.) | High | Done |
+| Node attribution — label or chrome per segment so users know which agent spoke | Medium | Done |
+| Parallel reply bubbles — when two+ nodes at the same layer await input, show separate composer targets (one bubble per awaiting node) | High | Done |
+| Route submit to correct node — `submit_user_input` keyed by target node id from the reply bubble, not canvas selection | High | Done |
+| Optional canvas sync — selecting a node scrolls global chat to that node's segment (highlight only; pane stays unified) | Low | Done |
+| Run start / entrypoint — global pane shows entrypoint user message at top before first node output | Medium | Done (segment headers) |
 
 **Target:** One continuous chat pane for the whole run. As nodes complete and downstream nodes start, earlier conversation stays visible in layer order. When parallel nodes at the same depth pause for input, each gets its own reply bubble in the composer area so you can answer both without switching canvas selection.
+
+**Shipped design:** Settled history (layer-ordered, non-live nodes) scrolls above a live strip of side-by-side columns (tmux-style). Each live column has its own transcript scroll, approval card, and composer. Overflow columns collapse into tabs in the last slot. Filter chips above settled history narrow by node without affecting canvas selection. Projection is UI-only (`projectChatLayout` in `crates/ui/src/lib/workflow.ts`); per-node `chatLogs` remain the backend source of truth.
 
 ### Attachments & file references
 
