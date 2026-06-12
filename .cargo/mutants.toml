@@ -1,0 +1,5 @@
+timeout_multiplier = 1.5
+
+exclude_re = [
+    "crates/desktop/",
+]

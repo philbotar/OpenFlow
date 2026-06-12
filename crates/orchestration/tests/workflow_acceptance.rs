@@ -116,11 +116,14 @@ async fn branch_join_workflow_preserves_sentinel_and_trace_contract() {
             .count()
             >= 4
     );
-    let requests = ai.requests.lock();
-    assert_eq!(
-        requests[0].input["entrypoint"]["text"],
-        "Plan project ORCHID-91"
-    );
+    let entrypoint_text = {
+        let requests = ai.requests.lock();
+        requests[0].input["entrypoint"]["text"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    assert_eq!(entrypoint_text, "Plan project ORCHID-91");
 }
 
 #[tokio::test]
@@ -225,9 +228,12 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
     #[async_trait]
     impl AiPort for ToolAi {
         async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
-            let mut calls = self.calls.lock();
-            *calls += 1;
-            if *calls == 1 {
+            let call_number = {
+                let mut calls = self.calls.lock();
+                *calls += 1;
+                *calls
+            };
+            if call_number == 1 {
                 assert_eq!(request.available_tools.len(), 3);
                 return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                     raw_text: String::new(),
@@ -300,10 +306,6 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
 
 #[tokio::test]
 async fn write_tool_requires_approval_and_mutates_file_after_allow() {
-    let dir = tempfile::tempdir().unwrap();
-    let target = dir.path().join("draft.txt");
-    let execution_cwd = Some(dir.path().to_path_buf());
-
     #[derive(Clone, Default)]
     struct WriteAi {
         calls: Arc<Mutex<usize>>,
@@ -312,9 +314,12 @@ async fn write_tool_requires_approval_and_mutates_file_after_allow() {
     #[async_trait]
     impl AiPort for WriteAi {
         async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
-            let mut calls = self.calls.lock();
-            *calls += 1;
-            if *calls == 1 {
+            let call_number = {
+                let mut calls = self.calls.lock();
+                *calls += 1;
+                *calls
+            };
+            if call_number == 1 {
                 return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                     raw_text: String::new(),
                     assistant_message: Some("Saving draft".to_string()),
@@ -338,6 +343,10 @@ async fn write_tool_requires_approval_and_mutates_file_after_allow() {
             }))
         }
     }
+
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("draft.txt");
+    let execution_cwd = Some(dir.path().to_path_buf());
 
     let mut workflow = Workflow::new("write tool acceptance");
     let mut node = agent("write-node", "Write node");

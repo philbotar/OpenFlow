@@ -1794,11 +1794,9 @@ select.text-input:hover {
   flex-direction: column;
   gap: 8px;
   padding-bottom: 12px;
-  border-bottom: 1px solid var(--border);
 }
 
 .chat-segment:last-child {
-  border-bottom: 0;
   padding-bottom: 0;
 }
 
@@ -1841,50 +1839,19 @@ select.text-input:hover {
   display: flex;
   flex-direction: row;
   gap: 10px;
-  flex: 0 0 55%;
-  min-height: 180px;
-  max-height: 55%;
+  flex-shrink: 0;
   border-top: 1px solid var(--border);
   padding-top: 10px;
   overflow: hidden;
 }
 
-.chat-live-column {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  flex: 1 1 0;
-  min-width: 220px;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.chat-live-column.is-focused {
-  animation: chat-segment-focus 1.5s ease;
-}
-
-.chat-live-column-header {
-  display: flex;
+.chat-live-strip--pending {
   align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
+  justify-content: center;
+  min-height: 64px;
 }
 
-.chat-live-column-label {
-  font-size: 13px;
-  font-weight: 600;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.chat-live-conversation {
-  flex: 1 1 auto;
-  min-height: 0;
-}
-
-.chat-live-column-footer {
+.chat-segment-footer {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1915,40 +1882,54 @@ select.text-input:hover {
   }
 }
 
-.chat-live-tabs-column {
-  min-width: 260px;
+.chat-live-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
 }
 
-.chat-live-tabs {
+.chat-live-picker-hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.chat-live-picker-options {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  flex-shrink: 0;
 }
 
-.chat-live-tab {
+.chat-live-picker-option {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px;
+  padding: 6px 12px;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--raised-surface);
-  color: var(--text-muted);
+  color: var(--text);
   font-size: 12px;
   cursor: pointer;
 }
 
-.chat-live-tab.active {
+.chat-live-picker-option:hover:not(:disabled) {
   border-color: var(--accent, #2563eb);
-  color: var(--text);
 }
 
-.chat-live-tab.has-activity .chat-filter-status-dot {
+.chat-live-picker-option:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.chat-live-picker-option.has-activity .chat-filter-status-dot {
   animation: chat-live-pulse 1.2s ease-in-out infinite;
 }
 
-.chat-live-tab-status {
+.chat-live-picker-status {
   font-size: 10px;
   color: var(--text-muted);
 }
@@ -2326,7 +2307,6 @@ select.text-input:hover {
   gap: 12px;
   padding: 12px 0;
   border: 0;
-  border-bottom: 1px solid var(--border);
   border-radius: 0;
   background: transparent;
   box-shadow: none;
@@ -2338,7 +2318,6 @@ select.text-input:hover {
 
 .chat-row:last-child {
   padding-bottom: 0;
-  border-bottom: 0;
 }
 
 .chat-role {
@@ -2886,10 +2865,8 @@ select.text-input:hover {
   font-weight: 600;
 }
 
-.message-content .markdown-body hr {
-  border: none;
-  border-top: 1px solid var(--border);
-  margin: 0.75em 0;
+.conversation .message-content .markdown-body hr {
+  display: none;
 }
 
 .message-user .message-content {
@@ -2917,6 +2894,9 @@ select.text-input:hover {
 
 .thinking-bubble {
   margin: 6px 0;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--surface-muted);
@@ -2965,7 +2945,14 @@ select.text-input:hover {
   padding: 0 12px 10px;
   color: var(--text-muted);
   font-size: 0.85rem;
-  border-top: 1px solid var(--border);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.thinking-bubble-body .markdown-body pre,
+.thinking-bubble-body .markdown-body table {
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .tool-line {
@@ -2978,11 +2965,6 @@ select.text-input:hover {
   font-size: 0.85rem;
   color: var(--text-muted);
   cursor: default;
-  border-bottom: 1px solid var(--border);
-}
-
-.tool-line:last-child {
-  border-bottom: 0;
 }
 
 .tool-line-name {

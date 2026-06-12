@@ -1,4 +1,8 @@
-#![allow(clippy::too_many_lines, clippy::float_cmp)]
+#![allow(
+    clippy::too_many_lines,
+    clippy::float_cmp,
+    reason = "builtin template table is data-heavy; layout coordinates use exact float equality"
+)]
 
 use super::Template;
 use crate::graph::AgentNodeConfig;
@@ -184,7 +188,7 @@ pub fn default_templates() -> Vec<Template> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, reason = "test fixtures use unwrap for brevity")]
 mod tests {
     use super::*;
 

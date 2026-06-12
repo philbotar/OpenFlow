@@ -42,6 +42,7 @@ export function shouldCollapseDock(height: number, tab: BottomTab): boolean {
 export function chatRoleLabel(
   role: ChatRole,
   nodeLabel: string | null | undefined,
+  options?: { segmentHeaderShowsNode?: boolean },
 ): string {
   switch (role) {
     case "system":
@@ -52,6 +53,9 @@ export function chatRoleLabel(
       return "Thinking";
     case "assistant":
     case "Assistant":
+      if (options?.segmentHeaderShowsNode) {
+        return "Assistant";
+      }
       return nodeLabel?.trim() || "Node";
     case "user":
     case "User":

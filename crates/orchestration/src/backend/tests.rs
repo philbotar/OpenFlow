@@ -312,7 +312,7 @@ fn submit_tool_approval_updates_snapshot_and_sends_action() {
         let mut run_state = WorkflowRunState::running_for_workflow(&workflow);
         run_state.pending_approvals = vec![engine::PendingToolApproval {
             approval_id: "approval-1".to_string(),
-            node_id: "idea".to_string(),
+            node_id: NodeId::from("idea"),
             node_label: "Idea".to_string(),
             tool_call: engine::ToolCall {
                 id: "call-1".to_string(),

@@ -80,11 +80,15 @@ impl Template {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, reason = "test fixtures use unwrap for brevity")]
 mod tests {
     use super::*;
 
     #[test]
+    #[allow(
+        clippy::float_cmp,
+        reason = "template positions are exact layout coordinates"
+    )]
     fn template_instantiate_uses_display_name_as_label() {
         let template = Template::new(
             "Code Reviewer",

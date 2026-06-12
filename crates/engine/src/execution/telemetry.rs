@@ -10,7 +10,7 @@ use serde_json::Value;
 
 /// Atomic telemetry event during an interactive run.
 ///
-/// Superset of lifecycle [`RunEventKind`] values plus chat, tool, and subagent detail.
+/// Superset of lifecycle [`crate::RunEventKind`] values plus chat, tool, and subagent detail.
 /// Orchestration projects this into `WorkflowRunState`; the headless report still uses
 /// compact [`crate::RunEvent`] records from the engine.
 #[derive(Debug, Clone)]

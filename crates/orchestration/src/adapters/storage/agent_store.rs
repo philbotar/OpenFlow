@@ -1,28 +1,13 @@
+use crate::adapters::storage::json_file_store::{
+    read_json_file, write_json_file, OPENFLOW_DATA_DIR_SLUG,
+};
 use crate::agent::ports::AgentStore;
 use engine::CallableAgent;
 use serde::{Deserialize, Serialize};
-use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-const CURRENT_DATA_DIR_SLUG: &str = "openflow";
-const LEGACY_DATA_DIR_SLUG: &str = "step-through-agentic-workflow";
 const AGENTS_FILE_NAME: &str = "agents.json";
-
-fn legacy_store_path(path: &Path) -> Option<PathBuf> {
-    let parent = path.parent()?;
-    let dir_name = parent.file_name()?;
-
-    if dir_name != CURRENT_DATA_DIR_SLUG || path.file_name()? != AGENTS_FILE_NAME {
-        return None;
-    }
-
-    Some(
-        parent
-            .with_file_name(LEGACY_DATA_DIR_SLUG)
-            .join(AGENTS_FILE_NAME),
-    )
-}
 
 #[derive(Debug, Clone)]
 pub struct FileAgentStore {
@@ -43,55 +28,25 @@ impl FileAgentStore {
     pub fn default_path() -> PathBuf {
         dirs::data_local_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join(CURRENT_DATA_DIR_SLUG)
+            .join(OPENFLOW_DATA_DIR_SLUG)
             .join(AGENTS_FILE_NAME)
     }
 
     /// # Errors
     /// Returns an error if the file cannot be read or parsed.
     pub fn load(&self) -> io::Result<Vec<CallableAgent>> {
-        let path = if self.path.exists() {
-            self.path.clone()
-        } else if let Some(legacy_path) = legacy_store_path(&self.path) {
-            if legacy_path.exists() {
-                legacy_path
-            } else {
-                return Ok(Vec::new());
-            }
-        } else {
-            return Ok(Vec::new());
-        };
-
-        let text = fs::read_to_string(&path)?;
-        let stored: StoredAgents = serde_json::from_str(&text).map_err(|error| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("agent store JSON invalid: {error}"),
-            )
-        })?;
+        let stored: StoredAgents =
+            read_json_file(&self.path, "agent store JSON invalid")?.unwrap_or_default();
         Ok(stored.agents)
     }
 
     /// # Errors
     /// Returns an error if the file cannot be serialized or written.
     pub fn save(&self, agents: &[CallableAgent]) -> io::Result<()> {
-        if let Some(parent) = self.path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
         let stored = StoredAgents {
             agents: agents.to_vec(),
         };
-
-        let text = serde_json::to_string_pretty(&stored).map_err(|error| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("agent store JSON serialization failed: {error}"),
-            )
-        })?;
-        let tmp = self.path.with_extension("tmp");
-        fs::write(&tmp, text)?;
-        fs::rename(&tmp, &self.path)
+        write_json_file(&self.path, &stored, "agent store JSON")
     }
 
     #[must_use]
@@ -114,6 +69,7 @@ impl AgentStore for FileAgentStore {
 mod tests {
     use super::*;
     use engine::AgentNodeConfig;
+    use std::fs;
     use tempfile::tempdir;
 
     #[test]
@@ -133,7 +89,7 @@ mod tests {
         assert_eq!(path.file_name().unwrap(), AGENTS_FILE_NAME);
         assert_eq!(
             path.parent().unwrap().file_name().unwrap(),
-            CURRENT_DATA_DIR_SLUG
+            OPENFLOW_DATA_DIR_SLUG
         );
     }
 
@@ -216,94 +172,6 @@ mod tests {
         assert!(value.get("taskPrompt").is_none());
         assert!(value.get("outputSchema").is_none());
         assert!(value.get("autoStart").is_none());
-    }
-
-    #[test]
-    fn load_uses_legacy_store_when_new_path_is_absent() {
-        let dir = tempdir().unwrap();
-        let current_path = dir
-            .path()
-            .join(CURRENT_DATA_DIR_SLUG)
-            .join(AGENTS_FILE_NAME);
-        let legacy_path = dir.path().join(LEGACY_DATA_DIR_SLUG).join(AGENTS_FILE_NAME);
-        let agent = CallableAgent::new("Legacy");
-        let stored = StoredAgents {
-            agents: vec![agent.clone()],
-        };
-        fs::create_dir_all(legacy_path.parent().unwrap()).unwrap();
-        fs::write(&legacy_path, serde_json::to_string_pretty(&stored).unwrap()).unwrap();
-        let store = FileAgentStore::new(current_path);
-
-        let loaded = store.load().unwrap();
-
-        assert_eq!(loaded, vec![agent]);
-    }
-
-    #[test]
-    fn load_prefers_new_store_when_both_paths_exist() {
-        let dir = tempdir().unwrap();
-        let current_path = dir
-            .path()
-            .join(CURRENT_DATA_DIR_SLUG)
-            .join(AGENTS_FILE_NAME);
-        let legacy_path = dir.path().join(LEGACY_DATA_DIR_SLUG).join(AGENTS_FILE_NAME);
-        let current_agent = CallableAgent::new("Current");
-        let legacy_agent = CallableAgent::new("Legacy");
-        let current_stored = StoredAgents {
-            agents: vec![current_agent.clone()],
-        };
-        let legacy_stored = StoredAgents {
-            agents: vec![legacy_agent],
-        };
-        fs::create_dir_all(current_path.parent().unwrap()).unwrap();
-        fs::create_dir_all(legacy_path.parent().unwrap()).unwrap();
-        fs::write(
-            &current_path,
-            serde_json::to_string_pretty(&current_stored).unwrap(),
-        )
-        .unwrap();
-        fs::write(
-            &legacy_path,
-            serde_json::to_string_pretty(&legacy_stored).unwrap(),
-        )
-        .unwrap();
-        let store = FileAgentStore::new(current_path);
-
-        let loaded = store.load().unwrap();
-
-        assert_eq!(loaded, vec![current_agent]);
-    }
-
-    #[test]
-    fn save_targets_new_path_even_when_legacy_store_exists() {
-        let dir = tempdir().unwrap();
-        let current_path = dir
-            .path()
-            .join(CURRENT_DATA_DIR_SLUG)
-            .join(AGENTS_FILE_NAME);
-        let legacy_path = dir.path().join(LEGACY_DATA_DIR_SLUG).join(AGENTS_FILE_NAME);
-        let legacy_agent = CallableAgent::new("Legacy");
-        let new_agent = CallableAgent::new("Current");
-        let legacy_stored = StoredAgents {
-            agents: vec![legacy_agent.clone()],
-        };
-        fs::create_dir_all(legacy_path.parent().unwrap()).unwrap();
-        fs::write(
-            &legacy_path,
-            serde_json::to_string_pretty(&legacy_stored).unwrap(),
-        )
-        .unwrap();
-        let store = FileAgentStore::new(&current_path);
-
-        store.save(std::slice::from_ref(&new_agent)).unwrap();
-
-        let current_raw = fs::read_to_string(&current_path).unwrap();
-        let current_stored: StoredAgents = serde_json::from_str(&current_raw).unwrap();
-        let legacy_raw = fs::read_to_string(&legacy_path).unwrap();
-        let legacy_stored_after: StoredAgents = serde_json::from_str(&legacy_raw).unwrap();
-
-        assert_eq!(current_stored.agents, vec![new_agent]);
-        assert_eq!(legacy_stored_after.agents, vec![legacy_agent]);
     }
 
     #[test]

@@ -7,6 +7,7 @@ use crate::execution::subagents::{
     adhoc_subagent_base_index, build_adhoc_subagent_summaries, merge_subagent_summaries,
 };
 use crate::execution::telemetry::RunTelemetry;
+use crate::execution::tool_results::error_tool_result;
 use crate::graph::callable_agent::CallableAgent;
 use crate::graph::{Node, NodeId, Workflow};
 use crate::ports::{AgentError, AgentRequest, AgentTurnOutcome, AgentTurnSuccess};
@@ -94,17 +95,6 @@ pub enum SubagentInvokeStep {
     },
 }
 
-fn tool_error_result(tool_call: &ToolCall, message: impl Into<String>) -> ToolResult {
-    ToolResult {
-        tool_call_id: tool_call.id.clone(),
-        tool_name: tool_call.name.clone(),
-        content: serde_json::json!({ "error": message.into() }).to_string(),
-        is_error: true,
-        artifact_ids: Vec::new(),
-        output_meta: None,
-    }
-}
-
 fn resolve_subagent_summary(
     subagent_id: &str,
     declared_subagents: &BTreeMap<String, SubagentSummary>,
@@ -129,7 +119,7 @@ pub fn start_subagent_invoke(
     let call_args = match serde_json::from_value::<CallSubagentArgs>(tool_call.arguments.clone()) {
         Ok(args) => args,
         Err(err) => {
-            return SubagentStartOutcome::Failed(tool_error_result(
+            return SubagentStartOutcome::Failed(error_tool_result(
                 tool_call,
                 format!("Invalid arguments for {CALL_SUBAGENT_TOOL}: {err}"),
             ));
@@ -139,7 +129,7 @@ pub fn start_subagent_invoke(
     let Some(mut subagent) =
         resolve_subagent_summary(&call_args.subagent_id, declared_subagents, agent_snapshots)
     else {
-        return SubagentStartOutcome::Failed(tool_error_result(
+        return SubagentStartOutcome::Failed(error_tool_result(
             tool_call,
             format!(
                 "Subagent '{}' not found. Declare subagents before invoking them.",
@@ -149,7 +139,7 @@ pub fn start_subagent_invoke(
     };
 
     if subagent.status != SubagentStatus::Declared && subagent.status != SubagentStatus::Completed {
-        return SubagentStartOutcome::Failed(tool_error_result(
+        return SubagentStartOutcome::Failed(error_tool_result(
             tool_call,
             format!(
                 "Subagent '{}' is {} and cannot be invoked. Only declared or completed subagents can be called.",
@@ -163,7 +153,7 @@ pub fn start_subagent_invoke(
     declared_subagents.insert(subagent.id.clone(), subagent.clone());
 
     let Some(parent_node) = workflow.nodes.iter().find(|n| n.id == *parent_node_id) else {
-        return SubagentStartOutcome::Failed(tool_error_result(
+        return SubagentStartOutcome::Failed(error_tool_result(
             tool_call,
             format!("Parent node '{parent_node_id}' not found in workflow"),
         ));
@@ -273,6 +263,7 @@ fn build_adhoc_agent_request(
 }
 
 /// Advance a subagent session after the host invokes the model.
+#[must_use]
 pub fn advance_subagent_invoke(
     mut session: SubagentInvokeSession,
     outcome: Result<AgentTurnOutcome, AgentError>,
@@ -314,13 +305,13 @@ pub fn advance_subagent_invoke(
 
 fn complete_subagent(
     session: SubagentInvokeSession,
-    success: AgentTurnSuccess,
+    AgentTurnSuccess { output, .. }: AgentTurnSuccess,
 ) -> SubagentInvokeStep {
     let mut subagent = session.subagent;
     subagent.status = SubagentStatus::Completed;
     let subagent_id = subagent.id.clone();
     let content = serde_json::json!({
-        "output": success.output,
+        "output": output,
         "message": format!("Subagent '{}' completed.", subagent.name)
     })
     .to_string();
@@ -366,17 +357,7 @@ fn complete_subagent_failed(session: SubagentInvokeSession, error: String) -> Su
 /// Returns a tool result for runtime builtins that subagents cannot invoke.
 #[must_use]
 pub fn subagent_runtime_builtin_denied(tool_call: &ToolCall) -> ToolResult {
-    ToolResult {
-        tool_call_id: tool_call.id.clone(),
-        tool_name: tool_call.name.clone(),
-        content: serde_json::json!({
-            "error": "Subagent cannot invoke runtime builtin tools."
-        })
-        .to_string(),
-        is_error: true,
-        artifact_ids: Vec::new(),
-        output_meta: None,
-    }
+    error_tool_result(tool_call, "Subagent cannot invoke runtime builtin tools.")
 }
 
 /// Whether a tool name is a subagent runtime builtin.
@@ -386,7 +367,7 @@ pub fn is_subagent_runtime_builtin(tool_name: &str) -> bool {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, reason = "test fixtures use unwrap for brevity")]
 mod tests {
     use super::*;
     use crate::graph::{NodeId, WorkflowId};
@@ -464,7 +445,7 @@ mod tests {
                     },
                 ]
             ),
-            other => assert!(matches!(other, SubagentInvokeStep::NeedAi(_))),
+            SubagentInvokeStep::Done { .. } => unreachable!("unexpected Done step"),
         }
     }
 }

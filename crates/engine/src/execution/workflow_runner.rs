@@ -2,7 +2,10 @@ use crate::conversation::AgentTranscriptItem;
 use crate::execution::node_invocation::{
     build_agent_request, build_upstream_map, NodeInvocationContext,
 };
-use crate::execution::{NodeRunOutput, RunError, RunEvent, RunEventKind, RunReport};
+use crate::execution::retry::{next_retry, retrying_event};
+use crate::execution::{
+    NodeFailureKind, NodeRunOutput, RunError, RunEvent, RunEventKind, RunReport,
+};
 use crate::graph::validation::execution_layers;
 use crate::graph::{NodeId, Workflow};
 use crate::ports::{AgentTurnOutcome, AiPort};
@@ -82,12 +85,12 @@ where
             .find(|node| node.id == *node_id)
             .ok_or_else(|| RunError::NodeFailed {
                 node_id: node_id.clone(),
-                message: "node id from layers not found in workflow".to_string(),
+                kind: NodeFailureKind::HeadlessNodeNotFound,
             })?;
         if !node.agent.auto_start {
             return Err(RunError::NodeFailed {
                 node_id: node_id.clone(),
-                message: "headless runner cannot satisfy human input".to_string(),
+                kind: NodeFailureKind::HeadlessAutoStartRequired,
             });
         }
 
@@ -135,31 +138,24 @@ where
                 Ok(AgentTurnOutcome::ToolCalls(_)) => {
                     return Err(RunError::NodeFailed {
                         node_id: node_id.clone(),
-                        message: "headless runner cannot satisfy tool execution".to_string(),
+                        kind: NodeFailureKind::HeadlessToolsUnsupported,
                     });
                 }
                 Ok(AgentTurnOutcome::NeedsUserInput(_)) => {
                     return Err(RunError::NodeFailed {
                         node_id: node_id.clone(),
-                        message: "headless runner cannot satisfy human input".to_string(),
+                        kind: NodeFailureKind::HeadlessUserInputUnsupported,
                     });
                 }
                 Err(error) => {
-                    if error.is_retryable() && retries < workflow.settings.retry_policy.max_attempts
-                    {
-                        retries += 1;
-                        let delay = workflow.settings.retry_policy.delay_for_attempt(retries);
-                        events.push(RunEvent {
-                            node_id: node_id.clone(),
-                            kind: RunEventKind::Retrying,
-                            message: format!(
-                                "retrying after transient failure; backoff_ms={}",
-                                delay.as_millis()
-                            ),
-                            output: None,
-                        });
-                        tokio::time::sleep(delay).await;
-                        continue;
+                    if error.is_retryable() {
+                        if let Some(delay) =
+                            next_retry(&workflow.settings.retry_policy, &mut retries)
+                        {
+                            events.push(retrying_event(node_id.clone(), delay));
+                            tokio::time::sleep(delay).await;
+                            continue;
+                        }
                     }
                     events.push(RunEvent {
                         node_id: node_id.clone(),
@@ -169,7 +165,7 @@ where
                     });
                     return Err(RunError::NodeFailed {
                         node_id: node_id.clone(),
-                        message: error.to_string(),
+                        kind: NodeFailureKind::Agent(error.to_string()),
                     });
                 }
             }
@@ -189,7 +185,8 @@ struct HeadlessNodeResult {
     clippy::significant_drop_tightening,
     clippy::unwrap_used,
     clippy::expect_used,
-    clippy::panic
+    clippy::panic,
+    reason = "integration-style runner tests favor readable setup over strict lint hygiene"
 )]
 mod tests {
     use super::*;
@@ -301,8 +298,8 @@ mod tests {
         let error = runner.run(&workflow).await.unwrap_err();
         assert!(matches!(
             error,
-            RunError::NodeFailed { node_id, message }
-                if node_id == "idea" && message == "headless runner cannot satisfy tool execution"
+            RunError::NodeFailed { node_id, kind }
+                if node_id == "idea" && kind == NodeFailureKind::HeadlessToolsUnsupported
         ));
     }
 
@@ -356,8 +353,9 @@ mod tests {
         let error = runner.run(&workflow).await.unwrap_err();
         assert!(matches!(
             error,
-            RunError::NodeFailed { ref node_id, ref message }
-                if node_id == "idea" && message == "synthetic failure for idea"
+            RunError::NodeFailed { ref node_id, ref kind }
+                if node_id == "idea"
+                    && *kind == NodeFailureKind::Agent("synthetic failure for idea".to_string())
         ));
     }
 

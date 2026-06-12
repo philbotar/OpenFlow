@@ -1,0 +1,12 @@
+[files]
+extend-exclude = [
+    "crates/ui/package-lock.json",
+    "crates/engine/tests/snapshots/",
+    "target/",
+]
+
+[default]
+extend-ignore-identifiers-re = [
+    "ser",
+    "promot",
+]

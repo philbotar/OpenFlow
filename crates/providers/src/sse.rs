@@ -126,7 +126,11 @@ impl ChatCompletionStreamAggregator {
         }
         if let Some(calls) = delta.get("tool_calls").and_then(Value::as_array) {
             for call in calls {
-                let index = call.get("index").and_then(Value::as_u64).unwrap_or(0) as usize;
+                let index = call
+                    .get("index")
+                    .and_then(Value::as_u64)
+                    .and_then(|value| usize::try_from(value).ok())
+                    .unwrap_or(0);
                 let entry = self.tool_calls.entry(index).or_default();
                 if let Some(id) = call.get("id").and_then(Value::as_str) {
                     entry.id = Some(id.to_string());

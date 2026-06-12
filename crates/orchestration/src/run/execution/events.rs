@@ -31,7 +31,7 @@ pub fn apply_event_to_run_state(
             remove_awaiting_node(state, &node_id);
             state
                 .pending_approvals
-                .retain(|approval| approval.node_id != node_id.0);
+                .retain(|approval| approval.node_id != *node_id);
             if state.active_manual_node_id.as_ref() == Some(&node_id) {
                 state.active_manual_node_id = None;
             }
@@ -135,7 +135,7 @@ pub fn apply_event_to_run_state(
                 .push(ChatMessage::tool_marker(tool_call.id.clone()));
         }
         ExecutionEvent::ToolApprovalRequested { request } => {
-            remove_awaiting_node(state, &NodeId(request.node_id.clone()));
+            remove_awaiting_node(state, &request.node_id);
             state.active_tool_call_id = Some(request.tool_call.id.clone());
             if !state
                 .pending_approvals
@@ -144,12 +144,11 @@ pub fn apply_event_to_run_state(
             {
                 state.pending_approvals.push(request.clone());
             }
-            state.status_by_node.insert(
-                NodeId(request.node_id.clone()),
-                AgentStatus::AwaitingToolApproval,
-            );
+            state
+                .status_by_node
+                .insert(request.node_id.clone(), AgentStatus::AwaitingToolApproval);
             state.run_trace.push(RunTraceEntry {
-                node_id: NodeId(request.node_id.clone()),
+                node_id: request.node_id.clone(),
                 node_label: request.node_label.clone(),
                 status: TraceStatus::Paused,
                 message: format!("awaiting approval for {}", request.tool_call.name),
@@ -157,7 +156,7 @@ pub fn apply_event_to_run_state(
             });
             state
                 .chat_logs
-                .entry(NodeId(request.node_id.clone()))
+                .entry(request.node_id.clone())
                 .or_default()
                 .push(ChatMessage::text(
                     ChatRole::System,
@@ -165,7 +164,7 @@ pub fn apply_event_to_run_state(
                 ));
             update_tool_status(
                 state,
-                &NodeId(request.node_id),
+                &request.node_id,
                 &request.tool_call.id,
                 ToolCallStatus::AwaitingApproval,
                 None,
@@ -292,7 +291,7 @@ pub fn apply_event_to_run_state(
             remove_awaiting_node(state, &node_id);
             state
                 .pending_approvals
-                .retain(|approval| approval.node_id != node_id.0);
+                .retain(|approval| approval.node_id != *node_id);
             if state.active_manual_node_id.as_ref() == Some(&node_id) {
                 state.active_manual_node_id = None;
             }
@@ -320,7 +319,7 @@ pub fn apply_event_to_run_state(
             remove_awaiting_node(state, &node_id);
             state
                 .pending_approvals
-                .retain(|approval| approval.node_id != node_id.0);
+                .retain(|approval| approval.node_id != *node_id);
             if state.active_manual_node_id.as_ref() == Some(&node_id) {
                 state.active_manual_node_id = None;
             }
@@ -352,7 +351,7 @@ pub fn apply_event_to_run_state(
             remove_awaiting_node(state, &node_id);
             state
                 .pending_approvals
-                .retain(|approval| approval.node_id != node_id.0);
+                .retain(|approval| approval.node_id != *node_id);
             if state.active_manual_node_id.as_ref() == Some(&node_id) {
                 state.active_manual_node_id = None;
             }
@@ -386,7 +385,7 @@ pub fn apply_event_to_run_state(
             remove_awaiting_node(state, &node_id);
             state
                 .pending_approvals
-                .retain(|approval| approval.node_id != node_id.0);
+                .retain(|approval| approval.node_id != *node_id);
             if state.active_manual_node_id.as_ref() == Some(&node_id) {
                 state.active_manual_node_id = None;
             }
@@ -671,7 +670,7 @@ fn restore_active_node_status(state: &mut WorkflowRunState, node_id: &NodeId) {
     if state
         .pending_approvals
         .iter()
-        .any(|approval| approval.node_id == node_id.0)
+        .any(|approval| approval.node_id == *node_id)
     {
         state
             .status_by_node

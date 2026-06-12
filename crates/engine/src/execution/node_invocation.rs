@@ -99,9 +99,9 @@ pub fn build_system_messages(workflow: &Workflow, node: &Node) -> Vec<String> {
 
 /// Collect file-change records from all transitive upstream nodes (deduped by path, latest timestamp wins).
 #[must_use]
-pub fn upstream_changed_files(
+pub fn upstream_changed_files<S: std::hash::BuildHasher>(
     node_id: &str,
-    upstream_by_node: &HashMap<NodeId, Vec<NodeId>>,
+    upstream_by_node: &HashMap<NodeId, Vec<NodeId>, S>,
     changed_files_by_node: &BTreeMap<NodeId, Vec<FileChangeRecord>>,
 ) -> Vec<FileChangeRecord> {
     let mut by_path: BTreeMap<String, FileChangeRecord> = BTreeMap::new();
@@ -115,9 +115,9 @@ pub fn upstream_changed_files(
     by_path.into_values().collect()
 }
 
-fn transitive_upstream_ids(
+fn transitive_upstream_ids<S: std::hash::BuildHasher>(
     node_id: &str,
-    upstream_by_node: &HashMap<NodeId, Vec<NodeId>>,
+    upstream_by_node: &HashMap<NodeId, Vec<NodeId>, S>,
 ) -> Vec<NodeId> {
     let mut visited = BTreeSet::new();
     let mut stack: Vec<NodeId> = upstream_by_node.get(node_id).cloned().unwrap_or_default();
@@ -137,9 +137,9 @@ fn transitive_upstream_ids(
 
 /// Build the JSON input payload for a node from upstream outputs and optional entrypoint text.
 #[must_use]
-pub fn build_node_input(
+pub fn build_node_input<S: std::hash::BuildHasher>(
     node_id: &str,
-    upstream_by_node: &HashMap<NodeId, Vec<NodeId>>,
+    upstream_by_node: &HashMap<NodeId, Vec<NodeId>, S>,
     outputs_by_node: &BTreeMap<NodeId, Value>,
     entrypoint_text: Option<&str>,
     changed_files_by_node: &BTreeMap<NodeId, Vec<FileChangeRecord>>,
@@ -200,10 +200,9 @@ pub fn build_agent_request(
     if require_model && node.agent.model.trim().is_empty() {
         return Err(RunError::NodeFailed {
             node_id: node.id.clone(),
-            message: format!(
-                "node \"{}\" has no model configured — select a model in the inspector before running",
-                node.label
-            ),
+            kind: crate::execution::NodeFailureKind::NoModelConfigured {
+                label: node.label.clone(),
+            },
         });
     }
 
@@ -232,7 +231,7 @@ pub fn build_agent_request(
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, reason = "test fixtures use unwrap for brevity")]
 mod tests {
     use super::*;
     use crate::graph::{Edge, Workflow};

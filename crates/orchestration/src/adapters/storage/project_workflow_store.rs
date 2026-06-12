@@ -1,3 +1,4 @@
+use crate::adapters::storage::json_file_store::atomic_write;
 use crate::workflow::ports::ProjectWorkflowStore;
 use engine::Workflow;
 use std::collections::BTreeMap;
@@ -72,9 +73,7 @@ pub fn save_project_workflow(project_root: &Path, workflow: &Workflow) -> io::Re
             format!("workflow JSON serialization failed: {error}"),
         )
     })?;
-    let tmp = path.with_extension("tmp");
-    fs::write(&tmp, text)?;
-    fs::rename(&tmp, path)
+    atomic_write(&path, &text)
 }
 
 /// # Errors

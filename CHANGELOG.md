@@ -4,6 +4,10 @@
 
 ### Added
 
+- **Provider prompt caching:** Anthropic adapter emits `cache_control` breakpoints on the system block and second-to-last message for multi-turn tool loops; OpenAI-compatible adapters emit `prompt_cache_key` (`workflow_id:node_id`) on Chat Completions and Responses requests (skipped for `ollama` / `lmstudio`); shared helpers in `providers/src/prompt_cache.rs`.
+- **Plan review tool:** standalone `tools/plan-review.html` — load or paste markdown plans, select text to comment, verdict chips (approve/block/question), threaded replies, import exported reviews with plan diff, export review notes; documented in [ROADMAP.md](docs/ROADMAP.md#interactive-plan-review-tool). Session storage is v2-only (`plan-review-session-v2`); v1 localStorage is wiped on load.
+- **`scripts/verify.sh` hardening:** LLM-friendly output (run all steps, one-line PASS/FAIL, truncated logs, repro summary); new gates for `doc`, `ui-typecheck`, `machete`, `typos`, and clippy-max strictness; optional `--deep` adds `cargo mutants` (missed-mutant note on failure); positional step filter (`./scripts/verify.sh clippy ui-test`); `VERIFY_FAIL_FAST=1` and `VERIFY_MAX_LINES` overrides; root `typos.toml` and `.cargo/mutants.toml`; contract documented in `docs/contributing/testing-workflows.md`, `AGENTS.md`, README, and `.cursor/rules/Verification-and-Lint.mdc`.
+- **Lint anti-silencing:** workspace `allow_attributes_without_reason = "deny"` — every `#[allow]` / `#[expect]` must carry `reason = "..."`.
 - **Global chat:** settled run history in execution-layer order above a live strip of per-node columns; per-node composers and approval cards; node filter chips; canvas selection no longer steals focus on pause (`projectChatLayout`, `LiveNodeColumn`, `ConversationSegmentMessages`).
 - **ROADMAP.md:** [Run checkpoint, history, and replay](docs/ROADMAP.md#run-checkpoint-history-and-replay) — persist checkpoints to disk, run history UI, resume paused runs, read-only replay, and fork-from-checkpoint; expands queue item #22 and ties to persistence policy (#6).
 - **AI retry policy:** default 3 auto-retry attempts with exponential backoff (base `backoff_ms`, capped at 30s) in `InteractiveEngine::run` and `WorkflowRunner`; cancellation-aware backoff sleep; gear-panel controls for max attempts and backoff; `RetryPolicy::delay_for_attempt`.
@@ -25,6 +29,13 @@
 
 ### Changed
 
+- **Chat presentation:** thinking bubbles constrain to pane width (long code/tables scroll inside); removed horizontal dividers between messages, segments, tool rows, and expanded thinking bodies; markdown `hr` hidden in conversation.
+- **Global chat (single node):** one running node appends into the main history stream instead of a separate live column; parallel live nodes still use the live strip until each finishes; assistant messages inside a segment header no longer repeat the node label.
+- **Engine crate refactor:** `string_id!` macro for `NodeId`/`EdgeId`/`WorkflowId`; shared `tool_results` and `retry` helpers; `NodeFailureKind` replaces stringly `RunError::NodeFailed` messages; `InteractiveEngine` split into `mod.rs` / `completion.rs` / `tools.rs` / `tests.rs`; public mutators take `&NodeId`; `PendingToolApproval` and `EditBatch` use `NodeId`; `tool_decision_for_call` single-pass policy lookup; validation helpers for duplicate ids and edge endpoints.
+- **Storage paths:** all app persistence under `{data_local}/openflow/`; removed `step-through-agentic-workflow` directory fallback and legacy path migration.
+- **Orchestration deepening (architecture review):** shared `JsonFileStore` helpers (`atomic_write`, `read_json_file`/`write_json_file`) for agent/project/workflow/settings stores; `template_store` and `project_workflow_store` use shared atomic writes; LSP settings flow through `ToolExecutionContext` (via `ToolPortImpl`) instead of a `ToolRunner` field; blocking edit/read ops moved to `tool/blocking_ops.rs`; subagent AI loop extracted to `run/execution/subagent_session.rs`; builtin dispatch split to `tool/dispatch.rs`; `finish_run_session` centralizes run teardown in `RunCoordinator`.
+- **Clippy-max in verify:** `engine` and `providers` pass pedantic/nursery/cargo lints; `orchestration` and `desktop` retain documented crate-level opt-outs until adapter lint backlog is cleared.
+- **Unused dependencies:** removed `async-trait` from `desktop` and `grep-matcher` from `orchestration` (machete).
 - **Inspector panel:** collapsible sections (Agent, Output schema, Tools, Callable agents) via `InspectorSection`; schema and Apply button grouped; header actions stay visible; Agent open by default.
 - **Dark mode tool/agent cards:** inspector tool and callable-agent option bubbles use theme surfaces instead of hardcoded light gray.
 - **Settings screen:** full-page shell replaces sidebar and top bar; left nav (Appearance, Authentication, Provider, Reasoning, Models) with section content on the right; Back to editor in settings nav; toast offset adjusts when top bar is hidden.
@@ -46,6 +57,8 @@
 
 ### Fixed
 
+- **Chat bar on run start:** keep the live strip visible while a run is active but no node has reached a live status yet (`Starting workflow…` placeholder); classify `awaitingNodeIds` as live before `statusByNode` catches up; open the chat dock when Run is clicked; fix `AgentStatus` IPC encoding (`awaiting_input` not `awaitingInput`) so live chat columns and canvas pills recognize paused/running-tool nodes.
+- **Bootstrap loading hang:** invalid or legacy `openflow/settings.json` (missing `providers` wrapper) no longer blocks startup — file is renamed to `.json.bak`, defaults are written, and the app loads with empty settings.
 - **Settings dark mode:** main shell, settings panel, and Save button no longer use light/white backgrounds when dark theme is active.
 - **AI loading hang:** SSE streams time out after 90s without data (`AgentError::Transient`); terminal `RunError::NodeFailed` from the drive loop emits `NodeFailed` (not `Error`) so nodes no longer stick on Started; dropped execution events are logged; action-channel close aborts the run cooperatively.
 - **User chat XML:** stop stripping `<tool_call>` markup from user messages in the conversation pane; tool-call echo cleanup now applies only to assistant and thinking rows.

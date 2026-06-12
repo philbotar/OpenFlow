@@ -69,7 +69,7 @@ Store and backend tests should prove:
 
 12. `AppBackend::load_all_workflows` merges app-store and project-discovered workflows.
 13. Project assign/unassign updates `projects.json` and routes saves to the correct store.
-14. Legacy `step-through-agentic-workflow` data-dir files migrate into `openflow` on first read for agents, projects, and templates.
+14. App persistence uses `{data_local}/openflow/` only (no legacy data-dir fallback).
 
 ## Live AI Rules
 
@@ -100,16 +100,30 @@ Guidelines:
 | Component behavior | `crates/ui/src/**/*.test.tsx` | Callable agent editor, app shell routing |
 | Canvas | `crates/ui/src/canvas/*.test.ts` | Graph interaction contracts |
 
-## When To Run Each Layer
+## Verification Gate (`scripts/verify.sh`)
 
-Run this before normal commits:
+Primary gate for agents and CI — run after every change:
 
 ```bash
-cargo fmt --all --check
-cargo clippy --workspace --all-targets
-cargo clippy-max
-cargo test --workspace
+./scripts/verify.sh
 ```
+
+| Behavior | Detail |
+| --- | --- |
+| Default | Runs all 11 steps; continues on failure so one run surfaces every broken step |
+| Output | One line per step (`PASS fmt (1s)` / `FAIL clippy (41s)`); truncated logs on fail; summary with exact repro commands |
+| Noise | No ANSI/progress escapes (`CARGO_TERM_COLOR=never`, `NO_COLOR=1`, `--quiet` on cargo/npm where supported) |
+| Filter | `./scripts/verify.sh fmt clippy ui-test` — unknown step name lists valid steps and exits 1 |
+| Deep | `./scripts/verify.sh --deep` adds `cargo mutants --no-shuffle` (minutes-long; missed mutants = untested behavior backlog) |
+| Env | `VERIFY_FAIL_FAST=1` stop on first failure; `VERIFY_MAX_LINES` (default 150) tail on fail |
+
+**Steps:** `fmt`, `clippy` (pedantic/nursery/cargo), `doc`, `test`, `public-api`, `machete`, `typos`, `ui-typecheck`, `ui-test`, `deny`, `arch`.
+
+**One-time installs:** `cargo install cargo-machete typos-cli cargo-mutants cargo-public-api` (nightly toolchain for public-api).
+
+## When To Run Each Layer
+
+`./scripts/verify.sh` replaces separate `cargo fmt`, `clippy`, and `cargo test --workspace` before commits.
 
 Run this when changing execution behavior, node input shaping, shared context, callable agents, execution cwd, manual pauses, tool approvals, tool result routing, run trace, or chat logs:
 

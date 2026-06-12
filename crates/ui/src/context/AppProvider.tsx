@@ -31,8 +31,11 @@ import {
   createIdleRunState,
   nextNodePlacement,
   isChatComposerBusy,
+  isLiveTranscriptSegment,
+  statusForNode,
   nodeOutput,
   prettyJson,
+  normalizeRunState,
   projectChatLayout,
   projectWorkflowCanvasGraph,
   projectWorkflowCanvasStatusByNode,
@@ -109,11 +112,12 @@ export function AppProvider(props: ParentProps) {
   }>({ current: null });
   const runState = () => runStateStore.current;
   const setRunState = (next: WorkflowRunState | null) => {
-    if (next === null || runStateStore.current === null) {
-      setRunStateStore("current", next);
+    const normalized = next === null ? null : normalizeRunState(next);
+    if (normalized === null || runStateStore.current === null) {
+      setRunStateStore("current", normalized);
       return;
     }
-    setRunStateStore("current", reconcile(next, { key: "id" }));
+    setRunStateStore("current", reconcile(normalized, { key: "id" }));
   };
   const [readiness, setReadiness] = createSignal<{
     ready: boolean;
@@ -128,6 +132,8 @@ export function AppProvider(props: ParentProps) {
   const [schemaText, setSchemaText] = createSignal("");
   const [chatDrafts, setChatDrafts] = createStore<Record<string, string>>({});
   const [chatFilterNodeId, setChatFilterNodeId] = createSignal<NodeId | null>(null);
+  const [pickedLiveNodeId, setPickedLiveNodeId] = createSignal<NodeId | null>(null);
+  const [chatSegmentOrder, setChatSegmentOrder] = createSignal<NodeId[]>([]);
   const [chatFocusNode, setChatFocusNode] = createSignal<{
     nodeId: NodeId;
     tick: number;
@@ -226,8 +232,49 @@ export function AppProvider(props: ParentProps) {
   const hasRunTraceMemo = createMemo(() => (runState()?.runTrace.length ?? 0) > 0);
   const currentNodeOutput = createMemo(() => nodeOutput(runState(), selectedNodeId()));
   const chatLayout = createMemo(() =>
-    projectChatLayout(activeWorkflow(), runState()),
+    projectChatLayout(
+      activeWorkflow(),
+      runState(),
+      pickedLiveNodeId(),
+      chatSegmentOrder(),
+    ),
   );
+  // Preserve the order nodes first appeared in global chat (append-only).
+  createEffect(() => {
+    const state = runState();
+    if (!state?.active) {
+      setChatSegmentOrder([]);
+      return;
+    }
+    const baseLayout = projectChatLayout(activeWorkflow(), state, pickedLiveNodeId());
+    const order = chatSegmentOrder();
+    let next = order;
+    for (const segment of baseLayout.settled) {
+      if (!next.includes(segment.nodeId)) {
+        next = [...next, segment.nodeId];
+      }
+    }
+    if (next.length !== order.length) {
+      setChatSegmentOrder(next);
+    }
+  });
+  // Drop the pick once the node settles (or the run ends) so the next parallel
+  // group blocks again until the user picks.
+  createEffect(() => {
+    const picked = pickedLiveNodeId();
+    if (!picked) {
+      return;
+    }
+    const state = runState();
+    if (!state || !state.active) {
+      setPickedLiveNodeId(null);
+      return;
+    }
+    const status = statusForNode(state.statusByNode, picked);
+    if (!isLiveTranscriptSegment(state, { status })) {
+      setPickedLiveNodeId(null);
+    }
+  });
   const chatDraft = (nodeId: NodeId) => chatDrafts[nodeId] ?? "";
   const setChatDraft = (nodeId: NodeId, text: string) => {
     setChatDrafts(nodeId, text);
@@ -793,7 +840,9 @@ export function AppProvider(props: ParentProps) {
       );
       setRunState(nextRunState);
       setSelectedTraceIndex(null);
+      setDockOpen(true);
       setBottomTab("chat");
+      setDockHeight((current) => clampDockHeight(current, "chat"));
       clearStatusToast();
     } catch (error) {
       setError(normalizeError(error));
@@ -1159,6 +1208,22 @@ export function AppProvider(props: ParentProps) {
     applyUiZoom(uiZoom());
 
     try {
+      // #region agent log
+      fetch("http://127.0.0.1:7419/ingest/cd582769-688d-4538-9ab3-652027b5e093", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Debug-Session-Id": "64d565",
+        },
+        body: JSON.stringify({
+          sessionId: "64d565",
+          location: "AppProvider.tsx:onMount",
+          message: "mount bootstrap starting",
+          hypothesisId: "D",
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       const appWindow = getAppWindow();
       const initialMaximized = await appWindow.isMaximized();
       setIsMaximized(initialMaximized);
@@ -1204,6 +1269,26 @@ export function AppProvider(props: ParentProps) {
         desktop,
       );
       const data = await desktop.bootstrapApp();
+      // #region agent log
+      fetch("http://127.0.0.1:7419/ingest/cd582769-688d-4538-9ab3-652027b5e093", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Debug-Session-Id": "64d565",
+        },
+        body: JSON.stringify({
+          sessionId: "64d565",
+          location: "AppProvider.tsx:onMount",
+          message: "bootstrapApp resolved",
+          hypothesisId: "C",
+          data: {
+            workflowCount: data.workflows?.length ?? 0,
+            agentCount: data.agents?.length ?? 0,
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       setAvailableSkills(data.skills ?? []);
       await initializeWorkspace(
         data.workflows,
@@ -1213,7 +1298,40 @@ export function AppProvider(props: ParentProps) {
         data.runState,
       );
       setAppReady(true);
+      // #region agent log
+      fetch("http://127.0.0.1:7419/ingest/cd582769-688d-4538-9ab3-652027b5e093", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Debug-Session-Id": "64d565",
+        },
+        body: JSON.stringify({
+          sessionId: "64d565",
+          location: "AppProvider.tsx:onMount",
+          message: "appReady set true",
+          hypothesisId: "C",
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
     } catch (error) {
+      // #region agent log
+      fetch("http://127.0.0.1:7419/ingest/cd582769-688d-4538-9ab3-652027b5e093", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Debug-Session-Id": "64d565",
+        },
+        body: JSON.stringify({
+          sessionId: "64d565",
+          location: "AppProvider.tsx:onMount",
+          message: "bootstrap failed",
+          hypothesisId: "A",
+          data: { error: normalizeError(error) },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       setError(normalizeError(error));
     }
 
@@ -1246,6 +1364,7 @@ export function AppProvider(props: ParentProps) {
     selectedTraceIndex,
     schemaText,
     chatFilterNodeId,
+    pickedLiveNodeId,
     chatFocusNode,
     newModelInputByProvider,
     providerKeyInputByProvider,
@@ -1274,6 +1393,7 @@ export function AppProvider(props: ParentProps) {
     setWorkflowNameDraft,
     setAgentNameDraft,
     setChatFilterNodeId,
+    setPickedLiveNodeId,
     chatDraft,
     setChatDraft,
     setNewModelInputByProvider,

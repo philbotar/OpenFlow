@@ -1,8 +1,10 @@
 use crate::auth::{apply_auth, AuthConfig};
+use crate::client::AiClientConfig;
 use crate::mapping::{
     all_tool_specs, parse_chat_completion_output, parse_responses_output, should_allow_user_input,
     tool_payload, transcript_to_chat_messages, transcript_to_responses_input,
 };
+use crate::prompt_cache::{apply_openai_cache_key, openai_compat_cache_key_enabled};
 use crate::spec::WireApi;
 use crate::sse::{stream_sse_data_lines, ChatCompletionStreamAggregator};
 use engine::{
@@ -36,11 +38,16 @@ pub async fn invoke(
     http: &Client,
     config: &OpenAiCompatibleConfig,
     auth: &AuthConfig,
+    client_config: &AiClientConfig,
     request: AgentRequest,
 ) -> Result<AgentTurnOutcome, AgentError> {
     match config.wire_api {
-        WireApi::Responses => invoke_responses(http, config, auth, request).await,
-        WireApi::ChatCompletions => invoke_chat_completions(http, config, auth, request).await,
+        WireApi::Responses => {
+            invoke_responses(http, config, auth, client_config, request).await
+        }
+        WireApi::ChatCompletions => {
+            invoke_chat_completions(http, config, auth, client_config, request).await
+        }
     }
 }
 
@@ -48,15 +55,17 @@ pub async fn invoke_stream(
     http: &Client,
     config: &OpenAiCompatibleConfig,
     auth: &AuthConfig,
+    client_config: &AiClientConfig,
     request: AgentRequest,
     sink: &dyn AiStreamSink,
 ) -> Result<AgentTurnOutcome, AgentError> {
     match config.wire_api {
         WireApi::ChatCompletions => {
-            invoke_chat_completions_stream(http, config, auth, request, sink).await
+            invoke_chat_completions_stream(http, config, auth, client_config, request, sink).await
         }
         WireApi::Responses => {
-            let outcome = invoke_responses(http, config, auth, request).await?;
+            let outcome =
+                invoke_responses(http, config, auth, client_config, request).await?;
             emit_assistant_deltas_from_outcome(sink, &outcome);
             Ok(outcome)
         }
@@ -67,9 +76,10 @@ async fn invoke_responses(
     http: &Client,
     config: &OpenAiCompatibleConfig,
     auth: &AuthConfig,
+    client_config: &AiClientConfig,
     request: AgentRequest,
 ) -> Result<AgentTurnOutcome, AgentError> {
-    let body = json!({
+    let mut body = json!({
         "model": request.model,
         "input": transcript_to_responses_input(&request)?,
         "tools": all_tool_specs(&request)
@@ -77,12 +87,20 @@ async fn invoke_responses(
             .map(|tool| tool_payload(&tool))
             .collect::<Vec<_>>()
     });
+    apply_openai_cache_key(
+        &mut body,
+        &request,
+        openai_compat_cache_key_enabled(&client_config.provider_id),
+    );
 
     let payload = post_json(http, config, auth, &config.responses_path, body, "OpenAI").await?;
     parse_responses_output(&payload, Some(&request.output_schema))
 }
 
-fn chat_completions_body(request: &AgentRequest) -> Result<Value, AgentError> {
+fn chat_completions_body(
+    client_config: &AiClientConfig,
+    request: &AgentRequest,
+) -> Result<Value, AgentError> {
     let mut body = json!({
         "model": request.model,
         "messages": transcript_to_chat_messages(request)?,
@@ -109,6 +127,11 @@ fn chat_completions_body(request: &AgentRequest) -> Result<Value, AgentError> {
     if let Some(budget) = request.reasoning_budget_tokens {
         body["reasoning"] = json!({ "max_tokens": budget });
     }
+    apply_openai_cache_key(
+        &mut body,
+        request,
+        openai_compat_cache_key_enabled(&client_config.provider_id),
+    );
     Ok(body)
 }
 
@@ -116,9 +139,10 @@ async fn invoke_chat_completions(
     http: &Client,
     config: &OpenAiCompatibleConfig,
     auth: &AuthConfig,
+    client_config: &AiClientConfig,
     request: AgentRequest,
 ) -> Result<AgentTurnOutcome, AgentError> {
-    let body = chat_completions_body(&request)?;
+    let body = chat_completions_body(client_config, &request)?;
     let payload = post_json(
         http,
         config,
@@ -139,10 +163,11 @@ async fn invoke_chat_completions_stream(
     http: &Client,
     config: &OpenAiCompatibleConfig,
     auth: &AuthConfig,
+    client_config: &AiClientConfig,
     request: AgentRequest,
     sink: &dyn AiStreamSink,
 ) -> Result<AgentTurnOutcome, AgentError> {
-    let mut body = chat_completions_body(&request)?;
+    let mut body = chat_completions_body(client_config, &request)?;
     body["stream"] = Value::Bool(true);
     let http_request = http.post(endpoint(&config.base_url, &config.chat_completions_path));
     let http_request = apply_auth(http_request, auth, "OpenAI-compatible")?.json(&body);
@@ -233,7 +258,8 @@ fn endpoint(base_url: &str, path: &str) -> String {
     clippy::expect_used,
     clippy::panic,
     clippy::too_many_lines,
-    clippy::unwrap_used
+    clippy::unwrap_used,
+    reason = "provider wire tests are long and use unwrap/expect for brevity"
 )]
 mod tests {
     use super::*;
@@ -270,8 +296,8 @@ mod tests {
         }
     }
 
-    fn client(base_url: String, wire_api: WireApi) -> AiClient {
-        AiClient::with_config(AiClientConfig {
+    fn client_config(base_url: String, wire_api: WireApi) -> AiClientConfig {
+        AiClientConfig {
             provider_id: ProviderId::from("openai"),
             provider_label: "OpenAI".to_string(),
             auth: AuthConfig::Bearer {
@@ -284,7 +310,11 @@ mod tests {
                 responses_path: "v1/responses".to_string(),
                 chat_completions_path: "v1/chat/completions".to_string(),
             }),
-        })
+        }
+    }
+
+    fn client(base_url: String, wire_api: WireApi) -> AiClient {
+        AiClient::with_config(client_config(base_url, wire_api))
     }
 
     #[test]
@@ -314,6 +344,7 @@ mod tests {
             .and(header("authorization", "Bearer key"))
             .and(body_json(json!({
                 "model": "test-model",
+                "prompt_cache_key": "wf-1:idea",
                 "input": [
                     { "role": "system", "content": "You are precise." },
                     {
@@ -380,6 +411,7 @@ mod tests {
             .and(path("/v1/chat/completions"))
             .and(body_json(json!({
                 "model": "test-model",
+                "prompt_cache_key": "wf-1:idea",
                 "messages": [
                     { "role": "system", "content": "You are precise." },
                     {
@@ -614,14 +646,37 @@ mod tests {
             .contains("OpenAI function_call arguments were not valid JSON"));
     }
 
+    fn ollama_client_config(base_url: String) -> AiClientConfig {
+        AiClientConfig {
+            provider_id: ProviderId::from("ollama"),
+            provider_label: "Ollama".to_string(),
+            auth: AuthConfig::NoneAllowed,
+            adapter: ProviderAdapterConfig::OpenAiCompatible(OpenAiCompatibleConfig {
+                base_url,
+                wire_api: WireApi::ChatCompletions,
+                responses_path: "v1/responses".to_string(),
+                chat_completions_path: "v1/chat/completions".to_string(),
+            }),
+        }
+    }
+
     #[test]
-    fn chat_completions_body_forwards_reasoning_effort_fields() {
+    fn chat_completions_body_forwards_reasoning_effort_fields_and_cache_key() {
         let mut request = request();
         request.reasoning_effort = Some("adaptive".to_string());
         request.reasoning_budget_tokens = Some(40960);
-        let body = chat_completions_body(&request).unwrap();
+        let client_config = client_config("http://example.test".to_string(), WireApi::ChatCompletions);
+        let body = chat_completions_body(&client_config, &request).unwrap();
         assert_eq!(body["reasoning_effort"], json!("adaptive"));
         assert_eq!(body["reasoning"]["max_tokens"], json!(40960));
+        assert_eq!(body["prompt_cache_key"], "wf-1:idea");
+    }
+
+    #[test]
+    fn chat_completions_body_omits_cache_key_for_ollama() {
+        let client_config = ollama_client_config("http://localhost:11434/v1".to_string());
+        let body = chat_completions_body(&client_config, &request()).unwrap();
+        assert!(body.get("prompt_cache_key").is_none());
     }
 
     #[tokio::test]

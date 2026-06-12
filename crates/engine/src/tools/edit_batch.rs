@@ -1,5 +1,6 @@
 //! Pre-edit snapshots for reverting agent write batches.
 
+use crate::graph::NodeId;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -15,7 +16,7 @@ pub struct FileSnapshot {
 #[serde(rename_all = "camelCase")]
 pub struct EditBatch {
     pub batch_id: String,
-    pub node_id: String,
+    pub node_id: NodeId,
     pub tool_call_id: String,
     pub tool_name: String,
     pub timestamp_ms: u64,

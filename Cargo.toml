@@ -43,6 +43,7 @@ unsafe_code = "forbid"
 
 [workspace.lints.clippy]
 all = "deny"
+allow_attributes_without_reason = "deny"
 
 [profile.release]
 opt-level = 3

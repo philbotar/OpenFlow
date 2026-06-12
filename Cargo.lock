@@ -661,7 +661,6 @@ dependencies = [
 name = "desktop"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "orchestration",
  "serde",
  "serde_json",
@@ -2496,7 +2495,6 @@ dependencies = [
  "dirs",
  "engine",
  "glob",
- "grep-matcher",
  "grep-regex",
  "grep-searcher",
  "ignore",

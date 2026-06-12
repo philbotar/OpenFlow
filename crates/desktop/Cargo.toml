@@ -18,7 +18,6 @@ tauri-build.workspace = true
 
 [dependencies]
 orchestration = { path = "../orchestration", version = "0.1.0" }
-async-trait.workspace = true
 serde.workspace = true
 serde_json.workspace = true
  tauri.workspace = true

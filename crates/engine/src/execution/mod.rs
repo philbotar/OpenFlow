@@ -3,12 +3,14 @@
 pub mod artifacts;
 pub mod interactive_engine;
 pub mod node_invocation;
+pub(crate) mod retry;
 pub mod subagent_runtime;
 pub mod subagents;
 pub mod telemetry;
+pub(crate) mod tool_results;
 pub mod workflow_runner;
 
-pub use artifacts::{NodeRunOutput, RunError, RunEvent, RunEventKind, RunReport};
+pub use artifacts::{NodeFailureKind, NodeRunOutput, RunError, RunEvent, RunEventKind, RunReport};
 pub use interactive_engine::{
     EngineAwaitApproval, EngineAwaitInput, EngineInputError, EnginePollResult, EngineRetryableNode,
     EngineRunResult, InteractiveEngine,

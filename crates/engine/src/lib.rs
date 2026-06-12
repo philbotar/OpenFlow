@@ -1,6 +1,9 @@
 // reason: `cargo clippy-max` enables `clippy::cargo`; current Tauri/WASI transitive
 // dependencies pull two `wit-bindgen` versions that this crate does not select directly.
-#![allow(clippy::multiple_crate_versions)]
+#![allow(
+    clippy::multiple_crate_versions,
+    reason = "transitive dependency version duplicates are not selected by this crate"
+)]
 
 pub mod conversation;
 pub mod execution;

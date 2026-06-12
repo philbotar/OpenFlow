@@ -59,8 +59,7 @@ Keep these execution rules in `orchestration/src/execution.rs`; do not reimpleme
 
 ## Persistence Conventions
 
-1. Newer stores (`agents.json`, `projects.json`, `templates.json`) use the `openflow` data-dir slug and migrate from `step-through-agentic-workflow` on first read.
-2. `workflows.json` and `settings.json` still use the legacy `step-through-agentic-workflow` slug.
+All app persistence files live under `{data_local}/openflow/` (`agents.json`, `projects.json`, `templates.json`, `workflows.json`, `settings.json`).
 3. Project workflow files use the `{workflowId}.workflow.json` suffix under `.flow/workflows/`.
 4. Provider API keys persist in `settings.json` on each `ProviderProfile.api_key` (plaintext on disk). UI loads settings redacted and fetches keys via dedicated IPC. Env vars (`OPENAI_API_KEY`, etc.) remain fallback.
 

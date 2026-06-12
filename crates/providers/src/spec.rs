@@ -430,7 +430,10 @@ pub fn provider_spec(id: &ProviderId) -> Option<&'static ProviderSpec> {
 }
 
 #[cfg(test)]
-#[allow(clippy::expect_used)]
+#[allow(
+    clippy::expect_used,
+    reason = "provider spec tests use expect for brevity"
+)]
 mod tests {
     use super::*;
 

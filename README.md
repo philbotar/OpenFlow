@@ -80,21 +80,20 @@ Faster debug bundle (for bundle-only iteration): `npm --prefix crates/ui run tau
 
 ## Test
 
-Default verification:
+Default verification (runs all steps, reports every failure, exits non-zero if any step fails):
 
 ```bash
 . "$HOME/.cargo/env"
 ./scripts/verify.sh
-cargo fmt --all --check
-cargo clippy --workspace --all-targets
-cargo clippy-max
-cargo test --workspace
 ```
 
-CI policy:
+Steps: `fmt`, `clippy` (clippy-max strictness), `doc`, `test`, `public-api`, `machete`, `typos`, `ui-typecheck`, `ui-test`, `deny`, `arch`. Optional `./scripts/verify.sh --deep` adds `mutants`. Run a subset: `./scripts/verify.sh fmt clippy`. Set `VERIFY_FAIL_FAST=1` to stop on first failure.
 
-- Blocking gate (`Verify`): `cargo fmt --all --check`, `cargo clippy --workspace --all-targets`, `cargo test --workspace`.
-- Audit-only gate (`Clippy max`): `cargo clippy-max` runs with `continue-on-error` to track stricter lint debt without blocking merges.
+Extra tools (install once): `cargo install cargo-machete typos-cli cargo-mutants cargo-public-api`.
+
+CI policy: blocking gate is `./scripts/verify.sh` (default steps, no `--deep`).
+
+Plan review (optional): `open tools/plan-review.html` — comment on markdown plans before implementation; see [ROADMAP](docs/ROADMAP.md#interactive-plan-review-tool).
 
 Workflow acceptance tests:
 

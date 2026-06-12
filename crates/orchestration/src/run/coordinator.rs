@@ -20,6 +20,17 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
+/// Clears session-scoped resources when a run becomes inactive.
+fn finish_run_session(session: &mut RunSession) {
+    session.snapshot_store = None;
+    session.lsp_settings = None;
+    session.pending_engine_reverts = None;
+    session.action_tx = None;
+    session.handle = None;
+    session.cancel_token = None;
+    session.node_interrupts = None;
+}
+
 #[derive(Debug)]
 struct RunSession {
     workflow: Option<Workflow>,
@@ -311,13 +322,7 @@ impl RunCoordinator {
         let finished = !run_state.active;
         let snapshot = run_state.clone();
         if finished {
-            session.snapshot_store = None;
-            session.lsp_settings = None;
-            session.pending_engine_reverts = None;
-            session.action_tx = None;
-            session.handle = None;
-            session.cancel_token = None;
-            session.node_interrupts = None;
+            finish_run_session(&mut session);
         }
         Ok(snapshot)
     }
@@ -546,10 +551,7 @@ impl RunCoordinator {
         run_state
             .changed_files
             .retain(|record| record.batch_id.as_deref() != Some(batch_id.as_str()));
-        if let Some(records) = run_state
-            .changed_files_by_node
-            .get_mut(batch_node_id.as_str())
-        {
+        if let Some(records) = run_state.changed_files_by_node.get_mut(&batch_node_id) {
             records.retain(|record| record.batch_id.as_deref() != Some(batch_id.as_str()));
         }
         run_state
@@ -586,13 +588,13 @@ impl RunCoordinator {
 
     #[cfg(test)]
     #[must_use]
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "used by orchestration integration tests")]
     pub(crate) fn runtime_handle(&self) -> &tokio::runtime::Handle {
         &self.runtime_handle
     }
 
     #[cfg(test)]
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "used by orchestration integration tests")]
     pub(crate) async fn test_seed_session(
         &self,
         workflow: Workflow,

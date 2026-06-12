@@ -124,6 +124,13 @@ docs/
 | `crates/ui/src/lib/types.ts` | Frontend DTO mirror types | Changing command payload shapes |
 | `crates/ui/src/styles/index.css` | Global styles and layout tokens | Changing spacing, inspector, dock CSS |
 
+### Agent tooling
+
+| Path | Purpose |
+| --- | --- |
+| `scripts/verify.sh` | Verification gate — see [Verification Commands](#verification-commands) |
+| `tools/plan-review.html` | Standalone plan review UI — load markdown plans, comment, verdict chips, export/import reviews (`open tools/plan-review.html`) |
+
 ### Examples
 
 | Path | Purpose |
@@ -159,8 +166,8 @@ docs/
 
 | Data | Path |
 | --- | --- |
-| App workflows | `{data_local}/step-through-agentic-workflow/workflows.json` |
-| Settings | `{data_local}/step-through-agentic-workflow/settings.json` |
+| App workflows | `{data_local}/openflow/workflows.json` |
+| Settings | `{data_local}/openflow/settings.json` |
 | Projects | `{data_local}/openflow/projects.json` (migrates from legacy slug) |
 | Saved agents | `{data_local}/openflow/agents.json` (migrates from legacy slug) |
 | Node templates | `{data_local}/openflow/templates.json` (migrates from legacy slug) |
@@ -173,12 +180,13 @@ API key resolution order (highest to lowest): transient input panel → stored s
 
 ## Verification Commands
 
+Primary gate — run after changes:
+
 ```bash
-cargo fmt --all --check
-cargo clippy --workspace --all-targets
-cargo clippy-max
-cargo test --workspace
+./scripts/verify.sh
 ```
+
+Runs all steps (`fmt`, clippy-max `clippy`, `doc`, `test`, `public-api`, `machete`, `typos`, `ui-typecheck`, `ui-test`, `deny`, `arch`); prints one-line PASS/FAIL per step and a summary with repro commands. Optional `./scripts/verify.sh --deep` adds `mutants`. Filter steps: `./scripts/verify.sh fmt clippy`. `VERIFY_FAIL_FAST=1` stops on first failure.
 
 For execution changes, also run:
 

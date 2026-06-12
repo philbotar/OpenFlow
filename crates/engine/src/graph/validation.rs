@@ -21,39 +21,21 @@ pub enum WorkflowValidationError {
     InternalConsistency(String),
 }
 
-/// # Errors
-/// Returns an error if the workflow is invalid.
-pub fn validate_workflow(workflow: &Workflow) -> Result<(), WorkflowValidationError> {
-    execution_layers(workflow).map(|_| ())
-}
-
-/// # Errors
-/// Returns an error if the workflow is invalid (empty, duplicate ids, missing endpoints, cycles,
-/// or internal consistency violation).
-pub fn execution_layers(workflow: &Workflow) -> Result<Vec<Vec<NodeId>>, WorkflowValidationError> {
-    if workflow.nodes.is_empty() {
-        return Err(WorkflowValidationError::EmptyWorkflow);
-    }
-
+fn check_duplicate_nodes(workflow: &Workflow) -> Result<HashSet<NodeId>, WorkflowValidationError> {
     let mut node_ids = HashSet::new();
     for node in &workflow.nodes {
         if !node_ids.insert(node.id.clone()) {
             return Err(WorkflowValidationError::DuplicateNodeId(node.id.clone()));
         }
     }
+    Ok(node_ids)
+}
 
+fn check_duplicate_edges_and_endpoints(
+    workflow: &Workflow,
+    node_ids: &HashSet<NodeId>,
+) -> Result<(), WorkflowValidationError> {
     let mut edge_ids = HashSet::new();
-    let mut incoming: HashMap<NodeId, usize> = workflow
-        .nodes
-        .iter()
-        .map(|node| (node.id.clone(), 0))
-        .collect();
-    let mut outgoing: HashMap<NodeId, Vec<NodeId>> = workflow
-        .nodes
-        .iter()
-        .map(|node| (node.id.clone(), Vec::new()))
-        .collect();
-
     for edge in &workflow.edges {
         if !edge_ids.insert(edge.id.clone()) {
             return Err(WorkflowValidationError::DuplicateEdgeId(edge.id.clone()));
@@ -73,7 +55,39 @@ pub fn execution_layers(workflow: &Workflow) -> Result<Vec<Vec<NodeId>>, Workflo
                 node_id: edge.to.clone(),
             });
         }
+    }
+    Ok(())
+}
 
+/// # Errors
+/// Returns an error if the workflow is invalid.
+pub fn validate_workflow(workflow: &Workflow) -> Result<(), WorkflowValidationError> {
+    execution_layers(workflow).map(|_| ())
+}
+
+/// # Errors
+/// Returns an error if the workflow is invalid (empty, duplicate ids, missing endpoints, cycles,
+/// or internal consistency violation).
+pub fn execution_layers(workflow: &Workflow) -> Result<Vec<Vec<NodeId>>, WorkflowValidationError> {
+    if workflow.nodes.is_empty() {
+        return Err(WorkflowValidationError::EmptyWorkflow);
+    }
+
+    let node_ids = check_duplicate_nodes(workflow)?;
+    check_duplicate_edges_and_endpoints(workflow, &node_ids)?;
+
+    let mut incoming: HashMap<NodeId, usize> = workflow
+        .nodes
+        .iter()
+        .map(|node| (node.id.clone(), 0))
+        .collect();
+    let mut outgoing: HashMap<NodeId, Vec<NodeId>> = workflow
+        .nodes
+        .iter()
+        .map(|node| (node.id.clone(), Vec::new()))
+        .collect();
+
+    for edge in &workflow.edges {
         *incoming.entry(edge.to.clone()).or_insert(0) += 1;
         outgoing
             .entry(edge.from.clone())
@@ -125,12 +139,20 @@ pub fn execution_layers(workflow: &Workflow) -> Result<Vec<Vec<NodeId>>, Workflo
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "test fixtures use unwrap/expect for brevity"
+)]
 mod tests {
     use super::*;
     use crate::graph::workflow::{Edge, Node, Workflow};
 
-    #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        reason = "test layout uses integer coordinates cast to f32 canvas positions"
+    )]
     fn workflow_with_nodes(labels: &[&str]) -> Workflow {
         let mut workflow = Workflow::new("test");
         workflow.nodes = labels

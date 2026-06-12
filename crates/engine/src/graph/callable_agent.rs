@@ -137,7 +137,7 @@ mod tests {
         let mut agent_b = agents[1].clone();
         agent_b.id = "agent-b".to_string();
 
-        let snapshots = resolve_callable_agent_snapshots(&workflow, &[agent_a.clone(), agent_b]);
+        let snapshots = resolve_callable_agent_snapshots(&workflow, &[agent_a, agent_b]);
 
         assert_eq!(snapshots.len(), 2);
         assert_eq!(snapshots["agent-a"].name, "Alpha");

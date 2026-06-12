@@ -575,7 +575,8 @@ pub fn parse_chat_completion_output(
     clippy::expect_used,
     clippy::panic,
     clippy::too_many_lines,
-    clippy::unwrap_used
+    clippy::unwrap_used,
+    reason = "mapping tests are long and use unwrap/expect for brevity"
 )]
 mod tests {
     use super::*;

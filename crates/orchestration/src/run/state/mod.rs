@@ -4,7 +4,7 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "snake_case")]
 pub enum AgentStatus {
     Idle,
     Queued,
@@ -124,5 +124,22 @@ impl WorkflowRunState {
             active: false,
             ..Self::running_for_workflow(workflow)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AgentStatus;
+
+    #[test]
+    fn agent_status_serializes_snake_case_for_frontend() {
+        assert_eq!(
+            serde_json::to_string(&AgentStatus::AwaitingInput).expect("serialize"),
+            "\"awaiting_input\""
+        );
+        assert_eq!(
+            serde_json::to_string(&AgentStatus::RunningTool).expect("serialize"),
+            "\"running_tool\""
+        );
     }
 }

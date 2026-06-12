@@ -1,10 +1,14 @@
-#![allow(clippy::multiple_crate_versions)]
+#![allow(
+    clippy::multiple_crate_versions,
+    reason = "transitive dependency version duplicates are not selected by this crate"
+)]
 
 pub(crate) mod anthropic;
 pub(crate) mod auth;
 mod client;
 pub(crate) mod mapping;
 pub(crate) mod openai_compat;
+pub(crate) mod prompt_cache;
 mod spec;
 mod sse;
 

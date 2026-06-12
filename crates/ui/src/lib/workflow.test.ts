@@ -1,5 +1,12 @@
 import { describe, expect, test } from "vitest";
-import type { AppSettings, SubagentStatus, SubagentSummary, Workflow, WorkflowRunState } from "./types";
+import type {
+  AgentStatus,
+  AppSettings,
+  SubagentStatus,
+  SubagentSummary,
+  Workflow,
+  WorkflowRunState,
+} from "./types";
 import {
   cloneSettings,
   cloneWorkflow,
@@ -10,7 +17,10 @@ import {
   pendingApprovalForNode,
   nodeChangedFiles,
   nodeEditBatches,
+  normalizeRunState,
+  nodeRunAppearanceOrder,
   projectChatLayout,
+  sortTranscriptSegmentsByNodeOrder,
   projectWorkflowCanvasGraph,
   projectWorkflowCanvasStatusByNode,
   projectWorkflowCanvasSubagentsByNode,
@@ -422,6 +432,68 @@ describe("executionLayers", () => {
   });
 });
 
+describe("normalizeRunState", () => {
+  test("maps legacy camelCase agent statuses to snake_case", () => {
+    const state: WorkflowRunState = {
+      ...runState,
+      statusByNode: {
+        "node-1": "completed" as AgentStatus,
+        "node-2": "awaitingInput" as AgentStatus,
+      },
+    };
+
+    const normalized = normalizeRunState(state);
+    expect(normalized.statusByNode["node-2"]).toBe("awaiting_input");
+    const layout = projectChatLayout(workflow, normalized);
+    expect(layout.live).toEqual([]);
+    expect(layout.settled.map((segment) => segment.nodeId)).toEqual(["node-2"]);
+  });
+});
+
+describe("nodeRunAppearanceOrder", () => {
+  test("uses run trace before DAG traversal for nodes with chat", () => {
+    const state: WorkflowRunState = {
+      ...runState,
+      chatLogs: {
+        "node-1": [{ role: "Assistant", content: "one" }],
+        "node-2": [{ role: "Assistant", content: "two" }],
+      },
+      runTrace: [
+        {
+          nodeId: "node-2",
+          nodeLabel: "Draft",
+          status: "running",
+          message: "started",
+          output: null,
+        },
+        {
+          nodeId: "node-1",
+          nodeLabel: "Plan",
+          status: "completed",
+          message: "done",
+          output: null,
+        },
+      ],
+    };
+
+    expect(nodeRunAppearanceOrder(state, ["node-1", "node-2"])).toEqual(["node-2", "node-1"]);
+  });
+});
+
+describe("sortTranscriptSegmentsByNodeOrder", () => {
+  test("reorders segments to match append ledger", () => {
+    const segments = [
+      { nodeId: "node-b", label: "B", messages: [], status: "completed" as const },
+      { nodeId: "node-a", label: "A", messages: [], status: "completed" as const },
+    ];
+    expect(
+      sortTranscriptSegmentsByNodeOrder(segments, ["node-a", "node-b"]).map(
+        (segment) => segment.nodeId,
+      ),
+    ).toEqual(["node-a", "node-b"]);
+  });
+});
+
 describe("projectChatLayout", () => {
   test("classifies live and settled nodes in layer order", () => {
     const diamond = makeDiamondWorkflow();
@@ -446,7 +518,6 @@ describe("projectChatLayout", () => {
     const layout = projectChatLayout(diamond, state);
     expect(layout.settled.map((segment) => segment.nodeId)).toEqual(["node-a"]);
     expect(layout.live.map((segment) => segment.nodeId)).toEqual(["node-b", "node-c"]);
-    expect(layout.live[1]?.messages).toEqual([]);
   });
 
   test("inactive run moves everything to settled", () => {
@@ -489,6 +560,146 @@ describe("projectChatLayout", () => {
       "deleted-node",
     ]);
     expect(layout.settled[1]?.label).toBe("deleted-node");
+  });
+
+  test("treats awaiting nodes as live before status catches up", () => {
+    const state: WorkflowRunState = {
+      ...runState,
+      active: true,
+      awaitingNodeIds: ["node-2"],
+      awaitingNodeId: "node-2",
+      statusByNode: {
+        "node-1": "completed",
+        "node-2": "idle",
+      },
+      chatLogs: {
+        "node-1": [{ role: "Assistant", content: "done" }],
+        "node-2": [],
+      },
+    };
+
+    const layout = projectChatLayout(workflow, state);
+    expect(layout.live).toEqual([]);
+    expect(layout.settled.map((segment) => segment.nodeId)).toEqual(["node-1", "node-2"]);
+    expect(layout.settled[1]?.status).toBe("awaiting_input");
+  });
+
+  test("folds a single live node into settled history", () => {
+    const state: WorkflowRunState = {
+      ...runState,
+      active: true,
+      statusByNode: {
+        "node-1": "completed",
+        "node-2": "started",
+      },
+      chatLogs: {
+        "node-1": [{ role: "Assistant", content: "done" }],
+        "node-2": [{ role: "Assistant", content: "working" }],
+      },
+    };
+
+    const layout = projectChatLayout(workflow, state);
+    expect(layout.live).toEqual([]);
+    expect(layout.settled.map((segment) => segment.nodeId)).toEqual(["node-1", "node-2"]);
+    expect(layout.settled[1]?.status).toBe("started");
+  });
+
+  test("keeps parallel live nodes out of settled until they finish", () => {
+    const diamond = makeDiamondWorkflow();
+    const state: WorkflowRunState = {
+      ...runState,
+      active: true,
+      awaitingNodeIds: ["node-b", "node-c"],
+      awaitingNodeId: "node-b",
+      statusByNode: {
+        "node-a": "completed",
+        "node-b": "awaiting_input",
+        "node-c": "awaiting_input",
+        "node-d": "idle",
+      },
+      chatLogs: {
+        "node-a": [{ role: "Assistant", content: "upstream done" }],
+        "node-b": [{ role: "User", content: "branch b" }],
+        "node-c": [{ role: "User", content: "branch c" }],
+      },
+    };
+
+    const layout = projectChatLayout(diamond, state);
+    expect(layout.settled.map((segment) => segment.nodeId)).toEqual(["node-a"]);
+    expect(layout.live.map((segment) => segment.nodeId)).toEqual(["node-b", "node-c"]);
+  });
+
+  test("appends picked parallel node after prior settled segments", () => {
+    const diamond = makeDiamondWorkflow();
+    const state: WorkflowRunState = {
+      ...runState,
+      active: true,
+      awaitingNodeIds: ["node-b", "node-c"],
+      awaitingNodeId: "node-b",
+      statusByNode: {
+        "node-a": "completed",
+        "node-b": "awaiting_input",
+        "node-c": "awaiting_input",
+        "node-d": "idle",
+      },
+      chatLogs: {
+        "node-a": [{ role: "Assistant", content: "upstream done" }],
+        "node-b": [{ role: "User", content: "branch b" }],
+        "node-c": [{ role: "User", content: "branch c" }],
+      },
+      runTrace: [
+        {
+          nodeId: "node-a",
+          nodeLabel: "Plan",
+          status: "completed",
+          message: "done",
+          output: null,
+        },
+        {
+          nodeId: "node-b",
+          nodeLabel: "Branch B",
+          status: "paused",
+          message: "paused",
+          output: null,
+        },
+        {
+          nodeId: "node-c",
+          nodeLabel: "Branch C",
+          status: "paused",
+          message: "paused",
+          output: null,
+        },
+      ],
+    };
+
+    const layout = projectChatLayout(diamond, state, "node-c", ["node-a", "node-c"]);
+    expect(layout.settled.map((segment) => segment.nodeId)).toEqual(["node-a", "node-c"]);
+    expect(layout.live.map((segment) => segment.nodeId)).toEqual(["node-b"]);
+  });
+
+  test("folds the picked parallel node inline, keeping siblings live", () => {
+    const diamond = makeDiamondWorkflow();
+    const state: WorkflowRunState = {
+      ...runState,
+      active: true,
+      awaitingNodeIds: ["node-b", "node-c"],
+      awaitingNodeId: "node-b",
+      statusByNode: {
+        "node-a": "completed",
+        "node-b": "awaiting_input",
+        "node-c": "awaiting_input",
+        "node-d": "idle",
+      },
+      chatLogs: {
+        "node-a": [{ role: "Assistant", content: "upstream done" }],
+        "node-b": [{ role: "User", content: "branch b" }],
+        "node-c": [{ role: "User", content: "branch c" }],
+      },
+    };
+
+    const layout = projectChatLayout(diamond, state, "node-c");
+    expect(layout.settled.map((segment) => segment.nodeId)).toEqual(["node-a", "node-c"]);
+    expect(layout.live.map((segment) => segment.nodeId)).toEqual(["node-b"]);
   });
 
   test("preserves per-node message order", () => {

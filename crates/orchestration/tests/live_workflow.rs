@@ -20,8 +20,8 @@ struct LiveWorkflowConfig {
     chat_completions_path: String,
 }
 
-fn parse_live_wire_api(value: Option<String>) -> Result<WireApi, String> {
-    match value.as_deref().unwrap_or("responses") {
+fn parse_live_wire_api(value: Option<&str>) -> Result<WireApi, String> {
+    match value.unwrap_or("responses") {
         "responses" => Ok(WireApi::Responses),
         "chat-completions" => Ok(WireApi::ChatCompletions),
         other => Err(format!(
@@ -41,7 +41,7 @@ fn live_workflow_config_from_vars(
     })?;
     let base_url =
         get("STEP_WORKFLOW_LIVE_BASE_URL").unwrap_or_else(|| "https://api.openai.com".to_string());
-    let wire_api = parse_live_wire_api(get("STEP_WORKFLOW_LIVE_WIRE_API"))?;
+    let wire_api = parse_live_wire_api(get("STEP_WORKFLOW_LIVE_WIRE_API").as_deref())?;
     let responses_path =
         get("STEP_WORKFLOW_LIVE_RESPONSES_PATH").unwrap_or_else(|| "v1/responses".to_string());
     let chat_completions_path = get("STEP_WORKFLOW_LIVE_CHAT_COMPLETIONS_PATH")
@@ -330,14 +330,14 @@ fn live_wire_api_defaults_to_responses() {
 #[test]
 fn live_wire_api_accepts_chat_completions() {
     assert_eq!(
-        parse_live_wire_api(Some("chat-completions".to_string())).unwrap(),
+        parse_live_wire_api(Some("chat-completions")).unwrap(),
         WireApi::ChatCompletions
     );
 }
 
 #[test]
 fn live_wire_api_rejects_unknown_values() {
-    let error = parse_live_wire_api(Some("completion".to_string())).unwrap_err();
+    let error = parse_live_wire_api(Some("completion")).unwrap_err();
     assert_eq!(
         error,
         "STEP_WORKFLOW_LIVE_WIRE_API must be 'responses' or 'chat-completions', got 'completion'"

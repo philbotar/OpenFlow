@@ -5,7 +5,7 @@ use std::fs;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use engine::{EditBatch, FileSnapshot};
+use engine::{EditBatch, FileSnapshot, NodeId};
 use serde::Deserialize;
 use serde_json::Value;
 use uuid::Uuid;
@@ -36,7 +36,7 @@ pub fn capture_edit_batch(
     }
     Some(EditBatch {
         batch_id: Uuid::new_v4().to_string(),
-        node_id: node_id.to_string(),
+        node_id: NodeId::from(node_id),
         tool_call_id: tool_call_id.to_string(),
         tool_name: tool_name.to_string(),
         timestamp_ms: now_ms(),
@@ -222,7 +222,7 @@ mod tests {
         fs::write(temp.path().join("src.txt"), "original\n").expect("write");
         let batch = EditBatch {
             batch_id: "b-move".to_string(),
-            node_id: "n1".to_string(),
+            node_id: NodeId::from("n1"),
             tool_call_id: "c1".to_string(),
             tool_name: "apply_patch".to_string(),
             timestamp_ms: 1,
@@ -254,7 +254,7 @@ mod tests {
         let temp = tempfile::TempDir::new().expect("tempdir");
         let batch = EditBatch {
             batch_id: "b1".to_string(),
-            node_id: "n1".to_string(),
+            node_id: NodeId::from("n1"),
             tool_call_id: "c1".to_string(),
             tool_name: "write".to_string(),
             timestamp_ms: 1,

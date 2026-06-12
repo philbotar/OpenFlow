@@ -1,7 +1,9 @@
+use crate::adapters::storage::json_file_store::{
+    read_json_file, write_json_file, OPENFLOW_DATA_DIR_SLUG,
+};
 use crate::workflow::ports::WorkflowStore;
 use engine::Workflow;
 use serde::{Deserialize, Serialize};
-use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -24,46 +26,25 @@ impl FileWorkflowStore {
     pub fn default_path() -> PathBuf {
         dirs::data_local_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join("step-through-agentic-workflow")
+            .join(OPENFLOW_DATA_DIR_SLUG)
             .join("workflows.json")
     }
 
     /// # Errors
     /// Returns an error if the file cannot be read or parsed.
     pub fn load(&self) -> io::Result<Vec<Workflow>> {
-        if !self.path.exists() {
-            return Ok(Vec::new());
-        }
-
-        let text = fs::read_to_string(&self.path)?;
-        let stored: StoredWorkflows = serde_json::from_str(&text).map_err(|error| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("workflow store JSON invalid: {error}"),
-            )
-        })?;
+        let stored: StoredWorkflows =
+            read_json_file(&self.path, "workflow store JSON invalid")?.unwrap_or_default();
         Ok(stored.workflows)
     }
 
     /// # Errors
     /// Returns an error if the file cannot be serialized or written.
     pub fn save(&self, workflows: &[Workflow]) -> io::Result<()> {
-        if let Some(parent) = self.path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
         let stored = StoredWorkflows {
             workflows: workflows.to_vec(),
         };
-        let text = serde_json::to_string_pretty(&stored).map_err(|error| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("workflow store JSON serialization failed: {error}"),
-            )
-        })?;
-        let tmp = self.path.with_extension("tmp");
-        fs::write(&tmp, text)?;
-        fs::rename(&tmp, &self.path)
+        write_json_file(&self.path, &stored, "workflow store JSON")
     }
 
     #[must_use]
@@ -85,6 +66,7 @@ impl WorkflowStore for FileWorkflowStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use tempfile::tempdir;
 
     #[test]

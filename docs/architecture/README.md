@@ -7,6 +7,7 @@ Layer model, dependency rules, and runtime concurrency design.
 ```text
 architecture/
 ├── README.md                    # This index
+├── technical-overview.md        # End-to-end overview with diagrams: context, caching, nodes/flow, harness design
 ├── contract.md                  # Layer responsibilities and dependency rules (source of truth)
 ├── arch-check-rules.toml        # CI architecture rules (consumed by scripts/check-architecture.sh)
 ├── threading-concurrency.md     # Tokio runtimes, async tasks, blocking I/O risks
@@ -18,10 +19,11 @@ architecture/
 
 ## Read Order
 
-1. [`contract.md`](contract.md) — allowed/forbidden dependencies, port rules, change checklist.
-2. [`arch-check-rules.toml`](arch-check-rules.toml) — Tier 2 CI rules (Cargo graph + forbidden imports).
-3. [`diagrams/layers-current-vs-target.mmd`](diagrams/layers-current-vs-target.mmd) — visual current vs target seams.
-4. [`threading-concurrency.md`](threading-concurrency.md) — when changing run lifecycle, I/O, or parallelism.
+1. [`technical-overview.md`](technical-overview.md) — big-picture tour: layers, node execution, context assembly, tool-result caching, harness design.
+2. [`contract.md`](contract.md) — allowed/forbidden dependencies, port rules, change checklist.
+3. [`arch-check-rules.toml`](arch-check-rules.toml) — Tier 2 CI rules (Cargo graph + forbidden imports).
+4. [`diagrams/layers-current-vs-target.mmd`](diagrams/layers-current-vs-target.mmd) — visual current vs target seams.
+5. [`threading-concurrency.md`](threading-concurrency.md) — when changing run lifecycle, I/O, or parallelism.
 
 ## Layer Stack
 

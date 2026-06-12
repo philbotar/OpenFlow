@@ -155,8 +155,7 @@ fn consume_tool_call_xml_block(content: &str) -> usize {
 
     content
         .find(CLOSE)
-        .map(|index| index + CLOSE.len())
-        .unwrap_or(content.len())
+        .map_or(content.len(), |index| index + CLOSE.len())
 }
 
 fn strip_trailing_partial_tool_call_prefix(content: &str) -> String {
@@ -286,7 +285,7 @@ pub enum AgentTranscriptItem {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, reason = "test fixtures use unwrap for brevity")]
 mod tests {
     use super::*;
     use serde_json::json;

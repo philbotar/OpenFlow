@@ -453,7 +453,7 @@ fn reducer_tracks_tool_approval_and_completion() {
         ExecutionEvent::ToolApprovalRequested {
             request: engine::PendingToolApproval {
                 approval_id: "approval-1".to_string(),
-                node_id: "first".to_string(),
+                node_id: NodeId::from("first"),
                 node_label: "First".to_string(),
                 tool_call: ToolCall {
                     id: "call-1".to_string(),

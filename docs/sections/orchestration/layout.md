@@ -236,11 +236,11 @@ Avoid: entity `adapters/` calling another entity's `application/`. Cross-entity 
 
 | Store module | On-disk path |
 | --- | --- |
-| `app_workflow_store` | `{data_local}/step-through-agentic-workflow/workflows.json` |
+| `app_workflow_store` | `{data_local}/openflow/workflows.json` |
 | `project_workflow_store` | `{project}/.flow/workflows/{id}.workflow.json` |
 | `agent_store` | `{data_local}/openflow/agents.json` |
 | `project_store` | `{data_local}/openflow/projects.json` |
-| `settings_store` | `{data_local}/step-through-agentic-workflow/settings.json` |
+| `settings_store` | `{data_local}/openflow/settings.json` |
 | `template_store` | `{data_local}/openflow/templates.json` |
 
 ---

@@ -4,6 +4,9 @@ use crate::mapping::{
     all_tool_specs, build_node_context, parse_internal_tool_outcome, parse_plain_json_completion,
     should_allow_user_input, ToolSpec, REQUEST_INPUT_TOOL, SUBMIT_OUTPUT_TOOL,
 };
+use crate::prompt_cache::{
+    apply_cache_control_to_message, ephemeral_cache_control, second_to_last_index,
+};
 use engine::{
     emit_assistant_deltas_from_outcome, AgentError, AgentNeedUserInput, AgentRequest,
     AgentToolCallBatch, AgentTranscriptItem, AgentTurnOutcome, AiStreamSink, ToolCall,
@@ -31,16 +34,7 @@ pub async fn invoke(
     auth: &AuthConfig,
     request: AgentRequest,
 ) -> Result<AgentTurnOutcome, AgentError> {
-    let body = json!({
-        "model": request.model,
-        "max_tokens": DEFAULT_MAX_TOKENS,
-        "system": request.system_content(),
-        "messages": transcript_to_anthropic_messages(&request),
-        "tools": all_tool_specs(&request)
-            .into_iter()
-            .map(|tool| anthropic_tool_payload(&tool))
-            .collect::<Vec<_>>()
-    });
+    let body = build_anthropic_request_body(&request);
 
     let payload = post_json(http, config, auth, &config.messages_path, body).await?;
     parse_anthropic_output(
@@ -50,19 +44,49 @@ pub async fn invoke(
     )
 }
 
+fn anthropic_system_blocks(request: &AgentRequest) -> Vec<Value> {
+    vec![json!({
+        "type": "text",
+        "text": request.system_content(),
+        "cache_control": ephemeral_cache_control(),
+    })]
+}
+
+fn build_anthropic_request_body(request: &AgentRequest) -> Value {
+    json!({
+        "model": request.model,
+        "max_tokens": DEFAULT_MAX_TOKENS,
+        "system": anthropic_system_blocks(request),
+        "messages": transcript_to_anthropic_messages(request),
+        "tools": all_tool_specs(request)
+            .into_iter()
+            .map(|tool| anthropic_tool_payload(&tool))
+            .collect::<Vec<_>>()
+    })
+}
+
 fn transcript_to_anthropic_messages(request: &AgentRequest) -> Vec<Value> {
     let mut messages = vec![json!({
         "role": "user",
-        "content": build_node_context(request)
+        "content": [{
+            "type": "text",
+            "text": build_node_context(request),
+        }]
     })];
 
     for item in &request.transcript {
         match item {
             AgentTranscriptItem::AssistantMessage { content } => {
-                messages.push(json!({ "role": "assistant", "content": content }));
+                messages.push(json!({
+                    "role": "assistant",
+                    "content": [{ "type": "text", "text": content }]
+                }));
             }
             AgentTranscriptItem::UserMessage { content } => {
-                messages.push(json!({ "role": "user", "content": content }));
+                messages.push(json!({
+                    "role": "user",
+                    "content": [{ "type": "text", "text": content }]
+                }));
             }
             AgentTranscriptItem::ToolCall { call } => {
                 messages.push(json!({
@@ -87,6 +111,10 @@ fn transcript_to_anthropic_messages(request: &AgentRequest) -> Vec<Value> {
                 }));
             }
         }
+    }
+
+    if let Some(index) = second_to_last_index(messages.len()) {
+        apply_cache_control_to_message(&mut messages[index]);
     }
 
     messages
@@ -255,7 +283,12 @@ fn parse_anthropic_tool_call(block: &Value) -> Result<ToolCall, AgentError> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "provider wire tests use unwrap/expect and panic for concise failures"
+)]
 mod tests {
     use super::*;
     use crate::{AiClient, AiClientConfig, ProviderAdapterConfig, ProviderId};
@@ -316,10 +349,17 @@ mod tests {
             .and(body_json(json!({
                 "model": "claude-3-5-sonnet-latest",
                 "max_tokens": 4096,
-                "system": "You are precise.",
+                "system": [{
+                    "type": "text",
+                    "text": "You are precise.",
+                    "cache_control": { "type": "ephemeral" }
+                }],
                 "messages": [{
                     "role": "user",
-                    "content": "Node: Idea\nTask:\nSummarize the kickoff.\n\nUpstream input JSON:\n{\"entrypoint\":{\"text\":\"ORCHID-91\"},\"upstream\":[]}"
+                    "content": [{
+                        "type": "text",
+                        "text": "Node: Idea\nTask:\nSummarize the kickoff.\n\nUpstream input JSON:\n{\"entrypoint\":{\"text\":\"ORCHID-91\"},\"upstream\":[]}"
+                    }]
                 }],
                 "tools": [{
                     "name": "openflow_submit_node_output",
@@ -419,6 +459,139 @@ mod tests {
                 }],
             })
         );
+    }
+
+    #[tokio::test]
+    async fn messages_tool_loop_places_cache_control_on_second_to_last_message() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/messages"))
+            .and(body_json(json!({
+                "model": "claude-3-5-sonnet-latest",
+                "max_tokens": 4096,
+                "system": [{
+                    "type": "text",
+                    "text": "You are precise.",
+                    "cache_control": { "type": "ephemeral" }
+                }],
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [{
+                            "type": "text",
+                            "text": "Node: Idea\nTask:\nSummarize the kickoff.\n\nUpstream input JSON:\n{\"entrypoint\":{\"text\":\"ORCHID-91\"},\"upstream\":[]}"
+                        }]
+                    },
+                    {
+                        "role": "assistant",
+                        "content": [{
+                            "type": "tool_use",
+                            "id": "toolu_1",
+                            "name": "read",
+                            "input": {"path": "README.md"},
+                            "cache_control": { "type": "ephemeral" }
+                        }]
+                    },
+                    {
+                        "role": "user",
+                        "content": [{
+                            "type": "tool_result",
+                            "tool_use_id": "toolu_1",
+                            "content": "# Title",
+                            "is_error": false
+                        }]
+                    }
+                ],
+                "tools": [{
+                    "name": "read",
+                    "description": "Read a file or URL.",
+                    "input_schema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "path": { "type": "string" }
+                        },
+                        "required": ["path"]
+                    }
+                }, {
+                    "name": "openflow_submit_node_output",
+                    "description": "Submit the final structured node output when the task is complete. Required shape: {\"output\": {...schema fields...}, \"assistant_message\": null|string}. Schema fields must be nested under \"output\", not at the top level.",
+                    "input_schema": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "output": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                    "summary": { "type": "string" }
+                                },
+                                "required": ["summary"]
+                            },
+                            "assistant_message": {
+                                "type": ["string", "null"],
+                                "description": "Optional human-facing note to show alongside the final result."
+                            }
+                        },
+                        "required": ["output", "assistant_message"]
+                    }
+                }]
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "content": [{
+                    "type": "tool_use",
+                    "id": "toolu_2",
+                    "name": "openflow_submit_node_output",
+                    "input": {
+                        "output": {"summary": "done"},
+                        "assistant_message": null
+                    }
+                }]
+            })))
+            .mount(&server)
+            .await;
+
+        let mut request = request();
+        request.available_tools = vec![ToolDefinition {
+            name: "read".to_string(),
+            description: "Read a file or URL.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "path": { "type": "string" }
+                },
+                "required": ["path"]
+            }),
+            tier: engine::ToolTier::Read,
+            concurrency: engine::ToolConcurrency::Shared,
+        }];
+        request.transcript = vec![
+            AgentTranscriptItem::ToolCall {
+                call: ToolCall {
+                    id: "toolu_1".to_string(),
+                    name: "read".to_string(),
+                    arguments: json!({"path": "README.md"}),
+                    intent: None,
+                },
+            },
+            AgentTranscriptItem::ToolResult {
+                result: engine::ToolResult {
+                    tool_call_id: "toolu_1".to_string(),
+                    tool_name: "read".to_string(),
+                    content: "# Title".to_string(),
+                    is_error: false,
+                    artifact_ids: Vec::new(),
+                    output_meta: None,
+                },
+            },
+        ];
+
+        let outcome = client(server.uri()).invoke(request).await.unwrap();
+        let AgentTurnOutcome::Completed(success) = outcome else {
+            panic!("expected completed outcome");
+        };
+        assert_eq!(success.output, json!({"summary": "done"}));
     }
 
     #[tokio::test]

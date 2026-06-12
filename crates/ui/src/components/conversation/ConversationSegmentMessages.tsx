@@ -53,7 +53,11 @@ function MarkerToolBubble(props: { message: ChatMessage; nodeId: string }) {
   );
 }
 
-function PlainMessage(props: { message: ChatMessage; label: string }) {
+function PlainMessage(props: {
+  message: ChatMessage;
+  label: string;
+  segmentHeaderShowsNode: boolean;
+}) {
   const content = createMemo(() =>
     displayChatContent(props.message.role, props.message.content),
   );
@@ -61,7 +65,9 @@ function PlainMessage(props: { message: ChatMessage; label: string }) {
     <Show when={content().trim()}>
       <Message
         from={chatRoleToMessageFrom(props.message.role)}
-        label={messageLabel(props.message.role, props.label)}
+        label={messageLabel(props.message.role, props.label, {
+          segmentHeaderShowsNode: props.segmentHeaderShowsNode,
+        })}
         content={content()}
         streaming={props.message.streaming}
       />
@@ -73,6 +79,7 @@ function ConversationItemView(props: {
   item: ConversationItem;
   nodeId: string;
   label: string;
+  segmentHeaderShowsNode: boolean;
 }) {
   if (isLegacyToolGroup(props.item)) {
     return <LegacyToolBubble group={props.item} />;
@@ -86,7 +93,13 @@ function ConversationItemView(props: {
   if (isProviderThinkingMessage(props.item)) {
     return <ThinkingBubble message={props.item} />;
   }
-  return <PlainMessage message={props.item} label={props.label} />;
+  return (
+    <PlainMessage
+      message={props.item}
+      label={props.label}
+      segmentHeaderShowsNode={props.segmentHeaderShowsNode}
+    />
+  );
 }
 
 export function ConversationSegmentMessages(props: {
@@ -94,6 +107,7 @@ export function ConversationSegmentMessages(props: {
   label: string;
   messages: ChatMessage[];
   emptyLabel?: string;
+  segmentHeaderShowsNode?: boolean;
 }) {
   const conversationItems = createMemo(() => groupLegacyToolMessages(props.messages));
 
@@ -108,7 +122,12 @@ export function ConversationSegmentMessages(props: {
     >
       <For each={conversationItems()}>
         {(item) => (
-          <ConversationItemView item={item} nodeId={props.nodeId} label={props.label} />
+          <ConversationItemView
+            item={item}
+            nodeId={props.nodeId}
+            label={props.label}
+            segmentHeaderShowsNode={props.segmentHeaderShowsNode ?? false}
+          />
         )}
       </For>
     </Show>

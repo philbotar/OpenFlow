@@ -1,5 +1,6 @@
 //! Tool catalog, approval policy, and transcript types for agent nodes.
 
+use crate::graph::NodeId;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -110,6 +111,14 @@ pub const fn requires_approval(
     tier: ToolTier,
     override_policy: Option<ToolPolicy>,
 ) -> ToolDecision {
+    decision_from_policy_and_mode(override_policy, mode, tier)
+}
+
+const fn decision_from_policy_and_mode(
+    override_policy: Option<ToolPolicy>,
+    mode: ApprovalMode,
+    tier: ToolTier,
+) -> ToolDecision {
     if let Some(policy) = override_policy {
         return match policy {
             ToolPolicy::Allow => ToolDecision::AutoAllow,
@@ -168,7 +177,7 @@ pub fn tool_decision_for_call(config: &NodeToolConfig, call: &ToolCall) -> ToolD
     let tier = tool_tier_for_call(config, &call.name);
     let override_policy = override_policy_for_call(config, &call.name);
     let approval_mode = config.approval_mode.unwrap_or(ApprovalMode::Write);
-    requires_approval(approval_mode, tier, override_policy)
+    decision_from_policy_and_mode(override_policy, approval_mode, tier)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -253,7 +262,7 @@ pub enum ToolTruncationStrategy {
 #[serde(rename_all = "camelCase")]
 pub struct PendingToolApproval {
     pub approval_id: String,
-    pub node_id: String,
+    pub node_id: NodeId,
     pub node_label: String,
     pub tool_call: ToolCall,
     pub tier: ToolTier,
@@ -284,7 +293,11 @@ pub struct SubagentSummary {
     pub status: SubagentStatus,
 }
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "test fixtures use unwrap/expect for brevity"
+)]
 mod tests {
     use super::*;
     use serde_json::json;

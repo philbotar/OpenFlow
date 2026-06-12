@@ -67,11 +67,13 @@ export interface AppContextValue {
   shortcutsModalOpen: Accessor<boolean>;
   chatFilterNodeId: Accessor<NodeId | null>;
   chatFocusNode: Accessor<{ nodeId: NodeId; tick: number } | null>;
+  pickedLiveNodeId: Accessor<NodeId | null>;
 
   // ── Signal setters (form inputs + simple UI state) ────────────────────────
   setWorkflowNameDraft: Setter<string>;
   setAgentNameDraft: Setter<string>;
   setChatFilterNodeId: Setter<NodeId | null>;
+  setPickedLiveNodeId: Setter<NodeId | null>;
   setChatDraft: (nodeId: NodeId, text: string) => void;
   setNewModelInputByProvider: Setter<Record<AiProviderKind, string>>;
   setProviderKeyInputByProvider: Setter<Record<AiProviderKind, string>>;

@@ -1,143 +1,64 @@
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  onCleanup,
-  onMount,
-  Show,
-} from "solid-js";
+import { For, Show } from "solid-js";
 import { labelForAgentStatus } from "../../lib/agentStatus";
-import type { TranscriptSegment } from "../../lib/workflow";
+import { isLiveTranscriptSegment } from "../../lib/workflow";
 import { useAppContext } from "../../context/AppContext";
 import { ConversationComposer } from "./ConversationComposer";
 import { ConversationMessages } from "./ConversationMessages";
 import { FileChangesPanel } from "./FileChangesPanel";
-import { LiveNodeColumn } from "./LiveNodeColumn";
 
-const WIDE_STRIP_THRESHOLD_PX = 720;
-
-function partitionLiveColumns(live: TranscriptSegment[], maxColumns: number) {
-  if (live.length <= maxColumns) {
-    return { dedicated: live, tabbed: [] as TranscriptSegment[] };
-  }
-  return {
-    dedicated: live.slice(0, maxColumns - 1),
-    tabbed: live.slice(maxColumns - 1),
-  };
-}
-
-function LiveTabbedColumn(props: {
-  segments: TranscriptSegment[];
-  activeNodeId: string;
-  onSelect: (nodeId: string) => void;
-}) {
-  const activeSegment = createMemo(
-    () =>
-      props.segments.find((segment) => segment.nodeId === props.activeNodeId) ??
-      props.segments[0],
-  );
+/**
+ * When parallel nodes run, the global chat blocks until the user picks one to
+ * talk to. The picked node streams inline in the conversation; the remaining
+ * live nodes stay here until each completes in turn.
+ */
+function LiveNodePicker() {
+  const ctx = useAppContext();
+  const locked = () => ctx.pickedLiveNodeId() !== null;
 
   return (
-    <div class="chat-live-column chat-live-tabs-column">
-      <div class="chat-live-tabs" role="tablist">
-        <For each={props.segments}>
+    <div class="chat-live-picker" role="group" aria-label="Pick a running node to talk to">
+      <p class="chat-live-picker-hint">
+        <Show
+          when={!locked()}
+          fallback={`${ctx.chatLayout().live.length} more nodes running — finish the current one first`}
+        >
+          {ctx.chatLayout().live.length} nodes running in parallel — pick one to talk to
+        </Show>
+      </p>
+      <div class="chat-live-picker-options">
+        <For each={ctx.chatLayout().live}>
           {(segment) => (
             <button
               type="button"
-              role="tab"
-              class="chat-live-tab"
+              class="chat-live-picker-option"
               classList={{
-                active: segment.nodeId === activeSegment()?.nodeId,
                 "has-activity":
-                  segment.status === "started" ||
-                  segment.status === "running_tool" ||
                   segment.status === "awaiting_input" ||
                   segment.status === "awaiting_tool_approval",
               }}
-              aria-selected={segment.nodeId === activeSegment()?.nodeId}
-              onClick={() => props.onSelect(segment.nodeId)}
+              disabled={locked()}
+              onClick={() => ctx.setPickedLiveNodeId(segment.nodeId)}
             >
               <span class={`chat-filter-status-dot status-${segment.status}`} />
               {segment.label}
-              <span class="chat-live-tab-status">{labelForAgentStatus(segment.status)}</span>
+              <span class="chat-live-picker-status">
+                {labelForAgentStatus(segment.status)}
+              </span>
             </button>
           )}
         </For>
       </div>
-      <Show when={activeSegment()}>
-        {(segment) => <LiveNodeColumn segment={segment()} />}
-      </Show>
     </div>
   );
 }
 
 export function ChatPanel() {
   const ctx = useAppContext();
-  let stripRef: HTMLDivElement | undefined;
-  const [stripWidth, setStripWidth] = createSignal(0);
-  const [tabbedActiveNodeId, setTabbedActiveNodeId] = createSignal<string | null>(null);
 
-  const maxColumns = createMemo(() => (stripWidth() >= WIDE_STRIP_THRESHOLD_PX ? 3 : 2));
-  const livePartition = createMemo(() =>
-    partitionLiveColumns(ctx.chatLayout().live, maxColumns()),
-  );
-
-  onMount(() => {
-    if (!stripRef) {
-      return;
-    }
-    const observer = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (entry) {
-        setStripWidth(entry.contentRect.width);
-      }
-    });
-    observer.observe(stripRef);
-    onCleanup(() => observer.disconnect());
-  });
-
-  createEffect(() => {
-    const tabbed = livePartition().tabbed;
-    if (tabbed.length === 0) {
-      setTabbedActiveNodeId(null);
-      return;
-    }
-    const focus = ctx.chatFocusNode();
-    if (focus && tabbed.some((segment) => segment.nodeId === focus.nodeId)) {
-      setTabbedActiveNodeId(focus.nodeId);
-      return;
-    }
-    const awaiting = tabbed.find(
-      (segment) =>
-        segment.status === "awaiting_input" || segment.status === "awaiting_tool_approval",
+  const hasInlineLiveSegment = () =>
+    ctx.chatLayout().settled.some((segment) =>
+      isLiveTranscriptSegment(ctx.runState(), segment),
     );
-    if (awaiting) {
-      setTabbedActiveNodeId(awaiting.nodeId);
-      return;
-    }
-    if (!tabbed.some((segment) => segment.nodeId === tabbedActiveNodeId())) {
-      setTabbedActiveNodeId(tabbed[0]?.nodeId ?? null);
-    }
-  });
-
-  createEffect(() => {
-    const focus = ctx.chatFocusNode();
-    if (!focus) {
-      return;
-    }
-    const liveIds = new Set(ctx.chatLayout().live.map((segment) => segment.nodeId));
-    if (!liveIds.has(focus.nodeId)) {
-      return;
-    }
-    const element = stripRef?.querySelector(`[data-node-id="${focus.nodeId}"]`);
-    if (element instanceof HTMLElement && typeof element.scrollIntoView === "function") {
-      element.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
-      element.classList.add("is-focused");
-      const timer = setTimeout(() => element.classList.remove("is-focused"), 1500);
-      onCleanup(() => clearTimeout(timer));
-    }
-  });
 
   return (
     <div class="chat-layout">
@@ -148,27 +69,25 @@ export function ChatPanel() {
       <Show
         when={ctx.chatLayout().live.length > 0}
         fallback={
-          <Show when={!ctx.runState()?.active}>
-            <ConversationComposer
-              nodeId={ctx.selectedNodeId() ?? "inactive"}
-              label="workflow"
-              disabled
-            />
+          <Show
+            when={ctx.runState()?.active && !hasInlineLiveSegment()}
+            fallback={
+              <Show when={!hasInlineLiveSegment()}>
+                <ConversationComposer
+                  nodeId={ctx.selectedNodeId() ?? "inactive"}
+                  label="workflow"
+                  disabled
+                />
+              </Show>
+            }
+          >
+            <div class="chat-live-strip chat-live-strip--pending" aria-live="polite">
+              <p class="chat-live-starting">Starting workflow…</p>
+            </div>
           </Show>
         }
       >
-        <div class="chat-live-strip" ref={stripRef}>
-          <For each={livePartition().dedicated}>
-            {(segment) => <LiveNodeColumn segment={segment} />}
-          </For>
-          <Show when={livePartition().tabbed.length > 0}>
-            <LiveTabbedColumn
-              segments={livePartition().tabbed}
-              activeNodeId={tabbedActiveNodeId() ?? livePartition().tabbed[0]?.nodeId ?? ""}
-              onSelect={setTabbedActiveNodeId}
-            />
-          </Show>
-        </div>
+        <LiveNodePicker />
       </Show>
     </div>
   );

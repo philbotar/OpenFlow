@@ -76,6 +76,12 @@ Getting the right context into and out of agents.
 | 29 | **Serde casing unification** — T16 (one wire convention) then T16b (drop legacy aliases/shims) | Planned | [Phase 4](#phase-4--cleanup) |
 | 30 | **Cleanup pass** — T13–T15, T18 (clippy `-D warnings`), refactor polish: slim `AppProvider`, typed desktop DTOs, store catalog audit, provider module audit | Planned | [Refactor](#refactor) |
 
+### Dev & agent tooling
+
+| # | Item | Status | Details |
+| --- | --- | --- | --- |
+| 31 | **Interactive plan review tool** — standalone HTML+JS for markdown plan review | Done | [Plan review tool](#interactive-plan-review-tool) |
+
 ### Backlog (unsequenced)
 
 Small or speculative items — pick up opportunistically or when a tier item touches the same code:
@@ -101,6 +107,34 @@ Small or speculative items — pick up opportunistically or when a tier item tou
 ---
 
 ## Detailed specs
+
+### Interactive plan review tool
+
+Standalone browser tool for reviewing implementation plans before execution — no build step, no server.
+
+| Path | Role |
+| --- | --- |
+| `tools/plan-review.html` | Single-file HTML+JS app — open in any browser |
+
+| Capability | Status |
+| --- | --- |
+| Load `.md` / paste / drag-drop plan text | Done |
+| Render markdown (headings, lists, code, tables, TOC) | Done |
+| Select text → inline comment with quote anchor | Done |
+| Comment sidebar — jump to highlight, delete | Done |
+| Export review as markdown (comments + source) | Done |
+| Session persistence via `localStorage` | Done |
+| Verdict chips — plan-level and per-comment (`approve` / `block` / `question`) | Done |
+| Threaded replies on comments | Done |
+| Import exported review — merge comments; line diff when plan text differs | Done |
+
+**Usage:**
+
+```bash
+open tools/plan-review.html
+```
+
+**Target:** Reviewers (human or LLM handoff) load a plan spec, attach anchored comments on specific passages, set verdicts, thread replies, and export a single markdown file the implementing agent can act on — without editing the plan in-repo. Re-import an exported review to merge feedback or apply an updated plan with a line diff preview.
 
 ### Wire entrypoint text through the desktop run path
 

@@ -1,3 +1,10 @@
+#![allow(
+    clippy::cargo,
+    clippy::nursery,
+    clippy::pedantic,
+    reason = "pedantic/nursery/cargo lint backlog in adapters; engine and providers are clippy-max clean"
+)]
+
 pub mod adapters;
 pub mod agent;
 pub mod api;

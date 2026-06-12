@@ -337,5 +337,8 @@ impl AppBackend {
 }
 
 #[cfg(test)]
-#[allow(clippy::float_cmp)]
+#[allow(
+    clippy::float_cmp,
+    reason = "backend tests compare exact layout coordinates"
+)]
 mod tests;

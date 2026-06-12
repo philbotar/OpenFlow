@@ -21,6 +21,27 @@ import { PROVIDER_ORDER } from "../constants/providers";
 export const NODE_WIDTH = 320;
 export const NODE_HEIGHT = 88;
 
+/** Backend historically emitted camelCase multi-word statuses over IPC. */
+const AGENT_STATUS_ALIASES: Record<string, AgentStatus> = {
+  awaitingInput: "awaiting_input",
+  awaitingToolApproval: "awaiting_tool_approval",
+  runningTool: "running_tool",
+};
+
+export function normalizeAgentStatus(status: string): AgentStatus {
+  return AGENT_STATUS_ALIASES[status] ?? (status as AgentStatus);
+}
+
+export function normalizeRunState(state: WorkflowRunState): WorkflowRunState {
+  const statusByNode = Object.fromEntries(
+    Object.entries(state.statusByNode).map(([nodeId, status]) => [
+      nodeId,
+      normalizeAgentStatus(String(status)),
+    ]),
+  ) as Record<NodeId, AgentStatus>;
+  return { ...state, statusByNode };
+}
+
 export function providerDisplayOrder(settings: AppSettings): string[] {
   const providerIds = Object.keys(settings.providers);
   const ordered = PROVIDER_ORDER.filter((providerId) => providerId in settings.providers);
@@ -365,7 +386,8 @@ export function statusForNode(
   statusByNode: WorkflowCanvasStatusByNode | null,
   nodeId: NodeId,
 ): AgentStatus {
-  return statusByNode?.[nodeId] ?? "idle";
+  const status = statusByNode?.[nodeId];
+  return status ? normalizeAgentStatus(status) : "idle";
 }
 
 export function nodeOutput(
@@ -512,6 +534,96 @@ function isLiveAgentStatus(runState: WorkflowRunState, status: AgentStatus): boo
   return runState.active === true && LIVE_AGENT_STATUSES.has(status);
 }
 
+/** True when a transcript segment is an actively running node (not yet folded into history). */
+export function isLiveTranscriptSegment(
+  runState: WorkflowRunState | null,
+  segment: Pick<TranscriptSegment, "status">,
+): boolean {
+  if (!runState) {
+    return false;
+  }
+  return isLiveAgentStatus(runState, segment.status);
+}
+
+/** First time each node appears in the run trace (fallback: DAG traversal). */
+export function nodeRunAppearanceOrder(
+  runState: WorkflowRunState,
+  traversalOrder: NodeId[],
+): NodeId[] {
+  const ordered: NodeId[] = [];
+  const seen = new Set<NodeId>();
+
+  for (const entry of runState.runTrace) {
+    if (!seen.has(entry.nodeId)) {
+      seen.add(entry.nodeId);
+      ordered.push(entry.nodeId);
+    }
+  }
+
+  for (const nodeId of traversalOrder) {
+    if (!seen.has(nodeId) && (runState.chatLogs[nodeId]?.length ?? 0) > 0) {
+      seen.add(nodeId);
+      ordered.push(nodeId);
+    }
+  }
+
+  for (const nodeId of Object.keys(runState.chatLogs)) {
+    if (!seen.has(nodeId) && (runState.chatLogs[nodeId]?.length ?? 0) > 0) {
+      seen.add(nodeId);
+      ordered.push(nodeId);
+    }
+  }
+
+  return ordered;
+}
+
+export function sortTranscriptSegmentsByNodeOrder(
+  segments: TranscriptSegment[],
+  nodeOrder: NodeId[],
+): TranscriptSegment[] {
+  if (nodeOrder.length === 0) {
+    return segments;
+  }
+  const rank = new Map(nodeOrder.map((nodeId, index) => [nodeId, index]));
+  return [...segments].sort((left, right) => {
+    const leftRank = rank.get(left.nodeId);
+    const rightRank = rank.get(right.nodeId);
+    if (leftRank !== undefined && rightRank !== undefined) {
+      return leftRank - rightRank;
+    }
+    if (leftRank !== undefined) {
+      return -1;
+    }
+    if (rightRank !== undefined) {
+      return 1;
+    }
+    return 0;
+  });
+}
+
+function appendSettledSegment(settled: TranscriptSegment[], segment: TranscriptSegment): void {
+  if (settled.some((existing) => existing.nodeId === segment.nodeId)) {
+    return;
+  }
+  settled.push(segment);
+}
+
+function effectiveAgentStatus(
+  runState: WorkflowRunState,
+  nodeId: NodeId,
+): AgentStatus {
+  const status = statusForNode(runState.statusByNode, nodeId);
+  if (!runState.active) {
+    return status;
+  }
+  const awaiting =
+    runState.awaitingNodeIds?.includes(nodeId) || runState.awaitingNodeId === nodeId;
+  if (awaiting && status === "idle") {
+    return "awaiting_input";
+  }
+  return status;
+}
+
 function buildTranscriptSegment(
   nodeId: NodeId,
   label: string,
@@ -524,6 +636,8 @@ function buildTranscriptSegment(
 export function projectChatLayout(
   workflow: Workflow | undefined,
   runState: WorkflowRunState | null,
+  pickedLiveNodeId?: NodeId | null,
+  segmentOrder?: NodeId[] | null,
 ): ChatLayoutProjection {
   if (!runState) {
     return { settled: [], live: [] };
@@ -542,13 +656,28 @@ export function projectChatLayout(
   const orderedNodeIds = layers.flat();
   const deletedNodeIds = Object.keys(runState.chatLogs).filter((id) => !workflowNodeIds.has(id));
   const traversalOrder = [...orderedNodeIds, ...deletedNodeIds];
+  const appearanceOrder = nodeRunAppearanceOrder(runState, traversalOrder);
+  const displayOrder =
+    segmentOrder && segmentOrder.length > 0
+      ? [
+          ...segmentOrder,
+          ...appearanceOrder.filter((nodeId) => !segmentOrder.includes(nodeId)),
+          ...traversalOrder.filter(
+            (nodeId) =>
+              !segmentOrder.includes(nodeId) && !appearanceOrder.includes(nodeId),
+          ),
+        ]
+      : [
+          ...appearanceOrder,
+          ...traversalOrder.filter((nodeId) => !appearanceOrder.includes(nodeId)),
+        ];
 
   const settled: TranscriptSegment[] = [];
   const live: TranscriptSegment[] = [];
 
   for (const nodeId of traversalOrder) {
     const messages = runState.chatLogs[nodeId] ?? [];
-    const status = statusForNode(runState.statusByNode, nodeId);
+    const status = effectiveAgentStatus(runState, nodeId);
     const label = labels.get(nodeId) ?? nodeId;
     const segment = buildTranscriptSegment(nodeId, label, messages, status);
 
@@ -561,7 +690,24 @@ export function projectChatLayout(
     }
   }
 
-  return { settled, live };
+  // One running node streams into the main history. With parallel nodes the chat
+  // blocks until the user picks one to talk to; the picked node streams inline and
+  // the rest stay in `live` (rendered as a picker) until each completes in turn.
+  if (live.length === 1) {
+    appendSettledSegment(settled, live[0]);
+    live.length = 0;
+  } else if (live.length > 1 && pickedLiveNodeId) {
+    const pickedIndex = live.findIndex((segment) => segment.nodeId === pickedLiveNodeId);
+    if (pickedIndex !== -1) {
+      const [picked] = live.splice(pickedIndex, 1);
+      appendSettledSegment(settled, picked);
+    }
+  }
+
+  return {
+    settled: sortTranscriptSegmentsByNodeOrder(settled, displayOrder),
+    live,
+  };
 }
 
 function cloneNode(node: Node): Node {

@@ -22,6 +22,7 @@ export function chatRoleToMessageFrom(role: ChatRole): MessageRole {
 export function messageLabel(
   role: ChatRole,
   nodeLabel: string | null | undefined,
+  options?: { segmentHeaderShowsNode?: boolean },
 ): string {
-  return chatRoleLabel(role, nodeLabel);
+  return chatRoleLabel(role, nodeLabel, options);
 }

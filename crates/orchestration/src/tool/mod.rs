@@ -5,6 +5,7 @@
 //! - Runner: tool execution and orchestration
 //! - Output: artifact storage and tool result handling
 
+pub(crate) mod blocking_ops;
 pub mod cache;
 pub mod errors;
 pub mod output;

@@ -1,8 +1,39 @@
+use crate::adapters::storage::json_file_store::{write_json_file, OPENFLOW_DATA_DIR_SLUG};
 use crate::settings::model::{merge_preserved_api_keys, AppSettings};
 use crate::settings::ports::SettingsStore;
 use std::fs;
-use std::io;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+
+// #region agent log
+const AGENT_DEBUG_LOG_PATH: &str =
+    "/Users/philipbotar/Developer/Step-through-agentic-workflow/.cursor/debug-64d565.log";
+
+fn agent_debug_log(
+    hypothesis_id: &str,
+    location: &str,
+    message: &str,
+    data: serde_json::Value,
+) {
+    let payload = serde_json::json!({
+        "sessionId": "64d565",
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "message": message,
+        "data": data,
+        "timestamp": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_millis()),
+    });
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(AGENT_DEBUG_LOG_PATH)
+    {
+        let _ = writeln!(file, "{payload}");
+    }
+}
+// #endregion
 
 fn parse_settings_json(text: &str) -> Result<AppSettings, serde_json::Error> {
     serde_json::from_str::<AppSettings>(text).map(AppSettings::normalized)
@@ -22,23 +53,63 @@ impl FileSettingsStore {
     pub fn default_path() -> PathBuf {
         dirs::data_local_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join("step-through-agentic-workflow")
+            .join(OPENFLOW_DATA_DIR_SLUG)
             .join("settings.json")
     }
 
     /// # Errors
     /// Returns an error if the settings file cannot be read or parsed.
     pub fn load(&self) -> io::Result<AppSettings> {
+        let path_display = self.path.display().to_string();
         if !self.path.exists() {
+            // #region agent log
+            agent_debug_log(
+                "A",
+                "settings_store.rs:load",
+                "settings file missing, using defaults",
+                serde_json::json!({ "path": path_display }),
+            );
+            // #endregion
             return Ok(AppSettings::default());
         }
         let text = fs::read_to_string(&self.path)?;
-        parse_settings_json(&text).map_err(|error| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("settings JSON invalid: {error}"),
-            )
-        })
+        let has_providers_key = text.contains("\"providers\"");
+        match parse_settings_json(&text) {
+            Ok(settings) => {
+                // #region agent log
+                agent_debug_log(
+                    "A",
+                    "settings_store.rs:load",
+                    "settings parsed",
+                    serde_json::json!({
+                        "path": path_display,
+                        "hasProvidersKey": has_providers_key,
+                        "providerCount": settings.providers.len(),
+                    }),
+                );
+                // #endregion
+                Ok(settings)
+            }
+            Err(error) => {
+                // #region agent log
+                agent_debug_log(
+                    "A",
+                    "settings_store.rs:load",
+                    "settings parse failed, bootstrapping defaults",
+                    serde_json::json!({
+                        "path": path_display,
+                        "hasProvidersKey": has_providers_key,
+                        "error": error.to_string(),
+                    }),
+                );
+                // #endregion
+                let bak_path = self.path.with_extension("json.bak");
+                let _ = fs::rename(&self.path, &bak_path);
+                let defaults = AppSettings::default();
+                let _ = write_json_file(&self.path, &defaults, "settings");
+                Ok(defaults)
+            }
+        }
     }
 
     /// # Errors
@@ -51,22 +122,7 @@ impl FileSettingsStore {
                 merge_preserved_api_keys(&mut to_save, &existing);
             }
         }
-        self.write(&to_save)
-    }
-
-    fn write(&self, settings: &AppSettings) -> io::Result<()> {
-        if let Some(parent) = self.path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let text = serde_json::to_string_pretty(settings).map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("settings serialization failed: {e}"),
-            )
-        })?;
-        let tmp = self.path.with_extension("tmp");
-        fs::write(&tmp, text)?;
-        fs::rename(&tmp, &self.path)
+        write_json_file(&self.path, &to_save, "settings")
     }
 
     #[must_use]
@@ -185,5 +241,35 @@ mod tests {
         let loaded = store.load().unwrap();
         assert_eq!(loaded, settings);
         assert_eq!(loaded.lsp, LspSettings::default());
+    }
+
+    #[test]
+    fn invalid_settings_file_bootstraps_defaults() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        fs::write(
+            &path,
+            r#"{"active_provider":"openai","openai":{"display_name":"Legacy"}}"#,
+        )
+        .unwrap();
+        let store = FileSettingsStore::new(&path);
+
+        let settings = store.load().unwrap();
+
+        assert_eq!(settings, AppSettings::default());
+        assert!(path.exists());
+        assert!(path.with_extension("json.bak").exists());
+    }
+
+    #[test]
+    fn atomic_save_does_not_leave_temp_file() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let store = FileSettingsStore::new(&path);
+
+        store.save(&AppSettings::default()).unwrap();
+
+        assert!(path.exists());
+        assert!(!path.with_extension("tmp").exists());
     }
 }

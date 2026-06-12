@@ -6,7 +6,9 @@ Domain terms for the Step-through-agentic-workflow architecture.
 |---|---|
 | **Composition root** | The crate responsible for constructing and wiring all dependencies. Here, orchestration is the composition root — `AppBackend` delegates to `WorkflowCatalog`, `AgentLibrary`, `ProjectRegistry`, `SettingsFacade`, and `RunCoordinator`. Provider construction uses the factory pattern (`create_provider`). |
 | **WorkflowCatalog** | Orchestration module: workflow CRUD, app/project merge (project wins on ID collision), assign/unassign. Adapters: `app_workflow_store`, `project_workflow_store`. |
-| **RunCoordinator** | Orchestration module: active run session, action channel, `start_run` / `submit_*` / event projection entry points. |
+| **RunCoordinator** | Orchestration module: active run session, action channel, `start_run` / `submit_*` / event projection entry points. Calls `finish_run_session` when a run becomes inactive to clear session-scoped resources. |
+| **JsonFileStore** | Adapter-internal module (`adapters/storage/json_file_store.rs`): atomic JSON file load/save. Port traits unchanged. |
+| **SubagentSession** | `run/execution/subagent_session.rs`: subagent AI-invocation loop extracted from `ToolPortImpl` for locality. |
 | **CallableAgent** | Engine type (`engine::CallableAgent`): saved agent snapshotted at run start for subagent invocation. Persisted as `openflow/agents.json`; orchestration alias `AgentDefinition`. |
 | **RunTelemetry** | Domain enum for interactive run events (chat, tools, subagents). Orchestration type alias `ExecutionEvent`; projected into `WorkflowRunState` by `events.rs`. |
 | **Factory pattern** | The `providers` crate exposes a single public factory function (`create_provider`) that returns `Box<dyn AiPort>`. Orchestration never names a concrete provider type. This is the contract boundary between orchestration and providers. |
@@ -39,7 +41,7 @@ Flat structure for domains with application-level logic:
 | `project/` | `registry.rs` | Project discovery & loading |
 | `run/` | `coordinator.rs` + `execution/` + `state/` | Run coordination, execution, state projection |
 | `settings/` | `facade.rs` | Settings aggregation |
-| `tool/` | `mod.rs` + `registry.rs` + `runner.rs` + `output.rs` | Tool catalog, execution, artifacts |
+| `tool/` | `mod.rs` + `registry.rs` + `runner.rs` + `dispatch.rs` + `blocking_ops.rs` + `output.rs` | Tool catalog, execution, blocking I/O dispatch, artifacts |
 
 **No folder for:** `skill`, `template` — these have no domain logic, only persistence (see `adapters/storage/`).
 
@@ -49,6 +51,7 @@ Flat structure for domains with application-level logic:
 
 #### `adapters/storage/`
 Persistence implementations (CRUD adapters for each domain):
+- `json_file_store.rs` - Shared atomic JSON persistence (`atomic_write`, `read_json_file`, `write_json_file`) under `{data_local}/openflow/`
 - `agent_store.rs` - Agent file persistence
 - `app_workflow_store.rs` - App-level workflow persistence (`workflows.json`)
 - `project_workflow_store.rs` - Project workflow files (`.flow/workflows/`)

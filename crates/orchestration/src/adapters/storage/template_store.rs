@@ -1,3 +1,4 @@
+use crate::adapters::storage::json_file_store::{atomic_write, OPENFLOW_DATA_DIR_SLUG};
 use engine::{default_templates, AgentNodeConfig, Template, TemplateStore, TemplateStoreError};
 use log::{debug, info, warn};
 use parking_lot::RwLock;
@@ -5,8 +6,6 @@ use serde::Deserialize;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-const CURRENT_DATA_DIR_SLUG: &str = "openflow";
-const LEGACY_DATA_DIR_SLUG: &str = "step-through-agentic-workflow";
 const TEMPLATES_FILE_NAME: &str = "templates.json";
 
 pub struct FileTemplateStore {
@@ -23,33 +22,9 @@ impl FileTemplateStore {
     }
 
     fn new_in(data_dir: PathBuf) -> Result<Self, TemplateStoreError> {
-        let dir = data_dir.join(CURRENT_DATA_DIR_SLUG);
-        let path = dir.join(TEMPLATES_FILE_NAME);
-        if path.exists() {
-            return Self::new_at(path);
-        }
-
-        let legacy_path = data_dir
-            .join(LEGACY_DATA_DIR_SLUG)
+        let path = data_dir
+            .join(OPENFLOW_DATA_DIR_SLUG)
             .join(TEMPLATES_FILE_NAME);
-        if legacy_path.exists() {
-            std::fs::create_dir_all(&dir).map_err(|source| {
-                TemplateStoreError::CannotCreateDir {
-                    path: dir.display().to_string(),
-                    source,
-                }
-            })?;
-            let templates = Self::load_existing_at(&legacy_path, &path)?;
-            return Ok(Self {
-                templates: RwLock::new(templates),
-                path,
-            });
-        }
-
-        std::fs::create_dir_all(&dir).map_err(|source| TemplateStoreError::CannotCreateDir {
-            path: dir.display().to_string(),
-            source,
-        })?;
         Self::new_at(path)
     }
 
@@ -120,7 +95,7 @@ impl FileTemplateStore {
 
     fn write_templates(path: &Path, templates: &[Template]) -> Result<(), TemplateStoreError> {
         let json = serde_json::to_string_pretty(templates)?;
-        std::fs::write(path, json).map_err(|source| TemplateStoreError::CannotWrite {
+        atomic_write(path, &json).map_err(|source| TemplateStoreError::CannotWrite {
             path: path.display().to_string(),
             source,
         })?;
@@ -201,7 +176,11 @@ impl LegacyNodeTemplate {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "storage tests use unwrap/expect for brevity"
+)]
 mod tests {
     use super::*;
 
@@ -225,15 +204,6 @@ mod tests {
             .into_iter()
             .find(|template| template.id == id)
             .unwrap()
-    }
-
-    fn legacy_template_json(id: &str, name: &str) -> serde_json::Value {
-        serde_json::json!({
-            "id": id,
-            "name": name,
-            "description": "Legacy template",
-            "config": AgentNodeConfig::default()
-        })
     }
 
     #[test]
@@ -325,100 +295,12 @@ mod tests {
     #[test]
     fn new_store_bootstraps_templates_in_openflow_path() {
         let dir = tempfile::tempdir().unwrap();
-        let openflow_path = storage_path(dir.path(), CURRENT_DATA_DIR_SLUG);
-        let legacy_path = storage_path(dir.path(), LEGACY_DATA_DIR_SLUG);
+        let openflow_path = storage_path(dir.path(), OPENFLOW_DATA_DIR_SLUG);
 
         let store = FileTemplateStore::new_in(dir.path().to_path_buf()).unwrap();
 
         assert_eq!(store.list(), default_templates());
         assert!(openflow_path.exists());
-        assert!(!legacy_path.exists());
-    }
-
-    #[test]
-    fn openflow_templates_take_precedence_over_legacy_templates() {
-        let dir = tempfile::tempdir().unwrap();
-        let legacy_path = storage_path(dir.path(), LEGACY_DATA_DIR_SLUG);
-        let openflow_path = storage_path(dir.path(), CURRENT_DATA_DIR_SLUG);
-        std::fs::create_dir_all(legacy_path.parent().unwrap()).unwrap();
-        std::fs::create_dir_all(openflow_path.parent().unwrap()).unwrap();
-
-        let legacy_templates = vec![legacy_template_json(
-            "builtin.simple-agent",
-            "Legacy Writer",
-        )];
-        let mut openflow_templates = vec![template("builtin.simple-agent")];
-        openflow_templates[0].display_name = "Openflow Writer".to_string();
-        std::fs::write(
-            &legacy_path,
-            serde_json::to_string_pretty(&legacy_templates).unwrap(),
-        )
-        .unwrap();
-        std::fs::write(
-            &openflow_path,
-            serde_json::to_string_pretty(&openflow_templates).unwrap(),
-        )
-        .unwrap();
-
-        let store = FileTemplateStore::new_in(dir.path().to_path_buf()).unwrap();
-
-        assert_eq!(store.list(), openflow_templates);
-    }
-
-    #[test]
-    fn loads_legacy_templates_when_openflow_file_is_missing_and_saves_to_openflow() {
-        let dir = tempfile::tempdir().unwrap();
-        let legacy_path = storage_path(dir.path(), LEGACY_DATA_DIR_SLUG);
-        let openflow_path = storage_path(dir.path(), CURRENT_DATA_DIR_SLUG);
-        std::fs::create_dir_all(legacy_path.parent().unwrap()).unwrap();
-
-        let legacy_templates = vec![legacy_template_json("builtin.writer", "Legacy Writer")];
-        std::fs::write(
-            &legacy_path,
-            serde_json::to_string_pretty(&legacy_templates).unwrap(),
-        )
-        .unwrap();
-
-        let store = FileTemplateStore::new_in(dir.path().to_path_buf()).unwrap();
-        assert_eq!(store.list()[0].id, "builtin.writer");
-        assert_eq!(store.list()[0].display_name, "Legacy Writer");
-        assert!(store.list()[0].locked_fields.is_empty());
-        assert!(!openflow_path.exists());
-
-        let classifier = template("builtin.classifier");
-        store.add(classifier).unwrap();
-
-        let saved_templates: Vec<Template> =
-            serde_json::from_str(&std::fs::read_to_string(&openflow_path).unwrap()).unwrap();
-        assert_eq!(saved_templates, store.list());
-
-        let legacy_saved: Vec<serde_json::Value> =
-            serde_json::from_str(&std::fs::read_to_string(&legacy_path).unwrap()).unwrap();
-        assert_eq!(legacy_saved, legacy_templates);
-    }
-
-    #[test]
-    fn corrupt_legacy_file_recovers_defaults_into_openflow_path() {
-        let dir = tempfile::tempdir().unwrap();
-        let legacy_path = storage_path(dir.path(), LEGACY_DATA_DIR_SLUG);
-        let openflow_path = storage_path(dir.path(), CURRENT_DATA_DIR_SLUG);
-        std::fs::create_dir_all(legacy_path.parent().unwrap()).unwrap();
-        std::fs::write(&legacy_path, b"this is not valid json").unwrap();
-
-        let store = FileTemplateStore::new_in(dir.path().to_path_buf()).unwrap();
-        assert_eq!(store.list(), default_templates());
-
-        let bak_path = legacy_path.with_extension("json.bak");
-        assert!(bak_path.exists());
-        assert_eq!(
-            std::fs::read_to_string(&bak_path).unwrap(),
-            "this is not valid json"
-        );
-
-        let saved_templates: Vec<Template> =
-            serde_json::from_str(&std::fs::read_to_string(&openflow_path).unwrap()).unwrap();
-        assert_eq!(saved_templates, default_templates());
-        assert!(!legacy_path.exists());
     }
 
     #[test]

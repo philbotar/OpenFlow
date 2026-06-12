@@ -49,10 +49,10 @@ Add a port/trait only when a consumer is typed on that interface. Current seams:
 
 | Data | Location | Owning module |
 | --- | --- | --- |
-| App workflows | `{data_local}/step-through-agentic-workflow/workflows.json` | `orchestration/src/adapters/storage/app_workflow_store.rs` |
+| App workflows | `{data_local}/openflow/workflows.json` | `orchestration/src/adapters/storage/app_workflow_store.rs` |
 | Projects | `{data_local}/openflow/projects.json` (migrates from legacy slug) | `orchestration/src/adapters/storage/project_store.rs` |
 | Saved agents | `{data_local}/openflow/agents.json` (migrates from legacy slug) | `orchestration/src/adapters/storage/agent_store.rs` |
-| Settings | `{data_local}/step-through-agentic-workflow/settings.json` | `orchestration/src/adapters/storage/settings_store.rs` |
+| Settings | `{data_local}/openflow/settings.json` | `orchestration/src/adapters/storage/settings_store.rs` |
 | Node templates | `{data_local}/openflow/templates.json` (migrates from legacy slug) | `orchestration/src/adapters/storage/template_store.rs` |
 | Project workflows | `{project}/.flow/workflows/{workflowId}.workflow.json` | `orchestration/src/adapters/storage/project_workflow_store.rs` |
 | Provider API keys | Plaintext in `settings.json` (`ProviderProfile.api_key`) | `orchestration/src/adapters/storage/settings_store.rs` |

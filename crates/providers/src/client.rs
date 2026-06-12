@@ -61,7 +61,7 @@ const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 /// Time allowed between reads on a response. Converts a stalled SSE stream
 /// (provider stops sending, dead TCP path after sleep/wake) into a transient
 /// error the retry policy can handle, instead of hanging the node forever.
-const READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+const READ_TIMEOUT: std::time::Duration = std::time::Duration::from_mins(2);
 
 #[derive(Debug, Clone)]
 pub struct AiClient {
@@ -91,7 +91,8 @@ impl AiPort for AiClient {
     async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
         match &self.config.adapter {
             ProviderAdapterConfig::OpenAiCompatible(config) => {
-                openai_compat::invoke(&self.http, config, &self.config.auth, request).await
+                openai_compat::invoke(&self.http, config, &self.config.auth, &self.config, request)
+                    .await
             }
             ProviderAdapterConfig::Anthropic(config) => {
                 anthropic::invoke(&self.http, config, &self.config.auth, request).await
@@ -106,8 +107,15 @@ impl AiPort for AiClient {
     ) -> Result<AgentTurnOutcome, AgentError> {
         match &self.config.adapter {
             ProviderAdapterConfig::OpenAiCompatible(config) => {
-                openai_compat::invoke_stream(&self.http, config, &self.config.auth, request, sink)
-                    .await
+                openai_compat::invoke_stream(
+                    &self.http,
+                    config,
+                    &self.config.auth,
+                    &self.config,
+                    request,
+                    sink,
+                )
+                .await
             }
             ProviderAdapterConfig::Anthropic(config) => {
                 anthropic::invoke_stream(&self.http, config, &self.config.auth, request, sink).await

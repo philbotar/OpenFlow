@@ -9,7 +9,9 @@ import {
 } from "solid-js";
 import { labelForAgentStatus } from "../../lib/agentStatus";
 import type { NodeId } from "../../lib/types";
+import { isLiveTranscriptSegment } from "../../lib/workflow";
 import { useAppContext } from "../../context/AppContext";
+import { LiveSegmentFooter } from "./LiveSegmentFooter";
 import {
   Conversation,
   ConversationContent,
@@ -116,12 +118,24 @@ export function ConversationMessages() {
                         <span class={`chat-segment-status status-${segment.status}`}>
                           {labelForAgentStatus(segment.status)}
                         </span>
+                        <Show
+                          when={
+                            isLiveTranscriptSegment(ctx.runState(), segment) &&
+                            ctx.composerBusyFor(segment.nodeId)
+                          }
+                        >
+                          <span class="chat-live-streaming-dot" aria-label="Streaming" />
+                        </Show>
                       </header>
                       <ConversationSegmentMessages
                         nodeId={segment.nodeId}
                         label={segment.label}
                         messages={segment.messages}
+                        segmentHeaderShowsNode
                       />
+                      <Show when={isLiveTranscriptSegment(ctx.runState(), segment)}>
+                        <LiveSegmentFooter segment={segment} />
+                      </Show>
                     </section>
                   )}
                 </For>

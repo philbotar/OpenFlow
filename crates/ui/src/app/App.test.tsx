@@ -1001,7 +1001,7 @@ describe("App chat slash commands", () => {
     await openChatTab(container);
     try {
       const textarea = await waitForElement(
-        () => container.querySelector(".chat-live-column .chat-composer-pill textarea"),
+        () => container.querySelector(".chat-composer-pill textarea"),
         "chat textarea",
       );
       (textarea as HTMLTextAreaElement).value = "/systematic-debugging Investigate ORCHID-91";
@@ -1038,7 +1038,7 @@ describe("App chat slash commands", () => {
 
     try {
       const textarea = await waitForElement(
-        () => container.querySelector(".chat-live-column .chat-composer-pill textarea"),
+        () => container.querySelector(".chat-composer-pill textarea"),
         "chat textarea",
       );
       (textarea as HTMLTextAreaElement).value = "/systematic-debugging Investigate ORCHID-91";
@@ -1070,7 +1070,7 @@ describe("App chat slash commands", () => {
 
     try {
       const textarea = await waitForElement(
-        () => container.querySelector(".chat-live-column .chat-composer-pill textarea"),
+        () => container.querySelector(".chat-composer-pill textarea"),
         "chat textarea",
       ) as HTMLTextAreaElement;
       textarea.value = "/sys";
@@ -1104,7 +1104,7 @@ describe("App chat slash commands", () => {
 
     try {
       const textarea = await waitForElement(
-        () => container.querySelector(".chat-live-column .chat-composer-pill textarea"),
+        () => container.querySelector(".chat-composer-pill textarea"),
         "chat textarea",
       );
       (textarea as HTMLTextAreaElement).value = "Approved";
@@ -1159,7 +1159,11 @@ describe("App chat slash commands", () => {
 
     try {
       const labels = Array.from(container.querySelectorAll(".chat-role")).map((element) => element.textContent);
-      expect(labels).toEqual(["System", "Agent 2"]);
+      expect(labels).toEqual(["System", "Assistant"]);
+      expect(
+        container.querySelector('.chat-segment[data-node-id="' + workflow.nodes[0].id + '"] .eyebrow')
+          ?.textContent,
+      ).toBe("Agent 2");
       expect(container.querySelector(".thinking-bubble-label")?.textContent).toContain("Thinking");
     } finally {
       dispose();
@@ -1220,7 +1224,49 @@ describe("Global chat layout", () => {
     });
   });
 
-  test("renders two live columns for parallel awaiting siblings", async () => {
+  test("shows pending strip while run is active before live nodes appear", async () => {
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    const runState: WorkflowRunState = {
+      active: true,
+      awaitingNodeId: null,
+      awaitingNodeIds: [],
+      activeManualNodeId: null,
+      activeToolCallId: null,
+      pendingApprovals: [],
+      toolCallsByNode: {},
+      toolArtifacts: {},
+      execApprovalGranted: false,
+      statusByNode: Object.fromEntries(workflow.nodes.map((node) => [node.id, "idle"])),
+      subagentsByNode: {},
+      lastReport: null,
+      lastError: null,
+      chatLogs: {},
+      runTrace: [],
+      outputs: {},
+      changedFiles: [],
+      changedFilesByNode: {},
+      editBatches: [],
+    };
+    const { container, dispose } = await mountApp({
+      workflows: [workflow],
+      agents: [makeAgent("agent-1", "Research Agent")],
+      skills: FIXTURE_SKILLS,
+      settings: SETTINGS,
+      runState,
+    });
+    await openChatTab(container);
+
+    try {
+      expect(container.querySelector(".chat-live-strip--pending")).not.toBeNull();
+      expect(container.querySelector(".chat-live-starting")?.textContent).toBe(
+        "Starting workflow…",
+      );
+    } finally {
+      dispose();
+    }
+  });
+
+  test("blocks chat behind a picker for parallel awaiting siblings", async () => {
     const workflow = makeParallelWorkflow();
     const runState = makeParallelAwaitingRunState(workflow);
     const { container, dispose } = await mountApp({
@@ -1233,17 +1279,18 @@ describe("Global chat layout", () => {
     await openChatTab(container);
 
     try {
-      const columns = container.querySelectorAll(".chat-live-column");
-      expect(columns.length).toBe(2);
-      expect(columns[0]?.querySelector(".chat-live-column-label")?.textContent).toBe("Branch B");
-      expect(columns[1]?.querySelector(".chat-live-column-label")?.textContent).toBe("Branch C");
-      expect(container.querySelectorAll(".chat-live-column .chat-composer-pill textarea").length).toBe(2);
+      const options = container.querySelectorAll(".chat-live-picker-option");
+      expect(options.length).toBe(2);
+      expect(options[0]?.textContent).toContain("Branch B");
+      expect(options[1]?.textContent).toContain("Branch C");
+      // No composer until the user picks a node to talk to.
+      expect(container.querySelectorAll(".chat-composer-pill textarea").length).toBe(0);
     } finally {
       dispose();
     }
   });
 
-  test("submits from column B without clearing column A draft", async () => {
+  test("picking a parallel node streams it inline and routes the composer to it", async () => {
     const workflow = makeParallelWorkflow();
     const runState = makeParallelAwaitingRunState(workflow);
     apiMocks.submitUserInput.mockResolvedValue(runState);
@@ -1257,28 +1304,33 @@ describe("Global chat layout", () => {
     await openChatTab(container);
 
     try {
-      await waitForElement(
-        () => container.querySelectorAll(".chat-live-column .chat-composer-pill textarea")[1] ?? null,
-        "column B textarea",
+      const options = container.querySelectorAll(".chat-live-picker-option");
+      (options[1] as HTMLButtonElement).dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
       );
-      const textareas = container.querySelectorAll(
-        ".chat-live-column .chat-composer-pill textarea",
+      await flush();
+
+      const textarea = await waitForElement(
+        () =>
+          container.querySelector(
+            '.chat-segment[data-node-id="node-c"] .chat-composer-pill textarea',
+          ) as HTMLTextAreaElement | null,
+        "picked node composer",
       );
-      const columnA = textareas[0] as HTMLTextAreaElement;
-      const columnB = textareas[1] as HTMLTextAreaElement;
-      columnA.value = "keep me";
-      columnA.dispatchEvent(new Event("input", { bubbles: true }));
-      columnB.value = "branch c reply";
-      columnB.dispatchEvent(new Event("input", { bubbles: true }));
-      columnB
+      textarea.value = "branch c reply";
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      textarea
         .closest(".chat-composer")
         ?.querySelector(".primary-button")
         ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       await flush();
 
       expect(apiMocks.submitUserInput).toHaveBeenCalledWith("node-c", "branch c reply");
-      expect(columnA.value).toBe("keep me");
-      expect(columnB.value).toBe("");
+      // The remaining live node stays blocked behind a locked picker.
+      const remaining = container.querySelectorAll(".chat-live-picker-option");
+      expect(remaining.length).toBe(1);
+      expect(remaining[0]?.textContent).toContain("Branch B");
+      expect((remaining[0] as HTMLButtonElement).disabled).toBe(true);
     } finally {
       dispose();
     }
@@ -1299,7 +1351,7 @@ describe("Global chat layout", () => {
     try {
       const settledHeader = container.querySelector('.chat-segment[data-node-id="node-a"] .eyebrow');
       expect(settledHeader?.textContent).toBe("Plan");
-      expect(container.querySelector(".chat-live-strip")).not.toBeNull();
+      expect(container.querySelector(".chat-live-picker")).not.toBeNull();
     } finally {
       dispose();
     }
@@ -1375,14 +1427,18 @@ describe("Global chat layout", () => {
     await openChatTab(container);
 
     try {
-      expect(container.querySelectorAll(".chat-live-column").length).toBe(1);
+      expect(container.querySelectorAll(".chat-live-column").length).toBe(0);
+      expect(container.querySelectorAll(".chat-segment").length).toBe(2);
       expect(container.querySelector('.chat-segment[data-node-id="' + workflow.nodes[0].id + '"]')).not.toBeNull();
+      expect(
+        container.querySelector('.chat-segment[data-node-id="workflow-1-node-2"] .chat-composer-pill textarea'),
+      ).not.toBeNull();
     } finally {
       dispose();
     }
   });
 
-  test("renders approval card inside owning live column", async () => {
+  test("renders approval card for a single live node in segment footer", async () => {
     const workflow = makeWorkflow("workflow-1", "Workflow One");
     const runState = makeAwaitingRunState(workflow);
     runState.statusByNode[workflow.nodes[0].id] = "awaiting_tool_approval";
@@ -1412,7 +1468,7 @@ describe("Global chat layout", () => {
     await openChatTab(container);
 
     try {
-      const card = container.querySelector(".chat-live-column .tool-approval-card");
+      const card = container.querySelector(".chat-segment-footer .tool-approval-card");
       expect(card).not.toBeNull();
       card?.querySelector(".primary-button")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       await flush();

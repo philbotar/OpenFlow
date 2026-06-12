@@ -55,7 +55,6 @@ pub(super) async fn drive_interactive_workflow<A>(
         artifacts,
         cancel_token.clone(),
         snapshot_store,
-        lsp,
     ));
     let workflow = Arc::new(workflow);
     let ai = Arc::new(ai);
@@ -68,6 +67,7 @@ pub(super) async fn drive_interactive_workflow<A>(
     ));
     let tool_port = ToolPortImpl::new(
         Arc::clone(&tool_runner),
+        lsp,
         Arc::clone(&workflow),
         Arc::new(agent_snapshots),
         Arc::clone(&ai_adapter),
@@ -260,7 +260,7 @@ pub(super) async fn drive_interactive_workflow<A>(
                                 );
                                 return;
                             }
-                            if let Err(error) = engine.retry_node(&node_id.0) {
+                            if let Err(error) = engine.retry_node(&node_id) {
                                 send_or_log(&event_tx, ExecutionEvent::Error(error.to_string()));
                                 return;
                             }
@@ -274,7 +274,7 @@ pub(super) async fn drive_interactive_workflow<A>(
                 return;
             }
             EngineRunResult::Failed(error) => match error {
-                RunError::NodeFailed { node_id, message } => {
+                RunError::NodeFailed { node_id, kind } => {
                     let label = workflow
                         .nodes
                         .iter()
@@ -286,7 +286,7 @@ pub(super) async fn drive_interactive_workflow<A>(
                         ExecutionEvent::NodeFailed {
                             node_id,
                             label,
-                            error: message,
+                            error: kind.to_string(),
                         },
                     );
                     return;
@@ -344,7 +344,7 @@ fn emit_approval_request(ctx: ApprovalRequestEmit<'_>) {
         if approval_request.is_none() {
             approval_request = Some(PendingToolApproval {
                 approval_id: ctx.approval_id.to_string(),
-                node_id: ctx.node_id.to_string(),
+                node_id: ctx.node_id.clone(),
                 node_label: ctx.label.to_string(),
                 tool_call: tool_call.clone(),
                 tier,
@@ -369,7 +369,7 @@ fn apply_pending_engine_reverts(
         tool_runner.bump_cache_epoch();
     }
     for batch in batches {
-        engine.revert_file_changes_for_batch(&batch.batch_id, &NodeId(batch.node_id.clone()));
+        engine.revert_file_changes_for_batch(&batch.batch_id, &batch.node_id);
         crate::tools::edit::batch::sync_hashline_snapshots_after_revert(
             tool_runner.cwd(),
             tool_runner.snapshot_store().as_ref(),
