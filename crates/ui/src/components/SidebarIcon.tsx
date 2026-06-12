@@ -7,6 +7,8 @@ import Plus from "lucide-solid/icons/plus";
 import Save from "lucide-solid/icons/save";
 import Settings2 from "lucide-solid/icons/settings-2";
 import Trash2 from "lucide-solid/icons/trash-2";
+import PanelRightOpen from "lucide-solid/icons/panel-right-open";
+import PanelRightClose from "lucide-solid/icons/panel-right-close";
 import CircleHelp from "lucide-solid/icons/circle-help";
 import { ICON_STROKE_WIDTH } from "../lib/utils";
 
@@ -20,7 +22,9 @@ export type SidebarIconName =
   | "run"
   | "stop"
   | "trash"
-  | "help";
+  | "help"
+  | "panel-right-open"
+  | "panel-right-close";
 
 export function SidebarIcon(props: { name: SidebarIconName }) {
   switch (props.name) {
@@ -108,6 +112,24 @@ export function SidebarIcon(props: { name: SidebarIconName }) {
     case "help":
       return (
         <CircleHelp
+          class="sidebar-icon"
+          aria-hidden="true"
+          absoluteStrokeWidth
+          strokeWidth={ICON_STROKE_WIDTH}
+        />
+      );
+    case "panel-right-open":
+      return (
+        <PanelRightOpen
+          class="sidebar-icon"
+          aria-hidden="true"
+          absoluteStrokeWidth
+          strokeWidth={ICON_STROKE_WIDTH}
+        />
+      );
+    case "panel-right-close":
+      return (
+        <PanelRightClose
           class="sidebar-icon"
           aria-hidden="true"
           absoluteStrokeWidth

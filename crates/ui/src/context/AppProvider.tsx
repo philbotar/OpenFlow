@@ -66,6 +66,10 @@ import {
   zoomInUi,
   zoomOutUi,
 } from "../lib/uiZoom";
+import {
+  readStoredRightPanelHidden,
+  writeStoredRightPanelHidden,
+} from "../lib/panelVisibility";
 import { resolveCommittedNodeLabel } from "../lib/nodeLabel";
 import { EMPTY_SETTINGS } from "../constants/providers";
 import {
@@ -146,6 +150,9 @@ export function AppProvider(props: ParentProps) {
     Record<AiProviderKind, string>
   >({} as Record<AiProviderKind, string>);
   const [uiZoom, setUiZoom] = createSignal(readStoredUiZoom(globalThis.localStorage));
+  const [rightPanelHidden, setRightPanelHidden] = createSignal(
+    readStoredRightPanelHidden(globalThis.localStorage),
+  );
   const [workflowSettingsOpen, setWorkflowSettingsOpen] = createSignal(false);
   const [editingWorkflowId, setEditingWorkflowId] = createSignal<string | null>(null);
   const [workflowNameDraft, setWorkflowNameDraft] = createSignal("");
@@ -694,7 +701,23 @@ export function AppProvider(props: ParentProps) {
   };
 
   const handleToggleWorkflowSettings = () => {
+    const opening = !workflowSettingsOpen();
     setWorkflowSettingsOpen((open) => !open);
+    if (opening) {
+      setRightPanelHidden(false);
+      writeStoredRightPanelHidden(globalThis.localStorage, false);
+    }
+  };
+
+  const handleToggleRightPanel = () => {
+    const currentlyHidden = rightPanelHidden();
+    if (currentlyHidden) {
+      setRightPanelHidden(false);
+      writeStoredRightPanelHidden(globalThis.localStorage, false);
+    } else {
+      setRightPanelHidden(true);
+      writeStoredRightPanelHidden(globalThis.localStorage, true);
+    }
   };
 
   const updateCurrentNode = (mutator: (node: Workflow["nodes"][number]) => void) => {
@@ -1115,6 +1138,11 @@ export function AppProvider(props: ParentProps) {
       openShortcutsModal();
       return;
     }
+    if (command && event.key.toLowerCase() === "j" && !isTextInputTarget(event.target) && screen() === "editor") {
+      event.preventDefault();
+      handleToggleRightPanel();
+      return;
+    }
     if (
       (event.key === "Delete" || event.key === "Backspace") &&
       !isTextInputTarget(event.target) &&
@@ -1208,22 +1236,6 @@ export function AppProvider(props: ParentProps) {
     applyUiZoom(uiZoom());
 
     try {
-      // #region agent log
-      fetch("http://127.0.0.1:7419/ingest/cd582769-688d-4538-9ab3-652027b5e093", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Debug-Session-Id": "64d565",
-        },
-        body: JSON.stringify({
-          sessionId: "64d565",
-          location: "AppProvider.tsx:onMount",
-          message: "mount bootstrap starting",
-          hypothesisId: "D",
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
       const appWindow = getAppWindow();
       const initialMaximized = await appWindow.isMaximized();
       setIsMaximized(initialMaximized);
@@ -1269,26 +1281,6 @@ export function AppProvider(props: ParentProps) {
         desktop,
       );
       const data = await desktop.bootstrapApp();
-      // #region agent log
-      fetch("http://127.0.0.1:7419/ingest/cd582769-688d-4538-9ab3-652027b5e093", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Debug-Session-Id": "64d565",
-        },
-        body: JSON.stringify({
-          sessionId: "64d565",
-          location: "AppProvider.tsx:onMount",
-          message: "bootstrapApp resolved",
-          hypothesisId: "C",
-          data: {
-            workflowCount: data.workflows?.length ?? 0,
-            agentCount: data.agents?.length ?? 0,
-          },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
       setAvailableSkills(data.skills ?? []);
       await initializeWorkspace(
         data.workflows,
@@ -1298,40 +1290,7 @@ export function AppProvider(props: ParentProps) {
         data.runState,
       );
       setAppReady(true);
-      // #region agent log
-      fetch("http://127.0.0.1:7419/ingest/cd582769-688d-4538-9ab3-652027b5e093", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Debug-Session-Id": "64d565",
-        },
-        body: JSON.stringify({
-          sessionId: "64d565",
-          location: "AppProvider.tsx:onMount",
-          message: "appReady set true",
-          hypothesisId: "C",
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
     } catch (error) {
-      // #region agent log
-      fetch("http://127.0.0.1:7419/ingest/cd582769-688d-4538-9ab3-652027b5e093", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Debug-Session-Id": "64d565",
-        },
-        body: JSON.stringify({
-          sessionId: "64d565",
-          location: "AppProvider.tsx:onMount",
-          message: "bootstrap failed",
-          hypothesisId: "A",
-          data: { error: normalizeError(error) },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
       setError(normalizeError(error));
     }
 
@@ -1495,6 +1454,8 @@ export function AppProvider(props: ParentProps) {
     handleZoomReset,
     handleToggleWorkflowSettings,
     updateActiveWorkflowSettings,
+    rightPanelHidden,
+    handleToggleRightPanel,
   };
 
   return <AppContext.Provider value={value}>{props.children}</AppContext.Provider>;

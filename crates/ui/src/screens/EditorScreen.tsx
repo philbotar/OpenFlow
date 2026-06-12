@@ -10,7 +10,7 @@ import { COLLAPSED_DOCK_HEIGHT } from "../lib/utils";
 export function EditorScreen() {
   const ctx = useAppContext();
   const showRightPanel = () =>
-    ctx.workflowSettingsOpen() || Boolean(ctx.selectedNodeId());
+    !ctx.rightPanelHidden() && (ctx.workflowSettingsOpen() || Boolean(ctx.selectedNodeId()));
 
   return (
     <div
@@ -46,10 +46,10 @@ export function EditorScreen() {
           />
         </section>
 
-        <Show when={ctx.workflowSettingsOpen()}>
+        <Show when={!ctx.rightPanelHidden() && ctx.workflowSettingsOpen()}>
           <WorkflowSettingsPanel />
         </Show>
-        <Show when={!ctx.workflowSettingsOpen() && ctx.selectedNodeId()}>
+        <Show when={!ctx.rightPanelHidden() && !ctx.workflowSettingsOpen() && ctx.selectedNodeId()}>
           <InspectorPanel />
         </Show>
       </div>

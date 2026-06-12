@@ -1,4 +1,4 @@
-//! Provider prompt-cache wire helpers (Anthropic `cache_control`, OpenAI `prompt_cache_key`).
+//! Provider `prompt-cache` wire helpers (Anthropic `cache_control`, `OpenAI` `prompt_cache_key`).
 
 use crate::spec::ProviderId;
 use engine::AgentRequest;
@@ -16,7 +16,7 @@ pub fn openai_compat_cache_key_enabled(provider_id: &ProviderId) -> bool {
     !matches!(provider_id.as_str(), "ollama" | "lmstudio")
 }
 
-/// Steers OpenAI cache routing for all turns of one workflow node.
+/// Steers `OpenAI` cache routing for all turns of one workflow node.
 #[must_use]
 pub fn cache_session_key(request: &AgentRequest) -> String {
     format!("{}:{}", request.workflow_id.0, request.node_id.0)
@@ -24,7 +24,7 @@ pub fn cache_session_key(request: &AgentRequest) -> String {
 
 /// Index of the second-to-last message for Anthropic BP2, when applicable.
 #[must_use]
-pub fn second_to_last_index(message_count: usize) -> Option<usize> {
+pub const fn second_to_last_index(message_count: usize) -> Option<usize> {
     if message_count >= 2 {
         Some(message_count - 2)
     } else {
@@ -55,10 +55,7 @@ pub fn apply_cache_control_to_message(message: &mut Value) {
         Value::Array(blocks) => {
             if let Some(last) = blocks.last_mut() {
                 if let Some(obj) = last.as_object_mut() {
-                    obj.insert(
-                        "cache_control".to_string(),
-                        ephemeral_cache_control(),
-                    );
+                    obj.insert("cache_control".to_string(), ephemeral_cache_control());
                 }
             }
         }
@@ -106,8 +103,12 @@ mod tests {
     #[test]
     fn openai_compat_cache_key_enabled_skips_local_hosts() {
         assert!(openai_compat_cache_key_enabled(&ProviderId::from("openai")));
-        assert!(!openai_compat_cache_key_enabled(&ProviderId::from("ollama")));
-        assert!(!openai_compat_cache_key_enabled(&ProviderId::from("lmstudio")));
+        assert!(!openai_compat_cache_key_enabled(&ProviderId::from(
+            "ollama"
+        )));
+        assert!(!openai_compat_cache_key_enabled(&ProviderId::from(
+            "lmstudio"
+        )));
     }
 
     #[test]

@@ -4,7 +4,8 @@
 
 ### Added
 
-- **Provider prompt caching:** Anthropic adapter emits `cache_control` breakpoints on the system block and second-to-last message for multi-turn tool loops; OpenAI-compatible adapters emit `prompt_cache_key` (`workflow_id:node_id`) on Chat Completions and Responses requests (skipped for `ollama` / `lmstudio`); shared helpers in `providers/src/prompt_cache.rs`.
+- **Right panel hide/show toggle:** toggle button in editor toolbar and ⌘/Ctrl+J shortcut to hide/show the inspector/workflow-settings panel; panel state persisted in localStorage; canvas expands to full width when hidden; auto-unhide when opening workflow settings.
+- **Provider prompt caching:**
 - **Plan review tool:** standalone `tools/plan-review.html` — load or paste markdown plans, select text to comment, verdict chips (approve/block/question), threaded replies, import exported reviews with plan diff, export review notes; documented in [ROADMAP.md](docs/ROADMAP.md#interactive-plan-review-tool). Session storage is v2-only (`plan-review-session-v2`); v1 localStorage is wiped on load.
 - **`scripts/verify.sh` hardening:** LLM-friendly output (run all steps, one-line PASS/FAIL, truncated logs, repro summary); new gates for `doc`, `ui-typecheck`, `machete`, `typos`, and clippy-max strictness; optional `--deep` adds `cargo mutants` (missed-mutant note on failure); positional step filter (`./scripts/verify.sh clippy ui-test`); `VERIFY_FAIL_FAST=1` and `VERIFY_MAX_LINES` overrides; root `typos.toml` and `.cargo/mutants.toml`; contract documented in `docs/contributing/testing-workflows.md`, `AGENTS.md`, README, and `.cursor/rules/Verification-and-Lint.mdc`.
 - **Lint anti-silencing:** workspace `allow_attributes_without_reason = "deny"` — every `#[allow]` / `#[expect]` must carry `reason = "..."`.
@@ -23,14 +24,22 @@
 - **ROADMAP.md:** [Attachments & file references](docs/ROADMAP.md#attachments--file-references) — attach button, drag-drop, and image paste; expands prior file-references plan.
 - **ROADMAP.md:** model thinking settings — workflow default in gear panel plus per-node inspector override (Thinking & chat presentation).
 - **ROADMAP.md:** [Global chat](docs/ROADMAP.md#global-chat) — unified chat pane across node progression; execution-layer message ordering; separate reply bubbles for parallel awaiting nodes.
-- **ROADMAP.md:** [Canvas run feedback](docs/ROADMAP.md#canvas-run-feedback) — scrollable in-node subagent list; colored status icons per agent state (thinking, done, etc.).
+- **ROADMAP.md:** [Canvas run feedback](docs/ROADMAP.md#canvas-run-feedback) — scrollable in-node subagent list; colored status icons per agent state (thinking, done, etc.); chat filter chips and live-node picker to use the same status colors as canvas.
+- **ROADMAP.md:** [Global chat](docs/ROADMAP.md#global-chat) — chat node bar status color parity (fix `.chat-filter-status-dot` gray override).
 - **Node status labels:** canvas nodes show descriptive statuses — Thinking, Waiting for Input, Awaiting Approval, Running Tool, and more — with matching colors for each state.
 - **Chat markdown:** assistant, user, system, and thinking messages render as Markdown (`solid-markdown`) with styled headings, lists, code blocks, tables, and links.
+
+### Fixed
+
+- **`scripts/verify.sh`:** failure log headers no longer pass `---` strings to `printf` as format literals (macOS treats them as flags).
+- **`providers`:** clippy/doc fixes for `prompt_cache.rs`; extract Anthropic cache-control test fixtures to satisfy `too_many_lines`.
+- **`desktop`:** bootstrap debug logging uses `inspect_err` instead of identity `map_err`.
+- **Standards cleanup:** remove temporary debug-session instrumentation from `desktop`, `settings_store`, and `AppProvider`; extract `anthropic.rs` wire tests to `anthropic_tests.rs`.
 
 ### Changed
 
 - **Chat presentation:** thinking bubbles constrain to pane width (long code/tables scroll inside); removed horizontal dividers between messages, segments, tool rows, and expanded thinking bodies; markdown `hr` hidden in conversation.
-- **Global chat (single node):** one running node appends into the main history stream instead of a separate live column; parallel live nodes still use the live strip until each finishes; assistant messages inside a segment header no longer repeat the node label.
+- **Global chat (single node):** one running node appends into the main history stream instead of a separate live column; parallel live nodes still use the live strip until each finishes; assistant messages inside a segment header no longer repeat the node label; settled segments sort by run/interaction order (trace + append ledger) instead of re-sorting parallel siblings by DAG layer.
 - **Engine crate refactor:** `string_id!` macro for `NodeId`/`EdgeId`/`WorkflowId`; shared `tool_results` and `retry` helpers; `NodeFailureKind` replaces stringly `RunError::NodeFailed` messages; `InteractiveEngine` split into `mod.rs` / `completion.rs` / `tools.rs` / `tests.rs`; public mutators take `&NodeId`; `PendingToolApproval` and `EditBatch` use `NodeId`; `tool_decision_for_call` single-pass policy lookup; validation helpers for duplicate ids and edge endpoints.
 - **Storage paths:** all app persistence under `{data_local}/openflow/`; removed `step-through-agentic-workflow` directory fallback and legacy path migration.
 - **Orchestration deepening (architecture review):** shared `JsonFileStore` helpers (`atomic_write`, `read_json_file`/`write_json_file`) for agent/project/workflow/settings stores; `template_store` and `project_workflow_store` use shared atomic writes; LSP settings flow through `ToolExecutionContext` (via `ToolPortImpl`) instead of a `ToolRunner` field; blocking edit/read ops moved to `tool/blocking_ops.rs`; subagent AI loop extracted to `run/execution/subagent_session.rs`; builtin dispatch split to `tool/dispatch.rs`; `finish_run_session` centralizes run teardown in `RunCoordinator`.

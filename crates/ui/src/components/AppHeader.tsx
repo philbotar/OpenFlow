@@ -43,6 +43,17 @@ export function AppHeader() {
           <div class="toolbar-group topbar-button-group">
             <button
               class="topbar-icon-button"
+              classList={{ "topbar-icon-button-active": !ctx.rightPanelHidden() }}
+              onClick={() => ctx.handleToggleRightPanel()}
+              title={ctx.rightPanelHidden() ? `Show panel (${mod()}+J)` : `Hide panel (${mod()}+J)`}
+              aria-label={ctx.rightPanelHidden() ? "Show right panel" : "Hide right panel"}
+              aria-pressed={!ctx.rightPanelHidden()}
+              data-tauri-drag-region="false"
+            >
+              <SidebarIcon name={ctx.rightPanelHidden() ? "panel-right-open" : "panel-right-close"} />
+            </button>
+            <button
+              class="topbar-icon-button"
               classList={{ "topbar-icon-button-active": ctx.workflowSettingsOpen() }}
               onClick={() => ctx.handleToggleWorkflowSettings()}
               title={`Workflow settings (${mod()}+S to save)`}

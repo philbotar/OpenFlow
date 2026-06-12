@@ -35,7 +35,7 @@ The things you hit every single run.
 
 | # | Item | Status | Details |
 | --- | --- | --- | --- |
-| 8 | **Canvas run feedback** — colored status icons per agent state; scrollable in-node subagent list (drop `+N more`) | Planned | [Canvas run feedback](#canvas-run-feedback) |
+| 8 | **Canvas run feedback** — colored status icons per agent state; scrollable in-node subagent list (drop `+N more`); chat node chips use same status colors as canvas | Planned | [Canvas run feedback](#canvas-run-feedback) |
 | 9 | **Thinking levels** — `thinking_level` schema (node + workflow default), gear-panel + inspector controls, provider reasoning param wiring, thinking transcript items | Planned | [Thinking & chat presentation](#thinking--chat-presentation) |
 | 10 | **Pre-run workflow validation** — validate before `start_run`: dangling edges, cycles, missing provider/model/key, empty prompts; surface as canvas badges + blocking dialog | Planned | *New* |
 | 11 | **Project rules** — `.flow/rules/` under linked projects; discovered on load, merged into shared context at run start | Planned | [Project rules](#project-rules) |
@@ -86,6 +86,7 @@ Getting the right context into and out of agents.
 
 Small or speculative items — pick up opportunistically or when a tier item touches the same code:
 
+- Chat node filter chips — status dot colors match canvas (`.chat-filter-status-dot` currently overrides `.status-*` to gray)
 - Remove `Context:` / `Task:` labels from chat
 - Skill discovery settings — unified skills section in Settings (currently scans Cursor/Codex/Claude roots)
 - Remove per-node JSON output schema editing (keep internal defaults)
@@ -272,9 +273,14 @@ During a run, agent nodes show a status row and optional subagent rows. Subagent
 | `crates/ui/src/styles/index.css` | `.node-subagent-list` is static; no max-height / overflow-y |
 | `crates/ui/src/canvas/WorkflowNode.react.tsx` | Status is dot + text only — no distinct icon per `AgentStatus` |
 | `crates/ui/src/lib/agentStatus.ts` | Labels only; no icon or color token mapping for canvas chrome |
+| `crates/ui/src/components/conversation/ConversationMessages.tsx` | Filter chips use `status-${segment.status}` on dots but `.chat-filter-status-dot` forces `var(--text-muted)` |
+| `crates/ui/src/components/conversation/ChatPanel.tsx` | Live-node picker chips share the same gray-dot override |
+| `crates/ui/src/styles/index.css` | Canvas `.status-*` palette exists; chat chip dots do not inherit it |
 
 | Item | Priority | Status |
 | --- | --- | --- |
+| Chat status color parity — filter chips and live-node picker dots use the same `.status-*` colors as canvas nodes | High | Planned |
+| Shared status tokens — single CSS variable or `agentStatus` color map consumed by canvas, handles, and chat chrome | Medium | Planned |
 | Scrollable subagent list — show all in-run subagents inside the node; max-height + `overflow-y: auto`; drop `+N more` truncation | High | Planned |
 | Subagent row polish — keep status dot + name; optional purpose tooltip; readable at small node widths | Medium | Planned |
 | Status icons — replace or augment the dot with a distinct colored icon per state (thinking, waiting for input, awaiting approval, running tool, done, failed, stopped) | High | Planned |
@@ -386,6 +392,16 @@ Today the dock Chat tab shows only the **selected** node's `chatLogs` entry (`Ap
 **Target:** One continuous chat pane for the whole run. As nodes complete and downstream nodes start, earlier conversation stays visible in layer order. When parallel nodes at the same depth pause for input, each gets its own reply bubble in the composer area so you can answer both without switching canvas selection.
 
 **Shipped design:** Settled history (layer-ordered, non-live nodes) scrolls above a live strip of side-by-side columns (tmux-style). Each live column has its own transcript scroll, approval card, and composer. Overflow columns collapse into tabs in the last slot. Filter chips above settled history narrow by node without affecting canvas selection. Projection is UI-only (`projectChatLayout` in `crates/ui/src/lib/workflow.ts`); per-node `chatLogs` remain the backend source of truth.
+
+**Gap — chat node bar status colors:** Filter chips (`.chat-filter-chips`) and the parallel live-node picker (`.chat-live-picker-options`) render a status dot per node via `chat-filter-status-dot status-${status}`, but `.chat-filter-status-dot { background: var(--text-muted) }` wins over the shared `.status-*` rules — every chip shows gray regardless of `queued`, `started`, `awaiting_input`, etc. Canvas nodes already use the full palette (dot, border glow, handle). Chat should match at a glance.
+
+| Item | Priority | Status |
+| --- | --- | --- |
+| Fix dot override — scope `.chat-filter-status-dot` size only; let `.status-*` set background (or use `.chat-filter-status-dot.status-queued`, etc.) | High | Planned |
+| Segment header pills — optional status tint on `.chat-segment-status` / `.chat-live-status-pill` for the active live column | Low | Planned |
+| Dark mode check — verify contrast for all status hues on `--raised-surface` chip backgrounds | Medium | Planned |
+
+**Target:** Node list in the chat bar shows the same status colors as the canvas — blue for thinking, amber for awaiting input, teal for running tool, green for done, red for failed, etc. — without re-selecting the node on the graph.
 
 ### Attachments & file references
 

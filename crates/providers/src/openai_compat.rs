@@ -42,9 +42,7 @@ pub async fn invoke(
     request: AgentRequest,
 ) -> Result<AgentTurnOutcome, AgentError> {
     match config.wire_api {
-        WireApi::Responses => {
-            invoke_responses(http, config, auth, client_config, request).await
-        }
+        WireApi::Responses => invoke_responses(http, config, auth, client_config, request).await,
         WireApi::ChatCompletions => {
             invoke_chat_completions(http, config, auth, client_config, request).await
         }
@@ -64,8 +62,7 @@ pub async fn invoke_stream(
             invoke_chat_completions_stream(http, config, auth, client_config, request, sink).await
         }
         WireApi::Responses => {
-            let outcome =
-                invoke_responses(http, config, auth, client_config, request).await?;
+            let outcome = invoke_responses(http, config, auth, client_config, request).await?;
             emit_assistant_deltas_from_outcome(sink, &outcome);
             Ok(outcome)
         }
@@ -665,7 +662,8 @@ mod tests {
         let mut request = request();
         request.reasoning_effort = Some("adaptive".to_string());
         request.reasoning_budget_tokens = Some(40960);
-        let client_config = client_config("http://example.test".to_string(), WireApi::ChatCompletions);
+        let client_config =
+            client_config("http://example.test".to_string(), WireApi::ChatCompletions);
         let body = chat_completions_body(&client_config, &request).unwrap();
         assert_eq!(body["reasoning_effort"], json!("adaptive"));
         assert_eq!(body["reasoning"]["max_tokens"], json!(40960));

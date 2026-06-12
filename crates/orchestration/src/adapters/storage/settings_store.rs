@@ -2,38 +2,8 @@ use crate::adapters::storage::json_file_store::{write_json_file, OPENFLOW_DATA_D
 use crate::settings::model::{merge_preserved_api_keys, AppSettings};
 use crate::settings::ports::SettingsStore;
 use std::fs;
-use std::io::{self, Write};
+use std::io;
 use std::path::{Path, PathBuf};
-
-// #region agent log
-const AGENT_DEBUG_LOG_PATH: &str =
-    "/Users/philipbotar/Developer/Step-through-agentic-workflow/.cursor/debug-64d565.log";
-
-fn agent_debug_log(
-    hypothesis_id: &str,
-    location: &str,
-    message: &str,
-    data: serde_json::Value,
-) {
-    let payload = serde_json::json!({
-        "sessionId": "64d565",
-        "hypothesisId": hypothesis_id,
-        "location": location,
-        "message": message,
-        "data": data,
-        "timestamp": std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_millis()),
-    });
-    if let Ok(mut file) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(AGENT_DEBUG_LOG_PATH)
-    {
-        let _ = writeln!(file, "{payload}");
-    }
-}
-// #endregion
 
 fn parse_settings_json(text: &str) -> Result<AppSettings, serde_json::Error> {
     serde_json::from_str::<AppSettings>(text).map(AppSettings::normalized)
@@ -60,49 +30,13 @@ impl FileSettingsStore {
     /// # Errors
     /// Returns an error if the settings file cannot be read or parsed.
     pub fn load(&self) -> io::Result<AppSettings> {
-        let path_display = self.path.display().to_string();
         if !self.path.exists() {
-            // #region agent log
-            agent_debug_log(
-                "A",
-                "settings_store.rs:load",
-                "settings file missing, using defaults",
-                serde_json::json!({ "path": path_display }),
-            );
-            // #endregion
             return Ok(AppSettings::default());
         }
         let text = fs::read_to_string(&self.path)?;
-        let has_providers_key = text.contains("\"providers\"");
         match parse_settings_json(&text) {
-            Ok(settings) => {
-                // #region agent log
-                agent_debug_log(
-                    "A",
-                    "settings_store.rs:load",
-                    "settings parsed",
-                    serde_json::json!({
-                        "path": path_display,
-                        "hasProvidersKey": has_providers_key,
-                        "providerCount": settings.providers.len(),
-                    }),
-                );
-                // #endregion
-                Ok(settings)
-            }
-            Err(error) => {
-                // #region agent log
-                agent_debug_log(
-                    "A",
-                    "settings_store.rs:load",
-                    "settings parse failed, bootstrapping defaults",
-                    serde_json::json!({
-                        "path": path_display,
-                        "hasProvidersKey": has_providers_key,
-                        "error": error.to_string(),
-                    }),
-                );
-                // #endregion
+            Ok(settings) => Ok(settings),
+            Err(_error) => {
                 let bak_path = self.path.with_extension("json.bak");
                 let _ = fs::rename(&self.path, &bak_path);
                 let defaults = AppSettings::default();

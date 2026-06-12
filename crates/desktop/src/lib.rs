@@ -15,37 +15,6 @@ use orchestration::{Project, Workflow};
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
 
-// #region agent log
-const AGENT_DEBUG_LOG_PATH: &str =
-    "/Users/philipbotar/Developer/Step-through-agentic-workflow/.cursor/debug-64d565.log";
-
-fn agent_debug_log(
-    hypothesis_id: &str,
-    location: &str,
-    message: &str,
-    data: serde_json::Value,
-) {
-    use std::io::Write;
-    let payload = serde_json::json!({
-        "sessionId": "64d565",
-        "hypothesisId": hypothesis_id,
-        "location": location,
-        "message": message,
-        "data": data,
-        "timestamp": std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_millis()),
-    });
-    if let Ok(mut file) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(AGENT_DEBUG_LOG_PATH)
-    {
-        let _ = writeln!(file, "{payload}");
-    }
-}
-// #endregion
-
 /// Bootstrap payload returned on app startup.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -79,102 +48,12 @@ impl serde::Serialize for CommandError {
 async fn bootstrap_app(
     backend: tauri::State<'_, AppBackend>,
 ) -> Result<BootstrapPayload, CommandError> {
-    // #region agent log
-    agent_debug_log(
-        "D",
-        "desktop/lib.rs:bootstrap_app",
-        "bootstrap start",
-        serde_json::json!({}),
-    );
-    // #endregion
-    let workflows = backend.load_all_workflows().map_err(|error| {
-        // #region agent log
-        agent_debug_log(
-            "B",
-            "desktop/lib.rs:bootstrap_app",
-            "load_all_workflows failed",
-            serde_json::json!({ "error": error.to_string() }),
-        );
-        // #endregion
-        error
-    })?;
-    // #region agent log
-    agent_debug_log(
-        "B",
-        "desktop/lib.rs:bootstrap_app",
-        "load_all_workflows ok",
-        serde_json::json!({ "count": workflows.len() }),
-    );
-    // #endregion
-    let agents = backend.load_agents().map_err(|error| {
-        // #region agent log
-        agent_debug_log(
-            "B",
-            "desktop/lib.rs:bootstrap_app",
-            "load_agents failed",
-            serde_json::json!({ "error": error.to_string() }),
-        );
-        // #endregion
-        error
-    })?;
-    let projects = backend.list_projects().map_err(|error| {
-        // #region agent log
-        agent_debug_log(
-            "B",
-            "desktop/lib.rs:bootstrap_app",
-            "list_projects failed",
-            serde_json::json!({ "error": error.to_string() }),
-        );
-        // #endregion
-        error
-    })?;
-    let skills = backend.list_skills().map_err(|error| {
-        // #region agent log
-        agent_debug_log(
-            "B",
-            "desktop/lib.rs:bootstrap_app",
-            "list_skills failed",
-            serde_json::json!({ "error": error.to_string() }),
-        );
-        // #endregion
-        error
-    })?;
-    let settings = backend.load_settings().map_err(|error| {
-        // #region agent log
-        agent_debug_log(
-            "A",
-            "desktop/lib.rs:bootstrap_app",
-            "load_settings failed",
-            serde_json::json!({ "error": error.to_string() }),
-        );
-        // #endregion
-        error
-    })?;
-    // #region agent log
-    agent_debug_log(
-        "A",
-        "desktop/lib.rs:bootstrap_app",
-        "load_settings ok",
-        serde_json::json!({
-            "providerCount": settings.providers.len(),
-            "activeProvider": settings.active_provider.to_string(),
-        }),
-    );
-    // #endregion
+    let workflows = backend.load_all_workflows()?;
+    let agents = backend.load_agents()?;
+    let projects = backend.list_projects()?;
+    let skills = backend.list_skills()?;
+    let settings = backend.load_settings()?;
     let run_state = backend.get_run_state().await;
-    // #region agent log
-    agent_debug_log(
-        "D",
-        "desktop/lib.rs:bootstrap_app",
-        "bootstrap complete",
-        serde_json::json!({
-            "workflows": workflows.len(),
-            "agents": agents.len(),
-            "projects": projects.len(),
-            "skills": skills.len(),
-        }),
-    );
-    // #endregion
     Ok(BootstrapPayload {
         workflows,
         agents,
