@@ -197,7 +197,7 @@ async fn run_shell_command(
     tokio::select! {
         biased;
         _ = cancel_token.cancelled() => {
-            let _ = child.kill().await;
+            kill_process_group(&mut child).await;
             Ok(RawShellOutcome {
                 combined_output: "Command cancelled".to_string(),
                 exit_code: None,
@@ -228,7 +228,7 @@ async fn run_shell_command(
             })
         } => result,
         _ = tokio::time::sleep(timeout) => {
-            let _ = child.kill().await;
+            kill_process_group(&mut child).await;
             Err(ToolError::Timeout {
                 tool: "bash".to_string(),
                 after_secs: timeout_secs,
@@ -253,6 +253,8 @@ fn build_shell_command(
         cmd.arg("-lc").arg(command);
         cmd
     };
+    #[cfg(unix)]
+    command_builder.process_group(0);
     command_builder.current_dir(cwd);
     command_builder.env_remove("BASH_ENV");
     for (key, value) in NON_INTERACTIVE_ENV {
@@ -264,6 +266,21 @@ fn build_shell_command(
         }
     }
     command_builder
+}
+
+#[cfg(unix)]
+async fn kill_process_group(child: &mut tokio::process::Child) {
+    if let Some(pid) = child.id() {
+        use nix::sys::signal::{killpg, Signal};
+        use nix::unistd::Pid;
+        let _ = killpg(Pid::from_raw(pid as i32), Signal::SIGKILL);
+    }
+    let _ = child.kill().await;
+}
+
+#[cfg(not(unix))]
+async fn kill_process_group(child: &mut tokio::process::Child) {
+    let _ = child.kill().await;
 }
 
 fn merge_stdout_stderr(stdout: &str, stderr: &str) -> String {
@@ -354,6 +371,34 @@ mod tests {
         let cwd = temp.path().canonicalize().expect("canonicalize");
         let err = resolve_bash_cwd(&cwd, Some("../outside")).unwrap_err();
         assert!(err.to_string().contains("escapes execution folder"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn bash_timeout_kills_process_group() {
+        let temp = TempDir::new().expect("tempdir");
+        let cwd = temp.path().canonicalize().expect("canonicalize");
+        let result = run_shell_command(
+            "sleep 6042 & sleep 6042",
+            &cwd,
+            None,
+            1,
+            &CancellationToken::new(),
+        )
+        .await;
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        let still_running = std::process::Command::new("pgrep")
+            .arg("-f")
+            .arg("sleep 6042")
+            .output()
+            .ok()
+            .map(|o| !o.stdout.is_empty())
+            .unwrap_or(false);
+        assert!(
+            !still_running,
+            "grandchild sleep should be killed with process group"
+        );
+        assert!(result.is_err() || result.unwrap().exit_code.is_none());
     }
 
     #[tokio::test]

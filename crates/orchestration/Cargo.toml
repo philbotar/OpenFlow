@@ -37,6 +37,9 @@ tokio-util.workspace = true
 uuid.workspace = true
 engine = { path = "../engine", version = "0.1.0" }
 
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.29", features = ["process", "signal"] }
+
 [dev-dependencies]
 async-trait.workspace = true
 tempfile.workspace = true
