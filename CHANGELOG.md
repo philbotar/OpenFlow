@@ -34,6 +34,7 @@
 
 ### Fixed
 
+- **Bash tool hardening:** timeout/cancel kills the process group (grandchildren no longer survive); timeout preserves partial stdout/stderr; incremental pipe reads replace `read_to_end` (groundwork for live streaming).
 - **`scripts/verify.sh`:** failure log headers no longer pass `---` strings to `printf` as format literals (macOS treats them as flags).
 - **`providers`:** clippy/doc fixes for `prompt_cache.rs`; extract Anthropic cache-control test fixtures to satisfy `too_many_lines`.
 - **`desktop`:** bootstrap debug logging uses `inspect_err` instead of identity `map_err`.

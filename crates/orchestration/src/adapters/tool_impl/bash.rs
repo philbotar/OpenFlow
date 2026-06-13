@@ -260,15 +260,15 @@ async fn run_shell_command(
 
     let stdout_reader = {
         let stdout_bytes = Arc::clone(&stdout_bytes);
-        tokio::spawn(async move {
-            read_stream_incremental_shared(&mut stdout_pipe, stdout_bytes).await
-        })
+        tokio::spawn(
+            async move { read_stream_incremental_shared(&mut stdout_pipe, stdout_bytes).await },
+        )
     };
     let stderr_reader = {
         let stderr_bytes = Arc::clone(&stderr_bytes);
-        tokio::spawn(async move {
-            read_stream_incremental_shared(&mut stderr_pipe, stderr_bytes).await
-        })
+        tokio::spawn(
+            async move { read_stream_incremental_shared(&mut stderr_pipe, stderr_bytes).await },
+        )
     };
 
     let timeout = Duration::from_secs(timeout_secs);
