@@ -17,6 +17,7 @@ pub enum ToolError {
         tool: String,
         after_secs: u64,
         hint: String,
+        partial_output: Option<String>,
     },
     #[error("[cancelled] {tool} was cancelled")]
     Cancelled { tool: String },
@@ -49,11 +50,28 @@ mod tests {
     use super::*;
 
     #[test]
+    fn timeout_carries_partial_output() {
+        let err = ToolError::Timeout {
+            tool: "bash".to_string(),
+            after_secs: 1,
+            hint: "retry".to_string(),
+            partial_output: Some("partial\n".to_string()),
+        };
+        match &err {
+            ToolError::Timeout { partial_output, .. } => {
+                assert_eq!(partial_output.as_deref(), Some("partial\n"));
+            }
+            _ => panic!("expected Timeout variant"),
+        }
+    }
+
+    #[test]
     fn timeout_is_retryable() {
         assert!(ToolError::Timeout {
             tool: "bash".to_string(),
             after_secs: 300,
             hint: "increase timeout".to_string(),
+            partial_output: None,
         }
         .is_retryable());
     }

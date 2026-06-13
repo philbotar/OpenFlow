@@ -233,6 +233,7 @@ async fn run_shell_command(
                 tool: "bash".to_string(),
                 after_secs: timeout_secs,
                 hint: "increase timeout or split the command into smaller steps".to_string(),
+                partial_output: None,
             })
         }
     }
