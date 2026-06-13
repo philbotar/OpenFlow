@@ -48,6 +48,9 @@ where
             workflow: workflow.clone(),
             entrypoint,
             execution_cwd,
+            artifact_root: super::new_artifact_root(),
+            resume_checkpoint: None,
+            checkpoint_sink: Arc::new(parking_lot::Mutex::new(None)),
             ai,
             agent_snapshots,
             snapshot_store,
@@ -130,6 +133,7 @@ where
                     .send(ExecutionAction::ResolveApproval {
                         approval_id: approval_id.clone(),
                         allow: approval.allow,
+                        reason: approval.reason.clone(),
                     })
                     .map_err(|_| {
                         WorkflowExecutionError::Execution("run channel closed".to_string())

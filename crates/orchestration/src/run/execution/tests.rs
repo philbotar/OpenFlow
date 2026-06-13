@@ -122,7 +122,6 @@ fn reducer_aborted_deactivates_run_and_marks_in_progress_tools() {
                 id: "call-1".to_string(),
                 name: "read".to_string(),
                 arguments: json!({ "path": "README.md" }),
-                intent: None,
             },
         },
     );
@@ -443,7 +442,6 @@ fn reducer_tracks_tool_approval_and_completion() {
                 id: "call-1".to_string(),
                 name: "read".to_string(),
                 arguments: json!({"path": "README.md"}),
-                intent: None,
             },
         },
     );
@@ -459,7 +457,6 @@ fn reducer_tracks_tool_approval_and_completion() {
                     id: "call-1".to_string(),
                     name: "read".to_string(),
                     arguments: json!({"path": "README.md"}),
-                    intent: None,
                 },
                 tier: ToolTier::Read,
             },
@@ -521,7 +518,6 @@ async fn headless_run_auto_approves_read_tool_and_reenters_model_loop() {
                         id: "call-1".to_string(),
                         name: "read".to_string(),
                         arguments: json!({"path": "README.md"}),
-                        intent: None,
                     }],
                 }));
             }
@@ -574,7 +570,6 @@ async fn headless_run_requires_scripted_approval_for_prompted_tool() {
                     id: "call-1".to_string(),
                     name: "read".to_string(),
                     arguments: json!({"path": "README.md"}),
-                    intent: None,
                 }],
             }))
         }
@@ -981,6 +976,9 @@ where
         workflow,
         entrypoint: None,
         execution_cwd,
+        artifact_root: super::new_artifact_root(),
+        resume_checkpoint: None,
+        checkpoint_sink: Arc::new(parking_lot::Mutex::new(None)),
         ai,
         agent_snapshots: BTreeMap::new(),
         snapshot_store: Arc::new(
@@ -1015,7 +1013,6 @@ async fn interrupt_during_slow_tool_emits_node_interrupted() {
                     id: "call-sleep".to_string(),
                     name: "bash".to_string(),
                     arguments: json!({"command": "sleep 30", "timeout": 30}),
-                    intent: None,
                 }],
             }))
         }
@@ -1178,4 +1175,227 @@ async fn headless_run_errors_on_retryable_node_failure_instead_of_hanging() {
         error,
         WorkflowExecutionError::MissingRetry(node_id) if node_id.0 == "first"
     ));
+}
+
+fn manual_review_workflow() -> Workflow {
+    let mut workflow = Workflow::new("stop-continue");
+    let mut node = engine::Node::agent("review", 0.0, 0.0);
+    node.id = engine::NodeId("review".to_string());
+    node.agent.auto_start = false;
+    node.agent.model = "test-model".to_string();
+    workflow.nodes = vec![node];
+    workflow
+}
+
+fn interactive_run_params_with_sink<A>(
+    workflow: Workflow,
+    execution_cwd: std::path::PathBuf,
+    ai: A,
+) -> (
+    InteractiveWorkflowRunParams<A>,
+    Arc<parking_lot::Mutex<Option<engine::InteractiveEngineCheckpoint>>>,
+)
+where
+    A: AiPort + Send + Sync + 'static,
+{
+    let checkpoint_sink = Arc::new(parking_lot::Mutex::new(None));
+    let params = InteractiveWorkflowRunParams {
+        workflow,
+        entrypoint: None,
+        execution_cwd,
+        artifact_root: super::new_artifact_root(),
+        resume_checkpoint: None,
+        checkpoint_sink: checkpoint_sink.clone(),
+        ai,
+        agent_snapshots: BTreeMap::new(),
+        snapshot_store: Arc::new(
+            crate::tools::edit::hashline::snapshots::InMemorySnapshotStore::new(),
+        ),
+        lsp: crate::lsp::LspSettings::from_env(),
+        pending_engine_reverts: Arc::new(parking_lot::Mutex::new(Vec::new())),
+        node_interrupts: Arc::new(parking_lot::Mutex::new(BTreeMap::new())),
+    };
+    (params, checkpoint_sink)
+}
+
+#[tokio::test]
+async fn stop_then_continue_restores_awaiting_input() {
+    #[derive(Clone)]
+    struct CompleteAi;
+
+    #[async_trait]
+    impl AiPort for CompleteAi {
+        async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            self.invoke_stream(request, &NoopStreamSink).await
+        }
+
+        async fn invoke_stream(
+            &self,
+            _request: AgentRequest,
+            _sink: &dyn AiStreamSink,
+        ) -> Result<AgentTurnOutcome, AgentError> {
+            Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                output: json!({"summary": "done"}),
+                raw_text: "{}".to_string(),
+                assistant_message: None,
+            }))
+        }
+    }
+
+    struct NoopStreamSink;
+
+    impl AiStreamSink for NoopStreamSink {
+        fn on_stream_event(&self, _event: AiStreamEvent) {}
+    }
+
+    let temp = TempDir::new().expect("tempdir");
+    let workflow = manual_review_workflow();
+    let artifact_root = super::new_artifact_root();
+    let (params, checkpoint_sink) =
+        interactive_run_params_with_sink(workflow.clone(), temp.path().to_path_buf(), CompleteAi);
+    let (handle, mut event_rx, action_tx, _cancel, _) =
+        spawn_interactive_workflow_run(&tokio::runtime::Handle::current(), params);
+
+    let mut saw_awaiting = false;
+    while let Ok(Some(event)) = timeout(Duration::from_secs(5), event_rx.recv()).await {
+        if matches!(
+            event,
+            ExecutionEvent::NodeAwaitingInput { ref node_id, .. } if node_id.0 == "review"
+        ) {
+            saw_awaiting = true;
+            action_tx.send(ExecutionAction::Stop).expect("stop");
+        }
+        if matches!(event, ExecutionEvent::Aborted) {
+            break;
+        }
+    }
+    handle.await.expect("drive task");
+
+    assert!(saw_awaiting, "expected awaiting input before stop");
+    let checkpoint = checkpoint_sink
+        .lock()
+        .clone()
+        .expect("checkpoint after stop");
+    assert!(checkpoint
+        .awaiting_nodes
+        .contains(&engine::NodeId("review".to_string())));
+
+    let (resume_params, _) =
+        interactive_run_params_with_sink(workflow, temp.path().to_path_buf(), CompleteAi);
+    let resume_params = InteractiveWorkflowRunParams {
+        artifact_root,
+        resume_checkpoint: Some(checkpoint),
+        ..resume_params
+    };
+    let (handle, mut event_rx, action_tx, _cancel, _) =
+        spawn_interactive_workflow_run(&tokio::runtime::Handle::current(), resume_params);
+
+    let mut saw_awaiting_again = false;
+    while let Ok(Some(event)) = timeout(Duration::from_secs(5), event_rx.recv()).await {
+        if matches!(
+            event,
+            ExecutionEvent::NodeAwaitingInput { ref node_id, .. } if node_id.0 == "review"
+        ) {
+            saw_awaiting_again = true;
+            action_tx
+                .send(ExecutionAction::ProvideInput {
+                    node_id: engine::NodeId("review".to_string()),
+                    text: "continue".to_string(),
+                })
+                .expect("input");
+        }
+        if matches!(
+            event,
+            ExecutionEvent::NodeCompleted { ref node_id, .. } if node_id.0 == "review"
+        ) {
+            break;
+        }
+    }
+    handle.await.expect("resume drive task");
+    assert!(saw_awaiting_again, "expected awaiting input after continue");
+}
+
+#[tokio::test]
+async fn stop_mid_run_then_continue_completes_node() {
+    #[derive(Clone)]
+    struct SlowCompleteAi;
+
+    #[async_trait]
+    impl AiPort for SlowCompleteAi {
+        async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            self.invoke_stream(request, &NoopStreamSink).await
+        }
+
+        async fn invoke_stream(
+            &self,
+            _request: AgentRequest,
+            _sink: &dyn AiStreamSink,
+        ) -> Result<AgentTurnOutcome, AgentError> {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                output: json!({"summary": "resumed"}),
+                raw_text: "{}".to_string(),
+                assistant_message: None,
+            }))
+        }
+    }
+
+    struct NoopStreamSink;
+
+    impl AiStreamSink for NoopStreamSink {
+        fn on_stream_event(&self, _event: AiStreamEvent) {}
+    }
+
+    let temp = TempDir::new().expect("tempdir");
+    let mut workflow = Workflow::new("mid-run");
+    let mut node = engine::Node::agent("idea", 0.0, 0.0);
+    node.id = engine::NodeId("idea".to_string());
+    node.agent.model = "test-model".to_string();
+    workflow.nodes = vec![node];
+
+    let artifact_root = super::new_artifact_root();
+    let (params, checkpoint_sink) = interactive_run_params_with_sink(
+        workflow.clone(),
+        temp.path().to_path_buf(),
+        SlowCompleteAi,
+    );
+    let (handle, mut event_rx, _action_tx, cancel, _) =
+        spawn_interactive_workflow_run(&tokio::runtime::Handle::current(), params);
+
+    let mut stopped = false;
+    while let Ok(Some(event)) = timeout(Duration::from_secs(5), event_rx.recv()).await {
+        if matches!(event, ExecutionEvent::NodeStarted { .. }) && !stopped {
+            stopped = true;
+            cancel.cancel();
+        }
+        if matches!(event, ExecutionEvent::Aborted) {
+            break;
+        }
+    }
+    handle.await.expect("drive task");
+    assert!(stopped, "expected to stop during node execution");
+
+    let checkpoint = checkpoint_sink.lock().clone().expect("checkpoint");
+    let (resume_params, _) =
+        interactive_run_params_with_sink(workflow, temp.path().to_path_buf(), SlowCompleteAi);
+    let resume_params = InteractiveWorkflowRunParams {
+        artifact_root,
+        resume_checkpoint: Some(checkpoint),
+        ..resume_params
+    };
+    let (handle, mut event_rx, _, _cancel, _) =
+        spawn_interactive_workflow_run(&tokio::runtime::Handle::current(), resume_params);
+
+    let mut completed = false;
+    while let Ok(Some(event)) = timeout(Duration::from_secs(5), event_rx.recv()).await {
+        if matches!(
+            event,
+            ExecutionEvent::NodeCompleted { ref node_id, .. } if node_id.0 == "idea"
+        ) {
+            completed = true;
+            break;
+        }
+    }
+    handle.await.expect("resume drive task");
+    assert!(completed, "expected node to complete after continue");
 }

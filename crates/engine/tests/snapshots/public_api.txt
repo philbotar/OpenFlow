@@ -496,6 +496,56 @@ impl<T> core::convert::From<T> for engine::execution::artifacts::RunReport
 pub fn engine::execution::artifacts::RunReport::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::execution::artifacts::RunReport where T: for<'de> serde_core::de::Deserialize<'de>
 pub mod engine::execution::interactive_engine
+pub enum engine::execution::interactive_engine::CheckpointError
+pub engine::execution::interactive_engine::CheckpointError::Validation(engine::graph::validation::WorkflowValidationError)
+pub engine::execution::interactive_engine::CheckpointError::WorkflowMismatch
+pub engine::execution::interactive_engine::CheckpointError::WorkflowMismatch::checkpoint: engine::graph::workflow::WorkflowId
+pub engine::execution::interactive_engine::CheckpointError::WorkflowMismatch::workflow: engine::graph::workflow::WorkflowId
+impl core::clone::Clone for engine::CheckpointError
+pub fn engine::CheckpointError::clone(&self) -> engine::CheckpointError
+impl core::cmp::Eq for engine::CheckpointError
+impl core::cmp::PartialEq for engine::CheckpointError
+pub fn engine::CheckpointError::eq(&self, &engine::CheckpointError) -> bool
+impl core::convert::From<engine::graph::validation::WorkflowValidationError> for engine::CheckpointError
+pub fn engine::CheckpointError::from(engine::graph::validation::WorkflowValidationError) -> Self
+impl core::error::Error for engine::CheckpointError
+pub fn engine::CheckpointError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
+impl core::fmt::Debug for engine::CheckpointError
+pub fn engine::CheckpointError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for engine::CheckpointError
+pub fn engine::CheckpointError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::CheckpointError
+impl core::marker::Freeze for engine::CheckpointError
+impl core::marker::Send for engine::CheckpointError
+impl core::marker::Sync for engine::CheckpointError
+impl core::marker::Unpin for engine::CheckpointError
+impl core::marker::UnsafeUnpin for engine::CheckpointError
+impl core::panic::unwind_safe::RefUnwindSafe for engine::CheckpointError
+impl core::panic::unwind_safe::UnwindSafe for engine::CheckpointError
+impl<T, U> core::convert::Into<U> for engine::CheckpointError where U: core::convert::From<T>
+pub fn engine::CheckpointError::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::CheckpointError where U: core::convert::Into<T>
+pub type engine::CheckpointError::Error = core::convert::Infallible
+pub fn engine::CheckpointError::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::CheckpointError where U: core::convert::TryFrom<T>
+pub type engine::CheckpointError::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::CheckpointError::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::CheckpointError where T: core::clone::Clone
+pub type engine::CheckpointError::Owned = T
+pub fn engine::CheckpointError::clone_into(&self, &mut T)
+pub fn engine::CheckpointError::to_owned(&self) -> T
+impl<T> alloc::string::ToString for engine::CheckpointError where T: core::fmt::Display + ?core::marker::Sized
+pub fn engine::CheckpointError::to_string(&self) -> alloc::string::String
+impl<T> core::any::Any for engine::CheckpointError where T: 'static + ?core::marker::Sized
+pub fn engine::CheckpointError::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::CheckpointError where T: ?core::marker::Sized
+pub fn engine::CheckpointError::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::CheckpointError where T: ?core::marker::Sized
+pub fn engine::CheckpointError::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::CheckpointError where T: core::clone::Clone
+pub unsafe fn engine::CheckpointError::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::CheckpointError
+pub fn engine::CheckpointError::from(T) -> T
 pub enum engine::execution::interactive_engine::EngineInputError
 pub engine::execution::interactive_engine::EngineInputError::NoNodeAwaiting
 pub engine::execution::interactive_engine::EngineInputError::NoPendingTools
@@ -773,9 +823,13 @@ pub fn engine::execution::interactive_engine::InteractiveEngine::revert_file_cha
 pub async fn engine::execution::interactive_engine::InteractiveEngine::run<A: engine::ports::outbound::AiPort, T: engine::ports::outbound::ToolPort>(&mut self, &A, &T, &tokio_util::sync::cancellation_token::CancellationToken) -> engine::execution::interactive_engine::EngineRunResult
 pub fn engine::execution::interactive_engine::InteractiveEngine::transcript(&self, &engine::graph::workflow::NodeId) -> &[engine::conversation::AgentTranscriptItem]
 impl engine::execution::interactive_engine::InteractiveEngine
+pub fn engine::execution::interactive_engine::InteractiveEngine::from_checkpoint(engine::graph::workflow::Workflow, engine::InteractiveEngineCheckpoint) -> core::result::Result<Self, engine::CheckpointError>
+pub fn engine::execution::interactive_engine::InteractiveEngine::prepare_resume(&mut self)
+pub fn engine::execution::interactive_engine::InteractiveEngine::prepare_stop_checkpoint(&mut self) -> engine::InteractiveEngineCheckpoint
+impl engine::execution::interactive_engine::InteractiveEngine
 pub fn engine::execution::interactive_engine::InteractiveEngine::on_ai_complete(&mut self, &engine::graph::workflow::NodeId, core::result::Result<engine::ports::outbound::AgentTurnOutcome, engine::ports::outbound::AgentError>)
 impl engine::execution::interactive_engine::InteractiveEngine
-pub fn engine::execution::interactive_engine::InteractiveEngine::on_tool_decision(&mut self, &str, bool) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
+pub fn engine::execution::interactive_engine::InteractiveEngine::on_tool_decision(&mut self, &str, bool, core::option::Option<&str>) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::on_tool_results(&mut self, &engine::graph::workflow::NodeId, alloc::vec::Vec<engine::ToolResult>) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 impl engine::ports::inbound::HumanInputPort for engine::execution::interactive_engine::InteractiveEngine
 pub fn engine::execution::interactive_engine::InteractiveEngine::submit_human_input(&mut self, engine::ports::inbound::HumanInput) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
@@ -804,6 +858,66 @@ impl<T> core::borrow::BorrowMut<T> for engine::execution::interactive_engine::In
 pub fn engine::execution::interactive_engine::InteractiveEngine::borrow_mut(&mut self) -> &mut T
 impl<T> core::convert::From<T> for engine::execution::interactive_engine::InteractiveEngine
 pub fn engine::execution::interactive_engine::InteractiveEngine::from(T) -> T
+pub struct engine::execution::interactive_engine::InteractiveEngineCheckpoint
+pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::awaiting_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
+pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::changed_files_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>>
+pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::entrypoint_text: core::option::Option<alloc::string::String>
+pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::events: alloc::vec::Vec<engine::execution::artifacts::RunEvent>
+pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::failed_nodes: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::string::String>
+pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::interrupted_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
+pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::layer_idx: usize
+pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::outputs: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, serde_json::value::Value>
+pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::pending_retry_delay_ms: core::option::Option<u64>
+pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::pending_tool_batches: alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::execution::interactive_engine::checkpoint::CheckpointPendingToolBatch>
+pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::queued_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
+pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::request_input_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
+pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
+pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::started_invocations_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
+pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::submit_output_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
+pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::transcripts: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::conversation::AgentTranscriptItem>>
+pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::workflow_id: engine::graph::workflow::WorkflowId
+impl core::clone::Clone for engine::InteractiveEngineCheckpoint
+pub fn engine::InteractiveEngineCheckpoint::clone(&self) -> engine::InteractiveEngineCheckpoint
+impl core::cmp::Eq for engine::InteractiveEngineCheckpoint
+impl core::cmp::PartialEq for engine::InteractiveEngineCheckpoint
+pub fn engine::InteractiveEngineCheckpoint::eq(&self, &engine::InteractiveEngineCheckpoint) -> bool
+impl core::fmt::Debug for engine::InteractiveEngineCheckpoint
+pub fn engine::InteractiveEngineCheckpoint::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::InteractiveEngineCheckpoint
+impl serde_core::ser::Serialize for engine::InteractiveEngineCheckpoint
+pub fn engine::InteractiveEngineCheckpoint::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for engine::InteractiveEngineCheckpoint
+pub fn engine::InteractiveEngineCheckpoint::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for engine::InteractiveEngineCheckpoint
+impl core::marker::Send for engine::InteractiveEngineCheckpoint
+impl core::marker::Sync for engine::InteractiveEngineCheckpoint
+impl core::marker::Unpin for engine::InteractiveEngineCheckpoint
+impl core::marker::UnsafeUnpin for engine::InteractiveEngineCheckpoint
+impl core::panic::unwind_safe::RefUnwindSafe for engine::InteractiveEngineCheckpoint
+impl core::panic::unwind_safe::UnwindSafe for engine::InteractiveEngineCheckpoint
+impl<T, U> core::convert::Into<U> for engine::InteractiveEngineCheckpoint where U: core::convert::From<T>
+pub fn engine::InteractiveEngineCheckpoint::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::InteractiveEngineCheckpoint where U: core::convert::Into<T>
+pub type engine::InteractiveEngineCheckpoint::Error = core::convert::Infallible
+pub fn engine::InteractiveEngineCheckpoint::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::InteractiveEngineCheckpoint where U: core::convert::TryFrom<T>
+pub type engine::InteractiveEngineCheckpoint::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::InteractiveEngineCheckpoint::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::InteractiveEngineCheckpoint where T: core::clone::Clone
+pub type engine::InteractiveEngineCheckpoint::Owned = T
+pub fn engine::InteractiveEngineCheckpoint::clone_into(&self, &mut T)
+pub fn engine::InteractiveEngineCheckpoint::to_owned(&self) -> T
+impl<T> core::any::Any for engine::InteractiveEngineCheckpoint where T: 'static + ?core::marker::Sized
+pub fn engine::InteractiveEngineCheckpoint::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::InteractiveEngineCheckpoint where T: ?core::marker::Sized
+pub fn engine::InteractiveEngineCheckpoint::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::InteractiveEngineCheckpoint where T: ?core::marker::Sized
+pub fn engine::InteractiveEngineCheckpoint::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::InteractiveEngineCheckpoint where T: core::clone::Clone
+pub unsafe fn engine::InteractiveEngineCheckpoint::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::InteractiveEngineCheckpoint
+pub fn engine::InteractiveEngineCheckpoint::from(T) -> T
+impl<T> serde_core::de::DeserializeOwned for engine::InteractiveEngineCheckpoint where T: for<'de> serde_core::de::Deserialize<'de>
 pub mod engine::execution::node_invocation
 pub struct engine::execution::node_invocation::NodeInvocationContext<'a>
 pub engine::execution::node_invocation::NodeInvocationContext::available_tools: &'a [engine::ToolDefinition]
@@ -1208,6 +1322,56 @@ impl<T> core::borrow::BorrowMut<T> for engine::execution::workflow_runner::Workf
 pub fn engine::execution::workflow_runner::WorkflowRunner<A>::borrow_mut(&mut self) -> &mut T
 impl<T> core::convert::From<T> for engine::execution::workflow_runner::WorkflowRunner<A>
 pub fn engine::execution::workflow_runner::WorkflowRunner<A>::from(T) -> T
+pub enum engine::execution::CheckpointError
+pub engine::execution::CheckpointError::Validation(engine::graph::validation::WorkflowValidationError)
+pub engine::execution::CheckpointError::WorkflowMismatch
+pub engine::execution::CheckpointError::WorkflowMismatch::checkpoint: engine::graph::workflow::WorkflowId
+pub engine::execution::CheckpointError::WorkflowMismatch::workflow: engine::graph::workflow::WorkflowId
+impl core::clone::Clone for engine::CheckpointError
+pub fn engine::CheckpointError::clone(&self) -> engine::CheckpointError
+impl core::cmp::Eq for engine::CheckpointError
+impl core::cmp::PartialEq for engine::CheckpointError
+pub fn engine::CheckpointError::eq(&self, &engine::CheckpointError) -> bool
+impl core::convert::From<engine::graph::validation::WorkflowValidationError> for engine::CheckpointError
+pub fn engine::CheckpointError::from(engine::graph::validation::WorkflowValidationError) -> Self
+impl core::error::Error for engine::CheckpointError
+pub fn engine::CheckpointError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
+impl core::fmt::Debug for engine::CheckpointError
+pub fn engine::CheckpointError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for engine::CheckpointError
+pub fn engine::CheckpointError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::CheckpointError
+impl core::marker::Freeze for engine::CheckpointError
+impl core::marker::Send for engine::CheckpointError
+impl core::marker::Sync for engine::CheckpointError
+impl core::marker::Unpin for engine::CheckpointError
+impl core::marker::UnsafeUnpin for engine::CheckpointError
+impl core::panic::unwind_safe::RefUnwindSafe for engine::CheckpointError
+impl core::panic::unwind_safe::UnwindSafe for engine::CheckpointError
+impl<T, U> core::convert::Into<U> for engine::CheckpointError where U: core::convert::From<T>
+pub fn engine::CheckpointError::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::CheckpointError where U: core::convert::Into<T>
+pub type engine::CheckpointError::Error = core::convert::Infallible
+pub fn engine::CheckpointError::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::CheckpointError where U: core::convert::TryFrom<T>
+pub type engine::CheckpointError::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::CheckpointError::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::CheckpointError where T: core::clone::Clone
+pub type engine::CheckpointError::Owned = T
+pub fn engine::CheckpointError::clone_into(&self, &mut T)
+pub fn engine::CheckpointError::to_owned(&self) -> T
+impl<T> alloc::string::ToString for engine::CheckpointError where T: core::fmt::Display + ?core::marker::Sized
+pub fn engine::CheckpointError::to_string(&self) -> alloc::string::String
+impl<T> core::any::Any for engine::CheckpointError where T: 'static + ?core::marker::Sized
+pub fn engine::CheckpointError::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::CheckpointError where T: ?core::marker::Sized
+pub fn engine::CheckpointError::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::CheckpointError where T: ?core::marker::Sized
+pub fn engine::CheckpointError::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::CheckpointError where T: core::clone::Clone
+pub unsafe fn engine::CheckpointError::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::CheckpointError
+pub fn engine::CheckpointError::from(T) -> T
 pub enum engine::execution::EngineInputError
 pub engine::execution::EngineInputError::NoNodeAwaiting
 pub engine::execution::EngineInputError::NoPendingTools
@@ -1921,9 +2085,13 @@ pub fn engine::execution::interactive_engine::InteractiveEngine::revert_file_cha
 pub async fn engine::execution::interactive_engine::InteractiveEngine::run<A: engine::ports::outbound::AiPort, T: engine::ports::outbound::ToolPort>(&mut self, &A, &T, &tokio_util::sync::cancellation_token::CancellationToken) -> engine::execution::interactive_engine::EngineRunResult
 pub fn engine::execution::interactive_engine::InteractiveEngine::transcript(&self, &engine::graph::workflow::NodeId) -> &[engine::conversation::AgentTranscriptItem]
 impl engine::execution::interactive_engine::InteractiveEngine
+pub fn engine::execution::interactive_engine::InteractiveEngine::from_checkpoint(engine::graph::workflow::Workflow, engine::InteractiveEngineCheckpoint) -> core::result::Result<Self, engine::CheckpointError>
+pub fn engine::execution::interactive_engine::InteractiveEngine::prepare_resume(&mut self)
+pub fn engine::execution::interactive_engine::InteractiveEngine::prepare_stop_checkpoint(&mut self) -> engine::InteractiveEngineCheckpoint
+impl engine::execution::interactive_engine::InteractiveEngine
 pub fn engine::execution::interactive_engine::InteractiveEngine::on_ai_complete(&mut self, &engine::graph::workflow::NodeId, core::result::Result<engine::ports::outbound::AgentTurnOutcome, engine::ports::outbound::AgentError>)
 impl engine::execution::interactive_engine::InteractiveEngine
-pub fn engine::execution::interactive_engine::InteractiveEngine::on_tool_decision(&mut self, &str, bool) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
+pub fn engine::execution::interactive_engine::InteractiveEngine::on_tool_decision(&mut self, &str, bool, core::option::Option<&str>) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::on_tool_results(&mut self, &engine::graph::workflow::NodeId, alloc::vec::Vec<engine::ToolResult>) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 impl engine::ports::inbound::HumanInputPort for engine::execution::interactive_engine::InteractiveEngine
 pub fn engine::execution::interactive_engine::InteractiveEngine::submit_human_input(&mut self, engine::ports::inbound::HumanInput) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
@@ -1952,6 +2120,66 @@ impl<T> core::borrow::BorrowMut<T> for engine::execution::interactive_engine::In
 pub fn engine::execution::interactive_engine::InteractiveEngine::borrow_mut(&mut self) -> &mut T
 impl<T> core::convert::From<T> for engine::execution::interactive_engine::InteractiveEngine
 pub fn engine::execution::interactive_engine::InteractiveEngine::from(T) -> T
+pub struct engine::execution::InteractiveEngineCheckpoint
+pub engine::execution::InteractiveEngineCheckpoint::awaiting_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
+pub engine::execution::InteractiveEngineCheckpoint::changed_files_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>>
+pub engine::execution::InteractiveEngineCheckpoint::entrypoint_text: core::option::Option<alloc::string::String>
+pub engine::execution::InteractiveEngineCheckpoint::events: alloc::vec::Vec<engine::execution::artifacts::RunEvent>
+pub engine::execution::InteractiveEngineCheckpoint::failed_nodes: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::string::String>
+pub engine::execution::InteractiveEngineCheckpoint::interrupted_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
+pub engine::execution::InteractiveEngineCheckpoint::layer_idx: usize
+pub engine::execution::InteractiveEngineCheckpoint::outputs: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, serde_json::value::Value>
+pub engine::execution::InteractiveEngineCheckpoint::pending_retry_delay_ms: core::option::Option<u64>
+pub engine::execution::InteractiveEngineCheckpoint::pending_tool_batches: alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::execution::interactive_engine::checkpoint::CheckpointPendingToolBatch>
+pub engine::execution::InteractiveEngineCheckpoint::queued_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
+pub engine::execution::InteractiveEngineCheckpoint::request_input_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
+pub engine::execution::InteractiveEngineCheckpoint::retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
+pub engine::execution::InteractiveEngineCheckpoint::started_invocations_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
+pub engine::execution::InteractiveEngineCheckpoint::submit_output_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
+pub engine::execution::InteractiveEngineCheckpoint::transcripts: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::conversation::AgentTranscriptItem>>
+pub engine::execution::InteractiveEngineCheckpoint::workflow_id: engine::graph::workflow::WorkflowId
+impl core::clone::Clone for engine::InteractiveEngineCheckpoint
+pub fn engine::InteractiveEngineCheckpoint::clone(&self) -> engine::InteractiveEngineCheckpoint
+impl core::cmp::Eq for engine::InteractiveEngineCheckpoint
+impl core::cmp::PartialEq for engine::InteractiveEngineCheckpoint
+pub fn engine::InteractiveEngineCheckpoint::eq(&self, &engine::InteractiveEngineCheckpoint) -> bool
+impl core::fmt::Debug for engine::InteractiveEngineCheckpoint
+pub fn engine::InteractiveEngineCheckpoint::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::InteractiveEngineCheckpoint
+impl serde_core::ser::Serialize for engine::InteractiveEngineCheckpoint
+pub fn engine::InteractiveEngineCheckpoint::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for engine::InteractiveEngineCheckpoint
+pub fn engine::InteractiveEngineCheckpoint::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for engine::InteractiveEngineCheckpoint
+impl core::marker::Send for engine::InteractiveEngineCheckpoint
+impl core::marker::Sync for engine::InteractiveEngineCheckpoint
+impl core::marker::Unpin for engine::InteractiveEngineCheckpoint
+impl core::marker::UnsafeUnpin for engine::InteractiveEngineCheckpoint
+impl core::panic::unwind_safe::RefUnwindSafe for engine::InteractiveEngineCheckpoint
+impl core::panic::unwind_safe::UnwindSafe for engine::InteractiveEngineCheckpoint
+impl<T, U> core::convert::Into<U> for engine::InteractiveEngineCheckpoint where U: core::convert::From<T>
+pub fn engine::InteractiveEngineCheckpoint::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::InteractiveEngineCheckpoint where U: core::convert::Into<T>
+pub type engine::InteractiveEngineCheckpoint::Error = core::convert::Infallible
+pub fn engine::InteractiveEngineCheckpoint::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::InteractiveEngineCheckpoint where U: core::convert::TryFrom<T>
+pub type engine::InteractiveEngineCheckpoint::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::InteractiveEngineCheckpoint::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::InteractiveEngineCheckpoint where T: core::clone::Clone
+pub type engine::InteractiveEngineCheckpoint::Owned = T
+pub fn engine::InteractiveEngineCheckpoint::clone_into(&self, &mut T)
+pub fn engine::InteractiveEngineCheckpoint::to_owned(&self) -> T
+impl<T> core::any::Any for engine::InteractiveEngineCheckpoint where T: 'static + ?core::marker::Sized
+pub fn engine::InteractiveEngineCheckpoint::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::InteractiveEngineCheckpoint where T: ?core::marker::Sized
+pub fn engine::InteractiveEngineCheckpoint::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::InteractiveEngineCheckpoint where T: ?core::marker::Sized
+pub fn engine::InteractiveEngineCheckpoint::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::InteractiveEngineCheckpoint where T: core::clone::Clone
+pub unsafe fn engine::InteractiveEngineCheckpoint::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::InteractiveEngineCheckpoint
+pub fn engine::InteractiveEngineCheckpoint::from(T) -> T
+impl<T> serde_core::de::DeserializeOwned for engine::InteractiveEngineCheckpoint where T: for<'de> serde_core::de::Deserialize<'de>
 pub struct engine::execution::NodeInvocationContext<'a>
 pub engine::execution::NodeInvocationContext::available_tools: &'a [engine::ToolDefinition]
 pub engine::execution::NodeInvocationContext::changed_files_by_node: &'a alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>>
@@ -2281,6 +2509,8 @@ pub fn engine::graph::validation::WorkflowValidationError::clone(&self) -> engin
 impl core::cmp::Eq for engine::graph::validation::WorkflowValidationError
 impl core::cmp::PartialEq for engine::graph::validation::WorkflowValidationError
 pub fn engine::graph::validation::WorkflowValidationError::eq(&self, &engine::graph::validation::WorkflowValidationError) -> bool
+impl core::convert::From<engine::graph::validation::WorkflowValidationError> for engine::CheckpointError
+pub fn engine::CheckpointError::from(engine::graph::validation::WorkflowValidationError) -> Self
 impl core::convert::From<engine::graph::validation::WorkflowValidationError> for engine::execution::artifacts::RunError
 pub fn engine::execution::artifacts::RunError::from(engine::graph::validation::WorkflowValidationError) -> Self
 impl core::error::Error for engine::graph::validation::WorkflowValidationError
@@ -3026,6 +3256,8 @@ pub fn engine::graph::validation::WorkflowValidationError::clone(&self) -> engin
 impl core::cmp::Eq for engine::graph::validation::WorkflowValidationError
 impl core::cmp::PartialEq for engine::graph::validation::WorkflowValidationError
 pub fn engine::graph::validation::WorkflowValidationError::eq(&self, &engine::graph::validation::WorkflowValidationError) -> bool
+impl core::convert::From<engine::graph::validation::WorkflowValidationError> for engine::CheckpointError
+pub fn engine::CheckpointError::from(engine::graph::validation::WorkflowValidationError) -> Self
 impl core::convert::From<engine::graph::validation::WorkflowValidationError> for engine::execution::artifacts::RunError
 pub fn engine::execution::artifacts::RunError::from(engine::graph::validation::WorkflowValidationError) -> Self
 impl core::error::Error for engine::graph::validation::WorkflowValidationError
@@ -3769,6 +4001,7 @@ pub fn engine::ports::inbound::HumanInput::from(T) -> T
 pub struct engine::ports::inbound::ToolApprovalInput
 pub engine::ports::inbound::ToolApprovalInput::allow: bool
 pub engine::ports::inbound::ToolApprovalInput::approval_id: alloc::string::String
+pub engine::ports::inbound::ToolApprovalInput::reason: core::option::Option<alloc::string::String>
 impl core::clone::Clone for engine::ports::inbound::ToolApprovalInput
 pub fn engine::ports::inbound::ToolApprovalInput::clone(&self) -> engine::ports::inbound::ToolApprovalInput
 impl core::cmp::Eq for engine::ports::inbound::ToolApprovalInput
@@ -4469,6 +4702,7 @@ pub fn engine::ports::inbound::HumanInput::from(T) -> T
 pub struct engine::ports::ToolApprovalInput
 pub engine::ports::ToolApprovalInput::allow: bool
 pub engine::ports::ToolApprovalInput::approval_id: alloc::string::String
+pub engine::ports::ToolApprovalInput::reason: core::option::Option<alloc::string::String>
 impl core::clone::Clone for engine::ports::inbound::ToolApprovalInput
 pub fn engine::ports::inbound::ToolApprovalInput::clone(&self) -> engine::ports::inbound::ToolApprovalInput
 impl core::cmp::Eq for engine::ports::inbound::ToolApprovalInput
@@ -5454,7 +5688,6 @@ impl<T> serde_core::de::DeserializeOwned for engine::SubagentSummary where T: fo
 pub struct engine::tools::ToolCall
 pub engine::tools::ToolCall::arguments: serde_json::value::Value
 pub engine::tools::ToolCall::id: alloc::string::String
-pub engine::tools::ToolCall::intent: core::option::Option<alloc::string::String>
 pub engine::tools::ToolCall::name: alloc::string::String
 impl core::clone::Clone for engine::ToolCall
 pub fn engine::ToolCall::clone(&self) -> engine::ToolCall
@@ -6148,6 +6381,56 @@ pub unsafe fn engine::conversation::ChatRole::clone_to_uninit(&self, *mut u8)
 impl<T> core::convert::From<T> for engine::conversation::ChatRole
 pub fn engine::conversation::ChatRole::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::conversation::ChatRole where T: for<'de> serde_core::de::Deserialize<'de>
+pub enum engine::CheckpointError
+pub engine::CheckpointError::Validation(engine::graph::validation::WorkflowValidationError)
+pub engine::CheckpointError::WorkflowMismatch
+pub engine::CheckpointError::WorkflowMismatch::checkpoint: engine::graph::workflow::WorkflowId
+pub engine::CheckpointError::WorkflowMismatch::workflow: engine::graph::workflow::WorkflowId
+impl core::clone::Clone for engine::CheckpointError
+pub fn engine::CheckpointError::clone(&self) -> engine::CheckpointError
+impl core::cmp::Eq for engine::CheckpointError
+impl core::cmp::PartialEq for engine::CheckpointError
+pub fn engine::CheckpointError::eq(&self, &engine::CheckpointError) -> bool
+impl core::convert::From<engine::graph::validation::WorkflowValidationError> for engine::CheckpointError
+pub fn engine::CheckpointError::from(engine::graph::validation::WorkflowValidationError) -> Self
+impl core::error::Error for engine::CheckpointError
+pub fn engine::CheckpointError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
+impl core::fmt::Debug for engine::CheckpointError
+pub fn engine::CheckpointError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for engine::CheckpointError
+pub fn engine::CheckpointError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::CheckpointError
+impl core::marker::Freeze for engine::CheckpointError
+impl core::marker::Send for engine::CheckpointError
+impl core::marker::Sync for engine::CheckpointError
+impl core::marker::Unpin for engine::CheckpointError
+impl core::marker::UnsafeUnpin for engine::CheckpointError
+impl core::panic::unwind_safe::RefUnwindSafe for engine::CheckpointError
+impl core::panic::unwind_safe::UnwindSafe for engine::CheckpointError
+impl<T, U> core::convert::Into<U> for engine::CheckpointError where U: core::convert::From<T>
+pub fn engine::CheckpointError::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::CheckpointError where U: core::convert::Into<T>
+pub type engine::CheckpointError::Error = core::convert::Infallible
+pub fn engine::CheckpointError::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::CheckpointError where U: core::convert::TryFrom<T>
+pub type engine::CheckpointError::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::CheckpointError::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::CheckpointError where T: core::clone::Clone
+pub type engine::CheckpointError::Owned = T
+pub fn engine::CheckpointError::clone_into(&self, &mut T)
+pub fn engine::CheckpointError::to_owned(&self) -> T
+impl<T> alloc::string::ToString for engine::CheckpointError where T: core::fmt::Display + ?core::marker::Sized
+pub fn engine::CheckpointError::to_string(&self) -> alloc::string::String
+impl<T> core::any::Any for engine::CheckpointError where T: 'static + ?core::marker::Sized
+pub fn engine::CheckpointError::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::CheckpointError where T: ?core::marker::Sized
+pub fn engine::CheckpointError::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::CheckpointError where T: ?core::marker::Sized
+pub fn engine::CheckpointError::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::CheckpointError where T: core::clone::Clone
+pub unsafe fn engine::CheckpointError::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::CheckpointError
+pub fn engine::CheckpointError::from(T) -> T
 pub enum engine::EngineInputError
 pub engine::EngineInputError::NoNodeAwaiting
 pub engine::EngineInputError::NoPendingTools
@@ -7075,6 +7358,8 @@ pub fn engine::graph::validation::WorkflowValidationError::clone(&self) -> engin
 impl core::cmp::Eq for engine::graph::validation::WorkflowValidationError
 impl core::cmp::PartialEq for engine::graph::validation::WorkflowValidationError
 pub fn engine::graph::validation::WorkflowValidationError::eq(&self, &engine::graph::validation::WorkflowValidationError) -> bool
+impl core::convert::From<engine::graph::validation::WorkflowValidationError> for engine::CheckpointError
+pub fn engine::CheckpointError::from(engine::graph::validation::WorkflowValidationError) -> Self
 impl core::convert::From<engine::graph::validation::WorkflowValidationError> for engine::execution::artifacts::RunError
 pub fn engine::execution::artifacts::RunError::from(engine::graph::validation::WorkflowValidationError) -> Self
 impl core::error::Error for engine::graph::validation::WorkflowValidationError
@@ -7930,9 +8215,13 @@ pub fn engine::execution::interactive_engine::InteractiveEngine::revert_file_cha
 pub async fn engine::execution::interactive_engine::InteractiveEngine::run<A: engine::ports::outbound::AiPort, T: engine::ports::outbound::ToolPort>(&mut self, &A, &T, &tokio_util::sync::cancellation_token::CancellationToken) -> engine::execution::interactive_engine::EngineRunResult
 pub fn engine::execution::interactive_engine::InteractiveEngine::transcript(&self, &engine::graph::workflow::NodeId) -> &[engine::conversation::AgentTranscriptItem]
 impl engine::execution::interactive_engine::InteractiveEngine
+pub fn engine::execution::interactive_engine::InteractiveEngine::from_checkpoint(engine::graph::workflow::Workflow, engine::InteractiveEngineCheckpoint) -> core::result::Result<Self, engine::CheckpointError>
+pub fn engine::execution::interactive_engine::InteractiveEngine::prepare_resume(&mut self)
+pub fn engine::execution::interactive_engine::InteractiveEngine::prepare_stop_checkpoint(&mut self) -> engine::InteractiveEngineCheckpoint
+impl engine::execution::interactive_engine::InteractiveEngine
 pub fn engine::execution::interactive_engine::InteractiveEngine::on_ai_complete(&mut self, &engine::graph::workflow::NodeId, core::result::Result<engine::ports::outbound::AgentTurnOutcome, engine::ports::outbound::AgentError>)
 impl engine::execution::interactive_engine::InteractiveEngine
-pub fn engine::execution::interactive_engine::InteractiveEngine::on_tool_decision(&mut self, &str, bool) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
+pub fn engine::execution::interactive_engine::InteractiveEngine::on_tool_decision(&mut self, &str, bool, core::option::Option<&str>) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::on_tool_results(&mut self, &engine::graph::workflow::NodeId, alloc::vec::Vec<engine::ToolResult>) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 impl engine::ports::inbound::HumanInputPort for engine::execution::interactive_engine::InteractiveEngine
 pub fn engine::execution::interactive_engine::InteractiveEngine::submit_human_input(&mut self, engine::ports::inbound::HumanInput) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
@@ -7961,6 +8250,66 @@ impl<T> core::borrow::BorrowMut<T> for engine::execution::interactive_engine::In
 pub fn engine::execution::interactive_engine::InteractiveEngine::borrow_mut(&mut self) -> &mut T
 impl<T> core::convert::From<T> for engine::execution::interactive_engine::InteractiveEngine
 pub fn engine::execution::interactive_engine::InteractiveEngine::from(T) -> T
+pub struct engine::InteractiveEngineCheckpoint
+pub engine::InteractiveEngineCheckpoint::awaiting_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
+pub engine::InteractiveEngineCheckpoint::changed_files_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>>
+pub engine::InteractiveEngineCheckpoint::entrypoint_text: core::option::Option<alloc::string::String>
+pub engine::InteractiveEngineCheckpoint::events: alloc::vec::Vec<engine::execution::artifacts::RunEvent>
+pub engine::InteractiveEngineCheckpoint::failed_nodes: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::string::String>
+pub engine::InteractiveEngineCheckpoint::interrupted_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
+pub engine::InteractiveEngineCheckpoint::layer_idx: usize
+pub engine::InteractiveEngineCheckpoint::outputs: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, serde_json::value::Value>
+pub engine::InteractiveEngineCheckpoint::pending_retry_delay_ms: core::option::Option<u64>
+pub engine::InteractiveEngineCheckpoint::pending_tool_batches: alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::execution::interactive_engine::checkpoint::CheckpointPendingToolBatch>
+pub engine::InteractiveEngineCheckpoint::queued_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
+pub engine::InteractiveEngineCheckpoint::request_input_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
+pub engine::InteractiveEngineCheckpoint::retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
+pub engine::InteractiveEngineCheckpoint::started_invocations_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
+pub engine::InteractiveEngineCheckpoint::submit_output_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
+pub engine::InteractiveEngineCheckpoint::transcripts: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::conversation::AgentTranscriptItem>>
+pub engine::InteractiveEngineCheckpoint::workflow_id: engine::graph::workflow::WorkflowId
+impl core::clone::Clone for engine::InteractiveEngineCheckpoint
+pub fn engine::InteractiveEngineCheckpoint::clone(&self) -> engine::InteractiveEngineCheckpoint
+impl core::cmp::Eq for engine::InteractiveEngineCheckpoint
+impl core::cmp::PartialEq for engine::InteractiveEngineCheckpoint
+pub fn engine::InteractiveEngineCheckpoint::eq(&self, &engine::InteractiveEngineCheckpoint) -> bool
+impl core::fmt::Debug for engine::InteractiveEngineCheckpoint
+pub fn engine::InteractiveEngineCheckpoint::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::InteractiveEngineCheckpoint
+impl serde_core::ser::Serialize for engine::InteractiveEngineCheckpoint
+pub fn engine::InteractiveEngineCheckpoint::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for engine::InteractiveEngineCheckpoint
+pub fn engine::InteractiveEngineCheckpoint::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for engine::InteractiveEngineCheckpoint
+impl core::marker::Send for engine::InteractiveEngineCheckpoint
+impl core::marker::Sync for engine::InteractiveEngineCheckpoint
+impl core::marker::Unpin for engine::InteractiveEngineCheckpoint
+impl core::marker::UnsafeUnpin for engine::InteractiveEngineCheckpoint
+impl core::panic::unwind_safe::RefUnwindSafe for engine::InteractiveEngineCheckpoint
+impl core::panic::unwind_safe::UnwindSafe for engine::InteractiveEngineCheckpoint
+impl<T, U> core::convert::Into<U> for engine::InteractiveEngineCheckpoint where U: core::convert::From<T>
+pub fn engine::InteractiveEngineCheckpoint::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::InteractiveEngineCheckpoint where U: core::convert::Into<T>
+pub type engine::InteractiveEngineCheckpoint::Error = core::convert::Infallible
+pub fn engine::InteractiveEngineCheckpoint::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::InteractiveEngineCheckpoint where U: core::convert::TryFrom<T>
+pub type engine::InteractiveEngineCheckpoint::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::InteractiveEngineCheckpoint::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::InteractiveEngineCheckpoint where T: core::clone::Clone
+pub type engine::InteractiveEngineCheckpoint::Owned = T
+pub fn engine::InteractiveEngineCheckpoint::clone_into(&self, &mut T)
+pub fn engine::InteractiveEngineCheckpoint::to_owned(&self) -> T
+impl<T> core::any::Any for engine::InteractiveEngineCheckpoint where T: 'static + ?core::marker::Sized
+pub fn engine::InteractiveEngineCheckpoint::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::InteractiveEngineCheckpoint where T: ?core::marker::Sized
+pub fn engine::InteractiveEngineCheckpoint::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::InteractiveEngineCheckpoint where T: ?core::marker::Sized
+pub fn engine::InteractiveEngineCheckpoint::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::InteractiveEngineCheckpoint where T: core::clone::Clone
+pub unsafe fn engine::InteractiveEngineCheckpoint::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::InteractiveEngineCheckpoint
+pub fn engine::InteractiveEngineCheckpoint::from(T) -> T
+impl<T> serde_core::de::DeserializeOwned for engine::InteractiveEngineCheckpoint where T: for<'de> serde_core::de::Deserialize<'de>
 pub struct engine::Node
 pub engine::Node::agent: engine::graph::workflow::AgentNodeConfig
 pub engine::Node::id: engine::graph::workflow::NodeId
@@ -8627,6 +8976,7 @@ impl<T> serde_core::de::DeserializeOwned for engine::template::Template where T:
 pub struct engine::ToolApprovalInput
 pub engine::ToolApprovalInput::allow: bool
 pub engine::ToolApprovalInput::approval_id: alloc::string::String
+pub engine::ToolApprovalInput::reason: core::option::Option<alloc::string::String>
 impl core::clone::Clone for engine::ports::inbound::ToolApprovalInput
 pub fn engine::ports::inbound::ToolApprovalInput::clone(&self) -> engine::ports::inbound::ToolApprovalInput
 impl core::cmp::Eq for engine::ports::inbound::ToolApprovalInput
@@ -8667,7 +9017,6 @@ pub fn engine::ports::inbound::ToolApprovalInput::from(T) -> T
 pub struct engine::ToolCall
 pub engine::ToolCall::arguments: serde_json::value::Value
 pub engine::ToolCall::id: alloc::string::String
-pub engine::ToolCall::intent: core::option::Option<alloc::string::String>
 pub engine::ToolCall::name: alloc::string::String
 impl core::clone::Clone for engine::ToolCall
 pub fn engine::ToolCall::clone(&self) -> engine::ToolCall

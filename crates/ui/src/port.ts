@@ -63,6 +63,12 @@ export interface UiDesktopOutboundPort {
 		transientApiKey?: string | null,
 	) => Promise<WorkflowRunState>;
 	stopRun: () => Promise<WorkflowRunState>;
+	continueRun: (
+		workflow: Workflow,
+		settings: AppSettings,
+		transientApiKey?: string | null,
+	) => Promise<WorkflowRunState>;
+	isRunContinuable: () => Promise<boolean>;
 	interruptNode: (nodeId: string) => Promise<WorkflowRunState>;
 	retryNode: (nodeId: string) => Promise<WorkflowRunState>;
 	previewFileEdit: (
@@ -73,7 +79,11 @@ export interface UiDesktopOutboundPort {
 	gitDiffFile: (path: string) => Promise<string>;
 	revertEditBatch: (batchId: string) => Promise<WorkflowRunState>;
 	submitUserInput: (nodeId: string, text: string) => Promise<WorkflowRunState>;
-	submitToolApproval: (approvalId: string, allow: boolean) => Promise<WorkflowRunState>;
+	submitToolApproval: (
+		approvalId: string,
+		allow: boolean,
+		reason?: string | null,
+	) => Promise<WorkflowRunState>;
 	completeManualNode: () => Promise<WorkflowRunState>;
 	getRunState: () => Promise<WorkflowRunState | null>;
 	clearRunTrace: () => Promise<WorkflowRunState | null>;
@@ -110,6 +120,8 @@ export function createUiDesktopOutboundAdapter(): UiDesktopOutboundPort {
 		createAgentNode: desktopApi.createAgentNode,
 		startRun: desktopApi.startRun,
 		stopRun: desktopApi.stopRun,
+		continueRun: desktopApi.continueRun,
+		isRunContinuable: desktopApi.isRunContinuable,
 		interruptNode: desktopApi.interruptNode,
 		retryNode: desktopApi.retryNode,
 		previewFileEdit: desktopApi.previewFileEdit,

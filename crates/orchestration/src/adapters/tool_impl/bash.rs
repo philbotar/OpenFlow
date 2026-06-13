@@ -94,12 +94,17 @@ pub async fn execute_bash(
     args: Value,
     cancel_token: &CancellationToken,
 ) -> Result<BashExecutionOutcome, ToolError> {
-    let args: BashArgs = serde_json::from_value(args)
-        .map_err(|error| ToolError::Failed(format!("invalid bash args: {error}")))?;
+    let args: BashArgs = serde_json::from_value(args).map_err(|error| ToolError::InvalidArgs {
+        tool: "bash".to_string(),
+        problem: error.to_string(),
+        hint: "required field: command (string); optional timeout, cwd, env".to_string(),
+    })?;
     if args.command.trim().is_empty() {
-        return Err(ToolError::Failed(
-            "bash command must not be empty".to_string(),
-        ));
+        return Err(ToolError::InvalidArgs {
+            tool: "bash".to_string(),
+            problem: "command must not be empty".to_string(),
+            hint: "provide a shell command string".to_string(),
+        });
     }
 
     let requested_timeout = args.timeout;
@@ -177,16 +182,16 @@ async fn run_shell_command(
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
-        .map_err(|error| ToolError::Failed(format!("bash failed to start: {error}")))?;
+        .map_err(|error| ToolError::failed(format!("bash failed to start: {error}")))?;
 
     let mut stdout_pipe = child
         .stdout
         .take()
-        .ok_or_else(|| ToolError::Failed("bash stdout unavailable".to_string()))?;
+        .ok_or_else(|| ToolError::failed("bash stdout unavailable".to_string()))?;
     let mut stderr_pipe = child
         .stderr
         .take()
-        .ok_or_else(|| ToolError::Failed("bash stderr unavailable".to_string()))?;
+        .ok_or_else(|| ToolError::failed("bash stderr unavailable".to_string()))?;
 
     let timeout = Duration::from_secs(timeout_secs);
     tokio::select! {
@@ -207,12 +212,12 @@ async fn run_shell_command(
                 tokio::io::AsyncReadExt::read_to_end(&mut stderr_pipe, &mut stderr_bytes),
                 child.wait(),
             );
-            stdout_res.map_err(|error| ToolError::Failed(format!("bash read failed: {error}")))?;
+            stdout_res.map_err(|error| ToolError::failed(format!("bash read failed: {error}")))?;
             stderr_res.map_err(|error| {
-                ToolError::Failed(format!("bash stderr read failed: {error}"))
+                ToolError::failed(format!("bash stderr read failed: {error}"))
             })?;
             let status = status
-                .map_err(|error| ToolError::Failed(format!("bash failed: {error}")))?;
+                .map_err(|error| ToolError::failed(format!("bash failed: {error}")))?;
             let stdout = String::from_utf8_lossy(&stdout_bytes);
             let stderr = String::from_utf8_lossy(&stderr_bytes);
             let combined_output = merge_stdout_stderr(&stdout, &stderr);
@@ -224,12 +229,10 @@ async fn run_shell_command(
         } => result,
         _ = tokio::time::sleep(timeout) => {
             let _ = child.kill().await;
-            Ok(RawShellOutcome {
-                combined_output: format!(
-                    "Command timed out after {timeout_secs} seconds"
-                ),
-                exit_code: None,
-                cancelled: true,
+            Err(ToolError::Timeout {
+                tool: "bash".to_string(),
+                after_secs: timeout_secs,
+                hint: "increase timeout or split the command into smaller steps".to_string(),
             })
         }
     }
@@ -273,11 +276,22 @@ fn merge_stdout_stderr(stdout: &str, stderr: &str) -> String {
 
 fn resolve_bash_cwd(execution_cwd: &Path, cwd: Option<&str>) -> Result<PathBuf, ToolError> {
     match cwd {
-        Some(path) if !path.trim().is_empty() => resolve_writable(execution_cwd, path)
-            .map_err(|PathEscapeError(message)| ToolError::Failed(message)),
+        Some(path) if !path.trim().is_empty() => {
+            resolve_writable(execution_cwd, path).map_err(|PathEscapeError(message)| {
+                if message.contains("path escapes execution folder") {
+                    ToolError::PermissionDenied {
+                        what: message,
+                        hint: "paths must stay under the execution folder; use a relative path"
+                            .to_string(),
+                    }
+                } else {
+                    ToolError::failed(message)
+                }
+            })
+        }
         _ => execution_cwd
             .canonicalize()
-            .map_err(|error| ToolError::Failed(format!("invalid execution cwd: {error}"))),
+            .map_err(|error| ToolError::failed(format!("invalid execution cwd: {error}"))),
     }
 }
 
@@ -293,7 +307,11 @@ fn normalize_bash_env(
     let mut normalized = HashMap::with_capacity(env.len());
     for (key, value) in env {
         if !BASH_ENV_NAME_PATTERN.is_match(&key) {
-            return Err(ToolError::Failed(format!("invalid bash env name: {key}")));
+            return Err(ToolError::InvalidArgs {
+                tool: "bash".to_string(),
+                problem: format!("invalid env name: {key}"),
+                hint: "env keys must be valid environment variable names".to_string(),
+            });
         }
         normalized.insert(key, value);
     }
@@ -317,7 +335,8 @@ mod tests {
     fn normalize_bash_env_rejects_invalid_names() {
         let err = normalize_bash_env(Some(HashMap::from([("1BAD".to_string(), "x".to_string())])))
             .unwrap_err();
-        assert!(err.to_string().contains("invalid bash env name"));
+        assert!(err.to_string().contains("[invalid_args]"));
+        assert!(err.to_string().contains("invalid env name"));
     }
 
     #[test]

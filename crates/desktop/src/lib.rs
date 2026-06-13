@@ -5,15 +5,19 @@
     reason = "Tauri desktop shell; strict pedantic/nursery lint not enforced on thin IPC glue"
 )]
 
+mod run_sleep_guard;
+
 use orchestration::backend::{
     AppBackend, BackendError, FileEditPreview, ProviderReadiness, WorkflowListItem,
     WorkflowValidationSummary,
 };
+use orchestration::run::execution::ExecutionEvent;
 use orchestration::run::state::WorkflowRunState;
 use orchestration::{AgentDefinition, AppSettings, SkillSummary};
 use orchestration::{Project, Workflow};
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
+use tokio::sync::mpsc::UnboundedReceiver;
 
 /// Bootstrap payload returned on app startup.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -25,6 +29,7 @@ struct BootstrapPayload {
     skills: Vec<SkillSummary>,
     settings: AppSettings,
     run_state: Option<WorkflowRunState>,
+    run_continuable: bool,
 }
 
 /// Error type returned to Tauri frontend.
@@ -54,6 +59,7 @@ async fn bootstrap_app(
     let skills = backend.list_skills()?;
     let settings = backend.load_settings()?;
     let run_state = backend.get_run_state().await;
+    let run_continuable = backend.is_run_continuable().await;
     Ok(BootstrapPayload {
         workflows,
         agents,
@@ -61,6 +67,7 @@ async fn bootstrap_app(
         skills,
         settings,
         run_state,
+        run_continuable,
     })
 }
 
@@ -236,39 +243,17 @@ fn create_agent_node(
     Ok(backend.create_agent_node(index, x, y, agent_id.as_deref())?)
 }
 
-/// Tauri command: Start a workflow run.
-#[tauri::command]
-async fn start_run(
-    backend: tauri::State<'_, AppBackend>,
-    app: tauri::AppHandle,
-    workflow: Workflow,
-    settings: AppSettings,
-    execution_cwd: Option<String>,
-    transient_api_key: Option<String>,
-) -> Result<WorkflowRunState, CommandError> {
-    let (initial_state, mut event_rx) = backend
-        .start_run(
-            workflow,
-            None,
-            execution_cwd,
-            &settings,
-            transient_api_key.as_deref(),
-        )
-        .await?;
-    let app_handle = app.clone();
+const RUN_STATE_COALESCE_WINDOW: std::time::Duration = std::time::Duration::from_millis(30);
 
-    // Streaming produces one execution event per token; emitting the full run
-    // state for each would flood the IPC channel with O(state size) payloads.
-    // Coalesce whatever arrives within a short window into a single emit.
-    const RUN_STATE_COALESCE_WINDOW: std::time::Duration = std::time::Duration::from_millis(30);
-
+fn spawn_run_event_bridge(app: tauri::AppHandle, mut event_rx: UnboundedReceiver<ExecutionEvent>) {
+    run_sleep_guard::start_for_app(&app);
     tauri::async_runtime::spawn(async move {
         let mut failed = false;
         while !failed {
             let Some(event) = event_rx.recv().await else {
                 break;
             };
-            let backend = app_handle.state::<AppBackend>();
+            let backend = app.state::<AppBackend>();
             let mut run_state = match backend.apply_execution_event(event).await {
                 Ok(state) => state,
                 Err(_) => break,
@@ -290,14 +275,65 @@ async fn start_run(
                 }
             }
             let active = run_state.active;
-            let _ = app_handle.emit("run-state", run_state);
+            let _ = app.emit("run-state", run_state);
             if !active {
+                let backend = app.state::<AppBackend>();
+                if !backend.is_run_active().await {
+                    run_sleep_guard::stop_for_app(&app);
+                }
                 break;
             }
         }
+        let backend = app.state::<AppBackend>();
+        if !backend.is_run_active().await {
+            run_sleep_guard::stop_for_app(&app);
+        }
     });
+}
 
+/// Tauri command: Start a workflow run.
+#[tauri::command]
+async fn start_run(
+    backend: tauri::State<'_, AppBackend>,
+    app: tauri::AppHandle,
+    workflow: Workflow,
+    settings: AppSettings,
+    execution_cwd: Option<String>,
+    transient_api_key: Option<String>,
+) -> Result<WorkflowRunState, CommandError> {
+    let (initial_state, event_rx) = backend
+        .start_run(
+            workflow,
+            None,
+            execution_cwd,
+            &settings,
+            transient_api_key.as_deref(),
+        )
+        .await?;
+    spawn_run_event_bridge(app, event_rx);
     Ok(initial_state)
+}
+
+/// Tauri command: Continue a stopped workflow run from the in-session checkpoint.
+#[tauri::command]
+async fn continue_run(
+    backend: tauri::State<'_, AppBackend>,
+    app: tauri::AppHandle,
+    workflow: Workflow,
+    settings: AppSettings,
+    transient_api_key: Option<String>,
+) -> Result<WorkflowRunState, CommandError> {
+    let (initial_state, event_rx) = backend
+        .continue_run(workflow, None, &settings, transient_api_key.as_deref())
+        .await?;
+    spawn_run_event_bridge(app, event_rx);
+    Ok(initial_state)
+}
+
+/// Tauri command: Whether a stopped run can be resumed in this session.
+#[tauri::command]
+async fn is_run_continuable(backend: tauri::State<'_, AppBackend>) -> Result<bool, CommandError> {
+    Ok(backend.is_run_continuable().await)
 }
 
 /// Tauri command: Preview write-tier file edits before approval.
@@ -341,6 +377,7 @@ async fn stop_run(
     app: tauri::AppHandle,
 ) -> Result<WorkflowRunState, CommandError> {
     let run_state = backend.stop_run().await?;
+    run_sleep_guard::stop_for_app(&app);
     let _ = app.emit("run-state", run_state.clone());
     Ok(run_state)
 }
@@ -380,8 +417,11 @@ async fn submit_tool_approval(
     app: tauri::AppHandle,
     approval_id: String,
     allow: bool,
+    reason: Option<String>,
 ) -> Result<WorkflowRunState, CommandError> {
-    let run_state = backend.submit_tool_approval(&approval_id, allow).await?;
+    let run_state = backend
+        .submit_tool_approval(&approval_id, allow, reason)
+        .await?;
     let _ = app.emit("run-state", run_state.clone());
     Ok(run_state)
 }
@@ -487,6 +527,8 @@ pub fn run() {
             validate_workflow,
             create_agent_node,
             start_run,
+            continue_run,
+            is_run_continuable,
             preview_file_edit,
             git_diff_file,
             revert_edit_batch,
@@ -507,12 +549,14 @@ pub fn run() {
                     if backend.is_run_active().await {
                         let _ = backend.stop_run().await;
                     }
+                    run_sleep_guard::stop_for_app(&app_handle);
                 });
             }
         })
         .setup(|app| {
             let runtime_handle = tauri::async_runtime::handle().inner().clone();
             app.manage(AppBackend::with_runtime_handle(runtime_handle));
+            app.manage(run_sleep_guard::RunSleepGuard::new());
             #[cfg(debug_assertions)]
             app.get_webview_window("main").unwrap().open_devtools();
             Ok(())

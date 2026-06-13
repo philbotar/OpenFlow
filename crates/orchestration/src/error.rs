@@ -45,4 +45,8 @@ pub enum BackendError {
     NodeNotInterruptible(String),
     #[error("node {0} is not retryable")]
     NodeNotRetryable(String),
+    #[error("no stopped run is available to continue")]
+    NoContinuableRun,
+    #[error("checkpoint workflow id does not match the current workflow")]
+    CheckpointWorkflowMismatch,
 }

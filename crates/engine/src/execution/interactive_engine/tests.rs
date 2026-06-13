@@ -6,11 +6,12 @@
 )]
 
 use super::{
-    EngineInputError, EnginePollResult, EngineRunResult, InteractiveEngine, RunError, RunEventKind,
+    CheckpointError, EngineInputError, EnginePollResult, EngineRunResult, InteractiveEngine,
+    RunError, RunEventKind,
 };
 use crate::conversation::{AgentTranscriptItem, ChatMessage, ChatRole};
 use crate::execution::NodeFailureKind;
-use crate::graph::{Node, NodeId, Workflow};
+use crate::graph::{Edge, Node, NodeId, Workflow};
 use crate::ports::{
     AgentError, AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTurnOutcome,
     AgentTurnSuccess, AiPort, ToolPort,
@@ -416,7 +417,6 @@ fn tool_calls_pause_for_approval_and_resume_after_results() {
                 id: "call-1".to_string(),
                 name: "read".to_string(),
                 arguments: json!({"path": "README.md"}),
-                intent: Some("Reading repo overview".to_string()),
             }],
         })),
     );
@@ -433,7 +433,7 @@ fn tool_calls_pause_for_approval_and_resume_after_results() {
     assert_eq!(node_id, "idea");
     let approval_id = approval_id.clone();
 
-    engine.on_tool_decision(&approval_id, true).unwrap();
+    engine.on_tool_decision(&approval_id, true, None).unwrap();
     let runnable = engine.poll();
     assert!(matches!(
         runnable,
@@ -536,7 +536,6 @@ fn yolo_mode_skips_tool_approval() {
                 id: "call-1".to_string(),
                 name: "read".to_string(),
                 arguments: json!({"path": "README.md"}),
-                intent: None,
             }],
         })),
     );
@@ -566,7 +565,6 @@ fn denied_tool_call_resumes_with_error_result() {
                 id: "call-1".to_string(),
                 name: "read".to_string(),
                 arguments: json!({"path": "README.md"}),
-                intent: None,
             }],
         })),
     );
@@ -574,7 +572,9 @@ fn denied_tool_call_resumes_with_error_result() {
         panic!("expected approval");
     };
 
-    engine.on_tool_decision(&approval_id, false).unwrap();
+    engine
+        .on_tool_decision(&approval_id, false, Some("not needed right now"))
+        .unwrap();
 
     let EnginePollResult::CallAi { request, .. } = engine.poll() else {
         panic!("expected resumed AI request");
@@ -582,7 +582,10 @@ fn denied_tool_call_resumes_with_error_result() {
     assert!(matches!(
         request.transcript.last(),
         Some(AgentTranscriptItem::ToolResult { result })
-            if result.is_error && result.content == "denied by user"
+            if result.is_error
+                && result.content.contains("Tool call denied by the user.")
+                && result.content.contains("Reason: not needed right now.")
+                && result.content.contains("Do not retry this exact call")
     ));
 }
 
@@ -773,7 +776,6 @@ fn tool_call_xml_echo_is_dropped_from_transcript() {
                 id: "call-1".to_string(),
                 name: "read".to_string(),
                 arguments: json!({"path": "README.md"}),
-                intent: None,
             }],
         })),
     );
@@ -895,7 +897,6 @@ fn inbound_ports_drive_engine_inputs() {
                 id: "call-1".to_string(),
                 name: "read".to_string(),
                 arguments: json!({"path": "README.md"}),
-                intent: None,
             }],
         })),
     );
@@ -907,6 +908,7 @@ fn inbound_ports_drive_engine_inputs() {
         ToolApprovalInput {
             approval_id,
             allow: false,
+            reason: None,
         },
     )
     .unwrap();
@@ -949,4 +951,106 @@ fn parallel_sibling_nodes_start_ai_together_in_layer() {
     );
 
     assert!(matches!(engine.poll(), EnginePollResult::Completed(_)));
+}
+
+#[test]
+fn checkpoint_roundtrip_preserves_awaiting_input_pause() {
+    let mut workflow = Workflow::new("pause");
+    let mut manual = node("review");
+    manual.agent.auto_start = false;
+    workflow.nodes = vec![manual];
+    let mut engine = InteractiveEngine::new(workflow.clone(), None).unwrap();
+
+    let EnginePollResult::AwaitInput { node_id, .. } = engine.poll() else {
+        panic!("expected awaiting input");
+    };
+    assert_eq!(node_id, NodeId::from("review"));
+
+    let checkpoint = engine.prepare_stop_checkpoint();
+    let restored =
+        InteractiveEngine::from_checkpoint(workflow, checkpoint).expect("restore checkpoint");
+    let mut engine = restored;
+    let EnginePollResult::AwaitInput { node_id, .. } = engine.poll() else {
+        panic!("expected awaiting input after restore");
+    };
+    assert_eq!(node_id, NodeId::from("review"));
+}
+
+#[test]
+fn checkpoint_stop_mid_ai_resume_issues_call_ai_with_transcript() {
+    let mut workflow = Workflow::new("mid-ai");
+    workflow.nodes = vec![node("idea")];
+    let mut engine = InteractiveEngine::new(workflow.clone(), None).unwrap();
+
+    assert!(matches!(engine.poll(), EnginePollResult::CallAi { .. }));
+    engine.on_ai_complete(
+        &NodeId::from("idea"),
+        Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
+            raw_text: "{}".to_string(),
+            assistant_message: "What scope?".to_string(),
+        })),
+    );
+    engine
+        .on_human_input(&NodeId::from("idea"), "full app")
+        .expect("input");
+    assert!(matches!(engine.poll(), EnginePollResult::CallAi { .. }));
+
+    let transcript_len = engine.transcript(&NodeId::from("idea")).len();
+    let checkpoint = engine.prepare_stop_checkpoint();
+    assert!(checkpoint.interrupted_nodes.contains(&NodeId::from("idea")));
+
+    let mut engine =
+        InteractiveEngine::from_checkpoint(workflow, checkpoint).expect("restore checkpoint");
+    engine.prepare_resume();
+    let EnginePollResult::CallAi { request, .. } = engine.poll() else {
+        panic!("expected resumed AI call");
+    };
+    assert_eq!(request.transcript.len(), transcript_len);
+    assert_eq!(request.model_attempt, 2);
+}
+
+#[test]
+fn checkpoint_completed_nodes_remain_blocked_after_restore() {
+    let mut workflow = Workflow::new("completed");
+    workflow.nodes = vec![node("first"), node("second")];
+    workflow.edges = vec![Edge::new(NodeId::from("first"), NodeId::from("second"))];
+    let mut engine = InteractiveEngine::new(workflow.clone(), None).unwrap();
+
+    assert!(matches!(engine.poll(), EnginePollResult::CallAi { .. }));
+    engine.on_ai_complete(
+        &NodeId::from("first"),
+        Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+            output: json!({"summary": "done"}),
+            raw_text: "{}".to_string(),
+            assistant_message: None,
+        })),
+    );
+    assert!(matches!(engine.poll(), EnginePollResult::CallAi { .. }));
+
+    let checkpoint = engine.prepare_stop_checkpoint();
+    let mut engine =
+        InteractiveEngine::from_checkpoint(workflow, checkpoint).expect("restore checkpoint");
+    engine.prepare_resume();
+
+    let EnginePollResult::CallAi { node_id, .. } = engine.poll() else {
+        panic!("expected second node to run");
+    };
+    assert_eq!(node_id, NodeId::from("second"));
+    assert!(engine.node_output(&NodeId::from("first")).is_some());
+}
+
+#[test]
+fn checkpoint_rejects_workflow_id_mismatch() {
+    let mut workflow = Workflow::new("one");
+    workflow.nodes = vec![node("idea")];
+    let mut engine = InteractiveEngine::new(workflow, None).unwrap();
+    let checkpoint = engine.prepare_stop_checkpoint();
+    let mut other = Workflow::new("two");
+    other.nodes = vec![node("idea")];
+
+    match InteractiveEngine::from_checkpoint(other, checkpoint) {
+        Err(CheckpointError::WorkflowMismatch { .. }) => {}
+        Ok(_) => panic!("expected workflow mismatch"),
+        Err(other) => panic!("expected workflow mismatch, got {other:?}"),
+    }
 }

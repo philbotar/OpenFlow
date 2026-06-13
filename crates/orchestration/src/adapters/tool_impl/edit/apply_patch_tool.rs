@@ -32,8 +32,12 @@ pub fn execute_apply_patch(
     ledger: FileChangeLedger,
     lsp: LspSettings,
 ) -> Result<String, ToolError> {
-    let args: ApplyPatchArgs = serde_json::from_value(args)
-        .map_err(|error| ToolError::Failed(format!("invalid apply_patch args: {error}")))?;
+    let args: ApplyPatchArgs =
+        serde_json::from_value(args).map_err(|error| ToolError::InvalidArgs {
+            tool: "apply_patch".to_string(),
+            problem: error.to_string(),
+            hint: "required field: input (string) with *** Begin Patch envelope".to_string(),
+        })?;
 
     let inputs = expand_apply_patch_to_inputs(&args.input).map_err(map_apply_patch_error)?;
     let options = PatchOptions {
@@ -54,7 +58,7 @@ pub fn execute_apply_patch(
                 } else {
                     format!("{}\n\n", lines.join("\n\n"))
                 };
-                return Err(ToolError::Failed(format!(
+                return Err(ToolError::failed(format!(
                     "{prefix}{}",
                     map_patch_error(error)
                 )));
@@ -161,9 +165,9 @@ fn fuzzy_threshold() -> f64 {
 }
 
 fn map_apply_patch_error(error: ApplyPatchError) -> ToolError {
-    ToolError::Failed(error.0)
+    ToolError::failed(error.0)
 }
 
 fn map_patch_error(error: PatchError) -> ToolError {
-    ToolError::Failed(error.to_string())
+    ToolError::failed(error.to_string())
 }

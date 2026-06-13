@@ -63,6 +63,7 @@ export interface AppContextValue {
   skillById: Accessor<Map<string, SkillSummary>>;
   appReady: Accessor<boolean>;
   startingRun: Accessor<boolean>;
+  continuableRun: Accessor<boolean>;
   themePreference: Accessor<ThemePreference>;
   resolvedTheme: Accessor<ResolvedTheme>;
   shortcutsModalOpen: Accessor<boolean>;
@@ -156,6 +157,7 @@ export interface AppContextValue {
   // ── Run handlers ──────────────────────────────────────────────────────────
   handleValidate: () => Promise<void>;
   handleRun: () => Promise<void>;
+  handleContinueRun: () => Promise<void>;
   handleStopRun: () => Promise<void>;
   handleInterruptNode: (nodeId: NodeId) => Promise<void>;
   handleRetryNode: (nodeId: NodeId) => Promise<void>;

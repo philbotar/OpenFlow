@@ -194,7 +194,6 @@ export interface ToolCall {
   id: string;
   name: string;
   arguments: unknown;
-  intent: string | null;
 }
 
 export interface PendingToolApproval {
@@ -381,4 +380,5 @@ export interface BootstrapPayload {
   skills: SkillSummary[];
   settings: AppSettings;
   runState: WorkflowRunState | null;
+  runContinuable?: boolean;
 }

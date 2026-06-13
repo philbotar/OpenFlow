@@ -413,7 +413,6 @@ mod tests {
             id: "call-1".to_string(),
             name: "read_file".to_string(),
             arguments: json!({ "path": "notes.txt" }),
-            intent: None,
         };
         let tool_result = ToolResult {
             tool_call_id: tool_call.id.clone(),

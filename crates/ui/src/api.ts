@@ -146,6 +146,22 @@ export function stopRun() {
   return invoke<WorkflowRunState>("stop_run");
 }
 
+export function continueRun(
+  workflow: Workflow,
+  settings: AppSettings,
+  transientApiKey: string | null = null,
+) {
+  return invoke<WorkflowRunState>("continue_run", {
+    workflow,
+    settings,
+    transientApiKey,
+  });
+}
+
+export function isRunContinuable() {
+  return invoke<boolean>("is_run_continuable");
+}
+
 export function interruptNode(nodeId: string) {
   return invoke<WorkflowRunState>("interrupt_node", { nodeId });
 }
@@ -178,8 +194,16 @@ export function submitUserInput(nodeId: string, text: string) {
   return invoke<WorkflowRunState>("submit_user_input", { nodeId, text });
 }
 
-export function submitToolApproval(approvalId: string, allow: boolean) {
-  return invoke<WorkflowRunState>("submit_tool_approval", { approvalId, allow });
+export function submitToolApproval(
+  approvalId: string,
+  allow: boolean,
+  reason?: string | null,
+) {
+  return invoke<WorkflowRunState>("submit_tool_approval", {
+    approvalId,
+    allow,
+    reason: reason ?? null,
+  });
 }
 
 export function completeManualNode() {

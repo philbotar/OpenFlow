@@ -169,6 +169,7 @@ export function AppProvider(props: ParentProps) {
   const [availableSkills, setAvailableSkills] = createSignal<SkillSummary[]>([]);
   const [appReady, setAppReady] = createSignal(false);
   const [startingRun, setStartingRun] = createSignal(false);
+  const [continuableRun, setContinuableRun] = createSignal(false);
   const [themePreference, setThemePreference] = createSignal<ThemePreference>(
     readStoredTheme(globalThis.localStorage),
   );
@@ -850,6 +851,24 @@ export function AppProvider(props: ParentProps) {
 
   const [stoppingRun, setStoppingRun] = createSignal(false);
 
+  const beginRunSession = (nextRunState: WorkflowRunState) => {
+    setRunState(nextRunState);
+    setContinuableRun(false);
+    setSelectedTraceIndex(null);
+    setDockOpen(true);
+    setBottomTab("chat");
+    setDockHeight((current) => clampDockHeight(current, "chat"));
+    clearStatusToast();
+  };
+
+  const refreshContinuableRun = async () => {
+    try {
+      setContinuableRun(await desktop.isRunContinuable());
+    } catch {
+      setContinuableRun(false);
+    }
+  };
+
   const handleRun = async () => {
     const workflow = activeWorkflow();
     if (!workflow || !applySchemaEditor() || stoppingRun() || startingRun()) return;
@@ -861,12 +880,25 @@ export function AppProvider(props: ParentProps) {
         executionCwdForActiveWorkflow(),
         activeProviderKeyInput() || null,
       );
-      setRunState(nextRunState);
-      setSelectedTraceIndex(null);
-      setDockOpen(true);
-      setBottomTab("chat");
-      setDockHeight((current) => clampDockHeight(current, "chat"));
-      clearStatusToast();
+      beginRunSession(nextRunState);
+    } catch (error) {
+      setError(normalizeError(error));
+    } finally {
+      setStartingRun(false);
+    }
+  };
+
+  const handleContinueRun = async () => {
+    const workflow = activeWorkflow();
+    if (!workflow || !continuableRun() || stoppingRun() || startingRun()) return;
+    setStartingRun(true);
+    try {
+      const nextRunState = await desktop.continueRun(
+        activeWorkflow()!,
+        settings(),
+        activeProviderKeyInput() || null,
+      );
+      beginRunSession(nextRunState);
     } catch (error) {
       setError(normalizeError(error));
     } finally {
@@ -889,6 +921,7 @@ export function AppProvider(props: ParentProps) {
     try {
       const nextRunState = await desktop.stopRun();
       setRunState(nextRunState);
+      await refreshContinuableRun();
       clearStatusToast();
     } catch (error) {
       setError(normalizeError(error));
@@ -919,6 +952,7 @@ export function AppProvider(props: ParentProps) {
     try {
       const nextRunState = await desktop.clearRunTrace();
       if (nextRunState) setRunState(nextRunState);
+      setContinuableRun(false);
       setSelectedTraceIndex(null);
     } catch (error) {
       setError(normalizeError(error));
@@ -1125,7 +1159,11 @@ export function AppProvider(props: ParentProps) {
     }
     if (command && event.key === "Enter") {
       event.preventDefault();
-      void handleRun();
+      if (continuableRun() && !runState()?.active) {
+        void handleContinueRun();
+      } else {
+        void handleRun();
+      }
       return;
     }
     if (command && event.key === ".") {
@@ -1289,6 +1327,7 @@ export function AppProvider(props: ParentProps) {
         data.settings,
         data.runState,
       );
+      setContinuableRun(data.runContinuable ?? false);
       setAppReady(true);
     } catch (error) {
       setError(normalizeError(error));
@@ -1345,6 +1384,7 @@ export function AppProvider(props: ParentProps) {
     skillById,
     appReady,
     startingRun,
+    continuableRun,
     themePreference,
     resolvedTheme,
     shortcutsModalOpen,
@@ -1423,6 +1463,7 @@ export function AppProvider(props: ParentProps) {
     closeAddNodePicker,
     handleValidate,
     handleRun,
+    handleContinueRun,
     handleStopRun,
     handleInterruptNode,
     handleRetryNode,

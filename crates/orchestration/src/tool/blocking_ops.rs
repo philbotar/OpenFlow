@@ -80,11 +80,9 @@ impl BlockingToolOps {
             BuiltinToolKind::Write => ops.write(args),
             BuiltinToolKind::Edit => ops.edit(args),
             BuiltinToolKind::ApplyPatch => ops.apply_patch(args),
-            BuiltinToolKind::AstGrep => Err(ToolError::Failed(
-                "ast_grep must use async runner".to_string(),
-            )),
-            _ => Err(ToolError::Failed(
-                "blocking runner received a non-blocking tool".to_string(),
+            BuiltinToolKind::AstGrep => Err(ToolError::failed("ast_grep must use async runner")),
+            _ => Err(ToolError::failed(
+                "blocking runner received a non-blocking tool",
             )),
         };
         let mut file_changes = ledger.take();
@@ -117,13 +115,12 @@ impl BlockingToolOps {
     pub(crate) fn read_local(&self, path: &str) -> Result<String, ToolError> {
         let (path, selector) = split_selector(path);
         let absolute = self.resolve_local(&path);
-        let metadata = fs::metadata(&absolute)
-            .map_err(|error| ToolError::Failed(format!("read failed for {}: {error}", path)))?;
+        let metadata = fs::metadata(&absolute).map_err(|error| map_read_io_error(&path, &error))?;
         if metadata.is_dir() {
             return self.read_directory(&absolute);
         }
-        let text = fs::read_to_string(&absolute)
-            .map_err(|error| ToolError::Failed(format!("read failed for {}: {error}", path)))?;
+        let text =
+            fs::read_to_string(&absolute).map_err(|error| map_read_io_error(&path, &error))?;
         if let Ok(canonical) =
             crate::tools::edit::file_snapshot_store::canonical_snapshot_path(&self.cwd, &path)
         {
@@ -138,9 +135,7 @@ impl BlockingToolOps {
 
     fn read_directory(&self, path: &Path) -> Result<String, ToolError> {
         let mut entries = fs::read_dir(path)
-            .map_err(|error| {
-                ToolError::Failed(format!("read failed for {}: {error}", path.display()))
-            })?
+            .map_err(|error| map_read_io_error(&path.display().to_string(), &error))?
             .filter_map(Result::ok)
             .map(|entry| {
                 let file_type = entry.file_type().ok();
@@ -192,8 +187,13 @@ impl BlockingToolOps {
         struct FindArgs {
             paths: StringOrMany,
         }
-        let args: FindArgs = serde_json::from_value(args)
-            .map_err(|error| ToolError::Failed(format!("invalid find args: {error}")))?;
+        let args: FindArgs =
+            serde_json::from_value(args).map_err(|error| ToolError::InvalidArgs {
+                tool: "find".to_string(),
+                problem: error.to_string(),
+                hint: "required field: paths (string or array of glob patterns, e.g. **/*.rs)"
+                    .to_string(),
+            })?;
         let mut matches = Vec::new();
         for pattern in args.paths.into_vec() {
             for entry in self.expand_paths(&pattern)? {
@@ -229,10 +229,12 @@ impl BlockingToolOps {
 
         let pattern = self.cwd.join(pattern).display().to_string();
         let mut matches = Vec::new();
-        for entry in glob::glob(&pattern)
-            .map_err(|error| ToolError::Failed(format!("invalid glob pattern: {error}")))?
-        {
-            let path = entry.map_err(|error| ToolError::Failed(format!("glob failed: {error}")))?;
+        for entry in glob::glob(&pattern).map_err(|error| ToolError::InvalidArgs {
+            tool: "find".to_string(),
+            problem: format!("invalid glob pattern: {error}"),
+            hint: "use glob syntax like **/*.rs or src/**/*.ts".to_string(),
+        })? {
+            let path = entry.map_err(|error| ToolError::failed(format!("glob failed: {error}")))?;
             if path.is_dir() {
                 matches.extend(
                     WalkDir::new(&path)
@@ -306,6 +308,17 @@ pub(crate) fn apply_read_selector(label: &str, text: &str, selector: Option<&str
             }
             output
         }
+    }
+}
+
+fn map_read_io_error(path: &str, error: &std::io::Error) -> ToolError {
+    if error.kind() == std::io::ErrorKind::NotFound {
+        ToolError::NotFound {
+            what: format!("read failed for {path}: {error}"),
+            hint: "use find to locate the file".to_string(),
+        }
+    } else {
+        ToolError::failed(format!("read failed for {path}: {error}"))
     }
 }
 

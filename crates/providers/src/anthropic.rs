@@ -278,7 +278,6 @@ fn parse_anthropic_tool_call(block: &Value) -> Result<ToolCall, AgentError> {
         id: id.to_string(),
         name: name.to_string(),
         arguments: input,
-        intent: None,
     })
 }
 

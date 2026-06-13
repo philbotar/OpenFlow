@@ -101,9 +101,9 @@ pub fn execute_hashline(
             path: None,
         },
     )
-    .map_err(ToolError::Failed)?;
+    .map_err(ToolError::failed)?;
     if patch.sections.is_empty() {
-        return Err(ToolError::Failed(
+        return Err(ToolError::failed(
             "No hashline sections found in input.".to_string(),
         ));
     }
@@ -116,7 +116,7 @@ pub fn execute_hashline(
         block_resolver: None,
     });
 
-    let applied = patcher.apply(&patch).map_err(ToolError::Failed)?;
+    let applied = patcher.apply(&patch).map_err(ToolError::failed)?;
     let writethrough = patcher.fs.take_writethrough();
     let mut parts = Vec::new();
     for section in applied.sections {

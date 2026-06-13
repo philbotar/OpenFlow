@@ -242,7 +242,6 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
                         id: "call-1".to_string(),
                         name: "read".to_string(),
                         arguments: json!({"path": "README.md"}),
-                        intent: Some("Reading repository overview".to_string()),
                     }],
                 }));
             }
@@ -291,6 +290,7 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
         vec![ApprovalResponse {
             approval_id: String::new(),
             allow: true,
+            reason: None,
         }],
         BTreeMap::new(),
         None,
@@ -327,7 +327,6 @@ async fn write_tool_requires_approval_and_mutates_file_after_allow() {
                         id: "call-write".to_string(),
                         name: "write".to_string(),
                         arguments: json!({"path": "draft.txt", "content": "saved ORCHID-91\n"}),
-                        intent: Some("Create draft file".to_string()),
                     }],
                 }));
             }
@@ -381,6 +380,7 @@ async fn write_tool_requires_approval_and_mutates_file_after_allow() {
         vec![ApprovalResponse {
             approval_id: String::new(),
             allow: true,
+            reason: None,
         }],
         BTreeMap::new(),
         execution_cwd,

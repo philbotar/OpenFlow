@@ -196,8 +196,6 @@ pub struct ToolCall {
     pub id: String,
     pub name: String,
     pub arguments: Value,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub intent: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -371,7 +369,6 @@ mod tests {
             id: "call-bash".to_string(),
             name: "bash".to_string(),
             arguments: json!({"command": "rm -rf /"}),
-            intent: None,
         };
         assert_eq!(tool_decision_for_call(&config, &call), ToolDecision::Prompt);
     }

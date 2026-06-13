@@ -217,7 +217,7 @@ impl InteractiveEngine {
                 }
                 ToolDecision::Deny => {
                     transcript.push(AgentTranscriptItem::ToolResult {
-                        result: denied_tool_result(&call, "denied by policy"),
+                        result: denied_tool_result(&call, Some("denied by policy")),
                     });
                 }
             }

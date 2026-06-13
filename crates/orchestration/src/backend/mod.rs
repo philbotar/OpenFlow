@@ -265,6 +265,32 @@ impl AppBackend {
         self.runs.stop_run().await
     }
 
+    pub async fn continue_run(
+        &self,
+        workflow: Workflow,
+        entrypoint: Option<String>,
+        settings: &AppSettings,
+        transient_api_key: Option<&str>,
+    ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
+        self.runs
+            .continue_run(RunStartParams {
+                workflow,
+                entrypoint,
+                execution_cwd: None,
+                settings,
+                transient_api_key,
+                agent_store: self.agents.store(),
+                settings_store: self.settings.store(),
+                env: self.settings.env(),
+            })
+            .await
+    }
+
+    #[must_use]
+    pub async fn is_run_continuable(&self) -> bool {
+        self.runs.is_run_continuable().await
+    }
+
     pub async fn interrupt_node(&self, node_id: &str) -> Result<WorkflowRunState, BackendError> {
         self.runs.interrupt_node(node_id).await
     }
@@ -297,8 +323,11 @@ impl AppBackend {
         &self,
         approval_id: &str,
         allow: bool,
+        reason: Option<String>,
     ) -> Result<WorkflowRunState, BackendError> {
-        self.runs.submit_tool_approval(approval_id, allow).await
+        self.runs
+            .submit_tool_approval(approval_id, allow, reason)
+            .await
     }
 
     pub async fn complete_manual_node(&self) -> Result<WorkflowRunState, BackendError> {

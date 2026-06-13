@@ -121,9 +121,33 @@ Primary gate for agents and CI — run after every change:
 
 **One-time installs:** `cargo install cargo-machete typos-cli cargo-mutants cargo-public-api` (nightly toolchain for public-api).
 
+## Fast Local Lane
+
+Use this during normal edit/test loops:
+
+```bash
+./scripts/test-fast.sh
+```
+
+Why this exists:
+
+- `cargo test --workspace` rebuilds `desktop`, which pulls the Tauri/native stack.
+- `cargo test -p desktop` stays opt-in unless you are changing the desktop seam.
+- `orchestration` acceptance stays opt-in unless you are changing execution behavior.
+
+Options:
+
+```bash
+./scripts/test-fast.sh --execution
+./scripts/test-fast.sh --desktop
+./scripts/test-fast.sh --execution --desktop
+```
+
 ## When To Run Each Layer
 
 `./scripts/verify.sh` replaces separate `cargo fmt`, `clippy`, and `cargo test --workspace` before commits.
+
+For local iteration, prefer `./scripts/test-fast.sh`. Use `./scripts/verify.sh` before handing work off or committing.
 
 Run this when changing execution behavior, node input shaping, shared context, callable agents, execution cwd, manual pauses, tool approvals, tool result routing, run trace, or chat logs:
 

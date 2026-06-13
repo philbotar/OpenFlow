@@ -73,7 +73,6 @@ fn read_tool_loop_transcript() -> Vec<AgentTranscriptItem> {
                 id: "toolu_1".to_string(),
                 name: "read".to_string(),
                 arguments: json!({"path": "README.md"}),
-                intent: None,
             },
         },
         AgentTranscriptItem::ToolResult {
@@ -266,7 +265,6 @@ async fn messages_response_routes_external_tool_calls() {
                 id: "toolu_2".to_string(),
                 name: "read".to_string(),
                 arguments: json!({"path": "README.md"}),
-                intent: None,
             }],
         })
     );

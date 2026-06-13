@@ -227,7 +227,6 @@ describe("workflow helpers", () => {
             id: "call-1",
             name: "write",
             arguments: { path: "out.txt", content: "hi" },
-            intent: null,
           },
           tier: "write",
         },

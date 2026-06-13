@@ -378,7 +378,6 @@ pub fn parse_compatible_tool_call(call: &Value) -> Result<ToolCall, AgentError> 
                 "OpenAI-compatible tool call arguments were not valid JSON: {error}"
             ))
         })?,
-        intent: None,
     })
 }
 
@@ -449,7 +448,6 @@ pub fn parse_responses_output(
                             "OpenAI function_call arguments were not valid JSON: {error}"
                         ))
                     })?,
-                    intent: None,
                 });
             }
             _ => {}

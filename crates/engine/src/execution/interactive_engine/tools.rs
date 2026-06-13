@@ -30,6 +30,7 @@ impl InteractiveEngine {
         &mut self,
         approval_id: &str,
         allow: bool,
+        reason: Option<&str>,
     ) -> Result<(), EngineInputError> {
         let pending = self
             .pending_tool_batches
@@ -48,7 +49,7 @@ impl InteractiveEngine {
             .tool_calls
             .iter()
             .map(|call| AgentTranscriptItem::ToolResult {
-                result: denied_tool_result(call, "denied by user"),
+                result: denied_tool_result(call, reason),
             })
             .collect::<Vec<_>>();
         self.transcripts.entry(node_id).or_default().extend(denied);

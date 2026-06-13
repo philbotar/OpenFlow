@@ -13,6 +13,7 @@ pub struct HumanInput {
 pub struct ToolApprovalInput {
     pub approval_id: String,
     pub allow: bool,
+    pub reason: Option<String>,
 }
 
 pub trait HumanInputPort {

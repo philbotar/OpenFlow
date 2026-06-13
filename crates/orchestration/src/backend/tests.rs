@@ -237,6 +237,7 @@ fn start_run_returns_initial_state_and_manual_events() {
         let stopped = backend.stop_run().await.expect("stop run");
         assert!(!stopped.active);
         assert!(stopped.last_error.is_none());
+        assert!(backend.is_run_continuable().await);
     });
 }
 
@@ -318,7 +319,6 @@ fn submit_tool_approval_updates_snapshot_and_sends_action() {
                 id: "call-1".to_string(),
                 name: "read".to_string(),
                 arguments: serde_json::json!({ "path": "README.md" }),
-                intent: None,
             },
             tier: engine::ToolTier::Read,
         }];
@@ -328,13 +328,17 @@ fn submit_tool_approval_updates_snapshot_and_sends_action() {
             .await;
 
         let run_state = backend
-            .submit_tool_approval("approval-1", true)
+            .submit_tool_approval("approval-1", true, None)
             .await
             .expect("submit approval");
 
         assert!(run_state.pending_approvals.is_empty());
         match action_rx.recv().await.expect("action") {
-            ExecutionAction::ResolveApproval { approval_id, allow } => {
+            ExecutionAction::ResolveApproval {
+                approval_id,
+                allow,
+                reason: _,
+            } => {
                 assert_eq!(approval_id, "approval-1");
                 assert!(allow);
             }

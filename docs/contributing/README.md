@@ -63,12 +63,15 @@ Add a port/trait only when a consumer is typed on that interface. Current seams:
 ## Verification (Quick)
 
 ```bash
+./scripts/test-fast.sh
 cargo fmt --all --check
 cargo clippy --workspace --all-targets
 cargo clippy-max
 cargo test --workspace
 ./scripts/check-engine-public-api.sh
 ```
+
+Use `./scripts/test-fast.sh` for the normal local loop. Keep `cargo test --workspace` as the full Rust workspace pass.
 
 Intentional changes to engine's public surface require updating `crates/engine/tests/snapshots/public_api.txt` (`cargo +nightly public-api` from `crates/engine/`).
 

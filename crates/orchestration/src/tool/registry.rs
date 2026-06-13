@@ -96,12 +96,15 @@ fn read_tool() -> RegisteredTool {
     RegisteredTool {
         definition: ToolDefinition {
             name: "read".to_string(),
-            description: "Read a local file, directory listing, or URL. Default output is numbered lines capped at 300; use path selectors like :10-20 for a line range or :raw for full content.".to_string(),
+            description: "Read a local file, directory listing, HTTP(S) URL, or spilled tool artifact. Default output is numbered lines capped at 300 lines; append :N-M for a line range (e.g. src/lib.rs:10-20) or :raw for full unnumbered content. Truncated tool output can be read via artifact:{id} (supports the same selectors).".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
-                    "path": { "type": "string" }
+                    "path": {
+                        "type": "string",
+                        "description": "Local path, URL, or artifact:{id}. Append :start-end for a line range or :raw for full content (e.g. note.txt:1-50, artifact:abc-123:1000-1200)."
+                    }
                 },
                 "required": ["path"]
             }),
@@ -116,13 +119,17 @@ fn search_tool() -> RegisteredTool {
     RegisteredTool {
         definition: ToolDefinition {
             name: "search".to_string(),
-            description: "Search file contents by regular expression across one or more paths. Uses ripgrep (gitignore-aware by default).".to_string(),
+            description: "Search file contents by regular expression (ripgrep/Rust regex syntax; no backrefs or lookaround). Gitignore-aware by default. Results cap at 500 matches — narrow the pattern or paths if you hit the limit.".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
-                    "pattern": { "type": "string" },
+                    "pattern": {
+                        "type": "string",
+                        "description": "Ripgrep/Rust regex pattern to match in file contents."
+                    },
                     "paths": {
+                        "description": "File, directory, or glob to search (string or array of strings).",
                         "oneOf": [
                             { "type": "string" },
                             {
@@ -131,8 +138,14 @@ fn search_tool() -> RegisteredTool {
                             }
                         ]
                     },
-                    "i": { "type": ["boolean", "null"] },
-                    "gitignore": { "type": ["boolean", "null"] }
+                    "i": {
+                        "type": ["boolean", "null"],
+                        "description": "Case-insensitive matching when true."
+                    },
+                    "gitignore": {
+                        "type": ["boolean", "null"],
+                        "description": "Respect .gitignore rules when true (default true)."
+                    }
                 },
                 "required": ["pattern", "paths"]
             }),
@@ -147,13 +160,13 @@ fn find_tool() -> RegisteredTool {
     RegisteredTool {
         definition: ToolDefinition {
             name: "find".to_string(),
-            description: "Find files and directories matching one or more glob patterns."
-                .to_string(),
+            description: "Find files and directories matching glob patterns (e.g. **/*.rs, src/**/*.ts). Results cap at 200 paths — narrow the pattern if you hit the limit.".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
                     "paths": {
+                        "description": "Glob pattern or array of patterns relative to the execution folder (e.g. **/*.rs).",
                         "oneOf": [
                             { "type": "string" },
                             {
@@ -176,13 +189,19 @@ fn write_tool() -> RegisteredTool {
     RegisteredTool {
         definition: ToolDefinition {
             name: "write".to_string(),
-            description: "Create or overwrite a file under the execution folder.".to_string(),
+            description: "Create or overwrite a file under the execution folder. Prefer edit for existing files; write replaces the whole file.".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
-                    "path": { "type": "string" },
-                    "content": { "type": "string" }
+                    "path": {
+                        "type": "string",
+                        "description": "Relative path under the execution folder."
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "Full file content to write."
+                    }
                 },
                 "required": ["path", "content"]
             }),
@@ -197,42 +216,43 @@ fn edit_tool() -> RegisteredTool {
     RegisteredTool {
         definition: ToolDefinition {
             name: "edit".to_string(),
-            description:
-                "Edit files under the execution folder: replace-mode (`path` + `edits`) or hashline-mode (`input` with `¶path#TAG` sections)."
-                    .to_string(),
+            description: "Edit files under the execution folder. Two modes: (1) replace-mode — path + edits[] where old_text must match exactly and uniquely unless all:true; (2) hashline-mode — input string with ¶path#TAG sections copied from read output.".to_string(),
             input_schema: serde_json::json!({
-                "oneOf": [
-                    {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "properties": {
-                            "path": { "type": "string" },
-                            "edits": {
-                                "type": "array",
-                                "minItems": 1,
-                                "items": {
-                                    "type": "object",
-                                    "additionalProperties": false,
-                                    "properties": {
-                                        "old_text": { "type": "string" },
-                                        "new_text": { "type": "string" },
-                                        "all": { "type": "boolean" }
-                                    },
-                                    "required": ["old_text", "new_text"]
-                                }
-                            }
-                        },
-                        "required": ["path", "edits"]
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Replace-mode only: relative path to the file to edit."
                     },
-                    {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "properties": {
-                            "input": { "type": "string" }
-                        },
-                        "required": ["input"]
+                    "edits": {
+                        "type": "array",
+                        "description": "Replace-mode only: one or more search/replace operations.",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "old_text": {
+                                    "type": "string",
+                                    "description": "Exact text to find in the file."
+                                },
+                                "new_text": {
+                                    "type": "string",
+                                    "description": "Replacement text."
+                                },
+                                "all": {
+                                    "type": "boolean",
+                                    "description": "Replace every match when true; default replaces only a unique match."
+                                }
+                            },
+                            "required": ["old_text", "new_text"]
+                        }
+                    },
+                    "input": {
+                        "type": "string",
+                        "description": "Hashline-mode only: patch text with ¶path#TAG sections from read output."
                     }
-                ]
+                }
             }),
             tier: ToolTier::Write,
             concurrency: ToolConcurrency::Exclusive,
@@ -245,7 +265,7 @@ fn bash_tool() -> RegisteredTool {
     RegisteredTool {
         definition: ToolDefinition {
             name: "bash".to_string(),
-            description: "Execute a bash command in the execution folder. Use `cwd` for the working directory (not `cd dir && …`). Prefer dedicated read/search/find/edit/write tools when they suffice. Returns merged stdout/stderr, wall time, and exit code.".to_string(),
+            description: "Execute a bash command in the execution folder. Use cwd for the working directory (not cd dir && …). Prefer dedicated read/search/find/edit/write tools when they suffice. Output over 50KB is truncated to an artifact (read it via artifact:{id}). Returns merged stdout/stderr, wall time, and exit code.".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "additionalProperties": false,
@@ -281,14 +301,15 @@ fn apply_patch_tool() -> RegisteredTool {
     RegisteredTool {
         definition: ToolDefinition {
             name: "apply_patch".to_string(),
-            description:
-                "Apply a Codex *** Begin Patch envelope to files under the execution folder."
-                    .to_string(),
+            description: "Apply a Codex-style *** Begin Patch / *** End Patch envelope to files under the execution folder. Usually prefer edit for targeted changes.".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
-                    "input": { "type": "string" }
+                    "input": {
+                        "type": "string",
+                        "description": "Full patch envelope text (*** Begin Patch … *** End Patch)."
+                    }
                 },
                 "required": ["input"]
             }),
@@ -303,14 +324,18 @@ fn ast_grep_tool() -> RegisteredTool {
     RegisteredTool {
         definition: ToolDefinition {
             name: "ast_grep".to_string(),
-            description: "Search code structurally using ast-grep AST patterns.".to_string(),
+            description: "Search code structurally using ast-grep patterns ($VAR metavariables). Prefer over search when matching syntax trees rather than raw text.".to_string(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
-                    "pat": { "type": "string" },
+                    "pat": {
+                        "type": "string",
+                        "description": "ast-grep pattern (use $VAR for metavariables)."
+                    },
                     "paths": {
                         "type": "array",
+                        "description": "Files or directories to scan.",
                         "items": { "type": "string" }
                     }
                 },
@@ -411,6 +436,50 @@ mod tests {
         assert_eq!(definitions.len(), 2);
         assert_eq!(definitions[0].name, "openflow_declare_subagents");
         assert_eq!(definitions[1].name, "openflow_call_subagent");
+    }
+
+    #[test]
+    fn every_schema_property_has_description() {
+        let registry = ToolRegistry::new();
+        let builtins = [
+            "read",
+            "search",
+            "find",
+            "ast_grep",
+            "write",
+            "edit",
+            "apply_patch",
+            "bash",
+        ];
+        for name in builtins {
+            let tool = registry.get(name).expect("builtin tool");
+            assert_schema_properties_have_descriptions(
+                &tool.definition.input_schema,
+                &tool.definition.name,
+            );
+        }
+    }
+
+    fn assert_schema_properties_have_descriptions(schema: &serde_json::Value, path: &str) {
+        let Some(properties) = schema
+            .get("properties")
+            .and_then(serde_json::Value::as_object)
+        else {
+            if let Some(items) = schema.get("items") {
+                assert_schema_properties_have_descriptions(items, &format!("{path}.items"));
+            }
+            return;
+        };
+        for (key, property) in properties {
+            let property_path = format!("{path}.{key}");
+            assert!(
+                property.get("description").is_some(),
+                "missing description at {property_path}"
+            );
+            if property.get("properties").is_some() || property.get("items").is_some() {
+                assert_schema_properties_have_descriptions(property, &property_path);
+            }
+        }
     }
 
     #[test]

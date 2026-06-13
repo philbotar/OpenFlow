@@ -4,11 +4,57 @@ use super::{
     apply_read_selector, BlockingBatchContext, BlockingRunOutcome, BlockingToolOps, LspSettings,
     ToolExecutionContext, ToolExecutionRecord, ToolRunner, ToolRunnerError,
 };
+use crate::tool::blocking_ops::split_selector;
 use crate::tool::errors::ToolError;
 use crate::tool::registry::BuiltinToolKind;
 use engine::ToolCall;
+use reqwest::StatusCode;
 use serde::Deserialize;
 use serde_json::Value;
+
+enum ReadTarget {
+    Artifact {
+        artifact_id: String,
+        selector: Option<String>,
+    },
+    Url {
+        url: String,
+        selector: Option<String>,
+    },
+    Local {
+        path: String,
+    },
+}
+
+fn parse_read_target(path: &str) -> ReadTarget {
+    let (base, selector) = split_selector(path);
+    if let Some(artifact_id) = base.strip_prefix("artifact:") {
+        return ReadTarget::Artifact {
+            artifact_id: artifact_id.to_string(),
+            selector,
+        };
+    }
+    if base.starts_with("http://") || base.starts_with("https://") {
+        return ReadTarget::Url {
+            url: base,
+            selector,
+        };
+    }
+    ReadTarget::Local {
+        path: path.to_string(),
+    }
+}
+
+fn map_http_status_error(url: &str, status: StatusCode) -> ToolError {
+    if matches!(status, StatusCode::NOT_FOUND | StatusCode::GONE) {
+        ToolError::NotFound {
+            what: format!("read failed for {url}: HTTP {status}"),
+            hint: "check the URL is reachable and returns 2xx".to_string(),
+        }
+    } else {
+        ToolError::failed(format!("read failed for {url}: HTTP {status}"))
+    }
+}
 
 impl ToolRunner {
     pub(super) async fn dispatch(
@@ -101,43 +147,72 @@ impl ToolRunner {
             path: String,
         }
         let args: ReadArgs = serde_json::from_value(args).map_err(|error| {
-            ToolRunnerError::Tool(ToolError::Failed(format!("invalid read args: {error}")))
+            ToolRunnerError::Tool(ToolError::InvalidArgs {
+                tool: "read".to_string(),
+                problem: error.to_string(),
+                hint:
+                    "required field: path (string); supports local paths, URLs, and artifact:{id}"
+                        .to_string(),
+            })
         })?;
-        if args.path.starts_with("http://") || args.path.starts_with("https://") {
-            return self
-                .read_url(&args.path)
+        match parse_read_target(&args.path) {
+            ReadTarget::Artifact {
+                artifact_id,
+                selector,
+            } => self.read_artifact(&artifact_id, selector.as_deref(), &args.path),
+            ReadTarget::Url { url, selector } => self
+                .read_url(&url, selector.as_deref())
                 .await
-                .map_err(ToolRunnerError::from);
+                .map_err(ToolRunnerError::from),
+            ReadTarget::Local { path } => {
+                let cwd = self.cwd.clone();
+                let snapshots = self.snapshot_store.clone();
+                tokio::task::spawn_blocking(move || {
+                    BlockingToolOps::read_local_at(cwd, snapshots, &path)
+                })
+                .await
+                .map_err(|error| ToolRunnerError::BlockingTask(error.to_string()))?
+                .map_err(ToolRunnerError::from)
+            }
         }
-
-        let cwd = self.cwd.clone();
-        let snapshots = self.snapshot_store.clone();
-        tokio::task::spawn_blocking(move || {
-            BlockingToolOps::read_local_at(cwd, snapshots, &args.path)
-        })
-        .await
-        .map_err(|error| ToolRunnerError::BlockingTask(error.to_string()))?
-        .map_err(ToolRunnerError::from)
     }
 
-    async fn read_url(&self, url: &str) -> Result<String, ToolError> {
+    fn read_artifact(
+        &self,
+        artifact_id: &str,
+        selector: Option<&str>,
+        label: &str,
+    ) -> Result<String, ToolRunnerError> {
+        let artifact_path = self.artifacts.path_for(artifact_id).ok_or_else(|| {
+            ToolRunnerError::Tool(ToolError::NotFound {
+                what: format!("artifact not found: {artifact_id}"),
+                hint: "artifacts only live for the current run".to_string(),
+            })
+        })?;
+        let text = std::fs::read_to_string(&artifact_path).map_err(|error| {
+            ToolRunnerError::Tool(ToolError::failed(format!(
+                "read failed for artifact:{artifact_id}: {error}"
+            )))
+        })?;
+        Ok(apply_read_selector(label, &text, selector))
+    }
+
+    async fn read_url(&self, url: &str, selector: Option<&str>) -> Result<String, ToolError> {
         let response = self
             .http
             .get(url)
             .send()
             .await
-            .map_err(|error| ToolError::Failed(format!("read failed for {url}: {error}")))?;
+            .map_err(|error| ToolError::failed(format!("read failed for {url}: {error}")))?;
         let status = response.status();
         let text = response
             .text()
             .await
-            .map_err(|error| ToolError::Failed(format!("read failed for {url}: {error}")))?;
+            .map_err(|error| ToolError::failed(format!("read failed for {url}: {error}")))?;
         if !status.is_success() {
-            return Err(ToolError::Failed(format!(
-                "read failed for {url}: HTTP {status}"
-            )));
+            return Err(map_http_status_error(url, status));
         }
-        Ok(apply_read_selector(url, &text, None))
+        Ok(apply_read_selector(url, &text, selector))
     }
 
     async fn ast_grep(&self, args: Value) -> Result<String, ToolRunnerError> {
@@ -147,7 +222,11 @@ impl ToolRunner {
             paths: Vec<String>,
         }
         let args: AstGrepArgs = serde_json::from_value(args).map_err(|error| {
-            ToolRunnerError::Tool(ToolError::Failed(format!("invalid ast_grep args: {error}")))
+            ToolRunnerError::Tool(ToolError::InvalidArgs {
+                tool: "ast_grep".to_string(),
+                problem: error.to_string(),
+                hint: "required fields: pat (string), paths (array of strings)".to_string(),
+            })
         })?;
         let mut command = tokio::process::Command::new("ast-grep");
         command
@@ -160,21 +239,21 @@ impl ToolRunner {
             command.arg(path);
         }
         let mut child = command.spawn().map_err(|error| {
-            ToolRunnerError::Tool(ToolError::Failed(format!("ast_grep failed: {error}")))
+            ToolRunnerError::Tool(ToolError::failed(format!("ast_grep failed: {error}")))
         })?;
         let mut stdout_pipe = child.stdout.take().ok_or_else(|| {
-            ToolRunnerError::Tool(ToolError::Failed("ast_grep stdout unavailable".to_string()))
+            ToolRunnerError::Tool(ToolError::failed("ast_grep stdout unavailable".to_string()))
         })?;
         let mut stderr_pipe = child.stderr.take().ok_or_else(|| {
-            ToolRunnerError::Tool(ToolError::Failed("ast_grep stderr unavailable".to_string()))
+            ToolRunnerError::Tool(ToolError::failed("ast_grep stderr unavailable".to_string()))
         })?;
         tokio::select! {
             biased;
             _ = self.cancel_token.cancelled() => {
                 let _ = child.kill().await;
-                Err(ToolRunnerError::Tool(ToolError::Failed(
-                    "ast_grep cancelled".to_string(),
-                )))
+                Err(ToolRunnerError::Tool(ToolError::Cancelled {
+                    tool: "ast_grep".to_string(),
+                }))
             }
             result = async {
                 let mut stdout_bytes = Vec::new();
@@ -185,23 +264,51 @@ impl ToolRunner {
                     child.wait(),
                 );
                 stdout_res.map_err(|error| {
-                    ToolRunnerError::Tool(ToolError::Failed(format!("ast_grep read failed: {error}")))
+                    ToolRunnerError::Tool(ToolError::failed(format!("ast_grep read failed: {error}")))
                 })?;
                 stderr_res.map_err(|error| {
-                    ToolRunnerError::Tool(ToolError::Failed(format!(
+                    ToolRunnerError::Tool(ToolError::failed(format!(
                         "ast_grep stderr read failed: {error}"
                     )))
                 })?;
                 let status = status.map_err(|error| {
-                    ToolRunnerError::Tool(ToolError::Failed(format!("ast_grep failed: {error}")))
+                    ToolRunnerError::Tool(ToolError::failed(format!("ast_grep failed: {error}")))
                 })?;
                 if !status.success() {
-                    return Err(ToolRunnerError::Tool(ToolError::Failed(
+                    return Err(ToolRunnerError::Tool(ToolError::failed(
                         String::from_utf8_lossy(&stderr_bytes).trim().to_string(),
                     )));
                 }
                 Ok(String::from_utf8_lossy(&stdout_bytes).to_string())
             } => result,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn read_target_treats_url_selectors_as_url_plus_selector() {
+        let target = parse_read_target("https://example.test/note.txt:2-3");
+        assert!(matches!(
+            target,
+            ReadTarget::Url { url, selector }
+                if url == "https://example.test/note.txt" && selector.as_deref() == Some("2-3")
+        ));
+    }
+
+    #[test]
+    fn http_status_error_only_uses_not_found_for_missing_resources() {
+        let not_found =
+            map_http_status_error("https://example.test/missing", StatusCode::NOT_FOUND);
+        assert!(matches!(not_found, ToolError::NotFound { .. }));
+
+        let server_error = map_http_status_error(
+            "https://example.test/boom",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        );
+        assert!(matches!(server_error, ToolError::ExecutionFailed { .. }));
     }
 }

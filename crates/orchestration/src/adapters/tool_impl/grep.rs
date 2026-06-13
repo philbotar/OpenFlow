@@ -97,19 +97,29 @@ impl Sink for MatchSink {
 
 /// Search files under `cwd` using ripgrep libraries.
 pub fn search_at(cwd: &Path, args: Value) -> Result<String, ToolError> {
-    let args: SearchArgs = serde_json::from_value(args)
-        .map_err(|error| ToolError::Failed(format!("invalid search args: {error}")))?;
+    let args: SearchArgs =
+        serde_json::from_value(args).map_err(|error| ToolError::InvalidArgs {
+            tool: "search".to_string(),
+            problem: error.to_string(),
+            hint: "required fields: pattern (string), paths (string or array)".to_string(),
+        })?;
     let pattern = args.pattern.trim();
     if pattern.is_empty() {
-        return Err(ToolError::Failed(
-            "search pattern must not be empty".to_string(),
-        ));
+        return Err(ToolError::InvalidArgs {
+            tool: "search".to_string(),
+            problem: "pattern must not be empty".to_string(),
+            hint: "provide a ripgrep/Rust regex pattern".to_string(),
+        });
     }
 
     let matcher = RegexMatcherBuilder::new()
         .case_insensitive(args.i.unwrap_or(false))
         .build(pattern)
-        .map_err(|error| ToolError::Failed(format!("invalid search regex: {error}")))?;
+        .map_err(|error| ToolError::InvalidArgs {
+            tool: "search".to_string(),
+            problem: format!("invalid regex: {error}"),
+            hint: "use ripgrep/Rust regex syntax; no backrefs or lookaround".to_string(),
+        })?;
 
     let gitignore = args.gitignore.unwrap_or(true);
     let mut searcher = SearcherBuilder::new()
@@ -190,7 +200,7 @@ fn search_file(
     searcher
         .search_path(matcher, path, &mut sink)
         .map_err(|error| {
-            ToolError::Failed(format!("search failed for {}: {error}", path.display()))
+            ToolError::failed(format!("search failed for {}: {error}", path.display()))
         })?;
     Ok((sink.lines, sink.limit_reached))
 }
@@ -242,10 +252,12 @@ fn resolve_search_targets(cwd: &Path, pattern: &str) -> Result<Vec<PathBuf>, Too
 
     let glob_pattern = cwd.join(pattern).display().to_string();
     let mut matches = Vec::new();
-    for entry in glob::glob(&glob_pattern)
-        .map_err(|error| ToolError::Failed(format!("invalid glob pattern: {error}")))?
-    {
-        matches.push(entry.map_err(|error| ToolError::Failed(format!("glob failed: {error}")))?);
+    for entry in glob::glob(&glob_pattern).map_err(|error| ToolError::InvalidArgs {
+        tool: "search".to_string(),
+        problem: format!("invalid glob pattern: {error}"),
+        hint: "narrow paths or use a valid glob under the execution folder".to_string(),
+    })? {
+        matches.push(entry.map_err(|error| ToolError::failed(format!("glob failed: {error}")))?);
     }
     Ok(matches)
 }
@@ -340,7 +352,8 @@ mod tests {
         let error = RipgrepSearch::new(cwd)
             .search(serde_json::json!({"pattern": "[", "paths": "."}))
             .unwrap_err();
-        assert!(error.to_string().contains("invalid search regex"));
+        assert!(error.to_string().contains("[invalid_args]"));
+        assert!(error.to_string().contains("invalid regex"));
     }
 
     #[test]

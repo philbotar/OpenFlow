@@ -11,7 +11,8 @@ pub use ai_adapter::AiInvocationAdapter;
 use crate::lsp::LspSettings;
 use crate::run::state::{RunTraceEntry, ToolArtifactSummary, ToolCallSummary};
 use engine::{
-    AiPort, CallableAgent, ChatMessage, EditBatch, NodeId, RunReport, RunTelemetry, Workflow,
+    AiPort, CallableAgent, ChatMessage, EditBatch, InteractiveEngineCheckpoint, NodeId, RunReport,
+    RunTelemetry, Workflow,
 };
 use parking_lot::Mutex;
 use serde_json::Value;
@@ -22,6 +23,7 @@ use thiserror::Error;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio_util::sync::CancellationToken;
 
+pub use drive::new_artifact_root;
 pub use events::{apply_event_to_run_state, record_user_input};
 pub use headless::run_workflow_headless;
 
@@ -38,9 +40,18 @@ pub fn send_or_log(event_tx: &UnboundedSender<ExecutionEvent>, event: ExecutionE
 }
 
 pub enum ExecutionAction {
-    ProvideInput { node_id: NodeId, text: String },
-    ResolveApproval { approval_id: String, allow: bool },
-    RetryNode { node_id: NodeId },
+    ProvideInput {
+        node_id: NodeId,
+        text: String,
+    },
+    ResolveApproval {
+        approval_id: String,
+        allow: bool,
+        reason: Option<String>,
+    },
+    RetryNode {
+        node_id: NodeId,
+    },
     Stop,
 }
 
@@ -54,6 +65,7 @@ pub struct ManualInput {
 pub struct ApprovalResponse {
     pub approval_id: String,
     pub allow: bool,
+    pub reason: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -118,6 +130,9 @@ pub struct InteractiveWorkflowRunParams<A> {
     pub workflow: Workflow,
     pub entrypoint: Option<String>,
     pub execution_cwd: PathBuf,
+    pub artifact_root: PathBuf,
+    pub resume_checkpoint: Option<InteractiveEngineCheckpoint>,
+    pub checkpoint_sink: Arc<Mutex<Option<InteractiveEngineCheckpoint>>>,
     pub ai: A,
     pub agent_snapshots: BTreeMap<String, CallableAgent>,
     pub snapshot_store: Arc<crate::tools::edit::hashline::snapshots::InMemorySnapshotStore>,

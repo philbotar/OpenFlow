@@ -84,19 +84,49 @@ export function AppHeader() {
             <Show
               when={ctx.runState()?.active}
               fallback={
-                <button
-                  class="topbar-icon-button topbar-icon-button-primary"
-                  classList={{ "topbar-icon-button--loading": ctx.startingRun() }}
-                  onClick={() => void ctx.handleRun()}
-                  disabled={ctx.startingRun()}
-                  title={`Run (${mod()}+Enter)`}
-                  aria-label="Run workflow"
-                  data-tauri-drag-region="false"
+                <Show
+                  when={ctx.continuableRun()}
+                  fallback={
+                    <button
+                      class="topbar-icon-button topbar-icon-button-primary"
+                      classList={{ "topbar-icon-button--loading": ctx.startingRun() }}
+                      onClick={() => void ctx.handleRun()}
+                      disabled={ctx.startingRun()}
+                      title={`Run (${mod()}+Enter)`}
+                      aria-label="Run workflow"
+                      data-tauri-drag-region="false"
+                    >
+                      <Show when={ctx.startingRun()} fallback={<SidebarIcon name="run" />}>
+                        <Spinner size="sm" />
+                      </Show>
+                    </button>
+                  }
                 >
-                  <Show when={ctx.startingRun()} fallback={<SidebarIcon name="run" />}>
-                    <Spinner size="sm" />
-                  </Show>
-                </button>
+                  <button
+                    class="topbar-icon-button topbar-icon-button-primary"
+                    classList={{ "topbar-icon-button--loading": ctx.startingRun() }}
+                    onClick={() => void ctx.handleContinueRun()}
+                    disabled={ctx.startingRun()}
+                    title={`Continue (${mod()}+Enter)`}
+                    aria-label="Continue workflow"
+                    data-tauri-drag-region="false"
+                  >
+                    <Show when={ctx.startingRun()} fallback={<SidebarIcon name="run" />}>
+                      <Spinner size="sm" />
+                    </Show>
+                  </button>
+                  <button
+                    class="topbar-icon-button"
+                    classList={{ "topbar-icon-button--loading": ctx.startingRun() }}
+                    onClick={() => void ctx.handleRun()}
+                    disabled={ctx.startingRun()}
+                    title="Start fresh run"
+                    aria-label="Start fresh workflow run"
+                    data-tauri-drag-region="false"
+                  >
+                    <SidebarIcon name="run" />
+                  </button>
+                </Show>
               }
             >
               <button

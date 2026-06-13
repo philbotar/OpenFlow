@@ -19,12 +19,14 @@ function makeMockContext(overrides: Partial<AppContextValue> = {}): AppContextVa
     readiness: () => ({ ready: true, provider: "OpenAI", message: "Ready", envVar: "" }),
     runState: () => null,
     startingRun: () => false,
+    continuableRun: () => false,
     stoppingRun: () => false,
     workflowSettingsOpen: () => false,
     handleToggleWorkflowSettings: vi.fn(),
     persistAll: vi.fn().mockResolvedValue(true),
     handleValidate: vi.fn().mockResolvedValue(undefined),
     handleRun: vi.fn().mockResolvedValue(undefined),
+    handleContinueRun: vi.fn().mockResolvedValue(undefined),
     handleStopRun: vi.fn().mockResolvedValue(undefined),
     workflows: () => [],
     projects: () => [],
@@ -239,6 +241,25 @@ describe("AppHeader", () => {
     });
     const btn = getToggleButton(container);
     expect(btn).toBeNull();
+    dispose();
+  });
+
+  it("shows continue and fresh run when a stopped run is continuable", () => {
+    const handleContinueRun = vi.fn().mockResolvedValue(undefined);
+    const { container, dispose } = renderWithContext({
+      continuableRun: () => true,
+      handleContinueRun,
+    });
+    const continueBtn = container.querySelector(
+      "button[aria-label='Continue workflow']",
+    ) as HTMLButtonElement | null;
+    const freshBtn = container.querySelector(
+      "button[aria-label='Start fresh workflow run']",
+    ) as HTMLButtonElement | null;
+    expect(continueBtn).not.toBeNull();
+    expect(freshBtn).not.toBeNull();
+    continueBtn!.click();
+    expect(handleContinueRun).toHaveBeenCalledTimes(1);
     dispose();
   });
 });

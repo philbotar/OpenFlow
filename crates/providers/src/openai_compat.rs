@@ -509,7 +509,6 @@ mod tests {
                     id: "call-7".to_string(),
                     name: "read".to_string(),
                     arguments: json!({"path": "README.md"}),
-                    intent: None,
                 }],
             })
         );
@@ -557,7 +556,6 @@ mod tests {
                     id: "call-1".to_string(),
                     name: "read".to_string(),
                     arguments: json!({"path": "README.md"}),
-                    intent: Some("Reading repo overview".to_string()),
                 },
             },
             AgentTranscriptItem::ToolResult {

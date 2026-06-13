@@ -1,9 +1,11 @@
 use crate::tools::{ArtifactStore, ToolRegistry, ToolRunner};
 use engine::{
-    AiPort, EditBatch, EngineRunResult, InteractiveEngine, NodeId, PendingToolApproval, RunError,
-    ToolCall, ToolTier, Workflow,
+    AiPort, EditBatch, EngineRunResult, InteractiveEngine, InteractiveEngineCheckpoint, NodeId,
+    PendingToolApproval, RunError, ToolCall, ToolTier, Workflow,
 };
+use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio_util::sync::CancellationToken;
@@ -25,6 +27,9 @@ pub(super) async fn drive_interactive_workflow<A>(
         workflow,
         entrypoint,
         execution_cwd,
+        artifact_root,
+        resume_checkpoint,
+        checkpoint_sink,
         ai,
         agent_snapshots,
         snapshot_store,
@@ -32,16 +37,16 @@ pub(super) async fn drive_interactive_workflow<A>(
         pending_engine_reverts,
         node_interrupts,
     } = params;
-    let mut engine = match InteractiveEngine::new(workflow.clone(), entrypoint) {
+
+    let mut engine = match build_engine(workflow.clone(), entrypoint, resume_checkpoint) {
         Ok(engine) => engine,
         Err(error) => {
-            send_or_log(&event_tx, ExecutionEvent::Error(error.to_string()));
+            send_or_log(&event_tx, ExecutionEvent::Error(error));
             return;
         }
     };
 
     let tool_registry = ToolRegistry::new();
-    let artifact_root = std::env::temp_dir().join(format!("openflow-run-{}", Uuid::new_v4()));
     let artifacts = match ArtifactStore::new(artifact_root) {
         Ok(store) => store,
         Err(error) => {
@@ -81,7 +86,12 @@ pub(super) async fn drive_interactive_workflow<A>(
 
     loop {
         if cancel_token.is_cancelled() {
-            abort_run(&event_tx, &mut aborted_emitted);
+            snapshot_and_abort(
+                &mut engine,
+                &checkpoint_sink,
+                &event_tx,
+                &mut aborted_emitted,
+            );
             return;
         }
         apply_pending_engine_reverts(
@@ -175,17 +185,32 @@ pub(super) async fn drive_interactive_workflow<A>(
                     || !pending_retryables.is_empty()
                 {
                     if cancel_token.is_cancelled() {
-                        abort_run(&event_tx, &mut aborted_emitted);
+                        snapshot_and_abort(
+                            &mut engine,
+                            &checkpoint_sink,
+                            &event_tx,
+                            &mut aborted_emitted,
+                        );
                         return;
                     }
                     let Some(action) = action_rx.recv().await else {
                         log::warn!("execution action channel closed; aborting run");
-                        abort_run(&event_tx, &mut aborted_emitted);
+                        snapshot_and_abort(
+                            &mut engine,
+                            &checkpoint_sink,
+                            &event_tx,
+                            &mut aborted_emitted,
+                        );
                         return;
                     };
                     match action {
                         ExecutionAction::Stop => {
-                            abort_run(&event_tx, &mut aborted_emitted);
+                            snapshot_and_abort(
+                                &mut engine,
+                                &checkpoint_sink,
+                                &event_tx,
+                                &mut aborted_emitted,
+                            );
                             return;
                         }
                         ExecutionAction::ProvideInput { node_id, text } => {
@@ -204,7 +229,11 @@ pub(super) async fn drive_interactive_workflow<A>(
                             }
                             pending_inputs.remove(&node_id);
                         }
-                        ExecutionAction::ResolveApproval { approval_id, allow } => {
+                        ExecutionAction::ResolveApproval {
+                            approval_id,
+                            allow,
+                            reason,
+                        } => {
                             if !pending_approvals.contains(&approval_id) {
                                 send_or_log(
                                     &event_tx,
@@ -214,7 +243,9 @@ pub(super) async fn drive_interactive_workflow<A>(
                                 );
                                 return;
                             }
-                            if let Err(error) = engine.on_tool_decision(&approval_id, allow) {
+                            if let Err(error) =
+                                engine.on_tool_decision(&approval_id, allow, reason.as_deref())
+                            {
                                 send_or_log(&event_tx, ExecutionEvent::Error(error.to_string()));
                                 return;
                             }
@@ -242,7 +273,9 @@ pub(super) async fn drive_interactive_workflow<A>(
                                                 node_id: node_id.clone(),
                                                 tool_call_id: tool_call.id.clone(),
                                                 tool_name: tool_call.name.clone(),
-                                                reason: "denied by user".to_string(),
+                                                reason: reason.clone().unwrap_or_else(|| {
+                                                    "Tool call denied by the user.".to_string()
+                                                }),
                                             },
                                         );
                                     }
@@ -297,11 +330,36 @@ pub(super) async fn drive_interactive_workflow<A>(
                 }
             },
             EngineRunResult::Cancelled => {
-                abort_run(&event_tx, &mut aborted_emitted);
+                snapshot_and_abort(
+                    &mut engine,
+                    &checkpoint_sink,
+                    &event_tx,
+                    &mut aborted_emitted,
+                );
                 return;
             }
         }
     }
+}
+
+fn build_engine(
+    workflow: Workflow,
+    entrypoint: Option<String>,
+    resume_checkpoint: Option<InteractiveEngineCheckpoint>,
+) -> Result<InteractiveEngine, String> {
+    match resume_checkpoint {
+        Some(checkpoint) => InteractiveEngine::from_checkpoint(workflow, checkpoint)
+            .map(|mut engine| {
+                engine.prepare_resume();
+                engine
+            })
+            .map_err(|error| error.to_string()),
+        None => InteractiveEngine::new(workflow, entrypoint).map_err(|error| error.to_string()),
+    }
+}
+
+pub fn new_artifact_root() -> PathBuf {
+    std::env::temp_dir().join(format!("openflow-run-{}", Uuid::new_v4()))
 }
 
 struct ApprovalRequestEmit<'a> {
@@ -376,6 +434,16 @@ fn apply_pending_engine_reverts(
             &batch,
         );
     }
+}
+
+fn snapshot_and_abort(
+    engine: &mut InteractiveEngine,
+    checkpoint_sink: &Arc<Mutex<Option<InteractiveEngineCheckpoint>>>,
+    event_tx: &UnboundedSender<ExecutionEvent>,
+    aborted_emitted: &mut bool,
+) {
+    *checkpoint_sink.lock() = Some(engine.prepare_stop_checkpoint());
+    abort_run(event_tx, aborted_emitted);
 }
 
 fn abort_run(event_tx: &UnboundedSender<ExecutionEvent>, aborted_emitted: &mut bool) {

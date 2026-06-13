@@ -288,7 +288,6 @@ mod tests {
                         id: "call-1".to_string(),
                         name: "read".to_string(),
                         arguments: json!({"path": "README.md"}),
-                        intent: None,
                     }],
                 }))
             }

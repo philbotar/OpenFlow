@@ -85,9 +85,6 @@ export function ToolApprovalCardBody(props: {
       <div class="eyebrow">Approval required</div>
       <h3>{props.approval.toolCall.name}</h3>
       <p class="tool-approval-node">{props.approval.nodeLabel}</p>
-      <Show when={props.approval.toolCall.intent}>
-        {(intent) => <p class="tool-approval-intent">{intent()}</p>}
-      </Show>
 
       <Show
         when={isFileEditTool(props.approval.toolCall.name)}

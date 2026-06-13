@@ -2,7 +2,7 @@ import { For } from "solid-js";
 import { AnimatedModal } from "./AnimatedModal";
 
 const SHORTCUTS = [
-  { keys: "⌘/Ctrl + Enter", action: "Run workflow" },
+  { keys: "⌘/Ctrl + Enter", action: "Run or continue workflow" },
   { keys: "⌘/Ctrl + .", action: "Stop workflow" },
   { keys: "⌘/Ctrl + S", action: "Save" },
   { keys: "⌘/Ctrl + 0", action: "Reset zoom" },

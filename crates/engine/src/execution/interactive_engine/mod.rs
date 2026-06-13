@@ -1,7 +1,10 @@
+mod checkpoint;
 mod completion;
 #[cfg(test)]
 mod tests;
 mod tools;
+
+pub use checkpoint::{CheckpointError, InteractiveEngineCheckpoint};
 
 use crate::conversation::{AgentTranscriptItem, ChatMessage, ChatRole};
 use crate::execution::node_invocation::{
@@ -803,6 +806,6 @@ impl crate::ports::inbound::ToolApprovalPort for InteractiveEngine {
         &mut self,
         input: crate::ports::inbound::ToolApprovalInput,
     ) -> Result<(), EngineInputError> {
-        self.on_tool_decision(&input.approval_id, input.allow)
+        self.on_tool_decision(&input.approval_id, input.allow, input.reason.as_deref())
     }
 }

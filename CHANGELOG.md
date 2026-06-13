@@ -4,6 +4,9 @@
 
 ### Added
 
+- **Stop and continue runs:** user stop snapshots `InteractiveEngine` state in-session; **Continue** resumes from checkpoint with transcripts, outputs, and pause points preserved; **Run** still starts fresh; `continue_run` / `is_run_continuable` desktop IPC; header Continue + fresh-run buttons when a stopped run is resumable; ⌘/Ctrl+Enter continues when continuable.
+- **Sleep prevention during runs:** active workflow runs hold an OS idle/sleep assertion (display may still turn off); released when the run stops, completes, or the app closes.
+- **LLM-usable tool errors and docs (ROADMAP T19):** typed `ToolError` variants (`NotFound`, `PermissionDenied`, `InvalidArgs`, `Timeout`, `Cancelled`, `ExecutionFailed`) with actionable hints and `is_retryable()` for transient classification; spilled output readable via `read` + `artifact:{id}` selectors; expanded builtin tool schemas/descriptions; cache-hit stubs point at prior call id with a head excerpt; tool denial threads optional user reason through engine → orchestration → desktop IPC; removed dead `ToolCall.intent`.
 - **Right panel hide/show toggle:** toggle button in editor toolbar and ⌘/Ctrl+J shortcut to hide/show the inspector/workflow-settings panel; panel state persisted in localStorage; canvas expands to full width when hidden; auto-unhide when opening workflow settings.
 - **Provider prompt caching:**
 - **Plan review tool:** standalone `tools/plan-review.html` — load or paste markdown plans, select text to comment, verdict chips (approve/block/question), threaded replies, import exported reviews with plan diff, export review notes; documented in [ROADMAP.md](docs/ROADMAP.md#interactive-plan-review-tool). Session storage is v2-only (`plan-review-session-v2`); v1 localStorage is wiped on load.

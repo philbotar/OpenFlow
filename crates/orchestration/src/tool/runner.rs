@@ -158,10 +158,13 @@ impl ToolRunner {
         let key = cache_key(&call.name, &call.arguments);
         let hit = self.cache.lookup(&key, &ctx.conversation_id)?;
         let (content, artifact_ids, output_meta) = if hit.same_conversation {
+            let lines: Vec<&str> = hit.content.lines().collect();
+            let head = lines.first().copied().unwrap_or("(empty)");
+            let line_count = lines.len();
             (
                 format!(
-                    "[cached] Result identical to your earlier `{}` call ({}) in this conversation; inputs unchanged, content omitted.",
-                    call.name, hit.tool_call_id
+                    "[cached] Identical to the result of tool call {} earlier in this conversation; inputs unchanged. Refer back to that result — do not repeat this call. First line: \"{head}\" ({line_count} lines total).",
+                    hit.tool_call_id
                 ),
                 Vec::new(),
                 None,
@@ -169,7 +172,7 @@ impl ToolRunner {
         } else {
             (
                 format!(
-                    "[cached] Unchanged since node '{}' ran this exact `{}` call earlier in the run.\n\n{}",
+                    "[cached] Unchanged since node '{}' ran this exact `{}` call earlier in the run; content below is still valid.\n\n{}",
                     hit.node_id, call.name, hit.content
                 ),
                 hit.artifact_ids,
@@ -269,6 +272,15 @@ impl ToolRunner {
         })
     }
 
+    fn is_artifact_read(call: &ToolCall) -> bool {
+        call.name == "read"
+            && call
+                .arguments
+                .get("path")
+                .and_then(Value::as_str)
+                .is_some_and(|path| split_selector(path).0.starts_with("artifact:"))
+    }
+
     pub(super) async fn finalize_record(
         &self,
         call: ToolCall,
@@ -276,8 +288,11 @@ impl ToolRunner {
         file_changes: Vec<FileChangeRecord>,
         edit_batch: Option<EditBatch>,
     ) -> Result<ToolExecutionRecord, ToolRunnerError> {
-        let (content, artifact, output_meta) =
-            self.store_output_text(&call.name, raw_output).await?;
+        let (content, artifact, output_meta) = if Self::is_artifact_read(&call) {
+            (raw_output, None, None)
+        } else {
+            self.store_output_text(&call.name, raw_output).await?
+        };
         Ok(ToolExecutionRecord {
             result: ToolResult {
                 tool_call_id: call.id,
@@ -382,7 +397,6 @@ mod tests {
                     id: "call-1".to_string(),
                     name: "read".to_string(),
                     arguments: serde_json::json!({"path": "note.txt:2-3"}),
-                    intent: None,
                 },
                 None,
             )
@@ -407,7 +421,6 @@ mod tests {
                     id: "call-trunc".to_string(),
                     name: "read".to_string(),
                     arguments: serde_json::json!({"path": "big.txt"}),
-                    intent: None,
                 },
                 None,
             )
@@ -436,7 +449,6 @@ mod tests {
                     id: "call-2".to_string(),
                     name: "search".to_string(),
                     arguments: serde_json::json!({"pattern": "beta", "paths": "note.txt"}),
-                    intent: None,
                 },
                 None,
             )
@@ -455,7 +467,6 @@ mod tests {
                     id: "call-write".to_string(),
                     name: "write".to_string(),
                     arguments: serde_json::json!({"path": "new.txt", "content": "hello\n"}),
-                    intent: None,
                 },
                 None,
             )
@@ -486,7 +497,6 @@ mod tests {
                         "path": "note.txt",
                         "edits": [{"old_text": "beta", "new_text": "gamma"}]
                     }),
-                    intent: None,
                 },
                 None,
             )
@@ -512,7 +522,6 @@ mod tests {
                     id: "call-escape".to_string(),
                     name: "write".to_string(),
                     arguments: serde_json::json!({"path": "../escape.txt", "content": "nope"}),
-                    intent: None,
                 },
                 None,
             )
@@ -532,7 +541,6 @@ mod tests {
                     id: "call-noop".to_string(),
                     name: "write".to_string(),
                     arguments: serde_json::json!({"path": "note.txt", "content": "alpha\n"}),
-                    intent: None,
                 },
                 None,
             )
@@ -559,7 +567,6 @@ mod tests {
                         "path": "../escape.txt",
                         "edits": [{"old_text": "alpha", "new_text": "beta"}]
                     }),
-                    intent: None,
                 },
                 None,
             )
@@ -579,7 +586,6 @@ mod tests {
                     id: "call-patch".to_string(),
                     name: "apply_patch".to_string(),
                     arguments: serde_json::json!({"input": patch}),
-                    intent: None,
                 },
                 None,
             )
@@ -601,7 +607,6 @@ mod tests {
             id: id.to_string(),
             name: "read".to_string(),
             arguments: serde_json::json!({ "path": path }),
-            intent: None,
         }
     }
 
@@ -640,8 +645,9 @@ mod tests {
             .execute(read_call("call-2", "note.txt"), ctx("recon", "recon"))
             .await
             .unwrap();
-        assert!(second.result.content.contains("content omitted"));
+        assert!(second.result.content.contains("do not repeat this call"));
         assert!(second.result.content.contains("call-1"));
+        assert!(second.result.content.contains("First line:"));
         assert!(!second.result.content.contains("alpha"));
     }
 
@@ -672,7 +678,6 @@ mod tests {
             id: id.to_string(),
             name: "search".to_string(),
             arguments: serde_json::json!({"pattern": "alpha", "paths": "."}),
-            intent: None,
         };
         runner
             .execute(search("call-1"), ctx("recon", "recon"))
@@ -689,7 +694,6 @@ mod tests {
                     id: "call-write".to_string(),
                     name: "write".to_string(),
                     arguments: serde_json::json!({"path": "other.txt", "content": "alpha too\n"}),
-                    intent: None,
                 },
                 ctx("implement", "implement"),
             )
@@ -712,7 +716,6 @@ mod tests {
             id: id.to_string(),
             name: "search".to_string(),
             arguments: serde_json::json!({"pattern": "alpha", "paths": "."}),
-            intent: None,
         };
         runner
             .execute(search("call-1"), ctx("recon", "recon"))
@@ -724,6 +727,42 @@ mod tests {
             .await
             .unwrap();
         assert!(!after_bump.result.content.contains("[cached]"));
+    }
+
+    #[tokio::test]
+    async fn read_artifact_round_trip_and_unknown_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let runner = runner(dir.path());
+        let big = "x".repeat(60_000);
+        let spilled = runner.artifacts().store_text("bash", big.clone()).unwrap();
+        let artifact_id = spilled.1.expect("artifact record").artifact_id.clone();
+
+        let full = runner
+            .execute(
+                read_call("call-artifact", &format!("artifact:{artifact_id}:raw")),
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(full.result.content, big);
+
+        let slice = runner
+            .execute(
+                read_call("call-slice", &format!("artifact:{artifact_id}:1-1")),
+                None,
+            )
+            .await
+            .unwrap();
+        assert!(slice.result.content.contains("1:"));
+
+        let error = runner
+            .execute(read_call("call-missing", "artifact:missing-id"), None)
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("[not_found]"));
+        assert!(error
+            .to_string()
+            .contains("artifacts only live for the current run"));
     }
 
     #[tokio::test]
@@ -753,7 +792,6 @@ mod tests {
                     id: "call-partial".to_string(),
                     name: "apply_patch".to_string(),
                     arguments: serde_json::json!({"input": patch}),
-                    intent: None,
                 },
                 None,
             )
@@ -774,7 +812,6 @@ mod tests {
                     id: "call-after-partial".to_string(),
                     name: "write".to_string(),
                     arguments: serde_json::json!({"path": "after.txt", "content": "ok\n"}),
-                    intent: None,
                 },
                 None,
             )

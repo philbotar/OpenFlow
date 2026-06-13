@@ -21,6 +21,8 @@ const apiMocks = vi.hoisted(() => ({
   saveSettings: vi.fn(),
   saveWorkflows: vi.fn(),
   startRun: vi.fn(),
+  continueRun: vi.fn(),
+  isRunContinuable: vi.fn(),
   submitToolApproval: vi.fn(),
   submitUserInput: vi.fn(),
   validateWorkflow: vi.fn(),
@@ -54,6 +56,8 @@ vi.mock("../api", async (importOriginal) => {
     saveSettings: apiMocks.saveSettings,
     saveWorkflows: apiMocks.saveWorkflows,
     startRun: apiMocks.startRun,
+    continueRun: apiMocks.continueRun,
+    isRunContinuable: apiMocks.isRunContinuable,
     submitUserInput: apiMocks.submitUserInput,
     validateWorkflow: apiMocks.validateWorkflow,
     createProjectFromDirectory: apiMocks.createProjectFromDirectory,
@@ -231,6 +235,7 @@ function installDefaultApiMocks() {
     } as typeof ResizeObserver;
   }
   apiMocks.listenToRunState.mockResolvedValue(() => {});
+  apiMocks.isRunContinuable.mockResolvedValue(false);
   apiMocks.resolveProviderReadiness.mockResolvedValue(READY);
   apiMocks.loadProviderApiKey.mockImplementation(async (providerId: string) => {
     if (providerId === "openai") {
@@ -1452,7 +1457,6 @@ describe("Global chat layout", () => {
           id: "call-1",
           name: "grep",
           arguments: { pattern: "todo" },
-          intent: null,
         },
         tier: "read",
       },
