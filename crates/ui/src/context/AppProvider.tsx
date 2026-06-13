@@ -70,6 +70,10 @@ import {
   readStoredRightPanelHidden,
   writeStoredRightPanelHidden,
 } from "../lib/panelVisibility";
+import {
+  readWorkflowsSectionHidden,
+  writeWorkflowsSectionHidden,
+} from "../lib/workflowsSectionVisibility";
 import { resolveCommittedNodeLabel } from "../lib/nodeLabel";
 import { EMPTY_SETTINGS } from "../constants/providers";
 import {
@@ -153,6 +157,10 @@ export function AppProvider(props: ParentProps) {
   const [rightPanelHidden, setRightPanelHidden] = createSignal(
     readStoredRightPanelHidden(globalThis.localStorage),
   );
+  const [workflowsSectionHidden, setWorkflowsSectionHidden] = createSignal(
+    readWorkflowsSectionHidden(globalThis.localStorage),
+  );
+  const workflowsSectionExpanded = createMemo(() => !workflowsSectionHidden());
   const [workflowSettingsOpen, setWorkflowSettingsOpen] = createSignal(false);
   const [editingWorkflowId, setEditingWorkflowId] = createSignal<string | null>(null);
   const [workflowNameDraft, setWorkflowNameDraft] = createSignal("");
@@ -495,6 +503,10 @@ export function AppProvider(props: ParentProps) {
     try {
       const workflow = await desktop.createWorkflow(`Workflow ${workflows().length + 1}`);
       setWorkflows([...workflows(), workflow]);
+      if (!workflowsSectionExpanded()) {
+        setWorkflowsSectionHidden(false);
+        writeWorkflowsSectionHidden(globalThis.localStorage, false);
+      }
       if (projectId) {
         const nextProjects = await desktop.assignWorkflowToProject(projectId, workflow.id);
         setProjects(nextProjects);
@@ -719,6 +731,12 @@ export function AppProvider(props: ParentProps) {
       setRightPanelHidden(true);
       writeStoredRightPanelHidden(globalThis.localStorage, true);
     }
+  };
+
+  const handleToggleWorkflowsSection = () => {
+    const next = !workflowsSectionExpanded();
+    setWorkflowsSectionHidden(!next);
+    writeWorkflowsSectionHidden(globalThis.localStorage, !next);
   };
 
   const updateCurrentNode = (mutator: (node: Workflow["nodes"][number]) => void) => {
@@ -1497,6 +1515,8 @@ export function AppProvider(props: ParentProps) {
     updateActiveWorkflowSettings,
     rightPanelHidden,
     handleToggleRightPanel,
+    workflowsSectionExpanded,
+    handleToggleWorkflowsSection,
   };
 
   return <AppContext.Provider value={value}>{props.children}</AppContext.Provider>;

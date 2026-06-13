@@ -32,7 +32,22 @@ impl ToolError {
     /// ROADMAP T19: transient (`Timeout`, some `ExecutionFailed`) vs permanent.
     #[must_use]
     pub fn is_retryable(&self) -> bool {
-        matches!(self, Self::Timeout { .. })
+        match self {
+            Self::Timeout { .. } => true,
+            Self::ExecutionFailed { detail, hint } => {
+                let combined =
+                    format!("{detail} {}", hint.as_deref().unwrap_or_default()).to_lowercase();
+                combined.contains("timeout")
+                    || combined.contains("timed out")
+                    || combined.contains("connection reset")
+                    || combined.contains("connection refused")
+                    || combined.contains("temporarily unavailable")
+                    || combined.contains("503")
+                    || combined.contains("502")
+                    || combined.contains("429")
+            }
+            _ => false,
+        }
     }
 
     /// Migration shim mapping to [`Self::ExecutionFailed`].
@@ -41,6 +56,15 @@ impl ToolError {
         Self::ExecutionFailed {
             detail: msg.into(),
             hint: None,
+        }
+    }
+
+    /// Transient execution failure for adapters (retryable via [`Self::is_retryable`]).
+    #[must_use]
+    pub fn transient(detail: impl Into<String>) -> Self {
+        Self::ExecutionFailed {
+            detail: detail.into(),
+            hint: Some("transient".to_string()),
         }
     }
 }
@@ -99,6 +123,20 @@ mod tests {
         }
         .is_retryable());
         assert!(!ToolError::failed("generic").is_retryable());
+    }
+
+    #[test]
+    fn transient_execution_failed_is_retryable() {
+        let err = ToolError::ExecutionFailed {
+            detail: "connection reset".to_string(),
+            hint: Some("transient".to_string()),
+        };
+        assert!(err.is_retryable());
+    }
+
+    #[test]
+    fn permanent_execution_failed_is_not_retryable() {
+        assert!(!ToolError::failed("file not found").is_retryable());
     }
 
     #[test]

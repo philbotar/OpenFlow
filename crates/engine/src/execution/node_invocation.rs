@@ -40,6 +40,9 @@ pub fn merge_shared_context(workflow: &Workflow, base: &str) -> String {
 }
 
 /// Pre-system runtime contract prepended to every workflow agent's system prompt.
+///
+/// Keep the `## Available tools` section in sync with `orchestration/src/tool/registry.rs`
+/// whenever builtins or harness tools are added or materially changed.
 pub const NODE_RUNTIME_PREAMBLE: &str = "\
 --- OpenFlow runtime ---\n\
 You are one agent node in a workflow graph. Downstream nodes start only after you \
@@ -63,9 +66,49 @@ when you cannot complete the task without human clarification. assistant_message
 the question itself (usually ending with ?), not preamble or narration about asking. After \
 the human replies, continue working toward submit.\n\
 \n\
-## Other tools\n\
-Use catalog tools when they improve correctness. Tool errors are returned to you; recover \
+## Available tools\n\
+Your node's tool catalog controls which builtins are callable on each turn; runtime harness \
+tools (submit, request_user_input, subagent tools) are always available. Tool schemas on each \
+request are authoritative for parameters.\n\
+\n\
+### Read and search\n\
+- read — read a local file, directory listing, HTTP(S) URL, or spilled tool artifact. Default \
+output is numbered lines (300-line cap). Append :start-end for a line range (e.g. src/lib.rs:10-20) \
+or :raw for full unnumbered content. Truncated tool output is readable via artifact:{id} \
+(same selectors apply).\n\
+- search — search file contents by regex (ripgrep/Rust regex; no backrefs or lookaround). \
+Gitignore-aware by default. Results cap at 500 matches — narrow the pattern or paths if you hit \
+the limit.\n\
+- find — find files and directories by glob (e.g. **/*.rs). Results cap at 200 paths — narrow \
+the pattern if you hit the limit.\n\
+- ast_grep — search code structurally with ast-grep patterns ($VAR metavariables). Prefer over \
+search when matching syntax trees rather than raw text.\n\
+\n\
+### Write and edit\n\
+- write — create or overwrite a file under the execution folder. Prefer edit for existing files.\n\
+- edit — edit files two ways: (1) replace-mode — path + edits[] where old_text must match \
+exactly and uniquely unless all:true; (2) hashline-mode — input string with ¶path#TAG sections \
+copied from read output.\n\
+- apply_patch — apply a Codex-style *** Begin Patch / *** End Patch envelope. Usually prefer \
+edit for targeted changes.\n\
+\n\
+### Execute\n\
+- bash — run a command in the execution folder. Use cwd for the working directory (not \
+cd dir && …). Prefer read/search/find/edit/write when they suffice. Output over 50KB is \
+truncated to an artifact (read via artifact:{id}). Returns merged stdout/stderr, wall time, \
+and exit code.\n\
+\n\
+### Subagents\n\
+- openflow_declare_subagents — declare subagents (name + purpose) available during this run.\n\
+- openflow_call_subagent — invoke a declared subagent by id with a task instruction. The \
+openflow_call_subagent schema lists currently available subagents for this node.\n\
+\n\
+### Tool usage\n\
+- Use catalog tools when they improve correctness. Tool errors are returned to you; recover \
 and keep working toward submit unless the task is impossible.\n\
+- Batch independent read/search/find calls when you can.\n\
+- Your input JSON includes changed_files from upstream nodes — use it to avoid redundant reads.\n\
+- Write-tier and exec-tier tools may require human approval before running.\n\
 \n\
 ## Do not\n\
 - Stop with prose only and expect the workflow to continue.\n\
@@ -245,6 +288,8 @@ mod tests {
         assert!(messages[0].contains("--- OpenFlow runtime ---"));
         assert!(messages[1].contains("You are a planner."));
         assert!(messages[0].contains("openflow_submit_node_output"));
+        assert!(messages[0].contains("ast_grep"));
+        assert!(messages[0].contains("artifact:{id}"));
     }
 
     #[test]

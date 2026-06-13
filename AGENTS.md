@@ -146,6 +146,7 @@ docs/
 | Add or change `AiPort`, `ToolPort`, or engine input contracts | `engine/src/ports/` |
 | Add or change UI desktop seam | `ui/src/port.ts` |
 | Change run execution semantics | `orchestration/src/run/execution/drive.rs`, `engine/src/execution/interactive_engine.rs` |
+| Add a new builtin tool | `orchestration/src/adapters/tool_impl/`, `orchestration/src/tool/registry.rs`, `engine/src/tools/config.rs` (tier); **also update `NODE_RUNTIME_PREAMBLE`** in `engine/src/execution/node_invocation.rs` so agents get when-to-use guidance in every node's system prompt |
 | Change tool/subagent execution wiring | `orchestration/src/run/execution/tool_port.rs` |
 | Change shared context or workflow settings | `engine/src/graph/workflow.rs`, `orchestration/src/run/execution/`, `ui/src/panels/WorkflowSettingsPanel.tsx` |
 | Change project/workflow linking | `orchestration/src/adapters/storage/project_store.rs`, `project_workflow_store.rs`, `backend/mod.rs`, `ui/src/components/sidebar/` |

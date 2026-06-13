@@ -12,8 +12,9 @@ pub mod workflow_runner;
 
 pub use artifacts::{NodeFailureKind, NodeRunOutput, RunError, RunEvent, RunEventKind, RunReport};
 pub use interactive_engine::{
-    CheckpointError, EngineAwaitApproval, EngineAwaitInput, EngineInputError, EnginePollResult,
-    EngineRetryableNode, EngineRunResult, InteractiveEngine, InteractiveEngineCheckpoint,
+    collect_checkpoint_node_ids, validate_checkpoint_against_workflow, CheckpointError,
+    EngineAwaitApproval, EngineAwaitInput, EngineInputError, EnginePollResult, EngineRetryableNode,
+    EngineRunResult, InteractiveEngine, InteractiveEngineCheckpoint,
 };
 pub use node_invocation::{
     build_agent_request, build_node_input, build_system_messages, build_upstream_map,

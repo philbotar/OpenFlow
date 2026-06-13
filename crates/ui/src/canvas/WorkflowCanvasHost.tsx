@@ -11,6 +11,7 @@ type WorkflowCanvasHostProps = {
   selectedEdgeId: EdgeId | null;
   statusByNode: WorkflowCanvasStatusByNode | null;
   subagentsByNode: WorkflowCanvasSubagentsByNode | null;
+  chatFocusNode?: { nodeId: NodeId; tick: number } | null;
   runActive?: boolean;
   colorMode?: "light" | "dark";
   onSelectNode: (nodeId: NodeId | null) => void;
@@ -40,6 +41,7 @@ function WorkflowCanvasHost(props: WorkflowCanvasHostProps) {
         selectedEdgeId: props.selectedEdgeId,
         statusByNode: props.statusByNode,
         subagentsByNode: props.subagentsByNode,
+        chatFocusNode: props.chatFocusNode,
         runActive: props.runActive,
         colorMode: props.colorMode,
         onSelectNode: props.onSelectNode,

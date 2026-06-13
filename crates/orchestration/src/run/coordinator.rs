@@ -233,7 +233,14 @@ impl RunCoordinator {
         } = params;
 
         validate_workflow(&workflow)?;
-        let session_resources = {
+        let (
+            checkpoint,
+            artifact_root,
+            execution_cwd,
+            snapshot_store,
+            lsp_settings,
+            pending_engine_reverts,
+        ) = {
             let session = self.session.lock().await;
             if session.run_state.as_ref().is_some_and(|state| state.active) {
                 return Err(BackendError::NoContinuableRun);
@@ -269,6 +276,8 @@ impl RunCoordinator {
                     .ok_or(BackendError::NoContinuableRun)?,
             )
         };
+        engine::validate_checkpoint_against_workflow(&workflow, &checkpoint)
+            .map_err(|error| BackendError::CheckpointIncompatible(error.to_string()))?;
 
         let persisted_settings = settings_store.load()?;
         let mut provider_settings = settings.clone();
@@ -292,15 +301,6 @@ impl RunCoordinator {
 
         self.terminate_active_run(TerminationMode::Replaced).await;
 
-        let (
-            engine_checkpoint,
-            artifact_root,
-            execution_cwd,
-            snapshot_store,
-            lsp_settings,
-            pending_engine_reverts,
-        ) = session_resources;
-
         let node_interrupts: NodeInterrupts =
             Arc::new(parking_lot::Mutex::new(std::collections::BTreeMap::new()));
         let checkpoint_sink = Arc::new(ParkingMutex::new(None));
@@ -311,7 +311,7 @@ impl RunCoordinator {
                 entrypoint: entrypoint.clone(),
                 execution_cwd: execution_cwd.clone(),
                 artifact_root: artifact_root.clone(),
-                resume_checkpoint: Some(engine_checkpoint),
+                resume_checkpoint: Some(checkpoint),
                 checkpoint_sink: checkpoint_sink.clone(),
                 ai,
                 agent_snapshots,

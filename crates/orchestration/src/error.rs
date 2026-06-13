@@ -49,4 +49,6 @@ pub enum BackendError {
     NoContinuableRun,
     #[error("checkpoint workflow id does not match the current workflow")]
     CheckpointWorkflowMismatch,
+    #[error("checkpoint is incompatible with the current workflow: {0}")]
+    CheckpointIncompatible(String),
 }

@@ -109,7 +109,7 @@ fail_step() {
 	local log="$LOG_DIR/${name}.log"
 	printf '%s\n' "$message" >"$log"
 	record_step_result "$name" "FAIL" "0"
-	printf '%s\n' '--- output ---'
+	echo '--- output ---'
 	printf '%s\n' "$message"
 	if [[ "$VERIFY_FAIL_FAST" == "1" ]]; then
 		print_summary
@@ -137,9 +137,9 @@ run_step() {
 		record_step_result "$name" "FAIL" "$duration"
 		line_count=$(wc -l <"$log" | tr -d ' ')
 		if [[ "$line_count" -gt "$VERIFY_MAX_LINES" ]]; then
-			printf '%s\n' "--- last $VERIFY_MAX_LINES lines ($line_count total; full log: $log) ---"
+			echo "--- last $VERIFY_MAX_LINES lines ($line_count total; full log: $log) ---"
 		else
-			printf '%s\n' '--- output ---'
+			echo '--- output ---'
 		fi
 		# Use cat (not printf) so diff/cargo lines starting with `-` are not parsed as flags.
 		tail -n "$VERIFY_MAX_LINES" "$log" | cat

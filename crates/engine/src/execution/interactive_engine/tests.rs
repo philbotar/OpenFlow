@@ -7,7 +7,7 @@
 
 use super::{
     CheckpointError, EngineInputError, EnginePollResult, EngineRunResult, InteractiveEngine,
-    RunError, RunEventKind,
+    PendingToolBatch, RunError, RunEventKind,
 };
 use crate::conversation::{AgentTranscriptItem, ChatMessage, ChatRole};
 use crate::execution::NodeFailureKind;
@@ -1037,6 +1037,63 @@ fn checkpoint_completed_nodes_remain_blocked_after_restore() {
     };
     assert_eq!(node_id, NodeId::from("second"));
     assert!(engine.node_output(&NodeId::from("first")).is_some());
+}
+
+#[test]
+fn checkpoint_stop_mid_tool_execution_retains_approved_batch() {
+    let mut workflow = Workflow::new("mid-tool");
+    workflow.nodes = vec![node("idea")];
+    let mut engine = InteractiveEngine::new(workflow, None).unwrap();
+
+    engine.pending_tool_batches.insert(
+        "batch-1".to_string(),
+        PendingToolBatch {
+            approval_id: "batch-1".to_string(),
+            node_id: NodeId::from("idea"),
+            tool_calls: vec![ToolCall {
+                id: "call-1".to_string(),
+                name: "read".to_string(),
+                arguments: json!({"path": "foo.txt"}),
+            }],
+            requires_approval: false,
+        },
+    );
+    engine.in_flight_ai.insert(NodeId::from("idea"));
+
+    let checkpoint = engine.prepare_stop_checkpoint();
+
+    assert!(
+        checkpoint.pending_tool_batches.contains_key("batch-1"),
+        "approved in-flight tool batch must survive stop checkpoint"
+    );
+}
+
+#[test]
+fn prepare_resume_returns_failures_for_non_retryable_nodes() {
+    let mut workflow = Workflow::new("resume-fail");
+    workflow.nodes = vec![node("idea")];
+    let mut engine = InteractiveEngine::new(workflow, None).unwrap();
+    engine.interrupted_nodes.insert(NodeId::from("ghost"));
+
+    let failures = engine.prepare_resume();
+    assert!(failures.contains(&NodeId::from("ghost")));
+}
+
+#[test]
+fn checkpoint_rejects_unknown_node_ids_in_workflow() {
+    let mut workflow = Workflow::new("wf-1");
+    workflow.nodes = vec![node("idea")];
+    let mut engine = InteractiveEngine::new(workflow.clone(), None).unwrap();
+    let mut checkpoint = engine.prepare_stop_checkpoint();
+    checkpoint
+        .outputs
+        .insert(NodeId::from("deleted"), json!({"x": 1}));
+
+    match InteractiveEngine::from_checkpoint(workflow, checkpoint) {
+        Err(CheckpointError::StaleNodeIds { .. }) => {}
+        Ok(_) => panic!("expected stale node ids error"),
+        Err(other) => panic!("expected stale node ids error, got {other:?}"),
+    }
 }
 
 #[test]

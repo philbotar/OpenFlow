@@ -70,6 +70,54 @@ pub enum CheckpointError {
         checkpoint: WorkflowId,
         workflow: WorkflowId,
     },
+    #[error("checkpoint references node ids not present in workflow: {missing:?}")]
+    StaleNodeIds { missing: Vec<NodeId> },
+}
+
+#[must_use]
+pub fn collect_checkpoint_node_ids(checkpoint: &InteractiveEngineCheckpoint) -> BTreeSet<NodeId> {
+    let mut ids = BTreeSet::new();
+    ids.extend(checkpoint.outputs.keys().cloned());
+    ids.extend(checkpoint.transcripts.keys().cloned());
+    ids.extend(checkpoint.changed_files_by_node.keys().cloned());
+    ids.extend(checkpoint.started_invocations_by_node.keys().cloned());
+    ids.extend(checkpoint.queued_nodes.iter().cloned());
+    ids.extend(checkpoint.awaiting_nodes.iter().cloned());
+    ids.extend(checkpoint.interrupted_nodes.iter().cloned());
+    ids.extend(checkpoint.failed_nodes.keys().cloned());
+    ids.extend(checkpoint.retries_by_node.keys().cloned());
+    ids.extend(
+        checkpoint
+            .pending_tool_batches
+            .values()
+            .map(|batch| batch.node_id.clone()),
+    );
+    ids.extend(checkpoint.events.iter().map(|event| event.node_id.clone()));
+    ids
+}
+
+/// # Errors
+/// Returns [`CheckpointError::WorkflowMismatch`] or [`CheckpointError::StaleNodeIds`].
+pub fn validate_checkpoint_against_workflow(
+    workflow: &Workflow,
+    checkpoint: &InteractiveEngineCheckpoint,
+) -> Result<(), CheckpointError> {
+    if workflow.id != checkpoint.workflow_id {
+        return Err(CheckpointError::WorkflowMismatch {
+            checkpoint: checkpoint.workflow_id.clone(),
+            workflow: workflow.id.clone(),
+        });
+    }
+    let valid: BTreeSet<NodeId> = workflow.nodes.iter().map(|n| n.id.clone()).collect();
+    let referenced = collect_checkpoint_node_ids(checkpoint);
+    let missing: Vec<NodeId> = referenced
+        .into_iter()
+        .filter(|id| !valid.contains(id))
+        .collect();
+    if !missing.is_empty() {
+        return Err(CheckpointError::StaleNodeIds { missing });
+    }
+    Ok(())
 }
 
 impl InteractiveEngine {
@@ -77,9 +125,6 @@ impl InteractiveEngine {
     pub fn prepare_stop_checkpoint(&mut self) -> InteractiveEngineCheckpoint {
         self.interrupted_nodes
             .extend(std::mem::take(&mut self.in_flight_ai));
-        self.pending_tool_batches.retain(|_, batch| {
-            batch.requires_approval || !self.interrupted_nodes.contains(&batch.node_id)
-        });
         self.pending_retry_delay = None;
 
         InteractiveEngineCheckpoint {
@@ -123,6 +168,7 @@ impl InteractiveEngine {
                 workflow: workflow.id,
             });
         }
+        validate_checkpoint_against_workflow(&workflow, &checkpoint)?;
 
         let layers = crate::graph::validation::execution_layers(&workflow)?;
         let upstream_map = crate::execution::build_upstream_map(&workflow);
@@ -164,10 +210,14 @@ impl InteractiveEngine {
     }
 
     /// Auto-retry interrupted nodes so continue does not require manual retry.
-    pub fn prepare_resume(&mut self) {
+    pub fn prepare_resume(&mut self) -> Vec<NodeId> {
         let interrupted = self.interrupted_nodes.iter().cloned().collect::<Vec<_>>();
+        let mut failures = Vec::new();
         for node_id in interrupted {
-            let _ = self.retry_node(&node_id);
+            if self.retry_node(&node_id).is_err() {
+                failures.push(node_id);
+            }
         }
+        failures
     }
 }

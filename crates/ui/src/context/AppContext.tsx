@@ -70,6 +70,7 @@ export interface AppContextValue {
   chatFilterNodeId: Accessor<NodeId | null>;
   chatFocusNode: Accessor<{ nodeId: NodeId; tick: number } | null>;
   pickedLiveNodeId: Accessor<NodeId | null>;
+  workflowsSectionExpanded: Accessor<boolean>;
 
   // ── Signal setters (form inputs + simple UI state) ────────────────────────
   setWorkflowNameDraft: Setter<string>;
@@ -185,6 +186,7 @@ export interface AppContextValue {
   handleChatInputKeyDown: (event: KeyboardEvent, nodeId: NodeId) => void;
 
   // ── Workflow settings handlers ────────────────────────────────────────────
+  handleToggleWorkflowsSection: () => void;
   handleToggleWorkflowSettings: () => void;
   handleToggleRightPanel: () => void;
   updateActiveWorkflowSettings: (mutator: (settings: Workflow["settings"]) => void) => void;

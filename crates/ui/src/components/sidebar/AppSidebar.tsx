@@ -1,12 +1,14 @@
 import { For, Show } from "solid-js";
 import { useAppContext } from "../../context/AppContext";
-import { isMacOS } from "../../lib/utils";
+import { isMacOS, ICON_STROKE_WIDTH } from "../../lib/utils";
 import { formatUiZoomLabel as fmtZoom } from "../../lib/uiZoom";
+import ChevronRight from "lucide-solid/icons/chevron-right";
 import { ProjectFolderRow } from "./ProjectFolderRow";
 import { SidebarList } from "./SidebarList";
 import { SidebarListRow } from "./SidebarListRow";
 import { SidebarIconButton } from "./SidebarIconButton";
 import { SidebarNavButton } from "./SidebarNavButton";
+import { CollapsibleSection } from "../CollapsibleSection";
 
 function WorkflowRows() {
   const ctx = useAppContext();
@@ -78,7 +80,21 @@ export function Sidebar() {
           onClick={ctx.handleOpenAgents}
         />
         <div class="sidebar-section-group">
-          <div class="sidebar-section-header">
+          <div class="sidebar-section-header workflows-section-header">
+            <button
+              type="button"
+              class="workflows-section-chevron-btn"
+              onClick={ctx.handleToggleWorkflowsSection}
+              aria-expanded={ctx.workflowsSectionExpanded()}
+              aria-label="Toggle workflows section"
+            >
+              <ChevronRight
+                class="workflows-section-chevron"
+                aria-hidden="true"
+                absoluteStrokeWidth
+                strokeWidth={ICON_STROKE_WIDTH}
+              />
+            </button>
             <div class="sidebar-section-label">Workflows</div>
             <SidebarIconButton
               icon="plus"
@@ -97,7 +113,9 @@ export function Sidebar() {
               </div>
             }
           >
-            <WorkflowRows />
+            <CollapsibleSection open={ctx.workflowsSectionExpanded()}>
+              <WorkflowRows />
+            </CollapsibleSection>
           </Show>
         </div>
         <div class="sidebar-section-group sidebar-projects-section">

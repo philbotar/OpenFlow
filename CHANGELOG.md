@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Changed
+
+- **Workflow canvas:** hide the default React Flow corner attribution via `proOptions.hideAttribution`; fit the full graph when a workflow loads and pan to a node on canvas selection or chat focus (`fitView` via `useReactFlow`).
+- **Node runtime preamble:** `NODE_RUNTIME_PREAMBLE` now documents all builtin and harness tools (read/search/find/ast_grep, write/edit/apply_patch, bash, subagents) with when-to-use guidance and usage conventions.
+
+### Documentation
+
+- Document that new or changed builtin tools must update `NODE_RUNTIME_PREAMBLE` alongside `tool/registry.rs` (`AGENTS.md`, `technical-overview.md`, hexagonal rules).
+- Add Staff+ deep audit report (`docs/audits/2026-06-13-deep-audit.md`) covering checkpoint/continue, bash tool, persistence, IPC, and refactor backlog.
+- Add four TDD implementation plans in `docs/superpowers/plans/2026-06-13-*.md` (checkpoint integrity, bash hardening, persistence atomicity, headless retry parity).
+
 ### Added
 
 - **Stop and continue runs:** user stop snapshots `InteractiveEngine` state in-session; **Continue** resumes from checkpoint with transcripts, outputs, and pause points preserved; **Run** still starts fresh; `continue_run` / `is_run_continuable` desktop IPC; header Continue + fresh-run buttons when a stopped run is resumable; ⌘/Ctrl+Enter continues when continuable.
@@ -34,6 +45,9 @@
 
 ### Fixed
 
+- Headless workflow runs auto-retry transient node errors (parity with interactive engine).
+- Tool errors with transient indicators (timeout, connection reset) are retryable.
+- **Checkpoint / continue integrity:** reject checkpoints whose node ids no longer exist in the workflow (`StaleNodeIds` / `CheckpointIncompatible`); retain in-flight tool batches across stop (prevents duplicate side effects on resume); `prepare_resume` returns nodes it could not retry; resolve approval `node_id` from engine pending batch before `on_tool_decision` clears it.
 - **Bash tool hardening:** timeout/cancel kills the process group (grandchildren no longer survive); timeout preserves partial stdout/stderr; incremental pipe reads replace `read_to_end` (groundwork for live streaming).
 - **`scripts/verify.sh`:** failure log headers no longer pass `---` strings to `printf` as format literals (macOS treats them as flags).
 - **`providers`:** clippy/doc fixes for `prompt_cache.rs`; extract Anthropic cache-control test fixtures to satisfy `too_many_lines`.

@@ -32,6 +32,7 @@ export function EditorScreen() {
             selectedEdgeId={ctx.selectedEdgeId()}
             statusByNode={ctx.canvasStatusByNode()}
             subagentsByNode={ctx.canvasSubagentsByNode()}
+            chatFocusNode={ctx.chatFocusNode()}
             runActive={Boolean(ctx.runState()?.active)}
             colorMode={ctx.resolvedTheme()}
             onSelectNode={ctx.handleSelectNode}

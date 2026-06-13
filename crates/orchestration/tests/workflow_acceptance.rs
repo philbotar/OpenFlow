@@ -3,7 +3,11 @@ use engine::{
     AgentError, AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTurnOutcome,
     AgentTurnSuccess, AiPort, ApprovalMode, Edge, Node, NodeId, ToolCall, ToolRef, Workflow,
 };
-use orchestration::run::execution::{run_workflow_headless, ApprovalResponse, ManualInput};
+use orchestration::run::execution::{
+    new_artifact_root, new_in_memory_snapshot_store, run_workflow_headless,
+    spawn_interactive_workflow_run, ApprovalResponse, ExecutionAction, ExecutionEvent,
+    InteractiveWorkflowRunParams, ManualInput,
+};
 use orchestration::run::state::TraceStatus;
 use parking_lot::Mutex;
 use serde_json::json;
@@ -395,5 +399,160 @@ async fn write_tool_requires_approval_and_mutates_file_after_allow() {
     assert_eq!(
         std::fs::read_to_string(&target).unwrap(),
         "saved ORCHID-91\n"
+    );
+}
+
+#[derive(Clone)]
+struct CheckpointWriteToolAi {
+    calls: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+#[async_trait]
+impl AiPort for CheckpointWriteToolAi {
+    async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+        use std::sync::atomic::Ordering;
+        let call_number = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
+        if call_number == 1 {
+            return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+                raw_text: String::new(),
+                assistant_message: Some("Saving draft".to_string()),
+                tool_calls: vec![ToolCall {
+                    id: "call-write".to_string(),
+                    name: "write".to_string(),
+                    arguments: json!({"path": "draft.txt", "content": "checkpoint ORCHID-91\n"}),
+                }],
+            }));
+        }
+        let saw_tool_result = request
+            .transcript
+            .iter()
+            .any(|item| matches!(item, engine::AgentTranscriptItem::ToolResult { .. }));
+        assert!(saw_tool_result);
+        Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+            output: json!({"summary": "draft saved ORCHID-91"}),
+            raw_text: "{}".to_string(),
+            assistant_message: None,
+        }))
+    }
+}
+
+fn write_approval_workflow() -> Workflow {
+    let mut workflow = Workflow::new("checkpoint mid approval");
+    let mut node = agent("write-node", "Write node");
+    node.agent.tools.catalog.tools = vec![ToolRef {
+        name: "write".to_string(),
+        tier: Some(engine::ToolTier::Write),
+    }];
+    node.agent.tools.approval_mode = Some(ApprovalMode::AlwaysAsk);
+    workflow.nodes = vec![node];
+    workflow
+}
+
+fn checkpoint_interactive_params<A: AiPort + Send + Sync + 'static>(
+    workflow: Workflow,
+    execution_cwd: std::path::PathBuf,
+    ai: A,
+    resume_checkpoint: Option<engine::InteractiveEngineCheckpoint>,
+    checkpoint_sink: Arc<parking_lot::Mutex<Option<engine::InteractiveEngineCheckpoint>>>,
+) -> InteractiveWorkflowRunParams<A> {
+    InteractiveWorkflowRunParams {
+        workflow,
+        entrypoint: None,
+        execution_cwd,
+        artifact_root: new_artifact_root(),
+        resume_checkpoint,
+        checkpoint_sink,
+        ai,
+        agent_snapshots: BTreeMap::new(),
+        snapshot_store: new_in_memory_snapshot_store(),
+        lsp: orchestration::lsp::LspSettings::from_env(),
+        pending_engine_reverts: Arc::new(parking_lot::Mutex::new(Vec::new())),
+        node_interrupts: Arc::new(parking_lot::Mutex::new(BTreeMap::new())),
+    }
+}
+
+#[tokio::test]
+async fn checkpoint_resume_mid_approval_replays_batch() {
+    use parking_lot::Mutex as ParkingMutex;
+    use std::time::Duration;
+    use tokio::time::timeout;
+
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("draft.txt");
+    let workflow = write_approval_workflow();
+    let ai = CheckpointWriteToolAi {
+        calls: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+    };
+    let checkpoint_sink = Arc::new(ParkingMutex::new(None));
+    let params = checkpoint_interactive_params(
+        workflow.clone(),
+        dir.path().to_path_buf(),
+        ai.clone(),
+        None,
+        checkpoint_sink.clone(),
+    );
+
+    let (handle, mut event_rx, action_tx, _cancel, _) =
+        spawn_interactive_workflow_run(&tokio::runtime::Handle::current(), params);
+
+    let mut captured_approval_id = None;
+    while let Ok(Some(event)) = timeout(Duration::from_secs(5), event_rx.recv()).await {
+        if let ExecutionEvent::ToolApprovalRequested { request } = &event {
+            captured_approval_id = Some(request.approval_id.clone());
+            action_tx.send(ExecutionAction::Stop).expect("stop");
+        }
+        if matches!(event, ExecutionEvent::Aborted) {
+            break;
+        }
+    }
+    handle.await.expect("drive task");
+
+    let approval_id = captured_approval_id.expect("expected tool approval before stop");
+    let checkpoint = checkpoint_sink
+        .lock()
+        .clone()
+        .expect("checkpoint after stop");
+    assert!(
+        checkpoint.pending_tool_batches.contains_key(&approval_id),
+        "checkpoint must retain pending approval batch"
+    );
+
+    let resume_params = checkpoint_interactive_params(
+        workflow,
+        dir.path().to_path_buf(),
+        ai,
+        Some(checkpoint),
+        Arc::new(ParkingMutex::new(None)),
+    );
+
+    let (handle, mut event_rx, action_tx, _cancel, _) =
+        spawn_interactive_workflow_run(&tokio::runtime::Handle::current(), resume_params);
+
+    let mut replayed_approval_id = None;
+    while let Ok(Some(event)) = timeout(Duration::from_secs(5), event_rx.recv()).await {
+        if let ExecutionEvent::ToolApprovalRequested { request } = &event {
+            replayed_approval_id = Some(request.approval_id.clone());
+            assert_eq!(request.tool_call.id, "call-write");
+            action_tx
+                .send(ExecutionAction::ResolveApproval {
+                    approval_id: request.approval_id.clone(),
+                    allow: true,
+                    reason: None,
+                })
+                .expect("approve");
+        }
+        if matches!(
+            event,
+            ExecutionEvent::NodeCompleted { ref node_id, .. } if node_id.0 == "write-node"
+        ) {
+            break;
+        }
+    }
+    handle.await.expect("resume drive task");
+
+    assert_eq!(replayed_approval_id.as_deref(), Some(approval_id.as_str()));
+    assert_eq!(
+        std::fs::read_to_string(&target).unwrap(),
+        "checkpoint ORCHID-91\n"
     );
 }

@@ -1,5 +1,4 @@
 use super::*;
-use engine::InteractiveEngine;
 use std::fs;
 
 fn seeded_session(artifact_root: PathBuf) -> RunSession {
@@ -43,10 +42,26 @@ fn finish_run_session_preserves_artifact_root_for_continuable_run() {
     fs::write(artifact_root.join("spill.txt"), "hello").expect("seed artifact");
 
     let mut session = seeded_session(artifact_root.clone());
-    let mut workflow = Workflow::new("wf-1");
-    workflow.nodes.push(engine::Node::agent("Agent", 0.0, 0.0));
-    let mut engine = InteractiveEngine::new(workflow, None).expect("engine");
-    session.engine_checkpoint = Some(engine.prepare_stop_checkpoint());
+    let workflow = Workflow::new("wf-1");
+    session.engine_checkpoint = Some(InteractiveEngineCheckpoint {
+        workflow_id: workflow.id,
+        layer_idx: 0,
+        outputs: Default::default(),
+        changed_files_by_node: Default::default(),
+        transcripts: Default::default(),
+        events: Vec::new(),
+        queued_nodes: Default::default(),
+        started_invocations_by_node: Default::default(),
+        awaiting_nodes: Default::default(),
+        pending_tool_batches: Default::default(),
+        retries_by_node: Default::default(),
+        pending_retry_delay_ms: None,
+        submit_output_retries_by_node: Default::default(),
+        request_input_retries_by_node: Default::default(),
+        entrypoint_text: None,
+        interrupted_nodes: Default::default(),
+        failed_nodes: Default::default(),
+    });
 
     finish_run_session(&mut session);
 

@@ -4,12 +4,14 @@ use crate::tools::ToolRegistry;
 use async_trait::async_trait;
 use engine::{
     AgentError, AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTurnOutcome,
-    AgentTurnSuccess, AiPort, AiStreamEvent, AiStreamSink, ApprovalMode, ChatRole, NodeToolConfig,
-    SubagentStatus, SubagentSummary, ToolCall, ToolCallStatus, ToolRef, ToolTier, Workflow,
+    AgentTurnSuccess, AiPort, AiStreamEvent, AiStreamSink, ApprovalMode, ChatRole, NodeId,
+    NodeToolConfig, SubagentStatus, SubagentSummary, ToolCall, ToolCallStatus, ToolRef, ToolTier,
+    Workflow,
 };
 use parking_lot::Mutex;
 use serde_json::json;
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tempfile::TempDir;
@@ -1134,6 +1136,109 @@ async fn retrying_failed_node_does_not_re_emit_sibling_input_pause() {
 }
 
 #[tokio::test]
+async fn headless_retries_transient_node_error() {
+    #[derive(Clone)]
+    struct TransientTwiceAi {
+        calls: Arc<AtomicUsize>,
+    }
+
+    struct NoopStreamSink;
+
+    impl AiStreamSink for NoopStreamSink {
+        fn on_stream_event(&self, _event: AiStreamEvent) {}
+    }
+
+    #[async_trait]
+    impl AiPort for TransientTwiceAi {
+        async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            self.invoke_stream(request, &NoopStreamSink).await
+        }
+
+        async fn invoke_stream(
+            &self,
+            _request: AgentRequest,
+            _sink: &dyn AiStreamSink,
+        ) -> Result<AgentTurnOutcome, AgentError> {
+            let call = self.calls.fetch_add(1, Ordering::SeqCst);
+            if call < 2 {
+                return Err(AgentError::Transient("timeout".to_string()));
+            }
+            Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                output: json!({"summary": "ok"}),
+                raw_text: "{}".to_string(),
+                assistant_message: None,
+            }))
+        }
+    }
+
+    let mut wf = workflow();
+    wf.settings.retry_policy.max_attempts = 1;
+
+    let snapshot = run_workflow_headless(
+        wf,
+        None,
+        TransientTwiceAi {
+            calls: Arc::new(AtomicUsize::new(0)),
+        },
+        Vec::new(),
+        Vec::new(),
+        BTreeMap::new(),
+        None,
+    )
+    .await
+    .expect("headless should auto-retry transient failure");
+
+    assert_eq!(snapshot.report.outputs.len(), 1);
+}
+
+#[tokio::test]
+async fn headless_exhausted_transient_retries_returns_missing_retry() {
+    #[derive(Clone)]
+    struct AlwaysTransientAi;
+
+    struct NoopStreamSink;
+
+    impl AiStreamSink for NoopStreamSink {
+        fn on_stream_event(&self, _event: AiStreamEvent) {}
+    }
+
+    #[async_trait]
+    impl AiPort for AlwaysTransientAi {
+        async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            self.invoke_stream(request, &NoopStreamSink).await
+        }
+
+        async fn invoke_stream(
+            &self,
+            _request: AgentRequest,
+            _sink: &dyn AiStreamSink,
+        ) -> Result<AgentTurnOutcome, AgentError> {
+            Err(AgentError::Transient("timeout".to_string()))
+        }
+    }
+
+    let mut wf = workflow();
+    wf.settings.retry_policy.max_attempts = 1;
+
+    let error = run_workflow_headless(
+        wf,
+        None,
+        AlwaysTransientAi,
+        Vec::new(),
+        Vec::new(),
+        BTreeMap::new(),
+        None,
+    )
+    .await
+    .expect_err("exhausted transient retries should surface MissingRetry");
+
+    assert!(matches!(
+        error,
+        WorkflowExecutionError::MissingRetry(node_id) if node_id.0 == "first"
+    ));
+}
+
+#[tokio::test]
 async fn headless_run_errors_on_retryable_node_failure_instead_of_hanging() {
     #[derive(Clone)]
     struct PermanentFailAi;
@@ -1398,4 +1503,111 @@ async fn stop_mid_run_then_continue_completes_node() {
     }
     handle.await.expect("resume drive task");
     assert!(completed, "expected node to complete after continue");
+}
+
+fn write_tool_workflow() -> Workflow {
+    let mut workflow = Workflow::new("write-approval");
+    let mut node = engine::Node::agent("writer", 0.0, 0.0);
+    node.id = NodeId("writer".to_string());
+    node.agent.model = "test-model".to_string();
+    node.agent.tools.catalog.tools = vec![ToolRef {
+        name: "write".to_string(),
+        tier: Some(ToolTier::Write),
+    }];
+    node.agent.tools.approval_mode = Some(ApprovalMode::AlwaysAsk);
+    workflow.nodes = vec![node];
+    workflow
+}
+
+#[tokio::test]
+async fn resolve_approval_uses_engine_node_id_after_stop_and_continue() {
+    #[derive(Clone)]
+    struct WriteToolAi;
+
+    #[async_trait]
+    impl AiPort for WriteToolAi {
+        async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            self.invoke_stream(request, &NoopStreamSink).await
+        }
+
+        async fn invoke_stream(
+            &self,
+            request: AgentRequest,
+            _sink: &dyn AiStreamSink,
+        ) -> Result<AgentTurnOutcome, AgentError> {
+            if request.transcript.is_empty() {
+                return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+                    raw_text: String::new(),
+                    assistant_message: None,
+                    tool_calls: vec![ToolCall {
+                        id: "call-write".to_string(),
+                        name: "write".to_string(),
+                        arguments: json!({"path": "out.txt", "content": "deny-me\n"}),
+                    }],
+                }));
+            }
+            Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                output: json!({"summary": "done"}),
+                raw_text: "{}".to_string(),
+                assistant_message: None,
+            }))
+        }
+    }
+
+    struct NoopStreamSink;
+
+    impl AiStreamSink for NoopStreamSink {
+        fn on_stream_event(&self, _event: AiStreamEvent) {}
+    }
+
+    let temp = TempDir::new().expect("tempdir");
+    let workflow = write_tool_workflow();
+    let (params, checkpoint_sink) =
+        interactive_run_params_with_sink(workflow.clone(), temp.path().to_path_buf(), WriteToolAi);
+    let (handle, mut event_rx, action_tx, _cancel, _) =
+        spawn_interactive_workflow_run(&tokio::runtime::Handle::current(), params);
+
+    let mut _approval_id = None;
+    while let Ok(Some(event)) = timeout(Duration::from_secs(5), event_rx.recv()).await {
+        if let ExecutionEvent::ToolApprovalRequested { request } = &event {
+            _approval_id = Some(request.approval_id.clone());
+            action_tx.send(ExecutionAction::Stop).expect("stop");
+        }
+        if matches!(event, ExecutionEvent::Aborted) {
+            break;
+        }
+    }
+    handle.await.expect("drive task");
+
+    let checkpoint = checkpoint_sink.lock().clone().expect("checkpoint");
+    let (resume_params, _) =
+        interactive_run_params_with_sink(workflow, temp.path().to_path_buf(), WriteToolAi);
+    let resume_params = InteractiveWorkflowRunParams {
+        resume_checkpoint: Some(checkpoint),
+        ..resume_params
+    };
+    let (handle, mut event_rx, action_tx, _cancel, _) =
+        spawn_interactive_workflow_run(&tokio::runtime::Handle::current(), resume_params);
+
+    let mut denied_node_id = None;
+    while let Ok(Some(event)) = timeout(Duration::from_secs(5), event_rx.recv()).await {
+        if let ExecutionEvent::ToolApprovalRequested { request } = &event {
+            action_tx
+                .send(ExecutionAction::ResolveApproval {
+                    approval_id: request.approval_id.clone(),
+                    allow: false,
+                    reason: Some("not now".to_string()),
+                })
+                .expect("deny");
+        }
+        if let ExecutionEvent::ToolDenied { node_id, .. } = &event {
+            denied_node_id = Some(node_id.clone());
+        }
+        if matches!(event, ExecutionEvent::Finished(_)) {
+            break;
+        }
+    }
+    handle.await.expect("resume drive task");
+
+    assert_eq!(denied_node_id, Some(NodeId("writer".to_string())));
 }

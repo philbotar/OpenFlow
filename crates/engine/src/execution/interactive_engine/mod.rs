@@ -4,7 +4,10 @@ mod completion;
 mod tests;
 mod tools;
 
-pub use checkpoint::{CheckpointError, InteractiveEngineCheckpoint};
+pub use checkpoint::{
+    collect_checkpoint_node_ids, validate_checkpoint_against_workflow, CheckpointError,
+    InteractiveEngineCheckpoint,
+};
 
 use crate::conversation::{AgentTranscriptItem, ChatMessage, ChatRole};
 use crate::execution::node_invocation::{
@@ -609,11 +612,21 @@ impl InteractiveEngine {
         });
     }
 
+    #[must_use]
+    pub fn pending_tool_batch_node(&self, approval_id: &str) -> Option<NodeId> {
+        self.pending_tool_batches
+            .get(approval_id)
+            .map(|batch| batch.node_id.clone())
+    }
+
     /// Retry a failed or interrupted node without clearing its transcript.
     ///
     /// # Errors
     /// Returns [`EngineInputError::NodeNotRetryable`] when the node is not paused for retry.
     pub fn retry_node(&mut self, node_id: &NodeId) -> Result<(), EngineInputError> {
+        if !self.node_index.contains_key(node_id) {
+            return Err(EngineInputError::NodeNotRetryable(node_id.clone()));
+        }
         if !self.failed_nodes.contains_key(node_id) && !self.interrupted_nodes.contains(node_id) {
             return Err(EngineInputError::NodeNotRetryable(node_id.clone()));
         }

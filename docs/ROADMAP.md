@@ -499,7 +499,7 @@ Under `ApprovalMode::Write`, **read** tier auto-allows; **write** and **exec** t
 
 | Layer | Role |
 | --- | --- |
-| `crates/orchestration/src/tool/registry.rs` | Builtin catalog — read tier: `read`, `search`, `find`, `ast_grep`; write tier: `write`, `edit`, `apply_patch` |
+| `crates/orchestration/src/tool/registry.rs` | Builtin catalog — read tier: `read`, `search`, `find`, `ast_grep`; write tier: `write`, `edit`, `apply_patch`; exec tier: `bash`. **Adding a tool:** register here and update `NODE_RUNTIME_PREAMBLE` (`engine/src/execution/node_invocation.rs`) |
 | `crates/orchestration/src/tool/runner.rs` | `ToolRunner` executes builtins under execution cwd; drains `FileChangeRecord` ledger after write-tier calls |
 | `crates/engine/src/tools/config.rs` | `ToolTier`, `ToolRef.tier`, `ApprovalMode`, per-call tier resolution and approval policy |
 | `crates/engine/src/execution/interactive_engine.rs` | Batches tool calls; pauses on write-tier approval via `AwaitToolApproval` |

@@ -243,16 +243,16 @@ pub(super) async fn drive_interactive_workflow<A>(
                                 );
                                 return;
                             }
+                            let node_id = engine
+                                .pending_tool_batch_node(&approval_id)
+                                .or_else(|| approval_nodes.get(&approval_id).cloned())
+                                .unwrap_or_else(|| NodeId("unknown".to_string()));
                             if let Err(error) =
                                 engine.on_tool_decision(&approval_id, allow, reason.as_deref())
                             {
                                 send_or_log(&event_tx, ExecutionEvent::Error(error.to_string()));
                                 return;
                             }
-                            let node_id = approval_nodes
-                                .get(&approval_id)
-                                .cloned()
-                                .unwrap_or_else(|| NodeId("unknown".to_string()));
                             if let Some(tool_calls) = approval_tool_calls.get(&approval_id) {
                                 for tool_call in tool_calls {
                                     if allow {
@@ -350,7 +350,10 @@ fn build_engine(
     match resume_checkpoint {
         Some(checkpoint) => InteractiveEngine::from_checkpoint(workflow, checkpoint)
             .map(|mut engine| {
-                engine.prepare_resume();
+                let failures = engine.prepare_resume();
+                if !failures.is_empty() {
+                    log::warn!("prepare_resume could not retry nodes: {failures:?}");
+                }
                 engine
             })
             .map_err(|error| error.to_string()),
@@ -360,6 +363,12 @@ fn build_engine(
 
 pub fn new_artifact_root() -> PathBuf {
     std::env::temp_dir().join(format!("openflow-run-{}", Uuid::new_v4()))
+}
+
+#[must_use]
+pub fn new_in_memory_snapshot_store(
+) -> Arc<crate::tools::edit::hashline::snapshots::InMemorySnapshotStore> {
+    Arc::new(crate::tools::edit::hashline::snapshots::InMemorySnapshotStore::new())
 }
 
 struct ApprovalRequestEmit<'a> {

@@ -7,19 +7,21 @@ import {
   MarkerType,
   Panel,
   ReactFlow,
+  ReactFlowProvider,
+  useNodesInitialized,
+  useReactFlow,
   type Connection,
   type Edge as FlowEdge,
   type EdgeChange,
   type Node as FlowNode,
   type NodeChange,
   type OnSelectionChangeParams,
-  type NodeProps,
   useEdgesState,
   useNodesState,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import * as React from "react";
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { AgentStatus, EdgeId, NodeId, SubagentSummary } from "../lib/types";
 import {
   NODE_HEIGHT,
@@ -36,6 +38,7 @@ type WorkflowCanvasProps = {
   selectedEdgeId: EdgeId | null;
   statusByNode: WorkflowCanvasStatusByNode | null;
   subagentsByNode: WorkflowCanvasSubagentsByNode | null;
+  chatFocusNode?: { nodeId: NodeId; tick: number } | null;
   runActive?: boolean;
   colorMode?: "light" | "dark";
   onSelectNode: (nodeId: NodeId | null) => void;
@@ -64,6 +67,87 @@ export type WorkflowCanvasEdge = FlowEdge<Record<string, never>, "default">;
 const NODE_TYPES = {
   workflowNode: WorkflowNode,
 };
+
+export const FIT_ALL_VIEWPORT_OPTIONS = {
+  padding: 0.2,
+  maxZoom: 1,
+  duration: 200,
+} as const;
+
+export const FIT_NODE_VIEWPORT_OPTIONS = {
+  padding: 0.35,
+  maxZoom: 1.2,
+  duration: 200,
+} as const;
+
+const NODE_FOCUS_SUPPRESS_MS = 400;
+
+function CanvasViewportController(props: {
+  workflowId: string | null;
+  selectedNodeId: NodeId | null;
+  chatFocusNode?: { nodeId: NodeId; tick: number } | null;
+}) {
+  const { fitView } = useReactFlow();
+  const nodesInitialized = useNodesInitialized();
+  const previousWorkflowIdRef = useRef<string | null>(null);
+  const previousSelectedNodeIdRef = useRef<NodeId | null>(null);
+  const previousChatFocusTickRef = useRef(0);
+  const suppressNodeFocusUntilRef = useRef(0);
+
+  useEffect(() => {
+    if (!nodesInitialized) {
+      return;
+    }
+
+    const workflowId = props.workflowId;
+    if (workflowId && workflowId !== previousWorkflowIdRef.current) {
+      previousWorkflowIdRef.current = workflowId;
+      previousSelectedNodeIdRef.current = props.selectedNodeId;
+      previousChatFocusTickRef.current = props.chatFocusNode?.tick ?? 0;
+      suppressNodeFocusUntilRef.current = performance.now() + NODE_FOCUS_SUPPRESS_MS;
+      void fitView(FIT_ALL_VIEWPORT_OPTIONS);
+      return;
+    }
+
+    const chatFocus = props.chatFocusNode;
+    if (chatFocus && chatFocus.tick !== previousChatFocusTickRef.current) {
+      previousChatFocusTickRef.current = chatFocus.tick;
+      void fitView({
+        ...FIT_NODE_VIEWPORT_OPTIONS,
+        nodes: [{ id: chatFocus.nodeId }],
+      });
+      return;
+    }
+
+    const selectedNodeId = props.selectedNodeId;
+    if (!selectedNodeId) {
+      previousSelectedNodeIdRef.current = null;
+      return;
+    }
+
+    if (selectedNodeId === previousSelectedNodeIdRef.current) {
+      return;
+    }
+
+    previousSelectedNodeIdRef.current = selectedNodeId;
+    if (performance.now() < suppressNodeFocusUntilRef.current) {
+      return;
+    }
+
+    void fitView({
+      ...FIT_NODE_VIEWPORT_OPTIONS,
+      nodes: [{ id: selectedNodeId }],
+    });
+  }, [
+    fitView,
+    nodesInitialized,
+    props.chatFocusNode,
+    props.selectedNodeId,
+    props.workflowId,
+  ]);
+
+  return null;
+}
 
 function edgeStrokeForTheme(colorMode: "light" | "dark") {
   return colorMode === "dark" ? "#4b5568" : "#c3cbda";
@@ -373,44 +457,52 @@ export function WorkflowCanvas(props: WorkflowCanvasProps) {
 
   return (
     <div className="workflow-flow-shell">
-      <ReactFlow<WorkflowCanvasNode, WorkflowCanvasEdge>
-        nodes={nodes}
-        edges={edges}
-        nodeTypes={NODE_TYPES}
-        colorMode={colorMode}
-        defaultEdgeOptions={defaultEdgeOptions(colorMode)}
-        onNodesChange={handleNodesChange}
-        onEdgesChange={handleEdgesChange}
-        onConnect={handleConnect}
-        onReconnect={handleReconnect}
-        onPaneClick={handlePaneClick}
-        onSelectionChange={handleSelectionChange}
-        onBeforeDelete={handleBeforeDelete}
-        deleteKeyCode={null}
-        fitView={false}
-        minZoom={0.4}
-        maxZoom={1.8}
-        panOnScroll
-        selectionOnDrag={false}
-        edgesReconnectable
-        isValidConnection={isValidCanvasConnection}
-        snapToGrid={true}
-        snapGrid={[16, 16]}
-      >
-        <Background
-          gap={22}
-          size={1.5}
-          color={backgroundDotForTheme(colorMode)}
-          variant={BackgroundVariant.Dots}
-        />
-        <Panel position="top-left" className="workflow-flow-panel">
-          <button type="button" className="secondary-button small workflow-flow-add-button" onClick={handleAddNode}>
-            Add node
-          </button>
-        </Panel>
-        <Controls showInteractive={false} position="bottom-left" />
-
-      </ReactFlow>
+      <ReactFlowProvider>
+        <ReactFlow<WorkflowCanvasNode, WorkflowCanvasEdge>
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={NODE_TYPES}
+          colorMode={colorMode}
+          proOptions={{ hideAttribution: true }}
+          defaultEdgeOptions={defaultEdgeOptions(colorMode)}
+          onNodesChange={handleNodesChange}
+          onEdgesChange={handleEdgesChange}
+          onConnect={handleConnect}
+          onReconnect={handleReconnect}
+          onPaneClick={handlePaneClick}
+          onSelectionChange={handleSelectionChange}
+          onBeforeDelete={handleBeforeDelete}
+          deleteKeyCode={null}
+          fitView={false}
+          fitViewOptions={FIT_ALL_VIEWPORT_OPTIONS}
+          minZoom={0.4}
+          maxZoom={1.8}
+          panOnScroll
+          selectionOnDrag={false}
+          edgesReconnectable
+          isValidConnection={isValidCanvasConnection}
+          snapToGrid={true}
+          snapGrid={[16, 16]}
+        >
+          <CanvasViewportController
+            workflowId={props.graph?.id ?? null}
+            selectedNodeId={props.selectedNodeId}
+            chatFocusNode={props.chatFocusNode}
+          />
+          <Background
+            gap={22}
+            size={1.5}
+            color={backgroundDotForTheme(colorMode)}
+            variant={BackgroundVariant.Dots}
+          />
+          <Panel position="top-left" className="workflow-flow-panel">
+            <button type="button" className="secondary-button small workflow-flow-add-button" onClick={handleAddNode}>
+              Add node
+            </button>
+          </Panel>
+          <Controls showInteractive={false} position="bottom-left" />
+        </ReactFlow>
+      </ReactFlowProvider>
     </div>
   );
 }

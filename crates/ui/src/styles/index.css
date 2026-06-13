@@ -651,6 +651,43 @@ select:focus-visible {
   color: var(--text);
 }
 
+.workflows-section-header {
+  gap: 4px;
+  justify-content: flex-start;
+}
+
+.workflows-section-chevron-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.workflows-section-chevron-btn:hover {
+  background: var(--sidebar-hover);
+  color: var(--text);
+}
+
+.workflows-section-chevron {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 150ms ease;
+}
+
+.workflows-section-chevron-btn[aria-expanded='true'] .workflows-section-chevron {
+  transform: rotate(90deg);
+}
+
 .sidebar-section-label {
   margin: 10px 10px 4px;
   font-size: 11px;

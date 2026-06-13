@@ -19,15 +19,15 @@ pub use conversation::{
 };
 pub use execution::{
     advance_subagent_invoke, augment_call_subagent_tool_description, build_agent_request,
-    build_node_input, build_system_messages, build_upstream_map, handle_declare_subagents,
-    is_subagent_runtime_builtin, merge_shared_context, merge_subagent_summaries,
-    start_subagent_invoke, subagent_runtime_builtin_denied, upstream_changed_files,
-    CallSubagentArgs, CheckpointError, EngineAwaitApproval, EngineAwaitInput, EngineInputError,
-    EnginePollResult, EngineRetryableNode, EngineRunResult, InteractiveEngine,
-    InteractiveEngineCheckpoint, NodeInvocationContext, NodeRunOutput, RunError, RunEvent,
-    RunEventKind, RunReport, RunTelemetry, SubagentInvokeSession, SubagentInvokeStep,
-    SubagentStartOutcome, WorkflowRunner, CALL_SUBAGENT_TOOL, DECLARE_SUBAGENTS_TOOL,
-    NODE_RUNTIME_PREAMBLE,
+    build_node_input, build_system_messages, build_upstream_map, collect_checkpoint_node_ids,
+    handle_declare_subagents, is_subagent_runtime_builtin, merge_shared_context,
+    merge_subagent_summaries, start_subagent_invoke, subagent_runtime_builtin_denied,
+    upstream_changed_files, validate_checkpoint_against_workflow, CallSubagentArgs,
+    CheckpointError, EngineAwaitApproval, EngineAwaitInput, EngineInputError, EnginePollResult,
+    EngineRetryableNode, EngineRunResult, InteractiveEngine, InteractiveEngineCheckpoint,
+    NodeInvocationContext, NodeRunOutput, RunError, RunEvent, RunEventKind, RunReport,
+    RunTelemetry, SubagentInvokeSession, SubagentInvokeStep, SubagentStartOutcome, WorkflowRunner,
+    CALL_SUBAGENT_TOOL, DECLARE_SUBAGENTS_TOOL, NODE_RUNTIME_PREAMBLE,
 };
 pub use graph::{
     build_predefined_subagent_summaries, execution_layers, resolve_callable_agent_snapshots,
