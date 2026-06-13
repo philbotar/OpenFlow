@@ -1749,20 +1749,24 @@ select.text-input:hover {
 
 .dock-tab-switcher > button,
 .segmented-control button {
-  padding: 7px 11px;
-  border: 1px solid transparent;
-  border-radius: 999px;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 4px;
   background: transparent;
   color: var(--text-muted);
-  transition: background 150ms ease, border-color 150ms ease, color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
+  transition: background 150ms ease, color 150ms ease;
 }
 
 .dock-tab-switcher > button.active,
 .segmented-control button.active {
   background: var(--surface-emphasis);
-  border-color: var(--border-strong);
   color: var(--text);
-  box-shadow: var(--shadow-panel);
+}
+
+.dock-tab-switcher > button:not(.active):hover,
+.segmented-control button:not(.active):hover {
+  background: rgba(24, 24, 27, 0.06);
+  color: var(--text);
 }
 
 .dock-trace-action {
@@ -3329,7 +3333,7 @@ select.text-input:hover {
 .model-chip:hover,
 .dock-tab-switcher > button:hover,
 .segmented-control button:hover {
-  transform: translateY(-1px);
+  transform: none;
 }
 
 .secondary-button.ghost {
@@ -4083,8 +4087,11 @@ select.text-input:hover {
 [data-theme="dark"] .dock-tab-switcher > button.active,
 [data-theme="dark"] .segmented-control button.active {
   background: rgba(42, 46, 60, 0.92);
-  border-color: rgba(129, 140, 248, 0.22);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+}
+
+[data-theme="dark"] .dock-tab-switcher > button:not(.active):hover,
+[data-theme="dark"] .segmented-control button:not(.active):hover {
+  background: rgba(255, 255, 255, 0.06);
 }
 
 [data-theme="dark"] .chat-composer-pill {

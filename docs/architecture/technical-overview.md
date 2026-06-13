@@ -161,7 +161,7 @@ Context is **engine-owned and deterministic**. Providers receive an ordered `Age
 ```mermaid
 flowchart TD
     subgraph SystemMessages["system_messages (ordered)"]
-        P1["1. NODE_RUNTIME_PREAMBLE<br/>(harness contract: how to finish,<br/>how to pause, what not to do)"]
+        P1["1. NODE_RUNTIME_PREAMBLE<br/>(harness contract + tool catalog:<br/>when to finish, pause, and use each tool)"]
         P2["2. Node's own system prompt"]
         P3["3. Workflow shared_context<br/>(--- Workflow context ---)"]
     end
@@ -193,7 +193,7 @@ Notable properties:
 - **Deterministic ordering.** Upstream outputs are sorted by node ID; `serde_json::Value` maps are BTreeMap-backed, so the same graph state always produces byte-identical input. This is what makes tool-result caching keyable on raw arguments (§4).
 - **Transitive file-change provenance.** `upstream_changed_files` walks *all* transitive ancestors, not just direct parents, and merges `FileChangeRecord`s (rename chains collapse to the destination path). A node three hops downstream knows exactly which files the run has touched before it starts — without re-reading anything.
 - **Transcript ≠ context blob.** Each node has its own append-only transcript of typed items (`AgentTranscriptItem`). Human replies, tool turns, and retries all extend the same transcript, so a retried node *continues* rather than restarts.
-- **Reasoning controls per node**: `reasoning_effort` / `reasoning_budget_tokens` ride along on the request as opaque values; the provider decides how to map them.
+- **Tool catalog in preamble.** `NODE_RUNTIME_PREAMBLE` documents every builtin and harness tool with when-to-use guidance. Per-turn `available_tools` schemas remain authoritative for parameters; the preamble is the cross-tool usage guide. **When you add or materially change a tool**, update both `orchestration/src/tool/registry.rs` (schema + description) and the `## Available tools` section of `NODE_RUNTIME_PREAMBLE` in `engine/src/execution/node_invocation.rs`. New harness tools (e.g. submit, request input) also need matching preamble sections.
 
 ---
 

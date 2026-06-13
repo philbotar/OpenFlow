@@ -4,6 +4,7 @@
 
 ### Changed
 
+- **Dock panel tabs:** restyle Overview / Chat / Run trace switcher to flat Cursor-like buttons — 4px radius, no border or shadow, subtle hover fill.
 - **Workflow canvas:** hide the default React Flow corner attribution via `proOptions.hideAttribution`; fit the full graph when a workflow loads and pan to a node on canvas selection or chat focus (`fitView` via `useReactFlow`).
 - **Node runtime preamble:** `NODE_RUNTIME_PREAMBLE` now documents all builtin and harness tools (read/search/find/ast_grep, write/edit/apply_patch, bash, subagents) with when-to-use guidance and usage conventions.
 
