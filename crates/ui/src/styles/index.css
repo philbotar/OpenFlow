@@ -651,9 +651,10 @@ select:focus-visible {
   color: var(--text);
 }
 
-.workflows-section-header {
-  gap: 4px;
-  justify-content: flex-start;
+.sidebar-section-trailing {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
 }
 
 .workflows-section-chevron-btn {
@@ -668,7 +669,20 @@ select:focus-visible {
   color: var(--text-muted);
   cursor: pointer;
   border-radius: 6px;
-  transition: background 150ms ease, color 150ms ease;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 150ms ease,
+    visibility 150ms ease,
+    background 150ms ease,
+    color 150ms ease;
+}
+
+.workflows-section-header:hover .workflows-section-chevron-btn,
+.sidebar-section-group:hover .workflows-section-chevron-btn,
+.workflows-section-chevron-btn:focus-visible {
+  opacity: 1;
+  visibility: visible;
 }
 
 .workflows-section-chevron-btn:hover {
@@ -1686,14 +1700,20 @@ select.text-input:hover {
   padding: 16px;
   border: 1px solid var(--border);
   border-radius: 20px;
-  background: rgba(255, 255, 255, 0.84);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  background: var(--raised-surface);
+  box-shadow: inset 0 1px 0 var(--hover-overlay);
 }
 
 .output-panel pre,
 .trace-detail pre {
   max-height: 240px;
   overflow: auto;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  font-family: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 }
 
 .dock-panel {
@@ -1751,7 +1771,7 @@ select.text-input:hover {
 .segmented-control button {
   padding: 6px 10px;
   border: none;
-  border-radius: 4px;
+  border-radius: 8px;
   background: transparent;
   color: var(--text-muted);
   transition: background 150ms ease, color 150ms ease;
@@ -3009,10 +3029,19 @@ select.text-input:hover {
 }
 
 .tool-line-name {
-  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  flex: 0 1 auto;
+  max-width: 100%;
+}
+
+.tool-line-name-text {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .tool-line-target {
@@ -3048,7 +3077,7 @@ select.text-input:hover {
 }
 
 .tool-line:hover .tool-line-chevron,
-.tool-line--expandable .tool-line-chevron {
+.tool-line-chevron--expanded {
   opacity: 1;
 }
 
@@ -3173,6 +3202,13 @@ select.text-input:hover {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
+}
+
+.trace-row > div > div:last-child {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1.45;
 }
 
 .trace-row.active,
@@ -3190,28 +3226,28 @@ select.text-input:hover {
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  background: #edf1ff;
-  color: #4856c4;
+  background: color-mix(in srgb, var(--focus-strong) 14%, var(--surface-emphasis));
+  color: var(--focus-strong);
 }
 
 .trace-pill.completed {
   background: var(--success-soft);
-  color: #256646;
+  color: var(--success);
 }
 
 .trace-pill.failed {
   background: var(--danger-soft);
-  color: #8f3340;
+  color: var(--danger);
 }
 
 .trace-pill.stopped {
-  background: #eceef2;
-  color: #5c6370;
+  background: var(--surface-emphasis);
+  color: var(--text-muted);
 }
 
 .trace-pill.paused {
   background: var(--warning-soft);
-  color: #8b6514;
+  color: var(--warning);
 }
 
 .workflow-row {
@@ -4051,11 +4087,22 @@ select.text-input:hover {
     linear-gradient(180deg, rgba(18, 20, 28, 0.98), rgba(15, 17, 24, 0.96));
 }
 
+[data-theme="dark"] .trace-row.active,
+[data-theme="dark"] .trace-row:hover {
+  background: rgba(34, 38, 50, 0.96);
+  border-color: rgba(129, 140, 248, 0.12);
+}
+
 [data-theme="dark"] .canvas-panel,
 [data-theme="dark"] .inspector-panel,
 [data-theme="dark"] .settings-panel,
-[data-theme="dark"] .settings-section {
+[data-theme="dark"] .settings-section,
+[data-theme="dark"] .output-panel,
+[data-theme="dark"] .trace-detail,
+[data-theme="dark"] .trace-list {
   background: rgba(28, 32, 42, 0.92);
+  border-color: rgba(129, 140, 248, 0.1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 [data-theme="dark"] .inspector-section-header:hover {

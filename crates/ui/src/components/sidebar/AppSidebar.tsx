@@ -81,27 +81,29 @@ export function Sidebar() {
         />
         <div class="sidebar-section-group">
           <div class="sidebar-section-header workflows-section-header">
-            <button
-              type="button"
-              class="workflows-section-chevron-btn"
-              onClick={ctx.handleToggleWorkflowsSection}
-              aria-expanded={ctx.workflowsSectionExpanded()}
-              aria-label="Toggle workflows section"
-            >
-              <ChevronRight
-                class="workflows-section-chevron"
-                aria-hidden="true"
-                absoluteStrokeWidth
-                strokeWidth={ICON_STROKE_WIDTH}
-              />
-            </button>
             <div class="sidebar-section-label">Workflows</div>
-            <SidebarIconButton
-              icon="plus"
-              label="New workflow"
-              class="sidebar-section-action"
-              onClick={() => void ctx.handleCreateWorkflow()}
-            />
+            <div class="sidebar-section-trailing">
+              <button
+                type="button"
+                class="workflows-section-chevron-btn"
+                onClick={ctx.handleToggleWorkflowsSection}
+                aria-expanded={ctx.workflowsSectionExpanded()}
+                aria-label="Toggle workflows section"
+              >
+                <ChevronRight
+                  class="workflows-section-chevron"
+                  aria-hidden="true"
+                  absoluteStrokeWidth
+                  strokeWidth={ICON_STROKE_WIDTH}
+                />
+              </button>
+              <SidebarIconButton
+                icon="plus"
+                label="New workflow"
+                class="sidebar-section-action"
+                onClick={() => void ctx.handleCreateWorkflow()}
+              />
+            </div>
           </div>
           <Show
             when={ctx.appReady()}

@@ -56,31 +56,33 @@ export function ToolBubble(props: ToolBubbleProps) {
       >
         <span class={`tool-line-status ${icon().class}`}>{icon().label}</span>
         <span class="tool-line-name">
-          {props.toolName}
-          <Show when={targetText()}>
-            {" "}
-            <span class="tool-line-target">{targetText()}</span>
-          </Show>
-          <Show when={!targetText() && rowStatusText()}>
-            {" "}
-            {rowStatusText()}
+          <span class="tool-line-name-text">
+            {props.toolName}
+            <Show when={targetText()}>
+              {" "}
+              <span class="tool-line-target">{targetText()}</span>
+            </Show>
+            <Show when={!targetText() && rowStatusText()}>
+              {" "}
+              {rowStatusText()}
+            </Show>
+          </span>
+          <Show when={expandable()}>
+            <button
+              type="button"
+              class="tool-line-chevron"
+              classList={{ "tool-line-chevron--expanded": expanded() }}
+              aria-expanded={expanded()}
+              aria-label={expanded() ? "Collapse tool output" : "Expand tool output"}
+              onClick={(event) => {
+                event.stopPropagation();
+                setExpanded((value) => !value);
+              }}
+            >
+              <ChevronRight width={14} height={14} />
+            </button>
           </Show>
         </span>
-        <Show when={expandable()}>
-          <button
-            type="button"
-            class="tool-line-chevron"
-            classList={{ "tool-line-chevron--expanded": expanded() }}
-            aria-expanded={expanded()}
-            aria-label={expanded() ? "Collapse tool output" : "Expand tool output"}
-            onClick={(event) => {
-              event.stopPropagation();
-              setExpanded((value) => !value);
-            }}
-          >
-            <ChevronRight width={14} height={14} />
-          </button>
-        </Show>
       </div>
       <Show when={expandable() && expanded()}>
         <div class="tool-line-output-wrapper tool-line-output-wrapper--expanded">
