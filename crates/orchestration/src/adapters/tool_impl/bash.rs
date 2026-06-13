@@ -7,8 +7,9 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
+use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use tokio_util::sync::CancellationToken;
 
@@ -113,14 +114,40 @@ pub async fn execute_bash(
     let env = normalize_bash_env(args.env)?;
 
     let started = Instant::now();
-    let raw = run_shell_command(
+    let raw = match run_shell_command(
         &args.command,
         &work_dir,
         env.as_ref(),
         timeout_secs,
         cancel_token,
     )
-    .await?;
+    .await
+    {
+        Ok(outcome) => outcome,
+        Err(ToolError::Timeout {
+            partial_output: Some(body),
+            after_secs,
+            ..
+        }) => {
+            let wall_time_secs = started.elapsed().as_secs_f64();
+            let mut output_lines = Vec::new();
+            let trimmed = body.trim_end();
+            if trimmed.is_empty() {
+                output_lines.push("(no output)".to_string());
+            } else {
+                output_lines.push(trimmed.to_string());
+            }
+            output_lines.push(String::new());
+            output_lines.push(format!("(timed out after {after_secs}s)"));
+            output_lines.push(format!("Wall time: {wall_time_secs:.2} seconds"));
+            return Ok(BashExecutionOutcome {
+                output: output_lines.join("\n"),
+                exit_code: None,
+                is_error: true,
+            });
+        }
+        Err(error) => return Err(error),
+    };
     let wall_time_secs = started.elapsed().as_secs_f64();
 
     let mut notices = Vec::new();
@@ -157,10 +184,45 @@ pub async fn execute_bash(
     })
 }
 
+#[derive(Debug)]
 struct RawShellOutcome {
     combined_output: String,
     exit_code: Option<i32>,
     cancelled: bool,
+}
+
+async fn read_stream_incremental<R, F>(reader: &mut R, mut append: F) -> std::io::Result<()>
+where
+    R: AsyncReadExt + Unpin,
+    F: FnMut(&[u8]),
+{
+    let mut chunk = [0u8; 4096];
+    loop {
+        let n = reader.read(&mut chunk).await?;
+        if n == 0 {
+            break;
+        }
+        append(&chunk[..n]);
+    }
+    Ok(())
+}
+
+async fn read_stream_incremental_shared<R: AsyncReadExt + Unpin>(
+    reader: &mut R,
+    buf: Arc<Mutex<Vec<u8>>>,
+) -> std::io::Result<()> {
+    read_stream_incremental(reader, |chunk| {
+        buf.lock()
+            .expect("pipe buffer lock")
+            .extend_from_slice(chunk);
+    })
+    .await
+}
+
+fn combined_output_from_bytes(stdout_bytes: &[u8], stderr_bytes: &[u8]) -> String {
+    let stdout = String::from_utf8_lossy(stdout_bytes);
+    let stderr = String::from_utf8_lossy(stderr_bytes);
+    merge_stdout_stderr(&stdout, &stderr)
 }
 
 async fn run_shell_command(
@@ -193,50 +255,69 @@ async fn run_shell_command(
         .take()
         .ok_or_else(|| ToolError::failed("bash stderr unavailable".to_string()))?;
 
+    let stdout_bytes = Arc::new(Mutex::new(Vec::new()));
+    let stderr_bytes = Arc::new(Mutex::new(Vec::new()));
+
+    let stdout_reader = {
+        let stdout_bytes = Arc::clone(&stdout_bytes);
+        tokio::spawn(async move {
+            read_stream_incremental_shared(&mut stdout_pipe, stdout_bytes).await
+        })
+    };
+    let stderr_reader = {
+        let stderr_bytes = Arc::clone(&stderr_bytes);
+        tokio::spawn(async move {
+            read_stream_incremental_shared(&mut stderr_pipe, stderr_bytes).await
+        })
+    };
+
     let timeout = Duration::from_secs(timeout_secs);
-    tokio::select! {
+    let outcome = tokio::select! {
         biased;
         _ = cancel_token.cancelled() => {
             kill_process_group(&mut child).await;
+            stdout_reader.abort();
+            stderr_reader.abort();
             Ok(RawShellOutcome {
                 combined_output: "Command cancelled".to_string(),
                 exit_code: None,
                 cancelled: true,
             })
         }
-        result = async {
-            let mut stdout_bytes = Vec::new();
-            let mut stderr_bytes = Vec::new();
-            let (stdout_res, stderr_res, status) = tokio::join!(
-                tokio::io::AsyncReadExt::read_to_end(&mut stdout_pipe, &mut stdout_bytes),
-                tokio::io::AsyncReadExt::read_to_end(&mut stderr_pipe, &mut stderr_bytes),
-                child.wait(),
-            );
+        status = child.wait() => {
+            let stdout_res = stdout_reader.await.unwrap_or(Ok(()));
+            let stderr_res = stderr_reader.await.unwrap_or(Ok(()));
             stdout_res.map_err(|error| ToolError::failed(format!("bash read failed: {error}")))?;
             stderr_res.map_err(|error| {
                 ToolError::failed(format!("bash stderr read failed: {error}"))
             })?;
             let status = status
                 .map_err(|error| ToolError::failed(format!("bash failed: {error}")))?;
-            let stdout = String::from_utf8_lossy(&stdout_bytes);
-            let stderr = String::from_utf8_lossy(&stderr_bytes);
-            let combined_output = merge_stdout_stderr(&stdout, &stderr);
+            let stdout = stdout_bytes.lock().expect("stdout lock").clone();
+            let stderr = stderr_bytes.lock().expect("stderr lock").clone();
             Ok(RawShellOutcome {
-                combined_output,
+                combined_output: combined_output_from_bytes(&stdout, &stderr),
                 exit_code: status.code(),
                 cancelled: false,
             })
-        } => result,
+        }
         _ = tokio::time::sleep(timeout) => {
             kill_process_group(&mut child).await;
+            stdout_reader.abort();
+            stderr_reader.abort();
+            let _ = child.wait().await;
+            let stdout = stdout_bytes.lock().expect("stdout lock").clone();
+            let stderr = stderr_bytes.lock().expect("stderr lock").clone();
+            let combined_output = combined_output_from_bytes(&stdout, &stderr);
             Err(ToolError::Timeout {
                 tool: "bash".to_string(),
                 after_secs: timeout_secs,
                 hint: "increase timeout or split the command into smaller steps".to_string(),
-                partial_output: None,
+                partial_output: Some(combined_output),
             })
         }
-    }
+    };
+    outcome
 }
 
 fn build_shell_command(
@@ -371,6 +452,45 @@ mod tests {
         let cwd = temp.path().canonicalize().expect("canonicalize");
         let err = resolve_bash_cwd(&cwd, Some("../outside")).unwrap_err();
         assert!(err.to_string().contains("escapes execution folder"));
+    }
+
+    #[tokio::test]
+    async fn bash_timeout_returns_partial_output() {
+        let temp = TempDir::new().expect("tempdir");
+        let cwd = temp.path().canonicalize().expect("canonicalize");
+        let err = run_shell_command(
+            "echo BEFORE_TIMEOUT; sleep 30",
+            &cwd,
+            None,
+            1,
+            &CancellationToken::new(),
+        )
+        .await
+        .expect_err("should timeout");
+        match err {
+            ToolError::Timeout { partial_output, .. } => {
+                let partial = partial_output.expect("partial output");
+                assert!(partial.contains("BEFORE_TIMEOUT"));
+            }
+            other => panic!("expected Timeout, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn bash_incremental_read_collects_output_before_exit() {
+        let temp = TempDir::new().expect("tempdir");
+        let cwd = temp.path().canonicalize().expect("canonicalize");
+        let outcome = run_shell_command(
+            "echo line1; echo line2",
+            &cwd,
+            None,
+            30,
+            &CancellationToken::new(),
+        )
+        .await
+        .expect("success");
+        assert!(outcome.combined_output.contains("line1"));
+        assert!(outcome.combined_output.contains("line2"));
     }
 
     #[cfg(unix)]
