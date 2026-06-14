@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Fixed
+
+- Settings bootstrap creates timestamped `.bak` files instead of clobbering; write errors propagate
+- JSON atomic writes fsync temp file before rename
+
 ### Changed
 
 - **Run trace dark mode:** trace list/detail panels and status pills use theme variables instead of hardcoded light backgrounds.
@@ -12,9 +17,11 @@
 
 ### Documentation
 
+- **ROADMAP.md:** [Node completion](#node-completion) acceptance criteria (NC-1–NC-14) — submit contract, upstream gate, chat summary bubble, trace output, and remaining T10/checkpoint gaps; linked from queue item #5.
 - Document that new or changed builtin tools must update `NODE_RUNTIME_PREAMBLE` alongside `tool/registry.rs` (`AGENTS.md`, `technical-overview.md`, hexagonal rules).
 - Add Staff+ deep audit report (`docs/audits/2026-06-13-deep-audit.md`) covering checkpoint/continue, bash tool, persistence, IPC, and refactor backlog.
 - Add four TDD implementation plans in `docs/superpowers/plans/2026-06-13-*.md` (checkpoint integrity, bash hardening, persistence atomicity, headless retry parity).
+- **ROADMAP.md:** queue item **#14 Project terminal** — interactive shell tab in the bottom dock (PTY backend, xterm.js, project/run cwd); promoted from backlog; renumbered items #15–#32.
 
 ### Added
 
@@ -27,7 +34,7 @@
 - **`scripts/verify.sh` hardening:** LLM-friendly output (run all steps, one-line PASS/FAIL, truncated logs, repro summary); new gates for `doc`, `ui-typecheck`, `machete`, `typos`, and clippy-max strictness; optional `--deep` adds `cargo mutants` (missed-mutant note on failure); positional step filter (`./scripts/verify.sh clippy ui-test`); `VERIFY_FAIL_FAST=1` and `VERIFY_MAX_LINES` overrides; root `typos.toml` and `.cargo/mutants.toml`; contract documented in `docs/contributing/testing-workflows.md`, `AGENTS.md`, README, and `.cursor/rules/Verification-and-Lint.mdc`.
 - **Lint anti-silencing:** workspace `allow_attributes_without_reason = "deny"` — every `#[allow]` / `#[expect]` must carry `reason = "..."`.
 - **Global chat:** settled run history in execution-layer order above a live strip of per-node columns; per-node composers and approval cards; node filter chips; canvas selection no longer steals focus on pause (`projectChatLayout`, `LiveNodeColumn`, `ConversationSegmentMessages`).
-- **ROADMAP.md:** [Run checkpoint, history, and replay](docs/ROADMAP.md#run-checkpoint-history-and-replay) — persist checkpoints to disk, run history UI, resume paused runs, read-only replay, and fork-from-checkpoint; expands queue item #22 and ties to persistence policy (#6).
+- **ROADMAP.md:** [Run checkpoint, history, and replay](docs/ROADMAP.md#run-checkpoint-history-and-replay) — persist checkpoints to disk, run history UI, resume paused runs, read-only replay, and fork-from-checkpoint; expands queue item #23 and ties to persistence policy (#6).
 - **AI retry policy:** default 3 auto-retry attempts with exponential backoff (base `backoff_ms`, capped at 30s) in `InteractiveEngine::run` and `WorkflowRunner`; cancellation-aware backoff sleep; gear-panel controls for max attempts and backoff; `RetryPolicy::delay_for_attempt`.
 - **Reasoning effort controls:** per-provider default in Settings plus per-node override in the inspector (effort level and budget tokens).
 - **Review-driven tests:** interrupt during slow bash tool emits `NodeInterrupted`; parallel retry does not re-emit sibling `NodeAwaitingInput`; headless runs return `MissingRetry` on retryable node failure; chat-completions body forwards `reasoning_effort` / budget fields.

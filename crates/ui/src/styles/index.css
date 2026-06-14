@@ -1391,6 +1391,10 @@ label span {
   background: #38b2ac;
 }
 
+.status-interrupted {
+  background: #d97757;
+}
+
 .node-subagent-list {
   display: flex;
   flex-direction: column;
@@ -1847,7 +1851,6 @@ select.text-input:hover {
   height: 7px;
   border-radius: 50%;
   flex-shrink: 0;
-  background: var(--text-muted);
 }
 
 .chat-segment {

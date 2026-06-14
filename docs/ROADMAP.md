@@ -15,7 +15,7 @@ A single prioritized queue. Work top to bottom — each numbered item is meant t
 | 1 | **Chat presentation** — thinking bubbles, collapsible tool rows, pretty tool names, args one-liners | In progress | [Chat presentation](#chat-presentation--thinking-bubbles--tool-cleanup) |
 | 2 | **Entrypoint wiring** — pass entrypoint text from UI through `start_run` to root node input | Planned | [Entrypoint wiring](#wire-entrypoint-text-through-the-desktop-run-path) |
 
-Entrypoint wiring is small but blocks attachments (#14) and any "kick off a run with instructions" flow — do it early.
+Entrypoint wiring is small but blocks attachments (#15) and any "kick off a run with instructions" flow — do it early.
 
 ### Tier 2 — Reliability core
 
@@ -25,7 +25,7 @@ Make runs survivable before adding features on top. A failed tool call or transi
 | --- | --- | --- | --- |
 | 3 | **Error taxonomy + AI retry** — T1 (`AgentError` transient/permanent), T2 (collapse templates), T3 (node lookup index), T5 (tool deny/decision resume), T6 (`retry_policy` with exponential backoff, default 3 attempts) | Done | [Phase 1–2](#phase-1--foundations) |
 | 4 | **Tool retry & resilient failure** — T19 (tool error taxonomy), T20 (tool invocation retry), T21 (failed tools feed transcript and resume `CallAi`; never abort the run) | Planned | [Tool retry](#tool-invocation-retry-and-resilience) |
-| 5 | **Transcript & event correctness** — T9 (strip redundant tool-call XML), T10 (validate node id in `on_ai_complete`), T11 (run-event semantics), T12 (template store persistence errors) | Planned | [Phase 2–3](#phase-2--functional-gaps) |
+| 5 | **Transcript & event correctness** — T9 (strip redundant tool-call XML), T10 (validate node id in `on_ai_complete`), T11 (run-event semantics), T12 (template store persistence errors); [node completion](#node-completion) acceptance | Planned | [Phase 2–3](#phase-2--functional-gaps) · [Node completion](#node-completion) |
 | 6 | **Run lifecycle leftovers** — clean up `openflow-run-*` temp dirs, store event-bridge task handle, decide checkpoint/persistence policy (in-memory only vs. disk checkpoints vs. resume after restart) | Planned | [Run lifecycle](#run-lifecycle) |
 | 7 | **Secure key storage** — move provider API keys from plaintext `settings.json` to macOS Keychain (keep env-var fallback); migrate existing keys on first launch | Planned | *New* |
 
@@ -41,6 +41,7 @@ The things you hit every single run.
 | 11 | **Project rules** — `.flow/rules/` under linked projects; discovered on load, merged into shared context at run start | Planned | [Project rules](#project-rules) |
 | 12 | **Input queue + structured questions** — type ahead during active runs (buffer per node, drain on `AwaitInput`); option-card questions via extended `openflow_request_user_input` | Planned | [Agent questions & todos](#agent-questions--todos) |
 | 13 | **Token & cost tracking** — per-turn usage from provider responses; per-node and per-run totals in trace and overview; rough cost estimate per model | Planned | *New* |
+| 14 | **Project terminal** — interactive shell tab in the bottom dock; cwd follows linked project / active run execution root; run build, test, and git commands without leaving the app | Planned | [Project terminal](#project-terminal) |
 
 ### Tier 4 — Context & attachments
 
@@ -48,39 +49,39 @@ Getting the right context into and out of agents.
 
 | # | Item | Status | Details |
 | --- | --- | --- | --- |
-| 14 | **Attachments & file references** — attach button, `@` token combobox, drag-drop; resolved content in submit payload and entrypoint | Planned | [Attachments](#attachments--file-references) |
-| 15 | **Upstream read-file context** — read-tier ledger per node; `read_files` in downstream node input alongside `changed_files` | Planned | [Upstream read-file context](#upstream-read-file-context) |
-| 16 | **Context used panel** — per-turn ledger of shared context, rules, skills, attachments, upstream artifacts; composer panel + per-turn attribution | Planned | [Context used](#context-used) |
-| 17 | **Global chat** — unified run-wide transcript in execution-layer order; per-awaiting-node reply bubbles for parallel pauses | Done | [Global chat](#global-chat) |
+| 15 | **Attachments & file references** — attach button, `@` token combobox, drag-drop; resolved content in submit payload and entrypoint | Planned | [Attachments](#attachments--file-references) |
+| 16 | **Upstream read-file context** — read-tier ledger per node; `read_files` in downstream node input alongside `changed_files` | Planned | [Upstream read-file context](#upstream-read-file-context) |
+| 17 | **Context used panel** — per-turn ledger of shared context, rules, skills, attachments, upstream artifacts; composer panel + per-turn attribution | Planned | [Context used](#context-used) |
+| 18 | **Global chat** — unified run-wide transcript in execution-layer order; per-awaiting-node reply bubbles for parallel pauses | Done | [Global chat](#global-chat) |
 
 ### Tier 5 — Power features
 
 | # | Item | Status | Details |
 | --- | --- | --- | --- |
-| 18 | **Branching join semantics** — nodes wait for all upstream outputs before continuing | Planned | |
-| 19 | **In-run todos** — `openflow_update_todos` builtin; run-state projection; dock/chat chrome UI | Planned | [Agent questions & todos](#agent-questions--todos) |
-| 20 | **MCP integration** — connect external MCP servers as tool sources on agent nodes | Planned | |
-| 21 | **Cron / scheduled runs + workflow retry loop** — execute the schedule/retry schema fields that already exist | Planned | |
-| 22 | **Run checkpoint, history, and replay** — persist run checkpoints to disk; browse run history; resume paused runs or replay from a checkpoint (read-only trace or forked re-execution); depends on persistence policy (#6) | Planned | [Run checkpoint & replay](#run-checkpoint-history-and-replay) |
-| 23 | **Programmatic / non-AI nodes** — API-call and transform nodes between agent nodes | Planned | |
-| 24 | **External connectors** — Composio / n8n-style integration nodes | Planned | |
+| 19 | **Branching join semantics** — nodes wait for all upstream outputs before continuing | Planned | |
+| 20 | **In-run todos** — `openflow_update_todos` builtin; run-state projection; dock/chat chrome UI | Planned | [Agent questions & todos](#agent-questions--todos) |
+| 21 | **MCP integration** — connect external MCP servers as tool sources on agent nodes | Planned | |
+| 22 | **Cron / scheduled runs + workflow retry loop** — execute the schedule/retry schema fields that already exist | Planned | |
+| 23 | **Run checkpoint, history, and replay** — persist run checkpoints to disk; browse run history; resume paused runs or replay from a checkpoint (read-only trace or forked re-execution); depends on persistence policy (#6) | Planned | [Run checkpoint & replay](#run-checkpoint-history-and-replay) |
+| 24 | **Programmatic / non-AI nodes** — API-call and transform nodes between agent nodes | Planned | |
+| 25 | **External connectors** — Composio / n8n-style integration nodes | Planned | |
 
 ### Tier 6 — Polish & distribution
 
 | # | Item | Status | Details |
 | --- | --- | --- | --- |
-| 25 | **Canvas editing QoL** — undo/redo for graph edits, duplicate node, copy/paste between workflows | Planned | *New* |
-| 26 | **Accessibility & keyboard shortcuts** — panel toggles, focus management, shortcut reference overlay | Planned | [Accessibility](#accessibility) |
-| 27 | **Onboarding & templates** — first-run empty state, 2–3 bundled example workflows, "new from template" | Planned | *New* |
-| 28 | **macOS distribution** — code signing, notarization, auto-update (Tauri updater); bundle already builds | Planned | *New (expands packaging)* |
-| 29 | **Serde casing unification** — T16 (one wire convention) then T16b (drop legacy aliases/shims) | Planned | [Phase 4](#phase-4--cleanup) |
-| 30 | **Cleanup pass** — T13–T15, T18 (clippy `-D warnings`), refactor polish: slim `AppProvider`, typed desktop DTOs, store catalog audit, provider module audit | Planned | [Refactor](#refactor) |
+| 26 | **Canvas editing QoL** — undo/redo for graph edits, duplicate node, copy/paste between workflows | Planned | *New* |
+| 27 | **Accessibility & keyboard shortcuts** — panel toggles, focus management, shortcut reference overlay | Planned | [Accessibility](#accessibility) |
+| 28 | **Onboarding & templates** — first-run empty state, 2–3 bundled example workflows, "new from template" | Planned | *New* |
+| 29 | **macOS distribution** — code signing, notarization, auto-update (Tauri updater); bundle already builds | Planned | *New (expands packaging)* |
+| 30 | **Serde casing unification** — T16 (one wire convention) then T16b (drop legacy aliases/shims) | Planned | [Phase 4](#phase-4--cleanup) |
+| 31 | **Cleanup pass** — T13–T15, T18 (clippy `-D warnings`), refactor polish: slim `AppProvider`, typed desktop DTOs, store catalog audit, provider module audit | Planned | [Refactor](#refactor) |
 
 ### Dev & agent tooling
 
 | # | Item | Status | Details |
 | --- | --- | --- | --- |
-| 31 | **Interactive plan review tool** — standalone HTML+JS for markdown plan review | Done | [Plan review tool](#interactive-plan-review-tool) |
+| 32 | **Interactive plan review tool** — standalone HTML+JS for markdown plan review | Done | [Plan review tool](#interactive-plan-review-tool) |
 
 ### Backlog (unsequenced)
 
@@ -92,7 +93,6 @@ Small or speculative items — pick up opportunistically or when a tier item tou
 - Remove per-node JSON output schema editing (keep internal defaults)
 - Chat composer markdown rendering
 - System-level notifications (run complete, agent question while unfocused)
-- Terminal tab in bottom dock
 - Sidebar search across workflows and agents
 - Warn on close: unsaved changes / active run
 - Per-workflow path allowlist beyond execution-cwd jail
@@ -214,7 +214,7 @@ Runs today live entirely in memory: `RunCoordinator` holds `WorkflowRunState`; `
 
 **Target:** Every meaningful pause and layer boundary writes a durable checkpoint under the linked project. You can close the app, reopen, and resume a paused run. Completed and in-progress runs appear in history. Open any past run to inspect trace and chat read-only, or fork a new run from an earlier checkpoint without re-entering context by hand.
 
-**Depends on:** #6 (persistence policy). **Unlocks:** #21 (scheduled runs need durable run records), deferred multi-run orchestration, audit/compliance use cases.
+**Depends on:** #6 (persistence policy). **Unlocks:** #22 (scheduled runs need durable run records), deferred multi-run orchestration, audit/compliance use cases.
 
 **Reference:** Live projection — `WorkflowRunState` in `crates/orchestration/src/run/state/mod.rs`; headless snapshot — `WorkflowRunSnapshot` in `crates/orchestration/src/run/execution/mod.rs`; artifact temp dirs — `drive.rs` (`openflow-run-{uuid}`).
 
@@ -288,6 +288,33 @@ During a run, agent nodes show a status row and optional subagent rows. Subagent
 | Handle chrome — match icon color on left/right handles for quick scan across the graph | Low | Planned |
 
 **Target:** Glance at the canvas and tell what each node is doing from icon color and shape. Open a busy agent node and scroll its full subagent roster without losing entries behind a `+N more` line.
+
+### Project terminal
+
+Interactive shell in the bottom dock — a fourth tab beside Overview, Chat, and Run trace. Lets you run commands in the linked project without switching to an external terminal. Complements (does not replace) the agent `bash` tool and live bash output in chat.
+
+| Layer | Gap |
+| --- | --- |
+| `crates/ui/src/panels/DockPanel.tsx` | Tabs are Overview / Chat / Run trace only; no terminal host |
+| `crates/ui/src/context/` | No `bottomTab === "terminal"` state or keyboard shortcut |
+| `crates/desktop/src/lib.rs` | No PTY spawn, resize, write, or output-stream IPC |
+| `crates/orchestration/` | No terminal session manager; execution cwd exists for runs but is not exposed to a user shell |
+
+| Item | Priority | Status |
+| --- | --- | --- |
+| Terminal tab — add **Terminal** to dock tab switcher; persist selected tab in session | High | Planned |
+| PTY backend — spawn login shell via `portable-pty` (or Tauri plugin); stream stdout/stderr to UI; handle resize | High | Planned |
+| Cwd policy — default to linked project root; during an active run, optionally follow execution cwd; `cd` in terminal is session-local | High | Planned |
+| xterm.js (or equivalent) frontend — fit-to-panel, scrollback, copy/paste, basic ANSI colors | High | Planned |
+| Lifecycle — one terminal session per editor window; kill PTY on app close; warn if shell still running (ties to warn-on-close backlog) | Medium | Planned |
+| New terminal / split — restart shell or open a second tab (v2) | Low | Planned |
+| Inject command from chat — "Run in terminal" on bash tool rows (optional; depends on live bash output) | Low | Planned |
+
+**Target:** Open the bottom dock → Terminal → get a project-scoped shell immediately. Run `cargo test`, `git status`, or `./scripts/verify.sh` while a workflow run is paused or in progress. Cwd matches where agents execute when a run is active.
+
+**Not in v1:** Remote SSH shells, root/sudo elevation UI, or replaying agent bash invocations as read-only panes (chat tool rows remain the audit trail).
+
+**Reference:** Dock tabs — [`DockPanel.tsx`](crates/ui/src/panels/DockPanel.tsx); execution cwd — `orchestration/src/run/execution/`; bash tool — [`bash.rs`](crates/orchestration/src/adapters/tool_impl/bash.rs).
 
 ### Accessibility
 
@@ -402,6 +429,42 @@ Today the dock Chat tab shows only the **selected** node's `chatLogs` entry (`Ap
 | Dark mode check — verify contrast for all status hues on `--raised-surface` chip backgrounds | Medium | Planned |
 
 **Target:** Node list in the chat bar shows the same status colors as the canvas — blue for thinking, amber for awaiting input, teal for running tool, green for done, red for failed, etc. — without re-selecting the node on the graph.
+
+### Node completion
+
+A workflow node is **incomplete** until the agent calls `openflow_submit_node_output` once with schema-conforming JSON. Plain assistant text does not finish the node or advance downstream scheduling. On success the host stores output, updates run projection, optionally surfaces a chat summary, and schedules the next execution layer when all siblings in the current layer have submitted.
+
+| Layer | Role |
+| --- | --- |
+| `crates/engine/src/execution/node_invocation.rs` | `NODE_RUNTIME_PREAMBLE` — submit contract, schema placement, pause vs finish |
+| `crates/providers/src/mapping.rs` | Parse submit tool args; `jsonrepair-rs`; auto-wrap flat fields under `output` |
+| `crates/engine/src/execution/interactive_engine/completion.rs` | `on_ai_complete` → store output, malformed-submit retry, layer advance |
+| `crates/engine/src/execution/interactive_engine/mod.rs` | `missing_upstream_outputs` — fail fast before scheduling downstream |
+| `crates/orchestration/src/run/execution/events.rs` | `NodeCompleted` reducer — status, trace, chat summary bubble |
+| `crates/ui/src/components/conversation/NodeCompletedBubble.tsx` | Dedicated “Node completed” row with success cue |
+
+**Acceptance criteria**
+
+| ID | Criterion | Verify | Status |
+| --- | --- | --- | --- |
+| NC-1 | Node stays incomplete until `openflow_submit_node_output` succeeds; assistant prose alone does not advance the layer | Engine poll never schedules downstream until `outputs` contains the node; preamble states contract | Done |
+| NC-2 | Submit args validated against node `output_schema`; invalid shape → correction user message and retry (max 3) before node failure | `malformed_submit_output_retries_then_succeeds`; live provider mapping tests | Done |
+| NC-3 | Flat schema fields auto-wrapped under `output` when the model omits the wrapper | `normalize_submit_output_arguments` unit tests in `mapping.rs` | Done |
+| NC-4 | Successful submit stores JSON in engine `outputs`; direct downstream `AgentRequest.input.upstream` lists `{node_id, output}` sorted by node id | `build_node_input` tests; acceptance workflows | Done |
+| NC-5 | Downstream node fails fast with `MissingUpstreamOutput` when any direct upstream lacks output — no silent empty upstream | Engine scheduling tests; error message lists missing node ids | Done |
+| NC-6 | `ExecutionEvent::NodeCompleted` sets canvas status `completed`, records full output in `outputs` and run trace | `reducer_node_completed_*` in `execution/tests.rs` | Done |
+| NC-7 | Chat log gets `messageKind: node_completed` with **summary text only** when output contains non-empty `summary`; skip chat row when `summary` absent | `reducer_node_completed_pushes_summary_completion_message`; `NodeCompletedBubble` | Done |
+| NC-8 | `<tool_call>` / fenced tool markup stripped from assistant messages on stream finalize and submit path; leading human text preserved | `reducer_stream_finalize_strips_echoed_tool_call_markup`; `filter_tool_turn_assistant_message` tests | Done |
+| NC-9 | Optional `assistant_message` on submit appended to transcript after markup strip; raw submit tool invocation never echoed as chat | `apply_completion` + provider adapter tests | Done |
+| NC-10 | Overview and run trace show full structured output JSON for completed nodes (not chat-truncated) | `DockPanel` overview + trace detail `prettyJson(entry.output)` | Done |
+| NC-11 | `on_ai_complete` rejects completions for a node not in `in_flight_ai` (T10) — terminal `MisroutedCompletion`, no output stored | Add engine test; wire in acceptance suite | Planned |
+| NC-12 | Misrouted completion validates node id exists in workflow graph before terminal error (ENG-1 audit) | `reject_misrouted_completion` + graph membership check | Planned |
+| NC-13 | Canvas status icon distinct for completed state (see [#8 Canvas run feedback](#canvas-run-feedback)) | Visual QA after status icons land | Planned |
+| NC-14 | Auto-checkpoint includes node output on layer completion (see [#6 Run lifecycle](#run-lifecycle), [#23 Run checkpoint & replay](#run-checkpoint-history-and-replay)) | Checkpoint round-trip with `outputs` map | Planned |
+
+**Target:** Agents finish nodes only via submit-output; users see a concise summary in chat, full JSON in trace/overview, and downstream nodes start only on valid upstream output — never on partial prose or missing parents.
+
+**Reference:** Submit contract — [`node_invocation.rs`](crates/engine/src/execution/node_invocation.rs) (`NODE_RUNTIME_PREAMBLE`); completion path — [`completion.rs`](crates/engine/src/execution/interactive_engine/completion.rs); run projection — [`events.rs`](crates/orchestration/src/run/execution/events.rs); technical overview § “When a node is done” — [`technical-overview.md`](docs/architecture/technical-overview.md).
 
 ### Attachments & file references
 
@@ -625,7 +688,7 @@ Structural cleanup by workspace section. Keep domain logic in `domain`, transpor
 
 ## Domain engine hardening
 
-Remediation for modeled-but-unwired behavior and correctness gaps in `crates/domain`. Full task specs (files, acceptance, guardrails) lived in the prior remediation plan; phases below are the execution order. These tasks are sequenced into the queue above (items #3–#5, #29–#30).
+Remediation for modeled-but-unwired behavior and correctness gaps in `crates/domain`. Full task specs (files, acceptance, guardrails) lived in the prior remediation plan; phases below are the execution order. These tasks are sequenced into the queue above (items #3–#5, #30–#31).
 
 ### Decisions (resolve before coding)
 

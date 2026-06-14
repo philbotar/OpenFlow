@@ -4,6 +4,7 @@ use crate::settings::ports::SettingsStore;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 fn parse_settings_json(text: &str) -> Result<AppSettings, serde_json::Error> {
     serde_json::from_str::<AppSettings>(text).map(AppSettings::normalized)
@@ -37,10 +38,16 @@ impl FileSettingsStore {
         match parse_settings_json(&text) {
             Ok(settings) => Ok(settings),
             Err(_error) => {
-                let bak_path = self.path.with_extension("json.bak");
-                let _ = fs::rename(&self.path, &bak_path);
+                let stamp = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                let stamped = self
+                    .path
+                    .with_file_name(format!("settings.json.bak.{stamp}"));
+                fs::rename(&self.path, &stamped)?;
                 let defaults = AppSettings::default();
-                let _ = write_json_file(&self.path, &defaults, "settings");
+                write_json_file(&self.path, &defaults, "settings")?;
                 Ok(defaults)
             }
         }
@@ -192,7 +199,57 @@ mod tests {
 
         assert_eq!(settings, AppSettings::default());
         assert!(path.exists());
-        assert!(path.with_extension("json.bak").exists());
+        let bak_files: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter(|n| n.starts_with("settings.json.bak"))
+            .collect();
+        assert_eq!(bak_files.len(), 1);
+    }
+
+    #[test]
+    fn bootstrap_preserves_existing_bak_with_timestamp() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let bak = dir.path().join("settings.json.bak");
+        fs::write(&path, "{not valid json").unwrap();
+        fs::write(&bak, r#"{"preserved":true}"#).unwrap();
+
+        let store = FileSettingsStore::new(path.clone());
+        let loaded = store.load().expect("load defaults after corrupt");
+        assert_eq!(loaded, AppSettings::default());
+        assert!(bak.exists(), "original .bak must not be overwritten");
+        let bak_files: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter(|n| n.starts_with("settings.json.bak"))
+            .collect();
+        assert!(bak_files.len() >= 2, "timestamped backup created");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn bootstrap_write_failure_returns_error() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        fs::write(&path, "{bad").unwrap();
+
+        let mut perms = fs::metadata(dir.path()).unwrap().permissions();
+        perms.set_mode(0o555);
+        fs::set_permissions(dir.path(), perms).unwrap();
+
+        let store = FileSettingsStore::new(&path);
+        let result = store.load();
+
+        let mut restore = fs::metadata(dir.path()).unwrap().permissions();
+        restore.set_mode(0o755);
+        let _ = fs::set_permissions(dir.path(), restore);
+
+        assert!(result.is_err());
     }
 
     #[test]

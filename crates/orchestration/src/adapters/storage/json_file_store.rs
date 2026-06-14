@@ -3,7 +3,7 @@
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::fs;
-use std::io;
+use std::io::{self, Write};
 use std::path::Path;
 
 pub const OPENFLOW_DATA_DIR_SLUG: &str = "openflow";
@@ -17,8 +17,18 @@ pub fn atomic_write(path: &Path, content: &str) -> io::Result<()> {
         fs::create_dir_all(parent)?;
     }
     let tmp = path.with_extension("tmp");
-    fs::write(&tmp, content)?;
-    fs::rename(&tmp, path)
+    {
+        let mut file = fs::File::create(&tmp)?;
+        file.write_all(content.as_bytes())?;
+        file.sync_all()?;
+    }
+    fs::rename(&tmp, path)?;
+    if let Some(parent) = path.parent() {
+        if let Ok(dir) = fs::File::open(parent) {
+            let _ = dir.sync_all();
+        }
+    }
+    Ok(())
 }
 
 fn invalid_data(context: &str, error: impl std::fmt::Display) -> io::Error {
@@ -83,6 +93,24 @@ mod tests {
 
         assert!(path.exists());
         assert!(!path.with_extension("tmp").exists());
+    }
+
+    #[test]
+    fn atomic_write_syncs_temp_file_before_rename() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("store.json");
+        atomic_write(&path, r#"{"value":1}"#).unwrap();
+        let content = fs::read_to_string(&path).unwrap();
+        assert_eq!(content, r#"{"value":1}"#);
+    }
+
+    #[test]
+    fn atomic_write_survives_simulated_crash_semantics() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("data.json");
+        atomic_write(&path, "long content payload").unwrap();
+        assert!(!path.with_extension("tmp").exists());
+        assert_eq!(fs::read_to_string(&path).unwrap(), "long content payload");
     }
 
     #[test]
