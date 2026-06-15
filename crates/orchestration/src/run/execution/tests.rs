@@ -1,4 +1,7 @@
 use super::*;
+use crate::adapters::storage::incident_store::FileIncidentStore;
+use crate::incident::{IncidentRecorder, IncidentScope};
+use crate::run::coordinator::RunCoordinator;
 use crate::run::state::{TraceStatus, WorkflowRunState};
 use crate::tools::ToolRegistry;
 use async_trait::async_trait;
@@ -11,6 +14,7 @@ use engine::{
 use parking_lot::Mutex;
 use serde_json::json;
 use std::collections::BTreeMap;
+use std::fs;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -660,6 +664,64 @@ async fn headless_run_requires_scripted_approval_for_prompted_tool() {
     .await
     .unwrap_err();
     assert!(matches!(error, WorkflowExecutionError::MissingApproval(_)));
+}
+
+#[tokio::test]
+async fn apply_execution_event_tool_failure_persists_jsonl_incident_scope() {
+    // Coordinator tests already cover direct incident mapping from apply_execution_event.
+    // This execution-side variant also verifies JSONL persistence and scoped fields.
+    let dir = TempDir::new().expect("tempdir");
+    let incident_path = dir.path().join("incidents.jsonl");
+    let incidents = Arc::new(IncidentRecorder::new(Arc::new(FileIncidentStore::new(
+        incident_path.clone(),
+    ))));
+    let coordinator =
+        RunCoordinator::new_with_incidents(tokio::runtime::Handle::current(), incidents.clone());
+
+    let workflow = workflow();
+    let expected_workflow_id = workflow.id.to_string();
+    let mut run_state = WorkflowRunState::running_for_workflow(&workflow);
+    run_state.run_id = Some("run-execution-incident-1".to_string());
+    let (action_tx, _action_rx) = tokio::sync::mpsc::unbounded_channel();
+    coordinator
+        .test_seed_session(workflow, run_state, action_tx)
+        .await;
+
+    coordinator
+        .apply_execution_event(ExecutionEvent::ToolCompleted {
+            node_id: NodeId("first".to_string()),
+            tool_call_id: "tool-incident-1".to_string(),
+            tool_name: "read".to_string(),
+            content: "[not_found] missing file — use project file references".to_string(),
+            is_error: true,
+            output_meta: None,
+            artifact_ids: Vec::new(),
+        })
+        .await
+        .expect("apply execution event");
+
+    let persisted_lines = fs::read_to_string(&incident_path).expect("read incidents jsonl");
+    let non_empty_lines: Vec<&str> = persisted_lines
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .collect();
+    assert_eq!(non_empty_lines.len(), 1);
+
+    let listed = incidents.list_unresolved(10).expect("list incidents");
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].code, "tool.not_found");
+    match &listed[0].scope {
+        IncidentScope::Node {
+            run_id,
+            workflow_id,
+            node_id,
+        } => {
+            assert_eq!(run_id, "run-execution-incident-1");
+            assert_eq!(workflow_id, &expected_workflow_id);
+            assert_eq!(node_id, &NodeId("first".to_string()));
+        }
+        scope => panic!("expected node scope, got {scope:?}"),
+    }
 }
 
 #[test]

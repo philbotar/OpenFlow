@@ -97,7 +97,7 @@ Small or speculative items — pick up opportunistically or when a tier item tou
 - Per-workflow path allowlist beyond execution-cwd jail
 - Git stage/commit helpers from changed-files panel
 - Full LSP language-server client
-- Error logging stored locally; agent loop to propose fixes
+- Error logging stored locally (**backend slice Done**; UI + agent auto-fix loop follow-up) — [persistent error reporting plan](superpowers/plans/2026-06-15-persistent-error-reporting.md)
 - Workflow version control (per-change revert)
 - Natural language workflow definition
 - T7 node-local max-tool-rounds (only if D4 changes), T17 concurrent layer siblings in headless runner (stretch)
