@@ -7,7 +7,7 @@ use crate::adapters::storage::settings_store::FileSettingsStore;
 use crate::adapters::storage::skill_store::FileSkillCatalog;
 use crate::agent::library::AgentLibrary;
 use crate::agent::ports::AgentStore;
-use crate::incident::IncidentRecorder;
+use crate::incident::{IncidentContext, IncidentRecord, IncidentRecorder};
 use crate::project::ports::{Project, ProjectStore};
 use crate::project::registry::ProjectRegistry;
 use crate::run::coordinator::{RunCoordinator, RunStartParams};
@@ -21,6 +21,7 @@ use crate::terminal::{TerminalEvent, TerminalManager, TerminalStart};
 use crate::workflow::catalog::WorkflowCatalog;
 use crate::workflow::ports::{ProjectWorkflowStore, WorkflowStore};
 use engine::{CallableAgent, Node, Workflow};
+use std::io;
 use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -74,6 +75,26 @@ impl AppBackend {
     #[must_use]
     pub fn incidents(&self) -> &IncidentRecorder {
         self.incidents.as_ref()
+    }
+
+    pub fn backend_err(&self, error: BackendError) -> BackendError {
+        let ctx = self.current_incident_context();
+        if let Err(io_error) = self.incidents.record_backend(&error, &ctx) {
+            log::warn!("failed to persist backend incident: {io_error}");
+        }
+        error
+    }
+
+    pub fn list_incidents(&self, limit: usize) -> io::Result<Vec<IncidentRecord>> {
+        self.incidents.list_unresolved(limit)
+    }
+
+    pub fn dismiss_incident(&self, id: &str) -> io::Result<()> {
+        self.incidents.dismiss(id)
+    }
+
+    fn current_incident_context(&self) -> IncidentContext {
+        self.runs.incident_context()
     }
 
     #[must_use]
@@ -291,6 +312,7 @@ impl AppBackend {
                 env: self.settings.env(),
             })
             .await
+            .map_err(|error| self.backend_err(error))
     }
 
     /// Stops the active workflow run cooperatively.
@@ -321,6 +343,7 @@ impl AppBackend {
                 env: self.settings.env(),
             })
             .await
+            .map_err(|error| self.backend_err(error))
     }
 
     #[must_use]
@@ -353,7 +376,10 @@ impl AppBackend {
         node_id: &str,
         text: String,
     ) -> Result<WorkflowRunState, BackendError> {
-        self.runs.submit_user_input(node_id, text).await
+        self.runs
+            .submit_user_input(node_id, text)
+            .await
+            .map_err(|error| self.backend_err(error))
     }
 
     pub async fn submit_tool_approval(
@@ -365,6 +391,7 @@ impl AppBackend {
         self.runs
             .submit_tool_approval(approval_id, allow, reason)
             .await
+            .map_err(|error| self.backend_err(error))
     }
 
     pub async fn complete_manual_node(&self) -> Result<WorkflowRunState, BackendError> {

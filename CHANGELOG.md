@@ -9,6 +9,7 @@
 
 ### Changed
 
+- **Backend IPC incident capture:** `AppBackend` now records explicit run-action `BackendError`s (`start_run`, `continue_run`, `submit_user_input`, `submit_tool_approval`) before returning them, and exposes backend incident list/dismiss accessors for IPC wiring.
 - **Run trace dark mode:** trace list/detail panels and status pills use theme variables instead of hardcoded light backgrounds.
 - **Sidebar workflows chevron:** move collapse control to the right of the label (before the new-workflow button); show on section hover only.
 - **Dock panel tabs:** restyle Overview / Chat / Run trace switcher to flat Cursor-like buttons — 4px radius, no border or shadow, subtle hover fill.

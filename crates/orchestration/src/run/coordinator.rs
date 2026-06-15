@@ -383,6 +383,35 @@ impl RunCoordinator {
                 .is_some_and(|state| !state.active)
     }
 
+    #[must_use]
+    pub fn incident_context(&self) -> IncidentContext {
+        let Ok(session) = self.session.try_lock() else {
+            return IncidentContext::default();
+        };
+        if !session
+            .run_state
+            .as_ref()
+            .is_some_and(|run_state| run_state.active)
+        {
+            return IncidentContext::default();
+        }
+        IncidentContext {
+            run_id: session.run_id.clone().or_else(|| {
+                session
+                    .run_state
+                    .as_ref()
+                    .and_then(|run_state| run_state.run_id.clone())
+            }),
+            workflow_id: session
+                .workflow
+                .as_ref()
+                .map(|workflow| workflow.id.to_string()),
+            project_id: session.project_id.clone(),
+            node_id: None,
+            node_label: None,
+        }
+    }
+
     /// Cancel the in-flight AI invocation for a running node without stopping the run.
     ///
     /// # Errors

@@ -1,9 +1,12 @@
 use super::*;
+use crate::adapters::storage::incident_store::FileIncidentStore;
+use crate::incident::IncidentRecorder;
 use crate::run::execution::{ExecutionAction, ExecutionEvent};
 use crate::settings::model::{ProviderProfile, ProviderTransport};
 use crate::workflow::catalog::default_workflow;
 use engine::{Node, NodeId};
 use providers::ProviderId;
+use std::sync::Arc;
 use tempfile::tempdir;
 
 fn backend() -> (AppBackend, tempfile::TempDir) {
@@ -201,6 +204,21 @@ fn provider_readiness_reports_missing_key() {
 
     assert!(!readiness.ready);
     assert_eq!(readiness.env_var, "OPENAI_COMPATIBLE_API_KEY");
+}
+
+#[test]
+fn backend_err_persists_incident_before_returning() {
+    let (mut backend, dir) = backend();
+    backend.incidents = Arc::new(IncidentRecorder::new(Arc::new(FileIncidentStore::new(
+        dir.path().join("incidents.jsonl"),
+    ))));
+
+    let error = backend.backend_err(BackendError::NoActiveRun);
+    assert!(matches!(error, BackendError::NoActiveRun));
+
+    let incidents = backend.list_incidents(10).expect("list incidents");
+    assert_eq!(incidents.len(), 1);
+    assert_eq!(incidents[0].code, "backend.no_active_run");
 }
 
 #[test]
