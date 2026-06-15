@@ -4,16 +4,20 @@ use crate::lsp::LspSettings as RuntimeLspSettings;
 use crate::settings::model::LspSettings;
 use crate::tool::errors::ToolError;
 use crate::tool::ports::ContentSearch;
-use crate::tool::read::selector::ReadSelector;
-use crate::tool::read::summary::render_read;
 use crate::tool::registry::BuiltinToolKind;
 use crate::tools::grep::RipgrepSearch;
+use regex::Regex;
 use serde::Deserialize;
 use serde_json::Value;
 use std::fs;
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, LazyLock};
 use walkdir::WalkDir;
+
+static LINE_SELECTOR: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\d+(?:-\d+)?$").expect("line selector regex is valid"));
+
+const DEFAULT_READ_LINE_LIMIT: usize = 3000;
 
 pub(crate) struct BlockingRunOutcome {
     pub output: Result<String, ToolError>,
@@ -113,7 +117,7 @@ impl BlockingToolOps {
         let absolute = self.resolve_local(&path);
         let metadata = fs::metadata(&absolute).map_err(|error| map_read_io_error(&path, &error))?;
         if metadata.is_dir() {
-            return crate::tool::read::directory::render_directory_listing(&absolute, &path);
+            return self.read_directory(&absolute);
         }
         let text =
             fs::read_to_string(&absolute).map_err(|error| map_read_io_error(&path, &error))?;
@@ -126,7 +130,24 @@ impl BlockingToolOps {
                 &text,
             );
         }
-        Ok(render_read(&path, &text, selector))
+        Ok(apply_read_selector(&path, &text, selector.as_deref()))
+    }
+
+    fn read_directory(&self, path: &Path) -> Result<String, ToolError> {
+        let mut entries = fs::read_dir(path)
+            .map_err(|error| map_read_io_error(&path.display().to_string(), &error))?
+            .filter_map(Result::ok)
+            .map(|entry| {
+                let file_type = entry.file_type().ok();
+                let mut name = entry.file_name().to_string_lossy().to_string();
+                if file_type.as_ref().is_some_and(|kind| kind.is_dir()) {
+                    name.push('/');
+                }
+                name
+            })
+            .collect::<Vec<_>>();
+        entries.sort();
+        Ok(entries.into_iter().take(200).collect::<Vec<_>>().join("\n"))
     }
 
     fn search(&self, args: Value) -> Result<String, ToolError> {
@@ -245,10 +266,49 @@ impl StringOrMany {
     }
 }
 
-pub(crate) use crate::tool::read::selector::split_selector;
+pub(crate) fn split_selector(path: &str) -> (String, Option<String>) {
+    if let Some(index) = path.rfind(':') {
+        let suffix = &path[index + 1..];
+        if suffix == "raw" || LINE_SELECTOR.is_match(suffix) {
+            return (path[..index].to_string(), Some(suffix.to_string()));
+        }
+    }
+    (path.to_string(), None)
+}
 
-pub(crate) fn apply_read_selector(label: &str, text: &str, selector: ReadSelector) -> String {
-    render_read(label, text, selector)
+pub(crate) fn apply_read_selector(label: &str, text: &str, selector: Option<&str>) -> String {
+    match selector {
+        Some("raw") => text.to_string(),
+        Some(range) => {
+            let (start, end) = parse_range(range);
+            let lines = text.lines().collect::<Vec<_>>();
+            let start_index = start.saturating_sub(1);
+            let end_index = end.min(lines.len());
+            let slice = lines[start_index.min(lines.len())..end_index]
+                .iter()
+                .enumerate()
+                .map(|(offset, line)| format!("{}:{}", start_index + offset + 1, line))
+                .collect::<Vec<_>>();
+            format!("¶{label}\n{}", slice.join("\n"))
+        }
+        None => {
+            let all_lines: Vec<_> = text.lines().collect();
+            let total_lines = all_lines.len();
+            let shown = all_lines
+                .iter()
+                .take(DEFAULT_READ_LINE_LIMIT)
+                .enumerate()
+                .map(|(index, line)| format!("{}:{}", index + 1, line))
+                .collect::<Vec<_>>();
+            let mut output = format!("¶{label}\n{}", shown.join("\n"));
+            if total_lines > DEFAULT_READ_LINE_LIMIT {
+                output.push_str(&format!(
+                    "\n… truncated at line {DEFAULT_READ_LINE_LIMIT} of {total_lines}; use :{{start}}-{{end}} or :raw to read more …"
+                ));
+            }
+            output
+        }
+    }
 }
 
 fn map_read_io_error(path: &str, error: &std::io::Error) -> ToolError {
@@ -259,5 +319,16 @@ fn map_read_io_error(path: &str, error: &std::io::Error) -> ToolError {
         }
     } else {
         ToolError::failed(format!("read failed for {path}: {error}"))
+    }
+}
+
+fn parse_range(range: &str) -> (usize, usize) {
+    if let Some((start, end)) = range.split_once('-') {
+        let start = start.parse::<usize>().unwrap_or(1);
+        let end = end.parse::<usize>().unwrap_or(start);
+        (start.max(1), end.max(start))
+    } else {
+        let value = range.parse::<usize>().unwrap_or(1);
+        (value.max(1), value)
     }
 }
