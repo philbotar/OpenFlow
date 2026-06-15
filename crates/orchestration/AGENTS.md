@@ -1,235 +1,151 @@
-# Agents in Orchestration
+---
+description: Coding agent orientation for the orchestration crate
+globs: crates/orchestration/**
+alwaysApply: false
+---
 
-## Overview
+# AGENTS.md — Orchestration
 
-An **agent** is a stateless workflow invocable that can be called by workflow nodes. Agents are snapshots of orchestration state (tools, settings, models) frozen at run-start to ensure deterministic subagent invocation.
+**Question this crate answers:** How does the desktop app store, load, wire, and host runs?
 
-**Hexagonal Architecture:** Agents exemplify the orchestration crate's hexagonal design:
-- **Core (domain logic):** `agent/library.rs` — CRUD, validation, business rules
-- **Ports (interfaces):** `FileAgentStore` trait — what the core depends on
-- **Adapters (implementations):** `adapters/storage/agent_store.rs` — file system persistence
-- **Boundaries:** Core never imports adapters; only adapters are concrete
+Composition root: entity domain logic + centralized adapters + run lifecycle. Depends on `engine` and `providers`; never on `desktop` or `ui`.
 
-This separation lets agents be tested without file I/O, persisted flexibly (file, DB, cloud), and extended without changing domain logic.
-
-## Data Model
-
-### `CallableAgent` (Domain: `engine::CallableAgent`)
-
-The canonical agent type from the engine. Contains:
-- `id`: Unique agent identifier
-- `name`: Display name
-- `description`: Agent behavior description
-- `model_override`: Optional model selection override
-- `tool_catalog_selection`: Which tools are available to this agent
-- `tool_policy`: Tool approval requirements
-
-**Immutable by design.** Agents don't change during a run—they're snapshots.
-
-### `AgentDefinition` (Orchestration)
-
-Orchestration's working copy: mirrors `CallableAgent` with file-system backing.
-
-```rust
-pub struct AgentDefinition {
-    pub id: String,
-    pub name: String,
-    pub description: String,
-    pub model_override: Option<String>,
-    pub tool_catalog_selection: ToolCatalogSelection,
-    pub tool_policy: ToolPolicy,
-}
-```
-
-Persisted as `openflow/agents.json` (project root).
-
-## Hexagonal Architecture: Ports & Adapters
+## Architecture
 
 ```
-┌─────────────────────────────────────┐
-│      agent/library.rs               │
-│  (Domain: CRUD & validation logic)  │
-├─────────────────────────────────────┤
-│  Outbound Port:                     │
-│  - FileAgentStore (trait)           │
-│    • load(id) → AgentDefinition     │
-│    • save(def) → Result             │
-│    • list() → Vec<AgentDefinition>  │
-│    • delete(id) → Result            │
-└─────────────────────────────────────┘
-          ↓ (depends on)
-┌─────────────────────────────────────┐
-│  adapters/storage/agent_store.rs    │
-│  (Adapter: file system I/O)         │
-├─────────────────────────────────────┤
-│  Implements FileAgentStore          │
-│  Reads/writes: openflow/agents.json │
-└─────────────────────────────────────┘
+desktop → AppBackend (backend/mod.rs)
+            ├── WorkflowCatalog      workflow CRUD, merge, assign
+            ├── AgentLibrary         saved CallableAgent definitions
+            ├── ProjectRegistry      folder-scoped projects
+            ├── SettingsFacade       settings, keys, skills
+            └── RunCoordinator       active run session
+                    └── run/execution/   InteractiveEngine host (ONLY place)
 ```
 
-**Key principle:** `agent/library.rs` owns the port definition; `adapters/storage/` owns the implementation. This decouples persistence from business logic.
+### Hexagonal layout
 
-## Layers
-
-### `agent/library.rs` — Agent Library
-
-**Module:** `crate::agent::library`
-
-Responsibility: CRUD & metadata for agents.
-
-```rust
-pub struct AgentLibrary {
-    store: FileAgentStore,
-}
-
-impl AgentLibrary {
-    pub fn list_agents(&self) -> Result<Vec<AgentDefinition>>;
-    pub fn get_agent(&self, id: &str) -> Result<AgentDefinition>;
-    pub fn create_agent(&mut self, def: AgentDefinition) -> Result<()>;
-    pub fn update_agent(&mut self, def: AgentDefinition) -> Result<()>;
-    pub fn delete_agent(&self, id: &str) -> Result<()>;
-}
+```text
+orchestration/src/
+├── agent/          ports.rs + library.rs
+├── workflow/       ports.rs + catalog.rs
+├── project/        ports.rs + registry.rs
+├── run/            coordinator.rs, execution/, state/
+├── settings/       ports.rs + facade.rs
+├── tool/           registry.rs, runner.rs, hooks.rs
+├── adapters/
+│   ├── storage/        File*Store impls
+│   ├── tool_impl/      edit, grep, bash, …
+│   └── infrastructure/ lsp, git
+└── backend/mod.rs      composition root — wires domains + adapters
 ```
 
-Used by:
-- `backend::AppBackend::agent_library()` — for orchestration setup
-- Workflow execution — to snapshot agents at run-start
+| Layer | Put code here | May import |
+| --- | --- | --- |
+| `{entity}/` | Use-case logic | `engine`, same-entity `ports.rs` |
+| `{entity}/ports.rs` | Traits domain depends on | `engine` types only |
+| `adapters/` | Concrete I/O | port traits — **never define ports here** |
+| `backend/` | Wire stores into services | entity modules + adapters |
+| `run/execution/` | Engine host, `ToolPortImpl` | `engine`, `tool/`, infrastructure |
 
-### `adapters/storage/agent_store.rs` — Persistence
+**Banned in domain folders** (`agent/`, `workflow/`, `project/`, `settings/`, `tool/`):
+- `use crate::adapters::`
+- `use crate::{agent_store, flow_store, …}` — depend on port traits; wire in `backend/`
 
-**Module:** `crate::agent_store`
+### State ownership
 
-Responsibility: File I/O for agent definitions.
+| Owned here | Not owned here |
+| --- | --- |
+| Active run session, approval queues, trace projection | Execution semantics (`engine`) |
+| Persistence paths, JSON schemas | LLM wire format (`providers`) |
+| Tool I/O, execution cwd, shared-context wiring | UI rendering |
 
-```rust
-pub struct FileAgentStore {
-    project_root: PathBuf,
-}
+## Dependency rules
 
-impl FileAgentStore {
-    pub fn list(&self) -> Result<Vec<AgentDefinition>>;
-    pub fn load(&self, id: &str) -> Result<AgentDefinition>;
-    pub fn save(&mut self, def: AgentDefinition) -> Result<()>;
-    pub fn delete(&mut self, id: &str) -> Result<()>;
-}
+**Allowed:** `engine`, `providers` (allowlisted: `create_provider`, config types)
+
+**Forbidden:**
+- `desktop`, `ui`, `tauri`
+- `use providers::AiClient` — use `create_provider()` → `Box<dyn AiPort>`
+- Constructing `InteractiveEngine` / `WorkflowRunner` outside `run/execution/`
+
+## Code standards
+
+1. **Entity folders** — flat logic files; no nested `application/` layers.
+2. **Centralized adapters** — persistence in `adapters/storage/`; tools in `adapters/tool_impl/`.
+3. **Thin backend** — `AppBackend` delegates; desktop maps 1:1 to backend methods.
+4. **Catalog vs run** — workflow/agent CRUD does not share mutex with active run.
+5. **Vocabulary** — [`docs/glossary.md`](../../docs/glossary.md); `CallableAgent` not "saved subagent".
+6. **Errors** — `BackendError` at IPC boundary; map to actionable strings for UI.
+7. **Engine invocation** — `drive.rs` stays thin around `InteractiveEngine::run()`.
+
+## Patterns
+
+### Where to add code
+
+| Change | Location |
+| --- | --- |
+| New desktop command surface | Delegate in `backend/mod.rs`; logic in entity folder |
+| Workflow merge / project assign | `workflow/catalog.rs`, `adapters/storage/*_workflow_store.rs` |
+| Saved agents | `agent/library.rs`, `adapters/storage/agent_store.rs` |
+| Run start, input, approval | `run/coordinator.rs`, `run/execution/` |
+| UI run snapshot fields | `run/state/mod.rs` + engine telemetry if needed |
+| New builtin tool | `adapters/tool_impl/` + `tool/registry.rs`; tier in `engine/tools/config.rs`; update `NODE_RUNTIME_PREAMBLE` |
+| Tool execution wiring | `run/execution/tool_port.rs` |
+| Settings / API keys | `settings/facade.rs`, `settings/provider.rs`, `adapters/storage/settings_store.rs` |
+| New persistence | `adapters/storage/` + `{entity}/ports.rs` |
+| IPC DTOs | `api.rs` |
+
+See [`docs/sections/orchestration/layout.md`](../../docs/sections/orchestration/layout.md) for full directory map.
+
+### Runtime semantics (orchestration wires, engine defines)
+
+1. **Shared context** — trimmed and appended per run in execution layer.
+2. **Execution cwd** — resolved at run start from project `default_execution_cwd` or process cwd.
+3. **Callable agents** — snapshotted at run start via `resolve_callable_agent_snapshots`.
+4. **Provider override** — `WorkflowSettings.provider_id` overrides active provider for the run.
+5. **Workflow storage** — app `workflows.json` + project `.flow/workflows/`; merge on load (project wins on ID collision).
+
+### Persistence (quick reference)
+
+| Store | Path |
+| --- | --- |
+| App workflows | `{data_local}/openflow/workflows.json` |
+| Project workflows | `{project}/.flow/workflows/{id}.workflow.json` |
+| Agents | `{data_local}/openflow/agents.json` |
+| Projects | `{data_local}/openflow/projects.json` |
+| Settings | `{data_local}/openflow/settings.json` |
+| Templates | `{data_local}/openflow/templates.json` |
+
+API key precedence: transient input → stored `ProviderProfile.api_key` → env var fallback.
+
+### Testing
+
+| Pattern | When |
+| --- | --- |
+| Inline `#[cfg(test)] mod tests` | Default |
+| `run/execution/tests.rs` | Execution subtree integration |
+| `tests/workflow_acceptance.rs` | Headless end-to-end runs |
+
+```bash
+cargo test -p orchestration
+cargo test -p orchestration --test workflow_acceptance -- --nocapture
 ```
 
-**File layout:**
-```
-project_root/
-└── openflow/
-    └── agents.json              # JSON array of AgentDefinition
-```
+Use inline `impl AiPort` stubs. Live AI: `STEP_WORKFLOW_LIVE_AI=1` (see `docs/contributing/testing-workflows.md`).
 
-## Run Lifecycle
+## Change checklist
 
-### 1. Run Start
-```rust
-RunCoordinator::start_run(workflow_id, agent_id) {
-    // Snapshot agent at run-start
-    let agent = agent_library.get_agent(agent_id)?;  // ← Load from store
-    let snapshot = CallableAgent::from(agent);        // ← Freeze it
-    // Pass snapshot to engine
-}
-```
+1. Domain folder free of adapter imports?
+2. Engine constructed only in `run/execution/`?
+3. New I/O behind a port trait in `{entity}/ports.rs`?
+4. `./scripts/check-architecture.sh` passes?
+5. Run `./scripts/verify.sh` after changes.
 
-The snapshot ensures that if the user edits the agent definition *during* a run, the running instance is unaffected.
+## Related docs
 
-### 2. Subagent Invocation
-```rust
-engine::execute_node(node, snapshot_agent) {
-    // Engine uses snapshot_agent.tool_policy, model_override, etc.
-    // Never fetches fresh agent definition
-}
-```
-
-### 3. Run Completion
-Snapshot is discarded. If the user re-runs the same workflow with a different agent, a fresh snapshot is taken.
-
-## Import Scope
-
-**Who can import agents?**
-
-| Module | Can Import | Example |
-|--------|-----------|---------|
-| `workflow::application` | `agent_store::AgentDefinition` | Workflow catalog references agents by ID |
-| `run::application::coordinator` | `agent_library::AgentLibrary`, `agent_store::FileAgentStore` | Snapshot agents at run-start |
-| `backend::AppBackend` | `agent_library::AgentLibrary` | Expose agents to orchestration API |
-| **Domain code** | ❌ | agent/application should not depend on workflow, run, etc. |
-
-## Design Decisions
-
-### Why snapshot agents at run-start?
-
-**Problem:** If an agent definition changes during a run, subagent calls would see inconsistent tool policies, model overrides, etc.
-
-**Solution:** Freeze the agent at run-start as an immutable `CallableAgent`. The engine never re-fetches. If the user edits agents, only *new* runs see the changes.
-
-### Why split `AgentDefinition` (orchestration) from `CallableAgent` (engine)?
-
-**`AgentDefinition`:** Orchestration concern (persistence, CRUD, UI representation).
-
-**`CallableAgent`:** Engine concern (execution, node invocation, snapshot semantics).
-
-They're structurally similar but logically distinct. The orchestration crate converts one → the other at run-start.
-
-### Why is agent storage centralized in `adapters/storage/`?
-
-Consolidates all persistence by *concern* (storage), not by domain. Makes it clear: "where do agents get persisted?" → check `adapters/storage/agent_store.rs`.
-
-## Extending Agents
-
-### Adding a new agent field
-
-1. Add to `engine::CallableAgent` (engine crate)
-2. Add to `orchestration::AgentDefinition` (orchestration crate, `adapters/storage/agent_store.rs`)
-3. Update `FileAgentStore::load()` / `::save()` to handle JSON
-4. Update `agent_library.rs` if new CRUD logic is needed
-5. Update `RunCoordinator::start_run()` if the field affects snapshotting
-
-### Adding agent validation
-
-Put it in `agent/library.rs` (the CRUD layer), not in the store. Example:
-
-```rust
-impl AgentLibrary {
-    pub fn validate_agent(&self, def: &AgentDefinition) -> Result<()> {
-        if def.name.is_empty() {
-            return Err(AgentError::EmptyName);
-        }
-        // ... more validation
-        Ok(())
-    }
-}
-```
-
-## Agents in the Broader Orchestration Architecture
-
-Agents are one of seven **domain concepts** in orchestration, each following the same hexagonal pattern:
-
-| Domain | Logic | Adapter |
-|--------|-------|---------|
-| **agent** | `agent/library.rs` | `adapters/storage/agent_store.rs` |
-| **workflow** | `workflow/catalog.rs` | `adapters/storage/{app,project}_workflow_store.rs` |
-| **project** | `project/registry.rs` | `adapters/storage/project_store.rs` |
-| **tool** | `tool/{registry,runner,output}.rs` | `adapters/tool_impl/` |
-| **run** | `run/coordinator.rs` + `run/state/` + `run/execution/` | State projection (no persistence) |
-| **settings** | `settings/facade.rs` | `adapters/storage/settings_store.rs` |
-| **skill/template** | (none) | `adapters/storage/{skill,template}_store.rs` |
-
-Each domain layer is **vertically independent**: agent CRUD doesn't depend on workflow, project, or run logic. They coordinate only through the backend composition root.
-
-This hexagonal isolation means:
-- **Testability:** Agents can be unit-tested without touching workflows or the file system
-- **Flexibility:** Swap `adapters/storage/agent_store.rs` for a database without changing domain logic
-- **Extensibility:** New domains (e.g., "team", "version") can be added without modifying existing code
-- **Clarity:** Each domain owns its outbound port contracts; adapters are pure implementations
-
-## References
-
-- [engine::CallableAgent](../../engine/src/graph/callable_agent.rs) — canonical agent type
-- [agent/library.rs](./src/agent/library.rs) — agent CRUD
-- [adapters/storage/agent_store.rs](./src/adapters/storage/agent_store.rs) — file persistence
-- [run/coordinator.rs](./src/run/coordinator.rs) — run start & snapshotting
-- [CONTEXT.md](../CONTEXT.md) — orchestration layer overview
-- [Orchestration Restructure Plan](.planning/ORCHESTRATION_RESTRUCTURE.md) — architecture rationale
+- [`docs/sections/orchestration/README.md`](../../docs/sections/orchestration/README.md)
+- [`docs/sections/orchestration/layout.md`](../../docs/sections/orchestration/layout.md)
+- [`docs/sections/orchestration/callable-agents.md`](../../docs/sections/orchestration/callable-agents.md) — CallableAgent domain deep dive
+- [`docs/architecture/contract.md`](../../docs/architecture/contract.md)
+- [`docs/architecture/threading-concurrency.md`](../../docs/architecture/threading-concurrency.md) — dual runtime, run mutex
+- [`../../AGENTS.md`](../../AGENTS.md) — workspace map

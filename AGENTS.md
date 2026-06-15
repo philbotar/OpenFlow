@@ -7,6 +7,18 @@ alwaysApply: true
 
 Single-file orientation for contributors and coding agents.
 
+## Crate orientation (AGENTS.md)
+
+| Crate | File |
+| --- | --- |
+| engine | [`crates/engine/AGENTS.md`](crates/engine/AGENTS.md) |
+| providers | [`crates/providers/AGENTS.md`](crates/providers/AGENTS.md) |
+| orchestration | [`crates/orchestration/AGENTS.md`](crates/orchestration/AGENTS.md) |
+| desktop | [`crates/desktop/AGENTS.md`](crates/desktop/AGENTS.md) |
+| ui | [`crates/ui/AGENTS.md`](crates/ui/AGENTS.md) |
+
+Each file covers architecture, dependency rules, code standards, patterns, and change checklists for that crate.
+
 ## 30-Second Intake
 
 1. This is a Rust workspace with five sections: `engine`, `providers`, `orchestration`, `desktop`, `ui`.
