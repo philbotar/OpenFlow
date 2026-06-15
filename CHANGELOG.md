@@ -29,6 +29,7 @@
 
 ### Added
 
+- **Natural language workflow builder:** ChatGPT-style **Build with AI** overlay — describe workflows in conversation, see DAG + semantic validation after each turn, apply valid drafts to the editor.
 - **Persistent error reporting (backend slice, UI deferred):** structured incidents now persist in `{data_local}/openflow/incidents.jsonl` with run/node scope; `RunCoordinator::apply_execution_event` records tool/node/subagent/run execution failures; backend IPC errors plus terminal start and workflow/settings persistence failures are captured; retention pruning (`incident_retention_max`) and incident lifecycle commands (`list_incidents`, `dismiss_incident`, `clear_resolved_incidents`) ship through backend + Tauri.
 - **Incident IPC (no UI):** `IncidentSummary` DTO, `list_incident_summaries` on `AppBackend`, and `list_incidents` / `dismiss_incident` Tauri commands for unresolved incident list and dismiss.
 - **Incident retention policy:** `AppSettings.incident_retention_max` (default 500); `IncidentRecorder` prunes oldest resolved then oldest overall after append; `clear_resolved_incidents` on `AppBackend` and desktop IPC.
