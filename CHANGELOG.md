@@ -17,7 +17,8 @@
 
 ### Documentation
 
-- **ROADMAP.md:** audit queue and detail specs against the codebase — mark chat presentation, thinking/reasoning, transcript correctness (T9–T12), in-session continue, T19, global chat status dots, and node completion NC-11/NC-12 as Done or In progress where shipped.
+- **Crate AGENTS.md:** add architecture, standards, and patterns guides for `engine`, `providers`, `orchestration`, `desktop`, and `ui`; move CallableAgent deep dive to `docs/sections/orchestration/callable-agents.md`; scope each crate guide with `globs: crates/{name}/**`.
+- **ROADMAP.md:** audit queue and detail specs against the codebase — mark chat presentation, thinking/reasoning, transcript correctness (T9–T12), in-session continue, T19, global chat status dots, and node completion NC-11/NC-12 as Done or in progress where shipped.
 - **ROADMAP.md:** [Node handoff artifacts & output review](docs/ROADMAP.md#node-handoff-artifacts--output-review) — queue item #17; per-node `plan.md` (or custom) under `.flow/runs/{run_id}/handoffs/{node_id}/`; per-node opt-in review gate before downstream handoff; in-app plan review UI modeled on `tools/plan-review.html`. Renumbered queue items #18–#33.
 - **ROADMAP.md:** [Node completion](#node-completion) acceptance criteria (NC-1–NC-14) — submit contract, upstream gate, chat summary bubble, trace output, and remaining T10/checkpoint gaps; linked from queue item #5.
 - Document that new or changed builtin tools must update `NODE_RUNTIME_PREAMBLE` alongside `tool/registry.rs` (`AGENTS.md`, `technical-overview.md`, hexagonal rules).
@@ -27,6 +28,7 @@
 
 ### Added
 
+- **Incident domain model:** structured `IncidentRecord` with severity, category, scope, and camelCase IPC serialization in `orchestration::incident`.
 - **Project terminal:** add a Terminal dock tab backed by a native PTY session, xterm.js rendering, project-cwd startup, resize handling, and app-close cleanup.
 - **Chat file references:** type `@` in the chat composer to search project files (gitignore-aware), pick files as `@{path}` tokens, and include bounded UTF-8 file contents in kickoff and paused-node chat submissions.
 - **Start run from global chat:** message the idle workflow composer to start a run with entrypoint text; header **Run** still starts without entrypoint for zero-input workflows; manual root nodes auto-receive the same text via `submit_user_input` when exactly one node awaits.

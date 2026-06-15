@@ -10,6 +10,7 @@ pub mod agent;
 pub mod api;
 pub mod backend;
 pub mod error;
+pub mod incident;
 pub mod project;
 pub mod run;
 pub mod settings;
