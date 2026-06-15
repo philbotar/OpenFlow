@@ -207,6 +207,30 @@ fn provider_readiness_reports_missing_key() {
 }
 
 #[test]
+fn terminal_start_failure_records_incident() {
+    use crate::incident::IncidentCategory;
+
+    let (mut backend, dir) = backend();
+    backend.incidents = Arc::new(IncidentRecorder::new(Arc::new(FileIncidentStore::new(
+        dir.path().join("incidents.jsonl"),
+    ))));
+
+    let error = backend
+        .start_terminal(
+            Some("/definitely/not/a/real/openflow/terminal/path"),
+            80,
+            24,
+        )
+        .expect_err("invalid cwd should fail");
+    assert!(matches!(error, BackendError::ProjectOperation(_)));
+
+    let incidents = backend.list_incidents(10).expect("list incidents");
+    assert_eq!(incidents.len(), 1);
+    assert_eq!(incidents[0].code, "terminal.start_failed");
+    assert_eq!(incidents[0].category, IncidentCategory::Terminal);
+}
+
+#[test]
 fn backend_err_persists_incident_before_returning() {
     let (mut backend, dir) = backend();
     backend.incidents = Arc::new(IncidentRecorder::new(Arc::new(FileIncidentStore::new(
@@ -267,6 +291,59 @@ fn list_incident_summaries_projects_records() {
     assert_eq!(summary.workflow_id.as_deref(), Some("wf-1"));
     assert_eq!(summary.run_id.as_deref(), Some("run-1"));
     assert_eq!(summary.node_id.as_deref(), Some("node-a"));
+}
+
+#[test]
+fn clear_resolved_incidents_removes_dismissed_records() {
+    use crate::incident::{IncidentCategory, IncidentRecord, IncidentScope, IncidentSeverity};
+
+    let (mut backend, dir) = backend();
+    backend.incidents = Arc::new(IncidentRecorder::new(Arc::new(FileIncidentStore::new(
+        dir.path().join("incidents.jsonl"),
+    ))));
+
+    backend
+        .incidents()
+        .record(IncidentRecord {
+            id: "keep".to_string(),
+            created_at_ms: 1,
+            severity: IncidentSeverity::Error,
+            category: IncidentCategory::Backend,
+            scope: IncidentScope::App,
+            code: "backend.io".to_string(),
+            message: "keep".to_string(),
+            hint: None,
+            retryable: false,
+            context: Default::default(),
+            resolved: false,
+        })
+        .expect("record keep");
+    backend
+        .incidents()
+        .record(IncidentRecord {
+            id: "remove".to_string(),
+            created_at_ms: 2,
+            severity: IncidentSeverity::Error,
+            category: IncidentCategory::Backend,
+            scope: IncidentScope::App,
+            code: "backend.io".to_string(),
+            message: "remove".to_string(),
+            hint: None,
+            retryable: false,
+            context: Default::default(),
+            resolved: false,
+        })
+        .expect("record remove");
+    backend.dismiss_incident("remove").expect("dismiss remove");
+
+    let removed = backend
+        .clear_resolved_incidents()
+        .expect("clear resolved incidents");
+    assert_eq!(removed, 1);
+
+    let active = backend.list_incidents(10).expect("list incidents");
+    assert_eq!(active.len(), 1);
+    assert_eq!(active[0].id, "keep");
 }
 
 #[test]

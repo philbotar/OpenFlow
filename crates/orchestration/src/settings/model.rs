@@ -182,6 +182,10 @@ fn default_lsp_enabled() -> bool {
     true
 }
 
+fn default_incident_retention_max() -> u32 {
+    500
+}
+
 impl Default for LspSettings {
     fn default() -> Self {
         Self {
@@ -200,6 +204,8 @@ pub struct AppSettings {
     pub skill_search_paths: Vec<String>,
     #[serde(default)]
     pub lsp: LspSettings,
+    #[serde(default = "default_incident_retention_max")]
+    pub incident_retention_max: u32,
 }
 
 impl AppSettings {
@@ -279,6 +285,7 @@ impl Default for AppSettings {
             providers,
             skill_search_paths: Vec::new(),
             lsp: LspSettings::default(),
+            incident_retention_max: default_incident_retention_max(),
         }
     }
 }

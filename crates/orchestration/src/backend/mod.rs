@@ -7,7 +7,9 @@ use crate::adapters::storage::settings_store::FileSettingsStore;
 use crate::adapters::storage::skill_store::FileSkillCatalog;
 use crate::agent::library::AgentLibrary;
 use crate::agent::ports::AgentStore;
-use crate::incident::{IncidentContext, IncidentRecord, IncidentRecorder};
+use crate::incident::{
+    IncidentCategory, IncidentContext, IncidentRecord, IncidentRecorder, IncidentSeverity,
+};
 use crate::project::ports::{Project, ProjectStore};
 use crate::project::registry::ProjectRegistry;
 use crate::run::coordinator::{RunCoordinator, RunStartParams};
@@ -57,9 +59,15 @@ pub struct AppBackend {
 impl AppBackend {
     #[must_use]
     pub fn new(deps: AppBackendDeps, owned_runtime: Option<tokio::runtime::Runtime>) -> Self {
-        let incidents = Arc::new(IncidentRecorder::new(Arc::new(FileIncidentStore::new(
-            FileIncidentStore::default_path(),
-        ))));
+        let retention_max = deps
+            .settings_store
+            .load()
+            .map(|settings| settings.incident_retention_max)
+            .unwrap_or(500);
+        let incidents = Arc::new(IncidentRecorder::with_retention_max(
+            Arc::new(FileIncidentStore::new(FileIncidentStore::default_path())),
+            retention_max,
+        ));
         Self {
             workflows: WorkflowCatalog::new(deps.workflow_store, deps.project_workflow_store),
             agents: AgentLibrary::new(deps.agent_store),
@@ -93,6 +101,10 @@ impl AppBackend {
         self.incidents.dismiss(id)
     }
 
+    pub fn clear_resolved_incidents(&self) -> io::Result<usize> {
+        self.incidents.clear_resolved()
+    }
+
     pub fn list_incident_summaries(&self, limit: usize) -> io::Result<Vec<IncidentSummary>> {
         self.list_incidents(limit)
             .map(|records| records.into_iter().map(IncidentSummary::from).collect())
@@ -100,6 +112,32 @@ impl AppBackend {
 
     fn current_incident_context(&self) -> IncidentContext {
         self.runs.incident_context()
+    }
+
+    fn record_incident(
+        &self,
+        severity: IncidentSeverity,
+        category: IncidentCategory,
+        code: &str,
+        message: &str,
+    ) {
+        let ctx = self.current_incident_context();
+        if let Err(io_error) = self
+            .incidents
+            .record_custom(&ctx, severity, category, code, message)
+        {
+            log::warn!("failed to persist incident: {io_error}");
+        }
+    }
+
+    fn persistence_err(&self, code: &str, error: BackendError) -> BackendError {
+        self.record_incident(
+            IncidentSeverity::Error,
+            IncidentCategory::Persistence,
+            code,
+            &error.to_string(),
+        );
+        error
     }
 
     #[must_use]
@@ -156,11 +194,15 @@ impl AppBackend {
     }
 
     pub fn save_workflow(&self, workflow: Workflow) -> Result<Workflow, BackendError> {
-        self.workflows.save_one(&self.projects, workflow)
+        self.workflows
+            .save_one(&self.projects, workflow)
+            .map_err(|error| self.persistence_err("persistence.workflow_save", error))
     }
 
     pub fn save_workflows(&self, workflows: &[Workflow]) -> Result<(), BackendError> {
-        self.workflows.save_all(&self.projects, workflows)
+        self.workflows
+            .save_all(&self.projects, workflows)
+            .map_err(|error| self.persistence_err("persistence.workflow_save", error))
     }
 
     pub fn rename_workflow(
@@ -206,7 +248,12 @@ impl AppBackend {
     }
 
     pub fn save_settings(&self, settings: &AppSettings) -> Result<(), BackendError> {
-        self.settings.save(settings)
+        self.settings
+            .save(settings)
+            .map_err(|error| self.persistence_err("persistence.settings_save", error))?;
+        self.incidents
+            .set_retention_max(settings.incident_retention_max);
+        Ok(())
     }
 
     pub fn load_provider_api_key(&self, provider_id: &str) -> Result<Option<String>, BackendError> {
@@ -439,9 +486,15 @@ impl AppBackend {
         cols: u16,
         rows: u16,
     ) -> Result<(TerminalStart, UnboundedReceiver<TerminalEvent>), BackendError> {
-        self.terminal
-            .start(cwd, cols, rows)
-            .map_err(BackendError::ProjectOperation)
+        self.terminal.start(cwd, cols, rows).map_err(|message| {
+            self.record_incident(
+                IncidentSeverity::Error,
+                IncidentCategory::Terminal,
+                "terminal.start_failed",
+                &message,
+            );
+            BackendError::ProjectOperation(message)
+        })
     }
 
     pub fn write_terminal(&self, session_id: &str, data: &str) -> Result<(), BackendError> {

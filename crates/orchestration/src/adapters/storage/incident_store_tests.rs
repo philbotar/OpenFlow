@@ -5,10 +5,10 @@ use crate::incident::{
 };
 use tempfile::tempdir;
 
-fn sample_record(id: &str) -> IncidentRecord {
+fn sample_record(id: &str, created_at_ms: u64, resolved: bool) -> IncidentRecord {
     IncidentRecord {
         id: id.to_string(),
-        created_at_ms: 1,
+        created_at_ms,
         severity: IncidentSeverity::Error,
         category: IncidentCategory::Tool,
         scope: IncidentScope::App,
@@ -17,8 +17,12 @@ fn sample_record(id: &str) -> IncidentRecord {
         hint: None,
         retryable: false,
         context: Default::default(),
-        resolved: false,
+        resolved,
     }
+}
+
+fn sample_record_unresolved(id: &str) -> IncidentRecord {
+    sample_record(id, 1, false)
 }
 
 #[test]
@@ -27,8 +31,8 @@ fn append_and_list_round_trip() {
     let path = dir.path().join("incidents.jsonl");
     let store = FileIncidentStore::new(path.clone());
 
-    store.append(&sample_record("a")).unwrap();
-    store.append(&sample_record("b")).unwrap();
+    store.append(&sample_record_unresolved("a")).unwrap();
+    store.append(&sample_record_unresolved("b")).unwrap();
 
     let listed = store.list(None).unwrap();
     assert_eq!(listed.len(), 2);
@@ -42,7 +46,7 @@ fn dismiss_marks_record_resolved() {
     let path = dir.path().join("incidents.jsonl");
     let store = FileIncidentStore::new(path);
 
-    store.append(&sample_record("x")).unwrap();
+    store.append(&sample_record_unresolved("x")).unwrap();
     store.dismiss("x").unwrap();
 
     let listed = store
@@ -61,7 +65,9 @@ fn list_none_excludes_dismissed_incidents() {
     let path = dir.path().join("incidents.jsonl");
     let store = FileIncidentStore::new(path);
 
-    store.append(&sample_record("dismissed")).unwrap();
+    store
+        .append(&sample_record_unresolved("dismissed"))
+        .unwrap();
     store.dismiss("dismissed").unwrap();
 
     let active = store.list(None).unwrap();
@@ -84,8 +90,8 @@ fn clear_resolved_removes_dismissed_rows() {
     let path = dir.path().join("incidents.jsonl");
     let store = FileIncidentStore::new(path);
 
-    store.append(&sample_record("keep")).unwrap();
-    store.append(&sample_record("remove")).unwrap();
+    store.append(&sample_record_unresolved("keep")).unwrap();
+    store.append(&sample_record_unresolved("remove")).unwrap();
     store.dismiss("remove").unwrap();
 
     let removed = store.clear_resolved().unwrap();
@@ -95,4 +101,51 @@ fn clear_resolved_removes_dismissed_rows() {
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].id, "keep");
     assert!(!listed[0].resolved);
+}
+
+#[test]
+fn prune_to_max_drops_oldest_resolved_first() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("incidents.jsonl");
+    let store = FileIncidentStore::new(path);
+
+    store
+        .append(&sample_record("old-resolved", 1, true))
+        .unwrap();
+    store
+        .append(&sample_record("new-resolved", 2, true))
+        .unwrap();
+    store.append(&sample_record_unresolved("active")).unwrap();
+
+    let removed = store.prune_to_max(2).unwrap();
+    assert_eq!(removed, 1);
+
+    let listed = store
+        .list(Some(IncidentListOptions {
+            include_resolved: true,
+            limit: None,
+        }))
+        .unwrap();
+    assert_eq!(listed.len(), 2);
+    assert_eq!(listed[0].id, "new-resolved");
+    assert_eq!(listed[1].id, "active");
+}
+
+#[test]
+fn prune_to_max_drops_oldest_unresolved_when_no_resolved() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("incidents.jsonl");
+    let store = FileIncidentStore::new(path);
+
+    store.append(&sample_record_unresolved("oldest")).unwrap();
+    store.append(&sample_record("middle", 2, false)).unwrap();
+    store.append(&sample_record("newest", 3, false)).unwrap();
+
+    let removed = store.prune_to_max(2).unwrap();
+    assert_eq!(removed, 1);
+
+    let listed = store.list(None).unwrap();
+    assert_eq!(listed.len(), 2);
+    assert_eq!(listed[0].id, "middle");
+    assert_eq!(listed[1].id, "newest");
 }

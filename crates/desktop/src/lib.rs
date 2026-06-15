@@ -572,20 +572,30 @@ fn list_incidents(
     backend
         .list_incident_summaries(limit.unwrap_or(200))
         .map_err(|error| {
-            backend.backend_err(BackendError::ProjectOperation(error.to_string()))
+            CommandError::from(
+                backend.backend_err(BackendError::ProjectOperation(error.to_string())),
+            )
         })
 }
 
 /// Tauri command: Dismiss an incident by id.
 #[tauri::command]
-fn dismiss_incident(
-    backend: tauri::State<'_, AppBackend>,
-    id: String,
-) -> Result<(), CommandError> {
+fn dismiss_incident(backend: tauri::State<'_, AppBackend>, id: String) -> Result<(), CommandError> {
+    backend.dismiss_incident(&id).map_err(|error| {
+        CommandError::from(backend.backend_err(BackendError::ProjectOperation(error.to_string())))
+    })
+}
+
+/// Tauri command: Remove all resolved incidents from the store.
+#[tauri::command]
+fn clear_resolved_incidents(backend: tauri::State<'_, AppBackend>) -> Result<u32, CommandError> {
     backend
-        .dismiss_incident(&id)
+        .clear_resolved_incidents()
+        .map(|count| count as u32)
         .map_err(|error| {
-            backend.backend_err(BackendError::ProjectOperation(error.to_string()))
+            CommandError::from(
+                backend.backend_err(BackendError::ProjectOperation(error.to_string())),
+            )
         })
 }
 
@@ -640,6 +650,7 @@ pub fn run() {
             clear_run_trace,
             list_incidents,
             dismiss_incident,
+            clear_resolved_incidents,
             start_terminal,
             write_terminal,
             resize_terminal,

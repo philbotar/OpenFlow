@@ -8,21 +8,41 @@ use engine::AgentError;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::io;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
+const DEFAULT_RETENTION_MAX: u32 = 500;
+
 pub struct IncidentRecorder {
     store: Arc<dyn IncidentStore>,
+    retention_max: AtomicU32,
 }
 
 impl IncidentRecorder {
     pub fn new(store: Arc<dyn IncidentStore>) -> Self {
-        Self { store }
+        Self::with_retention_max(store, DEFAULT_RETENTION_MAX)
+    }
+
+    pub fn with_retention_max(store: Arc<dyn IncidentStore>, retention_max: u32) -> Self {
+        Self {
+            store,
+            retention_max: AtomicU32::new(retention_max),
+        }
+    }
+
+    pub fn set_retention_max(&self, retention_max: u32) {
+        self.retention_max.store(retention_max, Ordering::Relaxed);
     }
 
     pub fn record(&self, record: IncidentRecord) -> io::Result<()> {
-        self.store.append(&record)
+        self.store.append(&record)?;
+        let max = self.retention_max.load(Ordering::Relaxed);
+        if max > 0 {
+            self.store.prune_to_max(max)?;
+        }
+        Ok(())
     }
 
     pub fn list_unresolved(&self, limit: usize) -> io::Result<Vec<IncidentRecord>> {
@@ -36,6 +56,10 @@ impl IncidentRecorder {
         self.store.dismiss(id)
     }
 
+    pub fn clear_resolved(&self) -> io::Result<usize> {
+        self.store.clear_resolved()
+    }
+
     pub fn record_backend(&self, error: &BackendError, ctx: &IncidentContext) -> io::Result<()> {
         let record = build_record(NewIncidentRecord {
             scope: scope_from_context(ctx),
@@ -43,6 +67,27 @@ impl IncidentRecorder {
             category: IncidentCategory::Backend,
             code: backend_error_code(error).to_string(),
             message: error.to_string(),
+            hint: None,
+            retryable: false,
+            context: context_from_incident(ctx),
+        });
+        self.record(record)
+    }
+
+    pub fn record_custom(
+        &self,
+        ctx: &IncidentContext,
+        severity: IncidentSeverity,
+        category: IncidentCategory,
+        code: &str,
+        message: &str,
+    ) -> io::Result<()> {
+        let record = build_record(NewIncidentRecord {
+            scope: scope_from_context(ctx),
+            severity,
+            category,
+            code: code.to_string(),
+            message: message.to_string(),
             hint: None,
             retryable: false,
             context: context_from_incident(ctx),

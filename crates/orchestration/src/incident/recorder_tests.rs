@@ -1,7 +1,12 @@
-use super::recorder::{incident_from_tool_error, IncidentRecorder};
+use super::recorder::{
+    build_record, incident_from_tool_error, IncidentRecorder, NewIncidentRecord,
+};
 use crate::adapters::storage::incident_store::FileIncidentStore;
 use crate::error::BackendError;
-use crate::incident::{IncidentCategory, IncidentContext, IncidentSeverity};
+use crate::incident::{
+    IncidentCategory, IncidentContext, IncidentListOptions, IncidentScope, IncidentSeverity,
+    IncidentStore,
+};
 use crate::tool::errors::ToolError;
 use engine::{AgentError, NodeId};
 use std::sync::Arc;
@@ -62,4 +67,73 @@ fn backend_error_maps_to_backend_category() {
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].category, IncidentCategory::Backend);
     assert_eq!(listed[0].code, "backend.no_active_run");
+}
+
+#[test]
+fn record_prunes_when_retention_max_exceeded() {
+    let dir = tempdir().unwrap();
+    let store = Arc::new(FileIncidentStore::new(dir.path().join("incidents.jsonl")));
+    let recorder = IncidentRecorder::with_retention_max(store.clone(), 2);
+
+    recorder
+        .record(build_record(NewIncidentRecord {
+            scope: IncidentScope::App,
+            severity: IncidentSeverity::Error,
+            category: IncidentCategory::Backend,
+            code: "one".to_string(),
+            message: "one".to_string(),
+            hint: None,
+            retryable: false,
+            context: Default::default(),
+        }))
+        .unwrap();
+    let first = store
+        .list(Some(IncidentListOptions {
+            include_resolved: true,
+            limit: None,
+        }))
+        .unwrap()
+        .pop()
+        .expect("first record");
+    store.dismiss(&first.id).unwrap();
+
+    recorder
+        .record(build_record(NewIncidentRecord {
+            scope: IncidentScope::App,
+            severity: IncidentSeverity::Error,
+            category: IncidentCategory::Backend,
+            code: "two".to_string(),
+            message: "two".to_string(),
+            hint: None,
+            retryable: false,
+            context: Default::default(),
+        }))
+        .unwrap();
+    recorder
+        .record(build_record(NewIncidentRecord {
+            scope: IncidentScope::App,
+            severity: IncidentSeverity::Error,
+            category: IncidentCategory::Backend,
+            code: "three".to_string(),
+            message: "three".to_string(),
+            hint: None,
+            retryable: false,
+            context: Default::default(),
+        }))
+        .unwrap();
+
+    let listed = store
+        .list(Some(IncidentListOptions {
+            include_resolved: true,
+            limit: None,
+        }))
+        .unwrap();
+    assert_eq!(listed.len(), 2);
+    assert!(
+        listed
+            .iter()
+            .all(|record| record.code == "two" || record.code == "three"),
+        "expected newest records to remain: {:?}",
+        listed
+    );
 }

@@ -1,5 +1,6 @@
 use crate::adapters::storage::json_file_store::{atomic_write, OPENFLOW_DATA_DIR_SLUG};
 use crate::incident::{IncidentListOptions, IncidentRecord, IncidentStore};
+use std::collections::HashSet;
 use std::fs::{self, OpenOptions};
 use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
@@ -122,5 +123,50 @@ impl IncidentStore for FileIncidentStore {
         let removed = before - kept.len();
         self.write_all(&kept)?;
         Ok(removed)
+    }
+
+    fn prune_to_max(&self, max: u32) -> io::Result<usize> {
+        let mut records = self.read_all()?;
+        let max = max as usize;
+        if records.len() <= max {
+            return Ok(0);
+        }
+        let to_remove = records.len() - max;
+        let mut remove_ids = Vec::with_capacity(to_remove);
+
+        let mut resolved_indices: Vec<usize> = records
+            .iter()
+            .enumerate()
+            .filter(|(_, record)| record.resolved)
+            .map(|(index, _)| index)
+            .collect();
+        resolved_indices.sort_by_key(|&index| records[index].created_at_ms);
+        for index in resolved_indices {
+            if remove_ids.len() >= to_remove {
+                break;
+            }
+            remove_ids.push(records[index].id.clone());
+        }
+
+        if remove_ids.len() < to_remove {
+            let mut unresolved_indices: Vec<usize> = records
+                .iter()
+                .enumerate()
+                .filter(|(_, record)| !record.resolved)
+                .map(|(index, _)| index)
+                .collect();
+            unresolved_indices.sort_by_key(|&index| records[index].created_at_ms);
+            for index in unresolved_indices {
+                if remove_ids.len() >= to_remove {
+                    break;
+                }
+                remove_ids.push(records[index].id.clone());
+            }
+        }
+
+        let remove_set: HashSet<_> = remove_ids.iter().cloned().collect();
+        records.retain(|record| !remove_set.contains(&record.id));
+        self.write_all(&records)?;
+        Ok(to_remove)
     }
 }

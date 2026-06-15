@@ -30,8 +30,9 @@
 ### Added
 
 - **Incident IPC (no UI):** `IncidentSummary` DTO, `list_incident_summaries` on `AppBackend`, and `list_incidents` / `dismiss_incident` Tauri commands for unresolved incident list and dismiss.
+- **Incident retention policy:** `AppSettings.incident_retention_max` (default 500); `IncidentRecorder` prunes oldest resolved then oldest overall after append; `clear_resolved_incidents` on `AppBackend` and desktop IPC.
 - **Incident JSONL store:** append/list/dismiss/clear for structured incidents at `{data_local}/openflow/incidents.jsonl` via `FileIncidentStore` and `IncidentStore` port.
-- **Incident recorder:** map `ToolError`, `AgentError`, and `BackendError` to durable `IncidentRecord`s via `IncidentRecorder` and `incident_from_tool_error`.
+- **Terminal and persistence incident capture:** `start_terminal` failures record `terminal.start_failed`; explicit `save_settings` / `save_workflow` / `save_workflows` failures record `persistence.settings_save` and `persistence.workflow_save`.
 - **Incident from telemetry:** map `RunTelemetry` failure events (`ToolCompleted` errors, `ToolDenied`, `NodeErrored`, `NodeFailed`, `SubagentFailed`, `Error`) to `IncidentRecord` via `incident_from_execution_event`.
 - **Run-scoped incident capture:** `RunCoordinator` now assigns per-run `run_id`s and records incident records from execution events before state projection.
 - **Incident domain model:** structured `IncidentRecord` with severity, category, scope, and camelCase IPC serialization in `orchestration::incident`.

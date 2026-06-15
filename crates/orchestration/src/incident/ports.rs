@@ -12,4 +12,5 @@ pub trait IncidentStore: Send + Sync {
     fn list(&self, options: Option<IncidentListOptions>) -> io::Result<Vec<IncidentRecord>>;
     fn dismiss(&self, id: &str) -> io::Result<()>;
     fn clear_resolved(&self) -> io::Result<usize>;
+    fn prune_to_max(&self, max: u32) -> io::Result<usize>;
 }
