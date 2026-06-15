@@ -28,6 +28,7 @@
 
 ### Added
 
+- **Incident JSONL store:** append/list/dismiss/clear for structured incidents at `{data_local}/openflow/incidents.jsonl` via `FileIncidentStore` and `IncidentStore` port.
 - **Incident domain model:** structured `IncidentRecord` with severity, category, scope, and camelCase IPC serialization in `orchestration::incident`.
 - **Project terminal:** add a Terminal dock tab backed by a native PTY session, xterm.js rendering, project-cwd startup, resize handling, and app-close cleanup.
 - **Chat file references:** type `@` in the chat composer to search project files (gitignore-aware), pick files as `@{path}` tokens, and include bounded UTF-8 file contents in kickoff and paused-node chat submissions.

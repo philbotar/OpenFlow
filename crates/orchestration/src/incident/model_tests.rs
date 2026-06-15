@@ -32,3 +32,29 @@ fn incident_record_serializes_camel_case_for_ipc() {
     assert_eq!(json["retryable"], true);
     assert_eq!(json["resolved"], false);
 }
+
+#[test]
+fn incident_record_deserializes_from_jsonl_line() {
+    let record = IncidentRecord {
+        id: "inc-2".to_string(),
+        created_at_ms: 1_700_000_000_001,
+        severity: IncidentSeverity::Warning,
+        category: IncidentCategory::Run,
+        scope: IncidentScope::Run {
+            run_id: "run-2".to_string(),
+            workflow_id: "wf-2".to_string(),
+        },
+        code: "run.stalled".to_string(),
+        message: "run stalled".to_string(),
+        hint: None,
+        retryable: false,
+        context: Default::default(),
+        resolved: false,
+    };
+    let line = serde_json::to_string(&record).expect("serialize");
+    let parsed: IncidentRecord = serde_json::from_str(&line).expect("deserialize");
+    assert_eq!(parsed, record);
+    let json: serde_json::Value = serde_json::from_str(&line).expect("parse json");
+    assert_eq!(json["scope"]["runId"], "run-2");
+    assert_eq!(json["scope"]["workflowId"], "wf-2");
+}
