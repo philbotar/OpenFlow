@@ -1,4 +1,4 @@
-use engine::FileChangeOp;
+use engine::{FileChangeOp, Workflow};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -83,6 +83,34 @@ pub struct IncidentSummary {
     pub node_id: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowAuthoringMessage {
+    pub role: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowAuthoringValidation {
+    pub valid: bool,
+    pub errors: Vec<String>,
+    pub warnings: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dag: Option<WorkflowValidationSummary>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowAuthoringTurnResult {
+    pub session_id: String,
+    pub assistant_message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub draft: Option<Workflow>,
+    pub validation: WorkflowAuthoringValidation,
+    pub messages: Vec<WorkflowAuthoringMessage>,
+}
+
 impl From<crate::incident::IncidentRecord> for IncidentSummary {
     fn from(record: crate::incident::IncidentRecord) -> Self {
         let (workflow_id, run_id, node_id) = match record.scope {
@@ -90,11 +118,7 @@ impl From<crate::incident::IncidentRecord> for IncidentSummary {
                 run_id,
                 workflow_id,
                 node_id,
-            } => (
-                Some(workflow_id),
-                Some(run_id),
-                Some(node_id.0),
-            ),
+            } => (Some(workflow_id), Some(run_id), Some(node_id.0)),
             crate::incident::IncidentScope::Run {
                 run_id,
                 workflow_id,
