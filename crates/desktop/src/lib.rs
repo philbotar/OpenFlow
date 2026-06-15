@@ -563,6 +563,32 @@ fn unassign_workflow_from_project(
     Ok(backend.unassign_workflow_from_project(&project_id, &workflow_id)?)
 }
 
+/// Tauri command: List unresolved incident summaries.
+#[tauri::command]
+fn list_incidents(
+    backend: tauri::State<'_, AppBackend>,
+    limit: Option<usize>,
+) -> Result<Vec<orchestration::api::IncidentSummary>, CommandError> {
+    backend
+        .list_incident_summaries(limit.unwrap_or(200))
+        .map_err(|error| {
+            backend.backend_err(BackendError::ProjectOperation(error.to_string()))
+        })
+}
+
+/// Tauri command: Dismiss an incident by id.
+#[tauri::command]
+fn dismiss_incident(
+    backend: tauri::State<'_, AppBackend>,
+    id: String,
+) -> Result<(), CommandError> {
+    backend
+        .dismiss_incident(&id)
+        .map_err(|error| {
+            backend.backend_err(BackendError::ProjectOperation(error.to_string()))
+        })
+}
+
 pub fn run() {
     let builder = tauri::Builder::default();
 
@@ -612,6 +638,8 @@ pub fn run() {
             complete_manual_node,
             get_run_state,
             clear_run_trace,
+            list_incidents,
+            dismiss_incident,
             start_terminal,
             write_terminal,
             resize_terminal,

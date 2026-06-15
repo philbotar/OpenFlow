@@ -29,6 +29,7 @@
 
 ### Added
 
+- **Incident IPC (no UI):** `IncidentSummary` DTO, `list_incident_summaries` on `AppBackend`, and `list_incidents` / `dismiss_incident` Tauri commands for unresolved incident list and dismiss.
 - **Incident JSONL store:** append/list/dismiss/clear for structured incidents at `{data_local}/openflow/incidents.jsonl` via `FileIncidentStore` and `IncidentStore` port.
 - **Incident recorder:** map `ToolError`, `AgentError`, and `BackendError` to durable `IncidentRecord`s via `IncidentRecorder` and `incident_from_tool_error`.
 - **Incident from telemetry:** map `RunTelemetry` failure events (`ToolCompleted` errors, `ToolDenied`, `NodeErrored`, `NodeFailed`, `SubagentFailed`, `Error`) to `IncidentRecord` via `incident_from_execution_event`.

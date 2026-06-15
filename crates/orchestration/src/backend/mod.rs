@@ -26,8 +26,8 @@ use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedReceiver;
 
 pub use crate::api::{
-    AgentDefinitionSummary, FileEditPreview, ProjectFileReference, ProjectFileReferenceContent,
-    ProviderReadiness, WorkflowListItem, WorkflowValidationSummary,
+    AgentDefinitionSummary, FileEditPreview, IncidentSummary, ProjectFileReference,
+    ProjectFileReferenceContent, ProviderReadiness, WorkflowListItem, WorkflowValidationSummary,
 };
 pub use crate::error::BackendError;
 
@@ -91,6 +91,11 @@ impl AppBackend {
 
     pub fn dismiss_incident(&self, id: &str) -> io::Result<()> {
         self.incidents.dismiss(id)
+    }
+
+    pub fn list_incident_summaries(&self, limit: usize) -> io::Result<Vec<IncidentSummary>> {
+        self.list_incidents(limit)
+            .map(|records| records.into_iter().map(IncidentSummary::from).collect())
     }
 
     fn current_incident_context(&self) -> IncidentContext {

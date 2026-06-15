@@ -222,6 +222,54 @@ fn backend_err_persists_incident_before_returning() {
 }
 
 #[test]
+fn list_incident_summaries_projects_records() {
+    use crate::incident::{IncidentCategory, IncidentRecord, IncidentScope, IncidentSeverity};
+
+    let (mut backend, dir) = backend();
+    backend.incidents = Arc::new(IncidentRecorder::new(Arc::new(FileIncidentStore::new(
+        dir.path().join("incidents.jsonl"),
+    ))));
+
+    backend
+        .incidents()
+        .record(IncidentRecord {
+            id: "inc-1".to_string(),
+            created_at_ms: 12_345,
+            severity: IncidentSeverity::Warning,
+            category: IncidentCategory::Node,
+            scope: IncidentScope::Node {
+                run_id: "run-1".to_string(),
+                workflow_id: "wf-1".to_string(),
+                node_id: NodeId("node-a".to_string()),
+            },
+            code: "node.failed".to_string(),
+            message: "something broke".to_string(),
+            hint: None,
+            retryable: true,
+            context: Default::default(),
+            resolved: false,
+        })
+        .expect("record incident");
+
+    let summaries = backend
+        .list_incident_summaries(10)
+        .expect("list incident summaries");
+    assert_eq!(summaries.len(), 1);
+    let summary = &summaries[0];
+    assert_eq!(summary.id, "inc-1");
+    assert_eq!(summary.created_at_ms, 12_345);
+    assert_eq!(summary.severity, "warning");
+    assert_eq!(summary.category, "node");
+    assert_eq!(summary.code, "node.failed");
+    assert_eq!(summary.message, "something broke");
+    assert!(summary.retryable);
+    assert!(!summary.resolved);
+    assert_eq!(summary.workflow_id.as_deref(), Some("wf-1"));
+    assert_eq!(summary.run_id.as_deref(), Some("run-1"));
+    assert_eq!(summary.node_id.as_deref(), Some("node-a"));
+}
+
+#[test]
 fn start_run_returns_initial_state_and_manual_events() {
     let (backend, _dir) = backend();
     backend.block_on_test(async {
