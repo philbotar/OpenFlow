@@ -68,3 +68,10 @@ fn finish_run_session_preserves_artifact_root_for_continuable_run() {
     assert_eq!(session.artifact_root.as_ref(), Some(&artifact_root));
     assert!(artifact_root.exists());
 }
+
+#[test]
+fn finish_run_session_tolerates_missing_artifact_root() {
+    let mut session = seeded_session(PathBuf::from("/tmp/openflow-missing-artifact-root-test"));
+    finish_run_session(&mut session);
+    assert!(session.artifact_root.is_none());
+}

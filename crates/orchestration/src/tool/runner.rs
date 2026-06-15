@@ -5,6 +5,7 @@ pub(super) use crate::tool::blocking_ops::{
 };
 use crate::tool::cache::{cache_key, CacheEntry, CacheValidation, ToolResultCache};
 use crate::tool::errors::ToolError;
+use crate::tool::hooks::{AfterToolContext, BeforeToolContext, BeforeToolDecision, ToolHooks};
 use crate::tool::output::{ArtifactStore, ToolArtifactRecord};
 use crate::tool::registry::{BuiltinToolKind, ToolRegistry, ToolRegistryError};
 use engine::{EditBatch, FileChangeRecord, ToolCall, ToolOutputMeta, ToolResult};
@@ -24,7 +25,13 @@ pub struct ToolExecutionRecord {
     pub edit_batch: Option<EditBatch>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolExecutionUpdate {
+    pub content: String,
+    pub output_meta: Option<ToolOutputMeta>,
+}
+
+#[derive(Clone)]
 pub struct ToolExecutionContext {
     pub node_id: engine::NodeId,
     /// Identifies the transcript receiving the result: the node id for node
@@ -34,6 +41,18 @@ pub struct ToolExecutionContext {
     pub conversation_id: String,
     /// LSP format-on-write and diagnostics for edit tools in this invocation.
     pub lsp: LspSettings,
+    pub update_tx: Option<tokio::sync::mpsc::UnboundedSender<ToolExecutionUpdate>>,
+}
+
+impl std::fmt::Debug for ToolExecutionContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ToolExecutionContext")
+            .field("node_id", &self.node_id)
+            .field("conversation_id", &self.conversation_id)
+            .field("lsp", &self.lsp)
+            .field("update_tx", &self.update_tx.is_some())
+            .finish()
+    }
 }
 
 #[derive(Debug)]
@@ -45,6 +64,7 @@ pub struct ToolRunner {
     pub(super) cancel_token: CancellationToken,
     pub(super) snapshot_store: Arc<crate::tools::edit::hashline::snapshots::InMemorySnapshotStore>,
     cache: ToolResultCache,
+    hooks: ToolHooks,
 }
 
 #[derive(Debug, Error)]
@@ -75,7 +95,14 @@ impl ToolRunner {
             cancel_token,
             snapshot_store,
             cache: ToolResultCache::new(),
+            hooks: ToolHooks::empty(),
         }
+    }
+
+    #[must_use]
+    pub fn with_hooks(mut self, hooks: ToolHooks) -> Self {
+        self.hooks = hooks;
+        self
     }
 
     /// Invalidate epoch-validated cache entries after files changed outside
@@ -114,6 +141,19 @@ impl ToolRunner {
             }
         }
         let cache_ctx = ctx.clone();
+        if let Some(context) = &ctx {
+            let decision = self
+                .hooks
+                .before_tool_call(BeforeToolContext {
+                    node_id: context.node_id.clone(),
+                    conversation_id: context.conversation_id.clone(),
+                    call: call.clone(),
+                })
+                .await;
+            if let BeforeToolDecision::Block { reason } = decision {
+                return Ok(self.failed_record(call, reason, Vec::new(), None));
+            }
+        }
         let result = self.dispatch(kind, call.clone(), ctx).await;
         if matches!(
             kind,
@@ -126,6 +166,14 @@ impl ToolRunner {
         }
         if let (Some(context), Ok(record)) = (&cache_ctx, &result) {
             self.maybe_cache(kind, &call, context, record);
+            self.hooks
+                .after_tool_call(AfterToolContext {
+                    node_id: context.node_id.clone(),
+                    conversation_id: context.conversation_id.clone(),
+                    call: call.clone(),
+                    result: record.result.clone(),
+                })
+                .await;
         }
         result
     }
@@ -383,6 +431,7 @@ mod tests {
             node_id: engine::NodeId(node.to_string()),
             conversation_id: conversation.to_string(),
             lsp: PersistedLspSettings::default(),
+            update_tx: None,
         })
     }
 
@@ -409,7 +458,7 @@ mod tests {
     #[tokio::test]
     async fn read_file_without_selector_announces_truncation() {
         let dir = tempfile::tempdir().unwrap();
-        let lines = (1..=305)
+        let lines = (1..=3005)
             .map(|index| format!("line-{index}"))
             .collect::<Vec<_>>()
             .join("\n");
@@ -426,12 +475,12 @@ mod tests {
             )
             .await
             .unwrap();
-        assert!(record.result.content.contains("300:line-300"));
-        assert!(!record.result.content.contains("301:line-301"));
+        assert!(record.result.content.contains("3000:line-3000"));
+        assert!(!record.result.content.contains("3001:line-3001"));
         assert!(record
             .result
             .content
-            .contains("truncated at line 300 of 305"));
+            .contains("truncated at line 3000 of 3005"));
         assert!(record
             .result
             .content

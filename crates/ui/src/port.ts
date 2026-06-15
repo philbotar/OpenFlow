@@ -6,6 +6,8 @@ import type {
 	BootstrapPayload,
 	Node,
 	Project,
+	ProjectFileReference,
+	ProjectFileReferenceContent,
 	ProviderReadiness,
 	SkillSummary,
 	Workflow,
@@ -13,6 +15,8 @@ import type {
 	WorkflowRunState,
 	WorkflowValidationSummary,
 	FileEditPreview,
+	TerminalEvent,
+	TerminalStart,
 } from "./lib/types";
 
 export type RunStateListener = (runState: WorkflowRunState) => void;
@@ -24,6 +28,15 @@ export interface RunStateEventSink {
 export interface UiDesktopOutboundPort {
 	bootstrapApp: () => Promise<BootstrapPayload>;
 	listProjects: () => Promise<Project[]>;
+	listProjectFileReferences: (
+		executionCwd: string,
+		query?: string | null,
+		limit?: number | null,
+	) => Promise<ProjectFileReference[]>;
+	readProjectFileReferences: (
+		executionCwd: string,
+		paths: string[],
+	) => Promise<ProjectFileReferenceContent[]>;
 	saveProjects: (projects: Project[]) => Promise<void>;
 	createProjectFromDirectory: (path: string) => Promise<Project>;
 	assignWorkflowToProject: (projectId: string, workflowId: string) => Promise<Project[]>;
@@ -61,6 +74,7 @@ export interface UiDesktopOutboundPort {
 		settings: AppSettings,
 		executionCwd?: string | null,
 		transientApiKey?: string | null,
+		entrypoint?: string | null,
 	) => Promise<WorkflowRunState>;
 	stopRun: () => Promise<WorkflowRunState>;
 	continueRun: (
@@ -87,6 +101,15 @@ export interface UiDesktopOutboundPort {
 	completeManualNode: () => Promise<WorkflowRunState>;
 	getRunState: () => Promise<WorkflowRunState | null>;
 	clearRunTrace: () => Promise<WorkflowRunState | null>;
+	startTerminal: (
+		cwd?: string | null,
+		cols?: number,
+		rows?: number,
+	) => Promise<TerminalStart>;
+	writeTerminal: (sessionId: string, data: string) => Promise<void>;
+	resizeTerminal: (sessionId: string, cols: number, rows: number) => Promise<void>;
+	stopTerminal: (sessionId: string) => Promise<void>;
+	listenToTerminalEvent: (handler: (event: TerminalEvent) => void) => Promise<() => void>;
 	listenToRunState: (handler: RunStateListener) => Promise<() => void>;
 }
 
@@ -94,6 +117,8 @@ export function createUiDesktopOutboundAdapter(): UiDesktopOutboundPort {
 	return {
 		bootstrapApp: desktopApi.bootstrapApp,
 		listProjects: desktopApi.listProjects,
+		listProjectFileReferences: desktopApi.listProjectFileReferences,
+		readProjectFileReferences: desktopApi.readProjectFileReferences,
 		saveProjects: desktopApi.saveProjects,
 		createProjectFromDirectory: desktopApi.createProjectFromDirectory,
 		assignWorkflowToProject: desktopApi.assignWorkflowToProject,
@@ -132,6 +157,11 @@ export function createUiDesktopOutboundAdapter(): UiDesktopOutboundPort {
 		completeManualNode: desktopApi.completeManualNode,
 		getRunState: desktopApi.getRunState,
 		clearRunTrace: desktopApi.clearRunTrace,
+		startTerminal: desktopApi.startTerminal,
+		writeTerminal: desktopApi.writeTerminal,
+		resizeTerminal: desktopApi.resizeTerminal,
+		stopTerminal: desktopApi.stopTerminal,
+		listenToTerminalEvent: desktopApi.listenToTerminalEvent,
 		listenToRunState: desktopApi.listenToRunState,
 	};
 }

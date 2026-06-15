@@ -26,6 +26,11 @@ const apiMocks = vi.hoisted(() => ({
   submitToolApproval: vi.fn(),
   submitUserInput: vi.fn(),
   validateWorkflow: vi.fn(),
+  startTerminal: vi.fn(),
+  writeTerminal: vi.fn(),
+  resizeTerminal: vi.fn(),
+  stopTerminal: vi.fn(),
+  listenToTerminalEvent: vi.fn(),
   createProjectFromDirectory: vi.fn(),
   assignWorkflowToProject: vi.fn(),
   unassignWorkflowFromProject: vi.fn(),
@@ -63,6 +68,11 @@ vi.mock("../api", async (importOriginal) => {
     createProjectFromDirectory: apiMocks.createProjectFromDirectory,
     assignWorkflowToProject: apiMocks.assignWorkflowToProject,
     unassignWorkflowFromProject: apiMocks.unassignWorkflowFromProject,
+    startTerminal: apiMocks.startTerminal,
+    writeTerminal: apiMocks.writeTerminal,
+    resizeTerminal: apiMocks.resizeTerminal,
+    stopTerminal: apiMocks.stopTerminal,
+    listenToTerminalEvent: apiMocks.listenToTerminalEvent,
   };
 });
 
@@ -79,6 +89,26 @@ vi.mock("../canvas/WorkflowCanvasHost", () => ({
       Canvas add node
     </button>
   ),
+}));
+
+vi.mock("@xterm/xterm", () => ({
+  Terminal: vi.fn().mockImplementation(() => ({
+    cols: 80,
+    rows: 24,
+    loadAddon: vi.fn(),
+    open: vi.fn(),
+    onData: vi.fn(),
+    reset: vi.fn(),
+    writeln: vi.fn(),
+    write: vi.fn(),
+    dispose: vi.fn(),
+  })),
+}));
+
+vi.mock("@xterm/addon-fit", () => ({
+  FitAddon: vi.fn().mockImplementation(() => ({
+    fit: vi.fn(),
+  })),
 }));
 
 import App from "../App";
@@ -258,6 +288,11 @@ function installDefaultApiMocks() {
   );
   apiMocks.listWorkflows.mockResolvedValue([]);
   apiMocks.listSkills.mockResolvedValue(FIXTURE_SKILLS);
+  apiMocks.startTerminal.mockResolvedValue({ sessionId: "terminal-1", cwd: "/tmp/Repo" });
+  apiMocks.writeTerminal.mockResolvedValue(undefined);
+  apiMocks.resizeTerminal.mockResolvedValue(undefined);
+  apiMocks.stopTerminal.mockResolvedValue(undefined);
+  apiMocks.listenToTerminalEvent.mockResolvedValue(() => {});
 }
 
 function makeProject(id: string, name: string, workflowIds: string[] = []): Project {
@@ -1144,6 +1179,41 @@ describe("App chat slash commands", () => {
     }
   });
 
+  test("toggles chat focus mode from the chat dock", async () => {
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    const runState = makeAwaitingRunState(workflow);
+    const { container, dispose } = await mountApp({
+      workflows: [workflow],
+      agents: [makeAgent("agent-1", "Research Agent")],
+      skills: FIXTURE_SKILLS,
+      settings: SETTINGS,
+      runState,
+    });
+    await openChatTab(container);
+
+    try {
+      const editor = container.querySelector(".editor-screen");
+      expect(editor?.classList.contains("editor-screen--chat-focus")).toBe(false);
+
+      const focusButton = await waitForElement(
+        () => container.querySelector('[aria-label="Focus chat"]') as HTMLButtonElement | null,
+        "focus chat button",
+      );
+      focusButton.click();
+      await flush();
+
+      expect(editor?.classList.contains("editor-screen--chat-focus")).toBe(true);
+      expect(container.querySelector('[aria-label="Show canvas"]')).not.toBeNull();
+
+      (container.querySelector('[aria-label="Show canvas"]') as HTMLButtonElement).click();
+      await flush();
+
+      expect(editor?.classList.contains("editor-screen--chat-focus")).toBe(false);
+    } finally {
+      dispose();
+    }
+  });
+
   test("shows node messages under the selected node label", async () => {
     const workflow = makeWorkflow("workflow-1", "Workflow One");
     workflow.nodes[0].label = "Agent 2";
@@ -1164,12 +1234,18 @@ describe("App chat slash commands", () => {
 
     try {
       const labels = Array.from(container.querySelectorAll(".chat-role")).map((element) => element.textContent);
-      expect(labels).toEqual(["System", "Assistant"]);
+      expect(labels).toEqual(["System"]);
       expect(
         container.querySelector('.chat-segment[data-node-id="' + workflow.nodes[0].id + '"] .eyebrow')
           ?.textContent,
       ).toBe("Agent 2");
-      expect(container.querySelector(".thinking-bubble-label")?.textContent).toContain("Thinking");
+      expect(container.querySelector(".thinking-bubble")).toBeNull();
+      const thinkingLine = container.querySelector('.tool-line[data-tool-name="thinking"]');
+      expect(thinkingLine).not.toBeNull();
+      expect(thinkingLine?.querySelector(".tool-line-name")?.textContent).toContain("thinking");
+      expect(thinkingLine?.querySelector(".tool-line-target")?.textContent).toContain(
+        "Agent prompt: You are a focused AI agent...",
+      );
     } finally {
       dispose();
     }
@@ -1530,10 +1606,58 @@ describe("App bottom dock", () => {
   afterEach(() => {
     document.body.innerHTML = "";
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
     window.localStorage.clear();
   });
   beforeEach(() => {
     installDefaultApiMocks();
+    vi.stubGlobal(
+      "ResizeObserver",
+      vi.fn().mockImplementation(() => ({
+        observe: vi.fn(),
+        disconnect: vi.fn(),
+      })),
+    );
+  });
+
+  test("opens terminal tab and starts terminal in active workflow cwd", async () => {
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    const project = makeProject("p1", "Repo", ["workflow-1"]);
+    apiMocks.bootstrapApp.mockResolvedValue({
+      workflows: [workflow],
+      agents: [makeAgent("agent-1", "Research Agent")],
+      skills: FIXTURE_SKILLS,
+      settings: SETTINGS,
+      projects: [project],
+      runState: null,
+    });
+    window.localStorage.setItem("openflow.expandedProjectIds", JSON.stringify(["p1"]));
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const dispose = render(() => <App />, container);
+
+    try {
+      await waitForElement(() => container.querySelector(".editor-screen"), "editor screen");
+      await flush();
+
+      const terminalTab = await waitForElement(
+        () =>
+          Array.from(container.querySelectorAll(".dock-tab-switcher button")).find(
+            (button) => button.textContent === "Terminal",
+          ) as HTMLButtonElement | null,
+        "terminal tab",
+      );
+      terminalTab.click();
+      await flush();
+
+      expect(apiMocks.startTerminal).toHaveBeenCalledWith("/tmp/Repo", 80, 24);
+      expect(container.querySelector(".terminal-host")).not.toBeNull();
+      expect(container.querySelector(".terminal-cwd")?.textContent).toContain("/tmp/Repo");
+    } finally {
+      dispose();
+      window.localStorage.removeItem("openflow.expandedProjectIds");
+    }
   });
 
   test("collapses and restores the bottom dock by dragging the seam", async () => {
@@ -1611,6 +1735,148 @@ describe("App bottom dock", () => {
       window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
 
       expect(editorScreen.style.getPropertyValue("--dock-height")).toBe("268px");
+    } finally {
+      dispose();
+    }
+  });
+});
+
+describe("Idle global chat kickoff", () => {
+  afterEach(() => {
+    document.body.innerHTML = "";
+    vi.clearAllMocks();
+    window.localStorage.clear();
+  });
+
+  beforeEach(() => {
+    installDefaultApiMocks();
+    apiMocks.listenToRunState.mockResolvedValue(() => {});
+  });
+
+  test("shows enabled composer when no run is active", async () => {
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    const { container, dispose } = await mountApp({
+      workflows: [workflow],
+      agents: [makeAgent("agent-1", "Research Agent")],
+      skills: FIXTURE_SKILLS,
+      settings: SETTINGS,
+      runState: null,
+    });
+    await openChatTab(container);
+    try {
+      const textarea = container.querySelector(
+        ".chat-composer-pill textarea",
+      ) as HTMLTextAreaElement;
+      expect(textarea?.disabled).toBe(false);
+      expect(textarea?.placeholder).toContain("start the workflow");
+    } finally {
+      dispose();
+    }
+  });
+
+  test("starts run from idle global chat with entrypoint", async () => {
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    workflow.nodes[0].agent.auto_start = true;
+    const idleRunState = { ...makeAwaitingRunState(workflow), active: false };
+    apiMocks.startRun.mockResolvedValue(makeAwaitingRunState(workflow));
+    const { container, dispose } = await mountApp({
+      workflows: [workflow],
+      agents: [makeAgent("agent-1", "Research Agent")],
+      skills: FIXTURE_SKILLS,
+      settings: SETTINGS,
+      runState: idleRunState,
+    });
+    await openChatTab(container);
+    try {
+      const textarea = container.querySelector(
+        ".chat-composer-pill textarea",
+      ) as HTMLTextAreaElement;
+      textarea.value = "Plan project ORCHID-91";
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      container
+        .querySelector(".composer-send-button")
+        ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await flush();
+      expect(apiMocks.startRun).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "workflow-1" }),
+        expect.objectContaining({ active_provider: "openai" }),
+        null,
+        "stored-openai-key",
+        "Plan project ORCHID-91",
+      );
+    } finally {
+      dispose();
+    }
+  });
+
+  test("auto-flushes kickoff to single awaiting manual root", async () => {
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    workflow.nodes[0].agent.auto_start = false;
+    const started = makeAwaitingRunState(workflow);
+    started.active = true;
+    started.awaitingNodeId = workflow.nodes[0].id;
+    started.awaitingNodeIds = [workflow.nodes[0].id];
+    started.statusByNode[workflow.nodes[0].id] = "awaiting_input";
+    apiMocks.startRun.mockResolvedValue(started);
+    apiMocks.submitUserInput.mockResolvedValue(started);
+    const idleRunState = { ...makeAwaitingRunState(workflow), active: false };
+    const { container, dispose } = await mountApp({
+      workflows: [workflow],
+      agents: [makeAgent("agent-1", "Research Agent")],
+      skills: FIXTURE_SKILLS,
+      settings: SETTINGS,
+      runState: idleRunState,
+    });
+    await openChatTab(container);
+    try {
+      const textarea = container.querySelector(
+        ".chat-composer-pill textarea",
+      ) as HTMLTextAreaElement;
+      textarea.value = "Manual kickoff";
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      container
+        .querySelector(".composer-send-button")
+        ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await flush();
+      expect(apiMocks.startRun).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "workflow-1" }),
+        expect.objectContaining({ active_provider: "openai" }),
+        null,
+        "stored-openai-key",
+        "Manual kickoff",
+      );
+      expect(apiMocks.submitUserInput).toHaveBeenCalledWith(
+        workflow.nodes[0].id,
+        "Manual kickoff",
+      );
+    } finally {
+      dispose();
+    }
+  });
+
+  test("header run button still starts without entrypoint", async () => {
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    apiMocks.startRun.mockResolvedValue(makeAwaitingRunState(workflow));
+    const { container, dispose } = await mountApp({
+      workflows: [workflow],
+      agents: [makeAgent("agent-1", "Research Agent")],
+      skills: FIXTURE_SKILLS,
+      settings: SETTINGS,
+      runState: null,
+    });
+    try {
+      const runButton = container.querySelector(
+        'button[aria-label="Run workflow"]',
+      ) as HTMLButtonElement;
+      runButton.click();
+      await flush();
+      expect(apiMocks.startRun).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "workflow-1" }),
+        expect.objectContaining({ active_provider: "openai" }),
+        null,
+        "stored-openai-key",
+        null,
+      );
     } finally {
       dispose();
     }

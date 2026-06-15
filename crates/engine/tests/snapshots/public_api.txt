@@ -1265,6 +1265,12 @@ pub engine::execution::telemetry::RunTelemetry::ToolStarted::arguments: serde_js
 pub engine::execution::telemetry::RunTelemetry::ToolStarted::node_id: engine::graph::workflow::NodeId
 pub engine::execution::telemetry::RunTelemetry::ToolStarted::tool_call_id: alloc::string::String
 pub engine::execution::telemetry::RunTelemetry::ToolStarted::tool_name: alloc::string::String
+pub engine::execution::telemetry::RunTelemetry::ToolUpdated
+pub engine::execution::telemetry::RunTelemetry::ToolUpdated::content: alloc::string::String
+pub engine::execution::telemetry::RunTelemetry::ToolUpdated::node_id: engine::graph::workflow::NodeId
+pub engine::execution::telemetry::RunTelemetry::ToolUpdated::output_meta: core::option::Option<engine::ToolOutputMeta>
+pub engine::execution::telemetry::RunTelemetry::ToolUpdated::tool_call_id: alloc::string::String
+pub engine::execution::telemetry::RunTelemetry::ToolUpdated::tool_name: alloc::string::String
 impl core::clone::Clone for engine::execution::telemetry::RunTelemetry
 pub fn engine::execution::telemetry::RunTelemetry::clone(&self) -> engine::execution::telemetry::RunTelemetry
 impl core::fmt::Debug for engine::execution::telemetry::RunTelemetry
@@ -1776,6 +1782,12 @@ pub engine::execution::RunTelemetry::ToolStarted::arguments: serde_json::value::
 pub engine::execution::RunTelemetry::ToolStarted::node_id: engine::graph::workflow::NodeId
 pub engine::execution::RunTelemetry::ToolStarted::tool_call_id: alloc::string::String
 pub engine::execution::RunTelemetry::ToolStarted::tool_name: alloc::string::String
+pub engine::execution::RunTelemetry::ToolUpdated
+pub engine::execution::RunTelemetry::ToolUpdated::content: alloc::string::String
+pub engine::execution::RunTelemetry::ToolUpdated::node_id: engine::graph::workflow::NodeId
+pub engine::execution::RunTelemetry::ToolUpdated::output_meta: core::option::Option<engine::ToolOutputMeta>
+pub engine::execution::RunTelemetry::ToolUpdated::tool_call_id: alloc::string::String
+pub engine::execution::RunTelemetry::ToolUpdated::tool_name: alloc::string::String
 impl core::clone::Clone for engine::execution::telemetry::RunTelemetry
 pub fn engine::execution::telemetry::RunTelemetry::clone(&self) -> engine::execution::telemetry::RunTelemetry
 impl core::fmt::Debug for engine::execution::telemetry::RunTelemetry
@@ -6077,6 +6089,7 @@ pub fn engine::tools::override_policy_for_call(&engine::NodeToolConfig, &str) ->
 pub const fn engine::tools::requires_approval(engine::ApprovalMode, engine::ToolTier, core::option::Option<engine::ToolPolicy>) -> engine::ToolDecision
 pub fn engine::tools::summarize_diff(&str, usize) -> alloc::string::String
 pub fn engine::tools::tool_decision_for_call(&engine::NodeToolConfig, &engine::ToolCall) -> engine::ToolDecision
+pub fn engine::tools::tool_intent_from_arguments(&serde_json::value::Value) -> core::option::Option<alloc::string::String>
 pub fn engine::tools::tool_tier_for_call(&engine::NodeToolConfig, &str) -> engine::ToolTier
 pub enum engine::AgentError
 pub engine::AgentError::Failed(alloc::string::String)
@@ -6873,6 +6886,12 @@ pub engine::RunTelemetry::ToolStarted::arguments: serde_json::value::Value
 pub engine::RunTelemetry::ToolStarted::node_id: engine::graph::workflow::NodeId
 pub engine::RunTelemetry::ToolStarted::tool_call_id: alloc::string::String
 pub engine::RunTelemetry::ToolStarted::tool_name: alloc::string::String
+pub engine::RunTelemetry::ToolUpdated
+pub engine::RunTelemetry::ToolUpdated::content: alloc::string::String
+pub engine::RunTelemetry::ToolUpdated::node_id: engine::graph::workflow::NodeId
+pub engine::RunTelemetry::ToolUpdated::output_meta: core::option::Option<engine::ToolOutputMeta>
+pub engine::RunTelemetry::ToolUpdated::tool_call_id: alloc::string::String
+pub engine::RunTelemetry::ToolUpdated::tool_name: alloc::string::String
 impl core::clone::Clone for engine::execution::telemetry::RunTelemetry
 pub fn engine::execution::telemetry::RunTelemetry::clone(&self) -> engine::execution::telemetry::RunTelemetry
 impl core::fmt::Debug for engine::execution::telemetry::RunTelemetry
@@ -9702,6 +9721,7 @@ pub fn engine::subagent_runtime_builtin_denied(&engine::ToolCall) -> engine::Too
 pub fn engine::summarize_diff(&str, usize) -> alloc::string::String
 pub fn engine::summary_from_node_output(&serde_json::value::Value) -> core::option::Option<alloc::string::String>
 pub fn engine::tool_decision_for_call(&engine::NodeToolConfig, &engine::ToolCall) -> engine::ToolDecision
+pub fn engine::tool_intent_from_arguments(&serde_json::value::Value) -> core::option::Option<alloc::string::String>
 pub fn engine::tool_tier_for_call(&engine::NodeToolConfig, &str) -> engine::ToolTier
 pub fn engine::upstream_changed_files<S: core::hash::BuildHasher>(&str, &std::collections::hash::map::HashMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::graph::workflow::NodeId>, S>, &alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>>) -> alloc::vec::Vec<engine::FileChangeRecord>
 pub fn engine::validate_checkpoint_against_workflow(&engine::graph::workflow::Workflow, &engine::InteractiveEngineCheckpoint) -> core::result::Result<(), engine::CheckpointError>

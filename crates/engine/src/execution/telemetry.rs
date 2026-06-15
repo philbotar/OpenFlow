@@ -68,6 +68,13 @@ pub enum RunTelemetry {
         tool_name: String,
         arguments: Value,
     },
+    ToolUpdated {
+        node_id: NodeId,
+        tool_call_id: String,
+        tool_name: String,
+        content: String,
+        output_meta: Option<ToolOutputMeta>,
+    },
     ToolCompleted {
         node_id: NodeId,
         tool_call_id: String,
@@ -140,4 +147,24 @@ pub enum RunTelemetry {
         node_id: Option<NodeId>,
         duration_ms: u64,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tool_updated_debug() {
+        let event = RunTelemetry::ToolUpdated {
+            node_id: NodeId("n1".to_string()),
+            tool_call_id: "tc-1".to_string(),
+            tool_name: "bash".to_string(),
+            content: "hello world".to_string(),
+            output_meta: None,
+        };
+        let debug = format!("{event:?}");
+        assert!(debug.contains("ToolUpdated"));
+        assert!(debug.contains("hello world"));
+        assert!(debug.contains("tc-1"));
+    }
 }

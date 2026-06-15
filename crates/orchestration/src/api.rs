@@ -49,3 +49,20 @@ pub struct FileEditPreview {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectFileReference {
+    pub path: String,
+    pub display_path: String,
+    pub size_bytes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectFileReferenceContent {
+    pub path: String,
+    pub content: String,
+    pub truncated: bool,
+    pub size_bytes: u64,
+}

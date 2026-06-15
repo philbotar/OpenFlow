@@ -73,7 +73,7 @@ request are authoritative for parameters.\n\
 \n\
 ### Read and search\n\
 - read — read a local file, directory listing, HTTP(S) URL, or spilled tool artifact. Default \
-output is numbered lines (300-line cap). Append :start-end for a line range (e.g. src/lib.rs:10-20) \
+output is numbered lines (3000-line cap). Append :start-end for a line range (e.g. src/lib.rs:10-20) \
 or :raw for full unnumbered content. Truncated tool output is readable via artifact:{id} \
 (same selectors apply).\n\
 - search — search file contents by regex (ripgrep/Rust regex; no backrefs or lookaround). \

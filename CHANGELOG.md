@@ -17,6 +17,8 @@
 
 ### Documentation
 
+- **ROADMAP.md:** audit queue and detail specs against the codebase — mark chat presentation, thinking/reasoning, transcript correctness (T9–T12), in-session continue, T19, global chat status dots, and node completion NC-11/NC-12 as Done or In progress where shipped.
+- **ROADMAP.md:** [Node handoff artifacts & output review](docs/ROADMAP.md#node-handoff-artifacts--output-review) — queue item #17; per-node `plan.md` (or custom) under `.flow/runs/{run_id}/handoffs/{node_id}/`; per-node opt-in review gate before downstream handoff; in-app plan review UI modeled on `tools/plan-review.html`. Renumbered queue items #18–#33.
 - **ROADMAP.md:** [Node completion](#node-completion) acceptance criteria (NC-1–NC-14) — submit contract, upstream gate, chat summary bubble, trace output, and remaining T10/checkpoint gaps; linked from queue item #5.
 - Document that new or changed builtin tools must update `NODE_RUNTIME_PREAMBLE` alongside `tool/registry.rs` (`AGENTS.md`, `technical-overview.md`, hexagonal rules).
 - Add Staff+ deep audit report (`docs/audits/2026-06-13-deep-audit.md`) covering checkpoint/continue, bash tool, persistence, IPC, and refactor backlog.
@@ -25,6 +27,9 @@
 
 ### Added
 
+- **Project terminal:** add a Terminal dock tab backed by a native PTY session, xterm.js rendering, project-cwd startup, resize handling, and app-close cleanup.
+- **Chat file references:** type `@` in the chat composer to search project files (gitignore-aware), pick files as `@{path}` tokens, and include bounded UTF-8 file contents in kickoff and paused-node chat submissions.
+- **Start run from global chat:** message the idle workflow composer to start a run with entrypoint text; header **Run** still starts without entrypoint for zero-input workflows; manual root nodes auto-receive the same text via `submit_user_input` when exactly one node awaits.
 - **Stop and continue runs:** user stop snapshots `InteractiveEngine` state in-session; **Continue** resumes from checkpoint with transcripts, outputs, and pause points preserved; **Run** still starts fresh; `continue_run` / `is_run_continuable` desktop IPC; header Continue + fresh-run buttons when a stopped run is resumable; ⌘/Ctrl+Enter continues when continuable.
 - **Sleep prevention during runs:** active workflow runs hold an OS idle/sleep assertion (display may still turn off); released when the run stops, completes, or the app closes.
 - **LLM-usable tool errors and docs (ROADMAP T19):** typed `ToolError` variants (`NotFound`, `PermissionDenied`, `InvalidArgs`, `Timeout`, `Cancelled`, `ExecutionFailed`) with actionable hints and `is_retryable()` for transient classification; spilled output readable via `read` + `artifact:{id}` selectors; expanded builtin tool schemas/descriptions; cache-hit stubs point at prior call id with a head excerpt; tool denial threads optional user reason through engine → orchestration → desktop IPC; removed dead `ToolCall.intent`.
@@ -43,6 +48,7 @@
 - **Provider thinking in node chat:** stream `reasoning_content` / `reasoning` from OpenAI-compatible APIs into collapsible `ThinkingBubble` rows in the selected node's conversation (collapsed preview by default; expand for full reasoning).
 - **ROADMAP.md restructure:** single prioritized queue (30 sequenced items across 6 tiers + unsequenced backlog) replacing category tables; detail specs preserved below the queue. New items: macOS Keychain key storage, pre-run workflow validation, token & cost tracking, canvas editing QoL (undo/redo, duplicate node), onboarding & templates, macOS distribution (signing, notarization, auto-update). Status corrections: chat presentation marked In progress; single Tokio runtime marked Done.
 - **Testing conventions:** standardised test placement rules — inline `#[cfg(test)] mod tests` by default, sibling `foo_tests.rs`/`tests.rs` extraction past ~150 lines, crate-level `tests/` for integration, Vitest siblings for frontend — documented in `docs/contributing/testing-workflows.md` and enforced via `.cursor/rules/testing-conventions.mdc`.
+- **Coverage tests:** `api.test.ts` exercises Tauri IPC wrappers; component tests for workflow settings panel, tool approval card, and project folder row; backend/coordinator tests for rename, settings persistence, run-state idle, workflow unassign, and denied tool approval with reason.
 - **Bash tool:** agent `bash` builtin (oh-my-pi–aligned) — `command`, optional `cwd`/`env`/`timeout`; non-interactive env defaults; merged stdout/stderr; wall-time and exit-code notices; `ToolTier::Exec` with critical-pattern approval override; opt-in via node tool config.
 - **ROADMAP.md:** [Context used](docs/ROADMAP.md#context-used) — structured per-turn context breakdown in composer and chat; ledger of shared context, rules, skills, attachments, and upstream artifacts.
 - **ROADMAP.md:** [Attachments & file references](docs/ROADMAP.md#attachments--file-references) — attach button, drag-drop, and image paste; expands prior file-references plan.

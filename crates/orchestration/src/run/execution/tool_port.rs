@@ -242,6 +242,7 @@ where
                     node_id: node_id_for_task,
                     conversation_id,
                     lsp,
+                    update_tx: None,
                 };
                 tokio::select! {
                     biased;
@@ -394,6 +395,24 @@ where
         });
     }
 
+    #[allow(dead_code, reason = "wired by live-output tools in the next task")]
+    fn emit_tool_updated(
+        &self,
+        node_id: &NodeId,
+        tool_call_id: &str,
+        tool_name: &str,
+        content: String,
+        output_meta: Option<engine::ToolOutputMeta>,
+    ) {
+        let _ = self.event_tx.send(ExecutionEvent::ToolUpdated {
+            node_id: node_id.clone(),
+            tool_call_id: tool_call_id.to_string(),
+            tool_name: tool_name.to_string(),
+            content,
+            output_meta,
+        });
+    }
+
     fn emit_tool_completed(&self, node_id: &NodeId, _tool_call: &ToolCall, result: &ToolResult) {
         send_or_log(
             &self.event_tx,
@@ -454,11 +473,29 @@ where
     ) -> Option<Result<ToolExecutionRecord, ToolRunnerError>> {
         let tool_runner = Arc::clone(&self.tool_runner);
         let tool_name = tool_call.name.clone();
+        let (update_tx, mut update_rx) = tokio::sync::mpsc::unbounded_channel();
+        let node_id_for_task = node_id.clone();
         let ctx = ToolExecutionContext {
-            node_id: node_id.clone(),
+            node_id: node_id_for_task,
             conversation_id: conversation_id.to_string(),
             lsp: self.lsp.clone(),
+            update_tx: Some(update_tx),
         };
+        let event_tx = self.event_tx.clone();
+        let update_node_id = node_id.clone();
+        let update_tool_call_id = tool_call.id.clone();
+        let update_tool_name = tool_call.name.clone();
+        tokio::spawn(async move {
+            while let Some(update) = update_rx.recv().await {
+                let _ = event_tx.send(ExecutionEvent::ToolUpdated {
+                    node_id: update_node_id.clone(),
+                    tool_call_id: update_tool_call_id.clone(),
+                    tool_name: update_tool_name.clone(),
+                    content: update.content,
+                    output_meta: update.output_meta,
+                });
+            }
+        });
         let started = Instant::now();
         let exclusive_permit = self.exclusive_permit(&tool_name).await;
         let node_token = self.node_interrupt_token(node_id);

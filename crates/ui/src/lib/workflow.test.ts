@@ -12,7 +12,10 @@ import {
   cloneWorkflow,
   createEmptyToolConfig,
   canSendChat,
+  canSendIdleRunKickoff,
   executionLayers,
+  firstLayerRootNodeIds,
+  GLOBAL_RUN_ENTRY_NODE_ID,
   isChatComposerBusy,
   pendingApprovalForNode,
   nodeChangedFiles,
@@ -722,5 +725,123 @@ describe("projectChatLayout", () => {
       "first",
       "second",
     ]);
+  });
+});
+
+function makeKickoffWorkflow(id: string, name: string): Workflow {
+  return {
+    id,
+    name,
+    nodes: [
+      {
+        id: "node-1",
+        label: "Plan",
+        kind: "Agent",
+        position: { x: 96, y: 96 },
+        agent: {
+          system_prompt: "system",
+          task_prompt: "task",
+          model: "gpt-4o-mini",
+          output_schema: { type: "object" },
+          auto_start: true,
+          tools: createEmptyToolConfig(),
+          callable_agents: [],
+          allow_all_callable_agents: false,
+        },
+      },
+    ],
+    edges: [],
+    settings: { shared_context: "" },
+  };
+}
+
+function makeAwaitingKickoffRunState(workflow: Workflow): WorkflowRunState {
+  const [node] = workflow.nodes;
+  return {
+    active: true,
+    awaitingNodeId: node.id,
+    activeManualNodeId: null,
+    activeToolCallId: null,
+    pendingApprovals: [],
+    toolCallsByNode: {},
+    toolArtifacts: {},
+    execApprovalGranted: false,
+    statusByNode: { [node.id]: "awaiting_input" },
+    subagentsByNode: {},
+    lastReport: null,
+    lastError: null,
+    chatLogs: { [node.id]: [] },
+    runTrace: [],
+    outputs: {},
+    changedFiles: [],
+    changedFilesByNode: {},
+    editBatches: [],
+  };
+}
+
+function makeParallelKickoffWorkflow(): Workflow {
+  const agent = workflow.nodes[0].agent;
+  return {
+    ...workflow,
+    id: "workflow-parallel",
+    name: "Parallel",
+    nodes: [
+      { ...workflow.nodes[0], id: "node-a", label: "Plan" },
+      {
+        id: "node-b",
+        label: "Branch B",
+        kind: "Agent",
+        position: { x: 200, y: 80 },
+        agent,
+      },
+      {
+        id: "node-c",
+        label: "Branch C",
+        kind: "Agent",
+        position: { x: 200, y: 200 },
+        agent,
+      },
+      {
+        id: "node-d",
+        label: "Join",
+        kind: "Agent",
+        position: { x: 400, y: 140 },
+        agent,
+      },
+    ],
+    edges: [
+      { id: "edge-ab", from: "node-a", to: "node-b" },
+      { id: "edge-ac", from: "node-a", to: "node-c" },
+      { id: "edge-bd", from: "node-b", to: "node-d" },
+      { id: "edge-cd", from: "node-c", to: "node-d" },
+    ],
+  };
+}
+
+describe("idle run kickoff", () => {
+  test("GLOBAL_RUN_ENTRY_NODE_ID is stable", () => {
+    expect(GLOBAL_RUN_ENTRY_NODE_ID).toBe("__run_entry__");
+  });
+
+  test("canSendIdleRunKickoff requires inactive run, readiness, and non-empty text", () => {
+    expect(canSendIdleRunKickoff(null, true, true, false, "  kickoff  ")).toBe(true);
+    expect(
+      canSendIdleRunKickoff(
+        makeAwaitingKickoffRunState(makeKickoffWorkflow("w", "W")),
+        true,
+        true,
+        false,
+        "x",
+      ),
+    ).toBe(false);
+    expect(canSendIdleRunKickoff(null, false, true, false, "x")).toBe(false);
+    expect(canSendIdleRunKickoff(null, true, false, false, "x")).toBe(false);
+    expect(canSendIdleRunKickoff(null, true, true, true, "x")).toBe(false);
+    expect(canSendIdleRunKickoff(null, true, true, false, "   ")).toBe(false);
+  });
+
+  test("firstLayerRootNodeIds returns layer-0 nodes in declaration order", () => {
+    const parallelWorkflow = makeParallelKickoffWorkflow();
+    expect(firstLayerRootNodeIds(parallelWorkflow)).toEqual(["node-a"]);
   });
 });

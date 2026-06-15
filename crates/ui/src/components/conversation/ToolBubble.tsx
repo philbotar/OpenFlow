@@ -8,7 +8,9 @@ export interface ToolBubbleProps {
   status: ToolCallStatus;
   output: string | null | undefined;
   arguments?: unknown;
+  intent?: string | null;
   isError?: boolean;
+  streaming?: boolean;
 }
 
 function statusIcon(status: ToolCallStatus): { class: string; label: string } {
@@ -34,17 +36,24 @@ function statusIcon(status: ToolCallStatus): { class: string; label: string } {
 
 export function ToolBubble(props: ToolBubbleProps) {
   const [expanded, setExpanded] = createSignal(false);
-  const targetText = () => toolBubbleTargetText(props.toolName, props.arguments);
+  const intentText = () => props.intent?.trim() ?? "";
+  const targetText = () => intentText() || toolBubbleTargetText(props.toolName, props.arguments);
   const rowStatusText = () => toolBubbleRowStatusText(props.status);
   const icon = () => statusIcon(props.status);
   const hasOutput = () => Boolean(props.output?.trim());
-  const expandable = () => hasOutput();
+  const expandable = () => hasOutput() || props.streaming;
+  const previewText = () => {
+    if (!props.streaming || !props.output) return "";
+    const text = props.output.trimEnd();
+    return text.length > 120 ? text.slice(-120) : text;
+  };
 
   return (
     <div
       class="tool-line"
       classList={{ "tool-line--expandable": expandable() }}
       data-tool-name={props.toolName}
+      data-streaming={props.streaming ? "true" : undefined}
     >
       <div
         class="tool-line-status-row"
@@ -84,6 +93,11 @@ export function ToolBubble(props: ToolBubbleProps) {
           </Show>
         </span>
       </div>
+      <Show when={props.streaming && !expanded() && previewText()}>
+        <div class="tool-line-preview">
+          <span class="tool-line-preview-text">{previewText()}</span>
+        </div>
+      </Show>
       <Show when={expandable() && expanded()}>
         <div class="tool-line-output-wrapper tool-line-output-wrapper--expanded">
           <pre

@@ -12,7 +12,10 @@ import type {
   RunTraceEntry,
   Screen,
   Project,
+  ProjectFileReference,
   SkillSummary,
+  TerminalEvent,
+  TerminalStart,
   Workflow,
   WorkflowRunState,
 } from "../lib/types";
@@ -40,6 +43,7 @@ export interface AppContextValue {
   bottomTab: Accessor<BottomTab>;
   dockOpen: Accessor<boolean>;
   dockHeight: Accessor<number>;
+  chatFocusMode: Accessor<boolean>;
   selectedTraceIndex: Accessor<number | null>;
   schemaText: Accessor<string>;
   newModelInputByProvider: Accessor<Record<AiProviderKind, string>>;
@@ -71,6 +75,10 @@ export interface AppContextValue {
   chatFocusNode: Accessor<{ nodeId: NodeId; tick: number } | null>;
   pickedLiveNodeId: Accessor<NodeId | null>;
   workflowsSectionExpanded: Accessor<boolean>;
+  terminalSession: Accessor<TerminalStart | null>;
+  terminalStarting: Accessor<boolean>;
+  terminalError: Accessor<string | null>;
+  terminalOutput: Accessor<string>;
 
   // ── Signal setters (form inputs + simple UI state) ────────────────────────
   setWorkflowNameDraft: Setter<string>;
@@ -169,6 +177,7 @@ export interface AppContextValue {
   handleClearRunTrace: () => Promise<void>;
   handleSubmitChat: (nodeId: NodeId) => Promise<void>;
   handleRefreshSkills: () => Promise<void>;
+  searchProjectFileReferences: (query: string) => Promise<ProjectFileReference[]>;
   handleToolApproval: (approvalId: string, allow: boolean) => Promise<void>;
 
   // ── Node label edit handlers ──────────────────────────────────────────────
@@ -205,7 +214,13 @@ export interface AppContextValue {
   persistAll: (successText?: string) => Promise<boolean>;
 
   // ── Dock handlers ─────────────────────────────────────────────────────────
+  handleOpenTerminal: (cols: number, rows: number) => Promise<void>;
+  handleTerminalInput: (data: string) => Promise<void>;
+  handleTerminalResize: (cols: number, rows: number) => Promise<void>;
+  handleStopTerminal: () => Promise<void>;
+  handleTerminalEvent: (event: TerminalEvent) => void;
   handleSelectBottomTab: (tab: BottomTab) => void;
+  handleToggleChatFocusMode: () => void;
   handleDockResizePointerDown: (event: PointerEvent) => void;
 
   // ── Zoom handlers ─────────────────────────────────────────────────────────

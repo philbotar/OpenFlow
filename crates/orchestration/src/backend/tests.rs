@@ -369,3 +369,162 @@ fn assign_workflow_to_project_round_trips() {
     let loaded = backend.load_projects().expect("load projects");
     assert_eq!(loaded[0].workflow_ids, vec![workflow.id.to_string()]);
 }
+
+#[test]
+fn rename_workflow_updates_list_and_load() {
+    let (backend, _dir) = backend();
+    let workflow = backend
+        .create_workflow("Original".to_string())
+        .expect("create workflow");
+
+    let renamed = backend
+        .rename_workflow(&workflow.id, "Renamed".to_string())
+        .expect("rename workflow");
+
+    assert_eq!(renamed.name, "Renamed");
+    let items = backend.list_workflows().expect("list workflows");
+    assert_eq!(items[0].name, "Renamed");
+    assert_eq!(
+        backend
+            .load_workflow(&workflow.id)
+            .expect("load workflow")
+            .name,
+        "Renamed"
+    );
+}
+
+#[test]
+fn load_and_save_settings_round_trip() {
+    let (backend, _dir) = backend();
+    let mut settings = backend.load_settings().expect("load settings");
+    settings.active_provider = "openai".into();
+
+    backend.save_settings(&settings).expect("save settings");
+    let loaded = backend.load_settings().expect("reload settings");
+    assert_eq!(loaded.active_provider, settings.active_provider);
+}
+
+#[test]
+fn get_run_state_is_none_when_idle() {
+    let (backend, _dir) = backend();
+    backend.block_on_test(async {
+        let state = backend.get_run_state().await;
+        assert!(state.is_none());
+    });
+}
+
+#[test]
+fn unassign_workflow_from_project_round_trips() {
+    let (backend, _dir) = backend();
+    let workflow = backend
+        .create_workflow("Flow".to_string())
+        .expect("create workflow");
+    let project = backend
+        .create_project_from_directory(std::env::temp_dir().to_string_lossy().into_owned())
+        .expect("create project");
+    backend
+        .assign_workflow_to_project(&project.id, &workflow.id.to_string())
+        .expect("assign workflow");
+
+    let projects = backend
+        .unassign_workflow_from_project(&project.id, &workflow.id.to_string())
+        .expect("unassign workflow");
+
+    assert!(projects[0].workflow_ids.is_empty());
+}
+
+#[test]
+fn submit_tool_approval_denied_forwards_reason() {
+    let (backend, _dir) = backend();
+    backend.block_on_test(async {
+        let workflow = default_workflow("Workflow");
+        let (action_tx, mut action_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut run_state = WorkflowRunState::running_for_workflow(&workflow);
+        run_state.pending_approvals = vec![engine::PendingToolApproval {
+            approval_id: "approval-2".to_string(),
+            node_id: NodeId::from("idea"),
+            node_label: "Idea".to_string(),
+            tool_call: engine::ToolCall {
+                id: "call-2".to_string(),
+                name: "bash".to_string(),
+                arguments: serde_json::json!({ "command": "echo hi" }),
+            },
+            tier: engine::ToolTier::Exec,
+        }];
+        backend
+            .runs
+            .test_seed_session(workflow, run_state, action_tx)
+            .await;
+
+        backend
+            .submit_tool_approval("approval-2", false, Some("Too risky".to_string()))
+            .await
+            .expect("submit denial");
+
+        match action_rx.recv().await.expect("action") {
+            ExecutionAction::ResolveApproval {
+                approval_id,
+                allow,
+                reason,
+            } if approval_id == "approval-2" && !allow => {
+                assert_eq!(reason.as_deref(), Some("Too risky"));
+            }
+            ExecutionAction::ResolveApproval { .. }
+            | ExecutionAction::ProvideInput { .. }
+            | ExecutionAction::Stop
+            | ExecutionAction::RetryNode { .. } => {
+                panic!("unexpected action variant");
+            }
+        }
+    });
+}
+
+#[test]
+fn list_project_file_references_returns_gitignore_aware_matches() {
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    std::process::Command::new("git")
+        .args(["init"])
+        .current_dir(dir.path())
+        .output()
+        .expect("git init");
+    std::fs::create_dir_all(dir.path().join("src")).expect("create src");
+    std::fs::write(dir.path().join("src/main.rs"), "fn main() {}\n").expect("write main");
+    std::fs::write(dir.path().join(".gitignore"), "ignored.rs\n").expect("write gitignore");
+    std::fs::write(dir.path().join("ignored.rs"), "ignored\n").expect("write ignored");
+
+    let (backend, _guard) = backend();
+    let refs = backend
+        .list_project_file_references(
+            dir.path().to_str().expect("utf8 path").to_string(),
+            Some("rs".to_string()),
+            Some(20),
+        )
+        .expect("list refs");
+
+    assert_eq!(refs.len(), 1);
+    assert_eq!(refs[0].path, "src/main.rs");
+}
+
+#[test]
+fn read_project_file_references_returns_bounded_content() {
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    std::fs::create_dir_all(dir.path().join("src")).expect("create src");
+    std::fs::write(
+        dir.path().join("src/lib.rs"),
+        "pub fn value() -> u8 { 7 }\n",
+    )
+    .expect("write lib");
+
+    let (backend, _guard) = backend();
+    let refs = backend
+        .read_project_file_references(
+            dir.path().to_str().expect("utf8 path").to_string(),
+            vec!["src/lib.rs".to_string()],
+        )
+        .expect("read refs");
+
+    assert_eq!(refs.len(), 1);
+    assert_eq!(refs[0].path, "src/lib.rs");
+    assert_eq!(refs[0].content, "pub fn value() -> u8 { 7 }\n");
+    assert!(!refs[0].truncated);
+}

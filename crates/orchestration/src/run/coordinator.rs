@@ -1,9 +1,9 @@
 use crate::api::FileEditPreview;
 use crate::error::BackendError;
 use crate::run::execution::{
-    apply_event_to_run_state, new_artifact_root, record_user_input, resolve_execution_cwd,
-    spawn_interactive_workflow_run, ExecutionAction, ExecutionEvent, InteractiveWorkflowRunParams,
-    NodeInterrupts,
+    apply_event_to_run_state, new_artifact_root, record_entrypoint_message, record_user_input,
+    resolve_execution_cwd, spawn_interactive_workflow_run, ExecutionAction, ExecutionEvent,
+    InteractiveWorkflowRunParams, NodeInterrupts,
 };
 use crate::run::reasoning_defaults::apply_provider_reasoning_defaults;
 use crate::run::state::{AgentStatus, WorkflowRunState};
@@ -11,7 +11,7 @@ use crate::settings::model::{merge_preserved_api_keys, AppSettings};
 use crate::settings::provider::{resolve_provider_config, ProviderEnv};
 use crate::tools::edit::preview::preview_file_edit;
 use engine::resolve_callable_agent_snapshots;
-use engine::{validate_workflow, InteractiveEngineCheckpoint, NodeId, Workflow};
+use engine::{execution_layers, validate_workflow, InteractiveEngineCheckpoint, NodeId, Workflow};
 use parking_lot::Mutex as ParkingMutex;
 use providers::{create_provider, ProviderId};
 use std::fs;
@@ -195,7 +195,14 @@ impl RunCoordinator {
         );
 
         let mut session = self.session.lock().await;
-        let initial_state = WorkflowRunState::running_for_workflow(&workflow);
+        let mut initial_state = WorkflowRunState::running_for_workflow(&workflow);
+        if let Some(text) = entrypoint.clone().filter(|t| !t.trim().is_empty()) {
+            if let Ok(layers) = execution_layers(&workflow) {
+                if let Some(root_id) = layers.first().and_then(|layer| layer.first()) {
+                    record_entrypoint_message(&mut initial_state, &root_id.0, text);
+                }
+            }
+        }
         session.workflow = Some(workflow);
         session.run_state = Some(initial_state.clone());
         session.execution_cwd = Some(resolved_cwd);

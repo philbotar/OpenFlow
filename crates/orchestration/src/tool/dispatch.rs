@@ -73,10 +73,12 @@ impl ToolRunner {
                 self.finalize_record(call, raw, Vec::new(), None).await
             }
             BuiltinToolKind::Bash => {
+                let update_tx = ctx.as_ref().and_then(|context| context.update_tx.clone());
                 let outcome = crate::tools::bash::execute_bash(
                     &self.cwd,
                     call.arguments.clone(),
                     &self.cancel_token,
+                    update_tx,
                 )
                 .await?;
                 self.finalize_bash_record(call, outcome).await

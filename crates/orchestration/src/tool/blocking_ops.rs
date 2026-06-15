@@ -17,7 +17,7 @@ use walkdir::WalkDir;
 static LINE_SELECTOR: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\d+(?:-\d+)?$").expect("line selector regex is valid"));
 
-const DEFAULT_READ_LINE_LIMIT: usize = 300;
+const DEFAULT_READ_LINE_LIMIT: usize = 3000;
 
 pub(crate) struct BlockingRunOutcome {
     pub output: Result<String, ToolError>,

@@ -23,6 +23,7 @@ grep-regex = "0.1"
 grep-searcher = "0.1"
 ignore = "0.4"
 parking_lot.workspace = true
+portable-pty.workspace = true
 regex = "1.11.1"
 similar = "2.7.0"
 unicode-normalization = "0.1.24"

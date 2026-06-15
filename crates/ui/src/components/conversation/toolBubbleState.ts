@@ -50,6 +50,18 @@ function patchFileHint(args: unknown): string | undefined {
   return match?.[1]?.trim();
 }
 
+/** Human-readable intent from the tool call, when present. */
+export function toolBubbleIntentText(summary: Pick<ToolCallSummary, "intent" | "arguments">): string {
+  if (typeof summary.intent === "string" && summary.intent.trim()) {
+    return summary.intent.trim();
+  }
+  if (summary.arguments && typeof summary.arguments === "object" && !Array.isArray(summary.arguments)) {
+    const raw = (summary.arguments as Record<string, unknown>)["_i"];
+    if (typeof raw === "string" && raw.trim()) return raw.trim();
+  }
+  return "";
+}
+
 /** File path, search pattern, or other invocation target — never tool output. */
 export function toolBubbleTargetText(toolName: string, args: unknown): string {
   switch (toolName) {

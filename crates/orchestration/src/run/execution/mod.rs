@@ -24,7 +24,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio_util::sync::CancellationToken;
 
 pub use drive::{new_artifact_root, new_in_memory_snapshot_store};
-pub use events::{apply_event_to_run_state, record_user_input};
+pub use events::{apply_event_to_run_state, record_entrypoint_message, record_user_input};
 pub use headless::run_workflow_headless;
 
 /// Interactive run telemetry; canonical type is [`engine::RunTelemetry`].

@@ -1,6 +1,6 @@
 import { For, Show } from "solid-js";
 import { labelForAgentStatus } from "../../lib/agentStatus";
-import { isLiveTranscriptSegment } from "../../lib/workflow";
+import { GLOBAL_RUN_ENTRY_NODE_ID, isLiveTranscriptSegment } from "../../lib/workflow";
 import { useAppContext } from "../../context/AppContext";
 import { ConversationComposer } from "./ConversationComposer";
 import { ConversationMessages } from "./ConversationMessages";
@@ -74,9 +74,9 @@ export function ChatPanel() {
             fallback={
               <Show when={!hasInlineLiveSegment()}>
                 <ConversationComposer
-                  nodeId={ctx.selectedNodeId() ?? "inactive"}
+                  nodeId={GLOBAL_RUN_ENTRY_NODE_ID}
                   label="workflow"
-                  disabled
+                  kickoff
                 />
               </Show>
             }

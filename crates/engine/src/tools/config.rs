@@ -166,6 +166,20 @@ fn default_tier_for_tool_name(tool_name: &str) -> ToolTier {
 }
 
 #[must_use]
+pub fn tool_intent_from_arguments(arguments: &Value) -> Option<String> {
+    let value = arguments
+        .get("_i")
+        .or_else(|| arguments.get("intent"))
+        .and_then(Value::as_str)?
+        .trim();
+    if value.is_empty() {
+        None
+    } else {
+        Some(value.to_string())
+    }
+}
+
+#[must_use]
 pub fn tool_decision_for_call(config: &NodeToolConfig, call: &ToolCall) -> ToolDecision {
     if call.name == "bash" {
         if let Some(command) = call.arguments.get("command").and_then(Value::as_str) {
@@ -398,6 +412,22 @@ mod tests {
         let dec: SubagentDeclaration = serde_json::from_value(json).unwrap();
         assert_eq!(dec.name, "Researcher");
         assert_eq!(dec.purpose, "Investigate API behavior");
+    }
+
+    #[test]
+    fn extracts_tool_intent_from_i_field() {
+        assert_eq!(
+            tool_intent_from_arguments(&serde_json::json!({"_i": "inspect config"})),
+            Some("inspect config".to_string())
+        );
+    }
+
+    #[test]
+    fn blank_tool_intent_is_ignored() {
+        assert_eq!(
+            tool_intent_from_arguments(&serde_json::json!({"_i": "   "})),
+            None
+        );
     }
 
     #[test]

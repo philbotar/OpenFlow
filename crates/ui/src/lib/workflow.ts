@@ -427,6 +427,34 @@ export function pendingApprovalForNode(
   return runState.pendingApprovals.find((approval) => approval.nodeId === nodeId);
 }
 
+export const GLOBAL_RUN_ENTRY_NODE_ID = "__run_entry__" as const;
+
+export function isGlobalRunEntryNodeId(nodeId: NodeId): boolean {
+  return nodeId === GLOBAL_RUN_ENTRY_NODE_ID;
+}
+
+export function canSendIdleRunKickoff(
+  runState: WorkflowRunState | null,
+  readinessReady: boolean,
+  hasActiveWorkflow: boolean,
+  startingRun: boolean,
+  text: string,
+): boolean {
+  return (
+    runState?.active !== true &&
+    hasActiveWorkflow &&
+    !startingRun &&
+    readinessReady &&
+    text.trim() !== ""
+  );
+}
+
+/** Root nodes in execution layer 0 (no incoming edges), declaration order preserved. */
+export function firstLayerRootNodeIds(workflow: Workflow): NodeId[] {
+  const layers = executionLayers(workflow);
+  return layers[0] ?? [];
+}
+
 export function canSendChat(
   runState: WorkflowRunState | null,
   selectedNodeId: NodeId | null,

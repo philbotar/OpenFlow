@@ -48,7 +48,9 @@ function MarkerToolBubble(props: { message: ChatMessage; nodeId: string }) {
       status={summary()?.status ?? "proposed"}
       output={summary()?.lastOutput}
       arguments={summary()?.arguments}
+      intent={summary()?.intent}
       isError={summary()?.isError}
+      streaming={summary()?.streaming ?? false}
     />
   );
 }

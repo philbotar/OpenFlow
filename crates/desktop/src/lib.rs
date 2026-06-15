@@ -13,11 +13,14 @@ use orchestration::backend::{
 };
 use orchestration::run::execution::ExecutionEvent;
 use orchestration::run::state::WorkflowRunState;
+use orchestration::terminal::TerminalStart;
 use orchestration::{AgentDefinition, AppSettings, SkillSummary};
-use orchestration::{Project, Workflow};
+use orchestration::{Project, ProjectFileReference, ProjectFileReferenceContent, Workflow};
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
 use tokio::sync::mpsc::UnboundedReceiver;
+
+const TERMINAL_EVENT: &str = "terminal-event";
 
 /// Bootstrap payload returned on app startup.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -300,11 +303,12 @@ async fn start_run(
     settings: AppSettings,
     execution_cwd: Option<String>,
     transient_api_key: Option<String>,
+    entrypoint: Option<String>,
 ) -> Result<WorkflowRunState, CommandError> {
     let (initial_state, event_rx) = backend
         .start_run(
             workflow,
-            None,
+            entrypoint,
             execution_cwd,
             &settings,
             transient_api_key.as_deref(),
@@ -449,10 +453,76 @@ async fn clear_run_trace(
     Ok(backend.clear_run_trace().await?)
 }
 
+#[tauri::command]
+async fn start_terminal(
+    app: tauri::AppHandle,
+    backend: tauri::State<'_, AppBackend>,
+    cwd: Option<String>,
+    cols: u16,
+    rows: u16,
+) -> Result<TerminalStart, CommandError> {
+    let (session, mut events) = backend.start_terminal(cwd.as_deref(), cols, rows)?;
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        while let Some(event) = events.recv().await {
+            let _ = app_handle.emit(TERMINAL_EVENT, event);
+        }
+    });
+    Ok(session)
+}
+
+#[tauri::command]
+fn write_terminal(
+    backend: tauri::State<AppBackend>,
+    session_id: String,
+    data: String,
+) -> Result<(), CommandError> {
+    Ok(backend.write_terminal(&session_id, &data)?)
+}
+
+#[tauri::command]
+fn resize_terminal(
+    backend: tauri::State<AppBackend>,
+    session_id: String,
+    cols: u16,
+    rows: u16,
+) -> Result<(), CommandError> {
+    Ok(backend.resize_terminal(&session_id, cols, rows)?)
+}
+
+#[tauri::command]
+fn stop_terminal(
+    backend: tauri::State<AppBackend>,
+    session_id: String,
+) -> Result<(), CommandError> {
+    Ok(backend.stop_terminal(&session_id)?)
+}
+
 /// Tauri command: List projects.
 #[tauri::command]
 fn list_projects(backend: tauri::State<AppBackend>) -> Result<Vec<Project>, CommandError> {
     Ok(backend.list_projects()?)
+}
+
+/// Tauri command: List files under an execution folder for chat @ references.
+#[tauri::command]
+fn list_project_file_references(
+    backend: tauri::State<AppBackend>,
+    execution_cwd: String,
+    query: Option<String>,
+    limit: Option<usize>,
+) -> Result<Vec<ProjectFileReference>, CommandError> {
+    Ok(backend.list_project_file_references(execution_cwd, query, limit)?)
+}
+
+/// Tauri command: Read selected project files for chat @ references.
+#[tauri::command]
+fn read_project_file_references(
+    backend: tauri::State<AppBackend>,
+    execution_cwd: String,
+    paths: Vec<String>,
+) -> Result<Vec<ProjectFileReferenceContent>, CommandError> {
+    Ok(backend.read_project_file_references(execution_cwd, paths)?)
 }
 
 /// Tauri command: Save projects.
@@ -502,6 +572,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             bootstrap_app,
             list_projects,
+            list_project_file_references,
+            read_project_file_references,
             save_projects,
             create_project_from_directory,
             assign_workflow_to_project,
@@ -540,6 +612,10 @@ pub fn run() {
             complete_manual_node,
             get_run_state,
             clear_run_trace,
+            start_terminal,
+            write_terminal,
+            resize_terminal,
+            stop_terminal,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
@@ -549,6 +625,7 @@ pub fn run() {
                     if backend.is_run_active().await {
                         let _ = backend.stop_run().await;
                     }
+                    backend.stop_all_terminals();
                     run_sleep_guard::stop_for_app(&app_handle);
                 });
             }

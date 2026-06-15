@@ -2,9 +2,30 @@ import { describe, expect, it } from "vitest";
 import type { NodeId, ToolCallStatus, WorkflowRunState } from "../../lib/types";
 import {
   resolveToolSummary,
+  toolBubbleIntentText,
   toolBubbleRowStatusText,
   toolBubbleTargetText,
 } from "./toolBubbleState";
+
+describe("toolBubbleIntentText", () => {
+  it("prefers projected tool intent", () => {
+    expect(
+      toolBubbleIntentText({
+        intent: "inspect config",
+        arguments: { path: "config.toml", _i: "read file" },
+      }),
+    ).toBe("inspect config");
+  });
+
+  it("falls back to _i from arguments", () => {
+    expect(
+      toolBubbleIntentText({
+        intent: null,
+        arguments: { path: "config.toml", _i: "read file" },
+      }),
+    ).toBe("read file");
+  });
+});
 
 describe("toolBubbleTargetText", () => {
   it("extracts file path for read", () => {

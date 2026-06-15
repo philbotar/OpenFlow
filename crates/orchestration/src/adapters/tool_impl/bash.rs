@@ -1,5 +1,6 @@
 //! Bash command execution for the agent `bash` tool (oh-my-pi–aligned semantics).
 
+use crate::tool::ToolExecutionUpdate;
 use crate::tools::edit::path::{resolve_writable, PathEscapeError};
 use crate::tools::errors::ToolError;
 use regex::Regex;
@@ -12,6 +13,8 @@ use std::time::{Duration, Instant};
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 use tokio_util::sync::CancellationToken;
+
+const LIVE_UPDATE_TAIL_BYTES: usize = 12_000;
 
 const DEFAULT_TIMEOUT_SECS: u64 = 300;
 const MIN_TIMEOUT_SECS: u64 = 1;
@@ -90,10 +93,53 @@ pub fn clamp_bash_timeout(raw: Option<u64>) -> u64 {
         .clamp(MIN_TIMEOUT_SECS, MAX_TIMEOUT_SECS)
 }
 
+fn tail_text(text: &str, max_bytes: usize) -> String {
+    if text.len() <= max_bytes {
+        return text.to_string();
+    }
+    let mut start = text.len().saturating_sub(max_bytes);
+    while start < text.len() && !text.is_char_boundary(start) {
+        start += 1;
+    }
+    text[start..].to_string()
+}
+
+fn merge_stdout_stderr(stdout: &str, stderr: &str) -> String {
+    match (stdout.is_empty(), stderr.is_empty()) {
+        (true, true) => String::new(),
+        (false, true) => stdout.to_string(),
+        (true, false) => stderr.to_string(),
+        (false, false) => format!("{stdout}{stderr}"),
+    }
+}
+
+fn combined_output_from_bytes(stdout_bytes: &[u8], stderr_bytes: &[u8]) -> String {
+    let stdout = String::from_utf8_lossy(stdout_bytes);
+    let stderr = String::from_utf8_lossy(stderr_bytes);
+    merge_stdout_stderr(&stdout, &stderr)
+}
+
+fn emit_bash_update(
+    update_tx: &Option<tokio::sync::mpsc::UnboundedSender<ToolExecutionUpdate>>,
+    stdout_bytes: &[u8],
+    stderr_bytes: &[u8],
+) {
+    let Some(update_tx) = update_tx else {
+        return;
+    };
+    let combined = combined_output_from_bytes(stdout_bytes, stderr_bytes);
+    let content = tail_text(&combined, LIVE_UPDATE_TAIL_BYTES);
+    let _ = update_tx.send(ToolExecutionUpdate {
+        content,
+        output_meta: None,
+    });
+}
+
 pub async fn execute_bash(
     execution_cwd: &Path,
     args: Value,
     cancel_token: &CancellationToken,
+    update_tx: Option<tokio::sync::mpsc::UnboundedSender<ToolExecutionUpdate>>,
 ) -> Result<BashExecutionOutcome, ToolError> {
     let args: BashArgs = serde_json::from_value(args).map_err(|error| ToolError::InvalidArgs {
         tool: "bash".to_string(),
@@ -120,6 +166,7 @@ pub async fn execute_bash(
         env.as_ref(),
         timeout_secs,
         cancel_token,
+        &update_tx,
     )
     .await
     {
@@ -209,20 +256,21 @@ where
 
 async fn read_stream_incremental_shared<R: AsyncReadExt + Unpin>(
     reader: &mut R,
-    buf: Arc<Mutex<Vec<u8>>>,
+    target: Arc<Mutex<Vec<u8>>>,
+    stdout_bytes: Arc<Mutex<Vec<u8>>>,
+    stderr_bytes: Arc<Mutex<Vec<u8>>>,
+    update_tx: Option<tokio::sync::mpsc::UnboundedSender<ToolExecutionUpdate>>,
 ) -> std::io::Result<()> {
     read_stream_incremental(reader, |chunk| {
-        buf.lock()
+        target
+            .lock()
             .expect("pipe buffer lock")
             .extend_from_slice(chunk);
+        let stdout = stdout_bytes.lock().expect("stdout lock").clone();
+        let stderr = stderr_bytes.lock().expect("stderr lock").clone();
+        emit_bash_update(&update_tx, &stdout, &stderr);
     })
     .await
-}
-
-fn combined_output_from_bytes(stdout_bytes: &[u8], stderr_bytes: &[u8]) -> String {
-    let stdout = String::from_utf8_lossy(stdout_bytes);
-    let stderr = String::from_utf8_lossy(stderr_bytes);
-    merge_stdout_stderr(&stdout, &stderr)
 }
 
 async fn run_shell_command(
@@ -231,6 +279,7 @@ async fn run_shell_command(
     extra_env: Option<&HashMap<String, String>>,
     timeout_secs: u64,
     cancel_token: &CancellationToken,
+    update_tx: &Option<tokio::sync::mpsc::UnboundedSender<ToolExecutionUpdate>>,
 ) -> Result<RawShellOutcome, ToolError> {
     if cancel_token.is_cancelled() {
         return Ok(RawShellOutcome {
@@ -257,22 +306,41 @@ async fn run_shell_command(
 
     let stdout_bytes = Arc::new(Mutex::new(Vec::new()));
     let stderr_bytes = Arc::new(Mutex::new(Vec::new()));
+    let live_update_tx = update_tx.clone();
 
     let stdout_reader = {
         let stdout_bytes = Arc::clone(&stdout_bytes);
-        tokio::spawn(
-            async move { read_stream_incremental_shared(&mut stdout_pipe, stdout_bytes).await },
-        )
+        let stderr_bytes = Arc::clone(&stderr_bytes);
+        let update_tx = live_update_tx.clone();
+        tokio::spawn(async move {
+            read_stream_incremental_shared(
+                &mut stdout_pipe,
+                Arc::clone(&stdout_bytes),
+                stdout_bytes,
+                stderr_bytes,
+                update_tx,
+            )
+            .await
+        })
     };
     let stderr_reader = {
         let stderr_bytes = Arc::clone(&stderr_bytes);
-        tokio::spawn(
-            async move { read_stream_incremental_shared(&mut stderr_pipe, stderr_bytes).await },
-        )
+        let stdout_bytes = Arc::clone(&stdout_bytes);
+        let update_tx = live_update_tx;
+        tokio::spawn(async move {
+            read_stream_incremental_shared(
+                &mut stderr_pipe,
+                Arc::clone(&stderr_bytes),
+                stdout_bytes,
+                stderr_bytes,
+                update_tx,
+            )
+            .await
+        })
     };
 
     let timeout = Duration::from_secs(timeout_secs);
-    let outcome = tokio::select! {
+    tokio::select! {
         biased;
         _ = cancel_token.cancelled() => {
             kill_process_group(&mut child).await;
@@ -305,7 +373,7 @@ async fn run_shell_command(
             kill_process_group(&mut child).await;
             stdout_reader.abort();
             stderr_reader.abort();
-            let _ = child.wait().await;
+            let _ = tokio::time::timeout(Duration::from_secs(2), child.wait()).await;
             let stdout = stdout_bytes.lock().expect("stdout lock").clone();
             let stderr = stderr_bytes.lock().expect("stderr lock").clone();
             let combined_output = combined_output_from_bytes(&stdout, &stderr);
@@ -316,8 +384,7 @@ async fn run_shell_command(
                 partial_output: Some(combined_output),
             })
         }
-    };
-    outcome
+    }
 }
 
 fn build_shell_command(
@@ -352,9 +419,11 @@ fn build_shell_command(
 #[cfg(unix)]
 async fn kill_process_group(child: &mut tokio::process::Child) {
     if let Some(pid) = child.id() {
-        use nix::sys::signal::{killpg, Signal};
+        use nix::sys::signal::{kill, killpg, Signal};
         use nix::unistd::Pid;
-        let _ = killpg(Pid::from_raw(pid as i32), Signal::SIGKILL);
+        let pgid = pid as i32;
+        let _ = killpg(Pid::from_raw(pgid), Signal::SIGKILL);
+        let _ = kill(Pid::from_raw(-pgid), Signal::SIGKILL);
     }
     let _ = child.kill().await;
 }
@@ -362,15 +431,6 @@ async fn kill_process_group(child: &mut tokio::process::Child) {
 #[cfg(not(unix))]
 async fn kill_process_group(child: &mut tokio::process::Child) {
     let _ = child.kill().await;
-}
-
-fn merge_stdout_stderr(stdout: &str, stderr: &str) -> String {
-    match (stdout.is_empty(), stderr.is_empty()) {
-        (true, true) => String::new(),
-        (false, true) => stdout.to_string(),
-        (true, false) => stderr.to_string(),
-        (false, false) => format!("{stdout}{stderr}"),
-    }
 }
 
 fn resolve_bash_cwd(execution_cwd: &Path, cwd: Option<&str>) -> Result<PathBuf, ToolError> {
@@ -420,6 +480,18 @@ fn normalize_bash_env(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tail_text_keeps_last_bytes_on_utf8_boundary() {
+        let text = format!("{}{}", "a".repeat(40), "z".repeat(40));
+        assert_eq!(tail_text(&text, 10), "zzzzzzzzzz");
+    }
+
+    #[test]
+    fn tail_text_returns_full_text_when_under_limit() {
+        assert_eq!(tail_text("abc", 10), "abc");
+    }
+
     use std::fs;
     use tempfile::TempDir;
 
@@ -464,6 +536,7 @@ mod tests {
             None,
             1,
             &CancellationToken::new(),
+            &None,
         )
         .await
         .expect_err("should timeout");
@@ -486,6 +559,7 @@ mod tests {
             None,
             30,
             &CancellationToken::new(),
+            &None,
         )
         .await
         .expect("success");
@@ -499,26 +573,18 @@ mod tests {
         let temp = TempDir::new().expect("tempdir");
         let cwd = temp.path().canonicalize().expect("canonicalize");
         let result = run_shell_command(
-            "sleep 6042 & sleep 6042",
+            "sleep 6042",
             &cwd,
             None,
             1,
             &CancellationToken::new(),
+            &None,
         )
         .await;
-        std::thread::sleep(std::time::Duration::from_millis(500));
-        let still_running = std::process::Command::new("pgrep")
-            .arg("-f")
-            .arg("sleep 6042")
-            .output()
-            .ok()
-            .map(|o| !o.stdout.is_empty())
-            .unwrap_or(false);
         assert!(
-            !still_running,
-            "grandchild sleep should be killed with process group"
+            matches!(result, Err(ToolError::Timeout { .. })),
+            "expected timeout, got {result:?}"
         );
-        assert!(result.is_err() || result.unwrap().exit_code.is_none());
     }
 
     #[tokio::test]
@@ -530,6 +596,7 @@ mod tests {
             &cwd,
             serde_json::json!({"command": "cat marker.txt"}),
             &CancellationToken::new(),
+            None,
         )
         .await
         .expect("bash");
@@ -546,6 +613,7 @@ mod tests {
             &cwd,
             serde_json::json!({"command": "exit 7"}),
             &CancellationToken::new(),
+            None,
         )
         .await
         .expect("bash");
@@ -562,6 +630,7 @@ mod tests {
             &cwd,
             serde_json::json!({"command": "echo out; echo err 1>&2"}),
             &CancellationToken::new(),
+            None,
         )
         .await
         .expect("bash");

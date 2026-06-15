@@ -15,14 +15,15 @@ use crate::settings::facade::SettingsFacade;
 use crate::settings::model::AppSettings;
 use crate::settings::ports::{SettingsStore, SkillCatalog, SkillSummary};
 use crate::settings::provider::ProviderEnv;
+use crate::terminal::{TerminalEvent, TerminalManager, TerminalStart};
 use crate::workflow::catalog::WorkflowCatalog;
 use crate::workflow::ports::{ProjectWorkflowStore, WorkflowStore};
 use engine::{CallableAgent, Node, Workflow};
 use tokio::sync::mpsc::UnboundedReceiver;
 
 pub use crate::api::{
-    AgentDefinitionSummary, FileEditPreview, ProviderReadiness, WorkflowListItem,
-    WorkflowValidationSummary,
+    AgentDefinitionSummary, FileEditPreview, ProjectFileReference, ProjectFileReferenceContent,
+    ProviderReadiness, WorkflowListItem, WorkflowValidationSummary,
 };
 pub use crate::error::BackendError;
 
@@ -43,6 +44,7 @@ pub struct AppBackend {
     projects: ProjectRegistry,
     settings: SettingsFacade,
     runs: RunCoordinator,
+    terminal: TerminalManager,
     /// Keeps an owned runtime alive for tests and non-Tauri entrypoints.
     _owned_runtime: Option<tokio::runtime::Runtime>,
 }
@@ -56,6 +58,7 @@ impl AppBackend {
             projects: ProjectRegistry::new(deps.project_store),
             settings: SettingsFacade::new(deps.settings_store, deps.skill_catalog, deps.env),
             runs: RunCoordinator::new(deps.runtime_handle),
+            terminal: TerminalManager::new(),
             _owned_runtime: owned_runtime,
         }
     }
@@ -206,6 +209,27 @@ impl AppBackend {
 
     pub fn list_projects(&self) -> Result<Vec<Project>, BackendError> {
         self.projects.list()
+    }
+
+    pub fn list_project_file_references(
+        &self,
+        execution_cwd: String,
+        query: Option<String>,
+        limit: Option<usize>,
+    ) -> Result<Vec<ProjectFileReference>, BackendError> {
+        crate::project::file_refs::list_project_file_references(
+            &execution_cwd,
+            query.as_deref(),
+            limit,
+        )
+    }
+
+    pub fn read_project_file_references(
+        &self,
+        execution_cwd: String,
+        paths: Vec<String>,
+    ) -> Result<Vec<ProjectFileReferenceContent>, BackendError> {
+        crate::project::file_refs::read_project_file_references(&execution_cwd, &paths)
     }
 
     pub fn save_projects(&self, projects: &[Project]) -> Result<(), BackendError> {
@@ -362,6 +386,44 @@ impl AppBackend {
 
     pub async fn clear_run_trace(&self) -> Result<Option<WorkflowRunState>, BackendError> {
         self.runs.clear_run_trace().await
+    }
+
+    pub fn start_terminal(
+        &self,
+        cwd: Option<&str>,
+        cols: u16,
+        rows: u16,
+    ) -> Result<(TerminalStart, UnboundedReceiver<TerminalEvent>), BackendError> {
+        self.terminal
+            .start(cwd, cols, rows)
+            .map_err(BackendError::ProjectOperation)
+    }
+
+    pub fn write_terminal(&self, session_id: &str, data: &str) -> Result<(), BackendError> {
+        self.terminal
+            .write(session_id, data)
+            .map_err(BackendError::ProjectOperation)
+    }
+
+    pub fn resize_terminal(
+        &self,
+        session_id: &str,
+        cols: u16,
+        rows: u16,
+    ) -> Result<(), BackendError> {
+        self.terminal
+            .resize(session_id, cols, rows)
+            .map_err(BackendError::ProjectOperation)
+    }
+
+    pub fn stop_terminal(&self, session_id: &str) -> Result<(), BackendError> {
+        self.terminal
+            .stop(session_id)
+            .map_err(BackendError::ProjectOperation)
+    }
+
+    pub fn stop_all_terminals(&self) {
+        self.terminal.stop_all();
     }
 }
 

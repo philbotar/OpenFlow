@@ -4,6 +4,8 @@
 
 ### Added
 
+- **OMP tool-host backbone:** optional `_i` intent on built-in tool schemas; `tool_intent_from_arguments` helper; intent projected into `ToolCallSummary` and shown in collapsed `ToolBubble` rows; `ToolUpdated` telemetry with live update sink; throttled bash tail streaming; before/after `ToolHooks` seam on `ToolRunner::execute`.
+
 - **Orchestration domain/adapter separation:** port traits for project workflows (`ProjectWorkflowStore`), skills (`SkillCatalog`), and project bindings (`project/domain.rs`); settings types in `settings/model.rs`, provider resolution in `settings/provider.rs`; `backend/` wires all `File*Store` adapters; fix duplicate module compilation via `lib.rs` aliases for `tools`, storage, and `lsp`.
 - **CI architecture checks (Phase C):** domain folders must not import flat store modules (`agent_store`, `flow_store`, …); legacy `domain` crate alias matcher excludes `project::domain` submodules.
 - **CI architecture checks (Phase B / Tier 3):** extend [`docs/architecture/arch-check-rules.toml`](docs/architecture/arch-check-rules.toml) — `orchestration → providers` symbol allowlist (`AiClient` banned), engine invocation locality (`InteractiveEngine::new` only in `run/execution/`), orchestration domain folders must not `use crate::adapters::`, UI `@tauri-apps/*` seam (`api.ts` / `port.ts` only).

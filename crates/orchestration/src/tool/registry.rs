@@ -1,4 +1,5 @@
 use engine::{NodeToolConfig, ToolConcurrency, ToolDefinition, ToolTier};
+use serde_json::Value;
 use std::collections::BTreeMap;
 use thiserror::Error;
 
@@ -92,12 +93,28 @@ fn register(tools: &mut BTreeMap<String, RegisteredTool>, tool: RegisteredTool) 
     tools.insert(tool.definition.name.clone(), tool);
 }
 
+fn with_intent_field(mut schema: Value) -> Value {
+    if let Some(properties) = schema
+        .get_mut("properties")
+        .and_then(serde_json::Value::as_object_mut)
+    {
+        properties.insert(
+            "_i".to_string(),
+            serde_json::json!({
+                "type": ["string", "null"],
+                "description": "Optional human-readable intent for this tool call. Keep it short; it is shown in the UI and ignored by the tool implementation."
+            }),
+        );
+    }
+    schema
+}
+
 fn read_tool() -> RegisteredTool {
     RegisteredTool {
         definition: ToolDefinition {
             name: "read".to_string(),
-            description: "Read a local file, directory listing, HTTP(S) URL, or spilled tool artifact. Default output is numbered lines capped at 300 lines; append :N-M for a line range (e.g. src/lib.rs:10-20) or :raw for full unnumbered content. Truncated tool output can be read via artifact:{id} (supports the same selectors).".to_string(),
-            input_schema: serde_json::json!({
+            description: "Read a local file, directory listing, HTTP(S) URL, or spilled tool artifact. Default output is numbered lines capped at 3000 lines; append :N-M for a line range (e.g. src/lib.rs:10-20) or :raw for full unnumbered content. Truncated tool output can be read via artifact:{id} (supports the same selectors).".to_string(),
+            input_schema: with_intent_field(serde_json::json!({
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
@@ -107,7 +124,7 @@ fn read_tool() -> RegisteredTool {
                     }
                 },
                 "required": ["path"]
-            }),
+            })),
             tier: ToolTier::Read,
             concurrency: ToolConcurrency::Shared,
         },
@@ -120,7 +137,7 @@ fn search_tool() -> RegisteredTool {
         definition: ToolDefinition {
             name: "search".to_string(),
             description: "Search file contents by regular expression (ripgrep/Rust regex syntax; no backrefs or lookaround). Gitignore-aware by default. Results cap at 500 matches — narrow the pattern or paths if you hit the limit.".to_string(),
-            input_schema: serde_json::json!({
+            input_schema: with_intent_field(serde_json::json!({
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
@@ -148,7 +165,7 @@ fn search_tool() -> RegisteredTool {
                     }
                 },
                 "required": ["pattern", "paths"]
-            }),
+            })),
             tier: ToolTier::Read,
             concurrency: ToolConcurrency::Shared,
         },
@@ -161,7 +178,7 @@ fn find_tool() -> RegisteredTool {
         definition: ToolDefinition {
             name: "find".to_string(),
             description: "Find files and directories matching glob patterns (e.g. **/*.rs, src/**/*.ts). Results cap at 200 paths — narrow the pattern if you hit the limit.".to_string(),
-            input_schema: serde_json::json!({
+            input_schema: with_intent_field(serde_json::json!({
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
@@ -177,7 +194,7 @@ fn find_tool() -> RegisteredTool {
                     }
                 },
                 "required": ["paths"]
-            }),
+            })),
             tier: ToolTier::Read,
             concurrency: ToolConcurrency::Shared,
         },
@@ -190,7 +207,7 @@ fn write_tool() -> RegisteredTool {
         definition: ToolDefinition {
             name: "write".to_string(),
             description: "Create or overwrite a file under the execution folder. Prefer edit for existing files; write replaces the whole file.".to_string(),
-            input_schema: serde_json::json!({
+            input_schema: with_intent_field(serde_json::json!({
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
@@ -204,7 +221,7 @@ fn write_tool() -> RegisteredTool {
                     }
                 },
                 "required": ["path", "content"]
-            }),
+            })),
             tier: ToolTier::Write,
             concurrency: ToolConcurrency::Exclusive,
         },
@@ -217,7 +234,7 @@ fn edit_tool() -> RegisteredTool {
         definition: ToolDefinition {
             name: "edit".to_string(),
             description: "Edit files under the execution folder. Two modes: (1) replace-mode — path + edits[] where old_text must match exactly and uniquely unless all:true; (2) hashline-mode — input string with ¶path#TAG sections copied from read output.".to_string(),
-            input_schema: serde_json::json!({
+            input_schema: with_intent_field(serde_json::json!({
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
@@ -252,8 +269,9 @@ fn edit_tool() -> RegisteredTool {
                         "type": "string",
                         "description": "Hashline-mode only: patch text with ¶path#TAG sections from read output."
                     }
-                }
-            }),
+                },
+                "required": []
+            })),
             tier: ToolTier::Write,
             concurrency: ToolConcurrency::Exclusive,
         },
@@ -266,7 +284,7 @@ fn bash_tool() -> RegisteredTool {
         definition: ToolDefinition {
             name: "bash".to_string(),
             description: "Execute a bash command in the execution folder. Use cwd for the working directory (not cd dir && …). Prefer dedicated read/search/find/edit/write tools when they suffice. Output over 50KB is truncated to an artifact (read it via artifact:{id}). Returns merged stdout/stderr, wall time, and exit code.".to_string(),
-            input_schema: serde_json::json!({
+            input_schema: with_intent_field(serde_json::json!({
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
@@ -289,7 +307,7 @@ fn bash_tool() -> RegisteredTool {
                     }
                 },
                 "required": ["command"]
-            }),
+            })),
             tier: ToolTier::Exec,
             concurrency: ToolConcurrency::Exclusive,
         },
@@ -302,7 +320,7 @@ fn apply_patch_tool() -> RegisteredTool {
         definition: ToolDefinition {
             name: "apply_patch".to_string(),
             description: "Apply a Codex-style *** Begin Patch / *** End Patch envelope to files under the execution folder. Usually prefer edit for targeted changes.".to_string(),
-            input_schema: serde_json::json!({
+            input_schema: with_intent_field(serde_json::json!({
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
@@ -312,7 +330,7 @@ fn apply_patch_tool() -> RegisteredTool {
                     }
                 },
                 "required": ["input"]
-            }),
+            })),
             tier: ToolTier::Write,
             concurrency: ToolConcurrency::Exclusive,
         },
@@ -325,7 +343,7 @@ fn ast_grep_tool() -> RegisteredTool {
         definition: ToolDefinition {
             name: "ast_grep".to_string(),
             description: "Search code structurally using ast-grep patterns ($VAR metavariables). Prefer over search when matching syntax trees rather than raw text.".to_string(),
-            input_schema: serde_json::json!({
+            input_schema: with_intent_field(serde_json::json!({
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
@@ -340,7 +358,7 @@ fn ast_grep_tool() -> RegisteredTool {
                     }
                 },
                 "required": ["pat", "paths"]
-            }),
+            })),
             tier: ToolTier::Read,
             concurrency: ToolConcurrency::Shared,
         },
@@ -436,6 +454,41 @@ mod tests {
         assert_eq!(definitions.len(), 2);
         assert_eq!(definitions[0].name, "openflow_declare_subagents");
         assert_eq!(definitions[1].name, "openflow_call_subagent");
+    }
+
+    #[test]
+    fn every_builtin_schema_accepts_optional_intent_field() {
+        let registry = ToolRegistry::new();
+        let builtins = [
+            "read",
+            "search",
+            "find",
+            "ast_grep",
+            "write",
+            "edit",
+            "apply_patch",
+            "bash",
+        ];
+        for name in builtins {
+            let tool = registry.get(name).expect("builtin tool");
+            let properties = tool
+                .definition
+                .input_schema
+                .get("properties")
+                .and_then(serde_json::Value::as_object)
+                .expect("tool schema has properties");
+            assert!(properties.contains_key("_i"), "missing _i on {name}");
+            let required = tool
+                .definition
+                .input_schema
+                .get("required")
+                .and_then(serde_json::Value::as_array)
+                .expect("tool schema has required");
+            assert!(
+                !required.iter().any(|value| value.as_str() == Some("_i")),
+                "_i must remain optional on {name}"
+            );
+        }
     }
 
     #[test]

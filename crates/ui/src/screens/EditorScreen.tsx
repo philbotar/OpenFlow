@@ -11,10 +11,13 @@ export function EditorScreen() {
   const ctx = useAppContext();
   const showRightPanel = () =>
     !ctx.rightPanelHidden() && (ctx.workflowSettingsOpen() || Boolean(ctx.selectedNodeId()));
+  const chatFocusActive = () =>
+    ctx.chatFocusMode() && ctx.bottomTab() === "chat" && ctx.dockOpen();
 
   return (
     <div
       class="editor-screen"
+      classList={{ "editor-screen--chat-focus": chatFocusActive() }}
       style={{
         "--dock-height": `${ctx.dockOpen() ? ctx.dockHeight() : COLLAPSED_DOCK_HEIGHT}px`,
       }}

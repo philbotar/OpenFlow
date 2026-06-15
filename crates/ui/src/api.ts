@@ -10,15 +10,20 @@ import type {
   BootstrapPayload,
   Node,
   Project,
+  ProjectFileReference,
+  ProjectFileReferenceContent,
   SkillSummary,
   ProviderReadiness,
   Workflow,
   WorkflowListItem,
   WorkflowRunState,
   WorkflowValidationSummary,
+  TerminalEvent,
+  TerminalStart,
 } from "./lib/types";
 
 export const RUN_STATE_EVENT = "run-state";
+export const TERMINAL_EVENT = "terminal-event";
 
 export function bootstrapApp() {
   return invoke<BootstrapPayload>("bootstrap_app");
@@ -26,6 +31,28 @@ export function bootstrapApp() {
 
 export function listProjects() {
   return invoke<Project[]>("list_projects");
+}
+
+export function listProjectFileReferences(
+  executionCwd: string,
+  query: string | null = null,
+  limit: number | null = null,
+) {
+  return invoke<ProjectFileReference[]>("list_project_file_references", {
+    executionCwd,
+    query,
+    limit,
+  });
+}
+
+export function readProjectFileReferences(
+  executionCwd: string,
+  paths: string[],
+) {
+  return invoke<ProjectFileReferenceContent[]>("read_project_file_references", {
+    executionCwd,
+    paths,
+  });
 }
 
 export function saveProjects(projects: Project[]) {
@@ -133,12 +160,14 @@ export function startRun(
   settings: AppSettings,
   executionCwd: string | null = null,
   transientApiKey: string | null = null,
+  entrypoint: string | null = null,
 ) {
   return invoke<WorkflowRunState>("start_run", {
     workflow,
     settings,
     executionCwd,
     transientApiKey,
+    entrypoint,
   });
 }
 
@@ -216,6 +245,30 @@ export function getRunState() {
 
 export function clearRunTrace() {
   return invoke<WorkflowRunState | null>("clear_run_trace");
+}
+
+export function startTerminal(
+  cwd: string | null = null,
+  cols = 80,
+  rows = 24,
+) {
+  return invoke<TerminalStart>("start_terminal", { cwd, cols, rows });
+}
+
+export function writeTerminal(sessionId: string, data: string) {
+  return invoke<void>("write_terminal", { sessionId, data });
+}
+
+export function resizeTerminal(sessionId: string, cols: number, rows: number) {
+  return invoke<void>("resize_terminal", { sessionId, cols, rows });
+}
+
+export function stopTerminal(sessionId: string) {
+  return invoke<void>("stop_terminal", { sessionId });
+}
+
+export function listenToTerminalEvent(handler: (event: TerminalEvent) => void) {
+  return listen<TerminalEvent>(TERMINAL_EVENT, (event) => handler(event.payload));
 }
 
 export function listenToRunState(handler: (runState: WorkflowRunState) => void) {

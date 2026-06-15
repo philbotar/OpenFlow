@@ -2,7 +2,7 @@ export type NodeId = string;
 export type WorkflowId = string;
 export type EdgeId = string;
 
-export type BottomTab = "overview" | "chat" | "trace";
+export type BottomTab = "overview" | "chat" | "trace" | "terminal";
 export type Screen = "editor" | "settings" | "agents";
 
 export interface RetryPolicy {
@@ -34,6 +34,19 @@ export interface Project {
   metadata: ProjectMetadata;
   workflow_ids: string[];
   default_execution_cwd: string;
+}
+
+export interface ProjectFileReference {
+  path: string;
+  displayPath: string;
+  sizeBytes: number;
+}
+
+export interface ProjectFileReferenceContent {
+  path: string;
+  content: string;
+  truncated: boolean;
+  sizeBytes: number;
 }
 
 export interface Workflow {
@@ -209,8 +222,10 @@ export interface ToolCallSummary {
   toolName: string;
   status: ToolCallStatus;
   arguments: unknown;
+  intent?: string | null;
   lastOutput: string | null;
   isError: boolean;
+  streaming: boolean;
 }
 
 export interface ToolArtifactSummary {
@@ -372,6 +387,25 @@ export interface WorkflowValidationSummary {
   layerCount: number;
   layers: string[][];
 }
+
+export interface TerminalStart {
+  sessionId: string;
+  cwd: string;
+}
+
+export type TerminalEvent =
+  | {
+      sessionId: string;
+      kind: { type: "output"; data: string };
+    }
+  | {
+      sessionId: string;
+      kind: { type: "exit"; status: number | null };
+    }
+  | {
+      sessionId: string;
+      kind: { type: "error"; message: string };
+    };
 
 export interface BootstrapPayload {
   workflows: Workflow[];

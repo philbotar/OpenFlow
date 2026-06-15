@@ -110,6 +110,52 @@ fn workflow() -> Workflow {
     workflow.nodes = vec![first];
     workflow
 }
+
+#[test]
+fn tool_updated_keeps_tool_running_and_records_last_output() {
+    let workflow = Workflow::new("w");
+    let node_id = NodeId("node-a".to_string());
+    let mut state = WorkflowRunState::running_for_workflow(&workflow);
+    apply_event_to_run_state(
+        &workflow,
+        &mut state,
+        RunTelemetry::ToolCallProposed {
+            node_id: node_id.clone(),
+            label: "Agent".to_string(),
+            tool_call: engine::ToolCall {
+                id: "tool-1".to_string(),
+                name: "bash".to_string(),
+                arguments: serde_json::json!({"command": "cargo test", "_i": "run tests"}),
+            },
+        },
+    );
+    apply_event_to_run_state(
+        &workflow,
+        &mut state,
+        RunTelemetry::ToolStarted {
+            node_id: node_id.clone(),
+            tool_call_id: "tool-1".to_string(),
+            tool_name: "bash".to_string(),
+            arguments: serde_json::json!({"command": "cargo test"}),
+        },
+    );
+    apply_event_to_run_state(
+        &workflow,
+        &mut state,
+        RunTelemetry::ToolUpdated {
+            node_id: node_id.clone(),
+            tool_call_id: "tool-1".to_string(),
+            tool_name: "bash".to_string(),
+            content: "running test x".to_string(),
+            output_meta: None,
+        },
+    );
+
+    let summary = &state.tool_calls_by_node[&node_id][0];
+    assert_eq!(summary.status, engine::ToolCallStatus::Running);
+    assert_eq!(summary.last_output.as_deref(), Some("running test x"));
+}
+
 #[test]
 fn reducer_aborted_deactivates_run_and_marks_in_progress_tools() {
     let workflow = workflow();
@@ -403,6 +449,25 @@ fn reducer_tool_completed_restores_thinking_status() {
     assert_eq!(
         state.status_by_node.get(&node_id),
         Some(&crate::run::state::AgentStatus::Started)
+    );
+}
+
+#[test]
+fn record_entrypoint_message_appends_user_chat_without_status_change() {
+    let mut state = WorkflowRunState::running_for_workflow(&Workflow::new("w"));
+    state.status_by_node.insert(
+        NodeId("root".into()),
+        crate::run::state::AgentStatus::Queued,
+    );
+    record_entrypoint_message(&mut state, "root", "Plan ORCHID-91".to_string());
+    assert_eq!(state.chat_logs[&NodeId("root".into())].len(), 1);
+    assert_eq!(
+        state.chat_logs[&NodeId("root".into())][0].role,
+        ChatRole::User
+    );
+    assert_eq!(
+        state.status_by_node[&NodeId("root".into())],
+        crate::run::state::AgentStatus::Queued
     );
 }
 

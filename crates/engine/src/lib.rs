@@ -43,9 +43,10 @@ pub use ports::{
 pub use template::{default_templates, Template, TemplateStore, TemplateStoreError};
 pub use tools::{
     is_critical_bash_command, override_policy_for_call, requires_approval, summarize_diff,
-    tool_decision_for_call, tool_tier_for_call, ApprovalMode, EditBatch, FileChangeOp,
-    FileChangeRecord, FileSnapshot, NodeToolConfig, PendingToolApproval, SubagentDeclaration,
-    SubagentStatus, SubagentSummary, ToolCall, ToolCallStatus, ToolCatalogSelection,
-    ToolConcurrency, ToolDecision, ToolDefinition, ToolOutputMeta, ToolPolicy, ToolPolicyOverride,
-    ToolRef, ToolResult, ToolTier, ToolTruncation, ToolTruncationStrategy,
+    tool_decision_for_call, tool_intent_from_arguments, tool_tier_for_call, ApprovalMode,
+    EditBatch, FileChangeOp, FileChangeRecord, FileSnapshot, NodeToolConfig, PendingToolApproval,
+    SubagentDeclaration, SubagentStatus, SubagentSummary, ToolCall, ToolCallStatus,
+    ToolCatalogSelection, ToolConcurrency, ToolDecision, ToolDefinition, ToolOutputMeta,
+    ToolPolicy, ToolPolicyOverride, ToolRef, ToolResult, ToolTier, ToolTruncation,
+    ToolTruncationStrategy,
 };

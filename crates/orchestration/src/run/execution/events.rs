@@ -125,8 +125,10 @@ pub fn apply_event_to_run_state(
                 tool_name: tool_call.name.clone(),
                 status: ToolCallStatus::Proposed,
                 arguments: tool_call.arguments.clone(),
+                intent: engine::tool_intent_from_arguments(&tool_call.arguments),
                 last_output: None,
                 is_error: false,
+                streaming: false,
             });
             state
                 .chat_logs
@@ -222,12 +224,35 @@ pub fn apply_event_to_run_state(
                 message: format!("running tool {tool_name}"),
                 output: None,
             });
+            if tool_name == "bash" {
+                set_tool_streaming(state, &node_id, &tool_call_id, true);
+            }
             update_tool_status(
                 state,
                 &node_id,
                 &tool_call_id,
                 ToolCallStatus::Running,
                 None,
+                false,
+            );
+        }
+        ExecutionEvent::ToolUpdated {
+            node_id,
+            tool_call_id,
+            tool_name: _,
+            content,
+            output_meta: _,
+        } => {
+            state.active_tool_call_id = Some(tool_call_id.clone());
+            state
+                .status_by_node
+                .insert(node_id.clone(), AgentStatus::RunningTool);
+            update_tool_status(
+                state,
+                &node_id,
+                &tool_call_id,
+                ToolCallStatus::Running,
+                Some(content),
                 false,
             );
         }
@@ -241,6 +266,7 @@ pub fn apply_event_to_run_state(
             ..
         } => {
             state.active_tool_call_id = None;
+            set_tool_streaming(state, &node_id, &tool_call_id, false);
             update_tool_status(
                 state,
                 &node_id,
@@ -561,6 +587,30 @@ fn format_phase_timed_message(phase: &str, label: &str, duration_ms: u64) -> Str
     format!("{phase}: {label} · {duration}")
 }
 
+fn find_tool_call_mut<'a>(
+    state: &'a mut WorkflowRunState,
+    node_id: &NodeId,
+    tool_call_id: &str,
+) -> Option<&'a mut ToolCallSummary> {
+    state
+        .tool_calls_by_node
+        .entry(node_id.clone())
+        .or_default()
+        .iter_mut()
+        .find(|call| call.tool_call_id == tool_call_id)
+}
+
+fn set_tool_streaming(
+    state: &mut WorkflowRunState,
+    node_id: &NodeId,
+    tool_call_id: &str,
+    streaming: bool,
+) {
+    if let Some(call) = find_tool_call_mut(state, node_id, tool_call_id) {
+        call.streaming = streaming;
+    }
+}
+
 fn abort_in_progress_tools(state: &mut WorkflowRunState) {
     for calls in state.tool_calls_by_node.values_mut() {
         for call in calls.iter_mut() {
@@ -645,6 +695,15 @@ fn remove_pending_approval(state: &mut WorkflowRunState, approval_id: &str) {
     state
         .pending_approvals
         .retain(|approval| approval.approval_id != approval_id);
+}
+
+pub fn record_entrypoint_message(state: &mut WorkflowRunState, node_id: &str, text: String) {
+    let node_id = NodeId(node_id.to_string());
+    state
+        .chat_logs
+        .entry(node_id)
+        .or_default()
+        .push(ChatMessage::text(ChatRole::User, text));
 }
 
 pub fn record_user_input(state: &mut WorkflowRunState, node_id: &str, text: String) {

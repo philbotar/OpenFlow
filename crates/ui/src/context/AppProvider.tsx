@@ -11,6 +11,10 @@ import { toast } from "solid-sonner";
 import { getAppWindow, openNativeDialog } from "../api";
 import { bindRunStateEvents, createUiDesktopOutboundAdapter } from "../port";
 import { resolveChatSubmission } from "../lib/chatCommands";
+import {
+  extractReferencedFilePaths,
+  formatSubmissionWithFileReferences,
+} from "../lib/fileReferences";
 import type {
   AgentDefinition,
   AiProviderKind,
@@ -19,7 +23,10 @@ import type {
   EdgeId,
   NodeId,
   Project,
+  ProjectFileReference,
   SkillSummary,
+  TerminalEvent,
+  TerminalStart,
   Workflow,
   WorkflowRunState,
 } from "../lib/types";
@@ -28,7 +35,10 @@ import {
   cloneSettings,
   cloneWorkflow,
   canSendChat,
+  canSendIdleRunKickoff,
   createIdleRunState,
+  GLOBAL_RUN_ENTRY_NODE_ID,
+  isGlobalRunEntryNodeId,
   nextNodePlacement,
   isChatComposerBusy,
   isLiveTranscriptSegment,
@@ -136,6 +146,11 @@ export function AppProvider(props: ParentProps) {
   const [bottomTab, setBottomTab] = createSignal<BottomTab>("overview");
   const [dockOpen, setDockOpen] = createSignal(true);
   const [dockHeight, setDockHeight] = createSignal(DEFAULT_DOCK_HEIGHT);
+  const [chatFocusMode, setChatFocusMode] = createSignal(false);
+  const [terminalSession, setTerminalSession] = createSignal<TerminalStart | null>(null);
+  const [terminalStarting, setTerminalStarting] = createSignal(false);
+  const [terminalError, setTerminalError] = createSignal<string | null>(null);
+  const [terminalOutput, setTerminalOutput] = createSignal("");
   const [selectedTraceIndex, setSelectedTraceIndex] = createSignal<number | null>(null);
   const [schemaText, setSchemaText] = createSignal("");
   const [chatDrafts, setChatDrafts] = createStore<Record<string, string>>({});
@@ -317,13 +332,69 @@ export function AppProvider(props: ParentProps) {
   });
   const chatSubmissionFor = (nodeId: NodeId) =>
     resolveChatSubmission(chatDraft(nodeId), skillIdsMemo());
-  const canSendChatFor = (nodeId: NodeId) =>
-    canSendChat(
+  const resolveChatSubmittedText = async (nodeId: NodeId): Promise<string> => {
+    const submission = chatSubmissionFor(nodeId);
+    const paths = extractReferencedFilePaths(chatDraft(nodeId));
+    if (paths.length === 0) {
+      return submission.submittedText;
+    }
+
+    const executionCwd = executionCwdForActiveWorkflow();
+    if (!executionCwd) {
+      throw new Error("File references require a project execution folder.");
+    }
+
+    const references = await desktop.readProjectFileReferences(executionCwd, paths);
+    return formatSubmissionWithFileReferences(submission.submittedText, references);
+  };
+  let pendingKickoffText: string | null = null;
+
+  const flushPendingKickoff = async (state: WorkflowRunState) => {
+    const text = pendingKickoffText;
+    if (!text || !state.active) {
+      return;
+    }
+    const awaitingIds =
+      state.awaitingNodeIds && state.awaitingNodeIds.length > 0
+        ? state.awaitingNodeIds
+        : state.awaitingNodeId
+          ? [state.awaitingNodeId]
+          : [];
+    if (awaitingIds.length === 1) {
+      pendingKickoffText = null;
+      try {
+        const next = await desktop.submitUserInput(awaitingIds[0], text);
+        setRunState(next);
+      } catch (error) {
+        setError(normalizeError(error));
+      }
+      return;
+    }
+    if (awaitingIds.length === 0 && !state.active) {
+      pendingKickoffText = null;
+    }
+    if (awaitingIds.length > 1) {
+      pendingKickoffText = null;
+    }
+  };
+
+  const canSendChatFor = (nodeId: NodeId) => {
+    if (isGlobalRunEntryNodeId(nodeId)) {
+      return canSendIdleRunKickoff(
+        runState(),
+        readiness()?.ready ?? false,
+        !!activeWorkflow(),
+        startingRun(),
+        chatSubmissionFor(nodeId).submittedText,
+      );
+    }
+    return canSendChat(
       runState(),
       nodeId,
       readiness()?.ready ?? false,
       chatSubmissionFor(nodeId).submittedText,
     );
+  };
   const composerBusyFor = (nodeId: NodeId) =>
     isChatComposerBusy(runState(), nodeId);
 
@@ -348,7 +419,16 @@ export function AppProvider(props: ParentProps) {
   const handleSelectBottomTab = (tab: BottomTab) => {
     setBottomTab(tab);
     setDockOpen(true);
+    if (tab !== "chat") {
+      setChatFocusMode(false);
+    }
     setDockHeight((current) => clampDockHeight(current, tab));
+  };
+
+  const handleToggleChatFocusMode = () => {
+    setBottomTab("chat");
+    setDockOpen(true);
+    setChatFocusMode((current) => !current);
   };
 
   const handleDockResizePointerDown = (event: PointerEvent) => {
@@ -377,6 +457,73 @@ export function AppProvider(props: ParentProps) {
     if (!dockResizeState) return;
     dockResizeState = null;
     document.body.classList.remove("is-resizing-dock");
+  };
+
+  const handleOpenTerminal = async (cols: number, rows: number) => {
+    if (terminalSession() || terminalStarting()) return;
+    setTerminalStarting(true);
+    setTerminalError(null);
+    try {
+      const session = await desktop.startTerminal(
+        executionCwdForActiveWorkflow(),
+        cols,
+        rows,
+      );
+      setTerminalOutput("");
+      setTerminalSession(session);
+    } catch (error) {
+      setTerminalError(normalizeError(error));
+    } finally {
+      setTerminalStarting(false);
+    }
+  };
+
+  const handleTerminalInput = async (data: string) => {
+    const session = terminalSession();
+    if (!session) return;
+    try {
+      await desktop.writeTerminal(session.sessionId, data);
+    } catch (error) {
+      setTerminalError(normalizeError(error));
+    }
+  };
+
+  const handleTerminalResize = async (cols: number, rows: number) => {
+    const session = terminalSession();
+    if (!session) return;
+    try {
+      await desktop.resizeTerminal(session.sessionId, cols, rows);
+    } catch (error) {
+      setTerminalError(normalizeError(error));
+    }
+  };
+
+  const handleStopTerminal = async () => {
+    const session = terminalSession();
+    if (!session) return;
+    try {
+      await desktop.stopTerminal(session.sessionId);
+    } catch (error) {
+      setTerminalError(normalizeError(error));
+    } finally {
+      setTerminalSession(null);
+    }
+  };
+
+  const handleTerminalEvent = (event: TerminalEvent) => {
+    const session = terminalSession();
+    if (!session || event.sessionId !== session.sessionId) return;
+    const { kind } = event;
+    switch (kind.type) {
+      case "output":
+        setTerminalOutput((current) => current + kind.data);
+        return;
+      case "error":
+        setTerminalError(kind.message);
+        return;
+      case "exit":
+        setTerminalSession(null);
+    }
   };
 
   // ── Provider / settings ───────────────────────────────────────────────────
@@ -897,9 +1044,61 @@ export function AppProvider(props: ParentProps) {
         settings(),
         executionCwdForActiveWorkflow(),
         activeProviderKeyInput() || null,
+        null,
       );
       beginRunSession(nextRunState);
     } catch (error) {
+      setError(normalizeError(error));
+    } finally {
+      setStartingRun(false);
+    }
+  };
+
+  const handleStartRunFromChat = async (nodeId: NodeId) => {
+    const workflow = activeWorkflow();
+    if (
+      !workflow ||
+      !isGlobalRunEntryNodeId(nodeId) ||
+      !applySchemaEditor() ||
+      stoppingRun() ||
+      startingRun()
+    ) {
+      return;
+    }
+    const submission = chatSubmissionFor(nodeId);
+    let submittedText = submission.submittedText;
+    if (
+      !canSendIdleRunKickoff(
+        runState(),
+        readiness()?.ready ?? false,
+        true,
+        startingRun(),
+        submission.submittedText,
+      )
+    ) {
+      return;
+    }
+    try {
+      submittedText = await resolveChatSubmittedText(nodeId);
+    } catch (error) {
+      setError(normalizeError(error));
+      return;
+    }
+    setStartingRun(true);
+    pendingKickoffText = submittedText;
+    try {
+      const nextRunState = await desktop.startRun(
+        workflow,
+        settings(),
+        executionCwdForActiveWorkflow(),
+        activeProviderKeyInput() || null,
+        submittedText,
+      );
+      setChatDraft(nodeId, "");
+      beginRunSession(nextRunState);
+      await flushPendingKickoff(nextRunState);
+    } catch (error) {
+      pendingKickoffText = null;
       setError(normalizeError(error));
     } finally {
       setStartingRun(false);
@@ -979,11 +1178,13 @@ export function AppProvider(props: ParentProps) {
 
   const handleSubmitChat = async (nodeId: NodeId) => {
     if (!canSendChatFor(nodeId)) return;
+    if (isGlobalRunEntryNodeId(nodeId)) {
+      await handleStartRunFromChat(nodeId);
+      return;
+    }
     try {
-      const nextRunState = await desktop.submitUserInput(
-        nodeId,
-        chatSubmissionFor(nodeId).submittedText,
-      );
+      const submittedText = await resolveChatSubmittedText(nodeId);
+      const nextRunState = await desktop.submitUserInput(nodeId, submittedText);
       setRunState(nextRunState);
       setChatDraft(nodeId, "");
     } catch (error) {
@@ -997,6 +1198,16 @@ export function AppProvider(props: ParentProps) {
     } catch (error) {
       setError(normalizeError(error));
     }
+  };
+
+  const searchProjectFileReferences = async (
+    query: string,
+  ): Promise<ProjectFileReference[]> => {
+    const executionCwd = executionCwdForActiveWorkflow();
+    if (!executionCwd) {
+      return [];
+    }
+    return desktop.listProjectFileReferences(executionCwd, query, 30);
   };
 
   const handleToolApproval = async (approvalId: string, allow: boolean) => {
@@ -1272,6 +1483,7 @@ export function AppProvider(props: ParentProps) {
   // ── Mount ─────────────────────────────────────────────────────────────────
   onMount(async () => {
     let unlisten: (() => void) | null = null;
+    let unlistenTerminal: (() => void) | undefined;
     let unlistenMaximized: (() => void) | null = null;
 
     window.addEventListener("keydown", handleKeyDown);
@@ -1286,6 +1498,8 @@ export function AppProvider(props: ParentProps) {
       window.removeEventListener("pointercancel", clearDockResizeState);
       document.body.classList.remove("is-resizing-dock");
       if (unlisten) void unlisten();
+      if (unlistenTerminal) void unlistenTerminal();
+      void handleStopTerminal();
       if (unlistenMaximized) void unlistenMaximized();
     });
 
@@ -1302,6 +1516,7 @@ export function AppProvider(props: ParentProps) {
         {
           handleRunStateUpdate: (nextRunState) => {
             setRunState(nextRunState);
+            void flushPendingKickoff(nextRunState);
             if (nextRunState.pendingApprovals.length > 0) {
               const approval = nextRunState.pendingApprovals[0];
               focusChatNode(approval.nodeId);
@@ -1336,6 +1551,7 @@ export function AppProvider(props: ParentProps) {
         },
         desktop,
       );
+      unlistenTerminal = await desktop.listenToTerminalEvent(handleTerminalEvent);
       const data = await desktop.bootstrapApp();
       setAvailableSkills(data.skills ?? []);
       await initializeWorkspace(
@@ -1377,6 +1593,7 @@ export function AppProvider(props: ParentProps) {
     bottomTab,
     dockOpen,
     dockHeight,
+    chatFocusMode,
     selectedTraceIndex,
     schemaText,
     chatFilterNodeId,
@@ -1406,6 +1623,10 @@ export function AppProvider(props: ParentProps) {
     themePreference,
     resolvedTheme,
     shortcutsModalOpen,
+    terminalSession,
+    terminalStarting,
+    terminalError,
+    terminalOutput,
     // Setters
     setWorkflowNameDraft,
     setAgentNameDraft,
@@ -1492,6 +1713,7 @@ export function AppProvider(props: ParentProps) {
     handleClearRunTrace,
     handleSubmitChat,
     handleRefreshSkills,
+    searchProjectFileReferences,
     handleToolApproval,
     handleStartNodeLabelEdit,
     handleCancelNodeLabelEdit,
@@ -1506,7 +1728,13 @@ export function AppProvider(props: ParentProps) {
     setToolEnabled,
     applySchemaEditor,
     persistAll,
+    handleOpenTerminal,
+    handleTerminalInput,
+    handleTerminalResize,
+    handleStopTerminal,
+    handleTerminalEvent,
     handleSelectBottomTab,
+    handleToggleChatFocusMode,
     handleDockResizePointerDown,
     handleZoomIn,
     handleZoomOut,

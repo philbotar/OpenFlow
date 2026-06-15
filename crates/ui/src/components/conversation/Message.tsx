@@ -1,4 +1,4 @@
-import { splitProps } from "solid-js";
+import { Show, splitProps } from "solid-js";
 import type { ComponentProps, JSX } from "solid-js";
 import { MarkdownContent } from "./MarkdownContent";
 
@@ -23,14 +23,18 @@ export function Message(allProps: MessageProps) {
     "content",
     "streaming",
   ]);
+  const animationClass = () =>
+    local.from === "assistant" ? "" : "conversation-item-enter";
   return (
     <div
-      class={`chat-row message message-${local.from} role-${local.from} conversation-item-enter ${local.class ?? ""}`}
+      class={`chat-row message message-${local.from} role-${local.from} ${animationClass()} ${local.class ?? ""}`}
       {...rest}
     >
-      <div class={`chat-role ${local.from === "system" ? "is-system" : ""}`}>
-        {local.label}
-      </div>
+      <Show when={local.from !== "assistant"}>
+        <div class={`chat-role ${local.from === "system" ? "is-system" : ""}`}>
+          {local.label}
+        </div>
+      </Show>
       <div
         class="message-content"
         classList={{ "message-streaming-caret": Boolean(local.streaming) }}

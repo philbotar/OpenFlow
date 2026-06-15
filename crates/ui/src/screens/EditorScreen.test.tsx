@@ -31,6 +31,7 @@ function makeMockContext(overrides: Partial<AppContextValue> = {}): AppContextVa
     workflowSettingsOpen: () => false,
     dockOpen: () => true,
     dockHeight: () => 300,
+    chatFocusMode: () => false,
     runState: () => null,
     selectedEdgeId: () => null,
     resolvedTheme: () => "light",
@@ -172,6 +173,7 @@ function makeMockContext(overrides: Partial<AppContextValue> = {}): AppContextVa
     applySchemaEditor: () => true,
     persistAll: async () => true,
     handleSelectBottomTab: () => {},
+    handleToggleChatFocusMode: () => {},
     handleDockResizePointerDown: () => {},
     handleZoomIn: () => {},
     handleZoomOut: () => {},
@@ -271,6 +273,18 @@ describe("EditorScreen", () => {
     const grid = container.querySelector(".workspace-grid");
     expect(grid).not.toBeNull();
     expect(grid!.classList.contains("workspace-grid--no-inspector")).toBe(true);
+    dispose();
+  });
+
+  it("applies chat focus class when chat focus mode is active", () => {
+    const { container, dispose } = renderWithContext({
+      chatFocusMode: () => true,
+      bottomTab: () => "chat",
+      dockOpen: () => true,
+    });
+
+    const screen = container.querySelector(".editor-screen");
+    expect(screen?.classList.contains("editor-screen--chat-focus")).toBe(true);
     dispose();
   });
 });

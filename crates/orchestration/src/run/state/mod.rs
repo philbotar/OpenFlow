@@ -46,8 +46,12 @@ pub struct ToolCallSummary {
     pub tool_name: String,
     pub status: engine::ToolCallStatus,
     pub arguments: Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub intent: Option<String>,
     pub last_output: Option<String>,
     pub is_error: bool,
+    #[serde(default)]
+    pub streaming: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -8,6 +8,7 @@
 pub(crate) mod blocking_ops;
 pub mod cache;
 pub mod errors;
+pub mod hooks;
 pub mod output;
 pub mod ports;
 pub mod registry;
@@ -16,4 +17,6 @@ pub mod runner;
 pub use cache::ToolResultCache;
 pub use output::{ArtifactStore, ToolArtifactRecord};
 pub use registry::{ToolRegistry, ToolRegistryError};
-pub use runner::{ToolExecutionContext, ToolExecutionRecord, ToolRunner, ToolRunnerError};
+pub use runner::{
+    ToolExecutionContext, ToolExecutionRecord, ToolExecutionUpdate, ToolRunner, ToolRunnerError,
+};

@@ -21,3 +21,6 @@ node_modules/
 .flow/
 .openflow/
 .worktrees/
+
+# Test coverage reports (vitest HTML, lcov, etc.)
+coverage/

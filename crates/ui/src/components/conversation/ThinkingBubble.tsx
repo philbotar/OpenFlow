@@ -1,4 +1,3 @@
-import ChevronDown from "lucide-solid/icons/chevron-down";
 import ChevronRight from "lucide-solid/icons/chevron-right";
 import { createMemo, createSignal, Show, splitProps } from "solid-js";
 import type { ComponentProps } from "solid-js";
@@ -26,29 +25,42 @@ export function ThinkingBubble(allProps: ThinkingBubbleProps) {
   return (
     <Show when={content().trim()}>
       <div
-        class={`thinking-bubble conversation-item-enter ${local.class ?? ""}`}
+        class={`tool-line tool-line--thinking tool-line--expandable conversation-item-enter ${local.class ?? ""}`}
         data-streaming={local.message.streaming ? "true" : "false"}
+        data-tool-name="thinking"
         {...rest}
       >
         <button
           type="button"
-          class="thinking-bubble-toggle"
+          class="tool-line-status-row"
           aria-expanded={expanded()}
           onClick={() => setExpanded((value) => !value)}
         >
-          <span class="thinking-bubble-icon" aria-hidden="true">
-            {expanded() ? <ChevronDown class="thinking-bubble-chevron" /> : <ChevronRight class="thinking-bubble-chevron" />}
+          <span class="tool-line-status tool-line-status--muted" aria-hidden="true">
+            {local.message.streaming ? "•" : ""}
           </span>
-          <span class="thinking-bubble-label">
-            Thinking{local.message.streaming ? "…" : ""}
+          <span class="tool-line-name">
+            <span class="tool-line-name-text">
+              thinking{local.message.streaming ? "…" : ""}
+              <Show when={preview()}>
+                {" "}
+                <span class="tool-line-target">{preview()}</span>
+              </Show>
+            </span>
+            <span
+              class="tool-line-chevron"
+              classList={{ "tool-line-chevron--expanded": expanded() }}
+              aria-hidden="true"
+            >
+              <ChevronRight width={14} height={14} />
+            </span>
           </span>
-          <Show when={!expanded() && preview()}>
-            <span class="thinking-bubble-preview">{preview()}</span>
-          </Show>
         </button>
         <Show when={expanded()}>
-          <div class="thinking-bubble-body message-content">
-            <MarkdownContent content={content()} />
+          <div class="tool-line-output-wrapper tool-line-output-wrapper--expanded">
+            <div class="tool-line-output message-content">
+              <MarkdownContent content={content()} />
+            </div>
           </div>
         </Show>
       </div>
