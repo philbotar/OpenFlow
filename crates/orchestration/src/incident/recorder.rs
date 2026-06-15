@@ -107,7 +107,7 @@ pub fn incident_from_tool_error(
     })
 }
 
-fn scope_from_context(ctx: &IncidentContext) -> IncidentScope {
+pub(crate) fn scope_from_context(ctx: &IncidentContext) -> IncidentScope {
     if let (Some(run_id), Some(workflow_id), Some(node_id)) =
         (&ctx.run_id, &ctx.workflow_id, &ctx.node_id)
     {
@@ -130,7 +130,7 @@ fn scope_from_context(ctx: &IncidentContext) -> IncidentScope {
     }
 }
 
-fn context_from_incident(ctx: &IncidentContext) -> BTreeMap<String, Value> {
+pub(crate) fn context_from_incident(ctx: &IncidentContext) -> BTreeMap<String, Value> {
     let mut context = BTreeMap::new();
     if let Some(label) = &ctx.node_label {
         context.insert("nodeLabel".to_string(), json!(label));

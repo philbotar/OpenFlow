@@ -1,0 +1,182 @@
+use crate::incident::recorder::{
+    build_record, context_from_incident, scope_from_context, NewIncidentRecord,
+};
+use crate::incident::{IncidentCategory, IncidentContext, IncidentRecord, IncidentSeverity};
+use engine::{NodeId, RunTelemetry};
+use serde_json::json;
+
+pub fn incident_from_execution_event(
+    event: &RunTelemetry,
+    ctx: &IncidentContext,
+) -> Option<IncidentRecord> {
+    match event {
+        RunTelemetry::ToolCompleted {
+            node_id,
+            tool_call_id,
+            tool_name,
+            content,
+            is_error,
+            ..
+        } => {
+            if !is_error {
+                return None;
+            }
+            let merged = ctx_with_node(ctx, node_id, None);
+            let code = parse_tool_code(content);
+            let retryable = tool_content_retryable(content, &code);
+            let mut context = context_from_incident(&merged);
+            context.insert("toolCallId".to_string(), json!(tool_call_id));
+            context.insert("toolName".to_string(), json!(tool_name));
+            Some(build_record(NewIncidentRecord {
+                scope: scope_from_context(&merged),
+                severity: IncidentSeverity::Error,
+                category: IncidentCategory::Tool,
+                code,
+                message: content.clone(),
+                hint: parse_tool_hint(content),
+                retryable,
+                context,
+            }))
+        }
+        RunTelemetry::ToolDenied {
+            node_id,
+            tool_call_id,
+            tool_name,
+            reason,
+            ..
+        } => {
+            let merged = ctx_with_node(ctx, node_id, None);
+            let mut context = context_from_incident(&merged);
+            context.insert("toolCallId".to_string(), json!(tool_call_id));
+            context.insert("toolName".to_string(), json!(tool_name));
+            Some(build_record(NewIncidentRecord {
+                scope: scope_from_context(&merged),
+                severity: IncidentSeverity::Warning,
+                category: IncidentCategory::Tool,
+                code: "tool.denied".to_string(),
+                message: reason.clone(),
+                hint: None,
+                retryable: false,
+                context,
+            }))
+        }
+        RunTelemetry::NodeErrored {
+            node_id,
+            label,
+            error,
+        } => {
+            let merged = ctx_with_node(ctx, node_id, Some(label));
+            Some(build_record(NewIncidentRecord {
+                scope: scope_from_context(&merged),
+                severity: IncidentSeverity::Error,
+                category: IncidentCategory::Node,
+                code: "node.errored".to_string(),
+                message: error.clone(),
+                hint: None,
+                retryable: true,
+                context: context_from_incident(&merged),
+            }))
+        }
+        RunTelemetry::NodeFailed {
+            node_id,
+            label,
+            error,
+        } => {
+            let merged = ctx_with_node(ctx, node_id, Some(label));
+            Some(build_record(NewIncidentRecord {
+                scope: scope_from_context(&merged),
+                severity: IncidentSeverity::Fatal,
+                category: IncidentCategory::Node,
+                code: "node.failed".to_string(),
+                message: error.clone(),
+                hint: None,
+                retryable: false,
+                context: context_from_incident(&merged),
+            }))
+        }
+        RunTelemetry::SubagentFailed {
+            node_id,
+            subagent_id,
+            error,
+        } => {
+            let merged = ctx_with_node(ctx, node_id, None);
+            let mut context = context_from_incident(&merged);
+            context.insert("subagentId".to_string(), json!(subagent_id));
+            Some(build_record(NewIncidentRecord {
+                scope: scope_from_context(&merged),
+                severity: IncidentSeverity::Error,
+                category: IncidentCategory::Subagent,
+                code: "subagent.failed".to_string(),
+                message: error.clone(),
+                hint: None,
+                retryable: false,
+                context,
+            }))
+        }
+        RunTelemetry::Error(message) => Some(build_record(NewIncidentRecord {
+            scope: scope_from_context(ctx),
+            severity: IncidentSeverity::Fatal,
+            category: IncidentCategory::Run,
+            code: "run.error".to_string(),
+            message: message.clone(),
+            hint: None,
+            retryable: false,
+            context: context_from_incident(ctx),
+        })),
+        _ => None,
+    }
+}
+
+fn ctx_with_node(ctx: &IncidentContext, node_id: &NodeId, label: Option<&str>) -> IncidentContext {
+    let mut merged = ctx.clone();
+    merged.node_id = Some(node_id.clone());
+    if label.is_some() && merged.node_label.is_none() {
+        merged.node_label = label.map(str::to_string);
+    }
+    merged
+}
+
+fn parse_tool_code(content: &str) -> String {
+    if let Some(tag) = extract_bracket_tag(content) {
+        format!("tool.{tag}")
+    } else {
+        "tool.failed".to_string()
+    }
+}
+
+fn extract_bracket_tag(content: &str) -> Option<&str> {
+    let trimmed = content.trim_start();
+    if !trimmed.starts_with('[') {
+        return None;
+    }
+    let end = trimmed[1..].find(']')?;
+    Some(&trimmed[1..1 + end])
+}
+
+fn parse_tool_hint(content: &str) -> Option<String> {
+    if let Some(tag_end) = content.find(']') {
+        let rest = content[tag_end + 1..].trim_start();
+        if let Some(pos) = rest.find('—') {
+            let hint = rest[pos + '—'.len_utf8()..].trim();
+            if !hint.is_empty() {
+                return Some(hint.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn tool_content_retryable(content: &str, code: &str) -> bool {
+    if code == "tool.timeout" {
+        return true;
+    }
+    let lower = content.to_lowercase();
+    lower.contains("timeout")
+        || lower.contains("timed out")
+        || lower.contains("connection reset")
+        || lower.contains("connection refused")
+        || lower.contains("temporarily unavailable")
+        || lower.contains("503")
+        || lower.contains("502")
+        || lower.contains("429")
+}
