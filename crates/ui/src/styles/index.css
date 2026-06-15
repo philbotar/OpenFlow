@@ -4412,3 +4412,105 @@ select.text-input:hover {
   background: rgba(255, 255, 255, 0.06);
   box-shadow: none;
 }
+
+/* ── Workflow authoring overlay ───────────────────────────────────── */
+
+.workflow-authoring-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-elevated, #ffffff);
+  color: var(--text-primary);
+}
+
+.workflow-authoring-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 24px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.workflow-authoring-header h2 {
+  margin: 0;
+  font-size: 1.125rem;
+}
+
+.workflow-authoring-subtitle {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.workflow-authoring-messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.workflow-authoring-validation {
+  margin: 0 24px 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+  font-size: 0.875rem;
+}
+
+.workflow-authoring-validation--valid {
+  background: rgba(34, 197, 94, 0.08);
+  border-color: rgba(34, 197, 94, 0.24);
+}
+
+.workflow-authoring-validation--invalid {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.24);
+}
+
+.workflow-authoring-validation-title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.workflow-authoring-validation-meta {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.workflow-authoring-validation-errors ul,
+.workflow-authoring-validation-warnings {
+  margin: 8px 0 0;
+  padding-left: 1.25rem;
+}
+
+.workflow-authoring-validation-warnings {
+  color: #b45309;
+}
+
+.workflow-authoring-footer {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 12px 24px 20px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.workflow-authoring-composer {
+  flex: 1;
+  min-width: 0;
+}
+
+.workflow-authoring-composer-pill {
+  width: 100%;
+}
+
+.workflow-authoring-apply {
+  flex-shrink: 0;
+  min-width: 140px;
+}

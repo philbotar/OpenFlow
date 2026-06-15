@@ -17,6 +17,8 @@ import type {
   TerminalEvent,
   TerminalStart,
   Workflow,
+  WorkflowAuthoringMessage,
+  WorkflowAuthoringValidation,
   WorkflowRunState,
 } from "../lib/types";
 import type { ResolvedTheme, ThemePreference } from "../lib/theme";
@@ -165,6 +167,15 @@ export interface AppContextValue {
 
   // ── Run handlers ──────────────────────────────────────────────────────────
   handleValidate: () => Promise<void>;
+  workflowAuthoringOpen: Accessor<boolean>;
+  workflowAuthoringBusy: Accessor<boolean>;
+  workflowAuthoringMessages: Accessor<WorkflowAuthoringMessage[]>;
+  workflowAuthoringValidation: Accessor<WorkflowAuthoringValidation | null>;
+  workflowAuthoringDraft: Accessor<Workflow | null>;
+  handleOpenWorkflowAuthoring: (baseWorkflow?: Workflow) => Promise<void>;
+  handleCloseWorkflowAuthoring: () => void;
+  handleWorkflowAuthoringSend: (message: string) => Promise<void>;
+  handleApplyWorkflowAuthoringDraft: () => Promise<void>;
   handleRun: () => Promise<void>;
   handleContinueRun: () => Promise<void>;
   handleStopRun: () => Promise<void>;

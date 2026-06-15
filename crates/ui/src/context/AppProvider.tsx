@@ -28,6 +28,8 @@ import type {
   TerminalEvent,
   TerminalStart,
   Workflow,
+  WorkflowAuthoringMessage,
+  WorkflowAuthoringValidation,
   WorkflowRunState,
 } from "../lib/types";
 import {
@@ -177,6 +179,19 @@ export function AppProvider(props: ParentProps) {
   );
   const workflowsSectionExpanded = createMemo(() => !workflowsSectionHidden());
   const [workflowSettingsOpen, setWorkflowSettingsOpen] = createSignal(false);
+  const [workflowAuthoringOpen, setWorkflowAuthoringOpen] = createSignal(false);
+  const [workflowAuthoringSessionId, setWorkflowAuthoringSessionId] = createSignal<
+    string | null
+  >(null);
+  const [workflowAuthoringMessages, setWorkflowAuthoringMessages] = createSignal<
+    WorkflowAuthoringMessage[]
+  >([]);
+  const [workflowAuthoringValidation, setWorkflowAuthoringValidation] =
+    createSignal<WorkflowAuthoringValidation | null>(null);
+  const [workflowAuthoringDraft, setWorkflowAuthoringDraft] = createSignal<Workflow | null>(
+    null,
+  );
+  const [workflowAuthoringBusy, setWorkflowAuthoringBusy] = createSignal(false);
   const [editingWorkflowId, setEditingWorkflowId] = createSignal<string | null>(null);
   const [workflowNameDraft, setWorkflowNameDraft] = createSignal("");
   const [selectedAgentId, setSelectedAgentId] = createSignal<string | null>(null);
@@ -1014,6 +1029,67 @@ export function AppProvider(props: ParentProps) {
     }
   };
 
+  const handleOpenWorkflowAuthoring = async (baseWorkflow?: Workflow) => {
+    try {
+      const sessionId = await desktop.startWorkflowAuthoring(baseWorkflow ?? null);
+      setWorkflowAuthoringSessionId(sessionId);
+      setWorkflowAuthoringMessages([]);
+      setWorkflowAuthoringValidation(null);
+      setWorkflowAuthoringDraft(baseWorkflow ?? null);
+      setWorkflowAuthoringOpen(true);
+    } catch (error) {
+      setError(normalizeError(error));
+    }
+  };
+
+  const handleCloseWorkflowAuthoring = () => {
+    setWorkflowAuthoringOpen(false);
+    setWorkflowAuthoringSessionId(null);
+    setWorkflowAuthoringBusy(false);
+  };
+
+  const handleWorkflowAuthoringSend = async (message: string) => {
+    const sessionId = workflowAuthoringSessionId();
+    if (!sessionId || !message.trim() || workflowAuthoringBusy()) return;
+    setWorkflowAuthoringBusy(true);
+    try {
+      const result = await desktop.workflowAuthoringTurn(
+        sessionId,
+        message.trim(),
+        settings(),
+        activeProviderKeyInput() || null,
+      );
+      setWorkflowAuthoringMessages(result.messages);
+      setWorkflowAuthoringValidation(result.validation);
+      setWorkflowAuthoringDraft(result.draft ?? null);
+    } catch (error) {
+      setError(normalizeError(error));
+    } finally {
+      setWorkflowAuthoringBusy(false);
+    }
+  };
+
+  const handleApplyWorkflowAuthoringDraft = async () => {
+    const draft = workflowAuthoringDraft();
+    const validation = workflowAuthoringValidation();
+    if (!draft || !validation?.valid) return;
+    if (workflows().some((workflow) => workflow.id === draft.id)) {
+      setWorkflows(replaceWorkflow(workflows(), draft));
+    } else {
+      setWorkflows([...workflows(), draft]);
+    }
+    setActiveWorkflowId(draft.id);
+    try {
+      await desktop.saveWorkflow(draft);
+      handleCloseWorkflowAuthoring();
+      setScreen("editor");
+      setSelectedNodeId(draft.nodes[0]?.id ?? null);
+      setSuccess(`Applied workflow "${draft.name}"`);
+    } catch (error) {
+      setError(normalizeError(error));
+    }
+  };
+
   const [stoppingRun, setStoppingRun] = createSignal(false);
 
   const beginRunSession = (nextRunState: WorkflowRunState) => {
@@ -1701,6 +1777,15 @@ export function AppProvider(props: ParentProps) {
     handleAddNode,
     closeAddNodePicker,
     handleValidate,
+    workflowAuthoringOpen,
+    workflowAuthoringBusy,
+    workflowAuthoringMessages,
+    workflowAuthoringValidation,
+    workflowAuthoringDraft,
+    handleOpenWorkflowAuthoring,
+    handleCloseWorkflowAuthoring,
+    handleWorkflowAuthoringSend,
+    handleApplyWorkflowAuthoringDraft,
     handleRun,
     handleContinueRun,
     handleStopRun,

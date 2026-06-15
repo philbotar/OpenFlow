@@ -9,6 +9,7 @@ import { AppHeader } from "./components/AppHeader";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { AgentsScreen } from "./screens/AgentsScreen";
 import { EditorScreen } from "./screens/EditorScreen";
+import { WorkflowAuthoringOverlay } from "./components/workflowAuthoring/WorkflowAuthoringOverlay";
 import { BANNER_DISMISS_MS } from "./lib/utils";
 
 function ScreenRouter() {
@@ -69,6 +70,17 @@ function AppChrome() {
         classList={{ "app-shell--settings": isSettings() }}
       >
         <WorkflowPickerModal />
+        <WorkflowAuthoringOverlay
+          open={ctx.workflowAuthoringOpen()}
+          busy={ctx.workflowAuthoringBusy()}
+          providerReady={ctx.readiness()?.ready ?? false}
+          messages={ctx.workflowAuthoringMessages()}
+          validation={ctx.workflowAuthoringValidation()}
+          canApply={ctx.workflowAuthoringValidation()?.valid === true}
+          onClose={ctx.handleCloseWorkflowAuthoring}
+          onSend={(message) => void ctx.handleWorkflowAuthoringSend(message)}
+          onApply={() => void ctx.handleApplyWorkflowAuthoringDraft()}
+        />
         <ShortcutsModal
           open={ctx.shortcutsModalOpen()}
           onClose={ctx.closeShortcutsModal}

@@ -14,6 +14,9 @@ import type {
 	WorkflowListItem,
 	WorkflowRunState,
 	WorkflowValidationSummary,
+	WorkflowAuthoringTurnResult,
+	WorkflowAuthoringMessage,
+	WorkflowAuthoringValidation,
 	FileEditPreview,
 	TerminalEvent,
 	TerminalStart,
@@ -63,6 +66,13 @@ export interface UiDesktopOutboundPort {
 		transientApiKey?: string | null,
 	) => Promise<ProviderReadiness>;
 	validateWorkflow: (workflow: Workflow) => Promise<WorkflowValidationSummary>;
+	startWorkflowAuthoring: (baseWorkflow?: Workflow | null) => Promise<string>;
+	workflowAuthoringTurn: (
+		sessionId: string,
+		message: string,
+		settings: AppSettings,
+		transientApiKey?: string | null,
+	) => Promise<WorkflowAuthoringTurnResult>;
 	createAgentNode: (
 		index: number,
 		x: number,
@@ -142,6 +152,8 @@ export function createUiDesktopOutboundAdapter(): UiDesktopOutboundPort {
 		deleteProviderApiKey: desktopApi.deleteProviderApiKey,
 		resolveProviderReadiness: desktopApi.resolveProviderReadiness,
 		validateWorkflow: desktopApi.validateWorkflow,
+		startWorkflowAuthoring: desktopApi.startWorkflowAuthoring,
+		workflowAuthoringTurn: desktopApi.workflowAuthoringTurn,
 		createAgentNode: desktopApi.createAgentNode,
 		startRun: desktopApi.startRun,
 		stopRun: desktopApi.stopRun,

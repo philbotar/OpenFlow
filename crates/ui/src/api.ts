@@ -18,6 +18,7 @@ import type {
   WorkflowListItem,
   WorkflowRunState,
   WorkflowValidationSummary,
+  WorkflowAuthoringTurnResult,
   TerminalEvent,
   TerminalStart,
 } from "./lib/types";
@@ -149,6 +150,24 @@ export function resolveProviderReadiness(settings: AppSettings, transientApiKey:
 
 export function validateWorkflow(workflow: Workflow) {
   return invoke<WorkflowValidationSummary>("validate_workflow", { workflow });
+}
+
+export function startWorkflowAuthoring(baseWorkflow: Workflow | null = null) {
+  return invoke<string>("start_workflow_authoring", { baseWorkflow });
+}
+
+export function workflowAuthoringTurn(
+  sessionId: string,
+  message: string,
+  settings: AppSettings,
+  transientApiKey: string | null = null,
+) {
+  return invoke<WorkflowAuthoringTurnResult>("workflow_authoring_turn", {
+    sessionId,
+    message,
+    settings,
+    transientApiKey,
+  });
 }
 
 export function createAgentNode(index: number, x: number, y: number, agentId: string | null = null) {

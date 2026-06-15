@@ -10,11 +10,13 @@ import Trash2 from "lucide-solid/icons/trash-2";
 import PanelRightOpen from "lucide-solid/icons/panel-right-open";
 import PanelRightClose from "lucide-solid/icons/panel-right-close";
 import CircleHelp from "lucide-solid/icons/circle-help";
+import Sparkles from "lucide-solid/icons/sparkles";
 import { ICON_STROKE_WIDTH } from "../lib/utils";
 
 export type SidebarIconName =
   | "agents"
   | "plus"
+  | "sparkles"
   | "edit"
   | "settings"
   | "save"
@@ -40,6 +42,15 @@ export function SidebarIcon(props: { name: SidebarIconName }) {
     case "plus":
       return (
         <Plus
+          class="sidebar-icon"
+          aria-hidden="true"
+          absoluteStrokeWidth
+          strokeWidth={ICON_STROKE_WIDTH}
+        />
+      );
+    case "sparkles":
+      return (
+        <Sparkles
           class="sidebar-icon"
           aria-hidden="true"
           absoluteStrokeWidth

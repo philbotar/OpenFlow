@@ -26,6 +26,7 @@ import {
   listenToRunState,
   startRun,
   submitToolApproval,
+  workflowAuthoringTurn,
 } from "./api";
 import type { AppSettings, Workflow } from "./lib/types";
 import { createEmptyToolConfig } from "./lib/workflow";
@@ -101,5 +102,22 @@ describe("api desktop seam", () => {
     const callback = listen.mock.calls[0]?.[1] as (event: { payload: unknown }) => void;
     callback({ payload: { active: true } });
     expect(handler).toHaveBeenCalledWith({ active: true });
+  });
+
+  test("workflowAuthoringTurn invokes workflow_authoring_turn", async () => {
+    invoke.mockResolvedValueOnce({
+      sessionId: "s1",
+      assistantMessage: "ok",
+      validation: { valid: true, errors: [], warnings: [] },
+      messages: [],
+    });
+    await workflowAuthoringTurn("s1", "hello", settings, null);
+    expect(invoke).toHaveBeenCalledWith(
+      "workflow_authoring_turn",
+      expect.objectContaining({
+        sessionId: "s1",
+        message: "hello",
+      }),
+    );
   });
 });

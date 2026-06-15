@@ -98,6 +98,12 @@ export function Sidebar() {
                 />
               </button>
               <SidebarIconButton
+                icon="sparkles"
+                label="Build with AI"
+                class="sidebar-section-action"
+                onClick={() => void ctx.handleOpenWorkflowAuthoring()}
+              />
+              <SidebarIconButton
                 icon="plus"
                 label="New workflow"
                 class="sidebar-section-action"

@@ -388,6 +388,26 @@ export interface WorkflowValidationSummary {
   layers: string[][];
 }
 
+export interface WorkflowAuthoringMessage {
+  role: string;
+  content: string;
+}
+
+export interface WorkflowAuthoringValidation {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+  dag?: WorkflowValidationSummary;
+}
+
+export interface WorkflowAuthoringTurnResult {
+  sessionId: string;
+  assistantMessage: string;
+  draft?: Workflow;
+  validation: WorkflowAuthoringValidation;
+  messages: WorkflowAuthoringMessage[];
+}
+
 export interface TerminalStart {
   sessionId: string;
   cwd: string;
