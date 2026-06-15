@@ -31,6 +31,7 @@
 - **Incident JSONL store:** append/list/dismiss/clear for structured incidents at `{data_local}/openflow/incidents.jsonl` via `FileIncidentStore` and `IncidentStore` port.
 - **Incident recorder:** map `ToolError`, `AgentError`, and `BackendError` to durable `IncidentRecord`s via `IncidentRecorder` and `incident_from_tool_error`.
 - **Incident from telemetry:** map `RunTelemetry` failure events (`ToolCompleted` errors, `ToolDenied`, `NodeErrored`, `NodeFailed`, `SubagentFailed`, `Error`) to `IncidentRecord` via `incident_from_execution_event`.
+- **Run-scoped incident capture:** `RunCoordinator` now assigns per-run `run_id`s and records incident records from execution events before state projection.
 - **Incident domain model:** structured `IncidentRecord` with severity, category, scope, and camelCase IPC serialization in `orchestration::incident`.
 - **Project terminal:** add a Terminal dock tab backed by a native PTY session, xterm.js rendering, project-cwd startup, resize handling, and app-close cleanup.
 - **Chat file references:** type `@` in the chat composer to search project files (gitignore-aware), pick files as `@{path}` tokens, and include bounded UTF-8 file contents in kickoff and paused-node chat submissions.

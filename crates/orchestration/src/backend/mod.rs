@@ -1,11 +1,13 @@
 use crate::adapters::storage::agent_store::FileAgentStore;
 use crate::adapters::storage::app_workflow_store::FileWorkflowStore;
+use crate::adapters::storage::incident_store::FileIncidentStore;
 use crate::adapters::storage::project_store::FileProjectStore;
 use crate::adapters::storage::project_workflow_store::FileProjectWorkflowStore;
 use crate::adapters::storage::settings_store::FileSettingsStore;
 use crate::adapters::storage::skill_store::FileSkillCatalog;
 use crate::agent::library::AgentLibrary;
 use crate::agent::ports::AgentStore;
+use crate::incident::IncidentRecorder;
 use crate::project::ports::{Project, ProjectStore};
 use crate::project::registry::ProjectRegistry;
 use crate::run::coordinator::{RunCoordinator, RunStartParams};
@@ -19,6 +21,7 @@ use crate::terminal::{TerminalEvent, TerminalManager, TerminalStart};
 use crate::workflow::catalog::WorkflowCatalog;
 use crate::workflow::ports::{ProjectWorkflowStore, WorkflowStore};
 use engine::{CallableAgent, Node, Workflow};
+use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedReceiver;
 
 pub use crate::api::{
@@ -44,6 +47,7 @@ pub struct AppBackend {
     projects: ProjectRegistry,
     settings: SettingsFacade,
     runs: RunCoordinator,
+    incidents: Arc<IncidentRecorder>,
     terminal: TerminalManager,
     /// Keeps an owned runtime alive for tests and non-Tauri entrypoints.
     _owned_runtime: Option<tokio::runtime::Runtime>,
@@ -52,15 +56,24 @@ pub struct AppBackend {
 impl AppBackend {
     #[must_use]
     pub fn new(deps: AppBackendDeps, owned_runtime: Option<tokio::runtime::Runtime>) -> Self {
+        let incidents = Arc::new(IncidentRecorder::new(Arc::new(FileIncidentStore::new(
+            FileIncidentStore::default_path(),
+        ))));
         Self {
             workflows: WorkflowCatalog::new(deps.workflow_store, deps.project_workflow_store),
             agents: AgentLibrary::new(deps.agent_store),
             projects: ProjectRegistry::new(deps.project_store),
             settings: SettingsFacade::new(deps.settings_store, deps.skill_catalog, deps.env),
-            runs: RunCoordinator::new(deps.runtime_handle),
+            runs: RunCoordinator::new(deps.runtime_handle, incidents.clone()),
+            incidents,
             terminal: TerminalManager::new(),
             _owned_runtime: owned_runtime,
         }
+    }
+
+    #[must_use]
+    pub fn incidents(&self) -> &IncidentRecorder {
+        self.incidents.as_ref()
     }
 
     #[must_use]

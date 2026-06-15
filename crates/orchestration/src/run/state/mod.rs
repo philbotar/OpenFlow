@@ -68,6 +68,8 @@ pub struct ToolArtifactSummary {
 #[serde(rename_all = "camelCase")]
 pub struct WorkflowRunState {
     pub active: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_id: Option<String>,
     pub awaiting_node_id: Option<NodeId>,
     #[serde(default)]
     pub awaiting_node_ids: Vec<NodeId>,
@@ -101,6 +103,7 @@ impl WorkflowRunState {
             .collect();
         Self {
             active: true,
+            run_id: None,
             awaiting_node_id: None,
             awaiting_node_ids: Vec::new(),
             active_manual_node_id: None,

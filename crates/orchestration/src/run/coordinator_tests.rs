@@ -1,10 +1,17 @@
 use super::*;
+use crate::adapters::storage::incident_store::FileIncidentStore;
+use crate::incident::{IncidentRecorder, IncidentScope};
+use engine::NodeId;
 use std::fs;
+use std::sync::Arc;
+use tempfile::tempdir;
 
 fn seeded_session(artifact_root: PathBuf) -> RunSession {
     RunSession {
         workflow: None,
         run_state: None,
+        run_id: None,
+        project_id: None,
         execution_cwd: None,
         entrypoint: None,
         artifact_root: Some(artifact_root),
@@ -74,4 +81,51 @@ fn finish_run_session_tolerates_missing_artifact_root() {
     let mut session = seeded_session(PathBuf::from("/tmp/openflow-missing-artifact-root-test"));
     finish_run_session(&mut session);
     assert!(session.artifact_root.is_none());
+}
+
+#[tokio::test]
+async fn apply_execution_event_records_tool_failure_incident() {
+    let dir = tempdir().expect("tempdir");
+    let store = Arc::new(FileIncidentStore::new(dir.path().join("incidents.jsonl")));
+    let incidents = Arc::new(IncidentRecorder::new(store));
+    let coordinator =
+        RunCoordinator::new_with_incidents(tokio::runtime::Handle::current(), incidents.clone());
+
+    let workflow = Workflow::new("wf-incident");
+    let expected_workflow_id = workflow.id.to_string();
+    let mut run_state = WorkflowRunState::running_for_workflow(&workflow);
+    run_state.run_id = Some("run-incident-1".to_string());
+    let (action_tx, _action_rx) = tokio::sync::mpsc::unbounded_channel();
+    coordinator
+        .test_seed_session(workflow, run_state, action_tx)
+        .await;
+
+    coordinator
+        .apply_execution_event(ExecutionEvent::ToolCompleted {
+            node_id: NodeId("node-1".to_string()),
+            tool_call_id: "tool-call-1".to_string(),
+            tool_name: "read".to_string(),
+            content: "[not_found] file missing — use project file references".to_string(),
+            is_error: true,
+            output_meta: None,
+            artifact_ids: vec![],
+        })
+        .await
+        .expect("apply event");
+
+    let listed = incidents.list_unresolved(10).expect("list incidents");
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].code, "tool.not_found");
+    match &listed[0].scope {
+        IncidentScope::Node {
+            run_id,
+            workflow_id,
+            node_id,
+        } => {
+            assert_eq!(run_id, "run-incident-1");
+            assert_eq!(workflow_id, &expected_workflow_id);
+            assert_eq!(node_id, &NodeId("node-1".to_string()));
+        }
+        scope => panic!("expected node scope, got {scope:?}"),
+    }
 }

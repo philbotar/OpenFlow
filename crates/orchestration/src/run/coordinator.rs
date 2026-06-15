@@ -1,5 +1,6 @@
 use crate::api::FileEditPreview;
 use crate::error::BackendError;
+use crate::incident::{incident_from_execution_event, IncidentContext, IncidentRecorder};
 use crate::run::execution::{
     apply_event_to_run_state, new_artifact_root, record_entrypoint_message, record_user_input,
     resolve_execution_cwd, spawn_interactive_workflow_run, ExecutionAction, ExecutionEvent,
@@ -21,6 +22,7 @@ use std::time::Duration;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
 
 /// Clears session-scoped resources when a run becomes inactive.
 fn finish_run_session(session: &mut RunSession) {
@@ -52,6 +54,8 @@ fn clear_artifact_root(session: &mut RunSession) {
 struct RunSession {
     workflow: Option<Workflow>,
     run_state: Option<WorkflowRunState>,
+    run_id: Option<String>,
+    project_id: Option<String>,
     execution_cwd: Option<PathBuf>,
     entrypoint: Option<String>,
     artifact_root: Option<PathBuf>,
@@ -82,9 +86,9 @@ pub struct RunStartParams<'a> {
     pub env: &'a ProviderEnv,
 }
 
-#[derive(Debug)]
 pub struct RunCoordinator {
     runtime_handle: tokio::runtime::Handle,
+    incidents: Arc<IncidentRecorder>,
     session: Mutex<RunSession>,
 }
 
@@ -94,12 +98,15 @@ mod coordinator_tests;
 
 impl RunCoordinator {
     #[must_use]
-    pub fn new(runtime_handle: tokio::runtime::Handle) -> Self {
+    pub fn new(runtime_handle: tokio::runtime::Handle, incidents: Arc<IncidentRecorder>) -> Self {
         Self {
             runtime_handle,
+            incidents,
             session: Mutex::new(RunSession {
                 workflow: None,
                 run_state: None,
+                run_id: None,
+                project_id: None,
                 execution_cwd: None,
                 entrypoint: None,
                 artifact_root: None,
@@ -114,6 +121,15 @@ impl RunCoordinator {
                 node_interrupts: None,
             }),
         }
+    }
+
+    #[cfg(test)]
+    #[must_use]
+    pub fn new_with_incidents(
+        runtime_handle: tokio::runtime::Handle,
+        incidents: Arc<IncidentRecorder>,
+    ) -> Self {
+        Self::new(runtime_handle, incidents)
     }
 
     /// # Errors
@@ -195,7 +211,10 @@ impl RunCoordinator {
         );
 
         let mut session = self.session.lock().await;
+        session.run_id = Some(Uuid::new_v4().to_string());
+        session.project_id = None;
         let mut initial_state = WorkflowRunState::running_for_workflow(&workflow);
+        initial_state.run_id = session.run_id.clone();
         if let Some(text) = entrypoint.clone().filter(|t| !t.trim().is_empty()) {
             if let Ok(layers) = execution_layers(&workflow) {
                 if let Some(root_id) = layers.first().and_then(|layer| layer.first()) {
@@ -330,11 +349,13 @@ impl RunCoordinator {
         );
 
         let mut session = self.session.lock().await;
+        let run_id = session.run_id.clone();
         let run_state = session
             .run_state
             .as_mut()
             .ok_or(BackendError::NoContinuableRun)?;
         run_state.active = true;
+        run_state.run_id = run_id;
         let resumed_state = run_state.clone();
         session.workflow = Some(workflow);
         session.entrypoint = entrypoint;
@@ -514,6 +535,18 @@ impl RunCoordinator {
     ) -> Result<WorkflowRunState, BackendError> {
         let mut session = self.session.lock().await;
         let workflow = session.workflow.clone().ok_or(BackendError::NoActiveRun)?;
+        let incident_context = IncidentContext {
+            run_id: session.run_id.clone(),
+            workflow_id: Some(workflow.id.to_string()),
+            project_id: session.project_id.clone(),
+            node_id: None,
+            node_label: None,
+        };
+        if let Some(record) = incident_from_execution_event(&event, &incident_context) {
+            if let Err(error) = self.incidents.record(record) {
+                log::warn!("failed to record execution incident: {error}");
+            }
+        }
         let run_state = session
             .run_state
             .as_mut()
@@ -808,6 +841,8 @@ impl RunCoordinator {
         action_tx: UnboundedSender<ExecutionAction>,
     ) {
         let mut session = self.session.lock().await;
+        session.run_id = run_state.run_id.clone();
+        session.project_id = None;
         session.workflow = Some(workflow);
         session.run_state = Some(run_state);
         session.action_tx = Some(action_tx);
