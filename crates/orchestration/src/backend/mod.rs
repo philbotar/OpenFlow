@@ -30,8 +30,8 @@ use tokio::sync::mpsc::UnboundedReceiver;
 
 pub use crate::api::{
     AgentDefinitionSummary, FileEditPreview, IncidentSummary, ProjectFileReference,
-    ProjectFileReferenceContent, ProviderReadiness, WorkflowAuthoringTurnResult,
-    WorkflowListItem, WorkflowValidationSummary,
+    ProjectFileReferenceContent, ProviderReadiness, WorkflowAuthoringTurnResult, WorkflowListItem,
+    WorkflowValidationSummary,
 };
 pub use crate::error::BackendError;
 
@@ -54,7 +54,7 @@ pub struct AppBackend {
     runs: RunCoordinator,
     incidents: Arc<IncidentRecorder>,
     terminal: TerminalManager,
-    workflow_authoring: parking_lot::Mutex<WorkflowAuthoringService>,
+    workflow_authoring: WorkflowAuthoringService,
     /// Keeps an owned runtime alive for tests and non-Tauri entrypoints.
     _owned_runtime: Option<tokio::runtime::Runtime>,
 }
@@ -79,7 +79,7 @@ impl AppBackend {
             runs: RunCoordinator::new(deps.runtime_handle, incidents.clone()),
             incidents,
             terminal: TerminalManager::new(),
-            workflow_authoring: parking_lot::Mutex::new(WorkflowAuthoringService::new()),
+            workflow_authoring: WorkflowAuthoringService::new(),
             _owned_runtime: owned_runtime,
         }
     }
@@ -294,9 +294,7 @@ impl AppBackend {
     }
 
     pub fn start_workflow_authoring(&self, base_workflow: Option<Workflow>) -> String {
-        self.workflow_authoring
-            .lock()
-            .start_session(base_workflow)
+        self.workflow_authoring.start_session(base_workflow)
     }
 
     pub async fn workflow_authoring_turn(
@@ -313,7 +311,6 @@ impl AppBackend {
         )?;
         let ai = providers::create_provider(provider_config);
         self.workflow_authoring
-            .lock()
             .send_turn(&session_id, message, settings, &ai)
             .await
             .map_err(BackendError::PreviewFailed)

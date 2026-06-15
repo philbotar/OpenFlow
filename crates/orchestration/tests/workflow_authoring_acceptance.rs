@@ -8,7 +8,7 @@ async fn live_authoring_turn_produces_valid_dag() {
         return;
     }
 
-    let mut service = WorkflowAuthoringService::new();
+    let service = WorkflowAuthoringService::new();
     let session_id = service.start_session(None);
     let settings = AppSettings::default();
     let provider_config = orchestration::settings::provider::resolve_provider_config(
@@ -29,5 +29,8 @@ async fn live_authoring_turn_produces_valid_dag() {
         .expect("authoring turn");
 
     assert!(result.validation.valid, "{:?}", result.validation.errors);
-    assert!(result.draft.as_ref().is_some_and(|draft| draft.nodes.len() >= 3));
+    assert!(result
+        .draft
+        .as_ref()
+        .is_some_and(|draft| draft.nodes.len() >= 3));
 }

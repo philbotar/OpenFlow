@@ -12,8 +12,10 @@ use engine::{
 };
 use serde_json::json;
 use std::collections::HashMap;
+use std::sync::Arc;
 use uuid::Uuid;
 
+#[derive(Clone)]
 pub struct WorkflowAuthoringSession {
     pub id: String,
     pub messages: Vec<WorkflowAuthoringMessage>,
@@ -21,50 +23,66 @@ pub struct WorkflowAuthoringSession {
 }
 
 pub struct WorkflowAuthoringService {
-    sessions: HashMap<String, WorkflowAuthoringSession>,
+    sessions: Arc<tokio::sync::Mutex<HashMap<String, WorkflowAuthoringSession>>>,
 }
 
 impl WorkflowAuthoringService {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            sessions: HashMap::new(),
+            sessions: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
         }
     }
 
-    pub fn start_session(&mut self, base_workflow: Option<Workflow>) -> String {
+    pub fn start_session(&self, base_workflow: Option<Workflow>) -> String {
         let id = Uuid::new_v4().to_string();
-        self.sessions.insert(
-            id.clone(),
-            WorkflowAuthoringSession {
-                id: id.clone(),
-                messages: Vec::new(),
-                current_draft: base_workflow,
-            },
-        );
+        let session = WorkflowAuthoringSession {
+            id: id.clone(),
+            messages: Vec::new(),
+            current_draft: base_workflow,
+        };
+        if let Ok(mut sessions) = self.sessions.try_lock() {
+            sessions.insert(id.clone(), session);
+        } else {
+            self.sessions.blocking_lock().insert(id.clone(), session);
+        }
         id
     }
 
-    pub fn get_session(&self, session_id: &str) -> Option<&WorkflowAuthoringSession> {
-        self.sessions.get(session_id)
+    pub fn get_session(&self, session_id: &str) -> Option<WorkflowAuthoringSession> {
+        self.sessions
+            .try_lock()
+            .ok()
+            .and_then(|sessions| sessions.get(session_id).cloned())
+            .or_else(|| self.sessions.blocking_lock().get(session_id).cloned())
     }
 
     pub async fn send_turn<A: AiPort + Send + Sync>(
-        &mut self,
+        &self,
         session_id: &str,
         user_message: String,
         settings: &AppSettings,
         ai: &A,
     ) -> Result<WorkflowAuthoringTurnResult, String> {
-        let session = self
-            .sessions
-            .get_mut(session_id)
-            .ok_or_else(|| "authoring session not found".to_string())?;
+        {
+            let mut sessions = self.sessions.lock().await;
+            let session = sessions
+                .get_mut(session_id)
+                .ok_or_else(|| "authoring session not found".to_string())?;
+            session.messages.push(WorkflowAuthoringMessage {
+                role: "user".to_string(),
+                content: user_message.clone(),
+            });
+        }
 
-        session.messages.push(WorkflowAuthoringMessage {
-            role: "user".to_string(),
-            content: user_message.clone(),
-        });
+        let snapshot = {
+            let sessions = self.sessions.lock().await;
+            let session = sessions
+                .get(session_id)
+                .ok_or_else(|| "authoring session not found".to_string())?;
+            (session.messages.clone(), session.current_draft.clone())
+        };
+        let (messages, current_draft) = snapshot;
 
         let model = settings
             .active_profile()
@@ -72,8 +90,7 @@ impl WorkflowAuthoringService {
             .clone()
             .unwrap_or_else(|| "gpt-5.5".to_string());
 
-        let transcript: Vec<AgentTranscriptItem> = session
-            .messages
+        let transcript: Vec<AgentTranscriptItem> = messages
             .iter()
             .map(|message| match message.role.as_str() {
                 "assistant" => AgentTranscriptItem::AssistantMessage {
@@ -85,8 +102,7 @@ impl WorkflowAuthoringService {
             })
             .collect();
 
-        let base_context = session
-            .current_draft
+        let base_context = current_draft
             .as_ref()
             .map(|workflow| serde_json::to_string_pretty(workflow).unwrap_or_default())
             .unwrap_or_default();
@@ -125,16 +141,14 @@ impl WorkflowAuthoringService {
                 return Ok(WorkflowAuthoringTurnResult {
                     session_id: session_id.to_string(),
                     assistant_message: need.assistant_message,
-                    draft: session.current_draft.clone(),
+                    draft: current_draft,
                     validation: WorkflowAuthoringValidation {
                         valid: false,
-                        errors: vec![
-                            "Model requested clarification instead of a draft".to_string(),
-                        ],
+                        errors: vec!["Model requested clarification instead of a draft".to_string()],
                         warnings: Vec::new(),
                         dag: None,
                     },
-                    messages: session.messages.clone(),
+                    messages,
                 });
             }
             AgentTurnOutcome::ToolCalls(_) => {
@@ -155,24 +169,33 @@ impl WorkflowAuthoringService {
         let draft: WorkflowAuthoringDraft = serde_json::from_value(draft_value.clone())
             .map_err(|error| format!("invalid workflowDraft: {error}"))?;
 
-        let base_id = session.current_draft.as_ref().map(|w| w.id.clone());
+        let base_id = current_draft.as_ref().map(|workflow| workflow.id.clone());
         let mut workflow = materialize_authoring_draft(draft, base_id, &model);
         layout_workflow_by_layers(&mut workflow)
             .map_err(|error| format!("layout failed: {error}"))?;
         let validation = validate_authoring_workflow(&workflow);
 
-        session.messages.push(WorkflowAuthoringMessage {
+        let mut messages = messages;
+        messages.push(WorkflowAuthoringMessage {
             role: "assistant".to_string(),
             content: assistant_message.clone(),
         });
-        session.current_draft = Some(workflow.clone());
+
+        {
+            let mut sessions = self.sessions.lock().await;
+            let session = sessions
+                .get_mut(session_id)
+                .ok_or_else(|| "authoring session not found".to_string())?;
+            session.messages = messages.clone();
+            session.current_draft = Some(workflow.clone());
+        }
 
         Ok(WorkflowAuthoringTurnResult {
             session_id: session_id.to_string(),
             assistant_message,
             draft: Some(workflow),
             validation,
-            messages: session.messages.clone(),
+            messages,
         })
     }
 }
