@@ -8,8 +8,8 @@
 mod run_sleep_guard;
 
 use orchestration::backend::{
-    AppBackend, BackendError, FileEditPreview, ProviderReadiness, WorkflowListItem,
-    WorkflowValidationSummary,
+    AppBackend, BackendError, FileEditPreview, ProviderReadiness, WorkflowAuthoringTurnResult,
+    WorkflowListItem, WorkflowValidationSummary,
 };
 use orchestration::run::execution::ExecutionEvent;
 use orchestration::run::state::WorkflowRunState;
@@ -232,6 +232,34 @@ fn validate_workflow(
     workflow: Workflow,
 ) -> Result<WorkflowValidationSummary, CommandError> {
     Ok(backend.validate_workflow(&workflow)?)
+}
+
+/// Tauri command: Start a workflow authoring chat session.
+#[tauri::command]
+fn start_workflow_authoring(
+    backend: tauri::State<AppBackend>,
+    base_workflow: Option<Workflow>,
+) -> Result<String, CommandError> {
+    Ok(backend.start_workflow_authoring(base_workflow))
+}
+
+/// Tauri command: Send a message in a workflow authoring session.
+#[tauri::command]
+async fn workflow_authoring_turn(
+    backend: tauri::State<'_, AppBackend>,
+    session_id: String,
+    message: String,
+    settings: AppSettings,
+    transient_api_key: Option<String>,
+) -> Result<WorkflowAuthoringTurnResult, CommandError> {
+    Ok(backend
+        .workflow_authoring_turn(
+            session_id,
+            message,
+            &settings,
+            transient_api_key.as_deref(),
+        )
+        .await?)
 }
 
 /// Tauri command: Create an agent node from a saved agent definition.
@@ -633,6 +661,8 @@ pub fn run() {
             delete_provider_api_key,
             resolve_provider_readiness,
             validate_workflow,
+            start_workflow_authoring,
+            workflow_authoring_turn,
             create_agent_node,
             start_run,
             continue_run,

@@ -32,6 +32,13 @@ fn backend() -> (AppBackend, tempfile::TempDir) {
 }
 
 #[test]
+fn start_workflow_authoring_returns_session_id() {
+    let (backend, _dir) = backend();
+    let session_id = backend.start_workflow_authoring(None);
+    assert!(!session_id.is_empty());
+}
+
+#[test]
 fn create_and_load_workflow_round_trips() {
     let (backend, _dir) = backend();
     let workflow = backend

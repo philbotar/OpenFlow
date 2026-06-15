@@ -20,6 +20,7 @@ use crate::settings::model::AppSettings;
 use crate::settings::ports::{SettingsStore, SkillCatalog, SkillSummary};
 use crate::settings::provider::ProviderEnv;
 use crate::terminal::{TerminalEvent, TerminalManager, TerminalStart};
+use crate::workflow::authoring::WorkflowAuthoringService;
 use crate::workflow::catalog::WorkflowCatalog;
 use crate::workflow::ports::{ProjectWorkflowStore, WorkflowStore};
 use engine::{CallableAgent, Node, Workflow};
@@ -29,7 +30,8 @@ use tokio::sync::mpsc::UnboundedReceiver;
 
 pub use crate::api::{
     AgentDefinitionSummary, FileEditPreview, IncidentSummary, ProjectFileReference,
-    ProjectFileReferenceContent, ProviderReadiness, WorkflowListItem, WorkflowValidationSummary,
+    ProjectFileReferenceContent, ProviderReadiness, WorkflowAuthoringTurnResult,
+    WorkflowListItem, WorkflowValidationSummary,
 };
 pub use crate::error::BackendError;
 
@@ -52,6 +54,7 @@ pub struct AppBackend {
     runs: RunCoordinator,
     incidents: Arc<IncidentRecorder>,
     terminal: TerminalManager,
+    workflow_authoring: parking_lot::Mutex<WorkflowAuthoringService>,
     /// Keeps an owned runtime alive for tests and non-Tauri entrypoints.
     _owned_runtime: Option<tokio::runtime::Runtime>,
 }
@@ -76,6 +79,7 @@ impl AppBackend {
             runs: RunCoordinator::new(deps.runtime_handle, incidents.clone()),
             incidents,
             terminal: TerminalManager::new(),
+            workflow_authoring: parking_lot::Mutex::new(WorkflowAuthoringService::new()),
             _owned_runtime: owned_runtime,
         }
     }
@@ -287,6 +291,32 @@ impl AppBackend {
         workflow: &Workflow,
     ) -> Result<WorkflowValidationSummary, BackendError> {
         self.settings.validate_workflow(workflow)
+    }
+
+    pub fn start_workflow_authoring(&self, base_workflow: Option<Workflow>) -> String {
+        self.workflow_authoring
+            .lock()
+            .start_session(base_workflow)
+    }
+
+    pub async fn workflow_authoring_turn(
+        &self,
+        session_id: String,
+        message: String,
+        settings: &AppSettings,
+        transient_api_key: Option<&str>,
+    ) -> Result<WorkflowAuthoringTurnResult, BackendError> {
+        let provider_config = crate::settings::provider::resolve_provider_config(
+            settings,
+            transient_api_key,
+            self.settings.env(),
+        )?;
+        let ai = providers::create_provider(provider_config);
+        self.workflow_authoring
+            .lock()
+            .send_turn(&session_id, message, settings, &ai)
+            .await
+            .map_err(BackendError::PreviewFailed)
     }
 
     pub fn load_projects(&self) -> Result<Vec<Project>, BackendError> {
