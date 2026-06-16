@@ -37,6 +37,8 @@ pub enum BackendError {
     RunChannelClosed,
     #[error("file edit preview failed: {0}")]
     PreviewFailed(String),
+    #[error("workflow authoring failed: {0}")]
+    AuthoringFailed(String),
     #[error("git operation failed: {0}")]
     GitFailed(String),
     #[error("edit batch {0} not found")]
@@ -51,4 +53,6 @@ pub enum BackendError {
     CheckpointWorkflowMismatch,
     #[error("checkpoint is incompatible with the current workflow: {0}")]
     CheckpointIncompatible(String),
+    #[error("schedule error: {0}")]
+    Schedule(String),
 }

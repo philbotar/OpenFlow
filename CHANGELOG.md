@@ -4,12 +4,24 @@
 
 ### Fixed
 
+- **Run stop / chat restart:** stop orphaned runs when the execution task is already gone; ignore stale run events after stop; re-read canonical run state before emitting UI updates so force-stop no longer leaves chat stuck on "Starting workflow…".
+- **Workflow chat:** switching workflows clears the chat panel and restores each workflow's own run history, drafts, and continuable-run controls instead of showing the previous workflow's conversation.
+- **Workflow canvas:** stop `focusChatNode` tick spam on repeated run-state events and unchanged node selection — breaks the `fitView` feedback loop that triggered "Maximum update depth exceeded"; skip viewport panning when chat-focus mode collapses the canvas; replace `onSelectionChange` with click handlers and ignore programmatic `select` changes to break the Solid↔React Flow selection sync loop; bail out of node/edge reconcile when data is unchanged; fix Solid/React canvas host initial render race.
+- **Workflow authoring errors:** map AI turn failures to `workflow authoring failed` instead of mislabeling them as file edit preview errors.
+- **Chat composer busy state:** remove the broken `is-busy` pseudo-element border animation that rendered a blue bar over the input; keep the send-button spinner and a subtle border highlight instead.
+- **Submit-output normalization:** nest flat nested-object schema fields under their parent property when models omit the `output` wrapper, including when fields are nested inside an existing `output` object.
+- **Workflow authoring parsing:** accept flat draft fields and `workflow_draft` aliases when models omit the `workflowDraft` wrapper; tighten the authoring system prompt with an explicit required shape.
+- **Workflow authoring clarification:** disable `request_user_input` for authoring turns, forbid clarifying questions in the system prompt, and retry once with draft-required feedback when a model still pauses for input.
+- **Workflow authoring submit-output:** retry up to three times with corrective feedback when the model's `openflow_submit_node_output` call is malformed, matching interactive run retry behavior.
 - Settings bootstrap creates timestamped `.bak` files instead of clobbering; write errors propagate
 - JSON atomic writes fsync temp file before rename
 
 ### Changed
 
-- **Backend IPC incident capture:** `AppBackend` now records explicit run-action `BackendError`s (`start_run`, `continue_run`, `submit_user_input`, `submit_tool_approval`) before returning them, and exposes backend incident list/dismiss accessors for IPC wiring.
+- **Schedule sidebar:** new Schedule screen for cron-based workflow runs while the desktop app is open; persists schedules on `WorkflowSettings.schedule`; orchestration owns cron evaluation and due-run claiming; desktop timer bridge starts scheduled runs and emits schedule status events; workflow picker opens in a modal like the node picker instead of an inline list.
+- **Terminal tab chrome:** replace the path + large Stop toolbar with a compact Codex-style session tab (folder name, inline stop icon, new-terminal control); full cwd stays on hover only; `+` opens additional PTY sessions instead of blocking on an existing one.
+- **Workflow authoring UI:** "Build with AI" is a routed screen inside the main shell (sidebar + topbar stay visible) instead of a full-screen modal overlay; composer stays typeable while provider readiness loads and shows an inline warning when the provider is not ready; live read-only canvas preview appears beside the chat once the AI proposes a workflow with nodes.
+- **Terminal theme:** xterm background, foreground, and selection colors follow the inspector panel surface (`--panel-surface`) instead of a hardcoded dark palette.
 - **Run trace dark mode:** trace list/detail panels and status pills use theme variables instead of hardcoded light backgrounds.
 - **Sidebar workflows chevron:** move collapse control to the right of the label (before the new-workflow button); show on section hover only.
 - **Dock panel tabs:** restyle Overview / Chat / Run trace switcher to flat Cursor-like buttons — 4px radius, no border or shadow, subtle hover fill.
@@ -18,7 +30,9 @@
 
 ### Documentation
 
-- **Crate AGENTS.md:** add architecture, standards, and patterns guides for `engine`, `providers`, `orchestration`, `desktop`, and `ui`; move CallableAgent deep dive to `docs/sections/orchestration/callable-agents.md`; scope each crate guide with `globs: crates/{name}/**`.
+- **ROADMAP.md:** [Programmatic / non-AI nodes](docs/ROADMAP.md#programmatic--non-ai-nodes) — queue item #25 expanded with Code/Transform/Http node kinds, engine `CallProgrammatic` branch, and sandboxed script execution. [Workflow orchestration & reinvoke](docs/ROADMAP.md#workflow-orchestration--reinvoke) — new queue item #35; child `invoke_workflow` runs, foreach-over-repo-files batch pattern, in-app `.flow/scripts/` driver, and partial `reinvoke_from_node`; promoted from deferred multi-run orchestration.
+- **ROADMAP.md:** [Run insights & self-learning](docs/ROADMAP.md#run-insights--self-learning) — queue item #27; post-run insight extraction, human approve/dismiss gate, workflow/project/node-scoped injection into future runs; insight taxonomy, storage layout, and dependency on run persistence (#24). Renumbered queue items #28–#34.
+- **OMP parity plans (2026-06-15):** add implementation plans for live bash/jobs/terminal, MCP external tools, browser tool, eval tool, and run persistence under `docs/superpowers/plans/`; update read parity plan status (Task 0 done).
 - **ROADMAP.md:** audit queue and detail specs against the codebase — mark chat presentation, thinking/reasoning, transcript correctness (T9–T12), in-session continue, T19, global chat status dots, and node completion NC-11/NC-12 as Done or in progress where shipped.
 - **ROADMAP.md:** [Node handoff artifacts & output review](docs/ROADMAP.md#node-handoff-artifacts--output-review) — queue item #17; per-node `plan.md` (or custom) under `.flow/runs/{run_id}/handoffs/{node_id}/`; per-node opt-in review gate before downstream handoff; in-app plan review UI modeled on `tools/plan-review.html`. Renumbered queue items #18–#33.
 - **ROADMAP.md:** [Node completion](#node-completion) acceptance criteria (NC-1–NC-14) — submit contract, upstream gate, chat summary bubble, trace output, and remaining T10/checkpoint gaps; linked from queue item #5.
@@ -29,7 +43,9 @@
 
 ### Added
 
+- **OMP read tool parity:** `tool/read/` module with OMP-style selectors (`:raw`, `:N-M`, `:N+M`, multi-range), structural summaries for bare code reads, depth-limited directory listings, and unified rendering for local/URL/artifact paths.
 - **Natural language workflow builder:** ChatGPT-style **Build with AI** overlay — describe workflows in conversation, see DAG + semantic validation after each turn, apply valid drafts to the editor.
+- **Tool retry & resilience (T20–T21):** transient tool failures retry per workflow `retry_policy` before surfacing `is_error` results; `ToolRetrying` telemetry; engine fills missing tool-batch results so cancelled/interrupted tools resume `CallAi` instead of aborting the run.
 - **Persistent error reporting (backend slice, UI deferred):** structured incidents now persist in `{data_local}/openflow/incidents.jsonl` with run/node scope; `RunCoordinator::apply_execution_event` records tool/node/subagent/run execution failures; backend IPC errors plus terminal start and workflow/settings persistence failures are captured; retention pruning (`incident_retention_max`) and incident lifecycle commands (`list_incidents`, `dismiss_incident`, `clear_resolved_incidents`) ship through backend + Tauri.
 - **Incident IPC (no UI):** `IncidentSummary` DTO, `list_incident_summaries` on `AppBackend`, and `list_incidents` / `dismiss_incident` Tauri commands for unresolved incident list and dismiss.
 - **Incident retention policy:** `AppSettings.incident_retention_max` (default 500); `IncidentRecorder` prunes oldest resolved then oldest overall after append; `clear_resolved_incidents` on `AppBackend` and desktop IPC.

@@ -1,24 +1,52 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
-import { createEffect, onCleanup, onMount, Show } from "solid-js";
+import Plus from "lucide-solid/icons/plus";
+import Square from "lucide-solid/icons/square";
+import { createEffect, For, onCleanup, onMount, Show } from "solid-js";
 import { useAppContext } from "../context/AppContext";
+import { readTerminalThemeColors } from "../lib/theme";
+import { ICON_STROKE_WIDTH } from "../lib/utils";
 
 const DEFAULT_COLS = 80;
 const DEFAULT_ROWS = 24;
+
+function terminalTabLabel(cwd: string | undefined): string {
+  if (!cwd) return "Terminal";
+  const normalized = cwd.replace(/\/+$/, "");
+  return normalized.split("/").filter(Boolean).pop() ?? cwd;
+}
 
 export function TerminalPanel() {
   const ctx = useAppContext();
   let host: HTMLDivElement | undefined;
   let terminal: Terminal | undefined;
   let fitAddon: FitAddon | undefined;
-  let lastSessionId: string | null = null;
+  let displayedSessionId: string | null = null;
   let writtenOutputLength = 0;
 
   const fitAndResize = () => {
     if (!terminal || !fitAddon) return;
     fitAddon.fit();
     void ctx.handleTerminalResize(terminal.cols, terminal.rows);
+  };
+
+  const syncDisplayedSession = (sessionId: string | null) => {
+    if (!terminal || sessionId === displayedSessionId) return;
+    displayedSessionId = sessionId;
+    writtenOutputLength = 0;
+    terminal.reset();
+    if (!sessionId) return;
+    const buffered = ctx.terminalOutputFor(sessionId);
+    if (buffered) {
+      terminal.write(buffered);
+      writtenOutputLength = buffered.length;
+    }
+  };
+
+  const applyTerminalTheme = () => {
+    if (!terminal?.options) return;
+    terminal.options.theme = readTerminalThemeColors();
   };
 
   onMount(() => {
@@ -29,21 +57,26 @@ export function TerminalPanel() {
       fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
       fontSize: 12,
       scrollback: 5000,
-      theme: {
-        background: "#101114",
-        foreground: "#f3f4f6",
-        cursor: "#f3f4f6",
-        selectionBackground: "#4b5563",
-      },
+      theme: readTerminalThemeColors(),
     });
     fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
     terminal.open(host);
     terminal.onData((data) => {
-      void ctx.handleTerminalInput(data);
+      const sessionId = ctx.activeTerminalSessionId();
+      if (sessionId) {
+        void ctx.handleTerminalInput(sessionId, data);
+      }
     });
     fitAddon.fit();
-    void ctx.handleOpenTerminal(terminal.cols || DEFAULT_COLS, terminal.rows || DEFAULT_ROWS);
+    const cols = terminal.cols || DEFAULT_COLS;
+    const rows = terminal.rows || DEFAULT_ROWS;
+    if (ctx.terminalSessions().length === 0) {
+      void ctx.handleOpenTerminal(cols, rows);
+    } else {
+      syncDisplayedSession(ctx.activeTerminalSessionId());
+      void ctx.handleTerminalResize(cols, rows);
+    }
 
     const observer = new ResizeObserver(() => fitAndResize());
     observer.observe(host);
@@ -53,26 +86,25 @@ export function TerminalPanel() {
       terminal?.dispose();
       terminal = undefined;
       fitAddon = undefined;
-      lastSessionId = null;
+      displayedSessionId = null;
       writtenOutputLength = 0;
     });
   });
 
   createEffect(() => {
-    const event = ctx.terminalSession();
-    if (!event || !terminal) return;
-    if (lastSessionId !== event.sessionId) {
-      lastSessionId = event.sessionId;
-      writtenOutputLength = 0;
-      terminal.reset();
-      terminal.writeln(`OpenFlow terminal: ${event.cwd}`);
-      terminal.writeln("");
-    }
+    ctx.resolvedTheme();
+    applyTerminalTheme();
   });
 
   createEffect(() => {
-    const output = ctx.terminalOutput();
-    if (!terminal || output.length <= writtenOutputLength) return;
+    syncDisplayedSession(ctx.activeTerminalSessionId());
+  });
+
+  createEffect(() => {
+    const sessionId = ctx.activeTerminalSessionId();
+    const output = sessionId ? ctx.terminalOutputFor(sessionId) : "";
+    if (!terminal || !sessionId || sessionId !== displayedSessionId) return;
+    if (output.length <= writtenOutputLength) return;
     terminal.write(output.slice(writtenOutputLength));
     writtenOutputLength = output.length;
   });
@@ -84,22 +116,64 @@ export function TerminalPanel() {
     }
   });
 
+  const openNewTerminal = () => {
+    if (!terminal) return;
+    void ctx.handleOpenTerminal(terminal.cols || DEFAULT_COLS, terminal.rows || DEFAULT_ROWS);
+  };
+
   return (
     <div class="terminal-layout">
-      <div class="terminal-toolbar">
-        <div>
-          <div class="eyebrow">Terminal</div>
-          <div class="terminal-cwd">
-            {ctx.terminalSession()?.cwd ?? ctx.executionCwdForActiveWorkflow() ?? "Process cwd"}
-          </div>
+      <div class="terminal-tab-bar">
+        <div class="terminal-tabs">
+          <For each={ctx.terminalSessions()}>
+            {(session) => (
+              <div
+                class="terminal-tab"
+                classList={{ active: ctx.activeTerminalSessionId() === session.sessionId }}
+              >
+                <button
+                  type="button"
+                  class="terminal-tab-stop"
+                  onClick={() => void ctx.handleStopTerminal(session.sessionId)}
+                  title="Stop terminal"
+                  aria-label={`Stop ${terminalTabLabel(session.cwd)} terminal`}
+                >
+                  <Square
+                    width={11}
+                    height={11}
+                    aria-hidden="true"
+                    absoluteStrokeWidth
+                    strokeWidth={ICON_STROKE_WIDTH}
+                  />
+                </button>
+                <button
+                  type="button"
+                  class="terminal-tab-select"
+                  onClick={() => ctx.handleSelectTerminalSession(session.sessionId)}
+                  title={session.cwd}
+                >
+                  <span class="terminal-tab-label">{terminalTabLabel(session.cwd)}</span>
+                </button>
+              </div>
+            )}
+          </For>
+          <button
+            type="button"
+            class="terminal-tab-add"
+            disabled={ctx.terminalStarting()}
+            onClick={openNewTerminal}
+            title="New terminal"
+            aria-label="New terminal"
+          >
+            <Plus
+              width={14}
+              height={14}
+              aria-hidden="true"
+              absoluteStrokeWidth
+              strokeWidth={ICON_STROKE_WIDTH}
+            />
+          </button>
         </div>
-        <button
-          class="secondary-button small ghost"
-          disabled={!ctx.terminalSession()}
-          onClick={() => void ctx.handleStopTerminal()}
-        >
-          Stop
-        </button>
       </div>
       <div class="terminal-host-shell">
         <div ref={host} class="terminal-host" />

@@ -225,6 +225,34 @@ export function withDefaultReasoningFromProfile(
   };
 }
 
+/** Match persisted backend run state to the workflow whose nodes it describes. */
+export function inferRunStateWorkflowId(
+  runState: WorkflowRunState | null | undefined,
+  workflows: Workflow[],
+): string | null {
+  if (!runState) {
+    return null;
+  }
+  const nodeIds = new Set([
+    ...Object.keys(runState.statusByNode),
+    ...Object.keys(runState.chatLogs),
+  ]);
+  if (nodeIds.size === 0) {
+    return null;
+  }
+
+  for (const workflow of workflows) {
+    const workflowNodeIds = workflow.nodes.map((node) => node.id);
+    if (workflowNodeIds.length === 0) {
+      continue;
+    }
+    if (workflowNodeIds.every((id) => nodeIds.has(id))) {
+      return workflow.id;
+    }
+  }
+  return null;
+}
+
 export function createIdleRunState(workflow: Workflow): WorkflowRunState {
   const statusByNode = workflow.nodes.reduce<Record<NodeId, AgentStatus>>((acc, node) => {
     acc[node.id] = "idle";

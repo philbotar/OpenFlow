@@ -39,6 +39,8 @@ type WorkflowCanvasProps = {
   statusByNode: WorkflowCanvasStatusByNode | null;
   subagentsByNode: WorkflowCanvasSubagentsByNode | null;
   chatFocusNode?: { nodeId: NodeId; tick: number } | null;
+  viewportEnabled?: boolean;
+  previewMode?: boolean;
   runActive?: boolean;
   colorMode?: "light" | "dark";
   onSelectNode: (nodeId: NodeId | null) => void;
@@ -86,16 +88,22 @@ function CanvasViewportController(props: {
   workflowId: string | null;
   selectedNodeId: NodeId | null;
   chatFocusNode?: { nodeId: NodeId; tick: number } | null;
+  viewportEnabled?: boolean;
 }) {
   const { fitView } = useReactFlow();
   const nodesInitialized = useNodesInitialized();
+  const nodesReadyRef = useRef(false);
   const previousWorkflowIdRef = useRef<string | null>(null);
   const previousSelectedNodeIdRef = useRef<NodeId | null>(null);
   const previousChatFocusTickRef = useRef(0);
   const suppressNodeFocusUntilRef = useRef(0);
 
+  if (nodesInitialized) {
+    nodesReadyRef.current = true;
+  }
+
   useEffect(() => {
-    if (!nodesInitialized) {
+    if (!nodesReadyRef.current || props.viewportEnabled === false) {
       return;
     }
 
@@ -140,9 +148,9 @@ function CanvasViewportController(props: {
     });
   }, [
     fitView,
-    nodesInitialized,
     props.chatFocusNode,
     props.selectedNodeId,
+    props.viewportEnabled,
     props.workflowId,
   ]);
 
@@ -240,11 +248,15 @@ export function reconcileFlowNodes(
   }
 
   const currentById = new Map(currentNodes.map((node) => [node.id, node]));
+  let changed = incomingNodes.length !== currentNodes.length;
+  const result: WorkflowCanvasNode[] = [];
 
-  return incomingNodes.map((incoming) => {
+  for (const incoming of incomingNodes) {
     const current = currentById.get(incoming.id);
     if (!current) {
-      return incoming;
+      result.push(incoming);
+      changed = true;
+      continue;
     }
 
     const position = current.dragging ? current.position : incoming.position;
@@ -262,16 +274,20 @@ export function reconcileFlowNodes(
       current.width === incoming.width &&
       current.height === incoming.height
     ) {
-      return current;
+      result.push(current);
+      continue;
     }
 
-    return {
+    changed = true;
+    result.push({
       ...current,
       ...incoming,
       position,
       data,
-    };
-  });
+    });
+  }
+
+  return changed ? result : currentNodes;
 }
 
 export function reconcileFlowEdges(
@@ -283,32 +299,53 @@ export function reconcileFlowEdges(
   }
 
   const currentById = new Map(currentEdges.map((edge) => [edge.id, edge]));
+  let changed = incomingEdges.length !== currentEdges.length;
+  const result: WorkflowCanvasEdge[] = [];
 
-  return incomingEdges.map((incoming) => {
+  for (const incoming of incomingEdges) {
     const current = currentById.get(incoming.id);
     if (!current) {
-      return incoming;
+      result.push(incoming);
+      changed = true;
+      continue;
     }
 
     if (
       current.selected === incoming.selected &&
       current.source === incoming.source &&
-      current.target === incoming.target
+      current.target === incoming.target &&
+      current.animated === incoming.animated
     ) {
-      return current;
+      result.push(current);
+      continue;
     }
 
-    return {
+    changed = true;
+    result.push({
       ...current,
       ...incoming,
-    };
-  });
+    });
+  }
+
+  return changed ? result : currentEdges;
 }
 
 export function withoutNodeRemovals(
   changes: NodeChange<WorkflowCanvasNode>[],
 ): NodeChange<WorkflowCanvasNode>[] {
   return changes.filter((change) => change.type !== "remove");
+}
+
+export function withoutProgrammaticNodeChanges(
+  changes: NodeChange<WorkflowCanvasNode>[],
+): NodeChange<WorkflowCanvasNode>[] {
+  return changes.filter((change) => change.type !== "remove" && change.type !== "select");
+}
+
+export function withoutProgrammaticEdgeChanges(
+  changes: EdgeChange<WorkflowCanvasEdge>[],
+): EdgeChange<WorkflowCanvasEdge>[] {
+  return changes.filter((change) => change.type !== "select");
 }
 
 export function forEachNodePositionChange(
@@ -344,11 +381,22 @@ export function selectionIdsFromChange(
   };
 }
 
+export function shouldEmitSelectionChange(
+  current: { selectedNodeId: NodeId | null; selectedEdgeId: EdgeId | null },
+  next: { selectedNodeId: NodeId | null; selectedEdgeId: EdgeId | null },
+): boolean {
+  return (
+    current.selectedNodeId !== next.selectedNodeId ||
+    current.selectedEdgeId !== next.selectedEdgeId
+  );
+}
+
 export function isValidCanvasConnection(connection: { source: string | null; target: string | null }) {
   return connection.source !== null && connection.target !== null && connection.source !== connection.target;
 }
 
 export function WorkflowCanvas(props: WorkflowCanvasProps) {
+  const previewMode = props.previewMode ?? false;
   const externalNodes = useMemo<WorkflowCanvasNode[]>(
     () =>
       buildFlowNodes(
@@ -379,31 +427,49 @@ export function WorkflowCanvas(props: WorkflowCanvasProps) {
     [props.graph, props.selectedEdgeId, runActive, colorMode],
   );
 
+  const flowEdgeDefaults = useMemo(() => defaultEdgeOptions(colorMode), [colorMode]);
+
   // Use xyflow hooks for state management
   const [nodes, setNodes, onNodesChange] = useNodesState<WorkflowCanvasNode>(externalNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<WorkflowCanvasEdge>(externalEdges);
 
   // Sync external updates to internal state
   useEffect(() => {
-    setNodes((current) => reconcileFlowNodes(current, externalNodes));
+    setNodes((current) => {
+      const next = reconcileFlowNodes(current, externalNodes);
+      return next === current ? current : next;
+    });
   }, [externalNodes, setNodes]);
 
   useEffect(() => {
-    setEdges((current) => reconcileFlowEdges(current, externalEdges));
+    setEdges((current) => {
+      const next = reconcileFlowEdges(current, externalEdges);
+      return next === current ? current : next;
+    });
   }, [externalEdges, setEdges]);
 
-  const handleSelectionChange = useCallback(
-    (selection: OnSelectionChangeParams<WorkflowCanvasNode, WorkflowCanvasEdge>) => {
-      const { selectedNodeId, selectedEdgeId } = selectionIdsFromChange(selection);
-      props.onSelectEdge(selectedEdgeId);
-      props.onSelectNode(selectedNodeId);
+  const handleNodeClick = useCallback(
+    (_event: React.MouseEvent, node: WorkflowCanvasNode) => {
+      props.onSelectEdge(null);
+      props.onSelectNode(node.id);
+    },
+    [props.onSelectEdge, props.onSelectNode],
+  );
+
+  const handleEdgeClick = useCallback(
+    (_event: React.MouseEvent, edge: WorkflowCanvasEdge) => {
+      props.onSelectNode(null);
+      props.onSelectEdge(edge.id);
     },
     [props.onSelectEdge, props.onSelectNode],
   );
 
   const handleNodesChange = useCallback(
     (changes: NodeChange<WorkflowCanvasNode>[]) => {
-      const allowedChanges = withoutNodeRemovals(changes);
+      if (previewMode) {
+        return;
+      }
+      const allowedChanges = withoutProgrammaticNodeChanges(changes);
       if (allowedChanges.length === 0) {
         return;
       }
@@ -411,39 +477,45 @@ export function WorkflowCanvas(props: WorkflowCanvasProps) {
       onNodesChange(allowedChanges);
       forEachNodePositionChange(allowedChanges, props.onUpdateNodePosition);
     },
-    [onNodesChange, props.onUpdateNodePosition],
+    [onNodesChange, previewMode, props.onUpdateNodePosition],
   );
 
   const handleBeforeDelete = useCallback(() => Promise.resolve(false), []);
 
   const handleEdgesChange = useCallback(
     (changes: EdgeChange<WorkflowCanvasEdge>[]) => {
-      onEdgesChange(changes);
+      if (previewMode) {
+        return;
+      }
+      const allowedChanges = withoutProgrammaticEdgeChanges(changes);
+      if (allowedChanges.length > 0) {
+        onEdgesChange(allowedChanges);
+      }
       forEachRemovedEdge(changes, props.onDeleteEdge);
     },
-    [onEdgesChange, props.onDeleteEdge],
+    [onEdgesChange, previewMode, props.onDeleteEdge],
   );
 
   const handleConnect = useCallback(
     (connection: Connection) => {
-      if (!connection.source || !connection.target) {
+      if (previewMode || !connection.source || !connection.target) {
         return;
       }
 
       props.onCreateEdge(connection.source, connection.target);
     },
-    [props.onCreateEdge],
+    [previewMode, props.onCreateEdge],
   );
 
   const handleReconnect = useCallback(
     (edge: WorkflowCanvasEdge, connection: Connection) => {
-      if (!connection.source || !connection.target) {
+      if (previewMode || !connection.source || !connection.target) {
         return;
       }
 
       props.onReconnectEdge(edge.id, connection.source, connection.target);
     },
-    [props.onReconnectEdge],
+    [previewMode, props.onReconnectEdge],
   );
 
   const handlePaneClick = useCallback(() => {
@@ -464,13 +536,14 @@ export function WorkflowCanvas(props: WorkflowCanvasProps) {
           nodeTypes={NODE_TYPES}
           colorMode={colorMode}
           proOptions={{ hideAttribution: true }}
-          defaultEdgeOptions={defaultEdgeOptions(colorMode)}
+          defaultEdgeOptions={flowEdgeDefaults}
           onNodesChange={handleNodesChange}
           onEdgesChange={handleEdgesChange}
           onConnect={handleConnect}
           onReconnect={handleReconnect}
           onPaneClick={handlePaneClick}
-          onSelectionChange={handleSelectionChange}
+          onNodeClick={handleNodeClick}
+          onEdgeClick={handleEdgeClick}
           onBeforeDelete={handleBeforeDelete}
           deleteKeyCode={null}
           fitView={false}
@@ -479,15 +552,18 @@ export function WorkflowCanvas(props: WorkflowCanvasProps) {
           maxZoom={1.8}
           panOnScroll
           selectionOnDrag={false}
-          edgesReconnectable
+          nodesDraggable={!previewMode}
+          nodesConnectable={!previewMode}
+          edgesReconnectable={!previewMode}
           isValidConnection={isValidCanvasConnection}
-          snapToGrid={true}
+          snapToGrid={!previewMode}
           snapGrid={[16, 16]}
         >
           <CanvasViewportController
             workflowId={props.graph?.id ?? null}
             selectedNodeId={props.selectedNodeId}
             chatFocusNode={props.chatFocusNode}
+            viewportEnabled={props.viewportEnabled ?? true}
           />
           <Background
             gap={22}
@@ -495,11 +571,13 @@ export function WorkflowCanvas(props: WorkflowCanvasProps) {
             color={backgroundDotForTheme(colorMode)}
             variant={BackgroundVariant.Dots}
           />
-          <Panel position="top-left" className="workflow-flow-panel">
-            <button type="button" className="secondary-button small workflow-flow-add-button" onClick={handleAddNode}>
-              Add node
-            </button>
-          </Panel>
+          {!previewMode ? (
+            <Panel position="top-left" className="workflow-flow-panel">
+              <button type="button" className="secondary-button small workflow-flow-add-button" onClick={handleAddNode}>
+                Add node
+              </button>
+            </Panel>
+          ) : null}
           <Controls showInteractive={false} position="bottom-left" />
         </ReactFlow>
       </ReactFlowProvider>

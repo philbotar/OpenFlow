@@ -3,7 +3,7 @@ export type WorkflowId = string;
 export type EdgeId = string;
 
 export type BottomTab = "overview" | "chat" | "trace" | "terminal";
-export type Screen = "editor" | "settings" | "agents";
+export type Screen = "editor" | "settings" | "agents" | "workflow-authoring" | "schedule";
 
 export interface RetryPolicy {
   max_attempts: number;
@@ -14,6 +14,18 @@ export interface WorkflowSchedule {
   cron: string;
   enabled: boolean;
   timezone: string;
+}
+
+export interface ScheduleStatus {
+  workflowId: string;
+  workflowName: string;
+  enabled: boolean;
+  cron: string;
+  timezone: string;
+  nextRunAt: string | null;
+  lastRunAt: string | null;
+  lastSkippedAt: string | null;
+  lastError: string | null;
 }
 
 export interface WorkflowSettings {
@@ -39,11 +51,13 @@ export interface Project {
 export interface ProjectFileReference {
   path: string;
   displayPath: string;
+  kind: "file" | "directory";
   sizeBytes: number;
 }
 
 export interface ProjectFileReferenceContent {
   path: string;
+  kind: "file" | "directory";
   content: string;
   truncated: boolean;
   sizeBytes: number;
@@ -435,4 +449,5 @@ export interface BootstrapPayload {
   settings: AppSettings;
   runState: WorkflowRunState | null;
   runContinuable?: boolean;
+  scheduleStatuses?: ScheduleStatus[];
 }

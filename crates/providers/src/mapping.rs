@@ -25,6 +25,10 @@ pub fn build_node_context(request: &AgentRequest) -> String {
 }
 
 pub fn should_allow_user_input(request: &AgentRequest) -> bool {
+    // Workflow authoring must always return a structured draft, never pause for clarification.
+    if request.workflow_id == "workflow-authoring" {
+        return false;
+    }
     request.transcript.iter().any(|item| {
         matches!(
             item,
@@ -180,44 +184,104 @@ pub fn transcript_to_chat_messages(request: &AgentRequest) -> Result<Vec<Value>,
     Ok(messages)
 }
 
+/// When models flatten nested object schema fields, group them under the parent property.
+fn nest_flat_fields_into_object_properties(
+    map: &mut serde_json::Map<String, Value>,
+    output_schema: Option<&Value>,
+) {
+    let Some(properties) = output_schema
+        .and_then(|schema| schema.get("properties"))
+        .and_then(Value::as_object)
+    else {
+        return;
+    };
+
+    for (prop_name, prop_schema) in properties {
+        if map.contains_key(prop_name) {
+            continue;
+        }
+        let Some(nested_props) = prop_schema.get("properties").and_then(Value::as_object) else {
+            continue;
+        };
+        let nested_keys: std::collections::HashSet<_> = nested_props.keys().cloned().collect();
+        if nested_keys.is_empty() {
+            continue;
+        }
+        let present: Vec<String> = map
+            .keys()
+            .filter(|key| nested_keys.contains(*key))
+            .cloned()
+            .collect();
+        if present.is_empty() {
+            continue;
+        }
+        let required_ok = prop_schema
+            .get("required")
+            .and_then(Value::as_array)
+            .is_none_or(|required| {
+                required
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .all(|field| map.contains_key(field))
+            });
+        if !required_ok {
+            continue;
+        }
+        let mut nested = serde_json::Map::new();
+        for key in present {
+            if let Some(value) = map.remove(&key) {
+                nested.insert(key, value);
+            }
+        }
+        map.insert(prop_name.clone(), Value::Object(nested));
+    }
+}
+
 /// When models omit the `output` wrapper, lift top-level schema fields under `output`.
 #[must_use]
 pub fn normalize_submit_output_arguments(value: Value, output_schema: Option<&Value>) -> Value {
-    if value.get("output").is_some() {
-        return value;
-    }
-    let Value::Object(mut map) = value else {
-        return value;
-    };
-    let assistant_message = map.remove("assistant_message");
-    if map.is_empty() {
-        return json!({ "assistant_message": assistant_message });
-    }
-
-    let schema_keys = output_schema
-        .and_then(|schema| schema.get("properties"))
-        .and_then(Value::as_object)
-        .map(|properties| {
-            properties
-                .keys()
-                .cloned()
-                .collect::<std::collections::HashSet<_>>()
-        });
-
-    let should_wrap = schema_keys
-        .as_ref()
-        .is_none_or(|keys| !map.is_empty() && map.keys().all(|key| keys.contains(key)));
-    if !should_wrap {
-        if let Some(assistant_message) = assistant_message {
-            map.insert("assistant_message".to_string(), assistant_message);
+    if let Value::Object(mut outer) = value {
+        if let Some(Value::Object(inner)) = outer.get("output").cloned() {
+            let mut inner = inner;
+            nest_flat_fields_into_object_properties(&mut inner, output_schema);
+            outer.insert("output".to_string(), Value::Object(inner));
+            return Value::Object(outer);
         }
-        return Value::Object(map);
+
+        let assistant_message = outer.remove("assistant_message");
+        if outer.is_empty() {
+            return json!({ "assistant_message": assistant_message });
+        }
+
+        nest_flat_fields_into_object_properties(&mut outer, output_schema);
+
+        let schema_keys = output_schema
+            .and_then(|schema| schema.get("properties"))
+            .and_then(Value::as_object)
+            .map(|properties| {
+                properties
+                    .keys()
+                    .cloned()
+                    .collect::<std::collections::HashSet<_>>()
+            });
+
+        let should_wrap = schema_keys
+            .as_ref()
+            .is_none_or(|keys| !outer.is_empty() && outer.keys().all(|key| keys.contains(key)));
+        if !should_wrap {
+            if let Some(assistant_message) = assistant_message {
+                outer.insert("assistant_message".to_string(), assistant_message);
+            }
+            return Value::Object(outer);
+        }
+
+        return json!({
+            "output": Value::Object(outer),
+            "assistant_message": assistant_message
+        });
     }
 
-    json!({
-        "output": Value::Object(map),
-        "assistant_message": assistant_message
-    })
+    value
 }
 
 pub fn parse_internal_tool_outcome(
@@ -723,6 +787,80 @@ mod tests {
     }
 
     #[test]
+    fn internal_submit_output_nests_flat_object_schema_fields() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "assistantMessage": { "type": "string" },
+                "workflowDraft": {
+                    "type": "object",
+                    "properties": {
+                        "name": { "type": "string" },
+                        "nodes": { "type": "array" },
+                        "edges": { "type": "array" }
+                    },
+                    "required": ["name", "nodes", "edges"]
+                }
+            },
+            "required": ["assistantMessage", "workflowDraft"]
+        });
+        let outcome = parse_internal_tool_outcome(
+            SUBMIT_OUTPUT_TOOL,
+            r#"{"assistantMessage":"Created flow","name":"My Flow","nodes":[],"edges":[],"assistant_message":null}"#,
+            None,
+            "test",
+            Some(&schema),
+        )
+        .expect("expected outcome");
+        let AgentTurnOutcome::Completed(success) = outcome else {
+            panic!("expected completed outcome");
+        };
+        assert_eq!(
+            success.output,
+            json!({
+                "assistantMessage": "Created flow",
+                "workflowDraft": {
+                    "name": "My Flow",
+                    "nodes": [],
+                    "edges": []
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn internal_submit_output_nests_flat_fields_inside_output_wrapper() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "assistantMessage": { "type": "string" },
+                "workflowDraft": {
+                    "type": "object",
+                    "properties": {
+                        "name": { "type": "string" },
+                        "nodes": { "type": "array" },
+                        "edges": { "type": "array" }
+                    },
+                    "required": ["name", "nodes", "edges"]
+                }
+            },
+            "required": ["assistantMessage", "workflowDraft"]
+        });
+        let outcome = parse_internal_tool_outcome(
+            SUBMIT_OUTPUT_TOOL,
+            r#"{"output":{"assistantMessage":"Created flow","name":"My Flow","nodes":[],"edges":[]},"assistant_message":null}"#,
+            None,
+            "test",
+            Some(&schema),
+        )
+        .expect("expected outcome");
+        let AgentTurnOutcome::Completed(success) = outcome else {
+            panic!("expected completed outcome");
+        };
+        assert!(success.output.get("workflowDraft").is_some());
+    }
+
+    #[test]
     fn internal_submit_output_does_not_wrap_unrelated_top_level_fields() {
         let schema = json!({
             "type": "object",
@@ -789,5 +927,36 @@ mod tests {
         assert_eq!(batch.tool_calls.len(), 1);
         assert_eq!(batch.tool_calls[0].name, "search");
         assert_eq!(batch.assistant_message, None);
+    }
+
+    #[test]
+    fn workflow_authoring_disallows_request_user_input_tool() {
+        use engine::{NodeId, WorkflowId};
+
+        let request = AgentRequest {
+            workflow_id: WorkflowId::from("workflow-authoring"),
+            node_id: NodeId::from("authoring"),
+            node_label: "Workflow authoring".to_string(),
+            model: "gpt-5.5".to_string(),
+            system_messages: vec!["design workflows".to_string()],
+            task_prompt: "Create a draft.".to_string(),
+            input: json!({}),
+            output_schema: json!({ "type": "object" }),
+            tool_config: engine::NodeToolConfig::default(),
+            available_tools: Vec::new(),
+            transcript: vec![AgentTranscriptItem::UserMessage {
+                content: "Build a planner".to_string(),
+            }],
+            model_attempt: 1,
+            reasoning_effort: None,
+            reasoning_budget_tokens: None,
+        };
+
+        assert!(!should_allow_user_input(&request));
+        let tool_names: Vec<_> = all_tool_specs(&request)
+            .into_iter()
+            .map(|tool| tool.name)
+            .collect();
+        assert_eq!(tool_names, vec![SUBMIT_OUTPUT_TOOL.to_string()]);
     }
 }

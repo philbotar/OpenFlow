@@ -411,6 +411,64 @@ fn stop_run_is_idempotent_when_inactive() {
 }
 
 #[test]
+fn stop_run_aborts_orphaned_active_session_without_handle() {
+    let (backend, _dir) = backend();
+    backend.block_on_test(async {
+        let workflow = default_workflow("Workflow");
+        let mut run_state = WorkflowRunState::running_for_workflow(&workflow);
+        run_state.run_id = Some("orphaned-run".to_string());
+        backend
+            .runs
+            .test_seed_session(workflow, run_state, {
+                let (tx, _) = tokio::sync::mpsc::unbounded_channel();
+                tx
+            })
+            .await;
+
+        let stopped = backend.stop_run().await.expect("stop orphaned run");
+        assert!(!stopped.active);
+        assert!(backend
+            .get_run_state()
+            .await
+            .is_some_and(|state| !state.active));
+    });
+}
+
+#[test]
+fn apply_execution_event_ignores_events_after_run_stopped() {
+    let (backend, _dir) = backend();
+    backend.block_on_test(async {
+        let workflow = default_workflow("Workflow");
+        let mut run_state = WorkflowRunState::running_for_workflow(&workflow);
+        run_state.run_id = Some("stopped-run".to_string());
+        backend
+            .runs
+            .test_seed_session(workflow, run_state, {
+                let (tx, _) = tokio::sync::mpsc::unbounded_channel();
+                tx
+            })
+            .await;
+
+        let stopped = backend.stop_run().await.expect("stop run");
+        assert!(!stopped.active);
+
+        let snapshot = backend
+            .apply_execution_event(ExecutionEvent::NodeQueued {
+                node_id: NodeId("idea".to_string()),
+                label: "Idea".to_string(),
+            })
+            .await
+            .expect("ignored stale event");
+
+        assert!(!snapshot.active);
+        assert!(snapshot
+            .run_trace
+            .iter()
+            .all(|entry| entry.node_id != NodeId("idea".to_string())));
+    });
+}
+
+#[test]
 fn submit_user_input_updates_snapshot_and_sends_action() {
     let (backend, _dir) = backend();
     backend.block_on_test(async {
@@ -677,4 +735,51 @@ fn read_project_file_references_returns_bounded_content() {
     assert_eq!(refs[0].path, "src/lib.rs");
     assert_eq!(refs[0].content, "pub fn value() -> u8 { 7 }\n");
     assert!(!refs[0].truncated);
+}
+
+#[test]
+fn saving_workflow_refreshes_schedule_statuses() {
+    let (backend, _dir) = backend();
+    let mut workflow = backend
+        .create_workflow("Scheduled".to_string())
+        .expect("create workflow");
+    workflow.settings.schedule = Some(engine::WorkflowSchedule {
+        cron: "*/15 * * * *".to_string(),
+        enabled: true,
+        timezone: "UTC".to_string(),
+    });
+
+    backend.save_workflow(workflow).expect("save workflow");
+
+    let statuses = backend.list_schedule_statuses();
+    assert_eq!(statuses.len(), 1);
+    assert_eq!(statuses[0].workflow_name, "Scheduled");
+    assert!(statuses[0].next_run_at.is_some());
+}
+
+#[test]
+fn due_schedule_candidate_uses_workflow_id() {
+    let (backend, _dir) = backend();
+    let mut workflow = backend
+        .create_workflow("Scheduled".to_string())
+        .expect("create workflow");
+    workflow.settings.schedule = Some(engine::WorkflowSchedule {
+        cron: "*/15 * * * *".to_string(),
+        enabled: true,
+        timezone: "UTC".to_string(),
+    });
+    let workflow_id = workflow.id.to_string();
+    backend.save_workflow(workflow).expect("save workflow");
+    backend
+        .refresh_schedules_at("2026-06-16T00:01:00Z".parse().expect("timestamp"))
+        .expect("refresh");
+
+    let candidate = backend
+        .block_on_test(
+            backend.claim_due_scheduled_run_at("2026-06-16T00:15:00Z".parse().expect("timestamp")),
+        )
+        .expect("claim result")
+        .expect("candidate");
+
+    assert_eq!(candidate.workflow_id, workflow_id);
 }

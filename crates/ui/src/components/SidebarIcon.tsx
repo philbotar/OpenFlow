@@ -1,3 +1,4 @@
+import CalendarClock from "lucide-solid/icons/calendar-clock";
 import Bot from "lucide-solid/icons/bot";
 import CircleCheck from "lucide-solid/icons/circle-check";
 import PencilLine from "lucide-solid/icons/pencil-line";
@@ -15,6 +16,7 @@ import { ICON_STROKE_WIDTH } from "../lib/utils";
 
 export type SidebarIconName =
   | "agents"
+  | "schedule"
   | "plus"
   | "sparkles"
   | "edit"
@@ -33,6 +35,15 @@ export function SidebarIcon(props: { name: SidebarIconName }) {
     case "agents":
       return (
         <Bot
+          class="sidebar-icon"
+          aria-hidden="true"
+          absoluteStrokeWidth
+          strokeWidth={ICON_STROKE_WIDTH}
+        />
+      );
+    case "schedule":
+      return (
+        <CalendarClock
           class="sidebar-icon"
           aria-hidden="true"
           absoluteStrokeWidth

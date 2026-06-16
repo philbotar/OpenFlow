@@ -79,6 +79,12 @@ export function Sidebar() {
           active={ctx.screen() === "agents"}
           onClick={ctx.handleOpenAgents}
         />
+        <SidebarNavButton
+          icon="schedule"
+          label="Schedule"
+          active={ctx.screen() === "schedule"}
+          onClick={ctx.handleOpenSchedule}
+        />
         <div class="sidebar-section-group">
           <div class="sidebar-section-header workflows-section-header">
             <div class="sidebar-section-label">Workflows</div>
@@ -101,6 +107,7 @@ export function Sidebar() {
                 icon="sparkles"
                 label="Build with AI"
                 class="sidebar-section-action"
+                active={ctx.screen() === "workflow-authoring"}
                 onClick={() => void ctx.handleOpenWorkflowAuthoring()}
               />
               <SidebarIconButton

@@ -328,5 +328,6 @@ Example: `FileAgentStore` currently in `adapters/storage/agent_store.rs` should 
 ## References
 
 - [CONTEXT.md](./CONTEXT.md) — Orchestration-specific terms and dependencies
-- [AGENTS.md](./crates/orchestration/AGENTS.md) — How agents work (hexagonal example)
+- [crates/orchestration/AGENTS.md](./crates/orchestration/AGENTS.md) — Orchestration crate orientation
+- [docs/sections/orchestration/callable-agents.md](./sections/orchestration/callable-agents.md) — CallableAgent domain deep dive
 - Hexagonal Architecture: [Alistair Cockburn's original](https://alistair.cockburn.us/hexagonal-architecture/)

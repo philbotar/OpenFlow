@@ -31,6 +31,9 @@ import type {
   WorkflowAuthoringMessage,
   WorkflowAuthoringValidation,
   WorkflowRunState,
+  Screen,
+  ScheduleStatus,
+  WorkflowSchedule,
 } from "../lib/types";
 import {
   activeProfile,
@@ -40,6 +43,7 @@ import {
   canSendIdleRunKickoff,
   createIdleRunState,
   GLOBAL_RUN_ENTRY_NODE_ID,
+  inferRunStateWorkflowId,
   isGlobalRunEntryNodeId,
   nextNodePlacement,
   isChatComposerBusy,
@@ -120,7 +124,7 @@ export function AppProvider(props: ParentProps) {
   const [activeWorkflowId, setActiveWorkflowId] = createSignal<string | null>(null);
   const [selectedNodeId, setSelectedNodeId] = createSignal<NodeId | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = createSignal<EdgeId | null>(null);
-  const [screen, setScreen] = createSignal<"editor" | "settings" | "agents">("editor");
+  const [screen, setScreen] = createSignal<Screen>("editor");
   const [settings, setSettings] = createSignal<AppSettings>(cloneSettings(EMPTY_SETTINGS));
   // Run state arrives as a freshly-deserialized snapshot on every execution
   // event (including each streaming token). Holding it in a store and applying
@@ -139,6 +143,10 @@ export function AppProvider(props: ParentProps) {
     }
     setRunStateStore("current", reconcile(normalized, { key: "id" }));
   };
+  const [runStateByWorkflowId, setRunStateByWorkflowId] = createStore<
+    Record<string, WorkflowRunState>
+  >({});
+  const [backendRunWorkflowId, setBackendRunWorkflowId] = createSignal<string | null>(null);
   const [readiness, setReadiness] = createSignal<{
     ready: boolean;
     provider: string;
@@ -149,13 +157,18 @@ export function AppProvider(props: ParentProps) {
   const [dockOpen, setDockOpen] = createSignal(true);
   const [dockHeight, setDockHeight] = createSignal(DEFAULT_DOCK_HEIGHT);
   const [chatFocusMode, setChatFocusMode] = createSignal(false);
-  const [terminalSession, setTerminalSession] = createSignal<TerminalStart | null>(null);
+  const [terminalSessions, setTerminalSessions] = createSignal<TerminalStart[]>([]);
+  const [activeTerminalSessionId, setActiveTerminalSessionId] = createSignal<string | null>(
+    null,
+  );
   const [terminalStarting, setTerminalStarting] = createSignal(false);
   const [terminalError, setTerminalError] = createSignal<string | null>(null);
-  const [terminalOutput, setTerminalOutput] = createSignal("");
+  const [terminalOutputs, setTerminalOutputs] = createSignal<Record<string, string>>({});
   const [selectedTraceIndex, setSelectedTraceIndex] = createSignal<number | null>(null);
   const [schemaText, setSchemaText] = createSignal("");
-  const [chatDrafts, setChatDrafts] = createStore<Record<string, string>>({});
+  const [chatDraftsByWorkflowId, setChatDraftsByWorkflowId] = createStore<
+    Record<string, Record<string, string>>
+  >({});
   const [chatFilterNodeId, setChatFilterNodeId] = createSignal<NodeId | null>(null);
   const [pickedLiveNodeId, setPickedLiveNodeId] = createSignal<NodeId | null>(null);
   const [chatSegmentOrder, setChatSegmentOrder] = createSignal<NodeId[]>([]);
@@ -179,7 +192,6 @@ export function AppProvider(props: ParentProps) {
   );
   const workflowsSectionExpanded = createMemo(() => !workflowsSectionHidden());
   const [workflowSettingsOpen, setWorkflowSettingsOpen] = createSignal(false);
-  const [workflowAuthoringOpen, setWorkflowAuthoringOpen] = createSignal(false);
   const [workflowAuthoringSessionId, setWorkflowAuthoringSessionId] = createSignal<
     string | null
   >(null);
@@ -192,6 +204,20 @@ export function AppProvider(props: ParentProps) {
     null,
   );
   const [workflowAuthoringBusy, setWorkflowAuthoringBusy] = createSignal(false);
+  const workflowAuthoringSessionReady = createMemo(
+    () => workflowAuthoringSessionId() !== null,
+  );
+
+  const resetWorkflowAuthoringSession = () => {
+    setWorkflowAuthoringSessionId(null);
+    setWorkflowAuthoringBusy(false);
+  };
+
+  createEffect(() => {
+    if (screen() !== "workflow-authoring" && workflowAuthoringSessionId() !== null) {
+      resetWorkflowAuthoringSession();
+    }
+  });
   const [editingWorkflowId, setEditingWorkflowId] = createSignal<string | null>(null);
   const [workflowNameDraft, setWorkflowNameDraft] = createSignal("");
   const [selectedAgentId, setSelectedAgentId] = createSignal<string | null>(null);
@@ -207,7 +233,11 @@ export function AppProvider(props: ParentProps) {
   const [availableSkills, setAvailableSkills] = createSignal<SkillSummary[]>([]);
   const [appReady, setAppReady] = createSignal(false);
   const [startingRun, setStartingRun] = createSignal(false);
-  const [continuableRun, setContinuableRun] = createSignal(false);
+  const [continuableRunBackend, setContinuableRunBackend] = createSignal(false);
+  const continuableRun = createMemo(
+    () => continuableRunBackend() && backendRunWorkflowId() === activeWorkflowId(),
+  );
+  const [scheduleStatuses, setScheduleStatuses] = createSignal<ScheduleStatus[]>([]);
   const [themePreference, setThemePreference] = createSignal<ThemePreference>(
     readStoredTheme(globalThis.localStorage),
   );
@@ -321,9 +351,24 @@ export function AppProvider(props: ParentProps) {
       setPickedLiveNodeId(null);
     }
   });
-  const chatDraft = (nodeId: NodeId) => chatDrafts[nodeId] ?? "";
+  const chatDraft = (nodeId: NodeId) => {
+    const workflowId = activeWorkflowId();
+    if (!workflowId) {
+      return "";
+    }
+    return chatDraftsByWorkflowId[workflowId]?.[nodeId] ?? "";
+  };
   const setChatDraft = (nodeId: NodeId, text: string) => {
-    setChatDrafts(nodeId, text);
+    const workflowId = activeWorkflowId();
+    if (!workflowId) {
+      return;
+    }
+    const existing = chatDraftsByWorkflowId[workflowId];
+    if (existing) {
+      setChatDraftsByWorkflowId(workflowId, nodeId, text);
+      return;
+    }
+    setChatDraftsByWorkflowId(workflowId, { [nodeId]: text });
   };
   const awaitingNodeIdsMemo = createMemo(() => {
     const state = runState();
@@ -379,7 +424,7 @@ export function AppProvider(props: ParentProps) {
       pendingKickoffText = null;
       try {
         const next = await desktop.submitUserInput(awaitingIds[0], text);
-        setRunState(next);
+        publishBackendRunState(next);
       } catch (error) {
         setError(normalizeError(error));
       }
@@ -474,8 +519,24 @@ export function AppProvider(props: ParentProps) {
     document.body.classList.remove("is-resizing-dock");
   };
 
+  const terminalOutputFor = (sessionId: string) => terminalOutputs()[sessionId] ?? "";
+
+  const removeTerminalSession = (sessionId: string) => {
+    setTerminalSessions((sessions) => {
+      const next = sessions.filter((session) => session.sessionId !== sessionId);
+      if (activeTerminalSessionId() === sessionId) {
+        setActiveTerminalSessionId(next.length > 0 ? next[next.length - 1].sessionId : null);
+      }
+      return next;
+    });
+    setTerminalOutputs((outputs) => {
+      const { [sessionId]: _removed, ...rest } = outputs;
+      return rest;
+    });
+  };
+
   const handleOpenTerminal = async (cols: number, rows: number) => {
-    if (terminalSession() || terminalStarting()) return;
+    if (terminalStarting()) return;
     setTerminalStarting(true);
     setTerminalError(null);
     try {
@@ -484,8 +545,9 @@ export function AppProvider(props: ParentProps) {
         cols,
         rows,
       );
-      setTerminalOutput("");
-      setTerminalSession(session);
+      setTerminalOutputs((outputs) => ({ ...outputs, [session.sessionId]: "" }));
+      setTerminalSessions((sessions) => [...sessions, session]);
+      setActiveTerminalSessionId(session.sessionId);
     } catch (error) {
       setTerminalError(normalizeError(error));
     } finally {
@@ -493,51 +555,65 @@ export function AppProvider(props: ParentProps) {
     }
   };
 
-  const handleTerminalInput = async (data: string) => {
-    const session = terminalSession();
-    if (!session) return;
+  const handleSelectTerminalSession = (sessionId: string) => {
+    if (!terminalSessions().some((session) => session.sessionId === sessionId)) return;
+    setActiveTerminalSessionId(sessionId);
+  };
+
+  const handleTerminalInput = async (sessionId: string, data: string) => {
+    if (!terminalSessions().some((session) => session.sessionId === sessionId)) return;
     try {
-      await desktop.writeTerminal(session.sessionId, data);
+      await desktop.writeTerminal(sessionId, data);
     } catch (error) {
       setTerminalError(normalizeError(error));
     }
   };
 
   const handleTerminalResize = async (cols: number, rows: number) => {
-    const session = terminalSession();
-    if (!session) return;
+    const sessionId = activeTerminalSessionId();
+    if (!sessionId) return;
     try {
-      await desktop.resizeTerminal(session.sessionId, cols, rows);
+      await desktop.resizeTerminal(sessionId, cols, rows);
     } catch (error) {
       setTerminalError(normalizeError(error));
     }
   };
 
-  const handleStopTerminal = async () => {
-    const session = terminalSession();
-    if (!session) return;
+  const handleStopTerminal = async (sessionId?: string) => {
+    const targets = sessionId
+      ? terminalSessions().filter((session) => session.sessionId === sessionId)
+      : terminalSessions();
+    if (targets.length === 0) return;
     try {
-      await desktop.stopTerminal(session.sessionId);
+      await Promise.all(targets.map((session) => desktop.stopTerminal(session.sessionId)));
     } catch (error) {
       setTerminalError(normalizeError(error));
     } finally {
-      setTerminalSession(null);
+      if (sessionId) {
+        removeTerminalSession(sessionId);
+        return;
+      }
+      setTerminalSessions([]);
+      setActiveTerminalSessionId(null);
+      setTerminalOutputs({});
     }
   };
 
   const handleTerminalEvent = (event: TerminalEvent) => {
-    const session = terminalSession();
-    if (!session || event.sessionId !== session.sessionId) return;
+    if (!terminalSessions().some((session) => session.sessionId === event.sessionId)) return;
     const { kind } = event;
     switch (kind.type) {
       case "output":
-        setTerminalOutput((current) => current + kind.data);
+        setTerminalOutputs((outputs) => ({
+          ...outputs,
+          [event.sessionId]: (outputs[event.sessionId] ?? "") + kind.data,
+        }));
         return;
       case "error":
         setTerminalError(kind.message);
         return;
       case "exit":
-        setTerminalSession(null);
+        removeTerminalSession(event.sessionId);
     }
   };
 
@@ -608,6 +684,69 @@ export function AppProvider(props: ParentProps) {
   };
 
   // ── Workspace init ────────────────────────────────────────────────────────
+  const cacheRunStateForWorkflow = (workflowId: string, state: WorkflowRunState) => {
+    setRunStateByWorkflowId(workflowId, normalizeRunState(state));
+  };
+
+  const publishBackendRunState = (nextRunState: WorkflowRunState) => {
+    const backendId = backendRunWorkflowId();
+    if (backendId) {
+      cacheRunStateForWorkflow(backendId, nextRunState);
+    }
+    if (activeWorkflowId() === backendId) {
+      setRunState(nextRunState);
+    }
+  };
+
+  const resetWorkflowChatUi = () => {
+    setChatFilterNodeId(null);
+    setPickedLiveNodeId(null);
+    setChatSegmentOrder([]);
+  };
+
+  const restoreRunStateForWorkflow = (workflow: Workflow) => {
+    const workflowId = workflow.id;
+    const backendId = backendRunWorkflowId();
+    const cached = runStateByWorkflowId[workflowId];
+
+    if (backendId === workflowId) {
+      setRunState(cached ?? createIdleRunState(workflow));
+      if (cached) {
+        return;
+      }
+      void desktop
+        .getRunState()
+        .then((live) => {
+          if (!live || activeWorkflowId() !== workflowId) {
+            return;
+          }
+          cacheRunStateForWorkflow(workflowId, live);
+          setRunState(live);
+        })
+        .catch(() => undefined);
+      return;
+    }
+    setRunState(cached ?? createIdleRunState(workflow));
+  };
+
+  const selectWorkflow = (workflow: Workflow) => {
+    const previousId = activeWorkflowId();
+    if (previousId && previousId !== workflow.id) {
+      const current = runState();
+      if (current) {
+        cacheRunStateForWorkflow(previousId, current);
+      }
+    }
+    setActiveWorkflowId(workflow.id);
+    setSelectedNodeId(workflow.nodes[0]?.id ?? null);
+    setSelectedEdgeId(null);
+    setEditingNodeId(null);
+    setNodeLabelDraft("");
+    setSelectedTraceIndex(null);
+    resetWorkflowChatUi();
+    restoreRunStateForWorkflow(workflow);
+  };
+
   const initializeWorkspace = async (
     initialWorkflows: Workflow[],
     initialAgents: AgentDefinition[],
@@ -625,12 +764,17 @@ export function AppProvider(props: ParentProps) {
     setAgents(initialAgents);
     setSelectedAgentId(initialAgents[0]?.id ?? null);
     setAgentSchemaDraft(initialAgents[0] ? prettyJson(initialAgents[0].output_schema) : "");
+    const backendId = inferRunStateWorkflowId(initialRunState, nextWorkflows);
+    setBackendRunWorkflowId(backendId);
+    if (initialRunState && backendId) {
+      cacheRunStateForWorkflow(backendId, initialRunState);
+    }
     setActiveWorkflowId(firstWorkflow.id);
     setSelectedNodeId(firstWorkflow.nodes[0]?.id ?? null);
     setSelectedEdgeId(null);
     setEditingNodeId(null);
     setNodeLabelDraft("");
-    setRunState(initialRunState ?? createIdleRunState(firstWorkflow));
+    restoreRunStateForWorkflow(firstWorkflow);
     setSettings(cloneSettings(initialSettings));
     await refreshReadiness(initialSettings);
   };
@@ -643,13 +787,8 @@ export function AppProvider(props: ParentProps) {
     const workflow = workflows().find((item) => item.id === workflowId);
     if (!workflow) return;
     closeAddNodePicker();
-    setActiveWorkflowId(workflow.id);
-    setSelectedNodeId(workflow.nodes[0]?.id ?? null);
-    setSelectedEdgeId(null);
-    setEditingNodeId(null);
-    setNodeLabelDraft("");
+    selectWorkflow(workflow);
     setScreen("editor");
-    setSelectedTraceIndex(null);
   };
 
   const expandProject = (projectId: string) => {
@@ -675,11 +814,7 @@ export function AppProvider(props: ParentProps) {
         expandProject(projectId);
         setSelectedProjectId(projectId);
       }
-      setActiveWorkflowId(workflow.id);
-      setSelectedNodeId(workflow.nodes[0]?.id ?? null);
-      setSelectedEdgeId(null);
-      setEditingNodeId(null);
-      setNodeLabelDraft("");
+      selectWorkflow(workflow);
       setScreen("editor");
       setSuccess("Created workflow");
     } catch (error) {
@@ -762,6 +897,38 @@ export function AppProvider(props: ParentProps) {
     setScreen("agents");
     if (!selectedAgentId() && agents().length > 0) {
       setSelectedAgentId(agents()[0].id);
+    }
+  };
+
+  const handleOpenSchedule = () => {
+    closeAddNodePicker();
+    setScreen("schedule");
+    void handleRefreshScheduleStatuses();
+  };
+
+  const handleRefreshScheduleStatuses = async () => {
+    try {
+      setScheduleStatuses(await desktop.refreshSchedules());
+    } catch (error) {
+      setError(normalizeError(error));
+    }
+  };
+
+  const handleSaveWorkflowSchedule = async (
+    workflowId: string,
+    schedule: WorkflowSchedule | null,
+  ) => {
+    const current = workflows().find((workflow) => workflow.id === workflowId);
+    if (!current) return;
+    const next = cloneWorkflow(current);
+    next.settings.schedule = schedule;
+    try {
+      const saved = await desktop.saveWorkflow(next);
+      setWorkflows(replaceWorkflow(workflows(), saved));
+      setScheduleStatuses(await desktop.refreshSchedules());
+      setSuccess(`Saved schedule for "${saved.name}"`);
+    } catch (error) {
+      setError(normalizeError(error));
     }
   };
 
@@ -1030,27 +1197,37 @@ export function AppProvider(props: ParentProps) {
   };
 
   const handleOpenWorkflowAuthoring = async (baseWorkflow?: Workflow) => {
+    resetWorkflowAuthoringSession();
+    setWorkflowAuthoringMessages([]);
+    setWorkflowAuthoringValidation(null);
+    setWorkflowAuthoringDraft(baseWorkflow ?? null);
+    setScreen("workflow-authoring");
+    void refreshReadiness();
     try {
       const sessionId = await desktop.startWorkflowAuthoring(baseWorkflow ?? null);
       setWorkflowAuthoringSessionId(sessionId);
-      setWorkflowAuthoringMessages([]);
-      setWorkflowAuthoringValidation(null);
-      setWorkflowAuthoringDraft(baseWorkflow ?? null);
-      setWorkflowAuthoringOpen(true);
     } catch (error) {
       setError(normalizeError(error));
+      setScreen("editor");
     }
   };
 
   const handleCloseWorkflowAuthoring = () => {
-    setWorkflowAuthoringOpen(false);
-    setWorkflowAuthoringSessionId(null);
-    setWorkflowAuthoringBusy(false);
+    resetWorkflowAuthoringSession();
+    setScreen("editor");
   };
 
   const handleWorkflowAuthoringSend = async (message: string) => {
     const sessionId = workflowAuthoringSessionId();
-    if (!sessionId || !message.trim() || workflowAuthoringBusy()) return;
+    if (!message.trim() || workflowAuthoringBusy()) return;
+    if (!sessionId) {
+      setError("Authoring session is not ready yet. Try opening Build with AI again.");
+      return;
+    }
+    if (readiness()?.ready !== true) {
+      setError(readiness()?.message ?? "Configure a provider in Settings first.");
+      return;
+    }
     setWorkflowAuthoringBusy(true);
     try {
       const result = await desktop.workflowAuthoringTurn(
@@ -1078,12 +1255,11 @@ export function AppProvider(props: ParentProps) {
     } else {
       setWorkflows([...workflows(), draft]);
     }
-    setActiveWorkflowId(draft.id);
+    selectWorkflow(draft);
     try {
       await desktop.saveWorkflow(draft);
-      handleCloseWorkflowAuthoring();
+      resetWorkflowAuthoringSession();
       setScreen("editor");
-      setSelectedNodeId(draft.nodes[0]?.id ?? null);
       setSuccess(`Applied workflow "${draft.name}"`);
     } catch (error) {
       setError(normalizeError(error));
@@ -1093,8 +1269,12 @@ export function AppProvider(props: ParentProps) {
   const [stoppingRun, setStoppingRun] = createSignal(false);
 
   const beginRunSession = (nextRunState: WorkflowRunState) => {
-    setRunState(nextRunState);
-    setContinuableRun(false);
+    const workflowId = activeWorkflowId();
+    if (workflowId) {
+      setBackendRunWorkflowId(workflowId);
+    }
+    publishBackendRunState(nextRunState);
+    setContinuableRunBackend(false);
     setSelectedTraceIndex(null);
     setDockOpen(true);
     setBottomTab("chat");
@@ -1104,9 +1284,9 @@ export function AppProvider(props: ParentProps) {
 
   const refreshContinuableRun = async () => {
     try {
-      setContinuableRun(await desktop.isRunContinuable());
+      setContinuableRunBackend(await desktop.isRunContinuable());
     } catch {
-      setContinuableRun(false);
+      setContinuableRunBackend(false);
     }
   };
 
@@ -1211,9 +1391,10 @@ export function AppProvider(props: ParentProps) {
   const handleStopRun = async () => {
     if (!runState()?.active || stoppingRun()) return;
     setStoppingRun(true);
+    pendingKickoffText = null;
     try {
       const nextRunState = await desktop.stopRun();
-      setRunState(nextRunState);
+      publishBackendRunState(nextRunState);
       await refreshContinuableRun();
       clearStatusToast();
     } catch (error) {
@@ -1244,8 +1425,8 @@ export function AppProvider(props: ParentProps) {
   const handleClearRunTrace = async () => {
     try {
       const nextRunState = await desktop.clearRunTrace();
-      if (nextRunState) setRunState(nextRunState);
-      setContinuableRun(false);
+      if (nextRunState) publishBackendRunState(nextRunState);
+      setContinuableRunBackend(false);
       setSelectedTraceIndex(null);
     } catch (error) {
       setError(normalizeError(error));
@@ -1261,7 +1442,7 @@ export function AppProvider(props: ParentProps) {
     try {
       const submittedText = await resolveChatSubmittedText(nodeId);
       const nextRunState = await desktop.submitUserInput(nodeId, submittedText);
-      setRunState(nextRunState);
+      publishBackendRunState(nextRunState);
       setChatDraft(nodeId, "");
     } catch (error) {
       setError(normalizeError(error));
@@ -1289,23 +1470,27 @@ export function AppProvider(props: ParentProps) {
   const handleToolApproval = async (approvalId: string, allow: boolean) => {
     try {
       const nextRunState = await desktop.submitToolApproval(approvalId, allow);
-      setRunState(nextRunState);
+      publishBackendRunState(nextRunState);
     } catch (error) {
       setError(normalizeError(error));
     }
   };
 
   const focusChatNode = (nodeId: NodeId) => {
+    if (chatFocusNode()?.nodeId === nodeId) {
+      return;
+    }
     chatFocusTick += 1;
     setChatFocusNode({ nodeId, tick: chatFocusTick });
   };
 
   const handleSelectNode = (nodeId: NodeId | null) => {
+    const previousNodeId = selectedNodeId();
     setSelectedEdgeId(null);
     setSelectedNodeId(nodeId);
     setEditingNodeId(null);
     setNodeLabelDraft("");
-    if (nodeId && bottomTab() === "chat") {
+    if (nodeId && bottomTab() === "chat" && nodeId !== previousNodeId) {
       focusChatNode(nodeId);
     }
   };
@@ -1462,7 +1647,7 @@ export function AppProvider(props: ParentProps) {
       }
       return;
     }
-    if (command && event.key === "Enter") {
+    if (command && event.key === "Enter" && screen() === "editor") {
       event.preventDefault();
       if (continuableRun() && !runState()?.active) {
         void handleContinueRun();
@@ -1471,7 +1656,7 @@ export function AppProvider(props: ParentProps) {
       }
       return;
     }
-    if (command && event.key === ".") {
+    if (command && event.key === "." && screen() === "editor") {
       event.preventDefault();
       void handleStopRun();
       return;
@@ -1560,6 +1745,7 @@ export function AppProvider(props: ParentProps) {
   onMount(async () => {
     let unlisten: (() => void) | null = null;
     let unlistenTerminal: (() => void) | undefined;
+    let unlistenSchedule: (() => void) | undefined;
     let unlistenMaximized: (() => void) | null = null;
 
     window.addEventListener("keydown", handleKeyDown);
@@ -1575,6 +1761,7 @@ export function AppProvider(props: ParentProps) {
       document.body.classList.remove("is-resizing-dock");
       if (unlisten) void unlisten();
       if (unlistenTerminal) void unlistenTerminal();
+      unlistenSchedule?.();
       void handleStopTerminal();
       if (unlistenMaximized) void unlistenMaximized();
     });
@@ -1591,7 +1778,11 @@ export function AppProvider(props: ParentProps) {
       unlisten = await bindRunStateEvents(
         {
           handleRunStateUpdate: (nextRunState) => {
-            setRunState(nextRunState);
+            publishBackendRunState(nextRunState);
+            void refreshContinuableRun();
+            if (activeWorkflowId() !== backendRunWorkflowId()) {
+              return;
+            }
             void flushPendingKickoff(nextRunState);
             if (nextRunState.pendingApprovals.length > 0) {
               const approval = nextRunState.pendingApprovals[0];
@@ -1628,8 +1819,15 @@ export function AppProvider(props: ParentProps) {
         desktop,
       );
       unlistenTerminal = await desktop.listenToTerminalEvent(handleTerminalEvent);
+      desktop
+        .listenToScheduleStatuses((statuses) => setScheduleStatuses(statuses))
+        .then((unlisten) => {
+          unlistenSchedule = unlisten;
+        })
+        .catch(() => undefined);
       const data = await desktop.bootstrapApp();
       setAvailableSkills(data.skills ?? []);
+      setScheduleStatuses(data.scheduleStatuses ?? []);
       await initializeWorkspace(
         data.workflows,
         data.agents,
@@ -1637,7 +1835,7 @@ export function AppProvider(props: ParentProps) {
         data.settings,
         data.runState,
       );
-      setContinuableRun(data.runContinuable ?? false);
+      setContinuableRunBackend(data.runContinuable ?? false);
       setAppReady(true);
     } catch (error) {
       setError(normalizeError(error));
@@ -1699,10 +1897,12 @@ export function AppProvider(props: ParentProps) {
     themePreference,
     resolvedTheme,
     shortcutsModalOpen,
-    terminalSession,
+    terminalSessions,
+    activeTerminalSessionId,
     terminalStarting,
     terminalError,
-    terminalOutput,
+    terminalOutputFor,
+    scheduleStatuses,
     // Setters
     setWorkflowNameDraft,
     setAgentNameDraft,
@@ -1748,6 +1948,9 @@ export function AppProvider(props: ParentProps) {
     workflowsAddableToProject: workflowsAddableToProjectMemo,
     handleAssignWorkflowToProject,
     handleOpenAgents,
+    handleOpenSchedule,
+    handleRefreshScheduleStatuses,
+    handleSaveWorkflowSchedule,
     handleAddProject,
     handleSelectProject,
     handleToggleProjectExpanded,
@@ -1777,8 +1980,8 @@ export function AppProvider(props: ParentProps) {
     handleAddNode,
     closeAddNodePicker,
     handleValidate,
-    workflowAuthoringOpen,
     workflowAuthoringBusy,
+    workflowAuthoringSessionReady,
     workflowAuthoringMessages,
     workflowAuthoringValidation,
     workflowAuthoringDraft,
@@ -1814,6 +2017,7 @@ export function AppProvider(props: ParentProps) {
     applySchemaEditor,
     persistAll,
     handleOpenTerminal,
+    handleSelectTerminalSession,
     handleTerminalInput,
     handleTerminalResize,
     handleStopTerminal,

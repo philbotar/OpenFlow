@@ -1,5 +1,31 @@
 import type { NodeId, ToolCallSummary, ToolCallStatus, WorkflowRunState } from "../../lib/types";
 
+const TOOL_DISPLAY_NAMES: Record<string, string> = {
+  read: "Read File",
+  write: "Write File",
+  edit: "Edit File",
+  apply_patch: "Apply Patch",
+  bash: "Run Command",
+  search: "Search Files",
+  find: "Find Files",
+  ast_grep: "AST Search",
+  openflow_call_subagent: "Call Subagent",
+  openflow_declare_subagents: "Declare Subagents",
+  openflow_submit_node_output: "Submit Output",
+  openflow_request_user_input: "Request Input",
+};
+
+/**
+ * Map a raw tool name to a human-friendly display name.
+ *
+ * Known tools are looked up in `TOOL_DISPLAY_NAMES`; unknown tools are
+ * returned unchanged so that third-party / future tools degrade gracefully.
+ */
+export function formatToolDisplayName(toolName: string | undefined | null): string {
+  if (toolName == null) return "";
+  return TOOL_DISPLAY_NAMES[toolName] ?? toolName;
+}
+
 export function resolveToolSummary(
   nodeId: NodeId | null | undefined,
   toolCallId: string,

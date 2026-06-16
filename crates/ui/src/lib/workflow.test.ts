@@ -27,6 +27,7 @@ import {
   projectWorkflowCanvasGraph,
   projectWorkflowCanvasStatusByNode,
   projectWorkflowCanvasSubagentsByNode,
+  inferRunStateWorkflowId,
 } from "./workflow";
 
 const workflow: Workflow = {
@@ -134,6 +135,24 @@ const runState: WorkflowRunState = {
 };
 
 describe("workflow helpers", () => {
+  test("inferRunStateWorkflowId matches workflow from status and chat node ids", () => {
+    const otherWorkflow: Workflow = {
+      ...workflow,
+      id: "workflow-2",
+      nodes: [
+        {
+          ...workflow.nodes[0],
+          id: "other-node",
+        },
+      ],
+      edges: [],
+    };
+
+    expect(inferRunStateWorkflowId(runState, [workflow, otherWorkflow])).toBe("workflow-1");
+    expect(inferRunStateWorkflowId(null, [workflow])).toBeNull();
+    expect(inferRunStateWorkflowId({ ...runState, statusByNode: {}, chatLogs: {} }, [workflow])).toBeNull();
+  });
+
   test("cloneWorkflow fills default retry policy when missing", () => {
     const cloned = cloneWorkflow(workflow);
 

@@ -19,6 +19,9 @@ categories = ["development-tools", "gui"]
 
 [workspace.dependencies]
 async-trait = "0.1.89"
+chrono = { version = "0.4", features = ["clock", "serde"] }
+chrono-tz = "0.10"
+cron = "0.16"
 bytes = "1"
 dirs = "6.0.0"
 futures = "0.3.32"

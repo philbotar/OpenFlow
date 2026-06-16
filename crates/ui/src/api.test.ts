@@ -24,6 +24,8 @@ import {
   bootstrapApp,
   getRunState,
   listenToRunState,
+  listScheduleStatuses,
+  refreshSchedules,
   startRun,
   submitToolApproval,
   workflowAuthoringTurn,
@@ -119,5 +121,15 @@ describe("api desktop seam", () => {
         message: "hello",
       }),
     );
+  });
+
+  test("listScheduleStatuses invokes list_schedule_statuses", async () => {
+    await listScheduleStatuses();
+    expect(invoke).toHaveBeenCalledWith("list_schedule_statuses");
+  });
+
+  test("refreshSchedules invokes refresh_schedules", async () => {
+    await refreshSchedules();
+    expect(invoke).toHaveBeenCalledWith("refresh_schedules");
   });
 });

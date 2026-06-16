@@ -4,13 +4,28 @@ import { Spinner } from "../Spinner";
 
 export function AuthoringComposer(props: {
   busy: boolean;
+  sessionReady: boolean;
   providerReady: boolean;
+  providerMessage: string;
   onSend: (message: string) => void;
 }) {
   const [draft, setDraft] = createSignal("");
 
   const canSend = () =>
-    props.providerReady && !props.busy && draft().trim().length > 0;
+    props.sessionReady &&
+    props.providerReady &&
+    !props.busy &&
+    draft().trim().length > 0;
+
+  const placeholder = () => {
+    if (!props.sessionReady) {
+      return "Starting authoring session...";
+    }
+    if (!props.providerReady) {
+      return props.providerMessage || "Configure a provider in Settings first.";
+    }
+    return "Describe the workflow you want to build...";
+  };
 
   const handleSend = () => {
     const message = draft().trim();
@@ -29,12 +44,8 @@ export function AuthoringComposer(props: {
           class="text-area composer-input"
           rows={2}
           value={draft()}
-          placeholder={
-            props.providerReady
-              ? "Describe the workflow you want to build..."
-              : "Configure a provider in Settings first."
-          }
-          disabled={!props.providerReady || props.busy}
+          placeholder={placeholder()}
+          disabled={props.busy}
           onInput={(event) => setDraft(event.currentTarget.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {

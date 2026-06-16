@@ -8,8 +8,8 @@
 mod run_sleep_guard;
 
 use orchestration::backend::{
-    AppBackend, BackendError, FileEditPreview, ProviderReadiness, WorkflowAuthoringTurnResult,
-    WorkflowListItem, WorkflowValidationSummary,
+    AppBackend, BackendError, FileEditPreview, ProviderReadiness, ScheduleStatus,
+    WorkflowAuthoringTurnResult, WorkflowListItem, WorkflowValidationSummary,
 };
 use orchestration::run::execution::ExecutionEvent;
 use orchestration::run::state::WorkflowRunState;
@@ -21,6 +21,38 @@ use tauri::{Emitter, Manager};
 use tokio::sync::mpsc::UnboundedReceiver;
 
 const TERMINAL_EVENT: &str = "terminal-event";
+const SCHEDULE_EVENT: &str = "schedule-event";
+const SCHEDULE_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
+
+fn emit_schedule_statuses(app: &tauri::AppHandle) {
+    let backend = app.state::<AppBackend>();
+    let _ = app.emit(SCHEDULE_EVENT, backend.list_schedule_statuses());
+}
+
+fn spawn_schedule_loop(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let mut interval = tokio::time::interval(SCHEDULE_POLL_INTERVAL);
+        loop {
+            interval.tick().await;
+            let backend = app.state::<AppBackend>();
+            match backend.start_due_scheduled_run().await {
+                Ok(Some((initial_state, event_rx))) => {
+                    let run_id = initial_state.run_id.clone();
+                    let _ = app.emit("run-state", initial_state);
+                    emit_schedule_statuses(&app);
+                    spawn_run_event_bridge(app.clone(), event_rx, run_id);
+                }
+                Ok(None) => {
+                    emit_schedule_statuses(&app);
+                }
+                Err(error) => {
+                    log::warn!("scheduled workflow failed to start: {error}");
+                    emit_schedule_statuses(&app);
+                }
+            }
+        }
+    });
+}
 
 /// Bootstrap payload returned on app startup.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,6 +65,7 @@ struct BootstrapPayload {
     settings: AppSettings,
     run_state: Option<WorkflowRunState>,
     run_continuable: bool,
+    schedule_statuses: Vec<ScheduleStatus>,
 }
 
 /// Error type returned to Tauri frontend.
@@ -63,6 +96,7 @@ async fn bootstrap_app(
     let settings = backend.load_settings()?;
     let run_state = backend.get_run_state().await;
     let run_continuable = backend.is_run_continuable().await;
+    let schedule_statuses = backend.refresh_schedules()?;
     Ok(BootstrapPayload {
         workflows,
         agents,
@@ -71,6 +105,7 @@ async fn bootstrap_app(
         settings,
         run_state,
         run_continuable,
+        schedule_statuses,
     })
 }
 
@@ -86,6 +121,22 @@ fn list_workflows(
 #[tauri::command]
 fn load_all_workflows(backend: tauri::State<AppBackend>) -> Result<Vec<Workflow>, CommandError> {
     Ok(backend.load_all_workflows()?)
+}
+
+/// Tauri command: List workflow schedule statuses.
+#[tauri::command]
+fn list_schedule_statuses(
+    backend: tauri::State<AppBackend>,
+) -> Result<Vec<ScheduleStatus>, CommandError> {
+    Ok(backend.list_schedule_statuses())
+}
+
+/// Tauri command: Refresh workflow schedule statuses.
+#[tauri::command]
+fn refresh_schedules(
+    backend: tauri::State<AppBackend>,
+) -> Result<Vec<ScheduleStatus>, CommandError> {
+    Ok(backend.refresh_schedules()?)
 }
 
 /// Tauri command: Load a single workflow.
@@ -253,12 +304,7 @@ async fn workflow_authoring_turn(
     transient_api_key: Option<String>,
 ) -> Result<WorkflowAuthoringTurnResult, CommandError> {
     Ok(backend
-        .workflow_authoring_turn(
-            session_id,
-            message,
-            &settings,
-            transient_api_key.as_deref(),
-        )
+        .workflow_authoring_turn(session_id, message, &settings, transient_api_key.as_deref())
         .await?)
 }
 
@@ -276,7 +322,19 @@ fn create_agent_node(
 
 const RUN_STATE_COALESCE_WINDOW: std::time::Duration = std::time::Duration::from_millis(30);
 
-fn spawn_run_event_bridge(app: tauri::AppHandle, mut event_rx: UnboundedReceiver<ExecutionEvent>) {
+async fn bridge_still_owns_run(backend: &AppBackend, bridge_run_id: &Option<String>) -> bool {
+    match (bridge_run_id, backend.current_run_id().await) {
+        (Some(expected), Some(current)) => expected == &current,
+        (None, _) => true,
+        (Some(_), None) => false,
+    }
+}
+
+fn spawn_run_event_bridge(
+    app: tauri::AppHandle,
+    mut event_rx: UnboundedReceiver<ExecutionEvent>,
+    bridge_run_id: Option<String>,
+) {
     run_sleep_guard::start_for_app(&app);
     tauri::async_runtime::spawn(async move {
         let mut failed = false;
@@ -285,6 +343,9 @@ fn spawn_run_event_bridge(app: tauri::AppHandle, mut event_rx: UnboundedReceiver
                 break;
             };
             let backend = app.state::<AppBackend>();
+            if !bridge_still_owns_run(&backend, &bridge_run_id).await {
+                break;
+            }
             let mut run_state = match backend.apply_execution_event(event).await {
                 Ok(state) => state,
                 Err(_) => break,
@@ -294,21 +355,32 @@ fn spawn_run_event_bridge(app: tauri::AppHandle, mut event_rx: UnboundedReceiver
                 tokio::select! {
                     () = tokio::time::sleep_until(deadline) => break,
                     maybe_event = event_rx.recv() => match maybe_event {
-                        Some(event) => match backend.apply_execution_event(event).await {
-                            Ok(state) => run_state = state,
-                            Err(_) => {
+                        Some(event) => {
+                            let backend = app.state::<AppBackend>();
+                            if !bridge_still_owns_run(&backend, &bridge_run_id).await {
                                 failed = true;
                                 break;
+                            }
+                            match backend.apply_execution_event(event).await {
+                                Ok(state) => run_state = state,
+                                Err(_) => {
+                                    failed = true;
+                                    break;
+                                }
                             }
                         },
                         None => break,
                     },
                 }
             }
+            let backend = app.state::<AppBackend>();
+            if !bridge_still_owns_run(&backend, &bridge_run_id).await {
+                break;
+            }
+            run_state = backend.get_run_state().await.unwrap_or(run_state);
             let active = run_state.active;
             let _ = app.emit("run-state", run_state);
             if !active {
-                let backend = app.state::<AppBackend>();
                 if !backend.is_run_active().await {
                     run_sleep_guard::stop_for_app(&app);
                 }
@@ -342,7 +414,7 @@ async fn start_run(
             transient_api_key.as_deref(),
         )
         .await?;
-    spawn_run_event_bridge(app, event_rx);
+    spawn_run_event_bridge(app, event_rx, initial_state.run_id.clone());
     Ok(initial_state)
 }
 
@@ -358,7 +430,7 @@ async fn continue_run(
     let (initial_state, event_rx) = backend
         .continue_run(workflow, None, &settings, transient_api_key.as_deref())
         .await?;
-    spawn_run_event_bridge(app, event_rx);
+    spawn_run_event_bridge(app, event_rx, initial_state.run_id.clone());
     Ok(initial_state)
 }
 
@@ -644,6 +716,8 @@ pub fn run() {
             unassign_workflow_from_project,
             list_workflows,
             load_all_workflows,
+            list_schedule_statuses,
+            refresh_schedules,
             load_workflow,
             create_workflow,
             save_workflow,
@@ -703,6 +777,7 @@ pub fn run() {
             let runtime_handle = tauri::async_runtime::handle().inner().clone();
             app.manage(AppBackend::with_runtime_handle(runtime_handle));
             app.manage(run_sleep_guard::RunSleepGuard::new());
+            spawn_schedule_loop(app.handle().clone());
             #[cfg(debug_assertions)]
             app.get_webview_window("main").unwrap().open_devtools();
             Ok(())

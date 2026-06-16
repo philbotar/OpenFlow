@@ -1,5 +1,6 @@
 import { For, Show } from "solid-js";
 import FileText from "lucide-solid/icons/file-text";
+import Folder from "lucide-solid/icons/folder";
 import type { ProjectFileReference } from "../../lib/types";
 
 interface FileReferenceComboboxProps {
@@ -18,7 +19,7 @@ export function FileReferenceCombobox(props: FileReferenceComboboxProps) {
     <Show when={props.open}>
       <div class="file-reference-combobox" role="presentation">
         <p class="file-reference-combobox-label eyebrow">
-          {props.query === "" ? "Files" : `Files matching @${props.query}`}
+          {props.query === "" ? "Files and folders" : `Files and folders matching @${props.query}`}
         </p>
         <Show
           when={!props.loading && props.suggestions.length > 0}
@@ -32,7 +33,7 @@ export function FileReferenceCombobox(props: FileReferenceComboboxProps) {
             id={props.listboxId}
             class="file-reference-combobox-list"
             role="listbox"
-            aria-label="File references"
+            aria-label="File and folder references"
           >
             <For each={props.suggestions}>
               {(reference, index) => (
@@ -50,10 +51,17 @@ export function FileReferenceCombobox(props: FileReferenceComboboxProps) {
                       props.onSelect(reference);
                     }}
                   >
-                    <FileText class="file-reference-option-icon" width={15} height={15} />
+                    <Show
+                      when={reference.kind === "directory"}
+                      fallback={
+                        <FileText class="file-reference-option-icon" width={15} height={15} />
+                      }
+                    >
+                      <Folder class="file-reference-option-icon" width={15} height={15} />
+                    </Show>
                     <span class="file-reference-option-path">{reference.displayPath}</span>
                     <span class="file-reference-option-size">
-                      {formatBytes(reference.sizeBytes)}
+                      {reference.kind === "directory" ? "Folder" : formatBytes(reference.sizeBytes)}
                     </span>
                   </button>
                 </li>

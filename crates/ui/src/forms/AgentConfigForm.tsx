@@ -118,10 +118,10 @@ export function AgentConfigForm(props: {
       <label class="checkbox-row">
         <input
           type="checkbox"
-          checked={props.autoStart}
-          onChange={(event) => props.onAutoStartChange(event.currentTarget.checked)}
+          checked={!props.autoStart}
+          onChange={(event) => props.onAutoStartChange(!event.currentTarget.checked)}
         />
-        <span>Auto-start without pausing for human input</span>
+        <span>Request user input</span>
       </label>
       <label>
         <span>System prompt</span>

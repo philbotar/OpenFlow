@@ -26,7 +26,9 @@ export function AppHeader() {
             <h2>
               {ctx.screen() === "agents"
                 ? "Agents"
-                : ctx.activeWorkflow()?.name ?? "Workflow"}
+                : ctx.screen() === "workflow-authoring"
+                  ? "Build workflow with AI"
+                  : ctx.activeWorkflow()?.name ?? "Workflow"}
             </h2>
           </Show>
         </div>

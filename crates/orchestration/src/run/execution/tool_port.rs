@@ -1,3 +1,4 @@
+use crate::tool::retry::execute_with_retry;
 use crate::tools::{ToolExecutionContext, ToolExecutionRecord, ToolRunner, ToolRunnerError};
 use async_trait::async_trait;
 use engine::{
@@ -227,6 +228,7 @@ where
 
         let mut join_handles = Vec::with_capacity(runnable_indices.len());
         let lsp_settings = self.lsp.clone();
+        let retry_policy = self.workflow.settings.retry_policy.clone();
         for &index in &runnable_indices {
             let tool_call = &tool_calls[index];
             let tool_runner = Arc::clone(&self.tool_runner);
@@ -234,20 +236,43 @@ where
             let node_id_for_task = node_id.clone();
             let call = tool_call.clone();
             let lsp = lsp_settings.clone();
+            let event_tx = self.event_tx.clone();
+            let retry_policy = retry_policy.clone();
             let exclusive_permit = self.exclusive_permit(&call.name).await;
             join_handles.push(tokio::spawn(async move {
                 let _permit = exclusive_permit;
                 let conversation_id = node_id_for_task.0.clone();
                 let ctx = ToolExecutionContext {
-                    node_id: node_id_for_task,
+                    node_id: node_id_for_task.clone(),
                     conversation_id,
                     lsp,
                     update_tx: None,
                 };
+                let retry_node_id = node_id_for_task.clone();
+                let retry_tool_call_id = call.id.clone();
+                let retry_tool_name = call.name.clone();
                 tokio::select! {
                     biased;
                     _ = cancel_token.cancelled() => None,
-                    result = tool_runner.execute(call, Some(ctx)) => Some(result),
+                    result = execute_with_retry(
+                        &retry_policy,
+                        &cancel_token,
+                        |attempt, delay| {
+                            let _ = event_tx.send(ExecutionEvent::ToolRetrying {
+                                node_id: retry_node_id.clone(),
+                                tool_call_id: retry_tool_call_id.clone(),
+                                tool_name: retry_tool_name.clone(),
+                                attempt,
+                                backoff_ms: delay.as_millis() as u64,
+                            });
+                        },
+                        || {
+                            let tool_runner = Arc::clone(&tool_runner);
+                            let call = call.clone();
+                            let ctx = ctx.clone();
+                            async move { tool_runner.execute(call, Some(ctx)).await }
+                        },
+                    ) => Some(result),
                 }
             }));
         }
@@ -499,6 +524,33 @@ where
         let started = Instant::now();
         let exclusive_permit = self.exclusive_permit(&tool_name).await;
         let node_token = self.node_interrupt_token(node_id);
+        let policy = self.workflow.settings.retry_policy.clone();
+        let cancel_for_retry = self.cancel_token.clone();
+        let retry_event_tx = self.event_tx.clone();
+        let retry_node_id = node_id.clone();
+        let retry_tool_call_id = tool_call.id.clone();
+        let retry_tool_name = tool_call.name.clone();
+        let call_for_attempt = tool_call.clone();
+        let ctx_for_attempt = ctx.clone();
+        let run_tool = execute_with_retry(
+            &policy,
+            &cancel_for_retry,
+            |attempt, delay| {
+                let _ = retry_event_tx.send(ExecutionEvent::ToolRetrying {
+                    node_id: retry_node_id.clone(),
+                    tool_call_id: retry_tool_call_id.clone(),
+                    tool_name: retry_tool_name.clone(),
+                    attempt,
+                    backoff_ms: delay.as_millis() as u64,
+                });
+            },
+            || {
+                let tool_runner = Arc::clone(&tool_runner);
+                let call = call_for_attempt.clone();
+                let ctx = ctx_for_attempt.clone();
+                async move { tool_runner.execute(call, Some(ctx)).await }
+            },
+        );
         let result = match node_token {
             Some(node_token) => {
                 tokio::select! {
@@ -511,7 +563,7 @@ where
                         engine.mark_node_interrupted(node_id);
                         None
                     }
-                    result = tool_runner.execute(tool_call, Some(ctx)) => Some(result),
+                    result = run_tool => Some(result),
                 }
             }
             None => {
@@ -521,7 +573,7 @@ where
                         abort_run(&self.event_tx, &self.aborted_emitted);
                         None
                     }
-                    result = tool_runner.execute(tool_call, Some(ctx)) => Some(result),
+                    result = run_tool => Some(result),
                 }
             }
         };

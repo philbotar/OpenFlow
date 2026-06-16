@@ -590,6 +590,61 @@ fn denied_tool_call_resumes_with_error_result() {
 }
 
 #[test]
+fn partial_tool_results_fill_missing_calls_with_errors() {
+    let mut workflow = Workflow::new("partial");
+    let mut idea = node("idea");
+    idea.agent.tools.approval_mode = Some(ApprovalMode::Yolo);
+    workflow.nodes = vec![idea];
+    let mut engine = InteractiveEngine::new(workflow, None).unwrap();
+
+    assert!(matches!(engine.poll(), EnginePollResult::CallAi { .. }));
+    engine.on_ai_complete(
+        &NodeId::from("idea"),
+        Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+            raw_text: "...".to_string(),
+            assistant_message: None,
+            tool_calls: vec![
+                ToolCall {
+                    id: "call-1".to_string(),
+                    name: "read".to_string(),
+                    arguments: json!({"path": "a.md"}),
+                },
+                ToolCall {
+                    id: "call-2".to_string(),
+                    name: "read".to_string(),
+                    arguments: json!({"path": "b.md"}),
+                },
+            ],
+        })),
+    );
+    assert!(matches!(engine.poll(), EnginePollResult::RunTools { .. }));
+
+    engine
+        .on_tool_results(
+            &NodeId::from("idea"),
+            vec![ToolResult {
+                tool_call_id: "call-1".to_string(),
+                tool_name: "read".to_string(),
+                content: "ok".to_string(),
+                is_error: false,
+                artifact_ids: Vec::new(),
+                output_meta: None,
+            }],
+        )
+        .expect("partial batch should not error");
+
+    let resumed = engine.poll();
+    let EnginePollResult::CallAi { request, .. } = resumed else {
+        panic!("expected CallAi after partial tool batch filled, got {resumed:?}");
+    };
+    assert!(request.transcript.iter().any(|item| matches!(
+        item,
+        AgentTranscriptItem::ToolResult { result }
+            if result.is_error && result.tool_call_id == "call-2"
+    )));
+}
+
+#[test]
 fn transient_failure_retries_then_succeeds() {
     let mut workflow = Workflow::new("retry");
     workflow.settings.retry_policy.max_attempts = 1;
@@ -645,6 +700,70 @@ fn permanent_failure_pauses_for_manual_retry() {
         .retry_node(&NodeId::from("idea"))
         .expect("manual retry");
     assert!(matches!(engine.poll(), EnginePollResult::CallAi { .. }));
+}
+
+#[test]
+fn interrupted_node_surfaces_await_retry_in_poll() {
+    let mut workflow = Workflow::new("interrupt-poll");
+    workflow.nodes = vec![node("idea")];
+    let mut engine = InteractiveEngine::new(workflow, None).unwrap();
+
+    assert!(matches!(engine.poll(), EnginePollResult::CallAi { .. }));
+    engine.on_ai_complete(&NodeId::from("idea"), Err(AgentError::Interrupted));
+
+    let EnginePollResult::AwaitRetry(retryable) = engine.poll() else {
+        panic!("expected retry pause instead of layer deadlock");
+    };
+    assert_eq!(retryable.node_id, NodeId::from("idea"));
+    assert!(retryable.interrupted);
+}
+
+#[test]
+fn stale_in_flight_node_surfaces_await_retry_in_poll() {
+    let mut workflow = Workflow::new("stale-poll");
+    workflow.nodes = vec![node("idea")];
+    let mut engine = InteractiveEngine::new(workflow, None).unwrap();
+    engine.in_flight_ai.insert(NodeId::from("idea"));
+
+    let EnginePollResult::AwaitRetry(retryable) = engine.poll() else {
+        panic!("expected stale in-flight recovery pause");
+    };
+    assert_eq!(retryable.node_id, NodeId::from("idea"));
+    assert!(retryable.interrupted);
+}
+
+#[tokio::test]
+async fn stale_in_flight_in_parallel_layer_surfaces_needs_interaction() {
+    struct NoAi;
+
+    #[async_trait]
+    impl AiPort for NoAi {
+        async fn invoke(&self, _request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            Err(AgentError::Failed("should not invoke".to_string()))
+        }
+    }
+
+    let mut workflow = Workflow::new("stale-run");
+    workflow.nodes = vec![node("done"), node("stale")];
+    let mut engine = InteractiveEngine::new(workflow, None).unwrap();
+    engine
+        .outputs
+        .insert(NodeId::from("done"), json!({"summary": "ok"}));
+    engine.in_flight_ai.insert(NodeId::from("stale"));
+
+    let result = engine
+        .run(&NoAi, &NoopToolPort, &CancellationToken::new())
+        .await;
+
+    let EngineRunResult::NeedsInteraction { retryables, .. } = result else {
+        panic!("expected retry interaction instead of layer deadlock, got {result:?}");
+    };
+    assert!(
+        retryables
+            .iter()
+            .any(|retryable| retryable.node_id.0 == "stale"),
+        "expected stale sibling to surface as retryable"
+    );
 }
 
 #[test]

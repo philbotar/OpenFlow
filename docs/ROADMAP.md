@@ -24,7 +24,7 @@ Make runs survivable before adding features on top. A failed tool call or transi
 | # | Item | Status | Details |
 | --- | --- | --- | --- |
 | 3 | **Error taxonomy + AI retry** — T1 (`AgentError` transient/permanent), T2 (collapse templates), T3 (node lookup index), T5 (tool deny/decision resume), T6 (`retry_policy` with exponential backoff, default 3 attempts) | Done | [Phase 1–2](#phase-1--foundations) |
-| 4 | **Tool retry, hooks & resilient failure** — T19 (tool error taxonomy), T20 (tool invocation retry), T21 (failed tools feed transcript and resume `CallAi`; never abort the run), before/after tool hooks for approval/audit/guards | In progress | [Tool retry](#tool-invocation-retry-and-resilience) — T19 **Done**; T20–T21 and hooks **remain** |
+| 4 | **Tool retry, hooks & resilient failure** — T19 (tool error taxonomy), T20 (tool invocation retry), T21 (failed tools feed transcript and resume `CallAi`; never abort the run), before/after tool hooks for approval/audit/guards | Done | [Tool retry](#tool-invocation-retry-and-resilience) — T19–T21 and hooks **Done** |
 | 5 | **Transcript & event correctness** — T9 (strip redundant tool-call XML), T10 (validate node id in `on_ai_complete`), T11 (run-event semantics), T12 (template store persistence errors); [node completion](#node-completion) acceptance | In progress | [Phase 2–3](#phase-2--functional-gaps) · [Node completion](#node-completion) — T9–T12 and NC-1–NC-10 **Done**; NC-13–NC-14 **remain** |
 | 6 | **Run lifecycle leftovers** — clean up `openflow-run-*` temp dirs, store event-bridge task handle, decide checkpoint/persistence policy and durable artifact layout (in-memory only vs. disk checkpoints vs. resume after restart) | Planned | [Run lifecycle](#run-lifecycle) |
 | 7 | **Secure key storage** — move provider API keys from plaintext `settings.json` to macOS Keychain (keep env-var fallback); migrate existing keys on first launch | Planned | *New* |
@@ -64,25 +64,27 @@ Getting the right context into and out of agents.
 | 22 | **MCP integration** — settings-gated MCP servers as external tool sources on agent nodes; default external tools to prompt/exec until sandboxing exists | Planned | [MCP integration](#mcp-integration) |
 | 23 | **Cron / scheduled runs + workflow retry loop** — execute the schedule/retry schema fields that already exist | Planned | |
 | 24 | **Run checkpoint, history, and replay** — persist run checkpoints to disk; browse run history; resume paused runs or replay from a checkpoint (read-only trace or forked re-execution); depends on persistence policy (#6) | Planned | [Run checkpoint & replay](#run-checkpoint-history-and-replay) |
-| 25 | **Programmatic / non-AI nodes** — API-call and transform nodes between agent nodes | Planned | |
+| 25 | **Programmatic / non-AI nodes** — code/script, API-call, and transform nodes between agent nodes; deterministic execution without LLM turns | Planned | [Programmatic nodes](#programmatic--non-ai-nodes) |
 | 26 | **External connectors** — Composio / n8n-style integration nodes | Planned | |
+| 27 | **Run insights & self-learning** — extract durable lessons from completed runs; surface patterns, failures, and optimization hints; inject approved insights into future runs | Planned | [Run insights & self-learning](#run-insights--self-learning) |
+| 35 | **Workflow orchestration & reinvoke** — child workflow runs, foreach/batch over repo files, in-app scripting to start runs; partial re-run of a node or subgraph | Planned | [Workflow orchestration & reinvoke](#workflow-orchestration--reinvoke) |
 
 ### Tier 6 — Polish & distribution
 
 | # | Item | Status | Details |
 | --- | --- | --- | --- |
-| 27 | **Canvas editing QoL** — undo/redo for graph edits, duplicate node, copy/paste between workflows | Planned | *New* |
-| 28 | **Accessibility & keyboard shortcuts** — panel toggles, focus management, shortcut reference overlay | Planned | [Accessibility](#accessibility) |
-| 29 | **Onboarding & templates** — first-run empty state, 2–3 bundled example workflows, "new from template" | Planned | *New* |
-| 30 | **macOS distribution** — code signing, notarization, auto-update (Tauri updater); bundle already builds | Planned | *New (expands packaging)* |
-| 31 | **Serde casing unification** — T16 (one wire convention) then T16b (drop legacy aliases/shims) | Planned | [Phase 4](#phase-4--cleanup) |
-| 32 | **Cleanup pass** — T13–T15, T18 (clippy `-D warnings`), refactor polish: slim `AppProvider`, typed desktop DTOs, store catalog audit, provider module audit | Planned | [Refactor](#refactor) |
+| 28 | **Canvas editing QoL** — undo/redo for graph edits, duplicate node, copy/paste between workflows | Planned | *New* |
+| 29 | **Accessibility & keyboard shortcuts** — panel toggles, focus management, shortcut reference overlay | Planned | [Accessibility](#accessibility) |
+| 30 | **Onboarding & templates** — first-run empty state, 2–3 bundled example workflows, "new from template" | Planned | *New* |
+| 31 | **macOS distribution** — code signing, notarization, auto-update (Tauri updater); bundle already builds | Planned | *New (expands packaging)* |
+| 32 | **Serde casing unification** — T16 (one wire convention) then T16b (drop legacy aliases/shims) | Planned | [Phase 4](#phase-4--cleanup) |
+| 33 | **Cleanup pass** — T13–T15, T18 (clippy `-D warnings`), refactor polish: slim `AppProvider`, typed desktop DTOs, store catalog audit, provider module audit | Planned | [Refactor](#refactor) |
 
 ### Dev & agent tooling
 
 | # | Item | Status | Details |
 | --- | --- | --- | --- |
-| 33 | **Interactive plan review tool** — standalone HTML+JS for markdown plan review | Done | [Plan review tool](#interactive-plan-review-tool) |
+| 34 | **Interactive plan review tool** — standalone HTML+JS for markdown plan review | Done | [Plan review tool](#interactive-plan-review-tool) |
 
 ### Backlog (unsequenced)
 
@@ -102,7 +104,7 @@ Small or speculative items — pick up opportunistically or when a tier item tou
 - Natural language workflow definition
 - T7 node-local max-tool-rounds (only if D4 changes), T17 concurrent layer siblings in headless runner (stretch)
 
-**Deferred** until cron, retry loops, and repo workflows land: background job start/stop/resume, multi-run orchestration.
+**Deferred** until cron, retry loops, and [#35 Workflow orchestration](#workflow-orchestration--reinvoke) land: background job start/stop/resume at the process level (distinct from in-workflow child runs).
 
 ---
 
@@ -217,9 +219,78 @@ Runs today live entirely in memory: `RunCoordinator` holds `WorkflowRunState`; `
 
 **Target:** Every meaningful pause and layer boundary writes a durable checkpoint under the linked project. You can close the app, reopen, and resume a paused run. Completed and in-progress runs appear in history. Open any past run to inspect trace and chat read-only, or fork a new run from an earlier checkpoint without re-entering context by hand.
 
-**Depends on:** #6 (persistence policy). **Unlocks:** #22 (scheduled runs need durable run records), #17 (handoff artifact paths), deferred multi-run orchestration, audit/compliance use cases.
+**Depends on:** #6 (persistence policy). **Unlocks:** #23 (scheduled runs need durable run records), #17 (handoff artifact paths), #27 (run insights need durable run records), [#35 Workflow orchestration](#workflow-orchestration--reinvoke), audit/compliance use cases.
 
 **Reference:** Live projection — `WorkflowRunState` in `crates/orchestration/src/run/state/mod.rs`; headless snapshot — `WorkflowRunSnapshot` in `crates/orchestration/src/run/execution/mod.rs`; artifact temp dirs — `drive.rs` (`openflow-run-{uuid}`).
+
+### Run insights & self-learning
+
+Completed runs today produce rich telemetry — transcripts, tool results, retries, approvals, node outputs, changed files — but none of it compounds across attempts. Every `start_run` begins with the same workflow `shared_context` and node prompts. Users must manually notice recurring failures (same tool error three runs in a row), copy lessons into workflow settings, or re-explain constraints in the entrypoint. There is no post-run retrospective, no workflow-scoped memory, and no way to promote a run-time discovery into durable guidance for the next execution.
+
+This section covers **insights** (human- and machine-readable observations extracted from run records) and **self-learning** (injecting approved insights back into future runs at workflow, project, or node scope). It deliberately does **not** copy oh-my-pi's opaque memory tools wholesale — insights map to Step-through's existing context surfaces (`shared_context`, project rules, per-node preamble, upstream handoffs) so learning stays inspectable and editable.
+
+| Layer | Gap |
+| --- | --- |
+| `crates/orchestration/src/run/state/` | `WorkflowRunState` is live projection only; no post-run analysis artifacts |
+| `crates/orchestration/src/run/execution/events.rs` | Telemetry is consumed for UI/trace; not aggregated into insight records |
+| `crates/orchestration/src/adapters/storage/` | No insight store — no `{project}/.flow/insights/` or per-workflow insight index |
+| `crates/orchestration/src/run/coordinator.rs` | `start_run` does not merge prior-run insights into context assembly |
+| `crates/engine/src/execution/node_invocation.rs` | `build_node_input` / preamble have no `insights` or `run_history_summary` block |
+| `crates/engine/src/graph/workflow.rs` | `WorkflowSettings` has no insight policy (auto-inject vs suggest-only vs off) |
+| `crates/orchestration/src/project/` | Project registry does not discover workflow insights alongside rules |
+| `crates/ui/src/` | No insights panel on completed runs; no "promote to workflow" affordance; no cross-run comparison |
+| `crates/desktop/src/lib.rs` | No IPC for list/generate/approve/dismiss insights |
+
+**Decisions (resolve before coding):**
+
+| ID | Question | Recommendation |
+| --- | --- | --- |
+| I1 | What is an insight? | A **structured record** with `kind`, `summary`, `evidence` (run id, node id, trace refs), `confidence`, `status` (`suggested` / `approved` / `dismissed`), and optional `scope` (`workflow`, `project`, `node:{id}`) |
+| I2 | Where do insights live? | Project-scoped index: `{project}/.flow/insights/index.json` + `{insight_id}.json`; app-only workflows mirror under app data dir. Per-run **raw analysis** stays inside the run record: `{project}/.flow/runs/{run_id}/insights.json` |
+| I3 | Who generates insights? | **v1:** deterministic extractors over run telemetry (retries, tool errors, approval denials, node failures, duration outliers) + optional **post-run LLM retrospective** (single summarizer node or headless `AiPort` call) producing suggested insights only — never auto-approved |
+| I4 | Human gate before injection? | **Yes.** Suggested insights appear in UI; user **approves** (promotes to scope) or **dismisses**. Approved insights merge at run start; dismissed insights are retained for audit but not injected |
+| I5 | Injection surface | Approved insights append to **`WorkflowSettings.shared_context`** (workflow scope), **project rules** (project scope), or **node system prompt suffix** (node scope) — same merge order as [#11 Project rules](#project-rules) and [#18 Context used](#context-used); show in context ledger |
+| I6 | Cross-run comparison? | **v2:** diff two runs of the same workflow (status, per-node outcomes, tool error sets, token totals when queue item #13 lands) — read-only analytics, not learning injection |
+| I7 | Scheduled / retry-loop learning? | Cron and workflow retry fields (queue item #23) may attach `insight_policy: refresh_on_failure` — re-run extractors when a scheduled attempt fails; surface "same failure as last Tuesday" in schedule UI |
+| I8 | Privacy / retention | Insights may quote file paths and error snippets; respect run prune policy ([#24](#run-checkpoint-history-and-replay)); optional redact paths in exported insight bundles |
+
+**Insight kinds (v1 taxonomy):**
+
+| Kind | Source signal | Example |
+| --- | --- | --- |
+| `tool_failure_pattern` | Repeated `is_error` tool results with same tool + error class | "bash exits 127 when `./scripts/verify.sh` run outside project root" |
+| `retry_friction` | AI or tool retries exhausted per node | "Research node hits transient provider errors — consider higher `retry_policy.max_attempts`" |
+| `approval_bottleneck` | Frequent `AwaitToolApproval` denials or long approval latency | "Edit tool on Implementer node denied 4× — tighten path allowlist or switch approval mode" |
+| `node_failure` | Terminal node `failed` with structured output or trace error | "Planner submit missing `summary` field — schema mismatch" |
+| `context_gap` | Downstream re-reads files upstream already read (after [#16 Upstream read-file context](#upstream-read-file-context)) | "Reviewer re-read `src/api.ts` — upstream read ledger not wired yet" |
+| `handoff_miss` | Downstream agent searches for plan file not in `handoff_files` (after [#17](#node-handoff-artifacts--output-review)) | "Implementer used `read` on ad-hoc path — enable handoff review on Planner" |
+| `cost_outlier` | Per-node token total > workflow median × N (after queue item #13) | "Debug node consumed 80% of run tokens" |
+| `retrospective` | Post-run LLM summary over trace + outputs | "Run succeeded but tests were never executed — add verification node" |
+
+| Item | Priority | Status |
+| --- | --- | --- |
+| Insight schema — `InsightRecord`, kinds, status, scope, evidence refs; serde round-trip tests | High | Planned |
+| Run-record analysis artifact — write `insights.json` (suggested + extractor metadata) on terminal outcomes | High | Planned |
+| Deterministic extractors — tool failure patterns, retry/approval counts, node failure messages, run duration | High | Planned |
+| `InsightStore` adapter — CRUD approved/dismissed insights; list by workflow/project/node scope | High | Planned |
+| Post-run retrospective — optional headless `AiPort` call or dedicated summarizer workflow template | Medium | Planned |
+| Approve / dismiss IPC — `list_insights`, `approve_insight`, `dismiss_insight`, `generate_run_insights(run_id)` | High | Planned |
+| Run-start merge — inject approved insights into `shared_context` / project rules / node preamble per scope | High | Planned |
+| Context ledger attribution — `context_used` rows for injected insights ([#18 Context used](#context-used)) | Medium | Planned |
+| Insights UI — completed-run panel: suggested cards with evidence links to trace rows; approve/dismiss actions | High | Planned |
+| Promote to workflow — one-click approve at workflow scope from run insights panel | High | Planned |
+| Workflow insight policy — `WorkflowSettings.insight_policy`: `off` / `suggest_only` / `inject_approved` (default `inject_approved`) | Medium | Planned |
+| Inspector preview — show approved insights that will apply on next run for selected node | Medium | Planned |
+| Export insights — markdown bundle for a workflow or run (audit, PR attachment) | Low | Planned |
+| Cross-run diff UI — pick two runs; compare outcomes, errors, tokens (depends on #13, #24) | Low | Planned |
+| Insight decay — optional `expires_at` or max age; auto-archive stale suggestions | Low | Planned |
+| Schedule failure linkage — surface recurring insight on schedule screen when same `tool_failure_pattern` repeats | Low | Planned |
+
+**Target:** Finish a run → open **Insights** on the run history row → see suggested lessons with trace evidence ("bash failed 3× with exit 127 on node Implementer"). Approve the ones you trust; they merge into the next run's context automatically and appear in **Context used** before the first `CallAi`. Dismiss noise without deleting audit history. Over time the workflow accumulates durable, human-curated guidance — self-learning without a black-box memory store.
+
+**Depends on:** [#24 Run checkpoint & replay](#run-checkpoint-history-and-replay) (durable run records and history UI). **Strongly benefits from:** [#11 Project rules](#project-rules) (project-scoped injection), [#18 Context used](#context-used) (attribution), queue item #13 (cost outliers), [#16 Upstream read-file context](#upstream-read-file-context) and [#17 Node handoff artifacts](#node-handoff-artifacts--output-review) (richer extractors). **Unlocks:** smarter scheduled/retry loops (queue item #23), workflow authoring suggestions ("your last 5 runs failed at the same node"), compliance exports, reduced repeated user entrypoint explanations.
+
+**Reference:** Run telemetry — `RunTelemetry` in `crates/engine/src/execution/telemetry.rs`; live projection — `WorkflowRunState` in `crates/orchestration/src/run/state/`; context assembly — `node_invocation.rs`; OMP memory stance — [OMP tool parity harness](superpowers/plans/2026-06-14-omp-tool-parity-harness.md) (map memory to context ledger / project rules, not opaque recall).
 
 ### Provider API key storage
 
@@ -236,17 +307,16 @@ Today a failed tool call becomes a single `is_error: true` [`ToolResult`](crates
 
 | Layer | Gap |
 | --- | --- |
-| `crates/orchestration/src/tools/runner.rs` | `ToolRunnerError` has no transient/permanent classification; no retry/backoff | **Partial** — `ToolError::is_retryable()` in `tool/errors.rs`; runner retry loop still missing |
-| `crates/orchestration/src/execution/drive.rs` | Tool execute fails once → `denied()` result; no retry loop; handler errors abort drive |
-| `crates/domain/src/graph/workflow.rs` | `RetryPolicy` is AI-oriented; no tool-specific retry knobs |
-| `crates/domain/src/execution/interactive_engine.rs` | Tool errors in transcript do not increment AI retry counters; run should continue |
+| `crates/orchestration/src/tool/runner.rs` | `ToolRunnerError::is_retryable()`; retry via `tool/retry.rs` + `tool_port.rs` | **Done** |
+| `crates/orchestration/src/run/execution/tool_port.rs` | Retry loop with backoff; `ToolRetrying` telemetry | **Done** |
+| `crates/engine/src/execution/interactive_engine/tools.rs` | Partial tool batches filled with error results; run continues | **Done** |
 
 **Target behavior:**
 
 1. Classify tool failures as retryable (timeout, rate limit, transient I/O) vs permanent (bad args, missing file, policy deny). **Done** — `ToolError::is_retryable()` in `orchestration/src/tool/errors.rs`.
-2. Retry retryable tool invocations per workflow/node policy (`max_attempts`, `backoff_ms`) **before** surfacing an error result to the model. **Planned** — no retry loop in `drive.rs` yet.
-3. On exhausted retries or permanent failure, append `is_error: true` tool result and **resume the agent loop** (`CallAi`) — do not terminate the run or crash the host. **Planned**
-4. Reserve run-level failure for unrecoverable host errors (engine state corruption, cancelled run), not individual tool calls. **Planned**
+2. Retry retryable tool invocations per workflow/node policy (`max_attempts`, `backoff_ms`) **before** surfacing an error result to the model. **Done** — `execute_with_retry` in `orchestration/src/tool/retry.rs`, wired from `tool_port.rs`.
+3. On exhausted retries or permanent failure, append `is_error: true` tool result and **resume the agent loop** (`CallAi`) — do not terminate the run or crash the host. **Done**
+4. Reserve run-level failure for unrecoverable host errors (engine state corruption, cancelled run), not individual tool calls. **Done**
 
 **oh-my-pi imports to keep:**
 
@@ -706,6 +776,108 @@ Planning nodes often produce markdown plans or specs that downstream implementer
 
 **Reference:** Submit contract — [`node_invocation.rs`](crates/engine/src/execution/node_invocation.rs); offline review UX — [`tools/plan-review.html`](tools/plan-review.html); tool-approval pause pattern — `AwaitToolApproval` in [`interactive_engine`](crates/engine/src/execution/interactive_engine/mod.rs).
 
+### Programmatic / non-AI nodes
+
+Workflows today are agent-only: every `NodeKind` is `Agent`, and every node turn goes through `AiPort`. There is no way to run deterministic logic — HTTP calls, JSON transforms, repo file enumeration, or small scripts — as a first-class graph step. Users work around this by asking an LLM to call `bash` or write throwaway tools, which is slow, non-deterministic, and hard to validate on the canvas.
+
+This section covers **programmatic nodes**: graph steps that execute without an LLM turn and emit structured output for downstream agent nodes (or other programmatic nodes).
+
+| Layer | Gap |
+| --- | --- |
+| `crates/engine/src/graph/workflow.rs` | `NodeKind` is only `Agent`; no `Code`, `Http`, or `Transform` config types |
+| `crates/engine/src/execution/interactive_engine/` | Engine assumes every ready node → `CallAi`; no `CallProgrammatic` poll branch |
+| `crates/orchestration/src/run/execution/drive.rs` | Drive loop has no programmatic executor hook |
+| `crates/orchestration/src/tool/` | Bash exists as an agent tool, not as a sandboxed node runtime with declared inputs/outputs |
+| `crates/ui/src/forms/` | Inspector only edits `AgentNodeConfig`; no code editor or HTTP/transform panels |
+| `crates/ui/src/canvas/` | Canvas renders all nodes as agent chips — no distinct programmatic node chrome |
+
+**Decisions (resolve before coding):**
+
+| ID | Question | Recommendation |
+| --- | --- | --- |
+| P1 | Which node kinds in v1? | **Code** (script), **Transform** (JSONata/JQ-style map on upstream output), **Http** (request/response) — ship Code + Transform first; Http can follow or land with [#26 External connectors](#tier-5--power-features) |
+| P2 | Code runtime? | **v1:** embedded JS (QuickJS or Deno core) with injected `upstream`, `entrypoint`, `env` (cwd, project path), and a narrow `invoke_workflow` stub (see [#35](#workflow-orchestration--reinvoke)); no raw filesystem/network unless explicitly allowlisted on the node |
+| P3 | Output contract? | Same as agent nodes: programmatic nodes **submit output** JSON via engine API; downstream `build_node_input` receives it in `upstream` like any other node completion |
+| P4 | Errors? | Structured node failure (permanent) vs retryable (transient HTTP); honor workflow `retry_policy` for retryable kinds; surface in trace like tool errors |
+| P5 | Validation? | Pre-run validation ([#10](#tier-3--daily-driver-ux)) checks script syntax, required upstream parents, and declared output schema when present |
+
+**Node kinds (v1 taxonomy):**
+
+| Kind | Executes | Typical use |
+| --- | --- | --- |
+| **Code** | User script in node config | Enumerate repo files, build entrypoint payload, branch on upstream JSON, call `invoke_workflow` in a loop |
+| **Transform** | Declarative map (no Turing-complete script required) | Pick fields from upstream, merge arrays, template strings into entrypoint shape |
+| **Http** | Outbound HTTP with typed response mapping | Webhooks, REST fetches, callback to external orchestrator |
+
+| Item | Priority | Status |
+| --- | --- | --- |
+| `NodeKind` + config structs — `CodeNodeConfig`, `TransformNodeConfig` in engine; serde + validation | High | Planned |
+| Engine poll branch — `CallProgrammatic` instead of `CallAi` for non-agent nodes; submit-output path shared with agents | High | Planned |
+| Programmatic executor port — orchestration adapter runs script/transform with timeout, memory cap, cwd jail | High | Planned |
+| Canvas + inspector — distinct node shape, Monaco (or embedded) editor for Code, transform field picker | High | Planned |
+| Pre-run validation hooks — syntax check, upstream completeness, output schema | Medium | Planned |
+| Http node kind — request builder, response → JSON output, retry on 5xx | Medium | Planned |
+| Headless acceptance — workflow with Code → Agent chain in `workflow_acceptance.rs` | High | Planned |
+
+**Target:** Place a **Code** node before an agent node. The script lists `src/**/*.rs`, builds `{ "files": [...] }`, and downstream agents receive that JSON in `upstream` without an LLM call. Complex control flow (loops, conditionals) lives in code nodes instead of prompt hacks.
+
+**Depends on:** [#5 Node completion](#node-completion) (submit contract). **Unlocks:** [#35 Workflow orchestration](#workflow-orchestration--reinvoke) (scripts call `invoke_workflow`), batch repo processing, cheaper DAG segments, [#26 External connectors](#tier-5--power-features) (Http node overlap).
+
+**Reference:** Submit contract — [`node_invocation.rs`](crates/engine/src/execution/node_invocation.rs); eval-tool stdin RPC pattern — [eval tool plan](superpowers/plans/2026-06-15-eval-tool.md); `NodeKind` — [`workflow.rs`](crates/engine/src/graph/workflow.rs).
+
+### Workflow orchestration & reinvoke
+
+Runs today are flat: one workflow, one `start_run`, one engine instance. A user cannot **re-run part of a graph** (a single node or a subgraph) without restarting the whole workflow, nor **spawn child workflow runs** from inside a parent (e.g. "for each file in the repo, run the review workflow"). There is no **in-app scripting surface** to start runs programmatically — only UI and IPC `start_run`. Checkpoint replay ([#24](#run-checkpoint-history-and-replay)) covers fork-from-checkpoint for humans, not dynamic in-run orchestration or batch fan-out.
+
+| Layer | Gap |
+| --- | --- |
+| `crates/orchestration/src/run/coordinator.rs` | Single active run per session focus; no parent/child run registry or `invoke_workflow(workflow_id, entrypoint)` API |
+| `crates/engine/src/execution/interactive_engine/` | No "jump to node" or "re-execute subgraph" without resetting completed upstream state |
+| `crates/orchestration/src/run/execution/drive.rs` | No wait-for-child-runs poll step; no aggregation of child outputs into parent node output |
+| `crates/desktop/src/lib.rs` | No batch `start_runs` or scripting IPC; no `reinvoke_from_node` |
+| `crates/ui/src/` | No child-run monitor, foreach progress, or "re-run from here" on canvas during/after a run |
+| Project scripts | No `.flow/scripts/` discovery or REPL to chain workflows |
+
+**Decisions (resolve before coding):**
+
+| ID | Question | Recommendation |
+| --- | --- | --- |
+| O1 | Child run model? | Each `invoke_workflow` creates a **new run record** (child `run_id`) with `parent_run_id` + `parent_node_id`; child gets its own engine instance and artifact dir under `{project}/.flow/runs/{child_run_id}/` |
+| O2 | Parent wait semantics? | **Sync (v1):** programmatic node blocks until all child runs terminal (completed/failed/stopped); emits aggregated output `{ "children": [ { "run_id", "status", "output" } ] }`. **Async (v2):** fire-and-forget with polling builtin |
+| O3 | Foreach / batch pattern? | **Dedicated `ForEach` programmatic node** *or* Code node calling `invoke_workflow` in a loop — start with Code + API; add `ForEach` node when UX demands canvas-native glob + concurrency controls |
+| O4 | Concurrency cap? | Workflow setting `max_concurrent_child_runs` (default 3); queue excess children; surface in run trace |
+| O5 | Partial reinvoke scope? | **In-run retry node** — re-execute node N and downstream only, preserving upstream outputs (extends checkpoint "replay from node" to live runs). **Subgraph reinvoke** — select node set on canvas, "Run selection" with fresh entrypoint. Distinct from full workflow restart |
+| O6 | In-app scripting? | **v1:** project scripts at `{project}/.flow/scripts/*.ts` (or `.js`) calling desktop seam commands (`startRun`, `waitForRun`, `invokeWorkflow`); run from Schedule sidebar or a Scripts panel. **v2:** workflow-embedded script library |
+| O7 | Entrypoint per child? | Child entrypoint is JSON merged from parent: `{ "item": <foreach element>, "parent": <parent node output>, "entrypoint": <root entrypoint text> }` |
+
+**Orchestration patterns (v1):**
+
+| Pattern | Mechanism | Example |
+| --- | --- | --- |
+| **Batch over repo files** | Code node globs paths → loop `invoke_workflow(review_wf_id, { item: { path } })` | Lint every `*.rs` file with a small review workflow |
+| **Map-reduce** | ForEach or Code spawns N children; downstream Agent node reads aggregated `children` output | Parallel doc generation per module |
+| **Partial re-run** | `reinvoke_from_node(node_id)` after editing workflow or fixing env | Re-run implementer only after plan approval |
+| **External driver** | `.flow/scripts/nightly.ts` starts runs on a timer (complements [#23 Cron](#tier-5--power-features)) | CI-style regression workflow battery |
+
+| Item | Priority | Status |
+| --- | --- | --- |
+| `invoke_workflow` API — orchestration + desktop IPC; child run metadata (`parent_run_id`, `parent_node_id`) | High | Planned |
+| Child run registry — list/watch children from parent; terminal aggregation into parent programmatic node output | High | Planned |
+| `reinvoke_from_node` — reset node N + descendants, preserve upstream outputs; engine + coordinator support | High | Planned |
+| Code node `invoke_workflow` binding — sandboxed callable from [#25](#programmatic--non-ai-nodes) scripts | High | Planned |
+| Concurrency limit + queue — `max_concurrent_child_runs` on `WorkflowSettings` | Medium | Planned |
+| ForEach node (optional) — glob/JSON-array input, native progress UI, concurrency slider | Medium | Planned |
+| `.flow/scripts/` — discover, edit, run project scripts; `startRun` / `waitForRun` / `invokeWorkflow` in script host | Medium | Planned |
+| Canvas "Re-run from here" — context menu on completed node; subgraph selection run | Medium | Planned |
+| Child run UI — nested run list, per-child status, jump to child trace | Medium | Planned |
+| Headless acceptance — parent Code node spawns two child runs, parent Agent reads aggregate | High | Planned |
+
+**Target:** A workflow with a **Code** node iterates `git ls-files '*.md'`, calls `invoke_workflow` for each path, and a downstream agent summarizes all child outputs. A project script in `.flow/scripts/` can start the same workflow ten times with different entrypoints without clicking Run. After a failed node, choose **Re-run from here** to re-execute that node and downstream without replaying the whole DAG.
+
+**Depends on:** [#24 Run checkpoint & replay](#run-checkpoint-history-and-replay) (durable child run records), [#25 Programmatic nodes](#programmatic--non-ai-nodes) (Code node + `invoke_workflow`), [#6 Run lifecycle](#run-lifecycle) (artifact layout). **Unlocks:** repo-wide refactors, workflow test batteries, CI-style automation inside the app, promoted background multi-run orchestration.
+
+**Reference:** Run coordinator — [`coordinator.rs`](crates/orchestration/src/run/coordinator.rs); checkpoint fork — [#24](#run-checkpoint-history-and-replay) "Replay from node"; schedule loop — [schedule sidebar plan](superpowers/plans/2026-06-16-schedule-sidebar.md).
+
 ---
 
 ## Refactor
@@ -748,7 +920,7 @@ Structural cleanup by workspace section. Keep domain logic in `domain`, transpor
 | Move `FileTemplateStore` from domain; alias `ExecutionEvent` → `RunTelemetry` | Done |
 | Typed `BackendError`; `spawn_blocking` tool I/O; dead-code removal | Done |
 | Unify on one Tokio runtime — `AppBackend` takes injected `Handle` | Done |
-| Tool runner error taxonomy + retry loop (T19–T20) | In progress |
+| Tool runner error taxonomy + retry loop (T19–T20) | Done |
 | `RunCoordinator` / session lifecycle — stop handle, channel cleanup | Done |
 | Store catalog split audit — merge overlapping workflow/project helpers | Planned |
 
@@ -781,7 +953,7 @@ Structural cleanup by workspace section. Keep domain logic in `domain`, transpor
 
 ## Domain engine hardening
 
-Remediation for modeled-but-unwired behavior and correctness gaps in `crates/domain`. Full task specs (files, acceptance, guardrails) lived in the prior remediation plan; phases below are the execution order. These tasks are sequenced into the queue above (items #3–#5, #30–#31).
+Remediation for modeled-but-unwired behavior and correctness gaps in `crates/domain`. Full task specs (files, acceptance, guardrails) lived in the prior remediation plan; phases below are the execution order. These tasks are sequenced into the queue above (items #3–#5, #31–#32).
 
 ### Decisions (resolve before coding)
 

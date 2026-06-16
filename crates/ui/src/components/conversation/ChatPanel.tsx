@@ -4,7 +4,6 @@ import { GLOBAL_RUN_ENTRY_NODE_ID, isLiveTranscriptSegment } from "../../lib/wor
 import { useAppContext } from "../../context/AppContext";
 import { ConversationComposer } from "./ConversationComposer";
 import { ConversationMessages } from "./ConversationMessages";
-import { FileChangesPanel } from "./FileChangesPanel";
 
 /**
  * When parallel nodes run, the global chat blocks until the user picks one to
@@ -13,17 +12,11 @@ import { FileChangesPanel } from "./FileChangesPanel";
  */
 function LiveNodePicker() {
   const ctx = useAppContext();
-  const locked = () => ctx.pickedLiveNodeId() !== null;
 
   return (
     <div class="chat-live-picker" role="group" aria-label="Pick a running node to talk to">
       <p class="chat-live-picker-hint">
-        <Show
-          when={!locked()}
-          fallback={`${ctx.chatLayout().live.length} more nodes running — finish the current one first`}
-        >
-          {ctx.chatLayout().live.length} nodes running in parallel — pick one to talk to
-        </Show>
+        {ctx.chatLayout().live.length} nodes running in parallel — pick one to talk to
       </p>
       <div class="chat-live-picker-options">
         <For each={ctx.chatLayout().live}>
@@ -35,8 +28,8 @@ function LiveNodePicker() {
                 "has-activity":
                   segment.status === "awaiting_input" ||
                   segment.status === "awaiting_tool_approval",
+                active: ctx.pickedLiveNodeId() === segment.nodeId,
               }}
-              disabled={locked()}
               onClick={() => ctx.setPickedLiveNodeId(segment.nodeId)}
             >
               <span class={`chat-filter-status-dot status-${segment.status}`} />
@@ -63,9 +56,6 @@ export function ChatPanel() {
   return (
     <div class="chat-layout">
       <ConversationMessages />
-      <div class="chat-side-panels">
-        <FileChangesPanel />
-      </div>
       <Show
         when={ctx.chatLayout().live.length > 0}
         fallback={

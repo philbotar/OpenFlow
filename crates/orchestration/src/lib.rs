@@ -13,6 +13,7 @@ pub mod error;
 pub mod incident;
 pub mod project;
 pub mod run;
+pub mod schedule;
 pub mod settings;
 pub mod terminal;
 pub mod tool;
@@ -26,7 +27,7 @@ pub use adapters::infrastructure::git;
 pub use adapters::infrastructure::lsp;
 
 // Re-exports of engine types consumed by downstream layers
-pub use api::{ProjectFileReference, ProjectFileReferenceContent};
+pub use api::{ProjectFileReference, ProjectFileReferenceContent, ProjectFileReferenceKind};
 pub use engine::CallableAgent as AgentDefinition;
 pub use engine::{
     CallableAgent, Node, RunTelemetry, Template, TemplateStore, TemplateStoreError, Workflow,

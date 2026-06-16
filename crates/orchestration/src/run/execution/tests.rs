@@ -624,6 +624,79 @@ async fn headless_run_auto_approves_read_tool_and_reenters_model_loop() {
 }
 
 #[tokio::test]
+async fn headless_run_survives_permanent_tool_failure_and_completes() {
+    #[derive(Clone, Default)]
+    struct ToolThenDoneAi {
+        calls: Arc<Mutex<usize>>,
+    }
+
+    #[async_trait]
+    impl AiPort for ToolThenDoneAi {
+        async fn invoke(
+            &self,
+            request: AgentRequest,
+        ) -> Result<AgentTurnOutcome, engine::AgentError> {
+            let mut calls = self.calls.lock();
+            *calls += 1;
+            if *calls == 1 {
+                return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+                    raw_text: String::new(),
+                    assistant_message: None,
+                    tool_calls: vec![ToolCall {
+                        id: "call-missing".to_string(),
+                        name: "read".to_string(),
+                        arguments: json!({"path": "definitely-missing-file-orch-test.txt"}),
+                    }],
+                }));
+            }
+            let saw_error = request.transcript.iter().any(|item| {
+                matches!(
+                    item,
+                    engine::AgentTranscriptItem::ToolResult { result }
+                        if result.is_error && result.content.contains("[not_found]")
+                )
+            });
+            assert!(saw_error, "model should see not_found tool error");
+            Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                output: json!({"summary": "recovered"}),
+                raw_text: "{}".to_string(),
+                assistant_message: None,
+            }))
+        }
+    }
+
+    let temp = TempDir::new().expect("tempdir");
+    let mut workflow = workflow();
+    let node_id = workflow.nodes[0].id.clone();
+    workflow.nodes[0].agent.tools.catalog.tools = vec![ToolRef {
+        name: "read".to_string(),
+        tier: Some(ToolTier::Read),
+    }];
+    workflow.nodes[0].agent.tools.approval_mode = Some(ApprovalMode::Yolo);
+
+    let snapshot = run_workflow_headless(
+        workflow,
+        None,
+        ToolThenDoneAi::default(),
+        Vec::new(),
+        Vec::new(),
+        BTreeMap::new(),
+        Some(temp.path().to_path_buf()),
+    )
+    .await
+    .expect("run should complete after tool failure");
+
+    assert_eq!(snapshot.outputs[&node_id], json!({"summary": "recovered"}));
+    let tool_rows = &snapshot.tool_calls_by_node[&node_id];
+    assert!(
+        tool_rows
+            .iter()
+            .any(|row| row.status == ToolCallStatus::Failed),
+        "trace should record failed tool call"
+    );
+}
+
+#[tokio::test]
 async fn headless_run_requires_scripted_approval_for_prompted_tool() {
     #[derive(Clone)]
     struct PromptingAi;

@@ -33,23 +33,22 @@ export function ConversationComposer(props: {
 
   const draft = () => ctx.chatDraft(props.nodeId);
   const submission = () => ctx.chatSubmissionFor(props.nodeId);
-  const chatEnabled = () => {
-    if (props.kickoff) {
-      return (
-        !props.disabled &&
-        ctx.runState()?.active !== true &&
-        (ctx.readiness()?.ready ?? false)
-      );
-    }
-    return (
-      !props.disabled &&
-      ctx.runState()?.active === true &&
-      (ctx.runState()?.awaitingNodeIds?.includes(props.nodeId) ||
-        ctx.runState()?.awaitingNodeId === props.nodeId) &&
-      (ctx.readiness()?.ready ?? false)
-    );
-  };
   const pendingApproval = () => pendingApprovalForNode(ctx.runState(), props.nodeId);
+  const inputEnabled = () => {
+    if (props.disabled) {
+      return false;
+    }
+    if (pendingApproval()) {
+      return false;
+    }
+    if (!(ctx.readiness()?.ready ?? false)) {
+      return false;
+    }
+    if (props.kickoff) {
+      return !ctx.runState()?.active;
+    }
+    return ctx.runState()?.active === true;
+  };
 
   const activeSlashToken = createMemo(() =>
     getActiveSlashToken(draft(), caretPosition()),
@@ -62,14 +61,14 @@ export function ConversationComposer(props: {
     return matchSkillsForSlashQuery(ctx.availableSkills(), token.query);
   });
   const comboboxOpen = createMemo(
-    () => !!activeSlashToken() && suggestions().length > 0 && chatEnabled(),
+    () => !!activeSlashToken() && suggestions().length > 0 && inputEnabled(),
   );
 
   const activeFileToken = createMemo(() =>
     getActiveFileReferenceToken(draft(), caretPosition()),
   );
   const fileQuery = createMemo(() =>
-    chatEnabled() && activeFileToken() ? activeFileToken()!.query : null,
+    inputEnabled() && activeFileToken() ? activeFileToken()!.query : null,
   );
   const [fileSuggestions] = createResource(fileQuery, async (query) => {
     if (query === null) {
@@ -78,7 +77,7 @@ export function ConversationComposer(props: {
     return ctx.searchProjectFileReferences(query);
   });
   const fileComboboxOpen = createMemo(
-    () => !!activeFileToken() && chatEnabled() && !comboboxOpen(),
+    () => !!activeFileToken() && inputEnabled() && !comboboxOpen(),
   );
   const referencedFilePaths = createMemo(() => extractReferencedFilePaths(draft()));
 
@@ -283,14 +282,14 @@ export function ConversationComposer(props: {
             onKeyDown={handleKeyDown}
             placeholder={
               props.kickoff
-                ? "Message to start the workflow... Type / for skills or @ for files."
+                ? "Message to start the workflow... Type / for skills or @ for files and folders."
                 : props.disabled
                   ? "Start a run to chat with agents."
                   : pendingApproval()
                     ? "Resolve the pending tool approval above."
-                    : `Reply to ${props.label}... Type / for skills or @ for files.`
+                    : `Reply to ${props.label}... Type / for skills or @ for files and folders.`
             }
-            disabled={!chatEnabled() || !!pendingApproval()}
+            disabled={!inputEnabled()}
           />
           <Show when={submission().invokedSkills.length > 0}>
             <span
@@ -307,11 +306,11 @@ export function ConversationComposer(props: {
           <Show when={referencedFilePaths().length > 0}>
             <span
               class="composer-file-pill"
-              title={`Referenced files: ${referencedFilePaths().join(", ")}`}
+              title={`Referenced paths: ${referencedFilePaths().join(", ")}`}
             >
               {referencedFilePaths().length === 1
                 ? `@ ${referencedFilePaths()[0]}`
-                : `@ ${referencedFilePaths().length} files`}
+                : `@ ${referencedFilePaths().length} refs`}
             </span>
           </Show>
           <button

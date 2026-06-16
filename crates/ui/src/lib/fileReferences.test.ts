@@ -35,6 +35,15 @@ describe("file reference token helpers", () => {
     });
   });
 
+  test("keeps folder completions with a trailing slash", () => {
+    expect(
+      applyFileReferenceCompletion("Open @src/com", 5, 13, "src/components/"),
+    ).toEqual({
+      value: "Open @{src/components/} ",
+      caret: 24,
+    });
+  });
+
   test("extracts unique braced file paths", () => {
     expect(
       extractReferencedFilePaths(
@@ -48,15 +57,33 @@ describe("formatSubmissionWithFileReferences", () => {
   const refs: ProjectFileReferenceContent[] = [
     {
       path: "src/lib.rs",
+      kind: "file",
       content: "pub fn value() -> u8 { 7 }\n",
       truncated: false,
       sizeBytes: 28,
     },
     {
       path: "src/large.rs",
+      kind: "file",
       content: "pub fn partial() {}\n",
       truncated: true,
       sizeBytes: 70000,
+    },
+    {
+      path: "src/components/",
+      kind: "directory",
+      content: [
+        "Directory tree:",
+        "src/components/",
+        "- Button.tsx",
+        "",
+        "File: src/components/Button.tsx",
+        "```text",
+        "export function Button() {}",
+        "```",
+      ].join("\n"),
+      truncated: false,
+      sizeBytes: 27,
     },
   ];
 
@@ -70,7 +97,7 @@ describe("formatSubmissionWithFileReferences", () => {
         "User message:",
         "Review @{src/lib.rs}",
         "",
-        "Referenced files:",
+        "Referenced context:",
         "",
         "File: src/lib.rs",
         "```text",
@@ -81,6 +108,16 @@ describe("formatSubmissionWithFileReferences", () => {
         "```text",
         "pub fn partial() {}",
         "```",
+        "",
+        "Directory: src/components/",
+        "Directory tree:",
+        "src/components/",
+        "- Button.tsx",
+        "",
+        "File: src/components/Button.tsx",
+        "```text",
+        "export function Button() {}",
+        "```",
       ].join("\n"),
     );
   });
@@ -89,6 +126,7 @@ describe("formatSubmissionWithFileReferences", () => {
     const skillRefs: ProjectFileReferenceContent[] = [
       {
         path: "README.md",
+        kind: "file",
         content: "# Project\n",
         truncated: false,
         sizeBytes: 10,
@@ -109,7 +147,7 @@ describe("formatSubmissionWithFileReferences", () => {
         "User message:",
         "Review @{README.md}",
         "",
-        "Referenced files:",
+        "Referenced context:",
         "",
         "File: README.md",
         "```text",

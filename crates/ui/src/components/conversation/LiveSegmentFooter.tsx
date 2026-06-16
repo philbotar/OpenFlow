@@ -8,11 +8,6 @@ import { ToolApprovalCardBody } from "./ToolApprovalCard";
 export function LiveSegmentFooter(props: { segment: TranscriptSegment }) {
   const ctx = useAppContext();
   const approval = () => pendingApprovalForNode(ctx.runState(), props.segment.nodeId);
-  const awaitingInput = () =>
-    ctx.runState()?.active === true &&
-    (ctx.runState()?.awaitingNodeIds?.includes(props.segment.nodeId) ||
-      ctx.runState()?.awaitingNodeId === props.segment.nodeId);
-
   return (
     <div class="chat-segment-footer">
       <Show when={approval()}>
@@ -23,9 +18,7 @@ export function LiveSegmentFooter(props: { segment: TranscriptSegment }) {
           />
         )}
       </Show>
-      <Show when={awaitingInput() && !approval()}>
-        <ConversationComposer nodeId={props.segment.nodeId} label={props.segment.label} />
-      </Show>
+      <ConversationComposer nodeId={props.segment.nodeId} label={props.segment.label} />
     </div>
   );
 }

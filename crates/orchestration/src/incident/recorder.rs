@@ -234,6 +234,7 @@ fn backend_error_code(error: &BackendError) -> &'static str {
         BackendError::WrongApprovalId { .. } => "backend.wrong_approval_id",
         BackendError::RunChannelClosed => "backend.run_channel_closed",
         BackendError::PreviewFailed(_) => "backend.preview_failed",
+        BackendError::AuthoringFailed(_) => "backend.authoring_failed",
         BackendError::GitFailed(_) => "backend.git_failed",
         BackendError::EditBatchNotFound(_) => "backend.edit_batch_not_found",
         BackendError::NodeNotInterruptible(_) => "backend.node_not_interruptible",
@@ -241,5 +242,6 @@ fn backend_error_code(error: &BackendError) -> &'static str {
         BackendError::NoContinuableRun => "backend.no_continuable_run",
         BackendError::CheckpointWorkflowMismatch => "backend.checkpoint_workflow_mismatch",
         BackendError::CheckpointIncompatible(_) => "backend.checkpoint_incompatible",
+        BackendError::Schedule(_) => "backend.schedule",
     }
 }

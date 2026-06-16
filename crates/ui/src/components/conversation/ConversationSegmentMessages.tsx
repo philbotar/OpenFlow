@@ -63,8 +63,14 @@ function PlainMessage(props: {
   const content = createMemo(() =>
     displayChatContent(props.message.role, props.message.content),
   );
+  const shouldRender = createMemo(
+    () =>
+      content().trim().length > 0 ||
+      props.message.streaming ||
+      props.message.role === "assistant",
+  );
   return (
-    <Show when={content().trim()}>
+    <Show when={shouldRender()}>
       <Message
         from={chatRoleToMessageFrom(props.message.role)}
         label={messageLabel(props.message.role, props.label, {

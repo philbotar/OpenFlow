@@ -20,6 +20,7 @@ import type {
 	FileEditPreview,
 	TerminalEvent,
 	TerminalStart,
+	ScheduleStatus,
 } from "./lib/types";
 
 export type RunStateListener = (runState: WorkflowRunState) => void;
@@ -121,6 +122,9 @@ export interface UiDesktopOutboundPort {
 	stopTerminal: (sessionId: string) => Promise<void>;
 	listenToTerminalEvent: (handler: (event: TerminalEvent) => void) => Promise<() => void>;
 	listenToRunState: (handler: RunStateListener) => Promise<() => void>;
+	listScheduleStatuses: () => Promise<ScheduleStatus[]>;
+	refreshSchedules: () => Promise<ScheduleStatus[]>;
+	listenToScheduleStatuses: (handler: (statuses: ScheduleStatus[]) => void) => Promise<() => void>;
 }
 
 export function createUiDesktopOutboundAdapter(): UiDesktopOutboundPort {
@@ -175,6 +179,9 @@ export function createUiDesktopOutboundAdapter(): UiDesktopOutboundPort {
 		stopTerminal: desktopApi.stopTerminal,
 		listenToTerminalEvent: desktopApi.listenToTerminalEvent,
 		listenToRunState: desktopApi.listenToRunState,
+		listScheduleStatuses: desktopApi.listScheduleStatuses,
+		refreshSchedules: desktopApi.refreshSchedules,
+		listenToScheduleStatuses: desktopApi.listenToScheduleStatuses,
 	};
 }
 

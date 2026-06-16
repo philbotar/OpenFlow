@@ -27,10 +27,16 @@ pub enum IncidentCategory {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum IncidentScope {
     App,
-    Project { project_id: String },
+    Project {
+        project_id: String,
+    },
     Run {
         run_id: String,
         workflow_id: String,

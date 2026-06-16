@@ -36,6 +36,7 @@ export function EditorScreen() {
             statusByNode={ctx.canvasStatusByNode()}
             subagentsByNode={ctx.canvasSubagentsByNode()}
             chatFocusNode={ctx.chatFocusNode()}
+            viewportEnabled={!chatFocusActive()}
             runActive={Boolean(ctx.runState()?.active)}
             colorMode={ctx.resolvedTheme()}
             onSelectNode={ctx.handleSelectNode}

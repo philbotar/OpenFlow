@@ -50,6 +50,24 @@ fn clear_artifact_root(session: &mut RunSession) {
     }
 }
 
+/// Marks the in-session run as user-stopped and captures a resume checkpoint when present.
+fn apply_user_stop_to_session(session: &mut RunSession) -> Option<WorkflowRunState> {
+    let captured_checkpoint = session
+        .checkpoint_sink
+        .as_ref()
+        .and_then(|sink| sink.lock().take());
+    if let Some(checkpoint) = captured_checkpoint {
+        session.engine_checkpoint = Some(checkpoint);
+    }
+    session.checkpoint_sink = None;
+    let workflow = session.workflow.clone()?;
+    let run_state = session.run_state.as_mut()?;
+    if run_state.active {
+        apply_event_to_run_state(&workflow, run_state, ExecutionEvent::Aborted);
+    }
+    Some(run_state.clone())
+}
+
 #[derive(Debug)]
 struct RunSession {
     workflow: Option<Workflow>,
@@ -495,16 +513,17 @@ impl RunCoordinator {
             }
         }
 
-        let session = self.session.lock().await;
-        if let Some(run_state) = session.run_state.clone() {
-            if !run_state.active {
-                return Ok(run_state);
+        let mut session = self.session.lock().await;
+        if session.run_state.as_ref().is_some_and(|state| state.active) {
+            if let Some(snapshot) = apply_user_stop_to_session(&mut session) {
+                return Ok(snapshot);
             }
         }
-        if let Some(workflow) = session.workflow.clone() {
-            return Ok(WorkflowRunState::idle_for_workflow(&workflow));
+        match (session.run_state.clone(), session.workflow.clone()) {
+            (Some(state), _) => Ok(state),
+            (None, Some(workflow)) => Ok(WorkflowRunState::idle_for_workflow(&workflow)),
+            (None, None) => Err(BackendError::NoActiveRun),
         }
-        Err(BackendError::NoActiveRun)
     }
 
     async fn terminate_active_run(&self, mode: TerminationMode) -> Option<WorkflowRunState> {
@@ -538,20 +557,7 @@ impl RunCoordinator {
 
         if matches!(mode, TerminationMode::UserStop) {
             let mut session = self.session.lock().await;
-            let captured_checkpoint = session
-                .checkpoint_sink
-                .as_ref()
-                .and_then(|sink| sink.lock().take());
-            if let Some(checkpoint) = captured_checkpoint {
-                session.engine_checkpoint = Some(checkpoint);
-            }
-            session.checkpoint_sink = None;
-            let workflow = session.workflow.clone()?;
-            let run_state = session.run_state.as_mut()?;
-            if run_state.active {
-                apply_event_to_run_state(&workflow, run_state, ExecutionEvent::Aborted);
-            }
-            return Some(run_state.clone());
+            return apply_user_stop_to_session(&mut session);
         }
         None
     }
@@ -580,6 +586,9 @@ impl RunCoordinator {
             .run_state
             .as_mut()
             .ok_or(BackendError::NoActiveRun)?;
+        if !run_state.active {
+            return Ok(run_state.clone());
+        }
         apply_event_to_run_state(&workflow, run_state, event);
         let finished = !run_state.active;
         let snapshot = run_state.clone();
@@ -696,6 +705,11 @@ impl RunCoordinator {
     #[must_use]
     pub async fn get_run_state(&self) -> Option<WorkflowRunState> {
         self.session.lock().await.run_state.clone()
+    }
+
+    #[must_use]
+    pub async fn current_run_id(&self) -> Option<String> {
+        self.session.lock().await.run_id.clone()
     }
 
     /// Dry-run a write-tier tool call and return numbered diffs for approval UI.

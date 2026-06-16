@@ -15,6 +15,7 @@ use crate::project::registry::ProjectRegistry;
 use crate::run::coordinator::{RunCoordinator, RunStartParams};
 use crate::run::execution::ExecutionEvent;
 use crate::run::state::WorkflowRunState;
+use crate::schedule::ScheduleService;
 use crate::settings::facade::SettingsFacade;
 use crate::settings::model::AppSettings;
 use crate::settings::ports::{SettingsStore, SkillCatalog, SkillSummary};
@@ -23,6 +24,7 @@ use crate::terminal::{TerminalEvent, TerminalManager, TerminalStart};
 use crate::workflow::authoring::WorkflowAuthoringService;
 use crate::workflow::catalog::WorkflowCatalog;
 use crate::workflow::ports::{ProjectWorkflowStore, WorkflowStore};
+use chrono::{DateTime, Utc};
 use engine::{CallableAgent, Node, Workflow};
 use std::io;
 use std::sync::Arc;
@@ -30,8 +32,8 @@ use tokio::sync::mpsc::UnboundedReceiver;
 
 pub use crate::api::{
     AgentDefinitionSummary, FileEditPreview, IncidentSummary, ProjectFileReference,
-    ProjectFileReferenceContent, ProviderReadiness, WorkflowAuthoringTurnResult, WorkflowListItem,
-    WorkflowValidationSummary,
+    ProjectFileReferenceContent, ProviderReadiness, ScheduleStatus, ScheduledRunCandidate,
+    WorkflowAuthoringTurnResult, WorkflowListItem, WorkflowValidationSummary,
 };
 pub use crate::error::BackendError;
 
@@ -55,6 +57,7 @@ pub struct AppBackend {
     incidents: Arc<IncidentRecorder>,
     terminal: TerminalManager,
     workflow_authoring: WorkflowAuthoringService,
+    schedule: ScheduleService,
     /// Keeps an owned runtime alive for tests and non-Tauri entrypoints.
     _owned_runtime: Option<tokio::runtime::Runtime>,
 }
@@ -80,6 +83,7 @@ impl AppBackend {
             incidents,
             terminal: TerminalManager::new(),
             workflow_authoring: WorkflowAuthoringService::new(),
+            schedule: ScheduleService::new(),
             _owned_runtime: owned_runtime,
         }
     }
@@ -186,7 +190,9 @@ impl AppBackend {
     }
 
     pub fn load_all_workflows(&self) -> Result<Vec<Workflow>, BackendError> {
-        self.workflows.load_all(&self.projects)
+        let workflows = self.workflows.load_all(&self.projects)?;
+        let _ = self.schedule.refresh(&workflows, Utc::now());
+        Ok(workflows)
     }
 
     pub fn load_workflow(&self, workflow_id: &str) -> Result<Workflow, BackendError> {
@@ -198,15 +204,20 @@ impl AppBackend {
     }
 
     pub fn save_workflow(&self, workflow: Workflow) -> Result<Workflow, BackendError> {
-        self.workflows
+        let saved = self
+            .workflows
             .save_one(&self.projects, workflow)
-            .map_err(|error| self.persistence_err("persistence.workflow_save", error))
+            .map_err(|error| self.persistence_err("persistence.workflow_save", error))?;
+        self.refresh_schedules()?;
+        Ok(saved)
     }
 
     pub fn save_workflows(&self, workflows: &[Workflow]) -> Result<(), BackendError> {
         self.workflows
             .save_all(&self.projects, workflows)
-            .map_err(|error| self.persistence_err("persistence.workflow_save", error))
+            .map_err(|error| self.persistence_err("persistence.workflow_save", error))?;
+        self.refresh_schedules()?;
+        Ok(())
     }
 
     pub fn rename_workflow(
@@ -313,7 +324,7 @@ impl AppBackend {
         self.workflow_authoring
             .send_turn(&session_id, message, settings, &ai)
             .await
-            .map_err(BackendError::PreviewFailed)
+            .map_err(BackendError::AuthoringFailed)
     }
 
     pub fn load_projects(&self) -> Result<Vec<Project>, BackendError> {
@@ -481,6 +492,10 @@ impl AppBackend {
         self.runs.get_run_state().await
     }
 
+    pub async fn current_run_id(&self) -> Option<String> {
+        self.runs.current_run_id().await
+    }
+
     pub async fn preview_file_edit(
         &self,
         approval_id: &str,
@@ -549,6 +564,99 @@ impl AppBackend {
 
     pub fn stop_all_terminals(&self) {
         self.terminal.stop_all();
+    }
+
+    pub fn refresh_schedules(&self) -> Result<Vec<ScheduleStatus>, BackendError> {
+        self.refresh_schedules_at(Utc::now())
+    }
+
+    pub fn refresh_schedules_at(
+        &self,
+        now: DateTime<Utc>,
+    ) -> Result<Vec<ScheduleStatus>, BackendError> {
+        let workflows = self.workflows.load_all(&self.projects)?;
+        self.schedule
+            .refresh(&workflows, now)
+            .map_err(BackendError::Schedule)?;
+        Ok(self.schedule.statuses())
+    }
+
+    #[must_use]
+    pub fn list_schedule_statuses(&self) -> Vec<ScheduleStatus> {
+        self.schedule.statuses()
+    }
+
+    pub async fn claim_due_scheduled_run(
+        &self,
+    ) -> Result<Option<ScheduledRunCandidate>, BackendError> {
+        self.claim_due_scheduled_run_at(Utc::now()).await
+    }
+
+    pub async fn claim_due_scheduled_run_at(
+        &self,
+        now: DateTime<Utc>,
+    ) -> Result<Option<ScheduledRunCandidate>, BackendError> {
+        let active = self.is_run_active().await;
+        Ok(self.schedule.claim_due_run(now, active))
+    }
+
+    fn scheduled_execution_cwd(&self, workflow_id: &str) -> Result<Option<String>, BackendError> {
+        let projects = self.projects.load()?;
+        let cwd = projects
+            .iter()
+            .find(|project| project.workflow_ids.iter().any(|id| id == workflow_id))
+            .map(|project| {
+                let candidate = project.default_execution_cwd.trim();
+                if candidate.is_empty() {
+                    project.path.clone()
+                } else {
+                    candidate.to_string()
+                }
+            });
+        Ok(cwd)
+    }
+
+    pub async fn start_scheduled_run(
+        &self,
+        workflow_id: String,
+    ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
+        if self.is_run_active().await {
+            return Err(BackendError::Schedule(
+                "Skipped because another workflow run was active".to_string(),
+            ));
+        }
+
+        let workflow = self.load_workflow(&workflow_id)?;
+        let execution_cwd = self.scheduled_execution_cwd(&workflow_id)?;
+        let settings = self.load_settings()?;
+        self.runs
+            .start_run(RunStartParams {
+                workflow,
+                entrypoint: None,
+                execution_cwd,
+                settings: &settings,
+                transient_api_key: None,
+                agent_store: self.agents.store(),
+                settings_store: self.settings.store(),
+                env: self.settings.env(),
+            })
+            .await
+            .map_err(|error| {
+                self.schedule
+                    .record_start_error(&workflow_id, error.to_string());
+                self.backend_err(error)
+            })
+    }
+
+    pub async fn start_due_scheduled_run(
+        &self,
+    ) -> Result<Option<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>)>, BackendError> {
+        let Some(candidate) = self.claim_due_scheduled_run().await? else {
+            return Ok(None);
+        };
+        self.start_scheduled_run(candidate.workflow_id)
+            .await
+            .map(Some)
     }
 }
 

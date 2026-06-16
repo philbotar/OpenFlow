@@ -55,6 +55,8 @@ pub enum EnginePollResult {
         label: String,
         tool_calls: Vec<ToolCall>,
     },
+    /// Pause until the host retries the node via [`InteractiveEngine::retry_node`].
+    AwaitRetry(EngineRetryableNode),
     /// Workflow finished successfully.
     Completed(RunReport),
     /// Workflow stopped with a terminal error; further polls return the same failure.
@@ -248,6 +250,47 @@ impl InteractiveEngine {
         }
     }
 
+    /// Move stale in-flight markers for incomplete layer nodes to interrupted so the host can retry.
+    fn recover_stale_in_flight_nodes(&mut self) -> bool {
+        let stale: Vec<NodeId> = self
+            .in_flight_ai
+            .iter()
+            .filter(|node_id| {
+                self.current_layer_nodes().contains(*node_id)
+                    && !self.outputs.contains_key(*node_id)
+            })
+            .cloned()
+            .collect();
+        if stale.is_empty() {
+            return false;
+        }
+        for node_id in stale {
+            self.in_flight_ai.remove(&node_id);
+            if self.interrupted_nodes.contains(&node_id) || self.failed_nodes.contains_key(&node_id)
+            {
+                continue;
+            }
+            self.interrupted_nodes.insert(node_id.clone());
+            self.events.push(RunEvent {
+                node_id: node_id.clone(),
+                kind: RunEventKind::Failed,
+                message: "model invocation did not complete; node is retryable".to_string(),
+                output: None,
+            });
+        }
+        true
+    }
+
+    fn layer_retryables(&self) -> Vec<EngineRetryableNode> {
+        self.gather_retryable_nodes()
+            .into_iter()
+            .filter(|retryable| {
+                self.current_layer_nodes().contains(&retryable.node_id)
+                    && !self.outputs.contains_key(&retryable.node_id)
+            })
+            .collect()
+    }
+
     fn find_node(&self, node_id: &NodeId) -> Option<&Node> {
         self.node_index
             .get(node_id)
@@ -276,8 +319,8 @@ impl InteractiveEngine {
     ///
     /// Call repeatedly until the result is [`EnginePollResult::Completed`] or
     /// [`EnginePollResult::Failed`]. For [`EnginePollResult::CallAi`], invoke the model and
-    /// pass the outcome to [`Self::on_ai_complete`]. For input and tool variants, call the
-    /// matching `on_*` handler before polling again.
+    /// pass the outcome to [`Self::on_ai_complete`]. For input, tool, and retry variants, call
+    /// the matching `on_*` / [`Self::retry_node`] handler before polling again.
     #[allow(
         clippy::too_many_lines,
         reason = "poll dispatches the full engine state machine in one place"
@@ -364,6 +407,9 @@ impl InteractiveEngine {
             }
         }
 
+        if self.recover_stale_in_flight_nodes() {
+            return self.poll();
+        }
         if !self.in_flight_ai.is_empty() {
             return EnginePollResult::Failed(RunError::NodeFailed {
                 node_id: self
@@ -374,6 +420,10 @@ impl InteractiveEngine {
                     .unwrap_or_else(|| NodeId("engine".to_string())),
                 kind: NodeFailureKind::LayerStalledInFlight,
             });
+        }
+
+        if let Some(retryable) = self.layer_retryables().into_iter().next() {
+            return EnginePollResult::AwaitRetry(retryable);
         }
 
         EnginePollResult::Failed(RunError::NodeFailed {
@@ -452,6 +502,7 @@ impl InteractiveEngine {
             }
 
             self.schedule_manual_nodes_in_layer();
+            self.recover_stale_in_flight_nodes();
             let inputs = self.gather_await_inputs();
             let approvals = self.gather_await_approvals();
             let retryables = self.gather_retryable_nodes();

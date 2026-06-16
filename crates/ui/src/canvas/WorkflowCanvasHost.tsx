@@ -12,6 +12,8 @@ type WorkflowCanvasHostProps = {
   statusByNode: WorkflowCanvasStatusByNode | null;
   subagentsByNode: WorkflowCanvasSubagentsByNode | null;
   chatFocusNode?: { nodeId: NodeId; tick: number } | null;
+  viewportEnabled?: boolean;
+  previewMode?: boolean;
   runActive?: boolean;
   colorMode?: "light" | "dark";
   onSelectNode: (nodeId: NodeId | null) => void;
@@ -29,12 +31,11 @@ function WorkflowCanvasHost(props: WorkflowCanvasHostProps) {
   let containerRef: HTMLDivElement | undefined;
   let root: Root | undefined;
 
-  onMount(() => {
-    root = createRoot(containerRef!);
-  });
-
-  createEffect(() => {
-    root?.render(
+  const renderCanvas = () => {
+    if (!root) {
+      return;
+    }
+    root.render(
       createElement(WorkflowCanvas, {
         graph: props.graph,
         selectedNodeId: props.selectedNodeId,
@@ -42,6 +43,8 @@ function WorkflowCanvasHost(props: WorkflowCanvasHostProps) {
         statusByNode: props.statusByNode,
         subagentsByNode: props.subagentsByNode,
         chatFocusNode: props.chatFocusNode,
+        viewportEnabled: props.viewportEnabled,
+        previewMode: props.previewMode,
         runActive: props.runActive,
         colorMode: props.colorMode,
         onSelectNode: props.onSelectNode,
@@ -55,6 +58,15 @@ function WorkflowCanvasHost(props: WorkflowCanvasHostProps) {
         onRetryNode: props.onRetryNode,
       }),
     );
+  };
+
+  onMount(() => {
+    root = createRoot(containerRef!);
+    renderCanvas();
+  });
+
+  createEffect(() => {
+    renderCanvas();
   });
 
   onCleanup(() => {

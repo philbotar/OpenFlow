@@ -6,6 +6,7 @@ use super::{
 };
 use crate::tool::blocking_ops::split_selector;
 use crate::tool::errors::ToolError;
+use crate::tool::read::selector::ReadSelector;
 use crate::tool::registry::BuiltinToolKind;
 use engine::ToolCall;
 use reqwest::StatusCode;
@@ -15,11 +16,11 @@ use serde_json::Value;
 enum ReadTarget {
     Artifact {
         artifact_id: String,
-        selector: Option<String>,
+        selector: ReadSelector,
     },
     Url {
         url: String,
-        selector: Option<String>,
+        selector: ReadSelector,
     },
     Local {
         path: String,
@@ -161,9 +162,9 @@ impl ToolRunner {
             ReadTarget::Artifact {
                 artifact_id,
                 selector,
-            } => self.read_artifact(&artifact_id, selector.as_deref(), &args.path),
+            } => self.read_artifact(&artifact_id, selector, &args.path),
             ReadTarget::Url { url, selector } => self
-                .read_url(&url, selector.as_deref())
+                .read_url(&url, selector)
                 .await
                 .map_err(ToolRunnerError::from),
             ReadTarget::Local { path } => {
@@ -182,7 +183,7 @@ impl ToolRunner {
     fn read_artifact(
         &self,
         artifact_id: &str,
-        selector: Option<&str>,
+        selector: ReadSelector,
         label: &str,
     ) -> Result<String, ToolRunnerError> {
         let artifact_path = self.artifacts.path_for(artifact_id).ok_or_else(|| {
@@ -199,7 +200,7 @@ impl ToolRunner {
         Ok(apply_read_selector(label, &text, selector))
     }
 
-    async fn read_url(&self, url: &str, selector: Option<&str>) -> Result<String, ToolError> {
+    async fn read_url(&self, url: &str, selector: ReadSelector) -> Result<String, ToolError> {
         let response = self
             .http
             .get(url)
@@ -297,7 +298,14 @@ mod tests {
         assert!(matches!(
             target,
             ReadTarget::Url { url, selector }
-                if url == "https://example.test/note.txt" && selector.as_deref() == Some("2-3")
+                if url == "https://example.test/note.txt"
+                    && selector == ReadSelector::Lines {
+                        ranges: vec![crate::tool::read::selector::LineRange {
+                            start: 2,
+                            end: Some(3)
+                        }],
+                        raw: false,
+                    }
         ));
     }
 

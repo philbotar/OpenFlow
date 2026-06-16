@@ -75,7 +75,7 @@ describe("ToolApprovalCardBody", () => {
   test("renders non-file tool arguments without preview request", async () => {
     renderCard(readApproval);
 
-    expect(container.textContent).toContain("read");
+    expect(container.textContent).toContain("Read File");
     expect(container.textContent).toContain("README.md");
     expect(previewFileEdit).not.toHaveBeenCalled();
   });

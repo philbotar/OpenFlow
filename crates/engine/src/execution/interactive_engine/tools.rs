@@ -1,9 +1,10 @@
 use super::InteractiveEngine;
 use crate::conversation::AgentTranscriptItem;
-use crate::execution::tool_results::denied_tool_result;
+use crate::execution::tool_results::{denied_tool_result, error_tool_result};
 use crate::execution::EngineInputError;
 use crate::graph::NodeId;
 use crate::tools::ToolResult;
+use std::collections::HashMap;
 
 impl InteractiveEngine {
     /// # Errors
@@ -16,8 +17,23 @@ impl InteractiveEngine {
         let approval_id = self
             .find_pending_tool_batch(node_id, false)
             .ok_or(EngineInputError::NoPendingTools)?;
+        let pending_calls = self
+            .pending_tool_batches
+            .get(&approval_id)
+            .map(|batch| batch.tool_calls.clone())
+            .ok_or(EngineInputError::NoPendingTools)?;
+        let mut by_id: HashMap<String, ToolResult> = results
+            .into_iter()
+            .map(|result| (result.tool_call_id.clone(), result))
+            .collect();
         let transcript = self.transcripts.entry(node_id.clone()).or_default();
-        for result in results {
+        for call in &pending_calls {
+            let result = by_id.remove(&call.id).unwrap_or_else(|| {
+                error_tool_result(
+                    call,
+                    "tool execution did not complete (interrupted or cancelled)",
+                )
+            });
             transcript.push(AgentTranscriptItem::ToolResult { result });
         }
         self.pending_tool_batches.remove(&approval_id);

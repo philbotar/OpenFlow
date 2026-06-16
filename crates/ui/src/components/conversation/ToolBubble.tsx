@@ -1,7 +1,7 @@
 import { createSignal, Show } from "solid-js";
 import ChevronRight from "lucide-solid/icons/chevron-right";
 import type { ToolCallStatus } from "../../lib/types";
-import { toolBubbleRowStatusText, toolBubbleTargetText } from "./toolBubbleState";
+import { toolBubbleRowStatusText, toolBubbleTargetText, formatToolDisplayName } from "./toolBubbleState";
 
 export interface ToolBubbleProps {
   toolName: string;
@@ -66,7 +66,7 @@ export function ToolBubble(props: ToolBubbleProps) {
         <span class={`tool-line-status ${icon().class}`}>{icon().label}</span>
         <span class="tool-line-name">
           <span class="tool-line-name-text">
-            {props.toolName}
+            {formatToolDisplayName(props.toolName)}
             <Show when={targetText()}>
               {" "}
               <span class="tool-line-target">{targetText()}</span>

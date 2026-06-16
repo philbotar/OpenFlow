@@ -20,6 +20,10 @@ const apiMocks = vi.hoisted(() => ({
   saveProviderApiKey: vi.fn(),
   saveSettings: vi.fn(),
   saveWorkflows: vi.fn(),
+  saveWorkflow: vi.fn(),
+  listScheduleStatuses: vi.fn(),
+  refreshSchedules: vi.fn(),
+  listenToScheduleStatuses: vi.fn(),
   startRun: vi.fn(),
   continueRun: vi.fn(),
   isRunContinuable: vi.fn(),
@@ -60,6 +64,10 @@ vi.mock("../api", async (importOriginal) => {
     saveProviderApiKey: apiMocks.saveProviderApiKey,
     saveSettings: apiMocks.saveSettings,
     saveWorkflows: apiMocks.saveWorkflows,
+    saveWorkflow: apiMocks.saveWorkflow,
+    listScheduleStatuses: apiMocks.listScheduleStatuses,
+    refreshSchedules: apiMocks.refreshSchedules,
+    listenToScheduleStatuses: apiMocks.listenToScheduleStatuses,
     startRun: apiMocks.startRun,
     continueRun: apiMocks.continueRun,
     isRunContinuable: apiMocks.isRunContinuable,
@@ -95,6 +103,7 @@ vi.mock("@xterm/xterm", () => ({
   Terminal: vi.fn().mockImplementation(() => ({
     cols: 80,
     rows: 24,
+    options: { theme: {} },
     loadAddon: vi.fn(),
     open: vi.fn(),
     onData: vi.fn(),
@@ -293,6 +302,10 @@ function installDefaultApiMocks() {
   apiMocks.resizeTerminal.mockResolvedValue(undefined);
   apiMocks.stopTerminal.mockResolvedValue(undefined);
   apiMocks.listenToTerminalEvent.mockResolvedValue(() => {});
+  apiMocks.saveWorkflow.mockImplementation(async (workflow) => workflow);
+  apiMocks.refreshSchedules.mockResolvedValue([]);
+  apiMocks.listScheduleStatuses.mockResolvedValue([]);
+  apiMocks.listenToScheduleStatuses.mockResolvedValue(() => {});
 }
 
 function makeProject(id: string, name: string, workflowIds: string[] = []): Project {
@@ -319,6 +332,7 @@ function makeBootstrapPayload(
     skills,
     settings: SETTINGS,
     runState: null,
+    scheduleStatuses: [],
   };
 }
 
@@ -714,9 +728,9 @@ describe("App agent dashboard", () => {
       expect(modelInput.value).toBe("gpt-4.1-mini");
 
       const autoStartInput = Array.from(container.querySelectorAll("label.checkbox-row input")).find(
-        (element) => (element.parentElement?.textContent ?? "").includes("Auto-start without pausing for human input"),
+        (element) => (element.parentElement?.textContent ?? "").includes("Request user input"),
       ) as HTMLInputElement | undefined;
-      expect(autoStartInput?.checked).toBe(true);
+      expect(autoStartInput?.checked).toBe(false);
 
       const systemPromptInput = Array.from(container.querySelectorAll("label span")).find(
         (element) => element.textContent === "System prompt",
@@ -1278,7 +1292,7 @@ describe("App chat slash commands", () => {
       const line = container.querySelector(".tool-line");
       expect(line).not.toBeNull();
       expect(line?.getAttribute("data-tool-name")).toBe("read");
-      expect(line?.querySelector(".tool-line-name")?.textContent).toContain("read");
+      expect(line?.querySelector(".tool-line-name")?.textContent).toContain("Read File");
       expect(line?.querySelector(".tool-line-target")?.textContent).toBe("README.md");
       expect(line?.querySelector(".tool-line-output")).toBeNull();
     } finally {
@@ -1407,11 +1421,11 @@ describe("Global chat layout", () => {
       await flush();
 
       expect(apiMocks.submitUserInput).toHaveBeenCalledWith("node-c", "branch c reply");
-      // The remaining live node stays blocked behind a locked picker.
+      // The remaining live node stays visible and can be selected.
       const remaining = container.querySelectorAll(".chat-live-picker-option");
       expect(remaining.length).toBe(1);
       expect(remaining[0]?.textContent).toContain("Branch B");
-      expect((remaining[0] as HTMLButtonElement).disabled).toBe(true);
+      expect((remaining[0] as HTMLButtonElement).disabled).toBe(false);
     } finally {
       dispose();
     }
@@ -1653,7 +1667,57 @@ describe("App bottom dock", () => {
 
       expect(apiMocks.startTerminal).toHaveBeenCalledWith("/tmp/Repo", 80, 24);
       expect(container.querySelector(".terminal-host")).not.toBeNull();
-      expect(container.querySelector(".terminal-cwd")?.textContent).toContain("/tmp/Repo");
+      expect(container.querySelector(".terminal-tab-label")?.textContent).toBe("Repo");
+      expect(container.querySelector(".terminal-tab-select")?.getAttribute("title")).toBe("/tmp/Repo");
+    } finally {
+      dispose();
+      window.localStorage.removeItem("openflow.expandedProjectIds");
+    }
+  });
+
+  test("opens another terminal session when the new-terminal control is clicked", async () => {
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    const project = makeProject("p1", "Repo", ["workflow-1"]);
+    apiMocks.bootstrapApp.mockResolvedValue({
+      workflows: [workflow],
+      agents: [makeAgent("agent-1", "Research Agent")],
+      skills: FIXTURE_SKILLS,
+      settings: SETTINGS,
+      projects: [project],
+      runState: null,
+    });
+    apiMocks.startTerminal
+      .mockResolvedValueOnce({ sessionId: "terminal-1", cwd: "/tmp/Repo" })
+      .mockResolvedValueOnce({ sessionId: "terminal-2", cwd: "/tmp/Repo" });
+    window.localStorage.setItem("openflow.expandedProjectIds", JSON.stringify(["p1"]));
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const dispose = render(() => <App />, container);
+
+    try {
+      await waitForElement(() => container.querySelector(".editor-screen"), "editor screen");
+      await flush();
+
+      const terminalTab = await waitForElement(
+        () =>
+          Array.from(container.querySelectorAll(".dock-tab-switcher button")).find(
+            (button) => button.textContent === "Terminal",
+          ) as HTMLButtonElement | null,
+        "terminal tab",
+      );
+      terminalTab.click();
+      await flush();
+
+      const addButton = await waitForElement(
+        () => container.querySelector(".terminal-tab-add") as HTMLButtonElement | null,
+        "terminal add button",
+      );
+      addButton.click();
+      await flush();
+
+      expect(apiMocks.startTerminal).toHaveBeenCalledTimes(2);
+      expect(container.querySelectorAll(".terminal-tab")).toHaveLength(2);
     } finally {
       dispose();
       window.localStorage.removeItem("openflow.expandedProjectIds");
@@ -1876,6 +1940,176 @@ describe("Idle global chat kickoff", () => {
         null,
         "stored-openai-key",
         null,
+      );
+    } finally {
+      dispose();
+    }
+  });
+});
+
+describe("App schedule screen", () => {
+  beforeEach(() => {
+    installDefaultApiMocks();
+  });
+
+  test("opens schedule screen from sidebar", async () => {
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    const { container, dispose } = await mountApp({
+      workflows: [workflow],
+      agents: [makeAgent("agent-1", "Research Agent")],
+      skills: FIXTURE_SKILLS,
+      settings: SETTINGS,
+      runState: null,
+      scheduleStatuses: [],
+    });
+
+    try {
+      const button = [...container.querySelectorAll("button")].find((item) =>
+        item.textContent?.includes("Schedule"),
+      ) as HTMLButtonElement;
+      button.click();
+      await flush();
+
+      expect(container.querySelector('[data-screen="schedule"]')).not.toBeNull();
+      expect(apiMocks.refreshSchedules).toHaveBeenCalled();
+    } finally {
+      dispose();
+    }
+  });
+
+  test("saves workflow schedule from schedule screen", async () => {
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    workflow.settings.schedule = {
+      cron: "0 9 * * *",
+      enabled: true,
+      timezone: "Australia/Perth",
+    };
+    apiMocks.saveWorkflows.mockResolvedValue(undefined);
+    apiMocks.refreshSchedules.mockResolvedValue([
+      {
+        workflowId: "workflow-1",
+        workflowName: "Workflow One",
+        enabled: true,
+        cron: "*/15 * * * *",
+        timezone: "UTC",
+        nextRunAt: "2026-06-16T00:15:00Z",
+        lastRunAt: null,
+        lastSkippedAt: null,
+        lastError: null,
+      },
+    ]);
+
+    const { container, dispose } = await mountApp({
+      workflows: [workflow],
+      agents: [makeAgent("agent-1", "Research Agent")],
+      skills: FIXTURE_SKILLS,
+      settings: SETTINGS,
+      runState: null,
+      scheduleStatuses: [],
+    });
+
+    try {
+      const button = [...container.querySelectorAll("button")].find((item) =>
+        item.textContent?.includes("Schedule"),
+      ) as HTMLButtonElement;
+      button.click();
+      await flush();
+
+      expect(container.querySelector('input[placeholder="0 9 * * *"]')).toBeNull();
+
+      const repeatButton = [...container.querySelectorAll(".schedule-frequency-select button")].find(
+        (item) => item.textContent?.includes("Repeat"),
+      ) as HTMLButtonElement;
+      repeatButton.click();
+
+      const intervalButton = [...container.querySelectorAll(".schedule-interval-select button")].find(
+        (item) => item.textContent?.includes("15m"),
+      ) as HTMLButtonElement;
+      intervalButton.click();
+
+      const saveButton = container.querySelector(
+        '.schedule-row button[title="Save schedule"]',
+      ) as HTMLButtonElement;
+      saveButton.click();
+      await flush();
+
+      expect(apiMocks.saveWorkflow).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: "workflow-1",
+          settings: expect.objectContaining({
+            schedule: expect.objectContaining({
+              cron: "*/15 * * * *",
+              enabled: true,
+            }),
+          }),
+        }),
+      );
+    } finally {
+      dispose();
+    }
+  });
+
+  test("shows only workflows added to the schedule page", async () => {
+    const scheduled = makeWorkflow("workflow-1", "Scheduled Workflow");
+    scheduled.settings.schedule = {
+      cron: "0 9 * * *",
+      enabled: true,
+      timezone: "Australia/Perth",
+    };
+    const unscheduled = makeWorkflow("workflow-2", "Unscheduled Workflow");
+    apiMocks.saveWorkflow.mockImplementation(async (workflow: Workflow) => workflow);
+    apiMocks.refreshSchedules.mockResolvedValue([]);
+
+    const { container, dispose } = await mountApp({
+      workflows: [scheduled, unscheduled],
+      agents: [makeAgent("agent-1", "Research Agent")],
+      skills: FIXTURE_SKILLS,
+      settings: SETTINGS,
+      runState: null,
+      scheduleStatuses: [],
+    });
+
+    try {
+      const button = [...container.querySelectorAll("button")].find((item) =>
+        item.textContent?.includes("Schedule"),
+      ) as HTMLButtonElement;
+      button.click();
+      await flush();
+
+      expect(container.querySelector(".schedule-table")?.textContent).toContain(
+        "Scheduled Workflow",
+      );
+      expect(container.querySelector(".schedule-table")?.textContent).not.toContain(
+        "Unscheduled Workflow",
+      );
+
+      const addWorkflowButton = container.querySelector(
+        ".schedule-add-button",
+      ) as HTMLButtonElement;
+      addWorkflowButton.click();
+      await flush();
+
+      expect(
+        container.querySelector('[role="dialog"][aria-label="Add workflow to schedule"]'),
+      ).not.toBeNull();
+
+      const addOption = [...container.querySelectorAll(".node-picker-option-title")].find(
+        (item) => item.textContent === "Unscheduled Workflow",
+      )?.closest("button") as HTMLButtonElement;
+      addOption.click();
+      await flush();
+
+      expect(apiMocks.saveWorkflow).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: "workflow-2",
+          settings: expect.objectContaining({
+            schedule: expect.objectContaining({
+              cron: "0 9 * * *",
+              enabled: true,
+              timezone: "Australia/Perth",
+            }),
+          }),
+        }),
       );
     } finally {
       dispose();

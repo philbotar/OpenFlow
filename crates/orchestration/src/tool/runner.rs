@@ -79,6 +79,16 @@ pub enum ToolRunnerError {
     BlockingTask(String),
 }
 
+impl ToolRunnerError {
+    #[must_use]
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            Self::Tool(error) => error.is_retryable(),
+            Self::Registry(_) | Self::InvalidArguments(_) | Self::BlockingTask(_) => false,
+        }
+    }
+}
+
 impl ToolRunner {
     pub fn new(
         registry: ToolRegistry,

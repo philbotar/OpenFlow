@@ -56,6 +56,12 @@ skip-tree = [
     { crate = "tauri@2.11.2", depth = 20 },
     { crate = "reqwest@0.13.3", depth = 20 },
 ]
+skip = [
+    { name = "phf", version = "0.11.3", reason = "cron 0.16 uses phf 0.11 alongside chrono-tz phf 0.12" },
+    { name = "phf_shared", version = "0.11.3", reason = "transitive from cron phf 0.11" },
+    { name = "rand", version = "0.8.6", reason = "transitive from cron phf_generator" },
+    { name = "rand_core", version = "0.6.4", reason = "transitive from cron rand 0.8" },
+]
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"

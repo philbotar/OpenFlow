@@ -18,6 +18,7 @@ tauri-build.workspace = true
 
 [dependencies]
 keepawake = "0.6.0"
+log = "0.4"
 orchestration = { path = "../orchestration", version = "0.1.0" }
 serde.workspace = true
 serde_json.workspace = true

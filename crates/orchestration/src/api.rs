@@ -1,6 +1,8 @@
 use engine::{FileChangeOp, Workflow};
 use serde::{Deserialize, Serialize};
 
+pub use crate::schedule::{ScheduleStatus, ScheduledRunCandidate};
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkflowListItem {
@@ -52,9 +54,17 @@ pub struct FileEditPreview {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub enum ProjectFileReferenceKind {
+    File,
+    Directory,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProjectFileReference {
     pub path: String,
     pub display_path: String,
+    pub kind: ProjectFileReferenceKind,
     pub size_bytes: u64,
 }
 
@@ -62,6 +72,7 @@ pub struct ProjectFileReference {
 #[serde(rename_all = "camelCase")]
 pub struct ProjectFileReferenceContent {
     pub path: String,
+    pub kind: ProjectFileReferenceKind,
     pub content: String,
     pub truncated: bool,
     pub size_bytes: u64,

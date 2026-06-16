@@ -556,3 +556,70 @@ async fn checkpoint_resume_mid_approval_replays_batch() {
         "checkpoint ORCHID-91\n"
     );
 }
+
+#[tokio::test]
+async fn failed_read_tool_feeds_error_and_node_completes() {
+    #[derive(Clone, Default)]
+    struct RecoverAi {
+        calls: Arc<Mutex<usize>>,
+    }
+
+    #[async_trait]
+    impl AiPort for RecoverAi {
+        async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            let n = {
+                let mut calls = self.calls.lock();
+                *calls += 1;
+                *calls
+            };
+            if n == 1 {
+                return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+                    raw_text: String::new(),
+                    assistant_message: None,
+                    tool_calls: vec![ToolCall {
+                        id: "call-1".to_string(),
+                        name: "read".to_string(),
+                        arguments: json!({"path": "missing-acceptance-file.txt"}),
+                    }],
+                }));
+            }
+            assert!(request.transcript.iter().any(|item| matches!(
+                item,
+                engine::AgentTranscriptItem::ToolResult { result } if result.is_error
+            )));
+            Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                output: json!({"summary": "ok after tool error"}),
+                raw_text: "{}".to_string(),
+                assistant_message: None,
+            }))
+        }
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let mut workflow = Workflow::new("tool resilience");
+    let mut node = agent("worker", "Worker");
+    node.agent.tools.catalog.tools = vec![ToolRef {
+        name: "read".to_string(),
+        tier: Some(engine::ToolTier::Read),
+    }];
+    node.agent.tools.approval_mode = Some(ApprovalMode::Yolo);
+    workflow.nodes = vec![node];
+
+    let snapshot = run_workflow_headless(
+        workflow,
+        None,
+        RecoverAi::default(),
+        vec![],
+        vec![],
+        BTreeMap::new(),
+        Some(temp.path().to_path_buf()),
+    )
+    .await
+    .expect("acceptance run completes");
+
+    assert_eq!(
+        snapshot.report.outputs.len(),
+        1,
+        "node should complete after tool error"
+    );
+}

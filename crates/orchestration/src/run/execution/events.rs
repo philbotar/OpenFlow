@@ -236,6 +236,36 @@ pub fn apply_event_to_run_state(
                 false,
             );
         }
+        ExecutionEvent::ToolRetrying {
+            node_id,
+            tool_call_id,
+            tool_name,
+            attempt,
+            backoff_ms,
+            ..
+        } => {
+            state.active_tool_call_id = Some(tool_call_id.clone());
+            state
+                .status_by_node
+                .insert(node_id.clone(), AgentStatus::RunningTool);
+            state.run_trace.push(RunTraceEntry {
+                node_id: node_id.clone(),
+                node_label: tool_name.clone(),
+                status: TraceStatus::Running,
+                message: format!(
+                    "retrying tool {tool_name} (attempt {attempt}, backoff {backoff_ms}ms)"
+                ),
+                output: None,
+            });
+            update_tool_status(
+                state,
+                &node_id,
+                &tool_call_id,
+                ToolCallStatus::Running,
+                None,
+                false,
+            );
+        }
         ExecutionEvent::ToolUpdated {
             node_id,
             tool_call_id,

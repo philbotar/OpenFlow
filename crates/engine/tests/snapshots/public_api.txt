@@ -604,6 +604,7 @@ pub engine::execution::interactive_engine::EnginePollResult::AwaitInput::context
 pub engine::execution::interactive_engine::EnginePollResult::AwaitInput::is_initial: bool
 pub engine::execution::interactive_engine::EnginePollResult::AwaitInput::label: alloc::string::String
 pub engine::execution::interactive_engine::EnginePollResult::AwaitInput::node_id: engine::graph::workflow::NodeId
+pub engine::execution::interactive_engine::EnginePollResult::AwaitRetry(engine::execution::interactive_engine::EngineRetryableNode)
 pub engine::execution::interactive_engine::EnginePollResult::AwaitToolApproval
 pub engine::execution::interactive_engine::EnginePollResult::AwaitToolApproval::approval_id: alloc::string::String
 pub engine::execution::interactive_engine::EnginePollResult::AwaitToolApproval::label: alloc::string::String
@@ -1260,6 +1261,12 @@ pub engine::execution::telemetry::RunTelemetry::ToolDenied::node_id: engine::gra
 pub engine::execution::telemetry::RunTelemetry::ToolDenied::reason: alloc::string::String
 pub engine::execution::telemetry::RunTelemetry::ToolDenied::tool_call_id: alloc::string::String
 pub engine::execution::telemetry::RunTelemetry::ToolDenied::tool_name: alloc::string::String
+pub engine::execution::telemetry::RunTelemetry::ToolRetrying
+pub engine::execution::telemetry::RunTelemetry::ToolRetrying::attempt: u8
+pub engine::execution::telemetry::RunTelemetry::ToolRetrying::backoff_ms: u64
+pub engine::execution::telemetry::RunTelemetry::ToolRetrying::node_id: engine::graph::workflow::NodeId
+pub engine::execution::telemetry::RunTelemetry::ToolRetrying::tool_call_id: alloc::string::String
+pub engine::execution::telemetry::RunTelemetry::ToolRetrying::tool_name: alloc::string::String
 pub engine::execution::telemetry::RunTelemetry::ToolStarted
 pub engine::execution::telemetry::RunTelemetry::ToolStarted::arguments: serde_json::value::Value
 pub engine::execution::telemetry::RunTelemetry::ToolStarted::node_id: engine::graph::workflow::NodeId
@@ -1441,6 +1448,7 @@ pub engine::execution::EnginePollResult::AwaitInput::context: alloc::string::Str
 pub engine::execution::EnginePollResult::AwaitInput::is_initial: bool
 pub engine::execution::EnginePollResult::AwaitInput::label: alloc::string::String
 pub engine::execution::EnginePollResult::AwaitInput::node_id: engine::graph::workflow::NodeId
+pub engine::execution::EnginePollResult::AwaitRetry(engine::execution::interactive_engine::EngineRetryableNode)
 pub engine::execution::EnginePollResult::AwaitToolApproval
 pub engine::execution::EnginePollResult::AwaitToolApproval::approval_id: alloc::string::String
 pub engine::execution::EnginePollResult::AwaitToolApproval::label: alloc::string::String
@@ -1777,6 +1785,12 @@ pub engine::execution::RunTelemetry::ToolDenied::node_id: engine::graph::workflo
 pub engine::execution::RunTelemetry::ToolDenied::reason: alloc::string::String
 pub engine::execution::RunTelemetry::ToolDenied::tool_call_id: alloc::string::String
 pub engine::execution::RunTelemetry::ToolDenied::tool_name: alloc::string::String
+pub engine::execution::RunTelemetry::ToolRetrying
+pub engine::execution::RunTelemetry::ToolRetrying::attempt: u8
+pub engine::execution::RunTelemetry::ToolRetrying::backoff_ms: u64
+pub engine::execution::RunTelemetry::ToolRetrying::node_id: engine::graph::workflow::NodeId
+pub engine::execution::RunTelemetry::ToolRetrying::tool_call_id: alloc::string::String
+pub engine::execution::RunTelemetry::ToolRetrying::tool_name: alloc::string::String
 pub engine::execution::RunTelemetry::ToolStarted
 pub engine::execution::RunTelemetry::ToolStarted::arguments: serde_json::value::Value
 pub engine::execution::RunTelemetry::ToolStarted::node_id: engine::graph::workflow::NodeId
@@ -6512,6 +6526,7 @@ pub engine::EnginePollResult::AwaitInput::context: alloc::string::String
 pub engine::EnginePollResult::AwaitInput::is_initial: bool
 pub engine::EnginePollResult::AwaitInput::label: alloc::string::String
 pub engine::EnginePollResult::AwaitInput::node_id: engine::graph::workflow::NodeId
+pub engine::EnginePollResult::AwaitRetry(engine::execution::interactive_engine::EngineRetryableNode)
 pub engine::EnginePollResult::AwaitToolApproval
 pub engine::EnginePollResult::AwaitToolApproval::approval_id: alloc::string::String
 pub engine::EnginePollResult::AwaitToolApproval::label: alloc::string::String
@@ -6881,6 +6896,12 @@ pub engine::RunTelemetry::ToolDenied::node_id: engine::graph::workflow::NodeId
 pub engine::RunTelemetry::ToolDenied::reason: alloc::string::String
 pub engine::RunTelemetry::ToolDenied::tool_call_id: alloc::string::String
 pub engine::RunTelemetry::ToolDenied::tool_name: alloc::string::String
+pub engine::RunTelemetry::ToolRetrying
+pub engine::RunTelemetry::ToolRetrying::attempt: u8
+pub engine::RunTelemetry::ToolRetrying::backoff_ms: u64
+pub engine::RunTelemetry::ToolRetrying::node_id: engine::graph::workflow::NodeId
+pub engine::RunTelemetry::ToolRetrying::tool_call_id: alloc::string::String
+pub engine::RunTelemetry::ToolRetrying::tool_name: alloc::string::String
 pub engine::RunTelemetry::ToolStarted
 pub engine::RunTelemetry::ToolStarted::arguments: serde_json::value::Value
 pub engine::RunTelemetry::ToolStarted::node_id: engine::graph::workflow::NodeId

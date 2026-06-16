@@ -5,6 +5,7 @@ import { useAppContext } from "../../context/AppContext";
 import { Spinner } from "../Spinner";
 import type { EditBatch, FileChangeRecord } from "../../lib/types";
 import { nodeChangedFiles, nodeEditBatches } from "../../lib/workflow";
+import { formatToolDisplayName } from "./toolBubbleState";
 
 const desktop = createUiDesktopOutboundAdapter();
 
@@ -147,7 +148,7 @@ function EditBatchRow(props: { batch: EditBatch }) {
   return (
     <div class="edit-batch-row">
       <div class="edit-batch-summary">
-        <span class="edit-batch-tool">{props.batch.toolName}</span>
+        <span class="edit-batch-tool">{formatToolDisplayName(props.batch.toolName)}</span>
         <span class="edit-batch-meta">
           {props.batch.snapshots.length} file
           {props.batch.snapshots.length === 1 ? "" : "s"}

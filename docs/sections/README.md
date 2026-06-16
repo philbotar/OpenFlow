@@ -16,13 +16,13 @@ sections/
 
 ## Sections
 
-| Folder | Crate | Start here in code |
-| --- | --- | --- |
-| [`domain/`](domain/) | `crates/engine` | `src/lib.rs`, `src/model.rs` |
-| [`providers/`](providers/) | `crates/providers` | `src/lib.rs`, `src/client.rs` |
-| [`orchestration/`](orchestration/) | `crates/orchestration` | `src/backend/mod.rs`, [`layout.md`](orchestration/layout.md) |
-| [`desktop/`](desktop/) | `crates/desktop` | `src/lib.rs` |
-| [`ui/`](ui/) | `crates/ui` | `src/App.tsx`, `src/context/` |
+| Folder | Crate | Agent orientation | Start here in code |
+| --- | --- | --- | --- |
+| [`domain/`](domain/) | `crates/engine` | [`AGENTS.md`](../../crates/engine/AGENTS.md) | `src/lib.rs`, `src/graph/` |
+| [`providers/`](providers/) | `crates/providers` | [`AGENTS.md`](../../crates/providers/AGENTS.md) | `src/lib.rs`, `src/client.rs` |
+| [`orchestration/`](orchestration/) | `crates/orchestration` | [`AGENTS.md`](../../crates/orchestration/AGENTS.md) | `src/backend/mod.rs`, [`layout.md`](orchestration/layout.md) |
+| [`desktop/`](desktop/) | `crates/desktop` | [`AGENTS.md`](../../crates/desktop/AGENTS.md) | `src/lib.rs` |
+| [`ui/`](ui/) | `crates/ui` | [`AGENTS.md`](../../crates/ui/AGENTS.md) | `src/App.tsx`, `src/context/` |
 
 ## Related
 

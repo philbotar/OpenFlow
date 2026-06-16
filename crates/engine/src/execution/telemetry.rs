@@ -68,6 +68,13 @@ pub enum RunTelemetry {
         tool_name: String,
         arguments: Value,
     },
+    ToolRetrying {
+        node_id: NodeId,
+        tool_call_id: String,
+        tool_name: String,
+        attempt: u8,
+        backoff_ms: u64,
+    },
     ToolUpdated {
         node_id: NodeId,
         tool_call_id: String,
@@ -166,5 +173,19 @@ mod tests {
         assert!(debug.contains("ToolUpdated"));
         assert!(debug.contains("hello world"));
         assert!(debug.contains("tc-1"));
+    }
+
+    #[test]
+    fn tool_retrying_debug() {
+        let event = RunTelemetry::ToolRetrying {
+            node_id: NodeId("n1".to_string()),
+            tool_call_id: "tc-1".to_string(),
+            tool_name: "bash".to_string(),
+            attempt: 2,
+            backoff_ms: 2000,
+        };
+        let debug = format!("{event:?}");
+        assert!(debug.contains("ToolRetrying"));
+        assert!(debug.contains("attempt: 2"));
     }
 }

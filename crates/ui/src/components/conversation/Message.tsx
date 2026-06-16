@@ -37,7 +37,10 @@ export function Message(allProps: MessageProps) {
       </Show>
       <div
         class="message-content"
-        classList={{ "message-streaming-caret": Boolean(local.streaming) }}
+        classList={{
+          "message-streaming-caret": Boolean(local.streaming),
+          "message-content--empty": local.content.trim().length === 0,
+        }}
       >
         <MarkdownContent content={local.content} />
       </div>

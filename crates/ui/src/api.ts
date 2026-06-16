@@ -21,10 +21,12 @@ import type {
   WorkflowAuthoringTurnResult,
   TerminalEvent,
   TerminalStart,
+  ScheduleStatus,
 } from "./lib/types";
 
 export const RUN_STATE_EVENT = "run-state";
 export const TERMINAL_EVENT = "terminal-event";
+export const SCHEDULE_EVENT = "schedule-event";
 
 export function bootstrapApp() {
   return invoke<BootstrapPayload>("bootstrap_app");
@@ -292,6 +294,18 @@ export function listenToTerminalEvent(handler: (event: TerminalEvent) => void) {
 
 export function listenToRunState(handler: (runState: WorkflowRunState) => void) {
   return listen<WorkflowRunState>(RUN_STATE_EVENT, (event) => handler(event.payload));
+}
+
+export function listScheduleStatuses() {
+  return invoke<ScheduleStatus[]>("list_schedule_statuses");
+}
+
+export function refreshSchedules() {
+  return invoke<ScheduleStatus[]>("refresh_schedules");
+}
+
+export function listenToScheduleStatuses(handler: (statuses: ScheduleStatus[]) => void) {
+  return listen<ScheduleStatus[]>(SCHEDULE_EVENT, (event) => handler(event.payload));
 }
 
 /** Native app window handle (Tauri seam — do not import @tauri-apps in components). */

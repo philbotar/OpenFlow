@@ -50,12 +50,12 @@ docs/
 
 ## Active Crates
 
-| Crate | Question it answers |
-| --- | --- |
-| `crates/engine` | What is a valid workflow, and how does a run behave? |
-| `crates/orchestration` | How does the desktop app store, load, wire, and host runs? |
-| `crates/providers` | How do we talk to OpenAI/Anthropic? |
-| `crates/ui` / `crates/desktop` | How does the user interact? |
+| Crate | Question it answers | Agent orientation |
+| --- | --- | --- |
+| `crates/engine` | What is a valid workflow, and how does a run behave? | [`AGENTS.md`](../crates/engine/AGENTS.md) |
+| `crates/orchestration` | How does the desktop app store, load, wire, and host runs? | [`AGENTS.md`](../crates/orchestration/AGENTS.md) |
+| `crates/providers` | How do we talk to OpenAI/Anthropic? | [`AGENTS.md`](../crates/providers/AGENTS.md) |
+| `crates/ui` / `crates/desktop` | How does the user interact? | [`ui/AGENTS.md`](../crates/ui/AGENTS.md), [`desktop/AGENTS.md`](../crates/desktop/AGENTS.md) |
 
 See [`architecture/contract.md`](architecture/contract.md) for layer boundaries and dependency rules.
 

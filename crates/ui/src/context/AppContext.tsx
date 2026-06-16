@@ -11,6 +11,7 @@ import type {
   ProviderReadiness,
   RunTraceEntry,
   Screen,
+  ScheduleStatus,
   Project,
   ProjectFileReference,
   SkillSummary,
@@ -20,6 +21,7 @@ import type {
   WorkflowAuthoringMessage,
   WorkflowAuthoringValidation,
   WorkflowRunState,
+  WorkflowSchedule,
 } from "../lib/types";
 import type { ResolvedTheme, ThemePreference } from "../lib/theme";
 import type { ChatSubmissionResolution } from "../lib/chatCommands";
@@ -77,10 +79,12 @@ export interface AppContextValue {
   chatFocusNode: Accessor<{ nodeId: NodeId; tick: number } | null>;
   pickedLiveNodeId: Accessor<NodeId | null>;
   workflowsSectionExpanded: Accessor<boolean>;
-  terminalSession: Accessor<TerminalStart | null>;
+  terminalSessions: Accessor<TerminalStart[]>;
+  activeTerminalSessionId: Accessor<string | null>;
   terminalStarting: Accessor<boolean>;
   terminalError: Accessor<string | null>;
-  terminalOutput: Accessor<string>;
+  terminalOutputFor: (sessionId: string) => string;
+  scheduleStatuses: Accessor<ScheduleStatus[]>;
 
   // ── Signal setters (form inputs + simple UI state) ────────────────────────
   setWorkflowNameDraft: Setter<string>;
@@ -130,6 +134,12 @@ export interface AppContextValue {
   workflowsAddableToProject: (projectId: string) => Workflow[];
   handleAssignWorkflowToProject: (projectId: string, workflowId: string) => Promise<void>;
   handleOpenAgents: () => void;
+  handleOpenSchedule: () => void;
+  handleRefreshScheduleStatuses: () => Promise<void>;
+  handleSaveWorkflowSchedule: (
+    workflowId: string,
+    schedule: WorkflowSchedule | null,
+  ) => Promise<void>;
   handleAddProject: () => Promise<void>;
   handleSelectProject: (projectId: string) => void;
   handleToggleProjectExpanded: (projectId: string) => void;
@@ -167,8 +177,8 @@ export interface AppContextValue {
 
   // ── Run handlers ──────────────────────────────────────────────────────────
   handleValidate: () => Promise<void>;
-  workflowAuthoringOpen: Accessor<boolean>;
   workflowAuthoringBusy: Accessor<boolean>;
+  workflowAuthoringSessionReady: Accessor<boolean>;
   workflowAuthoringMessages: Accessor<WorkflowAuthoringMessage[]>;
   workflowAuthoringValidation: Accessor<WorkflowAuthoringValidation | null>;
   workflowAuthoringDraft: Accessor<Workflow | null>;
@@ -226,9 +236,10 @@ export interface AppContextValue {
 
   // ── Dock handlers ─────────────────────────────────────────────────────────
   handleOpenTerminal: (cols: number, rows: number) => Promise<void>;
-  handleTerminalInput: (data: string) => Promise<void>;
+  handleSelectTerminalSession: (sessionId: string) => void;
+  handleTerminalInput: (sessionId: string, data: string) => Promise<void>;
   handleTerminalResize: (cols: number, rows: number) => Promise<void>;
-  handleStopTerminal: () => Promise<void>;
+  handleStopTerminal: (sessionId?: string) => Promise<void>;
   handleTerminalEvent: (event: TerminalEvent) => void;
   handleSelectBottomTab: (tab: BottomTab) => void;
   handleToggleChatFocusMode: () => void;

@@ -75,18 +75,27 @@ export function formatSubmissionWithFileReferences(
     return submittedText;
   }
 
-  const lines = ["User message:", submittedText, "", "Referenced files:"];
+  const lines = ["User message:", submittedText, "", "Referenced context:"];
   for (const reference of references) {
     lines.push("");
     lines.push(fileReferenceHeader(reference));
-    lines.push("```text");
-    lines.push(stripTrailingNewline(reference.content));
-    lines.push("```");
+    if (reference.kind === "directory") {
+      lines.push(stripTrailingNewline(reference.content));
+    } else {
+      lines.push("```text");
+      lines.push(stripTrailingNewline(reference.content));
+      lines.push("```");
+    }
   }
   return lines.join("\n");
 }
 
 function fileReferenceHeader(reference: ProjectFileReferenceContent): string {
+  if (reference.kind === "directory") {
+    return reference.truncated
+      ? `Directory: ${reference.path} (truncated)`
+      : `Directory: ${reference.path}`;
+  }
   if (!reference.truncated) {
     return `File: ${reference.path}`;
   }

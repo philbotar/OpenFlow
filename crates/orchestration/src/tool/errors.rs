@@ -144,4 +144,34 @@ mod tests {
         let error = ToolError::failed("path escapes execution folder: ../x");
         assert!(error.to_string().contains("path escapes execution folder"));
     }
+
+    #[test]
+    fn runner_registry_error_is_not_retryable() {
+        use crate::tool::registry::ToolRegistryError;
+        use crate::tool::runner::ToolRunnerError;
+
+        let err = ToolRunnerError::Registry(ToolRegistryError::Missing("nope".into()));
+        assert!(!err.is_retryable());
+    }
+
+    #[test]
+    fn runner_tool_timeout_is_retryable() {
+        use crate::tool::runner::ToolRunnerError;
+
+        let err = ToolRunnerError::Tool(ToolError::Timeout {
+            tool: "bash".into(),
+            after_secs: 1,
+            hint: "retry".into(),
+            partial_output: None,
+        });
+        assert!(err.is_retryable());
+    }
+
+    #[test]
+    fn runner_invalid_arguments_is_not_retryable() {
+        use crate::tool::runner::ToolRunnerError;
+
+        let err = ToolRunnerError::InvalidArguments("bad json".into());
+        assert!(!err.is_retryable());
+    }
 }

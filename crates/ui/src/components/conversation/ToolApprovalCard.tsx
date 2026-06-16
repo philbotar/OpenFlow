@@ -4,6 +4,7 @@ import type { PendingToolApproval } from "../../lib/types";
 import { prettyJson } from "../../lib/workflow";
 import { Spinner } from "../Spinner";
 import { isFileEditTool } from "./FileChangesPanel";
+import { formatToolDisplayName } from "./toolBubbleState";
 
 const desktop = createUiDesktopOutboundAdapter();
 
@@ -83,7 +84,7 @@ export function ToolApprovalCardBody(props: {
   return (
     <div class="tool-approval-card">
       <div class="eyebrow">Approval required</div>
-      <h3>{props.approval.toolCall.name}</h3>
+      <h3>{formatToolDisplayName(props.approval.toolCall.name)}</h3>
       <p class="tool-approval-node">{props.approval.nodeLabel}</p>
 
       <Show

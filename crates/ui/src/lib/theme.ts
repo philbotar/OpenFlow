@@ -27,6 +27,26 @@ export function applyTheme(resolved: ResolvedTheme): void {
   document.documentElement.style.colorScheme = resolved;
 }
 
+export type TerminalThemeColors = {
+  background: string;
+  foreground: string;
+  cursor: string;
+  selectionBackground: string;
+};
+
+export function readTerminalThemeColors(
+  root: HTMLElement = document.documentElement,
+): TerminalThemeColors {
+  const styles = getComputedStyle(root);
+  const read = (name: string, fallback: string) => styles.getPropertyValue(name).trim() || fallback;
+  return {
+    background: read("--terminal-bg", "rgba(255, 255, 255, 0.66)"),
+    foreground: read("--terminal-fg", "#18181b"),
+    cursor: read("--terminal-cursor", "#18181b"),
+    selectionBackground: read("--terminal-selection-bg", "rgba(111, 124, 247, 0.18)"),
+  };
+}
+
 export function watchSystemTheme(onChange: (resolved: ResolvedTheme) => void): () => void {
   const media = globalThis.matchMedia?.("(prefers-color-scheme: dark)");
   if (!media) {
