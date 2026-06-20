@@ -1,4 +1,4 @@
-use engine::{Edge, Node, NodeId, ToolRef, Workflow};
+use engine::{Edge, Node, NodeId, Workflow};
 use orchestration::run::execution::run_workflow_headless;
 use orchestration::run::state::TraceStatus;
 use providers::{
@@ -284,16 +284,12 @@ async fn live_chat_completions_tool_enabled_workflow_completes() {
     }
 
     let mut workflow = Workflow::new("Live compatible tooling smoke");
-    let mut node = live_smoke_node(
+    let node = live_smoke_node(
         "tooling",
         "Tooling",
         "Use the available tools if needed. Preserve project_code exactly as ORCHID-91 and provide a non-empty summary.",
         &config.model,
     );
-    node.agent.tools.catalog.tools = vec![ToolRef {
-        name: "read".to_string(),
-        tier: Some(engine::ToolTier::Read),
-    }];
     workflow.nodes = vec![node];
 
     let client = live_client(&config);

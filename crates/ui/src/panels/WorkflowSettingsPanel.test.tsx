@@ -2,10 +2,32 @@
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import type { Workflow } from "../lib/types";
+import type { AppSettings, Workflow } from "../lib/types";
 import { createEmptyToolConfig } from "../lib/workflow";
 import { AppContext, type AppContextValue } from "../context/AppContext";
 import { WorkflowSettingsPanel } from "./WorkflowSettingsPanel";
+
+const settings: AppSettings = {
+  active_provider: "anthropic",
+  providers: {
+    anthropic: {
+      display_name: "Anthropic",
+      base_url: "https://api.anthropic.com",
+      transport: "chat_completions",
+      responses_path: "v1/responses",
+      chat_completions_path: "v1/messages",
+      known_models: ["claude-sonnet-4-20250514"],
+      default_model: "claude-sonnet-4-20250514",
+      editable: false,
+      reasoning_effort_options: [
+        { value: "low", label: "Low", uses_budget_tokens: true },
+        { value: "medium", label: "Medium", uses_budget_tokens: false },
+      ],
+      default_reasoning_effort: "low",
+      default_reasoning_budget_tokens: { low: 10_240 },
+    },
+  },
+};
 
 function makeWorkflow(overrides: Partial<Workflow["settings"]> = {}): Workflow {
   return {
@@ -66,6 +88,7 @@ describe("WorkflowSettingsPanel", () => {
 
     const ctx = {
       activeWorkflow: workflow,
+      activeProfileMemo: () => settings.providers.anthropic,
       updateActiveWorkflowSettings,
     } as AppContextValue;
 
@@ -126,5 +149,32 @@ describe("WorkflowSettingsPanel", () => {
     backoffInput.value = "not-a-number";
     backoffInput.dispatchEvent(new Event("input", { bubbles: true }));
     expect(workflow().settings.retry_policy?.backoff_ms).toBe(0);
+  });
+
+  test("updates workflow default reasoning effort", () => {
+    const { workflow } = renderPanel(makeWorkflow());
+    const reasoningSelect = container.querySelector(
+      'select.text-input',
+    ) as HTMLSelectElement;
+
+    reasoningSelect.value = "medium";
+    reasoningSelect.dispatchEvent(new Event("change", { bubbles: true }));
+
+    expect(workflow().settings.reasoning_effort).toBe("medium");
+  });
+
+  test("clears workflow reasoning budget when effort does not use budget tokens", () => {
+    const { workflow } = renderPanel(
+      makeWorkflow({ reasoning_effort: "low", reasoning_budget_tokens: 10_240 }),
+    );
+    const reasoningSelect = container.querySelector(
+      'select.text-input',
+    ) as HTMLSelectElement;
+
+    reasoningSelect.value = "medium";
+    reasoningSelect.dispatchEvent(new Event("change", { bubbles: true }));
+
+    expect(workflow().settings.reasoning_effort).toBe("medium");
+    expect(workflow().settings.reasoning_budget_tokens).toBeNull();
   });
 });

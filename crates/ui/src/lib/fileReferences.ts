@@ -10,6 +10,82 @@ const BRACED_FILE_REFERENCE_PATTERN = /(?:^|\s)(@\{([^}\n]*)$)/;
 const PLAIN_FILE_REFERENCE_PATTERN = /(?:^|\s)(@([^\s{}]*)$)/;
 const COMPLETE_FILE_REFERENCE_PATTERN = /@\{([^}\n]+)\}/g;
 
+export type ComposerDisplaySegment =
+  | { kind: "text"; value: string }
+  | { kind: "fileRef"; path: string; token: string }
+  | { kind: "skillRef"; skillId: string; token: string };
+
+export function parseComposerDisplaySegments(
+  input: string,
+  knownSkillIds?: ReadonlySet<string>,
+): ComposerDisplaySegment[] {
+  const segments: ComposerDisplaySegment[] = [];
+  let pos = 0;
+
+  const leadingWhitespace = input.match(/^\s*/)?.[0] ?? "";
+  if (leadingWhitespace.length > 0) {
+    segments.push({ kind: "text", value: leadingWhitespace });
+    pos = leadingWhitespace.length;
+  }
+
+  while (pos < input.length) {
+    const rest = input.slice(pos);
+    if (!rest.startsWith("/")) {
+      break;
+    }
+
+    const separatorIndex = rest.search(/\s/);
+    const token = separatorIndex === -1 ? rest : rest.slice(0, separatorIndex);
+    const skillId = token.slice(1);
+    if (skillId === "" || (knownSkillIds && !knownSkillIds.has(skillId))) {
+      break;
+    }
+
+    segments.push({ kind: "skillRef", skillId, token });
+    pos += token.length;
+
+    if (separatorIndex === -1) {
+      break;
+    }
+
+    const afterToken = input.slice(pos);
+    const spaceMatch = afterToken.match(/^(\s+)/);
+    if (!spaceMatch) {
+      break;
+    }
+
+    const afterSpace = afterToken.slice(spaceMatch[1]!.length);
+    if (afterSpace.startsWith("/")) {
+      segments.push({ kind: "text", value: spaceMatch[1]! });
+      pos += spaceMatch[1]!.length;
+      continue;
+    }
+
+    break;
+  }
+
+  const remainder = input.slice(pos);
+  let lastIndex = 0;
+
+  for (const match of remainder.matchAll(COMPLETE_FILE_REFERENCE_PATTERN)) {
+    const start = match.index ?? 0;
+    if (start > lastIndex) {
+      segments.push({ kind: "text", value: remainder.slice(lastIndex, start) });
+    }
+    const path = match[1]?.trim();
+    if (path) {
+      segments.push({ kind: "fileRef", path, token: match[0] });
+    }
+    lastIndex = start + match[0].length;
+  }
+
+  if (lastIndex < remainder.length) {
+    segments.push({ kind: "text", value: remainder.slice(lastIndex) });
+  }
+
+  return segments;
+}
+
 export function getActiveFileReferenceToken(
   input: string,
   caret: number,

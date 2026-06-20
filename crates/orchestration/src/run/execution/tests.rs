@@ -1,5 +1,6 @@
 use super::*;
 use crate::adapters::storage::incident_store::FileIncidentStore;
+use crate::adapters::storage::run_checkpoint_store::FileRunCheckpointStore;
 use crate::incident::{IncidentRecorder, IncidentScope};
 use crate::run::coordinator::RunCoordinator;
 use crate::run::state::{TraceStatus, WorkflowRunState};
@@ -8,8 +9,7 @@ use async_trait::async_trait;
 use engine::{
     AgentError, AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTurnOutcome,
     AgentTurnSuccess, AiPort, AiStreamEvent, AiStreamSink, ApprovalMode, ChatRole, NodeId,
-    NodeToolConfig, SubagentStatus, SubagentSummary, ToolCall, ToolCallStatus, ToolRef, ToolTier,
-    Workflow,
+    NodeToolConfig, SubagentStatus, SubagentSummary, ToolCall, ToolCallStatus, ToolTier, Workflow,
 };
 use parking_lot::Mutex;
 use serde_json::json;
@@ -76,6 +76,7 @@ async fn adapter_emits_clarifying_question_after_streamed_preamble() {
         event_tx,
         node_interrupts,
         CancellationToken::new(),
+        BTreeMap::new(),
     );
     adapter
         .invoke(sample_agent_request())
@@ -581,7 +582,7 @@ async fn headless_run_auto_approves_read_tool_and_reenters_model_loop() {
             let mut calls = self.calls.lock();
             *calls += 1;
             if *calls == 1 {
-                assert_eq!(request.available_tools.len(), 3);
+                assert_eq!(request.available_tools.len(), 10);
                 return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                     raw_text: String::new(),
                     assistant_message: Some("Inspecting docs".to_string()),
@@ -590,21 +591,19 @@ async fn headless_run_auto_approves_read_tool_and_reenters_model_loop() {
                         name: "read".to_string(),
                         arguments: json!({"path": "README.md"}),
                     }],
+                    usage: None,
                 }));
             }
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
                 output: json!({"summary": "done"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
+                usage: None,
             }))
         }
     }
 
-    let mut workflow = workflow();
-    workflow.nodes[0].agent.tools.catalog.tools = vec![ToolRef {
-        name: "read".to_string(),
-        tier: Some(engine::ToolTier::Read),
-    }];
+    let workflow = workflow();
     let snapshot = run_workflow_headless(
         workflow,
         None,
@@ -647,6 +646,7 @@ async fn headless_run_survives_permanent_tool_failure_and_completes() {
                         name: "read".to_string(),
                         arguments: json!({"path": "definitely-missing-file-orch-test.txt"}),
                     }],
+                    usage: None,
                 }));
             }
             let saw_error = request.transcript.iter().any(|item| {
@@ -661,6 +661,7 @@ async fn headless_run_survives_permanent_tool_failure_and_completes() {
                 output: json!({"summary": "recovered"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
+                usage: None,
             }))
         }
     }
@@ -668,10 +669,6 @@ async fn headless_run_survives_permanent_tool_failure_and_completes() {
     let temp = TempDir::new().expect("tempdir");
     let mut workflow = workflow();
     let node_id = workflow.nodes[0].id.clone();
-    workflow.nodes[0].agent.tools.catalog.tools = vec![ToolRef {
-        name: "read".to_string(),
-        tier: Some(ToolTier::Read),
-    }];
     workflow.nodes[0].agent.tools.approval_mode = Some(ApprovalMode::Yolo);
 
     let snapshot = run_workflow_headless(
@@ -715,15 +712,12 @@ async fn headless_run_requires_scripted_approval_for_prompted_tool() {
                     name: "read".to_string(),
                     arguments: json!({"path": "README.md"}),
                 }],
+                usage: None,
             }))
         }
     }
 
     let mut workflow = workflow();
-    workflow.nodes[0].agent.tools.catalog.tools = vec![ToolRef {
-        name: "read".to_string(),
-        tier: Some(engine::ToolTier::Read),
-    }];
     workflow.nodes[0].agent.tools.approval_mode = Some(engine::ApprovalMode::AlwaysAsk);
     let error = run_workflow_headless(
         workflow,
@@ -761,15 +755,18 @@ async fn apply_execution_event_tool_failure_persists_jsonl_incident_scope() {
         .await;
 
     coordinator
-        .apply_execution_event(ExecutionEvent::ToolCompleted {
-            node_id: NodeId("first".to_string()),
-            tool_call_id: "tool-incident-1".to_string(),
-            tool_name: "read".to_string(),
-            content: "[not_found] missing file — use project file references".to_string(),
-            is_error: true,
-            output_meta: None,
-            artifact_ids: Vec::new(),
-        })
+        .apply_execution_event(
+            ExecutionEvent::ToolCompleted {
+                node_id: NodeId("first".to_string()),
+                tool_call_id: "tool-incident-1".to_string(),
+                tool_name: "read".to_string(),
+                content: "[not_found] missing file — use project file references".to_string(),
+                is_error: true,
+                output_meta: None,
+                artifact_ids: Vec::new(),
+            },
+            &FileRunCheckpointStore,
+        )
         .await
         .expect("apply execution event");
 
@@ -1189,6 +1186,7 @@ where
         lsp: crate::lsp::LspSettings::from_env(),
         pending_engine_reverts: Arc::new(parking_lot::Mutex::new(Vec::new())),
         node_interrupts: Arc::new(parking_lot::Mutex::new(BTreeMap::new())),
+        context_window_sizes: BTreeMap::new(),
     }
 }
 
@@ -1216,6 +1214,7 @@ async fn interrupt_during_slow_tool_emits_node_interrupted() {
                     name: "bash".to_string(),
                     arguments: json!({"command": "sleep 30", "timeout": 30}),
                 }],
+                usage: None,
             }))
         }
     }
@@ -1228,10 +1227,6 @@ async fn interrupt_during_slow_tool_emits_node_interrupted() {
 
     let temp = TempDir::new().expect("tempdir");
     let mut workflow = workflow();
-    workflow.nodes[0].agent.tools.catalog.tools = vec![ToolRef {
-        name: "bash".to_string(),
-        tier: Some(ToolTier::Exec),
-    }];
     workflow.nodes[0].agent.tools.approval_mode = Some(ApprovalMode::Yolo);
     let node_id = workflow.nodes[0].id.clone();
     let params = interactive_run_params(workflow, temp.path().to_path_buf(), BashSleepAi);
@@ -1367,6 +1362,7 @@ async fn headless_retries_transient_node_error() {
                 output: json!({"summary": "ok"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
+                usage: None,
             }))
         }
     }
@@ -1498,7 +1494,7 @@ fn interactive_run_params_with_sink<A>(
     ai: A,
 ) -> (
     InteractiveWorkflowRunParams<A>,
-    Arc<parking_lot::Mutex<Option<engine::InteractiveEngineCheckpoint>>>,
+    Arc<parking_lot::Mutex<Option<crate::run::persistence::PendingRunCheckpoint>>>,
 )
 where
     A: AiPort + Send + Sync + 'static,
@@ -1519,6 +1515,7 @@ where
         lsp: crate::lsp::LspSettings::from_env(),
         pending_engine_reverts: Arc::new(parking_lot::Mutex::new(Vec::new())),
         node_interrupts: Arc::new(parking_lot::Mutex::new(BTreeMap::new())),
+        context_window_sizes: BTreeMap::new(),
     };
     (params, checkpoint_sink)
 }
@@ -1543,6 +1540,7 @@ async fn stop_then_continue_restores_awaiting_input() {
                 output: json!({"summary": "done"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
+                usage: None,
             }))
         }
     }
@@ -1580,7 +1578,8 @@ async fn stop_then_continue_restores_awaiting_input() {
     let checkpoint = checkpoint_sink
         .lock()
         .clone()
-        .expect("checkpoint after stop");
+        .expect("checkpoint after stop")
+        .engine;
     assert!(checkpoint
         .awaiting_nodes
         .contains(&engine::NodeId("review".to_string())));
@@ -1641,6 +1640,7 @@ async fn stop_mid_run_then_continue_completes_node() {
                 output: json!({"summary": "resumed"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
+                usage: None,
             }))
         }
     }
@@ -1680,7 +1680,7 @@ async fn stop_mid_run_then_continue_completes_node() {
     handle.await.expect("drive task");
     assert!(stopped, "expected to stop during node execution");
 
-    let checkpoint = checkpoint_sink.lock().clone().expect("checkpoint");
+    let checkpoint = checkpoint_sink.lock().clone().expect("checkpoint").engine;
     let (resume_params, _) =
         interactive_run_params_with_sink(workflow, temp.path().to_path_buf(), SlowCompleteAi);
     let resume_params = InteractiveWorkflowRunParams {
@@ -1710,10 +1710,6 @@ fn write_tool_workflow() -> Workflow {
     let mut node = engine::Node::agent("writer", 0.0, 0.0);
     node.id = NodeId("writer".to_string());
     node.agent.model = "test-model".to_string();
-    node.agent.tools.catalog.tools = vec![ToolRef {
-        name: "write".to_string(),
-        tier: Some(ToolTier::Write),
-    }];
     node.agent.tools.approval_mode = Some(ApprovalMode::AlwaysAsk);
     workflow.nodes = vec![node];
     workflow
@@ -1744,12 +1740,14 @@ async fn resolve_approval_uses_engine_node_id_after_stop_and_continue() {
                         name: "write".to_string(),
                         arguments: json!({"path": "out.txt", "content": "deny-me\n"}),
                     }],
+                    usage: None,
                 }));
             }
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
                 output: json!({"summary": "done"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
+                usage: None,
             }))
         }
     }
@@ -1779,7 +1777,7 @@ async fn resolve_approval_uses_engine_node_id_after_stop_and_continue() {
     }
     handle.await.expect("drive task");
 
-    let checkpoint = checkpoint_sink.lock().clone().expect("checkpoint");
+    let checkpoint = checkpoint_sink.lock().clone().expect("checkpoint").engine;
     let (resume_params, _) =
         interactive_run_params_with_sink(workflow, temp.path().to_path_buf(), WriteToolAi);
     let resume_params = InteractiveWorkflowRunParams {
@@ -1810,4 +1808,24 @@ async fn resolve_approval_uses_engine_node_id_after_stop_and_continue() {
     handle.await.expect("resume drive task");
 
     assert_eq!(denied_node_id, Some(NodeId("writer".to_string())));
+}
+
+#[test]
+fn pending_checkpoint_records_pause_reason() {
+    let mut workflow = engine::Workflow::new("checkpoint-test");
+    let mut node = engine::Node::agent("Node", 0.0, 0.0);
+    node.id = engine::NodeId("node-1".to_string());
+    node.agent.auto_start = true;
+    node.agent.model = "test-model".to_string();
+    workflow.nodes = vec![node];
+    let mut engine = engine::InteractiveEngine::new(workflow, None).expect("engine");
+    let checkpoint = crate::run::persistence::PendingRunCheckpoint {
+        reason: crate::run::persistence::RunCheckpointReason::AwaitingInput,
+        engine: engine.prepare_stop_checkpoint(),
+    };
+
+    assert_eq!(
+        checkpoint.reason,
+        crate::run::persistence::RunCheckpointReason::AwaitingInput
+    );
 }

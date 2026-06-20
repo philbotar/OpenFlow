@@ -14,9 +14,7 @@ const agents: AgentDefinition[] = [
     output_schema: { type: "object" },
     auto_start: true,
     tools: {
-      catalog: { tools: [] },
       approvalMode: null,
-      overrides: [],
     },
   },
 ];

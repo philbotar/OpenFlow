@@ -154,6 +154,13 @@ pub enum RunTelemetry {
         node_id: Option<NodeId>,
         duration_ms: u64,
     },
+    /// Token usage report received for a node after an LLM invocation.
+    UsageReported {
+        node_id: NodeId,
+        usage: crate::UsageReport,
+        model: String,
+        max_context_tokens: Option<u32>,
+    },
 }
 
 #[cfg(test)]

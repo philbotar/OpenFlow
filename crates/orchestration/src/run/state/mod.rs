@@ -63,8 +63,18 @@ pub struct ToolArtifactSummary {
     pub size_bytes: usize,
 }
 
+/// Per-node context window usage snapshot.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextWindowSnapshot {
+    pub used_tokens: u32,
+    pub max_tokens: u32,
+    pub model: String,
+    pub node_id: NodeId,
+}
+
 /// Live run state pushed to the frontend via Tauri events.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkflowRunState {
     pub active: bool,
@@ -91,6 +101,9 @@ pub struct WorkflowRunState {
     pub changed_files_by_node: BTreeMap<NodeId, Vec<engine::FileChangeRecord>>,
     #[serde(default)]
     pub edit_batches: Vec<engine::EditBatch>,
+    /// Per-node context window usage snapshots for the bubble indicator.
+    #[serde(default)]
+    pub context_window_by_node: BTreeMap<NodeId, ContextWindowSnapshot>,
 }
 
 impl WorkflowRunState {
@@ -122,6 +135,7 @@ impl WorkflowRunState {
             changed_files: Vec::new(),
             changed_files_by_node: BTreeMap::new(),
             edit_batches: Vec::new(),
+            context_window_by_node: BTreeMap::new(),
         }
     }
 

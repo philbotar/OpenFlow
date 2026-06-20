@@ -14,6 +14,7 @@ import type {
   ProjectFileReferenceContent,
   SkillSummary,
   ProviderReadiness,
+  RunSummary,
   Workflow,
   WorkflowListItem,
   WorkflowRunState,
@@ -210,6 +211,26 @@ export function continueRun(
 
 export function isRunContinuable() {
   return invoke<boolean>("is_run_continuable");
+}
+
+export function listRuns(workflowId: string | null = null) {
+  return invoke<RunSummary[]>("list_runs", { workflowId });
+}
+
+export function replayRun(runId: string) {
+  return invoke<WorkflowRunState>("replay_run", { runId });
+}
+
+export function resumeDurableRun(
+  runId: string,
+  settings: AppSettings,
+  transientApiKey: string | null = null,
+) {
+  return invoke<WorkflowRunState>("resume_durable_run", {
+    runId,
+    settings,
+    transientApiKey,
+  });
 }
 
 export function interruptNode(nodeId: string) {

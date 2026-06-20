@@ -5,6 +5,7 @@ import {
   extractReferencedFilePaths,
   formatSubmissionWithFileReferences,
   getActiveFileReferenceToken,
+  parseComposerDisplaySegments,
 } from "./fileReferences";
 
 describe("file reference token helpers", () => {
@@ -50,6 +51,46 @@ describe("file reference token helpers", () => {
         "Read @{src/lib.rs} then @{README.md} and again @{src/lib.rs}",
       ),
     ).toEqual(["src/lib.rs", "README.md"]);
+  });
+
+  test("parses display segments with inline file chips", () => {
+    expect(parseComposerDisplaySegments("Review @{crates/} please")).toEqual([
+      { kind: "text", value: "Review " },
+      { kind: "fileRef", path: "crates/", token: "@{crates/}" },
+      { kind: "text", value: " please" },
+    ]);
+    expect(parseComposerDisplaySegments("Plain message")).toEqual([
+      { kind: "text", value: "Plain message" },
+    ]);
+    expect(parseComposerDisplaySegments("")).toEqual([]);
+  });
+
+  test("parses leading skill tokens as inline chips", () => {
+    const knownSkills = new Set(["brainstorming", "documents"]);
+
+    expect(
+      parseComposerDisplaySegments("/brainstorming Prepare the brief", knownSkills),
+    ).toEqual([
+      { kind: "skillRef", skillId: "brainstorming", token: "/brainstorming" },
+      { kind: "text", value: " Prepare the brief" },
+    ]);
+
+    expect(
+      parseComposerDisplaySegments(
+        "/brainstorming /documents Review @{README.md}",
+        knownSkills,
+      ),
+    ).toEqual([
+      { kind: "skillRef", skillId: "brainstorming", token: "/brainstorming" },
+      { kind: "text", value: " " },
+      { kind: "skillRef", skillId: "documents", token: "/documents" },
+      { kind: "text", value: " Review " },
+      { kind: "fileRef", path: "README.md", token: "@{README.md}" },
+    ]);
+
+    expect(parseComposerDisplaySegments("/not-a-skill keep literal", knownSkills)).toEqual([
+      { kind: "text", value: "/not-a-skill keep literal" },
+    ]);
   });
 });
 

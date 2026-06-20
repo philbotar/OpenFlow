@@ -59,16 +59,11 @@ impl ToolRegistry {
 
     #[must_use]
     pub fn definitions_for(&self, config: &NodeToolConfig) -> Vec<ToolDefinition> {
-        let mut defs: Vec<ToolDefinition> = config
-            .catalog
-            .tools
-            .iter()
-            .filter_map(|tool| self.tools.get(&tool.name))
-            .map(|tool| tool.definition.clone())
-            .collect();
-        // Always include the runtime subagent tools for parent agents
-        defs.push(declare_subagents_tool().definition);
-        defs.push(call_subagent_tool().definition);
+        let mut defs = self.filtered_builtins(config);
+        if !Self::is_read_only(config) {
+            defs.push(declare_subagents_tool().definition);
+            defs.push(call_subagent_tool().definition);
+        }
         defs
     }
 
@@ -76,15 +71,38 @@ impl ToolRegistry {
     /// to prevent recursive invocation.
     #[must_use]
     pub fn definitions_for_subagent(&self, config: &NodeToolConfig) -> Vec<ToolDefinition> {
-        let mut defs: Vec<ToolDefinition> = config
-            .catalog
+        let mut defs = self.filtered_builtins(config);
+        if !Self::is_read_only(config) {
+            defs.push(declare_subagents_tool().definition);
+        }
+        defs
+    }
+
+    fn is_read_only(config: &NodeToolConfig) -> bool {
+        matches!(
+            config.effective_approval_mode(),
+            engine::ApprovalMode::ReadOnly
+        )
+    }
+
+    fn filtered_builtins(&self, config: &NodeToolConfig) -> Vec<ToolDefinition> {
+        let read_only = Self::is_read_only(config);
+        let mut defs: Vec<ToolDefinition> = self
             .tools
-            .iter()
-            .filter_map(|tool| self.tools.get(&tool.name))
+            .values()
+            .filter(|tool| {
+                let name = tool.definition.name.as_str();
+                if matches!(
+                    name,
+                    "openflow_declare_subagents" | "openflow_call_subagent"
+                ) {
+                    return false;
+                }
+                !read_only || tool.definition.tier == ToolTier::Read
+            })
             .map(|tool| tool.definition.clone())
             .collect();
-        // Subagents can declare their own sub-subagents but cannot invoke them
-        defs.push(declare_subagents_tool().definition);
+        defs.sort_by(|left, right| left.name.cmp(&right.name));
         defs
     }
 }
@@ -308,7 +326,7 @@ fn bash_tool() -> RegisteredTool {
                 },
                 "required": ["command"]
             })),
-            tier: ToolTier::Exec,
+            tier: ToolTier::Write,
             concurrency: ToolConcurrency::Exclusive,
         },
         kind: BuiltinToolKind::Bash,
@@ -428,32 +446,43 @@ mod tests {
     use super::*;
 
     #[test]
-    fn registry_returns_requested_definitions() {
+    fn registry_returns_all_builtins_plus_subagent_tools_by_default() {
         let registry = ToolRegistry::new();
-        let mut config = NodeToolConfig::default();
-        config.catalog.tools = vec![engine::ToolRef {
-            name: "read".to_string(),
-            tier: Some(engine::ToolTier::Read),
-        }];
+        let config = NodeToolConfig::default();
         let definitions = registry.definitions_for(&config);
-        // read + openflow_declare_subagents + openflow_call_subagent
-        assert_eq!(definitions.len(), 3);
-        assert_eq!(definitions[0].name, "read");
-        assert_eq!(definitions[1].name, "openflow_declare_subagents");
-        assert_eq!(definitions[2].name, "openflow_call_subagent");
+        assert_eq!(definitions.len(), 10);
+        assert!(definitions
+            .iter()
+            .any(|tool| tool.name == "openflow_declare_subagents"));
+        assert!(definitions
+            .iter()
+            .any(|tool| tool.name == "openflow_call_subagent"));
     }
 
     #[test]
-    fn definitions_always_includes_subagent_tools() {
+    fn read_only_mode_exposes_read_tools_only() {
         let registry = ToolRegistry::new();
-        let empty_config_no_tools = NodeToolConfig {
-            catalog: engine::ToolCatalogSelection { tools: vec![] },
-            ..Default::default()
+        let config = NodeToolConfig {
+            approval_mode: Some(engine::ApprovalMode::ReadOnly),
         };
-        let definitions = registry.definitions_for(&empty_config_no_tools);
-        assert_eq!(definitions.len(), 2);
-        assert_eq!(definitions[0].name, "openflow_declare_subagents");
-        assert_eq!(definitions[1].name, "openflow_call_subagent");
+        let definitions = registry.definitions_for(&config);
+        assert_eq!(definitions.len(), 4);
+        assert!(definitions
+            .iter()
+            .all(|tool| tool.tier == engine::ToolTier::Read));
+    }
+
+    #[test]
+    fn definitions_always_includes_subagent_tools_in_write_mode() {
+        let registry = ToolRegistry::new();
+        let config = NodeToolConfig::default();
+        let definitions = registry.definitions_for(&config);
+        assert!(definitions
+            .iter()
+            .any(|tool| tool.name == "openflow_declare_subagents"));
+        assert!(definitions
+            .iter()
+            .any(|tool| tool.name == "openflow_call_subagent"));
     }
 
     #[test]

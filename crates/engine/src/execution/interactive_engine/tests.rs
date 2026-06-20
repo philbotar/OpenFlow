@@ -74,6 +74,7 @@ async fn run_sleeps_backoff_before_transient_retry() {
                 output: json!({"summary": "ok"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
+                usage: None,
             }))
         }
     }
@@ -201,6 +202,7 @@ fn auto_start_node_runs_ai_and_completes() {
             output: json!({"summary": "ok"}),
             raw_text: "...".to_string(),
             assistant_message: None,
+            usage: None,
         })),
     );
 
@@ -399,10 +401,6 @@ fn conversation_follow_up_repauses_same_node() {
 fn tool_calls_pause_for_approval_and_resume_after_results() {
     let mut workflow = Workflow::new("tooling");
     let mut idea = node("idea");
-    idea.agent.tools.catalog.tools = vec![crate::ToolRef {
-        name: "read".to_string(),
-        tier: Some(crate::ToolTier::Read),
-    }];
     idea.agent.tools.approval_mode = Some(ApprovalMode::AlwaysAsk);
     workflow.nodes = vec![idea];
     let mut engine = InteractiveEngine::new(workflow, None).unwrap();
@@ -418,6 +416,7 @@ fn tool_calls_pause_for_approval_and_resume_after_results() {
                 name: "read".to_string(),
                 arguments: json!({"path": "README.md"}),
             }],
+            usage: None,
         })),
     );
 
@@ -488,6 +487,7 @@ fn conversation_completion_sets_output_and_advances() {
             raw_text: "...".to_string(),
             assistant_message: Some("Locked. Advancing.".to_string()),
             output: json!({"summary": "Workflow execution with approvals"}),
+            usage: None,
         })),
     );
 
@@ -537,6 +537,7 @@ fn yolo_mode_skips_tool_approval() {
                 name: "read".to_string(),
                 arguments: json!({"path": "README.md"}),
             }],
+            usage: None,
         })),
     );
 
@@ -566,6 +567,7 @@ fn denied_tool_call_resumes_with_error_result() {
                 name: "read".to_string(),
                 arguments: json!({"path": "README.md"}),
             }],
+            usage: None,
         })),
     );
     let EnginePollResult::AwaitToolApproval { approval_id, .. } = engine.poll() else {
@@ -615,6 +617,7 @@ fn partial_tool_results_fill_missing_calls_with_errors() {
                     arguments: json!({"path": "b.md"}),
                 },
             ],
+            usage: None,
         })),
     );
     assert!(matches!(engine.poll(), EnginePollResult::RunTools { .. }));
@@ -669,6 +672,7 @@ fn transient_failure_retries_then_succeeds() {
             output: json!({"summary": "ok"}),
             raw_text: "{}".to_string(),
             assistant_message: None,
+            usage: None,
         })),
     );
 
@@ -845,6 +849,7 @@ fn malformed_submit_output_retries_then_succeeds() {
             output: json!({"summary": "ok"}),
             raw_text: "{}".to_string(),
             assistant_message: None,
+            usage: None,
         })),
     );
 
@@ -857,13 +862,10 @@ fn malformed_submit_output_retries_then_succeeds() {
 }
 
 #[test]
-fn tool_config_names_survive_into_request() {
+fn tool_config_approval_mode_survives_into_request() {
     let mut workflow = Workflow::new("tools");
     let mut idea = node("idea");
-    idea.agent.tools.catalog.tools = vec![crate::ToolRef {
-        name: "search".to_string(),
-        tier: Some(crate::ToolTier::Read),
-    }];
+    idea.agent.tools.approval_mode = Some(ApprovalMode::AlwaysAsk);
     workflow.nodes = vec![idea];
     let mut engine = InteractiveEngine::new(workflow, None).unwrap();
 
@@ -872,7 +874,10 @@ fn tool_config_names_survive_into_request() {
     };
 
     assert!(request.available_tools.is_empty());
-    assert_eq!(request.tool_config.catalog.tools[0].name, "search");
+    assert_eq!(
+        request.tool_config.approval_mode,
+        Some(ApprovalMode::AlwaysAsk)
+    );
 }
 
 #[test]
@@ -896,6 +901,7 @@ fn tool_call_xml_echo_is_dropped_from_transcript() {
                 name: "read".to_string(),
                 arguments: json!({"path": "README.md"}),
             }],
+            usage: None,
         })),
     );
 
@@ -924,6 +930,7 @@ fn completion_tool_call_xml_echo_is_dropped_from_transcript() {
             assistant_message: Some(
                 "<tool_call><function=read></function></tool_call>".to_string(),
             ),
+            usage: None,
         })),
     );
 
@@ -943,6 +950,7 @@ fn misrouted_completion_is_rejected() {
             output: json!({"summary": "wrong"}),
             raw_text: "{}".to_string(),
             assistant_message: None,
+            usage: None,
         })),
     );
 
@@ -971,6 +979,7 @@ fn started_event_is_provider_neutral_and_emitted_once_per_poll_attempt() {
             output: json!({"summary": "ok"}),
             raw_text: "{}".to_string(),
             assistant_message: None,
+            usage: None,
         })),
     );
 
@@ -1017,6 +1026,7 @@ fn inbound_ports_drive_engine_inputs() {
                 name: "read".to_string(),
                 arguments: json!({"path": "README.md"}),
             }],
+            usage: None,
         })),
     );
     let EnginePollResult::AwaitToolApproval { approval_id, .. } = engine.poll() else {
@@ -1058,6 +1068,7 @@ fn parallel_sibling_nodes_start_ai_together_in_layer() {
             output: json!({"plan": "a"}),
             raw_text: "{}".to_string(),
             assistant_message: None,
+            usage: None,
         })),
     );
     engine.on_ai_complete(
@@ -1066,6 +1077,7 @@ fn parallel_sibling_nodes_start_ai_together_in_layer() {
             output: json!({"risk": "b"}),
             raw_text: "{}".to_string(),
             assistant_message: None,
+            usage: None,
         })),
     );
 
@@ -1142,6 +1154,7 @@ fn checkpoint_completed_nodes_remain_blocked_after_restore() {
             output: json!({"summary": "done"}),
             raw_text: "{}".to_string(),
             assistant_message: None,
+            usage: None,
         })),
     );
     assert!(matches!(engine.poll(), EnginePollResult::CallAi { .. }));

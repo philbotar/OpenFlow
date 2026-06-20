@@ -2,15 +2,21 @@ use crate::api::FileEditPreview;
 use crate::error::BackendError;
 use crate::incident::{incident_from_execution_event, IncidentContext, IncidentRecorder};
 use crate::run::execution::{
-    apply_event_to_run_state, new_artifact_root, record_entrypoint_message, record_user_input,
-    resolve_execution_cwd, spawn_interactive_workflow_run, ExecutionAction, ExecutionEvent,
-    InteractiveWorkflowRunParams, NodeInterrupts,
+    apply_event_to_run_state, record_entrypoint_message, record_user_input, resolve_execution_cwd,
+    spawn_interactive_workflow_run, ExecutionAction, ExecutionEvent, InteractiveWorkflowRunParams,
+    NodeInterrupts,
 };
-use crate::run::reasoning_defaults::apply_provider_reasoning_defaults;
+use crate::run::persistence::{
+    workflow_hash, PendingRunCheckpoint, RunCheckpointPayload, RunCheckpointReason, RunRecord,
+    RunStatus, RunStoreRoot,
+};
+use crate::run::ports::RunCheckpointStore;
+use crate::run::reasoning_defaults::apply_reasoning_defaults;
 use crate::run::state::{AgentStatus, WorkflowRunState};
 use crate::settings::model::{merge_preserved_api_keys, AppSettings};
 use crate::settings::provider::{resolve_provider_config, ProviderEnv};
 use crate::tools::edit::preview::preview_file_edit;
+use chrono::Utc;
 use engine::resolve_callable_agent_snapshots;
 use engine::{execution_layers, validate_workflow, InteractiveEngineCheckpoint, NodeId, Workflow};
 use parking_lot::Mutex as ParkingMutex;
@@ -34,9 +40,7 @@ fn finish_run_session(session: &mut RunSession) {
     session.cancel_token = None;
     session.node_interrupts = None;
     session.checkpoint_sink = None;
-    if session.engine_checkpoint.is_none() {
-        clear_artifact_root(session);
-    }
+    session.engine_checkpoint = None;
 }
 
 fn clear_artifact_root(session: &mut RunSession) {
@@ -57,7 +61,7 @@ fn apply_user_stop_to_session(session: &mut RunSession) -> Option<WorkflowRunSta
         .as_ref()
         .and_then(|sink| sink.lock().take());
     if let Some(checkpoint) = captured_checkpoint {
-        session.engine_checkpoint = Some(checkpoint);
+        session.engine_checkpoint = Some(checkpoint.engine);
     }
     session.checkpoint_sink = None;
     let workflow = session.workflow.clone()?;
@@ -73,12 +77,13 @@ struct RunSession {
     workflow: Option<Workflow>,
     run_state: Option<WorkflowRunState>,
     run_id: Option<String>,
+    run_root: Option<RunStoreRoot>,
     project_id: Option<String>,
     execution_cwd: Option<PathBuf>,
     entrypoint: Option<String>,
     artifact_root: Option<PathBuf>,
     engine_checkpoint: Option<InteractiveEngineCheckpoint>,
-    checkpoint_sink: Option<Arc<ParkingMutex<Option<InteractiveEngineCheckpoint>>>>,
+    checkpoint_sink: Option<Arc<ParkingMutex<Option<PendingRunCheckpoint>>>>,
     snapshot_store: Option<Arc<crate::tools::edit::hashline::snapshots::InMemorySnapshotStore>>,
     lsp_settings: Option<crate::lsp::LspSettings>,
     pending_engine_reverts: Option<Arc<parking_lot::Mutex<Vec<engine::EditBatch>>>>,
@@ -97,11 +102,69 @@ pub struct RunStartParams<'a> {
     pub workflow: Workflow,
     pub entrypoint: Option<String>,
     pub execution_cwd: Option<String>,
+    pub run_root: RunStoreRoot,
     pub settings: &'a AppSettings,
     pub transient_api_key: Option<&'a str>,
     pub agent_store: &'a dyn crate::agent::ports::AgentStore,
     pub settings_store: &'a dyn crate::settings::ports::SettingsStore,
+    pub run_store: &'a dyn RunCheckpointStore,
     pub env: &'a ProviderEnv,
+}
+
+pub struct DurableResumeParams<'a> {
+    pub run_id: &'a str,
+    pub workflow: Workflow,
+    pub root: RunStoreRoot,
+    pub record: RunRecord,
+    pub checkpoint: RunCheckpointPayload,
+    pub settings: &'a AppSettings,
+    pub transient_api_key: Option<&'a str>,
+    pub agent_store: &'a dyn crate::agent::ports::AgentStore,
+    pub settings_store: &'a dyn crate::settings::ports::SettingsStore,
+    pub run_store: &'a dyn RunCheckpointStore,
+    pub env: &'a ProviderEnv,
+}
+
+fn status_for_checkpoint(reason: RunCheckpointReason) -> RunStatus {
+    match reason {
+        RunCheckpointReason::AwaitingInput
+        | RunCheckpointReason::AwaitingToolApproval
+        | RunCheckpointReason::AwaitingRetry => RunStatus::Paused,
+        RunCheckpointReason::UserStopped => RunStatus::Stopped,
+        RunCheckpointReason::Completed => RunStatus::Completed,
+        RunCheckpointReason::Failed => RunStatus::Failed,
+    }
+}
+
+fn next_checkpoint_seq(
+    store: &dyn RunCheckpointStore,
+    root: &RunStoreRoot,
+    run_id: &str,
+) -> Result<u32, BackendError> {
+    Ok(store
+        .load_latest_checkpoint(root, run_id)?
+        .map_or(1, |payload| payload.seq.saturating_add(1)))
+}
+
+fn persist_pending_checkpoint(
+    run_store: &dyn RunCheckpointStore,
+    root: &RunStoreRoot,
+    run_id: &str,
+    projection: &WorkflowRunState,
+    pending: PendingRunCheckpoint,
+) -> Result<(), BackendError> {
+    let now_ms = Utc::now().timestamp_millis();
+    let reason = pending.reason;
+    let payload = RunCheckpointPayload {
+        seq: next_checkpoint_seq(run_store, root, run_id)?,
+        created_at_ms: now_ms,
+        reason,
+        engine: pending.engine,
+        projection: projection.clone(),
+    };
+    run_store.append_checkpoint(root, run_id, &payload)?;
+    run_store.update_status(root, run_id, status_for_checkpoint(reason), now_ms)?;
+    Ok(())
 }
 
 pub struct RunCoordinator {
@@ -124,6 +187,7 @@ impl RunCoordinator {
                 workflow: None,
                 run_state: None,
                 run_id: None,
+                run_root: None,
                 project_id: None,
                 execution_cwd: None,
                 entrypoint: None,
@@ -160,10 +224,12 @@ impl RunCoordinator {
             workflow,
             entrypoint,
             execution_cwd,
+            run_root,
             settings,
             transient_api_key,
             agent_store,
             settings_store,
+            run_store,
             env,
         } = params;
 
@@ -190,7 +256,7 @@ impl RunCoordinator {
         let ai = create_provider(provider_config);
 
         let mut workflow = workflow;
-        apply_provider_reasoning_defaults(&mut workflow, provider_settings.active_profile());
+        apply_reasoning_defaults(&mut workflow, provider_settings.active_profile());
 
         let agents = agent_store.load()?;
         let agent_snapshots = resolve_callable_agent_snapshots(&workflow, &agents);
@@ -199,8 +265,24 @@ impl RunCoordinator {
         {
             let mut session = self.session.lock().await;
             session.engine_checkpoint = None;
-            clear_artifact_root(&mut session);
         }
+
+        let run_id = Uuid::new_v4().to_string();
+        let artifact_root = run_store.run_dir(&run_root, &run_id).join("artifacts");
+        let now_ms = Utc::now().timestamp_millis();
+        let run_record = RunRecord {
+            run_id: run_id.clone(),
+            workflow_id: workflow.id.to_string(),
+            workflow_name: workflow.name.clone(),
+            workflow_hash: workflow_hash(&workflow),
+            project_id: run_root.project_id.clone(),
+            execution_cwd: resolved_cwd.display().to_string(),
+            artifact_root: artifact_root.display().to_string(),
+            started_at_ms: now_ms,
+            updated_at_ms: now_ms,
+            status: RunStatus::Running,
+        };
+        run_store.create_run(&run_root, &run_record)?;
 
         let snapshot_store =
             Arc::new(crate::tools::edit::hashline::snapshots::InMemorySnapshotStore::new());
@@ -208,7 +290,6 @@ impl RunCoordinator {
         let pending_engine_reverts = Arc::new(parking_lot::Mutex::new(Vec::new()));
         let node_interrupts: NodeInterrupts =
             Arc::new(parking_lot::Mutex::new(std::collections::BTreeMap::new()));
-        let artifact_root = new_artifact_root();
         let checkpoint_sink = Arc::new(ParkingMutex::new(None));
         let (handle, event_rx, action_tx, cancel_token, _) = spawn_interactive_workflow_run(
             &self.runtime_handle,
@@ -225,12 +306,17 @@ impl RunCoordinator {
                 lsp: lsp_settings.clone(),
                 pending_engine_reverts: pending_engine_reverts.clone(),
                 node_interrupts: node_interrupts.clone(),
+                context_window_sizes: provider_settings
+                    .active_profile()
+                    .context_window_sizes
+                    .clone(),
             },
         );
 
         let mut session = self.session.lock().await;
-        session.run_id = Some(Uuid::new_v4().to_string());
-        session.project_id = None;
+        session.run_id = Some(run_id.clone());
+        session.run_root = Some(run_root);
+        session.project_id = run_record.project_id.clone();
         let mut initial_state = WorkflowRunState::running_for_workflow(&workflow);
         initial_state.run_id = session.run_id.clone();
         if let Some(text) = entrypoint.clone().filter(|t| !t.trim().is_empty()) {
@@ -338,7 +424,7 @@ impl RunCoordinator {
         let ai = create_provider(provider_config);
 
         let mut workflow = workflow;
-        apply_provider_reasoning_defaults(&mut workflow, provider_settings.active_profile());
+        apply_reasoning_defaults(&mut workflow, provider_settings.active_profile());
 
         let agents = agent_store.load()?;
         let agent_snapshots = resolve_callable_agent_snapshots(&workflow, &agents);
@@ -363,6 +449,10 @@ impl RunCoordinator {
                 lsp: lsp_settings.clone(),
                 pending_engine_reverts: pending_engine_reverts.clone(),
                 node_interrupts: node_interrupts.clone(),
+                context_window_sizes: provider_settings
+                    .active_profile()
+                    .context_window_sizes
+                    .clone(),
             },
         );
 
@@ -567,6 +657,7 @@ impl RunCoordinator {
     pub async fn apply_execution_event(
         &self,
         event: ExecutionEvent,
+        run_store: &dyn RunCheckpointStore,
     ) -> Result<WorkflowRunState, BackendError> {
         let mut session = self.session.lock().await;
         let workflow = session.workflow.clone().ok_or(BackendError::NoActiveRun)?;
@@ -592,10 +683,151 @@ impl RunCoordinator {
         apply_event_to_run_state(&workflow, run_state, event);
         let finished = !run_state.active;
         let snapshot = run_state.clone();
+        let pending_checkpoint = session
+            .checkpoint_sink
+            .as_ref()
+            .and_then(|sink| sink.lock().take());
+        if let (Some(root), Some(run_id), Some(pending)) = (
+            session.run_root.clone(),
+            session.run_id.clone(),
+            pending_checkpoint,
+        ) {
+            persist_pending_checkpoint(run_store, &root, &run_id, &snapshot, pending)?;
+        }
         if finished {
             finish_run_session(&mut session);
         }
         Ok(snapshot)
+    }
+
+    pub fn list_runs(
+        &self,
+        run_store: &dyn RunCheckpointStore,
+        roots: &[RunStoreRoot],
+        workflow_id: Option<&str>,
+    ) -> Result<Vec<crate::run::persistence::RunSummary>, BackendError> {
+        Ok(run_store.list_runs(roots, workflow_id)?)
+    }
+
+    pub fn replay_run(
+        &self,
+        run_store: &dyn RunCheckpointStore,
+        roots: &[RunStoreRoot],
+        run_id: &str,
+    ) -> Result<WorkflowRunState, BackendError> {
+        let (root, _) = run_store
+            .load_record(roots, run_id)?
+            .ok_or_else(|| BackendError::RunNotFound(run_id.to_string()))?;
+        let mut checkpoint = run_store
+            .load_latest_checkpoint(&root, run_id)?
+            .ok_or_else(|| BackendError::RunHasNoCheckpoints(run_id.to_string()))?;
+        checkpoint.projection.active = false;
+        checkpoint.projection.pending_approvals.clear();
+        checkpoint.projection.awaiting_node_id = None;
+        checkpoint.projection.awaiting_node_ids.clear();
+        checkpoint.projection.active_manual_node_id = None;
+        checkpoint.projection.active_tool_call_id = None;
+        Ok(checkpoint.projection)
+    }
+
+    /// # Errors
+    /// Returns an error when the workflow changed or provider configuration fails.
+    pub async fn resume_durable_run(
+        &self,
+        params: DurableResumeParams<'_>,
+    ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
+        if workflow_hash(&params.workflow) != params.record.workflow_hash {
+            return Err(BackendError::RunWorkflowChanged(
+                params.run_id.to_string(),
+                params.workflow.id.to_string(),
+            ));
+        }
+        engine::validate_checkpoint_against_workflow(&params.workflow, &params.checkpoint.engine)
+            .map_err(|error| BackendError::CheckpointIncompatible(error.to_string()))?;
+
+        let persisted_settings = params.settings_store.load()?;
+        let mut provider_settings = params.settings.clone();
+        merge_preserved_api_keys(&mut provider_settings, &persisted_settings);
+        if let Some(provider_id) = params
+            .workflow
+            .settings
+            .provider_id
+            .as_ref()
+            .filter(|provider_id| !provider_id.trim().is_empty())
+        {
+            provider_settings.active_provider = ProviderId::from(provider_id.as_str());
+        }
+        let provider_config =
+            resolve_provider_config(&provider_settings, params.transient_api_key, params.env)?;
+        let ai = create_provider(provider_config);
+
+        let mut workflow = params.workflow;
+        apply_reasoning_defaults(&mut workflow, provider_settings.active_profile());
+        let agents = params.agent_store.load()?;
+        let agent_snapshots = resolve_callable_agent_snapshots(&workflow, &agents);
+
+        self.terminate_active_run(TerminationMode::Replaced).await;
+
+        let snapshot_store =
+            Arc::new(crate::tools::edit::hashline::snapshots::InMemorySnapshotStore::new());
+        let lsp_settings = crate::lsp::LspSettings::from_persisted(&persisted_settings.lsp);
+        let pending_engine_reverts = Arc::new(parking_lot::Mutex::new(Vec::new()));
+        let node_interrupts: NodeInterrupts =
+            Arc::new(parking_lot::Mutex::new(std::collections::BTreeMap::new()));
+        let checkpoint_sink = Arc::new(ParkingMutex::new(None));
+        let artifact_root = PathBuf::from(&params.record.artifact_root);
+        let execution_cwd = PathBuf::from(&params.record.execution_cwd);
+        let (handle, event_rx, action_tx, cancel_token, _) = spawn_interactive_workflow_run(
+            &self.runtime_handle,
+            InteractiveWorkflowRunParams {
+                workflow: workflow.clone(),
+                entrypoint: None,
+                execution_cwd: execution_cwd.clone(),
+                artifact_root: artifact_root.clone(),
+                resume_checkpoint: Some(params.checkpoint.engine),
+                checkpoint_sink: checkpoint_sink.clone(),
+                ai,
+                agent_snapshots,
+                snapshot_store: snapshot_store.clone(),
+                lsp: lsp_settings.clone(),
+                pending_engine_reverts: pending_engine_reverts.clone(),
+                node_interrupts: node_interrupts.clone(),
+                context_window_sizes: provider_settings
+                    .active_profile()
+                    .context_window_sizes
+                    .clone(),
+            },
+        );
+
+        let mut resumed_state = params.checkpoint.projection;
+        resumed_state.active = true;
+        resumed_state.run_id = Some(params.run_id.to_string());
+
+        let mut session = self.session.lock().await;
+        session.workflow = Some(workflow);
+        session.run_state = Some(resumed_state.clone());
+        session.run_id = Some(params.run_id.to_string());
+        session.run_root = Some(params.root);
+        session.project_id = params.record.project_id;
+        session.execution_cwd = Some(execution_cwd);
+        session.entrypoint = None;
+        session.artifact_root = Some(artifact_root);
+        session.engine_checkpoint = None;
+        session.checkpoint_sink = Some(checkpoint_sink);
+        session.snapshot_store = Some(snapshot_store);
+        session.lsp_settings = Some(lsp_settings);
+        session.pending_engine_reverts = Some(pending_engine_reverts);
+        session.action_tx = Some(action_tx);
+        session.handle = Some(handle);
+        session.cancel_token = Some(cancel_token);
+        session.node_interrupts = Some(node_interrupts);
+        params.run_store.update_status(
+            session.run_root.as_ref().expect("run root"),
+            params.run_id,
+            RunStatus::Running,
+            Utc::now().timestamp_millis(),
+        )?;
+        Ok((resumed_state, event_rx))
     }
 
     /// # Errors

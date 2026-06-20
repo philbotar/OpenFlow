@@ -8,6 +8,7 @@
 pub mod conversation;
 pub mod execution;
 pub mod graph;
+pub mod model_context;
 pub mod ports;
 pub mod template;
 pub mod tools;
@@ -30,23 +31,22 @@ pub use execution::{
     CALL_SUBAGENT_TOOL, DECLARE_SUBAGENTS_TOOL, NODE_RUNTIME_PREAMBLE,
 };
 pub use graph::{
-    build_predefined_subagent_summaries, execution_layers, resolve_callable_agent_snapshots,
-    validate_workflow, AgentNodeConfig, CallableAgent, Edge, EdgeId, Node, NodeId, NodeKind,
-    NodePosition, RetryPolicy, Workflow, WorkflowId, WorkflowSchedule, WorkflowSettings,
-    WorkflowValidationError,
+    build_predefined_subagent_summaries, default_structured_output_schema, effective_output_schema,
+    execution_layers, resolve_callable_agent_snapshots, validate_workflow, AgentNodeConfig,
+    CallableAgent, Edge, EdgeId, Node, NodeId, NodeKind, NodePosition, RetryPolicy, Workflow,
+    WorkflowId, WorkflowSchedule, WorkflowSettings, WorkflowValidationError,
 };
+pub use model_context::{default_context_window_sizes, lookup_context_window_size};
 pub use ports::{
     emit_assistant_deltas_from_outcome, AgentError, AgentNeedUserInput, AgentRequest,
     AgentToolCallBatch, AgentTurnOutcome, AgentTurnSuccess, AiPort, AiStreamEvent, AiStreamSink,
-    HumanInput, HumanInputPort, ToolApprovalInput, ToolApprovalPort, ToolPort,
+    HumanInput, HumanInputPort, ToolApprovalInput, ToolApprovalPort, ToolPort, UsageReport,
 };
 pub use template::{default_templates, Template, TemplateStore, TemplateStoreError};
 pub use tools::{
-    is_critical_bash_command, override_policy_for_call, requires_approval, summarize_diff,
-    tool_decision_for_call, tool_intent_from_arguments, tool_tier_for_call, ApprovalMode,
-    EditBatch, FileChangeOp, FileChangeRecord, FileSnapshot, NodeToolConfig, PendingToolApproval,
-    SubagentDeclaration, SubagentStatus, SubagentSummary, ToolCall, ToolCallStatus,
-    ToolCatalogSelection, ToolConcurrency, ToolDecision, ToolDefinition, ToolOutputMeta,
-    ToolPolicy, ToolPolicyOverride, ToolRef, ToolResult, ToolTier, ToolTruncation,
-    ToolTruncationStrategy,
+    requires_approval, summarize_diff, tool_decision_for_call, tool_intent_from_arguments,
+    tool_tier_for_call, ApprovalMode, EditBatch, FileChangeOp, FileChangeRecord, FileSnapshot,
+    NodeToolConfig, PendingToolApproval, SubagentDeclaration, SubagentStatus, SubagentSummary,
+    ToolCall, ToolCallStatus, ToolConcurrency, ToolDecision, ToolDefinition, ToolOutputMeta,
+    ToolResult, ToolTier, ToolTruncation, ToolTruncationStrategy,
 };

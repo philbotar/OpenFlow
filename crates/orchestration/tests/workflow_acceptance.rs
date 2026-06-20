@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use engine::{
     AgentError, AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTurnOutcome,
-    AgentTurnSuccess, AiPort, ApprovalMode, Edge, Node, NodeId, ToolCall, ToolRef, Workflow,
+    AgentTurnSuccess, AiPort, ApprovalMode, Edge, Node, NodeId, ToolCall, Workflow,
 };
 use orchestration::run::execution::{
     new_artifact_root, new_in_memory_snapshot_store, run_workflow_headless,
@@ -57,6 +57,7 @@ impl AiPort for ScriptedAi {
             output,
             raw_text: "{}".to_string(),
             assistant_message: None,
+            usage: None,
         }))
     }
 }
@@ -120,6 +121,20 @@ async fn branch_join_workflow_preserves_sentinel_and_trace_contract() {
             .count()
             >= 4
     );
+    assert!(
+        snapshot
+            .run_trace
+            .iter()
+            .any(|entry| entry.status == TraceStatus::Completed),
+        "durable replay depends on completed trace entries being projected"
+    );
+    assert!(
+        snapshot
+            .chat_logs
+            .values()
+            .any(|messages| !messages.is_empty()),
+        "durable replay depends on chat logs being projected"
+    );
     let entrypoint_text = {
         let requests = ai.requests.lock();
         requests[0].input["entrypoint"]["text"]
@@ -167,6 +182,7 @@ async fn manual_node_pauses_accepts_input_and_feeds_downstream_node() {
                         output: json!({"summary": answer}),
                         raw_text: "{}".to_string(),
                         assistant_message: Some("Locked. Advancing.".to_string()),
+                        usage: None,
                     }))
                 }
                 "final" => {
@@ -177,6 +193,7 @@ async fn manual_node_pauses_accepts_input_and_feeds_downstream_node() {
                         }),
                         raw_text: "{}".to_string(),
                         assistant_message: None,
+                        usage: None,
                     }))
                 }
                 _ => unreachable!(),
@@ -238,7 +255,7 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
                 *calls
             };
             if call_number == 1 {
-                assert_eq!(request.available_tools.len(), 3);
+                assert_eq!(request.available_tools.len(), 10);
                 return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                     raw_text: String::new(),
                     assistant_message: Some("Need repo context".to_string()),
@@ -247,6 +264,7 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
                         name: "read".to_string(),
                         arguments: json!({"path": "README.md"}),
                     }],
+                    usage: None,
                 }));
             }
             let saw_tool_result = request
@@ -258,16 +276,13 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
                 output: json!({"summary": "tool verified ORCHID-91"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
+                usage: None,
             }))
         }
     }
 
     let mut workflow = Workflow::new("tool acceptance");
     let mut node = agent("tool-node", "Tool node");
-    node.agent.tools.catalog.tools = vec![ToolRef {
-        name: "read".to_string(),
-        tier: Some(engine::ToolTier::Read),
-    }];
     node.agent.tools.approval_mode = Some(ApprovalMode::AlwaysAsk);
     workflow.nodes = vec![node];
 
@@ -332,6 +347,7 @@ async fn write_tool_requires_approval_and_mutates_file_after_allow() {
                         name: "write".to_string(),
                         arguments: json!({"path": "draft.txt", "content": "saved ORCHID-91\n"}),
                     }],
+                    usage: None,
                 }));
             }
             let saw_tool_result = request
@@ -343,6 +359,7 @@ async fn write_tool_requires_approval_and_mutates_file_after_allow() {
                 output: json!({"summary": "draft saved ORCHID-91"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
+                usage: None,
             }))
         }
     }
@@ -353,10 +370,6 @@ async fn write_tool_requires_approval_and_mutates_file_after_allow() {
 
     let mut workflow = Workflow::new("write tool acceptance");
     let mut node = agent("write-node", "Write node");
-    node.agent.tools.catalog.tools = vec![ToolRef {
-        name: "write".to_string(),
-        tier: Some(engine::ToolTier::Write),
-    }];
     node.agent.tools.approval_mode = Some(ApprovalMode::AlwaysAsk);
     workflow.nodes = vec![node];
 
@@ -421,6 +434,7 @@ impl AiPort for CheckpointWriteToolAi {
                     name: "write".to_string(),
                     arguments: json!({"path": "draft.txt", "content": "checkpoint ORCHID-91\n"}),
                 }],
+                usage: None,
             }));
         }
         let saw_tool_result = request
@@ -432,6 +446,7 @@ impl AiPort for CheckpointWriteToolAi {
             output: json!({"summary": "draft saved ORCHID-91"}),
             raw_text: "{}".to_string(),
             assistant_message: None,
+            usage: None,
         }))
     }
 }
@@ -439,10 +454,6 @@ impl AiPort for CheckpointWriteToolAi {
 fn write_approval_workflow() -> Workflow {
     let mut workflow = Workflow::new("checkpoint mid approval");
     let mut node = agent("write-node", "Write node");
-    node.agent.tools.catalog.tools = vec![ToolRef {
-        name: "write".to_string(),
-        tier: Some(engine::ToolTier::Write),
-    }];
     node.agent.tools.approval_mode = Some(ApprovalMode::AlwaysAsk);
     workflow.nodes = vec![node];
     workflow
@@ -453,7 +464,9 @@ fn checkpoint_interactive_params<A: AiPort + Send + Sync + 'static>(
     execution_cwd: std::path::PathBuf,
     ai: A,
     resume_checkpoint: Option<engine::InteractiveEngineCheckpoint>,
-    checkpoint_sink: Arc<parking_lot::Mutex<Option<engine::InteractiveEngineCheckpoint>>>,
+    checkpoint_sink: Arc<
+        parking_lot::Mutex<Option<orchestration::run::persistence::PendingRunCheckpoint>>,
+    >,
 ) -> InteractiveWorkflowRunParams<A> {
     InteractiveWorkflowRunParams {
         workflow,
@@ -468,6 +481,7 @@ fn checkpoint_interactive_params<A: AiPort + Send + Sync + 'static>(
         lsp: orchestration::lsp::LspSettings::from_env(),
         pending_engine_reverts: Arc::new(parking_lot::Mutex::new(Vec::new())),
         node_interrupts: Arc::new(parking_lot::Mutex::new(BTreeMap::new())),
+        context_window_sizes: BTreeMap::new(),
     }
 }
 
@@ -511,7 +525,8 @@ async fn checkpoint_resume_mid_approval_replays_batch() {
     let checkpoint = checkpoint_sink
         .lock()
         .clone()
-        .expect("checkpoint after stop");
+        .expect("checkpoint after stop")
+        .engine;
     assert!(
         checkpoint.pending_tool_batches.contains_key(&approval_id),
         "checkpoint must retain pending approval batch"
@@ -581,6 +596,7 @@ async fn failed_read_tool_feeds_error_and_node_completes() {
                         name: "read".to_string(),
                         arguments: json!({"path": "missing-acceptance-file.txt"}),
                     }],
+                    usage: None,
                 }));
             }
             assert!(request.transcript.iter().any(|item| matches!(
@@ -591,6 +607,7 @@ async fn failed_read_tool_feeds_error_and_node_completes() {
                 output: json!({"summary": "ok after tool error"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
+                usage: None,
             }))
         }
     }
@@ -598,10 +615,6 @@ async fn failed_read_tool_feeds_error_and_node_completes() {
     let temp = tempfile::tempdir().unwrap();
     let mut workflow = Workflow::new("tool resilience");
     let mut node = agent("worker", "Worker");
-    node.agent.tools.catalog.tools = vec![ToolRef {
-        name: "read".to_string(),
-        tier: Some(engine::ToolTier::Read),
-    }];
     node.agent.tools.approval_mode = Some(ApprovalMode::Yolo);
     workflow.nodes = vec![node];
 

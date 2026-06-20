@@ -4,6 +4,11 @@
   "private": true,
   "scripts": {
     "start": "../ui/node_modules/.bin/tauri",
-    "build": "../ui/node_modules/.bin/tauri build"
+    "build": "../ui/node_modules/.bin/tauri build",
+    "e2e:install": "npm --prefix e2e install",
+    "e2e": "npm --prefix e2e test",
+    "e2e:browser": "npm --prefix e2e run test:browser",
+    "e2e:tauri": "npm --prefix e2e run test:tauri",
+    "dev:e2e": "npm --prefix ../ui run tauri -- dev --features e2e-testing"
   }
 }

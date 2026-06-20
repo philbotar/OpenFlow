@@ -7,6 +7,7 @@ import {
   defaultReasoningBudgetTokens,
   defaultReasoningEffort,
   reasoningEffortOptions,
+  workflowReasoningEffort,
 } from "../lib/workflow";
 import { CallableAgentsEditor } from "../forms/CallableAgentsEditor";
 import { ToolConfigEditor } from "../forms/ToolConfigEditor";
@@ -114,6 +115,9 @@ export function InspectorPanel() {
                 knownModels={ctx.activeProfileMemo().known_models}
                 defaultModel={ctx.activeProfileMemo().default_model}
                 reasoningEffortOptions={reasoningEffortOptions(ctx.activeProfileMemo())}
+                workflowDefaultReasoningEffort={workflowReasoningEffort(
+                  ctx.activeWorkflow()?.settings ?? { shared_context: "" },
+                )}
                 providerDefaultReasoningEffort={defaultReasoningEffort(ctx.activeProfileMemo())}
                 defaultReasoningBudgetTokens={defaultReasoningBudgetTokens(ctx.activeProfileMemo())}
                 reasoningEffort={agentReasoningEffort(node().agent)}
@@ -161,11 +165,6 @@ export function InspectorPanel() {
             <InspectorSection title="Tools">
               <ToolConfigEditor
                 config={node().agent.tools}
-                onToolEnabledChange={(toolName, enabled) =>
-                  ctx.updateCurrentNodeToolConfig((tools) => {
-                    ctx.setToolEnabled(tools, toolName, enabled);
-                  })
-                }
                 onApprovalModeChange={(value) =>
                   ctx.updateCurrentNodeToolConfig((tools) => {
                     tools.approvalMode = value;

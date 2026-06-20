@@ -9,7 +9,9 @@ use crate::execution::subagents::{
 use crate::execution::telemetry::RunTelemetry;
 use crate::execution::tool_results::error_tool_result;
 use crate::graph::callable_agent::CallableAgent;
-use crate::graph::{Node, NodeId, Workflow};
+use crate::graph::{
+    default_structured_output_schema, effective_output_schema, Node, NodeId, Workflow,
+};
 use crate::ports::{AgentError, AgentRequest, AgentTurnOutcome, AgentTurnSuccess};
 use crate::tools::{SubagentDeclaration, SubagentStatus, SubagentSummary, ToolCall, ToolResult};
 use serde::Deserialize;
@@ -216,7 +218,7 @@ fn build_saved_agent_request(
         system_messages: vec![system_prompt],
         task_prompt: input.to_string(),
         input: Value::Null,
-        output_schema: agent.output_schema.clone(),
+        output_schema: effective_output_schema(&agent.output_schema),
         tool_config: sub_node_config,
         available_tools,
         transcript: sub_transcript,
@@ -252,7 +254,7 @@ fn build_adhoc_agent_request(
         system_messages: vec![system_prompt],
         task_prompt: input.to_string(),
         input: Value::Null,
-        output_schema: Value::Null,
+        output_schema: default_structured_output_schema(),
         tool_config: sub_node_config,
         available_tools,
         transcript: sub_transcript,
@@ -367,12 +369,17 @@ pub fn is_subagent_runtime_builtin(tool_name: &str) -> bool {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, reason = "test fixtures use unwrap for brevity")]
+#[allow(
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "test fixtures use unwrap/panic for brevity"
+)]
 mod tests {
     use super::*;
+    use crate::execution::subagents::CALL_SUBAGENT_TOOL;
     use crate::graph::{NodeId, WorkflowId};
     use crate::ports::{AgentRequest, AgentToolCallBatch, AgentTurnOutcome};
-    use crate::tools::{NodeToolConfig, SubagentStatus};
+    use crate::tools::{NodeToolConfig, SubagentStatus, ToolCall};
     use serde_json::json;
 
     fn sample_session() -> SubagentInvokeSession {
@@ -407,6 +414,49 @@ mod tests {
     }
 
     #[test]
+    fn adhoc_subagent_request_uses_default_output_schema() {
+        let mut workflow = Workflow::new("Test");
+        let mut node = crate::Node::agent("Parent", 0.0, 0.0);
+        node.id = NodeId("parent".to_string());
+        workflow.nodes.push(node);
+
+        let mut declared = std::collections::BTreeMap::new();
+        declared.insert(
+            "sub-1".to_string(),
+            SubagentSummary {
+                id: "sub-1".to_string(),
+                name: "backend-impl".to_string(),
+                purpose: "Implement backend".to_string(),
+                status: SubagentStatus::Declared,
+            },
+        );
+
+        let tool_call = ToolCall {
+            id: "call-1".to_string(),
+            name: CALL_SUBAGENT_TOOL.to_string(),
+            arguments: json!({
+                "subagent_id": "sub-1",
+                "input": "wire the API"
+            }),
+        };
+
+        match start_subagent_invoke(
+            &workflow,
+            &NodeId("parent".to_string()),
+            &tool_call,
+            &mut declared,
+            &std::collections::BTreeMap::new(),
+            Vec::new(),
+        ) {
+            SubagentStartOutcome::Started(session, _) => {
+                assert_ne!(session.request.output_schema, Value::Null);
+                assert_eq!(session.request.output_schema["type"], "object");
+            }
+            SubagentStartOutcome::Failed(_) => panic!("expected subagent start"),
+        }
+    }
+
+    #[test]
     fn advance_subagent_invoke_records_tool_calls_before_results() {
         let session = sample_session();
         let tool_call = ToolCall {
@@ -426,6 +476,7 @@ mod tests {
             raw_text: String::new(),
             assistant_message: Some("Reading notes".to_string()),
             tool_calls: vec![tool_call.clone()],
+            usage: None,
         }));
 
         match advance_subagent_invoke(session, outcome, vec![tool_result.clone()]) {

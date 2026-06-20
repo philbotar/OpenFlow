@@ -53,6 +53,12 @@ pub enum BackendError {
     CheckpointWorkflowMismatch,
     #[error("checkpoint is incompatible with the current workflow: {0}")]
     CheckpointIncompatible(String),
+    #[error("run {0} not found")]
+    RunNotFound(String),
+    #[error("run {0} has no checkpoints")]
+    RunHasNoCheckpoints(String),
+    #[error("run {0} cannot be resumed because workflow {1} changed")]
+    RunWorkflowChanged(String, String),
     #[error("schedule error: {0}")]
     Schedule(String),
 }

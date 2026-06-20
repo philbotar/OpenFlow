@@ -5,6 +5,7 @@
     reason = "Tauri desktop shell; strict pedantic/nursery lint not enforced on thin IPC glue"
 )]
 
+mod run_notifications;
 mod run_sleep_guard;
 
 use orchestration::backend::{
@@ -36,11 +37,11 @@ fn spawn_schedule_loop(app: tauri::AppHandle) {
             interval.tick().await;
             let backend = app.state::<AppBackend>();
             match backend.start_due_scheduled_run().await {
-                Ok(Some((initial_state, event_rx))) => {
+                Ok(Some((initial_state, event_rx, workflow_name))) => {
                     let run_id = initial_state.run_id.clone();
                     let _ = app.emit("run-state", initial_state);
                     emit_schedule_statuses(&app);
-                    spawn_run_event_bridge(app.clone(), event_rx, run_id);
+                    spawn_run_event_bridge(app.clone(), workflow_name, event_rx, run_id);
                 }
                 Ok(None) => {
                     emit_schedule_statuses(&app);
@@ -332,6 +333,7 @@ async fn bridge_still_owns_run(backend: &AppBackend, bridge_run_id: &Option<Stri
 
 fn spawn_run_event_bridge(
     app: tauri::AppHandle,
+    workflow_name: String,
     mut event_rx: UnboundedReceiver<ExecutionEvent>,
     bridge_run_id: Option<String>,
 ) {
@@ -342,6 +344,8 @@ fn spawn_run_event_bridge(
             let Some(event) = event_rx.recv().await else {
                 break;
             };
+            let notification =
+                run_notifications::notification_for_event(&event, workflow_name.as_str());
             let backend = app.state::<AppBackend>();
             if !bridge_still_owns_run(&backend, &bridge_run_id).await {
                 break;
@@ -350,19 +354,33 @@ fn spawn_run_event_bridge(
                 Ok(state) => state,
                 Err(_) => break,
             };
+            if let Some(notification) = notification.as_ref() {
+                run_notifications::show_run_notification(&app, notification);
+            }
             let deadline = tokio::time::Instant::now() + RUN_STATE_COALESCE_WINDOW;
             while run_state.active {
                 tokio::select! {
                     () = tokio::time::sleep_until(deadline) => break,
                     maybe_event = event_rx.recv() => match maybe_event {
                         Some(event) => {
+                            let notification = run_notifications::notification_for_event(
+                                &event,
+                                workflow_name.as_str(),
+                            );
                             let backend = app.state::<AppBackend>();
                             if !bridge_still_owns_run(&backend, &bridge_run_id).await {
                                 failed = true;
                                 break;
                             }
                             match backend.apply_execution_event(event).await {
-                                Ok(state) => run_state = state,
+                                Ok(state) => {
+                                    run_state = state;
+                                    if let Some(notification) = notification.as_ref() {
+                                        run_notifications::show_run_notification(
+                                            &app, notification,
+                                        );
+                                    }
+                                }
                                 Err(_) => {
                                     failed = true;
                                     break;
@@ -405,6 +423,7 @@ async fn start_run(
     transient_api_key: Option<String>,
     entrypoint: Option<String>,
 ) -> Result<WorkflowRunState, CommandError> {
+    let workflow_name = workflow.name.clone();
     let (initial_state, event_rx) = backend
         .start_run(
             workflow,
@@ -414,7 +433,7 @@ async fn start_run(
             transient_api_key.as_deref(),
         )
         .await?;
-    spawn_run_event_bridge(app, event_rx, initial_state.run_id.clone());
+    spawn_run_event_bridge(app, workflow_name, event_rx, initial_state.run_id.clone());
     Ok(initial_state)
 }
 
@@ -427,10 +446,11 @@ async fn continue_run(
     settings: AppSettings,
     transient_api_key: Option<String>,
 ) -> Result<WorkflowRunState, CommandError> {
+    let workflow_name = workflow.name.clone();
     let (initial_state, event_rx) = backend
         .continue_run(workflow, None, &settings, transient_api_key.as_deref())
         .await?;
-    spawn_run_event_bridge(app, event_rx, initial_state.run_id.clone());
+    spawn_run_event_bridge(app, workflow_name, event_rx, initial_state.run_id.clone());
     Ok(initial_state)
 }
 
@@ -438,6 +458,37 @@ async fn continue_run(
 #[tauri::command]
 async fn is_run_continuable(backend: tauri::State<'_, AppBackend>) -> Result<bool, CommandError> {
     Ok(backend.is_run_continuable().await)
+}
+
+#[tauri::command]
+fn list_runs(
+    backend: tauri::State<'_, AppBackend>,
+    workflow_id: Option<String>,
+) -> Result<Vec<orchestration::run::persistence::RunSummary>, CommandError> {
+    Ok(backend.list_runs(workflow_id.as_deref())?)
+}
+
+#[tauri::command]
+fn replay_run(
+    backend: tauri::State<'_, AppBackend>,
+    run_id: String,
+) -> Result<WorkflowRunState, CommandError> {
+    Ok(backend.replay_run(&run_id)?)
+}
+
+#[tauri::command]
+async fn resume_durable_run(
+    backend: tauri::State<'_, AppBackend>,
+    app: tauri::AppHandle,
+    run_id: String,
+    settings: AppSettings,
+    transient_api_key: Option<String>,
+) -> Result<WorkflowRunState, CommandError> {
+    let (initial_state, event_rx, workflow_name) = backend
+        .resume_durable_run(&run_id, &settings, transient_api_key.as_deref())
+        .await?;
+    spawn_run_event_bridge(app, workflow_name, event_rx, initial_state.run_id.clone());
+    Ok(initial_state)
 }
 
 /// Tauri command: Preview write-tier file edits before approval.
@@ -700,11 +751,17 @@ fn clear_resolved_incidents(backend: tauri::State<'_, AppBackend>) -> Result<u32
 }
 
 pub fn run() {
-    let builder = tauri::Builder::default();
+    let builder = {
+        let builder = tauri::Builder::default();
+        #[cfg(feature = "e2e-testing")]
+        let builder = builder.plugin(tauri_plugin_playwright::init());
+        builder
+    };
 
     builder
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
             bootstrap_app,
             list_projects,
@@ -741,6 +798,9 @@ pub fn run() {
             start_run,
             continue_run,
             is_run_continuable,
+            list_runs,
+            replay_run,
+            resume_durable_run,
             preview_file_edit,
             git_diff_file,
             revert_edit_batch,

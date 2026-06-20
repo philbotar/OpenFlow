@@ -1,8 +1,32 @@
+import { createMemo, For, Show } from "solid-js";
 import { useAppContext } from "../context/AppContext";
 import { AnimatedPanel } from "../components/AnimatedPanel";
+import {
+  defaultReasoningBudgetTokens,
+  defaultReasoningEffort,
+  reasoningBudgetForEffort,
+  reasoningEffortOptions,
+  workflowReasoningBudgetTokens,
+  workflowReasoningEffort,
+} from "../lib/workflow";
 
 export function WorkflowSettingsPanel() {
   const ctx = useAppContext();
+  const effortOptions = createMemo(() => reasoningEffortOptions(ctx.activeProfileMemo()));
+  const selectedEffort = createMemo(
+    () => workflowReasoningEffort(ctx.activeWorkflow()?.settings ?? { shared_context: "" }) ?? "",
+  );
+  const selectedEffortOption = createMemo(() =>
+    effortOptions().find((option) => option.value === selectedEffort()),
+  );
+  const providerDefaultLabel = createMemo(() => {
+    const effort = defaultReasoningEffort(ctx.activeProfileMemo());
+    if (!effort) {
+      return "Use provider default";
+    }
+    const option = effortOptions().find((entry) => entry.value === effort);
+    return option ? `Use provider default (${option.label})` : `Use provider default (${effort})`;
+  });
 
   return (
     <AnimatedPanel class="inspector-panel workflow-settings-panel">
@@ -29,6 +53,80 @@ export function WorkflowSettingsPanel() {
           }
         />
       </label>
+
+      <Show when={effortOptions().length > 0}>
+        <label>
+          <span>Default reasoning effort</span>
+          <p class="field-help">
+            Applied to agent nodes that do not set their own effort level. Saved on this workflow.
+          </p>
+          <select
+            class="text-input"
+            value={selectedEffort()}
+            onChange={(event) =>
+              ctx.updateActiveWorkflowSettings((settings) => {
+                const nextValue = event.currentTarget.value;
+                settings.reasoning_effort = nextValue || null;
+                settings.reasoningEffort = nextValue || null;
+                if (!nextValue) {
+                  settings.reasoning_budget_tokens = null;
+                  settings.reasoningBudgetTokens = null;
+                  return;
+                }
+                const option = effortOptions().find((entry) => entry.value === nextValue);
+                if (!option?.uses_budget_tokens) {
+                  settings.reasoning_budget_tokens = null;
+                  settings.reasoningBudgetTokens = null;
+                  return;
+                }
+                const existing = workflowReasoningBudgetTokens(settings);
+                if (existing != null) {
+                  return;
+                }
+                const budget =
+                  reasoningBudgetForEffort(ctx.activeProfileMemo(), nextValue) ?? null;
+                settings.reasoning_budget_tokens = budget;
+                settings.reasoningBudgetTokens = budget;
+              })
+            }
+          >
+            <option value="">{providerDefaultLabel()}</option>
+            <For each={effortOptions()}>
+              {(option) => <option value={option.value}>{option.label}</option>}
+            </For>
+          </select>
+        </label>
+        <Show when={selectedEffortOption()?.uses_budget_tokens}>
+          <label>
+            <span>Budget tokens for {selectedEffortOption()?.label}</span>
+            <input
+              class="text-input"
+              type="number"
+              min={1}
+              step={1}
+              value={
+                workflowReasoningBudgetTokens(ctx.activeWorkflow()?.settings ?? {
+                  shared_context: "",
+                }) ??
+                defaultReasoningBudgetTokens(ctx.activeProfileMemo())[selectedEffort()] ??
+                ""
+              }
+              onInput={(event) => {
+                const parsed = Number.parseInt(event.currentTarget.value, 10);
+                ctx.updateActiveWorkflowSettings((settings) => {
+                  if (!Number.isFinite(parsed) || parsed <= 0) {
+                    settings.reasoning_budget_tokens = null;
+                    settings.reasoningBudgetTokens = null;
+                    return;
+                  }
+                  settings.reasoning_budget_tokens = parsed;
+                  settings.reasoningBudgetTokens = parsed;
+                });
+              }}
+            />
+          </label>
+        </Show>
+      </Show>
 
       <label>
         <span>Max retry attempts</span>
@@ -79,7 +177,6 @@ export function WorkflowSettingsPanel() {
           }}
         />
       </label>
-
     </AnimatedPanel>
   );
 }

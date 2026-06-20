@@ -9,6 +9,7 @@ mod tool_port;
 pub use ai_adapter::AiInvocationAdapter;
 
 use crate::lsp::LspSettings;
+use crate::run::persistence::PendingRunCheckpoint;
 use crate::run::state::{RunTraceEntry, ToolArtifactSummary, ToolCallSummary};
 use engine::{
     AiPort, CallableAgent, ChatMessage, EditBatch, InteractiveEngineCheckpoint, NodeId, RunReport,
@@ -132,13 +133,14 @@ pub struct InteractiveWorkflowRunParams<A> {
     pub execution_cwd: PathBuf,
     pub artifact_root: PathBuf,
     pub resume_checkpoint: Option<InteractiveEngineCheckpoint>,
-    pub checkpoint_sink: Arc<Mutex<Option<InteractiveEngineCheckpoint>>>,
+    pub checkpoint_sink: Arc<Mutex<Option<PendingRunCheckpoint>>>,
     pub ai: A,
     pub agent_snapshots: BTreeMap<String, CallableAgent>,
     pub snapshot_store: Arc<crate::tools::edit::hashline::snapshots::InMemorySnapshotStore>,
     pub lsp: LspSettings,
     pub pending_engine_reverts: Arc<parking_lot::Mutex<Vec<EditBatch>>>,
     pub node_interrupts: NodeInterrupts,
+    pub context_window_sizes: BTreeMap<String, u32>,
 }
 
 pub fn spawn_interactive_workflow_run<A>(

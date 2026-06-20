@@ -2,7 +2,7 @@
 import { render } from "solid-js/web";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { AgentDefinition, AppSettings, BootstrapPayload, Project, ProviderReadiness, SkillSummary, Workflow, WorkflowRunState } from "../lib/types";
-import { createEmptyToolConfig, SUPPORTED_NODE_TOOLS } from "../lib/workflow";
+import { createEmptyToolConfig } from "../lib/workflow";
 
 const apiMocks = vi.hoisted(() => ({
   bootstrapApp: vi.fn(),
@@ -862,20 +862,17 @@ describe("App agent dashboard", () => {
       toolsSectionHeader.click();
       await flush();
 
-      expect(
-        Array.from(
-          container.querySelectorAll(
-            '[aria-label="Enabled node tools"] .tool-config-option-title',
-          ),
-        ).map((element) => element.textContent),
-      ).toEqual(SUPPORTED_NODE_TOOLS.map((tool) => tool.name));
-
-      const checkboxes = Array.from(
-        container.querySelectorAll(
-          '[aria-label="Enabled node tools"] input[type="checkbox"]',
-        ),
-      ) as HTMLInputElement[];
-      expect(checkboxes.every((element) => element.checked)).toBe(true);
+      const approvalSelect = container.querySelector(
+        ".tool-config-body select.text-input",
+      ) as HTMLSelectElement | null;
+      expect(approvalSelect).not.toBeNull();
+      expect(approvalSelect?.value).toBe("write");
+      expect(Array.from(approvalSelect?.options ?? []).map((option) => option.value)).toEqual([
+        "read_only",
+        "write",
+        "always_ask",
+        "yolo",
+      ]);
 
       toolsSectionHeader.click();
       await flush();
@@ -890,9 +887,9 @@ describe("App agent dashboard", () => {
       await flush();
       const saveCalls = apiMocks.saveWorkflows.mock.calls as [Workflow[]][];
       const savedWorkflows = saveCalls[saveCalls.length - 1]?.[0];
-      expect(savedWorkflows?.[0]?.nodes[0]?.agent.tools.catalog.tools).toEqual(
-        SUPPORTED_NODE_TOOLS.map((tool) => ({ name: tool.name })),
-      );
+      expect(savedWorkflows?.[0]?.nodes[0]?.agent.tools).toEqual({
+        approvalMode: "write",
+      });
     } finally {
       dispose();
     }
@@ -1374,10 +1371,10 @@ describe("Global chat layout", () => {
     await openChatTab(container);
 
     try {
-      const options = container.querySelectorAll(".chat-live-picker-option");
-      expect(options.length).toBe(2);
-      expect(options[0]?.textContent).toContain("Branch B");
-      expect(options[1]?.textContent).toContain("Branch C");
+      const chips = container.querySelectorAll(".chat-filter-chip");
+      const labels = [...chips].map((chip) => chip.textContent ?? "");
+      expect(labels.some((text) => text.includes("Branch B"))).toBe(true);
+      expect(labels.some((text) => text.includes("Branch C"))).toBe(true);
       // No composer until the user picks a node to talk to.
       expect(container.querySelectorAll(".chat-composer-pill textarea").length).toBe(0);
     } finally {
@@ -1399,16 +1396,17 @@ describe("Global chat layout", () => {
     await openChatTab(container);
 
     try {
-      const options = container.querySelectorAll(".chat-live-picker-option");
-      (options[1] as HTMLButtonElement).dispatchEvent(
-        new MouseEvent("click", { bubbles: true }),
+      const branchCChip = [...container.querySelectorAll(".chat-filter-chip")].find((chip) =>
+        chip.textContent?.includes("Branch C"),
       );
+      expect(branchCChip).not.toBeUndefined();
+      branchCChip!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       await flush();
 
       const textarea = await waitForElement(
         () =>
           container.querySelector(
-            '.chat-segment[data-node-id="node-c"] .chat-composer-pill textarea',
+            ".chat-composer-bar .chat-composer-pill textarea",
           ) as HTMLTextAreaElement | null,
         "picked node composer",
       );
@@ -1422,10 +1420,10 @@ describe("Global chat layout", () => {
 
       expect(apiMocks.submitUserInput).toHaveBeenCalledWith("node-c", "branch c reply");
       // The remaining live node stays visible and can be selected.
-      const remaining = container.querySelectorAll(".chat-live-picker-option");
+      const remaining = [...container.querySelectorAll(".chat-filter-chip")].filter((chip) =>
+        chip.textContent?.includes("Branch B"),
+      );
       expect(remaining.length).toBe(1);
-      expect(remaining[0]?.textContent).toContain("Branch B");
-      expect((remaining[0] as HTMLButtonElement).disabled).toBe(false);
     } finally {
       dispose();
     }
@@ -1446,7 +1444,9 @@ describe("Global chat layout", () => {
     try {
       const settledHeader = container.querySelector('.chat-segment[data-node-id="node-a"] .eyebrow');
       expect(settledHeader?.textContent).toBe("Plan");
-      expect(container.querySelector(".chat-live-picker")).not.toBeNull();
+      const chips = container.querySelectorAll(".chat-filter-chip");
+      expect([...chips].some((chip) => chip.textContent?.includes("Branch B"))).toBe(true);
+      expect([...chips].some((chip) => chip.textContent?.includes("Branch C"))).toBe(true);
     } finally {
       dispose();
     }
@@ -1526,7 +1526,7 @@ describe("Global chat layout", () => {
       expect(container.querySelectorAll(".chat-segment").length).toBe(2);
       expect(container.querySelector('.chat-segment[data-node-id="' + workflow.nodes[0].id + '"]')).not.toBeNull();
       expect(
-        container.querySelector('.chat-segment[data-node-id="workflow-1-node-2"] .chat-composer-pill textarea'),
+        container.querySelector(".chat-composer-bar .chat-composer-pill textarea"),
       ).not.toBeNull();
     } finally {
       dispose();
@@ -1562,7 +1562,7 @@ describe("Global chat layout", () => {
     await openChatTab(container);
 
     try {
-      const card = container.querySelector(".chat-segment-footer .tool-approval-card");
+      const card = container.querySelector(".chat-composer-bar .tool-approval-card");
       expect(card).not.toBeNull();
       card?.querySelector(".primary-button")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       await flush();

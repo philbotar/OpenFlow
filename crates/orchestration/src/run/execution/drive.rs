@@ -1,3 +1,4 @@
+use crate::run::persistence::{PendingRunCheckpoint, RunCheckpointReason};
 use crate::tools::{ArtifactStore, ToolRegistry, ToolRunner};
 use engine::{
     AiPort, EditBatch, EngineRunResult, InteractiveEngine, InteractiveEngineCheckpoint, NodeId,
@@ -36,6 +37,7 @@ pub(super) async fn drive_interactive_workflow<A>(
         lsp,
         pending_engine_reverts,
         node_interrupts,
+        context_window_sizes,
     } = params;
 
     let mut engine = match build_engine(workflow.clone(), entrypoint, resume_checkpoint) {
@@ -69,6 +71,7 @@ pub(super) async fn drive_interactive_workflow<A>(
         event_tx.clone(),
         node_interrupts,
         cancel_token.clone(),
+        context_window_sizes,
     ));
     let tool_port = ToolPortImpl::new(
         Arc::clone(&tool_runner),
@@ -179,6 +182,15 @@ pub(super) async fn drive_interactive_workflow<A>(
                     .iter()
                     .map(|retryable| retryable.node_id.clone())
                     .collect();
+
+                let reason = if !approvals.is_empty() {
+                    RunCheckpointReason::AwaitingToolApproval
+                } else if !retryables.is_empty() {
+                    RunCheckpointReason::AwaitingRetry
+                } else {
+                    RunCheckpointReason::AwaitingInput
+                };
+                publish_checkpoint(&mut engine, &checkpoint_sink, reason);
 
                 while !pending_inputs.is_empty()
                     || !pending_approvals.is_empty()
@@ -303,32 +315,40 @@ pub(super) async fn drive_interactive_workflow<A>(
                 }
             }
             EngineRunResult::Completed(report) => {
+                publish_checkpoint(
+                    &mut engine,
+                    &checkpoint_sink,
+                    RunCheckpointReason::Completed,
+                );
                 send_or_log(&event_tx, ExecutionEvent::Finished(report));
                 return;
             }
-            EngineRunResult::Failed(error) => match error {
-                RunError::NodeFailed { node_id, kind } => {
-                    let label = workflow
-                        .nodes
-                        .iter()
-                        .find(|node| node.id == node_id)
-                        .map(|node| node.label.clone())
-                        .unwrap_or_else(|| node_id.to_string());
-                    send_or_log(
-                        &event_tx,
-                        ExecutionEvent::NodeFailed {
-                            node_id,
-                            label,
-                            error: kind.to_string(),
-                        },
-                    );
-                    return;
+            EngineRunResult::Failed(error) => {
+                publish_checkpoint(&mut engine, &checkpoint_sink, RunCheckpointReason::Failed);
+                match error {
+                    RunError::NodeFailed { node_id, kind } => {
+                        let label = workflow
+                            .nodes
+                            .iter()
+                            .find(|node| node.id == node_id)
+                            .map(|node| node.label.clone())
+                            .unwrap_or_else(|| node_id.to_string());
+                        send_or_log(
+                            &event_tx,
+                            ExecutionEvent::NodeFailed {
+                                node_id,
+                                label,
+                                error: kind.to_string(),
+                            },
+                        );
+                        return;
+                    }
+                    other => {
+                        send_or_log(&event_tx, ExecutionEvent::Error(other.to_string()));
+                        return;
+                    }
                 }
-                other => {
-                    send_or_log(&event_tx, ExecutionEvent::Error(other.to_string()));
-                    return;
-                }
-            },
+            }
             EngineRunResult::Cancelled => {
                 snapshot_and_abort(
                     &mut engine,
@@ -445,13 +465,24 @@ fn apply_pending_engine_reverts(
     }
 }
 
+fn publish_checkpoint(
+    engine: &mut InteractiveEngine,
+    checkpoint_sink: &Arc<Mutex<Option<PendingRunCheckpoint>>>,
+    reason: RunCheckpointReason,
+) {
+    *checkpoint_sink.lock() = Some(PendingRunCheckpoint {
+        reason,
+        engine: engine.prepare_stop_checkpoint(),
+    });
+}
+
 fn snapshot_and_abort(
     engine: &mut InteractiveEngine,
-    checkpoint_sink: &Arc<Mutex<Option<InteractiveEngineCheckpoint>>>,
+    checkpoint_sink: &Arc<Mutex<Option<PendingRunCheckpoint>>>,
     event_tx: &UnboundedSender<ExecutionEvent>,
     aborted_emitted: &mut bool,
 ) {
-    *checkpoint_sink.lock() = Some(engine.prepare_stop_checkpoint());
+    publish_checkpoint(engine, checkpoint_sink, RunCheckpointReason::UserStopped);
     abort_run(event_tx, aborted_emitted);
 }
 

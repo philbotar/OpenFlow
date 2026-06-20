@@ -1,6 +1,37 @@
 use crate::settings::model::ProviderProfile;
 use engine::Workflow;
 
+/// Apply workflow-level reasoning defaults to nodes that have no per-node override.
+pub fn apply_workflow_reasoning_defaults(workflow: &mut Workflow) {
+    let Some(default_effort) = workflow
+        .settings
+        .reasoning_effort
+        .as_ref()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+    else {
+        return;
+    };
+    let default_effort = default_effort.to_string();
+    let default_budget = workflow.settings.reasoning_budget_tokens;
+
+    for node in &mut workflow.nodes {
+        if node.agent.reasoning_effort.is_some() {
+            continue;
+        }
+        node.agent.reasoning_effort = Some(default_effort.clone());
+        if node.agent.reasoning_budget_tokens.is_none() {
+            node.agent.reasoning_budget_tokens = default_budget;
+        }
+    }
+}
+
+/// Apply workflow then provider reasoning defaults to unset nodes.
+pub fn apply_reasoning_defaults(workflow: &mut Workflow, profile: &ProviderProfile) {
+    apply_workflow_reasoning_defaults(workflow);
+    apply_provider_reasoning_defaults(workflow, profile);
+}
+
 /// Apply provider-level reasoning defaults to nodes that have no per-node override.
 pub fn apply_provider_reasoning_defaults(workflow: &mut Workflow, profile: &ProviderProfile) {
     let Some(default_effort) = profile
@@ -96,6 +127,66 @@ mod tests {
         apply_provider_reasoning_defaults(&mut workflow, &profile);
 
         assert!(workflow.nodes[0].agent.reasoning_effort.is_none());
+    }
+
+    #[test]
+    fn apply_workflow_reasoning_defaults_sets_effort_and_budget() {
+        let mut workflow = sample_workflow();
+        workflow.settings.reasoning_effort = Some("medium".to_string());
+        workflow.settings.reasoning_budget_tokens = Some(8_192);
+
+        apply_workflow_reasoning_defaults(&mut workflow);
+
+        assert_eq!(
+            workflow.nodes[0].agent.reasoning_effort,
+            Some("medium".to_string())
+        );
+        assert_eq!(workflow.nodes[0].agent.reasoning_budget_tokens, Some(8_192));
+    }
+
+    #[test]
+    fn apply_workflow_reasoning_defaults_preserves_node_override() {
+        let mut workflow = sample_workflow();
+        workflow.nodes[0].agent.reasoning_effort = Some("high".to_string());
+        workflow.settings.reasoning_effort = Some("low".to_string());
+
+        apply_workflow_reasoning_defaults(&mut workflow);
+
+        assert_eq!(
+            workflow.nodes[0].agent.reasoning_effort,
+            Some("high".to_string())
+        );
+    }
+
+    #[test]
+    fn apply_reasoning_defaults_prefers_workflow_over_provider() {
+        let mut workflow = sample_workflow();
+        workflow.settings.reasoning_effort = Some("medium".to_string());
+        let mut profile =
+            ProviderProfile::from_spec(provider_spec(&ProviderId::from("openai")).unwrap());
+        profile.default_reasoning_effort = Some("low".to_string());
+
+        apply_reasoning_defaults(&mut workflow, &profile);
+
+        assert_eq!(
+            workflow.nodes[0].agent.reasoning_effort,
+            Some("medium".to_string())
+        );
+    }
+
+    #[test]
+    fn apply_reasoning_defaults_falls_back_to_provider_when_workflow_unset() {
+        let mut workflow = sample_workflow();
+        let mut profile =
+            ProviderProfile::from_spec(provider_spec(&ProviderId::from("openai")).unwrap());
+        profile.default_reasoning_effort = Some("low".to_string());
+
+        apply_reasoning_defaults(&mut workflow, &profile);
+
+        assert_eq!(
+            workflow.nodes[0].agent.reasoning_effort,
+            Some("low".to_string())
+        );
     }
 
     #[test]

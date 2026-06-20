@@ -40,6 +40,9 @@ jobs:
       - name: Dependency audit
         run: cargo deny check
 
+      - name: Version sync
+        run: cargo test -p workspace-checks --test version_sync --quiet
+
       - name: Run tests
         run: cargo test --workspace
 

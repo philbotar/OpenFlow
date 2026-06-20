@@ -19,6 +19,7 @@ export function AgentConfigForm(props: {
   taskPromptRows?: number;
   schemaRows?: number;
   reasoningEffortOptions?: readonly ReasoningEffortOption[];
+  workflowDefaultReasoningEffort?: string | null;
   providerDefaultReasoningEffort?: string | null;
   defaultReasoningBudgetTokens?: Record<string, number>;
   reasoningEffort?: string | null;
@@ -33,10 +34,17 @@ export function AgentConfigForm(props: {
   const selectedEffortOption = createMemo(() =>
     effortOptions().find((option) => option.value === selectedEffort()),
   );
-  const providerDefaultLabel = createMemo(() => {
+  const inheritedDefaultLabel = createMemo(() => {
+    const workflowEffort = props.workflowDefaultReasoningEffort ?? null;
+    if (workflowEffort) {
+      const option = effortOptions().find((entry) => entry.value === workflowEffort);
+      return option
+        ? `Use workflow default (${option.label})`
+        : `Use workflow default (${workflowEffort})`;
+    }
     const effort = props.providerDefaultReasoningEffort ?? null;
     if (!effort) {
-      return "Use provider default";
+      return "None (provider default)";
     }
     const option = effortOptions().find((entry) => entry.value === effort);
     return option ? `Use provider default (${option.label})` : `Use provider default (${effort})`;
@@ -88,7 +96,7 @@ export function AgentConfigForm(props: {
               props.onReasoningBudgetTokensChange?.(defaultBudget);
             }}
           >
-            <option value="">{providerDefaultLabel()}</option>
+            <option value="">{inheritedDefaultLabel()}</option>
             <For each={effortOptions()}>
               {(option) => <option value={option.value}>{option.label}</option>}
             </For>

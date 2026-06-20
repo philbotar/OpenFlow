@@ -13,6 +13,10 @@ categories.workspace = true
 name = "desktop"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+default = []
+e2e-testing = ["dep:tauri-plugin-playwright"]
+
 [build-dependencies]
 tauri-build.workspace = true
 
@@ -22,11 +26,13 @@ log = "0.4"
 orchestration = { path = "../orchestration", version = "0.1.0" }
 serde.workspace = true
 serde_json.workspace = true
- tauri.workspace = true
- tauri-plugin-dialog = "2"
- tauri-plugin-shell = "2"
- thiserror.workspace = true
- tokio.workspace = true
+tauri.workspace = true
+tauri-plugin-dialog = "2"
+tauri-plugin-notification = "2.3.3"
+tauri-plugin-playwright = { version = "0.4", optional = true }
+tauri-plugin-shell = "2"
+thiserror.workspace = true
+tokio.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true

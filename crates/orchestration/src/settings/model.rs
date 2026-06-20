@@ -43,6 +43,10 @@ pub struct ProviderProfile {
         alias = "default_reasoning_effort"
     )]
     pub default_reasoning_effort: Option<String>,
+    /// Per-model context window sizes (in tokens) for the bubble indicator.
+    /// Users can override or extend the bundled defaults here.
+    #[serde(default)]
+    pub context_window_sizes: BTreeMap<String, u32>,
 }
 
 fn default_responses_path() -> String {
@@ -86,6 +90,7 @@ impl ProviderProfile {
             reasoning_effort_options: spec.default_reasoning_effort_options(),
             default_reasoning_budget_tokens: Self::default_budget_tokens_for_spec(spec),
             default_reasoning_effort: None,
+            context_window_sizes: engine::default_context_window_sizes(),
         }
     }
 
@@ -120,6 +125,7 @@ impl ProviderProfile {
             reasoning_effort_options: Vec::new(),
             default_reasoning_budget_tokens: BTreeMap::new(),
             default_reasoning_effort: None,
+            context_window_sizes: engine::default_context_window_sizes(),
         }
     }
 

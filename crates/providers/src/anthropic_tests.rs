@@ -266,6 +266,7 @@ async fn messages_response_routes_external_tool_calls() {
                 name: "read".to_string(),
                 arguments: json!({"path": "README.md"}),
             }],
+            usage: None,
         })
     );
 }

@@ -37,11 +37,20 @@ impl AgentRequest {
     }
 }
 
+/// Token usage report extracted from LLM provider responses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UsageReport {
+    pub prompt_tokens: u32,
+    pub completion_tokens: u32,
+    pub total_tokens: u32,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentTurnSuccess {
     pub output: Value,
     pub raw_text: String,
     pub assistant_message: Option<String>,
+    pub usage: Option<UsageReport>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,6 +58,7 @@ pub struct AgentToolCallBatch {
     pub raw_text: String,
     pub assistant_message: Option<String>,
     pub tool_calls: Vec<ToolCall>,
+    pub usage: Option<UsageReport>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

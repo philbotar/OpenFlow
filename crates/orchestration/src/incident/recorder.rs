@@ -243,5 +243,8 @@ fn backend_error_code(error: &BackendError) -> &'static str {
         BackendError::CheckpointWorkflowMismatch => "backend.checkpoint_workflow_mismatch",
         BackendError::CheckpointIncompatible(_) => "backend.checkpoint_incompatible",
         BackendError::Schedule(_) => "backend.schedule",
+        BackendError::RunNotFound(_) => "backend.run_not_found",
+        BackendError::RunHasNoCheckpoints(_) => "backend.run_has_no_checkpoints",
+        BackendError::RunWorkflowChanged(_, _) => "backend.run_workflow_changed",
     }
 }

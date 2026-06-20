@@ -82,7 +82,7 @@ export function WorkflowAuthoringScreen() {
               }
               onClick={() => void ctx.handleApplyWorkflowAuthoringDraft()}
             >
-              Apply to editor
+              Create Workflow
             </button>
           </footer>
         </div>

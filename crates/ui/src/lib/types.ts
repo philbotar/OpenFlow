@@ -2,7 +2,19 @@ export type NodeId = string;
 export type WorkflowId = string;
 export type EdgeId = string;
 
-export type BottomTab = "overview" | "chat" | "trace" | "terminal";
+export type BottomTab = "overview" | "chat" | "trace" | "terminal" | "runs";
+
+export type DurableRunStatus = "running" | "paused" | "stopped" | "completed" | "failed";
+
+export interface RunSummary {
+  runId: string;
+  workflowId: string;
+  workflowName: string;
+  projectId: string | null;
+  startedAtMs: number;
+  updatedAtMs: number;
+  status: DurableRunStatus;
+}
 export type Screen = "editor" | "settings" | "agents" | "workflow-authoring" | "schedule";
 
 export interface RetryPolicy {
@@ -33,6 +45,10 @@ export interface WorkflowSettings {
   schedule?: WorkflowSchedule | null;
   retry_policy?: RetryPolicy;
   provider_id?: string | null;
+  reasoning_effort?: string | null;
+  reasoningEffort?: string | null;
+  reasoning_budget_tokens?: number | null;
+  reasoningBudgetTokens?: number | null;
 }
 
 export interface ProjectMetadata {
@@ -84,30 +100,12 @@ export interface NodePosition {
   y: number;
 }
 
-export type ToolTier = "read" | "write" | "exec";
+export type ToolTier = "read" | "write";
 export type ToolConcurrency = "shared" | "exclusive";
-export type ToolPolicy = "allow" | "prompt" | "deny";
-export type ApprovalMode = "always_ask" | "write" | "yolo";
-
-export interface ToolRef {
-  name: string;
-  tier?: ToolTier | null;
-}
-
-export interface ToolCatalogSelection {
-  tools: ToolRef[];
-}
-
-export interface ToolPolicyOverride {
-  toolName: string;
-  policy: ToolPolicy;
-  timeoutSecs: number | null;
-}
+export type ApprovalMode = "read_only" | "always_ask" | "write" | "yolo";
 
 export interface NodeToolConfig {
-  catalog: ToolCatalogSelection;
   approvalMode: ApprovalMode | null;
-  overrides: ToolPolicyOverride[];
 }
 
 export interface AgentNodeConfig {
@@ -317,6 +315,7 @@ export interface EditBatch {
 
 export interface WorkflowRunState {
   active: boolean;
+  runId?: string | null;
   awaitingNodeId: NodeId | null;
   awaitingNodeIds?: NodeId[];
   activeManualNodeId: NodeId | null;
@@ -357,6 +356,8 @@ export interface ProviderProfile {
   reasoningEffortOptions?: ReasoningEffortOption[];
   defaultReasoningBudgetTokens?: Record<string, number>;
   defaultReasoningEffort?: string | null;
+  /** Per-model context window sizes (tokens) for the bubble indicator. */
+  contextWindowSizes?: Record<string, number>;
 }
 
 export interface LspSettings {

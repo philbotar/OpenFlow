@@ -114,11 +114,6 @@ export function AgentsScreen() {
                 />
                 <ToolConfigEditor
                   config={agent().tools}
-                  onToolEnabledChange={(toolName, enabled) =>
-                    ctx.updateSelectedAgent((draft) => {
-                      ctx.setToolEnabled(draft.tools, toolName, enabled);
-                    })
-                  }
                   onApprovalModeChange={(value) =>
                     ctx.updateSelectedAgent((draft) => {
                       draft.tools.approvalMode = value;

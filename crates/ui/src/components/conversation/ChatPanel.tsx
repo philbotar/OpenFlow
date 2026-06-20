@@ -1,84 +1,71 @@
-import { For, Show } from "solid-js";
-import { labelForAgentStatus } from "../../lib/agentStatus";
+import { createMemo, Show } from "solid-js";
+import RotateCcw from "lucide-solid/icons/rotate-ccw";
 import { GLOBAL_RUN_ENTRY_NODE_ID, isLiveTranscriptSegment } from "../../lib/workflow";
 import { useAppContext } from "../../context/AppContext";
 import { ConversationComposer } from "./ConversationComposer";
 import { ConversationMessages } from "./ConversationMessages";
-
-/**
- * When parallel nodes run, the global chat blocks until the user picks one to
- * talk to. The picked node streams inline in the conversation; the remaining
- * live nodes stay here until each completes in turn.
- */
-function LiveNodePicker() {
-  const ctx = useAppContext();
-
-  return (
-    <div class="chat-live-picker" role="group" aria-label="Pick a running node to talk to">
-      <p class="chat-live-picker-hint">
-        {ctx.chatLayout().live.length} nodes running in parallel — pick one to talk to
-      </p>
-      <div class="chat-live-picker-options">
-        <For each={ctx.chatLayout().live}>
-          {(segment) => (
-            <button
-              type="button"
-              class="chat-live-picker-option"
-              classList={{
-                "has-activity":
-                  segment.status === "awaiting_input" ||
-                  segment.status === "awaiting_tool_approval",
-                active: ctx.pickedLiveNodeId() === segment.nodeId,
-              }}
-              onClick={() => ctx.setPickedLiveNodeId(segment.nodeId)}
-            >
-              <span class={`chat-filter-status-dot status-${segment.status}`} />
-              {segment.label}
-              <span class="chat-live-picker-status">
-                {labelForAgentStatus(segment.status)}
-              </span>
-            </button>
-          )}
-        </For>
-      </div>
-    </div>
-  );
-}
+import { LiveSegmentFooter } from "./LiveSegmentFooter";
 
 export function ChatPanel() {
   const ctx = useAppContext();
+  const inReplayMode = () => ctx.replayRunId() !== null;
 
-  const hasInlineLiveSegment = () =>
-    ctx.chatLayout().settled.some((segment) =>
+  const inlineLiveSegment = createMemo(() =>
+    ctx.chatLayout().settled.find((segment) =>
       isLiveTranscriptSegment(ctx.runState(), segment),
-    );
+    ),
+  );
+
+  const replayRunSummary = createMemo(() => {
+    const runId = ctx.replayRunId();
+    if (!runId) {
+      return null;
+    }
+    return ctx.runHistory().find((run) => run.runId === runId) ?? null;
+  });
 
   return (
     <div class="chat-layout">
+      <Show when={inReplayMode()}>
+        <div class="chat-replay-banner" role="status">
+          <span>
+            Viewing saved run
+            {replayRunSummary() ? ` (${replayRunSummary()!.status})` : ""} — read-only.
+          </span>
+          <Show when={replayRunSummary() && replayRunSummary()!.status !== "completed"}>
+            <button
+              type="button"
+              class="secondary-button small"
+              onClick={() => void ctx.handleResumeDurableRun(ctx.replayRunId()!)}
+            >
+              <RotateCcw width={14} height={14} />
+              Resume run
+            </button>
+          </Show>
+        </div>
+      </Show>
       <ConversationMessages />
-      <Show
-        when={ctx.chatLayout().live.length > 0}
-        fallback={
+      <div class="chat-composer-bar">
+        <Show when={inlineLiveSegment()}>
+          {(segment) => <LiveSegmentFooter segment={segment()} />}
+        </Show>
+        <Show when={!inReplayMode() && ctx.chatLayout().live.length === 0 && !inlineLiveSegment()}>
           <Show
-            when={ctx.runState()?.active && !hasInlineLiveSegment()}
+            when={ctx.runState()?.active}
             fallback={
-              <Show when={!hasInlineLiveSegment()}>
-                <ConversationComposer
-                  nodeId={GLOBAL_RUN_ENTRY_NODE_ID}
-                  label="workflow"
-                  kickoff
-                />
-              </Show>
+              <ConversationComposer
+                nodeId={GLOBAL_RUN_ENTRY_NODE_ID}
+                label="workflow"
+                kickoff
+              />
             }
           >
             <div class="chat-live-strip chat-live-strip--pending" aria-live="polite">
               <p class="chat-live-starting">Starting workflow…</p>
             </div>
           </Show>
-        }
-      >
-        <LiveNodePicker />
-      </Show>
+        </Show>
+      </div>
     </div>
   );
 }

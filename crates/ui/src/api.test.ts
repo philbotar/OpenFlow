@@ -25,7 +25,10 @@ import {
   getRunState,
   listenToRunState,
   listScheduleStatuses,
+  listRuns,
+  replayRun,
   refreshSchedules,
+  resumeDurableRun,
   startRun,
   submitToolApproval,
   workflowAuthoringTurn,
@@ -131,5 +134,27 @@ describe("api desktop seam", () => {
   test("refreshSchedules invokes refresh_schedules", async () => {
     await refreshSchedules();
     expect(invoke).toHaveBeenCalledWith("refresh_schedules");
+  });
+
+  test("passes workflowId to list_runs", async () => {
+    invoke.mockResolvedValueOnce([]);
+    await listRuns("wf-1");
+    expect(invoke).toHaveBeenCalledWith("list_runs", { workflowId: "wf-1" });
+  });
+
+  test("passes runId to replay_run", async () => {
+    invoke.mockResolvedValueOnce({ active: false });
+    await replayRun("run-1");
+    expect(invoke).toHaveBeenCalledWith("replay_run", { runId: "run-1" });
+  });
+
+  test("passes settings to resume_durable_run", async () => {
+    vi.mocked(invoke).mockResolvedValueOnce({ active: true });
+    await resumeDurableRun("run-1", settings, "key");
+    expect(invoke).toHaveBeenCalledWith("resume_durable_run", {
+      runId: "run-1",
+      settings,
+      transientApiKey: "key",
+    });
   });
 });

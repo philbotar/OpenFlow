@@ -2,22 +2,37 @@
 
 ## Unreleased
 
+### Added
+
+- **Durable run persistence:** interactive runs persist to disk under `{project}/.flow/runs/` or `{data_local}/openflow/runs/` with append-only checkpoints combining engine state and UI projection; list/replay/resume via desktop IPC; Runs dock tab for history, read-only replay, and durable resume after restart.
+- **macOS run notifications:** native desktop notifications when a workflow needs input, requests tool approval, completes, errors, or aborts; classification lives in `crates/desktop/src/run_notifications.rs` and fires from the run event bridge after each applied execution event.
+
 ### Fixed
 
+- **Chat composer:** align the caret with inline skill and file chips by sizing highlight spacers to the raw token text instead of the chip bubble width.
+- **Chat composer:** render slash-command skills as inline chips in the input (same bubble styling as file and folder references) instead of a separate pill beside the send button.
+- **Chat composer:** pin the chat input bar to the bottom of the dock panel so it stays visible while scrolling message history; tool approvals and kickoff/live pickers render in the same sticky footer.
+- **Chat panel:** remove the inline "files changed" block from below conversation bubbles to keep the composer area focused.
+- **Chat bottom bubble stability:** keep the assistant text bubble visible at the bottom even when content is currently empty, so layout no longer jumps while waiting for text.
 - **Run stop / chat restart:** stop orphaned runs when the execution task is already gone; ignore stale run events after stop; re-read canonical run state before emitting UI updates so force-stop no longer leaves chat stuck on "Starting workflow…".
 - **Workflow chat:** switching workflows clears the chat panel and restores each workflow's own run history, drafts, and continuable-run controls instead of showing the previous workflow's conversation.
 - **Workflow canvas:** stop `focusChatNode` tick spam on repeated run-state events and unchanged node selection — breaks the `fitView` feedback loop that triggered "Maximum update depth exceeded"; skip viewport panning when chat-focus mode collapses the canvas; replace `onSelectionChange` with click handlers and ignore programmatic `select` changes to break the Solid↔React Flow selection sync loop; bail out of node/edge reconcile when data is unchanged; fix Solid/React canvas host initial render race.
 - **Workflow authoring errors:** map AI turn failures to `workflow authoring failed` instead of mislabeling them as file edit preview errors.
 - **Chat composer busy state:** remove the broken `is-busy` pseudo-element border animation that rendered a blue bar over the input; keep the send-button spinner and a subtle border highlight instead.
-- **Submit-output normalization:** nest flat nested-object schema fields under their parent property when models omit the `output` wrapper, including when fields are nested inside an existing `output` object.
+- **Parallel chat node switching:** keep live node picker bubbles selectable after choosing a running node so you can switch active chat target between concurrent nodes without waiting for completion.
+- **Ad-hoc subagent output schema:** ad-hoc subagents now get the default structured `summary` output schema instead of `null`, so `openflow_submit_node_output` tool parameters validate on strict OpenAI-compatible providers; provider mapping also falls back when `output_schema` is null; subagent AI invocations retry transient provider errors using the workflow `retry_policy`.
 - **Workflow authoring parsing:** accept flat draft fields and `workflow_draft` aliases when models omit the `workflowDraft` wrapper; tighten the authoring system prompt with an explicit required shape.
 - **Workflow authoring clarification:** disable `request_user_input` for authoring turns, forbid clarifying questions in the system prompt, and retry once with draft-required feedback when a model still pauses for input.
 - **Workflow authoring submit-output:** retry up to three times with corrective feedback when the model's `openflow_submit_node_output` call is malformed, matching interactive run retry behavior.
+- **Workflow authoring thinking display:** render `thinking` authoring messages with the same collapsible thinking bubble used in node chat, so Build with AI shows expandable reasoning previews.
+- **Workflow authoring draft readability:** stack the Build with AI preview above chat instead of side-by-side, and auto-layout AI-generated draft nodes by DAG layer before preview/apply so nodes do not overlap.
 - Settings bootstrap creates timestamped `.bak` files instead of clobbering; write errors propagate
 - JSON atomic writes fsync temp file before rename
 
 ### Changed
 
+- **Chat file references:** increase composer file/folder chip size (padding, font, icon), show longer paths before truncating, and reserve chip width in the highlight layer so following text no longer overlaps.
+- **Chat file references:** render completed `@{path}` tokens as inline file/folder chips in the composer instead of raw brace syntax.
 - **Schedule sidebar:** new Schedule screen for cron-based workflow runs while the desktop app is open; persists schedules on `WorkflowSettings.schedule`; orchestration owns cron evaluation and due-run claiming; desktop timer bridge starts scheduled runs and emits schedule status events; workflow picker opens in a modal like the node picker instead of an inline list.
 - **Terminal tab chrome:** replace the path + large Stop toolbar with a compact Codex-style session tab (folder name, inline stop icon, new-terminal control); full cwd stays on hover only; `+` opens additional PTY sessions instead of blocking on an existing one.
 - **Workflow authoring UI:** "Build with AI" is a routed screen inside the main shell (sidebar + topbar stay visible) instead of a full-screen modal overlay; composer stays typeable while provider readiness loads and shows an inline warning when the provider is not ready; live read-only canvas preview appears beside the chat once the AI proposes a workflow with nodes.
@@ -30,6 +45,7 @@
 
 ### Documentation
 
+- **ROADMAP.md:** cross-audit queue vs codebase — correct premature Done on #14 (terminal vs jobs), #4 (hook seam vs registration), provider thinking (OpenAI-compat vs Anthropic), terminal warn-on-close; mark #15 attachments, #23 cron, and #29 shortcuts as In progress with shipped slices; refresh stale Layer \| Gap tables (thinking, global chat, attachments); add [Cron / scheduled runs](#cron--scheduled-runs) detail spec; mark T20–T21 Done in Phase 2.
 - **ROADMAP.md:** [Programmatic / non-AI nodes](docs/ROADMAP.md#programmatic--non-ai-nodes) — queue item #25 expanded with Code/Transform/Http node kinds, engine `CallProgrammatic` branch, and sandboxed script execution. [Workflow orchestration & reinvoke](docs/ROADMAP.md#workflow-orchestration--reinvoke) — new queue item #35; child `invoke_workflow` runs, foreach-over-repo-files batch pattern, in-app `.flow/scripts/` driver, and partial `reinvoke_from_node`; promoted from deferred multi-run orchestration.
 - **ROADMAP.md:** [Run insights & self-learning](docs/ROADMAP.md#run-insights--self-learning) — queue item #27; post-run insight extraction, human approve/dismiss gate, workflow/project/node-scoped injection into future runs; insight taxonomy, storage layout, and dependency on run persistence (#24). Renumbered queue items #28–#34.
 - **OMP parity plans (2026-06-15):** add implementation plans for live bash/jobs/terminal, MCP external tools, browser tool, eval tool, and run persistence under `docs/superpowers/plans/`; update read parity plan status (Task 0 done).
@@ -43,6 +59,7 @@
 
 ### Added
 
+- **Workflow default reasoning effort:** gear-panel control for per-workflow `reasoning_effort` and budget tokens; orchestration applies workflow defaults before provider defaults at run start; new nodes inherit workflow then provider defaults.
 - **OMP read tool parity:** `tool/read/` module with OMP-style selectors (`:raw`, `:N-M`, `:N+M`, multi-range), structural summaries for bare code reads, depth-limited directory listings, and unified rendering for local/URL/artifact paths.
 - **Natural language workflow builder:** ChatGPT-style **Build with AI** overlay — describe workflows in conversation, see DAG + semantic validation after each turn, apply valid drafts to the editor.
 - **Tool retry & resilience (T20–T21):** transient tool failures retry per workflow `retry_policy` before surfacing `is_error` results; `ToolRetrying` telemetry; engine fills missing tool-batch results so cancelled/interrupted tools resume `CallAi` instead of aborting the run.

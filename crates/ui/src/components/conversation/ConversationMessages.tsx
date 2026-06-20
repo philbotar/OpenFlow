@@ -9,9 +9,8 @@ import {
 } from "solid-js";
 import { labelForAgentStatus } from "../../lib/agentStatus";
 import type { NodeId } from "../../lib/types";
-import { isLiveTranscriptSegment } from "../../lib/workflow";
+import { isLiveTranscriptSegment, sortTranscriptSegmentsByNodeOrder } from "../../lib/workflow";
 import { useAppContext } from "../../context/AppContext";
-import { LiveSegmentFooter } from "./LiveSegmentFooter";
 import {
   Conversation,
   ConversationContent,
@@ -34,7 +33,17 @@ export function ConversationMessages() {
     return segments.filter((segment) => segment.nodeId === filter);
   });
 
-  const showFilterChips = createMemo(() => ctx.chatLayout().settled.length > 1);
+  const filterChips = createMemo(() => {
+    const layout = ctx.chatLayout();
+    const segments = [...layout.settled, ...layout.live];
+    return sortTranscriptSegmentsByNodeOrder(segments, ctx.chatSegmentOrder());
+  });
+
+  const showFilterChips = createMemo(() => filterChips().length > 1);
+
+  const liveNodeIds = createMemo(
+    () => new Set(ctx.chatLayout().live.map((segment) => segment.nodeId)),
+  );
 
   createEffect(() => {
     const focus = ctx.chatFocusNode();
@@ -57,22 +66,41 @@ export function ConversationMessages() {
   return (
     <div class="chat-settled">
       <Show when={showFilterChips()}>
-        <div class="chat-filter-chips" role="toolbar" aria-label="Filter settled history">
+        <div class="chat-filter-chips" role="toolbar" aria-label="Filter conversation by node">
           <button
             type="button"
             class="chat-filter-chip"
-            classList={{ active: ctx.chatFilterNodeId() === null }}
+            classList={{
+              active:
+                ctx.chatFilterNodeId() === null && ctx.pickedLiveNodeId() === null,
+            }}
             onClick={() => ctx.setChatFilterNodeId(null)}
           >
             All
           </button>
-          <For each={ctx.chatLayout().settled}>
+          <For each={filterChips()}>
             {(segment) => (
               <button
                 type="button"
                 class="chat-filter-chip"
-                classList={{ active: ctx.chatFilterNodeId() === segment.nodeId }}
-                onClick={() => ctx.setChatFilterNodeId(segment.nodeId)}
+                classList={{
+                  active:
+                    ctx.pickedLiveNodeId() === segment.nodeId ||
+                    (ctx.pickedLiveNodeId() === null &&
+                      ctx.chatFilterNodeId() === segment.nodeId),
+                  "has-activity":
+                    segment.status === "awaiting_input" ||
+                    segment.status === "awaiting_tool_approval",
+                }}
+                onClick={() => {
+                  if (liveNodeIds().has(segment.nodeId)) {
+                    ctx.setPickedLiveNodeId(segment.nodeId);
+                    ctx.setChatFilterNodeId(null);
+                    return;
+                  }
+                  ctx.setChatFilterNodeId(segment.nodeId);
+                  ctx.setPickedLiveNodeId(null);
+                }}
               >
                 <span class={`chat-filter-status-dot status-${segment.status}`} />
                 {segment.label}
@@ -133,9 +161,6 @@ export function ConversationMessages() {
                         messages={segment.messages}
                         segmentHeaderShowsNode
                       />
-                      <Show when={isLiveTranscriptSegment(ctx.runState(), segment)}>
-                        <LiveSegmentFooter segment={segment} />
-                      </Show>
                     </section>
                   )}
                 </For>

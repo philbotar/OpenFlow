@@ -138,6 +138,16 @@ pub struct WorkflowSettings {
     pub retry_policy: RetryPolicy,
     #[serde(default)]
     pub provider_id: Option<String>,
+    /// Default reasoning effort for nodes that do not set their own level.
+    #[serde(default, rename = "reasoningEffort", alias = "reasoning_effort")]
+    pub reasoning_effort: Option<String>,
+    /// Optional budget token count paired with [`Self::reasoning_effort`].
+    #[serde(
+        default,
+        rename = "reasoningBudgetTokens",
+        alias = "reasoning_budget_tokens"
+    )]
+    pub reasoning_budget_tokens: Option<u32>,
 }
 
 /// A directed workflow graph with settings applied at run time.
@@ -234,20 +244,40 @@ const fn default_auto_start() -> bool {
     true
 }
 
+/// Default JSON Schema for structured node or subagent output.
+#[must_use]
+pub fn default_structured_output_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "summary": { "type": "string" }
+        },
+        "required": ["summary"]
+    })
+}
+
+/// Use `schema` when it is a non-empty object schema; otherwise fall back to [`default_structured_output_schema`].
+#[must_use]
+pub fn effective_output_schema(schema: &Value) -> Value {
+    match schema {
+        Value::Object(obj)
+            if obj.get("type").and_then(Value::as_str) == Some("object")
+                || obj.contains_key("properties") =>
+        {
+            schema.clone()
+        }
+        _ => default_structured_output_schema(),
+    }
+}
+
 impl Default for AgentNodeConfig {
     fn default() -> Self {
         Self {
             system_prompt: "You are a focused AI agent in a node workflow.".to_string(),
             task_prompt: "Return a concise JSON object for this node.".to_string(),
             model: String::new(),
-            output_schema: json!({
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {
-                    "summary": { "type": "string" }
-                },
-                "required": ["summary"]
-            }),
+            output_schema: default_structured_output_schema(),
             auto_start: true,
             tools: NodeToolConfig::default(),
             callable_agents: Vec::new(),
@@ -307,6 +337,22 @@ mod tests {
     }
 
     #[test]
+    fn effective_output_schema_falls_back_when_null() {
+        let schema = effective_output_schema(&Value::Null);
+        assert_eq!(schema["type"], "object");
+        assert_eq!(schema["required"], json!(["summary"]));
+    }
+
+    #[test]
+    fn effective_output_schema_preserves_valid_schema() {
+        let custom = json!({
+            "type": "object",
+            "properties": { "result": { "type": "string" } }
+        });
+        assert_eq!(effective_output_schema(&custom), custom);
+    }
+
+    #[test]
     fn agent_node_defaults_auto_start_true() {
         let node = Node::agent("Plan", 0.0, 0.0);
         assert!(node.agent.auto_start);
@@ -316,7 +362,7 @@ mod tests {
     fn agent_node_defaults_tools_enabled() {
         let node = Node::agent("Plan", 0.0, 0.0);
         assert!(node.agent.tools.is_enabled());
-        assert_eq!(node.agent.tools.catalog.tools.len(), 4);
+        assert_eq!(node.agent.tools.approval_mode, None);
     }
 
     #[test]
@@ -356,6 +402,25 @@ mod tests {
         assert_eq!(
             serde_json::from_value::<NodeKind>(json!("Agent")).unwrap(),
             NodeKind::Agent
+        );
+    }
+
+    #[test]
+    fn workflow_settings_serde_roundtrip_with_reasoning_defaults() {
+        let settings = WorkflowSettings {
+            shared_context: "ctx".to_string(),
+            reasoning_effort: Some("low".to_string()),
+            reasoning_budget_tokens: Some(10_240),
+            ..WorkflowSettings::default()
+        };
+        let value = serde_json::to_value(&settings).unwrap();
+        assert_eq!(value["reasoningEffort"], json!("low"));
+        assert_eq!(value["reasoningBudgetTokens"], json!(10_240));
+        let back: WorkflowSettings = serde_json::from_value(value).unwrap();
+        assert_eq!(back.reasoning_effort, settings.reasoning_effort);
+        assert_eq!(
+            back.reasoning_budget_tokens,
+            settings.reasoning_budget_tokens
         );
     }
 

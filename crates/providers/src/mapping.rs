@@ -1,7 +1,7 @@
 use engine::{
-    filter_tool_turn_assistant_message, AgentError, AgentNeedUserInput, AgentRequest,
-    AgentToolCallBatch, AgentTranscriptItem, AgentTurnOutcome, AgentTurnSuccess, ToolCall,
-    ToolDefinition,
+    effective_output_schema, filter_tool_turn_assistant_message, AgentError, AgentNeedUserInput,
+    AgentRequest, AgentToolCallBatch, AgentTranscriptItem, AgentTurnOutcome, AgentTurnSuccess,
+    ToolCall, ToolDefinition,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -46,7 +46,7 @@ pub fn submit_output_tool(request: &AgentRequest) -> ToolSpec {
             "type": "object",
             "additionalProperties": false,
             "properties": {
-                "output": request.output_schema,
+                "output": effective_output_schema(&request.output_schema),
                 "assistant_message": {
                     "type": ["string", "null"],
                     "description": "Optional human-facing note to show alongside the final result."
@@ -284,6 +284,44 @@ pub fn normalize_submit_output_arguments(value: Value, output_schema: Option<&Va
     value
 }
 
+/// Attach token usage to an outcome, if usage data is available.
+fn attach_usage(outcome: AgentTurnOutcome, usage: Option<engine::UsageReport>) -> AgentTurnOutcome {
+    match usage {
+        None => outcome,
+        Some(u) => match outcome {
+            AgentTurnOutcome::Completed(mut s) => {
+                s.usage = Some(u);
+                AgentTurnOutcome::Completed(s)
+            }
+            AgentTurnOutcome::ToolCalls(mut b) => {
+                b.usage = Some(u);
+                AgentTurnOutcome::ToolCalls(b)
+            }
+            AgentTurnOutcome::NeedsUserInput(input) => AgentTurnOutcome::NeedsUserInput(input),
+        },
+    }
+}
+
+fn usage_token(value: &Value) -> Option<u32> {
+    value.as_u64().and_then(|tokens| u32::try_from(tokens).ok())
+}
+
+/// Extract token usage from an OpenAI-compatible API response payload.
+pub fn extract_usage_from_openai(payload: &Value) -> Option<engine::UsageReport> {
+    let usage = payload.get("usage")?;
+    let prompt_tokens = usage.get("prompt_tokens").and_then(usage_token)?;
+    let completion_tokens = usage.get("completion_tokens").and_then(usage_token)?;
+    let total_tokens = usage
+        .get("total_tokens")
+        .and_then(usage_token)
+        .unwrap_or_else(|| prompt_tokens.saturating_add(completion_tokens));
+    Some(engine::UsageReport {
+        prompt_tokens,
+        completion_tokens,
+        total_tokens,
+    })
+}
+
 pub fn parse_internal_tool_outcome(
     tool_name: &str,
     arguments: &str,
@@ -312,6 +350,7 @@ pub fn parse_internal_tool_outcome(
                 assistant_message: filter_tool_turn_assistant_message(
                     args.assistant_message.or(assistant_message),
                 ),
+                usage: None,
             }))
         }
         REQUEST_INPUT_TOOL => {
@@ -359,6 +398,7 @@ pub fn parse_plain_json_completion(content: Option<&str>) -> Option<AgentTurnOut
         output,
         raw_text: content.to_string(),
         assistant_message: None,
+        usage: None,
     }))
 }
 
@@ -449,6 +489,7 @@ pub fn parse_responses_output(
     payload: &Value,
     output_schema: Option<&Value>,
 ) -> Result<AgentTurnOutcome, AgentError> {
+    let usage = extract_usage_from_openai(payload);
     let output = payload
         .get("output")
         .and_then(Value::as_array)
@@ -540,15 +581,20 @@ pub fn parse_responses_output(
             assistant_message,
             "OpenAI",
             output_schema,
-        );
+        )
+        .map(|outcome| attach_usage(outcome, usage.clone()));
     }
 
     let assistant_message = filter_tool_turn_assistant_message(assistant_message);
-    Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
-        raw_text: assistant_message.clone().unwrap_or_default(),
-        assistant_message,
-        tool_calls,
-    }))
+    Ok(attach_usage(
+        AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+            raw_text: assistant_message.clone().unwrap_or_default(),
+            assistant_message,
+            tool_calls,
+            usage: None,
+        }),
+        usage,
+    ))
 }
 
 pub fn parse_chat_completion_output(
@@ -556,6 +602,7 @@ pub fn parse_chat_completion_output(
     allow_plain_text_follow_up: bool,
     output_schema: Option<&Value>,
 ) -> Result<AgentTurnOutcome, AgentError> {
+    let usage = extract_usage_from_openai(payload);
     let message = payload
         .get("choices")
         .and_then(Value::as_array)
@@ -584,7 +631,7 @@ pub fn parse_chat_completion_output(
 
     if tool_calls.is_empty() {
         if let Some(outcome) = parse_plain_json_completion(assistant_message.as_deref()) {
-            return Ok(outcome);
+            return Ok(attach_usage(outcome, usage));
         }
         if allow_plain_text_follow_up {
             if let Some(assistant_message) = assistant_message {
@@ -621,15 +668,20 @@ pub fn parse_chat_completion_output(
             assistant_message,
             "OpenAI-compatible",
             output_schema,
-        );
+        )
+        .map(|outcome| attach_usage(outcome, usage.clone()));
     }
 
     let assistant_message = filter_tool_turn_assistant_message(assistant_message);
-    Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
-        raw_text: assistant_message.clone().unwrap_or_default(),
-        assistant_message,
-        tool_calls: parsed,
-    }))
+    Ok(attach_usage(
+        AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+            raw_text: assistant_message.clone().unwrap_or_default(),
+            assistant_message,
+            tool_calls: parsed,
+            usage: None,
+        }),
+        usage,
+    ))
 }
 
 #[cfg(test)]
@@ -927,6 +979,33 @@ mod tests {
         assert_eq!(batch.tool_calls.len(), 1);
         assert_eq!(batch.tool_calls[0].name, "search");
         assert_eq!(batch.assistant_message, None);
+    }
+
+    #[test]
+    fn submit_output_tool_uses_fallback_when_output_schema_null() {
+        use engine::{NodeId, WorkflowId};
+
+        let request = AgentRequest {
+            workflow_id: WorkflowId::from("wf-1"),
+            node_id: NodeId::from("node-1"),
+            node_label: "Node".to_string(),
+            model: "gpt-5.5".to_string(),
+            system_messages: vec!["system".to_string()],
+            task_prompt: "task".to_string(),
+            input: json!({}),
+            output_schema: Value::Null,
+            tool_config: engine::NodeToolConfig::default(),
+            available_tools: Vec::new(),
+            transcript: Vec::new(),
+            model_attempt: 1,
+            reasoning_effort: None,
+            reasoning_budget_tokens: None,
+        };
+
+        let tool = submit_output_tool(&request);
+        let output = &tool.parameters["properties"]["output"];
+        assert_eq!(output["type"], "object");
+        assert_eq!(output["required"], json!(["summary"]));
     }
 
     #[test]

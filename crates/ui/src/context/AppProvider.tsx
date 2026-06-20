@@ -24,6 +24,7 @@ import type {
   NodeId,
   Project,
   ProjectFileReference,
+  RunSummary,
   SkillSummary,
   TerminalEvent,
   TerminalStart,
@@ -46,6 +47,7 @@ import {
   inferRunStateWorkflowId,
   isGlobalRunEntryNodeId,
   nextNodePlacement,
+  normalizeWorkflowLayout,
   isChatComposerBusy,
   isLiveTranscriptSegment,
   statusForNode,
@@ -61,6 +63,7 @@ import {
   replaceWorkflow,
   selectedNode,
   withDefaultReasoningFromProfile,
+  withDefaultReasoningFromWorkflow,
   type WorkflowCanvasGraph,
   type WorkflowCanvasStatusByNode,
   type WorkflowCanvasSubagentsByNode,
@@ -237,6 +240,9 @@ export function AppProvider(props: ParentProps) {
   const continuableRun = createMemo(
     () => continuableRunBackend() && backendRunWorkflowId() === activeWorkflowId(),
   );
+  const [runHistory, setRunHistory] = createSignal<RunSummary[]>([]);
+  const [runHistoryLoading, setRunHistoryLoading] = createSignal(false);
+  const [replayRunId, setReplayRunId] = createSignal<string | null>(null);
   const [scheduleStatuses, setScheduleStatuses] = createSignal<ScheduleStatus[]>([]);
   const [themePreference, setThemePreference] = createSignal<ThemePreference>(
     readStoredTheme(globalThis.localStorage),
@@ -322,10 +328,15 @@ export function AppProvider(props: ParentProps) {
       setChatSegmentOrder([]);
       return;
     }
-    const baseLayout = projectChatLayout(activeWorkflow(), state, pickedLiveNodeId());
+    const orderLayout = projectChatLayout(activeWorkflow(), state, null);
     const order = chatSegmentOrder();
     let next = order;
-    for (const segment of baseLayout.settled) {
+    for (const segment of orderLayout.settled) {
+      if (!next.includes(segment.nodeId)) {
+        next = [...next, segment.nodeId];
+      }
+    }
+    for (const segment of orderLayout.live) {
       if (!next.includes(segment.nodeId)) {
         next = [...next, segment.nodeId];
       }
@@ -439,6 +450,9 @@ export function AppProvider(props: ParentProps) {
   };
 
   const canSendChatFor = (nodeId: NodeId) => {
+    if (replayRunId()) {
+      return false;
+    }
     if (isGlobalRunEntryNodeId(nodeId)) {
       return canSendIdleRunKickoff(
         runState(),
@@ -1083,17 +1097,6 @@ export function AppProvider(props: ParentProps) {
     updateCurrentNode((node) => mutator(node.agent.tools));
   };
 
-  const setToolEnabled = (
-    tools: { catalog: { tools: { name: string }[] } },
-    toolName: string,
-    enabled: boolean,
-  ) => {
-    const nextTools = tools.catalog.tools.filter((tool) => tool.name !== toolName);
-    tools.catalog.tools = enabled
-      ? [...nextTools, { name: toolName }].sort((l, r) => l.name.localeCompare(r.name))
-      : nextTools;
-  };
-
   const applySchemaEditor = () => {
     const nodeId = selectedNodeId();
     const workflow = activeWorkflow();
@@ -1145,7 +1148,10 @@ export function AppProvider(props: ParentProps) {
         agentId,
       );
       const profile = activeProfileMemo();
-      let nextAgent = withDefaultReasoningFromProfile(node.agent, profile);
+      let nextAgent = withDefaultReasoningFromWorkflow(
+        withDefaultReasoningFromProfile(node.agent, profile),
+        workflow.settings,
+      );
       if (profile.default_model && !nextAgent.model) {
         nextAgent = { ...nextAgent, model: profile.default_model };
       }
@@ -1238,7 +1244,7 @@ export function AppProvider(props: ParentProps) {
       );
       setWorkflowAuthoringMessages(result.messages);
       setWorkflowAuthoringValidation(result.validation);
-      setWorkflowAuthoringDraft(result.draft ?? null);
+      setWorkflowAuthoringDraft(result.draft ? normalizeWorkflowLayout(result.draft) : null);
     } catch (error) {
       setError(normalizeError(error));
     } finally {
@@ -1250,17 +1256,18 @@ export function AppProvider(props: ParentProps) {
     const draft = workflowAuthoringDraft();
     const validation = workflowAuthoringValidation();
     if (!draft || !validation?.valid) return;
+    const normalizedDraft = normalizeWorkflowLayout(draft);
     if (workflows().some((workflow) => workflow.id === draft.id)) {
-      setWorkflows(replaceWorkflow(workflows(), draft));
+      setWorkflows(replaceWorkflow(workflows(), normalizedDraft));
     } else {
-      setWorkflows([...workflows(), draft]);
+      setWorkflows([...workflows(), normalizedDraft]);
     }
-    selectWorkflow(draft);
+    selectWorkflow(normalizedDraft);
     try {
-      await desktop.saveWorkflow(draft);
+      await desktop.saveWorkflow(normalizedDraft);
       resetWorkflowAuthoringSession();
       setScreen("editor");
-      setSuccess(`Applied workflow "${draft.name}"`);
+      setSuccess(`Applied workflow "${normalizedDraft.name}"`);
     } catch (error) {
       setError(normalizeError(error));
     }
@@ -1273,6 +1280,7 @@ export function AppProvider(props: ParentProps) {
     if (workflowId) {
       setBackendRunWorkflowId(workflowId);
     }
+    setReplayRunId(null);
     publishBackendRunState(nextRunState);
     setContinuableRunBackend(false);
     setSelectedTraceIndex(null);
@@ -1292,7 +1300,9 @@ export function AppProvider(props: ParentProps) {
 
   const handleRun = async () => {
     const workflow = activeWorkflow();
-    if (!workflow || !applySchemaEditor() || stoppingRun() || startingRun()) return;
+    if (!workflow || !applySchemaEditor() || stoppingRun() || startingRun() || replayRunId()) {
+      return;
+    }
     setStartingRun(true);
     try {
       const nextRunState = await desktop.startRun(
@@ -1430,6 +1440,64 @@ export function AppProvider(props: ParentProps) {
       setSelectedTraceIndex(null);
     } catch (error) {
       setError(normalizeError(error));
+    }
+  };
+
+  const handleRefreshRunHistory = async () => {
+    const workflow = activeWorkflow();
+    if (!workflow) {
+      setRunHistory([]);
+      return;
+    }
+    setRunHistoryLoading(true);
+    try {
+      setRunHistory(await desktop.listRuns(workflow.id));
+    } catch (error) {
+      setError(normalizeError(error));
+    } finally {
+      setRunHistoryLoading(false);
+    }
+  };
+
+  const handleReplayRun = async (runId: string) => {
+    const workflow = activeWorkflow();
+    if (!workflow) {
+      return;
+    }
+    try {
+      const replay = await desktop.replayRun(runId);
+      const replayState: WorkflowRunState = { ...replay, active: false };
+      setReplayRunId(runId);
+      cacheRunStateForWorkflow(workflow.id, replayState);
+      setRunState(replayState);
+      setContinuableRunBackend(false);
+      setDockOpen(true);
+      setBottomTab("chat");
+      setDockHeight((current) => clampDockHeight(current, "chat"));
+    } catch (error) {
+      setError(normalizeError(error));
+    }
+  };
+
+  const handleResumeDurableRun = async (runId: string) => {
+    const workflow = activeWorkflow();
+    if (!workflow || !applySchemaEditor() || startingRun() || stoppingRun()) {
+      return;
+    }
+    setStartingRun(true);
+    try {
+      const nextRunState = await desktop.resumeDurableRun(
+        runId,
+        settings(),
+        activeProviderKeyInput() || null,
+      );
+      setReplayRunId(null);
+      beginRunSession(nextRunState);
+      await handleRefreshRunHistory();
+    } catch (error) {
+      setError(normalizeError(error));
+    } finally {
+      setStartingRun(false);
     }
   };
 
@@ -1778,6 +1846,9 @@ export function AppProvider(props: ParentProps) {
       unlisten = await bindRunStateEvents(
         {
           handleRunStateUpdate: (nextRunState) => {
+            if (nextRunState.active) {
+              setReplayRunId(null);
+            }
             publishBackendRunState(nextRunState);
             void refreshContinuableRun();
             if (activeWorkflowId() !== backendRunWorkflowId()) {
@@ -1872,6 +1943,7 @@ export function AppProvider(props: ParentProps) {
     schemaText,
     chatFilterNodeId,
     pickedLiveNodeId,
+    chatSegmentOrder,
     chatFocusNode,
     newModelInputByProvider,
     providerKeyInputByProvider,
@@ -1894,6 +1966,9 @@ export function AppProvider(props: ParentProps) {
     appReady,
     startingRun,
     continuableRun,
+    runHistory,
+    runHistoryLoading,
+    replayRunId,
     themePreference,
     resolvedTheme,
     shortcutsModalOpen,
@@ -1999,6 +2074,9 @@ export function AppProvider(props: ParentProps) {
     openShortcutsModal,
     closeShortcutsModal,
     handleClearRunTrace,
+    handleRefreshRunHistory,
+    handleReplayRun,
+    handleResumeDurableRun,
     handleSubmitChat,
     handleRefreshSkills,
     searchProjectFileReferences,
@@ -2013,7 +2091,6 @@ export function AppProvider(props: ParentProps) {
     handleChatInputKeyDown,
     updateCurrentNode,
     updateCurrentNodeToolConfig,
-    setToolEnabled,
     applySchemaEditor,
     persistAll,
     handleOpenTerminal,

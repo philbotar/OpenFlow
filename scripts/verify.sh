@@ -11,6 +11,13 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_DIR="$(mktemp -d)"
 trap 'rm -rf "$LOG_DIR"' EXIT
 
+# ponytail: parallel verify runs each get their own target dir so they don't block
+# on target/.cargo-lock. Set VERIFY_SHARE_TARGET=1 to reuse ./target (faster solo,
+# but only one cargo-using verify at a time). CARGO_TARGET_DIR always wins if set.
+if [[ -z "${CARGO_TARGET_DIR:-}" && "${VERIFY_SHARE_TARGET:-0}" != "1" ]]; then
+	export CARGO_TARGET_DIR="$ROOT/target/verify-$$"
+fi
+
 export CARGO_TERM_COLOR=never
 export CARGO_TERM_PROGRESS_WHEN=never
 export NO_COLOR=1
@@ -259,6 +266,8 @@ while [[ $# -gt 0 ]]; do
 		echo
 		echo "Runs verification steps; default runs all. Set VERIFY_FAIL_FAST=1 to stop on first failure."
 		echo "Set VERIFY_MAX_LINES to control truncated failure output (default: 150)."
+		echo "Parallel agents: default uses target/verify-<pid> (no cargo lock contention)."
+		echo "Set VERIFY_SHARE_TARGET=1 to reuse ./target for faster solo runs."
 		usage_steps
 		exit 0
 		;;

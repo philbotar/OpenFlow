@@ -1,0 +1,18 @@
+{
+  "name": "step-through-agentic-workflow",
+  "version": "1.0.0",
+  "description": "Rust desktop app for composing AI agent workflows as nodes and edges.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "example": "examples"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
+}

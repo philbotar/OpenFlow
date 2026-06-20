@@ -21,6 +21,7 @@ pub struct AiInvocationAdapter<A> {
     lifecycle_by_node: Mutex<BTreeMap<NodeId, u8>>,
     node_interrupts: NodeInterrupts,
     run_cancel_token: CancellationToken,
+    context_window_sizes: BTreeMap<String, u32>,
 }
 
 impl<A> AiInvocationAdapter<A>
@@ -32,6 +33,7 @@ where
         event_tx: UnboundedSender<ExecutionEvent>,
         node_interrupts: NodeInterrupts,
         run_cancel_token: CancellationToken,
+        context_window_sizes: BTreeMap<String, u32>,
     ) -> Self {
         Self {
             inner,
@@ -39,6 +41,7 @@ where
             lifecycle_by_node: Mutex::new(BTreeMap::new()),
             node_interrupts,
             run_cancel_token,
+            context_window_sizes,
         }
     }
 
@@ -121,6 +124,7 @@ where
         maybe_send_node_start_events(self, &request);
         let node_id = request.node_id.clone();
         let label = request.node_label.clone();
+        let model = request.model.clone();
         let attempt = request.model_attempt;
         let assistant_message_id = Uuid::new_v4().to_string();
         let thinking_message_id = Uuid::new_v4().to_string();
@@ -170,6 +174,25 @@ where
         if let Ok(outcome) = &result {
             if should_emit_assistant_message(did_stream, outcome, &streamed_content.lock()) {
                 emit_assistant_message(&self.event_tx, &node_id, outcome);
+            }
+            // Emit usage report if available
+            let usage = match outcome {
+                AgentTurnOutcome::Completed(s) => s.usage.clone(),
+                AgentTurnOutcome::ToolCalls(b) => b.usage.clone(),
+                AgentTurnOutcome::NeedsUserInput(_) => None,
+            };
+            if let Some(usage) = usage {
+                let max_context_tokens =
+                    engine::lookup_context_window_size(&self.context_window_sizes, &model);
+                send_or_log(
+                    &self.event_tx,
+                    ExecutionEvent::UsageReported {
+                        node_id: node_id.clone(),
+                        usage,
+                        model,
+                        max_context_tokens,
+                    },
+                );
             }
             if let AgentTurnOutcome::Completed(AgentTurnSuccess { output, .. }) = outcome {
                 send_or_log(

@@ -10,6 +10,7 @@ import type {
   ProviderProfile,
   ProviderReadiness,
   RunTraceEntry,
+  RunSummary,
   Screen,
   ScheduleStatus,
   Project,
@@ -72,12 +73,16 @@ export interface AppContextValue {
   appReady: Accessor<boolean>;
   startingRun: Accessor<boolean>;
   continuableRun: Accessor<boolean>;
+  runHistory: Accessor<RunSummary[]>;
+  runHistoryLoading: Accessor<boolean>;
+  replayRunId: Accessor<string | null>;
   themePreference: Accessor<ThemePreference>;
   resolvedTheme: Accessor<ResolvedTheme>;
   shortcutsModalOpen: Accessor<boolean>;
   chatFilterNodeId: Accessor<NodeId | null>;
   chatFocusNode: Accessor<{ nodeId: NodeId; tick: number } | null>;
   pickedLiveNodeId: Accessor<NodeId | null>;
+  chatSegmentOrder: Accessor<NodeId[]>;
   workflowsSectionExpanded: Accessor<boolean>;
   terminalSessions: Accessor<TerminalStart[]>;
   activeTerminalSessionId: Accessor<string | null>;
@@ -196,6 +201,9 @@ export interface AppContextValue {
   openShortcutsModal: () => void;
   closeShortcutsModal: () => void;
   handleClearRunTrace: () => Promise<void>;
+  handleRefreshRunHistory: () => Promise<void>;
+  handleReplayRun: (runId: string) => Promise<void>;
+  handleResumeDurableRun: (runId: string) => Promise<void>;
   handleSubmitChat: (nodeId: NodeId) => Promise<void>;
   handleRefreshSkills: () => Promise<void>;
   searchProjectFileReferences: (query: string) => Promise<ProjectFileReference[]>;
@@ -225,11 +233,6 @@ export interface AppContextValue {
   updateCurrentNode: (mutator: (node: Workflow["nodes"][number]) => void) => void;
   updateCurrentNodeToolConfig: (
     mutator: (tools: Workflow["nodes"][number]["agent"]["tools"]) => void,
-  ) => void;
-  setToolEnabled: (
-    tools: { catalog: { tools: { name: string }[] } },
-    toolName: string,
-    enabled: boolean,
   ) => void;
   applySchemaEditor: () => boolean;
   persistAll: (successText?: string) => Promise<boolean>;

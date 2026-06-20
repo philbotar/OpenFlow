@@ -141,11 +141,7 @@ mod tests {
             "output_schema": { "type": "object" },
             "auto_start": true,
             "tools": {
-                "catalog": {
-                    "tools": [{ "name": "read" }]
-                },
-                "approvalMode": "write",
-                "overrides": []
+                "approvalMode": "write"
             }
         }))
         .unwrap();
@@ -155,7 +151,6 @@ mod tests {
         assert_eq!(agent.model, "gpt-test");
         assert_eq!(agent.output_schema, serde_json::json!({ "type": "object" }));
         assert!(agent.auto_start);
-        assert_eq!(agent.tools.catalog.tools[0].name, "read");
         assert_eq!(agent.tools.approval_mode, Some(engine::ApprovalMode::Write));
     }
 

@@ -8,11 +8,11 @@ import {
 } from "../../lib/chatCommands";
 import {
   applyFileReferenceCompletion,
-  extractReferencedFilePaths,
   getActiveFileReferenceToken,
 } from "../../lib/fileReferences";
 import type { NodeId, ProjectFileReference, SkillSummary } from "../../lib/types";
 import { pendingApprovalForNode } from "../../lib/workflow";
+import { ComposerInput } from "./ComposerInput";
 import { FileReferenceCombobox } from "./FileReferenceCombobox";
 import { SkillCommandCombobox } from "./SkillCommandCombobox";
 import { SkillDescriptionPreview } from "./SkillDescriptionPreview";
@@ -32,9 +32,14 @@ export function ConversationComposer(props: {
   const fileListboxId = () => `chat-file-reference-listbox-${props.nodeId}`;
 
   const draft = () => ctx.chatDraft(props.nodeId);
-  const submission = () => ctx.chatSubmissionFor(props.nodeId);
+  const knownSkillIds = createMemo(
+    () => new Set(ctx.availableSkills().map((skill) => skill.id)),
+  );
   const pendingApproval = () => pendingApprovalForNode(ctx.runState(), props.nodeId);
   const inputEnabled = () => {
+    if (ctx.replayRunId()) {
+      return false;
+    }
     if (props.disabled) {
       return false;
     }
@@ -79,7 +84,6 @@ export function ConversationComposer(props: {
   const fileComboboxOpen = createMemo(
     () => !!activeFileToken() && inputEnabled() && !comboboxOpen(),
   );
-  const referencedFilePaths = createMemo(() => extractReferencedFilePaths(draft()));
 
   createEffect(() => {
     activeFileToken();
@@ -254,11 +258,12 @@ export function ConversationComposer(props: {
           class="chat-composer-pill"
           classList={{ "is-busy": ctx.composerBusyFor(props.nodeId) }}
         >
-          <textarea
+          <ComposerInput
             ref={textareaRef}
-            class="text-area composer-input"
+            class="text-area composer-input composer-input-mirror"
             rows={1}
             value={draft()}
+            knownSkillIds={knownSkillIds()}
             role="combobox"
             aria-autocomplete="list"
             aria-expanded={comboboxOpen() || fileComboboxOpen()}
@@ -291,28 +296,6 @@ export function ConversationComposer(props: {
             }
             disabled={!inputEnabled()}
           />
-          <Show when={submission().invokedSkills.length > 0}>
-            <span
-              class="composer-skill-pill"
-              title={`Sending with skills: ${submission()
-                .invokedSkills.map((skill) => `/${skill}`)
-                .join(", ")}`}
-            >
-              {submission()
-                .invokedSkills.map((skill) => `/${skill}`)
-                .join(", ")}
-            </span>
-          </Show>
-          <Show when={referencedFilePaths().length > 0}>
-            <span
-              class="composer-file-pill"
-              title={`Referenced paths: ${referencedFilePaths().join(", ")}`}
-            >
-              {referencedFilePaths().length === 1
-                ? `@ ${referencedFilePaths()[0]}`
-                : `@ ${referencedFilePaths().length} refs`}
-            </span>
-          </Show>
           <button
             class="primary-button composer-send-button"
             onClick={() => void ctx.handleSubmitChat(props.nodeId)}

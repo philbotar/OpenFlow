@@ -1,0 +1,62 @@
+- generic [ref=e2]:
+  - region "Notifications alt+T":
+    - list:
+      - listitem [ref=e3]:
+        - button "Close toast" [ref=e4] [cursor=pointer]:
+          - img [ref=e5]
+        - img [ref=e9]
+        - generic [ref=e12]: Cannot read properties of undefined (reading 'invoke')
+  - generic [ref=e13]:
+    - complementary [ref=e14]:
+      - generic [ref=e19]: OpenFlow
+      - generic [ref=e20]:
+        - button "Agents" [ref=e21] [cursor=pointer]:
+          - img [ref=e22]
+          - generic [ref=e25]: Agents
+        - button "Schedule" [ref=e26] [cursor=pointer]:
+          - img [ref=e27]
+          - generic [ref=e31]: Schedule
+        - generic [ref=e34]: Workflows
+        - generic [ref=e42]: Projects
+      - generic [ref=e45]:
+        - button "Shortcuts" [ref=e46] [cursor=pointer]:
+          - img [ref=e47]
+          - generic [ref=e50]: Shortcuts
+        - button "Settings" [ref=e51] [cursor=pointer]:
+          - img [ref=e52]
+          - generic [ref=e55]: Settings
+        - generic: Zoom 100%
+    - main [ref=e56]:
+      - generic [ref=e61]:
+        - generic [ref=e64]: Checking provider
+        - generic [ref=e65]:
+          - button "Hide right panel" [pressed] [ref=e66] [cursor=pointer]:
+            - img [ref=e67]
+          - button "Workflow settings" [ref=e70] [cursor=pointer]:
+            - img [ref=e71]
+          - button "Save workflow" [ref=e74] [cursor=pointer]:
+            - img [ref=e75]
+          - button "Validate workflow" [ref=e79] [cursor=pointer]:
+            - img [ref=e80]
+          - button "Run workflow" [ref=e83] [cursor=pointer]:
+            - img [ref=e84]
+      - generic [ref=e88]:
+        - application [ref=e93]:
+          - img
+          - button "Add node" [ref=e97] [cursor=pointer]
+          - generic "Control Panel" [ref=e98]:
+            - button "Zoom In" [ref=e99] [cursor=pointer]:
+              - img [ref=e100]
+            - button "Zoom Out" [ref=e102] [cursor=pointer]:
+              - img [ref=e103]
+            - button "Fit View" [ref=e105] [cursor=pointer]:
+              - img [ref=e106]
+        - generic [ref=e109]:
+          - separator "Resize bottom panel" [ref=e110]
+          - generic [ref=e112]:
+            - button "Overview" [ref=e113] [cursor=pointer]
+            - button "Chat" [ref=e114] [cursor=pointer]
+            - button "Terminal" [ref=e115] [cursor=pointer]
+            - button "Run trace" [ref=e116] [cursor=pointer]
+            - button "Runs" [ref=e117] [cursor=pointer]
+          - generic [ref=e120]: No workflow runs yet.

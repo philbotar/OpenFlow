@@ -33,6 +33,7 @@ unicode-normalization = "0.1.24"
 reqwest.workspace = true
 walkdir = "2.5.0"
 serde_json.workspace = true
+sha2.workspace = true
 serde_yaml.workspace = true
 thiserror.workspace = true
 tokio.workspace = true

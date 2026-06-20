@@ -9,6 +9,7 @@ pub use callable_agent::{
 };
 pub use validation::{execution_layers, validate_workflow, WorkflowValidationError};
 pub use workflow::{
-    AgentNodeConfig, Edge, EdgeId, Node, NodeId, NodeKind, NodePosition, RetryPolicy, Workflow,
-    WorkflowId, WorkflowSchedule, WorkflowSettings,
+    default_structured_output_schema, effective_output_schema, AgentNodeConfig, Edge, EdgeId, Node,
+    NodeId, NodeKind, NodePosition, RetryPolicy, Workflow, WorkflowId, WorkflowSchedule,
+    WorkflowSettings,
 };

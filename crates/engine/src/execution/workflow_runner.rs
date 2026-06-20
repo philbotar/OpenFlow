@@ -194,7 +194,7 @@ mod tests {
     use crate::ports::{
         AgentError, AgentRequest, AgentToolCallBatch, AgentTurnOutcome, AgentTurnSuccess, AiPort,
     };
-    use crate::tools::{ToolCall, ToolRef};
+    use crate::tools::ToolCall;
     use async_trait::async_trait;
     use serde_json::json;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -215,6 +215,7 @@ mod tests {
                 }),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
+                usage: None,
             }))
         }
     }
@@ -269,11 +270,7 @@ mod tests {
     #[tokio::test]
     async fn tool_enabled_node_requires_tool_execution_in_headless_runner() {
         let mut workflow = Workflow::new("tooling");
-        let mut idea = node("idea");
-        idea.agent.tools.catalog.tools = vec![ToolRef {
-            name: "read".to_string(),
-            tier: Some(crate::tools::ToolTier::Read),
-        }];
+        let idea = node("idea");
         workflow.nodes = vec![idea];
 
         struct ToolCallingAi;
@@ -289,6 +286,7 @@ mod tests {
                         name: "read".to_string(),
                         arguments: json!({"path": "README.md"}),
                     }],
+                    usage: None,
                 }))
             }
         }
@@ -376,6 +374,7 @@ mod tests {
                     }),
                     raw_text: "{}".to_string(),
                     assistant_message: None,
+                    usage: None,
                 }))
             }
         }
@@ -424,6 +423,7 @@ mod tests {
                     }),
                     raw_text: "{}".to_string(),
                     assistant_message: None,
+                    usage: None,
                 }))
             }
         }

@@ -118,23 +118,56 @@ where
 
     pub(super) async fn invoke_ai_or_cancel(
         &self,
-        request: engine::AgentRequest,
+        mut request: engine::AgentRequest,
     ) -> Option<Result<AgentTurnOutcome, engine::AgentError>> {
         let ai = Arc::clone(&self.ai);
         let label = format!("subagent · {}", request.node_label);
         let node_id = request.node_id.clone();
-        let started = Instant::now();
-        let result = tokio::select! {
-            biased;
-            _ = self.cancel_token.cancelled() => {
+        let policy = self.workflow.settings.retry_policy.clone();
+        let cancel_token = self.cancel_token.clone();
+        let mut retry_count: u8 = 0;
+
+        loop {
+            if cancel_token.is_cancelled() {
                 abort_run(&self.event_tx, &self.aborted_emitted);
-                None
+                return None;
             }
-            result = ai.invoke(request) => Some(result),
-        };
-        if result.is_some() {
-            emit_phase_timed(&self.event_tx, "ai_invoke", &label, Some(node_id), started);
+
+            request.model_attempt = retry_count.saturating_add(1);
+            let started = Instant::now();
+            let result = tokio::select! {
+                biased;
+                _ = cancel_token.cancelled() => {
+                    abort_run(&self.event_tx, &self.aborted_emitted);
+                    None
+                }
+                result = ai.invoke(request.clone()) => Some(result),
+            };
+
+            let result = result?;
+
+            match result {
+                Ok(outcome) => {
+                    emit_phase_timed(&self.event_tx, "ai_invoke", &label, Some(node_id), started);
+                    return Some(Ok(outcome));
+                }
+                Err(err) if err.is_retryable() && retry_count < policy.max_attempts => {
+                    retry_count += 1;
+                    let delay = policy.delay_for_attempt(retry_count);
+                    tokio::select! {
+                        biased;
+                        () = cancel_token.cancelled() => {
+                            abort_run(&self.event_tx, &self.aborted_emitted);
+                            return None;
+                        }
+                        () = tokio::time::sleep(delay) => {}
+                    }
+                }
+                Err(err) => {
+                    emit_phase_timed(&self.event_tx, "ai_invoke", &label, Some(node_id), started);
+                    return Some(Err(err));
+                }
+            }
         }
-        result
     }
 }

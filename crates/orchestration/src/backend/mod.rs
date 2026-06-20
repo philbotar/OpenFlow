@@ -3,6 +3,7 @@ use crate::adapters::storage::app_workflow_store::FileWorkflowStore;
 use crate::adapters::storage::incident_store::FileIncidentStore;
 use crate::adapters::storage::project_store::FileProjectStore;
 use crate::adapters::storage::project_workflow_store::FileProjectWorkflowStore;
+use crate::adapters::storage::run_checkpoint_store::FileRunCheckpointStore;
 use crate::adapters::storage::settings_store::FileSettingsStore;
 use crate::adapters::storage::skill_store::FileSkillCatalog;
 use crate::agent::library::AgentLibrary;
@@ -14,6 +15,8 @@ use crate::project::ports::{Project, ProjectStore};
 use crate::project::registry::ProjectRegistry;
 use crate::run::coordinator::{RunCoordinator, RunStartParams};
 use crate::run::execution::ExecutionEvent;
+use crate::run::persistence::RunStoreRoot;
+use crate::run::ports::RunCheckpointStore;
 use crate::run::state::WorkflowRunState;
 use crate::schedule::ScheduleService;
 use crate::settings::facade::SettingsFacade;
@@ -54,6 +57,7 @@ pub struct AppBackend {
     projects: ProjectRegistry,
     settings: SettingsFacade,
     runs: RunCoordinator,
+    run_store: Box<dyn RunCheckpointStore>,
     incidents: Arc<IncidentRecorder>,
     terminal: TerminalManager,
     workflow_authoring: WorkflowAuthoringService,
@@ -80,6 +84,7 @@ impl AppBackend {
             projects: ProjectRegistry::new(deps.project_store),
             settings: SettingsFacade::new(deps.settings_store, deps.skill_catalog, deps.env),
             runs: RunCoordinator::new(deps.runtime_handle, incidents.clone()),
+            run_store: Box::new(FileRunCheckpointStore),
             incidents,
             terminal: TerminalManager::new(),
             workflow_authoring: WorkflowAuthoringService::new(),
@@ -382,6 +387,91 @@ impl AppBackend {
             .unassign_from_project(&self.projects, project_id, workflow_id)
     }
 
+    fn run_roots(&self) -> Result<Vec<RunStoreRoot>, BackendError> {
+        let mut roots = vec![RunStoreRoot {
+            project_id: None,
+            root: FileRunCheckpointStore::app_runs_root(),
+        }];
+        for project in self.projects.load()? {
+            roots.push(RunStoreRoot {
+                project_id: Some(project.id),
+                root: std::path::Path::new(&project.path)
+                    .join(".flow")
+                    .join("runs"),
+            });
+        }
+        Ok(roots)
+    }
+
+    fn run_root_for_workflow(&self, workflow_id: &str) -> Result<RunStoreRoot, BackendError> {
+        for project in self.projects.load()? {
+            if project.workflow_ids.iter().any(|id| id == workflow_id) {
+                return Ok(RunStoreRoot {
+                    project_id: Some(project.id),
+                    root: std::path::Path::new(&project.path)
+                        .join(".flow")
+                        .join("runs"),
+                });
+            }
+        }
+        Ok(RunStoreRoot {
+            project_id: None,
+            root: FileRunCheckpointStore::app_runs_root(),
+        })
+    }
+
+    pub fn list_runs(
+        &self,
+        workflow_id: Option<&str>,
+    ) -> Result<Vec<crate::run::persistence::RunSummary>, BackendError> {
+        let roots = self.run_roots()?;
+        self.runs
+            .list_runs(self.run_store.as_ref(), &roots, workflow_id)
+    }
+
+    pub fn replay_run(&self, run_id: &str) -> Result<WorkflowRunState, BackendError> {
+        let roots = self.run_roots()?;
+        self.runs
+            .replay_run(self.run_store.as_ref(), &roots, run_id)
+    }
+
+    pub async fn resume_durable_run(
+        &self,
+        run_id: &str,
+        settings: &AppSettings,
+        transient_api_key: Option<&str>,
+    ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>, String), BackendError> {
+        let roots = self.run_roots()?;
+        let (root, record) = self
+            .run_store
+            .load_record(&roots, run_id)?
+            .ok_or_else(|| BackendError::RunNotFound(run_id.to_string()))?;
+        let workflow_name = record.workflow_name.clone();
+        let checkpoint = self
+            .run_store
+            .load_latest_checkpoint(&root, run_id)?
+            .ok_or_else(|| BackendError::RunHasNoCheckpoints(run_id.to_string()))?;
+        let workflow = self.load_workflow(&record.workflow_id)?;
+        let (state, event_rx) = self
+            .runs
+            .resume_durable_run(crate::run::coordinator::DurableResumeParams {
+                run_id,
+                workflow,
+                root,
+                record,
+                checkpoint,
+                settings,
+                transient_api_key,
+                agent_store: self.agents.store(),
+                settings_store: self.settings.store(),
+                run_store: self.run_store.as_ref(),
+                env: self.settings.env(),
+            })
+            .await
+            .map_err(|error| self.backend_err(error))?;
+        Ok((state, event_rx, workflow_name))
+    }
+
     pub async fn start_run(
         &self,
         workflow: Workflow,
@@ -390,15 +480,18 @@ impl AppBackend {
         settings: &AppSettings,
         transient_api_key: Option<&str>,
     ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
+        let run_root = self.run_root_for_workflow(&workflow.id)?;
         self.runs
             .start_run(RunStartParams {
                 workflow,
                 entrypoint,
                 execution_cwd,
+                run_root,
                 settings,
                 transient_api_key,
                 agent_store: self.agents.store(),
                 settings_store: self.settings.store(),
+                run_store: self.run_store.as_ref(),
                 env: self.settings.env(),
             })
             .await
@@ -421,15 +514,18 @@ impl AppBackend {
         settings: &AppSettings,
         transient_api_key: Option<&str>,
     ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
+        let run_root = self.run_root_for_workflow(&workflow.id)?;
         self.runs
             .continue_run(RunStartParams {
                 workflow,
                 entrypoint,
                 execution_cwd: None,
+                run_root,
                 settings,
                 transient_api_key,
                 agent_store: self.agents.store(),
                 settings_store: self.settings.store(),
+                run_store: self.run_store.as_ref(),
                 env: self.settings.env(),
             })
             .await
@@ -458,7 +554,9 @@ impl AppBackend {
         &self,
         event: ExecutionEvent,
     ) -> Result<WorkflowRunState, BackendError> {
-        self.runs.apply_execution_event(event).await
+        self.runs
+            .apply_execution_event(event, self.run_store.as_ref())
+            .await
     }
 
     pub async fn submit_user_input(
@@ -629,15 +727,18 @@ impl AppBackend {
         let workflow = self.load_workflow(&workflow_id)?;
         let execution_cwd = self.scheduled_execution_cwd(&workflow_id)?;
         let settings = self.load_settings()?;
+        let run_root = self.run_root_for_workflow(&workflow_id)?;
         self.runs
             .start_run(RunStartParams {
                 workflow,
                 entrypoint: None,
                 execution_cwd,
+                run_root,
                 settings: &settings,
                 transient_api_key: None,
                 agent_store: self.agents.store(),
                 settings_store: self.settings.store(),
+                run_store: self.run_store.as_ref(),
                 env: self.settings.env(),
             })
             .await
@@ -650,13 +751,14 @@ impl AppBackend {
 
     pub async fn start_due_scheduled_run(
         &self,
-    ) -> Result<Option<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>)>, BackendError> {
+    ) -> Result<Option<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>, String)>, BackendError>
+    {
         let Some(candidate) = self.claim_due_scheduled_run().await? else {
             return Ok(None);
         };
-        self.start_scheduled_run(candidate.workflow_id)
-            .await
-            .map(Some)
+        let workflow_name = self.load_workflow(&candidate.workflow_id)?.name;
+        let (state, event_rx) = self.start_scheduled_run(candidate.workflow_id).await?;
+        Ok(Some((state, event_rx, workflow_name)))
     }
 }
 

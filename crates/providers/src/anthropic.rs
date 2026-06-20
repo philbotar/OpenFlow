@@ -257,6 +257,7 @@ fn parse_anthropic_output(
         raw_text: assistant_message.clone().unwrap_or_default(),
         assistant_message,
         tool_calls,
+        usage: None,
     }))
 }
 

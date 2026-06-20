@@ -1,0 +1,15 @@
+# --- Headroom init provider ---
+model_provider = "headroom"
+openai_base_url = "http://127.0.0.1:8787/v1"
+
+[model_providers.headroom]
+name = "Headroom init proxy"
+base_url = "http://127.0.0.1:8787/v1"
+supports_websockets = true
+# --- end Headroom init provider ---
+
+[features]
+
+# --- Headroom init features ---
+hooks = true
+# --- end Headroom init features ---

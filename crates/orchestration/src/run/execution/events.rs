@@ -1,5 +1,6 @@
 use crate::run::state::{
-    AgentStatus, RunTraceEntry, ToolArtifactSummary, ToolCallSummary, TraceStatus, WorkflowRunState,
+    AgentStatus, ContextWindowSnapshot, RunTraceEntry, ToolArtifactSummary, ToolCallSummary,
+    TraceStatus, WorkflowRunState,
 };
 use engine::{
     strip_tool_call_markup, summary_from_node_output, ChatMessage, ChatRole, NodeId,
@@ -604,6 +605,23 @@ pub fn apply_event_to_run_state(
                 message,
                 output: Some(json!({ "phase": phase, "durationMs": duration_ms })),
             });
+        }
+        ExecutionEvent::UsageReported {
+            node_id,
+            usage,
+            model,
+            max_context_tokens,
+        } => {
+            let max_tokens = max_context_tokens.unwrap_or(0);
+            state.context_window_by_node.insert(
+                node_id.clone(),
+                ContextWindowSnapshot {
+                    used_tokens: usage.total_tokens,
+                    max_tokens,
+                    model,
+                    node_id,
+                },
+            );
         }
     }
 }

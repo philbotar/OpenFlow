@@ -5,6 +5,7 @@ import { ChatPanel } from "../components/conversation";
 import { useAppContext } from "../context/AppContext";
 import { prettyJson } from "../lib/workflow";
 import { TerminalPanel } from "./TerminalPanel";
+import { RunHistoryPanel } from "./RunHistoryPanel";
 
 export function DockPanel() {
   const ctx = useAppContext();
@@ -44,13 +45,20 @@ export function DockPanel() {
           >
             Run trace
           </button>
+          <button
+            classList={{ active: ctx.bottomTab() === "runs" }}
+            onClick={() => ctx.handleSelectBottomTab("runs")}
+          >
+            Runs
+          </button>
         </div>
         <Show
           when={
             ctx.dockOpen() &&
             (ctx.bottomTab() === "chat" ||
               ctx.bottomTab() === "trace" ||
-              ctx.bottomTab() === "terminal")
+              ctx.bottomTab() === "terminal" ||
+              ctx.bottomTab() === "runs")
           }
         >
           <div class="dock-tab-actions">
@@ -125,8 +133,18 @@ function TerminalOrTrace() {
   const ctx = useAppContext();
 
   return (
-    <Show when={ctx.bottomTab() === "terminal"} fallback={<TracePanel />}>
+    <Show when={ctx.bottomTab() === "terminal"} fallback={<TraceOrRuns />}>
       <TerminalPanel />
+    </Show>
+  );
+}
+
+function TraceOrRuns() {
+  const ctx = useAppContext();
+
+  return (
+    <Show when={ctx.bottomTab() === "runs"} fallback={<TracePanel />}>
+      <RunHistoryPanel />
     </Show>
   );
 }

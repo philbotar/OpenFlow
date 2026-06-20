@@ -28,6 +28,9 @@ import {
   projectWorkflowCanvasStatusByNode,
   projectWorkflowCanvasSubagentsByNode,
   inferRunStateWorkflowId,
+  normalizeWorkflowLayout,
+  withDefaultReasoningFromWorkflow,
+  workflowReasoningEffort,
 } from "./workflow";
 
 const workflow: Workflow = {
@@ -178,6 +181,48 @@ describe("workflow helpers", () => {
       "string",
     );
     expect(workflow.edges[0].to).toBe("node-2");
+  });
+
+  test("normalizeWorkflowLayout arranges nodes by execution layer", () => {
+    const laidOut = normalizeWorkflowLayout(makeDiamondWorkflow());
+    const byId = new Map(laidOut.nodes.map((node) => [node.id, node.position]));
+
+    expect(byId.get("node-a")?.x).toBe(96);
+    expect(byId.get("node-b")?.x).toBe(512);
+    expect(byId.get("node-c")?.x).toBe(512);
+    expect(byId.get("node-d")?.x).toBe(928);
+
+    expect(byId.get("node-b")?.y).toBeLessThan(byId.get("node-c")?.y ?? 0);
+    expect(byId.get("node-a")?.y).toBe(96);
+    expect(byId.get("node-d")?.y).toBe(96);
+  });
+
+  test("withDefaultReasoningFromWorkflow applies workflow default when node unset", () => {
+    const next = withDefaultReasoningFromWorkflow(workflow.nodes[0].agent, {
+      shared_context: "",
+      reasoning_effort: "medium",
+      reasoning_budget_tokens: 4_096,
+    });
+    expect(next.reasoning_effort).toBe("medium");
+    expect(next.reasoning_budget_tokens).toBe(4_096);
+  });
+
+  test("withDefaultReasoningFromWorkflow preserves node override", () => {
+    const agent = { ...workflow.nodes[0].agent, reasoning_effort: "high" };
+    const next = withDefaultReasoningFromWorkflow(agent, {
+      shared_context: "",
+      reasoning_effort: "low",
+    });
+    expect(next.reasoning_effort).toBe("high");
+  });
+
+  test("cloneWorkflow preserves workflow reasoning defaults", () => {
+    const source = cloneWorkflow(workflow);
+    source.settings.reasoning_effort = "low";
+    source.settings.reasoning_budget_tokens = 2_048;
+    const cloned = cloneWorkflow(source);
+    expect(workflowReasoningEffort(cloned.settings)).toBe("low");
+    expect(cloned.settings.reasoning_budget_tokens).toBe(2_048);
   });
 
   test("cloneSettings detaches provider fields", () => {

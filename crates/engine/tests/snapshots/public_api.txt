@@ -1278,6 +1278,11 @@ pub engine::execution::telemetry::RunTelemetry::ToolUpdated::node_id: engine::gr
 pub engine::execution::telemetry::RunTelemetry::ToolUpdated::output_meta: core::option::Option<engine::ToolOutputMeta>
 pub engine::execution::telemetry::RunTelemetry::ToolUpdated::tool_call_id: alloc::string::String
 pub engine::execution::telemetry::RunTelemetry::ToolUpdated::tool_name: alloc::string::String
+pub engine::execution::telemetry::RunTelemetry::UsageReported
+pub engine::execution::telemetry::RunTelemetry::UsageReported::max_context_tokens: core::option::Option<u32>
+pub engine::execution::telemetry::RunTelemetry::UsageReported::model: alloc::string::String
+pub engine::execution::telemetry::RunTelemetry::UsageReported::node_id: engine::graph::workflow::NodeId
+pub engine::execution::telemetry::RunTelemetry::UsageReported::usage: engine::ports::outbound::UsageReport
 impl core::clone::Clone for engine::execution::telemetry::RunTelemetry
 pub fn engine::execution::telemetry::RunTelemetry::clone(&self) -> engine::execution::telemetry::RunTelemetry
 impl core::fmt::Debug for engine::execution::telemetry::RunTelemetry
@@ -1802,6 +1807,11 @@ pub engine::execution::RunTelemetry::ToolUpdated::node_id: engine::graph::workfl
 pub engine::execution::RunTelemetry::ToolUpdated::output_meta: core::option::Option<engine::ToolOutputMeta>
 pub engine::execution::RunTelemetry::ToolUpdated::tool_call_id: alloc::string::String
 pub engine::execution::RunTelemetry::ToolUpdated::tool_name: alloc::string::String
+pub engine::execution::RunTelemetry::UsageReported
+pub engine::execution::RunTelemetry::UsageReported::max_context_tokens: core::option::Option<u32>
+pub engine::execution::RunTelemetry::UsageReported::model: alloc::string::String
+pub engine::execution::RunTelemetry::UsageReported::node_id: engine::graph::workflow::NodeId
+pub engine::execution::RunTelemetry::UsageReported::usage: engine::ports::outbound::UsageReport
 impl core::clone::Clone for engine::execution::telemetry::RunTelemetry
 pub fn engine::execution::telemetry::RunTelemetry::clone(&self) -> engine::execution::telemetry::RunTelemetry
 impl core::fmt::Debug for engine::execution::telemetry::RunTelemetry
@@ -3187,6 +3197,8 @@ pub fn engine::graph::workflow::WorkflowSchedule::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::graph::workflow::WorkflowSchedule where T: for<'de> serde_core::de::Deserialize<'de>
 pub struct engine::graph::workflow::WorkflowSettings
 pub engine::graph::workflow::WorkflowSettings::provider_id: core::option::Option<alloc::string::String>
+pub engine::graph::workflow::WorkflowSettings::reasoning_budget_tokens: core::option::Option<u32>
+pub engine::graph::workflow::WorkflowSettings::reasoning_effort: core::option::Option<alloc::string::String>
 pub engine::graph::workflow::WorkflowSettings::retry_policy: engine::graph::workflow::RetryPolicy
 pub engine::graph::workflow::WorkflowSettings::schedule: core::option::Option<engine::graph::workflow::WorkflowSchedule>
 pub engine::graph::workflow::WorkflowSettings::shared_context: alloc::string::String
@@ -3233,6 +3245,8 @@ pub unsafe fn engine::graph::workflow::WorkflowSettings::clone_to_uninit(&self, 
 impl<T> core::convert::From<T> for engine::graph::workflow::WorkflowSettings
 pub fn engine::graph::workflow::WorkflowSettings::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::graph::workflow::WorkflowSettings where T: for<'de> serde_core::de::Deserialize<'de>
+pub fn engine::graph::workflow::default_structured_output_schema() -> serde_json::value::Value
+pub fn engine::graph::workflow::effective_output_schema(&serde_json::value::Value) -> serde_json::value::Value
 pub enum engine::graph::NodeKind
 pub engine::graph::NodeKind::Agent
 impl core::clone::Clone for engine::graph::workflow::NodeKind
@@ -3942,6 +3956,8 @@ pub fn engine::graph::workflow::WorkflowSchedule::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::graph::workflow::WorkflowSchedule where T: for<'de> serde_core::de::Deserialize<'de>
 pub struct engine::graph::WorkflowSettings
 pub engine::graph::WorkflowSettings::provider_id: core::option::Option<alloc::string::String>
+pub engine::graph::WorkflowSettings::reasoning_budget_tokens: core::option::Option<u32>
+pub engine::graph::WorkflowSettings::reasoning_effort: core::option::Option<alloc::string::String>
 pub engine::graph::WorkflowSettings::retry_policy: engine::graph::workflow::RetryPolicy
 pub engine::graph::WorkflowSettings::schedule: core::option::Option<engine::graph::workflow::WorkflowSchedule>
 pub engine::graph::WorkflowSettings::shared_context: alloc::string::String
@@ -3989,9 +4005,14 @@ impl<T> core::convert::From<T> for engine::graph::workflow::WorkflowSettings
 pub fn engine::graph::workflow::WorkflowSettings::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::graph::workflow::WorkflowSettings where T: for<'de> serde_core::de::Deserialize<'de>
 pub fn engine::graph::build_predefined_subagent_summaries(&engine::graph::workflow::Node, &alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::graph::callable_agent::CallableAgent>) -> alloc::vec::Vec<engine::SubagentSummary>
+pub fn engine::graph::default_structured_output_schema() -> serde_json::value::Value
+pub fn engine::graph::effective_output_schema(&serde_json::value::Value) -> serde_json::value::Value
 pub fn engine::graph::execution_layers(&engine::graph::workflow::Workflow) -> core::result::Result<alloc::vec::Vec<alloc::vec::Vec<engine::graph::workflow::NodeId>>, engine::graph::validation::WorkflowValidationError>
 pub fn engine::graph::resolve_callable_agent_snapshots(&engine::graph::workflow::Workflow, &[engine::graph::callable_agent::CallableAgent]) -> alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::graph::callable_agent::CallableAgent>
 pub fn engine::graph::validate_workflow(&engine::graph::workflow::Workflow) -> core::result::Result<(), engine::graph::validation::WorkflowValidationError>
+pub mod engine::model_context
+pub fn engine::model_context::default_context_window_sizes() -> alloc::collections::btree::map::BTreeMap<alloc::string::String, u32>
+pub fn engine::model_context::lookup_context_window_size(&alloc::collections::btree::map::BTreeMap<alloc::string::String, u32>, &str) -> core::option::Option<u32>
 pub mod engine::ports
 pub mod engine::ports::inbound
 pub struct engine::ports::inbound::HumanInput
@@ -4304,6 +4325,7 @@ pub struct engine::ports::outbound::AgentToolCallBatch
 pub engine::ports::outbound::AgentToolCallBatch::assistant_message: core::option::Option<alloc::string::String>
 pub engine::ports::outbound::AgentToolCallBatch::raw_text: alloc::string::String
 pub engine::ports::outbound::AgentToolCallBatch::tool_calls: alloc::vec::Vec<engine::ToolCall>
+pub engine::ports::outbound::AgentToolCallBatch::usage: core::option::Option<engine::ports::outbound::UsageReport>
 impl core::clone::Clone for engine::ports::outbound::AgentToolCallBatch
 pub fn engine::ports::outbound::AgentToolCallBatch::clone(&self) -> engine::ports::outbound::AgentToolCallBatch
 impl core::cmp::Eq for engine::ports::outbound::AgentToolCallBatch
@@ -4345,6 +4367,7 @@ pub struct engine::ports::outbound::AgentTurnSuccess
 pub engine::ports::outbound::AgentTurnSuccess::assistant_message: core::option::Option<alloc::string::String>
 pub engine::ports::outbound::AgentTurnSuccess::output: serde_json::value::Value
 pub engine::ports::outbound::AgentTurnSuccess::raw_text: alloc::string::String
+pub engine::ports::outbound::AgentTurnSuccess::usage: core::option::Option<engine::ports::outbound::UsageReport>
 impl core::clone::Clone for engine::ports::outbound::AgentTurnSuccess
 pub fn engine::ports::outbound::AgentTurnSuccess::clone(&self) -> engine::ports::outbound::AgentTurnSuccess
 impl core::cmp::Eq for engine::ports::outbound::AgentTurnSuccess
@@ -4382,6 +4405,47 @@ impl<T> core::clone::CloneToUninit for engine::ports::outbound::AgentTurnSuccess
 pub unsafe fn engine::ports::outbound::AgentTurnSuccess::clone_to_uninit(&self, *mut u8)
 impl<T> core::convert::From<T> for engine::ports::outbound::AgentTurnSuccess
 pub fn engine::ports::outbound::AgentTurnSuccess::from(T) -> T
+pub struct engine::ports::outbound::UsageReport
+pub engine::ports::outbound::UsageReport::completion_tokens: u32
+pub engine::ports::outbound::UsageReport::prompt_tokens: u32
+pub engine::ports::outbound::UsageReport::total_tokens: u32
+impl core::clone::Clone for engine::ports::outbound::UsageReport
+pub fn engine::ports::outbound::UsageReport::clone(&self) -> engine::ports::outbound::UsageReport
+impl core::cmp::Eq for engine::ports::outbound::UsageReport
+impl core::cmp::PartialEq for engine::ports::outbound::UsageReport
+pub fn engine::ports::outbound::UsageReport::eq(&self, &engine::ports::outbound::UsageReport) -> bool
+impl core::fmt::Debug for engine::ports::outbound::UsageReport
+pub fn engine::ports::outbound::UsageReport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::ports::outbound::UsageReport
+impl core::marker::Freeze for engine::ports::outbound::UsageReport
+impl core::marker::Send for engine::ports::outbound::UsageReport
+impl core::marker::Sync for engine::ports::outbound::UsageReport
+impl core::marker::Unpin for engine::ports::outbound::UsageReport
+impl core::marker::UnsafeUnpin for engine::ports::outbound::UsageReport
+impl core::panic::unwind_safe::RefUnwindSafe for engine::ports::outbound::UsageReport
+impl core::panic::unwind_safe::UnwindSafe for engine::ports::outbound::UsageReport
+impl<T, U> core::convert::Into<U> for engine::ports::outbound::UsageReport where U: core::convert::From<T>
+pub fn engine::ports::outbound::UsageReport::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::ports::outbound::UsageReport where U: core::convert::Into<T>
+pub type engine::ports::outbound::UsageReport::Error = core::convert::Infallible
+pub fn engine::ports::outbound::UsageReport::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::ports::outbound::UsageReport where U: core::convert::TryFrom<T>
+pub type engine::ports::outbound::UsageReport::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::ports::outbound::UsageReport::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::ports::outbound::UsageReport where T: core::clone::Clone
+pub type engine::ports::outbound::UsageReport::Owned = T
+pub fn engine::ports::outbound::UsageReport::clone_into(&self, &mut T)
+pub fn engine::ports::outbound::UsageReport::to_owned(&self) -> T
+impl<T> core::any::Any for engine::ports::outbound::UsageReport where T: 'static + ?core::marker::Sized
+pub fn engine::ports::outbound::UsageReport::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::ports::outbound::UsageReport where T: ?core::marker::Sized
+pub fn engine::ports::outbound::UsageReport::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::ports::outbound::UsageReport where T: ?core::marker::Sized
+pub fn engine::ports::outbound::UsageReport::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::ports::outbound::UsageReport where T: core::clone::Clone
+pub unsafe fn engine::ports::outbound::UsageReport::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::ports::outbound::UsageReport
+pub fn engine::ports::outbound::UsageReport::from(T) -> T
 pub trait engine::ports::outbound::AiPort: core::marker::Send + core::marker::Sync
 pub fn engine::ports::outbound::AiPort::invoke<'life0, 'async_trait>(&'life0 self, engine::ports::outbound::AgentRequest) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = core::result::Result<engine::ports::outbound::AgentTurnOutcome, engine::ports::outbound::AgentError>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
 pub fn engine::ports::outbound::AiPort::invoke_stream<'life0, 'life1, 'async_trait>(&'life0 self, engine::ports::outbound::AgentRequest, &'life1 dyn engine::ports::outbound::AiStreamSink) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = core::result::Result<engine::ports::outbound::AgentTurnOutcome, engine::ports::outbound::AgentError>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
@@ -4617,6 +4681,7 @@ pub struct engine::ports::AgentToolCallBatch
 pub engine::ports::AgentToolCallBatch::assistant_message: core::option::Option<alloc::string::String>
 pub engine::ports::AgentToolCallBatch::raw_text: alloc::string::String
 pub engine::ports::AgentToolCallBatch::tool_calls: alloc::vec::Vec<engine::ToolCall>
+pub engine::ports::AgentToolCallBatch::usage: core::option::Option<engine::ports::outbound::UsageReport>
 impl core::clone::Clone for engine::ports::outbound::AgentToolCallBatch
 pub fn engine::ports::outbound::AgentToolCallBatch::clone(&self) -> engine::ports::outbound::AgentToolCallBatch
 impl core::cmp::Eq for engine::ports::outbound::AgentToolCallBatch
@@ -4658,6 +4723,7 @@ pub struct engine::ports::AgentTurnSuccess
 pub engine::ports::AgentTurnSuccess::assistant_message: core::option::Option<alloc::string::String>
 pub engine::ports::AgentTurnSuccess::output: serde_json::value::Value
 pub engine::ports::AgentTurnSuccess::raw_text: alloc::string::String
+pub engine::ports::AgentTurnSuccess::usage: core::option::Option<engine::ports::outbound::UsageReport>
 impl core::clone::Clone for engine::ports::outbound::AgentTurnSuccess
 pub fn engine::ports::outbound::AgentTurnSuccess::clone(&self) -> engine::ports::outbound::AgentTurnSuccess
 impl core::cmp::Eq for engine::ports::outbound::AgentTurnSuccess
@@ -4776,6 +4842,47 @@ impl<T> core::clone::CloneToUninit for engine::ports::inbound::ToolApprovalInput
 pub unsafe fn engine::ports::inbound::ToolApprovalInput::clone_to_uninit(&self, *mut u8)
 impl<T> core::convert::From<T> for engine::ports::inbound::ToolApprovalInput
 pub fn engine::ports::inbound::ToolApprovalInput::from(T) -> T
+pub struct engine::ports::UsageReport
+pub engine::ports::UsageReport::completion_tokens: u32
+pub engine::ports::UsageReport::prompt_tokens: u32
+pub engine::ports::UsageReport::total_tokens: u32
+impl core::clone::Clone for engine::ports::outbound::UsageReport
+pub fn engine::ports::outbound::UsageReport::clone(&self) -> engine::ports::outbound::UsageReport
+impl core::cmp::Eq for engine::ports::outbound::UsageReport
+impl core::cmp::PartialEq for engine::ports::outbound::UsageReport
+pub fn engine::ports::outbound::UsageReport::eq(&self, &engine::ports::outbound::UsageReport) -> bool
+impl core::fmt::Debug for engine::ports::outbound::UsageReport
+pub fn engine::ports::outbound::UsageReport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::ports::outbound::UsageReport
+impl core::marker::Freeze for engine::ports::outbound::UsageReport
+impl core::marker::Send for engine::ports::outbound::UsageReport
+impl core::marker::Sync for engine::ports::outbound::UsageReport
+impl core::marker::Unpin for engine::ports::outbound::UsageReport
+impl core::marker::UnsafeUnpin for engine::ports::outbound::UsageReport
+impl core::panic::unwind_safe::RefUnwindSafe for engine::ports::outbound::UsageReport
+impl core::panic::unwind_safe::UnwindSafe for engine::ports::outbound::UsageReport
+impl<T, U> core::convert::Into<U> for engine::ports::outbound::UsageReport where U: core::convert::From<T>
+pub fn engine::ports::outbound::UsageReport::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::ports::outbound::UsageReport where U: core::convert::Into<T>
+pub type engine::ports::outbound::UsageReport::Error = core::convert::Infallible
+pub fn engine::ports::outbound::UsageReport::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::ports::outbound::UsageReport where U: core::convert::TryFrom<T>
+pub type engine::ports::outbound::UsageReport::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::ports::outbound::UsageReport::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::ports::outbound::UsageReport where T: core::clone::Clone
+pub type engine::ports::outbound::UsageReport::Owned = T
+pub fn engine::ports::outbound::UsageReport::clone_into(&self, &mut T)
+pub fn engine::ports::outbound::UsageReport::to_owned(&self) -> T
+impl<T> core::any::Any for engine::ports::outbound::UsageReport where T: 'static + ?core::marker::Sized
+pub fn engine::ports::outbound::UsageReport::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::ports::outbound::UsageReport where T: ?core::marker::Sized
+pub fn engine::ports::outbound::UsageReport::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::ports::outbound::UsageReport where T: ?core::marker::Sized
+pub fn engine::ports::outbound::UsageReport::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::ports::outbound::UsageReport where T: core::clone::Clone
+pub unsafe fn engine::ports::outbound::UsageReport::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::ports::outbound::UsageReport
+pub fn engine::ports::outbound::UsageReport::from(T) -> T
 pub trait engine::ports::AiPort: core::marker::Send + core::marker::Sync
 pub fn engine::ports::AiPort::invoke<'life0, 'async_trait>(&'life0 self, engine::ports::outbound::AgentRequest) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = core::result::Result<engine::ports::outbound::AgentTurnOutcome, engine::ports::outbound::AgentError>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
 pub fn engine::ports::AiPort::invoke_stream<'life0, 'life1, 'async_trait>(&'life0 self, engine::ports::outbound::AgentRequest, &'life1 dyn engine::ports::outbound::AiStreamSink) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = core::result::Result<engine::ports::outbound::AgentTurnOutcome, engine::ports::outbound::AgentError>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
@@ -4965,6 +5072,7 @@ pub fn engine::template::default_templates() -> alloc::vec::Vec<engine::template
 pub mod engine::tools
 pub enum engine::tools::ApprovalMode
 pub engine::tools::ApprovalMode::AlwaysAsk
+pub engine::tools::ApprovalMode::ReadOnly
 pub engine::tools::ApprovalMode::Write
 pub engine::tools::ApprovalMode::Yolo
 impl core::clone::Clone for engine::ApprovalMode
@@ -5246,55 +5354,7 @@ impl<T> core::clone::CloneToUninit for engine::ToolDecision where T: core::clone
 pub unsafe fn engine::ToolDecision::clone_to_uninit(&self, *mut u8)
 impl<T> core::convert::From<T> for engine::ToolDecision
 pub fn engine::ToolDecision::from(T) -> T
-pub enum engine::tools::ToolPolicy
-pub engine::tools::ToolPolicy::Allow
-pub engine::tools::ToolPolicy::Deny
-pub engine::tools::ToolPolicy::Prompt
-impl core::clone::Clone for engine::ToolPolicy
-pub fn engine::ToolPolicy::clone(&self) -> engine::ToolPolicy
-impl core::cmp::Eq for engine::ToolPolicy
-impl core::cmp::PartialEq for engine::ToolPolicy
-pub fn engine::ToolPolicy::eq(&self, &engine::ToolPolicy) -> bool
-impl core::fmt::Debug for engine::ToolPolicy
-pub fn engine::ToolPolicy::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for engine::ToolPolicy
-impl core::marker::StructuralPartialEq for engine::ToolPolicy
-impl serde_core::ser::Serialize for engine::ToolPolicy
-pub fn engine::ToolPolicy::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for engine::ToolPolicy
-pub fn engine::ToolPolicy::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for engine::ToolPolicy
-impl core::marker::Send for engine::ToolPolicy
-impl core::marker::Sync for engine::ToolPolicy
-impl core::marker::Unpin for engine::ToolPolicy
-impl core::marker::UnsafeUnpin for engine::ToolPolicy
-impl core::panic::unwind_safe::RefUnwindSafe for engine::ToolPolicy
-impl core::panic::unwind_safe::UnwindSafe for engine::ToolPolicy
-impl<T, U> core::convert::Into<U> for engine::ToolPolicy where U: core::convert::From<T>
-pub fn engine::ToolPolicy::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for engine::ToolPolicy where U: core::convert::Into<T>
-pub type engine::ToolPolicy::Error = core::convert::Infallible
-pub fn engine::ToolPolicy::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for engine::ToolPolicy where U: core::convert::TryFrom<T>
-pub type engine::ToolPolicy::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn engine::ToolPolicy::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for engine::ToolPolicy where T: core::clone::Clone
-pub type engine::ToolPolicy::Owned = T
-pub fn engine::ToolPolicy::clone_into(&self, &mut T)
-pub fn engine::ToolPolicy::to_owned(&self) -> T
-impl<T> core::any::Any for engine::ToolPolicy where T: 'static + ?core::marker::Sized
-pub fn engine::ToolPolicy::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for engine::ToolPolicy where T: ?core::marker::Sized
-pub fn engine::ToolPolicy::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for engine::ToolPolicy where T: ?core::marker::Sized
-pub fn engine::ToolPolicy::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for engine::ToolPolicy where T: core::clone::Clone
-pub unsafe fn engine::ToolPolicy::clone_to_uninit(&self, *mut u8)
-impl<T> core::convert::From<T> for engine::ToolPolicy
-pub fn engine::ToolPolicy::from(T) -> T
-impl<T> serde_core::de::DeserializeOwned for engine::ToolPolicy where T: for<'de> serde_core::de::Deserialize<'de>
 pub enum engine::tools::ToolTier
-pub engine::tools::ToolTier::Exec
 pub engine::tools::ToolTier::Read
 pub engine::tools::ToolTier::Write
 impl core::clone::Clone for engine::ToolTier
@@ -5533,9 +5593,8 @@ pub fn engine::FileSnapshot::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::FileSnapshot where T: for<'de> serde_core::de::Deserialize<'de>
 pub struct engine::tools::NodeToolConfig
 pub engine::tools::NodeToolConfig::approval_mode: core::option::Option<engine::ApprovalMode>
-pub engine::tools::NodeToolConfig::catalog: engine::ToolCatalogSelection
-pub engine::tools::NodeToolConfig::overrides: alloc::vec::Vec<engine::ToolPolicyOverride>
 impl engine::NodeToolConfig
+pub const fn engine::NodeToolConfig::effective_approval_mode(&self) -> engine::ApprovalMode
 pub const fn engine::NodeToolConfig::is_enabled(&self) -> bool
 impl core::clone::Clone for engine::NodeToolConfig
 pub fn engine::NodeToolConfig::clone(&self) -> engine::NodeToolConfig
@@ -5767,52 +5826,6 @@ pub unsafe fn engine::ToolCall::clone_to_uninit(&self, *mut u8)
 impl<T> core::convert::From<T> for engine::ToolCall
 pub fn engine::ToolCall::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::ToolCall where T: for<'de> serde_core::de::Deserialize<'de>
-pub struct engine::tools::ToolCatalogSelection
-pub engine::tools::ToolCatalogSelection::tools: alloc::vec::Vec<engine::ToolRef>
-impl core::clone::Clone for engine::ToolCatalogSelection
-pub fn engine::ToolCatalogSelection::clone(&self) -> engine::ToolCatalogSelection
-impl core::cmp::Eq for engine::ToolCatalogSelection
-impl core::cmp::PartialEq for engine::ToolCatalogSelection
-pub fn engine::ToolCatalogSelection::eq(&self, &engine::ToolCatalogSelection) -> bool
-impl core::default::Default for engine::ToolCatalogSelection
-pub fn engine::ToolCatalogSelection::default() -> Self
-impl core::fmt::Debug for engine::ToolCatalogSelection
-pub fn engine::ToolCatalogSelection::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for engine::ToolCatalogSelection
-impl serde_core::ser::Serialize for engine::ToolCatalogSelection
-pub fn engine::ToolCatalogSelection::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for engine::ToolCatalogSelection
-pub fn engine::ToolCatalogSelection::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for engine::ToolCatalogSelection
-impl core::marker::Send for engine::ToolCatalogSelection
-impl core::marker::Sync for engine::ToolCatalogSelection
-impl core::marker::Unpin for engine::ToolCatalogSelection
-impl core::marker::UnsafeUnpin for engine::ToolCatalogSelection
-impl core::panic::unwind_safe::RefUnwindSafe for engine::ToolCatalogSelection
-impl core::panic::unwind_safe::UnwindSafe for engine::ToolCatalogSelection
-impl<T, U> core::convert::Into<U> for engine::ToolCatalogSelection where U: core::convert::From<T>
-pub fn engine::ToolCatalogSelection::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for engine::ToolCatalogSelection where U: core::convert::Into<T>
-pub type engine::ToolCatalogSelection::Error = core::convert::Infallible
-pub fn engine::ToolCatalogSelection::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for engine::ToolCatalogSelection where U: core::convert::TryFrom<T>
-pub type engine::ToolCatalogSelection::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn engine::ToolCatalogSelection::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for engine::ToolCatalogSelection where T: core::clone::Clone
-pub type engine::ToolCatalogSelection::Owned = T
-pub fn engine::ToolCatalogSelection::clone_into(&self, &mut T)
-pub fn engine::ToolCatalogSelection::to_owned(&self) -> T
-impl<T> core::any::Any for engine::ToolCatalogSelection where T: 'static + ?core::marker::Sized
-pub fn engine::ToolCatalogSelection::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for engine::ToolCatalogSelection where T: ?core::marker::Sized
-pub fn engine::ToolCatalogSelection::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for engine::ToolCatalogSelection where T: ?core::marker::Sized
-pub fn engine::ToolCatalogSelection::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for engine::ToolCatalogSelection where T: core::clone::Clone
-pub unsafe fn engine::ToolCatalogSelection::clone_to_uninit(&self, *mut u8)
-impl<T> core::convert::From<T> for engine::ToolCatalogSelection
-pub fn engine::ToolCatalogSelection::from(T) -> T
-impl<T> serde_core::de::DeserializeOwned for engine::ToolCatalogSelection where T: for<'de> serde_core::de::Deserialize<'de>
 pub struct engine::tools::ToolDefinition
 pub engine::tools::ToolDefinition::concurrency: engine::ToolConcurrency
 pub engine::tools::ToolDefinition::description: alloc::string::String
@@ -5906,97 +5919,6 @@ pub unsafe fn engine::ToolOutputMeta::clone_to_uninit(&self, *mut u8)
 impl<T> core::convert::From<T> for engine::ToolOutputMeta
 pub fn engine::ToolOutputMeta::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::ToolOutputMeta where T: for<'de> serde_core::de::Deserialize<'de>
-pub struct engine::tools::ToolPolicyOverride
-pub engine::tools::ToolPolicyOverride::policy: engine::ToolPolicy
-pub engine::tools::ToolPolicyOverride::timeout_secs: core::option::Option<u64>
-pub engine::tools::ToolPolicyOverride::tool_name: alloc::string::String
-impl core::clone::Clone for engine::ToolPolicyOverride
-pub fn engine::ToolPolicyOverride::clone(&self) -> engine::ToolPolicyOverride
-impl core::cmp::Eq for engine::ToolPolicyOverride
-impl core::cmp::PartialEq for engine::ToolPolicyOverride
-pub fn engine::ToolPolicyOverride::eq(&self, &engine::ToolPolicyOverride) -> bool
-impl core::fmt::Debug for engine::ToolPolicyOverride
-pub fn engine::ToolPolicyOverride::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for engine::ToolPolicyOverride
-impl serde_core::ser::Serialize for engine::ToolPolicyOverride
-pub fn engine::ToolPolicyOverride::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for engine::ToolPolicyOverride
-pub fn engine::ToolPolicyOverride::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for engine::ToolPolicyOverride
-impl core::marker::Send for engine::ToolPolicyOverride
-impl core::marker::Sync for engine::ToolPolicyOverride
-impl core::marker::Unpin for engine::ToolPolicyOverride
-impl core::marker::UnsafeUnpin for engine::ToolPolicyOverride
-impl core::panic::unwind_safe::RefUnwindSafe for engine::ToolPolicyOverride
-impl core::panic::unwind_safe::UnwindSafe for engine::ToolPolicyOverride
-impl<T, U> core::convert::Into<U> for engine::ToolPolicyOverride where U: core::convert::From<T>
-pub fn engine::ToolPolicyOverride::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for engine::ToolPolicyOverride where U: core::convert::Into<T>
-pub type engine::ToolPolicyOverride::Error = core::convert::Infallible
-pub fn engine::ToolPolicyOverride::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for engine::ToolPolicyOverride where U: core::convert::TryFrom<T>
-pub type engine::ToolPolicyOverride::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn engine::ToolPolicyOverride::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for engine::ToolPolicyOverride where T: core::clone::Clone
-pub type engine::ToolPolicyOverride::Owned = T
-pub fn engine::ToolPolicyOverride::clone_into(&self, &mut T)
-pub fn engine::ToolPolicyOverride::to_owned(&self) -> T
-impl<T> core::any::Any for engine::ToolPolicyOverride where T: 'static + ?core::marker::Sized
-pub fn engine::ToolPolicyOverride::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for engine::ToolPolicyOverride where T: ?core::marker::Sized
-pub fn engine::ToolPolicyOverride::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for engine::ToolPolicyOverride where T: ?core::marker::Sized
-pub fn engine::ToolPolicyOverride::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for engine::ToolPolicyOverride where T: core::clone::Clone
-pub unsafe fn engine::ToolPolicyOverride::clone_to_uninit(&self, *mut u8)
-impl<T> core::convert::From<T> for engine::ToolPolicyOverride
-pub fn engine::ToolPolicyOverride::from(T) -> T
-impl<T> serde_core::de::DeserializeOwned for engine::ToolPolicyOverride where T: for<'de> serde_core::de::Deserialize<'de>
-pub struct engine::tools::ToolRef
-pub engine::tools::ToolRef::name: alloc::string::String
-pub engine::tools::ToolRef::tier: core::option::Option<engine::ToolTier>
-impl core::clone::Clone for engine::ToolRef
-pub fn engine::ToolRef::clone(&self) -> engine::ToolRef
-impl core::cmp::Eq for engine::ToolRef
-impl core::cmp::PartialEq for engine::ToolRef
-pub fn engine::ToolRef::eq(&self, &engine::ToolRef) -> bool
-impl core::fmt::Debug for engine::ToolRef
-pub fn engine::ToolRef::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for engine::ToolRef
-impl serde_core::ser::Serialize for engine::ToolRef
-pub fn engine::ToolRef::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for engine::ToolRef
-pub fn engine::ToolRef::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for engine::ToolRef
-impl core::marker::Send for engine::ToolRef
-impl core::marker::Sync for engine::ToolRef
-impl core::marker::Unpin for engine::ToolRef
-impl core::marker::UnsafeUnpin for engine::ToolRef
-impl core::panic::unwind_safe::RefUnwindSafe for engine::ToolRef
-impl core::panic::unwind_safe::UnwindSafe for engine::ToolRef
-impl<T, U> core::convert::Into<U> for engine::ToolRef where U: core::convert::From<T>
-pub fn engine::ToolRef::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for engine::ToolRef where U: core::convert::Into<T>
-pub type engine::ToolRef::Error = core::convert::Infallible
-pub fn engine::ToolRef::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for engine::ToolRef where U: core::convert::TryFrom<T>
-pub type engine::ToolRef::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn engine::ToolRef::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for engine::ToolRef where T: core::clone::Clone
-pub type engine::ToolRef::Owned = T
-pub fn engine::ToolRef::clone_into(&self, &mut T)
-pub fn engine::ToolRef::to_owned(&self) -> T
-impl<T> core::any::Any for engine::ToolRef where T: 'static + ?core::marker::Sized
-pub fn engine::ToolRef::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for engine::ToolRef where T: ?core::marker::Sized
-pub fn engine::ToolRef::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for engine::ToolRef where T: ?core::marker::Sized
-pub fn engine::ToolRef::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for engine::ToolRef where T: core::clone::Clone
-pub unsafe fn engine::ToolRef::clone_to_uninit(&self, *mut u8)
-impl<T> core::convert::From<T> for engine::ToolRef
-pub fn engine::ToolRef::from(T) -> T
-impl<T> serde_core::de::DeserializeOwned for engine::ToolRef where T: for<'de> serde_core::de::Deserialize<'de>
 pub struct engine::tools::ToolResult
 pub engine::tools::ToolResult::artifact_ids: alloc::vec::Vec<alloc::string::String>
 pub engine::tools::ToolResult::content: alloc::string::String
@@ -6097,10 +6019,8 @@ impl<T> core::convert::From<T> for engine::ToolTruncation
 pub fn engine::ToolTruncation::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::ToolTruncation where T: for<'de> serde_core::de::Deserialize<'de>
 pub fn engine::tools::effective_change_path(&engine::FileChangeRecord) -> &str
-pub fn engine::tools::is_critical_bash_command(&str) -> bool
 pub fn engine::tools::merge_file_change_record(&mut alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::FileChangeRecord>, engine::FileChangeRecord)
-pub fn engine::tools::override_policy_for_call(&engine::NodeToolConfig, &str) -> core::option::Option<engine::ToolPolicy>
-pub const fn engine::tools::requires_approval(engine::ApprovalMode, engine::ToolTier, core::option::Option<engine::ToolPolicy>) -> engine::ToolDecision
+pub const fn engine::tools::requires_approval(engine::ApprovalMode, engine::ToolTier) -> engine::ToolDecision
 pub fn engine::tools::summarize_diff(&str, usize) -> alloc::string::String
 pub fn engine::tools::tool_decision_for_call(&engine::NodeToolConfig, &engine::ToolCall) -> engine::ToolDecision
 pub fn engine::tools::tool_intent_from_arguments(&serde_json::value::Value) -> core::option::Option<alloc::string::String>
@@ -6280,6 +6200,7 @@ impl<T> core::convert::From<T> for engine::ports::outbound::AiStreamEvent
 pub fn engine::ports::outbound::AiStreamEvent::from(T) -> T
 pub enum engine::ApprovalMode
 pub engine::ApprovalMode::AlwaysAsk
+pub engine::ApprovalMode::ReadOnly
 pub engine::ApprovalMode::Write
 pub engine::ApprovalMode::Yolo
 impl core::clone::Clone for engine::ApprovalMode
@@ -6913,6 +6834,11 @@ pub engine::RunTelemetry::ToolUpdated::node_id: engine::graph::workflow::NodeId
 pub engine::RunTelemetry::ToolUpdated::output_meta: core::option::Option<engine::ToolOutputMeta>
 pub engine::RunTelemetry::ToolUpdated::tool_call_id: alloc::string::String
 pub engine::RunTelemetry::ToolUpdated::tool_name: alloc::string::String
+pub engine::RunTelemetry::UsageReported
+pub engine::RunTelemetry::UsageReported::max_context_tokens: core::option::Option<u32>
+pub engine::RunTelemetry::UsageReported::model: alloc::string::String
+pub engine::RunTelemetry::UsageReported::node_id: engine::graph::workflow::NodeId
+pub engine::RunTelemetry::UsageReported::usage: engine::ports::outbound::UsageReport
 impl core::clone::Clone for engine::execution::telemetry::RunTelemetry
 pub fn engine::execution::telemetry::RunTelemetry::clone(&self) -> engine::execution::telemetry::RunTelemetry
 impl core::fmt::Debug for engine::execution::telemetry::RunTelemetry
@@ -7254,55 +7180,7 @@ impl<T> core::clone::CloneToUninit for engine::ToolDecision where T: core::clone
 pub unsafe fn engine::ToolDecision::clone_to_uninit(&self, *mut u8)
 impl<T> core::convert::From<T> for engine::ToolDecision
 pub fn engine::ToolDecision::from(T) -> T
-pub enum engine::ToolPolicy
-pub engine::ToolPolicy::Allow
-pub engine::ToolPolicy::Deny
-pub engine::ToolPolicy::Prompt
-impl core::clone::Clone for engine::ToolPolicy
-pub fn engine::ToolPolicy::clone(&self) -> engine::ToolPolicy
-impl core::cmp::Eq for engine::ToolPolicy
-impl core::cmp::PartialEq for engine::ToolPolicy
-pub fn engine::ToolPolicy::eq(&self, &engine::ToolPolicy) -> bool
-impl core::fmt::Debug for engine::ToolPolicy
-pub fn engine::ToolPolicy::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for engine::ToolPolicy
-impl core::marker::StructuralPartialEq for engine::ToolPolicy
-impl serde_core::ser::Serialize for engine::ToolPolicy
-pub fn engine::ToolPolicy::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for engine::ToolPolicy
-pub fn engine::ToolPolicy::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for engine::ToolPolicy
-impl core::marker::Send for engine::ToolPolicy
-impl core::marker::Sync for engine::ToolPolicy
-impl core::marker::Unpin for engine::ToolPolicy
-impl core::marker::UnsafeUnpin for engine::ToolPolicy
-impl core::panic::unwind_safe::RefUnwindSafe for engine::ToolPolicy
-impl core::panic::unwind_safe::UnwindSafe for engine::ToolPolicy
-impl<T, U> core::convert::Into<U> for engine::ToolPolicy where U: core::convert::From<T>
-pub fn engine::ToolPolicy::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for engine::ToolPolicy where U: core::convert::Into<T>
-pub type engine::ToolPolicy::Error = core::convert::Infallible
-pub fn engine::ToolPolicy::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for engine::ToolPolicy where U: core::convert::TryFrom<T>
-pub type engine::ToolPolicy::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn engine::ToolPolicy::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for engine::ToolPolicy where T: core::clone::Clone
-pub type engine::ToolPolicy::Owned = T
-pub fn engine::ToolPolicy::clone_into(&self, &mut T)
-pub fn engine::ToolPolicy::to_owned(&self) -> T
-impl<T> core::any::Any for engine::ToolPolicy where T: 'static + ?core::marker::Sized
-pub fn engine::ToolPolicy::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for engine::ToolPolicy where T: ?core::marker::Sized
-pub fn engine::ToolPolicy::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for engine::ToolPolicy where T: ?core::marker::Sized
-pub fn engine::ToolPolicy::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for engine::ToolPolicy where T: core::clone::Clone
-pub unsafe fn engine::ToolPolicy::clone_to_uninit(&self, *mut u8)
-impl<T> core::convert::From<T> for engine::ToolPolicy
-pub fn engine::ToolPolicy::from(T) -> T
-impl<T> serde_core::de::DeserializeOwned for engine::ToolPolicy where T: for<'de> serde_core::de::Deserialize<'de>
 pub enum engine::ToolTier
-pub engine::ToolTier::Exec
 pub engine::ToolTier::Read
 pub engine::ToolTier::Write
 impl core::clone::Clone for engine::ToolTier
@@ -7605,6 +7483,7 @@ pub struct engine::AgentToolCallBatch
 pub engine::AgentToolCallBatch::assistant_message: core::option::Option<alloc::string::String>
 pub engine::AgentToolCallBatch::raw_text: alloc::string::String
 pub engine::AgentToolCallBatch::tool_calls: alloc::vec::Vec<engine::ToolCall>
+pub engine::AgentToolCallBatch::usage: core::option::Option<engine::ports::outbound::UsageReport>
 impl core::clone::Clone for engine::ports::outbound::AgentToolCallBatch
 pub fn engine::ports::outbound::AgentToolCallBatch::clone(&self) -> engine::ports::outbound::AgentToolCallBatch
 impl core::cmp::Eq for engine::ports::outbound::AgentToolCallBatch
@@ -7646,6 +7525,7 @@ pub struct engine::AgentTurnSuccess
 pub engine::AgentTurnSuccess::assistant_message: core::option::Option<alloc::string::String>
 pub engine::AgentTurnSuccess::output: serde_json::value::Value
 pub engine::AgentTurnSuccess::raw_text: alloc::string::String
+pub engine::AgentTurnSuccess::usage: core::option::Option<engine::ports::outbound::UsageReport>
 impl core::clone::Clone for engine::ports::outbound::AgentTurnSuccess
 pub fn engine::ports::outbound::AgentTurnSuccess::clone(&self) -> engine::ports::outbound::AgentTurnSuccess
 impl core::cmp::Eq for engine::ports::outbound::AgentTurnSuccess
@@ -8604,9 +8484,8 @@ pub fn engine::execution::artifacts::NodeRunOutput::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::execution::artifacts::NodeRunOutput where T: for<'de> serde_core::de::Deserialize<'de>
 pub struct engine::NodeToolConfig
 pub engine::NodeToolConfig::approval_mode: core::option::Option<engine::ApprovalMode>
-pub engine::NodeToolConfig::catalog: engine::ToolCatalogSelection
-pub engine::NodeToolConfig::overrides: alloc::vec::Vec<engine::ToolPolicyOverride>
 impl engine::NodeToolConfig
+pub const fn engine::NodeToolConfig::effective_approval_mode(&self) -> engine::ApprovalMode
 pub const fn engine::NodeToolConfig::is_enabled(&self) -> bool
 impl core::clone::Clone for engine::NodeToolConfig
 pub fn engine::NodeToolConfig::clone(&self) -> engine::NodeToolConfig
@@ -9113,52 +8992,6 @@ pub unsafe fn engine::ToolCall::clone_to_uninit(&self, *mut u8)
 impl<T> core::convert::From<T> for engine::ToolCall
 pub fn engine::ToolCall::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::ToolCall where T: for<'de> serde_core::de::Deserialize<'de>
-pub struct engine::ToolCatalogSelection
-pub engine::ToolCatalogSelection::tools: alloc::vec::Vec<engine::ToolRef>
-impl core::clone::Clone for engine::ToolCatalogSelection
-pub fn engine::ToolCatalogSelection::clone(&self) -> engine::ToolCatalogSelection
-impl core::cmp::Eq for engine::ToolCatalogSelection
-impl core::cmp::PartialEq for engine::ToolCatalogSelection
-pub fn engine::ToolCatalogSelection::eq(&self, &engine::ToolCatalogSelection) -> bool
-impl core::default::Default for engine::ToolCatalogSelection
-pub fn engine::ToolCatalogSelection::default() -> Self
-impl core::fmt::Debug for engine::ToolCatalogSelection
-pub fn engine::ToolCatalogSelection::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for engine::ToolCatalogSelection
-impl serde_core::ser::Serialize for engine::ToolCatalogSelection
-pub fn engine::ToolCatalogSelection::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for engine::ToolCatalogSelection
-pub fn engine::ToolCatalogSelection::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for engine::ToolCatalogSelection
-impl core::marker::Send for engine::ToolCatalogSelection
-impl core::marker::Sync for engine::ToolCatalogSelection
-impl core::marker::Unpin for engine::ToolCatalogSelection
-impl core::marker::UnsafeUnpin for engine::ToolCatalogSelection
-impl core::panic::unwind_safe::RefUnwindSafe for engine::ToolCatalogSelection
-impl core::panic::unwind_safe::UnwindSafe for engine::ToolCatalogSelection
-impl<T, U> core::convert::Into<U> for engine::ToolCatalogSelection where U: core::convert::From<T>
-pub fn engine::ToolCatalogSelection::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for engine::ToolCatalogSelection where U: core::convert::Into<T>
-pub type engine::ToolCatalogSelection::Error = core::convert::Infallible
-pub fn engine::ToolCatalogSelection::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for engine::ToolCatalogSelection where U: core::convert::TryFrom<T>
-pub type engine::ToolCatalogSelection::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn engine::ToolCatalogSelection::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for engine::ToolCatalogSelection where T: core::clone::Clone
-pub type engine::ToolCatalogSelection::Owned = T
-pub fn engine::ToolCatalogSelection::clone_into(&self, &mut T)
-pub fn engine::ToolCatalogSelection::to_owned(&self) -> T
-impl<T> core::any::Any for engine::ToolCatalogSelection where T: 'static + ?core::marker::Sized
-pub fn engine::ToolCatalogSelection::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for engine::ToolCatalogSelection where T: ?core::marker::Sized
-pub fn engine::ToolCatalogSelection::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for engine::ToolCatalogSelection where T: ?core::marker::Sized
-pub fn engine::ToolCatalogSelection::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for engine::ToolCatalogSelection where T: core::clone::Clone
-pub unsafe fn engine::ToolCatalogSelection::clone_to_uninit(&self, *mut u8)
-impl<T> core::convert::From<T> for engine::ToolCatalogSelection
-pub fn engine::ToolCatalogSelection::from(T) -> T
-impl<T> serde_core::de::DeserializeOwned for engine::ToolCatalogSelection where T: for<'de> serde_core::de::Deserialize<'de>
 pub struct engine::ToolDefinition
 pub engine::ToolDefinition::concurrency: engine::ToolConcurrency
 pub engine::ToolDefinition::description: alloc::string::String
@@ -9252,97 +9085,6 @@ pub unsafe fn engine::ToolOutputMeta::clone_to_uninit(&self, *mut u8)
 impl<T> core::convert::From<T> for engine::ToolOutputMeta
 pub fn engine::ToolOutputMeta::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::ToolOutputMeta where T: for<'de> serde_core::de::Deserialize<'de>
-pub struct engine::ToolPolicyOverride
-pub engine::ToolPolicyOverride::policy: engine::ToolPolicy
-pub engine::ToolPolicyOverride::timeout_secs: core::option::Option<u64>
-pub engine::ToolPolicyOverride::tool_name: alloc::string::String
-impl core::clone::Clone for engine::ToolPolicyOverride
-pub fn engine::ToolPolicyOverride::clone(&self) -> engine::ToolPolicyOverride
-impl core::cmp::Eq for engine::ToolPolicyOverride
-impl core::cmp::PartialEq for engine::ToolPolicyOverride
-pub fn engine::ToolPolicyOverride::eq(&self, &engine::ToolPolicyOverride) -> bool
-impl core::fmt::Debug for engine::ToolPolicyOverride
-pub fn engine::ToolPolicyOverride::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for engine::ToolPolicyOverride
-impl serde_core::ser::Serialize for engine::ToolPolicyOverride
-pub fn engine::ToolPolicyOverride::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for engine::ToolPolicyOverride
-pub fn engine::ToolPolicyOverride::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for engine::ToolPolicyOverride
-impl core::marker::Send for engine::ToolPolicyOverride
-impl core::marker::Sync for engine::ToolPolicyOverride
-impl core::marker::Unpin for engine::ToolPolicyOverride
-impl core::marker::UnsafeUnpin for engine::ToolPolicyOverride
-impl core::panic::unwind_safe::RefUnwindSafe for engine::ToolPolicyOverride
-impl core::panic::unwind_safe::UnwindSafe for engine::ToolPolicyOverride
-impl<T, U> core::convert::Into<U> for engine::ToolPolicyOverride where U: core::convert::From<T>
-pub fn engine::ToolPolicyOverride::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for engine::ToolPolicyOverride where U: core::convert::Into<T>
-pub type engine::ToolPolicyOverride::Error = core::convert::Infallible
-pub fn engine::ToolPolicyOverride::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for engine::ToolPolicyOverride where U: core::convert::TryFrom<T>
-pub type engine::ToolPolicyOverride::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn engine::ToolPolicyOverride::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for engine::ToolPolicyOverride where T: core::clone::Clone
-pub type engine::ToolPolicyOverride::Owned = T
-pub fn engine::ToolPolicyOverride::clone_into(&self, &mut T)
-pub fn engine::ToolPolicyOverride::to_owned(&self) -> T
-impl<T> core::any::Any for engine::ToolPolicyOverride where T: 'static + ?core::marker::Sized
-pub fn engine::ToolPolicyOverride::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for engine::ToolPolicyOverride where T: ?core::marker::Sized
-pub fn engine::ToolPolicyOverride::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for engine::ToolPolicyOverride where T: ?core::marker::Sized
-pub fn engine::ToolPolicyOverride::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for engine::ToolPolicyOverride where T: core::clone::Clone
-pub unsafe fn engine::ToolPolicyOverride::clone_to_uninit(&self, *mut u8)
-impl<T> core::convert::From<T> for engine::ToolPolicyOverride
-pub fn engine::ToolPolicyOverride::from(T) -> T
-impl<T> serde_core::de::DeserializeOwned for engine::ToolPolicyOverride where T: for<'de> serde_core::de::Deserialize<'de>
-pub struct engine::ToolRef
-pub engine::ToolRef::name: alloc::string::String
-pub engine::ToolRef::tier: core::option::Option<engine::ToolTier>
-impl core::clone::Clone for engine::ToolRef
-pub fn engine::ToolRef::clone(&self) -> engine::ToolRef
-impl core::cmp::Eq for engine::ToolRef
-impl core::cmp::PartialEq for engine::ToolRef
-pub fn engine::ToolRef::eq(&self, &engine::ToolRef) -> bool
-impl core::fmt::Debug for engine::ToolRef
-pub fn engine::ToolRef::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for engine::ToolRef
-impl serde_core::ser::Serialize for engine::ToolRef
-pub fn engine::ToolRef::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for engine::ToolRef
-pub fn engine::ToolRef::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for engine::ToolRef
-impl core::marker::Send for engine::ToolRef
-impl core::marker::Sync for engine::ToolRef
-impl core::marker::Unpin for engine::ToolRef
-impl core::marker::UnsafeUnpin for engine::ToolRef
-impl core::panic::unwind_safe::RefUnwindSafe for engine::ToolRef
-impl core::panic::unwind_safe::UnwindSafe for engine::ToolRef
-impl<T, U> core::convert::Into<U> for engine::ToolRef where U: core::convert::From<T>
-pub fn engine::ToolRef::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for engine::ToolRef where U: core::convert::Into<T>
-pub type engine::ToolRef::Error = core::convert::Infallible
-pub fn engine::ToolRef::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for engine::ToolRef where U: core::convert::TryFrom<T>
-pub type engine::ToolRef::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn engine::ToolRef::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for engine::ToolRef where T: core::clone::Clone
-pub type engine::ToolRef::Owned = T
-pub fn engine::ToolRef::clone_into(&self, &mut T)
-pub fn engine::ToolRef::to_owned(&self) -> T
-impl<T> core::any::Any for engine::ToolRef where T: 'static + ?core::marker::Sized
-pub fn engine::ToolRef::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for engine::ToolRef where T: ?core::marker::Sized
-pub fn engine::ToolRef::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for engine::ToolRef where T: ?core::marker::Sized
-pub fn engine::ToolRef::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for engine::ToolRef where T: core::clone::Clone
-pub unsafe fn engine::ToolRef::clone_to_uninit(&self, *mut u8)
-impl<T> core::convert::From<T> for engine::ToolRef
-pub fn engine::ToolRef::from(T) -> T
-impl<T> serde_core::de::DeserializeOwned for engine::ToolRef where T: for<'de> serde_core::de::Deserialize<'de>
 pub struct engine::ToolResult
 pub engine::ToolResult::artifact_ids: alloc::vec::Vec<alloc::string::String>
 pub engine::ToolResult::content: alloc::string::String
@@ -9442,6 +9184,47 @@ pub unsafe fn engine::ToolTruncation::clone_to_uninit(&self, *mut u8)
 impl<T> core::convert::From<T> for engine::ToolTruncation
 pub fn engine::ToolTruncation::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::ToolTruncation where T: for<'de> serde_core::de::Deserialize<'de>
+pub struct engine::UsageReport
+pub engine::UsageReport::completion_tokens: u32
+pub engine::UsageReport::prompt_tokens: u32
+pub engine::UsageReport::total_tokens: u32
+impl core::clone::Clone for engine::ports::outbound::UsageReport
+pub fn engine::ports::outbound::UsageReport::clone(&self) -> engine::ports::outbound::UsageReport
+impl core::cmp::Eq for engine::ports::outbound::UsageReport
+impl core::cmp::PartialEq for engine::ports::outbound::UsageReport
+pub fn engine::ports::outbound::UsageReport::eq(&self, &engine::ports::outbound::UsageReport) -> bool
+impl core::fmt::Debug for engine::ports::outbound::UsageReport
+pub fn engine::ports::outbound::UsageReport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::ports::outbound::UsageReport
+impl core::marker::Freeze for engine::ports::outbound::UsageReport
+impl core::marker::Send for engine::ports::outbound::UsageReport
+impl core::marker::Sync for engine::ports::outbound::UsageReport
+impl core::marker::Unpin for engine::ports::outbound::UsageReport
+impl core::marker::UnsafeUnpin for engine::ports::outbound::UsageReport
+impl core::panic::unwind_safe::RefUnwindSafe for engine::ports::outbound::UsageReport
+impl core::panic::unwind_safe::UnwindSafe for engine::ports::outbound::UsageReport
+impl<T, U> core::convert::Into<U> for engine::ports::outbound::UsageReport where U: core::convert::From<T>
+pub fn engine::ports::outbound::UsageReport::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::ports::outbound::UsageReport where U: core::convert::Into<T>
+pub type engine::ports::outbound::UsageReport::Error = core::convert::Infallible
+pub fn engine::ports::outbound::UsageReport::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::ports::outbound::UsageReport where U: core::convert::TryFrom<T>
+pub type engine::ports::outbound::UsageReport::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::ports::outbound::UsageReport::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::ports::outbound::UsageReport where T: core::clone::Clone
+pub type engine::ports::outbound::UsageReport::Owned = T
+pub fn engine::ports::outbound::UsageReport::clone_into(&self, &mut T)
+pub fn engine::ports::outbound::UsageReport::to_owned(&self) -> T
+impl<T> core::any::Any for engine::ports::outbound::UsageReport where T: 'static + ?core::marker::Sized
+pub fn engine::ports::outbound::UsageReport::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::ports::outbound::UsageReport where T: ?core::marker::Sized
+pub fn engine::ports::outbound::UsageReport::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::ports::outbound::UsageReport where T: ?core::marker::Sized
+pub fn engine::ports::outbound::UsageReport::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::ports::outbound::UsageReport where T: core::clone::Clone
+pub unsafe fn engine::ports::outbound::UsageReport::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::ports::outbound::UsageReport
+pub fn engine::ports::outbound::UsageReport::from(T) -> T
 pub struct engine::Workflow
 pub engine::Workflow::edges: alloc::vec::Vec<engine::graph::workflow::Edge>
 pub engine::Workflow::id: engine::graph::workflow::WorkflowId
@@ -9638,6 +9421,8 @@ pub fn engine::graph::workflow::WorkflowSchedule::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::graph::workflow::WorkflowSchedule where T: for<'de> serde_core::de::Deserialize<'de>
 pub struct engine::WorkflowSettings
 pub engine::WorkflowSettings::provider_id: core::option::Option<alloc::string::String>
+pub engine::WorkflowSettings::reasoning_budget_tokens: core::option::Option<u32>
+pub engine::WorkflowSettings::reasoning_effort: core::option::Option<alloc::string::String>
 pub engine::WorkflowSettings::retry_policy: engine::graph::workflow::RetryPolicy
 pub engine::WorkflowSettings::schedule: core::option::Option<engine::graph::workflow::WorkflowSchedule>
 pub engine::WorkflowSettings::shared_context: alloc::string::String
@@ -9722,19 +9507,21 @@ pub fn engine::build_predefined_subagent_summaries(&engine::graph::workflow::Nod
 pub fn engine::build_system_messages(&engine::graph::workflow::Workflow, &engine::graph::workflow::Node) -> alloc::vec::Vec<alloc::string::String>
 pub fn engine::build_upstream_map(&engine::graph::workflow::Workflow) -> std::collections::hash::map::HashMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::graph::workflow::NodeId>>
 pub fn engine::collect_checkpoint_node_ids(&engine::InteractiveEngineCheckpoint) -> alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
+pub fn engine::default_context_window_sizes() -> alloc::collections::btree::map::BTreeMap<alloc::string::String, u32>
+pub fn engine::default_structured_output_schema() -> serde_json::value::Value
 pub fn engine::default_templates() -> alloc::vec::Vec<engine::template::Template>
+pub fn engine::effective_output_schema(&serde_json::value::Value) -> serde_json::value::Value
 pub fn engine::emit_assistant_deltas_from_outcome(&dyn engine::ports::outbound::AiStreamSink, &engine::ports::outbound::AgentTurnOutcome)
 pub fn engine::execution_layers(&engine::graph::workflow::Workflow) -> core::result::Result<alloc::vec::Vec<alloc::vec::Vec<engine::graph::workflow::NodeId>>, engine::graph::validation::WorkflowValidationError>
 pub fn engine::filter_tool_turn_assistant_message(core::option::Option<alloc::string::String>) -> core::option::Option<alloc::string::String>
 pub fn engine::handle_declare_subagents(&engine::graph::workflow::NodeId, &engine::ToolCall, &mut alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::SubagentSummary>) -> engine::execution::subagent_runtime::DeclareSubagentsOutcome
 pub fn engine::is_clarifying_question(&str) -> bool
-pub fn engine::is_critical_bash_command(&str) -> bool
 pub fn engine::is_redundant_tool_call_markup(&str) -> bool
 pub fn engine::is_subagent_runtime_builtin(&str) -> bool
+pub fn engine::lookup_context_window_size(&alloc::collections::btree::map::BTreeMap<alloc::string::String, u32>, &str) -> core::option::Option<u32>
 pub fn engine::merge_shared_context(&engine::graph::workflow::Workflow, &str) -> alloc::string::String
 pub fn engine::merge_subagent_summaries(&mut alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::SubagentSummary>, &[engine::SubagentSummary])
-pub fn engine::override_policy_for_call(&engine::NodeToolConfig, &str) -> core::option::Option<engine::ToolPolicy>
-pub const fn engine::requires_approval(engine::ApprovalMode, engine::ToolTier, core::option::Option<engine::ToolPolicy>) -> engine::ToolDecision
+pub const fn engine::requires_approval(engine::ApprovalMode, engine::ToolTier) -> engine::ToolDecision
 pub fn engine::resolve_callable_agent_snapshots(&engine::graph::workflow::Workflow, &[engine::graph::callable_agent::CallableAgent]) -> alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::graph::callable_agent::CallableAgent>
 pub fn engine::start_subagent_invoke(&engine::graph::workflow::Workflow, &engine::graph::workflow::NodeId, &engine::ToolCall, &mut alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::SubagentSummary>, &alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::graph::callable_agent::CallableAgent>, alloc::vec::Vec<engine::ToolDefinition>) -> engine::execution::subagent_runtime::SubagentStartOutcome
 pub fn engine::strip_tool_call_markup(&str) -> alloc::string::String

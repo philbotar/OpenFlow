@@ -510,6 +510,7 @@ mod tests {
                     name: "read".to_string(),
                     arguments: json!({"path": "README.md"}),
                 }],
+                usage: None,
             })
         );
     }
@@ -539,6 +540,7 @@ mod tests {
                 output: json!({"summary": "done without tool call"}),
                 raw_text: "{\"summary\":\"done without tool call\"}".to_string(),
                 assistant_message: None,
+                usage: None,
             })
         );
     }

@@ -21,6 +21,7 @@ import type {
 	TerminalEvent,
 	TerminalStart,
 	ScheduleStatus,
+	RunSummary,
 } from "./lib/types";
 
 export type RunStateListener = (runState: WorkflowRunState) => void;
@@ -94,6 +95,13 @@ export interface UiDesktopOutboundPort {
 		transientApiKey?: string | null,
 	) => Promise<WorkflowRunState>;
 	isRunContinuable: () => Promise<boolean>;
+	listRuns: (workflowId?: string | null) => Promise<RunSummary[]>;
+	replayRun: (runId: string) => Promise<WorkflowRunState>;
+	resumeDurableRun: (
+		runId: string,
+		settings: AppSettings,
+		transientApiKey?: string | null,
+	) => Promise<WorkflowRunState>;
 	interruptNode: (nodeId: string) => Promise<WorkflowRunState>;
 	retryNode: (nodeId: string) => Promise<WorkflowRunState>;
 	previewFileEdit: (
@@ -163,6 +171,9 @@ export function createUiDesktopOutboundAdapter(): UiDesktopOutboundPort {
 		stopRun: desktopApi.stopRun,
 		continueRun: desktopApi.continueRun,
 		isRunContinuable: desktopApi.isRunContinuable,
+		listRuns: desktopApi.listRuns,
+		replayRun: desktopApi.replayRun,
+		resumeDurableRun: desktopApi.resumeDurableRun,
 		interruptNode: desktopApi.interruptNode,
 		retryNode: desktopApi.retryNode,
 		previewFileEdit: desktopApi.previewFileEdit,

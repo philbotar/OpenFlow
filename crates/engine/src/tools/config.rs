@@ -4,13 +4,12 @@ use crate::graph::NodeId;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// Risk tier used to decide default approval behavior.
+/// Capability class used to decide default approval behavior.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ToolTier {
     Read,
     Write,
-    Exec,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -20,82 +19,37 @@ pub enum ToolConcurrency {
     Exclusive,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ToolPolicy {
-    Allow,
-    Prompt,
-    Deny,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ApprovalMode {
+    ReadOnly,
     AlwaysAsk,
     #[default]
     Write,
     Yolo,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ToolRef {
-    pub name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tier: Option<ToolTier>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ToolCatalogSelection {
-    #[serde(default = "default_tool_refs")]
-    pub tools: Vec<ToolRef>,
-}
-
-impl Default for ToolCatalogSelection {
-    fn default() -> Self {
-        Self {
-            tools: default_tool_refs(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ToolPolicyOverride {
-    pub tool_name: String,
-    pub policy: ToolPolicy,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub timeout_secs: Option<u64>,
-}
-
-/// Tool catalog and approval settings attached to an agent node.
+/// Tool approval settings attached to an agent node or saved agent.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NodeToolConfig {
-    #[serde(default)]
-    pub catalog: ToolCatalogSelection,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approval_mode: Option<ApprovalMode>,
-    #[serde(default)]
-    pub overrides: Vec<ToolPolicyOverride>,
 }
 
 impl NodeToolConfig {
     #[must_use]
     pub const fn is_enabled(&self) -> bool {
-        !self.catalog.tools.is_empty()
+        true
     }
-}
 
-fn default_tool_refs() -> Vec<ToolRef> {
-    ["read", "search", "find", "ast_grep"]
-        .into_iter()
-        .map(|name| ToolRef {
-            name: name.to_string(),
-            tier: Some(ToolTier::Read),
-        })
-        .collect()
+    #[must_use]
+    pub const fn effective_approval_mode(&self) -> ApprovalMode {
+        match self.approval_mode {
+            Some(mode) => mode,
+            None => ApprovalMode::Write,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -106,61 +60,29 @@ pub enum ToolDecision {
 }
 
 #[must_use]
-pub const fn requires_approval(
-    mode: ApprovalMode,
-    tier: ToolTier,
-    override_policy: Option<ToolPolicy>,
-) -> ToolDecision {
-    decision_from_policy_and_mode(override_policy, mode, tier)
+pub const fn requires_approval(mode: ApprovalMode, tier: ToolTier) -> ToolDecision {
+    decision_from_mode(mode, tier)
 }
 
-const fn decision_from_policy_and_mode(
-    override_policy: Option<ToolPolicy>,
-    mode: ApprovalMode,
-    tier: ToolTier,
-) -> ToolDecision {
-    if let Some(policy) = override_policy {
-        return match policy {
-            ToolPolicy::Allow => ToolDecision::AutoAllow,
-            ToolPolicy::Prompt => ToolDecision::Prompt,
-            ToolPolicy::Deny => ToolDecision::Deny,
-        };
-    }
-
+const fn decision_from_mode(mode: ApprovalMode, tier: ToolTier) -> ToolDecision {
     match mode {
-        ApprovalMode::Yolo => ToolDecision::AutoAllow,
+        ApprovalMode::Yolo | ApprovalMode::ReadOnly => ToolDecision::AutoAllow,
+        ApprovalMode::AlwaysAsk => ToolDecision::Prompt,
         ApprovalMode::Write => match tier {
             ToolTier::Read => ToolDecision::AutoAllow,
-            ToolTier::Write | ToolTier::Exec => ToolDecision::Prompt,
+            ToolTier::Write => ToolDecision::Prompt,
         },
-        ApprovalMode::AlwaysAsk => ToolDecision::Prompt,
     }
 }
 
 #[must_use]
-pub fn tool_tier_for_call(config: &NodeToolConfig, tool_name: &str) -> ToolTier {
-    config
-        .catalog
-        .tools
-        .iter()
-        .find(|tool| tool.name == tool_name)
-        .and_then(|tool| tool.tier)
-        .unwrap_or_else(|| default_tier_for_tool_name(tool_name))
-}
-
-#[must_use]
-pub fn override_policy_for_call(config: &NodeToolConfig, tool_name: &str) -> Option<ToolPolicy> {
-    config
-        .overrides
-        .iter()
-        .find(|entry| entry.tool_name == tool_name)
-        .map(|entry| entry.policy)
+pub fn tool_tier_for_call(_config: &NodeToolConfig, tool_name: &str) -> ToolTier {
+    default_tier_for_tool_name(tool_name)
 }
 
 fn default_tier_for_tool_name(tool_name: &str) -> ToolTier {
     match tool_name {
         "read" | "search" | "find" | "ast_grep" => ToolTier::Read,
-        "bash" => ToolTier::Exec,
         _ => ToolTier::Write,
     }
 }
@@ -181,17 +103,8 @@ pub fn tool_intent_from_arguments(arguments: &Value) -> Option<String> {
 
 #[must_use]
 pub fn tool_decision_for_call(config: &NodeToolConfig, call: &ToolCall) -> ToolDecision {
-    if call.name == "bash" {
-        if let Some(command) = call.arguments.get("command").and_then(Value::as_str) {
-            if super::bash_policy::is_critical_bash_command(command) {
-                return ToolDecision::Prompt;
-            }
-        }
-    }
     let tier = tool_tier_for_call(config, &call.name);
-    let override_policy = override_policy_for_call(config, &call.name);
-    let approval_mode = config.approval_mode.unwrap_or(ApprovalMode::Write);
-    decision_from_policy_and_mode(override_policy, approval_mode, tier)
+    decision_from_mode(config.effective_approval_mode(), tier)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -315,11 +228,11 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn node_tool_config_defaults_enable_retrieval_tools() {
+    fn node_tool_config_defaults_to_write_mode() {
         let config = NodeToolConfig::default();
         assert!(config.is_enabled());
         assert_eq!(config.approval_mode, None);
-        assert_eq!(config.catalog.tools, default_tool_refs());
+        assert_eq!(config.effective_approval_mode(), ApprovalMode::Write);
     }
 
     #[test]
@@ -332,74 +245,58 @@ mod tests {
     fn approval_mode_serializes_snake_case() {
         let value = serde_json::to_value(ApprovalMode::AlwaysAsk).unwrap();
         assert_eq!(value, json!("always_ask"));
+        let value = serde_json::to_value(ApprovalMode::ReadOnly).unwrap();
+        assert_eq!(value, json!("read_only"));
     }
 
     #[test]
-    fn requires_approval_honours_modes_tiers_and_overrides() {
-        for tier in [ToolTier::Read, ToolTier::Write, ToolTier::Exec] {
+    fn requires_approval_honours_modes_and_tiers() {
+        for tier in [ToolTier::Read, ToolTier::Write] {
             assert_eq!(
-                requires_approval(ApprovalMode::Yolo, tier, None),
+                requires_approval(ApprovalMode::Yolo, tier),
                 ToolDecision::AutoAllow
             );
             assert_eq!(
-                requires_approval(ApprovalMode::AlwaysAsk, tier, None),
-                ToolDecision::Prompt
-            );
-            assert_eq!(
-                requires_approval(ApprovalMode::Write, tier, Some(ToolPolicy::Allow)),
+                requires_approval(ApprovalMode::ReadOnly, tier),
                 ToolDecision::AutoAllow
             );
             assert_eq!(
-                requires_approval(ApprovalMode::Yolo, tier, Some(ToolPolicy::Prompt)),
+                requires_approval(ApprovalMode::AlwaysAsk, tier),
                 ToolDecision::Prompt
-            );
-            assert_eq!(
-                requires_approval(ApprovalMode::Yolo, tier, Some(ToolPolicy::Deny)),
-                ToolDecision::Deny
             );
         }
 
         assert_eq!(
-            requires_approval(ApprovalMode::Write, ToolTier::Read, None),
+            requires_approval(ApprovalMode::Write, ToolTier::Read),
             ToolDecision::AutoAllow
         );
         assert_eq!(
-            requires_approval(ApprovalMode::Write, ToolTier::Write, None),
-            ToolDecision::Prompt
-        );
-        assert_eq!(
-            requires_approval(ApprovalMode::Write, ToolTier::Exec, None),
+            requires_approval(ApprovalMode::Write, ToolTier::Write),
             ToolDecision::Prompt
         );
     }
 
     #[test]
-    fn tool_decision_for_call_prompts_on_critical_bash_even_in_yolo() {
+    fn tool_decision_for_call_never_prompts_in_yolo_even_for_bash() {
         let config = NodeToolConfig {
             approval_mode: Some(ApprovalMode::Yolo),
-            ..NodeToolConfig::default()
         };
         let call = ToolCall {
             id: "call-bash".to_string(),
             name: "bash".to_string(),
             arguments: json!({"command": "rm -rf /"}),
         };
-        assert_eq!(tool_decision_for_call(&config, &call), ToolDecision::Prompt);
+        assert_eq!(
+            tool_decision_for_call(&config, &call),
+            ToolDecision::AutoAllow
+        );
     }
 
     #[test]
-    fn tool_tier_falls_back_for_legacy_name_only_refs() {
-        let config = NodeToolConfig {
-            catalog: ToolCatalogSelection {
-                tools: vec![ToolRef {
-                    name: "read".to_string(),
-                    tier: None,
-                }],
-            },
-            ..NodeToolConfig::default()
-        };
-
+    fn tool_tier_uses_builtin_classification() {
+        let config = NodeToolConfig::default();
         assert_eq!(tool_tier_for_call(&config, "read"), ToolTier::Read);
+        assert_eq!(tool_tier_for_call(&config, "bash"), ToolTier::Write);
         assert_eq!(tool_tier_for_call(&config, "custom_write"), ToolTier::Write);
     }
 

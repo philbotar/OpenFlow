@@ -65,6 +65,7 @@ where
             lsp: crate::lsp::LspSettings::from_env(),
             pending_engine_reverts,
             node_interrupts,
+            context_window_sizes: BTreeMap::new(),
         },
         event_tx,
         action_rx,

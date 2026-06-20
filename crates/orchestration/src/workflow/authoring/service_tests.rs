@@ -19,6 +19,7 @@ impl AiPort for MockAuthoringAi {
             output: self.response.clone(),
             raw_text: self.response.to_string(),
             assistant_message: Some("Built draft".to_string()),
+            usage: None,
         }))
     }
 }
@@ -142,6 +143,7 @@ impl AiPort for ClarificationThenDraftAi {
                 output: self.draft_response.clone(),
                 raw_text: self.draft_response.to_string(),
                 assistant_message: Some("Built draft".to_string()),
+                usage: None,
             }))
         }
     }
@@ -234,6 +236,7 @@ impl AiPort for MalformedSubmitThenDraftAi {
             output: self.draft_response.clone(),
             raw_text: self.draft_response.to_string(),
             assistant_message: Some("Built draft".to_string()),
+            usage: None,
         }))
     }
 }

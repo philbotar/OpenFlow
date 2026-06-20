@@ -30,7 +30,8 @@ pub use adapters::infrastructure::lsp;
 pub use api::{ProjectFileReference, ProjectFileReferenceContent, ProjectFileReferenceKind};
 pub use engine::CallableAgent as AgentDefinition;
 pub use engine::{
-    CallableAgent, Node, RunTelemetry, Template, TemplateStore, TemplateStoreError, Workflow,
+    CallableAgent, Node, NodeId, NodeRunOutput, PendingToolApproval, RunReport, RunTelemetry,
+    Template, TemplateStore, TemplateStoreError, ToolCall, ToolTier, Workflow, WorkflowId,
 };
 pub use project::ports::Project;
 pub use settings::model::{AppSettings, SkillSummary};

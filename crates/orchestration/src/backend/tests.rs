@@ -142,10 +142,6 @@ fn create_agent_node_from_template_id_copies_agent_config() {
     agent.output_schema =
         serde_json::json!({ "type": "object", "properties": { "ok": { "type": "boolean" } } });
     agent.auto_start = false;
-    agent.tools.catalog.tools = vec![engine::ToolRef {
-        name: "search".to_string(),
-        tier: Some(engine::ToolTier::Read),
-    }];
     agent.tools.approval_mode = Some(engine::ApprovalMode::AlwaysAsk);
     backend
         .save_agents(std::slice::from_ref(&agent))
@@ -166,13 +162,6 @@ fn create_agent_node_from_template_id_copies_agent_config() {
         serde_json::json!({ "type": "object", "properties": { "ok": { "type": "boolean" } } })
     );
     assert!(!node.agent.auto_start);
-    assert_eq!(
-        node.agent.tools.catalog.tools,
-        vec![engine::ToolRef {
-            name: "search".to_string(),
-            tier: Some(engine::ToolTier::Read),
-        }]
-    );
     assert_eq!(
         node.agent.tools.approval_mode,
         Some(engine::ApprovalMode::AlwaysAsk)
@@ -657,7 +646,7 @@ fn submit_tool_approval_denied_forwards_reason() {
                 name: "bash".to_string(),
                 arguments: serde_json::json!({ "command": "echo hi" }),
             },
-            tier: engine::ToolTier::Exec,
+            tier: engine::ToolTier::Write,
         }];
         backend
             .runs
