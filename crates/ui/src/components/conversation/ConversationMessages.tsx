@@ -75,51 +75,8 @@ export function ConversationMessages() {
                 ctx.chatFilterNodeId() === null && ctx.pickedLiveNodeId() === null,
             }}
             onClick={() => {
-              // #region agent log
-              fetch("http://127.0.0.1:7783/ingest/0e0e1702-4b61-4c5c-957b-2a23a4d7c862", {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  "X-Debug-Session-Id": "484108",
-                },
-                body: JSON.stringify({
-                  sessionId: "484108",
-                  location: "ConversationMessages.tsx:AllChip",
-                  message: "All chip clicked",
-                  data: {
-                    chatFilterBefore: ctx.chatFilterNodeId(),
-                    pickedLiveBefore: ctx.pickedLiveNodeId(),
-                    liveCount: ctx.chatLayout().live.length,
-                    settledCount: ctx.chatLayout().settled.length,
-                  },
-                  timestamp: Date.now(),
-                  hypothesisId: "A",
-                }),
-              }).catch(() => {});
-              // #endregion
               ctx.setChatFilterNodeId(null);
-              // #region agent log
-              fetch("http://127.0.0.1:7783/ingest/0e0e1702-4b61-4c5c-957b-2a23a4d7c862", {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  "X-Debug-Session-Id": "484108",
-                },
-                body: JSON.stringify({
-                  sessionId: "484108",
-                  location: "ConversationMessages.tsx:AllChipAfter",
-                  message: "All chip after setChatFilterNodeId(null)",
-                  data: {
-                    chatFilterAfter: ctx.chatFilterNodeId(),
-                    pickedLiveAfter: ctx.pickedLiveNodeId(),
-                    liveCount: ctx.chatLayout().live.length,
-                    settledCount: ctx.chatLayout().settled.length,
-                  },
-                  timestamp: Date.now(),
-                  hypothesisId: "A",
-                }),
-              }).catch(() => {});
-              // #endregion
+              ctx.setPickedLiveNodeId(null);
             }}
           >
             All
@@ -140,28 +97,6 @@ export function ConversationMessages() {
                 }}
                 onClick={() => {
                   const isLive = liveNodeIds().has(segment.nodeId);
-                  // #region agent log
-                  fetch("http://127.0.0.1:7783/ingest/0e0e1702-4b61-4c5c-957b-2a23a4d7c862", {
-                    method: "POST",
-                    headers: {
-                      "Content-Type": "application/json",
-                      "X-Debug-Session-Id": "484108",
-                    },
-                    body: JSON.stringify({
-                      sessionId: "484108",
-                      location: "ConversationMessages.tsx:NodeChip",
-                      message: "Node chip clicked",
-                      data: {
-                        nodeId: segment.nodeId,
-                        isLive,
-                        chatFilterBefore: ctx.chatFilterNodeId(),
-                        pickedLiveBefore: ctx.pickedLiveNodeId(),
-                      },
-                      timestamp: Date.now(),
-                      hypothesisId: isLive ? "A" : "D",
-                    }),
-                  }).catch(() => {});
-                  // #endregion
                   if (isLive) {
                     ctx.setPickedLiveNodeId(segment.nodeId);
                     ctx.setChatFilterNodeId(null);

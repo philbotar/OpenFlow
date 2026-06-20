@@ -2,16 +2,13 @@ import { Match, Show, Switch } from "solid-js";
 import { Toaster } from "solid-sonner";
 import { AppProvider } from "./context/AppProvider";
 import { useAppContext } from "./context/AppContext";
-import { WorkflowPickerModal } from "./components/WorkflowPickerModal";
-import { ShortcutsModal } from "./components/ShortcutsModal";
-import { Sidebar } from "./components/sidebar";
-import { AppHeader } from "./components/AppHeader";
+import { AppHeader, ShortcutsModal, Sidebar, WorkflowPickerModal } from "@/components";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { AgentsScreen } from "./screens/AgentsScreen";
 import { EditorScreen } from "./screens/EditorScreen";
 import { WorkflowAuthoringScreen } from "./screens/WorkflowAuthoringScreen";
 import { ScheduleScreen } from "./screens/ScheduleScreen";
-import { BANNER_DISMISS_MS } from "./lib/utils";
+import { BANNER_DISMISS_MS } from "@/lib/utils";
 
 function ScreenRouter() {
   const ctx = useAppContext();

@@ -5,10 +5,10 @@ import Plus from "lucide-solid/icons/plus";
 import TerminalSquare from "lucide-solid/icons/terminal";
 import X from "lucide-solid/icons/x";
 import { createEffect, For, onCleanup, onMount, Show } from "solid-js";
-import { PanelEmptyState } from "../components/PanelEmptyState";
+import { PanelEmptyState } from "@/components";
 import { useAppContext } from "../context/AppContext";
-import { readTerminalThemeColors } from "../lib/theme";
-import { ICON_STROKE_WIDTH } from "../lib/utils";
+import { readTerminalThemeColors } from "@/lib/theme";
+import { ICON_STROKE_WIDTH } from "@/lib/utils";
 
 const DEFAULT_COLS = 80;
 const DEFAULT_ROWS = 24;

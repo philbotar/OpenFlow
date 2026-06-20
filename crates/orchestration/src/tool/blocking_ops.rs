@@ -272,9 +272,8 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let cwd = dir.path().to_path_buf();
         fs::write(cwd.join("findme.txt"), "needle\n").expect("seed file");
-        let snapshots = Arc::new(
-            crate::tools::edit::hashline::snapshots::InMemorySnapshotStore::new(),
-        );
+        let snapshots =
+            Arc::new(crate::tools::edit::hashline::snapshots::InMemorySnapshotStore::new());
         let outcome = BlockingToolOps::run_blocking(
             cwd,
             snapshots,

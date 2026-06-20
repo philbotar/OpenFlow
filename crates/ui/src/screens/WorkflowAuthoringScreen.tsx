@@ -1,12 +1,14 @@
 import { For, Show } from "solid-js";
 import Sparkles from "lucide-solid/icons/sparkles";
 import { useAppContext } from "../context/AppContext";
-import { Message } from "../components/conversation/Message";
-import { ThinkingBubble } from "../components/conversation/ThinkingBubble";
-import { PanelEmptyState } from "../components/PanelEmptyState";
-import { AuthoringComposer } from "../components/workflowAuthoring/AuthoringComposer";
-import { AuthoringDraftPreview } from "../components/workflowAuthoring/AuthoringDraftPreview";
-import { AuthoringValidationBanner } from "../components/workflowAuthoring/AuthoringValidationBanner";
+import {
+  AuthoringComposer,
+  AuthoringDraftPreview,
+  AuthoringValidationBanner,
+  Message,
+  PanelEmptyState,
+  ThinkingBubble,
+} from "@/components";
 
 export function WorkflowAuthoringScreen() {
   const ctx = useAppContext();

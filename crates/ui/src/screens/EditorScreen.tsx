@@ -1,11 +1,11 @@
 import { Show } from "solid-js";
 import { useAppContext } from "../context/AppContext";
-import { NodePickerModal } from "../components/NodePickerModal";
+import { NodePickerModal } from "@/components";
 import { InspectorPanel } from "../panels/InspectorPanel";
 import { WorkflowSettingsPanel } from "../panels/WorkflowSettingsPanel";
 import { DockPanel } from "../panels/DockPanel";
 import WorkflowCanvasHost from "../canvas/WorkflowCanvasHost";
-import { COLLAPSED_DOCK_HEIGHT } from "../lib/utils";
+import { COLLAPSED_DOCK_HEIGHT } from "@/lib/utils";
 
 export function EditorScreen() {
   const ctx = useAppContext();

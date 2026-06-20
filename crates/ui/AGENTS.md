@@ -29,13 +29,32 @@ App.tsx (shell)
 | Layer | Role |
 | --- | --- |
 | `port.ts` + `api.ts` | Desktop seam — swap backend in tests |
-| `lib/types.ts` | DTO mirror of orchestration IPC payloads |
+| `lib/types/` | DTO mirror of orchestration IPC payloads |
 | `context/` | App-wide state, run event subscription |
 | `screens/` | Full-page routes |
 | `components/` | Reusable UI; conversation, sidebar primitives |
 | `panels/` | Editor chrome (inspector, settings, dock) |
 | `canvas/` | Graph layout and interaction |
 | `lib/` | Pure helpers (workflow utils, file refs, theme) |
+
+### Folder layout (`components/` and `lib/`)
+
+**Root rule:** `components/` and `lib/` contain **only subdirectories + one root `index.ts` barrel**. No loose source files at those roots.
+
+**Single-component folder:**
+
+```text
+AppHeader/
+  AppHeader.tsx
+  AppHeader.test.tsx   # when present
+  index.ts             # export * from "./AppHeader";
+```
+
+**Domain folder** (e.g. `conversation/`): multiple related files are fine; expose public API via domain `index.ts`.
+
+**Imports:** prefer `@/components` or `@/lib` for new code; relative paths like `../components/AppHeader` keep working via directory resolution.
+
+**Mechanical moves:** `./scripts/ui-move-module.sh crates/ui/src/components AppHeader` and `./scripts/ui-move-lib-module.sh workflow`.
 
 ## Dependency rules
 
@@ -50,7 +69,7 @@ UI never calls `engine` or `orchestration` — always `invoke` through the port.
 
 ## Code standards
 
-1. **Seam-first** — new backend capability → extend `port.ts`, implement in `api.ts`, add types in `lib/types.ts`.
+1. **Seam-first** — new backend capability → extend `port.ts`, implement in `api.ts`, add types in `lib/types/`.
 2. **No domain logic** — validation summaries and run semantics come from backend; UI displays and submits.
 3. **Sidebar primitives** — use `SidebarNavButton`, `SidebarList`, `SidebarListRow` for consistent lists.
 4. **Inspector visibility** — hide when no node selected; toggle `WorkflowSettingsPanel` vs `InspectorPanel` by editor mode.
@@ -63,7 +82,7 @@ UI never calls `engine` or `orchestration` — always `invoke` through the port.
 
 | Change | Location |
 | --- | --- |
-| New backend call | `port.ts` → `api.ts` → `lib/types.ts` → consumer |
+| New backend call | `port.ts` → `api.ts` → `lib/types/` → consumer |
 | Editor layout / dock | `screens/EditorScreen.tsx`, `panels/DockPanel.tsx` |
 | Run conversation UI | `components/conversation/` |
 | Workflow canvas | `canvas/` |
@@ -106,7 +125,7 @@ Or full gate: `./scripts/verify.sh ui-typecheck ui-test`
 ## Change checklist
 
 1. Tauri imports only in `api.ts` / `port.ts`?
-2. Types updated in `lib/types.ts` for new IPC fields?
+2. Types updated in `lib/types/` for new IPC fields?
 3. Port interface extended before component work?
 4. Tests mock `UiDesktopOutboundPort`, not Tauri directly?
 5. Run `./scripts/verify.sh ui-typecheck ui-test`.

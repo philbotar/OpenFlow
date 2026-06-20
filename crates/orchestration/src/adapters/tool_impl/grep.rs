@@ -238,6 +238,12 @@ fn resolve_search_targets(cwd: &Path, pattern: &str) -> Result<Vec<PathBuf>, Too
     })? {
         matches.push(entry.map_err(|error| ToolError::failed(format!("glob failed: {error}")))?);
     }
+    if matches.is_empty() && !pattern.contains(['*', '?', '[', '{']) {
+        return Err(ToolError::NotFound {
+            what: pattern.to_string(),
+            hint: "check path is relative to the execution folder".to_string(),
+        });
+    }
     Ok(matches)
 }
 
@@ -347,5 +353,16 @@ mod tests {
         let error =
             search_at(&cwd, serde_json::json!({"pattern": "  ", "paths": "."})).unwrap_err();
         assert!(error.to_string().contains("must not be empty"));
+    }
+
+    #[test]
+    fn missing_literal_path_errors() {
+        let (_dir, cwd) = fixture();
+        let error = search_at(
+            &cwd,
+            serde_json::json!({"pattern": "needle", "paths": "missing.txt"}),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("[not_found]"));
     }
 }

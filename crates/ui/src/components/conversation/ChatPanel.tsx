@@ -24,6 +24,16 @@ export function ChatPanel() {
     return ctx.runHistory().find((run) => run.runId === runId) ?? null;
   });
 
+  const showParallelLiveHint = createMemo(
+    () =>
+      ctx.replayRunId() === null &&
+      ctx.chatFilterNodeId() === null &&
+      ctx.pickedLiveNodeId() === null &&
+      ctx.chatLayout().live.length > 1,
+  );
+
+  const parallelLiveCount = createMemo(() => ctx.chatLayout().live.length);
+
   return (
     <div class="chat-layout">
       <Show when={inReplayMode()}>
@@ -45,6 +55,14 @@ export function ChatPanel() {
         </div>
       </Show>
       <ConversationMessages />
+      <Show when={showParallelLiveHint()}>
+        <div class="chat-parallel-hint" role="status" aria-live="polite">
+          <span>
+            <strong>{parallelLiveCount()}</strong> agents are running in parallel.
+          </span>
+          <span>Select a node above to view and reply.</span>
+        </div>
+      </Show>
       <div class="chat-composer-bar">
         <Show when={inlineLiveSegment()}>
           {(segment) => <LiveSegmentFooter segment={segment()} />}

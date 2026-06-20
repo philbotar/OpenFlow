@@ -29,10 +29,7 @@ pub fn linear_workflow() -> Workflow {
         agent_node("step-b", "Step B"),
         agent_node("step-c", "Step C"),
     ];
-    workflow.edges = vec![
-        Edge::new("step-a", "step-b"),
-        Edge::new("step-b", "step-c"),
-    ];
+    workflow.edges = vec![Edge::new("step-a", "step-b"), Edge::new("step-b", "step-c")];
     workflow
 }
 

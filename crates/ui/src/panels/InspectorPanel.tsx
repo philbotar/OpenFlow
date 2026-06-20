@@ -8,12 +8,10 @@ import {
   defaultReasoningEffort,
   reasoningEffortOptions,
   workflowReasoningEffort,
-} from "../lib/workflow";
+} from "@/lib/workflow";
 import { CallableAgentsEditor } from "../forms/CallableAgentsEditor";
 import { ToolConfigEditor } from "../forms/ToolConfigEditor";
-import { AnimatedPanel } from "../components/AnimatedPanel";
-import { InspectorSection } from "../components/InspectorSection";
-import { SidebarIcon } from "../components/SidebarIcon";
+import { AnimatedPanel, InspectorSection, SidebarIcon } from "@/components";
 
 export function InspectorPanel() {
   const ctx = useAppContext();

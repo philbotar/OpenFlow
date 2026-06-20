@@ -2327,6 +2327,24 @@ label {
   color: var(--text-muted);
 }
 
+.chat-parallel-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.chat-parallel-hint strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
 .chat-replay-banner button {
   display: inline-flex;
   align-items: center;

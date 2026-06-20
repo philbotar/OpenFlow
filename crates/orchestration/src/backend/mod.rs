@@ -389,10 +389,7 @@ impl AppBackend {
             source_workflow_id,
         )?;
         let projects = self.projects.load()?;
-        Ok(crate::api::CopyWorkflowToProjectResult {
-            workflow,
-            projects,
-        })
+        Ok(crate::api::CopyWorkflowToProjectResult { workflow, projects })
     }
 
     pub fn unassign_workflow_from_project(

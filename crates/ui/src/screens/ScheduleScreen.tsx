@@ -1,10 +1,12 @@
 import { For, Show, createMemo, createSignal } from "solid-js";
-import type { Workflow } from "../lib/types";
-import { PanelEmptyState } from "../components/PanelEmptyState";
-import { TextSelect } from "../components/TextSelect";
-import { ScheduleTimePickerModal } from "../components/ScheduleTimePickerModal";
-import { ScheduleWorkflowPickerModal } from "../components/ScheduleWorkflowPickerModal";
-import { SidebarIcon } from "../components/SidebarIcon";
+import type { Workflow } from "@/lib/types";
+import {
+  PanelEmptyState,
+  ScheduleTimePickerModal,
+  ScheduleWorkflowPickerModal,
+  SidebarIcon,
+  TextSelect,
+} from "@/components";
 import { useAppContext } from "../context/AppContext";
 import {
   defaultWorkflowSchedule,
@@ -20,8 +22,8 @@ import {
   statusForWorkflow,
   workflowsAddableToSchedule,
   workflowsWithSchedules,
-} from "../lib/schedule";
-import type { IntervalUnit, ScheduleDraft, SchedulePreset } from "../lib/schedule";
+} from "@/lib/schedule";
+import type { IntervalUnit, ScheduleDraft, SchedulePreset } from "@/lib/schedule";
 
 function cloneDraft(draft: ScheduleDraft): ScheduleDraft {
   return { ...draft, weekdays: [...draft.weekdays] };

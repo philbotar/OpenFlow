@@ -2,10 +2,9 @@ import { For, Show } from "solid-js";
 import LayoutList from "lucide-solid/icons/layout-list";
 import Maximize2 from "lucide-solid/icons/maximize-2";
 import Minimize2 from "lucide-solid/icons/minimize-2";
-import { ChatPanel } from "../components/conversation";
-import { PanelEmptyState } from "../components/PanelEmptyState";
+import { ChatPanel, PanelEmptyState } from "@/components";
 import { useAppContext } from "../context/AppContext";
-import { prettyJson } from "../lib/workflow";
+import { prettyJson } from "@/lib/workflow";
 import { TerminalPanel } from "./TerminalPanel";
 import { RunHistoryPanel } from "./RunHistoryPanel";
 

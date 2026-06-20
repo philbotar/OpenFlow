@@ -111,11 +111,11 @@ impl IncidentRecorder {
         } else {
             match error {
                 AgentError::Transient(_) => ("ai.transient", IncidentSeverity::Error, true, None),
-                AgentError::Permanent(_) => {
-                    ("ai.permanent", IncidentSeverity::Error, false, None)
-                }
+                AgentError::Permanent(_) => ("ai.permanent", IncidentSeverity::Error, false, None),
                 AgentError::Failed(_) => ("ai.failed", IncidentSeverity::Error, false, None),
-                AgentError::Interrupted => ("ai.interrupted", IncidentSeverity::Warning, false, None),
+                AgentError::Interrupted => {
+                    ("ai.interrupted", IncidentSeverity::Warning, false, None)
+                }
             }
         };
         let record = build_record(NewIncidentRecord {

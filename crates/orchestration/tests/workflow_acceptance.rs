@@ -606,3 +606,90 @@ async fn failed_read_tool_feeds_error_and_node_completes() {
         "node should complete after tool error"
     );
 }
+
+/// Regression probe: `read` on a missing file yields `[not_found]`; `search` on a
+/// missing path should not silently succeed with "No matches found".
+#[tokio::test]
+async fn search_missing_path_surfaces_not_found_not_empty_success() {
+    #[derive(Clone, Default)]
+    struct SearchMissingAi {
+        calls: Arc<Mutex<usize>>,
+    }
+
+    #[async_trait]
+    impl AiPort for SearchMissingAi {
+        async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            let n = {
+                let mut calls = self.calls.lock();
+                *calls += 1;
+                *calls
+            };
+            if n == 1 {
+                return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+                    raw_text: String::new(),
+                    assistant_message: None,
+                    tool_calls: vec![ToolCall {
+                        id: "call-search".to_string(),
+                        name: "search".to_string(),
+                        arguments: json!({
+                            "pattern": "ORCHID-91",
+                            "paths": "missing-acceptance-target.txt"
+                        }),
+                    }],
+                    usage: None,
+                }));
+            }
+            let tool_result = request.transcript.iter().find_map(|item| match item {
+                engine::AgentTranscriptItem::ToolResult { result } => Some(result),
+                _ => None,
+            });
+            let Some(result) = tool_result else {
+                panic!("model should receive a search tool result on turn two");
+            };
+            assert!(
+                result.is_error,
+                "missing search path should surface a tool error, got success: {}",
+                result.content
+            );
+            assert!(
+                result.content.contains("[not_found]"),
+                "missing search path should use [not_found], got: {}",
+                result.content
+            );
+            assert!(
+                !result.content.contains("No matches found"),
+                "missing path must not masquerade as zero-match success: {}",
+                result.content
+            );
+            Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                output: json!({"summary": "ok after search path error"}),
+                raw_text: "{}".to_string(),
+                assistant_message: None,
+                usage: None,
+            }))
+        }
+    }
+
+    let temp = tempfile::tempdir().unwrap();
+    let mut workflow = Workflow::new("search missing path");
+    let mut node = agent("worker", "Worker");
+    node.agent.tools.approval_mode = Some(ApprovalMode::Yolo);
+    workflow.nodes = vec![node];
+
+    let snapshot = run_workflow_headless(
+        workflow,
+        None,
+        SearchMissingAi::default(),
+        vec![],
+        vec![],
+        BTreeMap::new(),
+        Some(temp.path().to_path_buf()),
+    )
+    .await
+    .expect("run should complete after surfacing search path error");
+
+    assert_eq!(
+        snapshot.outputs[&NodeId("worker".into())],
+        json!({"summary": "ok after search path error"})
+    );
+}

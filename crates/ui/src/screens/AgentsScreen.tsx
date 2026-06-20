@@ -1,9 +1,8 @@
 import { For, Show } from "solid-js";
-import { PanelEmptyState } from "../components/PanelEmptyState";
+import { PanelEmptyState, SidebarList, SidebarListRow, SidebarNavButton } from "@/components";
 import { useAppContext } from "../context/AppContext";
 import { AgentConfigForm } from "../forms/AgentConfigForm";
 import { ToolConfigEditor } from "../forms/ToolConfigEditor";
-import { SidebarList, SidebarListRow, SidebarNavButton } from "../components/sidebar";
 
 export function AgentsScreen() {
   const ctx = useAppContext();

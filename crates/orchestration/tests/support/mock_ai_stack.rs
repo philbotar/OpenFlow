@@ -132,20 +132,20 @@ impl MockAiStack {
                     usage: None,
                 }))
             }
-            MockTurn::ToolCalls { calls, assistant } => Ok(AgentTurnOutcome::ToolCalls(
-                AgentToolCallBatch {
+            MockTurn::ToolCalls { calls, assistant } => {
+                Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                     raw_text: String::new(),
                     assistant_message: assistant,
                     tool_calls: calls,
                     usage: None,
-                },
-            )),
-            MockTurn::NeedsUserInput { message } => Ok(AgentTurnOutcome::NeedsUserInput(
-                AgentNeedUserInput {
+                }))
+            }
+            MockTurn::NeedsUserInput { message } => {
+                Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
                     raw_text: "{}".to_string(),
                     assistant_message: message,
-                },
-            )),
+                }))
+            }
             MockTurn::Error(error) => Err(error),
         }
     }

@@ -723,10 +723,7 @@ fn copy_workflow_to_project(
     target_project_id: String,
     source_workflow_id: String,
 ) -> Result<orchestration::api::CopyWorkflowToProjectResult, CommandError> {
-    Ok(backend.copy_workflow_to_project(
-        &target_project_id,
-        &source_workflow_id,
-    )?)
+    Ok(backend.copy_workflow_to_project(&target_project_id, &source_workflow_id)?)
 }
 
 /// Tauri command: Remove a workflow from any project.

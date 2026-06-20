@@ -1,6 +1,6 @@
 import { createEffect, createMemo, For, Show } from "solid-js";
-import { TextSelect } from "../components/TextSelect";
-import type { ReasoningEffortOption } from "../lib/types";
+import { TextSelect } from "@/components";
+import type { ReasoningEffortOption } from "@/lib/types";
 
 export function AgentConfigForm(props: {
   model: string;

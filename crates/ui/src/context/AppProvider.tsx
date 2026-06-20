@@ -56,6 +56,7 @@ import {
   statusForNode,
   nodeOutput,
   prettyJson,
+  chatNavigationForNode,
   normalizeRunState,
   projectChatLayout,
   projectWorkflowCanvasGraph,
@@ -162,6 +163,13 @@ export function AppProvider(props: ParentProps) {
       return;
     }
     setRunStateStore("current", reconcile(normalized, { key: "id" }));
+  };
+  /** Full replace — use on workflow switch so reconcile does not merge across workflows. */
+  const applyRunStateSnapshot = (next: WorkflowRunState | null) => {
+    setRunStateStore(
+      "current",
+      next === null ? null : normalizeRunState(next),
+    );
   };
   const [runStateByWorkflowId, setRunStateByWorkflowId] = createStore<
     Record<string, WorkflowRunState>
@@ -380,31 +388,6 @@ export function AppProvider(props: ParentProps) {
   // group blocks again until the user picks.
   createEffect(() => {
     const picked = pickedLiveNodeId();
-    const filter = chatFilterNodeId();
-    const layout = chatLayout();
-    // #region agent log
-    fetch("http://127.0.0.1:7783/ingest/0e0e1702-4b61-4c5c-957b-2a23a4d7c862", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Debug-Session-Id": "484108",
-      },
-      body: JSON.stringify({
-        sessionId: "484108",
-        location: "AppProvider.tsx:pickedLiveEffect",
-        message: "Chat filter state changed",
-        data: {
-          pickedLiveNodeId: picked,
-          chatFilterNodeId: filter,
-          liveCount: layout.live.length,
-          settledCount: layout.settled.length,
-          liveNodeIds: layout.live.map((s) => s.nodeId),
-        },
-        timestamp: Date.now(),
-        hypothesisId: "B",
-      }),
-    }).catch(() => {});
-    // #endregion
     if (!picked) {
       return;
     }
@@ -772,6 +755,7 @@ export function AppProvider(props: ParentProps) {
     setChatFilterNodeId(null);
     setPickedLiveNodeId(null);
     setChatSegmentOrder([]);
+    setChatFocusNode(null);
   };
 
   const restoreRunStateForWorkflow = (workflow: Workflow) => {
@@ -780,10 +764,7 @@ export function AppProvider(props: ParentProps) {
     const cached = runStateByWorkflowId[workflowId];
 
     if (backendId === workflowId) {
-      setRunState(cached ?? createIdleRunState(workflow));
-      if (cached) {
-        return;
-      }
+      applyRunStateSnapshot(cached ?? createIdleRunState(workflow));
       void desktop
         .getRunState()
         .then((live) => {
@@ -791,20 +772,24 @@ export function AppProvider(props: ParentProps) {
             return;
           }
           cacheRunStateForWorkflow(workflowId, live);
-          setRunState(live);
+          applyRunStateSnapshot(live);
         })
         .catch(() => undefined);
       return;
     }
-    setRunState(cached ?? createIdleRunState(workflow));
+    applyRunStateSnapshot(cached ?? createIdleRunState(workflow));
   };
 
   const selectWorkflow = (workflow: Workflow) => {
     const previousId = activeWorkflowId();
     if (previousId && previousId !== workflow.id) {
-      const current = runState();
-      if (current) {
-        cacheRunStateForWorkflow(previousId, current);
+      const backendId = backendRunWorkflowId();
+      const toCache =
+        previousId === backendId
+          ? runStateByWorkflowId[previousId] ?? runState()
+          : runState();
+      if (toCache) {
+        cacheRunStateForWorkflow(previousId, toCache);
       }
     }
     setActiveWorkflowId(workflow.id);
@@ -1529,7 +1514,7 @@ export function AppProvider(props: ParentProps) {
       const replayState: WorkflowRunState = { ...replay, active: false };
       setReplayRunId(runId);
       cacheRunStateForWorkflow(workflow.id, replayState);
-      setRunState(replayState);
+      applyRunStateSnapshot(replayState);
       setContinuableRunBackend(false);
       setDockOpen(true);
       setBottomTab("chat");
@@ -1605,21 +1590,32 @@ export function AppProvider(props: ParentProps) {
   };
 
   const focusChatNode = (nodeId: NodeId) => {
-    if (chatFocusNode()?.nodeId === nodeId) {
-      return;
-    }
     chatFocusTick += 1;
     setChatFocusNode({ nodeId, tick: chatFocusTick });
   };
 
+  const navigateChatToNode = (nodeId: NodeId) => {
+    const nav = chatNavigationForNode(chatLayout(), nodeId);
+    if (nav?.mode === "live") {
+      setPickedLiveNodeId(nav.nodeId);
+      setChatFilterNodeId(null);
+    } else if (nav?.mode === "settled") {
+      setChatFilterNodeId(nav.nodeId);
+      setPickedLiveNodeId(null);
+    }
+    focusChatNode(nodeId);
+  };
+
   const handleSelectNode = (nodeId: NodeId | null) => {
-    const previousNodeId = selectedNodeId();
     setSelectedEdgeId(null);
     setSelectedNodeId(nodeId);
     setEditingNodeId(null);
     setNodeLabelDraft("");
-    if (nodeId && bottomTab() === "chat" && nodeId !== previousNodeId) {
-      focusChatNode(nodeId);
+    if (nodeId) {
+      setDockOpen(true);
+      setBottomTab("chat");
+      setDockHeight((current) => clampDockHeight(current, "chat"));
+      navigateChatToNode(nodeId);
     }
   };
 

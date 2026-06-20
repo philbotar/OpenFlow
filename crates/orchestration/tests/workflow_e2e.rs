@@ -83,7 +83,11 @@ async fn transient_then_success_auto_retries() {
         snapshot.outputs[&NodeId("first".into())],
         json!({"summary": "ok"})
     );
-    assert_eq!(ai.recorded_requests().len(), 3, "transient errors should re-invoke");
+    assert_eq!(
+        ai.recorded_requests().len(),
+        3,
+        "transient errors should re-invoke"
+    );
 }
 
 #[tokio::test]
@@ -186,9 +190,9 @@ async fn interrupt_during_slow_tool_emits_node_interrupted() {
                     token.cancel();
                 }
             }
-            orchestration::run::execution::ExecutionEvent::NodeInterrupted { node_id: id, .. }
-                if id == node_id =>
-            {
+            orchestration::run::execution::ExecutionEvent::NodeInterrupted {
+                node_id: id, ..
+            } if id == node_id => {
                 interrupted = true;
                 break;
             }

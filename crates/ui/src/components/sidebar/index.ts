@@ -1,5 +1,11 @@
 export { Sidebar } from "./AppSidebar";
-export { SidebarNavButton, type SidebarNavButtonProps } from "./SidebarNavButton";
-export { SidebarIconButton, type SidebarIconButtonProps } from "./SidebarIconButton";
-export { SidebarList, type SidebarListProps } from "./SidebarList";
-export { SidebarListRow, type SidebarListRowProps } from "./SidebarListRow";
+export { ProjectFolderRow } from "./ProjectFolderRow";
+export type { ProjectFolderRowProps } from "./ProjectFolderRow";
+export { SidebarNavButton } from "./SidebarNavButton";
+export type { SidebarNavButtonProps } from "./SidebarNavButton";
+export { SidebarIconButton } from "./SidebarIconButton";
+export type { SidebarIconButtonProps } from "./SidebarIconButton";
+export { SidebarList } from "./SidebarList";
+export type { SidebarListProps } from "./SidebarList";
+export { SidebarListRow } from "./SidebarListRow";
+export type { SidebarListRowProps } from "./SidebarListRow";

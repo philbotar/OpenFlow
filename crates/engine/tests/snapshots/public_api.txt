@@ -1168,6 +1168,10 @@ pub fn engine::execution::subagents::subagents_for_node(&engine::graph::workflow
 pub mod engine::execution::telemetry
 pub enum engine::execution::telemetry::RunTelemetry
 pub engine::execution::telemetry::RunTelemetry::Aborted
+pub engine::execution::telemetry::RunTelemetry::AiInvokeFailed
+pub engine::execution::telemetry::RunTelemetry::AiInvokeFailed::error: alloc::string::String
+pub engine::execution::telemetry::RunTelemetry::AiInvokeFailed::label: alloc::string::String
+pub engine::execution::telemetry::RunTelemetry::AiInvokeFailed::node_id: engine::graph::workflow::NodeId
 pub engine::execution::telemetry::RunTelemetry::ChatMessage
 pub engine::execution::telemetry::RunTelemetry::ChatMessage::content: alloc::string::String
 pub engine::execution::telemetry::RunTelemetry::ChatMessage::node_id: engine::graph::workflow::NodeId
@@ -1697,6 +1701,10 @@ pub fn engine::execution::artifacts::RunEventKind::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::execution::artifacts::RunEventKind where T: for<'de> serde_core::de::Deserialize<'de>
 pub enum engine::execution::RunTelemetry
 pub engine::execution::RunTelemetry::Aborted
+pub engine::execution::RunTelemetry::AiInvokeFailed
+pub engine::execution::RunTelemetry::AiInvokeFailed::error: alloc::string::String
+pub engine::execution::RunTelemetry::AiInvokeFailed::label: alloc::string::String
+pub engine::execution::RunTelemetry::AiInvokeFailed::node_id: engine::graph::workflow::NodeId
 pub engine::execution::RunTelemetry::ChatMessage
 pub engine::execution::RunTelemetry::ChatMessage::content: alloc::string::String
 pub engine::execution::RunTelemetry::ChatMessage::node_id: engine::graph::workflow::NodeId
@@ -6724,6 +6732,10 @@ pub fn engine::execution::artifacts::RunEventKind::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::execution::artifacts::RunEventKind where T: for<'de> serde_core::de::Deserialize<'de>
 pub enum engine::RunTelemetry
 pub engine::RunTelemetry::Aborted
+pub engine::RunTelemetry::AiInvokeFailed
+pub engine::RunTelemetry::AiInvokeFailed::error: alloc::string::String
+pub engine::RunTelemetry::AiInvokeFailed::label: alloc::string::String
+pub engine::RunTelemetry::AiInvokeFailed::node_id: engine::graph::workflow::NodeId
 pub engine::RunTelemetry::ChatMessage
 pub engine::RunTelemetry::ChatMessage::content: alloc::string::String
 pub engine::RunTelemetry::ChatMessage::node_id: engine::graph::workflow::NodeId

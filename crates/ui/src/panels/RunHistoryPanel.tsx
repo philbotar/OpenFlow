@@ -2,9 +2,9 @@ import { createEffect, For, Show } from "solid-js";
 import History from "lucide-solid/icons/history";
 import Play from "lucide-solid/icons/play";
 import RotateCcw from "lucide-solid/icons/rotate-ccw";
-import { PanelEmptyState } from "../components/PanelEmptyState";
+import { PanelEmptyState } from "@/components";
 import { useAppContext } from "../context/AppContext";
-import type { RunSummary } from "../lib/types";
+import type { RunSummary } from "@/lib/types";
 
 function formatRunTime(ms: number) {
   return new Date(ms).toLocaleString();

@@ -1,7 +1,7 @@
 use super::*;
 use crate::adapters::storage::incident_store::FileIncidentStore;
 use crate::adapters::storage::run_checkpoint_store::FileRunCheckpointStore;
-use crate::incident::{IncidentRecorder, IncidentScope};
+use crate::incident::{IncidentCategory, IncidentRecorder, IncidentScope};
 use crate::run::ports::RunCheckpointStore;
 use engine::NodeId;
 use std::fs;
@@ -210,4 +210,41 @@ async fn apply_execution_event_records_tool_failure_incident() {
         }
         scope => panic!("expected node scope, got {scope:?}"),
     }
+}
+
+#[tokio::test]
+async fn apply_execution_event_records_malformed_submit_output_incident() {
+    let dir = tempdir().expect("tempdir");
+    let store = Arc::new(FileIncidentStore::new(dir.path().join("incidents.jsonl")));
+    let incidents = Arc::new(IncidentRecorder::new(store));
+    let run_store = FileRunCheckpointStore;
+    let coordinator =
+        RunCoordinator::new_with_incidents(tokio::runtime::Handle::current(), incidents.clone());
+
+    let workflow = Workflow::new("wf-malformed-submit");
+    let mut run_state = WorkflowRunState::running_for_workflow(&workflow);
+    run_state.run_id = Some("run-malformed-submit-1".to_string());
+    let (action_tx, _action_rx) = tokio::sync::mpsc::unbounded_channel();
+    coordinator
+        .test_seed_session(workflow, run_state, action_tx)
+        .await;
+
+    coordinator
+        .apply_execution_event(
+            ExecutionEvent::AiInvokeFailed {
+                node_id: NodeId("node-arch".to_string()),
+                label: "Architecture Design".to_string(),
+                error: "OpenAI-compatible final output tool arguments were not valid JSON: missing field `output`"
+                    .to_string(),
+            },
+            &run_store,
+        )
+        .await
+        .expect("apply event");
+
+    let listed = incidents.list_unresolved(10).expect("list incidents");
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].code, "ai.malformed_submit_output");
+    assert_eq!(listed[0].category, IncidentCategory::AiInvoke);
+    assert!(listed[0].retryable);
 }

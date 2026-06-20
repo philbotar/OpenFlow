@@ -1,3 +1,5 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import solid from "vite-plugin-solid";
@@ -7,8 +9,14 @@ const SOLID_FILES = /\.react\.[jt]sx$/;
 
 // @ts-expect-error process is provided by the Node runtime
 const host = process.env.TAURI_DEV_HOST;
+const uiRoot = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      "@": path.resolve(uiRoot, "src"),
+    },
+  },
   plugins: [
     react({
       include: REACT_FILES,

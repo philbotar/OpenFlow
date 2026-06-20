@@ -94,10 +94,23 @@ vi.mock("@tauri-apps/api/window", () => ({
 }));
 
 vi.mock("../canvas/WorkflowCanvasHost", () => ({
-  default: (props: { onAddNode: () => void }) => (
-    <button aria-label="Canvas add node" onClick={() => props.onAddNode()}>
-      Canvas add node
-    </button>
+  default: (props: {
+    onAddNode: () => void;
+    onSelectNode?: (nodeId: string) => void;
+    graph?: { nodes: { id: string }[] } | null;
+  }) => (
+    <>
+      <button aria-label="Canvas add node" onClick={() => props.onAddNode()}>
+        Canvas add node
+      </button>
+      {props.graph?.nodes.map((node) => (
+        <button
+          type="button"
+          aria-label={`Select node ${node.id}`}
+          onClick={() => props.onSelectNode?.(node.id)}
+        />
+      ))}
+    </>
   ),
 }));
 
@@ -526,6 +539,17 @@ async function mountApp(payload: BootstrapPayload) {
   await waitForElement(() => container.querySelector(".workflow-row"), "workflow rows");
   await flush();
   return { container, dispose };
+}
+
+async function switchWorkflow(container: HTMLElement, name: string) {
+  const row = [...container.querySelectorAll(".workflow-row-main")].find(
+    (element) => element.querySelector(".workflow-row-title")?.textContent === name,
+  ) as HTMLButtonElement | undefined;
+  if (!row) {
+    throw new Error(`workflow row missing: ${name}`);
+  }
+  row.click();
+  await flush();
 }
 
 async function startWorkflowRename(container: HTMLElement, name: string) {
@@ -1486,6 +1510,11 @@ describe("Global chat layout", () => {
       expect(labels.some((text) => text.includes("Branch C"))).toBe(true);
       // No composer until the user picks a node to talk to.
       expect(container.querySelectorAll(".chat-composer-pill textarea").length).toBe(0);
+      const hint = container.querySelector(".chat-parallel-hint");
+      expect(hint).not.toBeNull();
+      expect(hint?.textContent).toContain("2");
+      expect(hint?.textContent).toContain("agents are running in parallel");
+      expect(hint?.textContent).toContain("Select a node above to view and reply");
     } finally {
       dispose();
     }
@@ -1505,6 +1534,7 @@ describe("Global chat layout", () => {
     await openChatTab(container);
 
     try {
+      expect(container.querySelector(".chat-parallel-hint")).not.toBeNull();
       const branchCChip = [...container.querySelectorAll(".chat-filter-chip")].find((chip) =>
         chip.textContent?.includes("Branch C"),
       );
@@ -1512,6 +1542,7 @@ describe("Global chat layout", () => {
       branchCChip!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       await flush();
 
+      expect(container.querySelector(".chat-parallel-hint")).toBeNull();
       const textarea = await waitForElement(
         () =>
           container.querySelector(
@@ -1533,6 +1564,32 @@ describe("Global chat layout", () => {
         chip.textContent?.includes("Branch B"),
       );
       expect(remaining.length).toBe(1);
+    } finally {
+      dispose();
+    }
+  });
+
+  test("hides parallel live hint when filtering to a settled node chip", async () => {
+    const workflow = makeParallelWorkflow();
+    const runState = makeParallelAwaitingRunState(workflow);
+    const { container, dispose } = await mountApp({
+      workflows: [workflow],
+      agents: [makeAgent("agent-1", "Research Agent")],
+      skills: FIXTURE_SKILLS,
+      settings: SETTINGS,
+      runState,
+    });
+    await openChatTab(container);
+
+    try {
+      expect(container.querySelector(".chat-parallel-hint")).not.toBeNull();
+      const planChip = [...container.querySelectorAll(".chat-filter-chip")].find((chip) =>
+        chip.textContent?.includes("Plan"),
+      );
+      expect(planChip).not.toBeUndefined();
+      planChip!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await flush();
+      expect(container.querySelector(".chat-parallel-hint")).toBeNull();
     } finally {
       dispose();
     }
@@ -1719,6 +1776,58 @@ describe("Global chat layout", () => {
       (chips[0] as HTMLButtonElement).click();
       await flush();
       expect(container.querySelectorAll(".chat-segment").length).toBe(2);
+    } finally {
+      dispose();
+    }
+  });
+
+  test("restores chat history after switching workflows", async () => {
+    const workflowA = makeWorkflow("workflow-1", "Workflow One");
+    workflowA.nodes.push({
+      id: "workflow-1-node-2",
+      label: "Second",
+      kind: "Agent",
+      position: { x: 320, y: 140 },
+      agent: workflowA.nodes[0].agent,
+    });
+    const workflowB = makeWorkflow("workflow-2", "Workflow Two");
+    const runState = makeAwaitingRunState(workflowA);
+    runState.active = false;
+    runState.awaitingNodeId = null;
+    runState.statusByNode = {
+      [workflowA.nodes[0].id]: "completed",
+      "workflow-1-node-2": "completed",
+    };
+    runState.chatLogs = {
+      [workflowA.nodes[0].id]: [{ role: "Assistant", content: "first" }],
+      "workflow-1-node-2": [{ role: "Assistant", content: "second" }],
+    };
+    const { container, dispose } = await mountApp({
+      ...makeBootstrapPayload([workflowA, workflowB]),
+      runState,
+    });
+
+    try {
+      await switchWorkflow(container, "Workflow Two");
+      expect(topbarTitle(container)).toBe("Workflow Two");
+      await switchWorkflow(container, "Workflow One");
+      expect(topbarTitle(container)).toBe("Workflow One");
+      await openChatTab(container);
+
+      expect(container.querySelector(".conversation-empty-state")).toBeNull();
+      expect(container.querySelectorAll(".chat-segment").length).toBe(2);
+
+      const secondNodeButton = container.querySelector(
+        '[aria-label="Select node workflow-1-node-2"]',
+      ) as HTMLButtonElement | null;
+      expect(secondNodeButton).not.toBeNull();
+      secondNodeButton!.click();
+      await flush();
+
+      expect(container.querySelectorAll(".chat-segment").length).toBe(1);
+      expect(
+        container.querySelector('.chat-segment[data-node-id="workflow-1-node-2"]'),
+      ).not.toBeNull();
     } finally {
       dispose();
     }

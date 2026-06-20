@@ -1,6 +1,5 @@
 import { createMemo, Show } from "solid-js";
-import { AnimatedPanel } from "../components/AnimatedPanel";
-import { TextSelect } from "../components/TextSelect";
+import { AnimatedPanel, TextSelect } from "@/components";
 import { useAppContext } from "../context/AppContext";
 import {
   defaultReasoningBudgetTokens,
