@@ -1,7 +1,9 @@
 import { For, Show } from "solid-js";
+import Sparkles from "lucide-solid/icons/sparkles";
 import { useAppContext } from "../context/AppContext";
 import { Message } from "../components/conversation/Message";
 import { ThinkingBubble } from "../components/conversation/ThinkingBubble";
+import { PanelEmptyState } from "../components/PanelEmptyState";
 import { AuthoringComposer } from "../components/workflowAuthoring/AuthoringComposer";
 import { AuthoringDraftPreview } from "../components/workflowAuthoring/AuthoringDraftPreview";
 import { AuthoringValidationBanner } from "../components/workflowAuthoring/AuthoringValidationBanner";
@@ -29,12 +31,11 @@ export function WorkflowAuthoringScreen() {
             <Show
               when={ctx.workflowAuthoringMessages().length > 0}
               fallback={
-                <div class="conversation-empty">
-                  <p class="conversation-empty-title">Start with a goal</p>
-                  <p class="conversation-empty-description">
-                    Example: clarify an idea, run plan and risk in parallel, then write a brief.
-                  </p>
-                </div>
+                <PanelEmptyState
+                  icon={<Sparkles width={22} height={22} />}
+                  title="Start with a goal"
+                  description="Example: clarify an idea, run plan and risk in parallel, then write a brief."
+                />
               }
             >
               <For each={ctx.workflowAuthoringMessages()}>

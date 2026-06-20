@@ -378,6 +378,23 @@ impl AppBackend {
             .assign_to_project(&self.projects, project_id, workflow_id)
     }
 
+    pub fn copy_workflow_to_project(
+        &self,
+        target_project_id: &str,
+        source_workflow_id: &str,
+    ) -> Result<crate::api::CopyWorkflowToProjectResult, BackendError> {
+        let workflow = self.workflows.copy_to_project(
+            &self.projects,
+            target_project_id,
+            source_workflow_id,
+        )?;
+        let projects = self.projects.load()?;
+        Ok(crate::api::CopyWorkflowToProjectResult {
+            workflow,
+            projects,
+        })
+    }
+
     pub fn unassign_workflow_from_project(
         &self,
         project_id: &str,
@@ -677,6 +694,14 @@ impl AppBackend {
             .refresh(&workflows, now)
             .map_err(BackendError::Schedule)?;
         Ok(self.schedule.statuses())
+    }
+
+    pub fn tick_schedules_at(&self, now: DateTime<Utc>) {
+        self.schedule.tick_at(now);
+    }
+
+    pub fn tick_schedules(&self) {
+        self.tick_schedules_at(Utc::now());
     }
 
     #[must_use]

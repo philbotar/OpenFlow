@@ -1,7 +1,9 @@
 import { For, Show } from "solid-js";
+import LayoutList from "lucide-solid/icons/layout-list";
 import Maximize2 from "lucide-solid/icons/maximize-2";
 import Minimize2 from "lucide-solid/icons/minimize-2";
 import { ChatPanel } from "../components/conversation";
+import { PanelEmptyState } from "../components/PanelEmptyState";
 import { useAppContext } from "../context/AppContext";
 import { prettyJson } from "../lib/workflow";
 import { TerminalPanel } from "./TerminalPanel";
@@ -94,7 +96,13 @@ export function DockPanel() {
             <div class="overview-feed">
               <Show
                 when={(ctx.runState()?.runTrace?.length ?? 0) > 0}
-                fallback={<div class="empty-panel">No workflow runs yet.</div>}
+                fallback={
+                  <PanelEmptyState
+                    icon={<LayoutList width={22} height={22} />}
+                    title="No activity yet"
+                    description="Run the workflow to see node progress here."
+                  />
+                }
               >
                 <For each={ctx.runState()?.runTrace ?? []}>
                   {(entry) => (
@@ -176,7 +184,12 @@ function TracePanel() {
       <div class="trace-detail">
         <Show
           when={ctx.selectedTrace()}
-          fallback={<div class="empty-panel">Select a trace entry.</div>}
+          fallback={
+            <PanelEmptyState
+              title="Select a trace entry"
+              description="Choose an event from the list to inspect its output."
+            />
+          }
         >
           {(entry) => (
             <>

@@ -6,6 +6,15 @@
 //! hardcoded into business logic.
 
 use std::collections::BTreeMap;
+use std::sync::LazyLock;
+
+/// Bundled default context-window sizes, built once and shared.
+///
+/// [`default_context_window_sizes`] clones this for callers that need an owned
+/// map (profile seeding); [`lookup_context_window_size`] borrows it directly so
+/// the fallback path allocates nothing.
+static DEFAULT_CONTEXT_WINDOW_SIZES: LazyLock<BTreeMap<String, u32>> =
+    LazyLock::new(build_default_context_window_sizes);
 
 /// Bundled default context-window sizes for well-known models.
 ///
@@ -13,6 +22,10 @@ use std::collections::BTreeMap;
 /// overridden or extended by the user through settings.
 #[must_use]
 pub fn default_context_window_sizes() -> BTreeMap<String, u32> {
+    DEFAULT_CONTEXT_WINDOW_SIZES.clone()
+}
+
+fn build_default_context_window_sizes() -> BTreeMap<String, u32> {
     let mut m = BTreeMap::new();
 
     // ── OpenAI ──────────────────────────────────────────────────────────
@@ -85,12 +98,12 @@ pub fn lookup_context_window_size(
         }
     }
     // 3. Fallback to bundled defaults (exact)
-    let defaults = default_context_window_sizes();
+    let defaults = &*DEFAULT_CONTEXT_WINDOW_SIZES;
     if let Some(&size) = defaults.get(model) {
         return Some(size);
     }
     // 4. Case-insensitive fallback
-    for (key, &size) in &defaults {
+    for (key, &size) in defaults {
         if key.to_lowercase() == lower {
             return Some(size);
         }

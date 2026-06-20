@@ -37,6 +37,7 @@ const apiMocks = vi.hoisted(() => ({
   listenToTerminalEvent: vi.fn(),
   createProjectFromDirectory: vi.fn(),
   assignWorkflowToProject: vi.fn(),
+  copyWorkflowToProject: vi.fn(),
   unassignWorkflowFromProject: vi.fn(),
 }));
 
@@ -75,6 +76,7 @@ vi.mock("../api", async (importOriginal) => {
     validateWorkflow: apiMocks.validateWorkflow,
     createProjectFromDirectory: apiMocks.createProjectFromDirectory,
     assignWorkflowToProject: apiMocks.assignWorkflowToProject,
+    copyWorkflowToProject: apiMocks.copyWorkflowToProject,
     unassignWorkflowFromProject: apiMocks.unassignWorkflowFromProject,
     startTerminal: apiMocks.startTerminal,
     writeTerminal: apiMocks.writeTerminal,
@@ -597,6 +599,57 @@ describe("App workflow rename", () => {
     }
   });
 
+  test("copies a workflow from another project via the picker", async () => {
+    const source = makeWorkflow("workflow-source", "Source Flow");
+    const independent = makeWorkflow("workflow-independent", "Independent Flow");
+    const projectA = makeProject("project-a", "Project A", ["workflow-source"]);
+    const projectB = makeProject("project-b", "Project B", []);
+    const copied = makeWorkflow("workflow-copy", "Source Flow copy");
+
+    apiMocks.copyWorkflowToProject.mockResolvedValue({
+      workflow: copied,
+      projects: [projectA, { ...projectB, workflow_ids: ["workflow-copy"] }],
+    });
+    window.localStorage.setItem("openflow.expandedProjectIds", JSON.stringify(["project-b"]));
+
+    const { container, dispose } = await mountApp(
+      makeBootstrapPayload([source, independent], undefined, undefined, [projectA, projectB]),
+    );
+
+    try {
+      const addButton = container.querySelector(
+        '[aria-label="Add workflow to Project B"]',
+      ) as HTMLButtonElement;
+      addButton.click();
+      await flush();
+
+      const copyMenuItem = [...container.querySelectorAll(".project-folder-menu-item")].find(
+        (item) => item.textContent === "Copy from…",
+      ) as HTMLButtonElement;
+      copyMenuItem.click();
+      await flush();
+
+      expect(
+        container.querySelector('[role="dialog"][aria-label="Add workflow to project"]'),
+      ).not.toBeNull();
+
+      const option = [...container.querySelectorAll(".node-picker-option-title")].find(
+        (item) => item.textContent === "Source Flow",
+      )?.closest("button") as HTMLButtonElement;
+      option.click();
+      await flush();
+
+      expect(apiMocks.copyWorkflowToProject).toHaveBeenCalledWith(
+        "project-b",
+        "workflow-source",
+      );
+      expect(topbarTitle(container)).toBe("Source Flow copy");
+    } finally {
+      dispose();
+      window.localStorage.removeItem("openflow.expandedProjectIds");
+    }
+  });
+
   test("renders the macOS titlebar spacer inside the topbar", async () => {
     const restoreUserAgent = setUserAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)");
     const { container, dispose } = await mountApp(
@@ -811,29 +864,77 @@ describe("App agent dashboard", () => {
       dispose();
     }
   });
-  test("shows a visible success toast after validation", async () => {
-    apiMocks.validateWorkflow.mockResolvedValue({ layerCount: 1 });
+  test("validates the workflow after adding a node", async () => {
+    apiMocks.validateWorkflow.mockResolvedValue({ layerCount: 1, layers: [["node-1"]] });
+    apiMocks.createAgentNode.mockResolvedValue(
+      makeNodeFromAgent(1, 128, 116, makeAgent("agent-2", "Writer Agent")),
+    );
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    const savedAgents = [makeAgent("agent-1", "Research Agent"), makeAgent("agent-2", "Writer Agent")];
+    const { container, dispose } = await mountApp(
+      makeBootstrapPayload([workflow], savedAgents),
+    );
+
+    try {
+      const addNodeButton = await waitForElement(
+        () => container.querySelector('button[aria-label="Canvas add node"]') as HTMLButtonElement | null,
+        "add node button",
+      );
+      addNodeButton.click();
+      await flush();
+
+      const savedAgentButton = await waitForElement(
+        () => Array.from(container.querySelectorAll(".node-picker-option-title")).find((element) => element.textContent === "Writer Agent")?.closest("button") as HTMLButtonElement | null,
+        "saved agent option",
+      );
+      savedAgentButton.click();
+      await flush();
+
+      expect(apiMocks.validateWorkflow).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: "workflow-1",
+          nodes: expect.arrayContaining([
+            expect.objectContaining({ id: "workflow-1-node-1" }),
+            expect.objectContaining({ label: "Writer Agent" }),
+          ]),
+        }),
+      );
+    } finally {
+      dispose();
+    }
+  });
+
+  test("shows an error toast when validation fails after adding a node", async () => {
+    apiMocks.validateWorkflow.mockRejectedValue(new Error("workflow contains a cycle"));
+    apiMocks.createAgentNode.mockResolvedValue(
+      makeNodeFromAgent(1, 128, 116, null),
+    );
     const workflow = makeWorkflow("workflow-1", "Workflow One");
     const { container, dispose } = await mountApp(makeBootstrapPayload([workflow]));
 
     try {
-      const validateButton = await waitForElement(
-        () => container.querySelector('button[aria-label="Validate workflow"]') as HTMLButtonElement | null,
-        "validate workflow button",
+      const addNodeButton = await waitForElement(
+        () => container.querySelector('button[aria-label="Canvas add node"]') as HTMLButtonElement | null,
+        "add node button",
       );
-      validateButton.click();
+      addNodeButton.click();
       await flush();
 
-      expect(apiMocks.validateWorkflow).toHaveBeenCalledWith(expect.objectContaining({ id: "workflow-1" }));
+      const blankNodeButton = await waitForElement(
+        () => Array.from(container.querySelectorAll(".node-picker-option-title")).find((element) => element.textContent === "Blank agent node")?.closest("button") as HTMLButtonElement | null,
+        "blank node option",
+      );
+      blankNodeButton.click();
+      await flush();
 
-      const successToast = await waitForElement(
+      const errorToast = await waitForElement(
         () =>
           document.body.querySelector(
-            '[data-sonner-toast][data-mounted="true"][data-visible="true"][data-type="success"] [data-title]',
+            '[data-sonner-toast][data-mounted="true"][data-visible="true"][data-type="error"] [data-title]',
           ) as HTMLElement | null,
-        "validation success toast",
+        "validation error toast",
       );
-      expect(successToast.textContent).toContain("Valid DAG · 1 layer");
+      expect(errorToast.textContent).toContain("workflow contains a cycle");
     } finally {
       dispose();
     }
@@ -1947,9 +2048,91 @@ describe("Idle global chat kickoff", () => {
   });
 });
 
+describe("App compact shell", () => {
+  afterEach(() => {
+    document.body.innerHTML = "";
+    vi.clearAllMocks();
+    window.localStorage.clear();
+  });
+
+  beforeEach(() => {
+    installDefaultApiMocks();
+  });
+
+  test("opens and closes the sidebar drawer from the compact nav trigger", async () => {
+    Object.defineProperty(window, "innerWidth", { value: 390, configurable: true });
+    window.dispatchEvent(new Event("resize"));
+    const { container, dispose } = await mountApp(
+      makeBootstrapPayload([makeWorkflow("workflow-1", "Workflow One")]),
+    );
+
+    try {
+      const shell = container.querySelector(".app-shell");
+      expect(shell?.classList.contains("app-shell--compact")).toBe(true);
+      expect(container.querySelector(".editor-screen")).not.toBeNull();
+
+      const navButton = await waitForElement(
+        () => container.querySelector('button[aria-label="Open navigation"]') as HTMLButtonElement | null,
+        "compact nav button",
+      );
+      navButton.click();
+      await flush();
+      expect(shell?.classList.contains("app-shell--sidebar-drawer-open")).toBe(true);
+
+      const scrim = container.querySelector(".sidebar-drawer-scrim") as HTMLButtonElement;
+      scrim.click();
+      await flush();
+      expect(shell?.classList.contains("app-shell--sidebar-drawer-open")).toBe(false);
+    } finally {
+      dispose();
+      Object.defineProperty(window, "innerWidth", { value: 1280, configurable: true });
+      window.dispatchEvent(new Event("resize"));
+    }
+  });
+
+  test("closes the drawer after selecting a sidebar destination", async () => {
+    Object.defineProperty(window, "innerWidth", { value: 390, configurable: true });
+    window.dispatchEvent(new Event("resize"));
+    const { container, dispose } = await mountApp(
+      makeBootstrapPayload([
+        makeWorkflow("workflow-1", "Workflow One"),
+        makeWorkflow("workflow-2", "Workflow Two"),
+      ]),
+    );
+
+    try {
+      const shell = container.querySelector(".app-shell");
+      const navButton = await waitForElement(
+        () => container.querySelector('button[aria-label="Open navigation"]') as HTMLButtonElement | null,
+        "compact nav button",
+      );
+      navButton.click();
+      await flush();
+
+      const agentsButton = await waitForElement(
+        () =>
+          Array.from(container.querySelectorAll(".sidebar-nav-button")).find((element) =>
+            element.textContent?.includes("Agents"),
+          ) as HTMLButtonElement | null,
+        "agents button",
+      );
+      agentsButton.click();
+      await flush();
+
+      expect(shell?.classList.contains("app-shell--sidebar-drawer-open")).toBe(false);
+      expect(topbarTitle(container)).toBe("Agents");
+    } finally {
+      dispose();
+      Object.defineProperty(window, "innerWidth", { value: 1280, configurable: true });
+      window.dispatchEvent(new Event("resize"));
+    }
+  });
+});
+
 describe("App schedule screen", () => {
   beforeEach(() => {
     installDefaultApiMocks();
+    Object.defineProperty(window, "innerWidth", { value: 1280, configurable: true });
   });
 
   test("opens schedule screen from sidebar", async () => {
@@ -1964,14 +2147,55 @@ describe("App schedule screen", () => {
     });
 
     try {
-      const button = [...container.querySelectorAll("button")].find((item) =>
-        item.textContent?.includes("Schedule"),
-      ) as HTMLButtonElement;
+      const button = await waitForElement(
+        () =>
+          Array.from(container.querySelectorAll(".sidebar-nav-button")).find((item) =>
+            item.textContent?.includes("Schedule"),
+          ) as HTMLButtonElement | null,
+        "schedule button",
+      );
       button.click();
       await flush();
 
-      expect(container.querySelector('[data-screen="schedule"]')).not.toBeNull();
-      expect(apiMocks.refreshSchedules).toHaveBeenCalled();
+      await waitForElement(
+        () => container.querySelector(".schedule-screen"),
+        "schedule screen",
+      );
+      expect(apiMocks.refreshSchedules).not.toHaveBeenCalled();
+    } finally {
+      dispose();
+    }
+  });
+
+  test("schedule screen has no manual refresh button", async () => {
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    workflow.settings.schedule = {
+      cron: "0 9 * * *",
+      enabled: true,
+      timezone: "Australia/Perth",
+    };
+
+    const { container, dispose } = await mountApp({
+      workflows: [workflow],
+      agents: [makeAgent("agent-1", "Research Agent")],
+      skills: FIXTURE_SKILLS,
+      settings: SETTINGS,
+      runState: null,
+      scheduleStatuses: [],
+    });
+
+    try {
+      const scheduleNav = [...container.querySelectorAll(".sidebar-nav-button")].find((item) =>
+        item.textContent?.includes("Schedule"),
+      ) as HTMLButtonElement;
+      scheduleNav.click();
+      await flush();
+
+      expect(
+        [...container.querySelectorAll("button")].some((button) =>
+          button.textContent?.includes("Refresh"),
+        ),
+      ).toBe(false);
     } finally {
       dispose();
     }
@@ -1985,19 +2209,27 @@ describe("App schedule screen", () => {
       timezone: "Australia/Perth",
     };
     apiMocks.saveWorkflows.mockResolvedValue(undefined);
-    apiMocks.refreshSchedules.mockResolvedValue([
-      {
-        workflowId: "workflow-1",
-        workflowName: "Workflow One",
-        enabled: true,
-        cron: "*/15 * * * *",
-        timezone: "UTC",
-        nextRunAt: "2026-06-16T00:15:00Z",
-        lastRunAt: null,
-        lastSkippedAt: null,
-        lastError: null,
-      },
-    ]);
+    let scheduleHandler: ((statuses: unknown[]) => void) | undefined;
+    apiMocks.listenToScheduleStatuses.mockImplementation(async (handler) => {
+      scheduleHandler = handler;
+      return () => {};
+    });
+    apiMocks.saveWorkflow.mockImplementation(async (workflow: Workflow) => {
+      scheduleHandler?.([
+        {
+          workflowId: workflow.id,
+          workflowName: workflow.name,
+          enabled: workflow.settings.schedule?.enabled ?? false,
+          cron: workflow.settings.schedule?.cron ?? "",
+          timezone: workflow.settings.schedule?.timezone ?? "UTC",
+          nextRunAt: "2026-06-16T00:15:00Z",
+          lastRunAt: null,
+          lastSkippedAt: null,
+          lastError: null,
+        },
+      ]);
+      return workflow;
+    });
 
     const { container, dispose } = await mountApp({
       workflows: [workflow],
@@ -2022,10 +2254,11 @@ describe("App schedule screen", () => {
       ) as HTMLButtonElement;
       repeatButton.click();
 
-      const intervalButton = [...container.querySelectorAll(".schedule-interval-select button")].find(
-        (item) => item.textContent?.includes("15m"),
-      ) as HTMLButtonElement;
-      intervalButton.click();
+      const intervalInput = container.querySelector(
+        ".schedule-interval-field input[type='number']",
+      ) as HTMLInputElement;
+      intervalInput.value = "15";
+      intervalInput.dispatchEvent(new Event("input", { bubbles: true }));
 
       const saveButton = container.querySelector(
         '.schedule-row button[title="Save schedule"]',
@@ -2044,6 +2277,7 @@ describe("App schedule screen", () => {
           }),
         }),
       );
+      expect(apiMocks.refreshSchedules).not.toHaveBeenCalled();
     } finally {
       dispose();
     }

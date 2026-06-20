@@ -86,6 +86,8 @@ function makeMockContext(overrides: Partial<AppContextValue> = {}): AppContextVa
     setSelectedTraceIndex: () => {},
     setSelectedAgentId: () => {},
     setScreen: () => {},
+    navigateToScreen: () => {},
+    screenTransitionClass: () => "nav-lateral",
     activeWorkflow: () => undefined,
     activeProject: () => undefined,
     independentWorkflows: () => [],
@@ -116,7 +118,7 @@ function makeMockContext(overrides: Partial<AppContextValue> = {}): AppContextVa
     handleOpenAssignWorkflowPicker: () => {},
     closeAssignWorkflowPicker: () => {},
     workflowsAddableToProject: () => [],
-    handleAssignWorkflowToProject: async () => {},
+    handleCopyWorkflowToProject: async () => {},
     handleOpenAgents: () => {},
     handleAddProject: async () => {},
     handleSelectProject: () => {},
@@ -146,7 +148,6 @@ function makeMockContext(overrides: Partial<AppContextValue> = {}): AppContextVa
     handleOpenAddNodePicker: () => {},
     handleAddNode: async () => {},
     closeAddNodePicker: () => {},
-    handleValidate: async () => {},
     handleRun: async () => {},
     handleContinueRun: async () => {},
     handleStopRun: async () => {},
@@ -175,6 +176,11 @@ function makeMockContext(overrides: Partial<AppContextValue> = {}): AppContextVa
     handleSelectBottomTab: () => {},
     handleToggleChatFocusMode: () => {},
     handleDockResizePointerDown: () => {},
+    isCompactViewport: () => false,
+    sidebarDrawerOpen: () => false,
+    openSidebarDrawer: () => {},
+    closeSidebarDrawer: () => {},
+    toggleSidebarDrawer: () => {},
     handleZoomIn: () => {},
     handleZoomOut: () => {},
     handleZoomReset: () => {},
@@ -285,6 +291,17 @@ describe("EditorScreen", () => {
 
     const screen = container.querySelector(".editor-screen");
     expect(screen?.classList.contains("editor-screen--chat-focus")).toBe(true);
+    dispose();
+  });
+
+  it("uses collapsed dock height when dock is closed", () => {
+    const { container, dispose } = renderWithContext({
+      dockOpen: () => false,
+      dockHeight: () => 300,
+    });
+
+    const screen = container.querySelector(".editor-screen") as HTMLElement;
+    expect(screen.style.getPropertyValue("--dock-height")).toBe("52px");
     dispose();
   });
 });

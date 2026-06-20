@@ -186,7 +186,7 @@ export function Sidebar() {
             label="Settings"
             onClick={() => {
               ctx.closeAddNodePicker();
-              ctx.setScreen("settings");
+              ctx.navigateToScreen("settings", "nav-forward");
             }}
           />
           <div class="settings-nav-popup" aria-hidden="true">

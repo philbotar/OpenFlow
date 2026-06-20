@@ -1,5 +1,8 @@
 import { For, Show, createMemo, createSignal } from "solid-js";
 import type { Workflow } from "../lib/types";
+import { PanelEmptyState } from "../components/PanelEmptyState";
+import { TextSelect } from "../components/TextSelect";
+import { ScheduleTimePickerModal } from "../components/ScheduleTimePickerModal";
 import { ScheduleWorkflowPickerModal } from "../components/ScheduleWorkflowPickerModal";
 import { SidebarIcon } from "../components/SidebarIcon";
 import { useAppContext } from "../context/AppContext";
@@ -8,6 +11,9 @@ import {
   describeWorkflowSchedule,
   describeScheduleStatus,
   formatScheduleTimestamp,
+  INTERVAL_UNIT_OPTIONS,
+  intervalValueMax,
+  parseIntervalValue,
   scheduleDraftFromSchedule,
   scheduleFromPreset,
   scheduleForWorkflow,
@@ -15,42 +21,10 @@ import {
   workflowsAddableToSchedule,
   workflowsWithSchedules,
 } from "../lib/schedule";
-import type { ScheduleDraft, SchedulePreset } from "../lib/schedule";
-
-const WEEKDAYS = [
-  ["0", "Sunday"],
-  ["1", "Monday"],
-  ["2", "Tuesday"],
-  ["3", "Wednesday"],
-  ["4", "Thursday"],
-  ["5", "Friday"],
-  ["6", "Saturday"],
-];
-
-const INTERVALS = [
-  ["15", "15m"],
-  ["30", "30m"],
-  ["60", "1h"],
-];
-
-const COMMON_TIMEZONES = [
-  "Australia/Perth",
-  "Australia/Sydney",
-  "Australia/Melbourne",
-  "UTC",
-  "America/New_York",
-  "America/Los_Angeles",
-  "Europe/London",
-];
-
-function timezoneOptions(current: string) {
-  return COMMON_TIMEZONES.includes(current)
-    ? COMMON_TIMEZONES
-    : [current, ...COMMON_TIMEZONES];
-}
+import type { IntervalUnit, ScheduleDraft, SchedulePreset } from "../lib/schedule";
 
 function cloneDraft(draft: ScheduleDraft): ScheduleDraft {
-  return { ...draft };
+  return { ...draft, weekdays: [...draft.weekdays] };
 }
 
 function ScheduleRow(props: { workflow: Workflow }) {
@@ -58,8 +32,9 @@ function ScheduleRow(props: { workflow: Workflow }) {
   const [draft, setDraft] = createSignal<ScheduleDraft>(
     cloneDraft(scheduleDraftFromSchedule(scheduleForWorkflow(props.workflow))),
   );
+  const [timePickerOpen, setTimePickerOpen] = createSignal(false);
   const status = () => statusForWorkflow(ctx.scheduleStatuses(), props.workflow.id);
-  const timezoneItems = () => timezoneOptions(draft().timezone);
+  const timedSummary = () => describeWorkflowSchedule(scheduleFromPreset(draft()));
 
   const save = () => {
     void ctx.handleSaveWorkflowSchedule(props.workflow.id, scheduleFromPreset(draft()));
@@ -71,6 +46,10 @@ function ScheduleRow(props: { workflow: Workflow }) {
 
   const setPreset = (preset: SchedulePreset) => {
     setDraft((current) => ({ ...current, preset }));
+  };
+
+  const patchDraft = (patch: Partial<ScheduleDraft>) => {
+    setDraft((current) => ({ ...current, ...patch }));
   };
 
   return (
@@ -99,24 +78,10 @@ function ScheduleRow(props: { workflow: Workflow }) {
       <div class="schedule-segmented schedule-frequency-select" aria-label="Schedule cadence">
         <button
           type="button"
-          classList={{ active: draft().preset === "daily" }}
-          onClick={() => setPreset("daily")}
+          classList={{ active: draft().preset === "timed" }}
+          onClick={() => setPreset("timed")}
         >
-          Daily
-        </button>
-        <button
-          type="button"
-          classList={{ active: draft().preset === "weekdays" }}
-          onClick={() => setPreset("weekdays")}
-        >
-          Weekdays
-        </button>
-        <button
-          type="button"
-          classList={{ active: draft().preset === "weekly" }}
-          onClick={() => setPreset("weekly")}
-        >
-          Weekly
+          At time
         </button>
         <button
           type="button"
@@ -130,77 +95,61 @@ function ScheduleRow(props: { workflow: Workflow }) {
       <Show
         when={draft().preset === "interval"}
         fallback={
-          <div class="schedule-time-cell">
-            <label class="schedule-field schedule-time-field">
-              <input
-                class="text-input"
-                type="time"
-                value={draft().time}
-                onInput={(event) =>
-                  setDraft((current) => ({
-                    ...current,
-                    time: event.currentTarget.value,
-                  }))
-                }
-              />
-            </label>
-            <Show when={draft().preset === "weekly"}>
-              <label class="schedule-field schedule-day-field">
-                <select
-                  class="text-input"
-                  value={draft().weekday}
-                  onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      weekday: event.currentTarget.value,
-                    }))
-                  }
-                >
-                  <For each={WEEKDAYS}>
-                    {([value, label]) => <option value={value}>{label}</option>}
-                  </For>
-                </select>
-              </label>
-            </Show>
-          </div>
+          <>
+            <button
+              type="button"
+              class="schedule-time-trigger"
+              aria-haspopup="dialog"
+              title={timedSummary()}
+              onClick={() => setTimePickerOpen(true)}
+            >
+              {timedSummary()}
+            </button>
+            <ScheduleTimePickerModal
+              open={timePickerOpen()}
+              draft={draft()}
+              onClose={() => setTimePickerOpen(false)}
+              onChange={patchDraft}
+            />
+          </>
         }
       >
-        <div class="schedule-chip-group schedule-interval-select" aria-label="Repeat interval">
-          <For each={INTERVALS}>
-            {([value, label]) => (
-              <button
-                type="button"
-                classList={{ active: draft().intervalMinutes === value }}
-                onClick={() =>
-                  setDraft((current) => ({
-                    ...current,
-                    intervalMinutes: value,
-                  }))
-                }
-              >
-                {label}
-              </button>
-            )}
-          </For>
+        <div class="schedule-interval-field" role="group" aria-label="Repeat interval">
+          <span class="schedule-interval-label">Every</span>
+          <input
+            class="text-input schedule-interval-value"
+            type="number"
+            min={1}
+            max={intervalValueMax(draft().intervalUnit)}
+            value={draft().intervalValue}
+            onInput={(event) =>
+              setDraft((current) => ({
+                ...current,
+                intervalValue: event.currentTarget.value,
+              }))
+            }
+          />
+          <TextSelect
+            class="schedule-interval-unit"
+            value={draft().intervalUnit}
+            aria-label="Repeat interval unit"
+            onChange={(event) =>
+              setDraft((current) => {
+                const intervalUnit = event.currentTarget.value as IntervalUnit;
+                return {
+                  ...current,
+                  intervalUnit,
+                  intervalValue: String(parseIntervalValue(current.intervalValue, intervalUnit)),
+                };
+              })
+            }
+          >
+            <For each={INTERVAL_UNIT_OPTIONS}>
+              {([value, label]) => <option value={value}>{label}</option>}
+            </For>
+          </TextSelect>
         </div>
       </Show>
-
-      <label class="schedule-field schedule-timezone-field">
-        <select
-          class="text-input"
-          value={draft().timezone}
-          onChange={(event) =>
-            setDraft((current) => ({
-              ...current,
-              timezone: event.currentTarget.value,
-            }))
-          }
-        >
-          <For each={timezoneItems()}>
-            {(timezone) => <option value={timezone}>{timezone}</option>}
-          </For>
-        </select>
-      </label>
 
       <div class="schedule-meta">
         <span>Next: {formatScheduleTimestamp(status()?.nextRunAt ?? null)}</span>
@@ -241,13 +190,6 @@ export function ScheduleScreen() {
         <div class="schedule-header-actions">
           <button
             type="button"
-            class="secondary-button"
-            onClick={() => void ctx.handleRefreshScheduleStatuses()}
-          >
-            Refresh
-          </button>
-          <button
-            type="button"
             class="primary-button schedule-add-button"
             onClick={() => setPickerOpen(true)}
             disabled={addableWorkflows().length === 0}
@@ -267,7 +209,12 @@ export function ScheduleScreen() {
 
       <Show
         when={scheduledWorkflows().length > 0}
-        fallback={<div class="empty-panel">No scheduled workflows yet.</div>}
+        fallback={
+          <PanelEmptyState
+            title="No scheduled workflows yet"
+            description="Add a workflow above to run it automatically."
+          />
+        }
       >
         <div class="schedule-table">
           <div class="schedule-table-header">
@@ -275,7 +222,6 @@ export function ScheduleScreen() {
             <span>Workflow</span>
             <span>Schedule</span>
             <span>Time / Every</span>
-            <span>Timezone</span>
             <span>Runs</span>
             <span />
           </div>

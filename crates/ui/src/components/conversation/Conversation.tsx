@@ -8,6 +8,7 @@ import {
   type JSX,
 } from "solid-js";
 import ArrowDown from "lucide-solid/icons/arrow-down";
+import { PanelEmptyState } from "../PanelEmptyState";
 
 export interface ConversationApi {
   isAtBottom: Accessor<boolean>;
@@ -130,26 +131,13 @@ interface ConversationEmptyStateProps extends ComponentProps<"div"> {
 
 export function ConversationEmptyState(allProps: ConversationEmptyStateProps) {
   const {
-    class: className,
     title = "No messages yet",
     description = "Run a workflow or select a paused node to continue.",
-    icon,
-    children,
     ...rest
   } = allProps;
 
   return (
-    <div class={`conversation-empty ${className ?? ""}`} {...rest}>
-      {children ?? (
-        <>
-          {icon && <div class="conversation-empty-icon">{icon}</div>}
-          <div class="conversation-empty-text">
-            <p class="conversation-empty-title">{title}</p>
-            {description && <p class="conversation-empty-description">{description}</p>}
-          </div>
-        </>
-      )}
-    </div>
+    <PanelEmptyState title={title} description={description} {...rest} />
   );
 }
 

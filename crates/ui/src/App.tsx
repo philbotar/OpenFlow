@@ -1,4 +1,4 @@
-import { Show } from "solid-js";
+import { Match, Show, Switch } from "solid-js";
 import { Toaster } from "solid-sonner";
 import { AppProvider } from "./context/AppProvider";
 import { useAppContext } from "./context/AppContext";
@@ -17,26 +17,22 @@ function ScreenRouter() {
   const ctx = useAppContext();
   return (
     <div class="screen-router">
-      <Show when={ctx.screen() === "editor"}>
-        <div class="screen-view" data-screen="editor">
-          <EditorScreen />
-        </div>
-      </Show>
-      <Show when={ctx.screen() === "agents"}>
-        <div class="screen-view" data-screen="agents">
-          <AgentsScreen />
-        </div>
-      </Show>
-      <Show when={ctx.screen() === "workflow-authoring"}>
-        <div class="screen-view" data-screen="workflow-authoring">
-          <WorkflowAuthoringScreen />
-        </div>
-      </Show>
-      <Show when={ctx.screen() === "schedule"}>
-        <div class="screen-view" data-screen="schedule">
-          <ScheduleScreen />
-        </div>
-      </Show>
+      <div class="screen-view">
+        <Switch>
+          <Match when={ctx.screen() === "editor"}>
+            <EditorScreen />
+          </Match>
+          <Match when={ctx.screen() === "agents"}>
+            <AgentsScreen />
+          </Match>
+          <Match when={ctx.screen() === "workflow-authoring"}>
+            <WorkflowAuthoringScreen />
+          </Match>
+          <Match when={ctx.screen() === "schedule"}>
+            <ScheduleScreen />
+          </Match>
+        </Switch>
+      </div>
     </div>
   );
 }
@@ -76,9 +72,21 @@ function AppChrome() {
   return (
     <>
       <AppToaster />
+      <Show when={ctx.isCompactViewport() && ctx.sidebarDrawerOpen()}>
+        <button
+          type="button"
+          class="sidebar-drawer-scrim"
+          aria-label="Close navigation"
+          onClick={ctx.closeSidebarDrawer}
+        />
+      </Show>
       <div
         class="app-shell"
-        classList={{ "app-shell--settings": isSettings() }}
+        classList={{
+          "app-shell--settings": isSettings(),
+          "app-shell--compact": ctx.isCompactViewport(),
+          "app-shell--sidebar-drawer-open": ctx.sidebarDrawerOpen(),
+        }}
       >
         <WorkflowPickerModal />
         <ShortcutsModal
@@ -97,7 +105,9 @@ function AppChrome() {
             </>
           }
         >
-          <SettingsScreen />
+          <div class="screen-view settings-screen-shell">
+            <SettingsScreen />
+          </div>
         </Show>
       </div>
     </>

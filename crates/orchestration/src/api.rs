@@ -1,3 +1,4 @@
+use crate::project::ports::Project;
 use engine::{FileChangeOp, Workflow};
 use serde::{Deserialize, Serialize};
 
@@ -8,6 +9,13 @@ pub use crate::schedule::{ScheduleStatus, ScheduledRunCandidate};
 pub struct WorkflowListItem {
     pub id: String,
     pub name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CopyWorkflowToProjectResult {
+    pub workflow: Workflow,
+    pub projects: Vec<Project>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

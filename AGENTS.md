@@ -28,9 +28,10 @@ Each file covers architecture, dependency rules, code standards, patterns, and c
    - **providers** — LLM transport
    - **ui** / **desktop** — user interaction
 3. Start docs at `docs/README.md` — see [Documentation](#documentation) for the full tree.
-4. Coding patterns: `docs/contributing/coding-patterns.md`.
-5. Workflow verification: `docs/contributing/testing-workflows.md`.
-6. Engine vocabulary: `docs/glossary.md`.
+4. Development lanes: `docs/contributing/development-lanes.md`.
+5. Coding patterns: `docs/contributing/coding-patterns.md`.
+6. Workflow verification: `docs/contributing/testing-workflows.md`.
+7. Engine vocabulary: `docs/glossary.md`.
 
 ## Boundary Seams
 
@@ -39,7 +40,7 @@ Add a port/trait only when a consumer is typed on that interface. Otherwise call
 | Seam | Location |
 | --- | --- |
 | LLM invocation (`AiPort`, `AgentRequest`) | `crates/engine/src/ports/outbound.rs` |
-| Tool and subagent execution (`ToolPort`) | `crates/engine/src/ports/outbound.rs` → `crates/orchestration/src/run/application/execution/tool_port.rs` |
+| Tool and subagent execution (`ToolPort`) | `crates/engine/src/ports/outbound.rs` → `crates/orchestration/src/run/execution/tool_port.rs` |
 | Human input / tool approval | `crates/engine/src/ports/inbound.rs` |
 | Provider client (`AiClient: AiPort`) | `crates/providers/src/client.rs` |
 | UI → desktop IPC | `crates/ui/src/port.ts` (`UiDesktopOutboundPort`) |
@@ -52,6 +53,7 @@ docs/
 ├── glossary.md
 ├── contributing/
 │   ├── README.md
+│   ├── development-lanes.md
 │   ├── coding-patterns.md
 │   └── testing-workflows.md
 └── architecture/
@@ -64,11 +66,26 @@ docs/
 | Doc | Use when |
 | --- | --- |
 | `docs/README.md` | First read; filesystem index |
+| `docs/contributing/development-lanes.md` | Classifying a change, selecting playbook/skill, choosing verification |
 | `docs/contributing/coding-patterns.md` | Ownership, runtime semantics, conventions |
 | `docs/contributing/testing-workflows.md` | Acceptance tests, live-AI smoke |
 | `docs/architecture/contract.md` | Layer boundaries and dependency rules |
 | `docs/architecture/threading-concurrency.md` | Runtimes, async I/O, parallelism |
 | `docs/glossary.md` | Engine terms and naming |
+
+## Development Lanes
+
+Before editing, classify the change with [`docs/contributing/development-lanes.md`](docs/contributing/development-lanes.md). Agent skills and editor rules should route to that doc instead of carrying their own copy of architecture facts.
+
+| Touched area | Lane | Local guide |
+| --- | --- | --- |
+| `crates/engine/**` | Engine semantics | `crates/engine/AGENTS.md` |
+| `crates/orchestration/src/run/**` | Run orchestration | `crates/orchestration/AGENTS.md` |
+| `crates/orchestration/src/{agent,workflow,project,settings,tool}/**` | Application/domain service | `crates/orchestration/AGENTS.md` |
+| `crates/orchestration/src/adapters/**` | Concrete adapter/I/O | `crates/orchestration/AGENTS.md` |
+| `crates/providers/**` | Provider adapter | `crates/providers/AGENTS.md` |
+| `crates/desktop/**` | Desktop IPC adapter | `crates/desktop/AGENTS.md` |
+| `crates/ui/**` | UI/Desktop seam and presentation | `crates/ui/AGENTS.md` |
 
 ## Repo Map
 

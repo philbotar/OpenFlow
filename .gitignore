@@ -21,6 +21,8 @@ node_modules/
 .flow/
 .openflow/
 .worktrees/
+.cursorrules
+.playwright-mcp
 
 # Test coverage reports (vitest HTML, lcov, etc.)
 coverage/

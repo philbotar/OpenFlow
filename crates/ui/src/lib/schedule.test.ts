@@ -1,6 +1,8 @@
 import { describe, expect, test, vi } from "vitest";
 import type { ScheduleStatus, Workflow } from "./types";
 import {
+  ALL_WEEKDAYS,
+  cronDayOfWeek,
   defaultWorkflowSchedule,
   describeScheduleStatus,
   describeWorkflowSchedule,
@@ -8,6 +10,7 @@ import {
   scheduleForWorkflow,
   schedulePresetFromCron,
   statusForWorkflow,
+  toggleWeekday,
   workflowsAddableToSchedule,
   workflowsWithSchedules,
 } from "./schedule";
@@ -78,14 +81,18 @@ describe("schedule helpers", () => {
     ]);
   });
 
-  test("schedule presets serialize to cron without exposing cron editing", () => {
+  test("timed presets serialize selected weekdays to cron", () => {
+    vi.spyOn(Intl, "DateTimeFormat").mockReturnValue({
+      resolvedOptions: () => ({ timeZone: "Australia/Perth" }),
+    } as Intl.DateTimeFormat);
+
     expect(
       scheduleFromPreset({
-        preset: "weekdays",
+        preset: "timed",
         time: "08:30",
-        weekday: "1",
-        intervalMinutes: "30",
-        timezone: "Australia/Perth",
+        weekdays: ["1", "2", "3", "4", "5"],
+        intervalValue: "30",
+        intervalUnit: "minutes",
         enabled: true,
       }),
     ).toEqual({
@@ -93,6 +100,119 @@ describe("schedule helpers", () => {
       enabled: true,
       timezone: "Australia/Perth",
     });
+
+    expect(
+      scheduleFromPreset({
+        preset: "timed",
+        time: "08:30",
+        weekdays: ["1", "3", "5"],
+        intervalValue: "30",
+        intervalUnit: "minutes",
+        enabled: true,
+      }),
+    ).toEqual({
+      cron: "30 8 * * 1,3,5",
+      enabled: true,
+      timezone: "Australia/Perth",
+    });
+  });
+
+  test("interval presets serialize minute and hour cron", () => {
+    vi.spyOn(Intl, "DateTimeFormat").mockReturnValue({
+      resolvedOptions: () => ({ timeZone: "Australia/Perth" }),
+    } as Intl.DateTimeFormat);
+
+    expect(
+      scheduleFromPreset({
+        preset: "interval",
+        time: "08:30",
+        weekdays: [...ALL_WEEKDAYS],
+        intervalValue: "45",
+        intervalUnit: "minutes",
+        enabled: true,
+      }),
+    ).toEqual({
+      cron: "*/45 * * * *",
+      enabled: true,
+      timezone: "Australia/Perth",
+    });
+
+    expect(
+      scheduleFromPreset({
+        preset: "interval",
+        time: "08:30",
+        weekdays: [...ALL_WEEKDAYS],
+        intervalValue: "2",
+        intervalUnit: "hours",
+        enabled: true,
+      }),
+    ).toEqual({
+      cron: "0 */2 * * *",
+      enabled: true,
+      timezone: "Australia/Perth",
+    });
+  });
+
+  test("interval presets serialize day cron", () => {
+    vi.spyOn(Intl, "DateTimeFormat").mockReturnValue({
+      resolvedOptions: () => ({ timeZone: "Australia/Perth" }),
+    } as Intl.DateTimeFormat);
+
+    expect(
+      scheduleFromPreset({
+        preset: "interval",
+        time: "09:00",
+        weekdays: [...ALL_WEEKDAYS],
+        intervalValue: "2",
+        intervalUnit: "days",
+        enabled: true,
+      }),
+    ).toEqual({
+      cron: "0 9 */2 * *",
+      enabled: true,
+      timezone: "Australia/Perth",
+    });
+
+    expect(
+      scheduleFromPreset({
+        preset: "interval",
+        time: "09:00",
+        weekdays: [...ALL_WEEKDAYS],
+        intervalValue: "31",
+        intervalUnit: "days",
+        enabled: true,
+      }),
+    ).toEqual({
+      cron: "0 9 */31 * *",
+      enabled: true,
+      timezone: "Australia/Perth",
+    });
+  });
+
+  test("invalid day steps load as clamped day intervals", () => {
+    vi.spyOn(Intl, "DateTimeFormat").mockReturnValue({
+      resolvedOptions: () => ({ timeZone: "Australia/Perth" }),
+    } as Intl.DateTimeFormat);
+
+    expect(schedulePresetFromCron("0 9 */210 * *")).toMatchObject({
+      preset: "interval",
+      intervalValue: "31",
+      intervalUnit: "days",
+      time: "09:00",
+    });
+
+    expect(
+      describeWorkflowSchedule(
+        scheduleFromPreset({
+          preset: "interval",
+          time: "09:00",
+          weekdays: [...ALL_WEEKDAYS],
+          intervalValue: "31",
+          intervalUnit: "days",
+          enabled: true,
+        }),
+      ),
+    ).toBe("Every 31 days at 09:00");
   });
 
   test("describeWorkflowSchedule creates compact row summaries", () => {
@@ -105,22 +225,91 @@ describe("schedule helpers", () => {
     ).toBe("Weekdays at 08:30");
     expect(
       describeWorkflowSchedule({
+        cron: "30 8 * * 1,3,5",
+        enabled: true,
+        timezone: "Australia/Perth",
+      }),
+    ).toBe("Mon, Wed, Fri at 08:30");
+    expect(
+      describeWorkflowSchedule({
         cron: "*/30 * * * *",
         enabled: true,
         timezone: "Australia/Perth",
       }),
     ).toBe("Every 30 minutes");
+    expect(
+      describeWorkflowSchedule({
+        cron: "0 */2 * * *",
+        enabled: true,
+        timezone: "Australia/Perth",
+      }),
+    ).toBe("Every 2 hours");
+    expect(
+      describeWorkflowSchedule({
+        cron: "0 9 */2 * *",
+        enabled: true,
+        timezone: "Australia/Perth",
+      }),
+    ).toBe("Every 2 days at 09:00");
+    expect(
+      describeWorkflowSchedule({
+        cron: "0 9 */7 * *",
+        enabled: true,
+        timezone: "Australia/Perth",
+      }),
+    ).toBe("Every 7 days at 09:00");
   });
 
   test("schedulePresetFromCron recognizes common persisted schedules", () => {
     expect(schedulePresetFromCron("30 8 * * 1-5")).toMatchObject({
-      preset: "weekdays",
+      preset: "timed",
       time: "08:30",
+      weekdays: ["1", "2", "3", "4", "5"],
+    });
+    expect(schedulePresetFromCron("30 8 * * 1,3,5")).toMatchObject({
+      preset: "timed",
+      weekdays: ["1", "3", "5"],
     });
     expect(schedulePresetFromCron("*/15 * * * *")).toMatchObject({
       preset: "interval",
-      intervalMinutes: "15",
+      intervalValue: "15",
+      intervalUnit: "minutes",
     });
+    expect(schedulePresetFromCron("0 * * * *")).toMatchObject({
+      preset: "interval",
+      intervalValue: "1",
+      intervalUnit: "hours",
+    });
+    expect(schedulePresetFromCron("0 9 */2 * *")).toMatchObject({
+      preset: "interval",
+      intervalValue: "2",
+      intervalUnit: "days",
+      time: "09:00",
+    });
+    expect(schedulePresetFromCron("0 9 */7 * *")).toMatchObject({
+      preset: "interval",
+      intervalValue: "7",
+      intervalUnit: "days",
+      time: "09:00",
+    });
+    expect(schedulePresetFromCron("0 9 */14 * *")).toMatchObject({
+      preset: "interval",
+      intervalValue: "14",
+      intervalUnit: "days",
+      time: "09:00",
+    });
+  });
+
+  test("toggleWeekday keeps at least one selected day", () => {
+    expect(toggleWeekday(["1"], "1")).toEqual(["1"]);
+    expect(toggleWeekday(["1", "3"], "1")).toEqual(["3"]);
+    expect(toggleWeekday(["1"], "3")).toEqual(["1", "3"]);
+  });
+
+  test("cronDayOfWeek maps weekday sets to cron fields", () => {
+    expect(cronDayOfWeek([...ALL_WEEKDAYS])).toBe("*");
+    expect(cronDayOfWeek(["1", "2", "3", "4", "5"])).toBe("1-5");
+    expect(cronDayOfWeek(["1", "3", "5"])).toBe("1,3,5");
   });
 
   test("statusForWorkflow finds matching status", () => {

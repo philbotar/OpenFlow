@@ -2,7 +2,8 @@ use crate::api::FileEditPreview;
 use crate::error::BackendError;
 use crate::incident::{incident_from_execution_event, IncidentContext, IncidentRecorder};
 use crate::run::execution::{
-    apply_event_to_run_state, record_entrypoint_message, record_user_input, resolve_execution_cwd,
+    apply_event_to_run_state, record_entrypoint_message, record_user_input,
+    resolve_execution_cwd, should_record_entrypoint_in_chat,
     spawn_interactive_workflow_run, ExecutionAction, ExecutionEvent, InteractiveWorkflowRunParams,
     NodeInterrupts,
 };
@@ -322,7 +323,9 @@ impl RunCoordinator {
         if let Some(text) = entrypoint.clone().filter(|t| !t.trim().is_empty()) {
             if let Ok(layers) = execution_layers(&workflow) {
                 if let Some(root_id) = layers.first().and_then(|layer| layer.first()) {
-                    record_entrypoint_message(&mut initial_state, &root_id.0, text);
+                    if should_record_entrypoint_in_chat(&workflow, root_id) {
+                        record_entrypoint_message(&mut initial_state, &root_id.0, text);
+                    }
                 }
             }
         }

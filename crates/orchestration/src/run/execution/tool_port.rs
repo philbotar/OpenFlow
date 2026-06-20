@@ -13,8 +13,7 @@ use tokio::sync::{mpsc::UnboundedSender, Semaphore};
 use tokio_util::sync::CancellationToken;
 
 use super::subagents::{augment_call_subagent_tool_description, merge_subagent_summaries_into_map};
-use super::timing::emit_phase_timed;
-use super::{send_or_log, ExecutionEvent, NodeInterrupts};
+use super::{emit_phase_timed, send_or_log, ExecutionEvent, NodeInterrupts};
 
 pub struct ToolPortImpl<A> {
     tool_runner: Arc<ToolRunner>,

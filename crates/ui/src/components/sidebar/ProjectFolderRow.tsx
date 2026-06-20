@@ -128,7 +128,7 @@ export function ProjectFolderRow(props: ProjectFolderRowProps) {
                   props.onAddExistingWorkflow();
                 }}
               >
-                Add existing…
+                Copy from…
               </button>
             </div>
           </Show>

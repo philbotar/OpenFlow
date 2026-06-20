@@ -13,6 +13,11 @@ function makeMockContext(overrides: Partial<AppContextValue> = {}): AppContextVa
     rightPanelHidden: () => false,
     screen: () => "editor",
     handleToggleRightPanel: vi.fn(),
+    isCompactViewport: () => false,
+    sidebarDrawerOpen: () => false,
+    openSidebarDrawer: vi.fn(),
+    closeSidebarDrawer: vi.fn(),
+    toggleSidebarDrawer: vi.fn(),
     isMaximized: () => false,
     appReady: () => true,
     activeWorkflow: () => ({ id: "w1", name: "My Workflow" } as any),
@@ -24,7 +29,6 @@ function makeMockContext(overrides: Partial<AppContextValue> = {}): AppContextVa
     workflowSettingsOpen: () => false,
     handleToggleWorkflowSettings: vi.fn(),
     persistAll: vi.fn().mockResolvedValue(true),
-    handleValidate: vi.fn().mockResolvedValue(undefined),
     handleRun: vi.fn().mockResolvedValue(undefined),
     handleContinueRun: vi.fn().mockResolvedValue(undefined),
     handleStopRun: vi.fn().mockResolvedValue(undefined),
@@ -75,6 +79,8 @@ function makeMockContext(overrides: Partial<AppContextValue> = {}): AppContextVa
     setSelectedTraceIndex: () => {},
     setSelectedAgentId: () => {},
     setScreen: () => {},
+    navigateToScreen: () => {},
+    screenTransitionClass: () => "nav-lateral",
     activeProject: () => undefined,
     independentWorkflows: () => [],
     executionCwdForActiveWorkflow: () => null,
@@ -101,7 +107,7 @@ function makeMockContext(overrides: Partial<AppContextValue> = {}): AppContextVa
     handleOpenAssignWorkflowPicker: () => {},
     closeAssignWorkflowPicker: () => {},
     workflowsAddableToProject: () => [],
-    handleAssignWorkflowToProject: async () => {},
+    handleCopyWorkflowToProject: async () => {},
     handleOpenAgents: () => {},
     handleAddProject: async () => {},
     handleSelectProject: () => {},
@@ -241,6 +247,43 @@ describe("AppHeader", () => {
     });
     const btn = getToggleButton(container);
     expect(btn).toBeNull();
+    dispose();
+  });
+
+  it("renders labeled primary run action", () => {
+    const { container, dispose } = renderWithContext({
+      screen: () => "editor",
+    });
+    const runBtn = container.querySelector(
+      "button[aria-label='Run workflow']",
+    ) as HTMLButtonElement | null;
+    expect(runBtn).not.toBeNull();
+    expect(runBtn!.textContent).toContain("Run");
+    dispose();
+  });
+
+  it("shows stop action separately while a run is active", () => {
+    const { container, dispose } = renderWithContext({
+      runState: () => ({ active: true } as any),
+    });
+    expect(container.querySelector("button[aria-label='Stop workflow']")).not.toBeNull();
+    expect(container.querySelector("button[aria-label='Run workflow']")).toBeNull();
+    dispose();
+  });
+
+  it("shows compact nav trigger only in compact viewport", () => {
+    const { container, dispose } = renderWithContext({
+      isCompactViewport: () => true,
+    });
+    expect(container.querySelector("button[aria-label='Open navigation']")).not.toBeNull();
+    dispose();
+  });
+
+  it("hides compact nav trigger on desktop viewport", () => {
+    const { container, dispose } = renderWithContext({
+      isCompactViewport: () => false,
+    });
+    expect(container.querySelector("button[aria-label='Open navigation']")).toBeNull();
     dispose();
   });
 

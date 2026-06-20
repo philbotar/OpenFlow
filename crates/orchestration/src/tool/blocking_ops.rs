@@ -3,11 +3,10 @@
 use crate::lsp::LspSettings as RuntimeLspSettings;
 use crate::settings::model::LspSettings;
 use crate::tool::errors::ToolError;
-use crate::tool::ports::ContentSearch;
 use crate::tool::read::selector::ReadSelector;
 use crate::tool::read::summary::render_read;
 use crate::tool::registry::BuiltinToolKind;
-use crate::tools::grep::RipgrepSearch;
+use crate::tools::grep::search_at;
 use serde::Deserialize;
 use serde_json::Value;
 use std::fs;
@@ -130,7 +129,7 @@ impl BlockingToolOps {
     }
 
     fn search(&self, args: Value) -> Result<String, ToolError> {
-        RipgrepSearch::new(self.cwd.clone()).search(args)
+        search_at(&self.cwd, args)
     }
 
     fn write(&self, args: Value) -> Result<String, ToolError> {
@@ -259,5 +258,33 @@ fn map_read_io_error(path: &str, error: &std::io::Error) -> ToolError {
         }
     } else {
         ToolError::failed(format!("read failed for {path}: {error}"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::sync::Arc;
+
+    #[test]
+    fn blocking_search_delegates_to_search_at() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cwd = dir.path().to_path_buf();
+        fs::write(cwd.join("findme.txt"), "needle\n").expect("seed file");
+        let snapshots = Arc::new(
+            crate::tools::edit::hashline::snapshots::InMemorySnapshotStore::new(),
+        );
+        let outcome = BlockingToolOps::run_blocking(
+            cwd,
+            snapshots,
+            LspSettings::default(),
+            BuiltinToolKind::Search,
+            serde_json::json!({"pattern": "needle", "paths": "findme.txt"}),
+            None,
+        );
+        let output = outcome.output.expect("search should succeed");
+        assert!(output.contains("findme.txt"));
+        assert!(output.contains("needle"));
     }
 }

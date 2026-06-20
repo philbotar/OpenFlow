@@ -54,6 +54,23 @@ impl ScheduleService {
         Ok(())
     }
 
+    pub fn tick_at(&self, now: DateTime<Utc>) {
+        let mut entries = self.entries.lock();
+        for entry in entries.values_mut() {
+            if !entry.schedule.enabled {
+                entry.next_run_at = None;
+                continue;
+            }
+            match next_run_after(&entry.schedule, now) {
+                Ok(next) => entry.next_run_at = Some(next),
+                Err(error) => {
+                    entry.next_run_at = None;
+                    entry.last_error = Some(error.to_string());
+                }
+            }
+        }
+    }
+
     #[must_use]
     pub fn statuses(&self) -> Vec<ScheduleStatus> {
         self.entries
@@ -189,6 +206,33 @@ mod tests {
         assert_eq!(
             status.next_run_at.expect("next").to_rfc3339(),
             "2026-06-16T00:30:00+00:00"
+        );
+    }
+
+    #[test]
+    fn tick_at_recomputes_next_run_without_workflow_reload() {
+        let service = ScheduleService::new();
+        let workflow = workflow_with_schedule("wf-1", "0 9 * * *", true);
+        service
+            .refresh(&[workflow], utc("2026-06-16T08:00:00Z"))
+            .expect("refresh schedules");
+
+        assert_eq!(
+            service.statuses()[0]
+                .next_run_at
+                .expect("next")
+                .to_rfc3339(),
+            "2026-06-16T09:00:00+00:00"
+        );
+
+        service.tick_at(utc("2026-06-16T10:00:00Z"));
+
+        assert_eq!(
+            service.statuses()[0]
+                .next_run_at
+                .expect("next")
+                .to_rfc3339(),
+            "2026-06-17T09:00:00+00:00"
         );
     }
 

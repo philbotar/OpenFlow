@@ -27,6 +27,7 @@ const SCHEDULE_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_se
 
 fn emit_schedule_statuses(app: &tauri::AppHandle) {
     let backend = app.state::<AppBackend>();
+    backend.tick_schedules();
     let _ = app.emit(SCHEDULE_EVENT, backend.list_schedule_statuses());
 }
 
@@ -120,8 +121,13 @@ fn list_workflows(
 
 /// Tauri command: Load all workflows.
 #[tauri::command]
-fn load_all_workflows(backend: tauri::State<AppBackend>) -> Result<Vec<Workflow>, CommandError> {
-    Ok(backend.load_all_workflows()?)
+fn load_all_workflows(
+    app: tauri::AppHandle,
+    backend: tauri::State<AppBackend>,
+) -> Result<Vec<Workflow>, CommandError> {
+    let workflows = backend.load_all_workflows()?;
+    emit_schedule_statuses(&app);
+    Ok(workflows)
 }
 
 /// Tauri command: List workflow schedule statuses.
@@ -161,19 +167,25 @@ fn create_workflow(
 /// Tauri command: Save a workflow.
 #[tauri::command]
 fn save_workflow(
+    app: tauri::AppHandle,
     backend: tauri::State<AppBackend>,
     workflow: Workflow,
 ) -> Result<Workflow, CommandError> {
-    Ok(backend.save_workflow(workflow)?)
+    let saved = backend.save_workflow(workflow)?;
+    emit_schedule_statuses(&app);
+    Ok(saved)
 }
 
 /// Tauri command: Save multiple workflows.
 #[tauri::command]
 fn save_workflows(
+    app: tauri::AppHandle,
     backend: tauri::State<AppBackend>,
     workflows: Vec<Workflow>,
 ) -> Result<(), CommandError> {
-    Ok(backend.save_workflows(&workflows)?)
+    backend.save_workflows(&workflows)?;
+    emit_schedule_statuses(&app);
+    Ok(())
 }
 
 /// Tauri command: Rename a workflow.
@@ -704,6 +716,19 @@ fn assign_workflow_to_project(
     Ok(backend.assign_workflow_to_project(&project_id, &workflow_id)?)
 }
 
+/// Tauri command: Copy a workflow into a project as an independent duplicate.
+#[tauri::command]
+fn copy_workflow_to_project(
+    backend: tauri::State<AppBackend>,
+    target_project_id: String,
+    source_workflow_id: String,
+) -> Result<orchestration::api::CopyWorkflowToProjectResult, CommandError> {
+    Ok(backend.copy_workflow_to_project(
+        &target_project_id,
+        &source_workflow_id,
+    )?)
+}
+
 /// Tauri command: Remove a workflow from any project.
 #[tauri::command]
 fn unassign_workflow_from_project(
@@ -770,6 +795,7 @@ pub fn run() {
             save_projects,
             create_project_from_directory,
             assign_workflow_to_project,
+            copy_workflow_to_project,
             unassign_workflow_from_project,
             list_workflows,
             load_all_workflows,

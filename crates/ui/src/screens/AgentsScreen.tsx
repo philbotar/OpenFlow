@@ -1,4 +1,5 @@
 import { For, Show } from "solid-js";
+import { PanelEmptyState } from "../components/PanelEmptyState";
 import { useAppContext } from "../context/AppContext";
 import { AgentConfigForm } from "../forms/AgentConfigForm";
 import { ToolConfigEditor } from "../forms/ToolConfigEditor";
@@ -20,7 +21,10 @@ export function AgentsScreen() {
             <Show
               when={ctx.agents().length > 0}
               fallback={
-                <div class="empty-panel agents-empty-panel">No saved agents yet.</div>
+                <PanelEmptyState
+                  title="No saved agents yet"
+                  description="Use New agent above to create your first reusable config."
+                />
               }
             >
               <For each={ctx.agents()}>
@@ -61,9 +65,10 @@ export function AgentsScreen() {
           <Show
             when={ctx.selectedAgent()}
             fallback={
-              <div class="empty-panel agents-detail-empty">
-                Select an agent to edit its prompts, schema, and model.
-              </div>
+              <PanelEmptyState
+                title="Select an agent"
+                description="Pick an agent from the list to edit prompts, schema, and model."
+              />
             }
           >
             {(agent) => (

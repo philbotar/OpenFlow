@@ -9,28 +9,7 @@ use serde_json::Value;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use crate::tool::ports::ContentSearch;
-
 pub const MAX_SEARCH_MATCHES: usize = 500;
-
-/// Ripgrep-library implementation of [`ContentSearch`].
-#[derive(Debug, Clone)]
-pub struct RipgrepSearch {
-    cwd: PathBuf,
-}
-
-impl RipgrepSearch {
-    #[must_use]
-    pub fn new(cwd: PathBuf) -> Self {
-        Self { cwd }
-    }
-}
-
-impl ContentSearch for RipgrepSearch {
-    fn search(&self, args: Value) -> Result<String, ToolError> {
-        search_at(&self.cwd, args)
-    }
-}
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
@@ -292,9 +271,11 @@ mod tests {
     fn finds_matching_line() {
         let (_dir, cwd) = fixture();
         fs::write(cwd.join("note.txt"), "alpha\nbeta\n").unwrap();
-        let output = RipgrepSearch::new(cwd.clone())
-            .search(serde_json::json!({"pattern": "beta", "paths": "note.txt"}))
-            .unwrap();
+        let output = search_at(
+            &cwd,
+            serde_json::json!({"pattern": "beta", "paths": "note.txt"}),
+        )
+        .unwrap();
         assert!(output.contains("note.txt:2:beta"));
     }
 
@@ -309,9 +290,11 @@ mod tests {
         fs::write(cwd.join(".gitignore"), "ignored.txt\n").unwrap();
         fs::write(cwd.join("ignored.txt"), "secret_match\n").unwrap();
         fs::write(cwd.join("visible.txt"), "secret_match\n").unwrap();
-        let output = RipgrepSearch::new(cwd)
-            .search(serde_json::json!({"pattern": "secret_match", "paths": "."}))
-            .unwrap();
+        let output = search_at(
+            &cwd,
+            serde_json::json!({"pattern": "secret_match", "paths": "."}),
+        )
+        .unwrap();
         assert!(output.contains("visible.txt"));
         assert!(!output.contains("ignored.txt"));
     }
@@ -320,9 +303,11 @@ mod tests {
     fn case_insensitive() {
         let (_dir, cwd) = fixture();
         fs::write(cwd.join("note.txt"), "Beta\n").unwrap();
-        let output = RipgrepSearch::new(cwd)
-            .search(serde_json::json!({"pattern": "beta", "paths": "note.txt", "i": true}))
-            .unwrap();
+        let output = search_at(
+            &cwd,
+            serde_json::json!({"pattern": "beta", "paths": "note.txt", "i": true}),
+        )
+        .unwrap();
         assert!(output.contains("note.txt:1:Beta"));
     }
 
@@ -333,9 +318,11 @@ mod tests {
             .map(|index| format!("match_{index}\n"))
             .collect::<String>();
         fs::write(cwd.join("many.txt"), lines).unwrap();
-        let output = RipgrepSearch::new(cwd)
-            .search(serde_json::json!({"pattern": "match_", "paths": "many.txt"}))
-            .unwrap();
+        let output = search_at(
+            &cwd,
+            serde_json::json!({"pattern": "match_", "paths": "many.txt"}),
+        )
+        .unwrap();
         assert!(output.contains("truncated"));
         assert_eq!(
             output
@@ -349,9 +336,7 @@ mod tests {
     #[test]
     fn invalid_regex() {
         let (_dir, cwd) = fixture();
-        let error = RipgrepSearch::new(cwd)
-            .search(serde_json::json!({"pattern": "[", "paths": "."}))
-            .unwrap_err();
+        let error = search_at(&cwd, serde_json::json!({"pattern": "[", "paths": "."})).unwrap_err();
         assert!(error.to_string().contains("[invalid_args]"));
         assert!(error.to_string().contains("invalid regex"));
     }
@@ -359,9 +344,8 @@ mod tests {
     #[test]
     fn empty_pattern_errors() {
         let (_dir, cwd) = fixture();
-        let error = RipgrepSearch::new(cwd)
-            .search(serde_json::json!({"pattern": "  ", "paths": "."}))
-            .unwrap_err();
+        let error =
+            search_at(&cwd, serde_json::json!({"pattern": "  ", "paths": "."})).unwrap_err();
         assert!(error.to_string().contains("must not be empty"));
     }
 }

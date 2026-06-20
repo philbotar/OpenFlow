@@ -87,6 +87,11 @@ export interface Workflow {
   settings: WorkflowSettings;
 }
 
+export interface CopyWorkflowToProjectResult {
+  workflow: Workflow;
+  projects: Project[];
+}
+
 export interface Node {
   id: NodeId;
   label: string;

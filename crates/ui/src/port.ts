@@ -8,6 +8,7 @@ import type {
 	Project,
 	ProjectFileReference,
 	ProjectFileReferenceContent,
+	CopyWorkflowToProjectResult,
 	ProviderReadiness,
 	SkillSummary,
 	Workflow,
@@ -45,6 +46,10 @@ export interface UiDesktopOutboundPort {
 	saveProjects: (projects: Project[]) => Promise<void>;
 	createProjectFromDirectory: (path: string) => Promise<Project>;
 	assignWorkflowToProject: (projectId: string, workflowId: string) => Promise<Project[]>;
+	copyWorkflowToProject: (
+		targetProjectId: string,
+		sourceWorkflowId: string,
+	) => Promise<CopyWorkflowToProjectResult>;
 	unassignWorkflowFromProject: (projectId: string, workflowId: string) => Promise<Project[]>;
 	listWorkflows: () => Promise<WorkflowListItem[]>;
 	loadAllWorkflows: () => Promise<Workflow[]>;
@@ -144,6 +149,7 @@ export function createUiDesktopOutboundAdapter(): UiDesktopOutboundPort {
 		saveProjects: desktopApi.saveProjects,
 		createProjectFromDirectory: desktopApi.createProjectFromDirectory,
 		assignWorkflowToProject: desktopApi.assignWorkflowToProject,
+		copyWorkflowToProject: desktopApi.copyWorkflowToProject,
 		unassignWorkflowFromProject: desktopApi.unassignWorkflowFromProject,
 		listWorkflows: desktopApi.listWorkflows,
 		loadAllWorkflows: desktopApi.loadAllWorkflows,

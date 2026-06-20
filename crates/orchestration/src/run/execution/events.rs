@@ -745,6 +745,16 @@ fn remove_pending_approval(state: &mut WorkflowRunState, approval_id: &str) {
         .retain(|approval| approval.approval_id != approval_id);
 }
 
+/// Manual roots receive the same kickoff text via `record_user_input` when the UI
+/// auto-flushes to the single awaiting node — skip duplicate chat entry here.
+pub fn should_record_entrypoint_in_chat(workflow: &Workflow, root_id: &NodeId) -> bool {
+    workflow
+        .nodes
+        .iter()
+        .find(|node| node.id == *root_id)
+        .is_some_and(|node| node.agent.auto_start)
+}
+
 pub fn record_entrypoint_message(state: &mut WorkflowRunState, node_id: &str, text: String) {
     let node_id = NodeId(node_id.to_string());
     state
@@ -792,6 +802,24 @@ fn restore_active_node_status(state: &mut WorkflowRunState, node_id: &NodeId) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use engine::Node;
+
+    #[test]
+    fn manual_root_skips_entrypoint_chat_record() {
+        let mut workflow = Workflow::new("w");
+        let mut node = Node::agent("Root", 0.0, 0.0);
+        node.agent.auto_start = false;
+        workflow.nodes = vec![node.clone()];
+        assert!(!should_record_entrypoint_in_chat(&workflow, &node.id));
+    }
+
+    #[test]
+    fn auto_start_root_records_entrypoint_in_chat() {
+        let mut workflow = Workflow::new("w");
+        let node = Node::agent("Root", 0.0, 0.0);
+        workflow.nodes = vec![node.clone()];
+        assert!(should_record_entrypoint_in_chat(&workflow, &node.id));
+    }
 
     #[test]
     fn phase_timed_message_formats_milliseconds_and_seconds() {

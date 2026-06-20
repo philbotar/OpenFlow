@@ -3,7 +3,6 @@ mod drive;
 mod events;
 mod headless;
 mod subagents;
-mod timing;
 mod tool_port;
 
 pub use ai_adapter::AiInvocationAdapter;
@@ -20,12 +19,16 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Instant;
 use thiserror::Error;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio_util::sync::CancellationToken;
 
 pub use drive::{new_artifact_root, new_in_memory_snapshot_store};
-pub use events::{apply_event_to_run_state, record_entrypoint_message, record_user_input};
+pub use events::{
+    apply_event_to_run_state, record_entrypoint_message, record_user_input,
+    should_record_entrypoint_in_chat,
+};
 pub use headless::run_workflow_headless;
 
 /// Interactive run telemetry; canonical type is [`engine::RunTelemetry`].
@@ -38,6 +41,23 @@ pub fn send_or_log(event_tx: &UnboundedSender<ExecutionEvent>, event: ExecutionE
     if let Err(error) = event_tx.send(event) {
         log::warn!("failed to send execution event; run consumer dropped: {error:?}");
     }
+}
+
+fn emit_phase_timed(
+    event_tx: &UnboundedSender<RunTelemetry>,
+    phase: &str,
+    label: &str,
+    node_id: Option<NodeId>,
+    started: Instant,
+) {
+    let duration_ms = started.elapsed().as_millis() as u64;
+    log::info!("[perf] {phase} · {label}: {duration_ms}ms");
+    let _ = event_tx.send(RunTelemetry::PhaseTimed {
+        phase: phase.to_string(),
+        label: label.to_string(),
+        node_id,
+        duration_ms,
+    });
 }
 
 pub enum ExecutionAction {

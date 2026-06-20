@@ -15,6 +15,9 @@ import {
   extractReferencedFilePaths,
   formatSubmissionWithFileReferences,
 } from "../lib/fileReferences";
+import {
+  type NavTransitionType,
+} from "../lib/viewTransition";
 import type {
   AgentDefinition,
   AiProviderKind,
@@ -99,10 +102,12 @@ import {
   clampDockHeight,
   COLLAPSED_DOCK_HEIGHT,
   DEFAULT_DOCK_HEIGHT,
+  isCompactViewportWidth,
   isTextInputTarget,
   normalizeError,
   shouldCollapseDock,
   STATUS_TOAST_ID,
+  viewportHeight,
 } from "../lib/utils";
 import {
   applyTheme,
@@ -128,6 +133,18 @@ export function AppProvider(props: ParentProps) {
   const [selectedNodeId, setSelectedNodeId] = createSignal<NodeId | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = createSignal<EdgeId | null>(null);
   const [screen, setScreen] = createSignal<Screen>("editor");
+  const [screenTransitionClass, setScreenTransitionClass] =
+    createSignal<NavTransitionType>("nav-lateral");
+
+  const navigateToScreen = (
+    next: Screen,
+    transition: NavTransitionType = "nav-lateral",
+  ) => {
+    if (screen() === next) return;
+    setScreenTransitionClass(transition);
+    // ponytail: skip View Transition API — morphs badly with .app-shell { zoom } in Tauri WebView.
+    setScreen(next);
+  };
   const [settings, setSettings] = createSignal<AppSettings>(cloneSettings(EMPTY_SETTINGS));
   // Run state arrives as a freshly-deserialized snapshot on every execution
   // event (including each streaming token). Holding it in a store and applying
@@ -248,7 +265,21 @@ export function AppProvider(props: ParentProps) {
     readStoredTheme(globalThis.localStorage),
   );
   const [shortcutsModalOpen, setShortcutsModalOpen] = createSignal(false);
+  const [isCompactViewport, setIsCompactViewport] = createSignal(isCompactViewportWidth());
+  const [sidebarDrawerOpen, setSidebarDrawerOpen] = createSignal(false);
   const resolvedTheme = createMemo(() => resolveTheme(themePreference()));
+
+  const openSidebarDrawer = () => setSidebarDrawerOpen(true);
+  const closeSidebarDrawer = () => setSidebarDrawerOpen(false);
+  const toggleSidebarDrawer = () => setSidebarDrawerOpen((open) => !open);
+
+  const syncCompactViewport = (width = globalThis.innerWidth ?? 1280) => {
+    const compact = isCompactViewportWidth(width);
+    setIsCompactViewport(compact);
+    if (!compact) {
+      setSidebarDrawerOpen(false);
+    }
+  };
 
   // ── Mutable refs (not signals) ────────────────────────────────────────────
   let workflowNameInput: HTMLInputElement | undefined;
@@ -519,7 +550,7 @@ export function AppProvider(props: ParentProps) {
     if (!dockResizeState) return;
     const nextHeight =
       dockResizeState.startHeight + (dockResizeState.startY - event.clientY);
-    if (shouldCollapseDock(nextHeight, bottomTab())) {
+    if (shouldCollapseDock(nextHeight, bottomTab(), isCompactViewport())) {
       setDockOpen(false);
       return;
     }
@@ -848,14 +879,17 @@ export function AppProvider(props: ParentProps) {
   const workflowsAddableToProjectMemo = (projectId: string) =>
     workflowsAddableToProject(workflows(), projects(), projectId);
 
-  const handleAssignWorkflowToProject = async (projectId: string, workflowId: string) => {
+  const handleCopyWorkflowToProject = async (projectId: string, sourceWorkflowId: string) => {
     try {
-      const nextProjects = await desktop.assignWorkflowToProject(projectId, workflowId);
-      setProjects(nextProjects);
+      const result = await desktop.copyWorkflowToProject(projectId, sourceWorkflowId);
+      setWorkflows([...workflows(), result.workflow]);
+      setProjects(result.projects);
       expandProject(projectId);
       setSelectedProjectId(projectId);
       closeAssignWorkflowPicker();
-      setSuccess("Added workflow to project");
+      selectWorkflow(result.workflow);
+      setScreen("editor");
+      setSuccess("Copied workflow");
     } catch (error) {
       setError(normalizeError(error));
     }
@@ -908,7 +942,7 @@ export function AppProvider(props: ParentProps) {
 
   const handleOpenAgents = () => {
     closeAddNodePicker();
-    setScreen("agents");
+    navigateToScreen("agents", "nav-lateral");
     if (!selectedAgentId() && agents().length > 0) {
       setSelectedAgentId(agents()[0].id);
     }
@@ -916,16 +950,7 @@ export function AppProvider(props: ParentProps) {
 
   const handleOpenSchedule = () => {
     closeAddNodePicker();
-    setScreen("schedule");
-    void handleRefreshScheduleStatuses();
-  };
-
-  const handleRefreshScheduleStatuses = async () => {
-    try {
-      setScheduleStatuses(await desktop.refreshSchedules());
-    } catch (error) {
-      setError(normalizeError(error));
-    }
+    navigateToScreen("schedule", "nav-lateral");
   };
 
   const handleSaveWorkflowSchedule = async (
@@ -939,7 +964,6 @@ export function AppProvider(props: ParentProps) {
     try {
       const saved = await desktop.saveWorkflow(next);
       setWorkflows(replaceWorkflow(workflows(), saved));
-      setScheduleStatuses(await desktop.refreshSchedules());
       setSuccess(`Saved schedule for "${saved.name}"`);
     } catch (error) {
       setError(normalizeError(error));
@@ -1040,12 +1064,27 @@ export function AppProvider(props: ParentProps) {
   };
 
   // ── Node mutation helpers ─────────────────────────────────────────────────
-  const updateActiveWorkflow = (mutator: (draft: Workflow) => void) => {
+  const updateActiveWorkflow = (mutator: (draft: Workflow) => void): Workflow | null => {
     const workflow = activeWorkflow();
-    if (!workflow) return;
+    if (!workflow) return null;
     const next = cloneWorkflow(workflow);
     mutator(next);
     setWorkflows(replaceWorkflow(workflows(), next));
+    return next;
+  };
+
+  const validateActiveWorkflow = async (
+    workflow: Workflow,
+    onInvalid?: () => void,
+  ): Promise<boolean> => {
+    try {
+      await desktop.validateWorkflow(workflow);
+      return true;
+    } catch (error) {
+      onInvalid?.();
+      setError(normalizeError(error));
+      return false;
+    }
   };
 
   const updateActiveWorkflowSettings = (
@@ -1156,7 +1195,7 @@ export function AppProvider(props: ParentProps) {
         nextAgent = { ...nextAgent, model: profile.default_model };
       }
       const nextNode = { ...node, agent: nextAgent };
-      updateActiveWorkflow((draft) => {
+      const nextWorkflow = updateActiveWorkflow((draft) => {
         draft.nodes.push(nextNode);
       });
       closeAddNodePicker();
@@ -1164,7 +1203,16 @@ export function AppProvider(props: ParentProps) {
       setSelectedEdgeId(null);
       setEditingNodeId(null);
       setNodeLabelDraft("");
-      setSuccess(agentId ? "Added saved agent to workflow" : "Added node");
+      if (!nextWorkflow) return;
+      const valid = await validateActiveWorkflow(nextWorkflow, () => {
+        updateActiveWorkflow((draft) => {
+          draft.nodes = draft.nodes.filter((item) => item.id !== nextNode.id);
+        });
+        setSelectedNodeId(workflow.nodes[0]?.id ?? null);
+      });
+      if (valid) {
+        setSuccess(agentId ? "Added saved agent to workflow" : "Added node");
+      }
     } catch (error) {
       setError(normalizeError(error));
     }
@@ -1189,38 +1237,25 @@ export function AppProvider(props: ParentProps) {
     if (selectedEdgeId() === edgeId) setSelectedEdgeId(null);
   };
 
-  const handleValidate = async () => {
-    const workflow = activeWorkflow();
-    if (!workflow || !applySchemaEditor()) return;
-    try {
-      const summary = await desktop.validateWorkflow(activeWorkflow()!);
-      setSuccess(
-        `Valid DAG · ${summary.layerCount} layer${summary.layerCount === 1 ? "" : "s"}`,
-      );
-    } catch (error) {
-      setError(normalizeError(error));
-    }
-  };
-
   const handleOpenWorkflowAuthoring = async (baseWorkflow?: Workflow) => {
     resetWorkflowAuthoringSession();
     setWorkflowAuthoringMessages([]);
     setWorkflowAuthoringValidation(null);
     setWorkflowAuthoringDraft(baseWorkflow ?? null);
-    setScreen("workflow-authoring");
+    navigateToScreen("workflow-authoring", "nav-forward");
     void refreshReadiness();
     try {
       const sessionId = await desktop.startWorkflowAuthoring(baseWorkflow ?? null);
       setWorkflowAuthoringSessionId(sessionId);
     } catch (error) {
       setError(normalizeError(error));
-      setScreen("editor");
+      navigateToScreen("editor", "nav-back");
     }
   };
 
   const handleCloseWorkflowAuthoring = () => {
     resetWorkflowAuthoringSession();
-    setScreen("editor");
+    navigateToScreen("editor", "nav-back");
   };
 
   const handleWorkflowAuthoringSend = async (message: string) => {
@@ -1266,7 +1301,7 @@ export function AppProvider(props: ParentProps) {
     try {
       await desktop.saveWorkflow(normalizedDraft);
       resetWorkflowAuthoringSession();
-      setScreen("editor");
+      navigateToScreen("editor", "nav-back");
       setSuccess(`Applied workflow "${normalizedDraft.name}"`);
     } catch (error) {
       setError(normalizeError(error));
@@ -1584,7 +1619,7 @@ export function AppProvider(props: ParentProps) {
     if (from === to) return;
     const edgeId = crypto.randomUUID();
     let created = false;
-    updateActiveWorkflow((draft) => {
+    const nextWorkflow = updateActiveWorkflow((draft) => {
       const duplicate = draft.edges.some((edge) => edge.from === from && edge.to === to);
       if (duplicate) return;
       draft.edges.push({ id: edgeId, from, to });
@@ -1595,13 +1630,25 @@ export function AppProvider(props: ParentProps) {
       setSelectedEdgeId(edgeId);
       setEditingNodeId(null);
       setNodeLabelDraft("");
+      if (nextWorkflow) {
+        void validateActiveWorkflow(nextWorkflow, () => {
+          updateActiveWorkflow((draft) => {
+            draft.edges = draft.edges.filter((edge) => edge.id !== edgeId);
+          });
+          setSelectedEdgeId(null);
+        });
+      }
     }
   };
 
   const handleReconnectEdge = (edgeId: EdgeId, from: NodeId, to: NodeId) => {
     if (from === to) return;
+    const existing = activeWorkflow()?.edges.find((edge) => edge.id === edgeId);
+    if (!existing) return;
+    const previousFrom = existing.from;
+    const previousTo = existing.to;
     let reconnected = false;
-    updateActiveWorkflow((draft) => {
+    const nextWorkflow = updateActiveWorkflow((draft) => {
       const duplicate = draft.edges.some(
         (edge) => edge.id !== edgeId && edge.from === from && edge.to === to,
       );
@@ -1617,6 +1664,17 @@ export function AppProvider(props: ParentProps) {
       setSelectedEdgeId(edgeId);
       setEditingNodeId(null);
       setNodeLabelDraft("");
+      if (nextWorkflow) {
+        void validateActiveWorkflow(nextWorkflow, () => {
+          updateActiveWorkflow((draft) => {
+            const edge = draft.edges.find((item) => item.id === edgeId);
+            if (edge) {
+              edge.from = previousFrom;
+              edge.to = previousTo;
+            }
+          });
+        });
+      }
     }
   };
 
@@ -1688,6 +1746,10 @@ export function AppProvider(props: ParentProps) {
 
   // ── Global keyboard handler ───────────────────────────────────────────────
   function handleKeyDown(event: KeyboardEvent) {
+    if (event.key === "Escape" && sidebarDrawerOpen()) {
+      closeSidebarDrawer();
+      return;
+    }
     const command = event.metaKey || event.ctrlKey;
     if (command && event.key === "0") {
       event.preventDefault();
@@ -1806,7 +1868,23 @@ export function AppProvider(props: ParentProps) {
 
   createEffect(() => {
     const tab = bottomTab();
-    setDockHeight((current) => clampDockHeight(current, tab));
+    setDockHeight((current) => clampDockHeight(current, tab, viewportHeight(), isCompactViewport()));
+  });
+
+  createEffect((prevCompact: boolean | undefined) => {
+    const compact = isCompactViewport();
+    if (compact && prevCompact === false) {
+      setDockOpen(false);
+    }
+    return compact;
+  });
+
+  createEffect(() => {
+    screen();
+    activeWorkflowId();
+    if (isCompactViewport()) {
+      closeSidebarDrawer();
+    }
   });
 
   // ── Mount ─────────────────────────────────────────────────────────────────
@@ -1820,12 +1898,19 @@ export function AppProvider(props: ParentProps) {
     window.addEventListener("pointermove", handleDockResizePointerMove);
     window.addEventListener("pointerup", clearDockResizeState);
     window.addEventListener("pointercancel", clearDockResizeState);
+    const handleViewportResize = () => syncCompactViewport();
+    window.addEventListener("resize", handleViewportResize);
+    syncCompactViewport();
+    if (isCompactViewport()) {
+      setDockOpen(false);
+    }
 
     onCleanup(() => {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("pointermove", handleDockResizePointerMove);
       window.removeEventListener("pointerup", clearDockResizeState);
       window.removeEventListener("pointercancel", clearDockResizeState);
+      window.removeEventListener("resize", handleViewportResize);
       document.body.classList.remove("is-resizing-dock");
       if (unlisten) void unlisten();
       if (unlistenTerminal) void unlistenTerminal();
@@ -1932,6 +2017,7 @@ export function AppProvider(props: ParentProps) {
     selectedNodeId,
     selectedEdgeId,
     screen,
+    screenTransitionClass,
     settings,
     runState,
     readiness,
@@ -1972,6 +2058,11 @@ export function AppProvider(props: ParentProps) {
     themePreference,
     resolvedTheme,
     shortcutsModalOpen,
+    isCompactViewport,
+    sidebarDrawerOpen,
+    openSidebarDrawer,
+    closeSidebarDrawer,
+    toggleSidebarDrawer,
     terminalSessions,
     activeTerminalSessionId,
     terminalStarting,
@@ -1992,6 +2083,7 @@ export function AppProvider(props: ParentProps) {
     setSelectedTraceIndex,
     setSelectedAgentId,
     setScreen,
+    navigateToScreen,
     // Memos
     activeWorkflow,
     activeProject,
@@ -2021,10 +2113,9 @@ export function AppProvider(props: ParentProps) {
     handleOpenAssignWorkflowPicker,
     closeAssignWorkflowPicker,
     workflowsAddableToProject: workflowsAddableToProjectMemo,
-    handleAssignWorkflowToProject,
+    handleCopyWorkflowToProject,
     handleOpenAgents,
     handleOpenSchedule,
-    handleRefreshScheduleStatuses,
     handleSaveWorkflowSchedule,
     handleAddProject,
     handleSelectProject,
@@ -2054,7 +2145,6 @@ export function AppProvider(props: ParentProps) {
     handleOpenAddNodePicker,
     handleAddNode,
     closeAddNodePicker,
-    handleValidate,
     workflowAuthoringBusy,
     workflowAuthoringSessionReady,
     workflowAuthoringMessages,

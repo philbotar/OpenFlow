@@ -1,4 +1,5 @@
 import { createEffect, createMemo, For, Show } from "solid-js";
+import { TextSelect } from "../components/TextSelect";
 import type { ReasoningEffortOption } from "../lib/types";
 
 export function AgentConfigForm(props: {
@@ -73,8 +74,7 @@ export function AgentConfigForm(props: {
       <Show when={effortOptions().length > 0 && props.onReasoningEffortChange}>
         <label>
           <span>Reasoning effort</span>
-          <select
-            class="text-input"
+          <TextSelect
             value={selectedEffort()}
             onChange={(event) => {
               const nextValue = event.currentTarget.value;
@@ -100,7 +100,7 @@ export function AgentConfigForm(props: {
             <For each={effortOptions()}>
               {(option) => <option value={option.value}>{option.label}</option>}
             </For>
-          </select>
+          </TextSelect>
         </label>
         <Show when={selectedEffortOption()?.uses_budget_tokens}>
           <label>

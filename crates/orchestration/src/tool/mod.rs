@@ -10,7 +10,6 @@ pub mod cache;
 pub mod errors;
 pub mod hooks;
 pub mod output;
-pub mod ports;
 pub(crate) mod read;
 pub mod registry;
 pub mod retry;

@@ -9,7 +9,7 @@ use engine::{
     NodeId, NodeToolConfig, SubagentInvokeStep, SubagentStartOutcome, ToolCall, ToolResult,
 };
 
-use crate::run::execution::timing::emit_phase_timed;
+use super::super::emit_phase_timed;
 
 use super::{abort_run, send_run_telemetry, ToolPortImpl};
 

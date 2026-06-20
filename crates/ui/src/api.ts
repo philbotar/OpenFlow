@@ -12,6 +12,7 @@ import type {
   Project,
   ProjectFileReference,
   ProjectFileReferenceContent,
+  CopyWorkflowToProjectResult,
   SkillSummary,
   ProviderReadiness,
   RunSummary,
@@ -69,6 +70,13 @@ export function createProjectFromDirectory(path: string) {
 
 export function assignWorkflowToProject(projectId: string, workflowId: string) {
   return invoke<Project[]>("assign_workflow_to_project", { projectId, workflowId });
+}
+
+export function copyWorkflowToProject(targetProjectId: string, sourceWorkflowId: string) {
+  return invoke<CopyWorkflowToProjectResult>("copy_workflow_to_project", {
+    targetProjectId,
+    sourceWorkflowId,
+  });
 }
 
 export function unassignWorkflowFromProject(projectId: string, workflowId: string) {

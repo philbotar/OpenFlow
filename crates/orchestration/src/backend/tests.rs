@@ -4,7 +4,7 @@ use crate::incident::IncidentRecorder;
 use crate::run::execution::{ExecutionAction, ExecutionEvent};
 use crate::settings::model::{ProviderProfile, ProviderTransport};
 use crate::workflow::catalog::default_workflow;
-use engine::{Node, NodeId};
+use engine::{Node, NodeId, Workflow};
 use providers::ProviderId;
 use std::sync::Arc;
 use tempfile::tempdir;
@@ -381,6 +381,73 @@ fn start_run_returns_initial_state_and_manual_events() {
 }
 
 #[test]
+fn start_run_with_entrypoint_skips_chat_for_manual_root() {
+    let (backend, _dir) = backend();
+    backend.block_on_test(async {
+        let mut workflow = Workflow::new("Manual kickoff");
+        let mut node = Node::agent("Review", 0.0, 0.0);
+        node.id = NodeId("review".to_string());
+        node.agent.auto_start = false;
+        workflow.nodes = vec![node];
+
+        let (initial_state, mut event_rx) = backend
+            .start_run(
+                workflow,
+                Some("Plan ORCHID-91".to_string()),
+                None,
+                &AppSettings::default(),
+                None,
+            )
+            .await
+            .expect("start run");
+
+        assert_eq!(
+            initial_state
+                .chat_logs
+                .get(&NodeId("review".into()))
+                .map_or(0, Vec::len),
+            0
+        );
+
+        let _ = event_rx.recv().await;
+        let _ = event_rx.recv().await;
+        backend.stop_run().await.expect("stop run");
+    });
+}
+
+#[test]
+fn start_run_with_entrypoint_records_chat_for_auto_start_root() {
+    let (backend, _dir) = backend();
+    backend.block_on_test(async {
+        let mut workflow = Workflow::new("Auto kickoff");
+        let mut node = Node::agent("Plan", 0.0, 0.0);
+        node.id = NodeId("plan".to_string());
+        node.agent.auto_start = true;
+        workflow.nodes = vec![node];
+
+        let (initial_state, _event_rx) = backend
+            .start_run(
+                workflow,
+                Some("Plan ORCHID-91".to_string()),
+                None,
+                &AppSettings::default(),
+                None,
+            )
+            .await
+            .expect("start run");
+
+        let log = initial_state
+            .chat_logs
+            .get(&NodeId("plan".into()))
+            .expect("chat log");
+        assert_eq!(log.len(), 1);
+        assert_eq!(log[0].role, engine::ChatRole::User);
+
+        backend.stop_run().await.expect("stop run");
+    });
+}
+
+#[test]
 fn stop_run_is_idempotent_when_inactive() {
     let (backend, _dir) = backend();
     backend.block_on_test(async {
@@ -546,6 +613,61 @@ fn submit_tool_approval_updates_snapshot_and_sends_action() {
             ExecutionAction::RetryNode { .. } => panic!("unexpected retry action"),
         }
     });
+}
+
+#[test]
+fn copy_workflow_to_project_creates_independent_copy() {
+    let (backend, dir) = backend();
+    let project_a_path = dir.path().join("project-a");
+    let project_b_path = dir.path().join("project-b");
+    std::fs::create_dir_all(&project_a_path).expect("project-a dir");
+    std::fs::create_dir_all(&project_b_path).expect("project-b dir");
+
+    let workflow = backend
+        .create_workflow("Source Flow".to_string())
+        .expect("create workflow");
+    let project_a = backend
+        .create_project_from_directory(project_a_path.to_string_lossy().into_owned())
+        .expect("create project a");
+    backend
+        .assign_workflow_to_project(&project_a.id, &workflow.id.to_string())
+        .expect("assign workflow to a");
+
+    let project_b = backend
+        .create_project_from_directory(project_b_path.to_string_lossy().into_owned())
+        .expect("create project b");
+
+    let result = backend
+        .copy_workflow_to_project(&project_b.id, &workflow.id.to_string())
+        .expect("copy workflow");
+
+    assert_ne!(result.workflow.id, workflow.id);
+    assert_eq!(result.workflow.name, "Source Flow copy");
+
+    let project_a_loaded = result
+        .projects
+        .iter()
+        .find(|project| project.id == project_a.id)
+        .expect("project a");
+    let project_b_loaded = result
+        .projects
+        .iter()
+        .find(|project| project.id == project_b.id)
+        .expect("project b");
+    assert_eq!(project_a_loaded.workflow_ids, vec![workflow.id.to_string()]);
+    assert_eq!(
+        project_b_loaded.workflow_ids,
+        vec![result.workflow.id.to_string()]
+    );
+
+    let source = backend
+        .load_workflow(&workflow.id.to_string())
+        .expect("load source");
+    let copy = backend
+        .load_workflow(&result.workflow.id.to_string())
+        .expect("load copy");
+    assert_eq!(source.name, "Source Flow");
+    assert_eq!(copy.name, "Source Flow copy");
 }
 
 #[test]
@@ -744,6 +866,31 @@ fn saving_workflow_refreshes_schedule_statuses() {
     assert_eq!(statuses.len(), 1);
     assert_eq!(statuses[0].workflow_name, "Scheduled");
     assert!(statuses[0].next_run_at.is_some());
+}
+
+#[test]
+fn tick_schedules_advances_next_run_without_reload() {
+    let (backend, _dir) = backend();
+    let mut workflow = backend
+        .create_workflow("Scheduled".to_string())
+        .expect("create workflow");
+    workflow.settings.schedule = Some(engine::WorkflowSchedule {
+        cron: "0 9 * * *".to_string(),
+        enabled: true,
+        timezone: "UTC".to_string(),
+    });
+    backend.save_workflow(workflow).expect("save workflow");
+    backend
+        .refresh_schedules_at("2026-06-16T08:00:00Z".parse().expect("timestamp"))
+        .expect("refresh");
+
+    backend.tick_schedules_at("2026-06-16T10:00:00Z".parse().expect("timestamp"));
+
+    let statuses = backend.list_schedule_statuses();
+    assert_eq!(
+        statuses[0].next_run_at.expect("next").to_rfc3339(),
+        "2026-06-17T09:00:00+00:00"
+    );
 }
 
 #[test]

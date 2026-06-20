@@ -24,6 +24,7 @@ import type {
   WorkflowRunState,
   WorkflowSchedule,
 } from "../lib/types";
+import type { NavTransitionType } from "../lib/viewTransition";
 import type { ResolvedTheme, ThemePreference } from "../lib/theme";
 import type { ChatSubmissionResolution } from "../lib/chatCommands";
 import type {
@@ -42,6 +43,7 @@ export interface AppContextValue {
   selectedNodeId: Accessor<NodeId | null>;
   selectedEdgeId: Accessor<EdgeId | null>;
   screen: Accessor<Screen>;
+  screenTransitionClass: Accessor<NavTransitionType>;
   settings: Accessor<AppSettings>;
   runState: Accessor<WorkflowRunState | null>;
   readiness: Accessor<ProviderReadiness | null>;
@@ -78,6 +80,11 @@ export interface AppContextValue {
   replayRunId: Accessor<string | null>;
   themePreference: Accessor<ThemePreference>;
   resolvedTheme: Accessor<ResolvedTheme>;
+  isCompactViewport: Accessor<boolean>;
+  sidebarDrawerOpen: Accessor<boolean>;
+  openSidebarDrawer: () => void;
+  closeSidebarDrawer: () => void;
+  toggleSidebarDrawer: () => void;
   shortcutsModalOpen: Accessor<boolean>;
   chatFilterNodeId: Accessor<NodeId | null>;
   chatFocusNode: Accessor<{ nodeId: NodeId; tick: number } | null>;
@@ -104,6 +111,7 @@ export interface AppContextValue {
   setSelectedTraceIndex: Setter<number | null>;
   setSelectedAgentId: Setter<string | null>;
   setScreen: Setter<Screen>;
+  navigateToScreen: (screen: Screen, transition?: NavTransitionType) => void;
 
   // ── Derived memos ─────────────────────────────────────────────────────────
   activeWorkflow: Accessor<Workflow | undefined>;
@@ -137,10 +145,9 @@ export interface AppContextValue {
   handleOpenAssignWorkflowPicker: (projectId: string) => void;
   closeAssignWorkflowPicker: () => void;
   workflowsAddableToProject: (projectId: string) => Workflow[];
-  handleAssignWorkflowToProject: (projectId: string, workflowId: string) => Promise<void>;
+  handleCopyWorkflowToProject: (projectId: string, workflowId: string) => Promise<void>;
   handleOpenAgents: () => void;
   handleOpenSchedule: () => void;
-  handleRefreshScheduleStatuses: () => Promise<void>;
   handleSaveWorkflowSchedule: (
     workflowId: string,
     schedule: WorkflowSchedule | null,
@@ -181,7 +188,6 @@ export interface AppContextValue {
   closeAddNodePicker: () => void;
 
   // ── Run handlers ──────────────────────────────────────────────────────────
-  handleValidate: () => Promise<void>;
   workflowAuthoringBusy: Accessor<boolean>;
   workflowAuthoringSessionReady: Accessor<boolean>;
   workflowAuthoringMessages: Accessor<WorkflowAuthoringMessage[]>;

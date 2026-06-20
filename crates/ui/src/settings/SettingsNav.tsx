@@ -39,7 +39,7 @@ export function SettingsNav(props: {
       <button
         type="button"
         class="settings-back-button"
-        onClick={() => ctx.setScreen("editor")}
+        onClick={() => ctx.navigateToScreen("editor", "nav-back")}
         data-tauri-drag-region="false"
       >
         <ChevronLeft

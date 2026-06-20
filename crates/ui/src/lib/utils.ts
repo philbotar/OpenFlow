@@ -6,6 +6,16 @@ export const BANNER_DISMISS_MS = 4000;
 export const DEFAULT_DOCK_HEIGHT = 188;
 export const COLLAPSED_DOCK_HEIGHT = 52;
 export const DOCK_VIEWPORT_MARGIN = 160;
+export const COMPACT_VIEWPORT_MAX = 980;
+export const COMPACT_DOCK_VIEWPORT_MARGIN = 240;
+
+export function isCompactViewportWidth(width = globalThis.innerWidth ?? 1280): boolean {
+  return width <= COMPACT_VIEWPORT_MAX;
+}
+
+export function dockViewportMargin(compact = isCompactViewportWidth()): number {
+  return compact ? COMPACT_DOCK_VIEWPORT_MARGIN : DOCK_VIEWPORT_MARGIN;
+}
 
 export function normalizeError(error: unknown): string {
   if (error instanceof Error) {
@@ -21,7 +31,10 @@ export function viewportHeight(): number {
   return typeof globalThis.innerHeight === "number" ? globalThis.innerHeight : 900;
 }
 
-export function minimumDockHeight(tab: BottomTab): number {
+export function minimumDockHeight(tab: BottomTab, compact = isCompactViewportWidth()): number {
+  if (compact) {
+    return tab === "chat" ? 104 : 132;
+  }
   return tab === "chat" ? 116 : 168;
 }
 
@@ -29,14 +42,19 @@ export function clampDockHeight(
   height: number,
   tab: BottomTab,
   nextViewportHeight = viewportHeight(),
+  compact = isCompactViewportWidth(),
 ): number {
-  const min = minimumDockHeight(tab);
-  const max = Math.max(min, nextViewportHeight - DOCK_VIEWPORT_MARGIN);
+  const min = minimumDockHeight(tab, compact);
+  const max = Math.max(min, nextViewportHeight - dockViewportMargin(compact));
   return Math.min(Math.max(Math.round(height), min), max);
 }
 
-export function shouldCollapseDock(height: number, tab: BottomTab): boolean {
-  return height <= Math.max(COLLAPSED_DOCK_HEIGHT + 16, minimumDockHeight(tab) - 32);
+export function shouldCollapseDock(
+  height: number,
+  tab: BottomTab,
+  compact = isCompactViewportWidth(),
+): boolean {
+  return height <= Math.max(COLLAPSED_DOCK_HEIGHT + 16, minimumDockHeight(tab, compact) - 32);
 }
 
 export function chatRoleLabel(

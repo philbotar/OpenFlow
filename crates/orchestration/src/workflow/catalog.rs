@@ -3,7 +3,7 @@ use crate::error::BackendError;
 use crate::project::ports::Project;
 use crate::project::registry::ProjectRegistry;
 use crate::workflow::ports::{ProjectWorkflowStore, WorkflowStore};
-use engine::{Node, Workflow};
+use engine::{Node, Workflow, WorkflowId};
 use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 
@@ -144,6 +144,24 @@ impl WorkflowCatalog {
             id: workflow_id.to_string(),
             name,
         })
+    }
+
+    /// # Errors
+    /// Returns an error if the source workflow, target project, or stores are missing.
+    pub fn copy_to_project(
+        &self,
+        projects: &ProjectRegistry,
+        target_project_id: &str,
+        source_workflow_id: &str,
+    ) -> Result<Workflow, BackendError> {
+        let source = self.load_one(projects, source_workflow_id)?;
+        let mut copy = source;
+        copy.id = WorkflowId(uuid::Uuid::new_v4().to_string());
+        copy.name = format!("{} copy", copy.name);
+        let project_path = projects.link_workflow(target_project_id, &copy.id.to_string())?;
+        self.project_workflows
+            .save_one(Path::new(&project_path), &copy)?;
+        Ok(copy)
     }
 
     /// # Errors

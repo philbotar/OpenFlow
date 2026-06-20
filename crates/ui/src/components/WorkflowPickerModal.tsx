@@ -1,5 +1,6 @@
 import { For, Show } from "solid-js";
 import { useAppContext } from "../context/AppContext";
+import { PanelEmptyState } from "./PanelEmptyState";
 import { workflowMembershipLabel } from "../lib/projects";
 import { AnimatedModal } from "./AnimatedModal";
 
@@ -21,16 +22,17 @@ export function WorkflowPickerModal() {
         <div>
           <div class="eyebrow">Add workflow</div>
           <h3>{project()?.name ?? "Project"}</h3>
-          <p>Link an existing workflow to this project.</p>
+          <p>Copy a workflow into this project.</p>
         </div>
       </div>
       <div class="node-picker-list">
         <Show
           when={addable().length > 0}
           fallback={
-            <div class="node-picker-empty">
-              No other workflows available. Create a new one from the project menu.
-            </div>
+            <PanelEmptyState
+              title="No workflows to copy"
+              description="Create a workflow from the project menu, then add it here."
+            />
           }
         >
           <For each={addable()}>
@@ -38,7 +40,7 @@ export function WorkflowPickerModal() {
               <button
                 class="node-picker-option"
                 onClick={() =>
-                  void ctx.handleAssignWorkflowToProject(projectId()!, workflow.id)
+                  void ctx.handleCopyWorkflowToProject(projectId()!, workflow.id)
                 }
               >
                 <span class="node-picker-option-title">{workflow.name}</span>
