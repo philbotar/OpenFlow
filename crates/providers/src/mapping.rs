@@ -237,6 +237,34 @@ fn nest_flat_fields_into_object_properties(
     }
 }
 
+/// When the model puts prose in `assistant_message` instead of under `output`, map it to a schema field.
+fn salvage_assistant_message_into_output(
+    assistant_message: &str,
+    output_schema: Option<&Value>,
+) -> Value {
+    let trimmed = assistant_message.trim();
+    if let Some(required) = output_schema
+        .and_then(|schema| schema.get("required"))
+        .and_then(Value::as_array)
+        .and_then(|fields| fields.first())
+        .and_then(Value::as_str)
+    {
+        return json!({ required: trimmed });
+    }
+    if let Some(properties) = output_schema
+        .and_then(|schema| schema.get("properties"))
+        .and_then(Value::as_object)
+    {
+        if properties.contains_key("summary") {
+            return json!({ "summary": trimmed });
+        }
+        if let Some(first_key) = properties.keys().next() {
+            return json!({ first_key.clone(): trimmed });
+        }
+    }
+    json!({ "content": trimmed })
+}
+
 /// When models omit the `output` wrapper, lift top-level schema fields under `output`.
 #[must_use]
 pub fn normalize_submit_output_arguments(value: Value, output_schema: Option<&Value>) -> Value {
@@ -250,6 +278,17 @@ pub fn normalize_submit_output_arguments(value: Value, output_schema: Option<&Va
 
         let assistant_message = outer.remove("assistant_message");
         if outer.is_empty() {
+            if let Some(text) = assistant_message
+                .as_ref()
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|text| !text.is_empty())
+            {
+                return json!({
+                    "output": salvage_assistant_message_into_output(text, output_schema),
+                    "assistant_message": Value::Null,
+                });
+            }
             return json!({ "assistant_message": assistant_message });
         }
 
@@ -910,6 +949,51 @@ mod tests {
             panic!("expected completed outcome");
         };
         assert!(success.output.get("workflowDraft").is_some());
+    }
+
+    #[test]
+    fn internal_submit_output_salvages_assistant_message_only() {
+        let schema = json!({
+            "type": "object",
+            "properties": { "summary": { "type": "string" } },
+            "required": ["summary"]
+        });
+        let outcome = parse_internal_tool_outcome(
+            SUBMIT_OUTPUT_TOOL,
+            r#"{"assistant_message": "Architecture uses a hexagonal layout with clear ports."}"#,
+            None,
+            "test",
+            Some(&schema),
+        )
+        .expect("expected outcome");
+        let AgentTurnOutcome::Completed(success) = outcome else {
+            panic!("expected completed outcome");
+        };
+        assert_eq!(
+            success.output,
+            json!({"summary": "Architecture uses a hexagonal layout with clear ports."})
+        );
+        assert_eq!(success.assistant_message, None);
+    }
+
+    #[test]
+    fn internal_submit_output_salvages_assistant_message_only_open_object_schema() {
+        let schema = json!({ "type": "object" });
+        let outcome = parse_internal_tool_outcome(
+            SUBMIT_OUTPUT_TOOL,
+            r#"{"assistant_message": "Layered services with orchestration at the center."}"#,
+            None,
+            "test",
+            Some(&schema),
+        )
+        .expect("expected outcome");
+        let AgentTurnOutcome::Completed(success) = outcome else {
+            panic!("expected completed outcome");
+        };
+        assert_eq!(
+            success.output,
+            json!({"content": "Layered services with orchestration at the center."})
+        );
     }
 
     #[test]

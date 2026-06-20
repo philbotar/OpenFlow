@@ -5,6 +5,8 @@ use crate::incident::{IncidentCategory, IncidentContext, IncidentRecord, Inciden
 use engine::{NodeId, RunTelemetry};
 use serde_json::json;
 
+const MALFORMED_SUBMIT_OUTPUT_MARKER: &str = "final output tool arguments were not valid JSON";
+
 pub fn incident_from_execution_event(
     event: &RunTelemetry,
     ctx: &IncidentContext,
@@ -60,11 +62,32 @@ pub fn incident_from_execution_event(
                 context,
             }))
         }
+        RunTelemetry::AiInvokeFailed {
+            node_id,
+            label,
+            error,
+        } => {
+            let merged = ctx_with_node(ctx, node_id, Some(label));
+            let (code, severity, retryable, hint) = classify_ai_invoke_failure(error);
+            Some(build_record(NewIncidentRecord {
+                scope: scope_from_context(&merged),
+                severity,
+                category: IncidentCategory::AiInvoke,
+                code,
+                message: error.clone(),
+                hint,
+                retryable,
+                context: context_from_incident(&merged),
+            }))
+        }
         RunTelemetry::NodeErrored {
             node_id,
             label,
             error,
         } => {
+            if is_malformed_submit_output_message(error) {
+                return None;
+            }
             let merged = ctx_with_node(ctx, node_id, Some(label));
             Some(build_record(NewIncidentRecord {
                 scope: scope_from_context(&merged),
@@ -82,6 +105,9 @@ pub fn incident_from_execution_event(
             label,
             error,
         } => {
+            if is_malformed_submit_output_message(error) {
+                return None;
+            }
             let merged = ctx_with_node(ctx, node_id, Some(label));
             Some(build_record(NewIncidentRecord {
                 scope: scope_from_context(&merged),
@@ -125,6 +151,55 @@ pub fn incident_from_execution_event(
         })),
         _ => None,
     }
+}
+
+fn is_malformed_submit_output_message(error: &str) -> bool {
+    error.contains(MALFORMED_SUBMIT_OUTPUT_MARKER)
+}
+
+fn classify_ai_invoke_failure(error: &str) -> (String, IncidentSeverity, bool, Option<String>) {
+    if is_malformed_submit_output_message(error) {
+        return (
+            "ai.malformed_submit_output".to_string(),
+            IncidentSeverity::Error,
+            true,
+            Some(
+                "Call openflow_submit_node_output with \
+                 {\"output\": {...schema fields...}, \"assistant_message\": null}."
+                    .to_string(),
+            ),
+        );
+    }
+    if error.starts_with("transient:") {
+        return (
+            "ai.transient".to_string(),
+            IncidentSeverity::Error,
+            true,
+            None,
+        );
+    }
+    if error.starts_with("permanent:") {
+        return (
+            "ai.permanent".to_string(),
+            IncidentSeverity::Error,
+            false,
+            None,
+        );
+    }
+    if error.contains("interrupted") {
+        return (
+            "ai.interrupted".to_string(),
+            IncidentSeverity::Warning,
+            false,
+            None,
+        );
+    }
+    (
+        "ai.failed".to_string(),
+        IncidentSeverity::Error,
+        false,
+        None,
+    )
 }
 
 fn ctx_with_node(ctx: &IncidentContext, node_id: &NodeId, label: Option<&str>) -> IncidentContext {

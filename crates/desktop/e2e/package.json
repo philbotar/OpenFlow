@@ -6,6 +6,7 @@
   "scripts": {
     "test": "playwright test",
     "test:browser": "playwright test --project=browser-only",
+    "test:visual": "playwright test --project=visual",
     "test:tauri": "playwright test --project=tauri",
     "postinstall": "playwright install chromium"
   },

@@ -51,13 +51,15 @@ export function ChatPanel() {
         </Show>
         <Show when={!inReplayMode() && ctx.chatLayout().live.length === 0 && !inlineLiveSegment()}>
           <Show
-            when={ctx.runState()?.active}
+            when={ctx.runState()?.active && !ctx.startingRun()}
             fallback={
-              <ConversationComposer
-                nodeId={GLOBAL_RUN_ENTRY_NODE_ID}
-                label="workflow"
-                kickoff
-              />
+              <Show when={!ctx.runState()?.active}>
+                <ConversationComposer
+                  nodeId={GLOBAL_RUN_ENTRY_NODE_ID}
+                  label="workflow"
+                  kickoff
+                />
+              </Show>
             }
           >
             <div class="chat-live-strip chat-live-strip--pending" aria-live="polite">

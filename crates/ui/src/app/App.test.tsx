@@ -963,17 +963,23 @@ describe("App agent dashboard", () => {
       toolsSectionHeader.click();
       await flush();
 
-      const approvalSelect = container.querySelector(
-        ".tool-config-body select.text-input",
-      ) as HTMLSelectElement | null;
-      expect(approvalSelect).not.toBeNull();
-      expect(approvalSelect?.value).toBe("write");
-      expect(Array.from(approvalSelect?.options ?? []).map((option) => option.value)).toEqual([
-        "read_only",
-        "write",
-        "always_ask",
-        "yolo",
+      const approvalTrigger = container.querySelector(
+        ".tool-config-body .text-select-trigger",
+      ) as HTMLButtonElement | null;
+      expect(approvalTrigger).not.toBeNull();
+      expect(approvalTrigger?.textContent).toContain("Read auto-approve");
+      approvalTrigger!.click();
+      expect(
+        [...container.querySelectorAll(".tool-config-body .text-select-option")].map(
+          (option) => option.textContent,
+        ),
+      ).toEqual([
+        "Read only",
+        "Read auto-approve, write prompt",
+        "Always ask",
+        "Auto-approve all",
       ]);
+      approvalTrigger!.click();
 
       toolsSectionHeader.click();
       await flush();
@@ -1067,12 +1073,14 @@ describe("App settings persistence", () => {
       settingsNavButton(container, "Provider").click();
       await flush();
 
-      const providerSelect = Array.from(container.querySelectorAll("select")).find(
-        (element) => Array.from(element.options).some((option) => option.value === "custom_openai_compatible"),
-      ) as HTMLSelectElement | undefined;
-      expect(providerSelect).toBeDefined();
-      providerSelect!.value = "custom_openai_compatible";
-      providerSelect!.dispatchEvent(new Event("change", { bubbles: true }));
+      const providerTrigger = container.querySelector(
+        ".settings-section .text-select-trigger",
+      ) as HTMLButtonElement;
+      providerTrigger.click();
+      const compatibleOption = [...container.querySelectorAll(".text-select-option")].find(
+        (element) => element.textContent === "Compatible",
+      ) as HTMLButtonElement;
+      compatibleOption.click();
       await flush();
 
       settingsNavButton(container, "Authentication").click();
@@ -1715,6 +1723,50 @@ describe("Global chat layout", () => {
       dispose();
     }
   });
+
+  test("settled segments expose header status classes for styling hooks", async () => {
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    workflow.nodes.push({
+      id: "workflow-1-node-2",
+      label: "Second",
+      kind: "Agent",
+      position: { x: 320, y: 140 },
+      agent: workflow.nodes[0].agent,
+    });
+    const runState = makeAwaitingRunState(workflow);
+    runState.active = false;
+    runState.awaitingNodeId = null;
+    runState.statusByNode = {
+      [workflow.nodes[0].id]: "completed",
+      "workflow-1-node-2": "completed",
+    };
+    runState.chatLogs = {
+      [workflow.nodes[0].id]: [{ role: "Assistant", content: "first" }],
+      "workflow-1-node-2": [{ role: "Assistant", content: "second" }],
+    };
+    const { container, dispose } = await mountApp({
+      workflows: [workflow],
+      agents: [makeAgent("agent-1", "Research Agent")],
+      skills: FIXTURE_SKILLS,
+      settings: SETTINGS,
+      runState,
+    });
+    await openChatTab(container);
+
+    try {
+      const firstId = workflow.nodes[0].id;
+      const secondId = "workflow-1-node-2";
+      const first = container.querySelector(`.chat-segment[data-node-id="${firstId}"]`);
+      const second = container.querySelector(`.chat-segment[data-node-id="${secondId}"]`);
+      expect(container.querySelectorAll(".chat-segment").length).toBe(2);
+      expect(
+        first?.querySelector(".chat-segment-status")?.classList.contains("status-completed"),
+      ).toBe(true);
+      expect(second?.querySelector(".chat-segment-header")).not.toBeNull();
+    } finally {
+      dispose();
+    }
+  });
 });
 
 describe("App bottom dock", () => {
@@ -2161,6 +2213,7 @@ describe("App schedule screen", () => {
         () => container.querySelector(".schedule-screen"),
         "schedule screen",
       );
+      expect(topbarTitle(container)).toBe("Schedule");
       expect(apiMocks.refreshSchedules).not.toHaveBeenCalled();
     } finally {
       dispose();

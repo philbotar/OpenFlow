@@ -51,6 +51,11 @@ export function AgentConfigForm(props: {
     return option ? `Use provider default (${option.label})` : `Use provider default (${effort})`;
   });
 
+  const effortSelectOptions = createMemo(() => [
+    { value: "", label: inheritedDefaultLabel() },
+    ...effortOptions().map((option) => ({ value: option.value, label: option.label })),
+  ]);
+
   createEffect(() => {
     if (!props.model && props.defaultModel) {
       props.onModelChange(props.defaultModel);
@@ -76,6 +81,7 @@ export function AgentConfigForm(props: {
           <span>Reasoning effort</span>
           <TextSelect
             value={selectedEffort()}
+            options={effortSelectOptions()}
             onChange={(event) => {
               const nextValue = event.currentTarget.value;
               if (!nextValue) {
@@ -95,12 +101,7 @@ export function AgentConfigForm(props: {
               const defaultBudget = props.defaultReasoningBudgetTokens?.[nextValue] ?? null;
               props.onReasoningBudgetTokensChange?.(defaultBudget);
             }}
-          >
-            <option value="">{inheritedDefaultLabel()}</option>
-            <For each={effortOptions()}>
-              {(option) => <option value={option.value}>{option.label}</option>}
-            </For>
-          </TextSelect>
+          />
         </label>
         <Show when={selectedEffortOption()?.uses_budget_tokens}>
           <label>

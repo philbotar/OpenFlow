@@ -153,6 +153,16 @@ where
             Some(node_id.clone()),
             started,
         );
+        if let Err(ref error) = result {
+            send_or_log(
+                &self.event_tx,
+                ExecutionEvent::AiInvokeFailed {
+                    node_id: node_id.clone(),
+                    label: label.clone(),
+                    error: error.to_string(),
+                },
+            );
+        }
         let did_stream = streamed.load(Ordering::Relaxed);
         if did_stream {
             finalize_stream_message(

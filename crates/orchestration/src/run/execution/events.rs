@@ -623,6 +623,7 @@ pub fn apply_event_to_run_state(
                 },
             );
         }
+        ExecutionEvent::AiInvokeFailed { .. } => {}
     }
 }
 

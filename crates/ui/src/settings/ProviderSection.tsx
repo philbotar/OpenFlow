@@ -1,9 +1,20 @@
-import { For } from "solid-js";
+import { createMemo } from "solid-js";
+import { TextSelect } from "../components/TextSelect";
 import { useAppContext } from "../context/AppContext";
 import { activeProfile } from "../lib/workflow";
 
 export function ProviderSection() {
   const ctx = useAppContext();
+  const providerOptions = createMemo(() =>
+    ctx.providerIdsMemo().map((providerId) => ({
+      value: providerId,
+      label: ctx.settings().providers[providerId]?.display_name ?? providerId,
+    })),
+  );
+  const transportOptions = [
+    { value: "responses", label: "Responses API" },
+    { value: "chat_completions", label: "Chat Completions API" },
+  ] as const;
 
   return (
     <div class="settings-section">
@@ -13,23 +24,15 @@ export function ProviderSection() {
       </div>
       <label>
         <span>Provider</span>
-        <select
-          class="text-input"
+        <TextSelect
           value={ctx.settings().active_provider}
+          options={providerOptions()}
           onChange={(event) =>
             void ctx.updateSettings((draft) => {
               draft.active_provider = event.currentTarget.value;
             })
           }
-        >
-          <For each={ctx.providerIdsMemo()}>
-            {(providerId) => (
-              <option value={providerId}>
-                {ctx.settings().providers[providerId]?.display_name ?? providerId}
-              </option>
-            )}
-          </For>
-        </select>
+        />
       </label>
       <div class="field-grid">
         <label>
@@ -47,9 +50,9 @@ export function ProviderSection() {
         </label>
         <label>
           <span>Transport</span>
-          <select
-            class="text-input"
+          <TextSelect
             value={ctx.activeProfileMemo().transport}
+            options={transportOptions}
             disabled={!ctx.activeProfileMemo().editable}
             onChange={(event) =>
               void ctx.updateSettings((draft) => {
@@ -58,10 +61,7 @@ export function ProviderSection() {
                   | "chat_completions";
               })
             }
-          >
-            <option value="responses">Responses API</option>
-            <option value="chat_completions">Chat Completions API</option>
-          </select>
+          />
         </label>
         <label>
           <span>Responses path</span>

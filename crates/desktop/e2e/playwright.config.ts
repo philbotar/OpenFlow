@@ -6,12 +6,29 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? "github" : "list",
+  expect: {
+    toHaveScreenshot: {
+      maxDiffPixelRatio: 0.01,
+      animations: "disabled",
+    },
+  },
   use: {
     trace: "on-first-retry",
   },
   projects: [
     {
+      name: "visual",
+      testMatch: "**/*.visual.spec.ts",
+      use: {
+        ...devices["Desktop Chrome"],
+        mode: "browser",
+        viewport: { width: 1280, height: 900 },
+        deviceScaleFactor: 1,
+      },
+    },
+    {
       name: "browser-only",
+      testIgnore: "**/*.visual.spec.ts",
       use: { ...devices["Desktop Chrome"], mode: "browser" },
     },
     {

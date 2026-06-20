@@ -287,6 +287,15 @@ describe("AppHeader", () => {
     dispose();
   });
 
+  it("shows Schedule in topbar on schedule screen", () => {
+    const { container, dispose } = renderWithContext({
+      screen: () => "schedule",
+      activeWorkflow: () => ({ id: "w1", name: "Workflow One" } as any),
+    });
+    expect(container.querySelector(".topbar-copy h2")?.textContent).toBe("Schedule");
+    dispose();
+  });
+
   it("shows continue and fresh run when a stopped run is continuable", () => {
     const handleContinueRun = vi.fn().mockResolvedValue(undefined);
     const { container, dispose } = renderWithContext({

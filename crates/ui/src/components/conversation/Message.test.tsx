@@ -36,4 +36,16 @@ describe("Message", () => {
     expect(row?.classList.contains("conversation-item-enter")).toBe(false);
     dispose();
   });
+
+  it("does not animate user rows", () => {
+    const { container, dispose } = renderMessage({
+      from: "user",
+      label: "You",
+      content: "Hello",
+    });
+
+    const row = container.querySelector(".message-user");
+    expect(row?.classList.contains("conversation-item-enter")).toBe(false);
+    dispose();
+  });
 });

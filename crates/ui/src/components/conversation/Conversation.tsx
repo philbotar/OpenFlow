@@ -96,7 +96,7 @@ export function ConversationContent(allProps: ConversationContentProps) {
       if (rafId != null) return;
       rafId = requestAnimationFrame(() => {
         rafId = undefined;
-        conversation.scrollToBottom(true);
+        conversation.scrollToBottom(false);
       });
     });
     mo.observe(ref, { childList: true, subtree: true, characterData: true });

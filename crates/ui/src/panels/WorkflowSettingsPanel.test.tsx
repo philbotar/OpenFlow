@@ -153,12 +153,12 @@ describe("WorkflowSettingsPanel", () => {
 
   test("updates workflow default reasoning effort", () => {
     const { workflow } = renderPanel(makeWorkflow());
-    const reasoningSelect = container.querySelector(
-      'select.text-input',
-    ) as HTMLSelectElement;
-
-    reasoningSelect.value = "medium";
-    reasoningSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    const trigger = container.querySelector(".text-select-trigger") as HTMLButtonElement;
+    trigger.click();
+    const mediumOption = [...container.querySelectorAll(".text-select-option")].find(
+      (element) => element.textContent === "Medium",
+    ) as HTMLButtonElement;
+    mediumOption.click();
 
     expect(workflow().settings.reasoning_effort).toBe("medium");
   });
@@ -167,12 +167,12 @@ describe("WorkflowSettingsPanel", () => {
     const { workflow } = renderPanel(
       makeWorkflow({ reasoning_effort: "low", reasoning_budget_tokens: 10_240 }),
     );
-    const reasoningSelect = container.querySelector(
-      'select.text-input',
-    ) as HTMLSelectElement;
-
-    reasoningSelect.value = "medium";
-    reasoningSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    const trigger = container.querySelector(".text-select-trigger") as HTMLButtonElement;
+    trigger.click();
+    const mediumOption = [...container.querySelectorAll(".text-select-option")].find(
+      (element) => element.textContent === "Medium",
+    ) as HTMLButtonElement;
+    mediumOption.click();
 
     expect(workflow().settings.reasoning_effort).toBe("medium");
     expect(workflow().settings.reasoning_budget_tokens).toBeNull();

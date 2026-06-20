@@ -132,6 +132,7 @@ function ScheduleRow(props: { workflow: Workflow }) {
           <TextSelect
             class="schedule-interval-unit"
             value={draft().intervalUnit}
+            options={INTERVAL_UNIT_OPTIONS.map(([value, label]) => ({ value, label }))}
             aria-label="Repeat interval unit"
             onChange={(event) =>
               setDraft((current) => {
@@ -143,11 +144,7 @@ function ScheduleRow(props: { workflow: Workflow }) {
                 };
               })
             }
-          >
-            <For each={INTERVAL_UNIT_OPTIONS}>
-              {([value, label]) => <option value={value}>{label}</option>}
-            </For>
-          </TextSelect>
+          />
         </div>
       </Show>
 

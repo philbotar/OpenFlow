@@ -24,7 +24,7 @@ export function Message(allProps: MessageProps) {
     "streaming",
   ]);
   const animationClass = () =>
-    local.from === "assistant" ? "" : "conversation-item-enter";
+    local.from === "assistant" || local.from === "user" ? "" : "conversation-item-enter";
   return (
     <div
       class={`chat-row message message-${local.from} role-${local.from} ${animationClass()} ${local.class ?? ""}`}

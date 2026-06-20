@@ -42,13 +42,11 @@ For where terms live in code, see [Domain modules](#domain-modules) and [`docs/s
 
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
-| **NodeToolConfig** | Tool catalog selection, approval mode, and overrides for a node | Tool settings, tool setup |
-| **ApprovalMode** | Node-level tool approval strategy: `always_ask`, `write` (prompt on write/exec tiers), or `yolo` (auto-allow) | Approval policy |
-| **ToolTier** | Risk tier for a tool: `read`, `write`, or `exec` | Tool level, access tier |
+| **NodeToolConfig** | Approval mode for a node or saved agent (`read_only`, `write`, `always_ask`, `yolo`) | Tool settings, tool setup |
+| **ApprovalMode** | Node-level tool approval strategy: `read_only` (read-class tools only, auto-approved), `write` (all tools; read-class auto, write-class prompt — default), `always_ask` (prompt every call), `yolo` (never prompt) | Approval policy |
+| **Tool capability class** | Static read/write grouping for builtins. Read: retrieval/search tools. Write: mutation, shell, subagent tools. Drives approval and `read_only` availability. | Tool tier |
+| **ToolTier** | Serialized capability class on tool definitions: `read` or `write` | Tool level, access tier |
 | **ToolConcurrency** | Whether tool calls share or exclude concurrent access: `shared` or `exclusive` | Parallelism, execution mode |
-| **ToolPolicy** | Per-tool override: `allow`, `prompt`, or `deny` | Approval requirement |
-| **ToolPolicyOverride** | Named override of default approval for one tool | Custom policy, exception |
-| **ToolCatalogSelection** | Tools selected from the global catalog for a node | Tool choice, tool pick |
 | **ToolCallStatus** | Lifecycle of a tool call: proposed, awaiting_approval, running, completed, blocked, failed, aborted | Call status |
 | **ToolTruncation** | Limits and strategy for truncating tool output | Output limit, size cap |
 | **PendingToolApproval** | A tool call awaiting human approval before execution | Pending tool, queued call |

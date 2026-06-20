@@ -26,7 +26,7 @@ const EMPTY_SETTINGS = {
   },
 };
 
-const BOOTSTRAP_PAYLOAD = {
+export const EMPTY_BOOTSTRAP = {
   workflows: [],
   agents: [],
   projects: [],
@@ -43,38 +43,63 @@ const PROVIDER_READINESS = {
   warnings: [],
 };
 
-export const openflowIpcMocks: Record<
-  string,
-  (args?: Record<string, unknown>) => unknown
-> = {
-  bootstrap_app: () => BOOTSTRAP_PAYLOAD,
-  list_workflows: () => [],
-  list_skills: () => [],
-  list_schedule_statuses: () => [],
-  refresh_schedules: () => [],
-  resolve_provider_readiness: () => PROVIDER_READINESS,
-  load_provider_api_key: () => null,
-  is_run_continuable: () => false,
-  list_runs: () => [],
-  validate_workflow: () => ({ valid: true, errors: [], warnings: [] }),
-  "plugin:window|is_maximized": () => false,
-  "plugin:window|is_minimized": () => false,
-  "plugin:window|is_focused": () => true,
-  "plugin:window|is_decorated": () => true,
-  "plugin:window|is_resizable": () => true,
-  "plugin:window|is_maximizable": () => true,
-  "plugin:window|is_minimizable": () => true,
-  "plugin:window|is_closable": () => true,
-  "plugin:window|is_visible": () => true,
-  "plugin:window|scale_factor": () => 1,
-  "plugin:window|inner_position": () => ({ x: 0, y: 0 }),
-  "plugin:window|outer_position": () => ({ x: 0, y: 0 }),
-  "plugin:window|inner_size": () => ({ width: 1440, height: 920 }),
-  "plugin:window|outer_size": () => ({ width: 1440, height: 920 }),
-  "plugin:window|title": () => "OpenFlow",
-  "plugin:dialog|open": () => null,
-  "plugin:dialog|save": () => null,
-  "plugin:dialog|message": () => null,
-  "plugin:dialog|ask": () => false,
-  "plugin:dialog|confirm": () => false,
+/** Handlers are toString'd into the page — embed literals, no outer closures. */
+function mockReturn<T>(value: T): (args?: Record<string, unknown>) => T {
+  const json = JSON.stringify(value);
+  return new Function(`return ${json}`) as (args?: Record<string, unknown>) => T;
+}
+
+function mockAsyncUnsubscribe(): (args?: Record<string, unknown>) => Promise<() => void> {
+  return new Function("return Promise.resolve(function(){})") as (
+    args?: Record<string, unknown>,
+  ) => Promise<() => void>;
+}
+
+const WINDOW_PLUGIN_MOCKS: Record<string, (args?: Record<string, unknown>) => unknown> = {
+  "plugin:window|is_maximized": mockReturn(false),
+  "plugin:window|is_minimized": mockReturn(false),
+  "plugin:window|is_focused": mockReturn(true),
+  "plugin:window|is_decorated": mockReturn(true),
+  "plugin:window|is_resizable": mockReturn(true),
+  "plugin:window|is_maximizable": mockReturn(true),
+  "plugin:window|is_minimizable": mockReturn(true),
+  "plugin:window|is_closable": mockReturn(true),
+  "plugin:window|is_visible": mockReturn(true),
+  "plugin:window|scale_factor": mockReturn(1),
+  "plugin:window|inner_position": mockReturn({ x: 0, y: 0 }),
+  "plugin:window|outer_position": mockReturn({ x: 0, y: 0 }),
+  "plugin:window|inner_size": mockReturn({ width: 1440, height: 920 }),
+  "plugin:window|outer_size": mockReturn({ width: 1440, height: 920 }),
+  "plugin:window|title": mockReturn("OpenFlow"),
 };
+
+const DIALOG_PLUGIN_MOCKS: Record<string, (args?: Record<string, unknown>) => unknown> = {
+  "plugin:dialog|open": mockReturn(null),
+  "plugin:dialog|save": mockReturn(null),
+  "plugin:dialog|message": mockReturn(null),
+  "plugin:dialog|ask": mockReturn(false),
+  "plugin:dialog|confirm": mockReturn(false),
+};
+
+export function createOpenflowIpcMocks(
+  bootstrap: typeof EMPTY_BOOTSTRAP = EMPTY_BOOTSTRAP,
+): Record<string, (args?: Record<string, unknown>) => unknown> {
+  return {
+    bootstrap_app: mockReturn(bootstrap),
+    list_workflows: mockReturn(bootstrap.workflows),
+    list_skills: mockReturn(bootstrap.skills ?? []),
+    list_schedule_statuses: mockReturn(bootstrap.scheduleStatuses ?? []),
+    refresh_schedules: mockReturn([]),
+    resolve_provider_readiness: mockReturn(PROVIDER_READINESS),
+    load_provider_api_key: mockReturn(null),
+    is_run_continuable: mockReturn(bootstrap.runContinuable ?? false),
+    list_runs: mockReturn([]),
+    validate_workflow: mockReturn({ valid: true, errors: [], warnings: [] }),
+    listen_to_run_state: mockAsyncUnsubscribe(),
+    listen_to_schedule_statuses: mockAsyncUnsubscribe(),
+    ...WINDOW_PLUGIN_MOCKS,
+    ...DIALOG_PLUGIN_MOCKS,
+  };
+}
+
+export const openflowIpcMocks = createOpenflowIpcMocks();

@@ -1,6 +1,7 @@
-import { createMemo, For, Show } from "solid-js";
-import { useAppContext } from "../context/AppContext";
+import { createMemo, Show } from "solid-js";
 import { AnimatedPanel } from "../components/AnimatedPanel";
+import { TextSelect } from "../components/TextSelect";
+import { useAppContext } from "../context/AppContext";
 import {
   defaultReasoningBudgetTokens,
   defaultReasoningEffort,
@@ -27,6 +28,11 @@ export function WorkflowSettingsPanel() {
     const option = effortOptions().find((entry) => entry.value === effort);
     return option ? `Use provider default (${option.label})` : `Use provider default (${effort})`;
   });
+
+  const effortSelectOptions = createMemo(() => [
+    { value: "", label: providerDefaultLabel() },
+    ...effortOptions().map((option) => ({ value: option.value, label: option.label })),
+  ]);
 
   return (
     <AnimatedPanel class="inspector-panel workflow-settings-panel">
@@ -60,9 +66,9 @@ export function WorkflowSettingsPanel() {
           <p class="field-help">
             Applied to agent nodes that do not set their own effort level. Saved on this workflow.
           </p>
-          <select
-            class="text-input"
+          <TextSelect
             value={selectedEffort()}
+            options={effortSelectOptions()}
             onChange={(event) =>
               ctx.updateActiveWorkflowSettings((settings) => {
                 const nextValue = event.currentTarget.value;
@@ -89,12 +95,7 @@ export function WorkflowSettingsPanel() {
                 settings.reasoningBudgetTokens = budget;
               })
             }
-          >
-            <option value="">{providerDefaultLabel()}</option>
-            <For each={effortOptions()}>
-              {(option) => <option value={option.value}>{option.label}</option>}
-            </For>
-          </select>
+          />
         </label>
         <Show when={selectedEffortOption()?.uses_budget_tokens}>
           <label>

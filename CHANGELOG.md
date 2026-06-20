@@ -4,11 +4,65 @@
 
 ### Added
 
+- **Orchestration headless E2E:** `MockAiStack` test helper (`crates/orchestration/tests/support/`) pops scripted `AiPort` responses from a stack; `workflow_e2e.rs` covers happy path, auto-retry, missing input/approval, exhausted stack, and interrupt during slow tools — no real providers.
+- **Roadmap:** [#38 In-app file viewer from node output](docs/ROADMAP.md#in-app-file-viewer-from-node-output) — clickable file references in node/chat output open paths in an in-app reader (syntax highlight, markdown, line ranges); Tier 5, further out.
+- **Roadmap:** [Workflow insights](docs/ROADMAP.md#workflow-insights) — design-time advisory panel for graph smells, config gaps, and best-practice suggestions (queue #36); distinct from pre-run blocking validation (#10) and post-run run insights (#27).
+
+### Fixed
+
+- **Malformed submit_output:** when the model calls `openflow_submit_node_output` with only `assistant_message` (no `output` wrapper), salvage that prose into the node output schema instead of failing after retries; retry feedback now includes the node's output schema.
+- **Malformed submit_output incidents:** each failed AI invoke now emits `AiInvokeFailed` telemetry and persists an `ai.malformed_submit_output` incident (category `ai_invoke`, retryable) to `{data_local}/openflow/incidents.jsonl` via the existing incident recorder.
+- **Schedule topbar title:** show "Schedule" in the app header on the schedule screen instead of the previously active workflow name.
+- **Agents screen background:** match schedule's `surface-ground` fill instead of the main-shell gradient.
+- **Chat send flash:** instant auto-scroll on new messages, stable composer footer during kickoff, and no fade-in on user bubbles — panel no longer jumps on send.
+- **Idle chat kickoff:** skip entrypoint chat record for manual (`auto_start: false`) root nodes — the same text is recorded once when the UI auto-submits to the awaiting node.
+
+### Changed
+
+- **Chat segment spacing:** hairline dividers and `--chat-segment-gap` rhythm between agent sections; translucent sticky headers replace opaque grey bands; completed status demoted to muted text; focus flash uses header accent bar.
+- **Roadmap:** [#37 Agent prompt skill references](#agent-prompt-skill-references) — `/skill` tokens in saved-agent and node system/task prompts with expansion at run-start (mirrors composer slash skills).
+- **Phase 2 UI refinement:** semantic typography, radius, and layout tokens; shared empty-state styling via `PanelEmptyState`; route-level cards normalized onto palette tokens (no per-screen page headers).
+- **Scrollbar styling:** thin token-based scrollbars (WebKit + Firefox) replace default OS chrome across scrollable panels.
+- **Run history status badges:** use scoped chip classes so run rows no longer inherit canvas status-dot backgrounds (fixes low-contrast "Stopped" in light mode).
+- **Project workflow copy:** per-project **Copy from…** picker duplicates a workflow into the target project (new ID, independent edits) instead of linking the same workflow across projects.
+- **Search tool wiring:** remove unused `ContentSearch` port trait and `RipgrepSearch` wrapper; `blocking_ops` calls `search_at` directly.
+- **Run execution timing:** inline `timing.rs` helper into `run/execution/mod.rs` beside `send_or_log`.
+- **Shell navigation motion:** disable View Transition API for route changes (opacity fade only) — VT size morph conflicts with UI zoom in the Tauri webview.
+- **Runs dock tab:** remove redundant manual refresh and duplicate "Runs / History" header; history loads when you open the tab.
+- **Dock empty states:** Overview, Terminal, and Runs tabs use the shared `PanelEmptyState` pattern (icon, title, description) matching chat.
+- **Select styling:** replace native `<select>` with custom `TextSelect` listbox so dropdowns render below the trigger with app tokens instead of macOS native menus.
+- **Schedule repeat interval:** add minutes, hours, days, and weeks unit selector; cron mapping stays UI-side (orchestration already evaluates arbitrary cron).
+- **Schedule time picker:** replace inline time input and weekday chips in the TIME / EVERY column with a compact summary button that opens a dialog.
+- **Schedule day selection:** replace Daily/Weekdays/Weekly presets with an at-time mode that supports multi-day toggles plus All/Weekdays shortcuts.
+- **Schedule time/day layout:** modal uses a single-row day grid for at-time editing.
+- **Schedule repeat controls:** keep Every / value / unit on one horizontal row (drop clashing `schedule-field` grid wrapper, fixed widths, wider column).
+- **Schedule timezone:** remove timezone picker from the schedule table; saves always use the computer's local timezone.
+- **Schedule repeat validation:** clamp day repeat intervals to cron-safe ranges (days cannot exceed 31); heal invalid persisted schedules like `*/210`. Remove weeks unit — cron cannot represent multi-week intervals honestly; use days (e.g. 7, 14) or At time for weekly patterns.
+- **Workflow validation UX:** remove the manual Validate toolbar button; validate the DAG automatically when nodes or edges are added (invalid edges are reverted with an error toast).
+
+### Added
+
+- **Phase 1 UI hierarchy and compact shell:** unified base + semantic palette contract in `styles/index.css` with legacy bridges; labeled primary Run/Continue/Stop actions in the topbar; stronger dock tab hierarchy with active-panel context; compact viewports use an overlay sidebar drawer so the canvas stays first-class; focused header/shell/dock tests.
+- **Chat segment visual regression:** Playwright snapshot test (`crates/desktop/e2e/tests/chat-segments.visual.spec.ts`) for multi-node settled transcript spacing in dark theme.
+- **Screen view transitions:** native View Transition API for SolidJS shell navigation — lateral cross-fade between sidebar routes, directional slides for settings and workflow authoring, persistent sidebar/header isolation; CSS recipes from the view-transitions skill in `styles/index.css`; `lib/viewTransition.ts` helper with unit tests.
+- **Engine change skill (rewritten):** intake gates (purity, validity/behavior/contract, execution mode, subagent vs catalog); engine-specific verification ladder; distinct from orchestration skill template.
+- **Orchestration change skill:** `.cursor/skills/openflow-orchestration-change/SKILL.md` — process-only guide for `crates/orchestration` changes; auto-attaches via `globs: crates/orchestration/**`; wired into `docs/contributing/development-lanes.md` skill table.
+- **Approval-mode-only tool config:** replace per-tool checkboxes with a single approval-mode dropdown (`read_only`, `write`, `always_ask`, `yolo`); all builtins available except in `read_only`; static read/write capability classes; remove `ToolPolicyOverride`, catalog selection, and critical-bash YOLO guard.
+- **Tauri Playwright E2E:** optional `e2e-testing` feature wires `tauri-plugin-playwright` into the desktop shell; `crates/desktop/e2e/` runs browser-only (mocked IPC) or native webview tests via `@srsholmes/tauri-playwright` (`npm --prefix crates/desktop run e2e:browser` / `e2e:tauri`).
+- **Verify parallel runs:** `./scripts/verify.sh` uses an isolated `target/verify-<pid>` by default so multiple agents can verify concurrently without blocking on Cargo's `target/.cargo-lock`; set `VERIFY_SHARE_TARGET=1` for faster solo runs against shared `./target`.
+- **Ponytail (Cursor):** install [ponytail](https://github.com/DietrichGebert/ponytail) lazy-senior-dev rule (`.cursor/rules/ponytail.mdc`, always-on) and skills (`.cursor/skills/ponytail*`) for review, audit, debt, gain, and help.
+- **Durable run replay UX:** replay mode no longer shows the idle kickoff composer (which started a fresh run on send); replay state applies to the active workflow directly; chat shows a read-only banner with resume action; live run events only exit replay when the run is active again.
 - **Durable run persistence:** interactive runs persist to disk under `{project}/.flow/runs/` or `{data_local}/openflow/runs/` with append-only checkpoints combining engine state and UI projection; list/replay/resume via desktop IPC; Runs dock tab for history, read-only replay, and durable resume after restart.
 - **macOS run notifications:** native desktop notifications when a workflow needs input, requests tool approval, completes, errors, or aborts; classification lives in `crates/desktop/src/run_notifications.rs` and fires from the run event bridge after each applied execution event.
 
 ### Fixed
 
+- **Chat composer chip focus:** hide native text selection on the mirror textarea so clicking @/skill chips no longer flashes a blue rectangle over the chip overlay.
+- **Terminal tab close icon:** use Lucide `X` instead of `Square` on session tabs so close reads as dismiss, not stop.
+- **Schedule and workflow authoring tokens:** define `--surface-ground`, `--surface-panel`, `--surface-raised`, `--border-subtle`, and semantic text tokens so those screens no longer fall through to browser defaults.
+- **Chat composer send button:** restore compact 36px circle styling after Phase 1 `.primary-button` rules overrode `.composer-send-button` padding and shadow.
+- **Dock tab bar:** revert Phase 1 pill/context styling to the prior flat VS Code-style tabs (muted labels, subtle active fill).
+- **Clippy:** allow test panics in `subagent_runtime` tests; fix `mapping.rs` usage extraction casts, wildcard match arm, and redundant clone on early return.
 - **Chat composer:** align the caret with inline skill and file chips by sizing highlight spacers to the raw token text instead of the chip bubble width.
 - **Chat composer:** render slash-command skills as inline chips in the input (same bubble styling as file and folder references) instead of a separate pill beside the send button.
 - **Chat composer:** pin the chat input bar to the bottom of the dock panel so it stays visible while scrolling message history; tool approvals and kickoff/live pickers render in the same sticky footer.
@@ -20,6 +74,7 @@
 - **Workflow authoring errors:** map AI turn failures to `workflow authoring failed` instead of mislabeling them as file edit preview errors.
 - **Chat composer busy state:** remove the broken `is-busy` pseudo-element border animation that rendered a blue bar over the input; keep the send-button spinner and a subtle border highlight instead.
 - **Parallel chat node switching:** keep live node picker bubbles selectable after choosing a running node so you can switch active chat target between concurrent nodes without waiting for completion.
+- **Chat node filter chips:** show all running and settled nodes in the top filter bar (including parallel live nodes); remove the duplicate bottom live-node picker; only one chip highlights at a time (live pick vs history filter are mutually exclusive); keep chip order stable as nodes move between live and settled.
 - **Ad-hoc subagent output schema:** ad-hoc subagents now get the default structured `summary` output schema instead of `null`, so `openflow_submit_node_output` tool parameters validate on strict OpenAI-compatible providers; provider mapping also falls back when `output_schema` is null; subagent AI invocations retry transient provider errors using the workflow `retry_policy`.
 - **Workflow authoring parsing:** accept flat draft fields and `workflow_draft` aliases when models omit the `workflowDraft` wrapper; tighten the authoring system prompt with an explicit required shape.
 - **Workflow authoring clarification:** disable `request_user_input` for authoring turns, forbid clarifying questions in the system prompt, and retry once with draft-required feedback when a model still pauses for input.

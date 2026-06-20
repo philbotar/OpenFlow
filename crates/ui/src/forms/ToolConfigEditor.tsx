@@ -1,4 +1,12 @@
+import { TextSelect } from "../components/TextSelect";
 import type { ApprovalMode, NodeToolConfig } from "../lib/types";
+
+const APPROVAL_MODE_OPTIONS: { value: ApprovalMode; label: string }[] = [
+  { value: "read_only", label: "Read only" },
+  { value: "write", label: "Read auto-approve, write prompt" },
+  { value: "always_ask", label: "Always ask" },
+  { value: "yolo", label: "Auto-approve all" },
+];
 
 export function ToolConfigEditor(props: {
   config: NodeToolConfig;
@@ -9,18 +17,13 @@ export function ToolConfigEditor(props: {
       <div class="field-grid tool-config-grid">
         <label>
           <span>Approval mode</span>
-          <select
-            class="text-input"
+          <TextSelect
             value={props.config.approvalMode ?? "write"}
+            options={APPROVAL_MODE_OPTIONS}
             onChange={(event) =>
               props.onApprovalModeChange(event.currentTarget.value as ApprovalMode)
             }
-          >
-            <option value="read_only">Read only</option>
-            <option value="write">Read auto-approve, write prompt</option>
-            <option value="always_ask">Always ask</option>
-            <option value="yolo">Auto-approve all</option>
-          </select>
+          />
         </label>
       </div>
     </div>

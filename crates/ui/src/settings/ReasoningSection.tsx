@@ -1,4 +1,5 @@
-import { createMemo, For, Show } from "solid-js";
+import { createMemo, Show } from "solid-js";
+import { TextSelect } from "../components/TextSelect";
 import { useAppContext } from "../context/AppContext";
 import {
   activeProfile,
@@ -15,6 +16,11 @@ export function ReasoningSection() {
     effortOptions().find((option) => option.value === selectedEffort()),
   );
 
+  const effortSelectOptions = createMemo(() => [
+    { value: "", label: "None (provider default)" },
+    ...effortOptions().map((option) => ({ value: option.value, label: option.label })),
+  ]);
+
   return (
     <Show when={effortOptions().length > 0}>
       <div class="settings-section">
@@ -27,9 +33,9 @@ export function ReasoningSection() {
         </div>
         <label>
           <span>Reasoning effort</span>
-          <select
-            class="text-input"
+          <TextSelect
             value={selectedEffort()}
+            options={effortSelectOptions()}
             onChange={(event) =>
               void ctx.updateSettings((draft) => {
                 const profile = activeProfile(draft);
@@ -37,12 +43,7 @@ export function ReasoningSection() {
                 profile.default_reasoning_effort = nextValue || null;
               })
             }
-          >
-            <option value="">None (provider default)</option>
-            <For each={effortOptions()}>
-              {(option) => <option value={option.value}>{option.label}</option>}
-            </For>
-          </select>
+          />
         </label>
         <Show when={selectedEffortOption()?.uses_budget_tokens}>
           <label>

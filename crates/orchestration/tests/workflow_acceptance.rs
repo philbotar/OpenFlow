@@ -1,7 +1,9 @@
+mod support;
+
 use async_trait::async_trait;
 use engine::{
     AgentError, AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTurnOutcome,
-    AgentTurnSuccess, AiPort, ApprovalMode, Edge, Node, NodeId, ToolCall, Workflow,
+    AgentTurnSuccess, AiPort, ApprovalMode, Edge, NodeId, ToolCall, Workflow,
 };
 use orchestration::run::execution::{
     new_artifact_root, new_in_memory_snapshot_store, run_workflow_headless,
@@ -13,6 +15,7 @@ use parking_lot::Mutex;
 use serde_json::json;
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use support::{agent_node as agent, branch_join_workflow, run_headless_script, HeadlessRunOpts};
 #[derive(Clone, Default)]
 struct ScriptedAi {
     requests: Arc<Mutex<Vec<AgentRequest>>>,
@@ -62,49 +65,16 @@ impl AiPort for ScriptedAi {
     }
 }
 
-fn agent(id: &str, label: &str) -> Node {
-    let mut node = Node::agent(label, 0.0, 0.0);
-    node.id = NodeId(id.to_string());
-    node.agent.model = "test-model".to_string();
-    node.agent.output_schema = json!({
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-            "summary": { "type": "string" }
-        },
-        "required": ["summary"]
-    });
-    node
-}
-
-fn branch_join_workflow() -> Workflow {
-    let mut workflow = Workflow::new("Acceptance branch join");
-    workflow.nodes = vec![
-        agent("idea", "Idea"),
-        agent("plan", "Plan"),
-        agent("risk", "Risk"),
-        agent("join", "Join"),
-    ];
-    workflow.edges = vec![
-        Edge::new("idea", "plan"),
-        Edge::new("idea", "risk"),
-        Edge::new("plan", "join"),
-        Edge::new("risk", "join"),
-    ];
-    workflow
-}
-
 #[tokio::test]
 async fn branch_join_workflow_preserves_sentinel_and_trace_contract() {
     let ai = ScriptedAi::default();
-    let snapshot = run_workflow_headless(
+    let snapshot = run_headless_script(
         branch_join_workflow(),
-        Some("Plan project ORCHID-91".to_string()),
         ai.clone(),
-        vec![],
-        vec![],
-        BTreeMap::new(),
-        None,
+        HeadlessRunOpts {
+            entrypoint: Some("Plan project ORCHID-91".to_string()),
+            ..HeadlessRunOpts::default()
+        },
     )
     .await
     .unwrap();

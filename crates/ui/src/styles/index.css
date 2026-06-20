@@ -93,6 +93,12 @@
   --chat-segment-header-pad: 8px;
   --dock-surface: var(--dock-bg);
 
+  /* ── Scrollbars ── */
+  --scrollbar-size: 10px;
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: rgba(24, 24, 27, 0.2);
+  --scrollbar-thumb-hover: rgba(24, 24, 27, 0.36);
+
   /* ── Legacy bridge (normalize in a follow-up pass) ── */
   --app-bg: var(--surface-ground);
   --app-bg-strong: var(--base-sand-50);
@@ -221,6 +227,9 @@
   --sidebar-active: rgba(129, 140, 248, 0.1);
   --sidebar-active-border: rgba(129, 140, 248, 0.14);
   --panel-surface: rgba(28, 32, 42, 0.92);
+
+  --scrollbar-thumb: rgba(255, 255, 255, 0.18);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.32);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -236,6 +245,32 @@
 
 * {
   box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+*::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+  border: 2px solid transparent;
+  border-radius: var(--radius-pill);
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 html,
@@ -1769,9 +1804,7 @@ label {
 
 .text-input,
 .text-area,
-.text-select,
-.workflow-row-input,
-select.text-input {
+.workflow-row-input {
   width: 100%;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -1783,32 +1816,87 @@ select.text-input {
 
 .text-input:hover,
 .text-area:hover,
-.text-select:hover,
-.workflow-row-input:hover,
-select.text-input:hover {
+.workflow-row-input:hover {
   border-color: var(--border-strong);
 }
 
-.text-select,
-select.text-input {
+.text-select-root {
+  position: relative;
+  width: 100%;
+}
+
+.text-select-trigger {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 32px 8px 10px;
+  background: var(--input-bg);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 150ms ease;
   appearance: none;
   -webkit-appearance: none;
-  padding-right: 32px;
-  cursor: pointer;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2366645d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 10px center;
   background-size: 16px;
 }
 
-.text-select:disabled,
-select.text-input:disabled {
+.text-select-trigger:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.text-select-trigger:disabled {
   cursor: not-allowed;
   opacity: 0.6;
 }
 
-[data-theme="dark"] .text-select,
-[data-theme="dark"] select.text-input {
+.text-select-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.text-select-menu {
+  position: fixed;
+  z-index: 120;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: min(280px, 40vh);
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-strong);
+  box-shadow: var(--shadow-soft);
+}
+
+.text-select-option {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.text-select-option:hover,
+.text-select-option.is-selected {
+  border-color: rgba(111, 124, 247, 0.22);
+  background: rgba(111, 124, 247, 0.08);
+}
+
+[data-theme="dark"] .text-select-trigger {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a8a29e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 }
 
@@ -2064,8 +2152,6 @@ select.text-input:disabled {
   flex-shrink: 0;
   margin-top: auto;
   padding-top: 10px;
-  border-top: 1px solid var(--border);
-  background: var(--dock-bg);
 }
 
 .chat-settled {
@@ -3241,7 +3327,7 @@ select.text-input:disabled {
   flex-direction: column;
   gap: 12px;
   padding: 0;
-  scroll-behavior: smooth;
+  scroll-behavior: auto;
 }
 
 .conversation-empty,
@@ -4090,6 +4176,11 @@ select.text-input:disabled {
 .agents-screen {
   min-height: 0;
   overflow: auto;
+}
+
+.agents-screen {
+  color: var(--text-primary);
+  background: var(--surface-ground);
 }
 
 /* ── Phase 2: shared full-page route shell (ponytail: CSS only, unused until a screen opts in) ── */
@@ -5245,23 +5336,18 @@ select.text-input:disabled {
   min-width: 0;
 }
 
-.schedule-row select.text-input,
+.schedule-row .text-select-root,
 .schedule-row input.text-input {
   height: 34px;
-  padding: 7px 10px;
-  border-radius: 7px;
-  background: var(--surface-ground);
-  box-shadow: none;
 }
 
-.schedule-row select.text-input {
-  appearance: none;
-  padding-right: 28px;
-  background-image: linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
-    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
-  background-position: calc(100% - 15px) 14px, calc(100% - 10px) 14px;
-  background-size: 5px 5px, 5px 5px;
-  background-repeat: no-repeat;
+.schedule-row .text-select-trigger,
+.schedule-row input.text-input {
+  height: 100%;
+  padding: 7px 10px;
+  border-radius: 7px;
+  background-color: var(--surface-ground);
+  box-shadow: none;
 }
 
 .schedule-segmented,
@@ -5464,14 +5550,18 @@ select.text-input:disabled {
 }
 
 .schedule-interval-field .schedule-interval-unit,
-.schedule-interval-field .text-select {
+.schedule-interval-field .text-select-root {
   flex: 0 0 auto;
   width: 112px;
   min-width: 112px;
   height: 34px;
+}
+
+.schedule-interval-field .text-select-trigger {
+  height: 100%;
   padding: 7px 28px 7px 10px;
   border-radius: 7px;
-  background: var(--surface-ground);
+  background-color: var(--surface-ground);
   box-shadow: none;
 }
 

@@ -21,6 +21,38 @@ fn node_errored_becomes_node_incident() {
 }
 
 #[test]
+fn ai_invoke_failed_malformed_submit_output_becomes_ai_invoke_incident() {
+    let ctx = IncidentContext {
+        run_id: Some("run-1".to_string()),
+        workflow_id: Some("wf-1".to_string()),
+        ..Default::default()
+    };
+    let event = RunTelemetry::AiInvokeFailed {
+        node_id: NodeId("arch".to_string()),
+        label: "Architecture Design".to_string(),
+        error: "OpenAI-compatible final output tool arguments were not valid JSON: missing field `output`"
+            .to_string(),
+    };
+    let record = incident_from_execution_event(&event, &ctx).expect("record");
+    assert_eq!(record.category, IncidentCategory::AiInvoke);
+    assert_eq!(record.code, "ai.malformed_submit_output");
+    assert!(record.retryable);
+    assert!(record.hint.is_some());
+}
+
+#[test]
+fn node_errored_malformed_submit_output_skips_duplicate_incident() {
+    let ctx = IncidentContext::default();
+    let event = RunTelemetry::NodeErrored {
+        node_id: NodeId("arch".to_string()),
+        label: "Architecture Design".to_string(),
+        error: "OpenAI-compatible final output tool arguments were not valid JSON: missing field `output`"
+            .to_string(),
+    };
+    assert!(incident_from_execution_event(&event, &ctx).is_none());
+}
+
+#[test]
 fn tool_completed_error_becomes_tool_incident() {
     let ctx = IncidentContext {
         run_id: Some("run-1".to_string()),

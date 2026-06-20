@@ -380,6 +380,31 @@ export function AppProvider(props: ParentProps) {
   // group blocks again until the user picks.
   createEffect(() => {
     const picked = pickedLiveNodeId();
+    const filter = chatFilterNodeId();
+    const layout = chatLayout();
+    // #region agent log
+    fetch("http://127.0.0.1:7783/ingest/0e0e1702-4b61-4c5c-957b-2a23a4d7c862", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Debug-Session-Id": "484108",
+      },
+      body: JSON.stringify({
+        sessionId: "484108",
+        location: "AppProvider.tsx:pickedLiveEffect",
+        message: "Chat filter state changed",
+        data: {
+          pickedLiveNodeId: picked,
+          chatFilterNodeId: filter,
+          liveCount: layout.live.length,
+          settledCount: layout.settled.length,
+          liveNodeIds: layout.live.map((s) => s.nodeId),
+        },
+        timestamp: Date.now(),
+        hypothesisId: "B",
+      }),
+    }).catch(() => {});
+    // #endregion
     if (!picked) {
       return;
     }

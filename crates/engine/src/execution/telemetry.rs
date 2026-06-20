@@ -161,6 +161,12 @@ pub enum RunTelemetry {
         model: String,
         max_context_tokens: Option<u32>,
     },
+    /// LLM invocation failed for a workflow node (recorded for incident persistence).
+    AiInvokeFailed {
+        node_id: NodeId,
+        label: String,
+        error: String,
+    },
 }
 
 #[cfg(test)]

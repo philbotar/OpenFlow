@@ -96,19 +96,35 @@ impl IncidentRecorder {
     }
 
     pub fn record_agent_error(&self, error: &AgentError, ctx: &IncidentContext) -> io::Result<()> {
-        let (code, severity, retryable) = match error {
-            AgentError::Transient(_) => ("ai.transient", IncidentSeverity::Error, true),
-            AgentError::Permanent(_) => ("ai.permanent", IncidentSeverity::Error, false),
-            AgentError::Failed(_) => ("ai.failed", IncidentSeverity::Error, false),
-            AgentError::Interrupted => ("ai.interrupted", IncidentSeverity::Warning, false),
+        let message = error.to_string();
+        let (code, severity, retryable, hint) = if error.is_malformed_submit_output() {
+            (
+                "ai.malformed_submit_output",
+                IncidentSeverity::Error,
+                true,
+                Some(
+                    "Call openflow_submit_node_output with \
+                     {\"output\": {...schema fields...}, \"assistant_message\": null}."
+                        .to_string(),
+                ),
+            )
+        } else {
+            match error {
+                AgentError::Transient(_) => ("ai.transient", IncidentSeverity::Error, true, None),
+                AgentError::Permanent(_) => {
+                    ("ai.permanent", IncidentSeverity::Error, false, None)
+                }
+                AgentError::Failed(_) => ("ai.failed", IncidentSeverity::Error, false, None),
+                AgentError::Interrupted => ("ai.interrupted", IncidentSeverity::Warning, false, None),
+            }
         };
         let record = build_record(NewIncidentRecord {
             scope: scope_from_context(ctx),
             severity,
             category: IncidentCategory::AiInvoke,
             code: code.to_string(),
-            message: error.to_string(),
-            hint: None,
+            message,
+            hint,
             retryable,
             context: context_from_incident(ctx),
         });

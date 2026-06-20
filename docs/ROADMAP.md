@@ -38,6 +38,7 @@ The things you hit every single run.
 | 8 | **Canvas run feedback** — colored status icons per agent state; scrollable in-node subagent list (drop `+N more`); chat node chips use same status colors as canvas | Planned | [Canvas run feedback](#canvas-run-feedback) |
 | 9 | **Thinking levels** — `reasoning_effort` schema (node + provider default), gear-panel + inspector controls, provider reasoning param wiring, thinking transcript items | In progress | [Thinking & chat presentation](#thinking--chat-presentation) — schema, UI controls, OpenAI-compat wiring, and `ThinkingBubble` **Done**; Anthropic reasoning/thinking **Planned**; per-run override **Planned** |
 | 10 | **Pre-run workflow validation** — validate before `start_run`: dangling edges, cycles, missing provider/model/key, empty prompts; surface as canvas badges + blocking dialog | Planned | *New* |
+| 36 | **Workflow insights** — continuous design-time advisory panel: graph smells, config gaps, and best-practice suggestions; non-blocking; jump-to-node fixes | Planned | [Workflow insights](#workflow-insights) |
 | 11 | **Project rules** — `.flow/rules/` under linked projects; discovered on load, merged into shared context at run start | Planned | [Project rules](#project-rules) |
 | 12 | **Input queue + structured questions** — type ahead during active runs (buffer per node, drain on `AwaitInput`); option-card questions via extended `openflow_request_user_input` | Planned | [Agent questions & todos](#agent-questions--todos) |
 | 13 | **Token & cost tracking** — per-turn usage from provider responses; per-node and per-run totals in trace and overview; rough cost estimate per model | Planned | *New* |
@@ -50,6 +51,7 @@ Getting the right context into and out of agents.
 | # | Item | Status | Details |
 | --- | --- | --- | --- |
 | 15 | **Attachments & file references** — attach button, `@` token combobox, drag-drop; resolved content in submit payload and entrypoint | In progress | [Attachments](#attachments--file-references) — `@` combobox + resolve-on-submit (inlined text) **Done**; attach button, drag-drop, structured payload, pills, images **Planned** |
+| 37 | **Agent prompt skill references** — `/skill` tokens in saved-agent and node system/task prompts; slash combobox + preview; expand skill bodies at run-start (or per turn) instead of pasting full instructions | Planned | [Agent prompt skill references](#agent-prompt-skill-references) |
 | 16 | **Upstream read-file context** — read-tier ledger per node; `read_files` in downstream node input alongside `changed_files` | Planned | [Upstream read-file context](#upstream-read-file-context) |
 | 17 | **Node handoff artifacts & output review** — per-node plan/md files in a canonical run dir; per-node opt-in review gate before downstream starts (Cursor-like) | Planned | [Node handoff artifacts & output review](#node-handoff-artifacts--output-review) |
 | 18 | **Context used panel** — per-turn ledger of shared context, rules, skills, attachments, upstream artifacts; composer panel + per-turn attribution | Planned | [Context used](#context-used) |
@@ -68,6 +70,7 @@ Getting the right context into and out of agents.
 | 26 | **External connectors** — Composio / n8n-style integration nodes | Planned | |
 | 27 | **Run insights & self-learning** — extract durable lessons from completed runs; surface patterns, failures, and optimization hints; inject approved insights into future runs | Planned | [Run insights & self-learning](#run-insights--self-learning) |
 | 35 | **Workflow orchestration & reinvoke** — child workflow runs, foreach/batch over repo files, in-app scripting to start runs; partial re-run of a node or subgraph | Planned | [Workflow orchestration & reinvoke](#workflow-orchestration--reinvoke) |
+| 38 | **In-app file viewer from node output** — agents and nodes surface clickable file references in chat, canvas, and handoff output; open paths in an in-app reader (syntax highlight, markdown, line ranges) without leaving the app | Planned | [In-app file viewer](#in-app-file-viewer-from-node-output) |
 
 ### Tier 6 — Polish & distribution
 
@@ -102,7 +105,7 @@ Small or speculative items — pick up opportunistically or when a tier item tou
 - Error logging stored locally (**backend slice Done**; UI + agent auto-fix loop follow-up) — [persistent error reporting plan](superpowers/plans/2026-06-15-persistent-error-reporting.md)
 - Workflow version control (per-change revert)
 - Natural language workflow definition (partial: **Build with AI** authoring screen shipped — [`WorkflowAuthoringScreen.tsx`](crates/ui/src/screens/WorkflowAuthoringScreen.tsx); full NL builder still backlog)
-- Workflow authoring polish — inspector apply UX, template library integration, richer validation banner
+- Workflow authoring polish — inspector apply UX, template library integration (validation banner → [#36 Workflow insights](#workflow-insights))
 - T7 node-local max-tool-rounds (only if D4 changes), T17 concurrent layer siblings in headless runner (stretch)
 
 **Deferred** until workflow retry loop ([#23](#cron--scheduled-runs)) and [#35 Workflow orchestration](#workflow-orchestration--reinvoke) land: background job start/stop/resume at the process level (distinct from in-workflow child runs). Cron scheduling while the app is open is **Done** — see [#23](#cron--scheduled-runs).
@@ -223,6 +226,75 @@ Runs today live entirely in memory: `RunCoordinator` holds `WorkflowRunState`; `
 **Depends on:** #6 (persistence policy). **Unlocks:** #23 (scheduled runs need durable run records), #17 (handoff artifact paths), #27 (run insights need durable run records), [#35 Workflow orchestration](#workflow-orchestration--reinvoke), audit/compliance use cases.
 
 **Reference:** Live projection — `WorkflowRunState` in `crates/orchestration/src/run/state/mod.rs`; headless snapshot — `WorkflowRunSnapshot` in `crates/orchestration/src/run/execution/mod.rs`; artifact temp dirs — `drive.rs` (`openflow-run-{uuid}`).
+
+### Workflow insights
+
+Workflow authors today get **errors only at run time** or when the Build-with-AI authoring screen validates a draft. The editor has no standing **advisory panel** that explains how to improve graph design, node configuration, or run readiness while you edit. [`validate_authoring_workflow`](crates/orchestration/src/workflow/authoring/validate.rs) already checks empty prompts, output schema shape, and DAG legality for AI-authored drafts, but those checks are not surfaced continuously in the canvas editor. Queue item [#10 Pre-run validation](#tier-3--daily-driver-ux) covers **blocking** gates before `start_run`; this section covers **non-blocking insights** — ranked suggestions with severity, evidence, and jump-to-fix affordances.
+
+Distinct from [#27 Run insights & self-learning](#run-insights--self-learning): **Workflow insights** analyze the **workflow definition** (and optional linked project/settings context). **Run insights** analyze **completed run telemetry** and promote lessons into future context. The two may cross-link later ("3 recent runs failed at node X — add retry policy") but ship independently.
+
+| Layer | Gap |
+| --- | --- |
+| `crates/engine/src/graph/validation.rs` | DAG errors only — no graph-smell heuristics (orphans, depth, fan-out) |
+| `crates/orchestration/src/workflow/authoring/validate.rs` | Authoring-only semantic checks; not invoked on every editor save |
+| `crates/orchestration/src/settings/provider.rs` | Provider readiness exists; not projected as per-node insight rows |
+| `crates/orchestration/src/workflow/catalog.rs` | No `analyze_workflow` use-case or insight DTO |
+| `crates/desktop/src/lib.rs` | No `list_workflow_insights` IPC |
+| `crates/ui/src/panels/` | No Insights panel in gear sidebar or inspector |
+| `crates/ui/src/canvas/` | No per-node insight badges (distinct from blocking validation badges in #10) |
+
+**Decisions (resolve before coding):**
+
+| ID | Question | Recommendation |
+| --- | --- | --- |
+| WI1 | What is a workflow insight? | A **structured suggestion** with `kind`, `severity` (`info` / `warning` / `hint`), `summary`, `detail`, optional `node_ids[]`, `fix_action` (`select_node`, `open_inspector`, `open_settings`), and `status` (`open` / `dismissed` / `resolved`) |
+| WI2 | Blocking vs advisory? | **Never block** `start_run` from insights alone — blocking rules stay in #10. Insights may **recommend** running validation or fixing config before run |
+| WI3 | When to recompute? | On workflow graph/config change (debounced); on linked project or settings change; optional manual refresh. Cache last result keyed by workflow content hash |
+| WI4 | Where in UI? | **Gear panel → Insights tab** (workflow-scoped list) + optional compact **editor header chip** ("3 suggestions"); per-node rows in inspector when a node is selected |
+| WI5 | Dismiss semantics? | Per-workflow dismiss stored in app data (`openflow/insight-dismissals.json` or embedded in workflow metadata); dismissed kinds do not reappear until workflow changes materially |
+| WI6 | Run-informed hints (v2)? | When durable run history exists ([#24](#run-checkpoint-history-and-replay)), optional insights cite recent failures — thin bridge to [#27](#run-insights--self-learning), not duplicate extractors |
+
+**Insight kinds (v1 taxonomy):**
+
+| Kind | Source signal | Example |
+| --- | --- | --- |
+| `graph_orphan` | Node with zero incoming and zero outgoing edges | "Node 'Debug' is disconnected — wire it or delete it" |
+| `graph_depth` | Longest path exceeds threshold | "7-node linear chain — consider parallel layers or a Code node for batch prep" |
+| `graph_fan_out` | Layer with many siblings, no merge/join semantics ([#20](#tier-5--power-features)) | "4 nodes at layer 2 run in parallel with no join — downstream may race" |
+| `config_empty_prompt` | Empty `system_prompt` or `task_prompt` | "Node 'Research' has an empty task prompt" |
+| `config_missing_model` | Node model unset and no provider default | "Node 'Writer' has no model and no provider default is configured" |
+| `config_no_tools` | Agent node with empty tool catalog on a task that typically needs I/O | "Implementer has no file tools — add read/write or confirm read-only intent" |
+| `config_write_without_read` | Write-tier tools enabled, no read-tier tools | "Node can edit files but cannot read them first" |
+| `config_approval_risk` | `ApprovalMode::Yolo` or `always_ask` mismatch with tool tiers | "YOLO mode on a node with bash — consider write approval" |
+| `config_missing_summary` | Output schema lacks `summary` field | "Add a `summary` string to output schema for chat handoff ([#5 Node completion](#node-completion))" |
+| `workflow_no_shared_context` | Multi-node workflow, empty `shared_context` | "3 agents share no workflow context — add standards in gear panel" |
+| `workflow_duplicate_prompt` | Identical system prompts on 2+ nodes | "Planner and Reviewer use the same system prompt — differentiate roles" |
+| `run_readiness_provider` | Active provider missing API key / model unavailable | "OpenAI provider has no API key — add in Settings before run" |
+| `run_readiness_project` | Workflow linked to missing project path | "Linked project folder not found — re-bind in sidebar" |
+| `schedule_disabled` | Cron expression set but `enabled: false` | "Schedule is configured but disabled" |
+
+| Item | Priority | Status |
+| --- | --- | --- |
+| Insight schema — `WorkflowInsight`, kinds, severity, evidence, dismiss id; serde round-trip tests | High | Planned |
+| `analyze_workflow` use-case — merge engine DAG validation + semantic checks from authoring validator + settings/provider readiness | High | Planned |
+| Graph heuristics — orphan detection, max depth, fan-out per layer, duplicate prompt hash | Medium | Planned |
+| Config heuristics — empty prompts, tool/approval mismatches, missing `summary` in output schema | High | Planned |
+| IPC — `list_workflow_insights(workflow_id)` returns ranked list; optional `dismiss_workflow_insight` | High | Planned |
+| Insights panel — gear sidebar tab: grouped by severity; click row selects node / opens inspector field | High | Planned |
+| Header summary chip — "N suggestions" opens Insights tab; hide when zero | Medium | Planned |
+| Inspector inline hints — top 1–3 insights for selected node with jump links | Medium | Planned |
+| Debounced recompute — hook editor mutations + project/settings listeners | High | Planned |
+| Dismiss persistence — per-workflow dismissed insight keys survive reload | Medium | Planned |
+| Share validator with authoring — single source for semantic checks in `workflow/authoring/validate.rs` and insights analyzer | High | Planned |
+| Canvas badges (optional) — non-blocking amber dot on nodes with open warnings (distinct from red blocking badges in #10) | Low | Planned |
+| Run-informed hints — surface recurring node failures from run history when #24 lands | Low | Planned |
+| Export insights — markdown checklist for workflow review PRs | Low | Planned |
+
+**Target:** Open a workflow → gear panel **Insights** lists actionable improvements ("Implementer has write tools but no read tools", "Provider key missing"). Click a row → canvas selects the node and inspector scrolls to the relevant field. Dismiss noise you accept intentionally. Run still works when only `info`-level hints remain; **Run** stays blocked only when #10 validation fails.
+
+**Depends on:** existing `validate_workflow` + `validate_authoring_workflow` checks. **Complements:** [#10 Pre-run validation](#tier-3--daily-driver-ux) (blocking), [#27 Run insights](#run-insights--self-learning) (post-run). **Unlocks:** better onboarding templates ([#30](#tier-6--polish--distribution)), workflow authoring polish, fewer failed first runs.
+
+**Reference:** DAG validation — [`validation.rs`](crates/engine/src/graph/validation.rs); authoring semantic checks — [`validate.rs`](crates/orchestration/src/workflow/authoring/validate.rs); provider readiness — [`settings/provider.rs`](crates/orchestration/src/settings/provider.rs); Build-with-AI validation UI — [`AuthoringDraftPreview.tsx`](crates/ui/src/components/workflowAuthoring/AuthoringDraftPreview.tsx).
 
 ### Run insights & self-learning
 
@@ -632,6 +704,34 @@ Users can invoke skills with `/skill` tokens and attach project context with `@{
 
 **Target:** Attach project files via button, `@` token, or drag-drop before send (or on run start). Resolved content is injected into the user message or entrypoint JSON so the agent sees explicit file context without an extra `read` tool round. Images attach when the selected model supports vision.
 
+### Agent prompt skill references
+
+Today `/skill` works in the **chat composer** (`resolveChatSubmission` in [`chatCommands.ts`](crates/ui/src/lib/chatCommands.ts)): type `/ponytail` (or pick from the combobox), see a description preview, and on send the skill id is recorded in formatted submit text. **Saved agents** and **node inspector** system/task prompts are plain textareas — authors must paste full skill instructions or duplicate prose by hand.
+
+| Layer | Role / gap |
+| --- | --- |
+| `crates/ui/src/forms/AgentConfigForm.tsx` | System + task prompt fields — no slash combobox or skill preview |
+| `crates/ui/src/screens/AgentsScreen.tsx` | Saved-agent editor — same gap |
+| `crates/ui/src/lib/chatCommands.ts` | Slash token parse, combobox match, submit resolution — **Done** for composer only |
+| `crates/ui/src/components/conversation/SkillCommandCombobox.tsx` | Reusable slash UI — composer-only today |
+| `crates/orchestration/src/adapters/storage/skill_store.rs` | Skill discovery + `SkillSummary` — read skill file body for expansion |
+| `crates/engine/src/execution/node_invocation.rs` | `AgentRequest` assembly — prompts passed verbatim; no `/skill` expansion |
+
+**Intent:** Write `/ponytail` (or `/openflow-engine-change`) in a system or task prompt instead of copying the whole skill markdown. At **run start** (or first `CallAi` for that node), expand each referenced skill into the assembled system prompt — same discovery roots as Settings skill scan. Persist **tokens** in `agents.json` / workflow JSON; store expanded text only in run snapshots if needed for replay ([#24](#run-checkpoint-history-and-replay)).
+
+| Item | Priority | Status |
+| --- | --- | --- |
+| Slash UX in prompt fields — reuse combobox + description preview on system/task textareas (Agents screen + node inspector) | High | Planned |
+| Token syntax — `/skillId` at line start or inline; unknown ids left literal with editor warning | High | Planned |
+| Expansion — resolve skill file content from `skill_store` into prompt assembly; dedupe repeated ids | High | Planned |
+| Snapshot policy — expand at run-start into frozen `CallableAgent` / node config snapshot (deterministic reruns) | Medium | Planned |
+| Context ledger — list expanded skills in [#18 Context used](#context-used) per turn | Medium | Planned |
+| Optional `@` in prompts — same jail as [#15](#attachments--file-references) for `{path}` in static prompts (stretch) | Low | Planned |
+
+**Target:** On the Agents screen, system prompt is `You follow /ponytail and /openflow-engine-change.` — no pasted skill bodies. Start a run → the model receives expanded skill instructions in its system prompt. Inspector shows which skills resolved and which ids were missing.
+
+**Depends on:** skill discovery (`list_skills` / `skill_store`). **Complements:** [#15 Attachments](#attachments--file-references) (composer `/skill`), [#18 Context used](#context-used). **Unlocks:** shorter saved-agent library, composable agent personas without duplication.
+
 ### Context used
 
 Users cannot see what context was assembled for each agent turn. `WorkflowSettings.shared_context`, project rules, skills, attachments, upstream outputs, and read-file ledgers are merged in `build_node_input` / system prompts, but only fragments appear in chat (and raw `Context:` blocks are being removed from the conversation view). There is no structured breakdown of what the model actually received.
@@ -796,6 +896,46 @@ Planning nodes often produce markdown plans or specs that downstream implementer
 **Depends on:** [#5 Node completion](#node-completion) (submit contract), [#6 Run lifecycle](#run-lifecycle) (artifact dirs), [#24 Run checkpoint & replay](#run-checkpoint-history-and-replay) (durable handoff paths). **Unlocks:** plan→implement workflow templates, audit trail for agent plans, LLM handoff via exported review markdown.
 
 **Reference:** Submit contract — [`node_invocation.rs`](crates/engine/src/execution/node_invocation.rs); offline review UX — [`tools/plan-review.html`](tools/plan-review.html); tool-approval pause pattern — `AwaitToolApproval` in [`interactive_engine`](crates/engine/src/execution/interactive_engine/mod.rs).
+
+### In-app file viewer from node output
+
+Agents and nodes already read and write files under the execution cwd, and the changed-files panel shows diffs after write-tier tools run. There is no general way for a node to **present** a file in its output — assistant text, submit payload, or handoff manifest — and let the user **click to open** that path inside OpenFlow. Users must open the linked project in an external editor or hunt paths in raw chat text.
+
+This item adds **clickable file references** surfaced by nodes during and after a run, plus an **in-app viewer** (dock tab or overlay panel) for reading those files without leaving the app.
+
+| Layer | Gap |
+| --- | --- |
+| `crates/ui/src/components/conversation/` | Assistant markdown renders paths as plain text — no file-link detection or click handler |
+| `crates/ui/src/panels/` | No file viewer tab/panel; `FileChangesPanel` is diff-only for write-tier mutations |
+| `crates/orchestration/src/project/file_refs.rs` | Read-under-jail exists for composer `@` refs — not wired for on-demand viewer open from run output |
+| `crates/engine/src/execution/` | Node `output` and transcript have no structured `presented_files: [{ path, label?, line_range? }]` |
+| `crates/desktop/src/lib.rs` | No `open_file_in_viewer` IPC (read path under execution cwd, return content + mime hint) |
+
+**Decisions (resolve before coding):**
+
+| ID | Question | Recommendation |
+| --- | --- | --- |
+| V1 | How are files referenced? | **Dual path:** (1) structured `presented_files` on submit/output when agent uses a builtin or schema field; (2) **auto-link** well-formed repo-relative paths in assistant markdown (`src/foo.rs`, `path:10-40`) under execution cwd jail |
+| V2 | Where does the viewer live? | Dock tab **Files** (or reuse Overview sub-panel) — list node-presented files + click history; primary pane shows content with syntax highlight for code, render for markdown |
+| V3 | Line ranges | Optional `#L10-L40` or `:10-40` suffix on links; viewer scrolls/highlights range |
+| V4 | Scope | Read-only in v1; "Open in editor" external action is stretch. Images: inline preview when path is image mime |
+| V5 | Security | Same execution-cwd jail as [#15](#attachments--file-references); reject escapes; cap file size for inline load |
+
+| Item | Priority | Status |
+| --- | --- | --- |
+| File-link detection — parse repo-relative paths in assistant markdown; render as clickable chips/links | High | Planned |
+| Viewer IPC — read file under execution cwd; return content, size, truncated flag | High | Planned |
+| In-app viewer panel — dock tab or split pane: path breadcrumb, content, line numbers, markdown/code modes | High | Planned |
+| Structured `presented_files` — optional field on node submit/output; merge into viewer file list per node | Medium | Planned |
+| Line-range navigation — scroll + highlight when link includes range | Medium | Planned |
+| Canvas / node card — show count or primary presented file on completed nodes; click opens viewer | Medium | Planned |
+| Handoff integration — primary handoff file from [#17](#node-handoff-artifacts--output-review) opens in same viewer | Medium | Planned |
+| Image preview — inline render for png/jpg/gif/webp under size cap | Low | Planned |
+| Open externally — reveal in Finder / default app (stretch) | Low | Planned |
+
+**Target:** A planning node finishes and its assistant message says "See `docs/plan.md` for the full spec." You click the link → the file opens in the dock viewer with markdown rendering. An implementer cites `src/lib.rs:42-80` → viewer jumps to that range. No copy-paste into another editor for read-only review.
+
+**Depends on:** execution cwd jail ([#15](#attachments--file-references)), optional [#17](#node-handoff-artifacts--output-review) for handoff paths. **Complements:** [File edit tooling](#file-edit-tooling) (changed-files diffs), [#18 Context used](#context-used) (click path rows to open). **Unlocks:** faster human review of agent-produced artifacts, less context switching during runs.
 
 ### Programmatic / non-AI nodes
 

@@ -213,7 +213,7 @@ mod tests {
         assert!(!AgentError::Interrupted.is_retryable());
         assert!(AgentError::Interrupted.is_interrupted());
         assert!(AgentError::Failed(
-            "OpenAI-compatible final output tool arguments were not valid JSON: missing field `output`"
+            "AI provider final output tool arguments were not valid JSON: missing field `output`"
                 .to_string()
         )
         .is_malformed_submit_output());

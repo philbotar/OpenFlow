@@ -77,15 +77,7 @@ export function DockPanel() {
                   <Minimize2 width={15} height={15} />
                 </Show>
               </button>
-            </Show>
-            <Show when={ctx.bottomTab() === "trace" && ctx.hasRunTraceMemo()}>
-              <button
-                class="secondary-button small ghost dock-trace-action"
-                onClick={() => void ctx.handleClearRunTrace()}
-              >
-                Clear trace
-              </button>
-            </Show>
+            </Show> 
           </div>
         </Show>
       </div>
