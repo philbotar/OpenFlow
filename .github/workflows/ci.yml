@@ -13,6 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       VERIFY_SHARE_TARGET: "1"
+      VERIFY_FAIL_FAST: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -21,9 +22,6 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-
-      - name: Install Rust nightly (public API check)
-        uses: dtolnay/rust-toolchain@nightly
 
       - name: Install Node
         uses: actions/setup-node@v4
@@ -40,42 +38,31 @@ jobs:
         with:
           tool: cargo-deny
 
-      - name: Install cargo-machete
-        uses: taiki-e/install-action@latest
-        with:
-          tool: cargo-machete
-
-      - name: Install typos-cli
-        uses: taiki-e/install-action@latest
-        with:
-          tool: typos-cli
-
-      - name: Install cargo-public-api
-        uses: taiki-e/install-action@latest
-        with:
-          tool: cargo-public-api
-
       - name: Cache Rust build artifacts
         uses: swatinem/rust-cache@v2
 
-      - name: Run verification gate
-        run: ./scripts/verify.sh
+      - name: Run CI verification gate
+        run: ./scripts/verify-ci.sh
 
-  clippy_max:
-    name: Clippy max (non-blocking)
+  miri:
+    name: Miri (engine UB)
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+      - name: Install Miri
+        run: |
+          rustup toolchain install nightly --component miri
+          cargo +nightly miri setup
 
-      - name: Cache Rust build artifacts
+      - name: Cache Miri build artifacts
         uses: swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+          cache-on-failure: true
+          shared-key: miri
 
-      - name: Clippy max strictness report
-        run: cargo clippy-max
+      - name: Test engine with Miri
+        run: ./scripts/miri.sh

@@ -121,6 +121,7 @@ mod tests {
             .expect("git config name");
     }
 
+    #[cfg_attr(miri, ignore)] // ponytail: Miri cannot emulate git subprocess (fork)
     #[test]
     fn diff_file_shows_uncommitted_changes() {
         let temp = tempfile::TempDir::new().expect("tempdir");

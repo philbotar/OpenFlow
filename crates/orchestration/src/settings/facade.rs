@@ -6,7 +6,11 @@ use crate::settings::provider::{
     active_provider_env_var, active_provider_label, resolve_provider_config, ProviderConfigError,
     ProviderEnv,
 };
+#[cfg(feature = "bedrock")]
+use engine::AgentError;
 use engine::{execution_layers, validate_workflow, Workflow};
+#[cfg(feature = "bedrock")]
+use providers::list_bedrock_foundation_models;
 use providers::ProviderId;
 
 pub struct SettingsFacade {
@@ -118,7 +122,7 @@ impl SettingsFacade {
             Err(ProviderConfigError::MissingApiKey { provider, env_var }) => ProviderReadiness {
                 ready: false,
                 provider,
-                message: format!("API key missing"),
+                message: "API key missing".to_string(),
                 env_var,
             },
             Err(error) => ProviderReadiness {
@@ -149,6 +153,51 @@ impl SettingsFacade {
         })
     }
 
+    /// # Errors
+    /// Returns an error if Bedrock model discovery fails or the Bedrock profile is missing.
+    pub fn refresh_bedrock_models(
+        &self,
+        settings: &AppSettings,
+    ) -> Result<Vec<String>, BackendError> {
+        let profile = settings
+            .providers
+            .get(&ProviderId::from("bedrock"))
+            .ok_or_else(|| {
+                BackendError::from(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "bedrock provider profile not found",
+                ))
+            })?;
+        let region = profile.base_url.trim();
+        if region.is_empty() {
+            return Err(BackendError::from(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Amazon Bedrock AWS region missing",
+            )));
+        }
+        let profile_name = profile.api_key.trim();
+        #[cfg(not(feature = "bedrock"))]
+        {
+            let _ = (region, profile_name);
+            Err(BackendError::from(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "Bedrock model refresh requires the orchestration `bedrock` feature",
+            )))
+        }
+        #[cfg(feature = "bedrock")]
+        {
+            list_bedrock_foundation_models(
+                region,
+                if profile_name.is_empty() {
+                    None
+                } else {
+                    Some(profile_name)
+                },
+            )
+            .map_err(map_agent_error_to_backend)
+        }
+    }
+
     pub(crate) fn store(&self) -> &dyn SettingsStore {
         &*self.store
     }
@@ -156,4 +205,9 @@ impl SettingsFacade {
     pub(crate) fn env(&self) -> &ProviderEnv {
         &self.env
     }
+}
+
+#[cfg(feature = "bedrock")]
+fn map_agent_error_to_backend(error: AgentError) -> BackendError {
+    BackendError::from(std::io::Error::other(error.to_string()))
 }

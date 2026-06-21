@@ -65,11 +65,12 @@ describe("SettingsScreen", () => {
     return [...container.querySelectorAll<HTMLButtonElement>(".settings-nav-button")];
   }
 
-  test("nav lists Appearance and Providers only", () => {
+  test("nav lists Appearance, Providers, and MCP Servers", () => {
     renderScreen();
     expect(navButtons().map((button) => button.textContent?.trim())).toEqual([
       "Appearance",
       "Providers",
+      "MCP Servers",
     ]);
   });
 

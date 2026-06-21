@@ -8,7 +8,7 @@ import {
 import type { ParentProps } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { toast } from "solid-sonner";
-import { getAppWindow, openNativeDialog } from "../api";
+import { getAppWindow, confirmNativeDialog, openNativeDialog } from "../api";
 import { bindRunStateEvents, createUiDesktopOutboundAdapter } from "../port";
 import { resolveChatSubmission } from "../lib/chatCommands";
 import {
@@ -907,6 +907,41 @@ export function AppProvider(props: ParentProps) {
       selectWorkflow(result.workflow);
       setScreen("editor");
       setSuccess("Copied workflow");
+    } catch (error) {
+      setError(normalizeError(error));
+    }
+  };
+
+  const handleDeleteActiveWorkflow = async () => {
+    const workflow = activeWorkflow();
+    if (!workflow) return;
+    if (runState()?.active && backendRunWorkflowId() === workflow.id) {
+      setError("Stop the run before deleting this workflow.");
+      return;
+    }
+    const confirmed = await confirmNativeDialog(
+      `Delete "${workflow.name}" permanently? This cannot be undone.`,
+      { title: "Delete workflow", kind: "warning" },
+    );
+    if (!confirmed) return;
+
+    try {
+      const nextProjects = await desktop.deleteWorkflow(workflow.id);
+      setProjects(nextProjects);
+      setRunStateByWorkflowId((state) => {
+        const { [workflow.id]: _removed, ...rest } = state;
+        return rest;
+      });
+
+      let remaining = workflows().filter((item) => item.id !== workflow.id);
+      if (remaining.length === 0) {
+        const created = await desktop.createWorkflow("Workflow 1");
+        remaining = [created];
+      }
+      setWorkflows(remaining);
+      setWorkflowSettingsOpen(false);
+      selectWorkflow(remaining[0]);
+      setSuccess(`Deleted ${workflow.name}`);
     } catch (error) {
       setError(normalizeError(error));
     }
@@ -2062,6 +2097,7 @@ export function AppProvider(props: ParentProps) {
     screenTransitionClass,
     settings,
     runState,
+    backendRunWorkflowId,
     readiness,
     bottomTab,
     dockOpen,
@@ -2156,6 +2192,7 @@ export function AppProvider(props: ParentProps) {
     closeAssignWorkflowPicker,
     workflowsAddableToProject: workflowsAddableToProjectMemo,
     handleCopyWorkflowToProject,
+    handleDeleteActiveWorkflow,
     handleOpenAgents,
     handleOpenSchedule,
     handleSaveWorkflowSchedule,

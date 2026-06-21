@@ -22,6 +22,7 @@ engine::AiPort (trait)
 │  mapping.rs │  transcript + tool-arg wire shape
 │  openai_compat.rs
 │  anthropic.rs
+│  bedrock.rs / bedrock_models.rs
 │  sse.rs     │  stream parsing
 │  auth.rs    │  key/header wiring
 └─────────────┘

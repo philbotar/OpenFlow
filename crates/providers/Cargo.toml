@@ -12,6 +12,10 @@ categories.workspace = true
 [lib]
 name = "providers"
 
+[features]
+default = []
+bedrock = ["dep:aws-config", "dep:aws-sdk-bedrock", "dep:aws-sdk-bedrockruntime"]
+
 [dependencies]
 async-trait.workspace = true
 bytes.workspace = true
@@ -22,6 +26,9 @@ jsonrepair-rs.workspace = true
 engine = { path = "../engine", version = "0.1.0" }
 futures.workspace = true
 tokio = { workspace = true, features = ["time"] }
+aws-config = { workspace = true, optional = true }
+aws-sdk-bedrock = { workspace = true, optional = true }
+aws-sdk-bedrockruntime = { workspace = true, optional = true }
 
 [dev-dependencies]
 bytes.workspace = true

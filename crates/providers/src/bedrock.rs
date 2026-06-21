@@ -1,0 +1,615 @@
+use crate::auth::AuthConfig;
+use crate::client::BedrockConfig;
+use crate::mapping::{
+    all_tool_specs, build_node_context, parse_internal_tool_outcome, parse_plain_json_completion,
+    should_allow_user_input, ToolSpec, REQUEST_INPUT_TOOL, SUBMIT_OUTPUT_TOOL,
+};
+use aws_sdk_bedrockruntime::error::ProvideErrorMetadata;
+use aws_sdk_bedrockruntime::types::{
+    AutoToolChoice, ContentBlock, ContentBlockDelta, ConversationRole, ConverseStreamOutput,
+    InferenceConfiguration, Message, SystemContentBlock, Tool, ToolChoice, ToolConfiguration,
+    ToolInputSchema, ToolResultBlock, ToolResultContentBlock, ToolResultStatus, ToolSpecification,
+    ToolUseBlock,
+};
+use aws_sdk_bedrockruntime::Client as BedrockRuntimeClient;
+use aws_smithy_types::Document;
+use engine::{
+    AgentError, AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTranscriptItem,
+    AgentTurnOutcome, AiStreamEvent, AiStreamSink, ToolCall,
+};
+use serde_json::Value;
+use std::collections::BTreeMap;
+
+const DEFAULT_MAX_TOKENS: i32 = 4096;
+
+struct ConverseInput {
+    system: Vec<SystemContentBlock>,
+    messages: Vec<Message>,
+    inference_config: InferenceConfiguration,
+    tool_config: Option<ToolConfiguration>,
+}
+
+pub async fn invoke(
+    config: &BedrockConfig,
+    auth: &AuthConfig,
+    request: AgentRequest,
+) -> Result<AgentTurnOutcome, AgentError> {
+    let client = bedrock_runtime_client(config, auth).await?;
+    let input = build_converse_input(&request)?;
+    let allow_follow_up = should_allow_user_input(&request);
+    let output_schema = request.output_schema.clone();
+    let model_id = request.model.clone();
+    let response = client
+        .converse()
+        .model_id(model_id)
+        .set_system(Some(input.system))
+        .set_messages(Some(input.messages))
+        .set_inference_config(Some(input.inference_config))
+        .set_tool_config(input.tool_config)
+        .send()
+        .await
+        .map_err(map_bedrock_runtime_error)?;
+    let message = response
+        .output
+        .ok_or_else(|| AgentError::Failed("Bedrock Converse response missing output".into()))?
+        .as_message()
+        .map_err(|_| AgentError::Failed("Bedrock Converse output was not a message".into()))?
+        .clone();
+    parse_converse_message(&message, allow_follow_up, Some(&output_schema))
+}
+
+pub async fn invoke_stream(
+    config: &BedrockConfig,
+    auth: &AuthConfig,
+    request: AgentRequest,
+    sink: &dyn AiStreamSink,
+) -> Result<AgentTurnOutcome, AgentError> {
+    let client = bedrock_runtime_client(config, auth).await?;
+    let input = build_converse_input(&request)?;
+    let allow_follow_up = should_allow_user_input(&request);
+    let output_schema = request.output_schema.clone();
+    let model_id = request.model.clone();
+    let mut stream = client
+        .converse_stream()
+        .model_id(model_id)
+        .set_system(Some(input.system))
+        .set_messages(Some(input.messages))
+        .set_inference_config(Some(input.inference_config))
+        .set_tool_config(input.tool_config)
+        .send()
+        .await
+        .map_err(map_bedrock_runtime_error)?
+        .stream;
+    let mut aggregator = ConverseStreamAggregator::default();
+    while let Some(event) = stream.recv().await.map_err(map_bedrock_stream_error)? {
+        if let Some(delta) = aggregator.apply_event(&event) {
+            sink.on_stream_event(AiStreamEvent::AssistantDelta { content: delta });
+        }
+    }
+    let message = aggregator.into_message();
+    parse_converse_message(&message, allow_follow_up, Some(&output_schema))
+}
+
+fn build_converse_input(request: &AgentRequest) -> Result<ConverseInput, AgentError> {
+    let system = vec![SystemContentBlock::Text(request.system_content())];
+    let mut messages = vec![Message::builder()
+        .role(ConversationRole::User)
+        .content(ContentBlock::Text(build_node_context(request)))
+        .build()
+        .map_err(|_| AgentError::Failed("Bedrock failed to build node context message".into()))?];
+    messages.extend(transcript_to_messages(request)?);
+    let tool_config = build_tool_config(request)?;
+    Ok(ConverseInput {
+        system,
+        messages,
+        inference_config: InferenceConfiguration::builder()
+            .max_tokens(DEFAULT_MAX_TOKENS)
+            .build()
+            .map_err(|_| AgentError::Failed("Bedrock failed to build inference config".into()))?,
+        tool_config,
+    })
+}
+
+fn build_tool_config(request: &AgentRequest) -> Result<Option<ToolConfiguration>, AgentError> {
+    let specs = all_tool_specs(request);
+    if specs.is_empty() {
+        return Ok(None);
+    }
+    let tools = specs
+        .iter()
+        .map(bedrock_tool_from_spec)
+        .collect::<Result<Vec<_>, _>>()?;
+    ToolConfiguration::builder()
+        .set_tools(Some(tools))
+        .tool_choice(ToolChoice::Auto(AutoToolChoice::builder().build()))
+        .build()
+        .map(Some)
+        .map_err(|_| AgentError::Failed("Bedrock failed to build tool config".into()))
+}
+
+fn bedrock_tool_from_spec(tool: &ToolSpec) -> Result<Tool, AgentError> {
+    let schema: Document = serde_json::from_value(tool.parameters.clone()).map_err(|error| {
+        AgentError::Failed(format!("Bedrock tool schema JSON invalid: {error}"))
+    })?;
+    let spec = ToolSpecification::builder()
+        .name(tool.name.clone())
+        .description(tool.description.clone())
+        .input_schema(ToolInputSchema::Json(schema))
+        .build()
+        .map_err(|_| AgentError::Failed(format!("Bedrock failed to build tool {}", tool.name)))?;
+    Ok(Tool::ToolSpec(spec))
+}
+
+fn transcript_to_messages(request: &AgentRequest) -> Result<Vec<Message>, AgentError> {
+    let mut messages = Vec::new();
+    for item in &request.transcript {
+        match item {
+            AgentTranscriptItem::AssistantMessage { content } => {
+                messages.push(
+                    Message::builder()
+                        .role(ConversationRole::Assistant)
+                        .content(ContentBlock::Text(content.clone()))
+                        .build()
+                        .map_err(|_| {
+                            AgentError::Failed("Bedrock failed to build assistant message".into())
+                        })?,
+                );
+            }
+            AgentTranscriptItem::UserMessage { content } => {
+                messages.push(
+                    Message::builder()
+                        .role(ConversationRole::User)
+                        .content(ContentBlock::Text(content.clone()))
+                        .build()
+                        .map_err(|_| {
+                            AgentError::Failed("Bedrock failed to build user message".into())
+                        })?,
+                );
+            }
+            AgentTranscriptItem::ToolCall { call } => {
+                let input = document_from_json(&call.arguments)?;
+                messages.push(
+                    Message::builder()
+                        .role(ConversationRole::Assistant)
+                        .content(ContentBlock::ToolUse(
+                            ToolUseBlock::builder()
+                                .tool_use_id(call.id.clone())
+                                .name(call.name.clone())
+                                .input(input)
+                                .build()
+                                .map_err(|_| {
+                                    AgentError::Failed(
+                                        "Bedrock failed to build tool use block".into(),
+                                    )
+                                })?,
+                        ))
+                        .build()
+                        .map_err(|_| {
+                            AgentError::Failed(
+                                "Bedrock failed to build assistant tool call message".into(),
+                            )
+                        })?,
+                );
+            }
+            AgentTranscriptItem::ToolResult { result } => {
+                let status = if result.is_error {
+                    ToolResultStatus::Error
+                } else {
+                    ToolResultStatus::Success
+                };
+                messages.push(
+                    Message::builder()
+                        .role(ConversationRole::User)
+                        .content(ContentBlock::ToolResult(
+                            ToolResultBlock::builder()
+                                .tool_use_id(result.tool_call_id.clone())
+                                .status(status)
+                                .content(ToolResultContentBlock::Text(result.content.clone()))
+                                .build()
+                                .map_err(|_| {
+                                    AgentError::Failed(
+                                        "Bedrock failed to build tool result block".into(),
+                                    )
+                                })?,
+                        ))
+                        .build()
+                        .map_err(|_| {
+                            AgentError::Failed("Bedrock failed to build tool result message".into())
+                        })?,
+                );
+            }
+        }
+    }
+    Ok(messages)
+}
+
+fn document_from_json(value: &Value) -> Result<Document, AgentError> {
+    let raw = serde_json::to_string(value).map_err(|error| {
+        AgentError::Failed(format!("Bedrock JSON document conversion failed: {error}"))
+    })?;
+    aws_smithy_types::serde::from_str(&raw).map_err(|error| {
+        AgentError::Failed(format!("Bedrock JSON document conversion failed: {error}"))
+    })
+}
+
+fn json_from_document(document: &Document) -> Result<Value, AgentError> {
+    let raw = aws_smithy_types::serde::to_string(document).map_err(|error| {
+        AgentError::Failed(format!("Bedrock document JSON conversion failed: {error}"))
+    })?;
+    serde_json::from_str(&raw).map_err(|error| {
+        AgentError::Failed(format!("Bedrock document JSON conversion failed: {error}"))
+    })
+}
+
+fn parse_converse_message(
+    message: &Message,
+    allow_plain_text_follow_up: bool,
+    output_schema: Option<&Value>,
+) -> Result<AgentTurnOutcome, AgentError> {
+    let mut assistant_text_parts = Vec::new();
+    let mut tool_calls = Vec::new();
+
+    for block in message.content() {
+        if let Ok(text) = block.as_text() {
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                assistant_text_parts.push(trimmed.to_string());
+            }
+            continue;
+        }
+        if let Ok(tool_use) = block.as_tool_use() {
+            tool_calls.push(parse_tool_use_block(tool_use)?);
+        }
+    }
+
+    let assistant_message =
+        (!assistant_text_parts.is_empty()).then(|| assistant_text_parts.join("\n"));
+
+    if tool_calls.is_empty() {
+        if let Some(outcome) = parse_plain_json_completion(assistant_message.as_deref()) {
+            return Ok(outcome);
+        }
+        if allow_plain_text_follow_up {
+            if let Some(assistant_message) = assistant_message {
+                return Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
+                    raw_text: assistant_message.clone(),
+                    assistant_message,
+                }));
+            }
+        }
+        return Err(AgentError::Failed(
+            "Bedrock response did not contain a tool call, plain JSON completion, or follow-up prompt"
+                .into(),
+        ));
+    }
+
+    if let Some(index) = tool_calls
+        .iter()
+        .position(|call| call.name == SUBMIT_OUTPUT_TOOL || call.name == REQUEST_INPUT_TOOL)
+    {
+        if tool_calls.len() != 1 {
+            return Err(AgentError::Failed(
+                "Bedrock response mixed internal and external tool calls".into(),
+            ));
+        }
+        let call = &tool_calls[index];
+        return parse_internal_tool_outcome(
+            &call.name,
+            &call.arguments.to_string(),
+            assistant_message,
+            "Bedrock",
+            output_schema,
+        );
+    }
+
+    Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+        raw_text: assistant_message.clone().unwrap_or_default(),
+        assistant_message,
+        tool_calls,
+        usage: None,
+    }))
+}
+
+fn parse_tool_use_block(tool_use: &ToolUseBlock) -> Result<ToolCall, AgentError> {
+    Ok(ToolCall {
+        id: tool_use.tool_use_id().to_string(),
+        name: tool_use.name().to_string(),
+        arguments: json_from_document(tool_use.input())?,
+    })
+}
+
+async fn bedrock_runtime_client(
+    config: &BedrockConfig,
+    auth: &AuthConfig,
+) -> Result<BedrockRuntimeClient, AgentError> {
+    let AuthConfig::AwsCredentials { profile, region } = auth else {
+        return Err(AgentError::Permanent(
+            "Bedrock requires AWS credentials config".into(),
+        ));
+    };
+    let effective_region = config.region.trim();
+    if effective_region.is_empty() && region.trim().is_empty() {
+        return Err(AgentError::Permanent(
+            "Amazon Bedrock AWS region missing".into(),
+        ));
+    }
+    let region_value = if effective_region.is_empty() {
+        region.clone()
+    } else {
+        effective_region.to_string()
+    };
+    let profile_name = config
+        .aws_profile
+        .as_deref()
+        .or(profile.as_deref())
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest())
+        .region(aws_config::Region::new(region_value));
+    if let Some(name) = profile_name {
+        loader = loader.profile_name(name);
+    }
+    let shared = loader.load().await;
+    Ok(BedrockRuntimeClient::new(&shared))
+}
+
+fn map_bedrock_runtime_error<E>(error: aws_sdk_bedrockruntime::error::SdkError<E>) -> AgentError
+where
+    E: ProvideErrorMetadata + std::error::Error + Send + Sync + 'static,
+{
+    map_bedrock_sdk_error(error, "Bedrock request failed")
+}
+
+fn map_bedrock_stream_error<E>(
+    error: aws_sdk_bedrockruntime::error::SdkError<E, aws_smithy_types::event_stream::RawMessage>,
+) -> AgentError
+where
+    E: ProvideErrorMetadata + std::error::Error + Send + Sync + 'static,
+{
+    map_bedrock_sdk_error(error, "Bedrock stream failed")
+}
+
+fn map_bedrock_sdk_error<E>(
+    error: aws_sdk_bedrockruntime::error::SdkError<E>,
+    prefix: &str,
+) -> AgentError
+where
+    E: ProvideErrorMetadata + std::error::Error + Send + Sync + 'static,
+{
+    let code = error
+        .as_service_error()
+        .and_then(|service| service.code())
+        .unwrap_or_default();
+    let message = format!("{prefix}: {error}");
+    match code {
+        "ThrottlingException" | "ServiceUnavailableException" | "ModelStreamErrorException" => {
+            AgentError::Transient(message)
+        }
+        "InternalServerException" => AgentError::Transient(message),
+        "AccessDeniedException" | "ValidationException" | "ResourceNotFoundException" => {
+            AgentError::Permanent(message)
+        }
+        _ if error.to_string().to_ascii_lowercase().contains("timeout") => {
+            AgentError::Transient(message)
+        }
+        _ => AgentError::Failed(message),
+    }
+}
+
+struct PendingToolUse {
+    tool_use_id: String,
+    name: String,
+    input_json: String,
+}
+
+#[derive(Default)]
+struct ConverseStreamAggregator {
+    text_by_block: BTreeMap<i32, String>,
+    pending_tools: BTreeMap<i32, PendingToolUse>,
+    tool_uses: Vec<ToolUseBlock>,
+}
+
+impl ConverseStreamAggregator {
+    fn apply_event(&mut self, event: &ConverseStreamOutput) -> Option<String> {
+        match event {
+            ConverseStreamOutput::ContentBlockDelta(delta_event) => {
+                let index = delta_event.content_block_index;
+                let delta = delta_event.delta();
+                if let Ok(text) = delta.as_text() {
+                    self.text_by_block.entry(index).or_default().push_str(text);
+                    return Some(text.clone());
+                }
+                if let Ok(tool_delta) = delta.as_tool_use() {
+                    if let Some(pending) = self.pending_tools.get_mut(&index) {
+                        if let Some(input) = tool_delta.input() {
+                            let fragment =
+                                aws_smithy_types::serde::to_string(input).unwrap_or_default();
+                            pending.input_json.push_str(&fragment);
+                        }
+                        if let Some(name) = tool_delta.name() {
+                            pending.name = name.to_string();
+                        }
+                        if let Some(id) = tool_delta.tool_use_id() {
+                            pending.tool_use_id = id.to_string();
+                        }
+                    }
+                }
+            }
+            ConverseStreamOutput::ContentBlockStart(start_event) => {
+                let index = start_event.content_block_index;
+                if let Ok(start) = start_event.start().as_tool_use() {
+                    self.pending_tools.insert(
+                        index,
+                        PendingToolUse {
+                            tool_use_id: start.tool_use_id().to_string(),
+                            name: start.name().to_string(),
+                            input_json: start
+                                .input()
+                                .map(|input| {
+                                    aws_smithy_types::serde::to_string(input).unwrap_or_default()
+                                })
+                                .unwrap_or_default(),
+                        },
+                    );
+                }
+            }
+            ConverseStreamOutput::ContentBlockStop(stop_event) => {
+                if let Some(pending) = self.pending_tools.remove(&stop_event.content_block_index) {
+                    let input = document_from_json(
+                        &serde_json::from_str(&pending.input_json)
+                            .unwrap_or(Value::Object(Default::default())),
+                    )
+                    .unwrap_or_default();
+                    if let Ok(block) = ToolUseBlock::builder()
+                        .tool_use_id(pending.tool_use_id)
+                        .name(pending.name)
+                        .input(input)
+                        .build()
+                    {
+                        self.tool_uses.push(block);
+                    }
+                }
+            }
+            ConverseStreamOutput::MessageStop(_) | ConverseStreamOutput::Metadata(_) => {}
+            ConverseStreamOutput::MessageStart(_) | ConverseStreamOutput::Unknown => {}
+        }
+        None
+    }
+
+    fn into_message(self) -> Message {
+        let mut content = Vec::new();
+        for (_, text) in self.text_by_block {
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                content.push(ContentBlock::Text(trimmed.to_string()));
+            }
+        }
+        for tool_use in self.tool_uses {
+            content.push(ContentBlock::ToolUse(tool_use));
+        }
+        Message::builder()
+            .role(ConversationRole::Assistant)
+            .set_content(Some(content))
+            .build()
+            .unwrap_or_else(|_| {
+                Message::builder()
+                    .role(ConversationRole::Assistant)
+                    .content(ContentBlock::Text(String::new()))
+                    .build()
+                    .expect("empty assistant message")
+            })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use engine::{NodeId, NodeToolConfig, ToolDefinition, ToolTier, WorkflowId};
+
+    fn sample_agent_request() -> AgentRequest {
+        AgentRequest {
+            workflow_id: WorkflowId("wf-1".to_string()),
+            node_id: NodeId("node-1".to_string()),
+            node_label: "Summarize".to_string(),
+            model: "anthropic.claude-sonnet-4-20250514-v1:0".to_string(),
+            system_messages: vec!["You are precise.".to_string()],
+            task_prompt: "Summarize the kickoff.".to_string(),
+            input: serde_json::json!({"entrypoint": {"text": "ORCHID-91"}, "upstream": []}),
+            output_schema: serde_json::json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": { "summary": { "type": "string" } },
+                "required": ["summary"]
+            }),
+            tool_config: NodeToolConfig::default(),
+            available_tools: vec![ToolDefinition {
+                name: "read".to_string(),
+                description: "Read a file.".to_string(),
+                input_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": { "path": { "type": "string" } },
+                    "required": ["path"]
+                }),
+                tier: ToolTier::Read,
+                concurrency: engine::ToolConcurrency::Shared,
+            }],
+            transcript: Vec::new(),
+            model_attempt: 1,
+            reasoning_effort: None,
+            reasoning_budget_tokens: None,
+        }
+    }
+
+    #[test]
+    fn maps_agent_request_to_converse_shape() {
+        let request = sample_agent_request();
+        let input = build_converse_input(&request).expect("converse input");
+        assert_eq!(input.system.len(), 1);
+        assert_eq!(input.messages.len(), 1);
+        assert!(input.tool_config.is_some());
+    }
+
+    #[test]
+    fn maps_tool_result_transcript_blocks() {
+        let mut request = sample_agent_request();
+        request.transcript = vec![
+            AgentTranscriptItem::ToolCall {
+                call: ToolCall {
+                    id: "toolu_1".to_string(),
+                    name: "read".to_string(),
+                    arguments: serde_json::json!({"path": "README.md"}),
+                },
+            },
+            AgentTranscriptItem::ToolResult {
+                result: engine::ToolResult {
+                    tool_call_id: "toolu_1".to_string(),
+                    content: "file contents".to_string(),
+                    is_error: false,
+                },
+            },
+        ];
+        let input = build_converse_input(&request).expect("converse input");
+        assert_eq!(input.messages.len(), 3);
+        assert!(message_contains_tool_use(&input.messages));
+        assert!(message_contains_tool_result(&input.messages));
+    }
+
+    fn message_contains_tool_use(messages: &[Message]) -> bool {
+        messages.iter().any(|message| {
+            message
+                .content()
+                .iter()
+                .any(|block| block.as_tool_use().is_ok())
+        })
+    }
+
+    fn message_contains_tool_result(messages: &[Message]) -> bool {
+        messages.iter().any(|message| {
+            message
+                .content()
+                .iter()
+                .any(|block| block.as_tool_use().is_err() && block.as_tool_result().is_ok())
+        })
+    }
+
+    #[test]
+    fn stream_aggregator_collects_text_deltas() {
+        let mut agg = ConverseStreamAggregator::default();
+        let delta = aws_sdk_bedrockruntime::types::ContentBlockDeltaEvent::builder()
+            .content_block_index(0)
+            .delta(ContentBlockDelta::Text("Hello".to_string()))
+            .build()
+            .expect("delta");
+        let event = ConverseStreamOutput::ContentBlockDelta(delta);
+        assert_eq!(agg.apply_event(&event).as_deref(), Some("Hello"));
+        let delta = aws_sdk_bedrockruntime::types::ContentBlockDeltaEvent::builder()
+            .content_block_index(0)
+            .delta(ContentBlockDelta::Text(" world".to_string()))
+            .build()
+            .expect("delta");
+        let event = ConverseStreamOutput::ContentBlockDelta(delta);
+        assert_eq!(agg.apply_event(&event).as_deref(), Some(" world"));
+        let message = agg.into_message();
+        assert_eq!(message.content()[0].as_text(), Ok("Hello world"));
+    }
+}

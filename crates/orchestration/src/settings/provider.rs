@@ -1,7 +1,7 @@
-use crate::settings::model::AppSettings;
+use crate::settings::model::{AppSettings, ProviderProfile};
 use providers::{
-    provider_spec, AiClientConfig, AnthropicConfig, AuthConfig, AuthSpec, OpenAiCompatibleConfig,
-    ProviderAdapterConfig, ProviderKind,
+    provider_spec, AiClientConfig, AnthropicConfig, AuthConfig, AuthSpec, BedrockConfig,
+    OpenAiCompatibleConfig, ProviderAdapterConfig, ProviderKind,
 };
 use std::collections::BTreeMap;
 use thiserror::Error;
@@ -72,7 +72,8 @@ pub fn resolve_provider_config(
         spec.auth,
         env,
     )?;
-    let auth = auth_config(spec.auth, api_key.clone());
+    let region = resolve_bedrock_region(profile, spec.auth, env);
+    let auth = auth_config(spec.auth, api_key.clone(), region.clone());
     let adapter = match spec.kind {
         ProviderKind::OpenAiCompatible(_) => {
             ProviderAdapterConfig::OpenAiCompatible(OpenAiCompatibleConfig {
@@ -87,6 +88,18 @@ pub fn resolve_provider_config(
             messages_path: anthropic.messages_path.to_string(),
             anthropic_version: anthropic.anthropic_version.to_string(),
         }),
+        ProviderKind::Bedrock(_) => {
+            let region = region.ok_or_else(|| ProviderConfigError::MissingApiKey {
+                provider: spec.display_name.to_string(),
+                env_var: bedrock_region_env_var(spec.auth)
+                    .unwrap_or("AWS_REGION")
+                    .to_string(),
+            })?;
+            ProviderAdapterConfig::Bedrock(BedrockConfig {
+                region,
+                aws_profile: resolve_bedrock_profile(profile, spec.auth, env, api_key.as_deref()),
+            })
+        }
     };
 
     Ok(AiClientConfig {
@@ -135,7 +148,7 @@ fn resolve_api_key(
     Ok(api_key)
 }
 
-fn auth_config(auth: AuthSpec, api_key: Option<String>) -> AuthConfig {
+fn auth_config(auth: AuthSpec, api_key: Option<String>, region: Option<String>) -> AuthConfig {
     match auth {
         AuthSpec::Bearer { required, .. } => AuthConfig::Bearer { api_key, required },
         AuthSpec::Header { name, required, .. } => AuthConfig::Header {
@@ -144,6 +157,54 @@ fn auth_config(auth: AuthSpec, api_key: Option<String>) -> AuthConfig {
             required,
         },
         AuthSpec::NoneAllowed { .. } => AuthConfig::NoneAllowed,
+        AuthSpec::AwsCredentials {
+            profile_env_var, ..
+        } => AuthConfig::AwsCredentials {
+            profile: api_key.or_else(|| {
+                std::env::var(profile_env_var)
+                    .ok()
+                    .and_then(|value| trimmed(Some(&value)).map(str::to_string))
+            }),
+            region: region.unwrap_or_default(),
+        },
+    }
+}
+
+fn resolve_bedrock_region(
+    profile: &ProviderProfile,
+    auth: AuthSpec,
+    env: &ProviderEnv,
+) -> Option<String> {
+    trimmed(Some(profile.base_url.as_str()))
+        .map(str::to_string)
+        .or_else(|| {
+            bedrock_region_env_var(auth)
+                .and_then(|env_var| env.get(env_var))
+                .and_then(|value| trimmed(Some(value)).map(str::to_string))
+        })
+}
+
+fn resolve_bedrock_profile(
+    profile: &ProviderProfile,
+    _auth: AuthSpec,
+    env: &ProviderEnv,
+    transient_or_stored: Option<&str>,
+) -> Option<String> {
+    trimmed(transient_or_stored)
+        .or_else(|| trimmed(Some(profile.api_key.as_str())))
+        .map(str::to_string)
+        .or_else(|| {
+            _auth
+                .env_var()
+                .and_then(|env_var| env.get(env_var))
+                .and_then(|value| trimmed(Some(value)).map(str::to_string))
+        })
+}
+
+fn bedrock_region_env_var(auth: AuthSpec) -> Option<&'static str> {
+    match auth {
+        AuthSpec::AwsCredentials { region_env_var, .. } => Some(region_env_var),
+        _ => None,
     }
 }
 
@@ -276,6 +337,34 @@ mod tests {
         assert_eq!(config.wire_api, WireApi::ChatCompletions);
         assert_eq!(config.responses_path, "custom/responses");
         assert_eq!(config.chat_completions_path, "chat/completions");
+    }
+
+    #[test]
+    fn bedrock_provider_uses_region_and_optional_profile() {
+        let mut settings = AppSettings {
+            active_provider: ProviderId::from("bedrock"),
+            ..Default::default()
+        };
+        settings
+            .providers
+            .get_mut(&ProviderId::from("bedrock"))
+            .expect("bedrock profile")
+            .base_url = "eu-west-1".to_string();
+        settings
+            .providers
+            .get_mut(&ProviderId::from("bedrock"))
+            .expect("bedrock profile")
+            .api_key = "work".to_string();
+
+        let resolved = resolve_provider_config(&settings, None, &ProviderEnv::default()).unwrap();
+
+        assert_eq!(resolved.provider_id, ProviderId::from("bedrock"));
+        let ProviderAdapterConfig::Bedrock(config) = resolved.adapter else {
+            panic!("expected Bedrock adapter");
+        };
+        assert_eq!(config.region, "eu-west-1");
+        assert_eq!(config.aws_profile.as_deref(), Some("work"));
+        assert!(matches!(resolved.auth, AuthConfig::AwsCredentials { .. }));
     }
 
     #[test]

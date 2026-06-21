@@ -1,4 +1,4 @@
-export type SettingsSectionId = "appearance" | "providers";
+export type SettingsSectionId = "appearance" | "providers" | "mcp";
 
 export const SETTINGS_SECTIONS: ReadonlyArray<{
   id: SettingsSectionId;
@@ -6,4 +6,5 @@ export const SETTINGS_SECTIONS: ReadonlyArray<{
 }> = [
   { id: "appearance", label: "Appearance" },
   { id: "providers", label: "Providers" },
+  { id: "mcp", label: "MCP Servers" },
 ];

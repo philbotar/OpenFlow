@@ -58,6 +58,7 @@ impl std::fmt::Debug for ToolExecutionContext {
 #[derive(Debug)]
 pub struct ToolRunner {
     registry: ToolRegistry,
+    mcp_clients: Option<crate::adapters::mcp::McpRunClients>,
     pub(super) http: Client,
     pub(super) cwd: PathBuf,
     artifacts: ArtifactStore,
@@ -77,6 +78,8 @@ pub enum ToolRunnerError {
     InvalidArguments(String),
     #[error("blocking tool task failed: {0}")]
     BlockingTask(String),
+    #[error(transparent)]
+    Mcp(#[from] crate::adapters::mcp::McpError),
 }
 
 impl ToolRunnerError {
@@ -85,6 +88,7 @@ impl ToolRunnerError {
         match self {
             Self::Tool(error) => error.is_retryable(),
             Self::Registry(_) | Self::InvalidArguments(_) | Self::BlockingTask(_) => false,
+            Self::Mcp(error) => matches!(error, crate::adapters::mcp::McpError::Transport(_)),
         }
     }
 }
@@ -99,6 +103,7 @@ impl ToolRunner {
     ) -> Self {
         Self {
             registry,
+            mcp_clients: None,
             http: Client::new(),
             cwd,
             artifacts,
@@ -112,6 +117,12 @@ impl ToolRunner {
     #[must_use]
     pub fn with_hooks(mut self, hooks: ToolHooks) -> Self {
         self.hooks = hooks;
+        self
+    }
+
+    #[must_use]
+    pub fn with_mcp_clients(mut self, mcp_clients: crate::adapters::mcp::McpRunClients) -> Self {
+        self.mcp_clients = Some(mcp_clients);
         self
     }
 
@@ -423,6 +434,7 @@ mod dispatch;
 mod tests {
     use super::*;
     use crate::settings::model::LspSettings as PersistedLspSettings;
+    use crate::tool::registry::{BuiltinToolKind, RegisteredTool};
 
     fn runner(root: &Path) -> ToolRunner {
         let registry = ToolRegistry::new();
@@ -445,6 +457,7 @@ mod tests {
         })
     }
 
+    #[cfg_attr(all(miri, target_os = "macos"), ignore)]
     #[tokio::test]
     async fn read_file_selector_returns_numbered_lines() {
         let dir = tempfile::tempdir().unwrap();
@@ -465,6 +478,7 @@ mod tests {
         assert!(record.result.content.contains("3:c"));
     }
 
+    #[cfg_attr(all(miri, target_os = "macos"), ignore)]
     #[tokio::test]
     async fn read_file_without_selector_announces_truncation() {
         let dir = tempfile::tempdir().unwrap();
@@ -497,6 +511,7 @@ mod tests {
             .contains("use :{start}-{end} or :raw to read more"));
     }
 
+    #[cfg_attr(all(miri, target_os = "macos"), ignore)]
     #[tokio::test]
     async fn search_finds_matching_lines() {
         let dir = tempfile::tempdir().unwrap();
@@ -516,6 +531,7 @@ mod tests {
         assert!(record.result.content.contains("note.txt:2:beta"));
     }
 
+    #[cfg_attr(all(miri, target_os = "macos"), ignore)]
     #[tokio::test]
     async fn write_creates_file_under_execution_folder() {
         let dir = tempfile::tempdir().unwrap();
@@ -542,6 +558,7 @@ mod tests {
         assert!(record.file_changes[0].diff_summary.is_some());
     }
 
+    #[cfg_attr(all(miri, target_os = "macos"), ignore)]
     #[tokio::test]
     async fn edit_replaces_text_in_file() {
         let dir = tempfile::tempdir().unwrap();
@@ -571,6 +588,7 @@ mod tests {
         assert_eq!(record.file_changes[0].op, engine::FileChangeOp::Update);
     }
 
+    #[cfg_attr(all(miri, target_os = "macos"), ignore)]
     #[tokio::test]
     async fn write_rejects_path_outside_execution_folder() {
         let dir = tempfile::tempdir().unwrap();
@@ -589,6 +607,7 @@ mod tests {
         assert!(error.to_string().contains("path escapes execution folder"));
     }
 
+    #[cfg_attr(all(miri, target_os = "macos"), ignore)]
     #[tokio::test]
     async fn write_rejects_no_op_overwrite() {
         let dir = tempfile::tempdir().unwrap();
@@ -612,6 +631,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(all(miri, target_os = "macos"), ignore)]
     #[tokio::test]
     async fn edit_rejects_path_outside_execution_folder() {
         let dir = tempfile::tempdir().unwrap();
@@ -634,6 +654,7 @@ mod tests {
         assert!(error.to_string().contains("path escapes execution folder"));
     }
 
+    #[cfg_attr(all(miri, target_os = "macos"), ignore)]
     #[tokio::test]
     async fn apply_patch_creates_file_under_execution_folder() {
         let dir = tempfile::tempdir().unwrap();
@@ -669,6 +690,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(all(miri, target_os = "macos"), ignore)]
     #[tokio::test]
     async fn repeated_read_across_nodes_serves_cached_content_with_provenance() {
         let dir = tempfile::tempdir().unwrap();
@@ -691,6 +713,7 @@ mod tests {
         assert_eq!(second.result.tool_call_id, "call-2");
     }
 
+    #[cfg_attr(all(miri, target_os = "macos"), ignore)]
     #[tokio::test]
     async fn repeated_read_in_same_conversation_omits_content() {
         let dir = tempfile::tempdir().unwrap();
@@ -710,6 +733,7 @@ mod tests {
         assert!(!second.result.content.contains("alpha"));
     }
 
+    #[cfg_attr(all(miri, target_os = "macos"), ignore)]
     #[tokio::test]
     async fn read_cache_invalidated_when_file_changes() {
         let dir = tempfile::tempdir().unwrap();
@@ -728,6 +752,7 @@ mod tests {
         assert!(second.result.content.contains("2:gamma"));
     }
 
+    #[cfg_attr(all(miri, target_os = "macos"), ignore)]
     #[tokio::test]
     async fn search_cache_invalidated_by_write_tool() {
         let dir = tempfile::tempdir().unwrap();
@@ -766,6 +791,7 @@ mod tests {
         assert!(after_write.result.content.contains("other.txt"));
     }
 
+    #[cfg_attr(all(miri, target_os = "macos"), ignore)]
     #[tokio::test]
     async fn bump_cache_epoch_invalidates_search_entries() {
         let dir = tempfile::tempdir().unwrap();
@@ -788,6 +814,7 @@ mod tests {
         assert!(!after_bump.result.content.contains("[cached]"));
     }
 
+    #[cfg_attr(all(miri, target_os = "macos"), ignore)]
     #[tokio::test]
     async fn read_artifact_round_trip_and_unknown_id() {
         let dir = tempfile::tempdir().unwrap();
@@ -824,6 +851,7 @@ mod tests {
             .contains("artifacts only live for the current run"));
     }
 
+    #[cfg_attr(all(miri, target_os = "macos"), ignore)]
     #[tokio::test]
     async fn execute_without_context_bypasses_cache() {
         let dir = tempfile::tempdir().unwrap();
@@ -840,6 +868,7 @@ mod tests {
         assert!(!second.result.content.contains("[cached]"));
     }
 
+    #[cfg_attr(all(miri, target_os = "macos"), ignore)]
     #[tokio::test]
     async fn partial_apply_patch_returns_file_changes_without_ledger_leak() {
         let dir = tempfile::tempdir().unwrap();
@@ -879,5 +908,43 @@ mod tests {
         assert!(!write_record.result.is_error);
         assert_eq!(write_record.file_changes.len(), 1);
         assert_eq!(write_record.file_changes[0].path, "after.txt");
+    }
+
+    #[cfg_attr(all(miri, target_os = "macos"), ignore)]
+    #[tokio::test]
+    async fn mcp_execute_without_clients_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut registry = ToolRegistry::new();
+        registry
+            .extend_mcp(vec![RegisteredTool {
+                definition: engine::ToolDefinition {
+                    name: "mcp/test/echo".into(),
+                    description: "echo".into(),
+                    input_schema: serde_json::json!({"type":"object","properties":{}}),
+                    tier: engine::ToolTier::Write,
+                    concurrency: engine::ToolConcurrency::Shared,
+                },
+                kind: BuiltinToolKind::Mcp,
+            }])
+            .unwrap();
+        let runner = ToolRunner::new(
+            registry,
+            dir.path().to_path_buf(),
+            ArtifactStore::new(dir.path().join("artifacts")).unwrap(),
+            CancellationToken::new(),
+            Arc::new(crate::tools::edit::hashline::snapshots::InMemorySnapshotStore::new()),
+        );
+        let err = runner
+            .execute(
+                ToolCall {
+                    id: "call-mcp".into(),
+                    name: "mcp/test/echo".into(),
+                    arguments: serde_json::json!({}),
+                },
+                None,
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(err, ToolRunnerError::Mcp(_)));
     }
 }

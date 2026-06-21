@@ -1,5 +1,7 @@
 use crate::anthropic;
 use crate::auth::AuthConfig;
+#[cfg(feature = "bedrock")]
+use crate::bedrock;
 use crate::openai_compat;
 use crate::openai_compat::OpenAiCompatibleConfig;
 use crate::spec::ProviderId;
@@ -26,9 +28,16 @@ impl AnthropicConfig {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BedrockConfig {
+    pub region: String,
+    pub aws_profile: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProviderAdapterConfig {
     OpenAiCompatible(OpenAiCompatibleConfig),
     Anthropic(AnthropicConfig),
+    Bedrock(BedrockConfig),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -97,6 +106,9 @@ impl AiPort for AiClient {
             ProviderAdapterConfig::Anthropic(config) => {
                 anthropic::invoke(&self.http, config, &self.config.auth, request).await
             }
+            ProviderAdapterConfig::Bedrock(config) => {
+                bedrock_invoke(config, &self.config.auth, request).await
+            }
         }
     }
 
@@ -120,6 +132,51 @@ impl AiPort for AiClient {
             ProviderAdapterConfig::Anthropic(config) => {
                 anthropic::invoke_stream(&self.http, config, &self.config.auth, request, sink).await
             }
+            ProviderAdapterConfig::Bedrock(config) => {
+                bedrock_invoke_stream(config, &self.config.auth, request, sink).await
+            }
         }
     }
+}
+
+#[cfg(feature = "bedrock")]
+async fn bedrock_invoke(
+    config: &BedrockConfig,
+    auth: &AuthConfig,
+    request: AgentRequest,
+) -> Result<AgentTurnOutcome, AgentError> {
+    bedrock::invoke(config, auth, request).await
+}
+
+#[cfg(not(feature = "bedrock"))]
+fn bedrock_invoke(
+    _config: &BedrockConfig,
+    _auth: &AuthConfig,
+    _request: AgentRequest,
+) -> std::future::Ready<Result<AgentTurnOutcome, AgentError>> {
+    std::future::ready(Err(AgentError::Failed(
+        "Bedrock provider requires the providers `bedrock` feature".into(),
+    )))
+}
+
+#[cfg(feature = "bedrock")]
+async fn bedrock_invoke_stream(
+    config: &BedrockConfig,
+    auth: &AuthConfig,
+    request: AgentRequest,
+    sink: &dyn AiStreamSink,
+) -> Result<AgentTurnOutcome, AgentError> {
+    bedrock::invoke_stream(config, auth, request, sink).await
+}
+
+#[cfg(not(feature = "bedrock"))]
+fn bedrock_invoke_stream(
+    _config: &BedrockConfig,
+    _auth: &AuthConfig,
+    _request: AgentRequest,
+    _sink: &dyn AiStreamSink,
+) -> std::future::Ready<Result<AgentTurnOutcome, AgentError>> {
+    std::future::ready(Err(AgentError::Failed(
+        "Bedrock provider requires the providers `bedrock` feature".into(),
+    )))
 }

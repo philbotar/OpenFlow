@@ -5,28 +5,19 @@ use orchestration::run::execution::{
     InteractiveWorkflowRunParams, ManualInput, NodeInterrupts, WorkflowExecutionError,
     WorkflowRunSnapshot,
 };
+use orchestration::settings::model::McpSettings;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio_util::sync::CancellationToken;
 
+#[derive(Default)]
 pub struct HeadlessRunOpts {
     pub entrypoint: Option<String>,
     pub manual_inputs: Vec<ManualInput>,
     pub approvals: Vec<ApprovalResponse>,
     pub cwd: Option<PathBuf>,
-}
-
-impl Default for HeadlessRunOpts {
-    fn default() -> Self {
-        Self {
-            entrypoint: None,
-            manual_inputs: Vec::new(),
-            approvals: Vec::new(),
-            cwd: None,
-        }
-    }
 }
 
 pub async fn run_headless_script<A>(
@@ -52,9 +43,9 @@ where
 pub struct InteractiveRunHandle {
     pub handle: tokio::task::JoinHandle<()>,
     pub event_rx: UnboundedReceiver<ExecutionEvent>,
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "exposed for interactive test harness extensions")]
     pub action_tx: UnboundedSender<ExecutionAction>,
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "exposed for interactive test harness extensions")]
     pub cancel_token: CancellationToken,
     pub node_interrupts: NodeInterrupts,
 }
@@ -81,6 +72,7 @@ where
         pending_engine_reverts: Arc::new(parking_lot::Mutex::new(Vec::new())),
         node_interrupts: Arc::new(parking_lot::Mutex::new(BTreeMap::new())),
         context_window_sizes: BTreeMap::new(),
+        mcp: McpSettings::default(),
     };
 
     let (handle, event_rx, action_tx, cancel_token, node_interrupts) =

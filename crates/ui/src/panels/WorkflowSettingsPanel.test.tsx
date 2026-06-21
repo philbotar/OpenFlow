@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import type { AppSettings, Workflow } from "../lib/types";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import type { AppSettings, Workflow, WorkflowRunState } from "../lib/types";
 import { createEmptyToolConfig } from "../lib/workflow";
 import { AppContext, type AppContextValue } from "../context/AppContext";
 import { WorkflowSettingsPanel } from "./WorkflowSettingsPanel";
@@ -74,8 +74,15 @@ describe("WorkflowSettingsPanel", () => {
     container.remove();
   });
 
-  function renderPanel(initial: Workflow) {
+  function renderPanel(
+    initial: Workflow,
+    options: {
+      runState?: WorkflowRunState | null;
+      backendRunWorkflowId?: string | null;
+    } = {},
+  ) {
     const [workflow, setWorkflow] = createSignal(initial);
+    const handleDeleteActiveWorkflow = vi.fn();
     const updateActiveWorkflowSettings: AppContextValue["updateActiveWorkflowSettings"] = (
       mutator,
     ) => {
@@ -90,7 +97,10 @@ describe("WorkflowSettingsPanel", () => {
       activeWorkflow: workflow,
       activeProfileMemo: () => settings.providers.anthropic,
       updateActiveWorkflowSettings,
-    } as AppContextValue;
+      handleDeleteActiveWorkflow,
+      runState: () => options.runState ?? null,
+      backendRunWorkflowId: () => options.backendRunWorkflowId ?? null,
+    } as unknown as AppContextValue;
 
     dispose = render(
       () => (
@@ -101,7 +111,7 @@ describe("WorkflowSettingsPanel", () => {
       container,
     );
 
-    return { workflow };
+    return { workflow, handleDeleteActiveWorkflow };
   }
 
   test("renders shared context and retry fields from active workflow", () => {
@@ -176,5 +186,29 @@ describe("WorkflowSettingsPanel", () => {
 
     expect(workflow().settings.reasoning_effort).toBe("medium");
     expect(workflow().settings.reasoning_budget_tokens).toBeNull();
+  });
+
+  test("calls handleDeleteActiveWorkflow when delete button is clicked", () => {
+    const { handleDeleteActiveWorkflow } = renderPanel(makeWorkflow());
+    const deleteButton = [...container.querySelectorAll("button")].find(
+      (element) => element.textContent === "Delete workflow",
+    ) as HTMLButtonElement;
+
+    deleteButton.click();
+
+    expect(handleDeleteActiveWorkflow).toHaveBeenCalledTimes(1);
+  });
+
+  test("hides delete button while active run is on this workflow", () => {
+    renderPanel(makeWorkflow(), {
+      runState: { active: true } as WorkflowRunState,
+      backendRunWorkflowId: "wf-1",
+    });
+
+    const deleteButton = [...container.querySelectorAll("button")].find(
+      (element) => element.textContent === "Delete workflow",
+    );
+    expect(deleteButton).toBeUndefined();
+    expect(container.textContent).toContain("Stop the active run before deleting");
   });
 });

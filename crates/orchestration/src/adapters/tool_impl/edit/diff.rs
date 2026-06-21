@@ -446,7 +446,10 @@ fn parse_one_hunk(
         let normalized_context_value = trimmed_context_value.trim_start_matches("@@ ");
 
         if let Some(caps) = line_hint_regex().captures(normalized_context_value) {
-            let start: usize = caps.get(1).unwrap().as_str().parse().unwrap_or(0);
+            let start: usize = caps
+                .get(1)
+                .map(|m| m.as_str().parse().unwrap_or(0))
+                .unwrap_or(0);
             if start < 1 {
                 return Err(ParseError::new("Line hint must be >= 1", Some(line_number)));
             }
@@ -478,21 +481,15 @@ fn parse_one_hunk(
         0
     };
 
-    if old_start_line.is_some_and(|n| n < 1) {
+    if let Some(invalid) = old_start_line.filter(|&n| n < 1) {
         return Err(ParseError::new(
-            format!(
-                "Line numbers must be >= 1 (got {})",
-                old_start_line.unwrap()
-            ),
+            format!("Line numbers must be >= 1 (got {invalid})"),
             Some(line_number),
         ));
     }
-    if new_start_line.is_some_and(|n| n < 1) {
+    if let Some(invalid) = new_start_line.filter(|&n| n < 1) {
         return Err(ParseError::new(
-            format!(
-                "Line numbers must be >= 1 (got {})",
-                new_start_line.unwrap()
-            ),
+            format!("Line numbers must be >= 1 (got {invalid})"),
             Some(line_number),
         ));
     }
@@ -887,12 +884,10 @@ pub fn replace_text(
 
     let match_outcome = find_match(&normalized_content, &normalized_old_text, &find_opts);
 
-    if match_outcome.occurrences.is_some_and(|n| n > 1) {
-        return Err(format_occurrence_match_error(
-            match_outcome.occurrences.unwrap(),
-            None,
-            None,
-        ));
+    if let Some(occurrences) = match_outcome.occurrences {
+        if occurrences > 1 {
+            return Err(format_occurrence_match_error(occurrences, None, None));
+        }
     }
 
     if options.fuzzy && match_outcome.matched.is_none() {

@@ -8,7 +8,7 @@ use serde_json::Value;
 use std::sync::Arc;
 
 #[derive(Debug)]
-#[allow(dead_code)]
+#[allow(dead_code, reason = "test helper variants for scripted AI responses")]
 pub enum MockTurn {
     Completed {
         output: Value,
@@ -24,9 +24,16 @@ pub enum MockTurn {
     Error(AgentError),
 }
 
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "test helper constructors for scripted AI responses"
+)]
 impl MockTurn {
     #[must_use]
+    #[allow(
+        clippy::missing_const_for_fn,
+        reason = "serde_json::json! is not const"
+    )]
     pub fn ok_json(output: Value) -> Self {
         Self::Completed {
             output,
@@ -85,7 +92,10 @@ pub struct MockAiStack {
     requests: Arc<Mutex<Vec<AgentRequest>>>,
 }
 
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "test harness for headless orchestration integration tests"
+)]
 impl MockAiStack {
     #[must_use]
     pub fn empty() -> Self {
@@ -155,10 +165,10 @@ impl MockAiStack {
 impl AiPort for MockAiStack {
     async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
         self.requests.lock().push(request);
-        match self.pop_turn() {
-            Some(turn) => Self::map_turn(turn),
-            None => Err(AgentError::Failed("mock ai stack exhausted".to_string())),
-        }
+        self.pop_turn().map_or_else(
+            || Err(AgentError::Failed("mock ai stack exhausted".to_string())),
+            Self::map_turn,
+        )
     }
 
     async fn invoke_stream(

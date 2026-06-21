@@ -177,6 +177,35 @@ export function WorkflowSettingsPanel() {
           }}
         />
       </label>
+
+      <div class="settings-section workflow-settings-danger">
+        <span>Danger zone</span>
+        <p class="field-help">Permanently delete this workflow and its settings.</p>
+        <Show
+          when={
+            !(
+              ctx.runState()?.active &&
+              ctx.backendRunWorkflowId() === ctx.activeWorkflow()?.id
+            )
+          }
+        >
+          <button
+            type="button"
+            class="danger-button"
+            onClick={() => void ctx.handleDeleteActiveWorkflow()}
+          >
+            Delete workflow
+          </button>
+        </Show>
+        <Show
+          when={
+            ctx.runState()?.active &&
+            ctx.backendRunWorkflowId() === ctx.activeWorkflow()?.id
+          }
+        >
+          <p class="field-help">Stop the active run before deleting this workflow.</p>
+        </Show>
+      </div>
     </AnimatedPanel>
   );
 }

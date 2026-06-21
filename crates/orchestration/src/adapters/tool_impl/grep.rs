@@ -285,6 +285,7 @@ mod tests {
         assert!(output.contains("note.txt:2:beta"));
     }
 
+    #[cfg_attr(miri, ignore)] // ponytail: Miri cannot emulate git subprocess (fork)
     #[test]
     fn respects_gitignore() {
         let (_dir, cwd) = fixture();

@@ -125,6 +125,17 @@ impl ToolRunner {
                     call.name
                 )))
             }
+            BuiltinToolKind::Mcp => {
+                let clients = self.mcp_clients.as_ref().ok_or_else(|| {
+                    ToolRunnerError::Mcp(crate::adapters::mcp::McpError::ServerNotConnected {
+                        server_id: call.name.clone(),
+                    })
+                })?;
+                let raw = clients
+                    .call_namespaced(&call.name, call.arguments.clone())
+                    .await?;
+                self.finalize_record(call, raw, Vec::new(), None).await
+            }
         }
     }
 

@@ -17,11 +17,14 @@ vi.mock("@tauri-apps/api/window", () => ({
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   open: vi.fn(),
+  confirm: vi.fn(),
 }));
 
 import {
   RUN_STATE_EVENT,
   bootstrapApp,
+  confirmNativeDialog,
+  deleteWorkflow,
   getRunState,
   listenToRunState,
   listScheduleStatuses,
@@ -134,6 +137,19 @@ describe("api desktop seam", () => {
   test("refreshSchedules invokes refresh_schedules", async () => {
     await refreshSchedules();
     expect(invoke).toHaveBeenCalledWith("refresh_schedules");
+  });
+
+  test("deleteWorkflow invokes delete_workflow", async () => {
+    invoke.mockResolvedValueOnce([]);
+    await deleteWorkflow("wf-1");
+    expect(invoke).toHaveBeenCalledWith("delete_workflow", { workflowId: "wf-1" });
+  });
+
+  test("confirmNativeDialog delegates to plugin confirm", async () => {
+    const { confirm } = await import("@tauri-apps/plugin-dialog");
+    vi.mocked(confirm).mockResolvedValueOnce(true);
+    await expect(confirmNativeDialog("Delete?", { title: "Confirm" })).resolves.toBe(true);
+    expect(confirm).toHaveBeenCalledWith("Delete?", { title: "Confirm" });
   });
 
   test("passes workflowId to list_runs", async () => {

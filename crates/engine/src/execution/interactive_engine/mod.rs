@@ -227,7 +227,8 @@ impl InteractiveEngine {
     }
 
     fn schedule_manual_nodes_in_layer(&mut self) {
-        for node_id in self.current_layer_nodes().to_vec() {
+        for i in 0..self.current_layer_nodes().len() {
+            let node_id = self.layers[self.layer_idx][i].clone();
             if self.is_node_blocked(&node_id) {
                 continue;
             }
@@ -246,7 +247,7 @@ impl InteractiveEngine {
                 });
             }
             self.awaiting_nodes.insert(node_id.clone());
-            self.transcripts.entry(node_id.clone()).or_default();
+            self.transcripts.entry(node_id).or_default();
         }
     }
 
@@ -272,7 +273,7 @@ impl InteractiveEngine {
             }
             self.interrupted_nodes.insert(node_id.clone());
             self.events.push(RunEvent {
-                node_id: node_id.clone(),
+                node_id,
                 kind: RunEventKind::Failed,
                 message: "model invocation did not complete; node is retryable".to_string(),
                 output: None,
@@ -326,114 +327,117 @@ impl InteractiveEngine {
         reason = "poll dispatches the full engine state machine in one place"
     )]
     pub fn poll(&mut self) -> EnginePollResult {
-        if let Some(error) = self.terminal_error.clone() {
-            return EnginePollResult::Failed(error);
-        }
-        if let Some((node_id, message)) = self.failed_nodes.iter().next() {
-            return EnginePollResult::Failed(RunError::NodeFailed {
-                node_id: node_id.clone(),
-                kind: NodeFailureKind::Agent(message.clone()),
-            });
-        }
+        loop {
+            if let Some(error) = self.terminal_error.clone() {
+                return EnginePollResult::Failed(error);
+            }
+            if let Some((node_id, message)) = self.failed_nodes.iter().next() {
+                return EnginePollResult::Failed(RunError::NodeFailed {
+                    node_id: node_id.clone(),
+                    kind: NodeFailureKind::Agent(message.clone()),
+                });
+            }
 
-        if let Some((approval_id, pending)) = self.pending_tool_batches.iter().next() {
-            let Some(node) = self.find_node(&pending.node_id) else {
-                let node_id = pending.node_id.clone();
-                return self.fail_internal(&node_id, NodeFailureKind::PendingToolNodeNotFound);
-            };
-            if pending.requires_approval {
-                return EnginePollResult::AwaitToolApproval {
-                    approval_id: approval_id.clone(),
+            if let Some((approval_id, pending)) = self.pending_tool_batches.iter().next() {
+                let Some(node) = self.find_node(&pending.node_id) else {
+                    let node_id = pending.node_id.clone();
+                    return self.fail_internal(&node_id, NodeFailureKind::PendingToolNodeNotFound);
+                };
+                if pending.requires_approval {
+                    return EnginePollResult::AwaitToolApproval {
+                        approval_id: approval_id.clone(),
+                        node_id: node.id.clone(),
+                        label: node.label.clone(),
+                        tool_calls: pending.tool_calls.clone(),
+                    };
+                }
+                return EnginePollResult::RunTools {
                     node_id: node.id.clone(),
                     label: node.label.clone(),
                     tool_calls: pending.tool_calls.clone(),
                 };
             }
-            return EnginePollResult::RunTools {
-                node_id: node.id.clone(),
-                label: node.label.clone(),
-                tool_calls: pending.tool_calls.clone(),
-            };
-        }
 
-        self.schedule_manual_nodes_in_layer();
-        if let Some(awaiting_id) = self.awaiting_nodes.iter().next() {
-            let Some(node) = self.find_node(awaiting_id) else {
-                let awaiting_id = awaiting_id.clone();
-                return self.fail_internal(&awaiting_id, NodeFailureKind::AwaitingNodeNotFound);
-            };
-            return EnginePollResult::AwaitInput {
-                node_id: node.id.clone(),
-                label: node.label.clone(),
-                context: self.assemble_context(&node.id),
-                is_initial: self.conversation_history(&node.id).is_empty(),
-            };
-        }
+            self.schedule_manual_nodes_in_layer();
+            if let Some(awaiting_id) = self.awaiting_nodes.iter().next() {
+                let Some(node) = self.find_node(awaiting_id) else {
+                    let awaiting_id = awaiting_id.clone();
+                    return self.fail_internal(&awaiting_id, NodeFailureKind::AwaitingNodeNotFound);
+                };
+                return EnginePollResult::AwaitInput {
+                    node_id: node.id.clone(),
+                    label: node.label.clone(),
+                    context: self.assemble_context(&node.id),
+                    is_initial: self.conversation_history(&node.id).is_empty(),
+                };
+            }
 
-        if let Some(report) = self.try_advance_layer() {
-            return EnginePollResult::Completed(report);
-        }
+            if let Some(report) = self.try_advance_layer() {
+                return EnginePollResult::Completed(report);
+            }
 
-        for node_id in self.current_layer_nodes().to_vec() {
-            if self.is_node_blocked(&node_id) {
+            for i in 0..self.current_layer_nodes().len() {
+                let node_id = self.layers[self.layer_idx][i].clone();
+                if self.is_node_blocked(&node_id) {
+                    continue;
+                }
+                let Some(node) = self.find_node(&node_id) else {
+                    return self.fail_internal(&node_id, NodeFailureKind::NodeIdFromLayersNotFound);
+                };
+                if let Some(missing) = self.missing_upstream_outputs(&node_id) {
+                    return self
+                        .fail_internal(&node_id, NodeFailureKind::MissingUpstreamOutput(missing));
+                }
+                if node.agent.auto_start || !self.transcript(&node_id).is_empty() {
+                    if self.queued_nodes.insert(node_id.clone()) {
+                        self.events.push(RunEvent {
+                            node_id: node_id.clone(),
+                            kind: RunEventKind::Queued,
+                            message: "queued".to_string(),
+                            output: None,
+                        });
+                    }
+                    self.emit_started_for_current_attempt(&node_id);
+                    let request = match self.build_request(&node_id) {
+                        Ok(r) => r,
+                        Err(e) => return EnginePollResult::Failed(e),
+                    };
+                    self.in_flight_ai.insert(node_id.clone());
+                    return EnginePollResult::CallAi {
+                        node_id,
+                        request: Box::new(request),
+                    };
+                }
+            }
+
+            if self.recover_stale_in_flight_nodes() {
                 continue;
             }
-            let Some(node) = self.find_node(&node_id) else {
-                return self.fail_internal(&node_id, NodeFailureKind::NodeIdFromLayersNotFound);
-            };
-            if let Some(missing) = self.missing_upstream_outputs(&node_id) {
-                return self
-                    .fail_internal(&node_id, NodeFailureKind::MissingUpstreamOutput(missing));
+            if !self.in_flight_ai.is_empty() {
+                return EnginePollResult::Failed(RunError::NodeFailed {
+                    node_id: self
+                        .in_flight_ai
+                        .iter()
+                        .next()
+                        .cloned()
+                        .unwrap_or_else(|| NodeId("engine".to_string())),
+                    kind: NodeFailureKind::LayerStalledInFlight,
+                });
             }
-            if node.agent.auto_start || !self.transcript(&node_id).is_empty() {
-                if self.queued_nodes.insert(node_id.clone()) {
-                    self.events.push(RunEvent {
-                        node_id: node_id.clone(),
-                        kind: RunEventKind::Queued,
-                        message: "queued".to_string(),
-                        output: None,
-                    });
-                }
-                self.emit_started_for_current_attempt(&node_id);
-                let request = match self.build_request(&node_id) {
-                    Ok(r) => r,
-                    Err(e) => return EnginePollResult::Failed(e),
-                };
-                self.in_flight_ai.insert(node_id.clone());
-                return EnginePollResult::CallAi {
-                    node_id: node_id.clone(),
-                    request: Box::new(request),
-                };
-            }
-        }
 
-        if self.recover_stale_in_flight_nodes() {
-            return self.poll();
-        }
-        if !self.in_flight_ai.is_empty() {
+            if let Some(retryable) = self.layer_retryables().into_iter().next() {
+                return EnginePollResult::AwaitRetry(retryable);
+            }
+
             return EnginePollResult::Failed(RunError::NodeFailed {
                 node_id: self
-                    .in_flight_ai
-                    .iter()
-                    .next()
+                    .current_layer_nodes()
+                    .first()
                     .cloned()
                     .unwrap_or_else(|| NodeId("engine".to_string())),
-                kind: NodeFailureKind::LayerStalledInFlight,
+                kind: NodeFailureKind::NoRunnableNodesInLayer,
             });
         }
-
-        if let Some(retryable) = self.layer_retryables().into_iter().next() {
-            return EnginePollResult::AwaitRetry(retryable);
-        }
-
-        EnginePollResult::Failed(RunError::NodeFailed {
-            node_id: self
-                .current_layer_nodes()
-                .first()
-                .cloned()
-                .unwrap_or_else(|| NodeId("engine".to_string())),
-            kind: NodeFailureKind::NoRunnableNodesInLayer,
-        })
     }
 
     /// Drive the engine until it needs host interaction or reaches a terminal state.
@@ -546,7 +550,8 @@ impl InteractiveEngine {
 
     fn gather_call_ai_actions(&mut self) -> Vec<(NodeId, AgentRequest)> {
         let mut actions = Vec::new();
-        for node_id in self.current_layer_nodes().to_vec() {
+        for i in 0..self.current_layer_nodes().len() {
+            let node_id = self.layers[self.layer_idx][i].clone();
             if self.is_node_blocked(&node_id) {
                 continue;
             }
@@ -555,7 +560,7 @@ impl InteractiveEngine {
             };
             if let Some(missing) = self.missing_upstream_outputs(&node_id) {
                 self.terminal_error = Some(RunError::NodeFailed {
-                    node_id: node_id.clone(),
+                    node_id,
                     kind: NodeFailureKind::MissingUpstreamOutput(missing),
                 });
                 break;

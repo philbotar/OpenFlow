@@ -1,8 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import type { OpenDialogOptions } from "@tauri-apps/plugin-dialog";
+import { open as openDialog, confirm as confirmDialog } from "@tauri-apps/plugin-dialog";
+import type { ConfirmDialogOptions, OpenDialogOptions } from "@tauri-apps/plugin-dialog";
 import type {
   AgentDefinition,
   AgentDefinitionSummary,
@@ -13,6 +13,7 @@ import type {
   ProjectFileReference,
   ProjectFileReferenceContent,
   CopyWorkflowToProjectResult,
+  McpServerConfig,
   SkillSummary,
   ProviderReadiness,
   RunSummary,
@@ -83,6 +84,10 @@ export function unassignWorkflowFromProject(projectId: string, workflowId: strin
   return invoke<Project[]>("unassign_workflow_from_project", { projectId, workflowId });
 }
 
+export function deleteWorkflow(workflowId: string) {
+  return invoke<Project[]>("delete_workflow", { workflowId });
+}
+
 export function listWorkflows() {
   return invoke<WorkflowListItem[]>("list_workflows");
 }
@@ -139,6 +144,10 @@ export function saveSettings(settings: AppSettings) {
   return invoke<void>("save_settings", { settings });
 }
 
+export function probeMcpServer(config: McpServerConfig) {
+  return invoke<string[]>("probe_mcp_server", { config });
+}
+
 export function loadProviderApiKey(providerId: string) {
   return invoke<string | null>("load_provider_api_key", { providerId });
 }
@@ -157,6 +166,10 @@ export function resolveProviderReadiness(settings: AppSettings, transientApiKey:
     settings,
     transientApiKey,
   });
+}
+
+export function refreshBedrockModels(settings: AppSettings) {
+  return invoke<string[]>("refresh_bedrock_models", { settings });
 }
 
 export function validateWorkflow(workflow: Workflow) {
@@ -345,4 +358,9 @@ export function getAppWindow() {
 /** Native file/folder picker (Tauri seam). */
 export function openNativeDialog(options?: OpenDialogOptions) {
   return openDialog(options);
+}
+
+/** Native confirm dialog (Tauri seam). */
+export function confirmNativeDialog(message: string, options?: string | ConfirmDialogOptions) {
+  return confirmDialog(message, options);
 }

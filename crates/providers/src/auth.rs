@@ -13,6 +13,10 @@ pub enum AuthConfig {
         required: bool,
     },
     NoneAllowed,
+    AwsCredentials {
+        profile: Option<String>,
+        region: String,
+    },
 }
 
 impl AuthConfig {
@@ -24,6 +28,7 @@ impl AuthConfig {
                 .map(str::trim)
                 .is_some_and(|key| !key.is_empty()),
             Self::NoneAllowed => true,
+            Self::AwsCredentials { region, .. } => !region.trim().is_empty(),
         }
     }
 
@@ -31,7 +36,7 @@ impl AuthConfig {
     pub const fn requires_key(&self) -> bool {
         match self {
             Self::Bearer { required, .. } | Self::Header { required, .. } => *required,
-            Self::NoneAllowed => false,
+            Self::NoneAllowed | Self::AwsCredentials { .. } => false,
         }
     }
 }
@@ -50,7 +55,7 @@ pub fn apply_auth(
             api_key,
             required,
         } => apply_header_auth(request, name, api_key.as_ref(), *required, label),
-        AuthConfig::NoneAllowed => Ok(request),
+        AuthConfig::NoneAllowed | AuthConfig::AwsCredentials { .. } => Ok(request),
     }
 }
 

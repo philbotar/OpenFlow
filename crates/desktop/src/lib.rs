@@ -15,7 +15,7 @@ use orchestration::backend::{
 use orchestration::run::execution::ExecutionEvent;
 use orchestration::run::state::WorkflowRunState;
 use orchestration::terminal::TerminalStart;
-use orchestration::{AgentDefinition, AppSettings, SkillSummary};
+use orchestration::{AgentDefinition, AppSettings, McpServerConfig, SkillSummary};
 use orchestration::{Project, ProjectFileReference, ProjectFileReferenceContent, Workflow};
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
@@ -251,6 +251,15 @@ fn save_settings(
     Ok(backend.save_settings(&settings)?)
 }
 
+/// Tauri command: Probe one MCP server and list tool names.
+#[tauri::command]
+async fn probe_mcp_server(
+    backend: tauri::State<'_, AppBackend>,
+    config: McpServerConfig,
+) -> Result<Vec<String>, CommandError> {
+    Ok(backend.probe_mcp_server(config).await?)
+}
+
 /// Tauri command: Load a provider API key from the OS credential store.
 #[tauri::command]
 fn load_provider_api_key(
@@ -287,6 +296,15 @@ fn resolve_provider_readiness(
     transient_api_key: Option<String>,
 ) -> ProviderReadiness {
     backend.resolve_provider_readiness(&settings, transient_api_key.as_deref())
+}
+
+/// Tauri command: List Bedrock foundation models for the configured region/profile.
+#[tauri::command]
+fn refresh_bedrock_models(
+    backend: tauri::State<AppBackend>,
+    settings: AppSettings,
+) -> Result<Vec<String>, CommandError> {
+    Ok(backend.refresh_bedrock_models(&settings)?)
 }
 
 /// Tauri command: Validate a workflow.
@@ -736,6 +754,18 @@ fn unassign_workflow_from_project(
     Ok(backend.unassign_workflow_from_project(&project_id, &workflow_id)?)
 }
 
+/// Tauri command: Permanently delete a workflow.
+#[tauri::command]
+fn delete_workflow(
+    app: tauri::AppHandle,
+    backend: tauri::State<AppBackend>,
+    workflow_id: String,
+) -> Result<Vec<Project>, CommandError> {
+    let projects = backend.delete_workflow(&workflow_id)?;
+    emit_schedule_statuses(&app);
+    Ok(projects)
+}
+
 /// Tauri command: List unresolved incident summaries.
 #[tauri::command]
 fn list_incidents(
@@ -794,6 +824,7 @@ pub fn run() {
             assign_workflow_to_project,
             copy_workflow_to_project,
             unassign_workflow_from_project,
+            delete_workflow,
             list_workflows,
             load_all_workflows,
             list_schedule_statuses,
@@ -810,10 +841,12 @@ pub fn run() {
             save_agents,
             load_settings,
             save_settings,
+            probe_mcp_server,
             load_provider_api_key,
             save_provider_api_key,
             delete_provider_api_key,
             resolve_provider_readiness,
+            refresh_bedrock_models,
             validate_workflow,
             start_workflow_authoring,
             workflow_authoring_turn,

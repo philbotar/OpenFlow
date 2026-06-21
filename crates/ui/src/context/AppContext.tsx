@@ -46,6 +46,7 @@ export interface AppContextValue {
   screenTransitionClass: Accessor<NavTransitionType>;
   settings: Accessor<AppSettings>;
   runState: Accessor<WorkflowRunState | null>;
+  backendRunWorkflowId: Accessor<string | null>;
   readiness: Accessor<ProviderReadiness | null>;
   bottomTab: Accessor<BottomTab>;
   dockOpen: Accessor<boolean>;
@@ -147,6 +148,7 @@ export interface AppContextValue {
   closeAssignWorkflowPicker: () => void;
   workflowsAddableToProject: (projectId: string) => Workflow[];
   handleCopyWorkflowToProject: (projectId: string, workflowId: string) => Promise<void>;
+  handleDeleteActiveWorkflow: () => Promise<void>;
   handleOpenAgents: () => void;
   handleOpenSchedule: () => void;
   handleSaveWorkflowSchedule: (

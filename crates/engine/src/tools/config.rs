@@ -83,6 +83,7 @@ pub fn tool_tier_for_call(_config: &NodeToolConfig, tool_name: &str) -> ToolTier
 fn default_tier_for_tool_name(tool_name: &str) -> ToolTier {
     match tool_name {
         "read" | "search" | "find" | "ast_grep" => ToolTier::Read,
+        name if name.starts_with("mcp/") => ToolTier::Write,
         _ => ToolTier::Write,
     }
 }
@@ -298,6 +299,10 @@ mod tests {
         assert_eq!(tool_tier_for_call(&config, "read"), ToolTier::Read);
         assert_eq!(tool_tier_for_call(&config, "bash"), ToolTier::Write);
         assert_eq!(tool_tier_for_call(&config, "custom_write"), ToolTier::Write);
+        assert_eq!(
+            tool_tier_for_call(&config, "mcp/gh/search"),
+            ToolTier::Write
+        );
     }
 
     #[test]

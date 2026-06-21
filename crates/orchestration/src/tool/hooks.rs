@@ -79,6 +79,7 @@ impl ToolHooks {
 mod tests {
     use super::*;
 
+    #[cfg_attr(all(miri, target_os = "macos"), ignore)]
     #[tokio::test]
     async fn empty_hooks_continue() {
         let hooks = ToolHooks::empty();

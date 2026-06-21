@@ -66,7 +66,7 @@ impl ProviderProfile {
                 openai.responses_path.to_string(),
                 openai.chat_completions_path.to_string(),
             ),
-            ProviderKind::Anthropic(_) => (
+            ProviderKind::Anthropic(_) | ProviderKind::Bedrock(_) => (
                 ProviderTransport::ChatCompletions,
                 default_responses_path(),
                 default_chat_completions_path(),
@@ -192,6 +192,31 @@ fn default_incident_retention_max() -> u32 {
     500
 }
 
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpSettings {
+    #[serde(default)]
+    pub servers: Vec<McpServerConfig>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpServerConfig {
+    pub id: String,
+    pub display_name: String,
+    pub command: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub env: BTreeMap<String, String>,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
 impl Default for LspSettings {
     fn default() -> Self {
         Self {
@@ -210,6 +235,8 @@ pub struct AppSettings {
     pub skill_search_paths: Vec<String>,
     #[serde(default)]
     pub lsp: LspSettings,
+    #[serde(default)]
+    pub mcp: McpSettings,
     #[serde(default = "default_incident_retention_max")]
     pub incident_retention_max: u32,
 }
@@ -291,6 +318,7 @@ impl Default for AppSettings {
             providers,
             skill_search_paths: Vec::new(),
             lsp: LspSettings::default(),
+            mcp: McpSettings::default(),
             incident_retention_max: default_incident_retention_max(),
         }
     }
@@ -396,5 +424,25 @@ mod tests {
         let spec = provider_spec(&ProviderId::from("anthropic")).unwrap();
         profile.normalize(Some(spec));
         assert_eq!(profile.reasoning_effort_options.len(), original_len);
+    }
+
+    #[test]
+    fn mcp_settings_round_trip() {
+        let settings = AppSettings {
+            mcp: McpSettings {
+                servers: vec![McpServerConfig {
+                    id: "github".into(),
+                    display_name: "GitHub".into(),
+                    command: "npx".into(),
+                    args: vec!["-y".into(), "@modelcontextprotocol/server-github".into()],
+                    env: Default::default(),
+                    enabled: true,
+                }],
+            },
+            ..AppSettings::default()
+        };
+        let json = serde_json::to_string(&settings).unwrap();
+        let parsed: AppSettings = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.mcp.servers[0].id, "github");
     }
 }

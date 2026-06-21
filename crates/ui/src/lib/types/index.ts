@@ -371,11 +371,25 @@ export interface LspSettings {
   diagnostics_on_write: boolean;
 }
 
+export interface McpServerConfig {
+  id: string;
+  displayName: string;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  enabled: boolean;
+}
+
+export interface McpSettings {
+  servers: McpServerConfig[];
+}
+
 export interface AppSettings {
   active_provider: ProviderId;
   providers: Record<ProviderId, ProviderProfile>;
   skill_search_paths?: string[];
   lsp?: LspSettings;
+  mcp?: McpSettings;
 }
 
 export interface SkillSummary {

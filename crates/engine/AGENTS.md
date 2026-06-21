@@ -116,6 +116,7 @@ These rules live here; orchestration wires them — do not duplicate in UI:
 ```bash
 cargo test -p engine
 cargo clippy -p engine -- -D warnings
+./scripts/miri.sh   # undefined-behavior interpreter (nightly miri)
 ```
 
 Mock ports with inline `impl AiPort` / `impl ToolPort` stubs. Test behavior, not private helpers.

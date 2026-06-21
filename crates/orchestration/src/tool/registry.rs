@@ -15,6 +15,7 @@ pub enum BuiltinToolKind {
     Bash,
     DeclareSubagents,
     CallSubagent,
+    Mcp,
 }
 
 #[derive(Debug, Clone)]
@@ -32,6 +33,8 @@ pub struct ToolRegistry {
 pub enum ToolRegistryError {
     #[error("tool {0} is not registered")]
     Missing(String),
+    #[error("external tool {0} collides with a registered tool")]
+    BuiltinCollision(String),
 }
 
 impl ToolRegistry {
@@ -55,6 +58,18 @@ impl ToolRegistry {
         self.tools
             .get(name)
             .ok_or_else(|| ToolRegistryError::Missing(name.to_string()))
+    }
+
+    pub fn extend_mcp(&mut self, tools: Vec<RegisteredTool>) -> Result<(), ToolRegistryError> {
+        for tool in tools {
+            if self.tools.contains_key(&tool.definition.name) {
+                return Err(ToolRegistryError::BuiltinCollision(
+                    tool.definition.name.clone(),
+                ));
+            }
+            register(&mut self.tools, tool);
+        }
+        Ok(())
     }
 
     #[must_use]
@@ -562,6 +577,26 @@ mod tests {
                 assert_schema_properties_have_descriptions(property, &property_path);
             }
         }
+    }
+
+    #[test]
+    fn registry_extends_mcp_without_shadowing_builtins() {
+        let mut registry = ToolRegistry::new();
+        registry
+            .extend_mcp(vec![RegisteredTool {
+                definition: ToolDefinition {
+                    name: "mcp/gh/search".into(),
+                    description: "Search GitHub".into(),
+                    input_schema: serde_json::json!({"type":"object","properties":{}}),
+                    tier: ToolTier::Write,
+                    concurrency: ToolConcurrency::Shared,
+                },
+                kind: BuiltinToolKind::Mcp,
+            }])
+            .unwrap();
+        assert!(registry.get("read").is_ok());
+        assert!(registry.get("mcp/gh/search").is_ok());
+        assert!(registry.get("search").is_ok());
     }
 
     #[test]

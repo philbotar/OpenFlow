@@ -424,6 +424,7 @@ mod tests {
         }));
     }
 
+    #[cfg_attr(miri, ignore)] // ponytail: Miri cannot emulate git subprocess (fork)
     #[test]
     fn respects_gitignore() {
         let dir = TempDir::new().expect("tempdir");

@@ -2,16 +2,34 @@
 
 ## Unreleased
 
+### Fixed
+
+- **Headless run queue desync:** replace `.expect` panics when scripted input/approval queues miss a matching entry with `MissingManualInput` / `MissingApproval` errors.
+- **Verify gate fixes:** settings nav tests include MCP Servers; backend project tests use isolated temp dirs; `deny.toml` skips duplicate `nix`/`cfg_aliases` from `rmcp` + `portable-pty`.
+
 ### Changed
 
-- **MCP external tools plan:** slim [`2026-06-15-mcp-external-tools.md`](docs/superpowers/plans/2026-06-15-mcp-external-tools.md) — drop `external.rs`, hand-rolled stdio, global MCP manager, and fictional `ToolTier::Exec`; align with `Read`/`Write` tiers, run-scoped `rmcp` clients in `drive.rs`, and settings-only CRUD + probe IPC.
+- **God-module split (orchestration):** `patch.rs` → `patch/{mod,hunk,search}.rs`; `coordinator.rs` → `coordinator/{mod,session,checkpoint}.rs` — file splits only, no API change.
+
+### Changed
+
+- **MCP external tools plan:** slim [`2026-06-15-mcp-external-tools.md`](docs/superpowers/plans/2026-06-15-mcp-external-tools.md) — run-scoped `rmcp` clients, no global manager, `ToolTier::Write` for `mcp/` tools.
 - **Settings Providers page:** consolidate Authentication, Provider, Reasoning, and Models into one Providers settings page with readiness status, grouped subsections, and a save bar; nav is now Appearance + Providers; fix inline-form button sizing on Add model row; compact model chips with outer spacing.
 - **Sidebar zoom hint:** remove hover popup showing zoom percentage on Shortcuts/Settings footer; ⌘/Ctrl +/−/0 shortcuts unchanged.
 
 ### Added
 
+- **Miri (engine UB checks):** `./scripts/miri.sh` runs [Miri](https://github.com/rust-lang/miri) on the `engine` crate; included in `./scripts/verify.sh --deep` and a separate GitHub Actions `miri` job. On macOS, cross-interprets as `x86_64-unknown-linux-gnu` (Miri lacks kqueue support on Darwin host).
+- **Playwright:** browser-only E2E for Settings → Providers (navigate, switch provider, save API key).
+- **Delete workflow from settings:** Workflow Settings panel danger zone permanently deletes the active workflow (confirm dialog; blocked while a run is active on that workflow).
+- **MCP external tools (v1):** `McpSettings` on `AppSettings`, `rmcp` stdio adapter, registry merge + dispatch, run-scoped client wiring in `drive.rs`, `probe_mcp_server` IPC, Settings **MCP Servers** section.
+- **Amazon Bedrock provider:** builtin `bedrock` profile using AWS Converse/ConverseStream (`aws-sdk-bedrockruntime`), credential-chain auth, region in settings, and Settings **Refresh from AWS** for `ListFoundationModels` model catalog.
 - **Sidebar projects collapse:** Projects section chevron toggle matches workflows — collapse/hide project folders; preference persists in localStorage.
 - **Legal entrypoints:** MIT `LICENSE`, `SECURITY.md`, and root `CONTRIBUTING.md` pointing to `docs/contributing/`.
+### Changed
+
+- **InteractiveEngine ownership:** index-based layer iteration avoids cloning whole node layers; move `NodeId` into poll/run payloads instead of extra clones; replace recursive `poll()` with a loop after stale in-flight recovery.
+- **CI verify gate:** GitHub Actions runs lean `./scripts/verify-ci.sh` (fmt, clippy, test-fast with workflow acceptance, arch, ui-test, deny) instead of full `./scripts/verify.sh`; drops nightly public-api, machete, typos, doc, and desktop/Tauri compile from the blocking path. Run `./scripts/verify.sh` locally before handoff.
 - **Public release readiness plan:** [`docs/superpowers/plans/2026-06-20-public-release-readiness.md`](docs/superpowers/plans/2026-06-20-public-release-readiness.md) — phased checklist for settings consolidation, UI shell polish, Bedrock/MCP, CI/docs/GTM before public launch.
 - **Chat parallel hint:** when multiple agents run in parallel on the All view, show a status banner above the composer bar directing users to select a node to view and reply.
 - **Orchestration headless E2E:** `MockAiStack` test helper (`crates/orchestration/tests/support/`) pops scripted `AiPort` responses from a stack; `workflow_e2e.rs` covers happy path, auto-retry, missing input/approval, exhausted stack, and interrupt during slow tools — no real providers.

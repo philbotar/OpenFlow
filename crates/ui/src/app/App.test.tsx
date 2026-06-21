@@ -39,10 +39,12 @@ const apiMocks = vi.hoisted(() => ({
   assignWorkflowToProject: vi.fn(),
   copyWorkflowToProject: vi.fn(),
   unassignWorkflowFromProject: vi.fn(),
+  deleteWorkflow: vi.fn(),
 }));
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   open: vi.fn().mockResolvedValue(null),
+  confirm: vi.fn().mockResolvedValue(false),
 }));
 
 vi.mock("../api", async (importOriginal) => {
@@ -78,6 +80,7 @@ vi.mock("../api", async (importOriginal) => {
     assignWorkflowToProject: apiMocks.assignWorkflowToProject,
     copyWorkflowToProject: apiMocks.copyWorkflowToProject,
     unassignWorkflowFromProject: apiMocks.unassignWorkflowFromProject,
+    deleteWorkflow: apiMocks.deleteWorkflow,
     startTerminal: apiMocks.startTerminal,
     writeTerminal: apiMocks.writeTerminal,
     resizeTerminal: apiMocks.resizeTerminal,
@@ -1077,7 +1080,7 @@ describe("App settings persistence", () => {
     }
   });
 
-  test("settings nav exposes only Appearance and Providers", async () => {
+  test("settings nav exposes Appearance, Providers, and MCP Servers", async () => {
     const { container, dispose } = await mountApp(
       makeBootstrapPayload([makeWorkflow("workflow-1", "Workflow One")]),
     );
@@ -1087,7 +1090,7 @@ describe("App settings persistence", () => {
       const labels = [...container.querySelectorAll('.settings-nav-button')].map(
         (element) => element.textContent?.trim(),
       );
-      expect(labels).toEqual(["Appearance", "Providers"]);
+      expect(labels).toEqual(["Appearance", "Providers", "MCP Servers"]);
     } finally {
       dispose();
     }

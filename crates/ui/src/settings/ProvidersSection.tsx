@@ -1,4 +1,5 @@
-import { createMemo, For, Show } from "solid-js";
+import { createMemo, createSignal, For, Show } from "solid-js";
+import { refreshBedrockModels } from "../api";
 import { TextSelect } from "../components/TextSelect";
 import { useAppContext } from "../context/AppContext";
 import {
@@ -30,6 +31,29 @@ export function ProvidersSection() {
     { value: "chat_completions", label: "Chat Completions API" },
   ] as const;
   const profileEditable = () => ctx.activeProfileMemo().editable;
+  const isBedrock = () => ctx.settings().active_provider === "bedrock";
+  const [refreshingModels, setRefreshingModels] = createSignal(false);
+
+  async function handleRefreshBedrockModels() {
+    setRefreshingModels(true);
+    try {
+      const models = await refreshBedrockModels(ctx.settings());
+      await ctx.updateSettings((draft) => {
+        const profile = activeProfile(draft);
+        profile.known_models = models;
+        if (
+          profile.default_model &&
+          !models.includes(profile.default_model)
+        ) {
+          profile.default_model = models[0] ?? null;
+        } else if (!profile.default_model) {
+          profile.default_model = models[0] ?? null;
+        }
+      });
+    } finally {
+      setRefreshingModels(false);
+    }
+  }
 
   return (
     <div class="settings-section providers-section">
@@ -65,17 +89,31 @@ export function ProvidersSection() {
 
       <section class="settings-subsection" aria-labelledby="providers-auth-heading">
         <h3 id="providers-auth-heading" class="settings-subheading">
-          API key
+          {isBedrock() ? "AWS credentials" : "API key"}
         </h3>
-        <p>
-          Stored in plaintext in your local settings file for the selected provider. Protect this
-          machine and settings file accordingly. Environment variables still act as fallback.
-        </p>
+        <Show
+          when={!isBedrock()}
+          fallback={
+            <p>
+              Uses the AWS credential chain (env vars, shared config, SSO, instance role). Optionally
+              set an AWS profile name below; otherwise <code>AWS_PROFILE</code> applies.
+            </p>
+          }
+        >
+          <p>
+            Stored in plaintext in your local settings file for the selected provider. Protect this
+            machine and settings file accordingly. Environment variables still act as fallback.
+          </p>
+        </Show>
         <input
-          type="password"
+          type={isBedrock() ? "text" : "password"}
           value={ctx.activeProviderKeyInput()}
           onInput={(event) => ctx.handleApiKeyInput(event.currentTarget.value)}
-          placeholder={ctx.readiness()?.envVar || "optional local provider key"}
+          placeholder={
+            isBedrock()
+              ? "AWS profile (optional)"
+              : ctx.readiness()?.envVar || "optional local provider key"
+          }
           class="text-input"
         />
       </section>
@@ -89,11 +127,11 @@ export function ProvidersSection() {
         </Show>
         <div class="field-grid">
           <label>
-            <span>Base URL</span>
+            <span>{isBedrock() ? "AWS region" : "Base URL"}</span>
             <input
               class="text-input"
               value={ctx.activeProfileMemo().base_url}
-              disabled={!profileEditable()}
+              disabled={!profileEditable() && !isBedrock()}
               onInput={(event) =>
                 void ctx.updateSettings((draft) => {
                   activeProfile(draft).base_url = event.currentTarget.value;
@@ -101,47 +139,49 @@ export function ProvidersSection() {
               }
             />
           </label>
-          <label>
-            <span>Transport</span>
-            <TextSelect
-              value={ctx.activeProfileMemo().transport}
-              options={transportOptions}
-              disabled={!profileEditable()}
-              onChange={(event) =>
-                void ctx.updateSettings((draft) => {
-                  activeProfile(draft).transport = event.currentTarget.value as
-                    | "responses"
-                    | "chat_completions";
-                })
-              }
-            />
-          </label>
-          <label>
-            <span>Responses path</span>
-            <input
-              class="text-input"
-              value={ctx.activeProfileMemo().responses_path}
-              disabled={!profileEditable()}
-              onInput={(event) =>
-                void ctx.updateSettings((draft) => {
-                  activeProfile(draft).responses_path = event.currentTarget.value;
-                })
-              }
-            />
-          </label>
-          <label>
-            <span>Chat completions path</span>
-            <input
-              class="text-input"
-              value={ctx.activeProfileMemo().chat_completions_path}
-              disabled={!profileEditable()}
-              onInput={(event) =>
-                void ctx.updateSettings((draft) => {
-                  activeProfile(draft).chat_completions_path = event.currentTarget.value;
-                })
-              }
-            />
-          </label>
+          <Show when={!isBedrock()}>
+            <label>
+              <span>Transport</span>
+              <TextSelect
+                value={ctx.activeProfileMemo().transport}
+                options={transportOptions}
+                disabled={!profileEditable()}
+                onChange={(event) =>
+                  void ctx.updateSettings((draft) => {
+                    activeProfile(draft).transport = event.currentTarget.value as
+                      | "responses"
+                      | "chat_completions";
+                  })
+                }
+              />
+            </label>
+            <label>
+              <span>Responses path</span>
+              <input
+                class="text-input"
+                value={ctx.activeProfileMemo().responses_path}
+                disabled={!profileEditable()}
+                onInput={(event) =>
+                  void ctx.updateSettings((draft) => {
+                    activeProfile(draft).responses_path = event.currentTarget.value;
+                  })
+                }
+              />
+            </label>
+            <label>
+              <span>Chat completions path</span>
+              <input
+                class="text-input"
+                value={ctx.activeProfileMemo().chat_completions_path}
+                disabled={!profileEditable()}
+                onInput={(event) =>
+                  void ctx.updateSettings((draft) => {
+                    activeProfile(draft).chat_completions_path = event.currentTarget.value;
+                  })
+                }
+              />
+            </label>
+          </Show>
         </div>
       </section>
 
@@ -226,6 +266,16 @@ export function ProvidersSection() {
           <button type="button" class="secondary-button" onClick={ctx.handleAddKnownModel}>
             Add model
           </button>
+          <Show when={isBedrock()}>
+            <button
+              type="button"
+              class="secondary-button"
+              disabled={refreshingModels()}
+              onClick={() => void handleRefreshBedrockModels()}
+            >
+              {refreshingModels() ? "Refreshing…" : "Refresh from AWS"}
+            </button>
+          </Show>
         </div>
         <label>
           <span>Default model</span>

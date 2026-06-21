@@ -34,5 +34,5 @@ pub use engine::{
     Template, TemplateStore, TemplateStoreError, ToolCall, ToolTier, Workflow, WorkflowId,
 };
 pub use project::ports::Project;
-pub use settings::model::{AppSettings, SkillSummary};
+pub use settings::model::{AppSettings, McpServerConfig, McpSettings, SkillSummary};
 pub use settings::ports::{LspSettings, ProviderProfile};

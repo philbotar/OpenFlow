@@ -39,8 +39,18 @@ export const EMPTY_BOOTSTRAP = {
 
 const PROVIDER_READINESS = {
   ready: true,
-  missingProviders: [],
-  warnings: [],
+  provider: "OpenAI",
+  message: "Ready via env var",
+  envVar: "OPENAI_API_KEY",
+};
+
+const DEFAULT_PROVIDER_API_KEYS = {
+  openai: "stored-openai-key",
+  custom_openai_compatible: "stored-compatible-key",
+} as const;
+
+export type OpenflowIpcMockOptions = {
+  providerApiKeys?: Record<string, string | null>;
 };
 
 /** Handlers are toString'd into the page — embed literals, no outer closures. */
@@ -49,10 +59,27 @@ function mockReturn<T>(value: T): (args?: Record<string, unknown>) => T {
   return new Function(`return ${json}`) as (args?: Record<string, unknown>) => T;
 }
 
+function mockInvokeBody(body: string): (args?: Record<string, unknown>) => unknown {
+  return new Function("args", body) as (args?: Record<string, unknown>) => unknown;
+}
+
 function mockAsyncUnsubscribe(): (args?: Record<string, unknown>) => Promise<() => void> {
   return new Function("return Promise.resolve(function(){})") as (
     args?: Record<string, unknown>,
   ) => Promise<() => void>;
+}
+
+function mockCreateWorkflow(): (args?: Record<string, unknown>) => unknown {
+  return mockInvokeBody(`
+    const name = args.name ?? "Workflow 1";
+    return {
+      id: "workflow-e2e",
+      name,
+      nodes: [],
+      edges: [],
+      settings: { shared_context: "" },
+    };
+  `);
 }
 
 const WINDOW_PLUGIN_MOCKS: Record<string, (args?: Record<string, unknown>) => unknown> = {
@@ -83,17 +110,48 @@ const DIALOG_PLUGIN_MOCKS: Record<string, (args?: Record<string, unknown>) => un
 
 export function createOpenflowIpcMocks(
   bootstrap: typeof EMPTY_BOOTSTRAP = EMPTY_BOOTSTRAP,
+  options: OpenflowIpcMockOptions = {},
 ): Record<string, (args?: Record<string, unknown>) => unknown> {
+  const providerApiKeys = options.providerApiKeys ?? DEFAULT_PROVIDER_API_KEYS;
+  const providerApiKeysJson = JSON.stringify(providerApiKeys);
+
   return {
     bootstrap_app: mockReturn(bootstrap),
+    create_workflow: mockCreateWorkflow(),
     list_workflows: mockReturn(bootstrap.workflows),
     list_skills: mockReturn(bootstrap.skills ?? []),
     list_schedule_statuses: mockReturn(bootstrap.scheduleStatuses ?? []),
     refresh_schedules: mockReturn([]),
     resolve_provider_readiness: mockReturn(PROVIDER_READINESS),
-    load_provider_api_key: mockReturn(null),
+    load_provider_api_key: mockInvokeBody(`
+      const keys = ${providerApiKeysJson};
+      return keys[args.providerId] ?? null;
+    `),
+    save_settings: mockInvokeBody(`
+      window.__openflowE2e = window.__openflowE2e || { calls: [] };
+      window.__openflowE2e.calls.push({ type: "save_settings", settings: args.settings });
+      return undefined;
+    `),
+    save_provider_api_key: mockInvokeBody(`
+      window.__openflowE2e = window.__openflowE2e || { calls: [] };
+      window.__openflowE2e.calls.push({
+        type: "save_provider_api_key",
+        providerId: args.providerId,
+        apiKey: args.apiKey,
+      });
+      return undefined;
+    `),
+    delete_provider_api_key: mockInvokeBody(`
+      window.__openflowE2e = window.__openflowE2e || { calls: [] };
+      window.__openflowE2e.calls.push({
+        type: "delete_provider_api_key",
+        providerId: args.providerId,
+      });
+      return undefined;
+    `),
     is_run_continuable: mockReturn(bootstrap.runContinuable ?? false),
     list_runs: mockReturn([]),
+    delete_workflow: mockReturn([]),
     validate_workflow: mockReturn({ valid: true, errors: [], warnings: [] }),
     listen_to_run_state: mockAsyncUnsubscribe(),
     listen_to_schedule_statuses: mockAsyncUnsubscribe(),

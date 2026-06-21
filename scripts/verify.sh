@@ -50,6 +50,7 @@ step_repro() {
 		;;
 	doc) printf '%s' 'RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --quiet' ;;
 	test) printf '%s' 'cargo test --workspace --quiet' ;;
+	test-fast) printf '%s' './scripts/test-fast.sh --execution' ;;
 	public-api) printf '%s' './scripts/check-engine-public-api.sh' ;;
 	machete) printf '%s' 'cargo machete' ;;
 	typos) printf '%s' 'typos' ;;
@@ -58,13 +59,14 @@ step_repro() {
 	deny) printf '%s' 'cargo deny check' ;;
 	arch) printf '%s' './scripts/check-architecture.sh' ;;
 	mutants) printf '%s' 'cargo mutants --no-shuffle' ;;
+	miri) printf '%s' './scripts/miri.sh' ;;
 	*) printf '%s' "$1" ;;
 	esac
 }
 
 is_valid_step() {
 	case "$1" in
-	fmt | clippy | doc | test | public-api | machete | typos | ui-typecheck | ui-test | deny | arch | mutants)
+	fmt | clippy | doc | test | test-fast | public-api | machete | typos | ui-typecheck | ui-test | deny | arch | mutants | miri)
 		return 0
 		;;
 	*) return 1 ;;
@@ -72,7 +74,7 @@ is_valid_step() {
 }
 
 usage_steps() {
-	printf 'Valid steps: %s\n' "${ALL_STEPS[*]} mutants (--deep only)"
+	printf 'Valid steps: %s\n' "${ALL_STEPS[*]} mutants miri (--deep only)"
 }
 
 preflight_toolchain() {
@@ -185,6 +187,10 @@ step_mutants() {
 	fi
 }
 
+step_miri() {
+	run_step miri "$ROOT/scripts/miri.sh"
+}
+
 step_ui_typecheck() {
 	preflight_npm || {
 		fail_step ui-typecheck "error: npm is required for UI steps (crates/ui)"
@@ -211,6 +217,13 @@ run_named_step() {
 		;;
 	doc) run_step doc env RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --quiet ;;
 	test) run_step test cargo test --workspace --quiet ;;
+	test-fast)
+		preflight_npm || {
+			fail_step test-fast "error: npm is required for UI steps (crates/ui)"
+			return 1
+		}
+		run_step test-fast "$ROOT/scripts/test-fast.sh" --execution
+		;;
 	public-api) run_step public-api "$ROOT/scripts/check-engine-public-api.sh" ;;
 	machete) step_machete ;;
 	typos) step_typos ;;
@@ -224,6 +237,13 @@ run_named_step() {
 			return 1
 		fi
 		step_mutants
+		;;
+	miri)
+		if [[ "$DEEP" -ne 1 ]]; then
+			fail_step miri "error: miri step requires --deep"
+			return 1
+		fi
+		step_miri
 		;;
 	*)
 		echo "error: unknown step '$name'" >&2
@@ -290,7 +310,7 @@ if [[ ${#REQUESTED_STEPS[@]} -gt 0 ]]; then
 else
 	STEPS_TO_RUN=("${ALL_STEPS[@]}")
 	if [[ "$DEEP" -eq 1 ]]; then
-		STEPS_TO_RUN+=(mutants)
+		STEPS_TO_RUN+=(mutants miri)
 	fi
 fi
 

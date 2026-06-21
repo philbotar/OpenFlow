@@ -1,6 +1,10 @@
 //! Shared orchestration integration-test helpers (mock AI stack, harness, workflows).
 
-#![allow(dead_code, unused_imports)]
+#![allow(
+    dead_code,
+    unused_imports,
+    reason = "integration test support re-exports"
+)]
 
 mod mock_ai_stack;
 mod run_harness;

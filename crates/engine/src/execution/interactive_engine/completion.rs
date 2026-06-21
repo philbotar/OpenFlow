@@ -78,10 +78,10 @@ impl InteractiveEngine {
         if !error.is_malformed_submit_output() {
             return false;
         }
-        let schema_hint = self
-            .find_node(node_id)
-            .map(|node| node.agent.output_schema.to_string())
-            .unwrap_or_else(|| "see the node output schema".to_string());
+        let schema_hint = self.find_node(node_id).map_or_else(
+            || "see the node output schema".to_string(),
+            |node| node.agent.output_schema.to_string(),
+        );
         let retry_count = self
             .submit_output_retries_by_node
             .entry(node_id.clone())

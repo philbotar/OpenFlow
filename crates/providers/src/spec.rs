@@ -66,6 +66,10 @@ pub enum AuthSpec {
     NoneAllowed {
         env_var: Option<&'static str>,
     },
+    AwsCredentials {
+        profile_env_var: &'static str,
+        region_env_var: &'static str,
+    },
 }
 
 impl AuthSpec {
@@ -74,6 +78,9 @@ impl AuthSpec {
         match self {
             Self::Bearer { env_var, .. } | Self::Header { env_var, .. } => Some(env_var),
             Self::NoneAllowed { env_var } => env_var,
+            Self::AwsCredentials {
+                profile_env_var, ..
+            } => Some(profile_env_var),
         }
     }
 
@@ -81,7 +88,7 @@ impl AuthSpec {
     pub const fn requires_key(self) -> bool {
         match self {
             Self::Bearer { required, .. } | Self::Header { required, .. } => required,
-            Self::NoneAllowed { .. } => false,
+            Self::NoneAllowed { .. } | Self::AwsCredentials { .. } => false,
         }
     }
 }
@@ -100,9 +107,13 @@ pub struct AnthropicSpec {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BedrockSpec;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProviderKind {
     OpenAiCompatible(OpenAiCompatibleSpec),
     Anthropic(AnthropicSpec),
+    Bedrock(BedrockSpec),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -130,7 +141,7 @@ impl ProviderSpec {
     #[must_use]
     pub fn default_reasoning_effort_options(&self) -> Vec<ReasoningEffortOption> {
         match self.kind {
-            ProviderKind::Anthropic(_) => vec![
+            ProviderKind::Anthropic(_) | ProviderKind::Bedrock(_) => vec![
                 ReasoningEffortOption {
                     value: "none".to_string(),
                     label: "None".to_string(),
@@ -219,6 +230,7 @@ const ANTHROPIC_MODELS: &[&str] = &[
     "claude-3-5-haiku-latest",
     "claude-3-opus-latest",
 ];
+const BEDROCK_MODELS: &[&str] = &["anthropic.claude-sonnet-4-20250514-v1:0"];
 
 const OPENAI_COMPAT_RESPONSES: OpenAiCompatibleSpec = OpenAiCompatibleSpec {
     default_wire_api: WireApi::Responses,
@@ -402,6 +414,20 @@ const BUILTIN_PROVIDER_SPECS: &[ProviderSpec] = &[
         editable: true,
     },
     ProviderSpec {
+        id: "bedrock",
+        display_name: "Amazon Bedrock",
+        // ponytail: AWS region stored in base_url; upgrade path: dedicated region field in settings schema
+        default_base_url: "us-east-1",
+        kind: ProviderKind::Bedrock(BedrockSpec),
+        auth: AuthSpec::AwsCredentials {
+            profile_env_var: "AWS_PROFILE",
+            region_env_var: "AWS_REGION",
+        },
+        default_models: BEDROCK_MODELS,
+        default_model: "anthropic.claude-sonnet-4-20250514-v1:0",
+        editable: false,
+    },
+    ProviderSpec {
         id: "anthropic",
         display_name: "Anthropic",
         default_base_url: "https://api.anthropic.com",
@@ -438,6 +464,13 @@ mod tests {
     use super::*;
 
     #[test]
+    fn builtin_specs_include_bedrock() {
+        assert!(builtin_provider_specs()
+            .iter()
+            .any(|spec| spec.id == "bedrock"));
+    }
+
+    #[test]
     fn builtin_specs_include_openai_and_anthropic_exclude_deferred_special_auth() {
         let ids = builtin_provider_specs()
             .iter()
@@ -446,7 +479,6 @@ mod tests {
 
         assert!(ids.contains(&"openai"));
         assert!(ids.contains(&"anthropic"));
-        assert!(!ids.contains(&"bedrock"));
         assert!(!ids.contains(&"azure_native"));
     }
 

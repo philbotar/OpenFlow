@@ -11,6 +11,7 @@ import type {
 	CopyWorkflowToProjectResult,
 	ProviderReadiness,
 	SkillSummary,
+	McpServerConfig,
 	Workflow,
 	WorkflowListItem,
 	WorkflowRunState,
@@ -51,6 +52,7 @@ export interface UiDesktopOutboundPort {
 		sourceWorkflowId: string,
 	) => Promise<CopyWorkflowToProjectResult>;
 	unassignWorkflowFromProject: (projectId: string, workflowId: string) => Promise<Project[]>;
+	deleteWorkflow: (workflowId: string) => Promise<Project[]>;
 	listWorkflows: () => Promise<WorkflowListItem[]>;
 	loadAllWorkflows: () => Promise<Workflow[]>;
 	loadWorkflow: (workflowId: string) => Promise<Workflow>;
@@ -72,6 +74,7 @@ export interface UiDesktopOutboundPort {
 		settings: AppSettings,
 		transientApiKey?: string | null,
 	) => Promise<ProviderReadiness>;
+	refreshBedrockModels: (settings: AppSettings) => Promise<string[]>;
 	validateWorkflow: (workflow: Workflow) => Promise<WorkflowValidationSummary>;
 	startWorkflowAuthoring: (baseWorkflow?: Workflow | null) => Promise<string>;
 	workflowAuthoringTurn: (
@@ -138,6 +141,7 @@ export interface UiDesktopOutboundPort {
 	listScheduleStatuses: () => Promise<ScheduleStatus[]>;
 	refreshSchedules: () => Promise<ScheduleStatus[]>;
 	listenToScheduleStatuses: (handler: (statuses: ScheduleStatus[]) => void) => Promise<() => void>;
+	probeMcpServer: (config: McpServerConfig) => Promise<string[]>;
 }
 
 export function createUiDesktopOutboundAdapter(): UiDesktopOutboundPort {
@@ -151,6 +155,7 @@ export function createUiDesktopOutboundAdapter(): UiDesktopOutboundPort {
 		assignWorkflowToProject: desktopApi.assignWorkflowToProject,
 		copyWorkflowToProject: desktopApi.copyWorkflowToProject,
 		unassignWorkflowFromProject: desktopApi.unassignWorkflowFromProject,
+		deleteWorkflow: desktopApi.deleteWorkflow,
 		listWorkflows: desktopApi.listWorkflows,
 		loadAllWorkflows: desktopApi.loadAllWorkflows,
 		loadWorkflow: desktopApi.loadWorkflow,
@@ -169,6 +174,7 @@ export function createUiDesktopOutboundAdapter(): UiDesktopOutboundPort {
 		saveProviderApiKey: desktopApi.saveProviderApiKey,
 		deleteProviderApiKey: desktopApi.deleteProviderApiKey,
 		resolveProviderReadiness: desktopApi.resolveProviderReadiness,
+		refreshBedrockModels: desktopApi.refreshBedrockModels,
 		validateWorkflow: desktopApi.validateWorkflow,
 		startWorkflowAuthoring: desktopApi.startWorkflowAuthoring,
 		workflowAuthoringTurn: desktopApi.workflowAuthoringTurn,
@@ -199,6 +205,7 @@ export function createUiDesktopOutboundAdapter(): UiDesktopOutboundPort {
 		listScheduleStatuses: desktopApi.listScheduleStatuses,
 		refreshSchedules: desktopApi.refreshSchedules,
 		listenToScheduleStatuses: desktopApi.listenToScheduleStatuses,
+		probeMcpServer: desktopApi.probeMcpServer,
 	};
 }
 

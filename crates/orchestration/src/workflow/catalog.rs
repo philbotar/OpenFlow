@@ -192,6 +192,38 @@ impl WorkflowCatalog {
             .delete(Path::new(&project_path), workflow_id)?;
         projects.load()
     }
+
+    /// Permanently removes a workflow from app and project stores.
+    ///
+    /// # Errors
+    /// Returns an error if the workflow is missing or stores cannot be written.
+    pub fn delete(
+        &self,
+        projects: &ProjectRegistry,
+        workflow_id: &str,
+    ) -> Result<Vec<Project>, BackendError> {
+        self.load_one(projects, workflow_id)?;
+
+        let project_ids: Vec<String> = projects
+            .load()?
+            .into_iter()
+            .filter(|project| project.workflow_ids.iter().any(|id| id == workflow_id))
+            .map(|project| project.id)
+            .collect();
+
+        for project_id in project_ids {
+            self.unassign_from_project(projects, &project_id, workflow_id)?;
+        }
+
+        let mut app_workflows = self.store.load()?;
+        let before = app_workflows.len();
+        app_workflows.retain(|workflow| workflow.id != workflow_id);
+        if app_workflows.len() != before {
+            self.store.save(&app_workflows)?;
+        }
+
+        projects.load()
+    }
 }
 
 pub(crate) fn default_workflow(name: &str) -> Workflow {

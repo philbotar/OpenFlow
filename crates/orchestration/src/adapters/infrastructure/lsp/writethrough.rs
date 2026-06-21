@@ -57,6 +57,7 @@ mod tests {
         assert!(after_write(Path::new("/tmp/x.rs"), &settings).is_none());
     }
 
+    #[cfg_attr(miri, ignore)] // ponytail: Miri cannot emulate rustfmt subprocess
     #[test]
     fn formats_rust_file_when_rustfmt_available() {
         let temp = tempfile::TempDir::new().expect("tempdir");

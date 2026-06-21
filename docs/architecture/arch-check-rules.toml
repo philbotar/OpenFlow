@@ -60,6 +60,9 @@ symbols = [
     "ProviderAdapterConfig",
     "AnthropicSpec",
     "OpenAiCompatibleSpec",
+    "BedrockConfig",
+    "BedrockSpec",
+    "list_bedrock_foundation_models",
 ]
 # Concrete provider client — use create_provider + dyn AiPort instead.
 ban_symbols = ["AiClient"]

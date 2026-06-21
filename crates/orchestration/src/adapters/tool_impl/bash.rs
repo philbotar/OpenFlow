@@ -526,6 +526,7 @@ mod tests {
         assert!(err.to_string().contains("escapes execution folder"));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn bash_timeout_returns_partial_output() {
         let temp = TempDir::new().expect("tempdir");
@@ -549,6 +550,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn bash_incremental_read_collects_output_before_exit() {
         let temp = TempDir::new().expect("tempdir");
@@ -568,6 +570,7 @@ mod tests {
     }
 
     #[cfg(unix)]
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn bash_timeout_kills_process_group() {
         let temp = TempDir::new().expect("tempdir");
@@ -587,6 +590,7 @@ mod tests {
         );
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn execute_bash_runs_command_in_cwd() {
         let temp = TempDir::new().expect("tempdir");
@@ -605,6 +609,7 @@ mod tests {
         assert!(!outcome.is_error);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn execute_bash_surfaces_non_zero_exit_as_error() {
         let temp = TempDir::new().expect("tempdir");
@@ -622,6 +627,7 @@ mod tests {
         assert!(outcome.output.contains("Command exited with code 7"));
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn execute_bash_merges_stderr() {
         let temp = TempDir::new().expect("tempdir");

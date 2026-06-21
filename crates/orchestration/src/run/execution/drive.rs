@@ -38,6 +38,7 @@ pub(super) async fn drive_interactive_workflow<A>(
         pending_engine_reverts,
         node_interrupts,
         context_window_sizes,
+        mcp,
     } = params;
 
     let mut engine = match build_engine(workflow.clone(), entrypoint, resume_checkpoint) {
@@ -48,7 +49,33 @@ pub(super) async fn drive_interactive_workflow<A>(
         }
     };
 
-    let tool_registry = ToolRegistry::new();
+    let mut tool_registry = ToolRegistry::new();
+    let mcp_clients = match crate::adapters::mcp::McpRunClients::connect(&mcp).await {
+        Ok(clients) => clients,
+        Err(error) => {
+            send_or_log(&event_tx, ExecutionEvent::Error(error.to_string()));
+            return;
+        }
+    };
+    match mcp_clients.list_all_tool_definitions().await {
+        Ok(definitions) => {
+            let mcp_tools = definitions
+                .into_iter()
+                .map(|definition| crate::tool::registry::RegisteredTool {
+                    definition,
+                    kind: crate::tool::registry::BuiltinToolKind::Mcp,
+                })
+                .collect();
+            if let Err(error) = tool_registry.extend_mcp(mcp_tools) {
+                send_or_log(&event_tx, ExecutionEvent::Error(error.to_string()));
+                return;
+            }
+        }
+        Err(error) => {
+            send_or_log(&event_tx, ExecutionEvent::Error(error.to_string()));
+            return;
+        }
+    }
     let artifacts = match ArtifactStore::new(artifact_root) {
         Ok(store) => store,
         Err(error) => {
@@ -56,13 +83,16 @@ pub(super) async fn drive_interactive_workflow<A>(
             return;
         }
     };
-    let tool_runner = Arc::new(ToolRunner::new(
-        tool_registry,
-        execution_cwd,
-        artifacts,
-        cancel_token.clone(),
-        snapshot_store,
-    ));
+    let tool_runner = Arc::new(
+        ToolRunner::new(
+            tool_registry,
+            execution_cwd,
+            artifacts,
+            cancel_token.clone(),
+            snapshot_store,
+        )
+        .with_mcp_clients(mcp_clients),
+    );
     let workflow = Arc::new(workflow);
     let ai = Arc::new(ai);
     let node_interrupts_for_tools = node_interrupts.clone();

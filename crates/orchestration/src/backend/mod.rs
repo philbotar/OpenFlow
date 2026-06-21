@@ -276,6 +276,21 @@ impl AppBackend {
         Ok(())
     }
 
+    /// Spawn an ephemeral MCP server and return discovered tool names.
+    pub async fn probe_mcp_server(
+        &self,
+        config: crate::settings::model::McpServerConfig,
+    ) -> Result<Vec<String>, BackendError> {
+        let client = crate::adapters::mcp::McpStdioClient::spawn(&config)
+            .await
+            .map_err(|error| io::Error::other(error.to_string()))?;
+        let names = client
+            .list_tool_names()
+            .await
+            .map_err(|error| io::Error::other(error.to_string()))?;
+        Ok(names)
+    }
+
     pub fn load_provider_api_key(&self, provider_id: &str) -> Result<Option<String>, BackendError> {
         self.settings.load_provider_api_key(provider_id)
     }
@@ -307,6 +322,13 @@ impl AppBackend {
         workflow: &Workflow,
     ) -> Result<WorkflowValidationSummary, BackendError> {
         self.settings.validate_workflow(workflow)
+    }
+
+    pub fn refresh_bedrock_models(
+        &self,
+        settings: &AppSettings,
+    ) -> Result<Vec<String>, BackendError> {
+        self.settings.refresh_bedrock_models(settings)
     }
 
     pub fn start_workflow_authoring(&self, base_workflow: Option<Workflow>) -> String {
@@ -399,6 +421,15 @@ impl AppBackend {
     ) -> Result<Vec<Project>, BackendError> {
         self.workflows
             .unassign_from_project(&self.projects, project_id, workflow_id)
+    }
+
+    pub fn delete_workflow(&self, workflow_id: &str) -> Result<Vec<Project>, BackendError> {
+        let projects = self
+            .workflows
+            .delete(&self.projects, workflow_id)
+            .map_err(|error| self.persistence_err("persistence.workflow_delete", error))?;
+        self.refresh_schedules()?;
+        Ok(projects)
     }
 
     fn run_roots(&self) -> Result<Vec<RunStoreRoot>, BackendError> {

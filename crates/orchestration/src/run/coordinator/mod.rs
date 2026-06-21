@@ -6,166 +6,39 @@ use crate::run::execution::{
     should_record_entrypoint_in_chat, spawn_interactive_workflow_run, ExecutionAction,
     ExecutionEvent, InteractiveWorkflowRunParams, NodeInterrupts,
 };
-use crate::run::persistence::{
-    workflow_hash, PendingRunCheckpoint, RunCheckpointPayload, RunCheckpointReason, RunRecord,
-    RunStatus, RunStoreRoot,
-};
+use crate::run::persistence::{workflow_hash, RunRecord, RunStatus, RunStoreRoot};
 use crate::run::ports::RunCheckpointStore;
 use crate::run::reasoning_defaults::apply_reasoning_defaults;
 use crate::run::state::{AgentStatus, WorkflowRunState};
-use crate::settings::model::{merge_preserved_api_keys, AppSettings};
-use crate::settings::provider::{resolve_provider_config, ProviderEnv};
+use crate::settings::model::merge_preserved_api_keys;
+use crate::settings::provider::resolve_provider_config;
 use crate::tools::edit::preview::preview_file_edit;
 use chrono::Utc;
 use engine::resolve_callable_agent_snapshots;
-use engine::{execution_layers, validate_workflow, InteractiveEngineCheckpoint, NodeId, Workflow};
+#[cfg(test)]
+use engine::Workflow;
+use engine::{execution_layers, validate_workflow, NodeId};
 use parking_lot::Mutex as ParkingMutex;
 use providers::{create_provider, ProviderId};
-use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::UnboundedReceiver;
+#[cfg(test)]
+use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::Mutex;
-use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-/// Clears session-scoped resources when a run becomes inactive.
-fn finish_run_session(session: &mut RunSession) {
-    session.snapshot_store = None;
-    session.lsp_settings = None;
-    session.pending_engine_reverts = None;
-    session.action_tx = None;
-    session.handle = None;
-    session.cancel_token = None;
-    session.node_interrupts = None;
-    session.checkpoint_sink = None;
-    session.engine_checkpoint = None;
-}
+mod checkpoint;
+mod session;
 
-fn clear_artifact_root(session: &mut RunSession) {
-    let Some(path) = session.artifact_root.take() else {
-        return;
-    };
-    if let Err(error) = fs::remove_dir_all(&path) {
-        if error.kind() != std::io::ErrorKind::NotFound {
-            log::warn!("failed to remove artifact root {}: {error}", path.display());
-        }
-    }
-}
+pub use session::{DurableResumeParams, RunStartParams};
 
-/// Marks the in-session run as user-stopped and captures a resume checkpoint when present.
-fn apply_user_stop_to_session(session: &mut RunSession) -> Option<WorkflowRunState> {
-    let captured_checkpoint = session
-        .checkpoint_sink
-        .as_ref()
-        .and_then(|sink| sink.lock().take());
-    if let Some(checkpoint) = captured_checkpoint {
-        session.engine_checkpoint = Some(checkpoint.engine);
-    }
-    session.checkpoint_sink = None;
-    let workflow = session.workflow.clone()?;
-    let run_state = session.run_state.as_mut()?;
-    if run_state.active {
-        apply_event_to_run_state(&workflow, run_state, ExecutionEvent::Aborted);
-    }
-    Some(run_state.clone())
-}
-
-#[derive(Debug)]
-struct RunSession {
-    workflow: Option<Workflow>,
-    run_state: Option<WorkflowRunState>,
-    run_id: Option<String>,
-    run_root: Option<RunStoreRoot>,
-    project_id: Option<String>,
-    execution_cwd: Option<PathBuf>,
-    entrypoint: Option<String>,
-    artifact_root: Option<PathBuf>,
-    engine_checkpoint: Option<InteractiveEngineCheckpoint>,
-    checkpoint_sink: Option<Arc<ParkingMutex<Option<PendingRunCheckpoint>>>>,
-    snapshot_store: Option<Arc<crate::tools::edit::hashline::snapshots::InMemorySnapshotStore>>,
-    lsp_settings: Option<crate::lsp::LspSettings>,
-    pending_engine_reverts: Option<Arc<parking_lot::Mutex<Vec<engine::EditBatch>>>>,
-    action_tx: Option<UnboundedSender<ExecutionAction>>,
-    handle: Option<tokio::task::JoinHandle<()>>,
-    cancel_token: Option<CancellationToken>,
-    node_interrupts: Option<NodeInterrupts>,
-}
-
-enum TerminationMode {
-    Replaced,
-    UserStop,
-}
-
-pub struct RunStartParams<'a> {
-    pub workflow: Workflow,
-    pub entrypoint: Option<String>,
-    pub execution_cwd: Option<String>,
-    pub run_root: RunStoreRoot,
-    pub settings: &'a AppSettings,
-    pub transient_api_key: Option<&'a str>,
-    pub agent_store: &'a dyn crate::agent::ports::AgentStore,
-    pub settings_store: &'a dyn crate::settings::ports::SettingsStore,
-    pub run_store: &'a dyn RunCheckpointStore,
-    pub env: &'a ProviderEnv,
-}
-
-pub struct DurableResumeParams<'a> {
-    pub run_id: &'a str,
-    pub workflow: Workflow,
-    pub root: RunStoreRoot,
-    pub record: RunRecord,
-    pub checkpoint: RunCheckpointPayload,
-    pub settings: &'a AppSettings,
-    pub transient_api_key: Option<&'a str>,
-    pub agent_store: &'a dyn crate::agent::ports::AgentStore,
-    pub settings_store: &'a dyn crate::settings::ports::SettingsStore,
-    pub run_store: &'a dyn RunCheckpointStore,
-    pub env: &'a ProviderEnv,
-}
-
-fn status_for_checkpoint(reason: RunCheckpointReason) -> RunStatus {
-    match reason {
-        RunCheckpointReason::AwaitingInput
-        | RunCheckpointReason::AwaitingToolApproval
-        | RunCheckpointReason::AwaitingRetry => RunStatus::Paused,
-        RunCheckpointReason::UserStopped => RunStatus::Stopped,
-        RunCheckpointReason::Completed => RunStatus::Completed,
-        RunCheckpointReason::Failed => RunStatus::Failed,
-    }
-}
-
-fn next_checkpoint_seq(
-    store: &dyn RunCheckpointStore,
-    root: &RunStoreRoot,
-    run_id: &str,
-) -> Result<u32, BackendError> {
-    Ok(store
-        .load_latest_checkpoint(root, run_id)?
-        .map_or(1, |payload| payload.seq.saturating_add(1)))
-}
-
-fn persist_pending_checkpoint(
-    run_store: &dyn RunCheckpointStore,
-    root: &RunStoreRoot,
-    run_id: &str,
-    projection: &WorkflowRunState,
-    pending: PendingRunCheckpoint,
-) -> Result<(), BackendError> {
-    let now_ms = Utc::now().timestamp_millis();
-    let reason = pending.reason;
-    let payload = RunCheckpointPayload {
-        seq: next_checkpoint_seq(run_store, root, run_id)?,
-        created_at_ms: now_ms,
-        reason,
-        engine: pending.engine,
-        projection: projection.clone(),
-    };
-    run_store.append_checkpoint(root, run_id, &payload)?;
-    run_store.update_status(root, run_id, status_for_checkpoint(reason), now_ms)?;
-    Ok(())
-}
+use checkpoint::persist_pending_checkpoint;
+use session::{
+    apply_user_stop_to_session, clear_artifact_root, finish_run_session, RunSession,
+    TerminationMode,
+};
 
 pub struct RunCoordinator {
     runtime_handle: tokio::runtime::Handle,
@@ -174,7 +47,7 @@ pub struct RunCoordinator {
 }
 
 #[cfg(test)]
-#[path = "coordinator_tests.rs"]
+#[path = "../coordinator_tests.rs"]
 mod coordinator_tests;
 
 impl RunCoordinator {
@@ -310,6 +183,7 @@ impl RunCoordinator {
                     .active_profile()
                     .context_window_sizes
                     .clone(),
+                mcp: persisted_settings.mcp.clone(),
             },
         );
 
@@ -455,6 +329,7 @@ impl RunCoordinator {
                     .active_profile()
                     .context_window_sizes
                     .clone(),
+                mcp: persisted_settings.mcp.clone(),
             },
         );
 
@@ -798,6 +673,7 @@ impl RunCoordinator {
                     .active_profile()
                     .context_window_sizes
                     .clone(),
+                mcp: persisted_settings.mcp.clone(),
             },
         );
 

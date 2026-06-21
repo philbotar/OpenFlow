@@ -9,6 +9,12 @@ use providers::ProviderId;
 use std::sync::Arc;
 use tempfile::tempdir;
 
+fn project_dir(dir: &tempfile::TempDir) -> String {
+    let path = dir.path().join("project-repo");
+    std::fs::create_dir_all(&path).expect("project dir");
+    path.to_string_lossy().into_owned()
+}
+
 fn backend() -> (AppBackend, tempfile::TempDir) {
     let dir = tempdir().expect("tempdir");
     let runtime = tokio::runtime::Runtime::new().expect("runtime");
@@ -672,12 +678,12 @@ fn copy_workflow_to_project_creates_independent_copy() {
 
 #[test]
 fn assign_workflow_to_project_round_trips() {
-    let (backend, _dir) = backend();
+    let (backend, dir) = backend();
     let workflow = backend
         .create_workflow("Flow".to_string())
         .expect("create workflow");
     let project = backend
-        .create_project_from_directory(std::env::temp_dir().to_string_lossy().into_owned())
+        .create_project_from_directory(project_dir(&dir))
         .expect("create project");
 
     let projects = backend
@@ -734,12 +740,12 @@ fn get_run_state_is_none_when_idle() {
 
 #[test]
 fn unassign_workflow_from_project_round_trips() {
-    let (backend, _dir) = backend();
+    let (backend, dir) = backend();
     let workflow = backend
         .create_workflow("Flow".to_string())
         .expect("create workflow");
     let project = backend
-        .create_project_from_directory(std::env::temp_dir().to_string_lossy().into_owned())
+        .create_project_from_directory(project_dir(&dir))
         .expect("create project");
     backend
         .assign_workflow_to_project(&project.id, &workflow.id.to_string())
@@ -750,6 +756,46 @@ fn unassign_workflow_from_project_round_trips() {
         .expect("unassign workflow");
 
     assert!(projects[0].workflow_ids.is_empty());
+}
+
+#[test]
+fn delete_workflow_removes_independent_workflow() {
+    let (backend, _dir) = backend();
+    let workflow = backend
+        .create_workflow("Delete me".to_string())
+        .expect("create workflow");
+
+    backend
+        .delete_workflow(&workflow.id.to_string())
+        .expect("delete workflow");
+
+    assert!(backend.list_workflows().expect("list").is_empty());
+    assert!(backend
+        .load_workflow(&workflow.id)
+        .expect_err("workflow gone")
+        .to_string()
+        .contains("not found"));
+}
+
+#[test]
+fn delete_workflow_removes_project_assigned_workflow() {
+    let (backend, dir) = backend();
+    let workflow = backend
+        .create_workflow("Project flow".to_string())
+        .expect("create workflow");
+    let project = backend
+        .create_project_from_directory(project_dir(&dir))
+        .expect("create project");
+    backend
+        .assign_workflow_to_project(&project.id, &workflow.id.to_string())
+        .expect("assign workflow");
+
+    let projects = backend
+        .delete_workflow(&workflow.id.to_string())
+        .expect("delete workflow");
+
+    assert!(projects[0].workflow_ids.is_empty());
+    assert!(backend.list_workflows().expect("list").is_empty());
 }
 
 #[test]
@@ -798,6 +844,7 @@ fn submit_tool_approval_denied_forwards_reason() {
     });
 }
 
+#[cfg_attr(miri, ignore)] // ponytail: Miri cannot emulate git subprocess (fork)
 #[test]
 fn list_project_file_references_returns_gitignore_aware_matches() {
     let dir = tempfile::TempDir::new().expect("tempdir");

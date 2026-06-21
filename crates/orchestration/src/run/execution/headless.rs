@@ -66,6 +66,7 @@ where
             pending_engine_reverts,
             node_interrupts,
             context_window_sizes: BTreeMap::new(),
+            mcp: Default::default(),
         },
         event_tx,
         action_rx,
@@ -123,11 +124,15 @@ where
 
         if let ExecutionEvent::NodeAwaitingInput { node_id, .. } = &event {
             if awaiting_input {
-                let position = manual_inputs
+                let Some(position) = manual_inputs
                     .iter()
                     .position(|next| next.node_id == *node_id)
-                    .expect("awaiting input matched queue");
-                let input = manual_inputs.remove(position).expect("input queue entry");
+                else {
+                    return Err(WorkflowExecutionError::MissingManualInput(node_id.clone()));
+                };
+                let Some(input) = manual_inputs.remove(position) else {
+                    return Err(WorkflowExecutionError::MissingManualInput(node_id.clone()));
+                };
                 action_tx
                     .send(ExecutionAction::ProvideInput {
                         node_id: input.node_id.clone(),
@@ -141,13 +146,18 @@ where
         }
         if let ExecutionEvent::ToolApprovalRequested { request } = &event {
             if awaiting_approval {
-                let position = approvals
-                    .iter()
-                    .position(|next| {
-                        next.approval_id.is_empty() || next.approval_id == request.approval_id
-                    })
-                    .expect("awaiting approval matched queue");
-                let approval = approvals.remove(position).expect("approval queue entry");
+                let Some(position) = approvals.iter().position(|next| {
+                    next.approval_id.is_empty() || next.approval_id == request.approval_id
+                }) else {
+                    return Err(WorkflowExecutionError::MissingApproval(
+                        request.approval_id.clone(),
+                    ));
+                };
+                let Some(approval) = approvals.remove(position) else {
+                    return Err(WorkflowExecutionError::MissingApproval(
+                        request.approval_id.clone(),
+                    ));
+                };
                 let approval_id = if approval.approval_id.is_empty() {
                     request.approval_id.clone()
                 } else {
