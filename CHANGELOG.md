@@ -2,8 +2,17 @@
 
 ## Unreleased
 
+### Changed
+
+- **MCP external tools plan:** slim [`2026-06-15-mcp-external-tools.md`](docs/superpowers/plans/2026-06-15-mcp-external-tools.md) — drop `external.rs`, hand-rolled stdio, global MCP manager, and fictional `ToolTier::Exec`; align with `Read`/`Write` tiers, run-scoped `rmcp` clients in `drive.rs`, and settings-only CRUD + probe IPC.
+- **Settings Providers page:** consolidate Authentication, Provider, Reasoning, and Models into one Providers settings page with readiness status, grouped subsections, and a save bar; nav is now Appearance + Providers; fix inline-form button sizing on Add model row; compact model chips with outer spacing.
+- **Sidebar zoom hint:** remove hover popup showing zoom percentage on Shortcuts/Settings footer; ⌘/Ctrl +/−/0 shortcuts unchanged.
+
 ### Added
 
+- **Sidebar projects collapse:** Projects section chevron toggle matches workflows — collapse/hide project folders; preference persists in localStorage.
+- **Legal entrypoints:** MIT `LICENSE`, `SECURITY.md`, and root `CONTRIBUTING.md` pointing to `docs/contributing/`.
+- **Public release readiness plan:** [`docs/superpowers/plans/2026-06-20-public-release-readiness.md`](docs/superpowers/plans/2026-06-20-public-release-readiness.md) — phased checklist for settings consolidation, UI shell polish, Bedrock/MCP, CI/docs/GTM before public launch.
 - **Chat parallel hint:** when multiple agents run in parallel on the All view, show a status banner above the composer bar directing users to select a node to view and reply.
 - **Orchestration headless E2E:** `MockAiStack` test helper (`crates/orchestration/tests/support/`) pops scripted `AiPort` responses from a stack; `workflow_e2e.rs` covers happy path, auto-retry, missing input/approval, exhausted stack, and interrupt during slow tools — no real providers.
 - **Roadmap:** [#38 In-app file viewer from node output](docs/ROADMAP.md#in-app-file-viewer-from-node-output) — clickable file references in node/chat output open paths in an in-app reader (syntax highlight, markdown, line ranges); Tier 5, further out.
@@ -11,17 +20,22 @@
 
 ### Fixed
 
+- **Settings field grid controls:** match TextSelect dropdown height to adjacent text inputs in Connection and tool config grids.
+- **TextSelect scroll:** scrolling long option lists no longer closes the dropdown; ancestor scroll still dismisses the menu.
+- **Schedule workflow picker theme:** node-picker list options use semantic surface tokens in dark mode (fixes low-contrast white-on-grey rows); long workflow names truncate to a single line.
 - **Search missing path:** `search` on a non-existent literal path now returns `[not_found]` instead of success with "No matches found"; headless acceptance `search_missing_path_surfaces_not_found_not_empty_success` guards regression.
 - **Workflow switch chat restore:** replace run-state snapshots on workflow switch instead of cross-workflow `reconcile` merges; refresh from backend when returning to the live-run workflow; canvas node clicks open Chat and route to the node's transcript (live pick or settled filter).
 - **Malformed submit_output:** when the model calls `openflow_submit_node_output` with only `assistant_message` (no `output` wrapper), salvage that prose into the node output schema instead of failing after retries; retry feedback now includes the node's output schema.
 - **Malformed submit_output incidents:** each failed AI invoke now emits `AiInvokeFailed` telemetry and persists an `ai.malformed_submit_output` incident (category `ai_invoke`, retryable) to `{data_local}/openflow/incidents.jsonl` via the existing incident recorder.
 - **Schedule topbar title:** show "Schedule" in the app header on the schedule screen instead of the previously active workflow name.
-- **Agents screen background:** match schedule's `surface-ground` fill instead of the main-shell gradient.
+- **Agents screen background:** agents list and detail panels fill the viewport height so `surface-ground` extends to the bottom instead of exposing the main-shell gradient.
 - **Chat send flash:** instant auto-scroll on new messages, stable composer footer during kickoff, and no fade-in on user bubbles — panel no longer jumps on send.
 - **Idle chat kickoff:** skip entrypoint chat record for manual (`auto_start: false`) root nodes — the same text is recorded once when the UI auto-submits to the awaiting node.
 
 ### Changed
 
+- **Chat item spacing:** uniform `--chat-item-gap` between tool lines, thinking rows, and messages inside a segment (removes stacked per-type padding).
+- **Chat tool lines:** tool invocations show text-only verb labels (`Reading` → `Read`) without status icons; thinking rows collapse to `Thinking` / `Thought for a while` with expand for full reasoning.
 - **UI module layout:** `components/` and `lib/` roots now contain only subdirectories plus a root `index.ts` barrel; 14 generic components moved into per-component folders; all lib modules moved into folder barrels; `@/*` path alias added for new imports.
 - **Chat segment spacing:** hairline dividers and `--chat-segment-gap` rhythm between agent sections; translucent sticky headers replace opaque grey bands; completed status demoted to muted text; focus flash uses header accent bar.
 - **Roadmap:** [#37 Agent prompt skill references](#agent-prompt-skill-references) — `/skill` tokens in saved-agent and node system/task prompts with expansion at run-start (mirrors composer slash skills).

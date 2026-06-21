@@ -94,7 +94,9 @@ import {
   writeStoredRightPanelHidden,
 } from "../lib/panelVisibility";
 import {
+  readProjectsSectionHidden,
   readWorkflowsSectionHidden,
+  writeProjectsSectionHidden,
   writeWorkflowsSectionHidden,
 } from "../lib/workflowsSectionVisibility";
 import { resolveCommittedNodeLabel } from "../lib/nodeLabel";
@@ -219,6 +221,10 @@ export function AppProvider(props: ParentProps) {
     readWorkflowsSectionHidden(globalThis.localStorage),
   );
   const workflowsSectionExpanded = createMemo(() => !workflowsSectionHidden());
+  const [projectsSectionHidden, setProjectsSectionHidden] = createSignal(
+    readProjectsSectionHidden(globalThis.localStorage),
+  );
+  const projectsSectionExpanded = createMemo(() => !projectsSectionHidden());
   const [workflowSettingsOpen, setWorkflowSettingsOpen] = createSignal(false);
   const [workflowAuthoringSessionId, setWorkflowAuthoringSessionId] = createSignal<
     string | null
@@ -866,6 +872,7 @@ export function AppProvider(props: ParentProps) {
       if (projectId) {
         const nextProjects = await desktop.assignWorkflowToProject(projectId, workflow.id);
         setProjects(nextProjects);
+        revealProjectsSection();
         expandProject(projectId);
         setSelectedProjectId(projectId);
       }
@@ -915,6 +922,7 @@ export function AppProvider(props: ParentProps) {
       if (!selected || Array.isArray(selected)) return;
       const project = await desktop.createProjectFromDirectory(selected);
       setProjects([...projects(), project]);
+      revealProjectsSection();
       setSelectedProjectId(project.id);
       setExpandedProjectIds((current) => {
         const next = new Set(current);
@@ -1129,6 +1137,19 @@ export function AppProvider(props: ParentProps) {
     const next = !workflowsSectionExpanded();
     setWorkflowsSectionHidden(!next);
     writeWorkflowsSectionHidden(globalThis.localStorage, !next);
+  };
+
+  const revealProjectsSection = () => {
+    if (!projectsSectionExpanded()) {
+      setProjectsSectionHidden(false);
+      writeProjectsSectionHidden(globalThis.localStorage, false);
+    }
+  };
+
+  const handleToggleProjectsSection = () => {
+    const next = !projectsSectionExpanded();
+    setProjectsSectionHidden(!next);
+    writeProjectsSectionHidden(globalThis.localStorage, !next);
   };
 
   const updateCurrentNode = (mutator: (node: Workflow["nodes"][number]) => void) => {
@@ -2222,6 +2243,8 @@ export function AppProvider(props: ParentProps) {
     handleToggleRightPanel,
     workflowsSectionExpanded,
     handleToggleWorkflowsSection,
+    projectsSectionExpanded,
+    handleToggleProjectsSection,
   };
 
   return <AppContext.Provider value={value}>{props.children}</AppContext.Provider>;

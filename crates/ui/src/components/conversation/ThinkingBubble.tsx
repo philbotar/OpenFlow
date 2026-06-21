@@ -15,12 +15,8 @@ export function ThinkingBubble(allProps: ThinkingBubbleProps) {
   const content = createMemo(() =>
     displayChatContent(local.message.role, local.message.content),
   );
-  const preview = createMemo(() => {
-    const text = content().replace(/\s+/g, " ").trim();
-    if (!text) return "";
-    const limit = 120;
-    return text.length > limit ? `${text.slice(0, limit)}…` : text;
-  });
+  const label = () =>
+    local.message.streaming ? "Thinking" : "Thought for a while";
 
   return (
     <Show when={content().trim()}>
@@ -36,17 +32,8 @@ export function ThinkingBubble(allProps: ThinkingBubbleProps) {
           aria-expanded={expanded()}
           onClick={() => setExpanded((value) => !value)}
         >
-          <span class="tool-line-status tool-line-status--muted" aria-hidden="true">
-            {local.message.streaming ? "•" : ""}
-          </span>
           <span class="tool-line-name">
-            <span class="tool-line-name-text">
-              thinking{local.message.streaming ? "…" : ""}
-              <Show when={preview()}>
-                {" "}
-                <span class="tool-line-target">{preview()}</span>
-              </Show>
-            </span>
+            <span class="tool-line-name-text">{label()}</span>
             <span
               class="tool-line-chevron"
               classList={{ "tool-line-chevron--expanded": expanded() }}

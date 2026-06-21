@@ -1,7 +1,7 @@
 import { createSignal, Show } from "solid-js";
 import ChevronRight from "lucide-solid/icons/chevron-right";
 import type { ToolCallStatus } from "../../lib/types";
-import { toolBubbleRowStatusText, toolBubbleTargetText, formatToolDisplayName } from "./toolBubbleState";
+import { toolBubbleLineText } from "./toolBubbleState";
 
 export interface ToolBubbleProps {
   toolName: string;
@@ -13,33 +13,10 @@ export interface ToolBubbleProps {
   streaming?: boolean;
 }
 
-function statusIcon(status: ToolCallStatus): { class: string; label: string } {
-  switch (status) {
-    case "proposed":
-      return { class: "tool-line-status--muted", label: "" };
-    case "running":
-      return { class: "tool-line-status--running", label: "" };
-    case "completed":
-      return { class: "tool-line-status--success", label: "✓" };
-    case "failed":
-      return { class: "tool-line-status--error", label: "✗" };
-    case "aborted":
-      return { class: "tool-line-status--error", label: "✗" };
-    case "blocked":
-      return { class: "tool-line-status--muted", label: "⊘" };
-    case "awaiting_approval":
-      return { class: "tool-line-status--warning", label: "⏳" };
-    default:
-      return { class: "tool-line-status--muted", label: "" };
-  }
-}
-
 export function ToolBubble(props: ToolBubbleProps) {
   const [expanded, setExpanded] = createSignal(false);
-  const intentText = () => props.intent?.trim() ?? "";
-  const targetText = () => intentText() || toolBubbleTargetText(props.toolName, props.arguments);
-  const rowStatusText = () => toolBubbleRowStatusText(props.status);
-  const icon = () => statusIcon(props.status);
+  const lineText = () =>
+    toolBubbleLineText(props.toolName, props.status, props.arguments, props.intent);
   const hasOutput = () => Boolean(props.output?.trim());
   const expandable = () => hasOutput() || props.streaming;
   const previewText = () => {
@@ -53,6 +30,7 @@ export function ToolBubble(props: ToolBubbleProps) {
       class="tool-line"
       classList={{ "tool-line--expandable": expandable() }}
       data-tool-name={props.toolName}
+      data-status={props.status}
       data-streaming={props.streaming ? "true" : undefined}
     >
       <div
@@ -63,19 +41,8 @@ export function ToolBubble(props: ToolBubbleProps) {
           }
         }}
       >
-        <span class={`tool-line-status ${icon().class}`}>{icon().label}</span>
         <span class="tool-line-name">
-          <span class="tool-line-name-text">
-            {formatToolDisplayName(props.toolName)}
-            <Show when={targetText()}>
-              {" "}
-              <span class="tool-line-target">{targetText()}</span>
-            </Show>
-            <Show when={!targetText() && rowStatusText()}>
-              {" "}
-              {rowStatusText()}
-            </Show>
-          </span>
+          <span class="tool-line-name-text">{lineText()}</span>
           <Show when={expandable()}>
             <button
               type="button"

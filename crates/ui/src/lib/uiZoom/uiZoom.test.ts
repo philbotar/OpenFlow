@@ -2,7 +2,6 @@ import { describe, expect, test } from "vitest";
 import {
   clampUiZoom,
   DEFAULT_UI_ZOOM,
-  formatUiZoomLabel,
   MAX_UI_ZOOM,
   MIN_UI_ZOOM,
   readStoredUiZoom,
@@ -49,9 +48,4 @@ describe("uiZoom helpers", () => {
     expect(storage.get(UI_ZOOM_STORAGE_KEY)).toBe(String(MIN_UI_ZOOM));
   });
 
-  test("formatUiZoomLabel renders rounded percentages", () => {
-    expect(formatUiZoomLabel(1)).toBe("100%");
-    expect(formatUiZoomLabel(0.9)).toBe("90%");
-    expect(formatUiZoomLabel(1.37)).toBe("140%");
-  });
 });

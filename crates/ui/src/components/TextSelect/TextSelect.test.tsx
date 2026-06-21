@@ -6,11 +6,14 @@ import { TextSelect } from "./TextSelect";
 
 describe("TextSelect", () => {
   let container: HTMLDivElement;
+  let scrollHost: HTMLDivElement | undefined;
   let dispose: () => void;
 
   afterEach(() => {
     dispose?.();
     container?.remove();
+    scrollHost?.remove();
+    scrollHost = undefined;
   });
 
   test("opens below trigger and selects a value", () => {
@@ -43,5 +46,58 @@ describe("TextSelect", () => {
 
     expect(value()).toBe("read_only");
     expect(container.querySelector(".text-select-menu")).toBeNull();
+  });
+
+  test("keeps menu open when scrolling inside the listbox", () => {
+    const manyOptions = Array.from({ length: 12 }, (_, index) => ({
+      value: `option-${index}`,
+      label: `Option ${index}`,
+    }));
+    container = document.createElement("div");
+    document.body.append(container);
+    dispose = render(
+      () => <TextSelect value="option-0" options={manyOptions} />,
+      container,
+    );
+
+    const trigger = container.querySelector(".text-select-trigger") as HTMLButtonElement;
+    trigger.click();
+
+    const menu = container.querySelector(".text-select-menu") as HTMLUListElement;
+    expect(menu).not.toBeNull();
+    menu.dispatchEvent(new Event("scroll", { bubbles: false }));
+
+    expect(container.querySelector(".text-select-menu")).not.toBeNull();
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  test("closes menu when an ancestor outside the root scrolls", () => {
+    container = document.createElement("div");
+    scrollHost = document.createElement("div");
+    scrollHost.style.height = "100px";
+    scrollHost.style.overflow = "auto";
+    scrollHost.append(container);
+    document.body.append(scrollHost);
+    dispose = render(
+      () => (
+        <TextSelect
+          value="a"
+          options={[
+            { value: "a", label: "A" },
+            { value: "b", label: "B" },
+          ]}
+        />
+      ),
+      container,
+    );
+
+    const trigger = container.querySelector(".text-select-trigger") as HTMLButtonElement;
+    trigger.click();
+    expect(container.querySelector(".text-select-menu")).not.toBeNull();
+
+    scrollHost.dispatchEvent(new Event("scroll", { bubbles: false }));
+
+    expect(container.querySelector(".text-select-menu")).toBeNull();
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
   });
 });

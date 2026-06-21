@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  PROJECTS_SECTION_STORAGE_KEY,
   WORKFLOWS_SECTION_STORAGE_KEY,
+  readProjectsSectionHidden,
   readWorkflowsSectionHidden,
+  writeProjectsSectionHidden,
   writeWorkflowsSectionHidden,
 } from ".";
 
@@ -101,5 +104,39 @@ describe("WORKFLOWS_SECTION_STORAGE_KEY", () => {
     expect(WORKFLOWS_SECTION_STORAGE_KEY).toBe(
       "openflow.workflowsSectionHidden",
     );
+  });
+});
+
+describe("readProjectsSectionHidden", () => {
+  it("returns false when storage is null", () => {
+    expect(readProjectsSectionHidden(null)).toBe(false);
+  });
+
+  it("returns true when stored value is 'true'", () => {
+    const storage = {
+      getItem: () => "true",
+      setItem: () => undefined,
+    };
+    expect(readProjectsSectionHidden(storage)).toBe(true);
+  });
+});
+
+describe("writeProjectsSectionHidden", () => {
+  it("persists hidden state", () => {
+    let stored: string | undefined;
+    const storage = {
+      getItem: () => stored ?? null,
+      setItem: (_key: string, value: string) => {
+        stored = value;
+      },
+    };
+    writeProjectsSectionHidden(storage, true);
+    expect(readProjectsSectionHidden(storage)).toBe(true);
+  });
+});
+
+describe("PROJECTS_SECTION_STORAGE_KEY", () => {
+  it("uses openflow.projectsSectionHidden key", () => {
+    expect(PROJECTS_SECTION_STORAGE_KEY).toBe("openflow.projectsSectionHidden");
   });
 });

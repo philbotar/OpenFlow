@@ -91,6 +91,7 @@ export interface AppContextValue {
   pickedLiveNodeId: Accessor<NodeId | null>;
   chatSegmentOrder: Accessor<NodeId[]>;
   workflowsSectionExpanded: Accessor<boolean>;
+  projectsSectionExpanded: Accessor<boolean>;
   terminalSessions: Accessor<TerminalStart[]>;
   activeTerminalSessionId: Accessor<string | null>;
   terminalStarting: Accessor<boolean>;
@@ -231,6 +232,7 @@ export interface AppContextValue {
 
   // ── Workflow settings handlers ────────────────────────────────────────────
   handleToggleWorkflowsSection: () => void;
+  handleToggleProjectsSection: () => void;
   handleToggleWorkflowSettings: () => void;
   handleToggleRightPanel: () => void;
   updateActiveWorkflowSettings: (mutator: (settings: Workflow["settings"]) => void) => void;

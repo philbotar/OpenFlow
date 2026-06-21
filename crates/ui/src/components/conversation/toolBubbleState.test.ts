@@ -4,6 +4,7 @@ import {
   formatToolDisplayName,
   resolveToolSummary,
   toolBubbleIntentText,
+  toolBubbleLineText,
   toolBubbleRowStatusText,
   toolBubbleTargetText,
 } from "./toolBubbleState";
@@ -139,6 +140,50 @@ describe("toolBubbleTargetText", () => {
 
   it("returns empty when args are missing", () => {
     expect(toolBubbleTargetText("read", null)).toBe("");
+  });
+});
+
+describe("toolBubbleLineText", () => {
+  it("uses active verb while running", () => {
+    expect(
+      toolBubbleLineText("read", "running", { path: "README.md" }),
+    ).toBe("Reading README.md");
+  });
+
+  it("uses done verb when completed", () => {
+    expect(
+      toolBubbleLineText("read", "completed", { path: "README.md" }),
+    ).toBe("Read README.md");
+  });
+
+  it("appends failure suffix without icon", () => {
+    expect(
+      toolBubbleLineText("read", "failed", { path: "README.md" }),
+    ).toBe("Read failed README.md");
+  });
+
+  it("uses intent over target args", () => {
+    expect(
+      toolBubbleLineText("read", "completed", { path: "README.md" }, "inspect config"),
+    ).toBe("Read inspect config");
+  });
+
+  it("falls back for unknown tools", () => {
+    expect(toolBubbleLineText("custom_tool", "running", null)).toBe("Running custom_tool");
+    expect(toolBubbleLineText("custom_tool", "completed", null)).toBe("Ran custom_tool");
+  });
+
+  it("shows ellipsis when proposed without target", () => {
+    expect(toolBubbleLineText("read", "proposed", null)).toBe("Reading…");
+  });
+
+  it("maps search to Grepping/Grepped", () => {
+    expect(
+      toolBubbleLineText("search", "running", { pattern: "TODO", paths: "crates/ui" }),
+    ).toBe("Grepping TODO in crates/ui");
+    expect(
+      toolBubbleLineText("search", "completed", { pattern: "TODO", paths: "crates/ui" }),
+    ).toBe("Grepped TODO in crates/ui");
   });
 });
 

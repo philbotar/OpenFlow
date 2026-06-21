@@ -76,14 +76,21 @@ export function TextSelect(props: TextSelectProps) {
       close();
     };
 
+    const onScroll = (event: Event) => {
+      const root = rootRef;
+      const target = event.target;
+      if (root && target instanceof Node && root.contains(target)) return;
+      close();
+    };
+
     const onDismiss = () => close();
 
     document.addEventListener("mousedown", onDocumentMouseDown);
-    window.addEventListener("scroll", onDismiss, true);
+    window.addEventListener("scroll", onScroll, true);
     window.addEventListener("resize", onDismiss);
     onCleanup(() => {
       document.removeEventListener("mousedown", onDocumentMouseDown);
-      window.removeEventListener("scroll", onDismiss, true);
+      window.removeEventListener("scroll", onScroll, true);
       window.removeEventListener("resize", onDismiss);
     });
   });

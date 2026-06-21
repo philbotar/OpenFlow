@@ -1077,6 +1077,44 @@ describe("App settings persistence", () => {
     }
   });
 
+  test("settings nav exposes only Appearance and Providers", async () => {
+    const { container, dispose } = await mountApp(
+      makeBootstrapPayload([makeWorkflow("workflow-1", "Workflow One")]),
+    );
+
+    try {
+      await openSettingsScreen(container);
+      const labels = [...container.querySelectorAll('.settings-nav-button')].map(
+        (element) => element.textContent?.trim(),
+      );
+      expect(labels).toEqual(["Appearance", "Providers"]);
+    } finally {
+      dispose();
+    }
+  });
+
+  test("provider fields are visible together on Providers page", async () => {
+    const { container, dispose } = await mountApp(
+      makeBootstrapPayload([makeWorkflow("workflow-1", "Workflow One")]),
+    );
+
+    try {
+      await openSettingsScreen(container);
+      settingsNavButton(container, "Providers").click();
+      await flush();
+
+      expect(container.querySelector('input[type="password"]')).not.toBeNull();
+      expect(container.querySelector('.providers-section .text-select-trigger')).not.toBeNull();
+      expect(
+        [...container.querySelectorAll("button")].some(
+          (element) => element.textContent === "Save settings",
+        ),
+      ).toBe(true);
+    } finally {
+      dispose();
+    }
+  });
+
   test("loads and saves provider API keys per provider", async () => {
     const { container, dispose } = await mountApp(
       makeBootstrapPayload([makeWorkflow("workflow-1", "Workflow One")]),
@@ -1085,7 +1123,7 @@ describe("App settings persistence", () => {
     try {
       await openSettingsScreen(container);
 
-      settingsNavButton(container, "Authentication").click();
+      settingsNavButton(container, "Providers").click();
       await flush();
 
       const apiKeyInput = await waitForElement(
@@ -1094,20 +1132,14 @@ describe("App settings persistence", () => {
       ) as HTMLInputElement;
       expect(apiKeyInput.value).toBe("stored-openai-key");
 
-      settingsNavButton(container, "Provider").click();
-      await flush();
-
       const providerTrigger = container.querySelector(
-        ".settings-section .text-select-trigger",
+        ".providers-section .text-select-trigger",
       ) as HTMLButtonElement;
       providerTrigger.click();
       const compatibleOption = [...container.querySelectorAll(".text-select-option")].find(
         (element) => element.textContent === "Compatible",
       ) as HTMLButtonElement;
       compatibleOption.click();
-      await flush();
-
-      settingsNavButton(container, "Authentication").click();
       await flush();
 
       const compatibleApiKeyInput = await waitForElement(
@@ -1120,9 +1152,6 @@ describe("App settings persistence", () => {
 
       compatibleApiKeyInput.value = "updated-compatible-key";
       compatibleApiKeyInput.dispatchEvent(new Event("input", { bubbles: true }));
-      await flush();
-
-      settingsNavButton(container, "Models").click();
       await flush();
 
       const saveButton = Array.from(container.querySelectorAll("button")).find(
@@ -1386,10 +1415,10 @@ describe("App chat slash commands", () => {
       expect(container.querySelector(".thinking-bubble")).toBeNull();
       const thinkingLine = container.querySelector('.tool-line[data-tool-name="thinking"]');
       expect(thinkingLine).not.toBeNull();
-      expect(thinkingLine?.querySelector(".tool-line-name")?.textContent).toContain("thinking");
-      expect(thinkingLine?.querySelector(".tool-line-target")?.textContent).toContain(
-        "Agent prompt: You are a focused AI agent...",
+      expect(thinkingLine?.querySelector(".tool-line-name")?.textContent).toContain(
+        "Thought for a while",
       );
+      expect(thinkingLine?.querySelector(".tool-line-target")).toBeNull();
     } finally {
       dispose();
     }
@@ -1422,8 +1451,8 @@ describe("App chat slash commands", () => {
       const line = container.querySelector(".tool-line");
       expect(line).not.toBeNull();
       expect(line?.getAttribute("data-tool-name")).toBe("read");
-      expect(line?.querySelector(".tool-line-name")?.textContent).toContain("Read File");
-      expect(line?.querySelector(".tool-line-target")?.textContent).toBe("README.md");
+      expect(line?.querySelector(".tool-line-name")?.textContent).toContain("Read README.md");
+      expect(line?.querySelector(".tool-line-status")).toBeNull();
       expect(line?.querySelector(".tool-line-output")).toBeNull();
     } finally {
       dispose();

@@ -118,7 +118,7 @@ impl SettingsFacade {
             Err(ProviderConfigError::MissingApiKey { provider, env_var }) => ProviderReadiness {
                 ready: false,
                 provider,
-                message: format!("API key missing (set it in Settings or {env_var})"),
+                message: format!("API key missing"),
                 env_var,
             },
             Err(error) => ProviderReadiness {

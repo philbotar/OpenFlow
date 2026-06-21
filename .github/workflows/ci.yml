@@ -11,6 +11,8 @@ jobs:
   verify:
     name: Verify (blocking)
     runs-on: ubuntu-latest
+    env:
+      VERIFY_SHARE_TARGET: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -20,31 +22,44 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      - name: Install Rust nightly (public API check)
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: crates/ui/package-lock.json
+
+      - name: Install npm dependencies
+        run: npm ci --prefix crates/ui
+
       - name: Install cargo-deny
         uses: taiki-e/install-action@latest
         with:
-          cargo: cargo-deny
+          tool: cargo-deny
+
+      - name: Install cargo-machete
+        uses: taiki-e/install-action@latest
+        with:
+          tool: cargo-machete
+
+      - name: Install typos-cli
+        uses: taiki-e/install-action@latest
+        with:
+          tool: typos-cli
+
+      - name: Install cargo-public-api
+        uses: taiki-e/install-action@latest
+        with:
+          tool: cargo-public-api
 
       - name: Cache Rust build artifacts
         uses: swatinem/rust-cache@v2
 
-      - name: Check formatting
-        run: cargo fmt --all --check
-
-      - name: Clippy (workspace baseline)
-        run: cargo clippy --workspace --all-targets
-
-      - name: Architecture boundaries
-        run: ./scripts/check-architecture.sh
-
-      - name: Dependency audit
-        run: cargo deny check
-
-      - name: Version sync
-        run: cargo test -p workspace-checks --test version_sync --quiet
-
-      - name: Run tests
-        run: cargo test --workspace
+      - name: Run verification gate
+        run: ./scripts/verify.sh
 
   clippy_max:
     name: Clippy max (non-blocking)

@@ -19,10 +19,6 @@ export function zoomOutUi(currentZoom: number) {
   return clampUiZoom(currentZoom - UI_ZOOM_STEP);
 }
 
-export function formatUiZoomLabel(currentZoom: number) {
-  return `${Math.round(clampUiZoom(currentZoom) * 100)}%`;
-}
-
 export function readStoredUiZoom(storage: StorageLike) {
   const rawValue = storage?.getItem(UI_ZOOM_STORAGE_KEY);
   if (rawValue === null || rawValue === undefined) {

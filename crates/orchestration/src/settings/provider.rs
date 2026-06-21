@@ -48,7 +48,7 @@ impl ProviderEnv {
 pub enum ProviderConfigError {
     #[error("provider {provider} is not implemented")]
     UnsupportedProvider { provider: String },
-    #[error("{provider} API key missing (set it in Settings or {env_var})")]
+    #[error("{provider} API key missing")]
     MissingApiKey { provider: String, env_var: String },
 }
 

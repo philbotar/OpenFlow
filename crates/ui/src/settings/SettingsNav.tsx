@@ -1,9 +1,7 @@
-import { createMemo, For, Show } from "solid-js";
+import { For, Show } from "solid-js";
 import ChevronLeft from "lucide-solid/icons/chevron-left";
 import { useAppContext } from "../context/AppContext";
-import { isMacOS } from "../lib/utils";
-import { ICON_STROKE_WIDTH } from "../lib/utils";
-import { reasoningEffortOptions } from "../lib/workflow";
+import { isMacOS, ICON_STROKE_WIDTH } from "../lib/utils";
 import { SETTINGS_SECTIONS, type SettingsSectionId } from "./types";
 
 export function SettingsNav(props: {
@@ -11,14 +9,6 @@ export function SettingsNav(props: {
   onSelectSection: (section: SettingsSectionId) => void;
 }) {
   const ctx = useAppContext();
-  const showReasoning = createMemo(
-    () => reasoningEffortOptions(ctx.activeProfileMemo()).length > 0,
-  );
-  const visibleSections = createMemo(() =>
-    SETTINGS_SECTIONS.filter(
-      (section) => section.id !== "reasoning" || showReasoning(),
-    ),
-  );
 
   return (
     <nav
@@ -54,7 +44,7 @@ export function SettingsNav(props: {
         <div class="eyebrow">Settings</div>
       </div>
       <div class="settings-nav-list">
-        <For each={visibleSections()}>
+        <For each={SETTINGS_SECTIONS}>
           {(section) => (
             <button
               type="button"

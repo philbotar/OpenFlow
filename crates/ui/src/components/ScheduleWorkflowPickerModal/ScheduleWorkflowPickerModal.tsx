@@ -64,6 +64,7 @@ export function ScheduleWorkflowPickerModal(props: ScheduleWorkflowPickerModalPr
               <button
                 class="node-picker-option"
                 type="button"
+                title={workflow.name}
                 onClick={() => select(workflow.id)}
               >
                 <span class="node-picker-option-title">{workflow.name}</span>

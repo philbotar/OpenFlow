@@ -1,5 +1,20 @@
 import type { NodeId, ToolCallSummary, ToolCallStatus, WorkflowRunState } from "../../lib/types";
 
+const TOOL_VERBS: Record<string, { active: string; done: string }> = {
+  read: { active: "Reading", done: "Read" },
+  write: { active: "Writing", done: "Wrote" },
+  edit: { active: "Editing", done: "Edited" },
+  apply_patch: { active: "Patching", done: "Patched" },
+  bash: { active: "Running", done: "Ran" },
+  search: { active: "Grepping", done: "Grepped" },
+  find: { active: "Finding", done: "Found" },
+  ast_grep: { active: "Searching", done: "Searched" },
+  openflow_call_subagent: { active: "Calling subagent", done: "Called subagent" },
+  openflow_declare_subagents: { active: "Declaring subagents", done: "Declared subagents" },
+  openflow_submit_node_output: { active: "Submitting output", done: "Submitted output" },
+  openflow_request_user_input: { active: "Requesting input", done: "Requested input" },
+};
+
 const TOOL_DISPLAY_NAMES: Record<string, string> = {
   read: "Read File",
   write: "Write File",
@@ -125,6 +140,50 @@ export function toolBubbleTargetText(toolName: string, args: unknown): string {
         ""
       );
   }
+}
+
+function toolBubbleVerb(toolName: string, status: ToolCallStatus): string {
+  const verbs = TOOL_VERBS[toolName];
+  const active = status === "proposed" || status === "running" || status === "awaiting_approval";
+  if (verbs) {
+    return active ? verbs.active : verbs.done;
+  }
+  return active ? `Running ${toolName}` : `Ran ${toolName}`;
+}
+
+function toolBubbleFailureSuffix(status: ToolCallStatus): string {
+  switch (status) {
+    case "failed":
+      return " failed";
+    case "aborted":
+      return " aborted";
+    case "blocked":
+      return " blocked";
+    default:
+      return "";
+  }
+}
+
+/** Single-line chat label: verb + target, tense follows tool status. */
+export function toolBubbleLineText(
+  toolName: string,
+  status: ToolCallStatus,
+  args: unknown,
+  intent?: string | null,
+): string {
+  const target =
+    (typeof intent === "string" && intent.trim()) ||
+    toolBubbleTargetText(toolName, args);
+  let line = toolBubbleVerb(toolName, status);
+  line += toolBubbleFailureSuffix(status);
+  if (target) {
+    line += ` ${target}`;
+  } else if (status === "proposed") {
+    line += "…";
+  } else if (status === "awaiting_approval") {
+    line += " (awaiting approval)";
+  }
+  return line;
 }
 
 /** Status label for the collapsed tool row when no target is available yet. */

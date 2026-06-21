@@ -1,7 +1,6 @@
 import { For, Show } from "solid-js";
 import { useAppContext } from "../../context/AppContext";
 import { isMacOS, ICON_STROKE_WIDTH } from "../../lib/utils";
-import { formatUiZoomLabel as fmtZoom } from "../../lib/uiZoom";
 import ChevronRight from "lucide-solid/icons/chevron-right";
 import { ProjectFolderRow } from "./ProjectFolderRow";
 import { SidebarList } from "./SidebarList";
@@ -133,45 +132,66 @@ export function Sidebar() {
             </CollapsibleSection>
           </Show>
         </div>
-        <div class="sidebar-section-group sidebar-projects-section">
-          <div class="sidebar-section-header">
+        <div
+          class="sidebar-section-group sidebar-projects-section"
+          classList={{ "sidebar-projects-section--expanded": ctx.projectsSectionExpanded() }}
+        >
+          <div class="sidebar-section-header workflows-section-header">
             <div class="sidebar-section-label">Projects</div>
-            <SidebarIconButton
-              icon="plus"
-              label="Add project"
-              class="sidebar-section-action"
-              onClick={() => void ctx.handleAddProject()}
-            />
-          </div>
-          <div class="sidebar-projects-scroll">
-            <For each={ctx.projects()}>
-              {(project) => (
-                <ProjectFolderRow
-                  project={project}
-                  workflows={ctx.workflowsForProject(project)}
-                  expanded={ctx.isProjectExpanded(project.id)}
-                  selected={ctx.selectedProjectId() === project.id}
-                  activeWorkflowId={ctx.activeWorkflowId()}
-                  screen={ctx.screen()}
-                  editingWorkflowId={ctx.editingWorkflowId()}
-                  workflowNameDraft={ctx.workflowNameDraft()}
-                  onToggleExpand={() => ctx.handleToggleProjectExpanded(project.id)}
-                  onSelectProject={() => ctx.handleSelectProject(project.id)}
-                  onSelectWorkflow={(workflowId) => {
-                    ctx.handleSelectProject(project.id);
-                    ctx.handleSwitchWorkflow(workflowId);
-                  }}
-                  onRenameWorkflow={ctx.handleStartWorkflowNameEdit}
-                  onCreateWorkflow={() => void ctx.handleCreateWorkflow(project.id)}
-                  onAddExistingWorkflow={() => ctx.handleOpenAssignWorkflowPicker(project.id)}
-                  setWorkflowNameInputRef={ctx.setWorkflowNameInputRef}
-                  setWorkflowNameDraft={ctx.setWorkflowNameDraft}
-                  onWorkflowNameCommit={ctx.handleWorkflowNameCommit}
-                  onWorkflowNameKeyDown={ctx.handleWorkflowNameKeyDown}
+            <div class="sidebar-section-trailing">
+              <button
+                type="button"
+                class="workflows-section-chevron-btn"
+                onClick={ctx.handleToggleProjectsSection}
+                aria-expanded={ctx.projectsSectionExpanded()}
+                aria-label="Toggle projects section"
+              >
+                <ChevronRight
+                  class="workflows-section-chevron"
+                  aria-hidden="true"
+                  absoluteStrokeWidth
+                  strokeWidth={ICON_STROKE_WIDTH}
                 />
-              )}
-            </For>
+              </button>
+              <SidebarIconButton
+                icon="plus"
+                label="Add project"
+                class="sidebar-section-action"
+                onClick={() => void ctx.handleAddProject()}
+              />
+            </div>
           </div>
+          <CollapsibleSection open={ctx.projectsSectionExpanded()} class="sidebar-projects-collapsible">
+            <div class="sidebar-projects-scroll">
+              <For each={ctx.projects()}>
+                {(project) => (
+                  <ProjectFolderRow
+                    project={project}
+                    workflows={ctx.workflowsForProject(project)}
+                    expanded={ctx.isProjectExpanded(project.id)}
+                    selected={ctx.selectedProjectId() === project.id}
+                    activeWorkflowId={ctx.activeWorkflowId()}
+                    screen={ctx.screen()}
+                    editingWorkflowId={ctx.editingWorkflowId()}
+                    workflowNameDraft={ctx.workflowNameDraft()}
+                    onToggleExpand={() => ctx.handleToggleProjectExpanded(project.id)}
+                    onSelectProject={() => ctx.handleSelectProject(project.id)}
+                    onSelectWorkflow={(workflowId) => {
+                      ctx.handleSelectProject(project.id);
+                      ctx.handleSwitchWorkflow(workflowId);
+                    }}
+                    onRenameWorkflow={ctx.handleStartWorkflowNameEdit}
+                    onCreateWorkflow={() => void ctx.handleCreateWorkflow(project.id)}
+                    onAddExistingWorkflow={() => ctx.handleOpenAssignWorkflowPicker(project.id)}
+                    setWorkflowNameInputRef={ctx.setWorkflowNameInputRef}
+                    setWorkflowNameDraft={ctx.setWorkflowNameDraft}
+                    onWorkflowNameCommit={ctx.handleWorkflowNameCommit}
+                    onWorkflowNameKeyDown={ctx.handleWorkflowNameKeyDown}
+                  />
+                )}
+              </For>
+            </div>
+          </CollapsibleSection>
         </div>
       </SidebarList>
       <div class="sidebar-footer">
@@ -189,9 +209,6 @@ export function Sidebar() {
               ctx.navigateToScreen("settings", "nav-forward");
             }}
           />
-          <div class="settings-nav-popup" aria-hidden="true">
-            Zoom {fmtZoom(ctx.uiZoom())}
-          </div>
         </div>
       </div>
     </aside>
