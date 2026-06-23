@@ -45,7 +45,7 @@ jobs:
         run: ./scripts/verify-ci.sh
 
   miri:
-    name: Miri (engine UB)
+    name: Miri (engine + orchestration UB)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -64,5 +64,5 @@ jobs:
           cache-on-failure: true
           shared-key: miri
 
-      - name: Test engine with Miri
+      - name: Test with Miri
         run: ./scripts/miri.sh

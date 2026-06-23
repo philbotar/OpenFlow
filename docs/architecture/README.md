@@ -11,6 +11,7 @@ architecture/
 ├── contract.md                  # Layer responsibilities and dependency rules (source of truth)
 ├── arch-check-rules.toml        # CI architecture rules (consumed by scripts/check-architecture.sh)
 ├── threading-concurrency.md     # Tokio runtimes, async tasks, blocking I/O risks
+├── run-persistence.md           # Durable run storage, checkpoints, replay vs resume
 └── diagrams/
     ├── README.md
     ├── layers-current-vs-target.mmd
@@ -24,6 +25,7 @@ architecture/
 3. [`arch-check-rules.toml`](arch-check-rules.toml) — Tier 2 CI rules (Cargo graph + forbidden imports).
 4. [`diagrams/layers-current-vs-target.mmd`](diagrams/layers-current-vs-target.mmd) — visual current vs target seams.
 5. [`threading-concurrency.md`](threading-concurrency.md) — when changing run lifecycle, I/O, or parallelism.
+6. [`run-persistence.md`](run-persistence.md) — durable run records, checkpoints, replay, and resume after restart.
 
 ## Layer Stack
 

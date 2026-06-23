@@ -1,6 +1,6 @@
 # Architecture Contract
 
-Step-through uses **Hexagonal Architecture with Layers** — nested ports-and-adapters where each layer is both an adapter (for the layer above) and a provider of services (to the layer below).
+OpenFlow uses **Hexagonal Architecture with Layers** — nested ports-and-adapters where each layer is both an adapter (for the layer above) and a provider of services (to the layer below).
 
 ```
 ┌─────────────────────────────────────────────────┐
@@ -67,9 +67,10 @@ Step-through uses **Hexagonal Architecture with Layers** — nested ports-and-ad
 - **Scope:** Run lifecycle, session state, coordination, approval/input loops, event fanout; `ToolPortImpl` executes tools and subagents
 - **Sub-roles:**
   - `backend/` — composition root; wires services and adapters
-  - `{entity}/application/` — service; coordinates engine + ports
-  - `{entity}/adapters/` — repository; persistence and file I/O
-  - `adapters/infrastructure/` — drivers; tool/git/LSP execution
+  - `agent/`, `workflow/`, `project/`, `settings/`, `tool/` — flat entity folders with application/domain logic
+  - `run/` — run coordination, execution host, persistence policy, and projected run state
+  - `adapters/storage/` — concrete JSON/file persistence implementations
+  - `adapters/tool_impl/` and `adapters/infrastructure/` — concrete tool, git, LSP, and other I/O drivers
 - **Public interface:** `AppBackend` — façade that Desktop calls
 - **Dependencies:** `engine` + `providers`, no upward
 
@@ -115,7 +116,7 @@ Step-through uses **Hexagonal Architecture with Layers** — nested ports-and-ad
 - UI → Engine or Providers (bypass orchestration)
 - UI → Orchestration directly (go through Desktop)
 - Desktop → Engine or Providers (go through Orchestration)
-- Desktop → Orchestration internals (`{entity}/application/adapters/`); only `AppBackend` public façade
+- Desktop → Orchestration internals (`run/execution/`, entity folders, or adapters); only `AppBackend` public façade
 - Orchestration → UI or Desktop (upward)
 - Engine → anything outward (no imports of provider, orchestration, UI, desktop)
 - Providers → UI or Desktop
@@ -140,7 +141,7 @@ Checks run in CI via `./scripts/check-architecture.sh`. Rules live in [`arch-che
 3. **Orchestration domain folders** — `agent/`, `workflow/`, `project/`, `settings/`, `tool/` must not `use crate::adapters::`.
 4. **UI Tauri seam** — `@tauri-apps/*` imports only in `api.ts`, `port.ts`, and test mocks.
 
-4. **Orchestration domain store ban** — `agent/`, `workflow/`, `project/`, `settings/`, `tool/` must not `use crate::{agent_store, flow_store, …}`; depend on port traits; wire `File*Store` in `backend/`.
+5. **Orchestration domain store ban** — `agent/`, `workflow/`, `project/`, `settings/`, `tool/` must not `use crate::{agent_store, flow_store, ...}`; depend on port traits; wire `File*Store` in `backend/`.
 
 Deferred: `tool/` → `lsp` narrowing; `providers → engine` submodule allowlist. See `CONTEXT.md` → **Architecture check rollout**.
 
@@ -179,6 +180,23 @@ Each layer implements the layer above's "inbound port":
 - Orchestration implements Engine's requirements (which ports orchestration provides)
 
 This is **nested ports-and-adapters**, not pure hex-arc, but follows the same dependency-points-inward principle.
+
+## Development Lanes
+
+Classify non-trivial changes before editing. The lane decides which source docs, skills, and verification commands apply; it does not replace the architecture rules above.
+
+| Touched area | Lane | Primary source docs | Required local verification |
+| --- | --- | --- | --- |
+| `crates/engine/**` | Engine semantics | `crates/engine/AGENTS.md`, this contract, `docs/glossary.md` | `cargo test -p engine`; add workflow acceptance when run behavior, prompts, ports, tools, or telemetry change |
+| `crates/orchestration/src/run/**` | Run orchestration | `crates/orchestration/AGENTS.md`, `docs/architecture/threading-concurrency.md`, `docs/contributing/testing-workflows.md` | `cargo test -p orchestration --lib`; `cargo test -p orchestration --test workflow_acceptance -- --nocapture` for execution behavior |
+| `crates/orchestration/src/{agent,workflow,project,settings,tool}/**` | Application/domain service | `crates/orchestration/AGENTS.md`, `docs/contributing/coding-patterns.md` | `cargo test -p orchestration --lib`; add focused store/backend tests when persistence or IPC-visible behavior changes |
+| `crates/orchestration/src/adapters/**` | Concrete adapter/I/O | `crates/orchestration/AGENTS.md`, this contract | Focused adapter tests plus `./scripts/check-architecture.sh` |
+| `crates/providers/**` | Provider adapter | `crates/providers/AGENTS.md` | `cargo test -p providers`; live smoke only when intentionally checking a real provider |
+| `crates/desktop/**` | Desktop IPC adapter | `crates/desktop/AGENTS.md` | `cargo test -p desktop`; update UI seam tests when payloads change |
+| `crates/ui/**` | UI/Desktop seam and presentation | `crates/ui/AGENTS.md` | `npm --prefix crates/ui run typecheck`; focused Vitest for changed helpers/components |
+| Cross-crate behavior | Full workflow slice | Root `AGENTS.md`, this contract, `docs/contributing/testing-workflows.md` | `./scripts/test-fast.sh --execution`; run `./scripts/verify.sh` before handoff |
+
+Agent-facing skills may summarize this table, but they must treat these docs as authoritative. If a skill, rule file, or memory contradicts this contract, update the secondary artifact rather than copying stale architecture facts forward.
 
 ## Change Review Checklist
 

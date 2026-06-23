@@ -14,7 +14,7 @@ export MIRIFLAGS="${MIRIFLAGS:--Zmiri-disable-isolation -Zmiri-ignore-leaks}"
 
 preflight_miri() {
 	if ! command -v rustup >/dev/null 2>&1; then
-		echo "error: rustup is required for Miri (https://rustcup.rs)" >&2
+		echo "error: rustup is required for Miri (https://rustup.rs)" >&2
 		exit 1
 	fi
 	if ! rustup +nightly component list --installed 2>&1 | grep -q '^miri'; then

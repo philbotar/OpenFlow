@@ -380,8 +380,25 @@ export interface McpServerConfig {
   enabled: boolean;
 }
 
+export interface McpDiscoveryRow {
+  id: string;
+  displayName: string;
+  command: string;
+  args: string[];
+  enabled: boolean;
+  source: string;
+  sourcePath: string;
+}
+
 export interface McpSettings {
   servers: McpServerConfig[];
+  discoverExternal?: boolean;
+  disabledDiscoveredIds?: string[];
+}
+
+export interface SettingsLoadPayload {
+  settings: AppSettings;
+  discoveredMcp: McpDiscoveryRow[];
 }
 
 export interface AppSettings {
@@ -467,6 +484,7 @@ export interface BootstrapPayload {
   projects?: Project[];
   skills: SkillSummary[];
   settings: AppSettings;
+  discoveredMcp?: McpDiscoveryRow[];
   runState: WorkflowRunState | null;
   runContinuable?: boolean;
   scheduleStatuses?: ScheduleStatus[];

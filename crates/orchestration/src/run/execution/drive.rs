@@ -50,7 +50,13 @@ pub(super) async fn drive_interactive_workflow<A>(
     };
 
     let mut tool_registry = ToolRegistry::new();
-    let mcp_clients = match crate::adapters::mcp::McpRunClients::connect(&mcp).await {
+    let effective_servers = crate::adapters::mcp::effective_mcp_servers(&mcp, &execution_cwd);
+    let effective_mcp = crate::settings::model::McpSettings {
+        servers: effective_servers,
+        discover_external: mcp.discover_external,
+        disabled_discovered_ids: mcp.disabled_discovered_ids.clone(),
+    };
+    let mcp_clients = match crate::adapters::mcp::McpRunClients::connect(&effective_mcp).await {
         Ok(clients) => clients,
         Err(error) => {
             send_or_log(&event_tx, ExecutionEvent::Error(error.to_string()));

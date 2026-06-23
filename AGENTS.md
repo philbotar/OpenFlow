@@ -216,7 +216,7 @@ Primary gate — run after changes:
 ./scripts/verify.sh
 ```
 
-Runs all steps (`fmt`, clippy-max `clippy`, `doc`, `test`, `public-api`, `machete`, `typos`, `ui-typecheck`, `ui-test`, `deny`, `arch`); prints one-line PASS/FAIL per step and a summary with repro commands. Optional `./scripts/verify.sh --deep` adds `mutants` and `miri` (engine undefined-behavior checks via `./scripts/miri.sh`). Filter steps: `./scripts/verify.sh fmt clippy`. `VERIFY_FAIL_FAST=1` stops on first failure.
+Runs all steps (`fmt`, clippy-max `clippy`, `doc`, `test`, `public-api`, `machete`, `typos`, `ui-typecheck`, `ui-test`, `deny`, `arch`); prints one-line PASS/FAIL per step and a summary with repro commands. Optional `./scripts/verify.sh --deep` adds `mutants` and `miri` (engine + orchestration UB via `./scripts/miri.sh`). Filter steps: `./scripts/verify.sh fmt clippy`. `VERIFY_FAIL_FAST=1` stops on first failure.
 
 For execution changes, also run:
 

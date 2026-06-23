@@ -349,6 +349,7 @@ function makeBootstrapPayload(
     projects,
     skills,
     settings: SETTINGS,
+    discoveredMcp: [],
     runState: null,
     scheduleStatuses: [],
   };

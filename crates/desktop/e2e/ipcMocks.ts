@@ -32,6 +32,7 @@ export const EMPTY_BOOTSTRAP = {
   projects: [],
   skills: [],
   settings: EMPTY_SETTINGS,
+  discoveredMcp: [],
   runState: null,
   runContinuable: false,
   scheduleStatuses: [],

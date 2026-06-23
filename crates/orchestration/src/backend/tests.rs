@@ -37,6 +37,7 @@ fn backend() -> (AppBackend, tempfile::TempDir) {
     (backend, dir)
 }
 
+#[cfg_attr(all(miri, target_os = "macos"), ignore)]
 #[test]
 fn start_workflow_authoring_returns_session_id() {
     let (backend, _dir) = backend();
@@ -44,6 +45,7 @@ fn start_workflow_authoring_returns_session_id() {
     assert!(!session_id.is_empty());
 }
 
+#[cfg_attr(all(miri, target_os = "macos"), ignore)]
 #[test]
 fn create_and_load_workflow_round_trips() {
     let (backend, _dir) = backend();
@@ -60,6 +62,7 @@ fn create_and_load_workflow_round_trips() {
     assert_eq!(loaded.nodes.len(), 1);
 }
 
+#[cfg_attr(all(miri, target_os = "macos"), ignore)]
 #[test]
 fn save_workflows_overwrites_store() {
     let (backend, _dir) = backend();
@@ -86,6 +89,7 @@ fn save_workflows_overwrites_store() {
     );
 }
 
+#[cfg_attr(all(miri, target_os = "macos"), ignore)]
 #[test]
 fn create_and_load_agents_round_trip() {
     let (backend, _dir) = backend();
@@ -101,6 +105,7 @@ fn create_and_load_agents_round_trip() {
     assert_eq!(loaded, vec![agent]);
 }
 
+#[cfg_attr(all(miri, target_os = "macos"), ignore)]
 #[test]
 fn save_agents_overwrites_store() {
     let (backend, _dir) = backend();
@@ -122,6 +127,7 @@ fn save_agents_overwrites_store() {
     assert_eq!(loaded, vec![first]);
 }
 
+#[cfg_attr(all(miri, target_os = "macos"), ignore)]
 #[test]
 fn create_agent_node_without_template_uses_default_node() {
     let (backend, _dir) = backend();
@@ -136,6 +142,7 @@ fn create_agent_node_without_template_uses_default_node() {
     assert_eq!(node.agent, engine::AgentNodeConfig::default());
 }
 
+#[cfg_attr(all(miri, target_os = "macos"), ignore)]
 #[test]
 fn create_agent_node_from_template_id_copies_agent_config() {
     let (backend, _dir) = backend();
@@ -174,6 +181,7 @@ fn create_agent_node_from_template_id_copies_agent_config() {
     );
 }
 
+#[cfg_attr(all(miri, target_os = "macos"), ignore)]
 #[test]
 fn provider_readiness_reports_missing_key() {
     let mut settings = AppSettings {
@@ -208,6 +216,7 @@ fn provider_readiness_reports_missing_key() {
     assert_eq!(readiness.env_var, "OPENAI_COMPATIBLE_API_KEY");
 }
 
+#[cfg_attr(all(miri, target_os = "macos"), ignore)]
 #[test]
 fn terminal_start_failure_records_incident() {
     use crate::incident::IncidentCategory;
@@ -232,6 +241,7 @@ fn terminal_start_failure_records_incident() {
     assert_eq!(incidents[0].category, IncidentCategory::Terminal);
 }
 
+#[cfg_attr(all(miri, target_os = "macos"), ignore)]
 #[test]
 fn backend_err_persists_incident_before_returning() {
     let (mut backend, dir) = backend();
@@ -247,6 +257,7 @@ fn backend_err_persists_incident_before_returning() {
     assert_eq!(incidents[0].code, "backend.no_active_run");
 }
 
+#[cfg_attr(all(miri, target_os = "macos"), ignore)]
 #[test]
 fn list_incident_summaries_projects_records() {
     use crate::incident::{IncidentCategory, IncidentRecord, IncidentScope, IncidentSeverity};
@@ -295,6 +306,7 @@ fn list_incident_summaries_projects_records() {
     assert_eq!(summary.node_id.as_deref(), Some("node-a"));
 }
 
+#[cfg_attr(all(miri, target_os = "macos"), ignore)]
 #[test]
 fn clear_resolved_incidents_removes_dismissed_records() {
     use crate::incident::{IncidentCategory, IncidentRecord, IncidentScope, IncidentSeverity};
@@ -348,6 +360,7 @@ fn clear_resolved_incidents_removes_dismissed_records() {
     assert_eq!(active[0].id, "keep");
 }
 
+#[cfg_attr(all(miri, target_os = "macos"), ignore)]
 #[test]
 fn start_run_returns_initial_state_and_manual_events() {
     let (backend, _dir) = backend();
@@ -386,6 +399,7 @@ fn start_run_returns_initial_state_and_manual_events() {
     });
 }
 
+#[cfg_attr(all(miri, target_os = "macos"), ignore)]
 #[test]
 fn start_run_with_entrypoint_skips_chat_for_manual_root() {
     let (backend, _dir) = backend();
@@ -421,6 +435,7 @@ fn start_run_with_entrypoint_skips_chat_for_manual_root() {
     });
 }
 
+#[cfg_attr(all(miri, target_os = "macos"), ignore)]
 #[test]
 fn start_run_with_entrypoint_records_chat_for_auto_start_root() {
     let (backend, _dir) = backend();
@@ -453,6 +468,7 @@ fn start_run_with_entrypoint_records_chat_for_auto_start_root() {
     });
 }
 
+#[cfg_attr(all(miri, target_os = "macos"), ignore)]
 #[test]
 fn stop_run_is_idempotent_when_inactive() {
     let (backend, _dir) = backend();
@@ -472,6 +488,7 @@ fn stop_run_is_idempotent_when_inactive() {
     });
 }
 
+#[cfg_attr(all(miri, target_os = "macos"), ignore)]
 #[test]
 fn stop_run_aborts_orphaned_active_session_without_handle() {
     let (backend, _dir) = backend();
@@ -496,6 +513,7 @@ fn stop_run_aborts_orphaned_active_session_without_handle() {
     });
 }
 
+#[cfg_attr(all(miri, target_os = "macos"), ignore)]
 #[test]
 fn apply_execution_event_ignores_events_after_run_stopped() {
     let (backend, _dir) = backend();
@@ -530,6 +548,7 @@ fn apply_execution_event_ignores_events_after_run_stopped() {
     });
 }
 
+#[cfg_attr(all(miri, target_os = "macos"), ignore)]
 #[test]
 fn submit_user_input_updates_snapshot_and_sends_action() {
     let (backend, _dir) = backend();
@@ -574,6 +593,7 @@ fn submit_user_input_updates_snapshot_and_sends_action() {
     });
 }
 
+#[cfg_attr(all(miri, target_os = "macos"), ignore)]
 #[test]
 fn submit_tool_approval_updates_snapshot_and_sends_action() {
     let (backend, _dir) = backend();
@@ -621,6 +641,7 @@ fn submit_tool_approval_updates_snapshot_and_sends_action() {
     });
 }
 
+#[cfg_attr(all(miri, target_os = "macos"), ignore)]
 #[test]
 fn copy_workflow_to_project_creates_independent_copy() {
     let (backend, dir) = backend();
@@ -676,6 +697,7 @@ fn copy_workflow_to_project_creates_independent_copy() {
     assert_eq!(copy.name, "Source Flow copy");
 }
 
+#[cfg_attr(all(miri, target_os = "macos"), ignore)]
 #[test]
 fn assign_workflow_to_project_round_trips() {
     let (backend, dir) = backend();
@@ -695,6 +717,7 @@ fn assign_workflow_to_project_round_trips() {
     assert_eq!(loaded[0].workflow_ids, vec![workflow.id.to_string()]);
 }
 
+#[cfg_attr(all(miri, target_os = "macos"), ignore)]
 #[test]
 fn rename_workflow_updates_list_and_load() {
     let (backend, _dir) = backend();
@@ -718,17 +741,24 @@ fn rename_workflow_updates_list_and_load() {
     );
 }
 
+#[cfg_attr(all(miri, target_os = "macos"), ignore)]
 #[test]
 fn load_and_save_settings_round_trip() {
     let (backend, _dir) = backend();
-    let mut settings = backend.load_settings().expect("load settings");
-    settings.active_provider = "openai".into();
+    let mut settings = backend.load_settings(None).expect("load settings");
+    settings.settings.active_provider = "openai".into();
 
-    backend.save_settings(&settings).expect("save settings");
-    let loaded = backend.load_settings().expect("reload settings");
-    assert_eq!(loaded.active_provider, settings.active_provider);
+    backend
+        .save_settings(&settings.settings)
+        .expect("save settings");
+    let loaded = backend.load_settings(None).expect("reload settings");
+    assert_eq!(
+        loaded.settings.active_provider,
+        settings.settings.active_provider
+    );
 }
 
+#[cfg_attr(all(miri, target_os = "macos"), ignore)]
 #[test]
 fn get_run_state_is_none_when_idle() {
     let (backend, _dir) = backend();
@@ -738,6 +768,7 @@ fn get_run_state_is_none_when_idle() {
     });
 }
 
+#[cfg_attr(all(miri, target_os = "macos"), ignore)]
 #[test]
 fn unassign_workflow_from_project_round_trips() {
     let (backend, dir) = backend();
@@ -758,6 +789,7 @@ fn unassign_workflow_from_project_round_trips() {
     assert!(projects[0].workflow_ids.is_empty());
 }
 
+#[cfg_attr(all(miri, target_os = "macos"), ignore)]
 #[test]
 fn delete_workflow_removes_independent_workflow() {
     let (backend, _dir) = backend();
@@ -777,6 +809,7 @@ fn delete_workflow_removes_independent_workflow() {
         .contains("not found"));
 }
 
+#[cfg_attr(all(miri, target_os = "macos"), ignore)]
 #[test]
 fn delete_workflow_removes_project_assigned_workflow() {
     let (backend, dir) = backend();
@@ -798,6 +831,7 @@ fn delete_workflow_removes_project_assigned_workflow() {
     assert!(backend.list_workflows().expect("list").is_empty());
 }
 
+#[cfg_attr(all(miri, target_os = "macos"), ignore)]
 #[test]
 fn submit_tool_approval_denied_forwards_reason() {
     let (backend, _dir) = backend();
@@ -871,6 +905,7 @@ fn list_project_file_references_returns_gitignore_aware_matches() {
     assert_eq!(refs[0].path, "src/main.rs");
 }
 
+#[cfg_attr(all(miri, target_os = "macos"), ignore)]
 #[test]
 fn read_project_file_references_returns_bounded_content() {
     let dir = tempfile::TempDir::new().expect("tempdir");
@@ -895,6 +930,7 @@ fn read_project_file_references_returns_bounded_content() {
     assert!(!refs[0].truncated);
 }
 
+#[cfg_attr(all(miri, target_os = "macos"), ignore)]
 #[test]
 fn saving_workflow_refreshes_schedule_statuses() {
     let (backend, _dir) = backend();
@@ -915,6 +951,7 @@ fn saving_workflow_refreshes_schedule_statuses() {
     assert!(statuses[0].next_run_at.is_some());
 }
 
+#[cfg_attr(all(miri, target_os = "macos"), ignore)]
 #[test]
 fn tick_schedules_advances_next_run_without_reload() {
     let (backend, _dir) = backend();
@@ -940,6 +977,7 @@ fn tick_schedules_advances_next_run_without_reload() {
     );
 }
 
+#[cfg_attr(all(miri, target_os = "macos"), ignore)]
 #[test]
 fn due_schedule_candidate_uses_workflow_id() {
     let (backend, _dir) = backend();

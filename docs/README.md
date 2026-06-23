@@ -64,6 +64,8 @@ See [`architecture/contract.md`](architecture/contract.md) for layer boundaries 
 - Desktop app: `npm --prefix crates/desktop run start -- dev`
 - Frontend only: `npm --prefix crates/ui run dev`
 - Frontend typecheck: `npm --prefix crates/ui run typecheck`
+- Full verify gate: `./scripts/verify.sh`
+- Miri (UB): `./scripts/miri.sh` — see [`contributing/testing-workflows.md`](contributing/testing-workflows.md#miri)
 
 ## Scope
 

@@ -88,6 +88,25 @@ pub struct ProjectFileReferenceContent {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct McpDiscoveryRow {
+    pub id: String,
+    pub display_name: String,
+    pub command: String,
+    pub args: Vec<String>,
+    pub enabled: bool,
+    pub source: String,
+    pub source_path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsLoadPayload {
+    pub settings: crate::settings::model::AppSettings,
+    pub discovered_mcp: Vec<McpDiscoveryRow>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct IncidentSummary {
     pub id: String,
     pub created_at_ms: u64,

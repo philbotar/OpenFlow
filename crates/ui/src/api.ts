@@ -14,6 +14,7 @@ import type {
   ProjectFileReferenceContent,
   CopyWorkflowToProjectResult,
   McpServerConfig,
+  SettingsLoadPayload,
   SkillSummary,
   ProviderReadiness,
   RunSummary,
@@ -136,8 +137,8 @@ export function saveAgents(agents: AgentDefinition[]) {
   return invoke<void>("save_agents", { agents });
 }
 
-export function loadSettings() {
-  return invoke<AppSettings>("load_settings");
+export function loadSettings(projectPath?: string | null) {
+  return invoke<SettingsLoadPayload>("load_settings", { projectPath: projectPath ?? null });
 }
 
 export function saveSettings(settings: AppSettings) {

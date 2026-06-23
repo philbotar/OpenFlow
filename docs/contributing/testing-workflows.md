@@ -37,6 +37,38 @@ Files predating this convention are brought into conformance opportunistically �
 | Start frontend only | `npm --prefix crates/ui run dev` | Vite dev server and frontend rendering load without desktop runtime |
 | Frontend typecheck | `npm --prefix crates/ui run typecheck` | TS/TSX surface still matches current DTOs and component usage |
 
+## Playwright visual regression (chat segments)
+
+Browser-only E2E with mocked IPC in `crates/desktop/e2e/`. Snapshots assert multi-node chat segment dividers and spacing (dark theme).
+
+| Goal | Command |
+| --- | --- |
+| Install E2E deps | `npm --prefix crates/desktop run e2e:install` |
+| Run visual snapshots | `npm --prefix crates/desktop/e2e run test:visual` |
+| Update baselines after intentional CSS change | `npm --prefix crates/desktop/e2e run test:visual -- --update-snapshots` |
+| Full browser E2E smoke | `npm --prefix crates/desktop run e2e:browser` |
+| Providers settings E2E | `npm --prefix crates/desktop/e2e run test:browser -- tests/settings-providers.spec.ts` |
+
+Visual tests use a fixed 1280×900 viewport, `deviceScaleFactor: 1`, and a static three-node settled-run fixture (`fixtures/multiSegmentChat.ts`). Not included in `./scripts/verify.sh` by default (Chromium install + ~30s).
+
+## Orchestration headless E2E (`MockAiStack`)
+
+Integration tests under `crates/orchestration/tests/` drive real orchestration execution (no desktop UI, no HTTP providers) via `run_workflow_headless` or `spawn_interactive_workflow_run`.
+
+| Goal | Command |
+| --- | --- |
+| Stack-mock E2E suite | `cargo test -p orchestration --test workflow_e2e -- --nocapture` |
+| Contract acceptance (tools, manual nodes, checkpoints) | `cargo test -p orchestration --test workflow_acceptance -- --nocapture` |
+| Both integration suites | `cargo test -p orchestration --test workflow_e2e --test workflow_acceptance -- --nocapture` |
+
+Shared helpers live in `crates/orchestration/tests/support/`:
+
+- **`MockAiStack`** — `impl AiPort` that pops scripted `MockTurn` responses per invoke (`from_invocation_order([...])` consumes the first array entry on the first call).
+- **`run_headless_script`** — thin wrapper around `run_workflow_headless`.
+- **`spawn_interactive_script`** — wrapper for mid-run interrupt/stop scenarios.
+
+Use inline `impl AiPort` stubs (e.g. node-id-aware `ScriptedAi` in `workflow_acceptance.rs`) when stack order is not deterministic (branch/join parallelism).
+
 ## Test Layers
 
 | Layer | Command | What It Proves |
@@ -44,9 +76,26 @@ Files predating this convention are brought into conformance opportunistically �
 | Unit tests | `cargo test --workspace` | Domain rules, tool approval resolution, app/project/agent stores, provider config, shared-context and callable-agent helpers, OpenAI-compatible and Anthropic wire mapping, `jsonrepair-rs` tool-argument recovery |
 | Desktop command tests | `cargo test -p desktop` | Tauri command wiring for bootstrap, projects, agents, workflows |
 | Deterministic workflow acceptance | `cargo test -p orchestration --test workflow_acceptance -- --nocapture` | A whole workflow can run headlessly with scripted AI outputs, tool calls, and approval pauses |
+| Orchestration headless E2E (stack mock) | `cargo test -p orchestration --test workflow_e2e -- --nocapture` | Full orchestration + engine runs with `MockAiStack` (`tests/support/`) — happy path, retries, missing input/approval, interrupt; no real providers |
 | Live AI smoke | `STEP_WORKFLOW_LIVE_AI=1 STEP_WORKFLOW_LIVE_API_KEY=... STEP_WORKFLOW_LIVE_MODEL=... cargo test -p orchestration --test live_workflow -- --ignored --nocapture` | A real BYOK provider can complete a small workflow and satisfy schema-level rules |
+| Miri (engine + orchestration UB) | `./scripts/miri.sh` or `./scripts/verify.sh --deep miri` | UB interpreter over `engine` + `orchestration` tests; CI runs on Ubuntu; macOS skips tokio/backend Miri tests that need `kqueue` |
 
-## Acceptance Rules
+## Miri
+
+[Miri](https://github.com/rust-lang/miri) interprets Rust MIR to detect undefined behavior. Scope: **`engine`** and **`orchestration`** (`providers` / `desktop` still out — HTTP/Tauri/FFI).
+
+| Goal | Command |
+| --- | --- |
+| Run Miri | `./scripts/miri.sh` |
+| Deep verify | `./scripts/verify.sh --deep` |
+| Engine cross target (macOS) | `MIRI_ENGINE_VPROC=x86_64-unknown-linux-gnu ./scripts/miri.sh` |
+
+Defaults: `MIRIFLAGS=-Zmiri-disable-isolation -Zmiri-ignore-leaks` (orchestration uses real temp files). Tests Miri cannot run (git/bash/MCP subprocess, live `#[ignore]` suites) carry `#[cfg_attr(miri, ignore)]`. `#[tokio::test]` and `backend` sync tests skip on **macOS Miri only** (`kqueue`); CI on Linux runs them.
+
+First run installs nightly `miri` via rustup. Artifacts: `target/miri/`.
+
+Mark new unsupported tests with `#[cfg_attr(miri, ignore)]` and a one-line `ponytail:` comment.
+
 
 The deterministic acceptance tests should prove:
 
@@ -102,11 +151,13 @@ Guidelines:
 
 ## Verification Gate (`scripts/verify.sh`)
 
-Primary gate for agents and CI — run after every change:
+Primary gate for agents and local handoff — run after every change:
 
 ```bash
 ./scripts/verify.sh
 ```
+
+**CI** runs the lean subset via `./scripts/verify-ci.sh` (fmt, clippy, test-fast + workflow acceptance, arch, ui-test, deny). Skips doc, public-api, machete, typos, full workspace test (desktop/Tauri). Run full `./scripts/verify.sh` before handoff or PR.
 
 | Behavior | Detail |
 | --- | --- |
@@ -114,12 +165,14 @@ Primary gate for agents and CI — run after every change:
 | Output | One line per step (`PASS fmt (1s)` / `FAIL clippy (41s)`); truncated logs on fail; summary with exact repro commands |
 | Noise | No ANSI/progress escapes (`CARGO_TERM_COLOR=never`, `NO_COLOR=1`, `--quiet` on cargo/npm where supported) |
 | Filter | `./scripts/verify.sh fmt clippy ui-test` — unknown step name lists valid steps and exits 1 |
-| Deep | `./scripts/verify.sh --deep` adds `cargo mutants --no-shuffle` (minutes-long; missed mutants = untested behavior backlog) |
+| Deep | `./scripts/verify.sh --deep` adds `cargo mutants --no-shuffle` and `./scripts/miri.sh` (Miri UB on `engine` + `orchestration`; minutes-long) |
 | Env | `VERIFY_FAIL_FAST=1` stop on first failure; `VERIFY_MAX_LINES` (default 150) tail on fail |
 
-**Steps:** `fmt`, `clippy` (pedantic/nursery/cargo), `doc`, `test`, `public-api`, `machete`, `typos`, `ui-typecheck`, `ui-test`, `deny`, `arch`.
+**Steps:** `fmt`, `clippy` (pedantic/nursery/cargo), `doc`, `test`, `test-fast`, `public-api`, `machete`, `typos`, `ui-typecheck`, `ui-test`, `deny`, `arch`. **`--deep` only:** `mutants`, `miri`.
 
-**One-time installs:** `cargo install cargo-machete typos-cli cargo-mutants cargo-public-api` (nightly toolchain for public-api).
+**CI:** blocking `./scripts/verify-ci.sh`; separate **`miri`** job runs `./scripts/miri.sh` on Ubuntu (not in the lean verify job).
+
+**One-time installs:** `cargo install cargo-machete typos-cli cargo-mutants cargo-public-api`; Miri: `rustup toolchain install nightly --component miri` (see [Miri §](testing-workflows.md#miri)).
 
 ## Fast Local Lane
 
@@ -149,11 +202,35 @@ Options:
 
 For local iteration, prefer `./scripts/test-fast.sh`. Use `./scripts/verify.sh` before handing work off or committing.
 
+Run this when changing durable run persistence, replay, or resume behavior:
+
+```bash
+cargo test -p orchestration run::persistence adapters::storage::run_checkpoint_store run::coordinator_tests -- --nocapture
+cargo test -p orchestration --test workflow_acceptance -- --nocapture
+npm --prefix crates/ui run typecheck
+```
+
 Run this when changing execution behavior, node input shaping, shared context, callable agents, execution cwd, manual pauses, tool approvals, tool result routing, run trace, or chat logs:
 
 ```bash
 cargo test -p orchestration --test workflow_acceptance -- --nocapture
 cargo test -p orchestration execution::
+```
+
+### Schedule
+
+Schedules live on `WorkflowSettings.schedule` and are evaluated only while the desktop app is open. For scheduler changes, run:
+
+```bash
+cargo test -p orchestration schedule -- --nocapture
+cargo test -p desktop
+npm --prefix crates/ui run test -- src/lib/schedule.test.ts src/api.test.ts
+```
+
+For end-to-end run behavior, also run:
+
+```bash
+cargo test -p orchestration --test workflow_acceptance -- --nocapture
 ```
 
 Run this when changing project/workflow persistence or bootstrap:

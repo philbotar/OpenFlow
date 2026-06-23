@@ -15,15 +15,14 @@ import {
   extractReferencedFilePaths,
   formatSubmissionWithFileReferences,
 } from "../lib/fileReferences";
-import {
-  type NavTransitionType,
-} from "../lib/viewTransition";
+import type { NavTransitionType } from "../lib/viewTransition";
 import type {
   AgentDefinition,
   AiProviderKind,
   AppSettings,
   BottomTab,
   EdgeId,
+  McpDiscoveryRow,
   NodeId,
   Project,
   ProjectFileReference,
@@ -149,6 +148,7 @@ export function AppProvider(props: ParentProps) {
     setScreen(next);
   };
   const [settings, setSettings] = createSignal<AppSettings>(cloneSettings(EMPTY_SETTINGS));
+  const [discoveredMcp, setDiscoveredMcp] = createSignal<McpDiscoveryRow[]>([]);
   // Run state arrives as a freshly-deserialized snapshot on every execution
   // event (including each streaming token). Holding it in a store and applying
   // updates with `reconcile` preserves object identity for unchanged messages,
@@ -685,6 +685,15 @@ export function AppProvider(props: ParentProps) {
           providerKeyInputByProvider()[nextSettings.active_provider] ?? null,
         ),
       );
+    } catch (error) {
+      setError(normalizeError(error));
+    }
+  };
+
+  const refreshDiscoveredMcp = async (projectPath?: string | null) => {
+    try {
+      const payload = await desktop.loadSettings(projectPath ?? null);
+      setDiscoveredMcp(payload.discoveredMcp);
     } catch (error) {
       setError(normalizeError(error));
     }
@@ -2061,6 +2070,7 @@ export function AppProvider(props: ParentProps) {
       const data = await desktop.bootstrapApp();
       setAvailableSkills(data.skills ?? []);
       setScheduleStatuses(data.scheduleStatuses ?? []);
+      setDiscoveredMcp(data.discoveredMcp ?? []);
       await initializeWorkspace(
         data.workflows,
         data.agents,
@@ -2096,6 +2106,8 @@ export function AppProvider(props: ParentProps) {
     screen,
     screenTransitionClass,
     settings,
+    discoveredMcp,
+    refreshDiscoveredMcp,
     runState,
     backendRunWorkflowId,
     readiness,

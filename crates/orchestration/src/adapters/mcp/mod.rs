@@ -1,5 +1,9 @@
 //! Stdio MCP client adapter — spawn servers, list tools, call tools.
 
+mod discover;
+
+pub use discover::{effective_mcp_servers, parse_mcp_servers_json, scan_external_mcp_for_api};
+
 use crate::settings::model::{McpServerConfig, McpSettings};
 use engine::{ToolConcurrency, ToolDefinition, ToolTier};
 use rmcp::{

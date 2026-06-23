@@ -12,6 +12,7 @@ import type {
 	ProviderReadiness,
 	SkillSummary,
 	McpServerConfig,
+	SettingsLoadPayload,
 	Workflow,
 	WorkflowListItem,
 	WorkflowRunState,
@@ -65,7 +66,7 @@ export interface UiDesktopOutboundPort {
 	loadAgents: () => Promise<AgentDefinition[]>;
 	createAgentDefinition: (name: string) => Promise<AgentDefinition>;
 	saveAgents: (agents: AgentDefinition[]) => Promise<void>;
-	loadSettings: () => Promise<AppSettings>;
+	loadSettings: (projectPath?: string | null) => Promise<SettingsLoadPayload>;
 	saveSettings: (settings: AppSettings) => Promise<void>;
 	loadProviderApiKey: (providerId: string) => Promise<string | null>;
 	saveProviderApiKey: (providerId: string, apiKey: string) => Promise<void>;

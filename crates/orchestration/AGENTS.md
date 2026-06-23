@@ -129,6 +129,7 @@ API key precedence: transient input → stored `ProviderProfile.api_key` → env
 ```bash
 cargo test -p orchestration
 cargo test -p orchestration --test workflow_acceptance -- --nocapture
+./scripts/miri.sh   # nightly Miri (orchestration + engine; see docs/contributing/testing-workflows.md)
 ```
 
 Use inline `impl AiPort` stubs. Live AI: `STEP_WORKFLOW_LIVE_AI=1` (see `docs/contributing/testing-workflows.md`).

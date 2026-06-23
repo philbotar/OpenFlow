@@ -7,14 +7,16 @@ How to change code in this repository.
 ```text
 contributing/
 ├── README.md              # This index
+├── development-lanes.md   # Change classification, skill routing, verification lanes
 ├── coding-patterns.md     # Architecture rules, ownership, persistence, conventions
 └── testing-workflows.md   # Test layers, acceptance rules, when to run each suite
 ```
 
 ## Read Order
 
-1. [`coding-patterns.md`](coding-patterns.md) — where logic lives, runtime semantics, change checklist.
-2. [`testing-workflows.md`](testing-workflows.md) — how to verify behavior without the desktop UI.
+1. [`development-lanes.md`](development-lanes.md) — classify the change, pick the matching playbook, and choose verification.
+2. [`coding-patterns.md`](coding-patterns.md) — where logic lives, runtime semantics, change checklist.
+3. [`testing-workflows.md`](testing-workflows.md) — how to verify behavior without the desktop UI.
 
 Also read before larger changes:
 
@@ -75,4 +77,8 @@ Use `./scripts/test-fast.sh` for the normal local loop. Keep `cargo test --works
 
 Intentional changes to engine's public surface require updating `crates/engine/tests/snapshots/public_api.txt` (`cargo +nightly public-api` from `crates/engine/`).
 
-See [`testing-workflows.md`](testing-workflows.md) for layered test commands.
+See [`testing-workflows.md`](testing-workflows.md) for layered test commands and [Miri](https://github.com/rust-lang/miri) undefined-behavior checks.
+
+## Miri (undefined behavior)
+
+We run [Miri](https://github.com/rust-lang/miri) on **`engine`** and **`orchestration`** to catch invalid memory use and aliasing in pure Rust code. Local: `./scripts/miri.sh` or `./scripts/verify.sh --deep miri`. CI: separate `miri` job in `.github/workflows/ci.yml` (Ubuntu). Requires nightly (`rustup toolchain install nightly --component miri`). Details: [`testing-workflows.md` § Miri](testing-workflows.md#miri).

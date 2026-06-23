@@ -6,6 +6,7 @@ import type {
   AppSettings,
   BottomTab,
   EdgeId,
+  McpDiscoveryRow,
   NodeId,
   ProviderProfile,
   ProviderReadiness,
@@ -45,6 +46,8 @@ export interface AppContextValue {
   screen: Accessor<Screen>;
   screenTransitionClass: Accessor<NavTransitionType>;
   settings: Accessor<AppSettings>;
+  discoveredMcp: Accessor<McpDiscoveryRow[]>;
+  refreshDiscoveredMcp: (projectPath?: string | null) => Promise<void>;
   runState: Accessor<WorkflowRunState | null>;
   backendRunWorkflowId: Accessor<string | null>;
   readiness: Accessor<ProviderReadiness | null>;

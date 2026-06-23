@@ -87,11 +87,11 @@ Default verification (runs all steps, reports every failure, exits non-zero if a
 ./scripts/verify.sh
 ```
 
-Steps: `fmt`, `clippy` (clippy-max strictness), `doc`, `test`, `public-api`, `machete`, `typos`, `ui-typecheck`, `ui-test`, `deny`, `arch`. Optional `./scripts/verify.sh --deep` adds `mutants`. Run a subset: `./scripts/verify.sh fmt clippy`. Set `VERIFY_FAIL_FAST=1` to stop on first failure.
+Steps: `fmt`, `clippy` (clippy-max strictness), `doc`, `test`, `public-api`, `machete`, `typos`, `ui-typecheck`, `ui-test`, `deny`, `arch`. Optional `./scripts/verify.sh --deep` adds `mutants` and **Miri** (`./scripts/miri.sh` on `engine` + `orchestration`; [rust](https://github.com/rust-lang/miri)). Run a subset: `./scripts/verify.sh fmt clippy`. Set `VERIFY_FAIL_FAST=1` to stop on first failure.
 
-Extra tools (install once): `cargo install cargo-machete typos-cli cargo-mutants cargo-public-api`.
+Extra tools (install once): `cargo install cargo-machete typos-cli cargo-mutants cargo-public-api`; Miri: `rustup toolchain install nightly --component miri`.
 
-CI policy: blocking gate is `./scripts/verify.sh` (default steps, no `--deep`).
+CI policy: blocking gate is `./scripts/verify-ci.sh`; separate **`miri`** job runs `./scripts/miri.sh` on Ubuntu.
 
 Plan review (optional): `open tools/plan-review.html` — comment on markdown plans before implementation; see [ROADMAP](docs/ROADMAP.md#interactive-plan-review-tool).
 

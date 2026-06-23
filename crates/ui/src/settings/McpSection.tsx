@@ -1,7 +1,7 @@
 import { createSignal, For, Show } from "solid-js";
 import { probeMcpServer } from "../api";
 import { useAppContext } from "../context/AppContext";
-import type { McpServerConfig } from "../lib/types";
+import type { McpDiscoveryRow, McpServerConfig } from "../lib/types";
 
 function emptyServer(): McpServerConfig {
   return {
@@ -14,12 +14,18 @@ function emptyServer(): McpServerConfig {
   };
 }
 
+function shortenPath(path: string): string {
+  const home = path.replace(/^\/Users\/[^/]+/, "~");
+  return home.length > 48 ? `…${home.slice(-45)}` : home;
+}
+
 export function McpSection() {
   const ctx = useAppContext();
   const [draft, setDraft] = createSignal(emptyServer());
   const [probeResult, setProbeResult] = createSignal<string | null>(null);
 
   const servers = () => ctx.settings().mcp?.servers ?? [];
+  const discoverExternal = () => ctx.settings().mcp?.discoverExternal ?? true;
 
   const updateServer = (index: number, patch: Partial<McpServerConfig>) => {
     void ctx.updateSettings((settings) => {
@@ -27,6 +33,27 @@ export function McpSection() {
       const current = settings.mcp.servers[index];
       if (!current) return;
       settings.mcp.servers[index] = { ...current, ...patch };
+    });
+  };
+
+  const toggleDiscoverExternal = async (enabled: boolean) => {
+    await ctx.updateSettings((settings) => {
+      settings.mcp ??= { servers: [] };
+      settings.mcp.discoverExternal = enabled;
+    });
+    await ctx.refreshDiscoveredMcp();
+  };
+
+  const toggleDiscoveredEnabled = (row: McpDiscoveryRow, enabled: boolean) => {
+    void ctx.updateSettings((settings) => {
+      settings.mcp ??= { servers: [] };
+      const disabled = new Set(settings.mcp.disabledDiscoveredIds ?? []);
+      if (enabled) {
+        disabled.delete(row.id);
+      } else {
+        disabled.add(row.id);
+      }
+      settings.mcp.disabledDiscoveredIds = [...disabled];
     });
   };
 
@@ -65,6 +92,44 @@ export function McpSection() {
           <p>Stdio MCP servers merge into the tool catalog at run start when enabled.</p>
         </div>
       </header>
+
+      <label class="checkbox-label settings-row">
+        <input
+          type="checkbox"
+          checked={discoverExternal()}
+          onChange={(event) => void toggleDiscoverExternal(event.currentTarget.checked)}
+        />
+        <span>Discover external MCP configs</span>
+      </label>
+
+      <section class="settings-subsection" aria-labelledby="mcp-discovered-heading">
+        <h3 id="mcp-discovered-heading" class="settings-subheading">
+          Discovered servers
+        </h3>
+        <Show when={ctx.discoveredMcp().length === 0}>
+          <p>No discovered MCP servers.</p>
+        </Show>
+        <For each={ctx.discoveredMcp()}>
+          {(row) => (
+            <div class="settings-row">
+              <div>
+                <strong>{row.displayName}</strong>
+                <p class="settings-hint">
+                  {row.source} · {shortenPath(row.sourcePath)}
+                </p>
+              </div>
+              <label class="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={row.enabled && !(ctx.settings().mcp?.disabledDiscoveredIds ?? []).includes(row.id)}
+                  onChange={(event) => toggleDiscoveredEnabled(row, event.currentTarget.checked)}
+                />
+                <span>Enabled</span>
+              </label>
+            </div>
+          )}
+        </For>
+      </section>
 
       <section class="settings-subsection" aria-labelledby="mcp-servers-heading">
         <h3 id="mcp-servers-heading" class="settings-subheading">

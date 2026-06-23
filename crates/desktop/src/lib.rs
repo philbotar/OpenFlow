@@ -8,6 +8,7 @@
 mod run_notifications;
 mod run_sleep_guard;
 
+use orchestration::api::{McpDiscoveryRow, SettingsLoadPayload};
 use orchestration::backend::{
     AppBackend, BackendError, FileEditPreview, ProviderReadiness, ScheduleStatus,
     WorkflowAuthoringTurnResult, WorkflowListItem, WorkflowValidationSummary,
@@ -65,6 +66,7 @@ struct BootstrapPayload {
     projects: Vec<Project>,
     skills: Vec<SkillSummary>,
     settings: AppSettings,
+    discovered_mcp: Vec<McpDiscoveryRow>,
     run_state: Option<WorkflowRunState>,
     run_continuable: bool,
     schedule_statuses: Vec<ScheduleStatus>,
@@ -95,7 +97,7 @@ async fn bootstrap_app(
     let agents = backend.load_agents()?;
     let projects = backend.list_projects()?;
     let skills = backend.list_skills()?;
-    let settings = backend.load_settings()?;
+    let settings_payload = backend.load_settings(None)?;
     let run_state = backend.get_run_state().await;
     let run_continuable = backend.is_run_continuable().await;
     let schedule_statuses = backend.refresh_schedules()?;
@@ -104,7 +106,8 @@ async fn bootstrap_app(
         agents,
         projects,
         skills,
-        settings,
+        settings: settings_payload.settings,
+        discovered_mcp: settings_payload.discovered_mcp,
         run_state,
         run_continuable,
         schedule_statuses,
@@ -238,8 +241,11 @@ fn save_agents(
 
 /// Tauri command: Load settings.
 #[tauri::command]
-fn load_settings(backend: tauri::State<AppBackend>) -> Result<AppSettings, CommandError> {
-    Ok(backend.load_settings()?)
+fn load_settings(
+    backend: tauri::State<AppBackend>,
+    project_path: Option<String>,
+) -> Result<SettingsLoadPayload, CommandError> {
+    Ok(backend.load_settings(project_path.as_deref())?)
 }
 
 /// Tauri command: Save settings.

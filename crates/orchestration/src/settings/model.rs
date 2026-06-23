@@ -196,11 +196,25 @@ fn default_true() -> bool {
     true
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpSettings {
     #[serde(default)]
     pub servers: Vec<McpServerConfig>,
+    #[serde(default = "default_true")]
+    pub discover_external: bool,
+    #[serde(default)]
+    pub disabled_discovered_ids: Vec<String>,
+}
+
+impl Default for McpSettings {
+    fn default() -> Self {
+        Self {
+            servers: Vec::new(),
+            discover_external: true,
+            disabled_discovered_ids: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -427,6 +441,35 @@ mod tests {
     }
 
     #[test]
+    fn mcp_settings_default_enables_external_discovery() {
+        assert!(McpSettings::default().discover_external);
+    }
+
+    #[test]
+    fn app_settings_missing_mcp_key_enables_external_discovery() {
+        let mut value = serde_json::to_value(AppSettings::default()).unwrap();
+        value.as_object_mut().unwrap().remove("mcp");
+        let parsed: AppSettings = serde_json::from_value(value).unwrap();
+        assert!(parsed.mcp.discover_external);
+    }
+
+    #[test]
+    fn mcp_discovery_settings_round_trip() {
+        let settings = AppSettings {
+            mcp: McpSettings {
+                servers: vec![],
+                discover_external: true,
+                disabled_discovered_ids: vec!["playwright".into()],
+            },
+            ..AppSettings::default()
+        };
+        let json = serde_json::to_string(&settings).unwrap();
+        let parsed: AppSettings = serde_json::from_str(&json).unwrap();
+        assert!(parsed.mcp.discover_external);
+        assert_eq!(parsed.mcp.disabled_discovered_ids, ["playwright"]);
+    }
+
+    #[test]
     fn mcp_settings_round_trip() {
         let settings = AppSettings {
             mcp: McpSettings {
@@ -438,6 +481,7 @@ mod tests {
                     env: Default::default(),
                     enabled: true,
                 }],
+                ..McpSettings::default()
             },
             ..AppSettings::default()
         };

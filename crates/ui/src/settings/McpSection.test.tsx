@@ -2,12 +2,24 @@
 import { render } from "solid-js/web";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { AppContext, type AppContextValue } from "../context/AppContext";
-import type { AppSettings } from "../lib/types";
+import type { AppSettings, McpDiscoveryRow } from "../lib/types";
 import { McpSection } from "./McpSection";
 
 vi.mock("../api", () => ({
   probeMcpServer: vi.fn(),
 }));
+
+const discoveredMcp: McpDiscoveryRow[] = [
+  {
+    id: "linear",
+    displayName: "linear",
+    command: "npx",
+    args: ["-y", "linear-mcp"],
+    enabled: true,
+    source: "cursor",
+    sourcePath: "/Users/me/.cursor/mcp.json",
+  },
+];
 
 const settings: AppSettings = {
   active_provider: "openai",
@@ -29,7 +41,9 @@ const settings: AppSettings = {
 function stubContext(): AppContextValue {
   return {
     settings: () => settings,
+    discoveredMcp: () => discoveredMcp,
     updateSettings: async () => {},
+    refreshDiscoveredMcp: async () => {},
   } as unknown as AppContextValue;
 }
 
@@ -56,5 +70,18 @@ describe("McpSection", () => {
     );
     expect(mountPoint.textContent).toContain("External tool servers");
     expect(mountPoint.textContent).toContain("Configured servers");
+  });
+
+  test("renders discovered server row", () => {
+    render(
+      () => (
+        <AppContext.Provider value={stubContext()}>
+          <McpSection />
+        </AppContext.Provider>
+      ),
+      mountPoint,
+    );
+    expect(mountPoint.textContent).toContain("linear");
+    expect(mountPoint.textContent).toContain("cursor");
   });
 });

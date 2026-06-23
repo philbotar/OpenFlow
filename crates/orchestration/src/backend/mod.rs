@@ -263,8 +263,20 @@ impl AppBackend {
         self.settings.list_skills()
     }
 
-    pub fn load_settings(&self) -> Result<AppSettings, BackendError> {
-        self.settings.load()
+    pub fn load_settings(
+        &self,
+        project_path: Option<&str>,
+    ) -> Result<crate::api::SettingsLoadPayload, BackendError> {
+        let settings = self.settings.load()?;
+        let root = project_path
+            .map(std::path::PathBuf::from)
+            .or_else(|| std::env::current_dir().ok())
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
+        let discovered_mcp = crate::adapters::mcp::scan_external_mcp_for_api(&settings.mcp, &root);
+        Ok(crate::api::SettingsLoadPayload {
+            settings: settings.redacted(),
+            discovered_mcp,
+        })
     }
 
     pub fn save_settings(&self, settings: &AppSettings) -> Result<(), BackendError> {
@@ -779,7 +791,7 @@ impl AppBackend {
 
         let workflow = self.load_workflow(&workflow_id)?;
         let execution_cwd = self.scheduled_execution_cwd(&workflow_id)?;
-        let settings = self.load_settings()?;
+        let settings = self.load_settings(None)?.settings;
         let run_root = self.run_root_for_workflow(&workflow_id)?;
         self.runs
             .start_run(RunStartParams {
