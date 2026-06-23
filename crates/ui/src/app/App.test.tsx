@@ -2411,6 +2411,13 @@ describe("App schedule screen", () => {
   beforeEach(() => {
     installDefaultApiMocks();
     Object.defineProperty(window, "innerWidth", { value: 1280, configurable: true });
+    vi.spyOn(Intl, "DateTimeFormat").mockReturnValue({
+      resolvedOptions: () => ({ timeZone: "Australia/Perth" }),
+    } as Intl.DateTimeFormat);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   test("opens schedule screen from sidebar", async () => {

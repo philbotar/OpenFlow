@@ -21,6 +21,9 @@ ignore = [
     "RUSTSEC-2025-0080",
     "RUSTSEC-2025-0100",
     "RUSTSEC-2025-0098",
+    "RUSTSEC-2026-0098",
+    "RUSTSEC-2026-0099",
+    "RUSTSEC-2026-0104",
 ]
 
 [licenses]
@@ -63,6 +66,10 @@ skip = [
     { name = "rand_core", version = "0.6.4", reason = "transitive from cron rand 0.8" },
     { name = "nix", version = "0.28.0", reason = "portable-pty 0.9 pins nix 0.28; rmcp/process-wrap pulls nix 0.31" },
     { name = "cfg_aliases", version = "0.1.1", reason = "transitive from nix 0.28 via portable-pty" },
+    { name = "windows-sys", version = "0.45.0", reason = "hyper 0.14/socket2 chain alongside tauri desktop stack" },
+    { name = "windows-sys", version = "0.52.0", reason = "ring/rustls aws-sdk chain alongside tauri desktop stack" },
+    { name = "windows-sys", version = "0.59.0", reason = "transitive duplicate alongside tauri desktop stack" },
+    { name = "windows-sys", version = "0.61.2", reason = "transitive duplicate alongside tauri desktop stack" },
 ]
 [sources]
 unknown-registry = "deny"

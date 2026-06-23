@@ -3,11 +3,31 @@ name: CI
 on:
   pull_request:
   push:
+    branches:
+      - main
 
 permissions:
   contents: read
 
 jobs:
+  version:
+    name: Version bump (per crate)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch base branch
+        if: github.event_name == 'pull_request'
+        run: git fetch origin "${{ github.base_ref }}"
+
+      - name: Check version bumps
+        env:
+          VERSION_CHECK_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || (github.event.before != '0000000000000000000000000000000000000000' && github.event.before || '') }}
+        run: ./scripts/check-version-bump.sh
+
   verify:
     name: Verify (blocking)
     runs-on: ubuntu-latest
@@ -33,6 +53,20 @@ jobs:
       - name: Install npm dependencies
         run: npm ci --prefix crates/ui
 
+      - name: Install Linux system dependencies (Tauri)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
       - name: Install cargo-deny
         uses: taiki-e/install-action@v2
         with:
@@ -47,14 +81,15 @@ jobs:
   miri:
     name: Miri (engine + orchestration UB)
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Install Miri
-        run: |
-          rustup toolchain install nightly --component miri
-          cargo +nightly miri setup
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
 
       - name: Cache Miri build artifacts
         uses: swatinem/rust-cache@v2

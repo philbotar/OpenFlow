@@ -162,7 +162,7 @@ fn compatible_probe_request_body(config: &LiveWorkflowConfig) -> Value {
     })
 }
 
-#[cfg_attr(all(miri, target_os = "macos"), ignore)]
+#[cfg_attr(miri, ignore)]
 #[tokio::test]
 #[ignore = "requires STEP_WORKFLOW_LIVE_AI=1, STEP_WORKFLOW_LIVE_API_KEY or OPENAI_API_KEY, and STEP_WORKFLOW_LIVE_MODEL"]
 async fn live_openai_workflow_preserves_sentinel_and_schema_contract() {
@@ -219,7 +219,7 @@ async fn live_openai_workflow_preserves_sentinel_and_schema_contract() {
     );
 }
 
-#[cfg_attr(all(miri, target_os = "macos"), ignore)]
+#[cfg_attr(miri, ignore)]
 #[tokio::test]
 #[ignore = "requires STEP_WORKFLOW_LIVE_AI=1 with STEP_WORKFLOW_LIVE_WIRE_API=chat-completions"]
 async fn live_chat_completions_provider_returns_supported_message_shape() {
@@ -271,7 +271,7 @@ async fn live_chat_completions_provider_returns_supported_message_shape() {
     );
 }
 
-#[cfg_attr(all(miri, target_os = "macos"), ignore)]
+#[cfg_attr(miri, ignore)]
 #[tokio::test]
 #[ignore = "requires STEP_WORKFLOW_LIVE_AI=1 with STEP_WORKFLOW_LIVE_WIRE_API=chat-completions"]
 async fn live_chat_completions_tool_enabled_workflow_completes() {

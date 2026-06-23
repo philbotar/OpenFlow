@@ -47,7 +47,7 @@ pub async fn invoke(
         .set_tool_config(input.tool_config)
         .send()
         .await
-        .map_err(map_bedrock_runtime_error)?;
+        .map_err(|error| map_bedrock_runtime_error(&error))?;
     let message = response
         .output
         .ok_or_else(|| AgentError::Failed("Bedrock Converse response missing output".into()))?
@@ -77,10 +77,14 @@ pub async fn invoke_stream(
         .set_tool_config(input.tool_config)
         .send()
         .await
-        .map_err(map_bedrock_runtime_error)?
+        .map_err(|error| map_bedrock_runtime_error(&error))?
         .stream;
     let mut aggregator = ConverseStreamAggregator::default();
-    while let Some(event) = stream.recv().await.map_err(map_bedrock_stream_error)? {
+    while let Some(event) = stream
+        .recv()
+        .await
+        .map_err(|error| map_bedrock_stream_error(&error))?
+    {
         if let Some(delta) = aggregator.apply_event(&event) {
             sink.on_stream_event(AiStreamEvent::AssistantDelta { content: delta });
         }
@@ -241,18 +245,12 @@ fn document_from_json(value: &Value) -> Result<Document, AgentError> {
 }
 
 fn json_number_to_smithy(number: &serde_json::Number) -> Number {
-    if let Some(value) = number.as_u64() {
-        Number::PosInt(value)
-    } else if let Some(value) = number.as_i64() {
-        if value >= 0 {
-            Number::PosInt(value as u64)
-        } else {
-            Number::NegInt(value)
-        }
-    } else if let Some(value) = number.as_f64() {
-        Number::Float(value)
-    } else {
-        Number::PosInt(0)
+    match (number.as_u64(), number.as_i64(), number.as_f64()) {
+        (Some(value), _, _) => Number::PosInt(value),
+        (_, Some(value), _) if value >= 0 => Number::PosInt(value.cast_unsigned()),
+        (_, Some(value), _) => Number::NegInt(value),
+        (_, _, Some(value)) => Number::Float(value),
+        _ => Number::PosInt(0),
     }
 }
 
@@ -395,7 +393,7 @@ async fn bedrock_runtime_client(
     Ok(BedrockRuntimeClient::new(&shared))
 }
 
-fn map_bedrock_runtime_error<E>(error: aws_sdk_bedrockruntime::error::SdkError<E>) -> AgentError
+fn map_bedrock_runtime_error<E>(error: &aws_sdk_bedrockruntime::error::SdkError<E>) -> AgentError
 where
     E: ProvideErrorMetadata + std::error::Error + Send + Sync + 'static,
 {
@@ -409,7 +407,7 @@ where
 }
 
 fn map_bedrock_stream_error<E>(
-    error: aws_sdk_bedrockruntime::error::SdkError<E, aws_smithy_types::event_stream::RawMessage>,
+    error: &aws_sdk_bedrockruntime::error::SdkError<E, aws_smithy_types::event_stream::RawMessage>,
 ) -> AgentError
 where
     E: ProvideErrorMetadata + std::error::Error + Send + Sync + 'static,
@@ -455,12 +453,10 @@ impl ConverseStreamAggregator {
         match event {
             ConverseStreamOutput::ContentBlockDelta(delta_event) => {
                 let index = delta_event.content_block_index;
-                let Some(delta) = delta_event.delta() else {
-                    return None;
-                };
+                let delta = delta_event.delta()?;
                 if let Ok(text) = delta.as_text() {
                     self.text_by_block.entry(index).or_default().push_str(text);
-                    return Some(text.to_string());
+                    return Some(text.clone());
                 }
                 if let Ok(tool_delta) = delta.as_tool_use() {
                     if let Some(pending) = self.pending_tools.get_mut(&index) {
@@ -486,9 +482,9 @@ impl ConverseStreamAggregator {
             ConverseStreamOutput::ContentBlockStop(stop_event) => {
                 if let Some(pending) = self.pending_tools.remove(&stop_event.content_block_index) {
                     let arguments = serde_json::from_str(&pending.input_json)
-                        .unwrap_or(Value::Object(Default::default()));
+                        .unwrap_or_else(|_| Value::Object(serde_json::Map::default()));
                     let input = document_from_json(&arguments)
-                        .unwrap_or(Document::Object(std::collections::HashMap::new()));
+                        .unwrap_or_else(|_| Document::Object(std::collections::HashMap::new()));
                     if let Ok(block) = ToolUseBlock::builder()
                         .tool_use_id(pending.tool_use_id)
                         .name(pending.name)
@@ -499,9 +495,10 @@ impl ConverseStreamAggregator {
                     }
                 }
             }
-            ConverseStreamOutput::MessageStop(_) | ConverseStreamOutput::Metadata(_) => {}
-            ConverseStreamOutput::MessageStart(_) => {}
-            _ => {}
+            ConverseStreamOutput::MessageStop(_)
+            | ConverseStreamOutput::Metadata(_)
+            | ConverseStreamOutput::MessageStart(_)
+            | _ => {}
         }
         None
     }
@@ -521,17 +518,21 @@ impl ConverseStreamAggregator {
             .role(ConversationRole::Assistant)
             .set_content(Some(content))
             .build()
-            .unwrap_or_else(|_| {
-                Message::builder()
-                    .role(ConversationRole::Assistant)
-                    .content(ContentBlock::Text(String::new()))
-                    .build()
-                    .expect("empty assistant message")
-            })
+            .unwrap_or_else(|_| empty_assistant_message())
     }
 }
 
+#[allow(clippy::expect_used)]
+fn empty_assistant_message() -> Message {
+    Message::builder()
+        .role(ConversationRole::Assistant)
+        .content(ContentBlock::Text(String::new()))
+        .build()
+        .expect("empty assistant message")
+}
+
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
     use super::*;
     use aws_sdk_bedrockruntime::types::ContentBlockDelta;

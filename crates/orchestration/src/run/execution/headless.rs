@@ -1,4 +1,5 @@
 use crate::run::state::WorkflowRunState;
+use crate::settings::model::McpSettings;
 use engine::CallableAgent;
 use engine::{AiPort, NodeId, Workflow};
 use std::collections::{BTreeMap, HashMap, VecDeque};
@@ -66,7 +67,10 @@ where
             pending_engine_reverts,
             node_interrupts,
             context_window_sizes: BTreeMap::new(),
-            mcp: Default::default(),
+            mcp: McpSettings {
+                discover_external: false,
+                ..McpSettings::default()
+            },
         },
         event_tx,
         action_rx,

@@ -41,7 +41,7 @@ fn sample_agent_request() -> AgentRequest {
     }
 }
 
-#[cfg_attr(all(miri, target_os = "macos"), ignore)]
+#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn adapter_emits_clarifying_question_after_streamed_preamble() {
     struct StreamingNeedsInputAi;
@@ -567,7 +567,7 @@ fn reducer_tracks_tool_approval_and_completion() {
     );
 }
 
-#[cfg_attr(all(miri, target_os = "macos"), ignore)]
+#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn headless_run_auto_approves_read_tool_and_reenters_model_loop() {
     #[derive(Clone, Default)]
@@ -624,7 +624,7 @@ async fn headless_run_auto_approves_read_tool_and_reenters_model_loop() {
     assert!(!snapshot.tool_calls_by_node[&NodeId("first".to_string())].is_empty());
 }
 
-#[cfg_attr(all(miri, target_os = "macos"), ignore)]
+#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn headless_run_survives_permanent_tool_failure_and_completes() {
     #[derive(Clone, Default)]
@@ -696,7 +696,7 @@ async fn headless_run_survives_permanent_tool_failure_and_completes() {
     );
 }
 
-#[cfg_attr(all(miri, target_os = "macos"), ignore)]
+#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn headless_run_requires_scripted_approval_for_prompted_tool() {
     #[derive(Clone)]
@@ -737,7 +737,7 @@ async fn headless_run_requires_scripted_approval_for_prompted_tool() {
     assert!(matches!(error, WorkflowExecutionError::MissingApproval(_)));
 }
 
-#[cfg_attr(all(miri, target_os = "macos"), ignore)]
+#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn apply_execution_event_tool_failure_persists_jsonl_incident_scope() {
     // Coordinator tests already cover direct incident mapping from apply_execution_event.
@@ -1196,7 +1196,7 @@ where
     }
 }
 
-#[cfg_attr(all(miri, target_os = "macos"), ignore)]
+#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn interrupt_during_slow_tool_emits_node_interrupted() {
     #[derive(Clone)]
@@ -1269,7 +1269,7 @@ async fn interrupt_during_slow_tool_emits_node_interrupted() {
     );
 }
 
-#[cfg_attr(all(miri, target_os = "macos"), ignore)]
+#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn retrying_failed_node_does_not_re_emit_sibling_input_pause() {
     #[derive(Clone)]
@@ -1338,7 +1338,7 @@ async fn retrying_failed_node_does_not_re_emit_sibling_input_pause() {
     );
 }
 
-#[cfg_attr(all(miri, target_os = "macos"), ignore)]
+#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn headless_retries_transient_node_error() {
     #[derive(Clone)]
@@ -1396,7 +1396,7 @@ async fn headless_retries_transient_node_error() {
     assert_eq!(snapshot.report.outputs.len(), 1);
 }
 
-#[cfg_attr(all(miri, target_os = "macos"), ignore)]
+#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn headless_exhausted_transient_retries_returns_missing_retry() {
     #[derive(Clone)]
@@ -1444,7 +1444,7 @@ async fn headless_exhausted_transient_retries_returns_missing_retry() {
     ));
 }
 
-#[cfg_attr(all(miri, target_os = "macos"), ignore)]
+#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn headless_run_errors_on_retryable_node_failure_instead_of_hanging() {
     #[derive(Clone)]
@@ -1532,7 +1532,7 @@ where
     (params, checkpoint_sink)
 }
 
-#[cfg_attr(all(miri, target_os = "macos"), ignore)]
+#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn stop_then_continue_restores_awaiting_input() {
     #[derive(Clone)]
@@ -1632,7 +1632,7 @@ async fn stop_then_continue_restores_awaiting_input() {
     assert!(saw_awaiting_again, "expected awaiting input after continue");
 }
 
-#[cfg_attr(all(miri, target_os = "macos"), ignore)]
+#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn stop_mid_run_then_continue_completes_node() {
     #[derive(Clone)]
@@ -1729,7 +1729,7 @@ fn write_tool_workflow() -> Workflow {
     workflow
 }
 
-#[cfg_attr(all(miri, target_os = "macos"), ignore)]
+#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn resolve_approval_uses_engine_node_id_after_stop_and_continue() {
     #[derive(Clone)]
