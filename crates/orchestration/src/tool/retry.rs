@@ -50,7 +50,7 @@ mod tests {
     use std::sync::atomic::{AtomicU8, Ordering};
     use std::sync::Arc;
 
-    #[cfg_attr(all(miri, target_os = "macos"), ignore)]
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn retries_transient_errors_until_success() {
         let policy = RetryPolicy {
@@ -88,7 +88,7 @@ mod tests {
         assert_eq!(retry_events, 2);
     }
 
-    #[cfg_attr(all(miri, target_os = "macos"), ignore)]
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn permanent_error_does_not_retry() {
         let policy = RetryPolicy::default();

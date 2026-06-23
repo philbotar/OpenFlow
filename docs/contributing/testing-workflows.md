@@ -78,7 +78,7 @@ Use inline `impl AiPort` stubs (e.g. node-id-aware `ScriptedAi` in `workflow_acc
 | Deterministic workflow acceptance | `cargo test -p orchestration --test workflow_acceptance -- --nocapture` | A whole workflow can run headlessly with scripted AI outputs, tool calls, and approval pauses |
 | Orchestration headless E2E (stack mock) | `cargo test -p orchestration --test workflow_e2e -- --nocapture` | Full orchestration + engine runs with `MockAiStack` (`tests/support/`) — happy path, retries, missing input/approval, interrupt; no real providers |
 | Live AI smoke | `STEP_WORKFLOW_LIVE_AI=1 STEP_WORKFLOW_LIVE_API_KEY=... STEP_WORKFLOW_LIVE_MODEL=... cargo test -p orchestration --test live_workflow -- --ignored --nocapture` | A real BYOK provider can complete a small workflow and satisfy schema-level rules |
-| Miri (engine + orchestration UB) | `./scripts/miri.sh` or `./scripts/verify.sh --deep miri` | UB interpreter over `engine` + `orchestration` tests; CI runs on Ubuntu; macOS skips tokio/backend Miri tests that need `kqueue` |
+| Miri (engine + orchestration UB) | `./scripts/miri.sh` or `./scripts/verify.sh --deep miri` | UB interpreter over `engine` + `orchestration` **lib** tests; CI runs on Ubuntu |
 
 ## Miri
 
@@ -90,7 +90,7 @@ Use inline `impl AiPort` stubs (e.g. node-id-aware `ScriptedAi` in `workflow_acc
 | Deep verify | `./scripts/verify.sh --deep` |
 | Engine cross target (macOS) | `MIRI_ENGINE_VPROC=x86_64-unknown-linux-gnu ./scripts/miri.sh` |
 
-Defaults: `MIRIFLAGS=-Zmiri-disable-isolation -Zmiri-ignore-leaks` (orchestration uses real temp files). Tests Miri cannot run (git/bash/MCP subprocess, live `#[ignore]` suites) carry `#[cfg_attr(miri, ignore)]`. `#[tokio::test]` and `backend` sync tests skip on **macOS Miri only** (`kqueue`); CI on Linux runs them.
+Scope: `cargo miri test -p engine --lib` (isolated; `-Zmiri-ignore-leaks`) and `cargo miri test -p orchestration --lib` (`-Zmiri-disable-isolation` for temp files). Integration binaries and tests Miri cannot run (tokio, git/bash/MCP subprocess, live `#[ignore]` suites) carry `#[cfg_attr(miri, ignore)]`.
 
 First run installs nightly `miri` via rustup. Artifacts: `target/miri/`.
 

@@ -83,7 +83,7 @@ fn workflow_hash_detects_changed_workflow_for_resume_guard() {
     assert_ne!(original, changed);
 }
 
-#[cfg_attr(all(miri, target_os = "macos"), ignore)]
+#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn replay_run_returns_inactive_projection_without_pending_actions() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -163,7 +163,7 @@ async fn replay_run_returns_inactive_projection_without_pending_actions() {
     assert!(replay.awaiting_node_ids.is_empty());
 }
 
-#[cfg_attr(all(miri, target_os = "macos"), ignore)]
+#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn apply_execution_event_records_tool_failure_incident() {
     let dir = tempdir().expect("tempdir");
@@ -215,7 +215,7 @@ async fn apply_execution_event_records_tool_failure_incident() {
     }
 }
 
-#[cfg_attr(all(miri, target_os = "macos"), ignore)]
+#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn apply_execution_event_records_malformed_submit_output_incident() {
     let dir = tempdir().expect("tempdir");

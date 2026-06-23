@@ -23,7 +23,7 @@
 
 ### Added
 
-- **Miri (engine + orchestration UB checks):** `./scripts/miri.sh` runs [Miri](https://github.com/rust-lang/miri) on `engine` and `orchestration` (lib + integration tests); subprocess/bash/git/MCP tests use `#[cfg_attr(miri, ignore)]`; backend sync tests skip on macOS Miri (kqueue). Included in `./scripts/verify.sh --deep` and a GitHub Actions `miri` job. Engine cross-interprets as `x86_64-unknown-linux-gnu` on Darwin host.
+- **Miri (engine + orchestration UB checks):** `./scripts/miri.sh` runs [Miri](https://github.com/rust-lang/miri) on `engine` and `orchestration` **lib** tests only; tokio/subprocess/bash/git/MCP tests use `#[cfg_attr(miri, ignore)]`. Included in `./scripts/verify.sh --deep` and a GitHub Actions `miri` job (PR + `main` push; `push` does not duplicate PR runs). Engine cross-interprets as `x86_64-unknown-linux-gnu` on Darwin host.
 - **Playwright:** browser-only E2E for Settings → Providers (navigate, switch provider, save API key).
 - **Delete workflow from settings:** Workflow Settings panel danger zone permanently deletes the active workflow (confirm dialog; blocked while a run is active on that workflow).
 - **MCP external discovery:** Fixed `discoverExternal` defaulting off when `settings.json` has no `mcp` key (`McpSettings::default()` now true); scans Cursor, Claude Code, and project `mcp.json` / `.flow/mcp.json`.

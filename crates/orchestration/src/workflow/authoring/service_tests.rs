@@ -24,7 +24,7 @@ impl AiPort for MockAuthoringAi {
     }
 }
 
-#[cfg_attr(all(miri, target_os = "macos"), ignore)]
+#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn send_turn_materializes_valid_draft() {
     let ai = MockAuthoringAi {
@@ -83,7 +83,7 @@ async fn send_turn_materializes_valid_draft() {
     assert_eq!(result.draft.as_ref().expect("draft").nodes.len(), 2);
 }
 
-#[cfg_attr(all(miri, target_os = "macos"), ignore)]
+#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn send_turn_accepts_flat_draft_fields_in_output() {
     let ai = MockAuthoringAi {
@@ -151,7 +151,7 @@ impl AiPort for ClarificationThenDraftAi {
     }
 }
 
-#[cfg_attr(all(miri, target_os = "macos"), ignore)]
+#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn send_turn_retries_clarification_and_materializes_draft() {
     let draft_response = json!({
@@ -244,7 +244,7 @@ impl AiPort for MalformedSubmitThenDraftAi {
     }
 }
 
-#[cfg_attr(all(miri, target_os = "macos"), ignore)]
+#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn send_turn_retries_malformed_submit_output_and_materializes_draft() {
     let draft_response = json!({

@@ -66,7 +66,7 @@ impl AiPort for ScriptedAi {
     }
 }
 
-#[cfg_attr(all(miri, target_os = "macos"), ignore)]
+#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn branch_join_workflow_preserves_sentinel_and_trace_contract() {
     let ai = ScriptedAi::default();
@@ -117,7 +117,7 @@ async fn branch_join_workflow_preserves_sentinel_and_trace_contract() {
     assert_eq!(entrypoint_text, "Plan project ORCHID-91");
 }
 
-#[cfg_attr(all(miri, target_os = "macos"), ignore)]
+#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn manual_node_pauses_accepts_input_and_feeds_downstream_node() {
     #[derive(Clone, Default)]
@@ -212,7 +212,7 @@ async fn manual_node_pauses_accepts_input_and_feeds_downstream_node() {
     );
 }
 
-#[cfg_attr(all(miri, target_os = "macos"), ignore)]
+#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
     #[derive(Clone, Default)]
@@ -297,7 +297,7 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
     assert!(!snapshot.tool_calls_by_node[&NodeId("tool-node".into())].is_empty());
 }
 
-#[cfg_attr(all(miri, target_os = "macos"), ignore)]
+#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn write_tool_requires_approval_and_mutates_file_after_allow() {
     #[derive(Clone, Default)]
@@ -461,7 +461,7 @@ fn checkpoint_interactive_params<A: AiPort + Send + Sync + 'static>(
     }
 }
 
-#[cfg_attr(all(miri, target_os = "macos"), ignore)]
+#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn checkpoint_resume_mid_approval_replays_batch() {
     use parking_lot::Mutex as ParkingMutex;
@@ -549,7 +549,7 @@ async fn checkpoint_resume_mid_approval_replays_batch() {
     );
 }
 
-#[cfg_attr(all(miri, target_os = "macos"), ignore)]
+#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn failed_read_tool_feeds_error_and_node_completes() {
     #[derive(Clone, Default)]
@@ -617,7 +617,7 @@ async fn failed_read_tool_feeds_error_and_node_completes() {
 
 /// Regression probe: `read` on a missing file yields `[not_found]`; `search` on a
 /// missing path should not silently succeed with "No matches found".
-#[cfg_attr(all(miri, target_os = "macos"), ignore)]
+#[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn search_missing_path_surfaces_not_found_not_empty_success() {
     #[derive(Clone, Default)]

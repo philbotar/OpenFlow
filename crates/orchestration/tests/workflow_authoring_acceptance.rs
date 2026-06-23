@@ -1,7 +1,7 @@
 use orchestration::workflow::authoring::WorkflowAuthoringService;
 use orchestration::AppSettings;
 
-#[cfg_attr(all(miri, target_os = "macos"), ignore)]
+#[cfg_attr(miri, ignore)]
 #[tokio::test]
 #[ignore = "requires STEP_WORKFLOW_LIVE_AI=1 and provider API key"]
 async fn live_authoring_turn_produces_valid_dag() {
