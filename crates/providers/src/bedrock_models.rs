@@ -5,6 +5,10 @@ use aws_sdk_bedrock::types::{
 use aws_sdk_bedrock::Client as BedrockControlClient;
 use engine::AgentError;
 
+/// Lists active on-demand Bedrock foundation models that support Converse text output.
+///
+/// # Errors
+/// Returns an error when AWS configuration, credentials, or the Bedrock control-plane call fails.
 pub async fn list_bedrock_foundation_models(
     region: &str,
     aws_profile: Option<&str>,
@@ -16,7 +20,7 @@ pub async fn list_bedrock_foundation_models(
         .by_inference_type(InferenceType::OnDemand)
         .send()
         .await
-        .map_err(map_bedrock_control_error)?;
+        .map_err(|error| map_bedrock_control_error(&error))?;
     Ok(filter_converse_model_ids(
         response.model_summaries.unwrap_or_default(),
     ))
@@ -67,7 +71,7 @@ async fn bedrock_control_client(
     Ok(BedrockControlClient::new(&shared))
 }
 
-fn map_bedrock_control_error<E>(error: aws_sdk_bedrock::error::SdkError<E>) -> AgentError
+fn map_bedrock_control_error<E>(error: &aws_sdk_bedrock::error::SdkError<E>) -> AgentError
 where
     E: std::error::Error + Send + Sync + 'static,
 {
@@ -100,6 +104,7 @@ fn classify_sdk_error_code(message: &str) -> SdkErrorClass {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
     use super::*;
 

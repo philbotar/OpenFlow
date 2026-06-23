@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   version:
-    name: Version bump (per crate + release)
+    name: Version bump (per crate)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

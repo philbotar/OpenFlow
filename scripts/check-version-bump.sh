@@ -83,7 +83,7 @@ while IFS= read -r file; do
 	substantive "$file" || continue
 	crate=$(crate_of "$file")
 	[[ -n "$crate" ]] && touched="${touched}${crate}"$'\n'
-done < <(git diff --name-only --diff-filter=ACMRT "$BASE..$HEAD")
+done < <(git diff --name-only --diff-filter=ACDMRT "$BASE..$HEAD")
 
 touched=$(printf '%s' "$touched" | sort -u)
 if [[ -z "$touched" ]]; then
