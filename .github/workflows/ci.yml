@@ -91,9 +91,6 @@ jobs:
         with:
           components: miri
 
-      - name: Miri setup
-        run: cargo miri setup
-
       - name: Cache Miri build artifacts
         uses: swatinem/rust-cache@v2
         with:
