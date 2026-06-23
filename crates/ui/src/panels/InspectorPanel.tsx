@@ -110,8 +110,8 @@ export function InspectorPanel() {
                 }
                 schemaJson={ctx.schemaText()}
                 onSchemaChange={(value) => ctx.setSchemaText(value)}
-                knownModels={ctx.activeProfileMemo().known_models}
-                defaultModel={ctx.activeProfileMemo().default_model}
+                knownModels={() => ctx.activeProfileMemo().known_models}
+                defaultModel={() => ctx.activeProfileMemo().default_model}
                 reasoningEffortOptions={reasoningEffortOptions(ctx.activeProfileMemo())}
                 workflowDefaultReasoningEffort={workflowReasoningEffort(
                   ctx.activeWorkflow()?.settings ?? { shared_context: "" },
@@ -136,7 +136,6 @@ export function InspectorPanel() {
                     nextNode.agent.reasoningBudgetTokens = value;
                   })
                 }
-                listId="node-model-list"
                 systemPromptRows={8}
                 taskPromptRows={5}
                 showSchema={false}

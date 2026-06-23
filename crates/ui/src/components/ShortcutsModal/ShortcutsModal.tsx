@@ -9,6 +9,7 @@ const SHORTCUTS = [
   { keys: "⌘/Ctrl + +", action: "Zoom in" },
   { keys: "⌘/Ctrl + -", action: "Zoom out" },
   { keys: "⌘/Ctrl + J", action: "Toggle right panel" },
+  { keys: "⌘/Ctrl + B", action: "Toggle left sidebar" },
   { keys: "Delete / Backspace", action: "Delete selected node or edge" },
   { keys: "?", action: "Show keyboard shortcuts" },
   { keys: "Escape", action: "Close modal" },

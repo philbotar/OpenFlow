@@ -6,13 +6,13 @@ use crate::mapping::{
 };
 use aws_sdk_bedrockruntime::error::ProvideErrorMetadata;
 use aws_sdk_bedrockruntime::types::{
-    AutoToolChoice, ContentBlock, ContentBlockDelta, ConversationRole, ConverseStreamOutput,
+    AutoToolChoice, ContentBlock, ConversationRole, ConverseStreamOutput,
     InferenceConfiguration, Message, SystemContentBlock, Tool, ToolChoice, ToolConfiguration,
     ToolInputSchema, ToolResultBlock, ToolResultContentBlock, ToolResultStatus, ToolSpecification,
     ToolUseBlock,
 };
 use aws_sdk_bedrockruntime::Client as BedrockRuntimeClient;
-use aws_smithy_types::Document;
+use aws_smithy_types::{Document, Number};
 use engine::{
     AgentError, AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTranscriptItem,
     AgentTurnOutcome, AiStreamEvent, AiStreamSink, ToolCall,
@@ -104,8 +104,7 @@ fn build_converse_input(request: &AgentRequest) -> Result<ConverseInput, AgentEr
         messages,
         inference_config: InferenceConfiguration::builder()
             .max_tokens(DEFAULT_MAX_TOKENS)
-            .build()
-            .map_err(|_| AgentError::Failed("Bedrock failed to build inference config".into()))?,
+            .build(),
         tool_config,
     })
 }
@@ -128,9 +127,7 @@ fn build_tool_config(request: &AgentRequest) -> Result<Option<ToolConfiguration>
 }
 
 fn bedrock_tool_from_spec(tool: &ToolSpec) -> Result<Tool, AgentError> {
-    let schema: Document = serde_json::from_value(tool.parameters.clone()).map_err(|error| {
-        AgentError::Failed(format!("Bedrock tool schema JSON invalid: {error}"))
-    })?;
+    let schema = document_from_json(&tool.parameters)?;
     let spec = ToolSpecification::builder()
         .name(tool.name.clone())
         .description(tool.description.clone())
@@ -224,20 +221,64 @@ fn transcript_to_messages(request: &AgentRequest) -> Result<Vec<Message>, AgentE
 }
 
 fn document_from_json(value: &Value) -> Result<Document, AgentError> {
-    let raw = serde_json::to_string(value).map_err(|error| {
-        AgentError::Failed(format!("Bedrock JSON document conversion failed: {error}"))
-    })?;
-    aws_smithy_types::serde::from_str(&raw).map_err(|error| {
-        AgentError::Failed(format!("Bedrock JSON document conversion failed: {error}"))
+    Ok(match value {
+        Value::Null => Document::Null,
+        Value::Bool(value) => Document::Bool(*value),
+        Value::Number(number) => Document::Number(json_number_to_smithy(number)),
+        Value::String(value) => Document::String(value.clone()),
+        Value::Array(values) => Document::Array(
+            values
+                .iter()
+                .map(document_from_json)
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
+        Value::Object(values) => Document::Object(
+            values
+                .iter()
+                .map(|(key, value)| document_from_json(value).map(|doc| (key.clone(), doc)))
+                .collect::<Result<_, _>>()?,
+        ),
     })
 }
 
+fn json_number_to_smithy(number: &serde_json::Number) -> Number {
+    if let Some(value) = number.as_u64() {
+        Number::PosInt(value)
+    } else if let Some(value) = number.as_i64() {
+        if value >= 0 {
+            Number::PosInt(value as u64)
+        } else {
+            Number::NegInt(value)
+        }
+    } else if let Some(value) = number.as_f64() {
+        Number::Float(value)
+    } else {
+        Number::PosInt(0)
+    }
+}
+
 fn json_from_document(document: &Document) -> Result<Value, AgentError> {
-    let raw = aws_smithy_types::serde::to_string(document).map_err(|error| {
-        AgentError::Failed(format!("Bedrock document JSON conversion failed: {error}"))
-    })?;
-    serde_json::from_str(&raw).map_err(|error| {
-        AgentError::Failed(format!("Bedrock document JSON conversion failed: {error}"))
+    Ok(match document {
+        Document::Null => Value::Null,
+        Document::Bool(value) => Value::Bool(*value),
+        Document::String(value) => Value::String(value.clone()),
+        Document::Number(value) => Value::Number(match value {
+            Number::PosInt(value) => serde_json::Number::from(*value),
+            Number::NegInt(value) => serde_json::Number::from(*value),
+            Number::Float(value) => serde_json::Number::from_f64(*value).unwrap_or_else(|| 0.into()),
+        }),
+        Document::Array(values) => Value::Array(
+            values
+                .iter()
+                .map(json_from_document)
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
+        Document::Object(values) => Value::Object(
+            values
+                .iter()
+                .map(|(key, value)| json_from_document(value).map(|json| (key.clone(), json)))
+                .collect::<Result<_, _>>()?,
+        ),
     })
 }
 
@@ -357,7 +398,13 @@ fn map_bedrock_runtime_error<E>(error: aws_sdk_bedrockruntime::error::SdkError<E
 where
     E: ProvideErrorMetadata + std::error::Error + Send + Sync + 'static,
 {
-    map_bedrock_sdk_error(error, "Bedrock request failed")
+    classify_bedrock_error(
+        error
+            .as_service_error()
+            .and_then(|service| service.code())
+            .unwrap_or_default(),
+        format!("Bedrock request failed: {error}"),
+    )
 }
 
 fn map_bedrock_stream_error<E>(
@@ -366,21 +413,16 @@ fn map_bedrock_stream_error<E>(
 where
     E: ProvideErrorMetadata + std::error::Error + Send + Sync + 'static,
 {
-    map_bedrock_sdk_error(error, "Bedrock stream failed")
+    classify_bedrock_error(
+        error
+            .as_service_error()
+            .and_then(|service| service.code())
+            .unwrap_or_default(),
+        format!("Bedrock stream failed: {error}"),
+    )
 }
 
-fn map_bedrock_sdk_error<E>(
-    error: aws_sdk_bedrockruntime::error::SdkError<E>,
-    prefix: &str,
-) -> AgentError
-where
-    E: ProvideErrorMetadata + std::error::Error + Send + Sync + 'static,
-{
-    let code = error
-        .as_service_error()
-        .and_then(|service| service.code())
-        .unwrap_or_default();
-    let message = format!("{prefix}: {error}");
+fn classify_bedrock_error(code: &str, message: String) -> AgentError {
     match code {
         "ThrottlingException" | "ServiceUnavailableException" | "ModelStreamErrorException" => {
             AgentError::Transient(message)
@@ -389,9 +431,7 @@ where
         "AccessDeniedException" | "ValidationException" | "ResourceNotFoundException" => {
             AgentError::Permanent(message)
         }
-        _ if error.to_string().to_ascii_lowercase().contains("timeout") => {
-            AgentError::Transient(message)
-        }
+        _ if message.to_ascii_lowercase().contains("timeout") => AgentError::Transient(message),
         _ => AgentError::Failed(message),
     }
 }
@@ -414,52 +454,41 @@ impl ConverseStreamAggregator {
         match event {
             ConverseStreamOutput::ContentBlockDelta(delta_event) => {
                 let index = delta_event.content_block_index;
-                let delta = delta_event.delta();
+                let Some(delta) = delta_event.delta() else {
+                    return None;
+                };
                 if let Ok(text) = delta.as_text() {
                     self.text_by_block.entry(index).or_default().push_str(text);
-                    return Some(text.clone());
+                    return Some(text.to_string());
                 }
                 if let Ok(tool_delta) = delta.as_tool_use() {
                     if let Some(pending) = self.pending_tools.get_mut(&index) {
-                        if let Some(input) = tool_delta.input() {
-                            let fragment =
-                                aws_smithy_types::serde::to_string(input).unwrap_or_default();
-                            pending.input_json.push_str(&fragment);
-                        }
-                        if let Some(name) = tool_delta.name() {
-                            pending.name = name.to_string();
-                        }
-                        if let Some(id) = tool_delta.tool_use_id() {
-                            pending.tool_use_id = id.to_string();
-                        }
+                        pending.input_json.push_str(tool_delta.input());
                     }
                 }
             }
             ConverseStreamOutput::ContentBlockStart(start_event) => {
                 let index = start_event.content_block_index;
-                if let Ok(start) = start_event.start().as_tool_use() {
-                    self.pending_tools.insert(
-                        index,
-                        PendingToolUse {
-                            tool_use_id: start.tool_use_id().to_string(),
-                            name: start.name().to_string(),
-                            input_json: start
-                                .input()
-                                .map(|input| {
-                                    aws_smithy_types::serde::to_string(input).unwrap_or_default()
-                                })
-                                .unwrap_or_default(),
-                        },
-                    );
+                if let Some(start) = start_event.start() {
+                    if let Ok(tool_start) = start.as_tool_use() {
+                        self.pending_tools.insert(
+                            index,
+                            PendingToolUse {
+                                tool_use_id: tool_start.tool_use_id().to_string(),
+                                name: tool_start.name().to_string(),
+                                input_json: String::new(),
+                            },
+                        );
+                    }
                 }
             }
             ConverseStreamOutput::ContentBlockStop(stop_event) => {
                 if let Some(pending) = self.pending_tools.remove(&stop_event.content_block_index) {
-                    let input = document_from_json(
-                        &serde_json::from_str(&pending.input_json)
-                            .unwrap_or(Value::Object(Default::default())),
-                    )
-                    .unwrap_or_default();
+                    let arguments = serde_json::from_str(&pending.input_json)
+                        .unwrap_or(Value::Object(Default::default()));
+                    let input = document_from_json(&arguments).unwrap_or(Document::Object(
+                        std::collections::HashMap::new(),
+                    ));
                     if let Ok(block) = ToolUseBlock::builder()
                         .tool_use_id(pending.tool_use_id)
                         .name(pending.name)
@@ -471,7 +500,8 @@ impl ConverseStreamAggregator {
                 }
             }
             ConverseStreamOutput::MessageStop(_) | ConverseStreamOutput::Metadata(_) => {}
-            ConverseStreamOutput::MessageStart(_) | ConverseStreamOutput::Unknown => {}
+            ConverseStreamOutput::MessageStart(_) => {}
+            _ => {}
         }
         None
     }
@@ -504,6 +534,7 @@ impl ConverseStreamAggregator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aws_sdk_bedrockruntime::types::ContentBlockDelta;
     use engine::{NodeId, NodeToolConfig, ToolDefinition, ToolTier, WorkflowId};
 
     fn sample_agent_request() -> AgentRequest {
@@ -563,8 +594,11 @@ mod tests {
             AgentTranscriptItem::ToolResult {
                 result: engine::ToolResult {
                     tool_call_id: "toolu_1".to_string(),
+                    tool_name: "read".to_string(),
                     content: "file contents".to_string(),
                     is_error: false,
+                    artifact_ids: Vec::new(),
+                    output_meta: None,
                 },
             },
         ];
@@ -610,6 +644,9 @@ mod tests {
         let event = ConverseStreamOutput::ContentBlockDelta(delta);
         assert_eq!(agg.apply_event(&event).as_deref(), Some(" world"));
         let message = agg.into_message();
-        assert_eq!(message.content()[0].as_text(), Ok("Hello world"));
+        assert_eq!(
+            message.content()[0].as_text().map(String::as_str),
+            Ok("Hello world")
+        );
     }
 }

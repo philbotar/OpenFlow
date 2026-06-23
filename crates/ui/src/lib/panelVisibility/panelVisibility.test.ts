@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  LEFT_PANEL_VISIBILITY_STORAGE_KEY,
   PANEL_VISIBILITY_STORAGE_KEY,
+  readStoredLeftPanelHidden,
   readStoredRightPanelHidden,
+  writeStoredLeftPanelHidden,
   writeStoredRightPanelHidden,
 } from ".";
 
@@ -99,5 +102,25 @@ describe("round-trip persistence", () => {
 describe("PANEL_VISIBILITY_STORAGE_KEY", () => {
   it("uses openflow.rightPanelHidden key", () => {
     expect(PANEL_VISIBILITY_STORAGE_KEY).toBe("openflow.rightPanelHidden");
+  });
+});
+
+describe("LEFT_PANEL_VISIBILITY_STORAGE_KEY", () => {
+  it("uses openflow.leftPanelHidden key", () => {
+    expect(LEFT_PANEL_VISIBILITY_STORAGE_KEY).toBe("openflow.leftPanelHidden");
+  });
+});
+
+describe("left panel round-trip persistence", () => {
+  it("write true then read returns true", () => {
+    let stored: string | null = null;
+    const storage = {
+      getItem: () => stored,
+      setItem: (_key: string, value: string) => {
+        stored = value;
+      },
+    };
+    writeStoredLeftPanelHidden(storage, true);
+    expect(readStoredLeftPanelHidden(storage)).toBe(true);
   });
 });

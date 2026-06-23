@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "tauri": "npm --prefix ../ui run tauri --",
+    "dev": "npm run tauri -- dev",
     "start": "../ui/node_modules/.bin/tauri",
     "build": "../ui/node_modules/.bin/tauri build",
     "e2e:install": "npm --prefix e2e install",

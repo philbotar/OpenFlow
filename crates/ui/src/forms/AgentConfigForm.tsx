@@ -1,4 +1,4 @@
-import { createEffect, createMemo, For, Show } from "solid-js";
+import { createEffect, createMemo, Show, type Accessor } from "solid-js";
 import { TextSelect } from "@/components";
 import type { ReasoningEffortOption } from "@/lib/types";
 
@@ -13,9 +13,8 @@ export function AgentConfigForm(props: {
   onTaskPromptChange: (value: string) => void;
   schemaJson: string;
   onSchemaChange: (value: string) => void;
-  knownModels: readonly string[];
-  defaultModel: string | null;
-  listId: string;
+  knownModels: Accessor<readonly string[]>;
+  defaultModel: Accessor<string | null>;
   systemPromptRows?: number;
   taskPromptRows?: number;
   schemaRows?: number;
@@ -29,7 +28,16 @@ export function AgentConfigForm(props: {
   onReasoningBudgetTokensChange?: (value: number | null) => void;
   showSchema?: boolean;
 }) {
-  const effectiveModel = () => props.model || props.defaultModel || "";
+  const effectiveModel = () => props.model || props.defaultModel() || "";
+  const modelSelectOptions = createMemo(() => {
+    const models = props.knownModels();
+    const options = models.map((model) => ({ value: model, label: model }));
+    const current = props.model;
+    if (current && !models.includes(current)) {
+      options.unshift({ value: current, label: current });
+    }
+    return options;
+  });
   const effortOptions = () => props.reasoningEffortOptions ?? [];
   const selectedEffort = () => props.reasoningEffort ?? "";
   const selectedEffortOption = createMemo(() =>
@@ -57,8 +65,9 @@ export function AgentConfigForm(props: {
   ]);
 
   createEffect(() => {
-    if (!props.model && props.defaultModel) {
-      props.onModelChange(props.defaultModel);
+    const defaultModel = props.defaultModel();
+    if (!props.model && defaultModel) {
+      props.onModelChange(defaultModel);
     }
   });
 
@@ -66,15 +75,11 @@ export function AgentConfigForm(props: {
     <>
       <label>
         <span>Model</span>
-        <input
-          class="text-input"
+        <TextSelect
           value={effectiveModel()}
-          list={props.listId}
-          onInput={(event) => props.onModelChange(event.currentTarget.value)}
+          options={modelSelectOptions()}
+          onChange={(event) => props.onModelChange(event.currentTarget.value)}
         />
-        <datalist id={props.listId}>
-          <For each={props.knownModels}>{(model) => <option value={model} />}</For>
-        </datalist>
       </label>
       <Show when={effortOptions().length > 0 && props.onReasoningEffortChange}>
         <label>

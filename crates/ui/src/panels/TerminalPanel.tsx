@@ -139,74 +139,76 @@ export function TerminalPanel() {
 
   return (
     <div class="terminal-layout">
-      <div class="terminal-tab-bar">
-        <div class="terminal-tabs">
-          <For each={ctx.terminalSessions()}>
-            {(session) => (
-              <div
-                class="terminal-tab"
-                classList={{ active: ctx.activeTerminalSessionId() === session.sessionId }}
-              >
-                <button
-                  type="button"
-                  class="terminal-tab-close"
-                  onClick={() => void ctx.handleStopTerminal(session.sessionId)}
-                  title="Close terminal"
-                  aria-label={`Close ${terminalTabLabel(session.cwd)} terminal`}
+      <div class="terminal-shell">
+        <div class="terminal-tab-bar">
+          <div class="terminal-tabs">
+            <For each={ctx.terminalSessions()}>
+              {(session) => (
+                <div
+                  class="terminal-tab"
+                  classList={{ active: ctx.activeTerminalSessionId() === session.sessionId }}
                 >
-                  <X
-                    width={12}
-                    height={12}
-                    aria-hidden="true"
-                    absoluteStrokeWidth
-                    strokeWidth={ICON_STROKE_WIDTH}
-                  />
-                </button>
-                <button
-                  type="button"
-                  class="terminal-tab-select"
-                  onClick={() => ctx.handleSelectTerminalSession(session.sessionId)}
-                  title={session.cwd}
-                >
-                  <span class="terminal-tab-label">{terminalTabLabel(session.cwd)}</span>
-                </button>
-              </div>
-            )}
-          </For>
-          <button
-            type="button"
-            class="terminal-tab-add"
-            disabled={ctx.terminalStarting()}
-            onClick={openNewTerminal}
-            title="New terminal"
-            aria-label="New terminal"
-          >
-            <Plus
-              width={14}
-              height={14}
-              aria-hidden="true"
-              absoluteStrokeWidth
-              strokeWidth={ICON_STROKE_WIDTH}
-            />
-          </button>
+                  <button
+                    type="button"
+                    class="terminal-tab-close"
+                    onClick={() => void ctx.handleStopTerminal(session.sessionId)}
+                    title="Close terminal"
+                    aria-label={`Close ${terminalTabLabel(session.cwd)} terminal`}
+                  >
+                    <X
+                      width={12}
+                      height={12}
+                      aria-hidden="true"
+                      absoluteStrokeWidth
+                      strokeWidth={ICON_STROKE_WIDTH}
+                    />
+                  </button>
+                  <button
+                    type="button"
+                    class="terminal-tab-select"
+                    onClick={() => ctx.handleSelectTerminalSession(session.sessionId)}
+                    title={session.cwd}
+                  >
+                    <span class="terminal-tab-label">{terminalTabLabel(session.cwd)}</span>
+                  </button>
+                </div>
+              )}
+            </For>
+            <button
+              type="button"
+              class="terminal-tab-add"
+              disabled={ctx.terminalStarting()}
+              onClick={openNewTerminal}
+              title="New terminal"
+              aria-label="New terminal"
+            >
+              <Plus
+                width={14}
+                height={14}
+                aria-hidden="true"
+                absoluteStrokeWidth
+                strokeWidth={ICON_STROKE_WIDTH}
+              />
+            </button>
+          </div>
         </div>
+        <Show
+          when={ctx.terminalSessions().length > 0}
+          fallback={
+            <PanelEmptyState
+              icon={<TerminalSquare width={22} height={22} />}
+              title={ctx.terminalStarting() ? "Starting terminal..." : "No terminal open"}
+              description={
+                ctx.terminalStarting()
+                  ? undefined
+                  : "Press + to open a shell in the project directory."
+              }
+            />
+          }
+        >
+          <TerminalHost />
+        </Show>
       </div>
-      <Show
-        when={ctx.terminalSessions().length > 0}
-        fallback={
-          <PanelEmptyState
-            icon={<TerminalSquare width={22} height={22} />}
-            title={ctx.terminalStarting() ? "Starting terminal..." : "No terminal open"}
-            description={
-              ctx.terminalStarting()
-                ? undefined
-                : "Press + to open a shell in the project directory."
-            }
-          />
-        }
-      >
-        <TerminalHost />
-      </Show>
     </div>
   );
 }

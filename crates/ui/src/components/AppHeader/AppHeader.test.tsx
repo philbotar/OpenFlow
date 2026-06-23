@@ -11,8 +11,10 @@ vi.mock("./Spinner", () => ({
 function makeMockContext(overrides: Partial<AppContextValue> = {}): AppContextValue {
   return {
     rightPanelHidden: () => false,
+    leftPanelHidden: () => false,
     screen: () => "editor",
     handleToggleRightPanel: vi.fn(),
+    handleToggleLeftPanel: vi.fn(),
     isCompactViewport: () => false,
     sidebarDrawerOpen: () => false,
     openSidebarDrawer: vi.fn(),
@@ -286,6 +288,42 @@ describe("AppHeader", () => {
       isCompactViewport: () => false,
     });
     expect(container.querySelector("button[aria-label='Open navigation']")).toBeNull();
+    dispose();
+  });
+
+  it("shows desktop sidebar toggle on non-compact viewport", () => {
+    const { container, dispose } = renderWithContext({
+      isCompactViewport: () => false,
+    });
+    expect(container.querySelector("button[aria-label='Hide left sidebar']")).not.toBeNull();
+    dispose();
+  });
+
+  it("does not highlight left sidebar toggle when sidebar is open", () => {
+    const { container, dispose } = renderWithContext({
+      isCompactViewport: () => false,
+      leftPanelHidden: () => false,
+    });
+    const toggle = container.querySelector(
+      "button[aria-label='Hide left sidebar']",
+    ) as HTMLButtonElement;
+    expect(toggle.classList.contains("topbar-icon-button-active")).toBe(false);
+    expect(toggle.hasAttribute("aria-pressed")).toBe(false);
+    dispose();
+  });
+
+  it("click calls handleToggleLeftPanel on desktop", () => {
+    const handleToggleLeftPanel = vi.fn();
+    const { container, dispose } = renderWithContext({
+      isCompactViewport: () => false,
+      leftPanelHidden: () => false,
+      handleToggleLeftPanel,
+    });
+    const toggle = container.querySelector(
+      "button[aria-label='Hide left sidebar']",
+    ) as HTMLButtonElement;
+    toggle.click();
+    expect(handleToggleLeftPanel).toHaveBeenCalledTimes(1);
     dispose();
   });
 

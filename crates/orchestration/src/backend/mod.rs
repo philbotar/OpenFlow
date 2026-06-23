@@ -336,11 +336,11 @@ impl AppBackend {
         self.settings.validate_workflow(workflow)
     }
 
-    pub fn refresh_bedrock_models(
+    pub async fn refresh_bedrock_models(
         &self,
         settings: &AppSettings,
     ) -> Result<Vec<String>, BackendError> {
-        self.settings.refresh_bedrock_models(settings)
+        self.settings.refresh_bedrock_models(settings).await
     }
 
     pub fn start_workflow_authoring(&self, base_workflow: Option<Workflow>) -> String {

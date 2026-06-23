@@ -112,9 +112,8 @@ export function AgentsScreen() {
                   }
                   schemaJson={ctx.agentSchemaDraft()}
                   onSchemaChange={(value) => ctx.handleAgentSchemaInput(value)}
-                  knownModels={ctx.activeProfileMemo().known_models}
-                  defaultModel={ctx.activeProfileMemo().default_model}
-                  listId="agent-model-list"
+                  knownModels={() => ctx.activeProfileMemo().known_models}
+                  defaultModel={() => ctx.activeProfileMemo().default_model}
                 />
                 <ToolConfigEditor
                   config={agent().tools}

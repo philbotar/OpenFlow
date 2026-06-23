@@ -21,11 +21,23 @@ export function AppHeader() {
         <Show when={ctx.isCompactViewport()}>
           <button
             type="button"
-            class="topbar-nav-button"
+            class="topbar-nav-button topbar-sidebar-toggle"
             onClick={() => ctx.toggleSidebarDrawer()}
             title="Open navigation"
             aria-label="Open navigation"
             aria-expanded={ctx.sidebarDrawerOpen()}
+            data-tauri-drag-region="false"
+          >
+            <SidebarIcon name="panel-left" />
+          </button>
+        </Show>
+        <Show when={!ctx.isCompactViewport()}>
+          <button
+            type="button"
+            class="topbar-icon-button topbar-sidebar-toggle"
+            onClick={() => ctx.handleToggleLeftPanel()}
+            title={ctx.leftPanelHidden() ? `Show sidebar (${mod()}+B)` : `Hide sidebar (${mod()}+B)`}
+            aria-label={ctx.leftPanelHidden() ? "Show left sidebar" : "Hide left sidebar"}
             data-tauri-drag-region="false"
           >
             <SidebarIcon name="panel-left" />
@@ -57,7 +69,7 @@ export function AppHeader() {
           <span>{ctx.readiness()?.message ?? "Checking provider"}</span>
         </div>
         <Show when={ctx.screen() === "editor"}>
-          <div class="toolbar-group topbar-button-group">
+          <div class="toolbar-group topbar-button-group ">
             <div class="topbar-primary-actions">
               <Show
                 when={ctx.runState()?.active}

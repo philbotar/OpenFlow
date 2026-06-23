@@ -83,6 +83,7 @@ function AppChrome() {
           "app-shell--settings": isSettings(),
           "app-shell--compact": ctx.isCompactViewport(),
           "app-shell--sidebar-drawer-open": ctx.sidebarDrawerOpen(),
+          "app-shell--sidebar-hidden": !ctx.isCompactViewport() && ctx.leftPanelHidden(),
         }}
       >
         <WorkflowPickerModal />

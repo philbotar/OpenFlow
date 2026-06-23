@@ -61,6 +61,7 @@ export interface AppContextValue {
   providerKeyInputByProvider: Accessor<Record<AiProviderKind, string>>;
   uiZoom: Accessor<number>;
   rightPanelHidden: Accessor<boolean>;
+  leftPanelHidden: Accessor<boolean>;
   workflowSettingsOpen: Accessor<boolean>;
   selectedProjectId: Accessor<string | null>;
   editingWorkflowId: Accessor<string | null>;
@@ -240,6 +241,7 @@ export interface AppContextValue {
   handleToggleProjectsSection: () => void;
   handleToggleWorkflowSettings: () => void;
   handleToggleRightPanel: () => void;
+  handleToggleLeftPanel: () => void;
   updateActiveWorkflowSettings: (mutator: (settings: Workflow["settings"]) => void) => void;
 
   // ── Node mutation helpers ─────────────────────────────────────────────────

@@ -53,30 +53,20 @@ export function DockPanel() {
             Runs
           </button>
         </div>
-        <Show
-          when={
-            ctx.dockOpen() &&
-            (ctx.bottomTab() === "chat" ||
-              ctx.bottomTab() === "trace" ||
-              ctx.bottomTab() === "terminal" ||
-              ctx.bottomTab() === "runs")
-          }
-        >
+        <Show when={ctx.dockOpen()}>
           <div class="dock-tab-actions">
-            <Show when={ctx.bottomTab() === "chat"}>
-              <button
-                type="button"
-                class="dock-icon-action dock-focus-action"
-                title={ctx.chatFocusMode() ? "Show canvas" : "Focus chat"}
-                aria-label={ctx.chatFocusMode() ? "Show canvas" : "Focus chat"}
-                aria-pressed={ctx.chatFocusMode()}
-                onClick={() => ctx.handleToggleChatFocusMode()}
-              >
-                <Show when={ctx.chatFocusMode()} fallback={<Maximize2 width={15} height={15} />}>
-                  <Minimize2 width={15} height={15} />
-                </Show>
-              </button>
-            </Show> 
+            <button
+              type="button"
+              class="dock-icon-action dock-focus-action"
+              title={ctx.chatFocusMode() ? "Show canvas" : "Focus panel"}
+              aria-label={ctx.chatFocusMode() ? "Show canvas" : "Focus panel"}
+              aria-pressed={ctx.chatFocusMode()}
+              onClick={() => ctx.handleToggleChatFocusMode()}
+            >
+              <Show when={ctx.chatFocusMode()} fallback={<Maximize2 width={15} height={15} />}>
+                <Minimize2 width={15} height={15} />
+              </Show>
+            </button>
           </div>
         </Show>
       </div>

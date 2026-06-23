@@ -10,13 +10,9 @@
 .kilo/
 .superpowers/
 .aider*
-*/node_modules/*
+node_modules/
 dist/
 .planning/
-crates/agent-workflow-desktop/node_modules*
-*/crates/ui/node_modules
-*node_modules/*
-node_modules/
 .cursor/
 .flow/
 .openflow/
@@ -26,3 +22,24 @@ node_modules/
 
 # Test coverage reports (vitest HTML, lcov, etc.)
 coverage/
+
+# Frontend / E2E artifacts
+.vite/
+*.tsbuildinfo
+test-results/
+playwright-report/
+blob-report/
+
+# Rust tooling artifacts
+.mutants/
+*.profraw
+*.profdata
+*.rs.bk
+
+# OS / editor junk
+Thumbs.db
+Desktop.ini
+*~
+*.swp
+*.swo
+.git.bak/

@@ -57,20 +57,15 @@ export function Sidebar() {
         "sidebar-macos": isMacOS(),
         "sidebar-maximized": ctx.isMaximized(),
       }}
+      aria-hidden={ctx.leftPanelHidden() && !ctx.isCompactViewport()}
     >
-      <Show when={isMacOS()}>
+      <Show when={isMacOS() && !ctx.isMaximized()}>
         <div
           class="sidebar-window-controls-spacer"
           aria-hidden="true"
           data-tauri-drag-region
         />
       </Show>
-      <div class="sidebar-brand" data-tauri-drag-region>
-        <div class="brand-mark" aria-hidden="true" />
-        <div class="brand-copy">
-          <span class="brand-title">OpenFlow</span>
-        </div>
-      </div>
       <SidebarList>
         <SidebarNavButton
           icon="agents"

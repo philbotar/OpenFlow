@@ -802,11 +802,14 @@ describe("App agent dashboard", () => {
 
       expect(apiMocks.createAgentDefinition).toHaveBeenCalledWith("Agent 1");
 
-      const modelInput = await waitForElement(
-        () => Array.from(container.querySelectorAll("label span")).find((element) => element.textContent === "Model")?.parentElement?.querySelector("input") as HTMLInputElement | null,
-        "agent model input",
+      const modelSelect = await waitForElement(
+        () =>
+          Array.from(container.querySelectorAll("label span"))
+            .find((element) => element.textContent === "Model")
+            ?.parentElement?.querySelector(".text-select-trigger") as HTMLButtonElement | null,
+        "agent model select",
       );
-      expect(modelInput.value).toBe("gpt-4.1-mini");
+      expect(modelSelect?.querySelector(".text-select-value")?.textContent).toBe("gpt-4.1-mini");
 
       const autoStartInput = Array.from(container.querySelectorAll("label.checkbox-row input")).find(
         (element) => (element.parentElement?.textContent ?? "").includes("Request user input"),
@@ -1356,7 +1359,7 @@ describe("App chat slash commands", () => {
     }
   });
 
-  test("toggles chat focus mode from the chat dock", async () => {
+  test("toggles dock focus mode from the dock tab bar", async () => {
     const workflow = makeWorkflow("workflow-1", "Workflow One");
     const runState = makeAwaitingRunState(workflow);
     const { container, dispose } = await mountApp({
@@ -1373,8 +1376,8 @@ describe("App chat slash commands", () => {
       expect(editor?.classList.contains("editor-screen--chat-focus")).toBe(false);
 
       const focusButton = await waitForElement(
-        () => container.querySelector('[aria-label="Focus chat"]') as HTMLButtonElement | null,
-        "focus chat button",
+        () => container.querySelector('[aria-label="Focus panel"]') as HTMLButtonElement | null,
+        "focus panel button",
       );
       focusButton.click();
       await flush();
@@ -2060,6 +2063,87 @@ describe("App bottom dock", () => {
 
       expect(editorScreen.style.getPropertyValue("--dock-height")).toBe("192px");
       expect(container.querySelector(".overview-layout")).not.toBeNull();
+    } finally {
+      dispose();
+    }
+  });
+
+  test("opens chat at seventy percent height after the dock was collapsed", async () => {
+    Object.defineProperty(window, "innerHeight", { value: 1000, configurable: true });
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    const runState = makeAwaitingRunState(workflow);
+    const { container, dispose } = await mountApp({
+      workflows: [workflow],
+      agents: [makeAgent("agent-1", "Research Agent")],
+      skills: FIXTURE_SKILLS,
+      settings: SETTINGS,
+      runState,
+    });
+
+    try {
+      const editorScreen = await waitForElement(
+        () => container.querySelector(".editor-screen"),
+        "editor screen",
+      ) as HTMLDivElement;
+      const resizeZone = await waitForElement(
+        () => container.querySelector(".dock-resize-zone"),
+        "dock resize zone",
+      );
+      const chatTab = await waitForElement(
+        () =>
+          Array.from(container.querySelectorAll(".dock-tab-switcher button")).find(
+            (button) => button.textContent === "Chat",
+          ) as HTMLButtonElement | null,
+        "chat tab",
+      );
+
+      resizeZone.dispatchEvent(new MouseEvent("pointerdown", { clientY: 600, button: 0, bubbles: true }));
+      window.dispatchEvent(new MouseEvent("pointermove", { clientY: 740, bubbles: true }));
+      await flush();
+      window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
+
+      expect(editorScreen.style.getPropertyValue("--dock-height")).toBe("52px");
+
+      chatTab.click();
+      await flush();
+
+      expect(editorScreen.style.getPropertyValue("--dock-height")).toBe("700px");
+      expect(container.querySelector(".chat-layout")).not.toBeNull();
+    } finally {
+      dispose();
+    }
+  });
+
+  test("restores chat to seventy percent height after leaving focus mode", async () => {
+    Object.defineProperty(window, "innerHeight", { value: 1000, configurable: true });
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    const runState = makeAwaitingRunState(workflow);
+    const { container, dispose } = await mountApp({
+      workflows: [workflow],
+      agents: [makeAgent("agent-1", "Research Agent")],
+      skills: FIXTURE_SKILLS,
+      settings: SETTINGS,
+      runState,
+    });
+
+    try {
+      const editorScreen = await waitForElement(
+        () => container.querySelector(".editor-screen"),
+        "editor screen",
+      ) as HTMLDivElement;
+      await openChatTab(container);
+
+      const focusButton = await waitForElement(
+        () => container.querySelector('[aria-label="Focus panel"]') as HTMLButtonElement | null,
+        "focus panel button",
+      );
+      focusButton.click();
+      await flush();
+
+      (container.querySelector('[aria-label="Show canvas"]') as HTMLButtonElement).click();
+      await flush();
+
+      expect(editorScreen.style.getPropertyValue("--dock-height")).toBe("700px");
     } finally {
       dispose();
     }

@@ -306,11 +306,11 @@ fn resolve_provider_readiness(
 
 /// Tauri command: List Bedrock foundation models for the configured region/profile.
 #[tauri::command]
-fn refresh_bedrock_models(
-    backend: tauri::State<AppBackend>,
+async fn refresh_bedrock_models(
+    backend: tauri::State<'_, AppBackend>,
     settings: AppSettings,
 ) -> Result<Vec<String>, CommandError> {
-    Ok(backend.refresh_bedrock_models(&settings)?)
+    Ok(backend.refresh_bedrock_models(&settings).await?)
 }
 
 /// Tauri command: Validate a workflow.

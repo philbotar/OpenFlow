@@ -27,6 +27,7 @@ vi.mock("../panels/WorkflowSettingsPanel", () => ({
 function makeMockContext(overrides: Partial<AppContextValue> = {}): AppContextValue {
   return {
     rightPanelHidden: () => false,
+    leftPanelHidden: () => false,
     selectedNodeId: () => null,
     workflowSettingsOpen: () => false,
     dockOpen: () => true,
@@ -188,6 +189,7 @@ function makeMockContext(overrides: Partial<AppContextValue> = {}): AppContextVa
     handleZoomReset: () => {},
     handleToggleWorkflowSettings: () => {},
     handleToggleRightPanel: () => {},
+    handleToggleLeftPanel: () => {},
     updateActiveWorkflowSettings: () => {},
     ...overrides,
   } as AppContextValue;
@@ -284,15 +286,26 @@ describe("EditorScreen", () => {
     dispose();
   });
 
-  it("applies chat focus class when chat focus mode is active", () => {
+  it("applies dock focus class when dock focus mode is active", () => {
     const { container, dispose } = renderWithContext({
       chatFocusMode: () => true,
-      bottomTab: () => "chat",
+      bottomTab: () => "terminal",
       dockOpen: () => true,
     });
 
     const screen = container.querySelector(".editor-screen");
     expect(screen?.classList.contains("editor-screen--chat-focus")).toBe(true);
+    dispose();
+  });
+
+  it("applies settings focus class when workflow settings are open", () => {
+    const { container, dispose } = renderWithContext({
+      workflowSettingsOpen: () => true,
+      rightPanelHidden: () => false,
+    });
+
+    const screen = container.querySelector(".editor-screen");
+    expect(screen?.classList.contains("editor-screen--settings-focus")).toBe(true);
     dispose();
   });
 

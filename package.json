@@ -1,0 +1,10 @@
+{
+  "name": "openflow",
+  "private": true,
+  "scripts": {
+    "tauri": "npm --prefix crates/ui run tauri --",
+    "dev": "npm run tauri -- dev",
+    "build": "npm run tauri -- build",
+    "start": "npm run dev"
+  }
+}

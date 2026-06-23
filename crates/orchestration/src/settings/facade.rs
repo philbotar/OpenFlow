@@ -155,7 +155,7 @@ impl SettingsFacade {
 
     /// # Errors
     /// Returns an error if Bedrock model discovery fails or the Bedrock profile is missing.
-    pub fn refresh_bedrock_models(
+    pub async fn refresh_bedrock_models(
         &self,
         settings: &AppSettings,
     ) -> Result<Vec<String>, BackendError> {
@@ -194,6 +194,7 @@ impl SettingsFacade {
                     Some(profile_name)
                 },
             )
+            .await
             .map_err(map_agent_error_to_backend)
         }
     }

@@ -89,7 +89,9 @@ import {
   zoomOutUi,
 } from "../lib/uiZoom";
 import {
+  readStoredLeftPanelHidden,
   readStoredRightPanelHidden,
+  writeStoredLeftPanelHidden,
   writeStoredRightPanelHidden,
 } from "../lib/panelVisibility";
 import {
@@ -107,6 +109,7 @@ import {
   isCompactViewportWidth,
   isTextInputTarget,
   normalizeError,
+  restoredChatDockHeight,
   shouldCollapseDock,
   STATUS_TOAST_ID,
   viewportHeight,
@@ -216,6 +219,9 @@ export function AppProvider(props: ParentProps) {
   const [uiZoom, setUiZoom] = createSignal(readStoredUiZoom(globalThis.localStorage));
   const [rightPanelHidden, setRightPanelHidden] = createSignal(
     readStoredRightPanelHidden(globalThis.localStorage),
+  );
+  const [leftPanelHidden, setLeftPanelHidden] = createSignal(
+    readStoredLeftPanelHidden(globalThis.localStorage),
   );
   const [workflowsSectionHidden, setWorkflowsSectionHidden] = createSignal(
     readWorkflowsSectionHidden(globalThis.localStorage),
@@ -536,17 +542,24 @@ export function AppProvider(props: ParentProps) {
 
   // ── Dock ──────────────────────────────────────────────────────────────────
   const handleSelectBottomTab = (tab: BottomTab) => {
+    const wasCollapsed = !dockOpen();
     setBottomTab(tab);
     setDockOpen(true);
-    if (tab !== "chat") {
-      setChatFocusMode(false);
+    if (chatFocusMode()) {
+      return;
+    }
+    if (tab === "chat" && wasCollapsed) {
+      setDockHeight(restoredChatDockHeight(viewportHeight(), isCompactViewport()));
+      return;
     }
     setDockHeight((current) => clampDockHeight(current, tab));
   };
 
   const handleToggleChatFocusMode = () => {
-    setBottomTab("chat");
     setDockOpen(true);
+    if (chatFocusMode()) {
+      setDockHeight(restoredChatDockHeight(viewportHeight(), isCompactViewport()));
+    }
     setChatFocusMode((current) => !current);
   };
 
@@ -1175,6 +1188,13 @@ export function AppProvider(props: ParentProps) {
       setRightPanelHidden(true);
       writeStoredRightPanelHidden(globalThis.localStorage, true);
     }
+  };
+
+  const handleToggleLeftPanel = () => {
+    if (isCompactViewport()) return;
+    const next = !leftPanelHidden();
+    setLeftPanelHidden(next);
+    writeStoredLeftPanelHidden(globalThis.localStorage, next);
   };
 
   const handleToggleWorkflowsSection = () => {
@@ -1887,6 +1907,11 @@ export function AppProvider(props: ParentProps) {
       handleToggleRightPanel();
       return;
     }
+    if (command && event.key.toLowerCase() === "b" && !isTextInputTarget(event.target)) {
+      event.preventDefault();
+      handleToggleLeftPanel();
+      return;
+    }
     if (
       (event.key === "Delete" || event.key === "Backspace") &&
       !isTextInputTarget(event.target) &&
@@ -2290,6 +2315,8 @@ export function AppProvider(props: ParentProps) {
     updateActiveWorkflowSettings,
     rightPanelHidden,
     handleToggleRightPanel,
+    leftPanelHidden,
+    handleToggleLeftPanel,
     workflowsSectionExpanded,
     handleToggleWorkflowsSection,
     projectsSectionExpanded,

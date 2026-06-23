@@ -33,18 +33,6 @@ Domain terms for the Step-through-agentic-workflow architecture.
 | **Tool config migration** | No backward-compat migration. Drop `catalog` and `overrides` from schema; default new nodes/agents to `write`. Pre-release — old saved JSON with tool lists is not supported. |
 | **ApprovalMode (UI labels)** | Dropdown order: `read_only` → "Read only"; `write` (default) → "Read auto-approve, write prompt"; `always_ask` → "Always ask"; `yolo` → "Auto-approve all". |
 | **YOLO semantics** | Literally never prompt — remove critical-bash guard; all tools auto-run including destructive shell commands. |
-| **Read ledger** | Per-node record of paths (and optional line ranges) consulted via read-tier tools during a run. Internal audit trail — not automatically forwarded downstream. |
-| **Handoff context** | Curated excerpts and file references a completing node declares relevant for downstream work. Only handoff context crosses node boundaries — not the full read ledger. May be inline (short excerpts in upstream input) or by reference (paths to handoff artifacts). |
-| **Handoff artifact** | Run-scoped markdown (or other) file materialized under a canonical handoff path; holds extensive context too large to inline. Downstream nodes receive the path and a short summary — not the full file body in every model call. |
-| **Handoff path convention** | Default artifact location per completing node: `{project}/.flow/runs/{run_id}/handoffs/{node_id}/plan.md` (overridable primary filename). Additional paths may be declared alongside the canonical file. |
-| **Handoff materialization** | Completing node may write the canonical handoff file during its run, or omit it and rely on the host to create `plan.md` from declared handoff context at submit time. Both paths normalize to the same canonical location. |
-| **Output review gate** | Per-node opt-in pause after valid submit and before downstream scheduling. Human approves, requests changes, or blocks the handoff. Default off; enabled on planning or research nodes. |
-| **Output review actions** | On reject: **request changes** (comments injected; same node resumes) or **block** (node failed; downstream never runs). On approve: commit output and schedule downstream. **Edit in place** — human may edit the handoff artifact directly, then approve without re-running the agent. |
-| **Auto-generated handoff** | Host-created `plan.md` when the completing node submits without declared handoff context or a written artifact. Built from read ledger and transcript summary. Surfaced in trace/UI as a warning — not treated as agent-curated. |
-| **Downstream handoff injection** | Short summary plus handoff file paths inlined in downstream `AgentRequest.input`. Full artifact content is fetched via `read` when the agent needs depth — not pre-loaded into every model call. |
-| **Agent capability priority** | Ship the full inter-node handoff stack before other OMP parity work. Read tool parity (structural summaries, read cache, line selectors) is the next tier after handoff. |
-| **Handoff v1 scope** | Engine and orchestration: read ledger, submit handoff context, canonical artifact dir, downstream injection, auto-generated fallback with trace warning. Minimal review UI: per-node opt-in gate with approve, request changes, and block. Edit-in-place and full plan-review panel deferred. |
-| **Inter-node rereading** | Downstream nodes repeating read-tier discovery that upstream nodes already performed because handoff context was missing or uncurated. |
 
 ## Orchestration Crate Structure
 

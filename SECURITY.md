@@ -16,4 +16,4 @@ Include:
 - Steps to reproduce
 - Affected versions or commits, if known
 
-You should receive an acknowledgment within a few business days. We will coordinate disclosure timing with you before publishing a fix.
+You should receive an acknowledgment within a few days. We will coordinate disclosure timing with you before publishing a fix.

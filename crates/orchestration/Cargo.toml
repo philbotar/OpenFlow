@@ -13,7 +13,7 @@ categories.workspace = true
 name = "orchestration"
 
 [features]
-default = []
+default = ["bedrock"]
 bedrock = ["providers/bedrock"]
 
 [dependencies]

@@ -45,7 +45,7 @@ rmcp = { version = "1.7", features = ["client", "transport-child-process"] }
 aws-config = { version = "1.8", features = ["behavior-version-latest"] }
 aws-sdk-bedrock = "1.146"
 aws-sdk-bedrockruntime = "1.116"
-aws-smithy-types = { version = "1.3", features = ["serde"] }
+aws-smithy-types = "1.3"
 
 [workspace.lints.rust]
 warnings = "deny"
