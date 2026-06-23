@@ -34,7 +34,7 @@ jobs:
         run: npm ci --prefix crates/ui
 
       - name: Install cargo-deny
-        uses: taiki-e/install-action@latest
+        uses: taiki-e/install-action@v2
         with:
           tool: cargo-deny
 
