@@ -6,10 +6,9 @@ use crate::mapping::{
 };
 use aws_sdk_bedrockruntime::error::ProvideErrorMetadata;
 use aws_sdk_bedrockruntime::types::{
-    AutoToolChoice, ContentBlock, ConversationRole, ConverseStreamOutput,
-    InferenceConfiguration, Message, SystemContentBlock, Tool, ToolChoice, ToolConfiguration,
-    ToolInputSchema, ToolResultBlock, ToolResultContentBlock, ToolResultStatus, ToolSpecification,
-    ToolUseBlock,
+    AutoToolChoice, ContentBlock, ConversationRole, ConverseStreamOutput, InferenceConfiguration,
+    Message, SystemContentBlock, Tool, ToolChoice, ToolConfiguration, ToolInputSchema,
+    ToolResultBlock, ToolResultContentBlock, ToolResultStatus, ToolSpecification, ToolUseBlock,
 };
 use aws_sdk_bedrockruntime::Client as BedrockRuntimeClient;
 use aws_smithy_types::{Document, Number};
@@ -265,7 +264,9 @@ fn json_from_document(document: &Document) -> Result<Value, AgentError> {
         Document::Number(value) => Value::Number(match value {
             Number::PosInt(value) => serde_json::Number::from(*value),
             Number::NegInt(value) => serde_json::Number::from(*value),
-            Number::Float(value) => serde_json::Number::from_f64(*value).unwrap_or_else(|| 0.into()),
+            Number::Float(value) => {
+                serde_json::Number::from_f64(*value).unwrap_or_else(|| 0.into())
+            }
         }),
         Document::Array(values) => Value::Array(
             values
@@ -486,9 +487,8 @@ impl ConverseStreamAggregator {
                 if let Some(pending) = self.pending_tools.remove(&stop_event.content_block_index) {
                     let arguments = serde_json::from_str(&pending.input_json)
                         .unwrap_or(Value::Object(Default::default()));
-                    let input = document_from_json(&arguments).unwrap_or(Document::Object(
-                        std::collections::HashMap::new(),
-                    ));
+                    let input = document_from_json(&arguments)
+                        .unwrap_or(Document::Object(std::collections::HashMap::new()));
                     if let Ok(block) = ToolUseBlock::builder()
                         .tool_use_id(pending.tool_use_id)
                         .name(pending.name)

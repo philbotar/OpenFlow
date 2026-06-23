@@ -110,7 +110,9 @@ mod tests {
     ) -> FoundationModelSummary {
         let mut builder = FoundationModelSummary::builder()
             .model_id(model_id)
-            .model_arn(format!("arn:aws:bedrock:us-east-1::foundation-model/{model_id}"))
+            .model_arn(format!(
+                "arn:aws:bedrock:us-east-1::foundation-model/{model_id}"
+            ))
             .model_name(model_id)
             .model_lifecycle(
                 FoundationModelLifecycle::builder()
