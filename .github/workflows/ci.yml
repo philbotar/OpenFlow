@@ -8,6 +8,24 @@ permissions:
   contents: read
 
 jobs:
+  version:
+    name: Version bump (per crate + release)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch base branch
+        if: github.event_name == 'pull_request'
+        run: git fetch origin "${{ github.base_ref }}"
+
+      - name: Check version bumps
+        env:
+          VERSION_CHECK_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || (github.event.before != '0000000000000000000000000000000000000000' && github.event.before || '') }}
+        run: ./scripts/check-version-bump.sh
+
   verify:
     name: Verify (blocking)
     runs-on: ubuntu-latest
