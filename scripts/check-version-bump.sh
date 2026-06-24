@@ -14,7 +14,10 @@ HEAD="${VERSION_CHECK_HEAD:-HEAD}"
 exempt() {
 	case "$1" in
 	docs/* | .github/* | examples/* | scripts/* | tools/*) return 0 ;;
-	AGENTS.md | CHANGELOG.md | CONTRIBUTING.md | LICENSE | README.md | SECURITY.md | deny.toml | Cargo.toml)
+	*/AGENTS.md | AGENTS.md) return 0 ;;
+	*.test.ts | *.test.tsx | *.spec.ts) return 0 ;;
+	crates/*/tests/*) return 0 ;;
+	CHANGELOG.md | CONTRIBUTING.md | LICENSE | README.md | SECURITY.md | deny.toml | Cargo.toml)
 		return 0
 		;;
 	esac
@@ -28,13 +31,12 @@ crate_of() {
 	crates/orchestration/*) echo orchestration ;;
 	crates/desktop/*) echo desktop ;;
 	crates/ui/*) echo ui ;;
-	crates/workspace-checks/*) echo workspace-checks ;;
 	esac
 }
 
 substantive() {
 	case "$1" in
-	crates/engine/* | crates/providers/* | crates/orchestration/* | crates/workspace-checks/*) return 0 ;;
+	crates/engine/* | crates/providers/* | crates/orchestration/*) return 0 ;;
 	crates/desktop/*) [[ "$(basename "$1")" != package-lock.json ]] ;;
 	crates/ui/*) [[ "$(basename "$1")" != package-lock.json ]] ;;
 	*) return 1 ;;
@@ -43,7 +45,7 @@ substantive() {
 
 manifest_for() {
 	case "$1" in
-	engine | providers | orchestration | workspace-checks) echo "crates/$1/Cargo.toml" ;;
+	engine | providers | orchestration) echo "crates/$1/Cargo.toml" ;;
 	desktop) echo crates/desktop/Cargo.toml ;;
 	ui) echo crates/ui/package.json ;;
 	esac
