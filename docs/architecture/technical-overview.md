@@ -8,7 +8,7 @@ All claims reference source files; diagrams are Mermaid.
 
 ## 1. Architecture Layout
 
-OpenFlow is **nested hexagonal architecture**: five layers, each an adapter for the layer above and a consumer of the layer below. Dependencies point strictly inward and are CI-enforced (`scripts/check-architecture.sh` reading [arch-check-rules.toml](arch-check-rules.toml)).
+OpenFlow is **nested hexagonal architecture**: five layers, each an adapter for the layer above and a consumer of the layer below. Dependencies point strictly inward and are CI-enforced by [`../../scripts/check-architecture.sh`](../../scripts/check-architecture.sh), which reads [`../../crates/workspace-checks/arch-check-rules.toml`](../../crates/workspace-checks/arch-check-rules.toml).
 
 ```mermaid
 flowchart TD
@@ -322,4 +322,4 @@ Approval policy lives in the **engine**, not the UI ([tools/config.rs](../../cra
 | Run driver (only engine constructor) | `crates/orchestration/src/run/execution/drive.rs` |
 | Tool execution + cache + artifacts | `crates/orchestration/src/tool/{runner,cache,output}.rs` |
 | Provider factory + wire mapping | `crates/providers/src/` |
-| Architecture rules (CI) | `docs/architecture/arch-check-rules.toml` |
+| Architecture rules (CI) | `crates/workspace-checks/arch-check-rules.toml` |

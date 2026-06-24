@@ -139,7 +139,7 @@ npm --prefix crates/desktop run start -- dev   # full app
 
 ## Related docs
 
-- [`docs/sections/ui/README.md`](../../docs/sections/ui/README.md)
+- [`docs/architecture/contract.md`](../../docs/architecture/contract.md)
 - [`docs/architecture/contract.md`](../../docs/architecture/contract.md)
 - [`docs/contributing/coding-patterns.md`](../../docs/contributing/coding-patterns.md) — UI ownership table
 - [`../../AGENTS.md`](../../AGENTS.md) — workspace map

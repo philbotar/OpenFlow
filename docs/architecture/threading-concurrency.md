@@ -1,26 +1,26 @@
-# Threading & Concurrency
+# Threading and concurrency
 
-How async tasks, runtimes, and I/O interact in Step-through-agentic-workflow — and where the current design creates risk or limits throughput.
+How async tasks, runtimes, and I/O interact in OpenFlow, and where the current design creates risk or limits throughput.
 
 Related: [`contract.md`](contract.md)
 
 ## Executive summary
 
-This app is **not heavily threaded**. It uses **async tasks on one or two Tokio runtimes**, with **one sequential execution loop** per workflow run. The main problems are:
+This app is **not heavily threaded**. In the desktop app, orchestration uses the Tauri Tokio runtime handle. Non-Tauri entry points can still create an owned runtime through `AppBackend::with_default_paths()`. Each workflow run has one execution task, with sequential node execution and parallel batches only for shared tools. The main risks are:
 
-1. **Two separate async runtimes** (AppBackend + Tauri) sharing state
-2. **Blocking I/O on async worker threads** (no `spawn_blocking`)
-3. **Fully sequential workflow execution** (DAG layers exist but are not parallelized)
-4. **A single global mutex** around all run state
-5. **Many sync Tauri commands** doing filesystem/keychain I/O on the command thread pool
+1. **Runtime split outside Tauri** when `AppBackend::with_default_paths()` creates an owned runtime for tests and non-desktop entry points.
+2. **Blocking I/O coverage** that depends on dispatching filesystem and subprocess work through `spawn_blocking`.
+3. **Sequential node execution** even though DAG layers identify nodes that could run independently.
+4. **A single active-run mutex** around live run state.
+5. **Many sync Tauri commands** doing filesystem or settings I/O on the command thread pool.
 
-There are no OS thread pools, no bulkheads, and no `spawn_blocking` anywhere in the codebase.
+Tool execution has per-tool semaphores for `ToolConcurrency::Exclusive`, but workflow runs themselves are still single-active-run.
 
 ---
 
 ## Process & runtime topology
 
-Everything runs in **one Tauri desktop process**. Inside it, concurrency is split awkwardly:
+Everything runs in **one Tauri desktop process**. In production, desktop injects `tauri::async_runtime::handle()` into `AppBackend::with_runtime_handle()`, and workflow execution is spawned from that handle.
 
 ```mermaid
 flowchart TB
@@ -34,7 +34,7 @@ flowchart TB
             EB["Event Bridge Task<br/>(recv execution events)"]
         end
 
-        subgraph BackendRT["AppBackend tokio::Runtime"]
+        subgraph BackendRT["Injected Tokio Handle"]
             EX["drive_interactive_workflow<br/>(single task per run)"]
         end
 
@@ -60,32 +60,27 @@ flowchart TB
 
 | Component | Runtime | File |
 | --- | --- | --- |
-| Workflow execution task | `AppBackend.runtime` | `crates/orchestration/src/backend.rs` |
+| Workflow execution task | injected `tokio::runtime::Handle` | `crates/orchestration/src/backend/mod.rs`, `crates/orchestration/src/run/execution/mod.rs` |
 | Tauri commands + event fanout | `tauri::async_runtime` | `crates/desktop/src/lib.rs` |
 | Sync file commands | Tauri blocking pool | `crates/desktop/src/lib.rs` |
 
-`AppBackend` creates its own runtime in `with_default_paths()` via `tokio::runtime::Runtime::new()`.
+`AppBackend::with_runtime_handle()` uses the runtime handle passed by desktop. `AppBackend::with_default_paths()` still creates an owned `tokio::runtime::Runtime` for tests and non-Tauri entry points.
 
-Workflow runs are spawned on that runtime in `spawn_interactive_workflow_run()` (`crates/orchestration/src/execution.rs`).
+Workflow runs are spawned by `spawn_interactive_workflow_run()` (`crates/orchestration/src/run/execution/mod.rs`).
 
 The event bridge runs on Tauri's runtime in `start_run()` (`crates/desktop/src/lib.rs`), which spawns a task on `tauri::async_runtime` to recv execution events, apply them to run state, and emit `run-state` to the UI.
 
-### Issue: dual runtime, shared state
+### Issue: runtime split outside the desktop path
 
-`RunSession` is a `tokio::sync::Mutex` touched from **both** runtimes:
+In the desktop path, the same Tauri runtime handle is used for command tasks and run execution. In tests or non-Tauri entry points that use `with_default_paths()`, `AppBackend` owns a separate runtime. That split is useful for local construction, but it should not become the production path.
 
-- Execution task (backend runtime) — indirectly via channels
-- `apply_execution_event`, `submit_user_input`, `submit_tool_approval` (Tauri runtime)
-
-This works in practice today but is fragile. Tokio mutexes are meant for tasks on the **same** runtime. Cross-runtime sharing adds subtle deadlock/latency risk and makes reasoning harder.
-
-**Recommendation direction:** Use one runtime (prefer Tauri's) or move execution onto Tauri's runtime and drop the private `Runtime` in `AppBackend`.
+**Recommendation direction:** Keep desktop execution on the injected Tauri runtime handle. Avoid adding production code paths that call `with_default_paths()`.
 
 ---
 
 ## Workflow execution model (one task, one loop)
 
-Each run is a **single async task** with a **synchronous poll loop**. No parallelism inside a run.
+Each run is a **single async task**. Node execution is sequential inside the engine. Within one tool batch, `ToolPortImpl` can run adjacent `ToolConcurrency::Shared` tools in parallel and serializes `ToolConcurrency::Exclusive` tools with per-tool semaphores.
 
 ```mermaid
 stateDiagram-v2
@@ -117,11 +112,11 @@ stateDiagram-v2
     Failed --> [*]
 ```
 
-The core loop lives in `drive_interactive_workflow()` (`crates/orchestration/src/execution.rs`). It calls `engine.poll()`, then awaits `ai.invoke()` or blocks on `action_rx` for user input and tool approvals.
+The host loop lives in `drive_interactive_workflow()` (`crates/orchestration/src/run/execution/drive.rs`). It calls `InteractiveEngine::run()`, which invokes `AiPort` and `ToolPort` internally until it completes, fails, or returns `NeedsInteraction`.
 
 ### Issue: DAG layers are not parallelized
 
-`execution_layers()` computes which nodes **could** run in parallel. `InteractiveEngine` still walks them **one at a time** via `layer_idx` / `node_idx` (`crates/domain/src/interactive.rs`).
+`execution_layers()` computes which nodes **could** run in parallel. `InteractiveEngine` still advances node execution sequentially (`crates/engine/src/execution/interactive_engine/`).
 
 Two independent nodes in the same layer still run serially. That is a throughput issue, not a correctness bug.
 
@@ -131,11 +126,11 @@ Subagent execution is a **nested loop inside the same task**, sharing `ai`, `too
 
 ---
 
-## Blocking I/O on async threads
+## Blocking I/O coverage
 
 `ToolRunner` and `RunCoordinator` use **`spawn_blocking`** for search/find/write/edit/patch, local reads, preview/git/revert, execution cwd resolution, and large artifact spills. Desktop and orchestration share one **injected Tokio `Handle`** (Tauri runtime in production).
 
-`ToolRunner::execute` is `async`, but most filesystem work is **synchronous inside blocking tasks**:
+`ToolRunner::execute` is `async`, and concrete local filesystem or subprocess work should stay inside blocking tasks:
 
 ```mermaid
 flowchart LR
@@ -143,12 +138,12 @@ flowchart LR
         EX["tool_runner.execute().await"]
     end
 
-    subgraph Blocking["Runs inline — blocks worker thread"]
+    subgraph Blocking["Runs on blocking thread"]
         FS["fs::read_to_string"]
         WD["WalkDir tree walks"]
         CMD["Command::output (ast-grep)"]
         REG["Regex scan entire files"]
-        HTTP["reqwest — truly async ✓"]
+        HTTP["HTTP clients stay async"]
     end
 
     EX --> FS
@@ -158,23 +153,22 @@ flowchart LR
     EX --> HTTP
 ```
 
-Examples from `crates/orchestration/src/tools/runner.rs`:
+Examples from `crates/orchestration/src/tool/dispatch.rs` and `crates/orchestration/src/run/coordinator/mod.rs`:
 
-- `fs::read_to_string`, `fs::read_dir`, `fs::metadata` — sync
-- `WalkDir` over large trees — sync
-- `Command::new("ast-grep").output()` — sync subprocess wait
-- `search()` — reads every file, regex every line — sync
+- `fs::read_to_string`, `fs::read_dir`, `fs::metadata` - sync
+- `WalkDir` over large trees - sync
+- `Command::new("ast-grep").output()` - sync subprocess wait
+- `search()` - reads every file, regex every line - sync
 
 ### Impact
 
-During a large `search` or `find` tool call:
+During a large `search` or `find` tool call, the blocking closure can still consume blocking-pool capacity:
 
-1. The Tokio worker thread is **blocked**
-2. The execution task cannot yield
-3. Other tasks on that runtime (if any) stall
-4. UI may feel sluggish if runtimes share thread pressure
+1. The run task waits for the blocking work to finish.
+2. Other blocking tasks can queue behind long file scans or subprocess calls.
+3. UI commands that also need blocking-pool work can feel delayed.
 
-`read_url` uses `reqwest` correctly (async). Local filesystem tools do not.
+`read_url` uses async HTTP. Local filesystem and subprocess tools should continue to use `spawn_blocking`.
 
 ---
 
@@ -196,13 +190,13 @@ flowchart TB
     AsyncCmd --> Mutex["lock RunSession"]
 ```
 
-Sync commands call straight into orchestration stores (`crates/orchestration/src/storage.rs`, `settings_store.rs`).
+Sync commands call straight into orchestration stores (`crates/orchestration/src/adapters/storage/`).
 
 ### Impact
 
-- Saving workflows while a run is active competes for disk I/O on a blocking pool thread — usually fine, but large files can delay command responses.
+- Saving workflows while a run is active competes for disk I/O on a blocking pool thread - usually fine, but large files can delay command responses.
 - Provider API key load/save reads and writes `settings.json` synchronously.
-- UI awaits `invoke()` — long sync commands make the app feel frozen.
+- UI awaits `invoke()` - long sync commands make the app feel frozen.
 
 Only a handful of commands are `async fn`. The rest block a Tauri worker.
 
@@ -214,7 +208,7 @@ All run lifecycle state sits behind one mutex:
 
 ```mermaid
 sequenceDiagram
-    participant EX as Execution Task<br/>(backend runtime)
+    participant EX as Execution Task<br/>(injected runtime)
     participant CH as MPSC channels
     participant EB as Event Bridge<br/>(tauri runtime)
     participant UI as UI commands<br/>(tauri runtime)
@@ -242,8 +236,8 @@ sequenceDiagram
 | --- | --- |
 | **Single mutex** | Every event apply + every user input + every approval contends on `run_session` |
 | **Clone on hot path** | `apply_execution_event` clones full `Workflow` and `WorkflowRunState` each event |
-| **Unbounded channels** | `unbounded_channel()` — fast event bursts can grow memory without backpressure |
-| **Single active run** | New `start_run` aborts previous handle — no concurrent runs |
+| **Unbounded channels** | `unbounded_channel()` - fast event bursts can grow memory without backpressure |
+| **Single active run** | New `start_run` aborts previous handle - no concurrent runs |
 
 ---
 
@@ -273,11 +267,13 @@ flowchart LR
 
 ---
 
-## Declared but unused concurrency controls
+## Tool concurrency controls
 
-`ToolConcurrency::Exclusive` exists in the domain model (`crates/domain/src/tools.rs`) but every tool is registered as `Shared` and nothing enforces exclusivity.
+`ToolConcurrency` lives in the engine tool model (`crates/engine/src/tools/config.rs`). Builtin tools are registered as either `Shared` or `Exclusive` in `crates/orchestration/src/tool/registry.rs`.
 
-No semaphore, no per-tool mutex, no bulkhead.
+`ToolPortImpl` runs adjacent shared tools in parallel. Exclusive tools acquire a per-tool `tokio::sync::Semaphore` before execution (`crates/orchestration/src/run/execution/tool_port.rs`). This protects tools such as write, edit, bash, and apply-patch from running concurrently with the same tool name inside a run.
+
+This is not a full bulkhead model. It does not cap all provider calls, all read tools, or all workflow runs globally.
 
 ---
 
@@ -285,13 +281,13 @@ No semaphore, no per-tool mutex, no bulkhead.
 
 | Priority | Issue | Symptom |
 | --- | --- | --- |
-| **P0** | Blocking fs/subprocess in async tool runner | UI stalls during search/find/ast-grep on large repos |
-| **P0** | Dual Tokio runtimes sharing `RunSession` | Hard-to-debug latency, future deadlock risk |
+| **P0** | Long blocking filesystem or subprocess tasks | UI commands can wait behind search/find/ast-grep on large repos |
+| **P1** | Non-Tauri owned runtime path | Extra runtime split if production code accidentally uses `with_default_paths()` |
 | **P1** | Sequential node execution despite DAG layers | Slow multi-branch workflows |
-| **P1** | Sync Tauri commands for all persistence | Invoke hangs on save/load during heavy I/O |
+| **P1** | Sync Tauri commands for persistence | Invoke hangs on save/load during heavy I/O |
 | **P2** | Subagents in nested loop, same task | Parent node frozen while subagent runs |
 | **P2** | Unbounded event channel | Memory growth on chatty runs |
-| **P3** | `ToolConcurrency::Exclusive` unused | Schema suggests safety that does not exist |
+| **P3** | Tool semaphores are per tool name and per run | No global cap across runs or providers |
 
 ---
 
@@ -299,15 +295,15 @@ No semaphore, no per-tool mutex, no bulkhead.
 
 These are architectural options, not a mandate.
 
-### A. Unify on one runtime
+### A. Keep production on one runtime
 
-- Drop `AppBackend.runtime`; spawn execution on `tauri::async_runtime`
-- Or use `Handle::current()` from Tauri in tests
+- Continue injecting `tauri::async_runtime::handle()` in desktop.
+- Keep `with_default_paths()` as a test or non-Tauri helper.
 
-### B. Move blocking work off async workers
+### B. Keep blocking work off async workers
 
 ```rust
-// Pattern to adopt in ToolRunner
+// Pattern for local filesystem and subprocess work.
 tokio::task::spawn_blocking(move || {
     // fs, WalkDir, Command::output
 })
@@ -329,10 +325,10 @@ tokio::task::spawn_blocking(move || {
 - Replace `unbounded_channel` with `bounded_channel(N)`
 - Or batch events before emit to reduce IPC churn
 
-### F. Enforce tool concurrency
+### F. Broaden tool concurrency limits
 
-- Per-tool `tokio::sync::Semaphore` for `Exclusive` tools
-- Cap concurrent provider calls
+- Add global caps for expensive read tools if large repositories starve the blocking pool.
+- Cap concurrent provider calls if workflow-level node parallelism is added later.
 
 ---
 
@@ -343,21 +339,21 @@ flowchart TB
     subgraph WhatYouHave["What you have today"]
         direction TB
         W1["1 process"]
-        W2["2 async runtimes"]
+        W2["injected Tauri runtime handle"]
         W3["1 run at a time"]
         W4["1 execution task per run"]
         W5["1 node at a time"]
-        W6["1 tool at a time in loop"]
-        W7["blocking I/O on async threads"]
+        W6["shared tools can run in parallel"]
+        W7["blocking I/O in spawn_blocking"]
         W8["sync file commands"]
     end
 
     subgraph WhatYouDontHave["What you don't have"]
         direction TB
         N1["thread pools per subsystem"]
-        N2["spawn_blocking for I/O"]
-        N3["parallel DAG layer execution"]
-        N4["bulkheads / semaphores"]
+        N2["parallel DAG layer execution"]
+        N3["async persistence commands"]
+        N4["global bulkheads"]
         N5["concurrent workflow runs"]
     end
 
@@ -370,10 +366,11 @@ flowchart TB
 
 | Concern | File |
 | --- | --- |
-| Private Tokio runtime + `RunSession` mutex | `crates/orchestration/src/backend.rs` |
-| Execution loop + spawn | `crates/orchestration/src/execution.rs` |
-| Sequential engine | `crates/domain/src/interactive.rs` |
-| Blocking tool I/O | `crates/orchestration/src/tools/runner.rs` |
-| Sync file persistence | `crates/orchestration/src/storage.rs`, `settings_store.rs` |
+| Runtime handle and backend facade | `crates/orchestration/src/backend/mod.rs` |
+| Execution loop + spawn | `crates/orchestration/src/run/execution/mod.rs`, `crates/orchestration/src/run/execution/drive.rs` |
+| Sequential engine | `crates/engine/src/execution/interactive_engine/` |
+| Tool concurrency and semaphores | `crates/orchestration/src/run/execution/tool_port.rs`, `crates/orchestration/src/tool/registry.rs` |
+| Blocking tool I/O | `crates/orchestration/src/tool/dispatch.rs`, `crates/orchestration/src/tool/runner.rs` |
+| Sync file persistence | `crates/orchestration/src/adapters/storage/` |
 | Tauri command + event bridge | `crates/desktop/src/lib.rs` |
 | UI event listener | `crates/ui/src/context/AppProvider.tsx` |

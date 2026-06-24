@@ -125,7 +125,7 @@ OpenFlow uses **Hexagonal Architecture with Layers** — nested ports-and-adapte
 
 ## CI enforcement
 
-Checks run in CI via `./scripts/check-architecture.sh`. Rules live in [`arch-check-rules.toml`](arch-check-rules.toml).
+Checks run in CI via `./scripts/check-architecture.sh`. Machine-readable rules live in [`../../crates/workspace-checks/arch-check-rules.toml`](../../crates/workspace-checks/arch-check-rules.toml); this contract is the human-readable source of truth.
 
 ### Tier 2 (Phase A) — inter-crate
 

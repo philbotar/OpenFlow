@@ -1,8 +1,8 @@
 # Glossary
 
-Domain vocabulary for Step-through-agentic-workflow. Use these terms in code, docs, and UI copy. Avoid the listed aliases.
+Engine and app vocabulary for OpenFlow. Use these terms in code, docs, and UI copy. Avoid the listed aliases.
 
-For where terms live in code, see [Domain modules](#domain-modules) and [`docs/sections/domain/README.md`](sections/domain/README.md).
+For where terms live in code, see [Engine modules](#engine-modules), [Orchestration modules](#orchestration-modules), and [orchestration crate layout](architecture/orchestration-layout.md).
 
 ## Graph structure
 
@@ -26,7 +26,7 @@ For where terms live in code, see [Domain modules](#domain-modules) and [`docs/s
 | **AgentNodeConfig** | Configuration for an agent node: model, prompts, tools, auto-start, callable agents | Node config, agent config |
 | **NodePosition** | Coordinates for rendering a node on the canvas | Position, coordinates |
 | **AutoStart** | Whether a node begins when its execution layer is reached (`auto_start: true`), or pauses for human input (`false`) | Auto-execute |
-| **CallableAgent** | A saved agent definition a node may invoke as a subagent during a run (`domain::graph::CallableAgent`) | Saved subagent, AgentDefinition |
+| **CallableAgent** | A saved agent definition a node may invoke as a subagent during a run (`engine::CallableAgent`) | Saved subagent, AgentDefinition |
 | **CallableAgentSelection** | Agent IDs on `AgentNodeConfig.callable_agents`; snapshotted at run start | Allowed agents, callable agents |
 | **AllowAllCallableAgents** | When true, every saved agent is snapshotted at run start instead of `callable_agents` | Allow all agents |
 
@@ -43,7 +43,7 @@ For where terms live in code, see [Domain modules](#domain-modules) and [`docs/s
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
 | **NodeToolConfig** | Approval mode for a node or saved agent (`read_only`, `write`, `always_ask`, `yolo`) | Tool settings, tool setup |
-| **ApprovalMode** | Node-level tool approval strategy: `read_only` (read-class tools only, auto-approved), `write` (all tools; read-class auto, write-class prompt — default), `always_ask` (prompt every call), `yolo` (never prompt) | Approval policy |
+| **ApprovalMode** | Node-level tool approval strategy: `read_only` (read-class tools only, auto-approved), `write` (all tools; read-class auto, write-class prompt - default), `always_ask` (prompt every call), `yolo` (never prompt) | Approval policy |
 | **Tool capability class** | Static read/write grouping for builtins. Read: retrieval/search tools. Write: mutation, shell, subagent tools. Drives approval and `read_only` availability. | Tool tier |
 | **ToolTier** | Serialized capability class on tool definitions: `read` or `write` | Tool level, access tier |
 | **ToolConcurrency** | Whether tool calls share or exclude concurrent access: `shared` or `exclusive` | Parallelism, execution mode |
@@ -119,9 +119,9 @@ For where terms live in code, see [Domain modules](#domain-modules) and [`docs/s
 | **ToolApproval** | Explicit human consent before a tool call runs | Tool consent, tool permit |
 | **AwaitToolApproval** | `EnginePollResult` variant when execution waits on approval | Waiting for tool approval |
 
-## Domain modules
+## Engine modules
 
-Map glossary buckets to `crates/domain/src/`:
+Map glossary buckets to `crates/engine/src/`:
 
 | Module | Terms |
 | --- | --- |
@@ -132,24 +132,26 @@ Map glossary buckets to `crates/domain/src/`:
 | `tools/` | NodeToolConfig, ApprovalMode, ToolCall, ToolResult, policy helpers |
 | `ports/` | AiPort, AgentRequest, AgentTurnOutcome, human/tool input ports |
 
-Persistence adapters outside domain:
+Persistence adapters outside engine:
 
 | Location | Terms |
 | --- | --- |
-| `orchestration/template_store.rs` | FileTemplateStore |
-| `orchestration/project_store.rs` | Project |
+| `orchestration/adapters/storage/template_store.rs` | FileTemplateStore |
+| `orchestration/adapters/storage/project_store.rs` | Project |
 | `orchestration/adapters/storage/project_workflow_store.rs` | Project workflow files (`.flow/workflows/`) |
 | `orchestration/adapters/storage/app_workflow_store.rs` | App-level workflows (`workflows.json`) |
 
-Orchestration composition modules (see `docs/sections/orchestration/README.md`):
+## Orchestration modules
+
+See [orchestration crate layout](architecture/orchestration-layout.md) for the crate overview.
 
 | Module | Terms |
 | --- | --- |
 | `orchestration/workflow/catalog.rs` | Workflow merge/split, project assign |
-| `orchestration/agent_library.rs` | CallableAgent library CRUD (`FileAgentStore` adapter) |
-| `orchestration/agent_store.rs` | `AgentDefinition` type alias for persisted `CallableAgent` JSON |
-| `orchestration/run_coordinator.rs` | Run session, Pause/Resume host path |
-| `orchestration/settings_facade.rs` | Settings, provider readiness |
+| `orchestration/agent/library.rs` | CallableAgent library CRUD (`FileAgentStore` adapter) |
+| `orchestration/lib.rs` | `AgentDefinition` type alias for persisted `CallableAgent` JSON |
+| `orchestration/run/coordinator/mod.rs` | Run session, Pause/Resume host path |
+| `orchestration/settings/facade.rs` | Settings, provider readiness |
 
 ## Relationships
 
@@ -168,7 +170,7 @@ Orchestration composition modules (see `docs/sections/orchestration/README.md`):
 
 > **Dev:** "If a **Node** has two incoming **Edges**, how do we determine its **Execution layer**?"
 >
-> **Domain expert:** "Topological order — layer is one more than the max layer of upstream nodes."
+> **Domain expert:** "Topological order - layer is one more than the max layer of upstream nodes."
 
 > **Dev:** "What happens when the model returns **ToolCalls**?"
 >
@@ -180,8 +182,8 @@ Orchestration composition modules (see `docs/sections/orchestration/README.md`):
 
 ## Flagged ambiguities
 
-- **Layer** — in `execution_layers`, DAG depth grouping; in CSS/UI, z-index. Here: execution layer only.
-- **Event** — **RunTelemetry** (interactive UI stream) vs compact **RunEvent** in `RunReport` vs OS/Tauri events.
-- **Config** — **AgentNodeConfig** (agent behavior) vs **NodeToolConfig** (tool environment). Distinct concepts.
-- **Template** — canonical type in `domain::template`. Legacy `NodeTemplate` JSON migrates in **FileTemplateStore**.
-- **Runner** — prefer **WorkflowRunner** (batch) or **InteractiveEngine** (step-through). Do not use "runner" alone in docs or module names.
+- **Layer** - in `execution_layers`, DAG depth grouping; in CSS/UI, z-index. Here: execution layer only.
+- **Event** - **RunTelemetry** (interactive UI stream) vs compact **RunEvent** in `RunReport` vs OS/Tauri events.
+- **Config** - **AgentNodeConfig** (agent behavior) vs **NodeToolConfig** (tool environment). Distinct concepts.
+- **Template** - canonical type in `engine::template`. Legacy `NodeTemplate` JSON migrates in **FileTemplateStore**.
+- **Runner** - prefer **WorkflowRunner** (batch) or **InteractiveEngine** (step-through). Do not use "runner" alone in docs or module names.

@@ -131,7 +131,7 @@ Mock ports with inline `impl AiPort` / `impl ToolPort` stubs. Test behavior, not
 
 ## Related docs
 
-- [`docs/sections/domain/README.md`](../../docs/sections/domain/README.md)
+- [`docs/glossary.md`](../../docs/glossary.md)
 - [`docs/architecture/contract.md`](../../docs/architecture/contract.md)
 - [`docs/FOLDER_STRUCTURE.md`](../../docs/FOLDER_STRUCTURE.md) — engine layout
 - [`../../AGENTS.md`](../../AGENTS.md) — workspace map

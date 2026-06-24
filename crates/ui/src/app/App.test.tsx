@@ -2,6 +2,7 @@
 import { render } from "solid-js/web";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { AgentDefinition, AppSettings, BootstrapPayload, Project, ProviderReadiness, SkillSummary, Workflow, WorkflowRunState } from "../lib/types";
+import { defaultWorkflowSchedule } from "../lib/schedule";
 import { createEmptyToolConfig } from "../lib/workflow";
 
 const apiMocks = vi.hoisted(() => ({
@@ -2407,13 +2408,20 @@ describe("App compact shell", () => {
   });
 });
 
+function mockLocalTimezone(timezone: string) {
+  vi.spyOn(Intl, "DateTimeFormat").mockImplementation(
+    () =>
+      ({
+        resolvedOptions: () => ({ timeZone: timezone }),
+      }) as Intl.DateTimeFormat,
+  );
+}
+
 describe("App schedule screen", () => {
   beforeEach(() => {
     installDefaultApiMocks();
     Object.defineProperty(window, "innerWidth", { value: 1280, configurable: true });
-    vi.spyOn(Intl, "DateTimeFormat").mockReturnValue({
-      resolvedOptions: () => ({ timeZone: "Australia/Perth" }),
-    } as Intl.DateTimeFormat);
+    mockLocalTimezone("Australia/Perth");
   });
 
   afterEach(() => {
@@ -2626,7 +2634,7 @@ describe("App schedule screen", () => {
             schedule: expect.objectContaining({
               cron: "0 9 * * *",
               enabled: true,
-              timezone: "Australia/Perth",
+              timezone: defaultWorkflowSchedule().timezone,
             }),
           }),
         }),

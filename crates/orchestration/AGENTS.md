@@ -95,7 +95,7 @@ orchestration/src/
 | New persistence | `adapters/storage/` + `{entity}/ports.rs` |
 | IPC DTOs | `api.rs` |
 
-See [`docs/sections/orchestration/layout.md`](../../docs/sections/orchestration/layout.md) for full directory map.
+See [`docs/architecture/orchestration-layout.md`](../../docs/architecture/orchestration-layout.md) for full directory map.
 
 ### Runtime semantics (orchestration wires, engine defines)
 
@@ -144,9 +144,8 @@ Use inline `impl AiPort` stubs. Live AI: `STEP_WORKFLOW_LIVE_AI=1` (see `docs/co
 
 ## Related docs
 
-- [`docs/sections/orchestration/README.md`](../../docs/sections/orchestration/README.md)
-- [`docs/sections/orchestration/layout.md`](../../docs/sections/orchestration/layout.md)
-- [`docs/sections/orchestration/callable-agents.md`](../../docs/sections/orchestration/callable-agents.md) — CallableAgent domain deep dive
+- [`docs/architecture/orchestration-layout.md`](../../docs/architecture/orchestration-layout.md)
+- [`docs/architecture/callable-agents.md`](../../docs/architecture/callable-agents.md) - CallableAgent snapshot and subagent model
 - [`docs/architecture/contract.md`](../../docs/architecture/contract.md)
 - [`docs/architecture/threading-concurrency.md`](../../docs/architecture/threading-concurrency.md) — dual runtime, run mutex
 - [`../../AGENTS.md`](../../AGENTS.md) — workspace map

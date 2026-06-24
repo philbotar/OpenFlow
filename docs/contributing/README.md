@@ -12,31 +12,31 @@ contributing/
 └── testing-workflows.md   # Test layers, acceptance rules, when to run each suite
 ```
 
-## Read Order
+## Read order
 
-1. [`development-lanes.md`](development-lanes.md) — classify the change, pick the matching playbook, and choose verification.
-2. [`coding-patterns.md`](coding-patterns.md) — where logic lives, runtime semantics, change checklist.
-3. [`testing-workflows.md`](testing-workflows.md) — how to verify behavior without the desktop UI.
+1. [`development-lanes.md`](development-lanes.md) - classify the change, pick the matching playbook, and choose verification.
+2. [`coding-patterns.md`](coding-patterns.md) - where logic lives, runtime semantics, change checklist.
+3. [`testing-workflows.md`](testing-workflows.md) - how to verify behavior without the desktop UI.
 
 Also read before larger changes:
 
-- [`../architecture/contract.md`](../architecture/contract.md) — layer dependency rules.
-- [`../../AGENTS.md`](../../AGENTS.md) — repo map and file-level ownership.
-- [`../glossary.md`](../glossary.md) — domain vocabulary.
+- [`../architecture/contract.md`](../architecture/contract.md) - layer dependency rules.
+- [`../../AGENTS.md`](../../AGENTS.md) - repo map and file-level ownership.
+- [`../glossary.md`](../glossary.md) - engine and app vocabulary.
 
-## Boundary Seams
+## Boundary seams
 
 Add a port/trait only when a consumer is typed on that interface. Current seams:
 
-- `crates/engine/src/ports/` — `AiPort`, human input, tool approval
-- `crates/providers/src/client.rs` — `AiClient` implements `AiPort`
-- `crates/ui/src/port.ts` — `UiDesktopOutboundPort` for swappable desktop backend
+- `crates/engine/src/ports/` - `AiPort`, human input, tool approval
+- `crates/providers/src/client.rs` - `AiClient` implements `AiPort`
+- `crates/ui/src/port.ts` - `UiDesktopOutboundPort` for swappable desktop backend
 
-## UI Layout
+## UI layout
 
 | Path | Purpose |
 | --- | --- |
-| `crates/ui/src/context/` | `AppProvider` / `AppContext` — app state, run listeners, navigation |
+| `crates/ui/src/context/` | `AppProvider` / `AppContext` - app state, run listeners, navigation |
 | `crates/ui/src/screens/` | Full-page routes: `EditorScreen`, `AgentsScreen`, `SettingsScreen` |
 | `crates/ui/src/components/` | Shared chrome: `AppHeader`, sidebar primitives, conversation UI |
 | `crates/ui/src/panels/` | Editor overlays: `InspectorPanel`, `WorkflowSettingsPanel`, `DockPanel` |
@@ -47,7 +47,7 @@ Add a port/trait only when a consumer is typed on that interface. Current seams:
 
 `App.tsx` is a thin shell: provider, toaster, sidebar, header, and `ScreenRouter`.
 
-## Persistence Overview
+## Persistence overview
 
 | Data | Location | Owning module |
 | --- | --- | --- |
@@ -62,7 +62,7 @@ Add a port/trait only when a consumer is typed on that interface. Current seams:
 
 `AppBackend::load_all_workflows` merges app-store workflows with project-discovered workflows (project files win on ID collision).
 
-## Verification (Quick)
+## Verification quick path
 
 ```bash
 ./scripts/test-fast.sh

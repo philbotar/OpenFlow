@@ -9,7 +9,9 @@ architecture/
 ├── README.md                    # This index
 ├── technical-overview.md        # End-to-end overview with diagrams: context, caching, nodes/flow, harness design
 ├── contract.md                  # Layer responsibilities and dependency rules (source of truth)
-├── arch-check-rules.toml        # CI architecture rules (consumed by scripts/check-architecture.sh)
+├── orchestration-layout.md      # Orchestration module map and change paths
+├── callable-agents.md           # Saved-agent snapshot and subagent model
+├── provider-adapters.md         # Provider adapter families and Bedrock notes
 ├── threading-concurrency.md     # Tokio runtimes, async tasks, blocking I/O risks
 ├── run-persistence.md           # Durable run storage, checkpoints, replay vs resume
 └── diagrams/
@@ -18,16 +20,18 @@ architecture/
     └── layers-legacy-names.mmd
 ```
 
-## Read Order
+## Read order
 
-1. [`technical-overview.md`](technical-overview.md) — big-picture tour: layers, node execution, context assembly, tool-result caching, harness design.
-2. [`contract.md`](contract.md) — allowed/forbidden dependencies, port rules, change checklist.
-3. [`arch-check-rules.toml`](arch-check-rules.toml) — Tier 2 CI rules (Cargo graph + forbidden imports).
-4. [`diagrams/layers-current-vs-target.mmd`](diagrams/layers-current-vs-target.mmd) — visual current vs target seams.
-5. [`threading-concurrency.md`](threading-concurrency.md) — when changing run lifecycle, I/O, or parallelism.
-6. [`run-persistence.md`](run-persistence.md) — durable run records, checkpoints, replay, and resume after restart.
+1. [`technical-overview.md`](technical-overview.md) - big-picture tour: layers, node execution, context assembly, tool-result caching, harness design.
+2. [`contract.md`](contract.md) - allowed/forbidden dependencies, port rules, change checklist.
+3. [`orchestration-layout.md`](orchestration-layout.md) - orchestration module map, service/storage split, and change paths.
+4. [`callable-agents.md`](callable-agents.md) - saved-agent snapshot model and subagent lifecycle.
+5. [`provider-adapters.md`](provider-adapters.md) - provider adapter families and Bedrock setup notes.
+6. [`diagrams/layers-current-vs-target.mmd`](diagrams/layers-current-vs-target.mmd) - visual current vs target seams.
+7. [`threading-concurrency.md`](threading-concurrency.md) - when changing run lifecycle, I/O, or parallelism.
+8. [`run-persistence.md`](run-persistence.md) - durable run records, checkpoints, replay, and resume after restart.
 
-## Layer Stack
+## Layer stack
 
 ```text
 UI (crates/ui)
@@ -41,5 +45,6 @@ Orchestration owns runtime execution state and `ToolPortImpl`. Engine owns the w
 
 ## Related
 
-- [`../contributing/coding-patterns.md`](../contributing/coding-patterns.md) — file-level ownership and runtime semantics.
-- [`../../AGENTS.md`](../../AGENTS.md) — repo map with primary change paths.
+- [`../contributing/coding-patterns.md`](../contributing/coding-patterns.md) - file-level ownership and runtime semantics.
+- [`../../AGENTS.md`](../../AGENTS.md) - repo map with primary change paths.
+- [`../../crates/workspace-checks/arch-check-rules.toml`](../../crates/workspace-checks/arch-check-rules.toml) - machine-readable architecture check config.

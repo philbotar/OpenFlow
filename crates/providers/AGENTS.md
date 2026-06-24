@@ -105,6 +105,6 @@ Test wire mapping and `jsonrepair` recovery. Avoid live network in unit tests.
 
 ## Related docs
 
-- [`docs/sections/providers/README.md`](../../docs/sections/providers/README.md)
+- [`docs/architecture/provider-adapters.md`](../../docs/architecture/provider-adapters.md)
 - [`docs/architecture/contract.md`](../../docs/architecture/contract.md)
 - [`../../AGENTS.md`](../../AGENTS.md) — workspace map
