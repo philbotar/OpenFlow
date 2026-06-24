@@ -1,6 +1,6 @@
 # Roadmap
 
-A single prioritized queue. Work top to bottom — each numbered item is meant to be a self-contained chunk you can finish before moving on. Detailed specs for the larger items live in [Detailed specs](#detailed-specs) below; domain task IDs (T1–T21) are specced in [Domain engine hardening](#domain-engine-hardening).
+A single prioritized queue. Work top to bottom — each numbered item is meant to be a self-contained chunk you can finish before moving on. Detailed specs for the larger items live in [Detailed specs](#detailed-specs) below; engine task IDs (T1–T21) are specced in [Engine hardening](#engine-hardening).
 
 **Status:** Done · In progress · Planned
 
@@ -102,9 +102,9 @@ Small or speculative items — pick up opportunistically or when a tier item tou
 - Per-workflow path allowlist beyond execution-cwd jail
 - Git stage/commit helpers from changed-files panel
 - Full LSP language-server client
-- Error logging stored locally (**backend slice Done**; UI + agent auto-fix loop follow-up) — [persistent error reporting plan](superpowers/plans/2026-06-15-persistent-error-reporting.md)
+- Error logging stored locally (**backend slice Done**; UI + agent auto-fix loop follow-up) — persistent error reporting plan (`docs/superpowers/plans/2026-06-15-persistent-error-reporting.md`)
 - Workflow version control (per-change revert)
-- Natural language workflow definition (partial: **Build with AI** authoring screen shipped — [`WorkflowAuthoringScreen.tsx`](crates/ui/src/screens/WorkflowAuthoringScreen.tsx); full NL builder still backlog)
+- Natural language workflow definition (partial: **Build with AI** authoring screen shipped — [`WorkflowAuthoringScreen.tsx`](../crates/ui/src/screens/WorkflowAuthoringScreen.tsx); full NL builder still backlog)
 - Workflow authoring polish — inspector apply UX, template library integration (validation banner → [#36 Workflow insights](#workflow-insights))
 - T7 node-local max-tool-rounds (only if D4 changes), T17 concurrent layer siblings in headless runner (stretch)
 
@@ -186,7 +186,7 @@ Runs today live entirely in memory: `RunCoordinator` holds `WorkflowRunState`; `
 | Layer | Gap |
 | --- | --- |
 | `crates/engine/src/execution/interactive_engine.rs` | Engine state (transcripts, completed nodes, pending retries, layer cursor) is not serializable; no `restore_from_checkpoint` |
-| `crates/orchestration/src/run/coordinator.rs` | `RunSession` is in-memory only; no run store; `start_run` always creates a fresh engine |
+| `crates/orchestration/src/run/coordinator/mod.rs` | `RunSession` is in-memory only; no run store; `start_run` always creates a fresh engine |
 | `crates/orchestration/src/run/state/` | `WorkflowRunState` is a UI projection — sufficient for browse/replay UI but not alone for resume |
 | `crates/orchestration/src/run/execution/drive.rs` | No checkpoint hook on pause/completion; artifact root is always a new temp dir |
 | `crates/orchestration/src/adapters/storage/` | No `RunCheckpointStore` — no `{project}/.flow/runs/` (or app-data) layout |
@@ -229,7 +229,7 @@ Runs today live entirely in memory: `RunCoordinator` holds `WorkflowRunState`; `
 
 ### Workflow insights
 
-Workflow authors today get **errors only at run time** or when the Build-with-AI authoring screen validates a draft. The editor has no standing **advisory panel** that explains how to improve graph design, node configuration, or run readiness while you edit. [`validate_authoring_workflow`](crates/orchestration/src/workflow/authoring/validate.rs) already checks empty prompts, output schema shape, and DAG legality for AI-authored drafts, but those checks are not surfaced continuously in the canvas editor. Queue item [#10 Pre-run validation](#tier-3--daily-driver-ux) covers **blocking** gates before `start_run`; this section covers **non-blocking insights** — ranked suggestions with severity, evidence, and jump-to-fix affordances.
+Workflow authors today get **errors only at run time** or when the Build-with-AI authoring screen validates a draft. The editor has no standing **advisory panel** that explains how to improve graph design, node configuration, or run readiness while you edit. [`validate_authoring_workflow`](../crates/orchestration/src/workflow/authoring/validate.rs) already checks empty prompts, output schema shape, and DAG legality for AI-authored drafts, but those checks are not surfaced continuously in the canvas editor. Queue item [#10 Pre-run validation](#tier-3--daily-driver-ux) covers **blocking** gates before `start_run`; this section covers **non-blocking insights** — ranked suggestions with severity, evidence, and jump-to-fix affordances.
 
 Distinct from [#27 Run insights & self-learning](#run-insights--self-learning): **Workflow insights** analyze the **workflow definition** (and optional linked project/settings context). **Run insights** analyze **completed run telemetry** and promote lessons into future context. The two may cross-link later ("3 recent runs failed at node X — add retry policy") but ship independently.
 
@@ -294,7 +294,7 @@ Distinct from [#27 Run insights & self-learning](#run-insights--self-learning): 
 
 **Depends on:** existing `validate_workflow` + `validate_authoring_workflow` checks. **Complements:** [#10 Pre-run validation](#tier-3--daily-driver-ux) (blocking), [#27 Run insights](#run-insights--self-learning) (post-run). **Unlocks:** better onboarding templates ([#30](#tier-6--polish--distribution)), workflow authoring polish, fewer failed first runs.
 
-**Reference:** DAG validation — [`validation.rs`](crates/engine/src/graph/validation.rs); authoring semantic checks — [`validate.rs`](crates/orchestration/src/workflow/authoring/validate.rs); provider readiness — [`settings/provider.rs`](crates/orchestration/src/settings/provider.rs); Build-with-AI validation UI — [`AuthoringDraftPreview.tsx`](crates/ui/src/components/workflowAuthoring/AuthoringDraftPreview.tsx).
+**Reference:** DAG validation — [`validation.rs`](../crates/engine/src/graph/validation.rs); authoring semantic checks — [`validate.rs`](../crates/orchestration/src/workflow/authoring/validate.rs); provider readiness — [`settings/provider.rs`](../crates/orchestration/src/settings/provider.rs); Build-with-AI validation UI — [`AuthoringDraftPreview.tsx`](../crates/ui/src/components/workflowAuthoring/AuthoringDraftPreview.tsx).
 
 ### Run insights & self-learning
 
@@ -307,7 +307,7 @@ This section covers **insights** (human- and machine-readable observations extra
 | `crates/orchestration/src/run/state/` | `WorkflowRunState` is live projection only; no post-run analysis artifacts |
 | `crates/orchestration/src/run/execution/events.rs` | Telemetry is consumed for UI/trace; not aggregated into insight records |
 | `crates/orchestration/src/adapters/storage/` | No insight store — no `{project}/.flow/insights/` or per-workflow insight index |
-| `crates/orchestration/src/run/coordinator.rs` | `start_run` does not merge prior-run insights into context assembly |
+| `crates/orchestration/src/run/coordinator/mod.rs` | `start_run` does not merge prior-run insights into context assembly |
 | `crates/engine/src/execution/node_invocation.rs` | `build_node_input` / preamble have no `insights` or `run_history_summary` block |
 | `crates/engine/src/graph/workflow.rs` | `WorkflowSettings` has no insight policy (auto-inject vs suggest-only vs off) |
 | `crates/orchestration/src/project/` | Project registry does not discover workflow insights alongside rules |
@@ -363,7 +363,7 @@ This section covers **insights** (human- and machine-readable observations extra
 
 **Depends on:** [#24 Run checkpoint & replay](#run-checkpoint-history-and-replay) (durable run records and history UI). **Strongly benefits from:** [#11 Project rules](#project-rules) (project-scoped injection), [#18 Context used](#context-used) (attribution), queue item #13 (cost outliers), [#16 Upstream read-file context](#upstream-read-file-context) and [#17 Node handoff artifacts](#node-handoff-artifacts--output-review) (richer extractors). **Unlocks:** smarter scheduled/retry loops (queue item #23), workflow authoring suggestions ("your last 5 runs failed at the same node"), compliance exports, reduced repeated user entrypoint explanations.
 
-**Reference:** Run telemetry — `RunTelemetry` in `crates/engine/src/execution/telemetry.rs`; live projection — `WorkflowRunState` in `crates/orchestration/src/run/state/`; context assembly — `node_invocation.rs`; OMP memory stance — [OMP tool parity harness](superpowers/plans/2026-06-14-omp-tool-parity-harness.md) (map memory to context ledger / project rules, not opaque recall).
+**Reference:** Run telemetry — `RunTelemetry` in `crates/engine/src/execution/telemetry.rs`; live projection — `WorkflowRunState` in `crates/orchestration/src/run/state/`; context assembly — `node_invocation.rs`; OMP memory stance — OMP tool parity harness (`docs/superpowers/plans/2026-06-14-omp-tool-parity-harness.md`) (map memory to context ledger / project rules, not opaque recall).
 
 ### Provider API key storage
 
@@ -376,7 +376,7 @@ This section covers **insights** (human- and machine-readable observations extra
 
 ### Tool invocation retry and resilience
 
-Today a failed tool call becomes a single `is_error: true` [`ToolResult`](crates/domain/src/tools/config.rs) fed back to the model. [`retry_policy`](crates/domain/src/graph/workflow.rs) (T6) applies only to transient **AI** [`AgentError`](crates/domain/src/ports/outbound.rs), not tool-runner failures. The drive loop can still **exit the run** on orchestration/engine mismatches (`on_tool_results` error → `ExecutionEvent::Error`) or on AI invoke failure after retries.
+Today a failed tool call becomes a single `is_error: true` [`ToolResult`](../crates/engine/src/tools/config.rs) fed back to the model. [`retry_policy`](../crates/engine/src/graph/workflow.rs) (T6) applies only to transient **AI** [`AgentError`](../crates/engine/src/ports/outbound.rs), not tool-runner failures. The drive loop can still **exit the run** on orchestration/engine mismatches (`on_tool_results` error → `ExecutionEvent::Error`) or on AI invoke failure after retries.
 
 | Layer | Gap |
 | --- | --- |
@@ -421,7 +421,7 @@ Assistant token streaming is wired (`ChatMessageDelta` → chat log). Collapsibl
 | Streaming thinking — append reasoning tokens into the thinking bubble during active turns | Medium | Done |
 | Hide legacy thinking tool lines — stop grouping provider reasoning with legacy tool I/O prose | Medium | Planned |
 
-**Reference:** [`ToolBubble.tsx`](crates/ui/src/components/conversation/ToolBubble.tsx); full spec in [Thinking & chat presentation](#thinking--chat-presentation).
+**Reference:** [`ToolBubble.tsx`](../crates/ui/src/components/conversation/ToolBubble.tsx); full spec in [Thinking & chat presentation](#thinking--chat-presentation).
 
 ### Canvas run feedback
 
@@ -477,7 +477,7 @@ Interactive shell in the bottom dock — a fourth tab beside Overview, Chat, and
 
 **Not in v1:** Remote SSH shells, root/sudo elevation UI, or replaying agent bash invocations as read-only panes (chat tool rows remain the audit trail).
 
-**Reference:** Dock tabs — [`DockPanel.tsx`](crates/ui/src/panels/DockPanel.tsx); execution cwd — `orchestration/src/run/execution/`; bash tool — [`bash.rs`](crates/orchestration/src/adapters/tool_impl/bash.rs).
+**Reference:** Dock tabs — [`DockPanel.tsx`](../crates/ui/src/panels/DockPanel.tsx); execution cwd — `orchestration/src/run/execution/`; bash tool — [`bash.rs`](../crates/orchestration/src/adapters/tool_impl/bash.rs).
 
 ### Cron / scheduled runs
 
@@ -500,7 +500,7 @@ Workflow-level cron schedules (`WorkflowSettings.schedule`) persist on the workf
 
 **Target:** Set a cron on a workflow; the app starts it automatically when due while open. Retry-loop semantics (automatic re-run after failed runs) remain future work.
 
-**Reference:** [Schedule sidebar plan](superpowers/plans/2026-06-16-schedule-sidebar.md).
+**Reference:** Schedule sidebar plan (`docs/superpowers/plans/2026-06-16-schedule-sidebar.md`).
 
 ### MCP integration
 
@@ -582,10 +582,10 @@ Agents can already ask for free-text input via `openflow_request_user_input` (`A
 | Layer | Gap |
 | --- | --- |
 | `crates/providers/src/mapping.rs` | `request_input_tool` accepts one string only; no options or question id |
-| `crates/domain/src/execution/interactive_engine.rs` | No in-run todo state; questions resume as plain user messages |
-| `crates/orchestration/src/run_coordinator.rs` | `submit_user_input` rejects unless `awaiting_node_id` matches |
-| `crates/orchestration/src/execution/drive.rs` | `ProvideInput` ignored during tool approval; no input buffer |
-| `crates/orchestration/src/state.rs` | Run state has no todo or pending-question projection; no input queue |
+| `crates/engine/src/execution/interactive_engine/mod.rs` | No in-run todo state; questions resume as plain user messages |
+| `crates/orchestration/src/run/coordinator/mod.rs` | `submit_user_input` rejects unless `awaiting_node_id` matches |
+| `crates/orchestration/src/run/execution/drive.rs` | `ProvideInput` ignored during tool approval; no input buffer |
+| `crates/orchestration/src/run/state/mod.rs` | Run state has no todo or pending-question projection; no input queue |
 | `crates/ui/src/components/conversation/` | Composer disabled unless node is awaiting; no queued-message UI |
 
 | Item | Priority | Status |
@@ -673,7 +673,7 @@ A workflow node is **incomplete** until the agent calls `openflow_submit_node_ou
 
 **Target:** Agents finish nodes only via submit-output; users see a concise summary in chat, full JSON in trace/overview, and downstream nodes start only on valid upstream output — never on partial prose or missing parents.
 
-**Reference:** Submit contract — [`node_invocation.rs`](crates/engine/src/execution/node_invocation.rs) (`NODE_RUNTIME_PREAMBLE`); completion path — [`completion.rs`](crates/engine/src/execution/interactive_engine/completion.rs); run projection — [`events.rs`](crates/orchestration/src/run/execution/events.rs); technical overview § “When a node is done” — [`technical-overview.md`](docs/architecture/technical-overview.md).
+**Reference:** Submit contract — [`node_invocation.rs`](../crates/engine/src/execution/node_invocation.rs) (`NODE_RUNTIME_PREAMBLE`); completion path — [`completion.rs`](../crates/engine/src/execution/interactive_engine/completion.rs); run projection — [`events.rs`](../crates/orchestration/src/run/execution/events.rs); technical overview § “When a node is done” — [`technical-overview.md`](architecture/technical-overview.md).
 
 ### Attachments & file references
 
@@ -706,7 +706,7 @@ Users can invoke skills with `/skill` tokens and attach project context with `@{
 
 ### Agent prompt skill references
 
-Today `/skill` works in the **chat composer** (`resolveChatSubmission` in [`chatCommands.ts`](crates/ui/src/lib/chatCommands.ts)): type `/ponytail` (or pick from the combobox), see a description preview, and on send the skill id is recorded in formatted submit text. **Saved agents** and **node inspector** system/task prompts are plain textareas — authors must paste full skill instructions or duplicate prose by hand.
+Today `/skill` works in the **chat composer** (`resolveChatSubmission` in [`chatCommands/index.ts`](../crates/ui/src/lib/chatCommands/index.ts)): type `/ponytail` (or pick from the combobox), see a description preview, and on send the skill id is recorded in formatted submit text. **Saved agents** and **node inspector** system/task prompts are plain textareas — authors must paste full skill instructions or duplicate prose by hand.
 
 | Layer | Role / gap |
 | --- | --- |
@@ -765,7 +765,7 @@ Linked projects should carry agent guidance (coding standards, architecture, nam
 | `{project}/.flow/` | No rules file or directory convention |
 | `crates/orchestration/src/project/` | Project registry does not discover or load rules |
 | `crates/engine/src/graph/workflow.rs` | `WorkflowSettings.shared_context` is manual; no auto-merge from project rules |
-| `crates/orchestration/src/run/application/execution/` | Run start does not inject project rules into node system prompts |
+| `crates/orchestration/src/run/execution/` | Run start does not inject project rules into node system prompts |
 | `crates/ui/src/` | No editor or picker for project rules in linked-project settings |
 
 | Item | Priority | Status |
@@ -895,7 +895,7 @@ Planning nodes often produce markdown plans or specs that downstream implementer
 
 **Depends on:** [#5 Node completion](#node-completion) (submit contract), [#6 Run lifecycle](#run-lifecycle) (artifact dirs), [#24 Run checkpoint & replay](#run-checkpoint-history-and-replay) (durable handoff paths). **Unlocks:** plan→implement workflow templates, audit trail for agent plans, LLM handoff via exported review markdown.
 
-**Reference:** Submit contract — [`node_invocation.rs`](crates/engine/src/execution/node_invocation.rs); offline review UX — [`tools/plan-review.html`](tools/plan-review.html); tool-approval pause pattern — `AwaitToolApproval` in [`interactive_engine`](crates/engine/src/execution/interactive_engine/mod.rs).
+**Reference:** Submit contract — [`node_invocation.rs`](../crates/engine/src/execution/node_invocation.rs); offline review UX — `tools/plan-review.html`; tool-approval pause pattern — `AwaitToolApproval` in [`interactive_engine`](../crates/engine/src/execution/interactive_engine/mod.rs).
 
 ### In-app file viewer from node output
 
@@ -984,7 +984,7 @@ This section covers **programmatic nodes**: graph steps that execute without an 
 
 **Depends on:** [#5 Node completion](#node-completion) (submit contract). **Unlocks:** [#35 Workflow orchestration](#workflow-orchestration--reinvoke) (scripts call `invoke_workflow`), batch repo processing, cheaper DAG segments, [#26 External connectors](#tier-5--power-features) (Http node overlap).
 
-**Reference:** Submit contract — [`node_invocation.rs`](crates/engine/src/execution/node_invocation.rs); eval-tool stdin RPC pattern — [eval tool plan](superpowers/plans/2026-06-15-eval-tool.md); `NodeKind` — [`workflow.rs`](crates/engine/src/graph/workflow.rs).
+**Reference:** Submit contract — [`node_invocation.rs`](../crates/engine/src/execution/node_invocation.rs); eval-tool stdin RPC pattern — eval tool plan (`docs/superpowers/plans/2026-06-15-eval-tool.md`); `NodeKind` — [`workflow.rs`](../crates/engine/src/graph/workflow.rs).
 
 ### Workflow orchestration & reinvoke
 
@@ -992,7 +992,7 @@ Runs today are flat: one workflow, one `start_run`, one engine instance. A user 
 
 | Layer | Gap |
 | --- | --- |
-| `crates/orchestration/src/run/coordinator.rs` | Single active run per session focus; no parent/child run registry or `invoke_workflow(workflow_id, entrypoint)` API |
+| `crates/orchestration/src/run/coordinator/mod.rs` | Single active run per session focus; no parent/child run registry or `invoke_workflow(workflow_id, entrypoint)` API |
 | `crates/engine/src/execution/interactive_engine/` | No "jump to node" or "re-execute subgraph" without resetting completed upstream state |
 | `crates/orchestration/src/run/execution/drive.rs` | No wait-for-child-runs poll step; no aggregation of child outputs into parent node output |
 | `crates/desktop/src/lib.rs` | No batch `start_runs` or scripting IPC; no `reinvoke_from_node` |
@@ -1037,17 +1037,17 @@ Runs today are flat: one workflow, one `start_run`, one engine instance. A user 
 
 **Depends on:** [#24 Run checkpoint & replay](#run-checkpoint-history-and-replay) (durable child run records), [#25 Programmatic nodes](#programmatic--non-ai-nodes) (Code node + `invoke_workflow`), [#6 Run lifecycle](#run-lifecycle) (artifact layout). **Unlocks:** repo-wide refactors, workflow test batteries, CI-style automation inside the app, promoted background multi-run orchestration.
 
-**Reference:** Run coordinator — [`coordinator.rs`](crates/orchestration/src/run/coordinator.rs); checkpoint fork — [#24](#run-checkpoint-history-and-replay) "Replay from node"; schedule loop — [schedule sidebar plan](superpowers/plans/2026-06-16-schedule-sidebar.md).
+**Reference:** Run coordinator — [`coordinator.rs`](../crates/orchestration/src/run/coordinator/mod.rs); checkpoint fork — [#24](#run-checkpoint-history-and-replay) "Replay from node"; schedule loop — schedule sidebar plan (`docs/superpowers/plans/2026-06-16-schedule-sidebar.md`).
 
 ---
 
 ## Refactor
 
-Structural cleanup by workspace section. Keep domain logic in `domain`, transport in `providers`, runtime in `orchestration`, Tauri IPC in `desktop`, and frontend in `ui`. See `docs/architecture/contract.md`.
+Structural cleanup by workspace section. Keep engine semantics in `engine`, provider transport in `providers`, runtime and persistence in `orchestration`, Tauri IPC in `desktop`, and frontend interaction in `ui`. See `docs/architecture/contract.md`.
 
 **Serde casing:** Engine persistence uses `snake_case`; IPC/UI DTOs use `camelCase`. Legacy `PascalCase` enum values and field aliases (`#[serde(alias = …)]`) remain for older saved workflows, run logs, and agent definitions. Unify on one convention (T16), then drop the old snake_case ↔ camelCase / PascalCase compatibility shims.
 
-### Domain (`crates/domain`)
+### Engine (`crates/engine`)
 
 | Item | Status |
 | --- | --- |
@@ -1070,15 +1070,15 @@ Structural cleanup by workspace section. Keep domain logic in `domain`, transpor
 | Inline `create_provider` factory; remove unused adapter scaffolding | Done |
 | `jsonrepair-rs` for tool args and plain JSON completions | Done |
 | Per-provider module split audit — keep mapping shared, trim duplicate wire helpers | Planned |
-| Provider error taxonomy aligned with domain `AgentError` (T1) | Planned |
+| Provider error taxonomy aligned with engine `AgentError` (T1) | Planned |
 
 ### Orchestration (`crates/orchestration`)
 
 | Item | Status |
 | --- | --- |
 | Thin `AppBackend` — catalog modules, `api.rs`, `error.rs` | Done |
-| `execution/` split (`drive`, `events`, `headless`, `subagents`) | Done |
-| Move `FileTemplateStore` from domain; alias `ExecutionEvent` → `RunTelemetry` | Done |
+| `run/execution/` split (`drive`, `events`, `headless`, `subagents`) | Done |
+| Move `FileTemplateStore` to orchestration; alias `ExecutionEvent` → `RunTelemetry` | Done |
 | Typed `BackendError`; `spawn_blocking` tool I/O; dead-code removal | Done |
 | Unify on one Tokio runtime — `AppBackend` takes injected `Handle` | Done |
 | Tool runner error taxonomy + retry loop (T19–T20) | Done |
@@ -1113,16 +1113,16 @@ Structural cleanup by workspace section. Keep domain logic in `domain`, transpor
 
 ---
 
-## Domain engine hardening
+## Engine hardening
 
-Remediation for modeled-but-unwired behavior and correctness gaps in `crates/domain`. Full task specs (files, acceptance, guardrails) lived in the prior remediation plan; phases below are the execution order. These tasks are sequenced into the queue above (items #3–#5, #31–#32).
+Remediation for modeled-but-unwired behavior and correctness gaps in `crates/engine`. Full task specs (files, acceptance, guardrails) lived in the prior remediation plan; phases below are the execution order. These tasks are sequenced into the queue above (items #3–#5, #31–#32).
 
 ### Decisions (resolve before coding)
 
 | ID | Question | Recommendation |
 | --- | --- | --- |
 | D1 Templates | `model::NodeTemplate` vs `template::Template` — which is canonical? | Keep `template::Template`; persist it in `FileTemplateStore` |
-| D2 `available_tools` | Domain resolves tool names, or adapter owns registry? | Confirm against provider crate; document if adapter-owned |
+| D2 `available_tools` | Engine resolves tool names, or adapter owns registry? | Confirm against provider crate; document if adapter-owned |
 | D3 Parallelism | Concurrent sibling nodes in same execution layer? | Stretch; skip unless needed for demo |
 | D4 Max tool rounds | Cap tool-calling rounds per node? | Removed — agents call tools until `openflow_submit_node_output` |
 | D5 Tool failure | Retry then feed error to model, or fail node/run immediately? | Default: retry transient tools per policy, then `is_error` result; never abort run for one tool call |

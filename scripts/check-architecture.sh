@@ -14,7 +14,7 @@ import tomllib
 from pathlib import Path
 
 WORKSPACE_DIR = Path(sys.argv[1])
-RULES_PATH = WORKSPACE_DIR / "docs" / "architecture" / "arch-check-rules.toml"
+RULES_PATH = WORKSPACE_DIR / "crates" / "workspace-checks" / "arch-check-rules.toml"
 ERRORS = 0
 
 

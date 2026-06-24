@@ -1,8 +1,8 @@
-# Testing Workflows
+# Testing workflows
 
 How to verify workflow behavior without manually clicking through the desktop app.
 
-## Test Placement Conventions
+## Test placement conventions
 
 Mirrored in `.cursor/rules/testing-conventions.mdc` so agents apply them automatically.
 
@@ -27,9 +27,9 @@ Mirrored in `.cursor/rules/testing-conventions.mdc` so agents apply them automat
 
 ### Migration
 
-Files predating this convention are brought into conformance opportunistically — when materially editing a file whose tests violate the rules, fix the placement in the same change. No mass migrations.
+Files predating this convention are brought into conformance opportunistically - when materially editing a file whose tests violate the rules, fix the placement in the same change. No mass migrations.
 
-## Local Dev Loops
+## Local dev loops
 
 | Goal | Command | What It Proves |
 | --- | --- | --- |
@@ -63,26 +63,26 @@ Integration tests under `crates/orchestration/tests/` drive real orchestration e
 
 Shared helpers live in `crates/orchestration/tests/support/`:
 
-- **`MockAiStack`** — `impl AiPort` that pops scripted `MockTurn` responses per invoke (`from_invocation_order([...])` consumes the first array entry on the first call).
-- **`run_headless_script`** — thin wrapper around `run_workflow_headless`.
-- **`spawn_interactive_script`** — wrapper for mid-run interrupt/stop scenarios.
+- **`MockAiStack`** - `impl AiPort` that pops scripted `MockTurn` responses per invoke (`from_invocation_order([...])` consumes the first array entry on the first call).
+- **`run_headless_script`** - thin wrapper around `run_workflow_headless`.
+- **`spawn_interactive_script`** - wrapper for mid-run interrupt/stop scenarios.
 
 Use inline `impl AiPort` stubs (e.g. node-id-aware `ScriptedAi` in `workflow_acceptance.rs`) when stack order is not deterministic (branch/join parallelism).
 
-## Test Layers
+## Test layers
 
 | Layer | Command | What It Proves |
 | --- | --- | --- |
-| Unit tests | `cargo test --workspace` | Domain rules, tool approval resolution, app/project/agent stores, provider config, shared-context and callable-agent helpers, OpenAI-compatible and Anthropic wire mapping, `jsonrepair-rs` tool-argument recovery |
+| Unit tests | `cargo test --workspace` | Engine rules, tool approval resolution, app/project/agent stores, provider config, shared-context and callable-agent helpers, OpenAI-compatible and Anthropic wire mapping, `jsonrepair-rs` tool-argument recovery |
 | Desktop command tests | `cargo test -p desktop` | Tauri command wiring for bootstrap, projects, agents, workflows |
 | Deterministic workflow acceptance | `cargo test -p orchestration --test workflow_acceptance -- --nocapture` | A whole workflow can run headlessly with scripted AI outputs, tool calls, and approval pauses |
-| Orchestration headless E2E (stack mock) | `cargo test -p orchestration --test workflow_e2e -- --nocapture` | Full orchestration + engine runs with `MockAiStack` (`tests/support/`) — happy path, retries, missing input/approval, interrupt; no real providers |
+| Orchestration headless E2E (stack mock) | `cargo test -p orchestration --test workflow_e2e -- --nocapture` | Full orchestration + engine runs with `MockAiStack` (`tests/support/`) - happy path, retries, missing input/approval, interrupt; no real providers |
 | Live AI smoke | `STEP_WORKFLOW_LIVE_AI=1 STEP_WORKFLOW_LIVE_API_KEY=... STEP_WORKFLOW_LIVE_MODEL=... cargo test -p orchestration --test live_workflow -- --ignored --nocapture` | A real BYOK provider can complete a small workflow and satisfy schema-level rules |
 | Miri (engine + orchestration UB) | `./scripts/miri.sh` or `./scripts/verify.sh --deep miri` | UB interpreter over `engine` + `orchestration` **lib** tests; CI runs on Ubuntu |
 
 ## Miri
 
-[Miri](https://github.com/rust-lang/miri) interprets Rust MIR to detect undefined behavior. Scope: **`engine`** and **`orchestration`** (`providers` / `desktop` still out — HTTP/Tauri/FFI).
+[Miri](https://github.com/rust-lang/miri) interprets Rust MIR to detect undefined behavior. Scope: **`engine`** and **`orchestration`** (`providers` / `desktop` still out - HTTP/Tauri/FFI).
 
 | Goal | Command |
 | --- | --- |
@@ -108,10 +108,10 @@ The deterministic acceptance tests should prove:
 7. Run trace entries expose queued, running, paused, completed, or failed state transitions.
 8. Chat logs capture system, thinking, user, and assistant messages where relevant, including paused-node follow-up turns and approval prompts.
 
-Unit tests in `orchestration/src/execution.rs` should additionally prove:
+Unit tests in `crates/orchestration/src/run/execution/` should additionally prove:
 
 9. `WorkflowSettings.shared_context` is appended to node and subagent system prompts.
-10. `domain::resolve_callable_agent_snapshots` honors `callable_agents` and `allow_all_callable_agents`.
+10. `engine::resolve_callable_agent_snapshots` honors `callable_agents` and `allow_all_callable_agents`.
 11. `resolve_execution_cwd` falls back to process cwd when unset and rejects invalid directories.
 
 Store and backend tests should prove:
@@ -120,7 +120,7 @@ Store and backend tests should prove:
 13. Project assign/unassign updates `projects.json` and routes saves to the correct store.
 14. App persistence uses `{data_local}/openflow/` only (no legacy data-dir fallback).
 
-## Live AI Rules
+## Live AI rules
 
 Live AI smoke tests must avoid exact prose assertions. Model output changes naturally, so assert contracts instead:
 
@@ -131,7 +131,7 @@ Live AI smoke tests must avoid exact prose assertions. Model output changes natu
 5. Required fields are non-empty.
 6. A sentinel value such as `ORCHID-91` is preserved exactly across nodes.
 
-## Seam Test Placement
+## Seam test placement
 
 Guidelines:
 
@@ -140,7 +140,7 @@ Guidelines:
 3. Test UI desktop seam by mocking `UiDesktopOutboundPort` when adding AppProvider behavior tests.
 4. End-to-end behavior remains in existing acceptance/live workflows.
 
-## Frontend Test Placement
+## Frontend test placement
 
 | Area | Location | What to test |
 | --- | --- | --- |
@@ -149,9 +149,9 @@ Guidelines:
 | Component behavior | `crates/ui/src/**/*.test.tsx` | Callable agent editor, app shell routing |
 | Canvas | `crates/ui/src/canvas/*.test.ts` | Graph interaction contracts |
 
-## Verification Gate (`scripts/verify.sh`)
+## Verification gate (`scripts/verify.sh`)
 
-Primary gate for agents and local handoff — run after every change:
+Primary gate for agents and local handoff - run after every change:
 
 ```bash
 ./scripts/verify.sh
@@ -164,7 +164,7 @@ Primary gate for agents and local handoff — run after every change:
 | Default | Runs all 11 steps; continues on failure so one run surfaces every broken step |
 | Output | One line per step (`PASS fmt (1s)` / `FAIL clippy (41s)`); truncated logs on fail; summary with exact repro commands |
 | Noise | No ANSI/progress escapes (`CARGO_TERM_COLOR=never`, `NO_COLOR=1`, `--quiet` on cargo/npm where supported) |
-| Filter | `./scripts/verify.sh fmt clippy ui-test` — unknown step name lists valid steps and exits 1 |
+| Filter | `./scripts/verify.sh fmt clippy ui-test` - unknown step name lists valid steps and exits 1 |
 | Deep | `./scripts/verify.sh --deep` adds `cargo mutants --no-shuffle` and `./scripts/miri.sh` (Miri UB on `engine` + `orchestration`; minutes-long) |
 | Env | `VERIFY_FAIL_FAST=1` stop on first failure; `VERIFY_MAX_LINES` (default 150) tail on fail |
 
@@ -174,7 +174,7 @@ Primary gate for agents and local handoff — run after every change:
 
 **One-time installs:** `cargo install cargo-machete typos-cli cargo-mutants cargo-public-api`; Miri: `rustup toolchain install nightly --component miri` (see [Miri §](testing-workflows.md#miri)).
 
-## Fast Local Lane
+## Fast local lane
 
 Use this during normal edit/test loops:
 
@@ -196,7 +196,7 @@ Options:
 ./scripts/test-fast.sh --execution --desktop
 ```
 
-## When To Run Each Layer
+## When to run each layer
 
 `./scripts/verify.sh` replaces separate `cargo fmt`, `clippy`, and `cargo test --workspace` before commits.
 

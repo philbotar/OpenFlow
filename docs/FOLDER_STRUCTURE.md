@@ -1,21 +1,21 @@
-# Folder Structure & Architecture Rules
+# Folder structure and architecture rules
 
 This document defines the folder organization principles across all crates (except `ui` and `desktop`, which have their own constraints).
 
-## Core Principle: Hexagonal Architecture
+## Core principle: hexagonal architecture
 
 Every crate applies **hexagonal architecture** with clear separation:
-- **Core (Domain Logic):** Business rules, entities, orchestration
-- **Ports (Interfaces):** Traits that the core depends on
-- **Adapters (Implementations):** Concrete implementations of ports
+- **Core logic:** Business rules, entities, orchestration
+- **Ports:** Traits that the core depends on
+- **Adapters:** Concrete implementations of ports
 
 **Rule:** Core never imports adapters. Adapters implement traits defined by core.
 
 ---
 
-## Folder Organization Rules
+## Folder organization rules
 
-### 1. Domain Folders (Flat Structure)
+### 1. Domain folders (flat structure)
 
 **What:** Business-driven vertical slices with application logic.
 
@@ -23,29 +23,29 @@ Every crate applies **hexagonal architecture** with clear separation:
 
 ```
 domain_name/
-├── ports.rs              ← trait definitions (what domain depends on)
-├── logic.rs              ← application logic (CRUD, validation, orchestration)
-├── other_logic.rs        ← more logic
-├── subfolder/            ← only if logically grouped (e.g., run/execution/)
+├── ports.rs  # trait definitions (what domain depends on)
+├── logic.rs  # application logic (CRUD, validation, orchestration)
+├── other_logic.rs  # more logic
+├── subfolder/  # only if logically grouped (e.g., run/execution/)
 │   └── detail.rs
-└── mod.rs                ← optional, declares submodules
+└── mod.rs  # optional, declares submodules
 ```
 
 **Examples:**
-- `agent/ports.rs` — FileAgentStore trait
-- `agent/library.rs` — agent CRUD using FileAgentStore
-- `workflow/ports.rs` — FileWorkflowStore trait
-- `workflow/catalog.rs` — workflow catalog
-- `run/coordinator.rs` — run coordination
-- `run/execution/` — execution details (grouped)
+- `agent/ports.rs` - AgentStore trait
+- `agent/library.rs` - agent CRUD using AgentStore
+- `workflow/ports.rs` - WorkflowStore trait
+- `workflow/catalog.rs` - workflow catalog
+- `run/coordinator/mod.rs` - run coordination
+- `run/execution/` - execution details (grouped)
 
 **✗ Don't do:**
 ```
-agent/application/library.rs    ← unnecessary nesting
-workflow/application/catalog.rs ← extra level
+agent/application/library.rs  # unnecessary nesting
+workflow/application/catalog.rs  # extra level
 ```
 
-### 2. Adapters Folder (Centralized by Concern)
+### 2. Adapters folder (centralized by concern)
 
 **What:** All concrete implementations of ports, grouped by technology concern.
 
@@ -53,20 +53,20 @@ workflow/application/catalog.rs ← extra level
 
 ```
 adapters/
-├── storage/                ← persistence implementations
+├── storage/  # persistence implementations
 │   ├── agent_store.rs
 │   ├── app_workflow_store.rs
 │   ├── project_workflow_store.rs
 │   └── ...
-├── infrastructure/         ← external systems (LSP, Git, HTTP, DB clients)
+├── infrastructure/  # external systems (LSP, Git, HTTP, DB clients)
 │   ├── lsp/
 │   ├── git/
 │   └── http/
-├── ai_provider/            ← (providers crate only) AI service implementations
+├── ai_provider/  # (providers crate only) AI service implementations
 │   ├── anthropic.rs
 │   ├── openai.rs
 │   └── ...
-├── tool_impl/              ← tool-specific implementations
+├── tool_impl/  # tool-specific implementations
 │   ├── edit/
 │   └── ...
 └── mod.rs
@@ -76,10 +76,10 @@ adapters/
 
 **✗ Don't do:**
 ```
-agent/adapters/store.rs    ← adapters belong in adapters/, not domains
+agent/adapters/store.rs  # adapters belong in adapters/, not domains
 ```
 
-### 3. Ports (Interfaces)
+### 3. Ports
 
 **Where:** In domain-specific `ports.rs` file (not in adapter files).
 
@@ -88,31 +88,31 @@ agent/adapters/store.rs    ← adapters belong in adapters/, not domains
 **Example:**
 ```rust
 // agent/ports.rs (domain port definitions)
-pub trait FileAgentStore {
-    fn load(&self, id: &str) -> Result<AgentDefinition>;
-    fn save(&mut self, def: AgentDefinition) -> Result<()>;
+pub trait AgentStore {
+    fn load(&self) -> io::Result<Vec<CallableAgent>>;
+    fn save(&self, agents: &[CallableAgent]) -> io::Result<()>;
 }
 ```
 
 ```rust
 // agent/library.rs (domain logic uses the port)
-use crate::agent::ports::FileAgentStore;
+use crate::agent::ports::AgentStore;
 
 pub struct AgentLibrary {
-    store: Box<dyn FileAgentStore>,
+    store: Box<dyn AgentStore>,
 }
 ```
 
 ```rust
 // adapters/storage/agent_store.rs (adapter implements the port)
-use crate::agent::ports::FileAgentStore;
+use crate::agent::ports::AgentStore;
 
 pub struct AgentFileStore { ... }
 
-impl FileAgentStore for AgentFileStore { ... }
+impl AgentStore for AgentFileStore { ... }
 ```
 
-**Rule:** 
+**Rule:**
 - ✅ Port traits defined in `domain/ports.rs`
 - ✅ Domain logic imports and uses ports
 - ✅ Adapters implement ports
@@ -120,28 +120,28 @@ impl FileAgentStore for AgentFileStore { ... }
 
 ---
 
-## Crate-Specific Rules
+## Crate-specific rules
 
-### `crates/engine` — Core Domain
+### `crates/engine` - Core domain
 
 **What:** Domain model, workflow execution, execution state.
 
 **Structure:**
 ```
 engine/src/
-├── conversation/       ← domain concept (chat history)
-├── execution/         ← domain concept (run execution)
-├── graph/             ← domain concept (workflow structure)
-├── ports/             ← inbound/outbound ports for engine
-├── template/          ← domain concept
-├── tools/             ← domain concept (tool catalog, policies)
+├── conversation/  # domain concept (chat history)
+├── execution/  # domain concept (run execution)
+├── graph/  # domain concept (workflow structure)
+├── ports/  # inbound/outbound ports for engine
+├── template/  # domain concept
+├── tools/  # domain concept (tool catalog, policies)
 ├── lib.rs
 └── mod declarations
 ```
 
-**Special case:** Engine defines its own `ports/inbound` and `ports/outbound` (boundaries for external systems). This is the exception—engine is the core and exports ports that others implement.
+**Special case:** Engine defines its own `ports/inbound` and `ports/outbound` (boundaries for external systems). This is the exception: engine is the core and exports ports that others implement.
 
-### `crates/orchestration` — Composition Root
+### `crates/orchestration` - Composition root
 
 **What:** Orchestrates domain concepts (agents, workflows, projects, tools, runs, settings) + adapters.
 
@@ -149,48 +149,48 @@ engine/src/
 ```
 orchestration/src/
 ├── agent/
-│   ├── ports.rs                        ← FileAgentStore trait
-│   └── library.rs                      ← agent CRUD
+│   ├── ports.rs  # AgentStore trait
+│   └── library.rs  # agent CRUD
 ├── workflow/
-│   ├── ports.rs                        ← FileWorkflowStore trait
-│   └── catalog.rs                      ← workflow catalog
+│   ├── ports.rs  # WorkflowStore trait
+│   └── catalog.rs  # workflow catalog
 ├── project/
-│   ├── ports.rs                        ← FileProjectStore trait
-│   └── registry.rs                     ← project registry
+│   ├── ports.rs  # ProjectStore trait
+│   └── registry.rs  # project registry
 ├── run/
-│   ├── coordinator.rs                  ← run coordination
-│   ├── execution/                      ← execution details
-│   └── state/mod.rs                    ← state projection
+│   ├── coordinator/                    # run coordination
+│   ├── execution/  # execution details
+│   └── state/mod.rs  # state projection
 ├── settings/
-│   ├── ports.rs                        ← FileSettingsStore trait
-│   └── facade.rs                       ← settings aggregation
+│   ├── ports.rs  # SettingsStore trait
+│   └── facade.rs  # settings aggregation
 ├── tool/
-│   ├── mod.rs                          ← tool layer module
-│   ├── registry.rs                     ← tool catalog
-│   ├── runner.rs                       ← tool execution
-│   └── output.rs                       ← artifact storage
+│   ├── mod.rs  # tool layer module
+│   ├── registry.rs  # tool catalog
+│   ├── runner.rs  # tool execution
+│   └── output.rs  # artifact storage
 │
 ├── adapters/
-│   ├── storage/                        ← all persistence
+│   ├── storage/  # all persistence
 │   │   ├── agent_store.rs
 │   │   ├── app_workflow_store.rs
-│   ├── project_workflow_store.rs
+│   │   ├── project_workflow_store.rs
 │   │   ├── project_store.rs
 │   │   ├── settings_store.rs
 │   │   ├── skill_store.rs
 │   │   └── template_store.rs
-│   ├── tool_impl/                      ← tool implementation (edit, patching)
+│   ├── tool_impl/  # tool implementation (edit, patching)
 │   │   ├── edit/
 │   │   ├── errors.rs
 │   │   └── mod.rs
-│   └── infrastructure/                 ← external systems
-│       ├── lsp/                        ← LSP protocol
-│       └── git/                        ← Git CLI
+│   └── infrastructure/  # external systems
+│       ├── lsp/  # LSP protocol
+│       └── git/  # Git CLI
 │
-├── backend/mod.rs                      ← composition root (wires all domains + adapters)
-├── api.rs                              ← public API entry points
-├── lib.rs                              ← module declarations
-└── error.rs                            ← top-level errors
+├── backend/mod.rs  # composition root (wires all domains + adapters)
+├── api.rs  # public API entry points
+├── lib.rs  # module declarations
+└── error.rs  # top-level errors
 ```
 
 **Rules:**
@@ -199,65 +199,65 @@ orchestration/src/
 - No persistence inside domain folders
 - `backend/mod.rs` is the only place that directly depends on both domain logic AND adapters
 
-### `crates/providers` — Adapter Crate
+### `crates/providers` - Adapter crate
 
 **What:** Implements `engine::ports::AiPort` for different AI providers.
 
 **Structure:**
 ```
 providers/src/
-├── anthropic.rs                        ← Anthropic transport
-├── openai_compat.rs                    ← OpenAI-compatible transport
-├── client.rs                           ← AiClient implementing AiPort
-├── mapping.rs                          ← transcript/tool-arg mapping
-├── sse.rs                              ← SSE stream parsing
-├── lib.rs                              ← create_provider() factory
+├── anthropic.rs  # Anthropic transport
+├── openai_compat.rs  # OpenAI-compatible transport
+├── client.rs  # AiClient implementing AiPort
+├── mapping.rs  # transcript/tool-arg mapping
+├── sse.rs  # SSE stream parsing
+├── lib.rs  # create_provider() factory
 └── ...
 ```
 
 **Rules:**
 - Single public entry point: `create_provider()` factory function in `lib.rs`
-- New provider → add `providers/src/{name}.rs` and wire in `create_provider()`
+- New provider -> add `providers/src/{name}.rs` and wire in `create_provider()`
 - Never expose concrete provider types to consumers
 - Implement `engine::ports::AiPort` trait
 
-### `crates/ui` — Frontend (EXEMPT)
+### `crates/ui` - Frontend (EXEMPT)
 
 **What:** React/TypeScript frontend for the desktop app.
 
-**Rules:** N/A — use standard web app conventions (components, pages, hooks, etc.)
+**Rules:** N/A - use standard web app conventions (components, pages, hooks, etc.)
 
-### `crates/desktop` — Desktop App (EXEMPT)
+### `crates/desktop` - Desktop app (EXEMPT)
 
-**What:** Electron/Tauri desktop shell.
+**What:** Tauri desktop shell.
 
-**Rules:** N/A — use desktop app conventions.
+**Rules:** N/A - use desktop app conventions.
 
 ---
 
-## Key Design Decisions
+## Key design decisions
 
-### Why Flat Domain Folders?
+### Why flat domain folders?
 
-Avoids unnecessary nesting (`domain/application/logic.rs` → `domain/logic.rs`). Hexagonal boundary is clear through:
+Avoids unnecessary nesting (`domain/application/logic.rs` -> `domain/logic.rs`). Hexagonal boundary is clear through:
 1. Files in domain folders = core logic
 2. Files in `adapters/` = implementations
 3. `lib.rs` declares public API
 
-### Why Centralized Adapters?
+### Why centralized adapters?
 
-Makes it easy to find implementations: "where is agent persistence?" → `adapters/storage/agent_store.rs`. 
+Makes it easy to find implementations: "where is agent persistence?" -> `adapters/storage/agent_store.rs`.
 
 Organized by **concern** (storage, infrastructure, tool_impl), not by domain. This prevents duplicated infrastructure code and makes it clear what technologies are being used.
 
-### Why No Nested Adapters?
+### Why no nested adapters?
 
 Adapters are terminal implementations. They don't have sub-adapters. Nesting (`agent/adapters/store.rs`) creates confusion because:
 1. Adapters aren't supposed to depend on domains
 2. It suggests there might be multiple layers (adapters of adapters)
 3. Breaks the one-way dependency rule
 
-### Why Single-Purpose Crates?
+### Why single-purpose crates?
 
 `providers` is purely adapters; `orchestration` orchestrates domains + adapters; `engine` is pure domain. This separation means:
 - Easy to test each crate independently
@@ -266,16 +266,16 @@ Adapters are terminal implementations. They don't have sub-adapters. Nesting (`a
 
 ---
 
-## Dependency Rules
+## Dependency rules
 
 ```
 engine (core domain)
   ↑
   └─ orchestration (domains + adapters)
-       ├─ agent/library → adapters/storage/agent_store
-       ├─ workflow/catalog → adapters/storage/{app,project}_workflow_store
-       └─ tool/runner → adapters/tool_impl/
-          
+       ├─ agent/library -> adapters/storage/agent_store
+       ├─ workflow/catalog -> adapters/storage/{app,project}_workflow_store
+       └─ tool/runner -> adapters/tool_impl/
+
 providers (adapters)
   ↑
   └─ orchestration (uses factory)
@@ -289,45 +289,41 @@ desktop/ui (frontend)
 
 ---
 
-## Applying the Rules: Checklist
+## Applying the rules: checklist
 
 When adding a new domain or adapter:
 
-**New Domain:**
+**New domain:**
 - [ ] Create folder: `domain_name/`
-- [ ] Create `domain_name/ports.rs` — define all traits the domain depends on
+- [ ] Create `domain_name/ports.rs` - define all traits the domain depends on
 - [ ] Add logic files at root: `domain_name/logic.rs` (imports from ports.rs)
 - [ ] Update `lib.rs` to re-export domain entry points
 - [ ] Add to composition root (`backend/mod.rs`)
 
-**New Adapter:**
+**New adapter:**
 - [ ] Create folder in `adapters/concern_name/`
 - [ ] Implement traits defined in `domain/ports.rs`
 - [ ] Never define ports in adapters
 - [ ] Never import the domain logic (only its ports)
 - [ ] Update `adapters/mod.rs` if needed
 
-**Refactoring Existing Code:**
-- [ ] No nested `application/` folders → move to domain root
-- [ ] Adapters out of domain folders → move to `adapters/`
+**Refactoring existing code:**
+- [ ] No nested `application/` folders -> move to domain root
+- [ ] Adapters out of domain folders -> move to `adapters/`
 - [ ] Organize adapters by concern, not domain
 - [ ] Move trait definitions from adapters to `domain/ports.rs`
 - [ ] Verify cargo check passes
 - [ ] Update this document if new pattern emerges
 
-## TODO: Port Refactoring
+## Port refactoring status
 
-Current state: Trait definitions are in `adapters/` (incorrect).
-
-Needed: Move all traits to `domain/ports.rs` files.
-
-Example: `FileAgentStore` currently in `adapters/storage/agent_store.rs` should move to `agent/ports.rs`.
+Current state: entity store traits live in `{entity}/ports.rs`, and concrete file stores live in `adapters/storage/`.
 
 ---
 
 ## References
 
-- [CONTEXT.md](./CONTEXT.md) — Orchestration-specific terms and dependencies
-- [crates/orchestration/AGENTS.md](./crates/orchestration/AGENTS.md) — Orchestration crate orientation
-- [docs/sections/orchestration/callable-agents.md](./sections/orchestration/callable-agents.md) — CallableAgent domain deep dive
+- [CONTEXT.md](CONTEXT.md) - Orchestration-specific terms and dependencies
+- [crates/orchestration/AGENTS.md](../crates/orchestration/AGENTS.md) - Orchestration crate orientation
+- [docs/architecture/callable-agents.md](./architecture/callable-agents.md) - CallableAgent snapshot and subagent model
 - Hexagonal Architecture: [Alistair Cockburn's original](https://alistair.cockburn.us/hexagonal-architecture/)

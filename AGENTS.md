@@ -21,7 +21,7 @@ Each file covers architecture, dependency rules, code standards, patterns, and c
 
 ## 30-Second Intake
 
-1. This is a Rust workspace with five sections: `engine`, `providers`, `orchestration`, `desktop`, `ui`.
+1. This is a Rust workspace with five crates: `engine`, `providers`, `orchestration`, `desktop`, `ui`.
 2. Core rule: keep engine logic in `engine`; keep API transport/auth quirks in `providers`; keep runtime/state/storage in `orchestration`; keep Tauri adapter code in `desktop`; keep frontend code in `ui`.
    - **engine** — valid workflow + run behavior
    - **orchestration** — store, load, wire, host runs
@@ -51,6 +51,18 @@ Add a port/trait only when a consumer is typed on that interface. Otherwise call
 docs/
 ├── README.md
 ├── glossary.md
+├── getting-started/
+│   └── README.md
+├── guides/
+│   └── first-workflow.md
+├── concepts/
+│   ├── README.md
+│   ├── how-openflow-works.md
+│   └── workflows-and-runs.md
+├── reference/
+│   └── README.md
+├── troubleshooting/
+│   └── README.md
 ├── contributing/
 │   ├── README.md
 │   ├── development-lanes.md
@@ -66,6 +78,11 @@ docs/
 | Doc | Use when |
 | --- | --- |
 | `docs/README.md` | First read; filesystem index |
+| `docs/getting-started/README.md` | Running the app and configuring a provider |
+| `docs/guides/first-workflow.md` | Building the first workflow |
+| `docs/concepts/how-openflow-works.md` | Understanding the runtime path |
+| `docs/reference/README.md` | Commands, storage paths, provider key resolution |
+| `docs/troubleshooting/README.md` | Setup, provider, run, and verification failures |
 | `docs/contributing/development-lanes.md` | Classifying a change, selecting playbook/skill, choosing verification |
 | `docs/contributing/coding-patterns.md` | Ownership, runtime semantics, conventions |
 | `docs/contributing/testing-workflows.md` | Acceptance tests, live-AI smoke |
