@@ -17,6 +17,7 @@
 </p>
 
 <p align="center">
+  <a href="#screenshots">Screenshots</a> ·
   <a href="#features">Features</a> ·
   <a href="#architecture">Architecture</a> ·
   <a href="#quick-start">Quick Start</a> ·
@@ -25,6 +26,26 @@
 </p>
 
 ---
+
+## Screenshots
+
+<p align="center">
+  <img src="docs/assets/workflow-run.png" alt="Workflow run with parallel agent layers and per-node chat" width="900" />
+  <br/>
+  <em>Run a multi-agent pipeline — parallel layers, live status, and per-node conversation.</em>
+</p>
+
+<p align="center">
+  <img src="docs/assets/agent-editor.png" alt="Agent editor for model, prompts, and approval settings" width="900" />
+  <br/>
+  <em>Configure reusable agents — model, prompts, JSON schema, and tool approval.</em>
+</p>
+
+<p align="center">
+  <img src="docs/assets/build-workflow-with-ai.png" alt="Build workflow with AI from a natural language goal" width="900" />
+  <br/>
+  <em>Describe a workflow in natural language, iterate, then apply to the editor.</em>
+</p>
 
 ## Features
 
