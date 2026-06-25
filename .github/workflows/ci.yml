@@ -28,12 +28,36 @@ jobs:
           VERSION_CHECK_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || (github.event.before != '0000000000000000000000000000000000000000' && github.event.before || '') }}
         run: ./scripts/check-version-bump.sh
 
-  verify:
-    name: Verify (blocking)
+  changes:
+    name: Detect changed crates
     runs-on: ubuntu-latest
-    env:
-      VERIFY_SHARE_TARGET: "1"
-      VERIFY_FAIL_FAST: "1"
+    outputs:
+      matrix: ${{ steps.detect.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch base branch
+        if: github.event_name == 'pull_request'
+        run: git fetch origin "${{ github.base_ref }}"
+
+      - name: Detect changed crates
+        id: detect
+        env:
+          VERSION_CHECK_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || (github.event.before != '0000000000000000000000000000000000000000' && github.event.before || '') }}
+        run: ./scripts/ci-changed-crates.sh
+
+  check:
+    name: Check ${{ matrix.name }}
+    needs: changes
+    if: needs.changes.outputs.matrix != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.changes.outputs.matrix) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -41,9 +65,10 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: clippy
 
       - name: Install Node
+        if: matrix.node
         uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -51,9 +76,11 @@ jobs:
           cache-dependency-path: crates/ui/package-lock.json
 
       - name: Install npm dependencies
+        if: matrix.node
         run: npm ci --prefix crates/ui
 
       - name: Install Linux system dependencies (Tauri)
+        if: matrix.tauri
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -67,6 +94,45 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev
 
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
+
+      - name: Cache Rust build artifacts
+        uses: swatinem/rust-cache@v2
+        with:
+          shared-key: check-${{ matrix.name }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Run crate check
+        run: ./scripts/ci-crate-check.sh "${{ matrix.name }}"
+
+  lint:
+    name: Lint (workspace)
+    runs-on: ubuntu-latest
+    env:
+      VERIFY_SHARE_TARGET: "1"
+      VERIFY_FAIL_FAST: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: crates/ui/package-lock.json
+
+      - name: Install npm dependencies
+        run: npm ci --prefix crates/ui
+
       - name: Install cargo-deny
         uses: taiki-e/install-action@v2
         with:
@@ -74,8 +140,11 @@ jobs:
 
       - name: Cache Rust build artifacts
         uses: swatinem/rust-cache@v2
+        with:
+          shared-key: lint
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: Run CI verification gate
+      - name: Run lint gate
         run: ./scripts/verify-ci.sh
 
   miri:
@@ -101,3 +170,22 @@ jobs:
 
       - name: Test with Miri
         run: ./scripts/miri.sh
+
+  ci-success:
+    name: CI success
+    if: always()
+    needs: [version, changes, check, lint, miri]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify required jobs succeeded
+        env:
+          RESULTS: ${{ toJSON(needs.*.result) }}
+        run: |
+          echo "job results: $RESULTS"
+          # 'skipped' is allowed (the check matrix is skipped on no-op diffs);
+          # any failure or cancellation fails the gate.
+          if echo "$RESULTS" | grep -Eq 'failure|cancelled'; then
+            echo "One or more required jobs failed."
+            exit 1
+          fi
+          echo "All required jobs passed (or were intentionally skipped)."
