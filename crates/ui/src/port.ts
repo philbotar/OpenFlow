@@ -26,6 +26,7 @@ import type {
 	ScheduleStatus,
 	RunSummary,
 } from "./lib/types";
+import type { AppUpdateResult } from "./api";
 
 export type RunStateListener = (runState: WorkflowRunState) => void;
 
@@ -143,6 +144,8 @@ export interface UiDesktopOutboundPort {
 	refreshSchedules: () => Promise<ScheduleStatus[]>;
 	listenToScheduleStatuses: (handler: (statuses: ScheduleStatus[]) => void) => Promise<() => void>;
 	probeMcpServer: (config: McpServerConfig) => Promise<string[]>;
+	getAppVersion: () => Promise<string>;
+	installAppUpdate: () => Promise<AppUpdateResult>;
 }
 
 export function createUiDesktopOutboundAdapter(): UiDesktopOutboundPort {
@@ -207,6 +210,8 @@ export function createUiDesktopOutboundAdapter(): UiDesktopOutboundPort {
 		refreshSchedules: desktopApi.refreshSchedules,
 		listenToScheduleStatuses: desktopApi.listenToScheduleStatuses,
 		probeMcpServer: desktopApi.probeMcpServer,
+		getAppVersion: desktopApi.getAppVersion,
+		installAppUpdate: desktopApi.installAppUpdate,
 	};
 }
 

@@ -4471,6 +4471,36 @@ label {
   flex: 1;
 }
 
+.about-version {
+  margin: 0 0 8px;
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+}
+
+.about-note {
+  margin: 0 0 16px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  max-width: 42rem;
+}
+
+.about-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.about-status {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.about-status-error {
+  color: var(--status-error, #c0392b);
+}
+
 .providers-section-header {
   display: flex;
   align-items: flex-start;
