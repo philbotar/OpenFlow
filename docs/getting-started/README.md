@@ -13,18 +13,18 @@ OpenFlow currently documents local development entry points. Use the reference p
 ## Run the Desktop App
 
 ```bash
-npm --prefix crates/desktop run start -- dev
+./scripts/start.sh
 ```
 
-This starts the Tauri desktop app and the UI dev server together.
+This installs dependencies on first run, then starts the Tauri desktop app and UI dev server together.
 
-For frontend-only work, run:
+## Install the Desktop App (macOS)
 
 ```bash
-npm --prefix crates/ui run dev
+./scripts/install.sh
 ```
 
-Use frontend-only mode for UI iteration. Use the desktop app when you need Tauri commands, local storage, run events, provider settings, or workflow execution.
+This builds a `.dmg` installer and opens it. Drag **OpenFlow** to **Applications** to install.
 
 ## Configure a Provider
 

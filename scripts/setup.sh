@@ -1,30 +1,21 @@
 #!/usr/bin/env bash
-# Install OpenFlow dev dependencies and optionally launch or build the app.
+# Install OpenFlow dev dependencies.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 UI="$ROOT/crates/ui"
-DESKTOP="$ROOT/crates/desktop"
-RUN_DEV=0
-RUN_BUILD=0
 
 usage() {
 	cat <<'EOF'
-Usage: ./scripts/setup.sh [options]
+Usage: ./scripts/setup.sh
 
 Install npm and Rust dependencies for local development.
-
-Options:
-  --dev     After setup, launch the desktop app in dev mode
-  --build   After setup, build a release app bundle
-  -h, --help
+Run ./scripts/start.sh to launch the app, or ./scripts/install.sh to build an installer.
 EOF
 }
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
-	--dev) RUN_DEV=1; shift ;;
-	--build) RUN_BUILD=1; shift ;;
 	-h | --help)
 		usage
 		exit 0
@@ -36,11 +27,6 @@ while [[ $# -gt 0 ]]; do
 		;;
 	esac
 done
-
-if [[ "$RUN_DEV" -eq 1 && "$RUN_BUILD" -eq 1 ]]; then
-	echo "error: pass only one of --dev or --build" >&2
-	exit 1
-fi
 
 need() {
 	if ! command -v "$1" >/dev/null 2>&1; then
@@ -76,26 +62,15 @@ fi
 echo "==> Fetching Rust workspace crates"
 (
 	cd "$ROOT"
-	cargo fetch --workspace --quiet
+	cargo fetch --quiet
 )
 
 echo
 echo "Setup complete."
 echo
 echo "Next steps:"
-echo "  Dev app:     npm --prefix crates/desktop run start -- dev"
-echo "  Frontend:    npm --prefix crates/ui run dev"
+echo "  Run app:     ./scripts/start.sh"
+echo "  Install app: ./scripts/install.sh"
 echo "  Verify:      ./scripts/verify.sh"
-echo "  Release:     npm --prefix crates/desktop run build"
 echo
 echo "Tauri platform deps: https://v2.tauri.app/start/prerequisites/"
-
-if [[ "$RUN_DEV" -eq 1 ]]; then
-	echo "==> Launching OpenFlow (dev)"
-	exec npm --prefix "$DESKTOP" run start -- dev
-fi
-
-if [[ "$RUN_BUILD" -eq 1 ]]; then
-	echo "==> Building OpenFlow (release)"
-	exec npm --prefix "$DESKTOP" run build
-fi

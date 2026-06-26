@@ -110,7 +110,7 @@ See [`testing-workflows.md`](testing-workflows.md) for acceptance and live-AI ve
 
 ## Local run commands
 
-1. Desktop app: `npm --prefix crates/desktop run start -- dev`
+1. Desktop app: `./scripts/start.sh`
 2. Frontend only: `npm --prefix crates/ui run dev`
 3. Frontend typecheck: `npm --prefix crates/ui run typecheck`
 
