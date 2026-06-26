@@ -50,7 +50,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEE0MDUxNjA5MkQ4MUNCOTEKUldTUnk0RXRDUllGcEQxVzU0Mjg5cjViaUZpVlFlbzQzbStzbElkNitHaHhhc3hmcGNmdE5vTVMK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJCQjgxNzFBMTQ0RjYzRTIKUldUaVkwOFVHaGU0dThPRjJwTE1VTzVDblYxRVp2NlJRL0g2SGdFT2dTenVRSkllcGgyQXltYTgK",
       "endpoints": [
         "https://github.com/philbotar/OpenFlow/releases/latest/download/latest.json"
       ]
