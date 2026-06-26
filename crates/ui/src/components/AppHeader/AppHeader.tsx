@@ -8,6 +8,21 @@ export function AppHeader() {
   const ctx = useAppContext();
   const mod = () => (isMacOS() ? "⌘" : "Ctrl");
 
+  const title = () => {
+    switch (ctx.screen()) {
+      case "agents":
+        return "Agents";
+      case "schedule":
+        return "Schedule";
+      case "settings":
+        return "Settings";
+      case "workflow-authoring":
+        return "Build workflow with AI";
+      default:
+        return ctx.activeWorkflow()?.name ?? "Workflow";
+    }
+  };
+
   return (
     <header
       class="topbar"
@@ -18,6 +33,13 @@ export function AppHeader() {
       data-tauri-drag-region
     >
       <div class="topbar-leading">
+        <Show when={isMacOS() && !ctx.isMaximized()}>
+          <div
+            class="topbar-window-controls-spacer"
+            aria-hidden="true"
+            data-tauri-drag-region
+          />
+        </Show>
         <Show when={ctx.isCompactViewport()}>
           <button
             type="button"
@@ -28,7 +50,7 @@ export function AppHeader() {
             aria-expanded={ctx.sidebarDrawerOpen()}
             data-tauri-drag-region="false"
           >
-            <SidebarIcon name="panel-left" />
+            <SidebarIcon name="panel-left-open" />
           </button>
         </Show>
         <Show when={!ctx.isCompactViewport()}>
@@ -40,119 +62,52 @@ export function AppHeader() {
             aria-label={ctx.leftPanelHidden() ? "Show left sidebar" : "Hide left sidebar"}
             data-tauri-drag-region="false"
           >
-            <SidebarIcon name="panel-left" />
+            <SidebarIcon
+              name={ctx.leftPanelHidden() ? "panel-left-open" : "panel-left-close"}
+            />
           </button>
         </Show>
-        <div class="topbar-copy" data-tauri-drag-region>
-          <Show
-            when={ctx.appReady()}
-            fallback={<span class="skeleton-line skeleton-line--title" aria-hidden="true" />}
-          >
-            <h2>
-              {ctx.screen() === "agents"
-                ? "Agents"
-                : ctx.screen() === "schedule"
-                  ? "Schedule"
-                  : ctx.screen() === "workflow-authoring"
-                    ? "Build workflow with AI"
-                    : ctx.activeWorkflow()?.name ?? "Workflow"}
-            </h2>
-          </Show>
-        </div>
+      </div>
+      <div class="topbar-title" data-tauri-drag-region>
+        <Show
+          when={ctx.appReady()}
+          fallback={<span class="skeleton-line skeleton-line--title" aria-hidden="true" />}
+        >
+          <span>{title()}</span>
+        </Show>
       </div>
       <div class="topbar-actions" data-tauri-drag-region>
-        <div
-          class="readiness-chip"
-          classList={{ ready: ctx.readiness()?.ready }}
-        >
-          <span class="status-dot" />
-          <span>{ctx.readiness()?.message ?? "Checking provider"}</span>
-        </div>
         <Show when={ctx.screen() === "editor"}>
           <div class="toolbar-group topbar-button-group ">
-            <div class="topbar-primary-actions">
-              <Show
-                when={ctx.runState()?.active}
-                fallback={
-                  <Show
-                    when={ctx.continuableRun()}
-                    fallback={
-                      <button
-                        type="button"
-                        class="topbar-primary-button"
-                        classList={{ "topbar-icon-button--loading": ctx.startingRun() }}
-                        onClick={() => void ctx.handleRun()}
-                        disabled={ctx.startingRun()}
-                        title={`Run (${mod()}+Enter)`}
-                        aria-label="Run workflow"
-                        data-tauri-drag-region="false"
-                      >
-                        <Show when={ctx.startingRun()} fallback={<SidebarIcon name="run" />}>
-                          <Spinner size="sm" />
-                        </Show>
-                        <span>{ctx.startingRun() ? "Starting…" : "Run"}</span>
-                      </button>
-                    }
-                  >
-                    <button
-                      type="button"
-                      class="topbar-primary-button"
-                      classList={{ "topbar-icon-button--loading": ctx.startingRun() }}
-                      onClick={() => void ctx.handleContinueRun()}
-                      disabled={ctx.startingRun()}
-                      title={`Continue (${mod()}+Enter)`}
-                      aria-label="Continue workflow"
-                      data-tauri-drag-region="false"
-                    >
-                      <Show when={ctx.startingRun()} fallback={<SidebarIcon name="run" />}>
-                        <Spinner size="sm" />
-                      </Show>
-                      <span>{ctx.startingRun() ? "Starting…" : "Continue"}</span>
-                    </button>
-                    <button
-                      type="button"
-                      class="topbar-icon-button"
-                      classList={{ "topbar-icon-button--loading": ctx.startingRun() }}
-                      onClick={() => void ctx.handleRun()}
-                      disabled={ctx.startingRun()}
-                      title="Start fresh run"
-                      aria-label="Start fresh workflow run"
-                      data-tauri-drag-region="false"
-                    >
-                      <SidebarIcon name="run" />
-                    </button>
-                  </Show>
-                }
+            <Show when={ctx.runState()?.active}>
+              <button
+                type="button"
+                class="topbar-danger-button"
+                classList={{ "topbar-icon-button--loading": ctx.stoppingRun() }}
+                onClick={() => void ctx.handleStopRun()}
+                disabled={ctx.stoppingRun()}
+                title={`Stop (${mod()}+.)`}
+                aria-label="Stop workflow"
+                data-tauri-drag-region="false"
               >
-                <button
-                  type="button"
-                  class="topbar-danger-button"
-                  classList={{ "topbar-icon-button--loading": ctx.stoppingRun() }}
-                  onClick={() => void ctx.handleStopRun()}
-                  disabled={ctx.stoppingRun()}
-                  title={`Stop (${mod()}+.)`}
-                  aria-label="Stop workflow"
-                  data-tauri-drag-region="false"
-                >
-                  <Show when={ctx.stoppingRun()} fallback={<SidebarIcon name="stop" />}>
-                    <Spinner size="sm" />
-                  </Show>
-                  <span>{ctx.stoppingRun() ? "Stopping…" : "Stop"}</span>
-                </button>
-              </Show>
-            </div>
+                <Show when={ctx.stoppingRun()} fallback={<SidebarIcon name="stop" />}>
+                  <Spinner size="sm" />
+                </Show>
+                <span>{ctx.stoppingRun() ? "Stopping…" : "Stop"}</span>
+              </button>
+            </Show>
             <div class="topbar-utility-group">
               <button
                 type="button"
                 class="topbar-icon-button"
-                classList={{ "topbar-icon-button-active": !ctx.rightPanelHidden() }}
-                onClick={() => ctx.handleToggleRightPanel()}
-                title={ctx.rightPanelHidden() ? `Show panel (${mod()}+J)` : `Hide panel (${mod()}+J)`}
-                aria-label={ctx.rightPanelHidden() ? "Show right panel" : "Hide right panel"}
-                aria-pressed={!ctx.rightPanelHidden()}
+                classList={{ "topbar-icon-button-active": ctx.inspectorOpen() && Boolean(ctx.selectedNodeId()) }}
+                onClick={() => ctx.handleToggleInspector()}
+                title="Inspector"
+                aria-label="Inspector"
+                aria-pressed={ctx.inspectorOpen() && Boolean(ctx.selectedNodeId())}
                 data-tauri-drag-region="false"
               >
-                <SidebarIcon name={ctx.rightPanelHidden() ? "panel-right-open" : "panel-right-close"} />
+                <SidebarIcon name="inspector" />
               </button>
               <button
                 type="button"
@@ -179,6 +134,13 @@ export function AppHeader() {
             </div>
           </div>
         </Show>
+        <div
+          class="readiness-chip"
+          classList={{ ready: ctx.readiness()?.ready }}
+        >
+          <span class="status-dot" />
+          <span>{ctx.readiness()?.message ?? "Checking provider"}</span>
+        </div>
       </div>
     </header>
   );

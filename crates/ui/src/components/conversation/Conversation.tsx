@@ -8,7 +8,6 @@ import {
   type JSX,
 } from "solid-js";
 import ArrowDown from "lucide-solid/icons/arrow-down";
-import { PanelEmptyState } from "../PanelEmptyState";
 
 export interface ConversationApi {
   isAtBottom: Accessor<boolean>;
@@ -117,27 +116,6 @@ export function ConversationContent(allProps: ConversationContentProps) {
     >
       {children}
     </div>
-  );
-}
-
-// ── ConversationEmptyState ───────────────────────────────────────────
-
-interface ConversationEmptyStateProps extends ComponentProps<"div"> {
-  title?: string;
-  description?: string;
-  icon?: JSX.Element;
-  children?: JSX.Element;
-}
-
-export function ConversationEmptyState(allProps: ConversationEmptyStateProps) {
-  const {
-    title = "No messages yet",
-    description = "Run a workflow or select a paused node to continue.",
-    ...rest
-  } = allProps;
-
-  return (
-    <PanelEmptyState title={title} description={description} {...rest} />
   );
 }
 

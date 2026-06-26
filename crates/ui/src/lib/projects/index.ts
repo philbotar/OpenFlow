@@ -50,15 +50,6 @@ export function workflowMembershipLabel(projects: Project[], workflowId: string)
   return "App workflows";
 }
 
-export function workflowIsInProject(
-  projects: Project[],
-  projectId: string,
-  workflowId: string,
-): boolean {
-  const project = projects.find((item) => item.id === projectId);
-  return project?.workflow_ids.includes(workflowId) ?? false;
-}
-
 export function executionCwdForWorkflow(
   projects: Project[],
   workflowId: string,
@@ -74,13 +65,6 @@ export function executionCwdForWorkflow(
   const project = active ?? memberships[0];
   const cwd = (project.default_execution_cwd || project.path).trim();
   return executionCwdForRun(cwd);
-}
-
-export function formatFolderBasename(path: string): string {
-  const trimmed = path.trim();
-  if (trimmed === "") return "Process cwd";
-  const parts = trimmed.split(/[/\\]/).filter(Boolean);
-  return parts[parts.length - 1] ?? trimmed;
 }
 
 export function readExpandedProjectIds(storage: StorageLike): Set<string> {

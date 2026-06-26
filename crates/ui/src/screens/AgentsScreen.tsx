@@ -125,7 +125,8 @@ export function AgentsScreen() {
                 />
                 <div class="button-row end">
                   <button
-                    class="primary-button"
+                    type="button"
+                    class="primary-button compact"
                     onClick={() => void ctx.handleSaveAgents()}
                   >
                     Save

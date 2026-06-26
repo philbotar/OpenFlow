@@ -181,22 +181,19 @@ export function ScheduleScreen() {
 
   return (
     <section class="schedule-screen">
-      <div class="schedule-header">
-        <div>
-          <div class="eyebrow">Automation</div>
-          <h2>Schedule</h2>
-        </div>
-        <div class="schedule-header-actions">
-          <button
-            type="button"
-            class="primary-button schedule-add-button"
-            onClick={() => setPickerOpen(true)}
-            disabled={addableWorkflows().length === 0}
-          >
-            <SidebarIcon name="plus" />
-            Add workflow
-          </button>
-        </div>
+      <div class="schedule-toolbar">
+        <p class="schedule-toolbar-description">
+          Run workflows automatically on a repeating schedule.
+        </p>
+        <button
+          type="button"
+          class="primary-button compact"
+          onClick={() => setPickerOpen(true)}
+          disabled={addableWorkflows().length === 0}
+        >
+          <SidebarIcon name="plus" />
+          Add workflow
+        </button>
       </div>
 
       <ScheduleWorkflowPickerModal
@@ -211,7 +208,7 @@ export function ScheduleScreen() {
         fallback={
           <PanelEmptyState
             title="No scheduled workflows yet"
-            description="Add a workflow above to run it automatically."
+            description="Add a workflow to run it automatically."
           />
         }
       >

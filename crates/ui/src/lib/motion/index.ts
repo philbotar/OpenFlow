@@ -45,16 +45,6 @@ export const modalExitKeyframes = {
   scale: [1, 0.96],
 };
 
-export const panelEnterKeyframes = {
-  opacity: [0, 1],
-  x: [24, 0],
-};
-
-export const panelExitKeyframes = {
-  opacity: [1, 0],
-  x: [0, 24],
-};
-
 export const fadeEnterKeyframes = {
   opacity: [0, 1],
 };

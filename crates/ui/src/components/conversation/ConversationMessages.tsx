@@ -11,10 +11,10 @@ import { labelForAgentStatus } from "../../lib/agentStatus";
 import type { NodeId } from "../../lib/types";
 import { isLiveTranscriptSegment, sortTranscriptSegmentsByNodeOrder } from "../../lib/workflow";
 import { useAppContext } from "../../context/AppContext";
+import { PanelEmptyState } from "../PanelEmptyState";
 import {
   Conversation,
   ConversationContent,
-  ConversationEmptyState,
   ConversationScrollButton,
 } from "./Conversation";
 import { ConversationSegmentMessages } from "./ConversationSegmentMessages";
@@ -120,7 +120,9 @@ export function ConversationMessages() {
               <Show
                 when={visibleSettled().length > 0}
                 fallback={
-                  <ConversationEmptyState
+                  <PanelEmptyState
+                    title="No messages yet"
+                    description="Send a message to start the workflow."
                     icon={
                       <MessageCircle
                         class="conversation-empty-icon-svg"

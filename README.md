@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Compose and run AI agent workflows, visually.</strong><br/>
-  A Rust desktop app for building DAG-based agent pipelines with tools, subagents, and live conversation.
+  An agent harness built for repeatable workflows, with the extensibility and feel of Claude Code.
 </p>
 
 <p align="center">
@@ -17,14 +17,39 @@
 </p>
 
 <p align="center">
+  <a href="#quick-start">Quick Start</a> ·
   <a href="#screenshots">Screenshots</a> ·
   <a href="#features">Features</a> ·
   <a href="#architecture">Architecture</a> ·
-  <a href="#quick-start">Quick Start</a> ·
   <a href="#development">Development</a> ·
   <a href="#contributing">Contributing</a>
 </p>
 
+## Quick Start
+
+### Prerequisites
+
+- [Rust](https://rustup.rs/) (stable)
+- [Node.js](https://nodejs.org/) 18+
+- Platform build tools for [Tauri](https://v2.tauri.app/start/prerequisites/)
+
+### Run
+
+```bash
+./scripts/start.sh
+```
+
+Installs dependencies on first run, then launches the desktop app.
+
+### Install (macOS)
+
+```bash
+./scripts/install.sh
+```
+
+Builds a `.dmg` and opens it — drag **OpenFlow** to **Applications**.
+
+> **macOS gatekeeper:** Unsigned local builds may be blocked on first launch. Right-click **OpenFlow** → **Open**, or run `xattr -cr /path/to/OpenFlow.app`.
 ---
 
 ## Screenshots
@@ -127,31 +152,6 @@ OpenFlow uses nested hexagonal architecture: five layers, dependencies pointing 
 
 Deep dive: [`docs/architecture/technical-overview.md`](docs/architecture/technical-overview.md)
 
-## Quick Start
-
-### Prerequisites
-
-- [Rust](https://rustup.rs/) (stable)
-- [Node.js](https://nodejs.org/) 18+
-- Platform build tools for [Tauri](https://v2.tauri.app/start/prerequisites/)
-
-### Run
-
-```bash
-./scripts/start.sh
-```
-
-Installs dependencies on first run, then launches the desktop app.
-
-### Install (macOS)
-
-```bash
-./scripts/install.sh
-```
-
-Builds a `.dmg` and opens it — drag **OpenFlow** to **Applications**.
-
-> **macOS gatekeeper:** Unsigned local builds may be blocked on first launch. Right-click **OpenFlow** → **Open**, or run `xattr -cr /path/to/OpenFlow.app`.
 
 ## Development
 

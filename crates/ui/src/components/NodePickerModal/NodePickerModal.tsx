@@ -1,23 +1,19 @@
 import { For, Show } from "solid-js";
 import { useAppContext } from "../../context/AppContext";
-import { AnimatedModal } from "../AnimatedModal";
+import { PickerModal } from "../PickerModal";
 
 export function NodePickerModal() {
   const ctx = useAppContext();
 
   return (
-    <AnimatedModal
+    <PickerModal
       open={ctx.addNodePickerOpen()}
       onClose={ctx.closeAddNodePicker}
       ariaLabel="Add agent node"
+      eyebrow="Add node"
+      title="Choose a starting point"
+      description="Start blank or reuse one of your saved agents."
     >
-      <div class="node-picker-header">
-        <div>
-          <div class="eyebrow">Add node</div>
-          <h3>Choose a starting point</h3>
-          <p>Start blank or reuse one of your saved agents.</p>
-        </div>
-      </div>
       <div class="node-picker-list">
         <button
           class="node-picker-option"
@@ -53,11 +49,6 @@ export function NodePickerModal() {
           </For>
         </Show>
       </div>
-      <div class="button-row end">
-        <button class="secondary-button" onClick={ctx.closeAddNodePicker}>
-          Cancel
-        </button>
-      </div>
-    </AnimatedModal>
+    </PickerModal>
   );
 }
