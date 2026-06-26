@@ -272,6 +272,8 @@ export function AppProvider(props: ParentProps) {
   const [isMaximized, setIsMaximized] = createSignal(false);
   const [availableSkills, setAvailableSkills] = createSignal<SkillSummary[]>([]);
   const [appReady, setAppReady] = createSignal(false);
+  const [appUpdateAvailable, setAppUpdateAvailable] = createSignal(false);
+  const clearAppUpdateAvailable = () => setAppUpdateAvailable(false);
   const [startingRun, setStartingRun] = createSignal(false);
   const [continuableRunBackend, setContinuableRunBackend] = createSignal(false);
   const continuableRun = createMemo(
@@ -2105,6 +2107,9 @@ export function AppProvider(props: ParentProps) {
       );
       setContinuableRunBackend(data.runContinuable ?? false);
       setAppReady(true);
+      void desktop.checkAppUpdateAvailable().then((result) => {
+        setAppUpdateAvailable(result.available);
+      });
     } catch (error) {
       setError(normalizeError(error));
     }
@@ -2165,6 +2170,8 @@ export function AppProvider(props: ParentProps) {
     availableSkills,
     skillById,
     appReady,
+    appUpdateAvailable,
+    clearAppUpdateAvailable,
     startingRun,
     continuableRun,
     runHistory,

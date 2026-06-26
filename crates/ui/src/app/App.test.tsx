@@ -1095,7 +1095,7 @@ describe("App settings persistence", () => {
       const labels = [...container.querySelectorAll('.settings-nav-button')].map(
         (element) => element.textContent?.trim(),
       );
-      expect(labels).toEqual(["Appearance", "Providers", "MCP Servers"]);
+      expect(labels).toEqual(["Appearance", "Providers", "MCP Servers", "About"]);
     } finally {
       dispose();
     }

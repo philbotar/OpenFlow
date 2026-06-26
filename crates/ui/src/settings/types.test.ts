@@ -2,11 +2,12 @@ import { describe, expect, it } from "vitest";
 import { SETTINGS_SECTIONS } from "./types";
 
 describe("SETTINGS_SECTIONS", () => {
-  it("exposes appearance, providers, and MCP sections", () => {
+  it("exposes appearance, providers, MCP, and about sections", () => {
     expect(SETTINGS_SECTIONS.map((section) => section.id)).toEqual([
       "appearance",
       "providers",
       "mcp",
+      "about",
     ]);
   });
 
@@ -15,6 +16,7 @@ describe("SETTINGS_SECTIONS", () => {
       "Appearance",
       "Providers",
       "MCP Servers",
+      "About",
     ]);
   });
 });

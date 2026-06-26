@@ -1,8 +1,11 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
+import { getVersion } from "@tauri-apps/api/app";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open as openDialog, confirm as confirmDialog } from "@tauri-apps/plugin-dialog";
 import type { ConfirmDialogOptions, OpenDialogOptions } from "@tauri-apps/plugin-dialog";
+import { relaunch } from "@tauri-apps/plugin-process";
+import { check } from "@tauri-apps/plugin-updater";
 import type {
   AgentDefinition,
   AgentDefinitionSummary,
@@ -31,6 +34,54 @@ import type {
 export const RUN_STATE_EVENT = "run-state";
 export const TERMINAL_EVENT = "terminal-event";
 export const SCHEDULE_EVENT = "schedule-event";
+
+export type AppUpdateResult =
+  | { status: "current" }
+  | { status: "updated" }
+  | { status: "unavailable" }
+  | { status: "error"; message: string };
+
+export type AppUpdateAvailability = {
+  available: boolean;
+  version: string | null;
+};
+
+export function getAppVersion() {
+  if (!isTauri()) {
+    return Promise.resolve("dev");
+  }
+  return getVersion();
+}
+
+export async function checkAppUpdateAvailable(): Promise<AppUpdateAvailability> {
+  if (!isTauri()) {
+    return { available: false, version: null };
+  }
+  try {
+    const update = await check();
+    return { available: update !== null, version: update?.version ?? null };
+  } catch {
+    return { available: false, version: null };
+  }
+}
+
+export async function installAppUpdate(): Promise<AppUpdateResult> {
+  if (!isTauri()) {
+    return { status: "unavailable" };
+  }
+  try {
+    const update = await check();
+    if (!update) {
+      return { status: "current" };
+    }
+    await update.downloadAndInstall();
+    await relaunch();
+    return { status: "updated" };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { status: "error", message };
+  }
+}
 
 export function bootstrapApp() {
   return invoke<BootstrapPayload>("bootstrap_app");

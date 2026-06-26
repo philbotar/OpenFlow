@@ -1,0 +1,60 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            args: --target aarch64-apple-darwin
+          - platform: macos-latest
+            args: --target x86_64-apple-darwin
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: crates/ui/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix crates/ui
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: crates/desktop
+
+      - name: Build and publish release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        with:
+          projectPath: crates/desktop
+          tagName: v__VERSION__
+          releaseName: OpenFlow v__VERSION__
+          releaseBody: |
+            macOS auto-update release. Publish this draft after review.
+
+            **First-time setup:** add repo secret `TAURI_SIGNING_PRIVATE_KEY` with the
+            private key from `tauri signer generate` (see workflow comments in PR).
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}

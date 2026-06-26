@@ -28,6 +28,11 @@ jobs:
           VERSION_CHECK_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || (github.event.before != '0000000000000000000000000000000000000000' && github.event.before || '') }}
         run: ./scripts/check-version-bump.sh
 
+      - name: Check release version alignment
+        env:
+          VERSION_CHECK_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || (github.event.before != '0000000000000000000000000000000000000000' && github.event.before || '') }}
+        run: ./scripts/check-release-version.sh
+
   verify:
     name: Verify (blocking)
     runs-on: ubuntu-latest

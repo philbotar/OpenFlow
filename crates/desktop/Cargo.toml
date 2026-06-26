@@ -1,6 +1,6 @@
 [package]
 name = "desktop"
-version = "0.1.0"
+version = "0.1.1"
 edition.workspace = true
 description.workspace = true
 license.workspace = true
@@ -30,7 +30,9 @@ tauri.workspace = true
 tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2.3.3"
 tauri-plugin-playwright = { version = "0.4", optional = true }
+tauri-plugin-process = "2"
 tauri-plugin-shell = "2"
+tauri-plugin-updater = "2"
 thiserror.workspace = true
 tokio.workspace = true
 

@@ -65,12 +65,13 @@ describe("SettingsScreen", () => {
     return [...container.querySelectorAll<HTMLButtonElement>(".settings-nav-button")];
   }
 
-  test("nav lists Appearance, Providers, and MCP Servers", () => {
+  test("nav lists Appearance, Providers, MCP Servers, and About", () => {
     renderScreen();
     expect(navButtons().map((button) => button.textContent?.trim())).toEqual([
       "Appearance",
       "Providers",
       "MCP Servers",
+      "About",
     ]);
   });
 
@@ -85,6 +86,12 @@ describe("SettingsScreen", () => {
     navButtons()[1]?.click();
     expect(container.querySelector(".providers-section")).not.toBeNull();
     expect(container.querySelector(".theme-segment")).toBeNull();
+  });
+
+  test("selecting About shows about section", () => {
+    renderScreen();
+    navButtons()[3]?.click();
+    expect(container.querySelector(".about-section")).not.toBeNull();
   });
 
   test("active nav button exposes aria-current page", () => {
