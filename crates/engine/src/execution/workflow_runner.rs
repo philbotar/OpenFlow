@@ -68,6 +68,9 @@ where
                 .into_iter()
                 .map(|(node_id, output)| NodeRunOutput { node_id, output })
                 .collect(),
+            read_calls: 0,
+            redundant_reads: 0,
+            tokens_in: 0,
         })
     }
 
@@ -111,11 +114,13 @@ where
                 output: None,
             });
             let empty_changed_files = BTreeMap::new();
+            let empty_reads = BTreeMap::new();
             let ctx = NodeInvocationContext {
                 workflow,
                 upstream_map,
                 outputs,
                 changed_files_by_node: &empty_changed_files,
+                reads_by_node: &empty_reads,
                 entrypoint_text,
                 transcript: empty_transcript,
                 available_tools: empty_tools,

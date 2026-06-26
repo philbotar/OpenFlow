@@ -112,4 +112,10 @@ pub struct RunReport {
     pub workflow_id: WorkflowId,
     pub events: Vec<RunEvent>,
     pub outputs: Vec<NodeRunOutput>,
+    #[serde(default)]
+    pub read_calls: u32,
+    #[serde(default)]
+    pub redundant_reads: u32,
+    #[serde(default)]
+    pub tokens_in: u32,
 }

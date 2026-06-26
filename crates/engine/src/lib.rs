@@ -23,7 +23,7 @@ pub use execution::{
     build_node_input, build_system_messages, build_upstream_map, collect_checkpoint_node_ids,
     handle_declare_subagents, is_subagent_runtime_builtin, merge_shared_context,
     merge_subagent_summaries, start_subagent_invoke, subagent_runtime_builtin_denied,
-    upstream_changed_files, validate_checkpoint_against_workflow, CallSubagentArgs,
+    upstream_changed_files, upstream_reads, validate_checkpoint_against_workflow, CallSubagentArgs,
     CheckpointError, EngineAwaitApproval, EngineAwaitInput, EngineInputError, EnginePollResult,
     EngineRetryableNode, EngineRunResult, InteractiveEngine, InteractiveEngineCheckpoint,
     NodeInvocationContext, NodeRunOutput, RunError, RunEvent, RunEventKind, RunReport,
@@ -46,7 +46,7 @@ pub use template::{default_templates, Template, TemplateStore, TemplateStoreErro
 pub use tools::{
     requires_approval, summarize_diff, tool_decision_for_call, tool_intent_from_arguments,
     tool_tier_for_call, ApprovalMode, EditBatch, FileChangeOp, FileChangeRecord, FileSnapshot,
-    NodeToolConfig, PendingToolApproval, SubagentDeclaration, SubagentStatus, SubagentSummary,
-    ToolCall, ToolCallStatus, ToolConcurrency, ToolDecision, ToolDefinition, ToolOutputMeta,
-    ToolResult, ToolTier, ToolTruncation, ToolTruncationStrategy,
+    NodeToolConfig, PendingToolApproval, ReadRecord, SubagentDeclaration, SubagentStatus,
+    SubagentSummary, ToolCall, ToolCallStatus, ToolConcurrency, ToolDecision, ToolDefinition,
+    ToolOutputMeta, ToolResult, ToolTier, ToolTruncation, ToolTruncationStrategy,
 };

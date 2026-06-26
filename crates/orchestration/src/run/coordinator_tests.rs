@@ -129,6 +129,7 @@ async fn replay_run_returns_inactive_projection_without_pending_actions() {
                     layer_idx: 0,
                     outputs: Default::default(),
                     changed_files_by_node: Default::default(),
+                    reads_by_node: Default::default(),
                     transcripts: Default::default(),
                     events: Vec::new(),
                     queued_nodes: Default::default(),

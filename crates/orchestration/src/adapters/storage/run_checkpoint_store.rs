@@ -208,6 +208,7 @@ mod tests {
                 layer_idx: 0,
                 outputs: BTreeMap::new(),
                 changed_files_by_node: BTreeMap::new(),
+                reads_by_node: BTreeMap::new(),
                 transcripts: BTreeMap::new(),
                 events: Vec::new(),
                 queued_nodes: BTreeSet::new(),

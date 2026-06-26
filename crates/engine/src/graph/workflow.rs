@@ -148,6 +148,9 @@ pub struct WorkflowSettings {
         alias = "reasoning_budget_tokens"
     )]
     pub reasoning_budget_tokens: Option<u32>,
+    /// Forward upstream read outlines to downstream node input JSON.
+    #[serde(default = "default_true", rename = "forwardUpstreamReads")]
+    pub forward_upstream_reads: bool,
 }
 
 /// A directed workflow graph with settings applied at run time.

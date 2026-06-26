@@ -1,3 +1,4 @@
+use crate::tool::blocking_ops::split_selector;
 use crate::tool::retry::execute_with_retry;
 use crate::tools::{ToolExecutionContext, ToolExecutionRecord, ToolRunner, ToolRunnerError};
 use async_trait::async_trait;
@@ -220,6 +221,7 @@ where
                 self.emit_tool_completed(node_id, tool_call, &record.result);
                 results[index] = Some(record.result);
             } else {
+                self.note_read_call(engine, node_id, tool_call);
                 self.emit_tool_started(node_id, tool_call);
                 runnable_indices.push(index);
             }
@@ -293,6 +295,7 @@ where
                         });
                     }
                     self.record_tool_file_changes(engine, node_id, &record);
+                    self.record_tool_reads(engine, node_id, &record);
                     self.emit_tool_completed(node_id, tool_call, &record.result);
                     results[index] = Some(record.result);
                 }
@@ -385,6 +388,7 @@ where
                     });
                 }
                 self.record_tool_file_changes(engine, node_id, &record);
+                self.record_tool_reads(engine, node_id, &record);
                 self.emit_tool_completed(node_id, &tool_call, &record.result);
                 Some(record.result)
             }
@@ -476,6 +480,44 @@ where
         }
     }
 
+    fn record_tool_reads(
+        &self,
+        engine: &mut InteractiveEngine,
+        node_id: &NodeId,
+        record: &ToolExecutionRecord,
+    ) {
+        if record.reads.is_empty() {
+            return;
+        }
+        engine.record_reads(node_id, record.reads.clone());
+    }
+
+    fn note_read_call(
+        &self,
+        engine: &mut InteractiveEngine,
+        node_id: &NodeId,
+        tool_call: &ToolCall,
+    ) {
+        if tool_call.name != "read" {
+            return;
+        }
+        let Some(path) = tool_call
+            .arguments
+            .get("path")
+            .and_then(|value| value.as_str())
+        else {
+            return;
+        };
+        let (path, _) = split_selector(path);
+        if path.starts_with("http://")
+            || path.starts_with("https://")
+            || path.starts_with("artifact:")
+        {
+            return;
+        }
+        engine.note_read_call(node_id, &path);
+    }
+
     fn node_interrupt_token(&self, node_id: &NodeId) -> Option<CancellationToken> {
         self.node_interrupts
             .lock()
@@ -495,6 +537,7 @@ where
         node_id: &NodeId,
         conversation_id: &str,
     ) -> Option<Result<ToolExecutionRecord, ToolRunnerError>> {
+        self.note_read_call(engine, node_id, &tool_call);
         let tool_runner = Arc::clone(&self.tool_runner);
         let tool_name = tool_call.name.clone();
         let (update_tx, mut update_rx) = tokio::sync::mpsc::unbounded_channel();
