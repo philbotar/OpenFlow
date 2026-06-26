@@ -78,10 +78,37 @@ jobs:
       - name: Run CI verification gate
         run: ./scripts/verify-ci.sh
 
-  miri:
-    name: Miri (engine + orchestration UB)
+  miri-changes:
+    name: Detect Miri crates
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    outputs:
+      matrix: ${{ steps.detect.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch base branch
+        if: github.event_name == 'pull_request'
+        run: git fetch origin "${{ github.base_ref }}"
+
+      - name: Detect Miri crates
+        id: detect
+        env:
+          VERSION_CHECK_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || (github.event.before != '0000000000000000000000000000000000000000' && github.event.before || '') }}
+        run: ./scripts/ci-miri-matrix.sh
+
+  miri:
+    name: Miri (${{ matrix.crate }})
+    needs: miri-changes
+    if: needs.miri-changes.outputs.matrix != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        crate: ${{ fromJSON(needs.miri-changes.outputs.matrix) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -97,7 +124,7 @@ jobs:
           workspaces: |
             .
           cache-on-failure: true
-          shared-key: miri
+          shared-key: miri-${{ matrix.crate }}
 
       - name: Test with Miri
-        run: ./scripts/miri.sh
+        run: ./scripts/miri.sh ${{ matrix.crate }}

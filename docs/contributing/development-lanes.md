@@ -52,7 +52,7 @@ Use `./scripts/test-fast.sh` for normal iteration. Add flags by risk:
 ./scripts/test-fast.sh --execution --desktop
 ```
 
-Use `./scripts/verify.sh` before handing work off. It is the canonical full gate. Use `./scripts/verify.sh --deep` (or `./scripts/miri.sh`) when you want [Miri](https://github.com/rust-lang/miri) undefined-behavior coverage on `engine` and `orchestration` - also run on CI via the `miri` workflow job.
+Use `./scripts/verify.sh` before handing work off. It is the canonical full gate. Use `./scripts/verify.sh --deep` (or `./scripts/miri.sh`) when you want [Miri](https://github.com/rust-lang/miri) undefined-behavior coverage on `engine` and `orchestration` - CI runs a parallel per-crate Miri matrix for changed crates only.
 
 For execution behavior, always add:
 
