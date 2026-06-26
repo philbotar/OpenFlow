@@ -15,6 +15,8 @@ if [[ ! -x ../ui/node_modules/.bin/tauri ]]; then
 fi
 
 echo "Generating signing keypair at $KEY"
+echo "warning: this overwrites existing keys. Skip if TAURI_SIGNING_PRIVATE_KEY is already on GitHub."
+echo "         Use ./scripts/sync-tauri-pubkey.sh instead to match an existing keypair."
 CI=1 ../ui/node_modules/.bin/tauri signer generate --write-keys "$KEY" --force --ci
 
 PUBKEY="$(tr -d '\n' < "${KEY}.pub")"
@@ -31,6 +33,7 @@ fi
 
 gh secret set TAURI_SIGNING_PRIVATE_KEY --repo "$REPO" <"$KEY"
 echo "Set GitHub secret TAURI_SIGNING_PRIVATE_KEY on $REPO"
+echo "CI keys use an empty password — do not set TAURI_SIGNING_PRIVATE_KEY_PASSWORD unless you skipped --ci"
 echo
 echo "Next: commit the pubkey change and push:"
 echo "  git add crates/desktop/tauri.conf.json"

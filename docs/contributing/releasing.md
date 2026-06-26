@@ -45,6 +45,7 @@ Installed apps check `https://github.com/philbotar/OpenFlow/releases/latest/down
 | Secret / config | Purpose |
 | --- | --- |
 | `TAURI_SIGNING_PRIVATE_KEY` | Signs updater bundles in CI |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Only if the key has a real password — **leave unset** for `--ci` keys (empty password) |
 | `plugins.updater.pubkey` in `tauri.conf.json` | Public half of signing key (in repo) |
 
 Generate keys and set the GitHub secret in one step (run on your machine — needs `gh` auth):
@@ -64,6 +65,8 @@ Validate before tagging:
 ```bash
 ./scripts/validate-tauri-signing.sh
 ```
+
+If pubkey mismatch (secret already on GitHub): `./scripts/sync-tauri-pubkey.sh` then commit `tauri.conf.json`.
 
 ## Common cases
 
