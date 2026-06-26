@@ -47,7 +47,17 @@ Installed apps check `https://github.com/philbotar/OpenFlow/releases/latest/down
 | `TAURI_SIGNING_PRIVATE_KEY` | Signs updater bundles in CI |
 | `plugins.updater.pubkey` in `tauri.conf.json` | Public half of signing key (in repo) |
 
-Generate keys: `CI=1 ../ui/node_modules/.bin/tauri signer generate --write-keys ~/.tauri/openflow.key --force --ci` (from `crates/desktop`).
+Generate keys and set the GitHub secret in one step (run on your machine — needs `gh` auth):
+
+```bash
+./scripts/setup-tauri-signing.sh
+```
+
+Manual equivalent (from `crates/desktop`):
+
+`CI=1 ../ui/node_modules/.bin/tauri signer generate --write-keys ~/.tauri/openflow.key --force --ci`
+
+Then `gh secret set TAURI_SIGNING_PRIVATE_KEY --repo philbotar/OpenFlow < ~/.tauri/openflow.key` and paste `openflow.key.pub` into `plugins.updater.pubkey` in `tauri.conf.json` (the script does both).
 
 ## Common cases
 
