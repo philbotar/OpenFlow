@@ -205,7 +205,7 @@ Before editing, classify the change with [`docs/contributing/development-lanes.m
 
 ## Dev Entry Points
 
-- Full desktop app: `npm --prefix crates/desktop run start -- dev`
+- Full desktop app: `./scripts/start.sh`
 - Frontend only: `npm --prefix crates/ui run dev`
 - Frontend typecheck: `npm --prefix crates/ui run typecheck`
 
@@ -256,9 +256,9 @@ See `docs/contributing/testing-workflows.md` for layered test commands.
 
 ## Cursor Cloud specific instructions
 
-OpenFlow is a **Tauri desktop GUI app**. Standard commands are in the README and `scripts/setup.sh`; lint/test/build use `./scripts/verify.sh` (see [Verification Commands](#verification-commands)). Notes below are only the non-obvious caveats for this VM.
+OpenFlow is a **Tauri desktop GUI app**. Standard commands are in the README and `scripts/start.sh`; lint/test/build use `./scripts/verify.sh` (see [Verification Commands](#verification-commands)). Notes below are only the non-obvious caveats for this VM.
 
-- **Run the GUI:** export `DISPLAY=:1` (a headless X server runs there) before `npm --prefix crates/desktop run start -- dev`. The Tauri dev command also auto-starts the Vite dev server on `http://localhost:1420`.
+- **Run the GUI:** export `DISPLAY=:1` (a headless X server runs there) before `./scripts/start.sh`. The Tauri dev command also auto-starts the Vite dev server on `http://localhost:1420`.
 - **Benign noise:** `libEGL warning: DRI3 error ...` lines at launch are expected — the VM has no GPU, so it falls back to software rendering. Not an error.
 - **No API key = editor only:** without an LLM key the header shows "API key missing" and the **Run** button cannot execute a workflow, but the visual editor (create workflow, add/rename/configure nodes, save) works fully. For real runs, set `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` (env fallback) or a key in Settings; resolution order is in [Runtime/Persistence Locations](#runtimepersistence-locations).
 - **First Rust build is slow** (large AWS SDK + reqwest tree, ~25 min cold). Subsequent builds are incremental. `cargo`-based `verify.sh` steps reuse `./target` only with `VERIFY_SHARE_TARGET=1` (CI sets this); otherwise each run gets its own `target/verify-<pid>`.

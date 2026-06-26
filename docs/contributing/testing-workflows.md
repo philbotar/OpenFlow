@@ -33,7 +33,7 @@ Files predating this convention are brought into conformance opportunistically -
 
 | Goal | Command | What It Proves |
 | --- | --- | --- |
-| Start full desktop app | `npm --prefix crates/desktop run start -- dev` | Tauri config, frontend dev server, and desktop bootstrap work together |
+| Start full desktop app | `./scripts/start.sh` | Tauri config, frontend dev server, and desktop bootstrap work together |
 | Start frontend only | `npm --prefix crates/ui run dev` | Vite dev server and frontend rendering load without desktop runtime |
 | Frontend typecheck | `npm --prefix crates/ui run typecheck` | TS/TSX surface still matches current DTOs and component usage |
 

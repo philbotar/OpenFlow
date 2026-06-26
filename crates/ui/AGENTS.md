@@ -134,7 +134,7 @@ Or full gate: `./scripts/verify.sh ui-typecheck ui-test`
 
 ```bash
 npm --prefix crates/ui run dev          # frontend only
-npm --prefix crates/desktop run start -- dev   # full app
+./scripts/start.sh   # full app
 ```
 
 ## Related docs

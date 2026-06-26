@@ -5,7 +5,7 @@ This walkthrough builds a two-node workflow: one node drafts a plan, and a secon
 ## 1. Start the App
 
 ```bash
-npm --prefix crates/desktop run start -- dev
+./scripts/start.sh
 ```
 
 Open Settings and confirm the active provider is ready. If readiness fails, check [`../troubleshooting/README.md#provider-not-ready`](../troubleshooting/README.md#provider-not-ready).

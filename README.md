@@ -135,21 +135,21 @@ Deep dive: [`docs/architecture/technical-overview.md`](docs/architecture/technic
 - [Node.js](https://nodejs.org/) 18+
 - Platform build tools for [Tauri](https://v2.tauri.app/start/prerequisites/)
 
-### Setup
+### Run
 
 ```bash
-./scripts/setup.sh          # install dependencies
-./scripts/setup.sh --dev    # setup + launch dev app
-./scripts/setup.sh --build  # setup + build release bundle
+./scripts/start.sh
 ```
 
-### Run from source
+Installs dependencies on first run, then launches the desktop app.
+
+### Install (macOS)
 
 ```bash
-npm --prefix crates/desktop run start -- dev
+./scripts/install.sh
 ```
 
-The compiled app lands in `crates/desktop/target/release/bundle/`.
+Builds a `.dmg` and opens it — drag **OpenFlow** to **Applications**.
 
 > **macOS gatekeeper:** Unsigned local builds may be blocked on first launch. Right-click **OpenFlow** → **Open**, or run `xattr -cr /path/to/OpenFlow.app`.
 

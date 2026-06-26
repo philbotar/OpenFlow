@@ -6,7 +6,8 @@ Use this page for commands, storage paths, and operational facts that should be 
 
 | Goal | Command |
 | --- | --- |
-| Full desktop app | `npm --prefix crates/desktop run start -- dev` |
+| Full desktop app | `./scripts/start.sh` |
+| Install desktop app (macOS) | `./scripts/install.sh` |
 | Frontend only | `npm --prefix crates/ui run dev` |
 | Frontend typecheck | `npm --prefix crates/ui run typecheck` |
 | Fast Rust lane | `./scripts/test-fast.sh` |
