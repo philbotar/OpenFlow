@@ -59,6 +59,12 @@ Manual equivalent (from `crates/desktop`):
 
 Then `gh secret set TAURI_SIGNING_PRIVATE_KEY --repo philbotar/OpenFlow < ~/.tauri/openflow.key` and paste `openflow.key.pub` into `plugins.updater.pubkey` in `tauri.conf.json` (the script does both).
 
+Validate before tagging:
+
+```bash
+./scripts/validate-tauri-signing.sh
+```
+
 ## Common cases
 
 | Change | Desktop bump? | Tag after merge? |
