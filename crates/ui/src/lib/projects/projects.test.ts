@@ -3,7 +3,6 @@ import type { Project, Workflow } from "../types";
 import {
   executionCwdForWorkflow,
   independentWorkflows,
-  workflowIsInProject,
   workflowMembershipLabel,
   workflowsAddableToProject,
   workflowsForProject,
@@ -67,6 +66,5 @@ describe("projects helpers", () => {
 
     expect(workflowMembershipLabel(projects, "a")).toBe("Repo, Other");
     expect(workflowMembershipLabel(projects, "missing")).toBe("App workflows");
-    expect(workflowIsInProject(projects, "p1", "a")).toBe(true);
   });
 });

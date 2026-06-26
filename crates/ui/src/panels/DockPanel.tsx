@@ -4,7 +4,6 @@ import Maximize2 from "lucide-solid/icons/maximize-2";
 import Minimize2 from "lucide-solid/icons/minimize-2";
 import { ChatPanel, PanelEmptyState } from "@/components";
 import { useAppContext } from "../context/AppContext";
-import { prettyJson } from "@/lib/workflow";
 import { TerminalPanel } from "./TerminalPanel";
 import { RunHistoryPanel } from "./RunHistoryPanel";
 
@@ -94,7 +93,7 @@ export function DockPanel() {
                       </div>
                       <div class="overview-message">{entry.message}</div>
                       <Show when={entry.output}>
-                        <pre class="overview-output">{prettyJson(entry.output)}</pre>
+                        <pre class="overview-output">{JSON.stringify(entry.output, null, 2)}</pre>
                       </Show>
                     </div>
                   )}
@@ -178,7 +177,7 @@ function TracePanel() {
               <h3>{entry().nodeLabel}</h3>
               <p>{entry().message}</p>
               <pre>
-                {entry().output ? prettyJson(entry().output) : "No output recorded."}
+                {entry().output ? JSON.stringify(entry().output, null, 2) : "No output recorded."}
               </pre>
             </>
           )}

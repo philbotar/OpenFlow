@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { describe, expect, it, vi } from "vitest";
 import { AppContext, type AppContextValue } from "../../context/AppContext";
@@ -30,7 +31,9 @@ function makeMockContext(overrides: Partial<AppContextValue> = {}): AppContextVa
     continuableRun: () => false,
     stoppingRun: () => false,
     workflowSettingsOpen: () => false,
+    inspectorOpen: () => false,
     handleToggleWorkflowSettings: vi.fn(),
+    handleToggleInspector: vi.fn(),
     persistAll: vi.fn().mockResolvedValue(true),
     handleRun: vi.fn().mockResolvedValue(undefined),
     handleContinueRun: vi.fn().mockResolvedValue(undefined),
@@ -83,7 +86,6 @@ function makeMockContext(overrides: Partial<AppContextValue> = {}): AppContextVa
     setSelectedAgentId: () => {},
     setScreen: () => {},
     navigateToScreen: () => {},
-    screenTransitionClass: () => "nav-lateral",
     activeProject: () => undefined,
     independentWorkflows: () => [],
     executionCwdForActiveWorkflow: () => null,
@@ -186,87 +188,62 @@ function renderWithContext(overrides: Partial<AppContextValue> = {}) {
   return { container, dispose, ctx };
 }
 
-function getToggleButton(container: HTMLElement) {
-  return container.querySelector("button[aria-label*='panel']") as HTMLButtonElement | null;
+function getLeftSidebarToggle(container: HTMLElement) {
+  return container.querySelector(
+    "button[aria-label='Hide left sidebar'], button[aria-label='Show left sidebar']",
+  ) as HTMLButtonElement | null;
 }
 
 describe("AppHeader", () => {
-  it("renders toggle button on editor screen", () => {
+  it("does not render right panel toggle on editor screen", () => {
     const { container, dispose } = renderWithContext({
       screen: () => "editor",
       rightPanelHidden: () => false,
     });
-    const btn = getToggleButton(container);
+    expect(container.querySelector("button[aria-label='Show right panel']")).toBeNull();
+    expect(container.querySelector("button[aria-label='Hide right panel']")).toBeNull();
+    dispose();
+  });
+
+  it("renders left sidebar toggle on editor screen", () => {
+    const { container, dispose } = renderWithContext({
+      screen: () => "editor",
+      rightPanelHidden: () => false,
+    });
+    const btn = getLeftSidebarToggle(container);
     expect(btn).not.toBeNull();
     dispose();
   });
 
-  it("toggle button aria-label includes 'panel'", () => {
+  it("left sidebar toggle aria-label includes sidebar", () => {
     const { container, dispose } = renderWithContext({
       screen: () => "editor",
       rightPanelHidden: () => false,
     });
-    const btn = getToggleButton(container);
-    expect(btn!.getAttribute("aria-label")).toContain("panel");
+    const btn = getLeftSidebarToggle(container);
+    expect(btn!.getAttribute("aria-label")).toContain("sidebar");
     dispose();
   });
 
-  it("aria-pressed is true when panel is visible", () => {
-    const { container, dispose } = renderWithContext({
-      screen: () => "editor",
-      rightPanelHidden: () => false,
-    });
-    const btn = getToggleButton(container);
-    expect(btn!.getAttribute("aria-pressed")).toBe("true");
-    dispose();
-  });
-
-  it("aria-pressed is false when panel is hidden", () => {
-    const { container, dispose } = renderWithContext({
-      screen: () => "editor",
-      rightPanelHidden: () => true,
-    });
-    const btn = getToggleButton(container);
-    expect(btn!.getAttribute("aria-pressed")).toBe("false");
-    dispose();
-  });
-
-  it("click calls handleToggleRightPanel", () => {
-    const handleToggleRightPanel = vi.fn();
-    const { container, dispose } = renderWithContext({
-      screen: () => "editor",
-      rightPanelHidden: () => false,
-      handleToggleRightPanel,
-    });
-    const btn = getToggleButton(container);
-    btn!.click();
-    expect(handleToggleRightPanel).toHaveBeenCalledTimes(1);
-    dispose();
-  });
-
-  it("no toggle button on non-editor screens", () => {
+  it("hides editor utility buttons on non-editor screens", () => {
     const { container, dispose } = renderWithContext({
       screen: () => "settings",
       rightPanelHidden: () => false,
     });
-    const btn = getToggleButton(container);
-    expect(btn).toBeNull();
+    expect(container.querySelector("button[aria-label='Inspector']")).toBeNull();
+    expect(container.querySelector("button[aria-label='Workflow settings']")).toBeNull();
     dispose();
   });
 
-  it("renders labeled primary run action", () => {
+  it("does not render a topbar run action", () => {
     const { container, dispose } = renderWithContext({
       screen: () => "editor",
     });
-    const runBtn = container.querySelector(
-      "button[aria-label='Run workflow']",
-    ) as HTMLButtonElement | null;
-    expect(runBtn).not.toBeNull();
-    expect(runBtn!.textContent).toContain("Run");
+    expect(container.querySelector("button[aria-label='Run workflow']")).toBeNull();
     dispose();
   });
 
-  it("shows stop action separately while a run is active", () => {
+  it("shows stop action while a run is active", () => {
     const { container, dispose } = renderWithContext({
       runState: () => ({ active: true } as any),
     });
@@ -327,31 +304,56 @@ describe("AppHeader", () => {
     dispose();
   });
 
+  it("swaps left sidebar icon when toggled", () => {
+    const [hidden, setHidden] = createSignal(false);
+    const { container, dispose } = renderWithContext({
+      isCompactViewport: () => false,
+      leftPanelHidden: hidden,
+      handleToggleLeftPanel: () => setHidden((value) => !value),
+    });
+    expect(container.querySelector("button[aria-label='Hide left sidebar']")).not.toBeNull();
+    (
+      container.querySelector("button[aria-label='Hide left sidebar']") as HTMLButtonElement
+    ).click();
+    expect(container.querySelector("button[aria-label='Show left sidebar']")).not.toBeNull();
+    dispose();
+  });
+
   it("shows Schedule in topbar on schedule screen", () => {
     const { container, dispose } = renderWithContext({
       screen: () => "schedule",
       activeWorkflow: () => ({ id: "w1", name: "Workflow One" } as any),
     });
-    expect(container.querySelector(".topbar-copy h2")?.textContent).toBe("Schedule");
+    expect(container.querySelector(".topbar-title span")?.textContent).toBe("Schedule");
     dispose();
   });
 
-  it("shows continue and fresh run when a stopped run is continuable", () => {
-    const handleContinueRun = vi.fn().mockResolvedValue(undefined);
+  it("renders inspector toggle on editor screen", () => {
+    const { container, dispose } = renderWithContext({
+      screen: () => "editor",
+    });
+    expect(container.querySelector("button[aria-label='Inspector']")).not.toBeNull();
+    dispose();
+  });
+
+  it("click calls handleToggleInspector", () => {
+    const handleToggleInspector = vi.fn();
+    const { container, dispose } = renderWithContext({
+      screen: () => "editor",
+      handleToggleInspector,
+    });
+    const btn = container.querySelector("button[aria-label='Inspector']") as HTMLButtonElement;
+    btn.click();
+    expect(handleToggleInspector).toHaveBeenCalledTimes(1);
+    dispose();
+  });
+
+  it("does not render continue or fresh run actions in the topbar", () => {
     const { container, dispose } = renderWithContext({
       continuableRun: () => true,
-      handleContinueRun,
     });
-    const continueBtn = container.querySelector(
-      "button[aria-label='Continue workflow']",
-    ) as HTMLButtonElement | null;
-    const freshBtn = container.querySelector(
-      "button[aria-label='Start fresh workflow run']",
-    ) as HTMLButtonElement | null;
-    expect(continueBtn).not.toBeNull();
-    expect(freshBtn).not.toBeNull();
-    continueBtn!.click();
-    expect(handleContinueRun).toHaveBeenCalledTimes(1);
+    expect(container.querySelector("button[aria-label='Continue workflow']")).toBeNull();
+    expect(container.querySelector("button[aria-label='Start fresh workflow run']")).toBeNull();
     dispose();
   });
 });

@@ -1,7 +1,6 @@
 import { createResource, For, Show } from "solid-js";
 import { createUiDesktopOutboundAdapter } from "../../port";
 import type { PendingToolApproval } from "../../lib/types";
-import { prettyJson } from "../../lib/workflow";
 import { Spinner } from "../Spinner";
 import { isFileEditTool } from "./FileChangesPanel";
 import { formatToolDisplayName } from "./toolBubbleState";
@@ -90,7 +89,7 @@ export function ToolApprovalCardBody(props: {
       <Show
         when={isFileEditTool(props.approval.toolCall.name)}
         fallback={
-          <pre class="tool-approval-args">{prettyJson(props.approval.toolCall.arguments)}</pre>
+          <pre class="tool-approval-args">{JSON.stringify(props.approval.toolCall.arguments, null, 2)}</pre>
         }
       >
         <div class="file-edit-preview">

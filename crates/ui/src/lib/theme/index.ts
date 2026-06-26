@@ -46,13 +46,3 @@ export function readTerminalThemeColors(
     selectionBackground: read("--terminal-selection-bg", "rgba(111, 124, 247, 0.18)"),
   };
 }
-
-export function watchSystemTheme(onChange: (resolved: ResolvedTheme) => void): () => void {
-  const media = globalThis.matchMedia?.("(prefers-color-scheme: dark)");
-  if (!media) {
-    return () => {};
-  }
-  const handler = () => onChange(media.matches ? "dark" : "light");
-  media.addEventListener("change", handler);
-  return () => media.removeEventListener("change", handler);
-}

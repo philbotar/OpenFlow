@@ -1,6 +1,6 @@
 export { ChatPanel } from "./ChatPanel";
 export { ComposerInput } from "./ComposerInput";
-export { Conversation, ConversationContent, ConversationEmptyState, ConversationScrollButton } from "./Conversation";
+export { Conversation, ConversationContent, ConversationScrollButton } from "./Conversation";
 export type { ConversationApi } from "./Conversation";
 export { ConversationComposer } from "./ConversationComposer";
 export { ConversationMessages } from "./ConversationMessages";

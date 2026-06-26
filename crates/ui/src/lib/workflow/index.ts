@@ -447,10 +447,6 @@ export function nodeOutput(
   return runState?.outputs[nodeId] ?? null;
 }
 
-export function prettyJson(value: unknown): string {
-  return JSON.stringify(value, null, 2);
-}
-
 export function isNodeAwaitingInput(
   runState: WorkflowRunState | null,
   nodeId: NodeId | null,

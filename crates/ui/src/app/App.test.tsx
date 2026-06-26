@@ -488,7 +488,7 @@ function workflowTitles(container: HTMLElement) {
 }
 
 function topbarTitle(container: HTMLElement) {
-  const title = container.querySelector(".topbar-copy h2");
+  const title = container.querySelector(".topbar-title span");
   if (!title) {
     throw new Error("topbar title missing");
   }
@@ -1046,7 +1046,7 @@ describe("App settings persistence", () => {
     installDefaultApiMocks();
   });
 
-  test("renders full-page settings without sidebar or topbar", async () => {
+  test("renders settings without sidebar but with unified topbar", async () => {
     const { container, dispose } = await mountApp(
       makeBootstrapPayload([makeWorkflow("workflow-1", "Workflow One")]),
     );
@@ -1055,7 +1055,8 @@ describe("App settings persistence", () => {
       await openSettingsScreen(container);
 
       expect(container.querySelector(".sidebar")).toBeNull();
-      expect(container.querySelector(".topbar")).toBeNull();
+      expect(container.querySelector(".topbar")).not.toBeNull();
+      expect(topbarTitle(container)).toBe("Settings");
       expect(container.querySelector(".settings-shell")).not.toBeNull();
       expect(container.querySelector(".settings-nav")).not.toBeNull();
     } finally {
@@ -2298,33 +2299,6 @@ describe("Idle global chat kickoff", () => {
     }
   });
 
-  test("header run button still starts without entrypoint", async () => {
-    const workflow = makeWorkflow("workflow-1", "Workflow One");
-    apiMocks.startRun.mockResolvedValue(makeAwaitingRunState(workflow));
-    const { container, dispose } = await mountApp({
-      workflows: [workflow],
-      agents: [makeAgent("agent-1", "Research Agent")],
-      skills: FIXTURE_SKILLS,
-      settings: SETTINGS,
-      runState: null,
-    });
-    try {
-      const runButton = container.querySelector(
-        'button[aria-label="Run workflow"]',
-      ) as HTMLButtonElement;
-      runButton.click();
-      await flush();
-      expect(apiMocks.startRun).toHaveBeenCalledWith(
-        expect.objectContaining({ id: "workflow-1" }),
-        expect.objectContaining({ active_provider: "openai" }),
-        null,
-        "stored-openai-key",
-        null,
-      );
-    } finally {
-      dispose();
-    }
-  });
 });
 
 describe("App compact shell", () => {
@@ -2612,7 +2586,7 @@ describe("App schedule screen", () => {
       );
 
       const addWorkflowButton = container.querySelector(
-        ".schedule-add-button",
+        ".schedule-toolbar .primary-button.compact",
       ) as HTMLButtonElement;
       addWorkflowButton.click();
       await flush();

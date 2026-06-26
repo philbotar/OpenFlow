@@ -25,7 +25,6 @@ import type {
   WorkflowRunState,
   WorkflowSchedule,
 } from "../lib/types";
-import type { NavTransitionType } from "../lib/viewTransition";
 import type { ResolvedTheme, ThemePreference } from "../lib/theme";
 import type { ChatSubmissionResolution } from "../lib/chatCommands";
 import type {
@@ -44,7 +43,6 @@ export interface AppContextValue {
   selectedNodeId: Accessor<NodeId | null>;
   selectedEdgeId: Accessor<EdgeId | null>;
   screen: Accessor<Screen>;
-  screenTransitionClass: Accessor<NavTransitionType>;
   settings: Accessor<AppSettings>;
   discoveredMcp: Accessor<McpDiscoveryRow[]>;
   refreshDiscoveredMcp: (projectPath?: string | null) => Promise<void>;
@@ -63,6 +61,7 @@ export interface AppContextValue {
   rightPanelHidden: Accessor<boolean>;
   leftPanelHidden: Accessor<boolean>;
   workflowSettingsOpen: Accessor<boolean>;
+  inspectorOpen: Accessor<boolean>;
   selectedProjectId: Accessor<string | null>;
   editingWorkflowId: Accessor<string | null>;
   workflowNameDraft: Accessor<string>;
@@ -119,7 +118,7 @@ export interface AppContextValue {
   setSelectedTraceIndex: Setter<number | null>;
   setSelectedAgentId: Setter<string | null>;
   setScreen: Setter<Screen>;
-  navigateToScreen: (screen: Screen, transition?: NavTransitionType) => void;
+  navigateToScreen: (screen: Screen) => void;
 
   // ── Derived memos ─────────────────────────────────────────────────────────
   activeWorkflow: Accessor<Workflow | undefined>;
@@ -242,6 +241,7 @@ export interface AppContextValue {
   handleToggleWorkflowsSection: () => void;
   handleToggleProjectsSection: () => void;
   handleToggleWorkflowSettings: () => void;
+  handleToggleInspector: () => void;
   handleToggleRightPanel: () => void;
   handleToggleLeftPanel: () => void;
   updateActiveWorkflowSettings: (mutator: (settings: Workflow["settings"]) => void) => void;

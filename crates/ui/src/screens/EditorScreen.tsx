@@ -9,18 +9,20 @@ import { COLLAPSED_DOCK_HEIGHT } from "@/lib/utils";
 
 export function EditorScreen() {
   const ctx = useAppContext();
+  const showInspectorPanel = () =>
+    ctx.inspectorOpen() &&
+    !ctx.workflowSettingsOpen() &&
+    Boolean(ctx.selectedNodeId());
   const showRightPanel = () =>
-    !ctx.rightPanelHidden() && (ctx.workflowSettingsOpen() || Boolean(ctx.selectedNodeId()));
+    !ctx.rightPanelHidden() && (ctx.workflowSettingsOpen() || showInspectorPanel());
   const chatFocusActive = () => ctx.chatFocusMode() && ctx.dockOpen();
-  const workflowSettingsFocusActive = () =>
-    ctx.workflowSettingsOpen() && !ctx.rightPanelHidden();
 
   return (
     <div
       class="editor-screen"
       classList={{
         "editor-screen--chat-focus": chatFocusActive(),
-        "editor-screen--settings-focus": workflowSettingsFocusActive(),
+        "editor-screen--no-right-panel": !showRightPanel(),
       }}
       style={{
         "--dock-height": `${ctx.dockOpen() ? ctx.dockHeight() : COLLAPSED_DOCK_HEIGHT}px`,
@@ -28,10 +30,7 @@ export function EditorScreen() {
     >
       <NodePickerModal />
 
-      <div
-        class="workspace-grid"
-        classList={{ "workspace-grid--no-inspector": !showRightPanel() }}
-      >
+      <div class="editor-main">
         <section class="canvas-panel">
           <WorkflowCanvasHost
             graph={ctx.canvasGraph()}
@@ -55,15 +54,15 @@ export function EditorScreen() {
           />
         </section>
 
-        <Show when={!ctx.rightPanelHidden() && ctx.workflowSettingsOpen()}>
-          <WorkflowSettingsPanel />
-        </Show>
-        <Show when={!ctx.rightPanelHidden() && !ctx.workflowSettingsOpen() && ctx.selectedNodeId()}>
-          <InspectorPanel />
-        </Show>
+        <DockPanel />
       </div>
 
-      <DockPanel />
+      <Show when={!ctx.rightPanelHidden() && ctx.workflowSettingsOpen()}>
+        <WorkflowSettingsPanel />
+      </Show>
+      <Show when={showInspectorPanel() && !ctx.rightPanelHidden()}>
+        <InspectorPanel />
+      </Show>
     </div>
   );
 }

@@ -2,7 +2,7 @@ import { For, Show } from "solid-js";
 import { useAppContext } from "../../context/AppContext";
 import { PanelEmptyState } from "../PanelEmptyState";
 import { workflowMembershipLabel } from "../../lib/projects";
-import { AnimatedModal } from "../AnimatedModal";
+import { PickerModal } from "../PickerModal";
 
 export function WorkflowPickerModal() {
   const ctx = useAppContext();
@@ -12,19 +12,15 @@ export function WorkflowPickerModal() {
     projectId() ? ctx.workflowsAddableToProject(projectId()!) : [];
 
   return (
-    <AnimatedModal
+    <PickerModal
       open={Boolean(projectId())}
       onClose={ctx.closeAssignWorkflowPicker}
       ariaLabel="Add workflow to project"
       backdropClass="app-picker-backdrop"
+      eyebrow="Add workflow"
+      title={project()?.name ?? "Project"}
+      description="Copy a workflow into this project."
     >
-      <div class="node-picker-header">
-        <div>
-          <div class="eyebrow">Add workflow</div>
-          <h3>{project()?.name ?? "Project"}</h3>
-          <p>Copy a workflow into this project.</p>
-        </div>
-      </div>
       <div class="node-picker-list">
         <Show
           when={addable().length > 0}
@@ -52,11 +48,6 @@ export function WorkflowPickerModal() {
           </For>
         </Show>
       </div>
-      <div class="button-row end">
-        <button class="secondary-button" onClick={ctx.closeAssignWorkflowPicker}>
-          Cancel
-        </button>
-      </div>
-    </AnimatedModal>
+    </PickerModal>
   );
 }

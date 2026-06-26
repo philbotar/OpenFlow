@@ -1,0 +1,195 @@
+/* Flat dock + chat overrides — must load after index.css (see main.tsx) */
+
+/* ── Dock panel bodies (chat, terminal, trace, overview, runs) ── */
+.chat-layout,
+.trace-layout,
+.terminal-layout,
+.overview-layout,
+.run-history-panel {
+  padding: 0;
+  gap: 0;
+}
+
+.chat-settled {
+  gap: 0;
+}
+
+.terminal-shell {
+  border-radius: 0;
+  border: 0;
+}
+
+.terminal-host {
+  padding: 8px 8px 0;
+}
+
+.terminal-shell > .panel-empty {
+  margin: 0;
+  border-radius: 0;
+}
+
+.overview-entry,
+.run-history-row {
+  border-radius: 0;
+}
+
+.trace-detail {
+  border-radius: 0;
+  border-top: 0;
+  box-shadow: none;
+}
+
+[data-theme="dark"] .trace-detail {
+  box-shadow: none;
+}
+
+/* Empty states — flat across all dock tabs */
+.dock-panel .panel-empty {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  min-height: 0;
+}
+
+.dock-panel .panel-empty-icon {
+  border: 0;
+  background: transparent;
+  width: auto;
+  height: auto;
+  margin-bottom: 0;
+}
+
+/* ── Chat composer ── */
+.chat-composer-bar {
+  padding: 0;
+  gap: 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.chat-composer {
+  padding: 0;
+}
+
+.chat-composer-pill {
+  border-radius: 0;
+  box-shadow: none;
+  padding: 8px 10px;
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+}
+
+.chat-composer-pill .composer-input-mirror {
+  caret-color: var(--text);
+  caret-shape: block;
+}
+
+[data-theme="dark"] .chat-composer-pill {
+  box-shadow: none;
+}
+
+/* ── Chat messages ── */
+.message-user {
+  align-items: flex-start;
+}
+
+.message {
+  max-width: 100%;
+}
+
+.message-user .message-content {
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
+}
+
+.chat-row {
+  padding: 4px 0;
+}
+
+.conversation-content {
+  gap: 4px;
+  padding: 0;
+}
+
+.node-completed-bubble {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+
+/* ── Workflow authoring (match dock chat) ── */
+.workflow-authoring-messages {
+  padding: 0;
+  gap: 4px;
+}
+
+.workflow-authoring-messages .panel-empty {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  min-height: 0;
+}
+
+.workflow-authoring-messages .panel-empty-icon {
+  border: 0;
+  background: transparent;
+  width: auto;
+  height: auto;
+  margin-bottom: 0;
+}
+
+.workflow-authoring-footer {
+  flex-direction: column;
+  align-items: stretch;
+  padding: 0;
+  gap: 0;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--composer-bg);
+}
+
+.workflow-authoring-composer-container {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--composer-bg);
+}
+
+.workflow-authoring-composer-container .workflow-authoring-composer {
+  flex: 1;
+  min-width: 0;
+}
+
+.workflow-authoring-composer-pill {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+
+.workflow-authoring-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  padding: 0;
+  border-top: 0;
+  background: transparent;
+}
+
+.workflow-authoring-composer-pill .composer-input {
+  caret-color: var(--text);
+  caret-shape: block;
+}
+
+.workflow-authoring-apply {
+  min-width: auto;
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  box-shadow: none;
+}

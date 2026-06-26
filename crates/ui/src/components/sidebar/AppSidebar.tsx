@@ -59,13 +59,6 @@ export function Sidebar() {
       }}
       aria-hidden={ctx.leftPanelHidden() && !ctx.isCompactViewport()}
     >
-      <Show when={isMacOS() && !ctx.isMaximized()}>
-        <div
-          class="sidebar-window-controls-spacer"
-          aria-hidden="true"
-          data-tauri-drag-region
-        />
-      </Show>
       <SidebarList>
         <SidebarNavButton
           icon="agents"
@@ -202,7 +195,7 @@ export function Sidebar() {
             updateAvailable={ctx.appUpdateAvailable()}
             onClick={() => {
               ctx.closeAddNodePicker();
-              ctx.navigateToScreen("settings", "nav-forward");
+              ctx.navigateToScreen("settings");
             }}
           />
         </div>
