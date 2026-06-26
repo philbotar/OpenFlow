@@ -761,7 +761,7 @@ impl InteractiveEngine {
         }
     }
 
-    pub fn note_usage(&mut self, usage: &crate::UsageReport) {
+    pub const fn note_usage(&mut self, usage: &crate::UsageReport) {
         self.tokens_in = self.tokens_in.saturating_add(usage.prompt_tokens);
     }
 

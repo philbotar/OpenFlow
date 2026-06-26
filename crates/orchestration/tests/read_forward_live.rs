@@ -39,32 +39,33 @@ fn live_config_from_env() -> Result<LiveProviderConfig, String> {
         .or_else(|_| env::var("OPENAI_API_KEY"))
         .ok();
 
-    let (api_key, default_base_url, default_model, default_responses_path) =
-        if let Some(key) = opencode_key {
-            (
-                key,
-                "https://opencode.ai/zen".to_string(),
-                "deepseek-v4-flash-free".to_string(),
-                "v1/responses".to_string(),
-            )
-        } else if let Some(key) = openai_key {
-            (
-                key,
-                "https://api.openai.com".to_string(),
-                "gpt-4o-mini".to_string(),
-                "v1/responses".to_string(),
-            )
-        } else {
-            return Err(
+    let (api_key, default_base_url, default_model, default_responses_path) = if let Some(key) =
+        opencode_key
+    {
+        (
+            key,
+            "https://opencode.ai/zen".to_string(),
+            "deepseek-v4-flash-free".to_string(),
+            "v1/responses".to_string(),
+        )
+    } else if let Some(key) = openai_key {
+        (
+            key,
+            "https://api.openai.com".to_string(),
+            "gpt-4o-mini".to_string(),
+            "v1/responses".to_string(),
+        )
+    } else {
+        return Err(
                 "set OPENCODE_ZEN_API_KEY, OPENCODE_API_KEY, STEP_WORKFLOW_LIVE_API_KEY, or OPENAI_API_KEY"
                     .to_string(),
             );
-        };
+    };
 
     let model = env::var("STEP_WORKFLOW_LIVE_MODEL").unwrap_or(default_model);
     let base_url = env::var("STEP_WORKFLOW_LIVE_BASE_URL").unwrap_or(default_base_url);
-    let responses_path = env::var("STEP_WORKFLOW_LIVE_RESPONSES_PATH")
-        .unwrap_or(default_responses_path);
+    let responses_path =
+        env::var("STEP_WORKFLOW_LIVE_RESPONSES_PATH").unwrap_or(default_responses_path);
     let wire_api = match env::var("STEP_WORKFLOW_LIVE_WIRE_API").as_deref() {
         Ok("chat-completions") => WireApi::ChatCompletions,
         Ok("responses") => WireApi::Responses,
@@ -158,9 +159,12 @@ async fn run_live_variant(
     .await
     .map_err(|error| error.to_string())?;
 
-    let consumer_summary = snapshot.outputs.get(&NodeId("consumer".into())).and_then(|output| {
-        output["summary"].as_str()
-    }).unwrap_or("").to_string();
+    let consumer_summary = snapshot
+        .outputs
+        .get(&NodeId("consumer".into()))
+        .and_then(|output| output["summary"].as_str())
+        .unwrap_or("")
+        .to_string();
 
     Ok(LiveAbReport {
         read_calls: snapshot.report.read_calls,
@@ -209,7 +213,8 @@ async fn live_read_forward_ab_reports_metrics() {
     );
 
     assert!(
-        !control.consumer_summary.trim().is_empty() && !treatment.consumer_summary.trim().is_empty(),
+        !control.consumer_summary.trim().is_empty()
+            && !treatment.consumer_summary.trim().is_empty(),
         "both runs should produce consumer summaries"
     );
     assert!(
@@ -237,11 +242,8 @@ async fn debug_live_reader_events() {
         &config.model,
         "Read lib.rs and submit a one-sentence summary naming the public function.",
     )];
-    let mut handle = spawn_interactive_script(
-        workflow,
-        dir.path().to_path_buf(),
-        live_client(&config),
-    );
+    let mut handle =
+        spawn_interactive_script(workflow, dir.path().to_path_buf(), live_client(&config));
     while let Some(event) = handle.event_rx.recv().await {
         eprintln!("debug event: {event:?}");
         if matches!(
