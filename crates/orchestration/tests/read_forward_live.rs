@@ -23,32 +23,75 @@ struct LiveAbReport {
     consumer_summary: String,
 }
 
-fn live_config_from_env() -> Result<(String, String), String> {
-    let api_key = env::var("STEP_WORKFLOW_LIVE_API_KEY")
-        .or_else(|_| env::var("OPENAI_API_KEY"))
-        .map_err(|_| "set STEP_WORKFLOW_LIVE_API_KEY or OPENAI_API_KEY".to_string())?;
-    let model = env::var("STEP_WORKFLOW_LIVE_MODEL")
-        .map_err(|_| "set STEP_WORKFLOW_LIVE_MODEL (e.g. gpt-4o-mini)".to_string())?;
-    Ok((api_key, model))
+struct LiveProviderConfig {
+    api_key: String,
+    model: String,
+    base_url: String,
+    wire_api: WireApi,
+    responses_path: String,
 }
 
-fn live_client(api_key: &str) -> AiClient {
+fn live_config_from_env() -> Result<LiveProviderConfig, String> {
+    let opencode_key = env::var("OPENCODE_ZEN_API_KEY")
+        .or_else(|_| env::var("OPENCODE_API_KEY"))
+        .ok();
+    let openai_key = env::var("STEP_WORKFLOW_LIVE_API_KEY")
+        .or_else(|_| env::var("OPENAI_API_KEY"))
+        .ok();
+
+    let (api_key, default_base_url, default_model, default_responses_path) =
+        if let Some(key) = opencode_key {
+            (
+                key,
+                "https://opencode.ai/zen".to_string(),
+                "gpt-5.4-nano".to_string(),
+                "v1/responses".to_string(),
+            )
+        } else if let Some(key) = openai_key {
+            (
+                key,
+                "https://api.openai.com".to_string(),
+                "gpt-4o-mini".to_string(),
+                "v1/responses".to_string(),
+            )
+        } else {
+            return Err(
+                "set OPENCODE_ZEN_API_KEY, OPENCODE_API_KEY, STEP_WORKFLOW_LIVE_API_KEY, or OPENAI_API_KEY"
+                    .to_string(),
+            );
+        };
+
+    let model = env::var("STEP_WORKFLOW_LIVE_MODEL").unwrap_or(default_model);
+    let base_url = env::var("STEP_WORKFLOW_LIVE_BASE_URL").unwrap_or(default_base_url);
+    let responses_path = env::var("STEP_WORKFLOW_LIVE_RESPONSES_PATH")
+        .unwrap_or(default_responses_path);
+    let wire_api = match env::var("STEP_WORKFLOW_LIVE_WIRE_API").as_deref() {
+        Ok("chat-completions") => WireApi::ChatCompletions,
+        Ok("responses") => WireApi::Responses,
+        _ if base_url.contains("opencode.ai/zen") => WireApi::Responses,
+        _ => WireApi::Responses,
+    };
+
+    Ok(LiveProviderConfig {
+        api_key,
+        model,
+        base_url,
+        wire_api,
+    })
+}
+
+fn live_client(config: &LiveProviderConfig) -> AiClient {
     AiClient::with_config(AiClientConfig {
         provider_id: ProviderId::from("live_read_forward"),
         provider_label: "Live read-forward A/B".to_string(),
         auth: AuthConfig::Bearer {
-            api_key: Some(api_key.to_string()),
+            api_key: Some(config.api_key.clone()),
             required: true,
         },
         adapter: ProviderAdapterConfig::OpenAiCompatible(OpenAiCompatibleConfig {
-            base_url: env::var("STEP_WORKFLOW_LIVE_BASE_URL")
-                .unwrap_or_else(|_| "https://api.openai.com".to_string()),
-            wire_api: match env::var("STEP_WORKFLOW_LIVE_WIRE_API").as_deref() {
-                Ok("chat-completions") => WireApi::ChatCompletions,
-                _ => WireApi::Responses,
-            },
-            responses_path: env::var("STEP_WORKFLOW_LIVE_RESPONSES_PATH")
-                .unwrap_or_else(|_| "v1/responses".to_string()),
+            base_url: config.base_url.clone(),
+            wire_api: config.wire_api,
+            responses_path: config.responses_path.clone(),
             chat_completions_path: env::var("STEP_WORKFLOW_LIVE_CHAT_COMPLETIONS_PATH")
                 .unwrap_or_else(|_| "v1/chat/completions".to_string()),
         }),
@@ -135,15 +178,19 @@ async fn live_read_forward_ab_reports_metrics() {
         return;
     }
 
-    let (api_key, model) = live_config_from_env().unwrap_or_else(|error| panic!("{error}"));
+    let config = live_config_from_env().unwrap_or_else(|error| panic!("{error}"));
+    eprintln!(
+        "live provider: base_url={} model={} wire={:?}",
+        config.base_url, config.model, config.wire_api
+    );
     let dir = TempDir::new().expect("tempdir");
     write_fixture(dir.path());
     let cwd = dir.path().to_path_buf();
 
-    let control = run_live_variant(live_client(&api_key), &model, false, cwd.clone())
+    let control = run_live_variant(live_client(&config), &config.model, false, cwd.clone())
         .await
         .expect("control run");
-    let treatment = run_live_variant(live_client(&api_key), &model, true, cwd)
+    let treatment = run_live_variant(live_client(&config), &config.model, true, cwd)
         .await
         .expect("treatment run");
 
