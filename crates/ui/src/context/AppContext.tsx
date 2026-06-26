@@ -78,6 +78,8 @@ export interface AppContextValue {
   availableSkills: Accessor<SkillSummary[]>;
   skillById: Accessor<Map<string, SkillSummary>>;
   appReady: Accessor<boolean>;
+  appUpdateAvailable: Accessor<boolean>;
+  clearAppUpdateAvailable: () => void;
   startingRun: Accessor<boolean>;
   continuableRun: Accessor<boolean>;
   runHistory: Accessor<RunSummary[]>;

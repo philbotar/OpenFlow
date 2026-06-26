@@ -31,6 +31,7 @@ export function AboutSection() {
     setUpdateState({ kind: "working", label: "Downloading update…" });
     const result = await desktop.installAppUpdate();
     if (result.status === "current") {
+      ctx.clearAppUpdateAvailable();
       setUpdateState({
         kind: "message",
         label: "You're on the latest version.",

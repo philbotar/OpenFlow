@@ -41,11 +41,28 @@ export type AppUpdateResult =
   | { status: "unavailable" }
   | { status: "error"; message: string };
 
+export type AppUpdateAvailability = {
+  available: boolean;
+  version: string | null;
+};
+
 export function getAppVersion() {
   if (!isTauri()) {
     return Promise.resolve("dev");
   }
   return getVersion();
+}
+
+export async function checkAppUpdateAvailable(): Promise<AppUpdateAvailability> {
+  if (!isTauri()) {
+    return { available: false, version: null };
+  }
+  try {
+    const update = await check();
+    return { available: update !== null, version: update?.version ?? null };
+  } catch {
+    return { available: false, version: null };
+  }
 }
 
 export async function installAppUpdate(): Promise<AppUpdateResult> {

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <title>OpenFlow update badge preview</title>
+    <link rel="stylesheet" href="../crates/ui/src/styles/index.css" />
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: var(--app-bg);
+      }
+
+      .preview-frame {
+        width: 248px;
+        padding: 16px;
+        border-radius: 18px;
+        background: var(--sidebar-bg);
+        border: 1px solid var(--border);
+        box-shadow: var(--shadow-panel);
+      }
+
+      .preview-label {
+        margin: 0 0 12px;
+        color: var(--text-muted);
+        font-size: 0.75rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="preview-frame">
+      <p class="preview-label">Update available</p>
+      <div class="settings-nav-menu">
+        <button type="button" class="sidebar-nav-button" aria-label="Settings (update available)">
+          <span class="sidebar-nav-button-icon-wrap">
+            <svg
+              class="sidebar-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.75"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="3" />
+              <path
+                d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
+              />
+            </svg>
+            <span class="sidebar-nav-update-badge" aria-hidden="true"></span>
+          </span>
+          <span>Settings</span>
+        </button>
+      </div>
+    </div>
+  </body>
+</html>

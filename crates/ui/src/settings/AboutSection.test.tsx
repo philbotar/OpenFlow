@@ -36,6 +36,7 @@ describe("AboutSection", () => {
   function renderSection(overrides: Partial<AppContextValue> = {}) {
     const ctx = {
       runState: () => null,
+      clearAppUpdateAvailable: vi.fn(),
       ...overrides,
     } as AppContextValue;
 
@@ -63,6 +64,15 @@ describe("AboutSection", () => {
       expect(container.textContent).toContain("You're on the latest version.");
     });
     expect(installAppUpdate).toHaveBeenCalledOnce();
+  });
+
+  test("clears sidebar badge when already up to date", async () => {
+    const clearAppUpdateAvailable = vi.fn();
+    renderSection({ clearAppUpdateAvailable });
+    container.querySelector<HTMLButtonElement>(".primary-button")?.click();
+    await vi.waitFor(() => {
+      expect(clearAppUpdateAvailable).toHaveBeenCalledOnce();
+    });
   });
 
   test("blocks update while a run is active", async () => {

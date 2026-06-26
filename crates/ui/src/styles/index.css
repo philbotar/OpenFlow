@@ -64,6 +64,8 @@
   --status-warning-soft: var(--base-amber-soft);
   --status-danger: var(--base-red-600);
   --status-danger-soft: var(--base-red-soft);
+  --update-badge: #2563eb;
+  --update-badge-ring: var(--sidebar-bg);
   --control-size-md: 36px;
   --control-size-compact: 40px;
 
@@ -196,6 +198,8 @@
   --status-warning-soft: var(--base-amber-soft);
   --status-danger: var(--base-red-600);
   --status-danger-soft: var(--base-red-soft);
+  --update-badge: #60a5fa;
+  --update-badge-ring: var(--sidebar-bg);
 
   /* ── Legacy bridge ── */
   --app-bg: var(--surface-ground);
@@ -595,6 +599,24 @@ select:focus-visible {
 .sidebar-nav-button.active {
   background: var(--sidebar-active);
   border: 1px solid var(--sidebar-active-border);
+}
+
+.sidebar-nav-button-icon-wrap {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.sidebar-nav-update-badge {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--update-badge);
+  border: 2px solid var(--update-badge-ring);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--update-badge) 35%, transparent);
 }
 
 .sidebar-footer .settings-nav-menu {

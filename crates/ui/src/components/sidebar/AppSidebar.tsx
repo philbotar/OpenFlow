@@ -199,6 +199,7 @@ export function Sidebar() {
           <SidebarNavButton
             icon="settings"
             label="Settings"
+            updateAvailable={ctx.appUpdateAvailable()}
             onClick={() => {
               ctx.closeAddNodePicker();
               ctx.navigateToScreen("settings", "nav-forward");
