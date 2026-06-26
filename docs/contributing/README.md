@@ -83,4 +83,4 @@ See [`testing-workflows.md`](testing-workflows.md) for layered test commands and
 
 ## Miri (undefined behavior)
 
-We run [Miri](https://github.com/rust-lang/miri) on **`engine`** and **`orchestration`** to catch invalid memory use and aliasing in pure Rust code. Local: `./scripts/miri.sh` or `./scripts/verify.sh --deep miri`. CI: separate `miri` job in `.github/workflows/ci.yml` (Ubuntu). Requires nightly (`rustup toolchain install nightly --component miri`). Details: [`testing-workflows.md` § Miri](testing-workflows.md#miri).
+We run [Miri](https://github.com/rust-lang/miri) on **`engine`** and **`orchestration`** to catch invalid memory use and aliasing in pure Rust code. Local: `./scripts/miri.sh` or `./scripts/verify.sh --deep miri`. CI: parallel per-crate Miri matrix in `.github/workflows/ci.yml` (Ubuntu; only changed crates). Requires nightly (`rustup toolchain install nightly --component miri`). Details: [`testing-workflows.md` § Miri](testing-workflows.md#miri).

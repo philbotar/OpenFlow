@@ -86,7 +86,8 @@ Use inline `impl AiPort` stubs (e.g. node-id-aware `ScriptedAi` in `workflow_acc
 
 | Goal | Command |
 | --- | --- |
-| Run Miri | `./scripts/miri.sh` |
+| Run Miri (both crates) | `./scripts/miri.sh` |
+| Run Miri (one crate) | `./scripts/miri.sh engine` or `./scripts/miri.sh orchestration` |
 | Deep verify | `./scripts/verify.sh --deep` |
 | Engine cross target (macOS) | `MIRI_ENGINE_VPROC=x86_64-unknown-linux-gnu ./scripts/miri.sh` |
 
@@ -170,7 +171,7 @@ Primary gate for agents and local handoff - run after every change:
 
 **Steps:** `fmt`, `clippy` (pedantic/nursery/cargo), `doc`, `test`, `test-fast`, `public-api`, `machete`, `typos`, `ui-typecheck`, `ui-test`, `deny`, `arch`. **`--deep` only:** `mutants`, `miri`.
 
-**CI:** blocking `./scripts/verify-ci.sh`; separate **`miri`** job runs `./scripts/miri.sh` on Ubuntu (not in the lean verify job).
+**CI:** blocking `./scripts/verify-ci.sh`; separate **`miri`** matrix job runs `./scripts/miri.sh <crate>` per changed Miri-eligible crate (`engine`, `orchestration`) on Ubuntu (skipped when neither changed).
 
 **One-time installs:** `cargo install cargo-machete typos-cli cargo-mutants cargo-public-api`; Miri: `rustup toolchain install nightly --component miri` (see [Miri §](testing-workflows.md#miri)).
 
