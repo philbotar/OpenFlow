@@ -56,7 +56,7 @@ export function AuthoringComposer(props: {
         />
         <button
           type="button"
-          class="composer-send-button"
+          class="primary-button composer-send-button"
           aria-label="Send message"
           disabled={!canSend()}
           onClick={handleSend}

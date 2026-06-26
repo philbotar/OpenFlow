@@ -70,23 +70,27 @@ export function WorkflowAuthoringScreen() {
           </Show>
 
           <footer class="workflow-authoring-footer">
-            <AuthoringComposer
-              busy={ctx.workflowAuthoringBusy()}
-              sessionReady={ctx.workflowAuthoringSessionReady()}
-              providerReady={ctx.readiness()?.ready === true}
-              providerMessage={ctx.readiness()?.message ?? "Checking provider..."}
-              onSend={(message) => void ctx.handleWorkflowAuthoringSend(message)}
-            />
-            <button
-              type="button"
-              class="primary-button workflow-authoring-apply"
-              disabled={
-                ctx.workflowAuthoringValidation()?.valid !== true || ctx.workflowAuthoringBusy()
-              }
-              onClick={() => void ctx.handleApplyWorkflowAuthoringDraft()}
-            >
-              Create Workflow
-            </button>
+            <div class="workflow-authoring-composer-container">
+              <AuthoringComposer
+                busy={ctx.workflowAuthoringBusy()}
+                sessionReady={ctx.workflowAuthoringSessionReady()}
+                providerReady={ctx.readiness()?.ready === true}
+                providerMessage={ctx.readiness()?.message ?? "Checking provider..."}
+                onSend={(message) => void ctx.handleWorkflowAuthoringSend(message)}
+              />
+              <div class="workflow-authoring-actions">
+                <button
+                  type="button"
+                  class="primary-button workflow-authoring-apply"
+                  disabled={
+                    ctx.workflowAuthoringValidation()?.valid !== true || ctx.workflowAuthoringBusy()
+                  }
+                  onClick={() => void ctx.handleApplyWorkflowAuthoringDraft()}
+                >
+                  Create Workflow
+                </button>
+              </div>
+            </div>
           </footer>
         </div>
 

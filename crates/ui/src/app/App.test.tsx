@@ -468,6 +468,15 @@ async function openChatTab(container: HTMLElement) {
   await flush();
 }
 
+async function openInspector(container: HTMLElement) {
+  const inspectorButton = await waitForElement(
+    () => container.querySelector('button[aria-label="Inspector"]') as HTMLButtonElement | null,
+    "inspector button",
+  );
+  inspectorButton.click();
+  await flush();
+}
+
 function flush() {
   return new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
@@ -488,7 +497,7 @@ function workflowTitles(container: HTMLElement) {
 }
 
 function topbarTitle(container: HTMLElement) {
-  const title = container.querySelector(".topbar-copy h2");
+  const title = container.querySelector(".topbar-title span");
   if (!title) {
     throw new Error("topbar title missing");
   }
@@ -891,6 +900,7 @@ describe("App agent dashboard", () => {
       await flush();
 
       expect(apiMocks.createAgentNode).toHaveBeenCalledWith(1, 128, 116, "agent-2");
+      await openInspector(container);
       expect(container.querySelector(".panel-header-title-row h3")?.textContent).toBe("Writer Agent");
     } finally {
       dispose();
@@ -981,6 +991,7 @@ describe("App agent dashboard", () => {
     const { container, dispose } = await mountApp(makeBootstrapPayload([workflow]));
 
     try {
+      await openInspector(container);
       expect(
         Array.from(container.querySelectorAll("span")).some((element) => element.textContent === "Max tool rounds"),
       ).toBe(false);
@@ -1046,7 +1057,7 @@ describe("App settings persistence", () => {
     installDefaultApiMocks();
   });
 
-  test("renders full-page settings without sidebar or topbar", async () => {
+  test("renders settings without sidebar but with unified topbar", async () => {
     const { container, dispose } = await mountApp(
       makeBootstrapPayload([makeWorkflow("workflow-1", "Workflow One")]),
     );
@@ -1055,7 +1066,8 @@ describe("App settings persistence", () => {
       await openSettingsScreen(container);
 
       expect(container.querySelector(".sidebar")).toBeNull();
-      expect(container.querySelector(".topbar")).toBeNull();
+      expect(container.querySelector(".topbar")).not.toBeNull();
+      expect(topbarTitle(container)).toBe("Settings");
       expect(container.querySelector(".settings-shell")).not.toBeNull();
       expect(container.querySelector(".settings-nav")).not.toBeNull();
     } finally {
@@ -1671,6 +1683,7 @@ describe("Global chat layout", () => {
     });
 
     try {
+      await openInspector(container);
       const inspectorTitle = () =>
         container.querySelector(".inspector-panel .panel-header-title-row")?.textContent;
       expect(inspectorTitle()).toContain("Plan");
@@ -2298,33 +2311,6 @@ describe("Idle global chat kickoff", () => {
     }
   });
 
-  test("header run button still starts without entrypoint", async () => {
-    const workflow = makeWorkflow("workflow-1", "Workflow One");
-    apiMocks.startRun.mockResolvedValue(makeAwaitingRunState(workflow));
-    const { container, dispose } = await mountApp({
-      workflows: [workflow],
-      agents: [makeAgent("agent-1", "Research Agent")],
-      skills: FIXTURE_SKILLS,
-      settings: SETTINGS,
-      runState: null,
-    });
-    try {
-      const runButton = container.querySelector(
-        'button[aria-label="Run workflow"]',
-      ) as HTMLButtonElement;
-      runButton.click();
-      await flush();
-      expect(apiMocks.startRun).toHaveBeenCalledWith(
-        expect.objectContaining({ id: "workflow-1" }),
-        expect.objectContaining({ active_provider: "openai" }),
-        null,
-        "stored-openai-key",
-        null,
-      );
-    } finally {
-      dispose();
-    }
-  });
 });
 
 describe("App compact shell", () => {
@@ -2612,7 +2598,7 @@ describe("App schedule screen", () => {
       );
 
       const addWorkflowButton = container.querySelector(
-        ".schedule-add-button",
+        ".schedule-toolbar .primary-button.compact",
       ) as HTMLButtonElement;
       addWorkflowButton.click();
       await flush();

@@ -11,7 +11,7 @@ import {
 } from "@/lib/workflow";
 import { CallableAgentsEditor } from "../forms/CallableAgentsEditor";
 import { ToolConfigEditor } from "../forms/ToolConfigEditor";
-import { AnimatedPanel, InspectorSection, SidebarIcon } from "@/components";
+import { InspectorSection, SidebarIcon } from "@/components";
 
 export function InspectorPanel() {
   const ctx = useAppContext();
@@ -28,7 +28,7 @@ export function InspectorPanel() {
   });
 
   return (
-    <AnimatedPanel class="inspector-panel">
+    <aside class="inspector-panel panel-enter">
       <Show when={ctx.currentNode()}>
         {(node) => (
           <>
@@ -202,6 +202,6 @@ export function InspectorPanel() {
           </>
         )}
       </Show>
-    </AnimatedPanel>
+    </aside>
   );
 }

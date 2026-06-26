@@ -1,6 +1,6 @@
 import { For, Show, createMemo, createSignal } from "solid-js";
 import type { Workflow } from "../../lib/types";
-import { AnimatedModal } from "../AnimatedModal";
+import { PickerModal } from "../PickerModal";
 
 interface ScheduleWorkflowPickerModalProps {
   open: boolean;
@@ -30,24 +30,22 @@ export function ScheduleWorkflowPickerModal(props: ScheduleWorkflowPickerModalPr
   };
 
   return (
-    <AnimatedModal
+    <PickerModal
       open={props.open}
       onClose={close}
       ariaLabel="Add workflow to schedule"
+      eyebrow="Add workflow"
+      title="Choose a workflow"
+      description="Pick an unscheduled workflow to add to the automation schedule."
+      toolbar={
+        <input
+          class="text-input node-picker-search"
+          value={search()}
+          placeholder="Search workflows"
+          onInput={(event) => setSearch(event.currentTarget.value)}
+        />
+      }
     >
-      <div class="node-picker-header">
-        <div>
-          <div class="eyebrow">Add workflow</div>
-          <h3>Choose a workflow</h3>
-          <p>Pick an unscheduled workflow to add to the automation schedule.</p>
-        </div>
-      </div>
-      <input
-        class="text-input node-picker-search"
-        value={search()}
-        placeholder="Search workflows"
-        onInput={(event) => setSearch(event.currentTarget.value)}
-      />
       <div class="node-picker-list">
         <Show
           when={filteredWorkflows().length > 0}
@@ -73,11 +71,6 @@ export function ScheduleWorkflowPickerModal(props: ScheduleWorkflowPickerModalPr
           </For>
         </Show>
       </div>
-      <div class="button-row end">
-        <button class="secondary-button" type="button" onClick={close}>
-          Cancel
-        </button>
-      </div>
-    </AnimatedModal>
+    </PickerModal>
   );
 }

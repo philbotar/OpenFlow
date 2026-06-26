@@ -36,7 +36,7 @@ function ScreenRouter() {
 
 function AppToaster() {
   const ctx = useAppContext();
-  const topOffset = () => (ctx.screen() === "settings" ? "16px" : "72px");
+  const topOffset = () => "calc(var(--topbar-height) + 16px)";
 
   return (
     <Toaster
@@ -95,15 +95,16 @@ function AppChrome() {
           when={isSettings()}
           fallback={
             <>
+              <AppHeader />
               <Sidebar />
               <main class="main-shell">
-                <AppHeader />
                 <ScreenRouter />
               </main>
             </>
           }
         >
-          <div class="screen-view settings-screen-shell">
+          <AppHeader />
+          <div class="settings-screen-shell screen-view">
             <SettingsScreen />
           </div>
         </Show>

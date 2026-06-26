@@ -30,6 +30,7 @@ function makeMockContext(overrides: Partial<AppContextValue> = {}): AppContextVa
     leftPanelHidden: () => false,
     selectedNodeId: () => null,
     workflowSettingsOpen: () => false,
+    inspectorOpen: () => false,
     dockOpen: () => true,
     dockHeight: () => 300,
     chatFocusMode: () => false,
@@ -89,7 +90,6 @@ function makeMockContext(overrides: Partial<AppContextValue> = {}): AppContextVa
     setSelectedAgentId: () => {},
     setScreen: () => {},
     navigateToScreen: () => {},
-    screenTransitionClass: () => "nav-lateral",
     activeWorkflow: () => undefined,
     activeProject: () => undefined,
     independentWorkflows: () => [],
@@ -188,6 +188,7 @@ function makeMockContext(overrides: Partial<AppContextValue> = {}): AppContextVa
     handleZoomOut: () => {},
     handleZoomReset: () => {},
     handleToggleWorkflowSettings: () => {},
+    handleToggleInspector: () => {},
     handleToggleRightPanel: () => {},
     handleToggleLeftPanel: () => {},
     updateActiveWorkflowSettings: () => {},
@@ -223,11 +224,12 @@ describe("EditorScreen", () => {
     dispose();
   });
 
-  it("renders InspectorPanel when rightPanelHidden is false and node selected", () => {
+  it("renders InspectorPanel when inspector is open", () => {
     const { container, dispose } = renderWithContext({
       rightPanelHidden: () => false,
       selectedNodeId: () => "n1" as any,
       workflowSettingsOpen: () => false,
+      inspectorOpen: () => true,
     });
 
     expect(container.querySelector('[data-testid="inspector-panel"]')).not.toBeNull();
@@ -247,42 +249,56 @@ describe("EditorScreen", () => {
     dispose();
   });
 
-  it("applies workspace-grid--no-inspector class when rightPanelHidden is true", () => {
+  it("applies editor-screen--no-right-panel class when rightPanelHidden is true", () => {
     const { container, dispose } = renderWithContext({
       rightPanelHidden: () => true,
       selectedNodeId: () => null,
       workflowSettingsOpen: () => false,
     });
 
-    const grid = container.querySelector(".workspace-grid");
-    expect(grid).not.toBeNull();
-    expect(grid!.classList.contains("workspace-grid--no-inspector")).toBe(true);
+    const screen = container.querySelector(".editor-screen");
+    expect(screen).not.toBeNull();
+    expect(screen!.classList.contains("editor-screen--no-right-panel")).toBe(true);
     dispose();
   });
 
-  it("does not apply workspace-grid--no-inspector class when panel is visible with selection", () => {
+  it("does not apply editor-screen--no-right-panel class when inspector is open", () => {
     const { container, dispose } = renderWithContext({
       rightPanelHidden: () => false,
       selectedNodeId: () => "n1" as any,
       workflowSettingsOpen: () => false,
+      inspectorOpen: () => true,
     });
 
-    const grid = container.querySelector(".workspace-grid");
-    expect(grid).not.toBeNull();
-    expect(grid!.classList.contains("workspace-grid--no-inspector")).toBe(false);
+    const screen = container.querySelector(".editor-screen");
+    expect(screen).not.toBeNull();
+    expect(screen!.classList.contains("editor-screen--no-right-panel")).toBe(false);
     dispose();
   });
 
-  it("applies workspace-grid--no-inspector when no selection and panel not hidden", () => {
+  it("hides inspector panel when inspector is open without a selected node", () => {
+    const { container, dispose } = renderWithContext({
+      rightPanelHidden: () => false,
+      selectedNodeId: () => null,
+      workflowSettingsOpen: () => false,
+      inspectorOpen: () => true,
+    });
+
+    expect(container.querySelector('[data-testid="inspector-panel"]')).toBeNull();
+    expect(container.querySelector(".editor-screen--no-right-panel")).not.toBeNull();
+    dispose();
+  });
+
+  it("applies editor-screen--no-right-panel when no selection and panel not hidden", () => {
     const { container, dispose } = renderWithContext({
       rightPanelHidden: () => false,
       selectedNodeId: () => null,
       workflowSettingsOpen: () => false,
     });
 
-    const grid = container.querySelector(".workspace-grid");
-    expect(grid).not.toBeNull();
-    expect(grid!.classList.contains("workspace-grid--no-inspector")).toBe(true);
+    const screen = container.querySelector(".editor-screen");
+    expect(screen).not.toBeNull();
+    expect(screen!.classList.contains("editor-screen--no-right-panel")).toBe(true);
     dispose();
   });
 
@@ -298,14 +314,16 @@ describe("EditorScreen", () => {
     dispose();
   });
 
-  it("applies settings focus class when workflow settings are open", () => {
+  it("keeps canvas visible beside workflow settings panel", () => {
     const { container, dispose } = renderWithContext({
       workflowSettingsOpen: () => true,
       rightPanelHidden: () => false,
     });
 
     const screen = container.querySelector(".editor-screen");
-    expect(screen?.classList.contains("editor-screen--settings-focus")).toBe(true);
+    expect(screen?.classList.contains("editor-screen--settings-focus")).toBe(false);
+    expect(container.querySelector(".editor-main")).not.toBeNull();
+    expect(container.querySelector('[data-testid="workflow-settings-panel"]')).not.toBeNull();
     dispose();
   });
 

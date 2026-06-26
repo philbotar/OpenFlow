@@ -1,5 +1,5 @@
 import { createMemo, Show } from "solid-js";
-import { AnimatedPanel, TextSelect } from "@/components";
+import { TextSelect } from "@/components";
 import { useAppContext } from "../context/AppContext";
 import {
   defaultReasoningBudgetTokens,
@@ -34,7 +34,7 @@ export function WorkflowSettingsPanel() {
   ]);
 
   return (
-    <AnimatedPanel class="inspector-panel workflow-settings-panel">
+    <aside class="inspector-panel workflow-settings-panel panel-enter">
       <div class="panel-header">
         <div class="panel-header-copy">
           <div class="eyebrow">Workflow</div>
@@ -178,7 +178,7 @@ export function WorkflowSettingsPanel() {
         />
       </label>
 
-      <div class="settings-section workflow-settings-danger">
+      <div class="workflow-settings-danger">
         <span>Danger zone</span>
         <p class="field-help">Permanently delete this workflow and its settings.</p>
         <Show
@@ -206,6 +206,6 @@ export function WorkflowSettingsPanel() {
           <p class="field-help">Stop the active run before deleting this workflow.</p>
         </Show>
       </div>
-    </AnimatedPanel>
+    </aside>
   );
 }

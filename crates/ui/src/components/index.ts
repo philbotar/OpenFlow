@@ -1,5 +1,4 @@
 export * from "./AnimatedModal";
-export * from "./AnimatedPanel";
 export * from "./AppHeader";
 export * from "./CollapsibleSection";
 export * from "./InspectorSection";

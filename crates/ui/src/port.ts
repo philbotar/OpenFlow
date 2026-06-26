@@ -30,10 +30,6 @@ import type { AppUpdateAvailability, AppUpdateResult } from "./api";
 
 export type RunStateListener = (runState: WorkflowRunState) => void;
 
-export interface RunStateEventSink {
-	handleRunStateUpdate: (runState: WorkflowRunState) => void;
-}
-
 export interface UiDesktopOutboundPort {
 	bootstrapApp: () => Promise<BootstrapPayload>;
 	listProjects: () => Promise<Project[]>;
@@ -215,11 +211,4 @@ export function createUiDesktopOutboundAdapter(): UiDesktopOutboundPort {
 		checkAppUpdateAvailable: desktopApi.checkAppUpdateAvailable,
 		installAppUpdate: desktopApi.installAppUpdate,
 	};
-}
-
-export function bindRunStateEvents(
-	sink: RunStateEventSink,
-	outboundPort: UiDesktopOutboundPort = createUiDesktopOutboundAdapter(),
-) {
-	return outboundPort.listenToRunState((runState) => sink.handleRunStateUpdate(runState));
 }

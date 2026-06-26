@@ -9,13 +9,12 @@ import type { ParentProps } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { toast } from "solid-sonner";
 import { getAppWindow, confirmNativeDialog, openNativeDialog } from "../api";
-import { bindRunStateEvents, createUiDesktopOutboundAdapter } from "../port";
+import { createUiDesktopOutboundAdapter } from "../port";
 import { resolveChatSubmission } from "../lib/chatCommands";
 import {
   extractReferencedFilePaths,
   formatSubmissionWithFileReferences,
 } from "../lib/fileReferences";
-import type { NavTransitionType } from "../lib/viewTransition";
 import type {
   AgentDefinition,
   AiProviderKind,
@@ -54,7 +53,6 @@ import {
   isLiveTranscriptSegment,
   statusForNode,
   nodeOutput,
-  prettyJson,
   chatNavigationForNode,
   normalizeRunState,
   projectChatLayout,
@@ -89,17 +87,15 @@ import {
   zoomOutUi,
 } from "../lib/uiZoom";
 import {
+  readProjectsSectionHidden,
   readStoredLeftPanelHidden,
   readStoredRightPanelHidden,
-  writeStoredLeftPanelHidden,
-  writeStoredRightPanelHidden,
-} from "../lib/panelVisibility";
-import {
-  readProjectsSectionHidden,
   readWorkflowsSectionHidden,
   writeProjectsSectionHidden,
+  writeStoredLeftPanelHidden,
+  writeStoredRightPanelHidden,
   writeWorkflowsSectionHidden,
-} from "../lib/workflowsSectionVisibility";
+} from "../lib/storedBoolean";
 import { resolveCommittedNodeLabel } from "../lib/nodeLabel";
 import { EMPTY_SETTINGS } from "../constants/providers";
 import {
@@ -138,16 +134,9 @@ export function AppProvider(props: ParentProps) {
   const [selectedNodeId, setSelectedNodeId] = createSignal<NodeId | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = createSignal<EdgeId | null>(null);
   const [screen, setScreen] = createSignal<Screen>("editor");
-  const [screenTransitionClass, setScreenTransitionClass] =
-    createSignal<NavTransitionType>("nav-lateral");
 
-  const navigateToScreen = (
-    next: Screen,
-    transition: NavTransitionType = "nav-lateral",
-  ) => {
+  const navigateToScreen = (next: Screen) => {
     if (screen() === next) return;
-    setScreenTransitionClass(transition);
-    // ponytail: skip View Transition API — morphs badly with .app-shell { zoom } in Tauri WebView.
     setScreen(next);
   };
   const [settings, setSettings] = createSignal<AppSettings>(cloneSettings(EMPTY_SETTINGS));
@@ -232,6 +221,7 @@ export function AppProvider(props: ParentProps) {
   );
   const projectsSectionExpanded = createMemo(() => !projectsSectionHidden());
   const [workflowSettingsOpen, setWorkflowSettingsOpen] = createSignal(false);
+  const [inspectorOpen, setInspectorOpen] = createSignal(false);
   const [workflowAuthoringSessionId, setWorkflowAuthoringSessionId] = createSignal<
     string | null
   >(null);
@@ -848,7 +838,7 @@ export function AppProvider(props: ParentProps) {
     setProjects(initialProjects);
     setAgents(initialAgents);
     setSelectedAgentId(initialAgents[0]?.id ?? null);
-    setAgentSchemaDraft(initialAgents[0] ? prettyJson(initialAgents[0].output_schema) : "");
+    setAgentSchemaDraft(initialAgents[0] ? JSON.stringify(initialAgents[0].output_schema, null, 2) : "");
     const backendId = inferRunStateWorkflowId(initialRunState, nextWorkflows);
     setBackendRunWorkflowId(backendId);
     if (initialRunState && backendId) {
@@ -1019,7 +1009,7 @@ export function AppProvider(props: ParentProps) {
 
   const handleOpenAgents = () => {
     closeAddNodePicker();
-    navigateToScreen("agents", "nav-lateral");
+    navigateToScreen("agents");
     if (!selectedAgentId() && agents().length > 0) {
       setSelectedAgentId(agents()[0].id);
     }
@@ -1027,7 +1017,7 @@ export function AppProvider(props: ParentProps) {
 
   const handleOpenSchedule = () => {
     closeAddNodePicker();
-    navigateToScreen("schedule", "nav-lateral");
+    navigateToScreen("schedule");
   };
 
   const handleSaveWorkflowSchedule = async (
@@ -1078,7 +1068,7 @@ export function AppProvider(props: ParentProps) {
       }
       setAgents([...agents(), agent]);
       setSelectedAgentId(agent.id);
-      setAgentSchemaDraft(prettyJson(agent.output_schema));
+      setAgentSchemaDraft(JSON.stringify(agent.output_schema, null, 2));
       setScreen("agents");
       setSuccess("Created agent");
     } catch (error) {
@@ -1174,11 +1164,29 @@ export function AppProvider(props: ParentProps) {
 
   const handleToggleWorkflowSettings = () => {
     const opening = !workflowSettingsOpen();
-    setWorkflowSettingsOpen((open) => !open);
+    setWorkflowSettingsOpen(opening);
     if (opening) {
+      setInspectorOpen(false);
       setRightPanelHidden(false);
       writeStoredRightPanelHidden(globalThis.localStorage, false);
     }
+  };
+
+  const handleToggleInspector = () => {
+    const opening = !inspectorOpen();
+    if (opening) {
+      setWorkflowSettingsOpen(false);
+      const node = selectedNodeId() ?? activeWorkflow()?.nodes[0]?.id ?? null;
+      if (!node) {
+        return;
+      }
+      setSelectedNodeId(node);
+      setInspectorOpen(true);
+      setRightPanelHidden(false);
+      writeStoredRightPanelHidden(globalThis.localStorage, false);
+      return;
+    }
+    setInspectorOpen(false);
   };
 
   const handleToggleRightPanel = () => {
@@ -1321,7 +1329,11 @@ export function AppProvider(props: ParentProps) {
     if (!workflow || !nodeId) return;
     const next = removeSelectedNode(workflow, nodeId);
     setWorkflows(replaceWorkflow(workflows(), next));
-    setSelectedNodeId(next.nodes[0]?.id ?? null);
+    const nextSelected = next.nodes[0]?.id ?? null;
+    setSelectedNodeId(nextSelected);
+    if (!nextSelected) {
+      setInspectorOpen(false);
+    }
     setSelectedEdgeId(null);
     setEditingNodeId(null);
     setNodeLabelDraft("");
@@ -1339,20 +1351,20 @@ export function AppProvider(props: ParentProps) {
     setWorkflowAuthoringMessages([]);
     setWorkflowAuthoringValidation(null);
     setWorkflowAuthoringDraft(baseWorkflow ?? null);
-    navigateToScreen("workflow-authoring", "nav-forward");
+    navigateToScreen("workflow-authoring");
     void refreshReadiness();
     try {
       const sessionId = await desktop.startWorkflowAuthoring(baseWorkflow ?? null);
       setWorkflowAuthoringSessionId(sessionId);
     } catch (error) {
       setError(normalizeError(error));
-      navigateToScreen("editor", "nav-back");
+      navigateToScreen("editor");
     }
   };
 
   const handleCloseWorkflowAuthoring = () => {
     resetWorkflowAuthoringSession();
-    navigateToScreen("editor", "nav-back");
+    navigateToScreen("editor");
   };
 
   const handleWorkflowAuthoringSend = async (message: string) => {
@@ -1398,7 +1410,7 @@ export function AppProvider(props: ParentProps) {
     try {
       await desktop.saveWorkflow(normalizedDraft);
       resetWorkflowAuthoringSession();
-      navigateToScreen("editor", "nav-back");
+      navigateToScreen("editor");
       setSuccess(`Applied workflow "${normalizedDraft.name}"`);
     } catch (error) {
       setError(normalizeError(error));
@@ -1699,16 +1711,23 @@ export function AppProvider(props: ParentProps) {
     setEditingNodeId(null);
     setNodeLabelDraft("");
     if (nodeId) {
+      setInspectorOpen(true);
+      setWorkflowSettingsOpen(false);
       setDockOpen(true);
       setBottomTab("chat");
       setDockHeight((current) => clampDockHeight(current, "chat"));
       navigateChatToNode(nodeId);
+    } else {
+      setInspectorOpen(false);
     }
   };
 
   const handleSelectEdge = (edgeId: EdgeId | null) => {
     setSelectedEdgeId(edgeId);
-    if (edgeId) setSelectedNodeId(null);
+    if (edgeId) {
+      setSelectedNodeId(null);
+      setInspectorOpen(false);
+    }
     setEditingNodeId(null);
     setNodeLabelDraft("");
   };
@@ -1951,12 +1970,12 @@ export function AppProvider(props: ParentProps) {
 
   createEffect(() => {
     const node = currentNode();
-    setSchemaText(node ? prettyJson(node.agent.output_schema) : "");
+    setSchemaText(node ? JSON.stringify(node.agent.output_schema, null, 2) : "");
   });
 
   createEffect(() => {
     const agent = selectedAgent();
-    setAgentSchemaDraft(agent ? prettyJson(agent.output_schema) : "");
+    setAgentSchemaDraft(agent ? JSON.stringify(agent.output_schema, null, 2) : "");
   });
 
   createEffect(() => {
@@ -2041,9 +2060,7 @@ export function AppProvider(props: ParentProps) {
       unlistenMaximized = await appWindow.onResized(() => {
         void appWindow.isMaximized().then(setIsMaximized);
       });
-      unlisten = await bindRunStateEvents(
-        {
-          handleRunStateUpdate: (nextRunState) => {
+      unlisten = await desktop.listenToRunState((nextRunState) => {
             if (nextRunState.active) {
               setReplayRunId(null);
             }
@@ -2083,10 +2100,7 @@ export function AppProvider(props: ParentProps) {
             if (nextRunState.lastError) {
               setError(nextRunState.lastError);
             }
-          },
-        },
-        desktop,
-      );
+          });
       unlistenTerminal = await desktop.listenToTerminalEvent(handleTerminalEvent);
       desktop
         .listenToScheduleStatuses((statuses) => setScheduleStatuses(statuses))
@@ -2134,7 +2148,6 @@ export function AppProvider(props: ParentProps) {
     selectedNodeId,
     selectedEdgeId,
     screen,
-    screenTransitionClass,
     settings,
     discoveredMcp,
     refreshDiscoveredMcp,
@@ -2155,6 +2168,7 @@ export function AppProvider(props: ParentProps) {
     providerKeyInputByProvider,
     uiZoom,
     workflowSettingsOpen,
+    inspectorOpen,
     selectedProjectId,
     editingWorkflowId,
     workflowNameDraft,
@@ -2319,6 +2333,7 @@ export function AppProvider(props: ParentProps) {
     handleZoomOut,
     handleZoomReset,
     handleToggleWorkflowSettings,
+    handleToggleInspector,
     updateActiveWorkflowSettings,
     rightPanelHidden,
     handleToggleRightPanel,
