@@ -65,6 +65,8 @@ Validate before tagging:
 ./scripts/validate-tauri-signing.sh
 ```
 
+If pubkey mismatch (secret already on GitHub): `./scripts/sync-tauri-pubkey.sh` then commit `tauri.conf.json`.
+
 ## Common cases
 
 | Change | Desktop bump? | Tag after merge? |

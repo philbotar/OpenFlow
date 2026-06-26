@@ -33,7 +33,11 @@ FILE_PUBKEY="$(tr -d '\n' < "${KEY}.pub")"
 	echo "pubkey in tauri.conf.json does not match ${KEY}.pub" >&2
 	echo "  config: ${CONFIG_PUBKEY:0:48}..." >&2
 	echo "  file:   ${FILE_PUBKEY:0:48}..." >&2
-	fail "run ./scripts/setup-tauri-signing.sh or commit the matching pubkey"
+	echo >&2
+	echo "The GitHub secret must pair with the pubkey baked into the app." >&2
+	echo "Do not run setup-tauri-signing.sh (that generates new keys)." >&2
+	echo "Run: ./scripts/sync-tauri-pubkey.sh" >&2
+	fail "commit the synced pubkey, then re-run this script"
 }
 pass "pubkey in tauri.conf.json matches ${KEY}.pub"
 
