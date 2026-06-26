@@ -468,6 +468,15 @@ async function openChatTab(container: HTMLElement) {
   await flush();
 }
 
+async function openInspector(container: HTMLElement) {
+  const inspectorButton = await waitForElement(
+    () => container.querySelector('button[aria-label="Inspector"]') as HTMLButtonElement | null,
+    "inspector button",
+  );
+  inspectorButton.click();
+  await flush();
+}
+
 function flush() {
   return new Promise<void>((resolve) => setTimeout(resolve, 0));
 }
@@ -891,6 +900,7 @@ describe("App agent dashboard", () => {
       await flush();
 
       expect(apiMocks.createAgentNode).toHaveBeenCalledWith(1, 128, 116, "agent-2");
+      await openInspector(container);
       expect(container.querySelector(".panel-header-title-row h3")?.textContent).toBe("Writer Agent");
     } finally {
       dispose();
@@ -981,6 +991,7 @@ describe("App agent dashboard", () => {
     const { container, dispose } = await mountApp(makeBootstrapPayload([workflow]));
 
     try {
+      await openInspector(container);
       expect(
         Array.from(container.querySelectorAll("span")).some((element) => element.textContent === "Max tool rounds"),
       ).toBe(false);
@@ -1672,6 +1683,7 @@ describe("Global chat layout", () => {
     });
 
     try {
+      await openInspector(container);
       const inspectorTitle = () =>
         container.querySelector(".inspector-panel .panel-header-title-row")?.textContent;
       expect(inspectorTitle()).toContain("Plan");
