@@ -253,3 +253,13 @@ See `docs/contributing/testing-workflows.md` for layered test commands.
 - `docs/architecture/contract.md`
 - `docs/architecture/threading-concurrency.md`
 - `docs/glossary.md`
+
+## Cursor Cloud specific instructions
+
+OpenFlow is a **Tauri desktop GUI app**. Standard commands are in the README and `scripts/setup.sh`; lint/test/build use `./scripts/verify.sh` (see [Verification Commands](#verification-commands)). Notes below are only the non-obvious caveats for this VM.
+
+- **Run the GUI:** export `DISPLAY=:1` (a headless X server runs there) before `npm --prefix crates/desktop run start -- dev`. The Tauri dev command also auto-starts the Vite dev server on `http://localhost:1420`.
+- **Benign noise:** `libEGL warning: DRI3 error ...` lines at launch are expected — the VM has no GPU, so it falls back to software rendering. Not an error.
+- **No API key = editor only:** without an LLM key the header shows "API key missing" and the **Run** button cannot execute a workflow, but the visual editor (create workflow, add/rename/configure nodes, save) works fully. For real runs, set `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` (env fallback) or a key in Settings; resolution order is in [Runtime/Persistence Locations](#runtimepersistence-locations).
+- **First Rust build is slow** (large AWS SDK + reqwest tree, ~25 min cold). Subsequent builds are incremental. `cargo`-based `verify.sh` steps reuse `./target` only with `VERIFY_SHARE_TARGET=1` (CI sets this); otherwise each run gets its own `target/verify-<pid>`.
+- **Verify-gate tooling** (`cargo-deny`, `cargo-machete`, `typos`) and Tauri Linux system libs (`libwebkit2gtk-4.1-dev`, `libxdo-dev`, `libayatana-appindicator3-dev`, `librsvg2-dev`, ...) are preinstalled in the VM snapshot. If a `verify.sh` step reports one missing, reinstall it (cargo tool via `cargo install`, system lib via `apt-get`).
