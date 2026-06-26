@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use support::agent_node;
+use support::{agent_node, spawn_interactive_script};
 use tempfile::TempDir;
 
 #[derive(Debug)]
@@ -44,7 +44,7 @@ fn live_config_from_env() -> Result<LiveProviderConfig, String> {
             (
                 key,
                 "https://opencode.ai/zen".to_string(),
-                "gpt-5.4-nano".to_string(),
+                "deepseek-v4-flash-free".to_string(),
                 "v1/responses".to_string(),
             )
         } else if let Some(key) = openai_key {
@@ -68,7 +68,8 @@ fn live_config_from_env() -> Result<LiveProviderConfig, String> {
     let wire_api = match env::var("STEP_WORKFLOW_LIVE_WIRE_API").as_deref() {
         Ok("chat-completions") => WireApi::ChatCompletions,
         Ok("responses") => WireApi::Responses,
-        _ if base_url.contains("opencode.ai/zen") => WireApi::Responses,
+        // Zen Responses API fails on tool-result round-trips for deepseek models.
+        _ if base_url.contains("opencode.ai/zen") => WireApi::ChatCompletions,
         _ => WireApi::Responses,
     };
 
@@ -77,6 +78,7 @@ fn live_config_from_env() -> Result<LiveProviderConfig, String> {
         model,
         base_url,
         wire_api,
+        responses_path,
     })
 }
 
@@ -156,10 +158,9 @@ async fn run_live_variant(
     .await
     .map_err(|error| error.to_string())?;
 
-    let consumer_summary = snapshot.outputs[&NodeId("consumer".into())]["summary"]
-        .as_str()
-        .unwrap_or("")
-        .to_string();
+    let consumer_summary = snapshot.outputs.get(&NodeId("consumer".into())).and_then(|output| {
+        output["summary"].as_str()
+    }).unwrap_or("").to_string();
 
     Ok(LiveAbReport {
         read_calls: snapshot.report.read_calls,
@@ -217,4 +218,43 @@ async fn live_read_forward_ab_reports_metrics() {
         control.redundant_reads,
         treatment.redundant_reads
     );
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+#[ignore = "debug helper for live provider failures"]
+async fn debug_live_reader_events() {
+    if env::var("STEP_WORKFLOW_LIVE_AI").as_deref() != Ok("1") {
+        return;
+    }
+    let config = live_config_from_env().unwrap_or_else(|error| panic!("{error}"));
+    let dir = TempDir::new().expect("tempdir");
+    write_fixture(dir.path());
+    let mut workflow = Workflow::new("debug-reader");
+    workflow.nodes = vec![live_node(
+        "reader",
+        "Reader",
+        &config.model,
+        "Read lib.rs and submit a one-sentence summary naming the public function.",
+    )];
+    let mut handle = spawn_interactive_script(
+        workflow,
+        dir.path().to_path_buf(),
+        live_client(&config),
+    );
+    while let Some(event) = handle.event_rx.recv().await {
+        eprintln!("debug event: {event:?}");
+        if matches!(
+            event,
+            orchestration::run::execution::ExecutionEvent::Finished(_)
+                | orchestration::run::execution::ExecutionEvent::Error(_)
+                | orchestration::run::execution::ExecutionEvent::NodeFailed { .. }
+                | orchestration::run::execution::ExecutionEvent::NodeErrored { .. }
+                | orchestration::run::execution::ExecutionEvent::NodeInterrupted { .. }
+                | orchestration::run::execution::ExecutionEvent::Aborted
+        ) {
+            break;
+        }
+    }
+    handle.handle.abort();
 }
