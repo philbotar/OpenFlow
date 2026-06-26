@@ -36,7 +36,10 @@
   "bundle": {
     "active": true,
     "createUpdaterArtifacts": true,
-    "targets": ["app", "dmg"],
+    "targets": [
+      "app",
+      "dmg"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -47,7 +50,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFFNkVENjUyNjhGMzZDM0IKUldRN2JQTm9VdFp1cmoycm5SeFoyZUxaK1Q3bVFGT3BLb3ozcm5HOTBUY0s0elVtTlIxMW5nZFUK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEE0MDUxNjA5MkQ4MUNCOTEKUldTUnk0RXRDUllGcEQxVzU0Mjg5cjViaUZpVlFlbzQzbStzbElkNitHaHhhc3hmcGNmdE5vTVMK",
       "endpoints": [
         "https://github.com/philbotar/OpenFlow/releases/latest/download/latest.json"
       ]
