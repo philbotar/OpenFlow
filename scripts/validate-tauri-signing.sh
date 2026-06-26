@@ -61,7 +61,22 @@ trap 'rm -f "$TMP" "$TMP.sig"' EXIT
 echo "openflow-signing-smoke" >"$TMP"
 
 export TAURI_SIGNING_PRIVATE_KEY="$(cat "$KEY")"
-"$TAURI_BIN" signer sign "$TMP" >/dev/null
+# CI-generated keys (--ci) use an empty password; without this, tauri prompts interactively.
+export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD-}"
+
+if ! "$TAURI_BIN" signer sign "$TMP" >/dev/null 2>"${TMP}.err"; then
+	if grep -q 'Wrong password for that key' "${TMP}.err" 2>/dev/null; then
+		echo >&2
+		echo "Your private key has a real password (not a CI/--ci key)." >&2
+		echo "Either:" >&2
+		echo "  1. Re-run sign with: export TAURI_SIGNING_PRIVATE_KEY_PASSWORD='your-password'" >&2
+		echo "  2. Add GitHub secret TAURI_SIGNING_PRIVATE_KEY_PASSWORD with the same value" >&2
+		echo "  3. Or regenerate passwordless (forgot password? only option):" >&2
+		echo "       ./scripts/setup-tauri-signing.sh" >&2
+	fi
+	cat "${TMP}.err" >&2
+	fail "tauri signer sign failed"
+fi
 [[ -f "${TMP}.sig" ]] || fail "tauri signer sign did not produce ${TMP}.sig"
 pass "local sign smoke test passed (${TMP}.sig created)"
 

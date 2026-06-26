@@ -33,6 +33,7 @@ fi
 
 gh secret set TAURI_SIGNING_PRIVATE_KEY --repo "$REPO" <"$KEY"
 echo "Set GitHub secret TAURI_SIGNING_PRIVATE_KEY on $REPO"
+echo "CI keys use an empty password — do not set TAURI_SIGNING_PRIVATE_KEY_PASSWORD unless you skipped --ci"
 echo
 echo "Next: commit the pubkey change and push:"
 echo "  git add crates/desktop/tauri.conf.json"
