@@ -13,7 +13,7 @@ edition = "2021"
 description = "Desktop app and core engine for composing and running agentic workflows"
 license = "MIT"
 readme = "README.md"
-repository = "https://example.invalid/step-through-agentic-workflow"
+repository = "https://github.com/philbotar/OpenFlow"
 keywords = ["agent", "workflow", "desktop", "openai", "rust"]
 categories = ["development-tools", "gui"]
 

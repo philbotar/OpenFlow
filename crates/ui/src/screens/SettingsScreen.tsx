@@ -1,5 +1,6 @@
 import { createSignal, Show } from "solid-js";
 import { AppearanceSection } from "../settings/AppearanceSection";
+import { AboutSection } from "../settings/AboutSection";
 import { McpSection } from "../settings/McpSection";
 import { ProvidersSection } from "../settings/ProvidersSection";
 import { SettingsNav } from "../settings/SettingsNav";
@@ -20,6 +21,9 @@ export function SettingsScreen() {
         </Show>
         <Show when={activeSection() === "mcp"}>
           <McpSection />
+        </Show>
+        <Show when={activeSection() === "about"}>
+          <AboutSection />
         </Show>
       </div>
     </section>

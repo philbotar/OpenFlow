@@ -9,6 +9,7 @@ contributing/
 ├── README.md              # This index
 ├── development-lanes.md   # Change classification, skill routing, verification lanes
 ├── coding-patterns.md     # Architecture rules, ownership, persistence, conventions
+├── releasing.md           # Desktop version bumps, GitHub tags, updater releases
 └── testing-workflows.md   # Test layers, acceptance rules, when to run each suite
 ```
 
@@ -17,6 +18,7 @@ contributing/
 1. [`development-lanes.md`](development-lanes.md) - classify the change, pick the matching playbook, and choose verification.
 2. [`coding-patterns.md`](coding-patterns.md) - where logic lives, runtime semantics, change checklist.
 3. [`testing-workflows.md`](testing-workflows.md) - how to verify behavior without the desktop UI.
+4. [`releasing.md`](releasing.md) - when and how to bump desktop version, tag, and publish GitHub Releases.
 
 Also read before larger changes:
 
