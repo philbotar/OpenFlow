@@ -1,6 +1,24 @@
 # Releasing OpenFlow (macOS)
 
-User-facing builds ship through **GitHub Releases** and the in-app updater. Release steps are part of the PR workflow when you bump the desktop app version.
+User-facing builds ship through **GitHub Releases** and the in-app updater. **Merging to `main` does not publish a release** — only pushing a `v*` tag does.
+
+## Release train (multiple PRs, one release)
+
+Use this when you want several PRs on `main` before users get a new build.
+
+```text
+PR A (engine)  ──┐
+PR B (ui)      ──┼──> main (no desktop version bump) ──> cut-release ──> tag vX.Y.Z ──> GitHub Release
+PR C (desktop) ──┘
+```
+
+1. **Feature PRs** — bump only the library crates you touch (`engine`, `orchestration`, `providers`, `ui`). **Do not bump the desktop app version.**
+2. **Merge as many PRs as you want** — CI passes without a tag or GitHub Release.
+3. **When ready to ship** — on `main`, run `./scripts/cut-release.sh` (or open a small release PR with that output). This bumps the desktop app version once.
+4. **Tag once** — `git tag vX.Y.Z && git push origin vX.Y.Z` (version must match `tauri.conf.json`).
+5. **Publish** the draft GitHub Release after the Release workflow finishes.
+
+`check-version-bump.sh` enforces library crate bumps per touched crate. It does **not** require a desktop app version bump on every PR — desktop version changes belong in the release cut step.
 
 ## Version files
 
@@ -18,20 +36,22 @@ Keep these in sync (CI enforces this):
 
 1. Classify the change ([`development-lanes.md`](development-lanes.md)).
 2. Run `./scripts/verify.sh`.
-3. If users should receive the change, **bump the desktop app version** (patch for bug fixes).
-4. If `crates/ui/**` changed, bump `crates/ui/package.json` too.
-5. Open PR — CI runs version bump + release sync checks.
-6. Merge.
+3. Bump library crate versions for every substantive crate you changed.
+4. If `crates/ui/**` changed, bump `crates/ui/package.json`.
+5. **Skip the desktop app version** unless this PR is explicitly the release cut (use `./scripts/cut-release.sh` on `main` instead).
+6. Open PR — CI runs version bump + release sync checks.
+7. Merge.
 
 ## After merge (maintainer)
 
-Only when the PR **bumped the desktop app version**:
+Only when you are **cutting a release** (desktop app version was bumped):
 
 ```bash
 git checkout main
 git pull origin main
-git tag v0.1.2          # must match tauri.conf.json version
-git push origin v0.1.2
+./scripts/cut-release.sh    # if not already bumped in a release PR
+git tag v0.1.5              # must match tauri.conf.json version
+git push origin v0.1.5
 ```
 
 1. **Release** workflow builds signed macOS artifacts and opens a **draft** GitHub Release.
@@ -70,16 +90,18 @@ If pubkey mismatch (secret already on GitHub): `./scripts/sync-tauri-pubkey.sh` 
 
 ## Common cases
 
-| Change | Desktop bump? | Tag after merge? |
-| --- | --- | --- |
-| Bug fix users should get | Yes (patch) | Yes |
-| Engine/orchestration only, users should get fix | Yes — users only update the **desktop bundle** | Yes |
-| UI-only, users should get change | Yes + bump `ui` crate | Yes |
-| Docs, CI, internal refactor | No | No |
-| WIP on `main` | No | No |
+| Change | Library crate bump? | Desktop bump in PR? | Tag after merge? |
+| --- | --- | --- | --- |
+| Bug fix users should get | Yes (touched crates) | No — use release train | Only after `cut-release` |
+| Engine/orchestration only | Yes | No | Only after `cut-release` |
+| UI change | Yes (`ui`) | No | Only after `cut-release` |
+| Desktop IPC / Tauri adapter | No (unless other crates touched) | No | Only after `cut-release` |
+| Docs, CI, internal refactor | No | No | No |
+| Ready to ship accumulated `main` | — | Yes (`./scripts/cut-release.sh`) | Yes |
 
 ## Rules
 
+- **Merge ≠ release.** Multiple PRs can land on `main` without tagging.
 - **Do not retag** a published version. Bump patch and push a new tag.
 - **Draft releases** are invisible to the updater — publish when ready.
 - Users on builds **without** the updater need one manual install first.
