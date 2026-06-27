@@ -4,7 +4,9 @@ use crate::conversation::AgentTranscriptItem;
 use crate::execution::RunError;
 use crate::graph::{Node, NodeId, Workflow};
 use crate::ports::AgentRequest;
-use crate::tools::{merge_file_change_record, FileChangeRecord, ToolDefinition};
+use crate::tools::{
+    merge_file_change_record, merge_read_record, FileChangeRecord, ReadRecord, ToolDefinition,
+};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -108,6 +110,7 @@ openflow_call_subagent schema lists currently available subagents for this node.
 and keep working toward submit unless the task is impossible.\n\
 - Batch independent read/search/find calls when you can.\n\
 - Your input JSON includes changed_files from upstream nodes — use it to avoid redundant reads.\n\
+- Your input JSON includes reads (paths already read upstream + structural outline) — use it to orient; only read a listed path when you need its actual contents.\n\
 - Write-tier and exec-tier tools may require human approval before running.\n\
 \n\
 ## Do not\n\
@@ -158,6 +161,24 @@ pub fn upstream_changed_files<S: std::hash::BuildHasher>(
     by_path.into_values().collect()
 }
 
+/// Collect read records from all transitive upstream nodes (deduped by path, latest outline wins).
+#[must_use]
+pub fn upstream_reads<S: std::hash::BuildHasher>(
+    node_id: &str,
+    upstream_by_node: &HashMap<NodeId, Vec<NodeId>, S>,
+    reads_by_node: &BTreeMap<NodeId, Vec<ReadRecord>>,
+) -> Vec<ReadRecord> {
+    let mut by_path: BTreeMap<String, ReadRecord> = BTreeMap::new();
+    for upstream_id in transitive_upstream_ids(node_id, upstream_by_node) {
+        if let Some(records) = reads_by_node.get(&upstream_id) {
+            for record in records {
+                merge_read_record(&mut by_path, record.clone());
+            }
+        }
+    }
+    by_path.into_values().collect()
+}
+
 fn transitive_upstream_ids<S: std::hash::BuildHasher>(
     node_id: &str,
     upstream_by_node: &HashMap<NodeId, Vec<NodeId>, S>,
@@ -186,6 +207,8 @@ pub fn build_node_input<S: std::hash::BuildHasher>(
     outputs_by_node: &BTreeMap<NodeId, Value>,
     entrypoint_text: Option<&str>,
     changed_files_by_node: &BTreeMap<NodeId, Vec<FileChangeRecord>>,
+    reads_by_node: &BTreeMap<NodeId, Vec<ReadRecord>>,
+    forward_upstream_reads: bool,
 ) -> Value {
     let upstream = upstream_by_node
         .get(node_id)
@@ -201,6 +224,11 @@ pub fn build_node_input<S: std::hash::BuildHasher>(
         })
         .collect::<Vec<_>>();
     let changed_files = upstream_changed_files(node_id, upstream_by_node, changed_files_by_node);
+    let reads = if forward_upstream_reads {
+        upstream_reads(node_id, upstream_by_node, reads_by_node)
+    } else {
+        Vec::new()
+    };
 
     if upstream.is_empty() {
         if let Some(text) = entrypoint_text.filter(|text| !text.trim().is_empty()) {
@@ -211,6 +239,9 @@ pub fn build_node_input<S: std::hash::BuildHasher>(
             if !changed_files.is_empty() {
                 payload["changed_files"] = json!(changed_files);
             }
+            if !reads.is_empty() {
+                payload["reads"] = json!(reads);
+            }
             return payload;
         }
     }
@@ -218,6 +249,9 @@ pub fn build_node_input<S: std::hash::BuildHasher>(
     let mut payload = json!({ "upstream": upstream });
     if !changed_files.is_empty() {
         payload["changed_files"] = json!(changed_files);
+    }
+    if !reads.is_empty() {
+        payload["reads"] = json!(reads);
     }
     payload
 }
@@ -228,6 +262,7 @@ pub struct NodeInvocationContext<'a> {
     pub upstream_map: &'a HashMap<NodeId, Vec<NodeId>>,
     pub outputs: &'a BTreeMap<NodeId, Value>,
     pub changed_files_by_node: &'a BTreeMap<NodeId, Vec<FileChangeRecord>>,
+    pub reads_by_node: &'a BTreeMap<NodeId, Vec<ReadRecord>>,
     pub entrypoint_text: Option<&'a str>,
     pub transcript: &'a [AgentTranscriptItem],
     pub available_tools: &'a [ToolDefinition],
@@ -262,6 +297,8 @@ pub fn build_agent_request(
             ctx.outputs,
             ctx.entrypoint_text,
             ctx.changed_files_by_node,
+            ctx.reads_by_node,
+            ctx.workflow.settings.forward_upstream_reads,
         ),
         output_schema: node.agent.output_schema.clone(),
         tool_config: node.agent.tools.clone(),
@@ -311,6 +348,8 @@ mod tests {
             &BTreeMap::new(),
             Some("   "),
             &BTreeMap::new(),
+            &BTreeMap::new(),
+            true,
         );
         assert_eq!(input, json!({"upstream": []}));
     }
@@ -340,7 +379,15 @@ mod tests {
         outputs.insert(NodeId("alpha".into()), json!({"summary": "from alpha"}));
         outputs.insert(NodeId("beta".into()), json!({"summary": "from beta"}));
 
-        let input = build_node_input("join", &upstream_map, &outputs, None, &BTreeMap::new());
+        let input = build_node_input(
+            "join",
+            &upstream_map,
+            &outputs,
+            None,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            true,
+        );
         assert_eq!(
             input,
             json!({
@@ -377,6 +424,8 @@ mod tests {
             &outputs,
             None,
             &changed_files_by_node,
+            &BTreeMap::new(),
+            true,
         );
 
         assert_eq!(
@@ -447,10 +496,67 @@ mod tests {
             &BTreeMap::new(),
             None,
             &changed_files_by_node,
+            &BTreeMap::new(),
+            true,
         );
 
         assert_eq!(input["changed_files"].as_array().map(Vec::len), Some(1));
         assert_eq!(input["changed_files"][0]["path"], "src/main.rs");
+    }
+
+    #[test]
+    fn downstream_input_includes_upstream_reads_when_forwarding_enabled() {
+        let upstream_map =
+            HashMap::from([(NodeId("join".to_string()), vec![NodeId("alpha".into())])]);
+        let mut outputs = BTreeMap::new();
+        outputs.insert(NodeId("alpha".into()), json!({"summary": "done"}));
+        let mut reads_by_node = BTreeMap::new();
+        reads_by_node.insert(
+            NodeId("alpha".into()),
+            vec![ReadRecord {
+                path: "src/lib.rs".to_string(),
+                outline: Some("fn main".to_string()),
+            }],
+        );
+
+        let input = build_node_input(
+            "join",
+            &upstream_map,
+            &outputs,
+            None,
+            &BTreeMap::new(),
+            &reads_by_node,
+            true,
+        );
+
+        assert_eq!(input["reads"][0]["path"], "src/lib.rs");
+        assert_eq!(input["reads"][0]["outline"], "fn main");
+    }
+
+    #[test]
+    fn upstream_reads_omitted_when_forwarding_disabled() {
+        let upstream_map =
+            HashMap::from([(NodeId("join".to_string()), vec![NodeId("alpha".into())])]);
+        let mut reads_by_node = BTreeMap::new();
+        reads_by_node.insert(
+            NodeId("alpha".into()),
+            vec![ReadRecord {
+                path: "src/lib.rs".to_string(),
+                outline: Some("fn main".to_string()),
+            }],
+        );
+
+        let input = build_node_input(
+            "join",
+            &upstream_map,
+            &BTreeMap::new(),
+            None,
+            &BTreeMap::new(),
+            &reads_by_node,
+            false,
+        );
+
+        assert!(input.get("reads").is_none());
     }
 
     #[test]
@@ -467,6 +573,7 @@ mod tests {
             upstream_map: &upstream_map,
             outputs: &BTreeMap::new(),
             changed_files_by_node: &BTreeMap::new(),
+            reads_by_node: &BTreeMap::new(),
             entrypoint_text: None,
             transcript: &[],
             available_tools: &[],

@@ -174,6 +174,9 @@ impl InteractiveEngine {
     }
 
     fn apply_completion(&mut self, node_id: &NodeId, success: AgentTurnSuccess) {
+        if let Some(usage) = &success.usage {
+            self.note_usage(usage);
+        }
         if let Some(message) = filter_tool_turn_assistant_message(success.assistant_message)
             .filter(|message| !message.trim().is_empty())
         {
@@ -192,6 +195,9 @@ impl InteractiveEngine {
     }
 
     fn apply_tool_calls(&mut self, node_id: &NodeId, batch: AgentToolCallBatch) {
+        if let Some(usage) = &batch.usage {
+            self.note_usage(usage);
+        }
         if self.find_node(node_id).is_none() {
             self.terminal_error = Some(RunError::NodeFailed {
                 node_id: node_id.clone(),

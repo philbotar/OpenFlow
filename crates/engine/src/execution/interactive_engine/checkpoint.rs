@@ -3,7 +3,7 @@ use crate::conversation::AgentTranscriptItem;
 use crate::execution::RunEvent;
 use crate::graph::validation::WorkflowValidationError;
 use crate::graph::{NodeId, Workflow, WorkflowId};
-use crate::tools::{FileChangeRecord, ToolCall};
+use crate::tools::{FileChangeRecord, ReadRecord, ToolCall};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
@@ -46,6 +46,8 @@ pub struct InteractiveEngineCheckpoint {
     pub layer_idx: usize,
     pub outputs: BTreeMap<NodeId, serde_json::Value>,
     pub changed_files_by_node: BTreeMap<NodeId, Vec<FileChangeRecord>>,
+    #[serde(default)]
+    pub reads_by_node: BTreeMap<NodeId, Vec<ReadRecord>>,
     pub transcripts: BTreeMap<NodeId, Vec<AgentTranscriptItem>>,
     pub events: Vec<RunEvent>,
     pub queued_nodes: BTreeSet<NodeId>,
@@ -80,6 +82,7 @@ pub fn collect_checkpoint_node_ids(checkpoint: &InteractiveEngineCheckpoint) -> 
     ids.extend(checkpoint.outputs.keys().cloned());
     ids.extend(checkpoint.transcripts.keys().cloned());
     ids.extend(checkpoint.changed_files_by_node.keys().cloned());
+    ids.extend(checkpoint.reads_by_node.keys().cloned());
     ids.extend(checkpoint.started_invocations_by_node.keys().cloned());
     ids.extend(checkpoint.queued_nodes.iter().cloned());
     ids.extend(checkpoint.awaiting_nodes.iter().cloned());
@@ -132,6 +135,7 @@ impl InteractiveEngine {
             layer_idx: self.layer_idx,
             outputs: self.outputs.clone(),
             changed_files_by_node: self.changed_files_by_node.clone(),
+            reads_by_node: self.reads_by_node.clone(),
             transcripts: self.transcripts.clone(),
             events: self.events.clone(),
             queued_nodes: self.queued_nodes.clone(),
@@ -187,6 +191,10 @@ impl InteractiveEngine {
             layer_idx: checkpoint.layer_idx,
             outputs: checkpoint.outputs,
             changed_files_by_node: checkpoint.changed_files_by_node,
+            reads_by_node: checkpoint.reads_by_node,
+            read_calls: 0,
+            redundant_reads: 0,
+            tokens_in: 0,
             transcripts: checkpoint.transcripts,
             events: checkpoint.events,
             queued_nodes: checkpoint.queued_nodes,

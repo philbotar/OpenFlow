@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "OpenFlow",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "identifier": "com.philipbotar.openflow",
   "build": {
     "beforeDevCommand": "npm --prefix ../ui run dev",
@@ -36,7 +36,10 @@
   "bundle": {
     "active": true,
     "createUpdaterArtifacts": true,
-    "targets": ["app", "dmg"],
+    "targets": [
+      "app",
+      "dmg"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -47,7 +50,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFFNkVENjUyNjhGMzZDM0IKUldRN2JQTm9VdFp1cmoycm5SeFoyZUxaK1Q3bVFGT3BLb3ozcm5HOTBUY0s0elVtTlIxMW5nZFUK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJCQjgxNzFBMTQ0RjYzRTIKUldUaVkwOFVHaGU0dThPRjJwTE1VTzVDblYxRVp2NlJRL0g2SGdFT2dTenVRSkllcGgyQXltYTgK",
       "endpoints": [
         "https://github.com/philbotar/OpenFlow/releases/latest/download/latest.json"
       ]

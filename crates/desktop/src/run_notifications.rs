@@ -164,6 +164,9 @@ mod tests {
                     output: json!({ "ok": true }),
                 },
             ],
+            read_calls: 0,
+            redundant_reads: 0,
+            tokens_in: 0,
         });
 
         let notification = notification_for_event(&event, "Launch Flow").expect("notification");

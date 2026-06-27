@@ -19,7 +19,7 @@ use crate::execution::{
 use crate::graph::validation::{execution_layers, WorkflowValidationError};
 use crate::graph::{Node, NodeId, Workflow};
 use crate::ports::{AgentRequest, AiPort, ToolPort};
-use crate::tools::{FileChangeRecord, ToolCall};
+use crate::tools::{FileChangeRecord, ReadRecord, ToolCall};
 use futures::future::join_all;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -134,6 +134,10 @@ pub struct InteractiveEngine {
     layer_idx: usize,
     outputs: BTreeMap<NodeId, Value>,
     changed_files_by_node: BTreeMap<NodeId, Vec<FileChangeRecord>>,
+    reads_by_node: BTreeMap<NodeId, Vec<ReadRecord>>,
+    read_calls: u32,
+    redundant_reads: u32,
+    tokens_in: u32,
     transcripts: BTreeMap<NodeId, Vec<AgentTranscriptItem>>,
     events: Vec<RunEvent>,
     queued_nodes: BTreeSet<NodeId>,
@@ -181,6 +185,10 @@ impl InteractiveEngine {
             layer_idx: 0,
             outputs: BTreeMap::new(),
             changed_files_by_node: BTreeMap::new(),
+            reads_by_node: BTreeMap::new(),
+            read_calls: 0,
+            redundant_reads: 0,
+            tokens_in: 0,
             transcripts: BTreeMap::new(),
             events: Vec::new(),
             queued_nodes: BTreeSet::new(),
@@ -311,6 +319,9 @@ impl InteractiveEngine {
                     .into_iter()
                     .map(|(node_id, output)| NodeRunOutput { node_id, output })
                     .collect(),
+                read_calls: self.read_calls,
+                redundant_reads: self.redundant_reads,
+                tokens_in: self.tokens_in,
             });
         }
         None
@@ -726,6 +737,34 @@ impl InteractiveEngine {
             .extend(records);
     }
 
+    pub fn record_reads(&mut self, node_id: &NodeId, records: Vec<ReadRecord>) {
+        if records.is_empty() {
+            return;
+        }
+        let node_reads = self.reads_by_node.entry(node_id.clone()).or_default();
+        let mut by_path = node_reads
+            .iter()
+            .map(|record| (record.path.clone(), record.clone()))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        for record in records {
+            crate::tools::merge_read_record(&mut by_path, record);
+        }
+        *node_reads = by_path.into_values().collect();
+    }
+
+    pub fn note_read_call(&mut self, node_id: &NodeId, path: &str) {
+        self.read_calls = self.read_calls.saturating_add(1);
+        let upstream =
+            crate::execution::upstream_reads(&node_id.0, &self.upstream_map, &self.reads_by_node);
+        if upstream.iter().any(|record| record.path == path) {
+            self.redundant_reads = self.redundant_reads.saturating_add(1);
+        }
+    }
+
+    pub const fn note_usage(&mut self, usage: &crate::UsageReport) {
+        self.tokens_in = self.tokens_in.saturating_add(usage.prompt_tokens);
+    }
+
     pub fn revert_file_changes_for_batch(&mut self, batch_id: &str, node_id: &NodeId) {
         if let Some(records) = self.changed_files_by_node.get_mut(node_id) {
             records.retain(|record| record.batch_id.as_deref() != Some(batch_id));
@@ -772,6 +811,7 @@ impl InteractiveEngine {
             upstream_map: &self.upstream_map,
             outputs: &self.outputs,
             changed_files_by_node: &self.changed_files_by_node,
+            reads_by_node: &self.reads_by_node,
             entrypoint_text: self.entrypoint_text.as_deref(),
             transcript: self.transcript(&node.id),
             available_tools: &[],

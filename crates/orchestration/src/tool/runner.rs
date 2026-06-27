@@ -8,7 +8,7 @@ use crate::tool::errors::ToolError;
 use crate::tool::hooks::{AfterToolContext, BeforeToolContext, BeforeToolDecision, ToolHooks};
 use crate::tool::output::{ArtifactStore, ToolArtifactRecord};
 use crate::tool::registry::{BuiltinToolKind, ToolRegistry, ToolRegistryError};
-use engine::{EditBatch, FileChangeRecord, ToolCall, ToolOutputMeta, ToolResult};
+use engine::{EditBatch, FileChangeRecord, ReadRecord, ToolCall, ToolOutputMeta, ToolResult};
 use reqwest::Client;
 use serde_json::Value;
 use std::fs;
@@ -22,6 +22,7 @@ pub struct ToolExecutionRecord {
     pub result: ToolResult,
     pub artifact: Option<ToolArtifactRecord>,
     pub file_changes: Vec<FileChangeRecord>,
+    pub reads: Vec<ReadRecord>,
     pub edit_batch: Option<EditBatch>,
 }
 
@@ -157,7 +158,8 @@ impl ToolRunner {
     ) -> Result<ToolExecutionRecord, ToolRunnerError> {
         let kind = self.registry.get(&call.name)?.kind;
         if let Some(context) = &ctx {
-            if let Some(record) = self.serve_cached(kind, &call, context) {
+            if let Some(mut record) = self.serve_cached(kind, &call, context) {
+                self.enrich_read_record(kind, &call, &mut record);
                 return Ok(record);
             }
         }
@@ -185,6 +187,10 @@ impl ToolRunner {
         ) {
             self.cache.bump_write_epoch();
         }
+        let mut result = result;
+        if let Ok(record) = &mut result {
+            self.enrich_read_record(kind, &call, record);
+        }
         if let (Some(context), Ok(record)) = (&cache_ctx, &result) {
             self.maybe_cache(kind, &call, context, record);
             self.hooks
@@ -208,6 +214,24 @@ impl ToolRunner {
                 .read_call_path(call)
                 .is_some_and(|path| !path.starts_with("http://") && !path.starts_with("https://")),
             _ => false,
+        }
+    }
+
+    fn enrich_read_record(
+        &self,
+        kind: BuiltinToolKind,
+        call: &ToolCall,
+        record: &mut ToolExecutionRecord,
+    ) {
+        if kind != BuiltinToolKind::Read || !record.reads.is_empty() {
+            return;
+        }
+        let Some(path) = self.read_call_path(call) else {
+            return;
+        };
+        if let Some(read_record) = crate::tool::read::capture::capture_read_record(&self.cwd, path)
+        {
+            record.reads.push(read_record);
         }
     }
 
@@ -259,6 +283,7 @@ impl ToolRunner {
             },
             artifact: None,
             file_changes: Vec::new(),
+            reads: Vec::new(),
             edit_batch: None,
         })
     }
@@ -337,6 +362,7 @@ impl ToolRunner {
             },
             artifact,
             file_changes: Vec::new(),
+            reads: Vec::new(),
             edit_batch: None,
         })
     }
@@ -376,6 +402,7 @@ impl ToolRunner {
             },
             artifact,
             file_changes,
+            reads: Vec::new(),
             edit_batch,
         })
     }
@@ -422,6 +449,7 @@ impl ToolRunner {
             },
             artifact: None,
             file_changes,
+            reads: Vec::new(),
             edit_batch,
         }
     }

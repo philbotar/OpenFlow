@@ -16,8 +16,10 @@ jobs:
         include:
           - platform: macos-latest
             args: --target aarch64-apple-darwin
+            rust_target: aarch64-apple-darwin
           - platform: macos-latest
             args: --target x86_64-apple-darwin
+            rust_target: x86_64-apple-darwin
     runs-on: ${{ matrix.platform }}
     steps:
       - name: Checkout
@@ -36,6 +38,9 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install Rust target
+        run: rustup target add ${{ matrix.rust_target }}
+
       - name: Cache Rust build artifacts
         uses: swatinem/rust-cache@v2
         with:
@@ -46,6 +51,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: crates/desktop
           tagName: v__VERSION__

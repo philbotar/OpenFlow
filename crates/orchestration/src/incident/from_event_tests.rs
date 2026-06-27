@@ -80,6 +80,9 @@ fn finished_does_not_emit_incident() {
         workflow_id: "wf".into(),
         events: vec![],
         outputs: vec![],
+        read_calls: 0,
+        redundant_reads: 0,
+        tokens_in: 0,
     });
     assert!(incident_from_execution_event(&event, &ctx).is_none());
 }

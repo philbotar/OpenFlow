@@ -100,6 +100,7 @@ where
             {
                 Some(Ok(record)) => {
                     self.record_tool_file_changes(engine, node_id, &record);
+                    self.record_tool_reads(engine, node_id, &record);
                     results.push(record.result);
                 }
                 Some(Err(err)) => results.push(ToolResult {
