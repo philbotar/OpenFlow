@@ -330,6 +330,18 @@ export function gitDiffFile(path: string) {
   return invoke<string>("git_diff_file", { path });
 }
 
+export function gitDiffRepo(cwd: string) {
+  return invoke<string>("git_diff_repo", { cwd });
+}
+
+export function gitIsRepo(cwd: string) {
+  return invoke<boolean>("git_is_repo", { cwd });
+}
+
+export function gitCurrentBranch(cwd: string) {
+  return invoke<string>("git_current_branch", { cwd });
+}
+
 export function revertEditBatch(batchId: string) {
   return invoke<WorkflowRunState>("revert_edit_batch", { batchId });
 }

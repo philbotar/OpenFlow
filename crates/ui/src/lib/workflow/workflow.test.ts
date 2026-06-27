@@ -20,6 +20,8 @@ import {
   pendingApprovalForNode,
   nodeChangedFiles,
   nodeEditBatches,
+  runChangedFilePaths,
+  latestChangesByPath,
   chatNavigationForNode,
   normalizeRunState,
   nodeRunAppearanceOrder,
@@ -431,6 +433,22 @@ describe("workflow helpers", () => {
     expect(nodeChangedFiles(state, null)).toEqual([]);
     expect(nodeEditBatches(state, "node-1").map((batch) => batch.batchId)).toEqual(["batch-1"]);
     expect(nodeEditBatches(state, "node-2").map((batch) => batch.batchId)).toEqual(["batch-2"]);
+  });
+
+  test("runChangedFilePaths dedupes run-wide changed files", () => {
+    const state: WorkflowRunState = {
+      ...runState,
+      changedFiles: [
+        { path: "a.ts", op: "update", timestampMs: 1 },
+        { path: "a.ts", op: "update", timestampMs: 2 },
+        { path: "old.ts", op: "rename", renameTo: "new.ts", timestampMs: 3 },
+      ],
+    };
+    expect(runChangedFilePaths(state)).toEqual(["a.ts", "new.ts"]);
+    expect(latestChangesByPath(state.changedFiles).map((record) => record.path)).toEqual([
+      "a.ts",
+      "old.ts",
+    ]);
   });
 });
 

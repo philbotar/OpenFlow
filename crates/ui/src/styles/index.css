@@ -6173,3 +6173,137 @@ label {
     justify-content: flex-start;
   }
 }
+
+/* Git panel */
+.git-body {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.git-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  color: var(--text-muted, #888);
+  font-size: 13px;
+}
+
+.git-panel-subtitle {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted, #888);
+  opacity: 0.72;
+}
+
+/* Diff view */
+.diff-view {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px 0px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.diff-file {
+  border: 1px solid var(--border, rgba(127, 127, 127, 0.2));
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.diff-file-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--surface, rgba(127, 127, 127, 0.08));
+}
+
+.diff-file-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.diff-chevron {
+  flex: 0 0 auto;
+  transition: transform 0.15s ease;
+}
+
+.diff-chevron.collapsed {
+  transform: rotate(-90deg);
+}
+
+.diff-file-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-file-stat {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.diff-add-count {
+  color: #3fb950;
+}
+
+.diff-del-count {
+  color: #f85149;
+}
+
+.diff-file-body {
+  overflow-x: auto;
+}
+
+.diff-context-band {
+  padding: 4px 12px;
+  background: var(--surface, rgba(83, 155, 245, 0.08));
+  color: var(--text-muted, #888);
+  font-size: 11px;
+}
+
+.diff-line {
+  display: flex;
+  white-space: pre;
+}
+
+.diff-line.is-add {
+  background: rgba(63, 185, 80, 0.15);
+}
+
+.diff-line.is-del {
+  background: rgba(248, 81, 73, 0.15);
+}
+
+.diff-ln {
+  flex: 0 0 auto;
+  width: 44px;
+  padding: 0 8px;
+  text-align: right;
+  color: var(--text-muted, #888);
+  user-select: none;
+}
+
+.diff-code {
+  flex: 1 1 auto;
+  padding-left: 8px;
+}
+
+.diff-binary {
+  padding: 8px 12px;
+  color: var(--text-muted, #888);
+}

@@ -2,6 +2,7 @@ import { Show } from "solid-js";
 import { useAppContext } from "../context/AppContext";
 import { NodePickerModal } from "@/components";
 import { InspectorPanel } from "../panels/InspectorPanel";
+import { GitPanel } from "../panels/GitPanel";
 import { WorkflowSettingsPanel } from "../panels/WorkflowSettingsPanel";
 import { DockPanel } from "../panels/DockPanel";
 import WorkflowCanvasHost from "../canvas/WorkflowCanvasHost";
@@ -12,9 +13,11 @@ export function EditorScreen() {
   const showInspectorPanel = () =>
     ctx.inspectorOpen() &&
     !ctx.workflowSettingsOpen() &&
+    !ctx.gitPanelOpen() &&
     Boolean(ctx.selectedNodeId());
   const showRightPanel = () =>
-    !ctx.rightPanelHidden() && (ctx.workflowSettingsOpen() || showInspectorPanel());
+    !ctx.rightPanelHidden() &&
+    (ctx.workflowSettingsOpen() || ctx.gitPanelOpen() || showInspectorPanel());
   const chatFocusActive = () => ctx.chatFocusMode() && ctx.dockOpen();
 
   return (
@@ -62,6 +65,9 @@ export function EditorScreen() {
       </Show>
       <Show when={showInspectorPanel() && !ctx.rightPanelHidden()}>
         <InspectorPanel />
+      </Show>
+      <Show when={ctx.gitPanelOpen() && !ctx.rightPanelHidden()}>
+        <GitPanel />
       </Show>
     </div>
   );

@@ -97,6 +97,20 @@ export function AppHeader() {
               </button>
             </Show>
             <div class="topbar-utility-group">
+              <Show when={ctx.activeProject() && ctx.gitRepoAvailable()}>
+                <button
+                  type="button"
+                  class="topbar-icon-button"
+                  classList={{ "topbar-icon-button-active": ctx.gitPanelOpen() }}
+                  onClick={() => ctx.handleToggleGitPanel()}
+                  title="Git"
+                  aria-label="Git"
+                  aria-pressed={ctx.gitPanelOpen()}
+                  data-tauri-drag-region="false"
+                >
+                  <SidebarIcon name="git-branch" />
+                </button>
+              </Show>
               <button
                 type="button"
                 class="topbar-icon-button"

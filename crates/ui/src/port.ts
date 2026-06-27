@@ -116,6 +116,9 @@ export interface UiDesktopOutboundPort {
 		toolArguments: unknown,
 	) => Promise<FileEditPreview>;
 	gitDiffFile: (path: string) => Promise<string>;
+	gitDiffRepo: (cwd: string) => Promise<string>;
+	gitIsRepo: (cwd: string) => Promise<boolean>;
+	gitCurrentBranch: (cwd: string) => Promise<string>;
 	revertEditBatch: (batchId: string) => Promise<WorkflowRunState>;
 	submitUserInput: (nodeId: string, text: string) => Promise<WorkflowRunState>;
 	submitToolApproval: (
@@ -191,6 +194,9 @@ export function createUiDesktopOutboundAdapter(): UiDesktopOutboundPort {
 		retryNode: desktopApi.retryNode,
 		previewFileEdit: desktopApi.previewFileEdit,
 		gitDiffFile: desktopApi.gitDiffFile,
+		gitDiffRepo: desktopApi.gitDiffRepo,
+		gitIsRepo: desktopApi.gitIsRepo,
+		gitCurrentBranch: desktopApi.gitCurrentBranch,
 		revertEditBatch: desktopApi.revertEditBatch,
 		submitUserInput: desktopApi.submitUserInput,
 		submitToolApproval: desktopApi.submitToolApproval,
