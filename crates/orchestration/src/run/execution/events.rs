@@ -426,7 +426,7 @@ pub fn apply_event_to_run_state(
             state.last_error = Some(error.clone());
             state
                 .chat_logs
-                .entry(node_id)
+                .entry(node_id.clone())
                 .or_default()
                 .push(ChatMessage::text(
                     ChatRole::System,
@@ -623,7 +623,11 @@ pub fn apply_event_to_run_state(
                 },
             );
         }
-        ExecutionEvent::AiInvokeFailed { .. } => {}
+        ExecutionEvent::AiInvokeFailed {
+            node_id: _,
+            label: _,
+            error: _,
+        } => {}
     }
 }
 
