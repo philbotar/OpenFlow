@@ -42,7 +42,7 @@ tokio-util = { version = "0.7.18", features = ["rt"] }
 uuid = { version = "1.23.1", features = ["v4", "serde"] }
 wiremock = "0.6.5"
 rmcp = { version = "1.7", features = ["client", "transport-child-process"] }
-aws-config = { version = "1.8", features = ["behavior-version-latest"] }
+aws-config = { version = "1.8", features = ["behavior-version-latest", "credentials-login"] }
 aws-sdk-bedrock = "1.146"
 aws-sdk-bedrockruntime = "1.116"
 aws-smithy-types = "1.3"

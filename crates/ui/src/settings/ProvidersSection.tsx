@@ -1,7 +1,9 @@
 import { createMemo, createSignal, For, Show } from "solid-js";
+import { toast } from "solid-sonner";
 import { refreshBedrockModels } from "../api";
 import { TextSelect } from "../components/TextSelect";
 import { useAppContext } from "../context/AppContext";
+import { normalizeError } from "../lib/utils";
 import {
   activeProfile,
   defaultReasoningBudgetTokens,
@@ -50,6 +52,8 @@ export function ProvidersSection() {
           profile.default_model = models[0] ?? null;
         }
       });
+    } catch (error) {
+      toast.error(normalizeError(error));
     } finally {
       setRefreshingModels(false);
     }
