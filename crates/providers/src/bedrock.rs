@@ -395,9 +395,7 @@ fn parse_converse_message(
     {
         let internal_names: Vec<&str> = tool_calls
             .iter()
-            .filter(|call| {
-                call.name == SUBMIT_OUTPUT_TOOL || call.name == REQUEST_INPUT_TOOL
-            })
+            .filter(|call| call.name == SUBMIT_OUTPUT_TOOL || call.name == REQUEST_INPUT_TOOL)
             .map(|call| call.name.as_str())
             .collect();
         agent_debug_log(

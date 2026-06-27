@@ -426,8 +426,10 @@ fn build_engine(
             engine
         })
         .map_err(|error| error.to_string()),
-        None => InteractiveEngine::new_with_run_context(workflow, entrypoint, project_repository_root)
-            .map_err(|error| error.to_string()),
+        None => {
+            InteractiveEngine::new_with_run_context(workflow, entrypoint, project_repository_root)
+                .map_err(|error| error.to_string())
+        }
     }
 }
 
