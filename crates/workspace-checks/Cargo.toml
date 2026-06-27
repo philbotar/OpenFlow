@@ -5,6 +5,9 @@ edition.workspace = true
 license.workspace = true
 publish = false
 
+[package.metadata.cargo-machete]
+ignored = ["serde_json"]
+
 [dependencies]
 serde_json.workspace = true
 

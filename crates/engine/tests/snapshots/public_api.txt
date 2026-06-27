@@ -452,6 +452,9 @@ impl<T> serde_core::de::DeserializeOwned for engine::execution::artifacts::RunEv
 pub struct engine::execution::artifacts::RunReport
 pub engine::execution::artifacts::RunReport::events: alloc::vec::Vec<engine::execution::artifacts::RunEvent>
 pub engine::execution::artifacts::RunReport::outputs: alloc::vec::Vec<engine::execution::artifacts::NodeRunOutput>
+pub engine::execution::artifacts::RunReport::read_calls: u32
+pub engine::execution::artifacts::RunReport::redundant_reads: u32
+pub engine::execution::artifacts::RunReport::tokens_in: u32
 pub engine::execution::artifacts::RunReport::workflow_id: engine::graph::workflow::WorkflowId
 impl core::clone::Clone for engine::execution::artifacts::RunReport
 pub fn engine::execution::artifacts::RunReport::clone(&self) -> engine::execution::artifacts::RunReport
@@ -818,10 +821,13 @@ pub fn engine::execution::interactive_engine::InteractiveEngine::mark_node_inter
 pub fn engine::execution::interactive_engine::InteractiveEngine::model_attempt_for_node(&self, &engine::graph::workflow::NodeId) -> u8
 pub fn engine::execution::interactive_engine::InteractiveEngine::new(engine::graph::workflow::Workflow, core::option::Option<alloc::string::String>) -> core::result::Result<Self, engine::graph::validation::WorkflowValidationError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::node_output(&self, &engine::graph::workflow::NodeId) -> core::option::Option<serde_json::value::Value>
+pub fn engine::execution::interactive_engine::InteractiveEngine::note_read_call(&mut self, &engine::graph::workflow::NodeId, &str)
+pub const fn engine::execution::interactive_engine::InteractiveEngine::note_usage(&mut self, &engine::ports::outbound::UsageReport)
 pub fn engine::execution::interactive_engine::InteractiveEngine::on_human_input(&mut self, &engine::graph::workflow::NodeId, &str) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::pending_tool_batch_node(&self, &str) -> core::option::Option<engine::graph::workflow::NodeId>
 pub fn engine::execution::interactive_engine::InteractiveEngine::poll(&mut self) -> engine::execution::interactive_engine::EnginePollResult
 pub fn engine::execution::interactive_engine::InteractiveEngine::record_file_changes(&mut self, &engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>)
+pub fn engine::execution::interactive_engine::InteractiveEngine::record_reads(&mut self, &engine::graph::workflow::NodeId, alloc::vec::Vec<engine::ReadRecord>)
 pub fn engine::execution::interactive_engine::InteractiveEngine::retry_node(&mut self, &engine::graph::workflow::NodeId) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::revert_file_changes_for_batch(&mut self, &str, &engine::graph::workflow::NodeId)
 pub async fn engine::execution::interactive_engine::InteractiveEngine::run<A: engine::ports::outbound::AiPort, T: engine::ports::outbound::ToolPort>(&mut self, &A, &T, &tokio_util::sync::cancellation_token::CancellationToken) -> engine::execution::interactive_engine::EngineRunResult
@@ -874,6 +880,7 @@ pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::outputs:
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::pending_retry_delay_ms: core::option::Option<u64>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::pending_tool_batches: alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::execution::interactive_engine::checkpoint::CheckpointPendingToolBatch>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::queued_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
+pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::reads_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::ReadRecord>>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::request_input_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::started_invocations_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
@@ -930,6 +937,7 @@ pub engine::execution::node_invocation::NodeInvocationContext::available_tools: 
 pub engine::execution::node_invocation::NodeInvocationContext::changed_files_by_node: &'a alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>>
 pub engine::execution::node_invocation::NodeInvocationContext::entrypoint_text: core::option::Option<&'a str>
 pub engine::execution::node_invocation::NodeInvocationContext::outputs: &'a alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, serde_json::value::Value>
+pub engine::execution::node_invocation::NodeInvocationContext::reads_by_node: &'a alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::ReadRecord>>
 pub engine::execution::node_invocation::NodeInvocationContext::transcript: &'a [engine::conversation::AgentTranscriptItem]
 pub engine::execution::node_invocation::NodeInvocationContext::upstream_map: &'a std::collections::hash::map::HashMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::graph::workflow::NodeId>>
 pub engine::execution::node_invocation::NodeInvocationContext::workflow: &'a engine::graph::workflow::Workflow
@@ -958,11 +966,12 @@ impl<T> core::convert::From<T> for engine::execution::node_invocation::NodeInvoc
 pub fn engine::execution::node_invocation::NodeInvocationContext<'a>::from(T) -> T
 pub const engine::execution::node_invocation::NODE_RUNTIME_PREAMBLE: &str
 pub fn engine::execution::node_invocation::build_agent_request(&engine::execution::node_invocation::NodeInvocationContext<'_>, &engine::graph::workflow::Node, bool) -> core::result::Result<engine::ports::outbound::AgentRequest, engine::execution::artifacts::RunError>
-pub fn engine::execution::node_invocation::build_node_input<S: core::hash::BuildHasher>(&str, &std::collections::hash::map::HashMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::graph::workflow::NodeId>, S>, &alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, serde_json::value::Value>, core::option::Option<&str>, &alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>>) -> serde_json::value::Value
+pub fn engine::execution::node_invocation::build_node_input<S: core::hash::BuildHasher>(&str, &std::collections::hash::map::HashMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::graph::workflow::NodeId>, S>, &alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, serde_json::value::Value>, core::option::Option<&str>, &alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>>, &alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::ReadRecord>>, bool) -> serde_json::value::Value
 pub fn engine::execution::node_invocation::build_system_messages(&engine::graph::workflow::Workflow, &engine::graph::workflow::Node) -> alloc::vec::Vec<alloc::string::String>
 pub fn engine::execution::node_invocation::build_upstream_map(&engine::graph::workflow::Workflow) -> std::collections::hash::map::HashMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::graph::workflow::NodeId>>
 pub fn engine::execution::node_invocation::merge_shared_context(&engine::graph::workflow::Workflow, &str) -> alloc::string::String
 pub fn engine::execution::node_invocation::upstream_changed_files<S: core::hash::BuildHasher>(&str, &std::collections::hash::map::HashMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::graph::workflow::NodeId>, S>, &alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>>) -> alloc::vec::Vec<engine::FileChangeRecord>
+pub fn engine::execution::node_invocation::upstream_reads<S: core::hash::BuildHasher>(&str, &std::collections::hash::map::HashMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::graph::workflow::NodeId>, S>, &alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::ReadRecord>>) -> alloc::vec::Vec<engine::ReadRecord>
 pub mod engine::execution::subagent_runtime
 pub enum engine::execution::subagent_runtime::SubagentInvokeStep
 pub engine::execution::subagent_runtime::SubagentInvokeStep::Done
@@ -2128,10 +2137,13 @@ pub fn engine::execution::interactive_engine::InteractiveEngine::mark_node_inter
 pub fn engine::execution::interactive_engine::InteractiveEngine::model_attempt_for_node(&self, &engine::graph::workflow::NodeId) -> u8
 pub fn engine::execution::interactive_engine::InteractiveEngine::new(engine::graph::workflow::Workflow, core::option::Option<alloc::string::String>) -> core::result::Result<Self, engine::graph::validation::WorkflowValidationError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::node_output(&self, &engine::graph::workflow::NodeId) -> core::option::Option<serde_json::value::Value>
+pub fn engine::execution::interactive_engine::InteractiveEngine::note_read_call(&mut self, &engine::graph::workflow::NodeId, &str)
+pub const fn engine::execution::interactive_engine::InteractiveEngine::note_usage(&mut self, &engine::ports::outbound::UsageReport)
 pub fn engine::execution::interactive_engine::InteractiveEngine::on_human_input(&mut self, &engine::graph::workflow::NodeId, &str) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::pending_tool_batch_node(&self, &str) -> core::option::Option<engine::graph::workflow::NodeId>
 pub fn engine::execution::interactive_engine::InteractiveEngine::poll(&mut self) -> engine::execution::interactive_engine::EnginePollResult
 pub fn engine::execution::interactive_engine::InteractiveEngine::record_file_changes(&mut self, &engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>)
+pub fn engine::execution::interactive_engine::InteractiveEngine::record_reads(&mut self, &engine::graph::workflow::NodeId, alloc::vec::Vec<engine::ReadRecord>)
 pub fn engine::execution::interactive_engine::InteractiveEngine::retry_node(&mut self, &engine::graph::workflow::NodeId) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::revert_file_changes_for_batch(&mut self, &str, &engine::graph::workflow::NodeId)
 pub async fn engine::execution::interactive_engine::InteractiveEngine::run<A: engine::ports::outbound::AiPort, T: engine::ports::outbound::ToolPort>(&mut self, &A, &T, &tokio_util::sync::cancellation_token::CancellationToken) -> engine::execution::interactive_engine::EngineRunResult
@@ -2184,6 +2196,7 @@ pub engine::execution::InteractiveEngineCheckpoint::outputs: alloc::collections:
 pub engine::execution::InteractiveEngineCheckpoint::pending_retry_delay_ms: core::option::Option<u64>
 pub engine::execution::InteractiveEngineCheckpoint::pending_tool_batches: alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::execution::interactive_engine::checkpoint::CheckpointPendingToolBatch>
 pub engine::execution::InteractiveEngineCheckpoint::queued_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
+pub engine::execution::InteractiveEngineCheckpoint::reads_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::ReadRecord>>
 pub engine::execution::InteractiveEngineCheckpoint::request_input_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::execution::InteractiveEngineCheckpoint::retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::execution::InteractiveEngineCheckpoint::started_invocations_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
@@ -2237,6 +2250,7 @@ pub engine::execution::NodeInvocationContext::available_tools: &'a [engine::Tool
 pub engine::execution::NodeInvocationContext::changed_files_by_node: &'a alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>>
 pub engine::execution::NodeInvocationContext::entrypoint_text: core::option::Option<&'a str>
 pub engine::execution::NodeInvocationContext::outputs: &'a alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, serde_json::value::Value>
+pub engine::execution::NodeInvocationContext::reads_by_node: &'a alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::ReadRecord>>
 pub engine::execution::NodeInvocationContext::transcript: &'a [engine::conversation::AgentTranscriptItem]
 pub engine::execution::NodeInvocationContext::upstream_map: &'a std::collections::hash::map::HashMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::graph::workflow::NodeId>>
 pub engine::execution::NodeInvocationContext::workflow: &'a engine::graph::workflow::Workflow
@@ -2358,6 +2372,9 @@ impl<T> serde_core::de::DeserializeOwned for engine::execution::artifacts::RunEv
 pub struct engine::execution::RunReport
 pub engine::execution::RunReport::events: alloc::vec::Vec<engine::execution::artifacts::RunEvent>
 pub engine::execution::RunReport::outputs: alloc::vec::Vec<engine::execution::artifacts::NodeRunOutput>
+pub engine::execution::RunReport::read_calls: u32
+pub engine::execution::RunReport::redundant_reads: u32
+pub engine::execution::RunReport::tokens_in: u32
 pub engine::execution::RunReport::workflow_id: engine::graph::workflow::WorkflowId
 impl core::clone::Clone for engine::execution::artifacts::RunReport
 pub fn engine::execution::artifacts::RunReport::clone(&self) -> engine::execution::artifacts::RunReport
@@ -2475,7 +2492,7 @@ pub fn engine::execution::advance_subagent_invoke(engine::execution::subagent_ru
 pub fn engine::execution::augment_call_subagent_tool_description(&mut [engine::ToolDefinition], &engine::graph::workflow::Node, &alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::SubagentSummary>, &alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::graph::callable_agent::CallableAgent>)
 pub fn engine::execution::build_adhoc_subagent_summaries(&engine::graph::workflow::NodeId, &[engine::SubagentDeclaration], usize) -> alloc::vec::Vec<engine::SubagentSummary>
 pub fn engine::execution::build_agent_request(&engine::execution::node_invocation::NodeInvocationContext<'_>, &engine::graph::workflow::Node, bool) -> core::result::Result<engine::ports::outbound::AgentRequest, engine::execution::artifacts::RunError>
-pub fn engine::execution::build_node_input<S: core::hash::BuildHasher>(&str, &std::collections::hash::map::HashMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::graph::workflow::NodeId>, S>, &alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, serde_json::value::Value>, core::option::Option<&str>, &alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>>) -> serde_json::value::Value
+pub fn engine::execution::build_node_input<S: core::hash::BuildHasher>(&str, &std::collections::hash::map::HashMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::graph::workflow::NodeId>, S>, &alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, serde_json::value::Value>, core::option::Option<&str>, &alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>>, &alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::ReadRecord>>, bool) -> serde_json::value::Value
 pub fn engine::execution::build_system_messages(&engine::graph::workflow::Workflow, &engine::graph::workflow::Node) -> alloc::vec::Vec<alloc::string::String>
 pub fn engine::execution::build_upstream_map(&engine::graph::workflow::Workflow) -> std::collections::hash::map::HashMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::graph::workflow::NodeId>>
 pub fn engine::execution::collect_checkpoint_node_ids(&engine::InteractiveEngineCheckpoint) -> alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
@@ -2487,6 +2504,7 @@ pub fn engine::execution::start_subagent_invoke(&engine::graph::workflow::Workfl
 pub fn engine::execution::subagent_runtime_builtin_denied(&engine::ToolCall) -> engine::ToolResult
 pub fn engine::execution::subagents_for_node(&engine::graph::workflow::Node, &alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::SubagentSummary>, &alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::graph::callable_agent::CallableAgent>) -> alloc::vec::Vec<engine::SubagentSummary>
 pub fn engine::execution::upstream_changed_files<S: core::hash::BuildHasher>(&str, &std::collections::hash::map::HashMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::graph::workflow::NodeId>, S>, &alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>>) -> alloc::vec::Vec<engine::FileChangeRecord>
+pub fn engine::execution::upstream_reads<S: core::hash::BuildHasher>(&str, &std::collections::hash::map::HashMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::graph::workflow::NodeId>, S>, &alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::ReadRecord>>) -> alloc::vec::Vec<engine::ReadRecord>
 pub fn engine::execution::validate_checkpoint_against_workflow(&engine::graph::workflow::Workflow, &engine::InteractiveEngineCheckpoint) -> core::result::Result<(), engine::CheckpointError>
 pub mod engine::graph
 pub mod engine::graph::callable_agent
@@ -3204,6 +3222,7 @@ impl<T> core::convert::From<T> for engine::graph::workflow::WorkflowSchedule
 pub fn engine::graph::workflow::WorkflowSchedule::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::graph::workflow::WorkflowSchedule where T: for<'de> serde_core::de::Deserialize<'de>
 pub struct engine::graph::workflow::WorkflowSettings
+pub engine::graph::workflow::WorkflowSettings::forward_upstream_reads: bool
 pub engine::graph::workflow::WorkflowSettings::provider_id: core::option::Option<alloc::string::String>
 pub engine::graph::workflow::WorkflowSettings::reasoning_budget_tokens: core::option::Option<u32>
 pub engine::graph::workflow::WorkflowSettings::reasoning_effort: core::option::Option<alloc::string::String>
@@ -3963,6 +3982,7 @@ impl<T> core::convert::From<T> for engine::graph::workflow::WorkflowSchedule
 pub fn engine::graph::workflow::WorkflowSchedule::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::graph::workflow::WorkflowSchedule where T: for<'de> serde_core::de::Deserialize<'de>
 pub struct engine::graph::WorkflowSettings
+pub engine::graph::WorkflowSettings::forward_upstream_reads: bool
 pub engine::graph::WorkflowSettings::provider_id: core::option::Option<alloc::string::String>
 pub engine::graph::WorkflowSettings::reasoning_budget_tokens: core::option::Option<u32>
 pub engine::graph::WorkflowSettings::reasoning_effort: core::option::Option<alloc::string::String>
@@ -5696,6 +5716,51 @@ pub unsafe fn engine::PendingToolApproval::clone_to_uninit(&self, *mut u8)
 impl<T> core::convert::From<T> for engine::PendingToolApproval
 pub fn engine::PendingToolApproval::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::PendingToolApproval where T: for<'de> serde_core::de::Deserialize<'de>
+pub struct engine::tools::ReadRecord
+pub engine::tools::ReadRecord::outline: core::option::Option<alloc::string::String>
+pub engine::tools::ReadRecord::path: alloc::string::String
+impl core::clone::Clone for engine::ReadRecord
+pub fn engine::ReadRecord::clone(&self) -> engine::ReadRecord
+impl core::cmp::Eq for engine::ReadRecord
+impl core::cmp::PartialEq for engine::ReadRecord
+pub fn engine::ReadRecord::eq(&self, &engine::ReadRecord) -> bool
+impl core::fmt::Debug for engine::ReadRecord
+pub fn engine::ReadRecord::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::ReadRecord
+impl serde_core::ser::Serialize for engine::ReadRecord
+pub fn engine::ReadRecord::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for engine::ReadRecord
+pub fn engine::ReadRecord::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for engine::ReadRecord
+impl core::marker::Send for engine::ReadRecord
+impl core::marker::Sync for engine::ReadRecord
+impl core::marker::Unpin for engine::ReadRecord
+impl core::marker::UnsafeUnpin for engine::ReadRecord
+impl core::panic::unwind_safe::RefUnwindSafe for engine::ReadRecord
+impl core::panic::unwind_safe::UnwindSafe for engine::ReadRecord
+impl<T, U> core::convert::Into<U> for engine::ReadRecord where U: core::convert::From<T>
+pub fn engine::ReadRecord::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::ReadRecord where U: core::convert::Into<T>
+pub type engine::ReadRecord::Error = core::convert::Infallible
+pub fn engine::ReadRecord::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::ReadRecord where U: core::convert::TryFrom<T>
+pub type engine::ReadRecord::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::ReadRecord::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::ReadRecord where T: core::clone::Clone
+pub type engine::ReadRecord::Owned = T
+pub fn engine::ReadRecord::clone_into(&self, &mut T)
+pub fn engine::ReadRecord::to_owned(&self) -> T
+impl<T> core::any::Any for engine::ReadRecord where T: 'static + ?core::marker::Sized
+pub fn engine::ReadRecord::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::ReadRecord where T: ?core::marker::Sized
+pub fn engine::ReadRecord::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::ReadRecord where T: ?core::marker::Sized
+pub fn engine::ReadRecord::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::ReadRecord where T: core::clone::Clone
+pub unsafe fn engine::ReadRecord::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::ReadRecord
+pub fn engine::ReadRecord::from(T) -> T
+impl<T> serde_core::de::DeserializeOwned for engine::ReadRecord where T: for<'de> serde_core::de::Deserialize<'de>
 pub struct engine::tools::SubagentDeclaration
 pub engine::tools::SubagentDeclaration::name: alloc::string::String
 pub engine::tools::SubagentDeclaration::purpose: alloc::string::String
@@ -6028,6 +6093,7 @@ pub fn engine::ToolTruncation::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::ToolTruncation where T: for<'de> serde_core::de::Deserialize<'de>
 pub fn engine::tools::effective_change_path(&engine::FileChangeRecord) -> &str
 pub fn engine::tools::merge_file_change_record(&mut alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::FileChangeRecord>, engine::FileChangeRecord)
+pub fn engine::tools::merge_read_record(&mut alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::ReadRecord>, engine::ReadRecord)
 pub const fn engine::tools::requires_approval(engine::ApprovalMode, engine::ToolTier) -> engine::ToolDecision
 pub fn engine::tools::summarize_diff(&str, usize) -> alloc::string::String
 pub fn engine::tools::tool_decision_for_call(&engine::NodeToolConfig, &engine::ToolCall) -> engine::ToolDecision
@@ -8151,10 +8217,13 @@ pub fn engine::execution::interactive_engine::InteractiveEngine::mark_node_inter
 pub fn engine::execution::interactive_engine::InteractiveEngine::model_attempt_for_node(&self, &engine::graph::workflow::NodeId) -> u8
 pub fn engine::execution::interactive_engine::InteractiveEngine::new(engine::graph::workflow::Workflow, core::option::Option<alloc::string::String>) -> core::result::Result<Self, engine::graph::validation::WorkflowValidationError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::node_output(&self, &engine::graph::workflow::NodeId) -> core::option::Option<serde_json::value::Value>
+pub fn engine::execution::interactive_engine::InteractiveEngine::note_read_call(&mut self, &engine::graph::workflow::NodeId, &str)
+pub const fn engine::execution::interactive_engine::InteractiveEngine::note_usage(&mut self, &engine::ports::outbound::UsageReport)
 pub fn engine::execution::interactive_engine::InteractiveEngine::on_human_input(&mut self, &engine::graph::workflow::NodeId, &str) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::pending_tool_batch_node(&self, &str) -> core::option::Option<engine::graph::workflow::NodeId>
 pub fn engine::execution::interactive_engine::InteractiveEngine::poll(&mut self) -> engine::execution::interactive_engine::EnginePollResult
 pub fn engine::execution::interactive_engine::InteractiveEngine::record_file_changes(&mut self, &engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>)
+pub fn engine::execution::interactive_engine::InteractiveEngine::record_reads(&mut self, &engine::graph::workflow::NodeId, alloc::vec::Vec<engine::ReadRecord>)
 pub fn engine::execution::interactive_engine::InteractiveEngine::retry_node(&mut self, &engine::graph::workflow::NodeId) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::revert_file_changes_for_batch(&mut self, &str, &engine::graph::workflow::NodeId)
 pub async fn engine::execution::interactive_engine::InteractiveEngine::run<A: engine::ports::outbound::AiPort, T: engine::ports::outbound::ToolPort>(&mut self, &A, &T, &tokio_util::sync::cancellation_token::CancellationToken) -> engine::execution::interactive_engine::EngineRunResult
@@ -8207,6 +8276,7 @@ pub engine::InteractiveEngineCheckpoint::outputs: alloc::collections::btree::map
 pub engine::InteractiveEngineCheckpoint::pending_retry_delay_ms: core::option::Option<u64>
 pub engine::InteractiveEngineCheckpoint::pending_tool_batches: alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::execution::interactive_engine::checkpoint::CheckpointPendingToolBatch>
 pub engine::InteractiveEngineCheckpoint::queued_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
+pub engine::InteractiveEngineCheckpoint::reads_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::ReadRecord>>
 pub engine::InteractiveEngineCheckpoint::request_input_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::InteractiveEngineCheckpoint::retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::InteractiveEngineCheckpoint::started_invocations_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
@@ -8379,6 +8449,7 @@ pub engine::NodeInvocationContext::available_tools: &'a [engine::ToolDefinition]
 pub engine::NodeInvocationContext::changed_files_by_node: &'a alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>>
 pub engine::NodeInvocationContext::entrypoint_text: core::option::Option<&'a str>
 pub engine::NodeInvocationContext::outputs: &'a alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, serde_json::value::Value>
+pub engine::NodeInvocationContext::reads_by_node: &'a alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::ReadRecord>>
 pub engine::NodeInvocationContext::transcript: &'a [engine::conversation::AgentTranscriptItem]
 pub engine::NodeInvocationContext::upstream_map: &'a std::collections::hash::map::HashMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::graph::workflow::NodeId>>
 pub engine::NodeInvocationContext::workflow: &'a engine::graph::workflow::Workflow
@@ -8591,6 +8662,51 @@ pub unsafe fn engine::PendingToolApproval::clone_to_uninit(&self, *mut u8)
 impl<T> core::convert::From<T> for engine::PendingToolApproval
 pub fn engine::PendingToolApproval::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::PendingToolApproval where T: for<'de> serde_core::de::Deserialize<'de>
+pub struct engine::ReadRecord
+pub engine::ReadRecord::outline: core::option::Option<alloc::string::String>
+pub engine::ReadRecord::path: alloc::string::String
+impl core::clone::Clone for engine::ReadRecord
+pub fn engine::ReadRecord::clone(&self) -> engine::ReadRecord
+impl core::cmp::Eq for engine::ReadRecord
+impl core::cmp::PartialEq for engine::ReadRecord
+pub fn engine::ReadRecord::eq(&self, &engine::ReadRecord) -> bool
+impl core::fmt::Debug for engine::ReadRecord
+pub fn engine::ReadRecord::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::ReadRecord
+impl serde_core::ser::Serialize for engine::ReadRecord
+pub fn engine::ReadRecord::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for engine::ReadRecord
+pub fn engine::ReadRecord::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for engine::ReadRecord
+impl core::marker::Send for engine::ReadRecord
+impl core::marker::Sync for engine::ReadRecord
+impl core::marker::Unpin for engine::ReadRecord
+impl core::marker::UnsafeUnpin for engine::ReadRecord
+impl core::panic::unwind_safe::RefUnwindSafe for engine::ReadRecord
+impl core::panic::unwind_safe::UnwindSafe for engine::ReadRecord
+impl<T, U> core::convert::Into<U> for engine::ReadRecord where U: core::convert::From<T>
+pub fn engine::ReadRecord::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::ReadRecord where U: core::convert::Into<T>
+pub type engine::ReadRecord::Error = core::convert::Infallible
+pub fn engine::ReadRecord::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::ReadRecord where U: core::convert::TryFrom<T>
+pub type engine::ReadRecord::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::ReadRecord::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::ReadRecord where T: core::clone::Clone
+pub type engine::ReadRecord::Owned = T
+pub fn engine::ReadRecord::clone_into(&self, &mut T)
+pub fn engine::ReadRecord::to_owned(&self) -> T
+impl<T> core::any::Any for engine::ReadRecord where T: 'static + ?core::marker::Sized
+pub fn engine::ReadRecord::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::ReadRecord where T: ?core::marker::Sized
+pub fn engine::ReadRecord::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::ReadRecord where T: ?core::marker::Sized
+pub fn engine::ReadRecord::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::ReadRecord where T: core::clone::Clone
+pub unsafe fn engine::ReadRecord::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::ReadRecord
+pub fn engine::ReadRecord::from(T) -> T
+impl<T> serde_core::de::DeserializeOwned for engine::ReadRecord where T: for<'de> serde_core::de::Deserialize<'de>
 pub struct engine::RetryPolicy
 pub engine::RetryPolicy::backoff_ms: u64
 pub engine::RetryPolicy::max_attempts: u8
@@ -8690,6 +8806,9 @@ impl<T> serde_core::de::DeserializeOwned for engine::execution::artifacts::RunEv
 pub struct engine::RunReport
 pub engine::RunReport::events: alloc::vec::Vec<engine::execution::artifacts::RunEvent>
 pub engine::RunReport::outputs: alloc::vec::Vec<engine::execution::artifacts::NodeRunOutput>
+pub engine::RunReport::read_calls: u32
+pub engine::RunReport::redundant_reads: u32
+pub engine::RunReport::tokens_in: u32
 pub engine::RunReport::workflow_id: engine::graph::workflow::WorkflowId
 impl core::clone::Clone for engine::execution::artifacts::RunReport
 pub fn engine::execution::artifacts::RunReport::clone(&self) -> engine::execution::artifacts::RunReport
@@ -9432,6 +9551,7 @@ impl<T> core::convert::From<T> for engine::graph::workflow::WorkflowSchedule
 pub fn engine::graph::workflow::WorkflowSchedule::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::graph::workflow::WorkflowSchedule where T: for<'de> serde_core::de::Deserialize<'de>
 pub struct engine::WorkflowSettings
+pub engine::WorkflowSettings::forward_upstream_reads: bool
 pub engine::WorkflowSettings::provider_id: core::option::Option<alloc::string::String>
 pub engine::WorkflowSettings::reasoning_budget_tokens: core::option::Option<u32>
 pub engine::WorkflowSettings::reasoning_effort: core::option::Option<alloc::string::String>
@@ -9514,7 +9634,7 @@ pub fn alloc::boxed::Box<T>::execute_batch<'life0, 'life1, 'life2, 'life3, 'asyn
 pub fn engine::advance_subagent_invoke(engine::execution::subagent_runtime::SubagentInvokeSession, core::result::Result<engine::ports::outbound::AgentTurnOutcome, engine::ports::outbound::AgentError>, alloc::vec::Vec<engine::ToolResult>) -> engine::execution::subagent_runtime::SubagentInvokeStep
 pub fn engine::augment_call_subagent_tool_description(&mut [engine::ToolDefinition], &engine::graph::workflow::Node, &alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::SubagentSummary>, &alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::graph::callable_agent::CallableAgent>)
 pub fn engine::build_agent_request(&engine::execution::node_invocation::NodeInvocationContext<'_>, &engine::graph::workflow::Node, bool) -> core::result::Result<engine::ports::outbound::AgentRequest, engine::execution::artifacts::RunError>
-pub fn engine::build_node_input<S: core::hash::BuildHasher>(&str, &std::collections::hash::map::HashMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::graph::workflow::NodeId>, S>, &alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, serde_json::value::Value>, core::option::Option<&str>, &alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>>) -> serde_json::value::Value
+pub fn engine::build_node_input<S: core::hash::BuildHasher>(&str, &std::collections::hash::map::HashMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::graph::workflow::NodeId>, S>, &alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, serde_json::value::Value>, core::option::Option<&str>, &alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>>, &alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::ReadRecord>>, bool) -> serde_json::value::Value
 pub fn engine::build_predefined_subagent_summaries(&engine::graph::workflow::Node, &alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::graph::callable_agent::CallableAgent>) -> alloc::vec::Vec<engine::SubagentSummary>
 pub fn engine::build_system_messages(&engine::graph::workflow::Workflow, &engine::graph::workflow::Node) -> alloc::vec::Vec<alloc::string::String>
 pub fn engine::build_upstream_map(&engine::graph::workflow::Workflow) -> std::collections::hash::map::HashMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::graph::workflow::NodeId>>
@@ -9544,5 +9664,6 @@ pub fn engine::tool_decision_for_call(&engine::NodeToolConfig, &engine::ToolCall
 pub fn engine::tool_intent_from_arguments(&serde_json::value::Value) -> core::option::Option<alloc::string::String>
 pub fn engine::tool_tier_for_call(&engine::NodeToolConfig, &str) -> engine::ToolTier
 pub fn engine::upstream_changed_files<S: core::hash::BuildHasher>(&str, &std::collections::hash::map::HashMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::graph::workflow::NodeId>, S>, &alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>>) -> alloc::vec::Vec<engine::FileChangeRecord>
+pub fn engine::upstream_reads<S: core::hash::BuildHasher>(&str, &std::collections::hash::map::HashMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::graph::workflow::NodeId>, S>, &alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::ReadRecord>>) -> alloc::vec::Vec<engine::ReadRecord>
 pub fn engine::validate_checkpoint_against_workflow(&engine::graph::workflow::Workflow, &engine::InteractiveEngineCheckpoint) -> core::result::Result<(), engine::CheckpointError>
 pub fn engine::validate_workflow(&engine::graph::workflow::Workflow) -> core::result::Result<(), engine::graph::validation::WorkflowValidationError>

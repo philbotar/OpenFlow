@@ -41,6 +41,9 @@ const apiMocks = vi.hoisted(() => ({
   copyWorkflowToProject: vi.fn(),
   unassignWorkflowFromProject: vi.fn(),
   deleteWorkflow: vi.fn(),
+  gitIsRepo: vi.fn(),
+  gitDiffRepo: vi.fn(),
+  gitCurrentBranch: vi.fn(),
 }));
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
@@ -87,6 +90,9 @@ vi.mock("../api", async (importOriginal) => {
     resizeTerminal: apiMocks.resizeTerminal,
     stopTerminal: apiMocks.stopTerminal,
     listenToTerminalEvent: apiMocks.listenToTerminalEvent,
+    gitIsRepo: apiMocks.gitIsRepo,
+    gitDiffRepo: apiMocks.gitDiffRepo,
+    gitCurrentBranch: apiMocks.gitCurrentBranch,
   };
 });
 
@@ -325,6 +331,9 @@ function installDefaultApiMocks() {
   apiMocks.refreshSchedules.mockResolvedValue([]);
   apiMocks.listScheduleStatuses.mockResolvedValue([]);
   apiMocks.listenToScheduleStatuses.mockResolvedValue(() => {});
+  apiMocks.gitIsRepo.mockResolvedValue(false);
+  apiMocks.gitDiffRepo.mockResolvedValue("");
+  apiMocks.gitCurrentBranch.mockResolvedValue("main");
 }
 
 function makeProject(id: string, name: string, workflowIds: string[] = []): Project {

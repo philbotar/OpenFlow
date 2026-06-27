@@ -563,11 +563,11 @@ async fn git_diff_repo(cwd: String) -> Result<String, CommandError> {
 /// Tauri command: Return whether `cwd` is inside a git work tree.
 #[tauri::command]
 async fn git_is_repo(cwd: String) -> Result<bool, CommandError> {
-    Ok(tauri::async_runtime::spawn_blocking(move || {
+    tauri::async_runtime::spawn_blocking(move || {
         orchestration::git::is_repo(std::path::Path::new(&cwd))
     })
     .await
-    .map_err(|error| CommandError::Backend(BackendError::GitFailed(error.to_string())))?)
+    .map_err(|error| CommandError::Backend(BackendError::GitFailed(error.to_string())))
 }
 
 /// Tauri command: Return the current branch name for the repo at `cwd`.
