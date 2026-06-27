@@ -1,6 +1,6 @@
 [package]
 name = "desktop"
-version = "0.1.3"
+version = "0.1.4"
 edition.workspace = true
 description.workspace = true
 license.workspace = true
@@ -23,7 +23,7 @@ tauri-build.workspace = true
 [dependencies]
 keepawake = "0.6.0"
 log = "0.4"
-orchestration = { path = "../orchestration", version = "0.1.2" }
+orchestration = { path = "../orchestration", version = "0.1.3" }
 serde.workspace = true
 serde_json.workspace = true
 tauri.workspace = true

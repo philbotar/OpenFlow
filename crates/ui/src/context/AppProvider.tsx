@@ -1,6 +1,7 @@
 import {
   createEffect,
   createMemo,
+  createResource,
   createSignal,
   onCleanup,
   onMount,
@@ -222,6 +223,7 @@ export function AppProvider(props: ParentProps) {
   const projectsSectionExpanded = createMemo(() => !projectsSectionHidden());
   const [workflowSettingsOpen, setWorkflowSettingsOpen] = createSignal(false);
   const [inspectorOpen, setInspectorOpen] = createSignal(false);
+  const [gitPanelOpen, setGitPanelOpen] = createSignal(false);
   const [workflowAuthoringSessionId, setWorkflowAuthoringSessionId] = createSignal<
     string | null
   >(null);
@@ -327,6 +329,15 @@ export function AppProvider(props: ParentProps) {
     const workflowId = activeWorkflowId();
     if (!workflowId) return null;
     return executionCwdForWorkflow(projects(), workflowId, selectedProjectId());
+  });
+  const [gitRepoCheck] = createResource(executionCwdForActiveWorkflow, (cwd) =>
+    cwd ? desktop.gitIsRepo(cwd) : Promise.resolve(false),
+  );
+  const gitRepoAvailable = () => gitRepoCheck() === true;
+  createEffect(() => {
+    if (!activeProject() || !gitRepoAvailable()) {
+      setGitPanelOpen(false);
+    }
   });
   const selectedAgent = createMemo(
     () => agents().find((agent) => agent.id === selectedAgentId()) ?? null,
@@ -1167,6 +1178,7 @@ export function AppProvider(props: ParentProps) {
     setWorkflowSettingsOpen(opening);
     if (opening) {
       setInspectorOpen(false);
+      setGitPanelOpen(false);
       setRightPanelHidden(false);
       writeStoredRightPanelHidden(globalThis.localStorage, false);
     }
@@ -1176,6 +1188,7 @@ export function AppProvider(props: ParentProps) {
     const opening = !inspectorOpen();
     if (opening) {
       setWorkflowSettingsOpen(false);
+      setGitPanelOpen(false);
       const node = selectedNodeId() ?? activeWorkflow()?.nodes[0]?.id ?? null;
       if (!node) {
         return;
@@ -1187,6 +1200,17 @@ export function AppProvider(props: ParentProps) {
       return;
     }
     setInspectorOpen(false);
+  };
+
+  const handleToggleGitPanel = () => {
+    const opening = !gitPanelOpen();
+    setGitPanelOpen(opening);
+    if (opening) {
+      setInspectorOpen(false);
+      setWorkflowSettingsOpen(false);
+      setRightPanelHidden(false);
+      writeStoredRightPanelHidden(globalThis.localStorage, false);
+    }
   };
 
   const handleToggleRightPanel = () => {
@@ -1713,6 +1737,7 @@ export function AppProvider(props: ParentProps) {
     if (nodeId) {
       setInspectorOpen(true);
       setWorkflowSettingsOpen(false);
+      setGitPanelOpen(false);
       setDockOpen(true);
       setBottomTab("chat");
       setDockHeight((current) => clampDockHeight(current, "chat"));
@@ -2169,6 +2194,7 @@ export function AppProvider(props: ParentProps) {
     uiZoom,
     workflowSettingsOpen,
     inspectorOpen,
+    gitPanelOpen,
     selectedProjectId,
     editingWorkflowId,
     workflowNameDraft,
@@ -2223,6 +2249,7 @@ export function AppProvider(props: ParentProps) {
     // Memos
     activeWorkflow,
     activeProject,
+    gitRepoAvailable,
     independentWorkflows: independentWorkflowsMemo,
     executionCwdForActiveWorkflow,
     selectedAgent,
@@ -2334,6 +2361,7 @@ export function AppProvider(props: ParentProps) {
     handleZoomReset,
     handleToggleWorkflowSettings,
     handleToggleInspector,
+    handleToggleGitPanel,
     updateActiveWorkflowSettings,
     rightPanelHidden,
     handleToggleRightPanel,

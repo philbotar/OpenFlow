@@ -32,8 +32,10 @@ function makeMockContext(overrides: Partial<AppContextValue> = {}): AppContextVa
     stoppingRun: () => false,
     workflowSettingsOpen: () => false,
     inspectorOpen: () => false,
+    gitPanelOpen: () => false,
     handleToggleWorkflowSettings: vi.fn(),
     handleToggleInspector: vi.fn(),
+    handleToggleGitPanel: vi.fn(),
     persistAll: vi.fn().mockResolvedValue(true),
     handleRun: vi.fn().mockResolvedValue(undefined),
     handleContinueRun: vi.fn().mockResolvedValue(undefined),
@@ -87,6 +89,7 @@ function makeMockContext(overrides: Partial<AppContextValue> = {}): AppContextVa
     setScreen: () => {},
     navigateToScreen: () => {},
     activeProject: () => undefined,
+    gitRepoAvailable: () => false,
     independentWorkflows: () => [],
     executionCwdForActiveWorkflow: () => null,
     selectedAgent: () => null,
@@ -333,6 +336,47 @@ describe("AppHeader", () => {
       screen: () => "editor",
     });
     expect(container.querySelector("button[aria-label='Inspector']")).not.toBeNull();
+    dispose();
+  });
+
+  it("hides git toggle when no active project", () => {
+    const { container, dispose } = renderWithContext({
+      screen: () => "editor",
+      activeProject: () => undefined,
+    });
+    expect(container.querySelector("button[aria-label='Git']")).toBeNull();
+    dispose();
+  });
+
+  it("shows git toggle for project workflows with a git repo", () => {
+    const { container, dispose } = renderWithContext({
+      screen: () => "editor",
+      activeProject: () =>
+        ({
+          id: "p1",
+          name: "Demo",
+          path: "/tmp/demo",
+          workflow_ids: ["w1"],
+        }) as any,
+      gitRepoAvailable: () => true,
+    });
+    expect(container.querySelector("button[aria-label='Git']")).not.toBeNull();
+    dispose();
+  });
+
+  it("hides git toggle when project cwd is not a git repo", () => {
+    const { container, dispose } = renderWithContext({
+      screen: () => "editor",
+      activeProject: () =>
+        ({
+          id: "p1",
+          name: "Demo",
+          path: "/tmp/demo",
+          workflow_ids: ["w1"],
+        }) as any,
+      gitRepoAvailable: () => false,
+    });
+    expect(container.querySelector("button[aria-label='Git']")).toBeNull();
     dispose();
   });
 

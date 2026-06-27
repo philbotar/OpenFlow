@@ -549,6 +549,38 @@ async fn git_diff_file(
     Ok(backend.git_diff_file(path).await?)
 }
 
+/// Tauri command: Return `git diff` for the whole repo at `cwd`.
+#[tauri::command]
+async fn git_diff_repo(cwd: String) -> Result<String, CommandError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        orchestration::git::diff_repo(std::path::Path::new(&cwd))
+    })
+    .await
+    .map_err(|error| CommandError::Backend(BackendError::GitFailed(error.to_string())))?
+    .map_err(|error| CommandError::Backend(BackendError::GitFailed(error.to_string())))
+}
+
+/// Tauri command: Return whether `cwd` is inside a git work tree.
+#[tauri::command]
+async fn git_is_repo(cwd: String) -> Result<bool, CommandError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        orchestration::git::is_repo(std::path::Path::new(&cwd))
+    })
+    .await
+    .map_err(|error| CommandError::Backend(BackendError::GitFailed(error.to_string())))
+}
+
+/// Tauri command: Return the current branch name for the repo at `cwd`.
+#[tauri::command]
+async fn git_current_branch(cwd: String) -> Result<String, CommandError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        orchestration::git::current_branch(std::path::Path::new(&cwd))
+    })
+    .await
+    .map_err(|error| CommandError::Backend(BackendError::GitFailed(error.to_string())))?
+    .map_err(|error| CommandError::Backend(BackendError::GitFailed(error.to_string())))
+}
+
 /// Tauri command: Restore files from a recorded edit batch.
 #[tauri::command]
 async fn revert_edit_batch(
@@ -867,6 +899,9 @@ pub fn run() {
             resume_durable_run,
             preview_file_edit,
             git_diff_file,
+            git_diff_repo,
+            git_is_repo,
+            git_current_branch,
             revert_edit_batch,
             stop_run,
             interrupt_node,

@@ -4,7 +4,7 @@ import { createUiDesktopOutboundAdapter } from "../../port";
 import { useAppContext } from "../../context/AppContext";
 import { Spinner } from "../Spinner";
 import type { EditBatch, FileChangeRecord } from "../../lib/types";
-import { nodeChangedFiles, nodeEditBatches } from "../../lib/workflow";
+import { effectiveChangePath, latestChangesByPath, nodeChangedFiles, nodeEditBatches } from "../../lib/workflow";
 import { formatToolDisplayName } from "./toolBubbleState";
 
 const desktop = createUiDesktopOutboundAdapter();
@@ -24,31 +24,6 @@ function opLabel(op: FileChangeRecord["op"]): string {
     default:
       return op;
   }
-}
-
-function effectiveChangePath(record: FileChangeRecord): string {
-  if (record.op === "rename" && record.renameTo) {
-    return record.renameTo;
-  }
-  return record.path;
-}
-
-function latestChangesByPath(records: FileChangeRecord[]): FileChangeRecord[] {
-  const byPath = new Map<string, FileChangeRecord>();
-  for (const record of records) {
-    if (record.op === "rename") {
-      const stale = byPath.get(record.path);
-      if (!stale || record.timestampMs >= stale.timestampMs) {
-        byPath.delete(record.path);
-      }
-    }
-    const key = effectiveChangePath(record);
-    const existing = byPath.get(key);
-    if (!existing || record.timestampMs >= existing.timestampMs) {
-      byPath.set(key, record);
-    }
-  }
-  return [...byPath.values()];
 }
 
 function FileChangeRow(props: { record: FileChangeRecord }) {

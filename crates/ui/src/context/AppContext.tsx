@@ -62,6 +62,7 @@ export interface AppContextValue {
   leftPanelHidden: Accessor<boolean>;
   workflowSettingsOpen: Accessor<boolean>;
   inspectorOpen: Accessor<boolean>;
+  gitPanelOpen: Accessor<boolean>;
   selectedProjectId: Accessor<string | null>;
   editingWorkflowId: Accessor<string | null>;
   workflowNameDraft: Accessor<string>;
@@ -123,6 +124,7 @@ export interface AppContextValue {
   // ── Derived memos ─────────────────────────────────────────────────────────
   activeWorkflow: Accessor<Workflow | undefined>;
   activeProject: Accessor<Project | undefined>;
+  gitRepoAvailable: Accessor<boolean>;
   independentWorkflows: Accessor<Workflow[]>;
   executionCwdForActiveWorkflow: Accessor<string | null>;
   selectedAgent: Accessor<AgentDefinition | null>;
@@ -242,6 +244,7 @@ export interface AppContextValue {
   handleToggleProjectsSection: () => void;
   handleToggleWorkflowSettings: () => void;
   handleToggleInspector: () => void;
+  handleToggleGitPanel: () => void;
   handleToggleRightPanel: () => void;
   handleToggleLeftPanel: () => void;
   updateActiveWorkflowSettings: (mutator: (settings: Workflow["settings"]) => void) => void;

@@ -15,6 +15,7 @@ import PanelLeftClose from "lucide-solid/icons/panel-left-close";
 import CircleHelp from "lucide-solid/icons/circle-help";
 import Sparkles from "lucide-solid/icons/sparkles";
 import Search from "lucide-solid/icons/search";
+import GitBranch from "lucide-solid/icons/git-branch";
 import { Match, Switch } from "solid-js";
 import { ICON_STROKE_WIDTH } from "../../lib/utils";
 
@@ -31,6 +32,7 @@ export type SidebarIconName =
   | "trash"
   | "help"
   | "inspector"
+  | "git-branch"
   | "panel-right-open"
   | "panel-right-close"
   | "panel-left"
@@ -130,6 +132,14 @@ export function SidebarIcon(props: { name: SidebarIconName }) {
       </Match>
       <Match when={props.name === "inspector"}>
         <Search
+          class="sidebar-icon"
+          aria-hidden="true"
+          absoluteStrokeWidth
+          strokeWidth={ICON_STROKE_WIDTH}
+        />
+      </Match>
+      <Match when={props.name === "git-branch"}>
+        <GitBranch
           class="sidebar-icon"
           aria-hidden="true"
           absoluteStrokeWidth

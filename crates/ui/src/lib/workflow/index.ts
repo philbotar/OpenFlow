@@ -314,6 +314,36 @@ export function nodeChangedFiles(
   return runState.changedFilesByNode[nodeId] ?? [];
 }
 
+export function effectiveChangePath(record: FileChangeRecord): string {
+  if (record.op === "rename" && record.renameTo) {
+    return record.renameTo;
+  }
+  return record.path;
+}
+
+export function latestChangesByPath(records: FileChangeRecord[]): FileChangeRecord[] {
+  const byPath = new Map<string, FileChangeRecord>();
+  for (const record of records) {
+    if (record.op === "rename") {
+      const stale = byPath.get(record.path);
+      if (!stale || record.timestampMs >= stale.timestampMs) {
+        byPath.delete(record.path);
+      }
+    }
+    const key = effectiveChangePath(record);
+    const existing = byPath.get(key);
+    if (!existing || record.timestampMs >= existing.timestampMs) {
+      byPath.set(key, record);
+    }
+  }
+  return [...byPath.values()];
+}
+
+export function runChangedFilePaths(runState: WorkflowRunState | null): string[] {
+  if (!runState) return [];
+  return latestChangesByPath(runState.changedFiles).map(effectiveChangePath);
+}
+
 export function nodeEditBatches(
   runState: WorkflowRunState | null,
   nodeId: NodeId | null,
