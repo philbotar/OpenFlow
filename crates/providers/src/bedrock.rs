@@ -203,83 +203,84 @@ fn bedrock_tool_from_spec(tool: &ToolSpec, wire_name: &str) -> Result<Tool, Agen
     Ok(Tool::ToolSpec(spec))
 }
 
+fn tool_use_content_block(call: &ToolCall) -> Result<ContentBlock, AgentError> {
+    let input = document_from_json(&call.arguments)?;
+    ToolUseBlock::builder()
+        .tool_use_id(call.id.clone())
+        .name(bedrock_wire_tool_name(&call.name))
+        .input(input)
+        .build()
+        .map(ContentBlock::ToolUse)
+        .map_err(|_| AgentError::Failed("Bedrock failed to build tool use block".into()))
+}
+
+fn tool_result_content_block(result: &engine::ToolResult) -> Result<ContentBlock, AgentError> {
+    let status = if result.is_error {
+        ToolResultStatus::Error
+    } else {
+        ToolResultStatus::Success
+    };
+    ToolResultBlock::builder()
+        .tool_use_id(result.tool_call_id.clone())
+        .status(status)
+        .content(ToolResultContentBlock::Text(result.content.clone()))
+        .build()
+        .map(ContentBlock::ToolResult)
+        .map_err(|_| AgentError::Failed("Bedrock failed to build tool result block".into()))
+}
+
+fn assistant_message(blocks: Vec<ContentBlock>) -> Result<Message, AgentError> {
+    Message::builder()
+        .role(ConversationRole::Assistant)
+        .set_content(Some(blocks))
+        .build()
+        .map_err(|_| AgentError::Failed("Bedrock failed to build assistant message".into()))
+}
+
+fn user_message(blocks: Vec<ContentBlock>) -> Result<Message, AgentError> {
+    Message::builder()
+        .role(ConversationRole::User)
+        .set_content(Some(blocks))
+        .build()
+        .map_err(|_| AgentError::Failed("Bedrock failed to build user message".into()))
+}
+
 fn transcript_to_messages(request: &AgentRequest) -> Result<Vec<Message>, AgentError> {
     let mut messages = Vec::new();
-    for item in &request.transcript {
-        match item {
+    let items = &request.transcript;
+    let mut index = 0;
+    while index < items.len() {
+        match &items[index] {
             AgentTranscriptItem::AssistantMessage { content } => {
-                messages.push(
-                    Message::builder()
-                        .role(ConversationRole::Assistant)
-                        .content(ContentBlock::Text(content.clone()))
-                        .build()
-                        .map_err(|_| {
-                            AgentError::Failed("Bedrock failed to build assistant message".into())
-                        })?,
-                );
+                let mut blocks = vec![ContentBlock::Text(content.clone())];
+                index += 1;
+                while let Some(AgentTranscriptItem::ToolCall { call }) = items.get(index) {
+                    blocks.push(tool_use_content_block(call)?);
+                    index += 1;
+                }
+                messages.push(assistant_message(blocks)?);
             }
             AgentTranscriptItem::UserMessage { content } => {
-                messages.push(
-                    Message::builder()
-                        .role(ConversationRole::User)
-                        .content(ContentBlock::Text(content.clone()))
-                        .build()
-                        .map_err(|_| {
-                            AgentError::Failed("Bedrock failed to build user message".into())
-                        })?,
-                );
+                messages.push(user_message(vec![ContentBlock::Text(content.clone())])?);
+                index += 1;
             }
             AgentTranscriptItem::ToolCall { call } => {
-                let input = document_from_json(&call.arguments)?;
-                messages.push(
-                    Message::builder()
-                        .role(ConversationRole::Assistant)
-                        .content(ContentBlock::ToolUse(
-                            ToolUseBlock::builder()
-                                .tool_use_id(call.id.clone())
-                                .name(bedrock_wire_tool_name(&call.name))
-                                .input(input)
-                                .build()
-                                .map_err(|_| {
-                                    AgentError::Failed(
-                                        "Bedrock failed to build tool use block".into(),
-                                    )
-                                })?,
-                        ))
-                        .build()
-                        .map_err(|_| {
-                            AgentError::Failed(
-                                "Bedrock failed to build assistant tool call message".into(),
-                            )
-                        })?,
-                );
+                let mut blocks = vec![tool_use_content_block(call)?];
+                index += 1;
+                while let Some(AgentTranscriptItem::ToolCall { call }) = items.get(index) {
+                    blocks.push(tool_use_content_block(call)?);
+                    index += 1;
+                }
+                messages.push(assistant_message(blocks)?);
             }
             AgentTranscriptItem::ToolResult { result } => {
-                let status = if result.is_error {
-                    ToolResultStatus::Error
-                } else {
-                    ToolResultStatus::Success
-                };
-                messages.push(
-                    Message::builder()
-                        .role(ConversationRole::User)
-                        .content(ContentBlock::ToolResult(
-                            ToolResultBlock::builder()
-                                .tool_use_id(result.tool_call_id.clone())
-                                .status(status)
-                                .content(ToolResultContentBlock::Text(result.content.clone()))
-                                .build()
-                                .map_err(|_| {
-                                    AgentError::Failed(
-                                        "Bedrock failed to build tool result block".into(),
-                                    )
-                                })?,
-                        ))
-                        .build()
-                        .map_err(|_| {
-                            AgentError::Failed("Bedrock failed to build tool result message".into())
-                        })?,
-                );
+                let mut blocks = vec![tool_result_content_block(result)?];
+                index += 1;
+                while let Some(AgentTranscriptItem::ToolResult { result }) = items.get(index) {
+                    blocks.push(tool_result_content_block(result)?);
+                    index += 1;
+                }
+                messages.push(user_message(blocks)?);
             }
         }
     }
@@ -774,6 +775,69 @@ mod tests {
         assert_eq!(input.messages.len(), 3);
         assert!(message_contains_tool_use(&input.messages));
         assert!(message_contains_tool_result(&input.messages));
+    }
+
+    #[test]
+    fn groups_parallel_tool_calls_and_results_into_single_messages() {
+        let mut request = sample_agent_request();
+        request.transcript = vec![
+            AgentTranscriptItem::ToolCall {
+                call: ToolCall {
+                    id: "tooluse_a".to_string(),
+                    name: "read".to_string(),
+                    arguments: serde_json::json!({"path": "a.md"}),
+                },
+            },
+            AgentTranscriptItem::ToolCall {
+                call: ToolCall {
+                    id: "tooluse_b".to_string(),
+                    name: "read".to_string(),
+                    arguments: serde_json::json!({"path": "b.md"}),
+                },
+            },
+            AgentTranscriptItem::ToolResult {
+                result: engine::ToolResult {
+                    tool_call_id: "tooluse_a".to_string(),
+                    tool_name: "read".to_string(),
+                    content: "a".to_string(),
+                    is_error: false,
+                    artifact_ids: Vec::new(),
+                    output_meta: None,
+                },
+            },
+            AgentTranscriptItem::ToolResult {
+                result: engine::ToolResult {
+                    tool_call_id: "tooluse_b".to_string(),
+                    tool_name: "read".to_string(),
+                    content: "b".to_string(),
+                    is_error: false,
+                    artifact_ids: Vec::new(),
+                    output_meta: None,
+                },
+            },
+        ];
+        let input = build_converse_input(&request).expect("converse input");
+        assert_eq!(input.messages.len(), 3);
+        let assistant = &input.messages[1];
+        assert_eq!(assistant.role(), &ConversationRole::Assistant);
+        assert_eq!(assistant.content().len(), 2);
+        let user = &input.messages[2];
+        assert_eq!(user.role(), &ConversationRole::User);
+        assert_eq!(user.content().len(), 2);
+        assert_eq!(
+            user.content()[0]
+                .as_tool_result()
+                .ok()
+                .map(|block| block.tool_use_id()),
+            Some("tooluse_a")
+        );
+        assert_eq!(
+            user.content()[1]
+                .as_tool_result()
+                .ok()
+                .map(|block| block.tool_use_id()),
+            Some("tooluse_b")
+        );
     }
 
     fn message_contains_tool_use(messages: &[Message]) -> bool {
