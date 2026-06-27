@@ -124,6 +124,7 @@ where
                 entrypoint_text,
                 transcript: empty_transcript,
                 available_tools: empty_tools,
+                project_repository_root: None,
             };
             let request = build_agent_request(&ctx, node, false)?;
             match self.ai.invoke(request).await {

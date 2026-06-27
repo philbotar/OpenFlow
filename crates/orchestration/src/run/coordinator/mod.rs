@@ -170,6 +170,10 @@ impl RunCoordinator {
                 workflow: workflow.clone(),
                 entrypoint: entrypoint.clone(),
                 execution_cwd: resolved_cwd.clone(),
+                project_repository_root: crate::run::execution::project_repository_root(
+                    run_root.project_id.as_deref(),
+                    &resolved_cwd,
+                ),
                 artifact_root: artifact_root.clone(),
                 resume_checkpoint: None,
                 checkpoint_sink: checkpoint_sink.clone(),
@@ -246,6 +250,7 @@ impl RunCoordinator {
             snapshot_store,
             lsp_settings,
             pending_engine_reverts,
+            project_id,
         ) = {
             let session = self.session.lock().await;
             if session.run_state.as_ref().is_some_and(|state| state.active) {
@@ -280,6 +285,7 @@ impl RunCoordinator {
                     .pending_engine_reverts
                     .clone()
                     .ok_or(BackendError::NoContinuableRun)?,
+                session.project_id.clone(),
             )
         };
         engine::validate_checkpoint_against_workflow(&workflow, &checkpoint)
@@ -316,6 +322,10 @@ impl RunCoordinator {
                 workflow: workflow.clone(),
                 entrypoint: entrypoint.clone(),
                 execution_cwd: execution_cwd.clone(),
+                project_repository_root: crate::run::execution::project_repository_root(
+                    project_id.as_deref(),
+                    &execution_cwd,
+                ),
                 artifact_root: artifact_root.clone(),
                 resume_checkpoint: Some(checkpoint),
                 checkpoint_sink: checkpoint_sink.clone(),
@@ -660,6 +670,10 @@ impl RunCoordinator {
                 workflow: workflow.clone(),
                 entrypoint: None,
                 execution_cwd: execution_cwd.clone(),
+                project_repository_root: crate::run::execution::project_repository_root(
+                    params.record.project_id.as_deref(),
+                    &execution_cwd,
+                ),
                 artifact_root: artifact_root.clone(),
                 resume_checkpoint: Some(params.checkpoint.engine),
                 checkpoint_sink: checkpoint_sink.clone(),

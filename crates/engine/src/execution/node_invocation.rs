@@ -109,9 +109,18 @@ openflow_call_subagent schema lists currently available subagents for this node.
 - Use catalog tools when they improve correctness. Tool errors are returned to you; recover \
 and keep working toward submit unless the task is impossible.\n\
 - Batch independent read/search/find calls when you can.\n\
+- search and find skip paths matched by .gitignore (including .flow/ when ignored).\n\
 - Your input JSON includes changed_files from upstream nodes — use it to avoid redundant reads.\n\
 - Your input JSON includes reads (paths already read upstream + structural outline) — use it to orient; only read a listed path when you need its actual contents.\n\
 - Write-tier and exec-tier tools may require human approval before running.\n\
+\n\
+## Project workflows\n\
+When this workflow is assigned to a project, the execution folder is that project's \
+repository checkout on disk. You are working inside a real codebase — not an isolated \
+sandbox. Use read/search/find (and bash for git or other CLI tasks) with \
+repository-relative paths. Workflow definitions for this project live under \
+`.flow/workflows/` in that repo; do not confuse them with application source unless \
+the task targets them. A follow-on system block may include the exact repository path.\n\
 \n\
 ## Do not\n\
 - Stop with prose only and expect the workflow to continue.\n\
@@ -120,7 +129,11 @@ and keep working toward submit unless the task is impossible.\n\
 
 /// Assemble ordered system messages for a workflow agent node (engine-owned; providers do not edit).
 #[must_use]
-pub fn build_system_messages(workflow: &Workflow, node: &Node) -> Vec<String> {
+pub fn build_system_messages(
+    workflow: &Workflow,
+    node: &Node,
+    project_repository_root: Option<&str>,
+) -> Vec<String> {
     let mut messages = Vec::new();
     if !node
         .agent
@@ -128,6 +141,15 @@ pub fn build_system_messages(workflow: &Workflow, node: &Node) -> Vec<String> {
         .contains("--- OpenFlow runtime ---")
     {
         messages.push(NODE_RUNTIME_PREAMBLE.to_string());
+    }
+    if let Some(root) = project_repository_root.map(str::trim).filter(|root| !root.is_empty()) {
+        messages.push(format!(
+            "--- Project repository ---\n\
+This workflow is assigned to a project. You are working in the repository at:\n\
+{root}\n\
+All read/write/bash tools resolve paths relative to this checkout unless an absolute \
+path is given."
+        ));
     }
     let node_prompt = node.agent.system_prompt.trim();
     if !node_prompt.is_empty() {
@@ -266,6 +288,7 @@ pub struct NodeInvocationContext<'a> {
     pub entrypoint_text: Option<&'a str>,
     pub transcript: &'a [AgentTranscriptItem],
     pub available_tools: &'a [ToolDefinition],
+    pub project_repository_root: Option<&'a str>,
 }
 
 /// # Errors
@@ -289,7 +312,11 @@ pub fn build_agent_request(
         node_id: node.id.clone(),
         node_label: node.label.clone(),
         model: node.agent.model.clone(),
-        system_messages: build_system_messages(ctx.workflow, node),
+        system_messages: build_system_messages(
+            ctx.workflow,
+            node,
+            ctx.project_repository_root,
+        ),
         task_prompt: node.agent.task_prompt.clone(),
         input: build_node_input(
             &node.id,
@@ -321,7 +348,7 @@ mod tests {
         let workflow = Workflow::new("completion");
         let mut node = crate::graph::Node::agent("idea", 0.0, 0.0);
         node.agent.system_prompt = "You are a planner.".to_string();
-        let messages = build_system_messages(&workflow, &node);
+        let messages = build_system_messages(&workflow, &node, None);
         assert!(messages[0].contains("--- OpenFlow runtime ---"));
         assert!(messages[1].contains("You are a planner."));
         assert!(messages[0].contains("openflow_submit_node_output"));
@@ -334,10 +361,20 @@ mod tests {
         let mut workflow = Workflow::new("shared");
         workflow.settings.shared_context = "Use the style guide.".to_string();
         let node = crate::graph::Node::agent("idea", 0.0, 0.0);
-        let messages = build_system_messages(&workflow, &node);
+        let messages = build_system_messages(&workflow, &node, None);
         assert!(messages[1].contains("focused AI agent"));
         assert!(messages[2].contains("--- Workflow context ---"));
         assert!(messages[2].contains("Use the style guide."));
+    }
+
+    #[test]
+    fn build_system_messages_includes_project_repository_root() {
+        let workflow = Workflow::new("repo");
+        let node = crate::graph::Node::agent("idea", 0.0, 0.0);
+        let messages = build_system_messages(&workflow, &node, Some("/tmp/my-repo"));
+        assert!(messages[0].contains("--- OpenFlow runtime ---"));
+        assert!(messages[1].contains("--- Project repository ---"));
+        assert!(messages[1].contains("/tmp/my-repo"));
     }
 
     #[test]
@@ -577,6 +614,7 @@ mod tests {
             entrypoint_text: None,
             transcript: &[],
             available_tools: &[],
+            project_repository_root: None,
         };
         let request = build_agent_request(&ctx, &node, true).unwrap();
         assert_eq!(request.reasoning_effort, Some("adaptive".to_string()));

@@ -28,6 +28,7 @@ pub(super) async fn drive_interactive_workflow<A>(
         workflow,
         entrypoint,
         execution_cwd,
+        project_repository_root,
         artifact_root,
         resume_checkpoint,
         checkpoint_sink,
@@ -41,7 +42,14 @@ pub(super) async fn drive_interactive_workflow<A>(
         mcp,
     } = params;
 
-    let mut engine = match build_engine(workflow.clone(), entrypoint, resume_checkpoint) {
+    let mut engine = match build_engine(
+        workflow.clone(),
+        entrypoint,
+        resume_checkpoint,
+        project_repository_root
+            .as_ref()
+            .map(|path| path.display().to_string()),
+    ) {
         Ok(engine) => engine,
         Err(error) => {
             send_or_log(&event_tx, ExecutionEvent::Error(error));
@@ -402,18 +410,24 @@ fn build_engine(
     workflow: Workflow,
     entrypoint: Option<String>,
     resume_checkpoint: Option<InteractiveEngineCheckpoint>,
+    project_repository_root: Option<String>,
 ) -> Result<InteractiveEngine, String> {
     match resume_checkpoint {
-        Some(checkpoint) => InteractiveEngine::from_checkpoint(workflow, checkpoint)
-            .map(|mut engine| {
-                let failures = engine.prepare_resume();
-                if !failures.is_empty() {
-                    log::warn!("prepare_resume could not retry nodes: {failures:?}");
-                }
-                engine
-            })
+        Some(checkpoint) => InteractiveEngine::from_checkpoint_with_run_context(
+            workflow,
+            checkpoint,
+            project_repository_root,
+        )
+        .map(|mut engine| {
+            let failures = engine.prepare_resume();
+            if !failures.is_empty() {
+                log::warn!("prepare_resume could not retry nodes: {failures:?}");
+            }
+            engine
+        })
+        .map_err(|error| error.to_string()),
+        None => InteractiveEngine::new_with_run_context(workflow, entrypoint, project_repository_root)
             .map_err(|error| error.to_string()),
-        None => InteractiveEngine::new(workflow, entrypoint).map_err(|error| error.to_string()),
     }
 }
 
