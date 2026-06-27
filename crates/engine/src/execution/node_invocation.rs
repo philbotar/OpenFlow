@@ -68,6 +68,21 @@ when you cannot complete the task without human clarification. assistant_message
 the question itself (usually ending with ?), not preamble or narration about asking. After \
 the human replies, continue working toward submit.\n\
 \n\
+## Operating rules\n\
+- Follow the node task prompt and any workflow context directly. Be concise in human-facing \
+assistant messages; keep detailed reasoning in your private work.\n\
+- Gather enough context before acting. Use input.upstream, input.changed_files, and input.reads \
+first, then read/search/find only the files needed to make a correct change or answer.\n\
+- Read before you edit. For existing files, inspect the relevant contents, preserve indentation \
+and local style, and prefer the smallest edit that satisfies the task.\n\
+- Recover from failed tool calls. Tool errors, failed edits, empty searches, and truncated output \
+are feedback: narrow the query, read the artifact, adjust the edit, or choose another available \
+tool instead of stopping immediately.\n\
+- Preserve user work. Treat the execution folder as a real checkout; do not revert, delete, or \
+overwrite unrelated files unless the task explicitly asks for it.\n\
+- Use the available tool schema on the current request as the parameter source of truth. Do not \
+invent parameters from this preamble when the live schema differs.\n\
+\n\
 ## Available tools\n\
 Your node's tool catalog controls which builtins are callable on each turn; runtime harness \
 tools (submit, request_user_input, subagent tools) are always available. Tool schemas on each \
@@ -99,6 +114,8 @@ edit for targeted changes.\n\
 cd dir && …). Prefer read/search/find/edit/write when they suffice. Output over 50KB is \
 truncated to an artifact (read via artifact:{id}). Returns merged stdout/stderr, wall time, \
 and exit code.\n\
+- Run shell commands non-interactive: pass flags that avoid prompts, avoid pagers, and do not \
+start long-running foreground servers or watchers unless the task requires them.\n\
 \n\
 ### Subagents\n\
 - openflow_declare_subagents — declare subagents (name + purpose) available during this run.\n\
@@ -125,6 +142,8 @@ the task targets them. A follow-on system block may include the exact repository
 ## Do not\n\
 - Stop with prose only and expect the workflow to continue.\n\
 - Call submit before the task is actually complete.\n\
+- Ask the human for information you can discover with the available context or tools.\n\
+- Use bash for file reads, searches, or edits when read/search/find/edit/write are sufficient.\n\
 - Assume downstream nodes have started before submit succeeds.";
 
 /// Assemble ordered system messages for a workflow agent node (engine-owned; providers do not edit).
@@ -142,7 +161,10 @@ pub fn build_system_messages(
     {
         messages.push(NODE_RUNTIME_PREAMBLE.to_string());
     }
-    if let Some(root) = project_repository_root.map(str::trim).filter(|root| !root.is_empty()) {
+    if let Some(root) = project_repository_root
+        .map(str::trim)
+        .filter(|root| !root.is_empty())
+    {
         messages.push(format!(
             "--- Project repository ---\n\
 This workflow is assigned to a project. You are working in the repository at:\n\
@@ -312,11 +334,7 @@ pub fn build_agent_request(
         node_id: node.id.clone(),
         node_label: node.label.clone(),
         model: node.agent.model.clone(),
-        system_messages: build_system_messages(
-            ctx.workflow,
-            node,
-            ctx.project_repository_root,
-        ),
+        system_messages: build_system_messages(ctx.workflow, node, ctx.project_repository_root),
         task_prompt: node.agent.task_prompt.clone(),
         input: build_node_input(
             &node.id,
@@ -354,6 +372,16 @@ mod tests {
         assert!(messages[0].contains("openflow_submit_node_output"));
         assert!(messages[0].contains("ast_grep"));
         assert!(messages[0].contains("artifact:{id}"));
+    }
+
+    #[test]
+    fn runtime_preamble_includes_cursor_grade_operating_rules() {
+        assert!(NODE_RUNTIME_PREAMBLE.contains("Gather enough context"));
+        assert!(NODE_RUNTIME_PREAMBLE.contains("Read before you edit"));
+        assert!(NODE_RUNTIME_PREAMBLE.contains("non-interactive"));
+        assert!(NODE_RUNTIME_PREAMBLE.contains("Recover from failed tool calls"));
+        assert!(NODE_RUNTIME_PREAMBLE.contains("Preserve user work"));
+        assert!(NODE_RUNTIME_PREAMBLE.contains("available tool schema"));
     }
 
     #[test]
