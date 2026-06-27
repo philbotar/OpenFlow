@@ -345,30 +345,6 @@ fn json_from_document(document: &Document) -> Result<Value, AgentError> {
     })
 }
 
-// #region agent log
-fn agent_debug_log(hypothesis_id: &str, location: &str, message: &str, data: Value) {
-    use std::io::Write;
-    if let Ok(mut file) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open("/Users/philipbotar/Developer/OpenFlow/.cursor/debug-cbbb15.log")
-    {
-        let line = serde_json::json!({
-            "sessionId": "cbbb15",
-            "hypothesisId": hypothesis_id,
-            "location": location,
-            "message": message,
-            "data": data,
-            "timestamp": std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis())
-                .unwrap_or(0),
-        });
-        let _ = writeln!(file, "{line}");
-    }
-}
-// #endregion
-
 fn parse_converse_message(
     message: &Message,
     tool_names: &BedrockToolNames,
@@ -390,27 +366,6 @@ fn parse_converse_message(
             tool_calls.push(parse_tool_use_block(tool_use, tool_names)?);
         }
     }
-
-    // #region agent log
-    {
-        let internal_names: Vec<&str> = tool_calls
-            .iter()
-            .filter(|call| call.name == SUBMIT_OUTPUT_TOOL || call.name == REQUEST_INPUT_TOOL)
-            .map(|call| call.name.as_str())
-            .collect();
-        agent_debug_log(
-            "H1",
-            "bedrock.rs:parse_converse_message",
-            "tool_calls_parsed",
-            serde_json::json!({
-                "count": tool_calls.len(),
-                "names": tool_calls.iter().map(|call| call.name.clone()).collect::<Vec<_>>(),
-                "internal_names": internal_names,
-                "content_block_count": message.content().len(),
-            }),
-        );
-    }
-    // #endregion
 
     let assistant_message =
         (!assistant_text_parts.is_empty()).then(|| assistant_text_parts.join("\n"));
@@ -438,18 +393,6 @@ fn parse_converse_message(
         .position(|call| call.name == SUBMIT_OUTPUT_TOOL || call.name == REQUEST_INPUT_TOOL)
     {
         if tool_calls.len() != 1 {
-            // #region agent log
-            agent_debug_log(
-                "H1",
-                "bedrock.rs:parse_converse_message",
-                "mixed_internal_external_rejected",
-                serde_json::json!({
-                    "count": tool_calls.len(),
-                    "names": tool_calls.iter().map(|call| call.name.clone()).collect::<Vec<_>>(),
-                    "internal_index": index,
-                }),
-            );
-            // #endregion
             return Err(AgentError::Failed(
                 "Bedrock response mixed internal and external tool calls".into(),
             ));
@@ -478,18 +421,6 @@ fn parse_tool_use_block(
 ) -> Result<ToolCall, AgentError> {
     let wire_name = tool_use.name();
     let original_name = tool_names.original_name(wire_name);
-    // #region agent log
-    agent_debug_log(
-        "H2",
-        "bedrock.rs:parse_tool_use_block",
-        "wire_name_mapped",
-        serde_json::json!({
-            "wire": wire_name,
-            "original": original_name.clone(),
-            "wire_differs_from_original": wire_name != original_name,
-        }),
-    );
-    // #endregion
     Ok(ToolCall {
         id: tool_use.tool_use_id().to_string(),
         name: original_name,
@@ -726,22 +657,10 @@ impl ConverseStreamAggregator {
                         .unwrap_or_else(|_| Document::Object(std::collections::HashMap::new()));
                     if let Ok(block) = ToolUseBlock::builder()
                         .tool_use_id(pending.tool_use_id)
-                        .name(pending.name.clone())
+                        .name(pending.name)
                         .input(input)
                         .build()
                     {
-                        // #region agent log
-                        agent_debug_log(
-                            "H3",
-                            "bedrock.rs:ConverseStreamAggregator",
-                            "stream_tool_use_assembled",
-                            serde_json::json!({
-                                "wire": pending.name,
-                                "tool_use_id": block.tool_use_id(),
-                                "stream_tool_count": self.tool_uses.len() + 1,
-                            }),
-                        );
-                        // #endregion
                         self.tool_uses.push(block);
                     }
                 }
@@ -911,14 +830,14 @@ mod tests {
             user.content()[0]
                 .as_tool_result()
                 .ok()
-                .map(|block| block.tool_use_id()),
+                .map(aws_sdk_bedrockruntime::types::ToolResultBlock::tool_use_id),
             Some("tooluse_a")
         );
         assert_eq!(
             user.content()[1]
                 .as_tool_result()
                 .ok()
-                .map(|block| block.tool_use_id()),
+                .map(aws_sdk_bedrockruntime::types::ToolResultBlock::tool_use_id),
             Some("tooluse_b")
         );
     }
