@@ -64,6 +64,8 @@ skip = [
     { name = "phf_shared", version = "0.11.3", reason = "transitive from cron phf 0.11" },
     { name = "rand", version = "0.8.6", reason = "transitive from cron phf_generator" },
     { name = "rand_core", version = "0.6.4", reason = "transitive from cron rand 0.8" },
+    { name = "rand_chacha", version = "0.3.1", reason = "transitive from aws-config rand 0.8 alongside desktop rand 0.9" },
+    { name = "hmac", version = "0.12.1", reason = "transitive from ecdsa/p256 via aws-config alongside aws-sigv4 hmac 0.13" },
     { name = "nix", version = "0.28.0", reason = "portable-pty 0.9 pins nix 0.28; rmcp/process-wrap pulls nix 0.31" },
     { name = "cfg_aliases", version = "0.1.1", reason = "transitive from nix 0.28 via portable-pty" },
     { name = "windows-sys", version = "0.45.0", reason = "hyper 0.14/socket2 chain alongside tauri desktop stack" },

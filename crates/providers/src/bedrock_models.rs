@@ -77,7 +77,9 @@ where
 {
     let message = crate::bedrock::humanize_bedrock_sdk_error(&error.to_string());
     match classify_sdk_error_code(&message) {
-        SdkErrorClass::Transient => AgentError::Transient(format!("Bedrock list models failed: {message}")),
+        SdkErrorClass::Transient => {
+            AgentError::Transient(format!("Bedrock list models failed: {message}"))
+        }
         SdkErrorClass::Permanent => {
             AgentError::Permanent(format!("Bedrock list models failed: {message}"))
         }

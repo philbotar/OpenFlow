@@ -59,10 +59,6 @@ impl BedrockToolNames {
         Ok(Self { wire_to_original })
     }
 
-    fn wire_name(&self, original: &str) -> String {
-        bedrock_wire_tool_name(original)
-    }
-
     fn original_name(&self, wire: &str) -> String {
         self.wire_to_original
             .get(wire)
@@ -167,8 +163,8 @@ fn build_converse_input(request: &AgentRequest) -> Result<ConverseInput, AgentEr
         .content(ContentBlock::Text(build_node_context(request)))
         .build()
         .map_err(|_| AgentError::Failed("Bedrock failed to build node context message".into()))?];
-    messages.extend(transcript_to_messages(request, &tool_names)?);
-    let tool_config = build_tool_config(&specs, &tool_names)?;
+    messages.extend(transcript_to_messages(request)?);
+    let tool_config = build_tool_config(&specs)?;
     Ok(ConverseInput {
         system,
         messages,
@@ -180,16 +176,13 @@ fn build_converse_input(request: &AgentRequest) -> Result<ConverseInput, AgentEr
     })
 }
 
-fn build_tool_config(
-    specs: &[ToolSpec],
-    tool_names: &BedrockToolNames,
-) -> Result<Option<ToolConfiguration>, AgentError> {
+fn build_tool_config(specs: &[ToolSpec]) -> Result<Option<ToolConfiguration>, AgentError> {
     if specs.is_empty() {
         return Ok(None);
     }
     let tools = specs
         .iter()
-        .map(|tool| bedrock_tool_from_spec(tool, &tool_names.wire_name(&tool.name)))
+        .map(|tool| bedrock_tool_from_spec(tool, &bedrock_wire_tool_name(&tool.name)))
         .collect::<Result<Vec<_>, _>>()?;
     ToolConfiguration::builder()
         .set_tools(Some(tools))
@@ -210,10 +203,7 @@ fn bedrock_tool_from_spec(tool: &ToolSpec, wire_name: &str) -> Result<Tool, Agen
     Ok(Tool::ToolSpec(spec))
 }
 
-fn transcript_to_messages(
-    request: &AgentRequest,
-    tool_names: &BedrockToolNames,
-) -> Result<Vec<Message>, AgentError> {
+fn transcript_to_messages(request: &AgentRequest) -> Result<Vec<Message>, AgentError> {
     let mut messages = Vec::new();
     for item in &request.transcript {
         match item {
@@ -247,7 +237,7 @@ fn transcript_to_messages(
                         .content(ContentBlock::ToolUse(
                             ToolUseBlock::builder()
                                 .tool_use_id(call.id.clone())
-                                .name(tool_names.wire_name(&call.name))
+                                .name(bedrock_wire_tool_name(&call.name))
                                 .input(input)
                                 .build()
                                 .map_err(|_| {
@@ -474,7 +464,10 @@ fn map_bedrock_runtime_error<E>(error: &aws_sdk_bedrockruntime::error::SdkError<
 where
     E: ProvideErrorMetadata + std::error::Error + Send + Sync + 'static,
 {
-    classify_bedrock_error(bedrock_service_error_code(error), bedrock_error_message(error))
+    classify_bedrock_error(
+        bedrock_service_error_code(error),
+        &bedrock_error_message(error),
+    )
 }
 
 fn map_bedrock_stream_error<E>(
@@ -485,7 +478,7 @@ where
 {
     classify_bedrock_error(
         bedrock_stream_service_error_code(error),
-        bedrock_stream_error_message(error),
+        &bedrock_stream_error_message(error),
     )
 }
 
@@ -518,8 +511,12 @@ where
     let service = error.as_service_error();
     format_bedrock_service_error(
         "Bedrock request failed",
-        service.and_then(|service| service.code()).unwrap_or_default(),
-        service.and_then(|service| service.message()).unwrap_or_default(),
+        service
+            .and_then(|service| service.code())
+            .unwrap_or_default(),
+        service
+            .and_then(|service| service.message())
+            .unwrap_or_default(),
         &error.to_string(),
     )
 }
@@ -533,18 +530,17 @@ where
     let service = error.as_service_error();
     format_bedrock_service_error(
         "Bedrock stream failed",
-        service.and_then(|service| service.code()).unwrap_or_default(),
-        service.and_then(|service| service.message()).unwrap_or_default(),
+        service
+            .and_then(|service| service.code())
+            .unwrap_or_default(),
+        service
+            .and_then(|service| service.message())
+            .unwrap_or_default(),
         &error.to_string(),
     )
 }
 
-fn format_bedrock_service_error(
-    prefix: &str,
-    code: &str,
-    message: &str,
-    fallback: &str,
-) -> String {
+fn format_bedrock_service_error(prefix: &str, code: &str, message: &str, fallback: &str) -> String {
     if !code.is_empty() && !message.is_empty() {
         return format!("{prefix} ({code}): {message}");
     }
@@ -557,8 +553,8 @@ fn format_bedrock_service_error(
     format!("{prefix}: {fallback}")
 }
 
-fn classify_bedrock_error(code: &str, message: String) -> AgentError {
-    let message = humanize_bedrock_sdk_error(&message);
+fn classify_bedrock_error(code: &str, message: &str) -> AgentError {
+    let message = humanize_bedrock_sdk_error(message);
     match code {
         "ThrottlingException" | "ServiceUnavailableException" | "ModelStreamErrorException" => {
             AgentError::Transient(message)
@@ -572,6 +568,10 @@ fn classify_bedrock_error(code: &str, message: String) -> AgentError {
     }
 }
 
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "bedrock_models calls this across submodule boundary"
+)]
 pub(crate) fn humanize_bedrock_sdk_error(message: &str) -> String {
     let lowered = message.to_ascii_lowercase();
     if lowered.contains("dispatch failure") {
@@ -843,13 +843,11 @@ mod tests {
         let tools = input
             .tool_config
             .as_ref()
-            .map(|config| config.tools())
+            .map(aws_sdk_bedrockruntime::types::ToolConfiguration::tools)
             .expect("tool config");
-        assert!(
-            tools.iter().any(|tool| tool.as_tool_spec().is_ok_and(|spec| {
-                spec.name() == "mcp_playwright_browser_click"
-            }))
-        );
+        assert!(tools.iter().any(|tool| tool
+            .as_tool_spec()
+            .is_ok_and(|spec| { spec.name() == "mcp_playwright_browser_click" })));
         assert_eq!(
             input
                 .tool_names
