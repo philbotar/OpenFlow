@@ -185,6 +185,9 @@ jobs:
         with:
           toolchain: nightly
 
+      - name: Install Linux system dependencies (Tauri)
+        run: ./scripts/install-ci-deps.sh
+
       - name: Install cargo-deny
         uses: taiki-e/install-action@v2
         with:
