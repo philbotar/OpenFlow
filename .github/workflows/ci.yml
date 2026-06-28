@@ -186,7 +186,6 @@ jobs:
         uses: ./.github/actions/setup-rust
         with:
           toolchain: nightly
-          components: rustdoc
 
       - name: Install cargo-deny
         uses: taiki-e/install-action@v2
