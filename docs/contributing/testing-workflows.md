@@ -91,9 +91,9 @@ Use inline `impl AiPort` stubs (e.g. node-id-aware `ScriptedAi` in `workflow_acc
 | Deep verify | `./scripts/verify.sh --deep` |
 | Engine cross target (macOS) | `MIRI_ENGINE_VPROC=x86_64-unknown-linux-gnu ./scripts/miri.sh` |
 
-Scope: `cargo miri nextest run -p engine --lib` (isolated; `-Zmiri-ignore-leaks`) and `cargo miri nextest run -p orchestration --lib` (`-Zmiri-disable-isolation` for temp files). Tests run one Miri process each via [cargo-nextest](https://nexte.st/docs/integrations/miri/) so lib tests can use multiple cores. Trade-offs: Miri recompiles the test crate per test (large crates may see less net speedup); cross-test data races on shared statics are not detected (unlike `cargo miri test`). Integration binaries and tests Miri cannot run (tokio, git/bash/MCP subprocess, live `#[ignore]` suites) carry `#[cfg_attr(miri, ignore)]`.
+Scope: `cargo miri nextest run -p engine --lib` (isolated; `-Zmiri-ignore-leaks`) and `cargo miri nextest run -p orchestration --lib` with a **UB-relevant allowlist** (`run::execution`, `coordinator`, `tool::runner`, `tool::blocking_ops`, `tool::retry`, `schedule`, `adapters::infrastructure`; see `ORCH_MIRI_FILTER` in `./scripts/miri.sh`) plus `-Zmiri-disable-isolation` for temp files. Pure edit/patch/store logic stays on `test-fast`/clippy — workspace `unsafe_code = "forbid"` means those tests have no UB surface. Tests run one Miri process each via [cargo-nextest](https://nexte.st/docs/integrations/miri/) (`--profile default-miri`) so lib tests can use multiple cores. Trade-offs: Miri recompiles the test crate per test (large crates may see less net speedup); cross-test data races on shared statics are not detected (unlike `cargo miri test`). Integration binaries and tests Miri cannot run (tokio, git/bash/MCP subprocess, live `#[ignore]` suites) carry `#[cfg_attr(miri, ignore)]`.
 
-First run installs nightly `miri` and `cargo-nextest` if missing. Artifacts: `target/miri/`. Optional: `MIRI_JOBS=N` caps nextest parallelism.
+First run installs nightly `miri` and `cargo-nextest` if missing. Artifacts: `target/miri/`. Optional: `MIRI_JOBS=N` caps nextest parallelism; `MIRI_TOOLCHAIN` selects the rustc nightly (CI pins `nightly-2026-06-20` for cache stability).
 
 Mark new unsupported tests with `#[cfg_attr(miri, ignore)]` and a one-line `ponytail:` comment.
 
@@ -171,7 +171,7 @@ Primary gate for agents and local handoff - run after every change:
 
 **Steps:** `fmt`, `clippy` (pedantic/nursery/cargo), `doc`, `test`, `test-fast`, `public-api`, `machete`, `typos`, `ui-typecheck`, `ui-test`, `deny`, `arch`. **`--deep` only:** `mutants`, `miri`.
 
-**CI:** blocking `./scripts/verify-ci.sh`; separate **`miri`** matrix job runs `./scripts/miri.sh <crate>` per changed Miri-eligible crate (`engine`, `orchestration`) on Ubuntu (skipped when neither changed).
+**CI:** blocking `./scripts/verify-ci.sh`; separate **`miri`** matrix job runs `./scripts/miri.sh <crate>` per changed Miri-eligible crate (`engine`, `orchestration`) on Ubuntu (skipped when neither changed). Superseded runs cancel via workflow `concurrency`. Miri CI pins `nightly-2026-06-20` (`MIRI_TOOLCHAIN`) and caches `~/.cache/miri` (sysroot) plus `target/miri` (via `rust-cache`) so warm runs skip the ~17s sysroot build and most dependency recompiles.
 
 **One-time installs:** `cargo install cargo-machete typos-cli cargo-mutants cargo-public-api`; Miri: `rustup toolchain install nightly --component miri` (see [Miri §](testing-workflows.md#miri)).
 

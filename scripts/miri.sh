@@ -9,10 +9,14 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+MIRI_TOOLCHAIN="${MIRI_TOOLCHAIN:-nightly}"
 
 if [[ -z "${CARGO_TARGET_DIR:-}" ]]; then
 	export CARGO_TARGET_DIR="$ROOT/target/miri"
 fi
+
+# UB-relevant orchestration modules only; pure edit/patch/store logic stays on test-fast/clippy.
+ORCH_MIRI_FILTER='test(/run::execution::/) | test(/coordinator/) | test(/tool::runner/) | test(/tool::blocking_ops/) | test(/tool::retry/) | test(/schedule::/) | test(/adapters::infrastructure::/)'
 
 preflight_nextest() {
 	if ! cargo nextest --version >/dev/null 2>&1; then
@@ -25,10 +29,10 @@ preflight_miri() {
 		echo "error: rustup is required for Miri (https://rustup.rs)" >&2
 		exit 1
 	fi
-	if ! rustup +nightly component list --installed 2>&1 | grep -q '^miri'; then
-		rustup toolchain install nightly --component miri
+	if ! rustup "+$MIRI_TOOLCHAIN" component list --installed 2>&1 | grep -q '^miri'; then
+		rustup toolchain install "$MIRI_TOOLCHAIN" --component miri
 	fi
-	cargo +nightly miri setup
+	cargo "+$MIRI_TOOLCHAIN" miri setup
 	preflight_nextest
 }
 
@@ -42,7 +46,10 @@ run_engine() {
 	fi
 	# Tokio/subprocess/integration tests carry #[cfg_attr(miri, ignore)].
 	echo "Miri: engine (lib, isolated)"
-	local -a nextest_cmd=(cargo +nightly miri nextest run -p engine "${engine_args[@]}")
+	local -a nextest_cmd=(
+		cargo "+$MIRI_TOOLCHAIN" miri nextest run -p engine "${engine_args[@]}"
+		--profile default-miri
+	)
 	if [[ -n "${MIRI_JOBS:-}" ]]; then
 		nextest_cmd+=(-j "$MIRI_JOBS")
 	fi
@@ -51,8 +58,12 @@ run_engine() {
 }
 
 run_orchestration() {
-	echo "Miri: orchestration (lib, real temp files)"
-	local -a nextest_cmd=(cargo +nightly miri nextest run -p orchestration --lib)
+	echo "Miri: orchestration (lib, UB-relevant allowlist, real temp files)"
+	local -a nextest_cmd=(
+		cargo "+$MIRI_TOOLCHAIN" miri nextest run -p orchestration --lib
+		--profile default-miri
+		-E "$ORCH_MIRI_FILTER"
+	)
 	if [[ -n "${MIRI_JOBS:-}" ]]; then
 		nextest_cmd+=(-j "$MIRI_JOBS")
 	fi
