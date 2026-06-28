@@ -91,9 +91,9 @@ Use inline `impl AiPort` stubs (e.g. node-id-aware `ScriptedAi` in `workflow_acc
 | Deep verify | `./scripts/verify.sh --deep` |
 | Engine cross target (macOS) | `MIRI_ENGINE_VPROC=x86_64-unknown-linux-gnu ./scripts/miri.sh` |
 
-Scope: `cargo miri test -p engine --lib` (isolated; `-Zmiri-ignore-leaks`) and `cargo miri test -p orchestration --lib` (`-Zmiri-disable-isolation` for temp files). Integration binaries and tests Miri cannot run (tokio, git/bash/MCP subprocess, live `#[ignore]` suites) carry `#[cfg_attr(miri, ignore)]`.
+Scope: `cargo miri nextest run -p engine --lib` (isolated; `-Zmiri-ignore-leaks`) and `cargo miri nextest run -p orchestration --lib` (`-Zmiri-disable-isolation` for temp files). Tests run one Miri process each via [cargo-nextest](https://nexte.st/docs/integrations/miri/) so lib tests can use multiple cores. Trade-offs: Miri recompiles the test crate per test (large crates may see less net speedup); cross-test data races on shared statics are not detected (unlike `cargo miri test`). Integration binaries and tests Miri cannot run (tokio, git/bash/MCP subprocess, live `#[ignore]` suites) carry `#[cfg_attr(miri, ignore)]`.
 
-First run installs nightly `miri` via rustup. Artifacts: `target/miri/`.
+First run installs nightly `miri` and `cargo-nextest` if missing. Artifacts: `target/miri/`. Optional: `MIRI_JOBS=N` caps nextest parallelism.
 
 Mark new unsupported tests with `#[cfg_attr(miri, ignore)]` and a one-line `ponytail:` comment.
 
