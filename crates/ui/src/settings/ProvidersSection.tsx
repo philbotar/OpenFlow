@@ -34,6 +34,9 @@ export function ProvidersSection() {
   ] as const;
   const profileEditable = () => ctx.activeProfileMemo().editable;
   const isBedrock = () => ctx.settings().active_provider === "bedrock";
+  const bedrockRegion = createMemo(
+    () => ctx.activeProfileMemo().aws_region ?? ctx.activeProfileMemo().base_url,
+  );
   const [refreshingModels, setRefreshingModels] = createSignal(false);
 
   async function handleRefreshBedrockModels() {
@@ -148,11 +151,16 @@ export function ProvidersSection() {
             <span>{isBedrock() ? "AWS region" : "Base URL"}</span>
             <input
               class="text-input"
-              value={ctx.activeProfileMemo().base_url}
+              value={isBedrock() ? bedrockRegion() : ctx.activeProfileMemo().base_url}
               disabled={!profileEditable() && !isBedrock()}
               onInput={(event) =>
                 void ctx.updateSettings((draft) => {
-                  activeProfile(draft).base_url = event.currentTarget.value;
+                  const profile = activeProfile(draft);
+                  if (isBedrock()) {
+                    profile.aws_region = event.currentTarget.value;
+                  } else {
+                    profile.base_url = event.currentTarget.value;
+                  }
                 })
               }
             />

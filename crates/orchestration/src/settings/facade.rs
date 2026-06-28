@@ -170,7 +170,7 @@ impl SettingsFacade {
                     "bedrock provider profile not found",
                 ))
             })?;
-        let region = profile.base_url.trim();
+        let region = profile.aws_region.trim();
         if region.is_empty() {
             return Err(BackendError::from(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,

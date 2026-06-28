@@ -48,7 +48,7 @@ const CUSTOM: ProviderProfile = {
 
 const BEDROCK: ProviderProfile = {
   display_name: "Amazon Bedrock",
-  base_url: "us-east-1",
+  base_url: "",
   transport: "chat_completions",
   responses_path: "v1/responses",
   chat_completions_path: "v1/chat/completions",
@@ -56,6 +56,7 @@ const BEDROCK: ProviderProfile = {
   default_model: "anthropic.claude-sonnet-4-20250514-v1:0",
   editable: false,
   aws_profile: "bedrock",
+  aws_region: "us-east-1",
 };
 
 function makeSettings(activeProvider: keyof typeof baseProviders): AppSettings {
@@ -271,5 +272,19 @@ describe("ProvidersSection", () => {
     profileInput.value = "work-profile";
     profileInput.dispatchEvent(new Event("input", { bubbles: true }));
     expect(settings().providers.bedrock?.aws_profile).toBe("work-profile");
+  });
+
+  test("bedrock aws region input updates aws_region instead of base_url", async () => {
+    const { settings } = renderSection("bedrock");
+    const regionInput = Array.from(container.querySelectorAll("label")).find((label) =>
+      label.textContent?.includes("AWS region"),
+    )?.querySelector("input") as HTMLInputElement;
+
+    expect(regionInput.value).toBe("us-east-1");
+    regionInput.value = "ap-southeast-2";
+    regionInput.dispatchEvent(new Event("input", { bubbles: true }));
+
+    expect(settings().providers.bedrock?.aws_region).toBe("ap-southeast-2");
+    expect(settings().providers.bedrock?.base_url).toBe("");
   });
 });
