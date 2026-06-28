@@ -76,7 +76,6 @@ jobs:
 
   fmt:
     name: fmt
-    needs: build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -149,7 +148,6 @@ jobs:
 
   ui:
     name: ui
-    needs: build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
