@@ -12,6 +12,7 @@ concurrency:
 
 env:
   MIRI_NIGHTLY: nightly-2026-06-20
+  MIRI_TOOLCHAIN: nightly-2026-06-20
   RUST_CACHE_SHARED_KEY: ci-verify
 
 permissions:
@@ -259,7 +260,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      MIRI_TOOLCHAIN: ${{ env.MIRI_NIGHTLY }}
       CARGO_TARGET_DIR: target/miri
     strategy:
       fail-fast: false
