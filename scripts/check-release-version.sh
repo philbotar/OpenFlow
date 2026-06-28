@@ -71,7 +71,8 @@ After merge (maintainer):
   git push origin v${head_ver}
   # wait for Release workflow, then publish the draft GitHub Release
 
-Users on older builds will see the Settings update badge once the release is published.
+To batch multiple feature PRs first, do not bump desktop in those PRs.
+When ready to ship, run ./scripts/cut-release.sh on main, then tag once.
 EOF
 fi
 

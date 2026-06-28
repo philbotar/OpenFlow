@@ -37,7 +37,6 @@ crate_of() {
 substantive() {
 	case "$1" in
 	crates/engine/* | crates/providers/* | crates/orchestration/*) return 0 ;;
-	crates/desktop/*) [[ "$(basename "$1")" != package-lock.json ]] ;;
 	crates/ui/*) [[ "$(basename "$1")" != package-lock.json ]] ;;
 	*) return 1 ;;
 	esac
