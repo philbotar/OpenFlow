@@ -370,6 +370,25 @@ mod tests {
     use super::*;
 
     #[test]
+    fn normalized_clears_bedrock_api_key() {
+        let mut settings = AppSettings::default();
+        settings
+            .providers
+            .get_mut(&ProviderId::from("bedrock"))
+            .expect("bedrock profile")
+            .api_key = "legacy-profile-as-key".to_string();
+
+        let normalized = settings.normalized();
+
+        assert!(normalized
+            .providers
+            .get(&ProviderId::from("bedrock"))
+            .expect("bedrock profile")
+            .api_key
+            .is_empty());
+    }
+
+    #[test]
     fn provider_profile_serde_roundtrip_with_reasoning_effort_options() {
         let profile = ProviderProfile {
             reasoning_effort_options: vec![ReasoningEffortOption {

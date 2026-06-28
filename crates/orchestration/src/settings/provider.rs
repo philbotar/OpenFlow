@@ -209,7 +209,9 @@ fn resolve_bedrock_profile(
                 .and_then(|value| trimmed(Some(value)).map(str::to_string))
         })
         .or_else(|| match auth {
-            AuthSpec::AwsCredentials { profile_env_var, .. } => std::env::var(profile_env_var)
+            AuthSpec::AwsCredentials {
+                profile_env_var, ..
+            } => std::env::var(profile_env_var)
                 .ok()
                 .and_then(|value| trimmed(Some(&value)).map(str::to_string)),
             _ => None,
@@ -380,6 +382,84 @@ mod tests {
         assert_eq!(config.region, "eu-west-1");
         assert_eq!(config.aws_profile.as_deref(), Some("work"));
         assert!(matches!(resolved.auth, AuthConfig::AwsCredentials { .. }));
+    }
+
+    #[test]
+    fn bedrock_ignores_api_key_and_transient_key_for_profile() {
+        let mut settings = AppSettings {
+            active_provider: ProviderId::from("bedrock"),
+            ..Default::default()
+        };
+        settings
+            .providers
+            .get_mut(&ProviderId::from("bedrock"))
+            .expect("bedrock profile")
+            .api_key = "legacy-key".to_string();
+
+        let resolved =
+            resolve_provider_config(&settings, Some("transient-key"), &ProviderEnv::default())
+                .unwrap();
+
+        let ProviderAdapterConfig::Bedrock(config) = resolved.adapter else {
+            panic!("expected Bedrock adapter");
+        };
+        assert_eq!(config.aws_profile, None);
+        assert!(matches!(
+            resolved.auth,
+            AuthConfig::AwsCredentials { profile: None, .. }
+        ));
+    }
+
+    #[test]
+    fn bedrock_profile_falls_back_to_aws_profile_env() {
+        let settings = AppSettings {
+            active_provider: ProviderId::from("bedrock"),
+            ..Default::default()
+        };
+
+        let resolved = resolve_provider_config(
+            &settings,
+            None,
+            &ProviderEnv::from_pairs([("AWS_PROFILE", "bedrock-sso")]),
+        )
+        .unwrap();
+
+        let ProviderAdapterConfig::Bedrock(config) = resolved.adapter else {
+            panic!("expected Bedrock adapter");
+        };
+        assert_eq!(config.aws_profile.as_deref(), Some("bedrock-sso"));
+        assert!(matches!(
+            resolved.auth,
+            AuthConfig::AwsCredentials {
+                profile: Some(ref name),
+                ..
+            } if name == "bedrock-sso"
+        ));
+    }
+
+    #[test]
+    fn bedrock_stored_aws_profile_beats_env() {
+        let mut settings = AppSettings {
+            active_provider: ProviderId::from("bedrock"),
+            ..Default::default()
+        };
+        settings
+            .providers
+            .get_mut(&ProviderId::from("bedrock"))
+            .expect("bedrock profile")
+            .aws_profile = "from-settings".to_string();
+
+        let resolved = resolve_provider_config(
+            &settings,
+            None,
+            &ProviderEnv::from_pairs([("AWS_PROFILE", "from-env")]),
+        )
+        .unwrap();
+
+        let ProviderAdapterConfig::Bedrock(config) = resolved.adapter else {
+            panic!("expected Bedrock adapter");
+        };
+        assert_eq!(config.aws_profile.as_deref(), Some("from-settings"));
     }
 
     #[test]

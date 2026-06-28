@@ -893,6 +893,18 @@ mod tests {
     }
 
     #[test]
+    fn humanize_bedrock_sdk_error_mentions_sso_for_credential_failures() {
+        let message = humanize_bedrock_sdk_error(
+            "dispatch failure: credentials provider failed: unable to locate credentials",
+        );
+        assert!(message.contains("aws sso login"));
+        assert!(message.contains("AWS profile name in Settings"));
+
+        let message = humanize_bedrock_sdk_error("CredentialsNotLoaded: no credentials configured");
+        assert!(message.contains("aws sso login"));
+    }
+
+    #[test]
     fn converse_tool_config_uses_sanitized_mcp_tool_names() {
         let mut request = sample_agent_request();
         request.available_tools.push(ToolDefinition {

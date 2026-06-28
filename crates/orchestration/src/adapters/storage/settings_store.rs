@@ -283,16 +283,14 @@ mod tests {
             .clear();
         store.save_raw(&cleared).unwrap();
 
-        assert!(
-            store
-                .load()
-                .unwrap()
-                .providers
-                .get(&ProviderId::from("openai"))
-                .expect("openai profile")
-                .api_key
-                .is_empty()
-        );
+        assert!(store
+            .load()
+            .unwrap()
+            .providers
+            .get(&ProviderId::from("openai"))
+            .expect("openai profile")
+            .api_key
+            .is_empty());
     }
 
     #[test]
