@@ -42,25 +42,26 @@ RAN_STEPS=()
 STEP_STATUS=()
 FAILED_COUNT=0
 
+# shellcheck source=verify/_lib.sh
+. "$ROOT/scripts/verify/_lib.sh"
+
+step_script() {
+	case "$1" in
+	test-fast) printf '%s/scripts/test-fast.sh' "$ROOT" ;;
+	public-api) printf '%s/scripts/check-engine-public-api.sh' "$ROOT" ;;
+	arch) printf '%s/scripts/check-architecture.sh' "$ROOT" ;;
+	miri) printf '%s/scripts/miri.sh' "$ROOT" ;;
+	*) printf '%s/scripts/verify/%s.sh' "$ROOT" "$1" ;;
+	esac
+}
+
 step_repro() {
 	case "$1" in
-	fmt) printf '%s' 'cargo fmt --all --check' ;;
-	clippy)
-		printf '%s' 'cargo clippy --workspace --all-targets --quiet --message-format=short -- -D warnings -D clippy::pedantic -D clippy::nursery -D clippy::cargo'
-		;;
-	doc) printf '%s' 'RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --quiet' ;;
-	test) printf '%s' 'cargo test --workspace --quiet' ;;
 	test-fast) printf '%s' './scripts/test-fast.sh --execution' ;;
 	public-api) printf '%s' './scripts/check-engine-public-api.sh' ;;
-	machete) printf '%s' 'cargo machete' ;;
-	typos) printf '%s' 'typos' ;;
-	ui-typecheck) printf '%s' 'npm --prefix crates/ui run typecheck' ;;
-	ui-test) printf '%s' 'npm --prefix crates/ui run test' ;;
-	deny) printf '%s' 'cargo deny check' ;;
 	arch) printf '%s' './scripts/check-architecture.sh' ;;
-	mutants) printf '%s' 'cargo mutants --no-shuffle' ;;
 	miri) printf '%s' './scripts/miri.sh' ;;
-	*) printf '%s' "$1" ;;
+	*) printf './scripts/verify/%s.sh' "$1" ;;
 	esac
 }
 
@@ -75,27 +76,6 @@ is_valid_step() {
 
 usage_steps() {
 	printf 'Valid steps: %s\n' "${ALL_STEPS[*]} mutants miri (--deep only)"
-}
-
-preflight_toolchain() {
-	if ! command -v cargo >/dev/null 2>&1; then
-		# shellcheck disable=SC1090
-		source "$HOME/.cargo/env"
-	fi
-	if ! command -v cargo >/dev/null 2>&1; then
-		echo "error: cargo not found — install Rust via https://rustup.rs" >&2
-		exit 1
-	fi
-}
-
-preflight_npm() {
-	if ! command -v npm >/dev/null 2>&1; then
-		echo "error: npm is required for UI steps (crates/ui)" >&2
-		return 1
-	fi
-	if [[ ! -d "$ROOT/crates/ui/node_modules" ]]; then
-		npm --prefix "$ROOT/crates/ui" ci
-	fi
 }
 
 record_step_result() {
@@ -159,98 +139,55 @@ run_step() {
 	fi
 }
 
-step_machete() {
-	if ! command -v cargo-machete >/dev/null 2>&1; then
-		fail_step machete "error: cargo-machete is required (cargo install cargo-machete)"
-		return 1
-	fi
-	run_step machete cargo machete
-}
-
-step_typos() {
-	if ! command -v typos >/dev/null 2>&1; then
-		fail_step typos "error: typos is required (cargo install typos-cli)"
-		return 1
-	fi
-	run_step typos typos
-}
-
-step_mutants() {
-	if ! command -v cargo-mutants >/dev/null 2>&1; then
-		fail_step mutants "error: cargo-mutants is required (cargo install cargo-mutants)"
-		return 1
-	fi
-	run_step mutants cargo mutants --no-shuffle
-	local last_idx=$((${#STEP_STATUS[@]} - 1))
-	if [[ $last_idx -ge 0 && "${STEP_STATUS[$last_idx]}" == "FAIL" ]]; then
-		printf 'note: missed mutants mean injected bugs survived the test suite — backlog signal for untested behavior, not necessarily a release blocker\n'
-	fi
-}
-
-step_miri() {
-	run_step miri "$ROOT/scripts/miri.sh"
-}
-
-step_ui_typecheck() {
-	preflight_npm || {
-		fail_step ui-typecheck "error: npm is required for UI steps (crates/ui)"
-		return 1
-	}
-	run_step ui-typecheck npm --prefix crates/ui run typecheck
-}
-
-step_ui_test() {
-	preflight_npm || {
-		fail_step ui-test "error: npm is required for UI steps (crates/ui)"
-		return 1
-	}
-	run_step ui-test npm --prefix crates/ui run test
-}
-
 run_named_step() {
 	local name="$1"
+	local script args=()
+
 	case "$name" in
-	fmt) run_step fmt cargo fmt --all --check ;;
-	clippy)
-		run_step clippy cargo clippy --workspace --all-targets --quiet --message-format=short -- \
-			-D warnings -D clippy::pedantic -D clippy::nursery -D clippy::cargo
-		;;
-	doc) run_step doc env RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --quiet ;;
-	test) run_step test cargo test --workspace --quiet ;;
 	test-fast)
 		preflight_npm || {
 			fail_step test-fast "error: npm is required for UI steps (crates/ui)"
 			return 1
 		}
-		run_step test-fast "$ROOT/scripts/test-fast.sh" --execution
+		script="$(step_script test-fast)"
+		args=(--execution)
 		;;
-	public-api) run_step public-api "$ROOT/scripts/check-engine-public-api.sh" ;;
-	machete) step_machete ;;
-	typos) step_typos ;;
-	ui-typecheck) step_ui_typecheck ;;
-	ui-test) step_ui_test ;;
-	deny) run_step deny cargo deny check ;;
-	arch) run_step arch "$ROOT/scripts/check-architecture.sh" ;;
 	mutants)
 		if [[ "$DEEP" -ne 1 ]]; then
 			fail_step mutants "error: mutants step requires --deep"
 			return 1
 		fi
-		step_mutants
+		script="$(step_script mutants)"
 		;;
 	miri)
 		if [[ "$DEEP" -ne 1 ]]; then
 			fail_step miri "error: miri step requires --deep"
 			return 1
 		fi
-		step_miri
+		script="$(step_script miri)"
 		;;
 	*)
-		echo "error: unknown step '$name'" >&2
-		usage_steps
-		return 1
+		script="$(step_script "$name")"
 		;;
 	esac
+
+	if [[ ! -x "$script" && ! -f "$script" ]]; then
+		echo "error: missing step script '$script'" >&2
+		return 1
+	fi
+
+	if ((${#args[@]})); then
+		run_step "$name" "$script" "${args[@]}"
+	else
+		run_step "$name" "$script"
+	fi
+
+	if [[ "$name" == "mutants" ]]; then
+		local last_idx=$((${#STEP_STATUS[@]} - 1))
+		if [[ $last_idx -ge 0 && "${STEP_STATUS[$last_idx]}" == "FAIL" ]]; then
+			printf 'note: missed mutants mean injected bugs survived the test suite — backlog signal for untested behavior, not necessarily a release blocker\n'
+		fi
+	fi
 }
 
 print_summary() {
@@ -288,6 +225,7 @@ while [[ $# -gt 0 ]]; do
 		echo "Set VERIFY_MAX_LINES to control truncated failure output (default: 150)."
 		echo "Parallel agents: default uses target/verify-<pid> (no cargo lock contention)."
 		echo "Set VERIFY_SHARE_TARGET=1 to reuse ./target for faster solo runs."
+		echo "Run scripts/verify/<step>.sh directly for full untruncated output."
 		usage_steps
 		exit 0
 		;;

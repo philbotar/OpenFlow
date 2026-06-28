@@ -158,7 +158,35 @@ Primary gate for agents and local handoff - run after every change:
 ./scripts/verify.sh
 ```
 
-**CI** runs the lean subset via `./scripts/verify-ci.sh` (fmt, clippy, test-fast + workflow acceptance, arch, ui-test, deny). Skips doc, public-api, machete, typos, full workspace test (desktop/Tauri). Run full `./scripts/verify.sh` before handoff or PR.
+**CI** runs parallel jobs in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml): a `build` job warms a shared Rust cache, then `fmt`, `clippy`, `test` (`test-fast.sh --execution`), `ui`, and `lint-extras` (machete, typos, deny, arch, doc, public-api) run in parallel. Skips full workspace `test` (desktop/Tauri) and `--deep` steps (`mutants`, `miri`). Run full `./scripts/verify.sh` before handoff or PR.
+
+Run a granular script directly for full untruncated output; run `verify.sh` for the truncated summary gate.
+
+| Step | Granular script |
+| --- | --- |
+| `fmt` | `./scripts/verify/fmt.sh` |
+| `clippy` | `./scripts/verify/clippy.sh` |
+| `doc` | `./scripts/verify/doc.sh` |
+| `test` | `./scripts/verify/test.sh` |
+| `test-fast` | `./scripts/test-fast.sh` (delegates to `scripts/verify/test-*.sh`) |
+| `public-api` | `./scripts/check-engine-public-api.sh` |
+| `machete` | `./scripts/verify/machete.sh` |
+| `typos` | `./scripts/verify/typos.sh` |
+| `ui-typecheck` | `./scripts/verify/ui-typecheck.sh` |
+| `ui-test` | `./scripts/verify/ui-test.sh` |
+| `deny` | `./scripts/verify/deny.sh` |
+| `arch` | `./scripts/check-architecture.sh` |
+| `mutants` (`--deep`) | `./scripts/verify/mutants.sh` |
+| `miri` (`--deep`) | `./scripts/miri.sh` |
+
+| Test-fast leg | Granular script |
+| --- | --- |
+| engine | `./scripts/verify/test-engine.sh` |
+| providers | `./scripts/verify/test-providers.sh` |
+| orchestration lib | `./scripts/verify/test-orchestration-lib.sh` |
+| workspace-checks | `./scripts/verify/test-workspace-checks.sh` |
+| workflow acceptance | `./scripts/verify/test-execution.sh` |
+| desktop | `./scripts/verify/test-desktop.sh` |
 
 | Behavior | Detail |
 | --- | --- |
@@ -171,7 +199,7 @@ Primary gate for agents and local handoff - run after every change:
 
 **Steps:** `fmt`, `clippy` (pedantic/nursery/cargo), `doc`, `test`, `test-fast`, `public-api`, `machete`, `typos`, `ui-typecheck`, `ui-test`, `deny`, `arch`. **`--deep` only:** `mutants`, `miri`.
 
-**CI:** blocking `./scripts/verify-ci.sh`; separate **`miri`** matrix job runs `./scripts/miri.sh <crate>` per changed Miri-eligible crate (`engine`, `orchestration`) on Ubuntu (skipped when neither changed). Superseded runs cancel via workflow `concurrency`. Miri CI pins `nightly-2026-06-20` (`MIRI_TOOLCHAIN`) and caches `~/.cache/miri` (sysroot) plus `target/miri` (via `rust-cache`) so warm runs skip the ~17s sysroot build and most dependency recompiles.
+**CI:** parallel jobs (`build` warm cache → `fmt`, `clippy`, `test`, `ui`, `lint-extras`); separate **`miri`** matrix job runs `./scripts/miri.sh <crate>` per changed Miri-eligible crate (`engine`, `orchestration`) on Ubuntu (skipped when neither changed). Superseded runs cancel via workflow `concurrency`. Miri CI pins `nightly-2026-06-20` (`MIRI_TOOLCHAIN`) and caches `~/.cache/miri` (sysroot) plus `target/miri` (via `rust-cache`) so warm runs skip the ~17s sysroot build and most dependency recompiles.
 
 **One-time installs:** `cargo install cargo-machete typos-cli cargo-mutants cargo-public-api`; Miri: `rustup toolchain install nightly --component miri` (see [Miri §](testing-workflows.md#miri)).
 
@@ -182,6 +210,8 @@ Use this during normal edit/test loops:
 ```bash
 ./scripts/test-fast.sh
 ```
+
+Each leg is also runnable directly under `scripts/verify/test-*.sh` (e.g. `./scripts/verify/test-providers.sh`).
 
 Why this exists:
 

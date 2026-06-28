@@ -11,11 +11,11 @@ usage() {
 Usage: ./scripts/test-fast.sh [--execution] [--desktop]
 
 Default lane:
-  - cargo test -p engine
-  - cargo test -p providers
-  - cargo test -p orchestration --lib
-  - cargo test -p workspace-checks
-  - npm --prefix crates/ui run typecheck
+  - ./scripts/verify/test-engine.sh
+  - ./scripts/verify/test-providers.sh
+  - ./scripts/verify/test-orchestration-lib.sh
+  - ./scripts/verify/test-workspace-checks.sh
+  - ./scripts/verify/ui-typecheck.sh
 
 Options:
   --execution  Add deterministic workflow acceptance coverage.
@@ -28,10 +28,7 @@ run_step() {
 	local label="$1"
 	shift
 	printf '\n== %s ==\n' "$label"
-	(
-		cd "$ROOT"
-		"$@"
-	)
+	"$@"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -56,18 +53,16 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 
-run_step "engine" cargo test -p engine --quiet
-run_step "providers" cargo test -p providers --quiet
-run_step "orchestration lib" cargo test -p orchestration --lib --quiet
-run_step "workspace checks" cargo test -p workspace-checks --quiet
-run_step "ui typecheck" npm --prefix crates/ui run typecheck
+run_step "engine" "$ROOT/scripts/verify/test-engine.sh"
+run_step "providers" "$ROOT/scripts/verify/test-providers.sh"
+run_step "orchestration lib" "$ROOT/scripts/verify/test-orchestration-lib.sh"
+run_step "workspace checks" "$ROOT/scripts/verify/test-workspace-checks.sh"
+run_step "ui typecheck" "$ROOT/scripts/verify/ui-typecheck.sh"
 
 if [[ "$RUN_EXECUTION" == "1" ]]; then
-	run_step \
-		"workflow acceptance" \
-		cargo test -p orchestration --test workflow_acceptance -- --nocapture
+	run_step "workflow acceptance" "$ROOT/scripts/verify/test-execution.sh"
 fi
 
 if [[ "$RUN_DESKTOP" == "1" ]]; then
-	run_step "desktop" cargo test -p desktop --quiet
+	run_step "desktop" "$ROOT/scripts/verify/test-desktop.sh"
 fi
