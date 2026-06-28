@@ -232,6 +232,13 @@ jobs:
       - name: Run public-api
         run: ./scripts/check-engine-public-api.sh
 
+  verify:
+    name: Verify (blocking)
+    needs: [build, fmt, clippy, test, ui, lint-extras]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "All verify checks passed"
+
   miri-changes:
     name: Detect Miri crates
     runs-on: ubuntu-latest
