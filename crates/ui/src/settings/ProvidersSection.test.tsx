@@ -46,6 +46,18 @@ const CUSTOM: ProviderProfile = {
   editable: true,
 };
 
+const BEDROCK: ProviderProfile = {
+  display_name: "Amazon Bedrock",
+  base_url: "us-east-1",
+  transport: "chat_completions",
+  responses_path: "v1/responses",
+  chat_completions_path: "v1/chat/completions",
+  known_models: ["anthropic.claude-sonnet-4-20250514-v1:0"],
+  default_model: "anthropic.claude-sonnet-4-20250514-v1:0",
+  editable: false,
+  aws_profile: "bedrock",
+};
+
 function makeSettings(activeProvider: keyof typeof baseProviders): AppSettings {
   return {
     active_provider: activeProvider,
@@ -57,6 +69,7 @@ const baseProviders = {
   openai: OPENAI,
   anthropic: ANTHROPIC,
   custom_openai_compatible: CUSTOM,
+  bedrock: BEDROCK,
 };
 
 describe("ProvidersSection", () => {
@@ -86,7 +99,7 @@ describe("ProvidersSection", () => {
     const ctx = {
       settings,
       activeProfileMemo: () => activeProfile(settings()),
-      providerIdsMemo: () => ["openai", "anthropic", "custom_openai_compatible"],
+      providerIdsMemo: () => ["openai", "anthropic", "custom_openai_compatible", "bedrock"],
       activeProviderKeyInput: () => "stored-key",
       newModelInputByProvider: () => ({ custom_openai_compatible: "new-model" }),
       readiness: () => ({
@@ -236,5 +249,27 @@ describe("ProvidersSection", () => {
       const section = container.querySelector(`section[aria-labelledby="${id}"]`);
       expect(section).not.toBeNull();
     }
+  });
+
+  test("bedrock shows aws profile field instead of api key input", () => {
+    renderSection("bedrock");
+    expect(subheading("providers-auth-heading")?.textContent).toBe("AWS credentials");
+    expect(container.textContent).toContain("aws sso login");
+    expect(container.querySelector('input[type="password"]')).toBeNull();
+    const profileInput = container.querySelector(
+      'input[placeholder="e.g. bedrock"]',
+    ) as HTMLInputElement;
+    expect(profileInput).not.toBeNull();
+    expect(profileInput.value).toBe("bedrock");
+  });
+
+  test("bedrock aws profile input updates settings", async () => {
+    const { settings } = renderSection("bedrock");
+    const profileInput = container.querySelector(
+      'input[placeholder="e.g. bedrock"]',
+    ) as HTMLInputElement;
+    profileInput.value = "work-profile";
+    profileInput.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(settings().providers.bedrock?.aws_profile).toBe("work-profile");
   });
 });
