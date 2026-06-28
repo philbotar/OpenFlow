@@ -56,7 +56,7 @@ highlight = "all"
 allow = []
 deny = []
 skip-tree = [
-    { crate = "tauri@2.11.2", depth = 20 },
+    { crate = "tauri@2.11.3", depth = 20 },
     { crate = "reqwest@0.13.3", depth = 20 },
 ]
 skip = [
