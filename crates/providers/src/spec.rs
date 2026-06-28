@@ -107,7 +107,9 @@ pub struct AnthropicSpec {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct BedrockSpec;
+pub struct BedrockSpec {
+    pub default_region: &'static str,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProviderKind {
@@ -247,6 +249,10 @@ const OPENAI_COMPAT_CHAT: OpenAiCompatibleSpec = OpenAiCompatibleSpec {
 const ANTHROPIC: AnthropicSpec = AnthropicSpec {
     messages_path: ANTHROPIC_MESSAGES_PATH,
     anthropic_version: ANTHROPIC_VERSION,
+};
+
+const BEDROCK: BedrockSpec = BedrockSpec {
+    default_region: "us-east-1",
 };
 
 const BUILTIN_PROVIDER_SPECS: &[ProviderSpec] = &[
@@ -416,9 +422,8 @@ const BUILTIN_PROVIDER_SPECS: &[ProviderSpec] = &[
     ProviderSpec {
         id: "bedrock",
         display_name: "Amazon Bedrock",
-        // ponytail: AWS region stored in base_url; upgrade path: dedicated region field in settings schema
-        default_base_url: "us-east-1",
-        kind: ProviderKind::Bedrock(BedrockSpec),
+        default_base_url: "",
+        kind: ProviderKind::Bedrock(BEDROCK),
         auth: AuthSpec::AwsCredentials {
             profile_env_var: "AWS_PROFILE",
             region_env_var: "AWS_REGION",

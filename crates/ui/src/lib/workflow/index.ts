@@ -873,6 +873,7 @@ function cloneProviderProfile(profile: ProviderProfile): ProviderProfile {
     default_model: profile.default_model,
     editable: profile.editable,
     aws_profile: profile.aws_profile,
+    aws_region: profile.aws_region,
     reasoning_effort_options: reasoningOptions.map((option) => ({ ...option })),
     default_reasoning_budget_tokens: { ...budgetTokens },
     default_reasoning_effort: defaultReasoningEffort(profile),

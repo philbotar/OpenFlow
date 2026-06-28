@@ -19,7 +19,7 @@ Bedrock uses AWS credentials and region settings rather than a normal API-key he
 | Concern | Source |
 | --- | --- |
 | Auth | AWS credential chain (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`, SSO, shared config, instance role). Optional profile name in Settings (`ProviderProfile.aws_profile`), or `AWS_PROFILE` env var. |
-| Region | Settings **AWS region** field (`ProviderProfile.base_url`, default `us-east-1`) or `AWS_REGION`. |
+| Region | Settings **AWS region** field (`ProviderProfile.aws_region`, default `us-east-1`) or `AWS_REGION`. Older settings with a Bedrock region in `ProviderProfile.base_url` are migrated on load. |
 | Inference | AWS Bedrock Converse API through `aws-sdk-bedrockruntime`, not native Anthropic Messages on `bedrock-mantle`. |
 | Model refresh | Settings **Refresh from AWS** calls `ListFoundationModels` and filters active text-capable on-demand models. |
 | Minimum IAM | `bedrock:InvokeModel`, `bedrock:InvokeModelWithResponseStream`, and `bedrock:ListFoundationModels`. |

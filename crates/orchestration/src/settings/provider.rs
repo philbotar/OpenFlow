@@ -14,9 +14,8 @@ pub struct ProviderEnv {
 impl ProviderEnv {
     #[must_use]
     pub fn from_system() -> Self {
-        let values = providers::builtin_provider_specs()
-            .iter()
-            .filter_map(|spec| spec.auth.env_var())
+        let values = provider_env_var_names()
+            .into_iter()
             .filter_map(|env_var| {
                 std::env::var(env_var)
                     .ok()
@@ -42,6 +41,21 @@ impl ProviderEnv {
     pub fn get(&self, env_var: &str) -> Option<&str> {
         self.values.get(env_var).map(String::as_str)
     }
+}
+
+fn provider_env_var_names() -> Vec<&'static str> {
+    let mut names = Vec::new();
+    for spec in providers::builtin_provider_specs() {
+        if let Some(env_var) = spec.auth.env_var() {
+            names.push(env_var);
+        }
+        if let AuthSpec::AwsCredentials { region_env_var, .. } = spec.auth {
+            names.push(region_env_var);
+        }
+    }
+    names.sort_unstable();
+    names.dedup();
+    names
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -187,8 +201,9 @@ fn resolve_bedrock_region(
     auth: AuthSpec,
     env: &ProviderEnv,
 ) -> Option<String> {
-    trimmed(Some(profile.base_url.as_str()))
+    trimmed(Some(profile.aws_region.as_str()))
         .map(str::to_string)
+        .or_else(|| trimmed(Some(profile.base_url.as_str())).map(str::to_string))
         .or_else(|| {
             bedrock_region_env_var(auth)
                 .and_then(|env_var| env.get(env_var))
@@ -366,7 +381,7 @@ mod tests {
             .providers
             .get_mut(&ProviderId::from("bedrock"))
             .expect("bedrock profile")
-            .base_url = "eu-west-1".to_string();
+            .aws_region = "eu-west-1".to_string();
         settings
             .providers
             .get_mut(&ProviderId::from("bedrock"))
@@ -435,6 +450,74 @@ mod tests {
                 ..
             } if name == "bedrock-sso"
         ));
+    }
+
+    #[test]
+    fn bedrock_region_falls_back_to_aws_region_env() {
+        let mut settings = AppSettings {
+            active_provider: ProviderId::from("bedrock"),
+            ..Default::default()
+        };
+        settings
+            .providers
+            .get_mut(&ProviderId::from("bedrock"))
+            .expect("bedrock profile")
+            .aws_region
+            .clear();
+        settings
+            .providers
+            .get_mut(&ProviderId::from("bedrock"))
+            .expect("bedrock profile")
+            .base_url
+            .clear();
+
+        let resolved = resolve_provider_config(
+            &settings,
+            None,
+            &ProviderEnv::from_pairs([("AWS_REGION", "ap-southeast-2")]),
+        )
+        .unwrap();
+
+        let ProviderAdapterConfig::Bedrock(config) = resolved.adapter else {
+            panic!("expected Bedrock adapter");
+        };
+        assert_eq!(config.region, "ap-southeast-2");
+        assert!(matches!(
+            resolved.auth,
+            AuthConfig::AwsCredentials {
+                region: ref resolved_region,
+                ..
+            } if resolved_region == "ap-southeast-2"
+        ));
+    }
+
+    #[test]
+    fn provider_env_var_names_include_bedrock_profile_and_region() {
+        let names = provider_env_var_names();
+
+        assert!(names.contains(&"AWS_PROFILE"));
+        assert!(names.contains(&"AWS_REGION"));
+    }
+
+    #[test]
+    fn bedrock_region_reads_legacy_base_url_when_aws_region_missing() {
+        let mut settings = AppSettings {
+            active_provider: ProviderId::from("bedrock"),
+            ..Default::default()
+        };
+        let profile = settings
+            .providers
+            .get_mut(&ProviderId::from("bedrock"))
+            .expect("bedrock profile");
+        profile.aws_region.clear();
+        profile.base_url = "ap-southeast-2".to_string();
+
+        let resolved = resolve_provider_config(&settings, None, &ProviderEnv::default()).unwrap();
+
+        let ProviderAdapterConfig::Bedrock(config) = resolved.adapter else {
+            panic!("expected Bedrock adapter");
+        };
+        assert_eq!(config.region, "ap-southeast-2");
     }
 
     #[test]

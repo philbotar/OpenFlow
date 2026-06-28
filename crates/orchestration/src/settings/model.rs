@@ -23,6 +23,8 @@ pub struct ProviderProfile {
     pub api_key: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub aws_profile: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub aws_region: String,
     #[serde(default)]
     pub editable: bool,
     #[serde(skip)]
@@ -62,21 +64,33 @@ fn default_chat_completions_path() -> String {
 impl ProviderProfile {
     #[must_use]
     pub fn from_spec(spec: &ProviderSpec) -> Self {
-        let (transport, responses_path, chat_completions_path) = match spec.kind {
-            ProviderKind::OpenAiCompatible(openai) => (
-                openai.default_wire_api,
-                openai.responses_path.to_string(),
-                openai.chat_completions_path.to_string(),
-            ),
-            ProviderKind::Anthropic(_) | ProviderKind::Bedrock(_) => (
-                ProviderTransport::ChatCompletions,
-                default_responses_path(),
-                default_chat_completions_path(),
-            ),
-        };
+        let (transport, responses_path, chat_completions_path, base_url, aws_region) =
+            match spec.kind {
+                ProviderKind::OpenAiCompatible(openai) => (
+                    openai.default_wire_api,
+                    openai.responses_path.to_string(),
+                    openai.chat_completions_path.to_string(),
+                    spec.default_base_url.to_string(),
+                    String::new(),
+                ),
+                ProviderKind::Anthropic(_) => (
+                    ProviderTransport::ChatCompletions,
+                    default_responses_path(),
+                    default_chat_completions_path(),
+                    spec.default_base_url.to_string(),
+                    String::new(),
+                ),
+                ProviderKind::Bedrock(bedrock) => (
+                    ProviderTransport::ChatCompletions,
+                    default_responses_path(),
+                    default_chat_completions_path(),
+                    String::new(),
+                    bedrock.default_region.to_string(),
+                ),
+            };
         Self {
             display_name: spec.display_name.to_string(),
-            base_url: spec.default_base_url.to_string(),
+            base_url,
             transport,
             responses_path,
             chat_completions_path,
@@ -88,6 +102,7 @@ impl ProviderProfile {
             default_model: Some(spec.default_model.to_string()),
             api_key: String::new(),
             aws_profile: String::new(),
+            aws_region,
             editable: spec.editable,
             new_model_input: String::new(),
             reasoning_effort_options: spec.default_reasoning_effort_options(),
@@ -124,6 +139,7 @@ impl ProviderProfile {
             default_model: Some("gpt-4o-mini".to_string()),
             api_key: String::new(),
             aws_profile: String::new(),
+            aws_region: String::new(),
             editable: false,
             new_model_input: String::new(),
             reasoning_effort_options: Vec::new(),
@@ -138,8 +154,23 @@ impl ProviderProfile {
             if self.display_name.trim().is_empty() {
                 self.display_name = spec.display_name.to_string();
             }
-            if self.base_url.trim().is_empty() {
-                self.base_url = spec.default_base_url.to_string();
+            match spec.kind {
+                ProviderKind::Bedrock(bedrock) => {
+                    let legacy_region = self.base_url.trim();
+                    if self.aws_region.trim().is_empty() && !legacy_region.is_empty() {
+                        self.aws_region = legacy_region.to_string();
+                    }
+                    if self.aws_region.trim().is_empty() {
+                        self.aws_region = bedrock.default_region.to_string();
+                    }
+                    self.base_url.clear();
+                }
+                ProviderKind::OpenAiCompatible(_) | ProviderKind::Anthropic(_) => {
+                    if self.base_url.trim().is_empty() {
+                        self.base_url = spec.default_base_url.to_string();
+                    }
+                    self.aws_region.clear();
+                }
             }
             if self.known_models.is_empty() {
                 self.known_models = spec
@@ -259,6 +290,14 @@ pub struct AppSettings {
     pub incident_retention_max: u32,
 }
 
+fn migrate_bedrock_legacy_profile(profile: &mut ProviderProfile) {
+    let legacy_profile = profile.api_key.trim();
+    if profile.aws_profile.trim().is_empty() && !legacy_profile.is_empty() {
+        profile.aws_profile = legacy_profile.to_string();
+    }
+    profile.api_key.clear();
+}
+
 impl AppSettings {
     #[must_use]
     pub fn active_profile(&self) -> &ProviderProfile {
@@ -322,7 +361,7 @@ impl AppSettings {
             self.active_provider = ProviderId::from("openai");
         }
         if let Some(profile) = self.providers.get_mut(&ProviderId::from("bedrock")) {
-            profile.api_key.clear();
+            migrate_bedrock_legacy_profile(profile);
         }
         self
     }
@@ -386,6 +425,58 @@ mod tests {
             .expect("bedrock profile")
             .api_key
             .is_empty());
+    }
+
+    #[test]
+    fn normalized_migrates_legacy_bedrock_api_key_to_aws_profile() {
+        let mut settings = AppSettings::default();
+        let profile = settings
+            .providers
+            .get_mut(&ProviderId::from("bedrock"))
+            .expect("bedrock profile");
+        profile.api_key = " openflow-bedrock ".to_string();
+        profile.aws_profile.clear();
+
+        let normalized = settings.normalized();
+        let profile = normalized
+            .providers
+            .get(&ProviderId::from("bedrock"))
+            .expect("bedrock profile");
+
+        assert_eq!(profile.aws_profile, "openflow-bedrock");
+        assert!(profile.api_key.is_empty());
+    }
+
+    #[test]
+    fn bedrock_default_uses_aws_region_not_base_url() {
+        let settings = AppSettings::default();
+        let profile = settings
+            .providers
+            .get(&ProviderId::from("bedrock"))
+            .expect("bedrock profile");
+
+        assert_eq!(profile.aws_region, "us-east-1");
+        assert!(profile.base_url.is_empty());
+    }
+
+    #[test]
+    fn normalized_migrates_legacy_bedrock_base_url_to_aws_region() {
+        let mut settings = AppSettings::default();
+        let profile = settings
+            .providers
+            .get_mut(&ProviderId::from("bedrock"))
+            .expect("bedrock profile");
+        profile.aws_region.clear();
+        profile.base_url = " ap-southeast-2 ".to_string();
+
+        let normalized = settings.normalized();
+        let profile = normalized
+            .providers
+            .get(&ProviderId::from("bedrock"))
+            .expect("bedrock profile");
+
+        assert_eq!(profile.aws_region, "ap-southeast-2");
+        assert!(profile.base_url.is_empty());
     }
 
     #[test]
