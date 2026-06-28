@@ -1004,3 +1004,32 @@ fn due_schedule_candidate_uses_workflow_id() {
 
     assert_eq!(candidate.workflow_id, workflow_id);
 }
+
+#[test]
+fn delete_provider_api_key_clears_stored_key() {
+    let (backend, _dir) = backend();
+
+    backend
+        .save_provider_api_key("openai", "sk-secret")
+        .expect("save key");
+    backend
+        .delete_provider_api_key("openai")
+        .expect("delete key");
+
+    assert_eq!(backend.load_provider_api_key("openai").unwrap(), None);
+}
+
+#[test]
+fn load_provider_api_key_ignores_bedrock_aws_profile() {
+    let (backend, dir) = backend();
+    let store = FileSettingsStore::new(dir.path().join("settings.json"));
+    let mut settings = store.load().unwrap();
+    settings
+        .providers
+        .get_mut(&ProviderId::from("bedrock"))
+        .expect("bedrock profile")
+        .aws_profile = "bedrock".to_string();
+    store.save(&settings).unwrap();
+
+    assert_eq!(backend.load_provider_api_key("bedrock").unwrap(), None);
+}

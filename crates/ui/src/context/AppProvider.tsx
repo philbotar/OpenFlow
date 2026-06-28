@@ -734,10 +734,12 @@ export function AppProvider(props: ParentProps) {
     const providerId = settings().active_provider;
     const apiKey = activeProviderKeyInput().trim();
     try {
-      if (apiKey) {
-        await desktop.saveProviderApiKey(providerId, apiKey);
-      } else {
-        await desktop.deleteProviderApiKey(providerId);
+      if (providerId !== "bedrock") {
+        if (apiKey) {
+          await desktop.saveProviderApiKey(providerId, apiKey);
+        } else {
+          await desktop.deleteProviderApiKey(providerId);
+        }
       }
       await desktop.saveSettings(settings());
       await refreshReadiness();

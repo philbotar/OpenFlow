@@ -21,6 +21,8 @@ pub struct ProviderProfile {
     pub default_model: Option<String>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub api_key: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub aws_profile: String,
     #[serde(default)]
     pub editable: bool,
     #[serde(skip)]
@@ -85,6 +87,7 @@ impl ProviderProfile {
                 .collect(),
             default_model: Some(spec.default_model.to_string()),
             api_key: String::new(),
+            aws_profile: String::new(),
             editable: spec.editable,
             new_model_input: String::new(),
             reasoning_effort_options: spec.default_reasoning_effort_options(),
@@ -120,6 +123,7 @@ impl ProviderProfile {
             known_models: vec!["gpt-4o-mini".to_string()],
             default_model: Some("gpt-4o-mini".to_string()),
             api_key: String::new(),
+            aws_profile: String::new(),
             editable: false,
             new_model_input: String::new(),
             reasoning_effort_options: Vec::new(),
@@ -317,6 +321,9 @@ impl AppSettings {
         if !self.providers.contains_key(&self.active_provider) {
             self.active_provider = ProviderId::from("openai");
         }
+        if let Some(profile) = self.providers.get_mut(&ProviderId::from("bedrock")) {
+            profile.api_key.clear();
+        }
         self
     }
 }
@@ -361,6 +368,25 @@ pub fn merge_preserved_api_keys(incoming: &mut AppSettings, existing: &AppSettin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn normalized_clears_bedrock_api_key() {
+        let mut settings = AppSettings::default();
+        settings
+            .providers
+            .get_mut(&ProviderId::from("bedrock"))
+            .expect("bedrock profile")
+            .api_key = "legacy-profile-as-key".to_string();
+
+        let normalized = settings.normalized();
+
+        assert!(normalized
+            .providers
+            .get(&ProviderId::from("bedrock"))
+            .expect("bedrock profile")
+            .api_key
+            .is_empty());
+    }
 
     #[test]
     fn provider_profile_serde_roundtrip_with_reasoning_effort_options() {
