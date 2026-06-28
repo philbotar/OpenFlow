@@ -81,7 +81,7 @@ impl SettingsFacade {
             )
         })?;
         profile.api_key = api_key.trim().to_string();
-        self.store.save(&settings)?;
+        self.store.save_raw(&settings)?;
         Ok(())
     }
 
@@ -177,7 +177,7 @@ impl SettingsFacade {
                 "Amazon Bedrock AWS region missing",
             )));
         }
-        let profile_name = profile.api_key.trim();
+        let profile_name = profile.aws_profile.trim();
         #[cfg(not(feature = "bedrock"))]
         {
             let _ = (region, profile_name);
