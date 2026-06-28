@@ -105,7 +105,7 @@ else
 	jq --arg v "$next" '.version = $v' "$DESKTOP_TAURI" >"${DESKTOP_TAURI}.tmp"
 	mv "${DESKTOP_TAURI}.tmp" "$DESKTOP_TAURI"
 
-	sed -i "s/^version = \".*\"/version = \"${next}\"/" "$DESKTOP_CARGO"
+	sed -i.bak "s/^version = \".*\"/version = \"${next}\"/" "$DESKTOP_CARGO" && rm -f "${DESKTOP_CARGO}.bak"
 	jq --arg v "$next" '.version = $v' "$DESKTOP_PACKAGE" >"${DESKTOP_PACKAGE}.tmp"
 	mv "${DESKTOP_PACKAGE}.tmp" "$DESKTOP_PACKAGE"
 fi
