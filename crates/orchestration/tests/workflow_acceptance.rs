@@ -447,6 +447,7 @@ fn checkpoint_interactive_params<A: AiPort + Send + Sync + 'static>(
         workflow,
         entrypoint: None,
         execution_cwd,
+        project_repository_root: None,
         artifact_root: new_artifact_root(),
         resume_checkpoint,
         checkpoint_sink,

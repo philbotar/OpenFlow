@@ -159,7 +159,9 @@ impl SettingsFacade {
         &self,
         settings: &AppSettings,
     ) -> Result<Vec<String>, BackendError> {
-        let profile = settings
+        let mut merged = settings.clone();
+        merge_preserved_api_keys(&mut merged, &self.store.load()?);
+        let profile = merged
             .providers
             .get(&ProviderId::from("bedrock"))
             .ok_or_else(|| {

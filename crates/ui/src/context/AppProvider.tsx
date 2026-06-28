@@ -2091,7 +2091,9 @@ export function AppProvider(props: ParentProps) {
             }
             publishBackendRunState(nextRunState);
             void refreshContinuableRun();
-            if (activeWorkflowId() !== backendRunWorkflowId()) {
+            const activeId = activeWorkflowId();
+            const backendId = backendRunWorkflowId();
+            if (activeId !== backendId) {
               return;
             }
             void flushPendingKickoff(nextRunState);

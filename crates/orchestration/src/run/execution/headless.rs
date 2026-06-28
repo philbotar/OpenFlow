@@ -57,6 +57,7 @@ where
             workflow: workflow.clone(),
             entrypoint,
             execution_cwd,
+            project_repository_root: None,
             artifact_root: super::new_artifact_root(),
             resume_checkpoint: None,
             checkpoint_sink: Arc::new(parking_lot::Mutex::new(None)),

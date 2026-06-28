@@ -210,7 +210,7 @@ fn find_tool() -> RegisteredTool {
     RegisteredTool {
         definition: ToolDefinition {
             name: "find".to_string(),
-            description: "Find files and directories matching glob patterns (e.g. **/*.rs, src/**/*.ts). Results cap at 200 paths — narrow the pattern if you hit the limit.".to_string(),
+            description: "Find files and directories matching glob patterns (e.g. **/*.rs, src/**/*.ts). Gitignore-aware by default. Results cap at 200 paths — narrow the pattern if you hit the limit.".to_string(),
             input_schema: with_intent_field(serde_json::json!({
                 "type": "object",
                 "additionalProperties": false,

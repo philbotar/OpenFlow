@@ -10,6 +10,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 pub const MAX_SEARCH_MATCHES: usize = 500;
+/// ponytail: glob expansion ignores gitignore; cap and fall back to directory walk
+const MAX_GLOB_PATHS: usize = 500;
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
@@ -223,7 +225,17 @@ fn search_directory(
     Ok((lines, limit_reached))
 }
 
+fn is_catch_all_search_path(pattern: &str) -> bool {
+    matches!(pattern.trim(), "**/*" | "**" | "*")
+}
+
 fn resolve_search_targets(cwd: &Path, pattern: &str) -> Result<Vec<PathBuf>, ToolError> {
+    let pattern = pattern.trim();
+    // ponytail: glob crate ignores .gitignore; **/* expands target/ and hangs runs
+    if is_catch_all_search_path(pattern) {
+        return Ok(vec![cwd.to_path_buf()]);
+    }
+
     let absolute = resolve_local(cwd, pattern);
     if absolute.exists() {
         return Ok(vec![absolute]);
@@ -237,6 +249,9 @@ fn resolve_search_targets(cwd: &Path, pattern: &str) -> Result<Vec<PathBuf>, Too
         hint: "narrow paths or use a valid glob under the execution folder".to_string(),
     })? {
         matches.push(entry.map_err(|error| ToolError::failed(format!("glob failed: {error}")))?);
+        if matches.len() > MAX_GLOB_PATHS {
+            return Ok(vec![cwd.to_path_buf()]);
+        }
     }
     if matches.is_empty() && !pattern.contains(['*', '?', '[', '{']) {
         return Err(ToolError::NotFound {
@@ -283,6 +298,28 @@ mod tests {
         )
         .unwrap();
         assert!(output.contains("note.txt:2:beta"));
+    }
+
+    #[cfg_attr(miri, ignore)] // ponytail: Miri cannot emulate git subprocess (fork)
+    #[test]
+    fn catch_all_glob_respects_gitignore() {
+        let (_dir, cwd) = fixture();
+        std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(&cwd)
+            .status()
+            .expect("git init for gitignore test");
+        fs::write(cwd.join(".gitignore"), "ignored/\n").unwrap();
+        fs::create_dir(cwd.join("ignored")).unwrap();
+        fs::write(cwd.join("ignored/hidden.txt"), "needle\n").unwrap();
+        fs::write(cwd.join("visible.txt"), "needle\n").unwrap();
+        let output = search_at(
+            &cwd,
+            serde_json::json!({"pattern": "needle", "paths": "**/*"}),
+        )
+        .unwrap();
+        assert!(output.contains("visible.txt"));
+        assert!(!output.contains("ignored/hidden.txt"));
     }
 
     #[cfg_attr(miri, ignore)] // ponytail: Miri cannot emulate git subprocess (fork)

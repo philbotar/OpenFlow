@@ -20,7 +20,7 @@ use crate::run::ports::RunCheckpointStore;
 use crate::run::state::WorkflowRunState;
 use crate::schedule::ScheduleService;
 use crate::settings::facade::SettingsFacade;
-use crate::settings::model::AppSettings;
+use crate::settings::model::{merge_preserved_api_keys, AppSettings};
 use crate::settings::ports::{SettingsStore, SkillCatalog, SkillSummary};
 use crate::settings::provider::ProviderEnv;
 use crate::terminal::{TerminalEvent, TerminalManager, TerminalStart};
@@ -354,14 +354,16 @@ impl AppBackend {
         settings: &AppSettings,
         transient_api_key: Option<&str>,
     ) -> Result<WorkflowAuthoringTurnResult, BackendError> {
+        let mut merged = settings.clone();
+        merge_preserved_api_keys(&mut merged, &self.settings.store().load()?);
         let provider_config = crate::settings::provider::resolve_provider_config(
-            settings,
+            &merged,
             transient_api_key,
             self.settings.env(),
         )?;
         let ai = providers::create_provider(provider_config);
         self.workflow_authoring
-            .send_turn(&session_id, message, settings, &ai)
+            .send_turn(&session_id, message, &merged, &ai)
             .await
             .map_err(BackendError::AuthoringFailed)
     }

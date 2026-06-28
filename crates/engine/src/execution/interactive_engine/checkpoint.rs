@@ -166,6 +166,18 @@ impl InteractiveEngine {
         workflow: Workflow,
         checkpoint: InteractiveEngineCheckpoint,
     ) -> Result<Self, CheckpointError> {
+        Self::from_checkpoint_with_run_context(workflow, checkpoint, None)
+    }
+
+    /// Restore an engine from a checkpoint for the given workflow.
+    ///
+    /// # Errors
+    /// Returns an error when the workflow fails validation or ids do not match.
+    pub fn from_checkpoint_with_run_context(
+        workflow: Workflow,
+        checkpoint: InteractiveEngineCheckpoint,
+        project_repository_root: Option<String>,
+    ) -> Result<Self, CheckpointError> {
         if workflow.id != checkpoint.workflow_id {
             return Err(CheckpointError::WorkflowMismatch {
                 checkpoint: checkpoint.workflow_id,
@@ -211,6 +223,7 @@ impl InteractiveEngine {
             submit_output_retries_by_node: checkpoint.submit_output_retries_by_node,
             request_input_retries_by_node: checkpoint.request_input_retries_by_node,
             entrypoint_text: checkpoint.entrypoint_text,
+            project_repository_root,
             terminal_error: None,
             interrupted_nodes: checkpoint.interrupted_nodes,
             failed_nodes: checkpoint.failed_nodes,

@@ -1,4 +1,4 @@
-use std::fs;
+use ignore::WalkBuilder;
 use std::path::Path;
 
 use crate::tool::errors::ToolError;
@@ -8,7 +8,27 @@ const MAX_DIRECTORY_DEPTH: usize = 1;
 
 pub fn render_directory_listing(path: &Path, label: &str) -> Result<String, ToolError> {
     let mut lines = Vec::new();
-    collect_entries(path, path, 0, &mut lines)?;
+    let max_components = MAX_DIRECTORY_DEPTH + 1;
+    let mut builder = WalkBuilder::new(path);
+    builder.standard_filters(true).follow_links(false);
+
+    for entry in builder.build() {
+        let entry = entry.map_err(|error| {
+            ToolError::failed(format!("read failed for {}: {error}", path.display()))
+        })?;
+        let entry_path = entry.path();
+        if entry_path == path {
+            continue;
+        }
+        let relative = entry_path.strip_prefix(path).unwrap_or(entry_path);
+        if relative.components().count() > max_components {
+            continue;
+        }
+        let display = relative.to_string_lossy().replace('\\', "/");
+        let suffix = if entry_path.is_dir() { "/" } else { "" };
+        lines.push(format!("{display}{suffix}"));
+    }
+
     lines.sort();
     let total = lines.len();
     let shown: Vec<String> = lines.into_iter().take(MAX_DIRECTORY_ENTRIES).collect();
@@ -19,37 +39,6 @@ pub fn render_directory_listing(path: &Path, label: &str) -> Result<String, Tool
         ));
     }
     Ok(output)
-}
-
-fn collect_entries(
-    root: &Path,
-    current: &Path,
-    depth: usize,
-    lines: &mut Vec<String>,
-) -> Result<(), ToolError> {
-    if depth > MAX_DIRECTORY_DEPTH {
-        return Ok(());
-    }
-    let entries = fs::read_dir(current).map_err(|error| map_directory_error(current, &error))?;
-    for entry in entries {
-        let entry = entry.map_err(|error| map_directory_error(current, &error))?;
-        let path = entry.path();
-        let relative = path
-            .strip_prefix(root)
-            .unwrap_or(&path)
-            .to_string_lossy()
-            .replace('\\', "/");
-        let suffix = if path.is_dir() { "/" } else { "" };
-        lines.push(format!("{relative}{suffix}"));
-        if path.is_dir() && depth < MAX_DIRECTORY_DEPTH {
-            collect_entries(root, &path, depth + 1, lines)?;
-        }
-    }
-    Ok(())
-}
-
-fn map_directory_error(path: &Path, error: &std::io::Error) -> ToolError {
-    ToolError::failed(format!("read failed for {}: {error}", path.display()))
 }
 
 #[cfg(test)]

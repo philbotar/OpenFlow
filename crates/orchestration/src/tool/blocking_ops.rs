@@ -7,12 +7,12 @@ use crate::tool::read::selector::ReadSelector;
 use crate::tool::read::summary::render_read;
 use crate::tool::registry::BuiltinToolKind;
 use crate::tools::grep::search_at;
+use ignore::WalkBuilder;
 use serde::Deserialize;
 use serde_json::Value;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use walkdir::WalkDir;
 
 pub(crate) struct BlockingRunOutcome {
     pub output: Result<String, ToolError>,
@@ -196,36 +196,40 @@ impl BlockingToolOps {
         let absolute = self.resolve_local(pattern);
         if absolute.exists() {
             if absolute.is_dir() {
-                return Ok(WalkDir::new(&absolute)
-                    .into_iter()
-                    .filter_map(Result::ok)
-                    .map(|entry| entry.path().to_path_buf())
-                    .collect());
+                return Ok(gitignore_walk(&absolute));
             }
             return Ok(vec![absolute]);
         }
 
-        let pattern = self.cwd.join(pattern).display().to_string();
-        let mut matches = Vec::new();
-        for entry in glob::glob(&pattern).map_err(|error| ToolError::InvalidArgs {
+        let glob = glob::Pattern::new(pattern).map_err(|error| ToolError::InvalidArgs {
             tool: "find".to_string(),
             problem: format!("invalid glob pattern: {error}"),
             hint: "use glob syntax like **/*.rs or src/**/*.ts".to_string(),
-        })? {
-            let path = entry.map_err(|error| ToolError::failed(format!("glob failed: {error}")))?;
-            if path.is_dir() {
-                matches.extend(
-                    WalkDir::new(&path)
-                        .into_iter()
-                        .filter_map(Result::ok)
-                        .map(|entry| entry.path().to_path_buf()),
-                );
-            } else {
-                matches.push(path);
+        })?;
+        let mut matches = Vec::new();
+        let mut builder = WalkBuilder::new(&self.cwd);
+        builder.standard_filters(true).follow_links(false);
+        for entry in builder.build().filter_map(Result::ok) {
+            let path = entry.path();
+            let Ok(relative) = path.strip_prefix(&self.cwd) else {
+                continue;
+            };
+            if glob.matches_path(relative) {
+                matches.push(path.to_path_buf());
             }
         }
         Ok(matches)
     }
+}
+
+fn gitignore_walk(root: &Path) -> Vec<PathBuf> {
+    let mut builder = WalkBuilder::new(root);
+    builder.standard_filters(true).follow_links(false);
+    builder
+        .build()
+        .filter_map(Result::ok)
+        .map(|entry| entry.path().to_path_buf())
+        .collect()
 }
 
 #[derive(Debug, Deserialize)]
@@ -285,5 +289,33 @@ mod tests {
         let output = outcome.output.expect("search should succeed");
         assert!(output.contains("findme.txt"));
         assert!(output.contains("needle"));
+    }
+
+    #[cfg_attr(miri, ignore)] // ponytail: Miri cannot emulate git subprocess (fork)
+    #[test]
+    fn find_respects_gitignore() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cwd = dir.path().to_path_buf();
+        std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(&cwd)
+            .status()
+            .expect("git init for gitignore test");
+        fs::write(cwd.join(".gitignore"), "ignored.txt\n").expect("write gitignore");
+        fs::write(cwd.join("ignored.txt"), "secret\n").expect("write ignored");
+        fs::write(cwd.join("visible.txt"), "public\n").expect("write visible");
+        let snapshots =
+            Arc::new(crate::tools::edit::hashline::snapshots::InMemorySnapshotStore::new());
+        let outcome = BlockingToolOps::run_blocking(
+            cwd.clone(),
+            snapshots,
+            LspSettings::default(),
+            BuiltinToolKind::Find,
+            serde_json::json!({"paths": "**/*"}),
+            None,
+        );
+        let output = outcome.output.expect("find should succeed");
+        assert!(output.contains("visible.txt"));
+        assert!(!output.contains("ignored.txt"));
     }
 }

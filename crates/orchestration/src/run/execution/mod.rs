@@ -17,7 +17,7 @@ use engine::{
 use parking_lot::Mutex;
 use serde_json::Value;
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 use thiserror::Error;
@@ -135,6 +135,13 @@ pub fn resolve_execution_cwd(execution_cwd: Option<&str>) -> Result<PathBuf, Str
     }
 }
 
+#[must_use]
+pub fn project_repository_root(project_id: Option<&str>, execution_cwd: &Path) -> Option<PathBuf> {
+    project_id
+        .filter(|id| !id.trim().is_empty())
+        .map(|_| execution_cwd.to_path_buf())
+}
+
 fn expand_tilde(path: &str) -> PathBuf {
     if path == "~" {
         return dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
@@ -151,6 +158,7 @@ pub struct InteractiveWorkflowRunParams<A> {
     pub workflow: Workflow,
     pub entrypoint: Option<String>,
     pub execution_cwd: PathBuf,
+    pub project_repository_root: Option<PathBuf>,
     pub artifact_root: PathBuf,
     pub resume_checkpoint: Option<InteractiveEngineCheckpoint>,
     pub checkpoint_sink: Arc<Mutex<Option<PendingRunCheckpoint>>>,

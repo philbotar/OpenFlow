@@ -150,6 +150,7 @@ pub struct InteractiveEngine {
     submit_output_retries_by_node: BTreeMap<NodeId, u8>,
     request_input_retries_by_node: BTreeMap<NodeId, u8>,
     entrypoint_text: Option<String>,
+    project_repository_root: Option<String>,
     terminal_error: Option<RunError>,
     interrupted_nodes: BTreeSet<NodeId>,
     failed_nodes: BTreeMap<NodeId, String>,
@@ -168,6 +169,16 @@ impl InteractiveEngine {
     pub fn new(
         workflow: Workflow,
         entrypoint_text: Option<String>,
+    ) -> Result<Self, WorkflowValidationError> {
+        Self::new_with_run_context(workflow, entrypoint_text, None)
+    }
+
+    /// # Errors
+    /// Returns an error if the workflow fails validation.
+    pub fn new_with_run_context(
+        workflow: Workflow,
+        entrypoint_text: Option<String>,
+        project_repository_root: Option<String>,
     ) -> Result<Self, WorkflowValidationError> {
         let layers = execution_layers(&workflow)?;
         let upstream_map = build_upstream_map(&workflow);
@@ -201,6 +212,7 @@ impl InteractiveEngine {
             submit_output_retries_by_node: BTreeMap::new(),
             request_input_retries_by_node: BTreeMap::new(),
             entrypoint_text,
+            project_repository_root,
             terminal_error: None,
             interrupted_nodes: BTreeSet::new(),
             failed_nodes: BTreeMap::new(),
@@ -815,6 +827,7 @@ impl InteractiveEngine {
             entrypoint_text: self.entrypoint_text.as_deref(),
             transcript: self.transcript(&node.id),
             available_tools: &[],
+            project_repository_root: self.project_repository_root.as_deref(),
         };
         let mut request = build_agent_request(&ctx, node, true)?;
         request.model_attempt = self.model_attempt_for(&node.id);
