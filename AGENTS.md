@@ -235,6 +235,8 @@ Primary gate — run after changes:
 
 Runs all steps (`fmt`, clippy-max `clippy`, `doc`, `test`, `public-api`, `machete`, `typos`, `ui-typecheck`, `ui-test`, `deny`, `arch`); prints one-line PASS/FAIL per step and a summary with repro commands. Optional `./scripts/verify.sh --deep` adds `mutants` and `miri` (engine + orchestration UB via `./scripts/miri.sh`). Filter steps: `./scripts/verify.sh fmt clippy`. `VERIFY_FAIL_FAST=1` stops on first failure.
 
+For single-step debug with full untruncated output, run a granular script directly: `./scripts/verify/<step>.sh` (see `scripts/verify/`).
+
 For execution changes, also run:
 
 ```bash
@@ -261,5 +263,5 @@ OpenFlow is a **Tauri desktop GUI app**. Standard commands are in the README and
 - **Run the GUI:** export `DISPLAY=:1` (a headless X server runs there) before `./scripts/start.sh`. The Tauri dev command also auto-starts the Vite dev server on `http://localhost:1420`.
 - **Benign noise:** `libEGL warning: DRI3 error ...` lines at launch are expected — the VM has no GPU, so it falls back to software rendering. Not an error.
 - **No API key = editor only:** without an LLM key the header shows "API key missing" and the **Run** button cannot execute a workflow, but the visual editor (create workflow, add/rename/configure nodes, save) works fully. For real runs, set `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` (env fallback) or a key in Settings; resolution order is in [Runtime/Persistence Locations](#runtimepersistence-locations).
-- **First Rust build is slow** (large AWS SDK + reqwest tree, ~25 min cold). Subsequent builds are incremental. `cargo`-based `verify.sh` steps reuse `./target` only with `VERIFY_SHARE_TARGET=1` (CI sets this); otherwise each run gets its own `target/verify-<pid>`.
+- **First Rust build is slow** (large AWS SDK + reqwest tree, ~25 min cold). Subsequent builds are incremental. `cargo`-based `verify.sh` steps reuse `./target` only with `VERIFY_SHARE_TARGET=1` (faster solo runs); otherwise each run gets its own `target/verify-<pid>`.
 - **Verify-gate tooling** (`cargo-deny`, `cargo-machete`, `typos`) and Tauri Linux system libs (`libwebkit2gtk-4.1-dev`, `libxdo-dev`, `libayatana-appindicator3-dev`, `librsvg2-dev`, ...) are preinstalled in the VM snapshot. If a `verify.sh` step reports one missing, reinstall it (cargo tool via `cargo install`, system lib via `apt-get`).

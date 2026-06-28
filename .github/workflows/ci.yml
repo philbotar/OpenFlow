@@ -6,6 +6,15 @@ on:
     branches:
       - main
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  MIRI_NIGHTLY: nightly-2026-06-20
+  MIRI_TOOLCHAIN: nightly-2026-06-20
+  RUST_CACHE_SHARED_KEY: ci-verify
+
 permissions:
   contents: read
 
@@ -33,20 +42,18 @@ jobs:
           VERSION_CHECK_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || (github.event.before != '0000000000000000000000000000000000000000' && github.event.before || '') }}
         run: ./scripts/check-release-version.sh
 
-  verify:
-    name: Verify (blocking)
+  build:
+    name: Build (warm cache)
     runs-on: ubuntu-latest
-    env:
-      VERIFY_SHARE_TARGET: "1"
-      VERIFY_FAIL_FAST: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
+
+      - name: Install Linux system dependencies (Tauri)
+        run: ./scripts/install-ci-deps.sh
 
       - name: Install Node
         uses: actions/setup-node@v4
@@ -58,30 +65,179 @@ jobs:
       - name: Install npm dependencies
         run: npm ci --prefix crates/ui
 
+      - name: Cache Rust build artifacts
+        uses: swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ env.RUST_CACHE_SHARED_KEY }}
+          cache-on-failure: true
+
+      - name: Warm workspace build
+        run: cargo build --workspace --all-targets --quiet
+
+  fmt:
+    name: fmt
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
+
+      - name: Cache Rust build artifacts
+        uses: swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ env.RUST_CACHE_SHARED_KEY }}
+          cache-on-failure: true
+
+      - name: Run fmt
+        run: ./scripts/verify/fmt.sh
+
+  clippy:
+    name: clippy
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
+
       - name: Install Linux system dependencies (Tauri)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            build-essential \
-            curl \
-            wget \
-            file \
-            libxdo-dev \
-            libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev
+        run: ./scripts/install-ci-deps.sh
+
+      - name: Cache Rust build artifacts
+        uses: swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ env.RUST_CACHE_SHARED_KEY }}
+          cache-on-failure: true
+
+      - name: Run clippy
+        run: ./scripts/verify/clippy.sh
+
+  test:
+    name: test
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: crates/ui/package-lock.json
+
+      - name: Install npm dependencies
+        run: npm ci --prefix crates/ui
+
+      - name: Cache Rust build artifacts
+        uses: swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ env.RUST_CACHE_SHARED_KEY }}
+          cache-on-failure: true
+
+      - name: Run test-fast
+        run: ./scripts/test-fast.sh --execution
+
+  ui:
+    name: ui
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: crates/ui/package-lock.json
+
+      - name: Install npm dependencies
+        run: npm ci --prefix crates/ui
+
+      - name: Run ui-typecheck
+        run: ./scripts/verify/ui-typecheck.sh
+
+      - name: Run ui-test
+        run: ./scripts/verify/ui-test.sh
+
+  lint-extras:
+    name: lint-extras
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust (stable)
+        uses: ./.github/actions/setup-rust
+
+      - name: Setup Rust (nightly)
+        uses: ./.github/actions/setup-rust
+        with:
+          toolchain: nightly
+
+      - name: Install Linux system dependencies (Tauri)
+        run: ./scripts/install-ci-deps.sh
 
       - name: Install cargo-deny
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-deny
 
+      - name: Install cargo-machete
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-machete
+
+      - name: Install typos
+        uses: taiki-e/install-action@v2
+        with:
+          tool: typos
+
+      - name: Install cargo-public-api
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-public-api
+
       - name: Cache Rust build artifacts
         uses: swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ env.RUST_CACHE_SHARED_KEY }}
+          cache-on-failure: true
 
-      - name: Run CI verification gate
-        run: ./scripts/verify-ci.sh
+      - name: Run machete
+        run: ./scripts/verify/machete.sh
+
+      - name: Run typos
+        run: ./scripts/verify/typos.sh
+
+      - name: Run deny
+        run: ./scripts/verify/deny.sh
+
+      - name: Run arch
+        run: ./scripts/check-architecture.sh
+
+      - name: Run doc
+        run: ./scripts/verify/doc.sh
+
+      - name: Run public-api
+        run: ./scripts/check-engine-public-api.sh
+
+  verify:
+    name: Verify (blocking)
+    needs: [build, fmt, clippy, test, ui, lint-extras]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "All verify checks passed"
 
   miri-changes:
     name: Detect Miri crates
@@ -110,6 +266,8 @@ jobs:
     if: needs.miri-changes.outputs.matrix != '[]'
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      CARGO_TARGET_DIR: target/miri
     strategy:
       fail-fast: false
       matrix:
@@ -118,10 +276,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Miri
-        uses: dtolnay/rust-toolchain@nightly
+      - name: Setup Rust (Miri)
+        uses: ./.github/actions/setup-rust
         with:
+          toolchain: ${{ env.MIRI_NIGHTLY }}
           components: miri
+
+      - name: Cache Miri sysroot
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/miri
+          key: miri-sysroot-${{ runner.os }}-${{ env.MIRI_NIGHTLY }}-x86_64-unknown-linux-gnu
 
       - name: Cache Miri build artifacts
         uses: swatinem/rust-cache@v2
@@ -129,7 +294,12 @@ jobs:
           workspaces: |
             .
           cache-on-failure: true
-          shared-key: miri-${{ matrix.crate }}
+          shared-key: miri
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
 
       - name: Test with Miri
         run: ./scripts/miri.sh ${{ matrix.crate }}

@@ -1,0 +1,3 @@
+[profile.default-miri]
+# Orchestration edit/patch lib tests can exceed 3m under Miri (see patch_tests).
+slow-timeout = { period = "180s", terminate-after = 3 }
