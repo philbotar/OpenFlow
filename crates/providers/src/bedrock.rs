@@ -583,18 +583,18 @@ pub(crate) fn humanize_bedrock_sdk_error(message: &str) -> String {
             || lowered.contains("not found or invalid")
             || lowered.contains("unable to locate")
         {
-            return "AWS credentials missing or expired. In a terminal run `aws login` (browser sign-in) or `aws configure` (access keys), verify with `aws sts get-caller-identity`, then retry."
+            return "AWS credentials missing or expired. If you use SSO, enter your AWS profile name in Settings and run `aws sso login --profile <name>` in a terminal first; verify with `aws sts get-caller-identity --profile <name>`. For access keys, run `aws configure`."
                 .to_string();
         }
         return format!(
-            "Could not reach Amazon Bedrock ({message}). Check AWS region in Settings, network/VPN, and credentials (`aws login` or `aws configure`)."
+            "Could not reach Amazon Bedrock ({message}). Check AWS region in Settings, network/VPN, and credentials (SSO: `aws sso login --profile <name>`; access keys: `aws configure`)."
         );
     }
     if lowered.contains("credentialsnotloaded")
         || lowered.contains("unable to load credentials")
         || lowered.contains("no credentials")
     {
-        return "AWS credentials not configured. In a terminal run `aws login` or `aws configure`, then retry."
+        return "AWS credentials not configured. If you use SSO, enter your AWS profile name in Settings and run `aws sso login --profile <name>` in a terminal first. For access keys, run `aws configure`."
             .to_string();
     }
     if lowered.contains("model identifier is invalid") {

@@ -73,7 +73,19 @@ pub fn resolve_provider_config(
         env,
     )?;
     let region = resolve_bedrock_region(profile, spec.auth, env);
-    let auth = auth_config(spec.auth, api_key.clone(), region.clone());
+    let bedrock_aws_profile = if matches!(spec.kind, ProviderKind::Bedrock(_)) {
+        resolve_bedrock_profile(profile, spec.auth, env)
+    } else {
+        None
+    };
+    let auth = if matches!(spec.kind, ProviderKind::Bedrock(_)) {
+        AuthConfig::AwsCredentials {
+            profile: bedrock_aws_profile.clone(),
+            region: region.clone().unwrap_or_default(),
+        }
+    } else {
+        auth_config(spec.auth, api_key.clone(), region.clone())
+    };
     let adapter = match spec.kind {
         ProviderKind::OpenAiCompatible(_) => {
             ProviderAdapterConfig::OpenAiCompatible(OpenAiCompatibleConfig {
@@ -97,7 +109,7 @@ pub fn resolve_provider_config(
             })?;
             ProviderAdapterConfig::Bedrock(BedrockConfig {
                 region,
-                aws_profile: resolve_bedrock_profile(profile, spec.auth, env, api_key.as_deref()),
+                aws_profile: bedrock_aws_profile,
             })
         }
     };
@@ -186,18 +198,21 @@ fn resolve_bedrock_region(
 
 fn resolve_bedrock_profile(
     profile: &ProviderProfile,
-    _auth: AuthSpec,
+    auth: AuthSpec,
     env: &ProviderEnv,
-    transient_or_stored: Option<&str>,
 ) -> Option<String> {
-    trimmed(transient_or_stored)
-        .or_else(|| trimmed(Some(profile.api_key.as_str())))
+    trimmed(Some(profile.aws_profile.as_str()))
         .map(str::to_string)
         .or_else(|| {
-            _auth
-                .env_var()
+            auth.env_var()
                 .and_then(|env_var| env.get(env_var))
                 .and_then(|value| trimmed(Some(value)).map(str::to_string))
+        })
+        .or_else(|| match auth {
+            AuthSpec::AwsCredentials { profile_env_var, .. } => std::env::var(profile_env_var)
+                .ok()
+                .and_then(|value| trimmed(Some(&value)).map(str::to_string)),
+            _ => None,
         })
 }
 
@@ -354,7 +369,7 @@ mod tests {
             .providers
             .get_mut(&ProviderId::from("bedrock"))
             .expect("bedrock profile")
-            .api_key = "work".to_string();
+            .aws_profile = "work".to_string();
 
         let resolved = resolve_provider_config(&settings, None, &ProviderEnv::default()).unwrap();
 

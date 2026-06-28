@@ -18,11 +18,19 @@ Bedrock uses AWS credentials and region settings rather than a normal API-key he
 
 | Concern | Source |
 | --- | --- |
-| Auth | AWS credential chain (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`, SSO, shared config, instance role). Optional profile name in Settings is stored in the provider `api_key` field, or use `AWS_PROFILE`. |
+| Auth | AWS credential chain (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`, SSO, shared config, instance role). Optional profile name in Settings (`ProviderProfile.aws_profile`), or `AWS_PROFILE` env var. |
 | Region | Settings **AWS region** field (`ProviderProfile.base_url`, default `us-east-1`) or `AWS_REGION`. |
 | Inference | AWS Bedrock Converse API through `aws-sdk-bedrockruntime`, not native Anthropic Messages on `bedrock-mantle`. |
 | Model refresh | Settings **Refresh from AWS** calls `ListFoundationModels` and filters active text-capable on-demand models. |
 | Minimum IAM | `bedrock:InvokeModel`, `bedrock:InvokeModelWithResponseStream`, and `bedrock:ListFoundationModels`. |
+
+### Bedrock with SSO
+
+1. In Settings → Bedrock, set **AWS profile** to the profile name from `~/.aws/config` (e.g. `bedrock`).
+2. Set **AWS region** to the region where your models are enabled (not necessarily `us-east-1`).
+3. In a terminal, run `aws sso login --profile <name>` before starting a run. SSO tokens expire (typically 8–12h); re-login when credentials fail.
+4. On macOS, apps launched from the Dock do not inherit `AWS_PROFILE` from `~/.zshrc`. Either enter the profile in Settings or launch OpenFlow from a terminal (`./scripts/start.sh`) where the env var is set.
+5. Verify credentials: `aws sts get-caller-identity --profile <name>` and `aws bedrock list-foundation-models --profile <name> --region <region>`.
 
 ## Manual smoke
 

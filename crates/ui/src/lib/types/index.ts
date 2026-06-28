@@ -354,6 +354,7 @@ export interface ProviderProfile {
   known_models: string[];
   default_model: string | null;
   editable: boolean;
+  aws_profile?: string;
   reasoning_effort_options?: ReasoningEffortOption[];
   default_reasoning_budget_tokens?: Record<string, number>;
   default_reasoning_effort?: string | null;

@@ -98,28 +98,42 @@ export function ProvidersSection() {
         <Show
           when={!isBedrock()}
           fallback={
-            <p>
-              Uses the AWS credential chain (env vars, shared config, SSO, instance role). Optionally
-              set an AWS profile name below; otherwise <code>AWS_PROFILE</code> applies.
-            </p>
+            <>
+              <p>
+                Uses the AWS credential chain (env vars, shared config, SSO, instance role). For
+                SSO, enter your AWS profile name below (required) and run{" "}
+                <code>aws sso login --profile &lt;name&gt;</code> in a terminal first. Access-key
+                users can leave the profile blank.
+              </p>
+              <label>
+                <span>AWS profile</span>
+                <input
+                  type="text"
+                  class="text-input"
+                  value={ctx.activeProfileMemo().aws_profile ?? ""}
+                  placeholder="e.g. bedrock"
+                  onInput={(event) =>
+                    void ctx.updateSettings((draft) => {
+                      activeProfile(draft).aws_profile = event.currentTarget.value;
+                    })
+                  }
+                />
+              </label>
+            </>
           }
         >
           <p>
             Stored in plaintext in your local settings file for the selected provider. Protect this
             machine and settings file accordingly. Environment variables still act as fallback.
           </p>
+          <input
+            type="password"
+            value={ctx.activeProviderKeyInput()}
+            onInput={(event) => ctx.handleApiKeyInput(event.currentTarget.value)}
+            placeholder={ctx.readiness()?.envVar || "optional local provider key"}
+            class="text-input"
+          />
         </Show>
-        <input
-          type={isBedrock() ? "text" : "password"}
-          value={ctx.activeProviderKeyInput()}
-          onInput={(event) => ctx.handleApiKeyInput(event.currentTarget.value)}
-          placeholder={
-            isBedrock()
-              ? "AWS profile (optional)"
-              : ctx.readiness()?.envVar || "optional local provider key"
-          }
-          class="text-input"
-        />
       </section>
 
       <section class="settings-subsection" aria-labelledby="providers-connection-heading">
@@ -302,7 +316,11 @@ export function ProvidersSection() {
       </section>
 
       <footer class="settings-save-bar">
-        <p class="settings-save-hint">Saves API key and provider profile to local settings.</p>
+        <p class="settings-save-hint">
+          {isBedrock()
+            ? "Saves AWS profile, region, and provider profile to local settings."
+            : "Saves API key and provider profile to local settings."}
+        </p>
         <button type="button" class="primary-button" onClick={() => void ctx.handleSaveSettings()}>
           Save settings
         </button>

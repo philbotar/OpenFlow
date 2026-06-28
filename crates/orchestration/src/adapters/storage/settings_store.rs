@@ -55,6 +55,12 @@ impl FileSettingsStore {
 
     /// # Errors
     /// Returns an error if the settings cannot be serialized or written to disk.
+    pub fn save_raw(&self, settings: &AppSettings) -> io::Result<()> {
+        write_json_file(&self.path, settings, "settings")
+    }
+
+    /// # Errors
+    /// Returns an error if the settings cannot be serialized or written to disk.
     pub fn save(&self, settings: &AppSettings) -> io::Result<()> {
         let mut to_save = settings.clone();
         if self.path.exists() {
@@ -63,7 +69,7 @@ impl FileSettingsStore {
                 merge_preserved_api_keys(&mut to_save, &existing);
             }
         }
-        write_json_file(&self.path, &to_save, "settings")
+        self.save_raw(&to_save)
     }
 
     #[must_use]
@@ -79,6 +85,10 @@ impl SettingsStore for FileSettingsStore {
 
     fn save(&self, settings: &AppSettings) -> io::Result<()> {
         FileSettingsStore::save(self, settings)
+    }
+
+    fn save_raw(&self, settings: &AppSettings) -> io::Result<()> {
+        FileSettingsStore::save_raw(self, settings)
     }
 }
 
@@ -250,6 +260,39 @@ mod tests {
         let _ = fs::set_permissions(dir.path(), restore);
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn save_raw_clears_api_key_without_merge() {
+        let dir = tempdir().unwrap();
+        let store = FileSettingsStore::new(dir.path().join("settings.json"));
+        let mut settings = AppSettings::default();
+        settings
+            .providers
+            .get_mut(&ProviderId::from("openai"))
+            .expect("openai profile")
+            .api_key = "sk-persisted".to_string();
+        store.save(&settings).unwrap();
+
+        let mut cleared = store.load().unwrap();
+        cleared
+            .providers
+            .get_mut(&ProviderId::from("openai"))
+            .expect("openai profile")
+            .api_key
+            .clear();
+        store.save_raw(&cleared).unwrap();
+
+        assert!(
+            store
+                .load()
+                .unwrap()
+                .providers
+                .get(&ProviderId::from("openai"))
+                .expect("openai profile")
+                .api_key
+                .is_empty()
+        );
     }
 
     #[test]

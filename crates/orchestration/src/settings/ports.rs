@@ -7,6 +7,8 @@ pub use crate::settings::model::{
 pub trait SettingsStore: Send + Sync {
     fn load(&self) -> io::Result<AppSettings>;
     fn save(&self, settings: &AppSettings) -> io::Result<()>;
+    /// Write settings as-is (no merge of preserved API keys).
+    fn save_raw(&self, settings: &AppSettings) -> io::Result<()>;
 }
 
 pub trait SkillCatalog: Send + Sync {

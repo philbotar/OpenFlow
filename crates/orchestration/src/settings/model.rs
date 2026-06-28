@@ -21,6 +21,8 @@ pub struct ProviderProfile {
     pub default_model: Option<String>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub api_key: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub aws_profile: String,
     #[serde(default)]
     pub editable: bool,
     #[serde(skip)]
@@ -85,6 +87,7 @@ impl ProviderProfile {
                 .collect(),
             default_model: Some(spec.default_model.to_string()),
             api_key: String::new(),
+            aws_profile: String::new(),
             editable: spec.editable,
             new_model_input: String::new(),
             reasoning_effort_options: spec.default_reasoning_effort_options(),
@@ -120,6 +123,7 @@ impl ProviderProfile {
             known_models: vec!["gpt-4o-mini".to_string()],
             default_model: Some("gpt-4o-mini".to_string()),
             api_key: String::new(),
+            aws_profile: String::new(),
             editable: false,
             new_model_input: String::new(),
             reasoning_effort_options: Vec::new(),
@@ -316,6 +320,9 @@ impl AppSettings {
         }
         if !self.providers.contains_key(&self.active_provider) {
             self.active_provider = ProviderId::from("openai");
+        }
+        if let Some(profile) = self.providers.get_mut(&ProviderId::from("bedrock")) {
+            profile.api_key.clear();
         }
         self
     }
