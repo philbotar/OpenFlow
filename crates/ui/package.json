@@ -1,6 +1,6 @@
 {
   "name": "ui",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,7 +12,7 @@
     "build:app": "sh -c '(cd ../desktop && exec tauri build \"$@\")' --"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2",
+    "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-updater": "^2.10.1",
@@ -28,7 +28,7 @@
     "solid-sonner": "^0.3.1"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2",
+    "@tauri-apps/cli": "^2.11.3",
     "@testing-library/react": "^16.3.0",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.2",
