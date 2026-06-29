@@ -19,15 +19,19 @@ export function WorkflowAuthoringScreen() {
 
   return (
     <section class="workflow-authoring-screen">
-      <p class="workflow-authoring-intro">
-        Describe your workflow in natural language. Iterate until validation passes, then apply
-        to the editor.
-      </p>
-
       <div
         class="workflow-authoring-body"
         classList={{ "workflow-authoring-body--with-preview": showDraftPreview() }}
       >
+        <Show when={showDraftPreview()}>
+          <AuthoringDraftPreview
+            draft={ctx.workflowAuthoringDraft()!}
+            validation={ctx.workflowAuthoringValidation()}
+            busy={ctx.workflowAuthoringBusy()}
+            colorMode={ctx.resolvedTheme()}
+          />
+        </Show>
+
         <div class="workflow-authoring-chat">
           <div class="workflow-authoring-messages">
             <Show
@@ -64,7 +68,7 @@ export function WorkflowAuthoringScreen() {
             </Show>
           </div>
 
-          <AuthoringValidationBanner validation={ctx.workflowAuthoringValidation()} />
+          {/* <AuthoringValidationBanner validation={ctx.workflowAuthoringValidation()} /> */}
 
           <Show when={ctx.readiness()?.ready === false ? ctx.readiness() : undefined}>
             {(readiness) => (
@@ -98,15 +102,6 @@ export function WorkflowAuthoringScreen() {
             </div>
           </footer>
         </div>
-
-        <Show when={showDraftPreview()}>
-          <AuthoringDraftPreview
-            draft={ctx.workflowAuthoringDraft()!}
-            validation={ctx.workflowAuthoringValidation()}
-            busy={ctx.workflowAuthoringBusy()}
-            colorMode={ctx.resolvedTheme()}
-          />
-        </Show>
       </div>
     </section>
   );

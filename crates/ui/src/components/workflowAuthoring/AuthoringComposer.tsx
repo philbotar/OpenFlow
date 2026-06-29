@@ -45,7 +45,6 @@ export function AuthoringComposer(props: {
           rows={2}
           value={draft()}
           placeholder={placeholder()}
-          disabled={props.busy}
           onInput={(event) => setDraft(event.currentTarget.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {

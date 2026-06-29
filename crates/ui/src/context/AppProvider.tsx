@@ -1403,6 +1403,13 @@ export function AppProvider(props: ParentProps) {
   };
 
   const handleOpenWorkflowAuthoring = async (baseWorkflow?: Workflow) => {
+    if (
+      screen() === "workflow-authoring" &&
+      workflowAuthoringSessionId() !== null &&
+      baseWorkflow === undefined
+    ) {
+      return;
+    }
     resetWorkflowAuthoringSession();
     setWorkflowAuthoringMessages([]);
     setWorkflowAuthoringValidation(null);
@@ -1451,6 +1458,16 @@ export function AppProvider(props: ParentProps) {
       setWorkflowAuthoringValidation(result.validation);
       setWorkflowAuthoringDraft(result.draft ? normalizeWorkflowLayout(result.draft) : null);
     } catch (error) {
+      setWorkflowAuthoringMessages((current) =>
+        current.filter(
+          (message, index) =>
+            !(
+              index === current.length - 1 &&
+              message.role === "user" &&
+              message.content === trimmed
+            ),
+        ),
+      );
       setError(normalizeError(error));
     } finally {
       setWorkflowAuthoringBusy(false);

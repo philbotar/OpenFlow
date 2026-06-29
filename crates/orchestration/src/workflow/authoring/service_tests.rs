@@ -83,6 +83,91 @@ async fn send_turn_materializes_valid_draft() {
     assert_eq!(result.draft.as_ref().expect("draft").nodes.len(), 2);
 }
 
+fn single_node_draft(name: &str, node_id: &str, label: &str) -> serde_json::Value {
+    json!({
+        "assistantMessage": format!("Built {name}."),
+        "workflowDraft": {
+            "name": name,
+            "sharedContext": "",
+            "nodes": [{
+                "id": node_id,
+                "label": label,
+                "systemPrompt": "You are helpful.",
+                "taskPrompt": "Do the work.",
+                "outputSchema": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": { "result": { "type": "string" } },
+                    "required": ["result"]
+                },
+                "autoStart": true
+            }],
+            "edges": []
+        }
+    })
+}
+
+struct MultiTurnMockAi {
+    calls: AtomicUsize,
+}
+
+#[async_trait]
+impl AiPort for MultiTurnMockAi {
+    async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+        let call = self.calls.fetch_add(1, Ordering::SeqCst);
+        let output = if call == 0 {
+            assert_eq!(request.transcript.len(), 1);
+            single_node_draft("Draft v1", "root", "Root")
+        } else {
+            assert_eq!(request.transcript.len(), 3);
+            assert!(request.task_prompt.contains("Draft v1"));
+            single_node_draft("Draft v2", "root", "Root Updated")
+        };
+        Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+            output: output.clone(),
+            raw_text: output.to_string(),
+            assistant_message: Some("Updated draft".to_string()),
+            usage: None,
+        }))
+    }
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+async fn send_turn_preserves_session_for_follow_up_messages() {
+    let ai = MultiTurnMockAi {
+        calls: AtomicUsize::new(0),
+    };
+    let service = WorkflowAuthoringService::new();
+    let session_id = service.start_session(None);
+    let settings = AppSettings::default();
+
+    let first = service
+        .send_turn(
+            &session_id,
+            "Build a one-node workflow".to_string(),
+            &settings,
+            &ai,
+        )
+        .await
+        .expect("first turn");
+    assert_eq!(first.messages.len(), 2);
+    assert_eq!(first.draft.as_ref().expect("draft").name, "Draft v1");
+
+    let second = service
+        .send_turn(
+            &session_id,
+            "Rename the root node".to_string(),
+            &settings,
+            &ai,
+        )
+        .await
+        .expect("second turn");
+    assert_eq!(second.messages.len(), 4);
+    assert_eq!(second.draft.as_ref().expect("draft").name, "Draft v2");
+    assert_eq!(ai.calls.load(Ordering::SeqCst), 2);
+}
+
 #[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn send_turn_accepts_flat_draft_fields_in_output() {
