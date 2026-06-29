@@ -101,6 +101,17 @@ jobs:
       - name: Install Rust target
         run: rustup target add ${{ matrix.rust_target }}
 
+      - name: Verify tag matches desktop version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag="${GITHUB_REF#refs/tags/v}"
+          ver=$(jq -r '.version' crates/desktop/tauri.conf.json)
+          if [[ "$tag" != "$ver" ]]; then
+            echo "error: tag v${tag} does not match desktop version ${ver}" >&2
+            echo "Run ./scripts/cut-release.sh on main, commit, then tag v${ver}." >&2
+            exit 1
+          fi
+
       - name: Cache Rust build artifacts
         uses: swatinem/rust-cache@v2
         with:
