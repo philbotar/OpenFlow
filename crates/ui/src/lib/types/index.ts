@@ -398,9 +398,24 @@ export interface McpSettings {
   disabledDiscoveredIds?: string[];
 }
 
+export interface LocalDiagnosticsSettings {
+  debug_output: boolean;
+}
+
 export interface SettingsLoadPayload {
   settings: AppSettings;
   discoveredMcp: McpDiscoveryRow[];
+}
+
+export interface DebugLogEntry {
+  level: string;
+  message: string;
+  context?: string | null;
+}
+
+export interface DebugLogWrite {
+  enabled: boolean;
+  path?: string | null;
 }
 
 export interface AppSettings {
@@ -409,6 +424,7 @@ export interface AppSettings {
   skill_search_paths?: string[];
   lsp?: LspSettings;
   mcp?: McpSettings;
+  local_diagnostics?: LocalDiagnosticsSettings;
 }
 
 export interface SkillSummary {

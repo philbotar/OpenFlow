@@ -288,6 +288,19 @@ impl AppBackend {
         Ok(())
     }
 
+    #[must_use]
+    pub fn debug_log_path(&self) -> String {
+        crate::diagnostics::debug_log_path().display().to_string()
+    }
+
+    pub fn append_debug_log(
+        &self,
+        settings: &AppSettings,
+        entry: &crate::api::DebugLogEntry,
+    ) -> Result<crate::api::DebugLogWrite, BackendError> {
+        crate::diagnostics::append_debug_log(settings, entry)
+    }
+
     /// Spawn an ephemeral MCP server and return discovered tool names.
     pub async fn probe_mcp_server(
         &self,

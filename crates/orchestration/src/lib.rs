@@ -9,6 +9,7 @@ pub mod adapters;
 pub mod agent;
 pub mod api;
 pub mod backend;
+pub mod diagnostics;
 pub mod error;
 pub mod incident;
 pub mod project;

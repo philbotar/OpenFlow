@@ -22,8 +22,10 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 
 import {
   RUN_STATE_EVENT,
+  appendDebugLog,
   bootstrapApp,
   confirmNativeDialog,
+  debugLogPath,
   deleteWorkflow,
   getRunState,
   listenToRunState,
@@ -63,6 +65,23 @@ describe("api desktop seam", () => {
   test("bootstrapApp invokes bootstrap_app", async () => {
     await bootstrapApp();
     expect(invoke).toHaveBeenCalledWith("bootstrap_app");
+  });
+
+  test("debugLogPath invokes debug_log_path", async () => {
+    await debugLogPath();
+    expect(invoke).toHaveBeenCalledWith("debug_log_path");
+  });
+
+  test("appendDebugLog forwards settings and entry", async () => {
+    const entry = {
+      level: "error",
+      message: "Bedrock failed",
+      context: "Refresh from AWS",
+    };
+
+    await appendDebugLog(settings, entry);
+
+    expect(invoke).toHaveBeenCalledWith("append_debug_log", { settings, entry });
   });
 
   test("startRun forwards workflow, settings, cwd, key, and entrypoint", async () => {

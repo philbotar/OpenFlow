@@ -56,4 +56,7 @@ export const EMPTY_SETTINGS: AppSettings = {
     format_on_write: false,
     diagnostics_on_write: false,
   },
+  local_diagnostics: {
+    debug_output: false,
+  },
 };

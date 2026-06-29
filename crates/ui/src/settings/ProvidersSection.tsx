@@ -1,5 +1,4 @@
 import { createMemo, createSignal, For, Show } from "solid-js";
-import { toast } from "solid-sonner";
 import { refreshBedrockModels } from "../api";
 import { TextSelect } from "../components/TextSelect";
 import { useAppContext } from "../context/AppContext";
@@ -56,7 +55,7 @@ export function ProvidersSection() {
         }
       });
     } catch (error) {
-      toast.error(normalizeError(error));
+      ctx.showErrorToast(normalizeError(error), "Refresh Bedrock models");
     } finally {
       setRefreshingModels(false);
     }

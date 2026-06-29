@@ -28,6 +28,24 @@ export function normalizeError(error: unknown): string {
   return JSON.stringify(error);
 }
 
+export function toastMessageForDebugMode(message: string, debugOutput: boolean): string {
+  if (debugOutput) {
+    return message;
+  }
+  const marker = "Raw AWS SDK error:";
+  const markerIndex = message.indexOf(marker);
+  if (markerIndex < 0) {
+    return message;
+  }
+  const before = message.slice(0, markerIndex).trimEnd();
+  const after = message.slice(markerIndex + marker.length);
+  const checkIndex = after.indexOf(". Check ");
+  if (checkIndex >= 0) {
+    return `${before} ${after.slice(checkIndex + 2).trimStart()}`.trim();
+  }
+  return before.replace(/[.:;\s]+$/, ".");
+}
+
 export function viewportHeight(): number {
   return typeof globalThis.innerHeight === "number" ? globalThis.innerHeight : 900;
 }

@@ -109,6 +109,7 @@ import {
   restoredChatDockHeight,
   shouldCollapseDock,
   STATUS_TOAST_ID,
+  toastMessageForDebugMode,
   viewportHeight,
 } from "../lib/utils";
 import {
@@ -275,6 +276,7 @@ export function AppProvider(props: ParentProps) {
   const [runHistoryLoading, setRunHistoryLoading] = createSignal(false);
   const [replayRunId, setReplayRunId] = createSignal<string | null>(null);
   const [scheduleStatuses, setScheduleStatuses] = createSignal<ScheduleStatus[]>([]);
+  const [localDebugLogPath, setLocalDebugLogPath] = createSignal<string | null>(null);
   const [themePreference, setThemePreference] = createSignal<ThemePreference>(
     readStoredTheme(globalThis.localStorage),
   );
@@ -528,8 +530,36 @@ export function AppProvider(props: ParentProps) {
 
   // ── Toast helpers ─────────────────────────────────────────────────────────
   const clearStatusToast = () => toast.dismiss(STATUS_TOAST_ID);
-  const setError = (text: string) => toast.error(text, { id: STATUS_TOAST_ID });
-  const setSuccess = (text: string) => toast.success(text, { id: STATUS_TOAST_ID });
+  const debugOutputEnabled = () => settings().local_diagnostics?.debug_output === true;
+  const appendLocalDebugLog = (level: string, message: string, context?: string) => {
+    if (!debugOutputEnabled()) return;
+    void desktop
+      .appendDebugLog(settings(), {
+        level,
+        message,
+        context: context ?? null,
+      })
+      .then((result) => {
+        if (result.path) {
+          setLocalDebugLogPath(result.path);
+        }
+      })
+      .catch(() => undefined);
+  };
+  const setError = (text: string, context?: string) => {
+    appendLocalDebugLog("error", text, context);
+    toast.error(toastMessageForDebugMode(text, debugOutputEnabled()), {
+      id: STATUS_TOAST_ID,
+    });
+  };
+  const setSuccess = (text: string, context?: string) => {
+    appendLocalDebugLog("success", text, context);
+    toast.success(text, { id: STATUS_TOAST_ID });
+  };
+  const setInfo = (text: string, context?: string) => {
+    appendLocalDebugLog("info", text, context);
+    toast(toastMessageForDebugMode(text, debugOutputEnabled()), { id: STATUS_TOAST_ID });
+  };
 
   // ── Zoom ──────────────────────────────────────────────────────────────────
   const applyUiZoom = (nextZoom: number) => {
@@ -2105,7 +2135,7 @@ export function AppProvider(props: ParentProps) {
               setDockOpen(true);
               setBottomTab("chat");
               setDockHeight((current) => clampDockHeight(current, "chat"));
-              toast(`${approval.nodeLabel} needs tool approval`, { id: STATUS_TOAST_ID });
+              setInfo(`${approval.nodeLabel} needs tool approval`, "run-state");
             } else {
               const awaitingIds =
                 nextRunState.awaitingNodeIds && nextRunState.awaitingNodeIds.length > 0
@@ -2123,7 +2153,7 @@ export function AppProvider(props: ParentProps) {
                 setDockHeight((current) => clampDockHeight(current, "chat"));
                 const suffix =
                   awaitingIds.length > 1 ? ` (+${awaitingIds.length - 1} more)` : "";
-                toast(`${label} is waiting for input${suffix}`, { id: STATUS_TOAST_ID });
+                setInfo(`${label} is waiting for input${suffix}`, "run-state");
               }
             }
             if (nextRunState.lastError) {
@@ -2141,6 +2171,7 @@ export function AppProvider(props: ParentProps) {
       setAvailableSkills(data.skills ?? []);
       setScheduleStatuses(data.scheduleStatuses ?? []);
       setDiscoveredMcp(data.discoveredMcp ?? []);
+      void desktop.debugLogPath().then(setLocalDebugLogPath).catch(() => undefined);
       await initializeWorkspace(
         data.workflows,
         data.agents,
@@ -2235,6 +2266,7 @@ export function AppProvider(props: ParentProps) {
     terminalError,
     terminalOutputFor,
     scheduleStatuses,
+    localDebugLogPath,
     // Setters
     setWorkflowNameDraft,
     setAgentNameDraft,
@@ -2303,6 +2335,9 @@ export function AppProvider(props: ParentProps) {
     handleRemoveKnownModel,
     handleApiKeyInput,
     updateSettings,
+    showErrorToast: setError,
+    showSuccessToast: setSuccess,
+    showInfoToast: setInfo,
     handleSelectNode,
     handleSelectEdge,
     handleCanvasNodePosition,
