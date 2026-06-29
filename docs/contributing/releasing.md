@@ -18,6 +18,8 @@ PR C (desktop) ──┘
 4. **Tag once** — `git tag vX.Y.Z && git push origin vX.Y.Z` (version must match `tauri.conf.json`).
 5. **Publish** the draft GitHub Release after the Release workflow finishes.
 
+**Tag push → `release-verify` (Linux deep gate) → macOS build → draft Release → publish.**
+
 `check-version-bump.sh` enforces library crate bumps per touched crate. It does **not** require a desktop app version bump on every PR — desktop version changes belong in the release cut step.
 
 ## Version files
@@ -54,7 +56,7 @@ git tag v0.1.5              # must match tauri.conf.json version
 git push origin v0.1.5
 ```
 
-1. **Release** workflow builds signed macOS artifacts and opens a **draft** GitHub Release.
+1. **Release** workflow first runs `release-verify` on Ubuntu — Miri over `engine`+`orchestration`, `test-fast --execution --desktop`, and `cargo test -p orchestration --test workflow_e2e`. The macOS build only proceeds if `release-verify` passes, then builds signed artifacts and opens a **draft** GitHub Release.
 2. Review assets (`latest.json`, `.tar.gz`, `.dmg`).
 3. **Publish** the release.
 

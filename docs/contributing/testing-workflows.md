@@ -78,7 +78,7 @@ Use inline `impl AiPort` stubs (e.g. node-id-aware `ScriptedAi` in `workflow_acc
 | Deterministic workflow acceptance | `cargo test -p orchestration --test workflow_acceptance -- --nocapture` | A whole workflow can run headlessly with scripted AI outputs, tool calls, and approval pauses |
 | Orchestration headless E2E (stack mock) | `cargo test -p orchestration --test workflow_e2e -- --nocapture` | Full orchestration + engine runs with `MockAiStack` (`tests/support/`) - happy path, retries, missing input/approval, interrupt; no real providers |
 | Live AI smoke | `STEP_WORKFLOW_LIVE_AI=1 STEP_WORKFLOW_LIVE_API_KEY=... STEP_WORKFLOW_LIVE_MODEL=... cargo test -p orchestration --test live_workflow -- --ignored --nocapture` | A real BYOK provider can complete a small workflow and satisfy schema-level rules |
-| Miri (engine + orchestration UB) | `./scripts/miri.sh` or `./scripts/verify.sh --deep miri` | UB interpreter over `engine` + `orchestration` **lib** tests; CI runs on Ubuntu |
+| Miri (engine + orchestration UB) | `./scripts/miri.sh` or `./scripts/verify.sh --deep miri` | UB interpreter over `engine` + `orchestration` **lib** tests; runs in `release.yml` `release-verify` on tag push (Ubuntu); not on PR CI. |
 
 ## Miri
 
@@ -93,7 +93,7 @@ Use inline `impl AiPort` stubs (e.g. node-id-aware `ScriptedAi` in `workflow_acc
 
 Scope: `cargo miri nextest run -p engine --lib` (isolated; `-Zmiri-ignore-leaks`) and `cargo miri nextest run -p orchestration --lib` with a **UB-relevant allowlist** (`run::execution`, `coordinator`, `tool::runner`, `tool::blocking_ops`, `tool::retry`, `schedule`, `adapters::infrastructure`; see `ORCH_MIRI_FILTER` in `./scripts/miri.sh`) plus `-Zmiri-disable-isolation` for temp files. Pure edit/patch/store logic stays on `test-fast`/clippy — workspace `unsafe_code = "forbid"` means those tests have no UB surface. Tests run one Miri process each via [cargo-nextest](https://nexte.st/docs/integrations/miri/) (`--profile default-miri`) so lib tests can use multiple cores. Trade-offs: Miri recompiles the test crate per test (large crates may see less net speedup); cross-test data races on shared statics are not detected (unlike `cargo miri test`). Integration binaries and tests Miri cannot run (tokio, git/bash/MCP subprocess, live `#[ignore]` suites) carry `#[cfg_attr(miri, ignore)]`.
 
-First run installs nightly `miri` and `cargo-nextest` if missing. Artifacts: `target/miri/`. Optional: `MIRI_JOBS=N` caps nextest parallelism; `MIRI_TOOLCHAIN` selects the rustc nightly (CI pins `nightly-2026-06-20` for cache stability).
+First run installs nightly `miri` and `cargo-nextest` if missing. Artifacts: `target/miri/`. Optional: `MIRI_JOBS=N` caps nextest parallelism; `MIRI_TOOLCHAIN` selects the rustc nightly (the `release-verify` job pins `nightly-2026-06-20` for cache stability).
 
 Mark new unsupported tests with `#[cfg_attr(miri, ignore)]` and a one-line `ponytail:` comment.
 
@@ -158,7 +158,7 @@ Primary gate for agents and local handoff - run after every change:
 ./scripts/verify.sh
 ```
 
-**CI** runs parallel jobs in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml): a `build` job warms a shared Rust cache, then `fmt`, `clippy`, `test` (`test-fast.sh --execution`), `ui`, and `lint-extras` (machete, typos, deny, arch, doc, public-api) run in parallel. Skips full workspace `test` (desktop/Tauri) and `--deep` steps (`mutants`, `miri`). Run full `./scripts/verify.sh` before handoff or PR.
+**CI** runs parallel jobs in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml): a `build` job warms a shared Rust cache, then `fmt`, `clippy`, `test` (`test-fast.sh --execution`), `ui`, and `lint-extras` (machete, typos, deny, arch, doc, public-api) run in parallel. Skips full workspace `test` (desktop/Tauri) and `--deep` steps (`mutants`, `miri`). Miri runs at release (tag push) in `release.yml` `release-verify`, not on PR CI. Run full `./scripts/verify.sh` before handoff or PR.
 
 Run a granular script directly for full untruncated output; run `verify.sh` for the truncated summary gate.
 
@@ -199,7 +199,7 @@ Run a granular script directly for full untruncated output; run `verify.sh` for 
 
 **Steps:** `fmt`, `clippy` (pedantic/nursery/cargo), `doc`, `test`, `test-fast`, `public-api`, `machete`, `typos`, `ui-typecheck`, `ui-test`, `deny`, `arch`. **`--deep` only:** `mutants`, `miri`.
 
-**CI:** parallel jobs (`build` warm cache → `fmt`, `clippy`, `test`, `ui`, `lint-extras`); separate **`miri`** matrix job runs `./scripts/miri.sh <crate>` per changed Miri-eligible crate (`engine`, `orchestration`) on Ubuntu (skipped when neither changed). Superseded runs cancel via workflow `concurrency`. Miri CI pins `nightly-2026-06-20` (`MIRI_TOOLCHAIN`) and caches `~/.cache/miri` (sysroot) plus `target/miri` (via `rust-cache`) so warm runs skip the ~17s sysroot build and most dependency recompiles.
+**CI:** parallel jobs (`build` warm cache → `fmt`, `clippy`, `test`, `ui`, `lint-extras`); PR CI no longer runs Miri. Miri runs in the release workflow's `release-verify` job (tag push or `workflow_dispatch`) on Ubuntu: `./scripts/miri.sh` (both crates), pinning `nightly-2026-06-20` (`MIRI_TOOLCHAIN`) and caching `~/.cache/miri` (sysroot) + `target/miri` (via `rust-cache`).
 
 **One-time installs:** `cargo install cargo-machete typos-cli cargo-mutants cargo-public-api`; Miri: `rustup toolchain install nightly --component miri` (see [Miri §](testing-workflows.md#miri)).
 

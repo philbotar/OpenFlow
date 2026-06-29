@@ -1,0 +1,28 @@
+name: Install cargo tools
+description: Cache the taiki-e cargo tool binaries and install them only on cache miss.
+
+runs:
+  using: composite
+  steps:
+    - name: Cache cargo tool binaries
+      id: cargo-tools
+      uses: actions/cache@v4
+      with:
+        # Cache ONLY the 4 tool binaries (not all of ~/.cargo/bin, which overlaps setup-rust
+        # and swatinem). ponytail: caches binaries, not versions — bump the key prefix
+        # (cargo-tools2-) to refresh when upstream versions move. Upgrade path: pin tool
+        # versions in the taiki-e call (tool: cargo-deny@<ver>,...) for a stable key.
+        path: |
+          ~/.cargo/bin/cargo-deny
+          ~/.cargo/bin/cargo-machete
+          ~/.cargo/bin/typos
+          ~/.cargo/bin/cargo-public-api
+        key: cargo-tools-${{ runner.os }}-${{ hashFiles('.github/actions/install-cargo-tools/action.yml') }}
+        restore-keys: |
+          cargo-tools-${{ runner.os }}-
+
+    - name: Install cargo-deny, cargo-machete, typos, cargo-public-api
+      if: steps.cargo-tools.outputs.cache-hit != 'true'
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-deny,cargo-machete,typos,cargo-public-api
