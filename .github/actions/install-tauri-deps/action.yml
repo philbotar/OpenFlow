@@ -1,0 +1,32 @@
+name: Install Tauri Linux deps
+description: Cache apt .deb archives (first-party actions/cache) and install the Tauri Linux -dev libs. No-op on non-Linux runners.
+
+runs:
+  using: composite
+  steps:
+    - name: Cache apt archives
+      if: runner.os == 'Linux'
+      uses: actions/cache@v4
+      with:
+        # User-owned dir so actions/cache can save/restore. Caching /var/cache/apt/archives
+        # fails on restore: it is root-owned and tar runs as the runner user. Redirecting apt
+        # here also dodges the image's docker-clean hook that rm's the default archives dir.
+        path: ~/.cache/apt-archives
+        key: apt-tauri-${{ runner.os }}-${{ hashFiles('.github/actions/install-tauri-deps/action.yml') }}
+        restore-keys: |
+          apt-tauri-${{ runner.os }}-
+
+    - name: Install Tauri Linux deps (cached)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        set -euo pipefail
+        # ponytail: caches the deb DOWNLOADS, not installed state — apt still runs dpkg each run.
+        # 5 -dev libs not preinstalled on ubuntu-latest; build-essential/curl/wget/file are
+        # already on the image, so they are not listed. Upgrade path if version drift causes too
+        # many partial misses: also cache /var/lib/apt/lists (root-owned, needs the same chown trick).
+        mkdir -p "$HOME/.cache/apt-archives/partial"
+        echo "Dir::Cache::archives \"$HOME/.cache/apt-archives\";" | sudo tee /etc/apt/apt.conf.d/99user-archives >/dev/null
+        echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' | sudo tee /etc/apt/apt.conf.d/01keep-debs >/dev/null
+        sudo apt-get update
+        sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
