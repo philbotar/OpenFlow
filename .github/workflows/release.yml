@@ -4,12 +4,71 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+
+env:
+  MIRI_NIGHTLY: nightly-2026-06-20
+  MIRI_TOOLCHAIN: nightly-2026-06-20
 
 permissions:
   contents: write
 
 jobs:
+  release-verify:
+    name: Release verify (Miri + deep tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust (stable)
+        uses: ./.github/actions/setup-rust
+
+      - name: Setup Rust (nightly + miri)
+        uses: ./.github/actions/setup-rust
+        with:
+          toolchain: ${{ env.MIRI_NIGHTLY }}
+          components: miri
+
+      - name: Install Tauri Linux deps (cached)
+        uses: ./.github/actions/install-tauri-deps
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+
+      - name: Cache Miri sysroot
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/miri
+          key: miri-sysroot-${{ runner.os }}-${{ env.MIRI_NIGHTLY }}-x86_64-unknown-linux-gnu
+
+      - name: Cache Rust + Miri build artifacts
+        uses: swatinem/rust-cache@v2
+        with:
+          # scripts/miri.sh exports CARGO_TARGET_DIR=target/miri for the Miri run only; the deep
+          # checks use ./target. swatinem does not read CARGO_TARGET_DIR, so target/miri must be
+          # listed explicitly (this also fixes the prior ./target mis-cache from the old ci.yml job).
+          workspaces: |
+            . -> target
+            . -> target/miri
+          cache-on-failure: true
+          shared-key: release-verify
+
+      - name: Miri (engine + orchestration)
+        run: ./scripts/miri.sh
+
+      - name: Deep tests (execution + desktop)
+        run: ./scripts/test-fast.sh --execution --desktop --skip-ui-typecheck
+
+      - name: Orchestration E2E
+        run: cargo test -p orchestration --test workflow_e2e -- --nocapture
+
   release:
+    needs: release-verify
+    if: startsWith(github.ref, 'refs/tags/v')
     strategy:
       fail-fast: false
       matrix:

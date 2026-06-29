@@ -5,10 +5,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RUN_EXECUTION=0
 RUN_DESKTOP=0
+SKIP_UI_TYPECHECK=0
 
 usage() {
 	cat <<'EOF'
-Usage: ./scripts/test-fast.sh [--execution] [--desktop]
+Usage: ./scripts/test-fast.sh [--execution] [--desktop] [--skip-ui-typecheck]
 
 Default lane:
   - ./scripts/verify/test-engine.sh
@@ -20,6 +21,7 @@ Default lane:
 Options:
   --execution  Add deterministic workflow acceptance coverage.
   --desktop    Add desktop/Tauri command coverage.
+  --skip-ui-typecheck  Omit the ui typecheck step (run it in a separate CI job instead).
   -h, --help   Show this help text.
 EOF
 }
@@ -41,6 +43,10 @@ while [[ $# -gt 0 ]]; do
 		RUN_DESKTOP=1
 		shift
 		;;
+	--skip-ui-typecheck)
+		SKIP_UI_TYPECHECK=1
+		shift
+		;;
 	-h | --help)
 		usage
 		exit 0
@@ -57,7 +63,10 @@ run_step "engine" "$ROOT/scripts/verify/test-engine.sh"
 run_step "providers" "$ROOT/scripts/verify/test-providers.sh"
 run_step "orchestration lib" "$ROOT/scripts/verify/test-orchestration-lib.sh"
 run_step "workspace checks" "$ROOT/scripts/verify/test-workspace-checks.sh"
-run_step "ui typecheck" "$ROOT/scripts/verify/ui-typecheck.sh"
+
+if [[ "$SKIP_UI_TYPECHECK" != "1" ]]; then
+	run_step "ui typecheck" "$ROOT/scripts/verify/ui-typecheck.sh"
+fi
 
 if [[ "$RUN_EXECUTION" == "1" ]]; then
 	run_step "workflow acceptance" "$ROOT/scripts/verify/test-execution.sh"
