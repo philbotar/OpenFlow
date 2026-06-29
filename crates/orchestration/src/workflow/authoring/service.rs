@@ -148,9 +148,22 @@ impl WorkflowAuthoringService {
                     model_attempt += 1;
                 }
                 Ok(AgentTurnOutcome::NeedsUserInput(need)) => {
+                    let assistant_message = need.assistant_message;
+                    let mut messages = messages;
+                    messages.push(WorkflowAuthoringMessage {
+                        role: "assistant".to_string(),
+                        content: assistant_message.clone(),
+                    });
+                    {
+                        let mut sessions = self.sessions.lock().await;
+                        let session = sessions
+                            .get_mut(session_id)
+                            .ok_or_else(|| "authoring session not found".to_string())?;
+                        session.messages = messages.clone();
+                    }
                     return Ok(WorkflowAuthoringTurnResult {
                         session_id: session_id.to_string(),
-                        assistant_message: need.assistant_message,
+                        assistant_message,
                         draft: current_draft,
                         validation: WorkflowAuthoringValidation {
                             valid: false,

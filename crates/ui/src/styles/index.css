@@ -5462,7 +5462,7 @@ label {
 
 .workflow-authoring-body--with-preview {
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(320px, 44%) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 3fr) minmax(0, 2fr);
 }
 
 .workflow-authoring-chat {
@@ -5471,11 +5471,17 @@ label {
   flex: 1;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
 }
 
 .workflow-authoring-body--with-preview .workflow-authoring-chat {
+  grid-row: 2;
   border-top: 1px solid var(--border);
   border-right: none;
+}
+
+.workflow-authoring-body--with-preview .workflow-authoring-preview {
+  grid-row: 1;
 }
 
 .workflow-authoring-preview {
@@ -5483,6 +5489,7 @@ label {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
   background: var(--surface-ground);
 }
 
@@ -5555,6 +5562,8 @@ label {
 }
 
 .workflow-authoring-preview-canvas {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
   margin: 12px var(--card-padding-md) var(--card-padding-md);
@@ -5566,14 +5575,6 @@ label {
 
 [data-theme="dark"] .workflow-authoring-preview-canvas {
   background: var(--surface-panel);
-}
-
-.workflow-authoring-intro {
-  margin: 0;
-  padding: var(--card-padding-md) var(--page-gutter);
-  border-bottom: 1px solid var(--border-subtle);
-  color: var(--text-secondary);
-  font-size: var(--text-body-sm);
 }
 
 .workflow-authoring-status {

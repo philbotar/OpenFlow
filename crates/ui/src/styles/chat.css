@@ -124,6 +124,7 @@
 /* ── Workflow authoring (match dock chat) ── */
 .workflow-authoring-messages {
   padding: 0;
+  margin: 8px;
   gap: 4px;
 }
 
