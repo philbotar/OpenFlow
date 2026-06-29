@@ -56,6 +56,11 @@ export function WorkflowAuthoringScreen() {
                   </Show>
                 )}
               </For>
+              <Show when={ctx.workflowAuthoringBusy()}>
+                <div class="chat-live-strip chat-live-strip--pending" aria-live="polite">
+                  <p class="chat-live-starting">Building workflow draft…</p>
+                </div>
+              </Show>
             </Show>
           </div>
 

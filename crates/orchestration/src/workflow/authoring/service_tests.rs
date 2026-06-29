@@ -213,6 +213,50 @@ async fn send_turn_retries_clarification_and_materializes_draft() {
     assert_eq!(ai.calls.load(Ordering::SeqCst), 2);
 }
 
+struct AlwaysClarifyAi;
+
+#[async_trait]
+impl AiPort for AlwaysClarifyAi {
+    async fn invoke(&self, _request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+        Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
+            raw_text: "What kind of workflow?".to_string(),
+            assistant_message: "What kind of workflow do you want?".to_string(),
+        }))
+    }
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+async fn send_turn_returns_assistant_message_when_clarification_exhausted() {
+    let ai = AlwaysClarifyAi;
+    let service = WorkflowAuthoringService::new();
+    let session_id = service.start_session(None);
+    let settings = AppSettings::default();
+    let result = service
+        .send_turn(
+            &session_id,
+            "Build a simple planner".to_string(),
+            &settings,
+            &ai,
+        )
+        .await
+        .expect("turn");
+
+    assert_eq!(result.messages.len(), 2);
+    assert_eq!(result.messages[0].role, "user");
+    assert_eq!(result.messages[0].content, "Build a simple planner");
+    assert_eq!(result.messages[1].role, "assistant");
+    assert_eq!(
+        result.messages[1].content,
+        "What kind of workflow do you want?"
+    );
+    assert_eq!(
+        result.assistant_message,
+        "What kind of workflow do you want?"
+    );
+    assert!(!result.validation.valid);
+}
+
 struct MalformedSubmitThenDraftAi {
     calls: AtomicUsize,
     draft_response: serde_json::Value,

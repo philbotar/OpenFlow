@@ -1425,7 +1425,8 @@ export function AppProvider(props: ParentProps) {
 
   const handleWorkflowAuthoringSend = async (message: string) => {
     const sessionId = workflowAuthoringSessionId();
-    if (!message.trim() || workflowAuthoringBusy()) return;
+    const trimmed = message.trim();
+    if (!trimmed || workflowAuthoringBusy()) return;
     if (!sessionId) {
       setError("Authoring session is not ready yet. Try opening Build with AI again.");
       return;
@@ -1434,11 +1435,15 @@ export function AppProvider(props: ParentProps) {
       setError(readiness()?.message ?? "Configure a provider in Settings first.");
       return;
     }
+    setWorkflowAuthoringMessages((current) => [
+      ...current,
+      { role: "user", content: trimmed },
+    ]);
     setWorkflowAuthoringBusy(true);
     try {
       const result = await desktop.workflowAuthoringTurn(
         sessionId,
-        message.trim(),
+        trimmed,
         settings(),
         activeProviderKeyInput() || null,
       );
