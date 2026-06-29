@@ -16,6 +16,8 @@ const apiMocks = vi.hoisted(() => ({
   listenToRunState: vi.fn(),
   resolveProviderReadiness: vi.fn(),
   deleteProviderApiKey: vi.fn(),
+  debugLogPath: vi.fn(),
+  appendDebugLog: vi.fn(),
   loadProviderApiKey: vi.fn(),
   saveAgents: vi.fn(),
   saveProviderApiKey: vi.fn(),
@@ -65,6 +67,8 @@ vi.mock("../api", async (importOriginal) => {
     listenToRunState: apiMocks.listenToRunState,
     resolveProviderReadiness: apiMocks.resolveProviderReadiness,
     deleteProviderApiKey: apiMocks.deleteProviderApiKey,
+    debugLogPath: apiMocks.debugLogPath,
+    appendDebugLog: apiMocks.appendDebugLog,
     loadProviderApiKey: apiMocks.loadProviderApiKey,
     saveAgents: apiMocks.saveAgents,
     submitToolApproval: apiMocks.submitToolApproval,
@@ -312,6 +316,11 @@ function installDefaultApiMocks() {
   });
   apiMocks.saveProviderApiKey.mockResolvedValue(undefined);
   apiMocks.deleteProviderApiKey.mockResolvedValue(undefined);
+  apiMocks.debugLogPath.mockResolvedValue("/tmp/openflow-debug-test.jsonl");
+  apiMocks.appendDebugLog.mockResolvedValue({
+    enabled: true,
+    path: "/tmp/openflow-debug-test.jsonl",
+  });
   apiMocks.createWorkflow.mockImplementation(async (name: string) => makeWorkflow("created-workflow", name));
   apiMocks.createAgentDefinition.mockImplementation(async (name: string) => makeAgent("created-agent", name));
   apiMocks.createAgentNode.mockImplementation(
@@ -1116,7 +1125,7 @@ describe("App settings persistence", () => {
       const labels = [...container.querySelectorAll('.settings-nav-button')].map(
         (element) => element.textContent?.trim(),
       );
-      expect(labels).toEqual(["Appearance", "Providers", "MCP Servers", "About"]);
+      expect(labels).toEqual(["Appearance", "Providers", "MCP Servers", "Diagnostics", "About"]);
     } finally {
       dispose();
     }

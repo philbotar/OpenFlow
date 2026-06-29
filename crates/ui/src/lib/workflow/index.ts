@@ -160,6 +160,22 @@ export function cloneSettings(settings: AppSettings): AppSettings {
       ? [...settings.skill_search_paths]
       : undefined,
     lsp: settings.lsp ? { ...settings.lsp } : undefined,
+    mcp: settings.mcp
+      ? {
+          servers: settings.mcp.servers.map((server) => ({
+            ...server,
+            args: [...server.args],
+            env: { ...server.env },
+          })),
+          discoverExternal: settings.mcp.discoverExternal,
+          disabledDiscoveredIds: settings.mcp.disabledDiscoveredIds
+            ? [...settings.mcp.disabledDiscoveredIds]
+            : undefined,
+        }
+      : undefined,
+    local_diagnostics: settings.local_diagnostics
+      ? { ...settings.local_diagnostics }
+      : undefined,
   };
 }
 

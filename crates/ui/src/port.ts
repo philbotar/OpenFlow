@@ -4,6 +4,8 @@ import type {
 	AgentDefinitionSummary,
 	AppSettings,
 	BootstrapPayload,
+	DebugLogEntry,
+	DebugLogWrite,
 	Node,
 	Project,
 	ProjectFileReference,
@@ -65,6 +67,8 @@ export interface UiDesktopOutboundPort {
 	saveAgents: (agents: AgentDefinition[]) => Promise<void>;
 	loadSettings: (projectPath?: string | null) => Promise<SettingsLoadPayload>;
 	saveSettings: (settings: AppSettings) => Promise<void>;
+	debugLogPath: () => Promise<string>;
+	appendDebugLog: (settings: AppSettings, entry: DebugLogEntry) => Promise<DebugLogWrite>;
 	loadProviderApiKey: (providerId: string) => Promise<string | null>;
 	saveProviderApiKey: (providerId: string, apiKey: string) => Promise<void>;
 	deleteProviderApiKey: (providerId: string) => Promise<void>;
@@ -174,6 +178,8 @@ export function createUiDesktopOutboundAdapter(): UiDesktopOutboundPort {
 		saveAgents: desktopApi.saveAgents,
 		loadSettings: desktopApi.loadSettings,
 		saveSettings: desktopApi.saveSettings,
+		debugLogPath: desktopApi.debugLogPath,
+		appendDebugLog: desktopApi.appendDebugLog,
 		loadProviderApiKey: desktopApi.loadProviderApiKey,
 		saveProviderApiKey: desktopApi.saveProviderApiKey,
 		deleteProviderApiKey: desktopApi.deleteProviderApiKey,

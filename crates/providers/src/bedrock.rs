@@ -583,11 +583,12 @@ pub(crate) fn humanize_bedrock_sdk_error(message: &str) -> String {
             || lowered.contains("not found or invalid")
             || lowered.contains("unable to locate")
         {
-            return "AWS credentials missing or expired. If you use SSO, enter your AWS profile name in Settings and run `aws sso login --profile <name>` in a terminal first; verify with `aws sts get-caller-identity --profile <name>`. For access keys, run `aws configure`."
-                .to_string();
+            return format!(
+                "AWS credentials missing or expired. If you use SSO, enter your AWS profile name in Settings and run `aws sso login --profile <name>` in a terminal first; verify with `aws sts get-caller-identity --profile <name>`. For access keys, run `aws configure`. Raw AWS SDK error: {message}"
+            );
         }
         return format!(
-            "Could not reach Amazon Bedrock ({message}). Check AWS region in Settings, network/VPN, and credentials (SSO: `aws sso login --profile <name>`; access keys: `aws configure`)."
+            "Could not reach Amazon Bedrock. Raw AWS SDK error: {message}. Check AWS region in Settings, network/VPN, proxy/TLS settings, and credentials (SSO: `aws sso login --profile <name>`; access keys: `aws configure`)."
         );
     }
     if lowered.contains("credentialsnotloaded")
@@ -899,9 +900,23 @@ mod tests {
         );
         assert!(message.contains("aws sso login"));
         assert!(message.contains("AWS profile name in Settings"));
+        assert!(message.contains("Raw AWS SDK error"));
+        assert!(message.contains("unable to locate credentials"));
 
         let message = humanize_bedrock_sdk_error("CredentialsNotLoaded: no credentials configured");
         assert!(message.contains("aws sso login"));
+    }
+
+    #[test]
+    fn humanize_bedrock_sdk_error_preserves_dispatch_failure_detail() {
+        let message = humanize_bedrock_sdk_error(
+            "dispatch failure: connector error: certificate verify failed for bedrock-runtime.ap-southeast-2.amazonaws.com",
+        );
+
+        assert!(message.contains("Could not reach Amazon Bedrock"));
+        assert!(message.contains("Raw AWS SDK error"));
+        assert!(message.contains("certificate verify failed"));
+        assert!(message.contains("proxy/TLS settings"));
     }
 
     #[test]

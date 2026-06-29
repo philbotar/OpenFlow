@@ -1226,6 +1226,9 @@ select:focus-visible {
   color: var(--text);
   box-shadow: var(--shadow-panel);
   backdrop-filter: blur(16px);
+  max-height: min(52vh, 440px);
+  overflow: auto;
+  overflow-wrap: anywhere;
 }
 
 .app-toast [data-title] {
@@ -1247,6 +1250,7 @@ select:focus-visible {
 
 .app-toast-title {
   font-size: 0.95rem;
+  line-height: 1.45;
 }
 
 .app-toast-close-button {
@@ -4648,6 +4652,35 @@ label {
   margin: 0;
   font-size: var(--text-body-sm);
   color: var(--text-secondary);
+}
+
+.diagnostics-toggle {
+  margin-bottom: 8px;
+}
+
+.diagnostics-note {
+  margin: 0 0 14px;
+  font-size: var(--text-body-sm);
+  color: var(--text-secondary);
+}
+
+.diagnostics-log-path {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-strong);
+  color: var(--text-secondary);
+  font-size: var(--text-body-sm);
+}
+
+.diagnostics-log-path code {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  color: var(--text);
 }
 
 .mcp-server-list {

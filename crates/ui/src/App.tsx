@@ -37,6 +37,10 @@ function ScreenRouter() {
 function AppToaster() {
   const ctx = useAppContext();
   const topOffset = () => "calc(var(--topbar-height) + 16px)";
+  const toastWidth = () =>
+    ctx.settings().local_diagnostics?.debug_output
+      ? "min(720px, calc(100vw - 32px))"
+      : "min(400px, calc(100vw - 32px))";
 
   return (
     <Toaster
@@ -47,7 +51,7 @@ function AppToaster() {
       closeButton
       duration={BANNER_DISMISS_MS}
       style={{
-        "--width": "min(400px, calc(100vw - 32px))",
+        "--width": toastWidth(),
         "z-index": "9999",
         zoom: "var(--ui-zoom)",
       }}

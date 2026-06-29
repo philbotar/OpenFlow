@@ -8,7 +8,7 @@
 mod run_notifications;
 mod run_sleep_guard;
 
-use orchestration::api::{McpDiscoveryRow, SettingsLoadPayload};
+use orchestration::api::{DebugLogEntry, DebugLogWrite, McpDiscoveryRow, SettingsLoadPayload};
 use orchestration::backend::{
     AppBackend, BackendError, FileEditPreview, ProviderReadiness, ScheduleStatus,
     WorkflowAuthoringTurnResult, WorkflowListItem, WorkflowValidationSummary,
@@ -255,6 +255,22 @@ fn save_settings(
     settings: AppSettings,
 ) -> Result<(), CommandError> {
     Ok(backend.save_settings(&settings)?)
+}
+
+/// Tauri command: Return the local diagnostics temp log path for this process.
+#[tauri::command]
+fn debug_log_path(backend: tauri::State<AppBackend>) -> String {
+    backend.debug_log_path()
+}
+
+/// Tauri command: Append a local diagnostics entry when debug output is enabled.
+#[tauri::command]
+fn append_debug_log(
+    backend: tauri::State<AppBackend>,
+    settings: AppSettings,
+    entry: DebugLogEntry,
+) -> Result<DebugLogWrite, CommandError> {
+    Ok(backend.append_debug_log(&settings, &entry)?)
 }
 
 /// Tauri command: Probe one MCP server and list tool names.
@@ -881,6 +897,8 @@ pub fn run() {
             save_agents,
             load_settings,
             save_settings,
+            debug_log_path,
+            append_debug_log,
             probe_mcp_server,
             load_provider_api_key,
             save_provider_api_key,

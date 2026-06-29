@@ -276,6 +276,12 @@ impl Default for LspSettings {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct LocalDiagnosticsSettings {
+    #[serde(default)]
+    pub debug_output: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppSettings {
     pub active_provider: ProviderId,
@@ -286,6 +292,8 @@ pub struct AppSettings {
     pub lsp: LspSettings,
     #[serde(default)]
     pub mcp: McpSettings,
+    #[serde(default)]
+    pub local_diagnostics: LocalDiagnosticsSettings,
     #[serde(default = "default_incident_retention_max")]
     pub incident_retention_max: u32,
 }
@@ -379,6 +387,7 @@ impl Default for AppSettings {
             skill_search_paths: Vec::new(),
             lsp: LspSettings::default(),
             mcp: McpSettings::default(),
+            local_diagnostics: LocalDiagnosticsSettings::default(),
             incident_retention_max: default_incident_retention_max(),
         }
     }
@@ -568,6 +577,19 @@ mod tests {
         value.as_object_mut().unwrap().remove("mcp");
         let parsed: AppSettings = serde_json::from_value(value).unwrap();
         assert!(parsed.mcp.discover_external);
+    }
+
+    #[test]
+    fn app_settings_default_local_diagnostics_disabled() {
+        assert!(!AppSettings::default().local_diagnostics.debug_output);
+    }
+
+    #[test]
+    fn app_settings_missing_local_diagnostics_defaults_disabled() {
+        let mut value = serde_json::to_value(AppSettings::default()).unwrap();
+        value.as_object_mut().unwrap().remove("local_diagnostics");
+        let parsed: AppSettings = serde_json::from_value(value).unwrap();
+        assert!(!parsed.local_diagnostics.debug_output);
     }
 
     #[test]

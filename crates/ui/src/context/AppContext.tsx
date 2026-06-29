@@ -105,6 +105,7 @@ export interface AppContextValue {
   terminalError: Accessor<string | null>;
   terminalOutputFor: (sessionId: string) => string;
   scheduleStatuses: Accessor<ScheduleStatus[]>;
+  localDebugLogPath: Accessor<string | null>;
 
   // ── Signal setters (form inputs + simple UI state) ────────────────────────
   setWorkflowNameDraft: Setter<string>;
@@ -184,6 +185,9 @@ export interface AppContextValue {
   handleRemoveKnownModel: (model: string) => void;
   handleApiKeyInput: (key: string) => void;
   updateSettings: (mutator: (draft: AppSettings) => void) => Promise<void>;
+  showErrorToast: (message: string, context?: string) => void;
+  showSuccessToast: (message: string, context?: string) => void;
+  showInfoToast: (message: string, context?: string) => void;
 
   // ── Canvas / graph handlers ───────────────────────────────────────────────
   handleSelectNode: (nodeId: NodeId | null) => void;

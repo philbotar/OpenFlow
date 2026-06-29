@@ -11,6 +11,8 @@ import type {
   AgentDefinitionSummary,
   AppSettings,
   BootstrapPayload,
+  DebugLogEntry,
+  DebugLogWrite,
   Node,
   Project,
   ProjectFileReference,
@@ -194,6 +196,14 @@ export function loadSettings(projectPath?: string | null) {
 
 export function saveSettings(settings: AppSettings) {
   return invoke<void>("save_settings", { settings });
+}
+
+export function debugLogPath() {
+  return invoke<string>("debug_log_path");
+}
+
+export function appendDebugLog(settings: AppSettings, entry: DebugLogEntry) {
+  return invoke<DebugLogWrite>("append_debug_log", { settings, entry });
 }
 
 export function probeMcpServer(config: McpServerConfig) {
