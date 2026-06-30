@@ -63,6 +63,8 @@ symbols = [
     "BedrockConfig",
     "BedrockSpec",
     "list_bedrock_foundation_models",
+    "verify_bedrock_credentials",
+    "ensure_process_home_env",
 ]
 # Concrete provider client — use create_provider + dyn AiPort instead.
 ban_symbols = ["AiClient"]

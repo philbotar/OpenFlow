@@ -30,7 +30,12 @@ Bedrock uses AWS credentials and region settings rather than a normal API-key he
 2. Set **AWS region** to the region where your models are enabled (not necessarily `us-east-1`).
 3. In a terminal, run `aws sso login --profile <name>` before starting a run. SSO tokens expire (typically 8–12h); re-login when credentials fail.
 4. On macOS, apps launched from the Dock do not inherit `AWS_PROFILE` from `~/.zshrc`. Either enter the profile in Settings or launch OpenFlow from a terminal (`./scripts/start.sh`) where the env var is set.
-5. Verify credentials: `aws sts get-caller-identity --profile <name>` and `aws bedrock list-foundation-models --profile <name> --region <region>`.
+5. Use **Test AWS connection** in Settings to confirm the app can load credentials (Settings → Bedrock). This checks the same credential chain used at run time.
+6. Verify credentials: `aws sts get-caller-identity --profile <name>` and `aws bedrock list-foundation-models --profile <name> --region <region>`.
+
+### GUI apps and `HOME`
+
+The AWS Rust SDK resolves `~/.aws/config`, `~/.aws/credentials`, and SSO token cache via the `HOME` environment variable. GUI launches often omit `HOME` even when a terminal session works. OpenFlow sets `HOME` from the OS user directory when it is missing so shared AWS config files are discoverable in-process.
 
 ## Manual smoke
 

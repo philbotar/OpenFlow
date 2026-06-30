@@ -1,3 +1,5 @@
+use crate::aws_runtime::load_aws_sdk_config;
+use aws_sdk_bedrock::config::ProvideCredentials;
 use aws_sdk_bedrock::types::{
     FoundationModelLifecycle, FoundationModelLifecycleStatus, FoundationModelSummary,
     InferenceType, ModelModality,
@@ -23,6 +25,43 @@ pub async fn list_bedrock_foundation_models(
         .map_err(|error| map_bedrock_control_error(&error))?;
     Ok(filter_converse_model_ids(
         response.model_summaries.unwrap_or_default(),
+    ))
+}
+
+/// Loads AWS credentials for Bedrock without calling the Bedrock API.
+///
+/// # Errors
+/// Returns an error when the AWS credential chain cannot resolve credentials.
+pub async fn verify_bedrock_credentials(
+    region: &str,
+    aws_profile: Option<&str>,
+) -> Result<String, AgentError> {
+    let trimmed_region = region.trim();
+    if trimmed_region.is_empty() {
+        return Err(AgentError::Permanent(
+            "Amazon Bedrock AWS region missing".to_string(),
+        ));
+    }
+    let config = load_aws_sdk_config(trimmed_region, aws_profile).await;
+    let provider = config.credentials_provider().ok_or_else(|| {
+        AgentError::Permanent("AWS credentials provider not configured".to_string())
+    })?;
+    let credentials = provider.provide_credentials().await.map_err(|error| {
+        AgentError::Permanent(crate::bedrock::humanize_bedrock_sdk_error(
+            &error.to_string(),
+        ))
+    })?;
+    let suffix: String = credentials
+        .access_key_id()
+        .chars()
+        .rev()
+        .take(4)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+    Ok(format!(
+        "AWS credentials loaded (access key id ends with …{suffix})"
     ))
 }
 
@@ -62,12 +101,11 @@ async fn bedrock_control_client(
             "Amazon Bedrock AWS region missing".to_string(),
         ));
     }
-    let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest())
-        .region(aws_config::Region::new(trimmed_region.to_string()));
-    if let Some(profile) = aws_profile.map(str::trim).filter(|value| !value.is_empty()) {
-        loader = loader.profile_name(profile);
-    }
-    let shared = loader.load().await;
+    let shared = load_aws_sdk_config(
+        trimmed_region,
+        aws_profile.map(str::trim).filter(|value| !value.is_empty()),
+    )
+    .await;
     Ok(BedrockControlClient::new(&shared))
 }
 

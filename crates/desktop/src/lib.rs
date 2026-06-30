@@ -329,6 +329,15 @@ async fn refresh_bedrock_models(
     Ok(backend.refresh_bedrock_models(&settings).await?)
 }
 
+/// Tauri command: Verify Bedrock can load AWS credentials for the configured region/profile.
+#[tauri::command]
+async fn verify_bedrock_credentials(
+    backend: tauri::State<'_, AppBackend>,
+    settings: AppSettings,
+) -> Result<String, CommandError> {
+    Ok(backend.verify_bedrock_credentials(&settings).await?)
+}
+
 /// Tauri command: Validate a workflow.
 #[tauri::command]
 fn validate_workflow(
@@ -905,6 +914,7 @@ pub fn run() {
             delete_provider_api_key,
             resolve_provider_readiness,
             refresh_bedrock_models,
+            verify_bedrock_credentials,
             validate_workflow,
             start_workflow_authoring,
             workflow_authoring_turn,

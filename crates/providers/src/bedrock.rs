@@ -1,4 +1,5 @@
 use crate::auth::AuthConfig;
+use crate::aws_runtime::load_aws_sdk_config;
 use crate::client::BedrockConfig;
 use crate::mapping::{
     all_tool_specs, build_node_context, parse_internal_tool_outcome, parse_plain_json_completion,
@@ -454,12 +455,7 @@ async fn bedrock_runtime_client(
         .or(profile.as_deref())
         .map(str::trim)
         .filter(|value| !value.is_empty());
-    let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest())
-        .region(aws_config::Region::new(region_value));
-    if let Some(name) = profile_name {
-        loader = loader.profile_name(name);
-    }
-    let shared = loader.load().await;
+    let shared = load_aws_sdk_config(&region_value, profile_name).await;
     Ok(BedrockRuntimeClient::new(&shared))
 }
 

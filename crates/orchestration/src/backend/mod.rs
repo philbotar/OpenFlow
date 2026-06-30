@@ -356,6 +356,13 @@ impl AppBackend {
         self.settings.refresh_bedrock_models(settings).await
     }
 
+    pub async fn verify_bedrock_credentials(
+        &self,
+        settings: &AppSettings,
+    ) -> Result<String, BackendError> {
+        self.settings.verify_bedrock_credentials(settings).await
+    }
+
     pub fn start_workflow_authoring(&self, base_workflow: Option<Workflow>) -> String {
         self.workflow_authoring.start_session(base_workflow)
     }

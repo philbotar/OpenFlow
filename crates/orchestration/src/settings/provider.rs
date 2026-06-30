@@ -14,6 +14,8 @@ pub struct ProviderEnv {
 impl ProviderEnv {
     #[must_use]
     pub fn from_system() -> Self {
+        #[cfg(feature = "bedrock")]
+        providers::ensure_process_home_env();
         let values = provider_env_var_names()
             .into_iter()
             .filter_map(|env_var| {
@@ -208,6 +210,13 @@ fn resolve_bedrock_region(
             bedrock_region_env_var(auth)
                 .and_then(|env_var| env.get(env_var))
                 .and_then(|value| trimmed(Some(value)).map(str::to_string))
+        })
+        .or_else(|| {
+            bedrock_region_env_var(auth).and_then(|env_var| {
+                std::env::var(env_var)
+                    .ok()
+                    .and_then(|value| trimmed(Some(&value)).map(str::to_string))
+            })
         })
 }
 
@@ -543,6 +552,45 @@ mod tests {
             panic!("expected Bedrock adapter");
         };
         assert_eq!(config.aws_profile.as_deref(), Some("from-settings"));
+    }
+
+    #[test]
+    fn bedrock_region_falls_back_to_live_aws_region_env() {
+        use std::sync::{Mutex, OnceLock};
+
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        let _guard = LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        let previous = std::env::var_os("AWS_REGION");
+        std::env::set_var("AWS_REGION", "eu-central-1");
+
+        let mut settings = AppSettings {
+            active_provider: ProviderId::from("bedrock"),
+            ..Default::default()
+        };
+        settings
+            .providers
+            .get_mut(&ProviderId::from("bedrock"))
+            .expect("bedrock profile")
+            .aws_region
+            .clear();
+        settings
+            .providers
+            .get_mut(&ProviderId::from("bedrock"))
+            .expect("bedrock profile")
+            .base_url
+            .clear();
+
+        let resolved = resolve_provider_config(&settings, None, &ProviderEnv::default()).unwrap();
+
+        match previous {
+            Some(value) => std::env::set_var("AWS_REGION", value),
+            None => std::env::remove_var("AWS_REGION"),
+        }
+
+        let ProviderAdapterConfig::Bedrock(config) = resolved.adapter else {
+            panic!("expected Bedrock adapter");
+        };
+        assert_eq!(config.region, "eu-central-1");
     }
 
     #[test]
