@@ -1507,7 +1507,7 @@ dependencies = [
 
 [[package]]
 name = "desktop"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "keepawake",
  "log",
@@ -4246,7 +4246,7 @@ dependencies = [
 
 [[package]]
 name = "providers"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "async-trait",
  "aws-config",
