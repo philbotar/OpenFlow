@@ -503,6 +503,24 @@ where
         .unwrap_or_default()
 }
 
+/// Formats an AWS SDK error by walking the full `source` chain.
+///
+/// `SdkError::to_string()` only yields a generic label (e.g. "dispatch failure");
+/// the actionable detail lives on inner sources.
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "bedrock_models calls this across submodule boundary"
+)]
+pub(crate) fn format_aws_sdk_error(error: &dyn std::error::Error) -> String {
+    let mut parts = vec![error.to_string()];
+    let mut current = error.source();
+    while let Some(source) = current {
+        parts.push(source.to_string());
+        current = source.source();
+    }
+    parts.join(": ")
+}
+
 fn bedrock_error_message<E>(error: &aws_sdk_bedrockruntime::error::SdkError<E>) -> String
 where
     E: ProvideErrorMetadata + std::error::Error + Send + Sync + 'static,
@@ -516,7 +534,7 @@ where
         service
             .and_then(|service| service.message())
             .unwrap_or_default(),
-        &error.to_string(),
+        &format_aws_sdk_error(error),
     )
 }
 
@@ -535,7 +553,7 @@ where
         service
             .and_then(|service| service.message())
             .unwrap_or_default(),
-        &error.to_string(),
+        &format_aws_sdk_error(error),
     )
 }
 
@@ -887,6 +905,62 @@ mod tests {
             bedrock_wire_tool_name("mcp/playwright/browser_click"),
             "mcp_playwright_browser_click"
         );
+    }
+
+    #[test]
+    fn format_aws_sdk_error_unwraps_source_chain() {
+        #[derive(Debug)]
+        struct LeafError(&'static str);
+        impl std::fmt::Display for LeafError {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{}", self.0)
+            }
+        }
+        impl std::error::Error for LeafError {}
+
+        #[derive(Debug)]
+        struct ConnectorError {
+            source: LeafError,
+        }
+        impl std::fmt::Display for ConnectorError {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "other")
+            }
+        }
+        impl std::error::Error for ConnectorError {
+            fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+                Some(&self.source)
+            }
+        }
+
+        #[derive(Debug)]
+        struct DispatchFailure {
+            source: ConnectorError,
+        }
+        impl std::fmt::Display for DispatchFailure {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "dispatch failure")
+            }
+        }
+        impl std::error::Error for DispatchFailure {
+            fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+                Some(&self.source)
+            }
+        }
+
+        let error = DispatchFailure {
+            source: ConnectorError {
+                source: LeafError("unable to locate credentials"),
+            },
+        };
+        assert_eq!(
+            format_aws_sdk_error(&error),
+            "dispatch failure: other: unable to locate credentials"
+        );
+
+        let message = humanize_bedrock_sdk_error(&format_aws_sdk_error(&error));
+        assert!(message.contains("unable to locate credentials"));
+        assert!(message.contains("aws sso login"));
     }
 
     #[test]

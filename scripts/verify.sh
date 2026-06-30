@@ -241,6 +241,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 preflight_toolchain
+preflight_cargo_tools
+preflight_tauri_deps
 
 STEPS_TO_RUN=()
 if [[ ${#REQUESTED_STEPS[@]} -gt 0 ]]; then
