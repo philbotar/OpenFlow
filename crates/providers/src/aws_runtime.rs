@@ -23,6 +23,10 @@ pub fn process_home_dir() -> Option<PathBuf> {
         .or_else(windows_home_dir)
 }
 
+#[allow(
+    clippy::redundant_pub_crate,
+    reason = "shared Bedrock loader used from bedrock_models sibling module"
+)]
 pub(crate) async fn load_aws_sdk_config(
     region: &str,
     profile: Option<&str>,
@@ -54,7 +58,7 @@ fn windows_home_dir() -> Option<PathBuf> {
 }
 
 #[cfg(not(windows))]
-fn windows_home_dir() -> Option<PathBuf> {
+const fn windows_home_dir() -> Option<PathBuf> {
     None
 }
 
@@ -72,7 +76,7 @@ mod tests {
     fn ensure_process_home_env_sets_home_from_userprofile_on_windows() {
         let _guard = env_lock()
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let previous_home = std::env::var_os("HOME");
         let previous_userprofile = std::env::var_os("USERPROFILE");
         std::env::remove_var("HOME");
