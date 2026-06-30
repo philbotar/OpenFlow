@@ -75,7 +75,8 @@ fn map_bedrock_control_error<E>(error: &aws_sdk_bedrock::error::SdkError<E>) -> 
 where
     E: std::error::Error + Send + Sync + 'static,
 {
-    let message = crate::bedrock::humanize_bedrock_sdk_error(&error.to_string());
+    let message =
+        crate::bedrock::humanize_bedrock_sdk_error(&crate::bedrock::format_aws_sdk_error(error));
     match classify_sdk_error_code(&message) {
         SdkErrorClass::Transient => {
             AgentError::Transient(format!("Bedrock list models failed: {message}"))
