@@ -10,8 +10,8 @@ use crate::settings::provider::{
 use engine::AgentError;
 use engine::{execution_layers, validate_workflow, Workflow};
 #[cfg(feature = "bedrock")]
-use providers::list_bedrock_foundation_models;
-use providers::ProviderId;
+use providers::{list_bedrock_foundation_models, verify_bedrock_credentials};
+use providers::{ProviderAdapterConfig, ProviderId};
 
 pub struct SettingsFacade {
     store: Box<dyn SettingsStore>,
@@ -111,6 +111,17 @@ impl SettingsFacade {
         merge_preserved_api_keys(&mut merged, &persisted);
 
         match resolve_provider_config(&merged, transient_api_key, &self.env) {
+            Ok(config) if matches!(config.adapter, ProviderAdapterConfig::Bedrock(_)) => {
+                ProviderReadiness {
+                    ready: true,
+                    provider: active_provider_label(settings),
+                    message: "Region configured — use Test AWS connection to verify credentials"
+                        .to_string(),
+                    env_var: active_provider_env_var(settings)
+                        .unwrap_or_default()
+                        .to_string(),
+                }
+            }
             Ok(_) => ProviderReadiness {
                 ready: true,
                 provider: active_provider_label(settings),
@@ -161,43 +172,67 @@ impl SettingsFacade {
     ) -> Result<Vec<String>, BackendError> {
         let mut merged = settings.clone();
         merge_preserved_api_keys(&mut merged, &self.store.load()?);
-        let profile = merged
-            .providers
-            .get(&ProviderId::from("bedrock"))
-            .ok_or_else(|| {
+        #[cfg(feature = "bedrock")]
+        {
+            let config = resolve_provider_config(&merged, None, &self.env).map_err(|error| {
                 BackendError::from(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    "bedrock provider profile not found",
+                    std::io::ErrorKind::InvalidInput,
+                    error.to_string(),
                 ))
             })?;
-        let region = profile.aws_region.trim();
-        if region.is_empty() {
-            return Err(BackendError::from(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "Amazon Bedrock AWS region missing",
-            )));
+            let ProviderAdapterConfig::Bedrock(bedrock) = config.adapter else {
+                return Err(BackendError::from(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "active provider is not Amazon Bedrock",
+                )));
+            };
+            return list_bedrock_foundation_models(&bedrock.region, bedrock.aws_profile.as_deref())
+                .await
+                .map_err(map_agent_error_to_backend);
         }
-        let profile_name = profile.aws_profile.trim();
         #[cfg(not(feature = "bedrock"))]
         {
-            let _ = (region, profile_name);
+            let _ = merged;
             Err(BackendError::from(std::io::Error::new(
                 std::io::ErrorKind::Unsupported,
                 "Bedrock model refresh requires the orchestration `bedrock` feature",
             )))
         }
+    }
+
+    /// # Errors
+    /// Returns an error if Bedrock credentials cannot be loaded for the active profile.
+    pub async fn verify_bedrock_credentials(
+        &self,
+        settings: &AppSettings,
+    ) -> Result<String, BackendError> {
+        let mut merged = settings.clone();
+        merge_preserved_api_keys(&mut merged, &self.store.load()?);
         #[cfg(feature = "bedrock")]
         {
-            list_bedrock_foundation_models(
-                region,
-                if profile_name.is_empty() {
-                    None
-                } else {
-                    Some(profile_name)
-                },
-            )
-            .await
-            .map_err(map_agent_error_to_backend)
+            let config = resolve_provider_config(&merged, None, &self.env).map_err(|error| {
+                BackendError::from(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    error.to_string(),
+                ))
+            })?;
+            let ProviderAdapterConfig::Bedrock(bedrock) = config.adapter else {
+                return Err(BackendError::from(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "active provider is not Amazon Bedrock",
+                )));
+            };
+            return verify_bedrock_credentials(&bedrock.region, bedrock.aws_profile.as_deref())
+                .await
+                .map_err(map_agent_error_to_backend);
+        }
+        #[cfg(not(feature = "bedrock"))]
+        {
+            let _ = merged;
+            Err(BackendError::from(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "Bedrock credential verification requires the orchestration `bedrock` feature",
+            )))
         }
     }
 

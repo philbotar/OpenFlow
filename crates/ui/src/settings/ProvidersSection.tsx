@@ -1,5 +1,5 @@
 import { createMemo, createSignal, For, Show } from "solid-js";
-import { refreshBedrockModels } from "../api";
+import { refreshBedrockModels, verifyBedrockCredentials } from "../api";
 import { TextSelect } from "../components/TextSelect";
 import { useAppContext } from "../context/AppContext";
 import { normalizeError } from "../lib/utils";
@@ -37,6 +37,19 @@ export function ProvidersSection() {
     () => ctx.activeProfileMemo().aws_region ?? ctx.activeProfileMemo().base_url,
   );
   const [refreshingModels, setRefreshingModels] = createSignal(false);
+  const [verifyingCredentials, setVerifyingCredentials] = createSignal(false);
+
+  async function handleVerifyBedrockCredentials() {
+    setVerifyingCredentials(true);
+    try {
+      const message = await verifyBedrockCredentials(ctx.settings());
+      ctx.showSuccessToast(message);
+    } catch (error) {
+      ctx.showErrorToast(normalizeError(error), "Test AWS connection");
+    } finally {
+      setVerifyingCredentials(false);
+    }
+  }
 
   async function handleRefreshBedrockModels() {
     setRefreshingModels(true);
@@ -121,6 +134,14 @@ export function ProvidersSection() {
                   }
                 />
               </label>
+              <button
+                type="button"
+                class="secondary-button"
+                disabled={verifyingCredentials()}
+                onClick={() => void handleVerifyBedrockCredentials()}
+              >
+                {verifyingCredentials() ? "Testing…" : "Test AWS connection"}
+              </button>
             </>
           }
         >

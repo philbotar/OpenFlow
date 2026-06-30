@@ -274,6 +274,15 @@ describe("ProvidersSection", () => {
     expect(settings().providers.bedrock?.aws_profile).toBe("work-profile");
   });
 
+  test("bedrock shows test aws connection button", () => {
+    renderSection("bedrock");
+    expect(
+      Array.from(container.querySelectorAll("button")).some((button) =>
+        button.textContent?.includes("Test AWS connection"),
+      ),
+    ).toBe(true);
+  });
+
   test("bedrock aws region input updates aws_region instead of base_url", async () => {
     const { settings } = renderSection("bedrock");
     const regionInput = Array.from(container.querySelectorAll("label")).find((label) =>
