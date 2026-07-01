@@ -79,6 +79,7 @@ export interface UiDesktopOutboundPort {
 		transientApiKey?: string | null,
 	) => Promise<ProviderReadiness>;
 	refreshBedrockModels: (settings: AppSettings) => Promise<string[]>;
+	verifyBedrockCredentials: (settings: AppSettings) => Promise<string>;
 	validateWorkflow: (workflow: Workflow) => Promise<WorkflowValidationSummary>;
 	startWorkflowAuthoring: (baseWorkflow?: Workflow | null) => Promise<string>;
 	endWorkflowAuthoring: (sessionId: string) => Promise<boolean>;
@@ -190,6 +191,7 @@ export function createUiDesktopOutboundAdapter(): UiDesktopOutboundPort {
 		deleteProviderApiKey: desktopApi.deleteProviderApiKey,
 		resolveProviderReadiness: desktopApi.resolveProviderReadiness,
 		refreshBedrockModels: desktopApi.refreshBedrockModels,
+		verifyBedrockCredentials: desktopApi.verifyBedrockCredentials,
 		validateWorkflow: desktopApi.validateWorkflow,
 		startWorkflowAuthoring: desktopApi.startWorkflowAuthoring,
 		endWorkflowAuthoring: desktopApi.endWorkflowAuthoring,

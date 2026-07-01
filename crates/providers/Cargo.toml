@@ -1,6 +1,6 @@
 [package]
 name = "providers"
-version = "0.1.7"
+version = "0.1.9"
 edition.workspace = true
 description.workspace = true
 license.workspace = true
@@ -14,7 +14,7 @@ name = "providers"
 
 [features]
 default = ["bedrock"]
-bedrock = ["dep:aws-config", "dep:aws-sdk-bedrock", "dep:aws-sdk-bedrockruntime", "dep:aws-smithy-types"]
+bedrock = ["dep:aws-config", "dep:aws-sdk-bedrock", "dep:aws-sdk-bedrockruntime", "dep:aws-smithy-types", "dep:dirs"]
 
 [dependencies]
 async-trait.workspace = true
@@ -30,6 +30,7 @@ aws-config = { workspace = true, optional = true }
 aws-sdk-bedrock = { workspace = true, optional = true }
 aws-sdk-bedrockruntime = { workspace = true, optional = true }
 aws-smithy-types = { workspace = true, optional = true }
+dirs = { workspace = true, optional = true }
 
 [dev-dependencies]
 bytes.workspace = true

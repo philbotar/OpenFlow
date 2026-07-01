@@ -236,6 +236,10 @@ export function refreshBedrockModels(settings: AppSettings) {
   return invoke<string[]>("refresh_bedrock_models", { settings });
 }
 
+export function verifyBedrockCredentials(settings: AppSettings) {
+  return invoke<string>("verify_bedrock_credentials", { settings });
+}
+
 export function validateWorkflow(workflow: Workflow) {
   return invoke<WorkflowValidationSummary>("validate_workflow", { workflow });
 }

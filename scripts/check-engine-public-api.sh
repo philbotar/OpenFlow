@@ -4,16 +4,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SNAPSHOT="$ROOT/crates/engine/tests/snapshots/public_api.txt"
 ENGINE_CRATE="$ROOT/crates/engine"
-
-if ! command -v cargo-public-api >/dev/null 2>&1; then
-	echo "error: cargo-public-api is required (cargo install cargo-public-api)" >&2
-	exit 1
-fi
-
-if ! rustup toolchain list | grep -q '^nightly'; then
-	echo "error: nightly toolchain required for cargo-public-api" >&2
-	exit 1
-fi
+# shellcheck source=verify/_lib.sh
+. "$ROOT/scripts/verify/_lib.sh"
+preflight_cargo_tools
 
 TMP="$(mktemp)"
 trap 'rm -f "$TMP"' EXIT

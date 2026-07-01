@@ -6,6 +6,8 @@
 pub(crate) mod anthropic;
 pub(crate) mod auth;
 #[cfg(feature = "bedrock")]
+pub(crate) mod aws_runtime;
+#[cfg(feature = "bedrock")]
 pub(crate) mod bedrock;
 #[cfg(feature = "bedrock")]
 pub(crate) mod bedrock_models;
@@ -18,7 +20,9 @@ mod sse;
 
 pub use auth::AuthConfig;
 #[cfg(feature = "bedrock")]
-pub use bedrock_models::list_bedrock_foundation_models;
+pub use aws_runtime::ensure_process_home_env;
+#[cfg(feature = "bedrock")]
+pub use bedrock_models::{list_bedrock_foundation_models, verify_bedrock_credentials};
 pub use client::{AiClient, AiClientConfig, AnthropicConfig, BedrockConfig, ProviderAdapterConfig};
 pub use engine::AiPort;
 pub use openai_compat::OpenAiCompatibleConfig;
