@@ -26,9 +26,8 @@ pub fn lookup_context_window_size(
     if let Some(&size) = provider_overrides.get(model) {
         return Some(size);
     }
-    let lower = model.to_lowercase();
     for (key, &size) in provider_overrides {
-        if key.eq_ignore_ascii_case(&lower) {
+        if key.eq_ignore_ascii_case(model) {
             return Some(size);
         }
     }
@@ -37,7 +36,7 @@ pub fn lookup_context_window_size(
         return Some(size);
     }
     for (key, &size) in defaults {
-        if key.eq_ignore_ascii_case(&lower) {
+        if key.eq_ignore_ascii_case(model) {
             return Some(size);
         }
     }
