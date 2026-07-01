@@ -54,22 +54,31 @@ function ScheduleRow(props: { workflow: Workflow }) {
     ctx.showErrorToast(message, "schedule");
   };
 
+  let draftRequestId = 0;
+  let summaryRequestId = 0;
+
   createEffect(() => {
     const schedule = currentSchedule();
+    const requestId = ++draftRequestId;
     void ctx
       .scheduleDraftFromSchedule(schedule)
-      .then((nextDraft) => setDraft(cloneDraft(nextDraft)))
+      .then((nextDraft) => {
+        if (requestId !== draftRequestId) return;
+        setDraft(cloneDraft(nextDraft));
+      })
       .catch(showScheduleError);
   });
 
   createEffect(() => {
     const nextDraft = draft();
+    const requestId = ++summaryRequestId;
     void ctx
       .scheduleFromPreset(nextDraft)
-      .then((nextSchedule) => {
-        return ctx.describeWorkflowSchedule(nextSchedule);
+      .then((nextSchedule) => ctx.describeWorkflowSchedule(nextSchedule))
+      .then((summary) => {
+        if (requestId !== summaryRequestId) return;
+        setDraftSummary(summary);
       })
-      .then(setDraftSummary)
       .catch(showScheduleError);
   });
 
