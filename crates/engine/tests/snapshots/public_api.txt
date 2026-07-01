@@ -4568,13 +4568,13 @@ pub mod engine::template::store
 pub enum engine::template::store::TemplateStoreError
 pub engine::template::store::TemplateStoreError::CannotCreateDir
 pub engine::template::store::TemplateStoreError::CannotCreateDir::path: alloc::string::String
-pub engine::template::store::TemplateStoreError::CannotCreateDir::source: std::io::error::Error
+pub engine::template::store::TemplateStoreError::CannotCreateDir::source: core::io::error::Error
 pub engine::template::store::TemplateStoreError::CannotRead
 pub engine::template::store::TemplateStoreError::CannotRead::path: alloc::string::String
-pub engine::template::store::TemplateStoreError::CannotRead::source: std::io::error::Error
+pub engine::template::store::TemplateStoreError::CannotRead::source: core::io::error::Error
 pub engine::template::store::TemplateStoreError::CannotWrite
 pub engine::template::store::TemplateStoreError::CannotWrite::path: alloc::string::String
-pub engine::template::store::TemplateStoreError::CannotWrite::source: std::io::error::Error
+pub engine::template::store::TemplateStoreError::CannotWrite::source: core::io::error::Error
 pub engine::template::store::TemplateStoreError::DataDirUnavailable
 pub engine::template::store::TemplateStoreError::NotFound
 pub engine::template::store::TemplateStoreError::NotFound::id: alloc::string::String
@@ -4620,13 +4620,13 @@ pub fn engine::template::store::TemplateStore::update(&self, engine::template::T
 pub enum engine::template::TemplateStoreError
 pub engine::template::TemplateStoreError::CannotCreateDir
 pub engine::template::TemplateStoreError::CannotCreateDir::path: alloc::string::String
-pub engine::template::TemplateStoreError::CannotCreateDir::source: std::io::error::Error
+pub engine::template::TemplateStoreError::CannotCreateDir::source: core::io::error::Error
 pub engine::template::TemplateStoreError::CannotRead
 pub engine::template::TemplateStoreError::CannotRead::path: alloc::string::String
-pub engine::template::TemplateStoreError::CannotRead::source: std::io::error::Error
+pub engine::template::TemplateStoreError::CannotRead::source: core::io::error::Error
 pub engine::template::TemplateStoreError::CannotWrite
 pub engine::template::TemplateStoreError::CannotWrite::path: alloc::string::String
-pub engine::template::TemplateStoreError::CannotWrite::source: std::io::error::Error
+pub engine::template::TemplateStoreError::CannotWrite::source: core::io::error::Error
 pub engine::template::TemplateStoreError::DataDirUnavailable
 pub engine::template::TemplateStoreError::NotFound
 pub engine::template::TemplateStoreError::NotFound::id: alloc::string::String
@@ -6600,13 +6600,13 @@ impl<T> serde_core::de::DeserializeOwned for engine::SubagentStatus where T: for
 pub enum engine::TemplateStoreError
 pub engine::TemplateStoreError::CannotCreateDir
 pub engine::TemplateStoreError::CannotCreateDir::path: alloc::string::String
-pub engine::TemplateStoreError::CannotCreateDir::source: std::io::error::Error
+pub engine::TemplateStoreError::CannotCreateDir::source: core::io::error::Error
 pub engine::TemplateStoreError::CannotRead
 pub engine::TemplateStoreError::CannotRead::path: alloc::string::String
-pub engine::TemplateStoreError::CannotRead::source: std::io::error::Error
+pub engine::TemplateStoreError::CannotRead::source: core::io::error::Error
 pub engine::TemplateStoreError::CannotWrite
 pub engine::TemplateStoreError::CannotWrite::path: alloc::string::String
-pub engine::TemplateStoreError::CannotWrite::source: std::io::error::Error
+pub engine::TemplateStoreError::CannotWrite::source: core::io::error::Error
 pub engine::TemplateStoreError::DataDirUnavailable
 pub engine::TemplateStoreError::NotFound
 pub engine::TemplateStoreError::NotFound::id: alloc::string::String
