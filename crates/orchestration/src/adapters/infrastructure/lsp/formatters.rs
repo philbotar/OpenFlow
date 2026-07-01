@@ -7,8 +7,8 @@ use std::process::{Command, Stdio};
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
-use super::config::LspSettings;
 use super::diagnostics::{FileDiagnosticsResult, FormatResult};
+use super::LspSettings;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct FormatterSpec {

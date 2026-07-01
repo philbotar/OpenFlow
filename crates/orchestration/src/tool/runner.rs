@@ -5,7 +5,6 @@ pub(super) use crate::tool::blocking_ops::{
 };
 use crate::tool::cache::{cache_key, CacheEntry, CacheValidation, ToolResultCache};
 use crate::tool::errors::ToolError;
-use crate::tool::hooks::{AfterToolContext, BeforeToolContext, BeforeToolDecision, ToolHooks};
 use crate::tool::output::{ArtifactStore, ToolArtifactRecord};
 use crate::tool::registry::{BuiltinToolKind, ToolRegistry, ToolRegistryError};
 use engine::{EditBatch, FileChangeRecord, ReadRecord, ToolCall, ToolOutputMeta, ToolResult};
@@ -66,7 +65,6 @@ pub struct ToolRunner {
     pub(super) cancel_token: CancellationToken,
     pub(super) snapshot_store: Arc<crate::tools::edit::hashline::snapshots::InMemorySnapshotStore>,
     cache: ToolResultCache,
-    hooks: ToolHooks,
 }
 
 #[derive(Debug, Error)]
@@ -111,14 +109,7 @@ impl ToolRunner {
             cancel_token,
             snapshot_store,
             cache: ToolResultCache::new(),
-            hooks: ToolHooks::empty(),
         }
-    }
-
-    #[must_use]
-    pub fn with_hooks(mut self, hooks: ToolHooks) -> Self {
-        self.hooks = hooks;
-        self
     }
 
     #[must_use]
@@ -164,19 +155,6 @@ impl ToolRunner {
             }
         }
         let cache_ctx = ctx.clone();
-        if let Some(context) = &ctx {
-            let decision = self
-                .hooks
-                .before_tool_call(BeforeToolContext {
-                    node_id: context.node_id.clone(),
-                    conversation_id: context.conversation_id.clone(),
-                    call: call.clone(),
-                })
-                .await;
-            if let BeforeToolDecision::Block { reason } = decision {
-                return Ok(self.failed_record(call, reason, Vec::new(), None));
-            }
-        }
         let result = self.dispatch(kind, call.clone(), ctx).await;
         if matches!(
             kind,
@@ -193,14 +171,6 @@ impl ToolRunner {
         }
         if let (Some(context), Ok(record)) = (&cache_ctx, &result) {
             self.maybe_cache(kind, &call, context, record);
-            self.hooks
-                .after_tool_call(AfterToolContext {
-                    node_id: context.node_id.clone(),
-                    conversation_id: context.conversation_id.clone(),
-                    call: call.clone(),
-                    result: record.result.clone(),
-                })
-                .await;
         }
         result
     }

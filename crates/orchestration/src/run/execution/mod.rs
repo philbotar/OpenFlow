@@ -43,6 +43,16 @@ pub fn send_or_log(event_tx: &UnboundedSender<ExecutionEvent>, event: ExecutionE
     }
 }
 
+/// Single abort dedup flag shared by the drive loop and tool port.
+pub(super) fn abort_run(event_tx: &UnboundedSender<ExecutionEvent>, aborted_emitted: &Mutex<bool>) {
+    let mut emitted = aborted_emitted.lock();
+    if *emitted {
+        return;
+    }
+    *emitted = true;
+    send_or_log(event_tx, ExecutionEvent::Aborted);
+}
+
 fn emit_phase_timed(
     event_tx: &UnboundedSender<RunTelemetry>,
     phase: &str,

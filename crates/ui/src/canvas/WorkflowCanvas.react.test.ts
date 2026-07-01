@@ -16,6 +16,7 @@ import {
   buildFlowNodes,
   forEachNodePositionChange,
   forEachRemovedEdge,
+  graphStructureSignature,
   withoutNodeRemovals,
   isValidCanvasConnection,
   reconcileFlowNodes,
@@ -154,6 +155,38 @@ describe("WorkflowCanvas adapter helpers", () => {
     expect(edges[0].style).toEqual({ stroke: "#4b5568", strokeWidth: 2 });
   });
 
+  test("graphStructureSignature ignores node positions", () => {
+    const movedGraph = {
+      ...graph,
+      nodes: graph.nodes.map((node) =>
+        node.id === "node-1"
+          ? { ...node, position: { x: node.position.x + 160, y: node.position.y + 80 } }
+          : node,
+      ),
+    };
+
+    expect(graphStructureSignature(movedGraph)).toBe(graphStructureSignature(graph));
+  });
+
+  test("graphStructureSignature changes for structural graph edits", () => {
+    const reconnectedGraph = {
+      ...graph,
+      edges: graph.edges.map((edge) =>
+        edge.id === "edge-1" ? { ...edge, to: "node-1" } : edge,
+      ),
+    };
+    const addedNodeGraph = {
+      ...graph,
+      nodes: [
+        ...graph.nodes,
+        { ...graph.nodes[0], id: "node-3", label: "Review" },
+      ],
+    };
+
+    expect(graphStructureSignature(reconnectedGraph)).not.toBe(graphStructureSignature(graph));
+    expect(graphStructureSignature(addedNodeGraph)).not.toBe(graphStructureSignature(graph));
+  });
+
   test("reconcileFlowNodes keeps local drag position while applying external state", () => {
     const current = buildFlowNodes(graph, null, statusByNode, null);
     current[0] = {
@@ -282,6 +315,7 @@ describe("WorkflowCanvas adapter helpers", () => {
 describe("WorkflowCanvas component", () => {
   test("renders an add node panel button that triggers the callback", () => {
     const onAddNode = vi.fn();
+    const onAutoLayout = vi.fn();
 
     render(
       createElement(
@@ -296,6 +330,7 @@ describe("WorkflowCanvas component", () => {
           onSelectNode: vi.fn(),
           onSelectEdge: vi.fn(),
           onUpdateNodePosition: vi.fn(),
+          onAutoLayout,
           onCreateEdge: vi.fn(),
           onReconnectEdge: vi.fn(),
           onDeleteEdge: vi.fn(),
@@ -307,5 +342,9 @@ describe("WorkflowCanvas component", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add node" }));
 
     expect(onAddNode).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Auto layout" }));
+
+    expect(onAutoLayout).toHaveBeenCalledTimes(1);
   });
 });

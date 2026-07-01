@@ -55,7 +55,7 @@ Key constraints (all CI-checked, not just documented):
 | Rule | Enforcement |
 |---|---|
 | Engine has **zero I/O** — no filesystem, no HTTP, no `unwrap`/`expect`/`panic` | Clippy denies + forbidden-dep table (`reqwest`, `tauri` banned in engine) |
-| Only `orchestration/run/execution/` may construct `InteractiveEngine`/`WorkflowRunner` | Tier-3 arch check |
+| Only `orchestration/run/execution/` may construct `InteractiveEngine` | Tier-3 arch check |
 | Desktop imports `orchestration::Workflow`, never `engine::Workflow` | Re-export boundary; ban tables |
 | Orchestration may only import `create_provider` + config types from providers | Allowlist; `AiClient` banned |
 | Engine public API is snapshot-tested | `crates/engine/tests/snapshots/public_api.txt` |
@@ -88,29 +88,29 @@ flowchart LR
 
 ### The engine state machine
 
-[`InteractiveEngine`](../../crates/engine/src/execution/interactive_engine/mod.rs) is a **sans-I/O state machine**. It never calls a model or runs a tool itself — `poll()` returns the next action the host must perform, and the host feeds results back via `on_*` handlers. The async `run()` loop is just a driver around this same state machine that invokes the `AiPort`/`ToolPort` trait objects and fires all ready nodes in a layer concurrently via `join_all`.
+[`InteractiveEngine`](../../crates/engine/src/execution/interactive_engine/mod.rs) is a **sans-I/O state machine**. It never calls a model or runs a tool itself — `run()` invokes `AiPort` and `ToolPort` until the workflow completes, fails, cancels, or returns `NeedsInteraction`. The host feeds human input and approvals back via `on_*` handlers, then calls `run()` again.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Polling
-    Polling --> CallAi : runnable auto-start node<br/>(or manual node with transcript)
-    Polling --> AwaitInput : manual node (auto-start off)<br/>or agent asked a question
-    Polling --> AwaitToolApproval : pending batch needs approval
-    Polling --> RunTools : pending batch auto-allowed
-    Polling --> Completed : all layers done → RunReport
-    Polling --> Failed : terminal error
+    [*] --> Running
+    Running --> CallAi : runnable auto-start node<br/>(or manual node with transcript)
+    Running --> AwaitInput : manual node (auto-start off)<br/>or agent asked a question
+    Running --> AwaitToolApproval : pending batch needs approval
+    Running --> RunTools : pending batch auto-allowed
+    Running --> Completed : all layers done → RunReport
+    Running --> Failed : terminal error
 
-    CallAi --> OnAiComplete : host invokes model
-    OnAiComplete --> Polling : Completed(output) → store output
-    OnAiComplete --> Polling : ToolCalls → queue PendingToolBatch
+    CallAi --> OnAiComplete : invoke model via AiPort
+    OnAiComplete --> Running : Completed(output) → store output
+    OnAiComplete --> Running : ToolCalls → queue PendingToolBatch
     OnAiComplete --> AwaitInput : NeedsUserInput
     OnAiComplete --> Retrying : Transient error /<br/>malformed control-tool call
     Retrying --> CallAi : backoff delay, transcript preserved
 
-    AwaitInput --> Polling : on_human_input(text)<br/>→ appended to transcript
+    AwaitInput --> Running : on_human_input(text)<br/>→ appended to transcript
     AwaitToolApproval --> RunTools : on_tool_decision(allow)
-    AwaitToolApproval --> Polling : on_tool_decision(deny)<br/>→ denied ToolResult to model
-    RunTools --> Polling : on_tool_results
+    AwaitToolApproval --> Running : on_tool_decision(deny)<br/>→ denied ToolResult to model
+    RunTools --> Running : on_tool_results
 ```
 
 `EngineRunResult::NeedsInteraction` is the **only** surface orchestration sees during a run — it batches every paused node at once (`inputs` + `approvals` + `retryables`), so the UI can show all pending human work across parallel branches simultaneously.
@@ -133,7 +133,7 @@ sequenceDiagram
     RC->>DR: spawn background task (event/action channels)
     DR->>E: engine.run(ai_adapter, tool_port, cancel)
     loop until layer complete
-        E->>AI: invoke(AgentRequest) — all ready nodes via join_all
+        E->>AI: invoke(AgentRequest) — ready nodes in layer, sequentially
         AI-->>E: AgentTurnOutcome::ToolCalls(batch)
         E->>E: queue PendingToolBatch (policy decides approval)
         alt requires approval
@@ -261,12 +261,9 @@ Toggling **auto-start off** turns any agent node into a human checkpoint *at the
 
 Because `NeedsInteraction` batches all paused nodes, parallel branches don't serialize on the human: branch A can await your input while branch B keeps executing tools.
 
-### 5.3 The engine is sans-I/O and dual-driven
+### 5.3 The engine is sans-I/O
 
-The same state machine runs two ways:
-
-- `poll()` — synchronous, returns one `EnginePollResult` at a time; the host performs the action. Fully deterministic and unit-testable without any async runtime or mock servers.
-- `run()` — async self-driving loop over the same state, batching all ready nodes in a layer into one concurrent `join_all` over `AiPort::invoke`.
+`InteractiveEngine::run()` is the sole execution entry. It drives model and tool I/O through port traits until it returns `EngineRunResult`. Orchestration handles `NeedsInteraction` by blocking on the action channel, applying `on_human_input` / `on_tool_decision` / `retry_node`, and calling `run()` again.
 
 I/O-freedom is enforced, not aspirational: clippy denies `unwrap`/`expect`/`panic`, `std::fs` is disallowed, and the arch check bans transport crates. Every execution semantic (retry classification, approval policy, layer advancement, interruption) is testable as a pure state transition.
 
@@ -313,7 +310,7 @@ Approval policy lives in the **engine**, not the UI ([tools/config.rs](../../cra
 
 | Concern | Where |
 |---|---|
-| State machine, poll/run loop | `crates/engine/src/execution/interactive_engine/` |
+| State machine, `run()` loop | `crates/engine/src/execution/interactive_engine/` |
 | Context assembly, runtime preamble | `crates/engine/src/execution/node_invocation.rs` |
 | Layering / DAG validation | `crates/engine/src/graph/validation.rs` |
 | Ports (AiPort, ToolPort, inbound) | `crates/engine/src/ports/` |

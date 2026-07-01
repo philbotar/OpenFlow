@@ -208,10 +208,6 @@ pub enum engine::execution::artifacts::NodeFailureKind
 pub engine::execution::artifacts::NodeFailureKind::Agent(alloc::string::String)
 pub engine::execution::artifacts::NodeFailureKind::AwaitingNodeNotFound
 pub engine::execution::artifacts::NodeFailureKind::EngineInput(alloc::string::String)
-pub engine::execution::artifacts::NodeFailureKind::HeadlessAutoStartRequired
-pub engine::execution::artifacts::NodeFailureKind::HeadlessNodeNotFound
-pub engine::execution::artifacts::NodeFailureKind::HeadlessToolsUnsupported
-pub engine::execution::artifacts::NodeFailureKind::HeadlessUserInputUnsupported
 pub engine::execution::artifacts::NodeFailureKind::LayerStalledInFlight
 pub engine::execution::artifacts::NodeFailureKind::MisroutedCompletion(alloc::string::String)
 pub engine::execution::artifacts::NodeFailureKind::MissingUpstreamOutput(alloc::vec::Vec<engine::graph::workflow::NodeId>)
@@ -309,54 +305,6 @@ impl<T> core::clone::CloneToUninit for engine::execution::artifacts::RunError wh
 pub unsafe fn engine::execution::artifacts::RunError::clone_to_uninit(&self, *mut u8)
 impl<T> core::convert::From<T> for engine::execution::artifacts::RunError
 pub fn engine::execution::artifacts::RunError::from(T) -> T
-pub enum engine::execution::artifacts::RunEventKind
-pub engine::execution::artifacts::RunEventKind::Completed
-pub engine::execution::artifacts::RunEventKind::Failed
-pub engine::execution::artifacts::RunEventKind::Queued
-pub engine::execution::artifacts::RunEventKind::Retrying
-pub engine::execution::artifacts::RunEventKind::Started
-impl core::clone::Clone for engine::execution::artifacts::RunEventKind
-pub fn engine::execution::artifacts::RunEventKind::clone(&self) -> engine::execution::artifacts::RunEventKind
-impl core::cmp::Eq for engine::execution::artifacts::RunEventKind
-impl core::cmp::PartialEq for engine::execution::artifacts::RunEventKind
-pub fn engine::execution::artifacts::RunEventKind::eq(&self, &engine::execution::artifacts::RunEventKind) -> bool
-impl core::fmt::Debug for engine::execution::artifacts::RunEventKind
-pub fn engine::execution::artifacts::RunEventKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for engine::execution::artifacts::RunEventKind
-impl serde_core::ser::Serialize for engine::execution::artifacts::RunEventKind
-pub fn engine::execution::artifacts::RunEventKind::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for engine::execution::artifacts::RunEventKind
-pub fn engine::execution::artifacts::RunEventKind::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for engine::execution::artifacts::RunEventKind
-impl core::marker::Send for engine::execution::artifacts::RunEventKind
-impl core::marker::Sync for engine::execution::artifacts::RunEventKind
-impl core::marker::Unpin for engine::execution::artifacts::RunEventKind
-impl core::marker::UnsafeUnpin for engine::execution::artifacts::RunEventKind
-impl core::panic::unwind_safe::RefUnwindSafe for engine::execution::artifacts::RunEventKind
-impl core::panic::unwind_safe::UnwindSafe for engine::execution::artifacts::RunEventKind
-impl<T, U> core::convert::Into<U> for engine::execution::artifacts::RunEventKind where U: core::convert::From<T>
-pub fn engine::execution::artifacts::RunEventKind::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for engine::execution::artifacts::RunEventKind where U: core::convert::Into<T>
-pub type engine::execution::artifacts::RunEventKind::Error = core::convert::Infallible
-pub fn engine::execution::artifacts::RunEventKind::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for engine::execution::artifacts::RunEventKind where U: core::convert::TryFrom<T>
-pub type engine::execution::artifacts::RunEventKind::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn engine::execution::artifacts::RunEventKind::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for engine::execution::artifacts::RunEventKind where T: core::clone::Clone
-pub type engine::execution::artifacts::RunEventKind::Owned = T
-pub fn engine::execution::artifacts::RunEventKind::clone_into(&self, &mut T)
-pub fn engine::execution::artifacts::RunEventKind::to_owned(&self) -> T
-impl<T> core::any::Any for engine::execution::artifacts::RunEventKind where T: 'static + ?core::marker::Sized
-pub fn engine::execution::artifacts::RunEventKind::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for engine::execution::artifacts::RunEventKind where T: ?core::marker::Sized
-pub fn engine::execution::artifacts::RunEventKind::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for engine::execution::artifacts::RunEventKind where T: ?core::marker::Sized
-pub fn engine::execution::artifacts::RunEventKind::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for engine::execution::artifacts::RunEventKind where T: core::clone::Clone
-pub unsafe fn engine::execution::artifacts::RunEventKind::clone_to_uninit(&self, *mut u8)
-impl<T> core::convert::From<T> for engine::execution::artifacts::RunEventKind
-pub fn engine::execution::artifacts::RunEventKind::from(T) -> T
-impl<T> serde_core::de::DeserializeOwned for engine::execution::artifacts::RunEventKind where T: for<'de> serde_core::de::Deserialize<'de>
 pub struct engine::execution::artifacts::NodeRunOutput
 pub engine::execution::artifacts::NodeRunOutput::node_id: engine::graph::workflow::NodeId
 pub engine::execution::artifacts::NodeRunOutput::output: serde_json::value::Value
@@ -402,55 +350,7 @@ pub unsafe fn engine::execution::artifacts::NodeRunOutput::clone_to_uninit(&self
 impl<T> core::convert::From<T> for engine::execution::artifacts::NodeRunOutput
 pub fn engine::execution::artifacts::NodeRunOutput::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::execution::artifacts::NodeRunOutput where T: for<'de> serde_core::de::Deserialize<'de>
-pub struct engine::execution::artifacts::RunEvent
-pub engine::execution::artifacts::RunEvent::kind: engine::execution::artifacts::RunEventKind
-pub engine::execution::artifacts::RunEvent::message: alloc::string::String
-pub engine::execution::artifacts::RunEvent::node_id: engine::graph::workflow::NodeId
-pub engine::execution::artifacts::RunEvent::output: core::option::Option<serde_json::value::Value>
-impl core::clone::Clone for engine::execution::artifacts::RunEvent
-pub fn engine::execution::artifacts::RunEvent::clone(&self) -> engine::execution::artifacts::RunEvent
-impl core::cmp::Eq for engine::execution::artifacts::RunEvent
-impl core::cmp::PartialEq for engine::execution::artifacts::RunEvent
-pub fn engine::execution::artifacts::RunEvent::eq(&self, &engine::execution::artifacts::RunEvent) -> bool
-impl core::fmt::Debug for engine::execution::artifacts::RunEvent
-pub fn engine::execution::artifacts::RunEvent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for engine::execution::artifacts::RunEvent
-impl serde_core::ser::Serialize for engine::execution::artifacts::RunEvent
-pub fn engine::execution::artifacts::RunEvent::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for engine::execution::artifacts::RunEvent
-pub fn engine::execution::artifacts::RunEvent::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for engine::execution::artifacts::RunEvent
-impl core::marker::Send for engine::execution::artifacts::RunEvent
-impl core::marker::Sync for engine::execution::artifacts::RunEvent
-impl core::marker::Unpin for engine::execution::artifacts::RunEvent
-impl core::marker::UnsafeUnpin for engine::execution::artifacts::RunEvent
-impl core::panic::unwind_safe::RefUnwindSafe for engine::execution::artifacts::RunEvent
-impl core::panic::unwind_safe::UnwindSafe for engine::execution::artifacts::RunEvent
-impl<T, U> core::convert::Into<U> for engine::execution::artifacts::RunEvent where U: core::convert::From<T>
-pub fn engine::execution::artifacts::RunEvent::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for engine::execution::artifacts::RunEvent where U: core::convert::Into<T>
-pub type engine::execution::artifacts::RunEvent::Error = core::convert::Infallible
-pub fn engine::execution::artifacts::RunEvent::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for engine::execution::artifacts::RunEvent where U: core::convert::TryFrom<T>
-pub type engine::execution::artifacts::RunEvent::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn engine::execution::artifacts::RunEvent::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for engine::execution::artifacts::RunEvent where T: core::clone::Clone
-pub type engine::execution::artifacts::RunEvent::Owned = T
-pub fn engine::execution::artifacts::RunEvent::clone_into(&self, &mut T)
-pub fn engine::execution::artifacts::RunEvent::to_owned(&self) -> T
-impl<T> core::any::Any for engine::execution::artifacts::RunEvent where T: 'static + ?core::marker::Sized
-pub fn engine::execution::artifacts::RunEvent::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for engine::execution::artifacts::RunEvent where T: ?core::marker::Sized
-pub fn engine::execution::artifacts::RunEvent::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for engine::execution::artifacts::RunEvent where T: ?core::marker::Sized
-pub fn engine::execution::artifacts::RunEvent::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for engine::execution::artifacts::RunEvent where T: core::clone::Clone
-pub unsafe fn engine::execution::artifacts::RunEvent::clone_to_uninit(&self, *mut u8)
-impl<T> core::convert::From<T> for engine::execution::artifacts::RunEvent
-pub fn engine::execution::artifacts::RunEvent::from(T) -> T
-impl<T> serde_core::de::DeserializeOwned for engine::execution::artifacts::RunEvent where T: for<'de> serde_core::de::Deserialize<'de>
 pub struct engine::execution::artifacts::RunReport
-pub engine::execution::artifacts::RunReport::events: alloc::vec::Vec<engine::execution::artifacts::RunEvent>
 pub engine::execution::artifacts::RunReport::outputs: alloc::vec::Vec<engine::execution::artifacts::NodeRunOutput>
 pub engine::execution::artifacts::RunReport::read_calls: u32
 pub engine::execution::artifacts::RunReport::redundant_reads: u32
@@ -601,60 +501,6 @@ impl<T> core::clone::CloneToUninit for engine::execution::interactive_engine::En
 pub unsafe fn engine::execution::interactive_engine::EngineInputError::clone_to_uninit(&self, *mut u8)
 impl<T> core::convert::From<T> for engine::execution::interactive_engine::EngineInputError
 pub fn engine::execution::interactive_engine::EngineInputError::from(T) -> T
-pub enum engine::execution::interactive_engine::EnginePollResult
-pub engine::execution::interactive_engine::EnginePollResult::AwaitInput
-pub engine::execution::interactive_engine::EnginePollResult::AwaitInput::context: alloc::string::String
-pub engine::execution::interactive_engine::EnginePollResult::AwaitInput::is_initial: bool
-pub engine::execution::interactive_engine::EnginePollResult::AwaitInput::label: alloc::string::String
-pub engine::execution::interactive_engine::EnginePollResult::AwaitInput::node_id: engine::graph::workflow::NodeId
-pub engine::execution::interactive_engine::EnginePollResult::AwaitRetry(engine::execution::interactive_engine::EngineRetryableNode)
-pub engine::execution::interactive_engine::EnginePollResult::AwaitToolApproval
-pub engine::execution::interactive_engine::EnginePollResult::AwaitToolApproval::approval_id: alloc::string::String
-pub engine::execution::interactive_engine::EnginePollResult::AwaitToolApproval::label: alloc::string::String
-pub engine::execution::interactive_engine::EnginePollResult::AwaitToolApproval::node_id: engine::graph::workflow::NodeId
-pub engine::execution::interactive_engine::EnginePollResult::AwaitToolApproval::tool_calls: alloc::vec::Vec<engine::ToolCall>
-pub engine::execution::interactive_engine::EnginePollResult::CallAi
-pub engine::execution::interactive_engine::EnginePollResult::CallAi::node_id: engine::graph::workflow::NodeId
-pub engine::execution::interactive_engine::EnginePollResult::CallAi::request: alloc::boxed::Box<engine::ports::outbound::AgentRequest>
-pub engine::execution::interactive_engine::EnginePollResult::Completed(engine::execution::artifacts::RunReport)
-pub engine::execution::interactive_engine::EnginePollResult::Failed(engine::execution::artifacts::RunError)
-pub engine::execution::interactive_engine::EnginePollResult::RunTools
-pub engine::execution::interactive_engine::EnginePollResult::RunTools::label: alloc::string::String
-pub engine::execution::interactive_engine::EnginePollResult::RunTools::node_id: engine::graph::workflow::NodeId
-pub engine::execution::interactive_engine::EnginePollResult::RunTools::tool_calls: alloc::vec::Vec<engine::ToolCall>
-impl core::clone::Clone for engine::execution::interactive_engine::EnginePollResult
-pub fn engine::execution::interactive_engine::EnginePollResult::clone(&self) -> engine::execution::interactive_engine::EnginePollResult
-impl core::fmt::Debug for engine::execution::interactive_engine::EnginePollResult
-pub fn engine::execution::interactive_engine::EnginePollResult::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for engine::execution::interactive_engine::EnginePollResult
-impl core::marker::Send for engine::execution::interactive_engine::EnginePollResult
-impl core::marker::Sync for engine::execution::interactive_engine::EnginePollResult
-impl core::marker::Unpin for engine::execution::interactive_engine::EnginePollResult
-impl core::marker::UnsafeUnpin for engine::execution::interactive_engine::EnginePollResult
-impl core::panic::unwind_safe::RefUnwindSafe for engine::execution::interactive_engine::EnginePollResult
-impl core::panic::unwind_safe::UnwindSafe for engine::execution::interactive_engine::EnginePollResult
-impl<T, U> core::convert::Into<U> for engine::execution::interactive_engine::EnginePollResult where U: core::convert::From<T>
-pub fn engine::execution::interactive_engine::EnginePollResult::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for engine::execution::interactive_engine::EnginePollResult where U: core::convert::Into<T>
-pub type engine::execution::interactive_engine::EnginePollResult::Error = core::convert::Infallible
-pub fn engine::execution::interactive_engine::EnginePollResult::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for engine::execution::interactive_engine::EnginePollResult where U: core::convert::TryFrom<T>
-pub type engine::execution::interactive_engine::EnginePollResult::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn engine::execution::interactive_engine::EnginePollResult::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for engine::execution::interactive_engine::EnginePollResult where T: core::clone::Clone
-pub type engine::execution::interactive_engine::EnginePollResult::Owned = T
-pub fn engine::execution::interactive_engine::EnginePollResult::clone_into(&self, &mut T)
-pub fn engine::execution::interactive_engine::EnginePollResult::to_owned(&self) -> T
-impl<T> core::any::Any for engine::execution::interactive_engine::EnginePollResult where T: 'static + ?core::marker::Sized
-pub fn engine::execution::interactive_engine::EnginePollResult::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for engine::execution::interactive_engine::EnginePollResult where T: ?core::marker::Sized
-pub fn engine::execution::interactive_engine::EnginePollResult::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for engine::execution::interactive_engine::EnginePollResult where T: ?core::marker::Sized
-pub fn engine::execution::interactive_engine::EnginePollResult::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for engine::execution::interactive_engine::EnginePollResult where T: core::clone::Clone
-pub unsafe fn engine::execution::interactive_engine::EnginePollResult::clone_to_uninit(&self, *mut u8)
-impl<T> core::convert::From<T> for engine::execution::interactive_engine::EnginePollResult
-pub fn engine::execution::interactive_engine::EnginePollResult::from(T) -> T
 pub enum engine::execution::interactive_engine::EngineRunResult
 pub engine::execution::interactive_engine::EngineRunResult::Cancelled
 pub engine::execution::interactive_engine::EngineRunResult::Completed(engine::execution::artifacts::RunReport)
@@ -819,14 +665,12 @@ impl engine::execution::interactive_engine::InteractiveEngine
 pub fn engine::execution::interactive_engine::InteractiveEngine::conversation_history(&self, &engine::graph::workflow::NodeId) -> alloc::vec::Vec<engine::conversation::ChatMessage>
 pub fn engine::execution::interactive_engine::InteractiveEngine::mark_node_interrupted(&mut self, &engine::graph::workflow::NodeId)
 pub fn engine::execution::interactive_engine::InteractiveEngine::model_attempt_for_node(&self, &engine::graph::workflow::NodeId) -> u8
-pub fn engine::execution::interactive_engine::InteractiveEngine::new(engine::graph::workflow::Workflow, core::option::Option<alloc::string::String>) -> core::result::Result<Self, engine::graph::validation::WorkflowValidationError>
-pub fn engine::execution::interactive_engine::InteractiveEngine::new_with_run_context(engine::graph::workflow::Workflow, core::option::Option<alloc::string::String>, core::option::Option<alloc::string::String>) -> core::result::Result<Self, engine::graph::validation::WorkflowValidationError>
+pub fn engine::execution::interactive_engine::InteractiveEngine::new(engine::graph::workflow::Workflow, core::option::Option<alloc::string::String>, core::option::Option<alloc::string::String>) -> core::result::Result<Self, engine::graph::validation::WorkflowValidationError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::node_output(&self, &engine::graph::workflow::NodeId) -> core::option::Option<serde_json::value::Value>
 pub fn engine::execution::interactive_engine::InteractiveEngine::note_read_call(&mut self, &engine::graph::workflow::NodeId, &str)
 pub const fn engine::execution::interactive_engine::InteractiveEngine::note_usage(&mut self, &engine::ports::outbound::UsageReport)
 pub fn engine::execution::interactive_engine::InteractiveEngine::on_human_input(&mut self, &engine::graph::workflow::NodeId, &str) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::pending_tool_batch_node(&self, &str) -> core::option::Option<engine::graph::workflow::NodeId>
-pub fn engine::execution::interactive_engine::InteractiveEngine::poll(&mut self) -> engine::execution::interactive_engine::EnginePollResult
 pub fn engine::execution::interactive_engine::InteractiveEngine::record_file_changes(&mut self, &engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>)
 pub fn engine::execution::interactive_engine::InteractiveEngine::record_reads(&mut self, &engine::graph::workflow::NodeId, alloc::vec::Vec<engine::ReadRecord>)
 pub fn engine::execution::interactive_engine::InteractiveEngine::retry_node(&mut self, &engine::graph::workflow::NodeId) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
@@ -834,8 +678,7 @@ pub fn engine::execution::interactive_engine::InteractiveEngine::revert_file_cha
 pub async fn engine::execution::interactive_engine::InteractiveEngine::run<A: engine::ports::outbound::AiPort, T: engine::ports::outbound::ToolPort>(&mut self, &A, &T, &tokio_util::sync::cancellation_token::CancellationToken) -> engine::execution::interactive_engine::EngineRunResult
 pub fn engine::execution::interactive_engine::InteractiveEngine::transcript(&self, &engine::graph::workflow::NodeId) -> &[engine::conversation::AgentTranscriptItem]
 impl engine::execution::interactive_engine::InteractiveEngine
-pub fn engine::execution::interactive_engine::InteractiveEngine::from_checkpoint(engine::graph::workflow::Workflow, engine::InteractiveEngineCheckpoint) -> core::result::Result<Self, engine::CheckpointError>
-pub fn engine::execution::interactive_engine::InteractiveEngine::from_checkpoint_with_run_context(engine::graph::workflow::Workflow, engine::InteractiveEngineCheckpoint, core::option::Option<alloc::string::String>) -> core::result::Result<Self, engine::CheckpointError>
+pub fn engine::execution::interactive_engine::InteractiveEngine::from_checkpoint(engine::graph::workflow::Workflow, engine::InteractiveEngineCheckpoint, core::option::Option<alloc::string::String>) -> core::result::Result<Self, engine::CheckpointError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::prepare_resume(&mut self) -> alloc::vec::Vec<engine::graph::workflow::NodeId>
 pub fn engine::execution::interactive_engine::InteractiveEngine::prepare_stop_checkpoint(&mut self) -> engine::InteractiveEngineCheckpoint
 impl engine::execution::interactive_engine::InteractiveEngine
@@ -874,7 +717,6 @@ pub struct engine::execution::interactive_engine::InteractiveEngineCheckpoint
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::awaiting_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::changed_files_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::entrypoint_text: core::option::Option<alloc::string::String>
-pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::events: alloc::vec::Vec<engine::execution::artifacts::RunEvent>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::failed_nodes: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::string::String>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::interrupted_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::layer_idx: usize
@@ -1332,35 +1174,6 @@ impl<T> core::clone::CloneToUninit for engine::execution::telemetry::RunTelemetr
 pub unsafe fn engine::execution::telemetry::RunTelemetry::clone_to_uninit(&self, *mut u8)
 impl<T> core::convert::From<T> for engine::execution::telemetry::RunTelemetry
 pub fn engine::execution::telemetry::RunTelemetry::from(T) -> T
-pub mod engine::execution::workflow_runner
-pub struct engine::execution::workflow_runner::WorkflowRunner<A>
-impl<A> engine::execution::workflow_runner::WorkflowRunner<A> where A: engine::ports::outbound::AiPort
-pub const fn engine::execution::workflow_runner::WorkflowRunner<A>::new(A) -> Self
-pub async fn engine::execution::workflow_runner::WorkflowRunner<A>::run(&self, &engine::graph::workflow::Workflow) -> core::result::Result<engine::execution::artifacts::RunReport, engine::execution::artifacts::RunError>
-pub async fn engine::execution::workflow_runner::WorkflowRunner<A>::run_with_entrypoint(&self, &engine::graph::workflow::Workflow, core::option::Option<&str>) -> core::result::Result<engine::execution::artifacts::RunReport, engine::execution::artifacts::RunError>
-impl<A> core::marker::Freeze for engine::execution::workflow_runner::WorkflowRunner<A> where A: core::marker::Freeze
-impl<A> core::marker::Send for engine::execution::workflow_runner::WorkflowRunner<A> where A: core::marker::Send
-impl<A> core::marker::Sync for engine::execution::workflow_runner::WorkflowRunner<A> where A: core::marker::Sync
-impl<A> core::marker::Unpin for engine::execution::workflow_runner::WorkflowRunner<A> where A: core::marker::Unpin
-impl<A> core::marker::UnsafeUnpin for engine::execution::workflow_runner::WorkflowRunner<A> where A: core::marker::UnsafeUnpin
-impl<A> core::panic::unwind_safe::RefUnwindSafe for engine::execution::workflow_runner::WorkflowRunner<A> where A: core::panic::unwind_safe::RefUnwindSafe
-impl<A> core::panic::unwind_safe::UnwindSafe for engine::execution::workflow_runner::WorkflowRunner<A> where A: core::panic::unwind_safe::UnwindSafe
-impl<T, U> core::convert::Into<U> for engine::execution::workflow_runner::WorkflowRunner<A> where U: core::convert::From<T>
-pub fn engine::execution::workflow_runner::WorkflowRunner<A>::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for engine::execution::workflow_runner::WorkflowRunner<A> where U: core::convert::Into<T>
-pub type engine::execution::workflow_runner::WorkflowRunner<A>::Error = core::convert::Infallible
-pub fn engine::execution::workflow_runner::WorkflowRunner<A>::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for engine::execution::workflow_runner::WorkflowRunner<A> where U: core::convert::TryFrom<T>
-pub type engine::execution::workflow_runner::WorkflowRunner<A>::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn engine::execution::workflow_runner::WorkflowRunner<A>::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> core::any::Any for engine::execution::workflow_runner::WorkflowRunner<A> where T: 'static + ?core::marker::Sized
-pub fn engine::execution::workflow_runner::WorkflowRunner<A>::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for engine::execution::workflow_runner::WorkflowRunner<A> where T: ?core::marker::Sized
-pub fn engine::execution::workflow_runner::WorkflowRunner<A>::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for engine::execution::workflow_runner::WorkflowRunner<A> where T: ?core::marker::Sized
-pub fn engine::execution::workflow_runner::WorkflowRunner<A>::borrow_mut(&mut self) -> &mut T
-impl<T> core::convert::From<T> for engine::execution::workflow_runner::WorkflowRunner<A>
-pub fn engine::execution::workflow_runner::WorkflowRunner<A>::from(T) -> T
 pub enum engine::execution::CheckpointError
 pub engine::execution::CheckpointError::StaleNodeIds
 pub engine::execution::CheckpointError::StaleNodeIds::missing: alloc::vec::Vec<engine::graph::workflow::NodeId>
@@ -1463,60 +1276,6 @@ impl<T> core::clone::CloneToUninit for engine::execution::interactive_engine::En
 pub unsafe fn engine::execution::interactive_engine::EngineInputError::clone_to_uninit(&self, *mut u8)
 impl<T> core::convert::From<T> for engine::execution::interactive_engine::EngineInputError
 pub fn engine::execution::interactive_engine::EngineInputError::from(T) -> T
-pub enum engine::execution::EnginePollResult
-pub engine::execution::EnginePollResult::AwaitInput
-pub engine::execution::EnginePollResult::AwaitInput::context: alloc::string::String
-pub engine::execution::EnginePollResult::AwaitInput::is_initial: bool
-pub engine::execution::EnginePollResult::AwaitInput::label: alloc::string::String
-pub engine::execution::EnginePollResult::AwaitInput::node_id: engine::graph::workflow::NodeId
-pub engine::execution::EnginePollResult::AwaitRetry(engine::execution::interactive_engine::EngineRetryableNode)
-pub engine::execution::EnginePollResult::AwaitToolApproval
-pub engine::execution::EnginePollResult::AwaitToolApproval::approval_id: alloc::string::String
-pub engine::execution::EnginePollResult::AwaitToolApproval::label: alloc::string::String
-pub engine::execution::EnginePollResult::AwaitToolApproval::node_id: engine::graph::workflow::NodeId
-pub engine::execution::EnginePollResult::AwaitToolApproval::tool_calls: alloc::vec::Vec<engine::ToolCall>
-pub engine::execution::EnginePollResult::CallAi
-pub engine::execution::EnginePollResult::CallAi::node_id: engine::graph::workflow::NodeId
-pub engine::execution::EnginePollResult::CallAi::request: alloc::boxed::Box<engine::ports::outbound::AgentRequest>
-pub engine::execution::EnginePollResult::Completed(engine::execution::artifacts::RunReport)
-pub engine::execution::EnginePollResult::Failed(engine::execution::artifacts::RunError)
-pub engine::execution::EnginePollResult::RunTools
-pub engine::execution::EnginePollResult::RunTools::label: alloc::string::String
-pub engine::execution::EnginePollResult::RunTools::node_id: engine::graph::workflow::NodeId
-pub engine::execution::EnginePollResult::RunTools::tool_calls: alloc::vec::Vec<engine::ToolCall>
-impl core::clone::Clone for engine::execution::interactive_engine::EnginePollResult
-pub fn engine::execution::interactive_engine::EnginePollResult::clone(&self) -> engine::execution::interactive_engine::EnginePollResult
-impl core::fmt::Debug for engine::execution::interactive_engine::EnginePollResult
-pub fn engine::execution::interactive_engine::EnginePollResult::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for engine::execution::interactive_engine::EnginePollResult
-impl core::marker::Send for engine::execution::interactive_engine::EnginePollResult
-impl core::marker::Sync for engine::execution::interactive_engine::EnginePollResult
-impl core::marker::Unpin for engine::execution::interactive_engine::EnginePollResult
-impl core::marker::UnsafeUnpin for engine::execution::interactive_engine::EnginePollResult
-impl core::panic::unwind_safe::RefUnwindSafe for engine::execution::interactive_engine::EnginePollResult
-impl core::panic::unwind_safe::UnwindSafe for engine::execution::interactive_engine::EnginePollResult
-impl<T, U> core::convert::Into<U> for engine::execution::interactive_engine::EnginePollResult where U: core::convert::From<T>
-pub fn engine::execution::interactive_engine::EnginePollResult::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for engine::execution::interactive_engine::EnginePollResult where U: core::convert::Into<T>
-pub type engine::execution::interactive_engine::EnginePollResult::Error = core::convert::Infallible
-pub fn engine::execution::interactive_engine::EnginePollResult::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for engine::execution::interactive_engine::EnginePollResult where U: core::convert::TryFrom<T>
-pub type engine::execution::interactive_engine::EnginePollResult::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn engine::execution::interactive_engine::EnginePollResult::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for engine::execution::interactive_engine::EnginePollResult where T: core::clone::Clone
-pub type engine::execution::interactive_engine::EnginePollResult::Owned = T
-pub fn engine::execution::interactive_engine::EnginePollResult::clone_into(&self, &mut T)
-pub fn engine::execution::interactive_engine::EnginePollResult::to_owned(&self) -> T
-impl<T> core::any::Any for engine::execution::interactive_engine::EnginePollResult where T: 'static + ?core::marker::Sized
-pub fn engine::execution::interactive_engine::EnginePollResult::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for engine::execution::interactive_engine::EnginePollResult where T: ?core::marker::Sized
-pub fn engine::execution::interactive_engine::EnginePollResult::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for engine::execution::interactive_engine::EnginePollResult where T: ?core::marker::Sized
-pub fn engine::execution::interactive_engine::EnginePollResult::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for engine::execution::interactive_engine::EnginePollResult where T: core::clone::Clone
-pub unsafe fn engine::execution::interactive_engine::EnginePollResult::clone_to_uninit(&self, *mut u8)
-impl<T> core::convert::From<T> for engine::execution::interactive_engine::EnginePollResult
-pub fn engine::execution::interactive_engine::EnginePollResult::from(T) -> T
 pub enum engine::execution::EngineRunResult
 pub engine::execution::EngineRunResult::Cancelled
 pub engine::execution::EngineRunResult::Completed(engine::execution::artifacts::RunReport)
@@ -1562,10 +1321,6 @@ pub enum engine::execution::NodeFailureKind
 pub engine::execution::NodeFailureKind::Agent(alloc::string::String)
 pub engine::execution::NodeFailureKind::AwaitingNodeNotFound
 pub engine::execution::NodeFailureKind::EngineInput(alloc::string::String)
-pub engine::execution::NodeFailureKind::HeadlessAutoStartRequired
-pub engine::execution::NodeFailureKind::HeadlessNodeNotFound
-pub engine::execution::NodeFailureKind::HeadlessToolsUnsupported
-pub engine::execution::NodeFailureKind::HeadlessUserInputUnsupported
 pub engine::execution::NodeFailureKind::LayerStalledInFlight
 pub engine::execution::NodeFailureKind::MisroutedCompletion(alloc::string::String)
 pub engine::execution::NodeFailureKind::MissingUpstreamOutput(alloc::vec::Vec<engine::graph::workflow::NodeId>)
@@ -1663,54 +1418,6 @@ impl<T> core::clone::CloneToUninit for engine::execution::artifacts::RunError wh
 pub unsafe fn engine::execution::artifacts::RunError::clone_to_uninit(&self, *mut u8)
 impl<T> core::convert::From<T> for engine::execution::artifacts::RunError
 pub fn engine::execution::artifacts::RunError::from(T) -> T
-pub enum engine::execution::RunEventKind
-pub engine::execution::RunEventKind::Completed
-pub engine::execution::RunEventKind::Failed
-pub engine::execution::RunEventKind::Queued
-pub engine::execution::RunEventKind::Retrying
-pub engine::execution::RunEventKind::Started
-impl core::clone::Clone for engine::execution::artifacts::RunEventKind
-pub fn engine::execution::artifacts::RunEventKind::clone(&self) -> engine::execution::artifacts::RunEventKind
-impl core::cmp::Eq for engine::execution::artifacts::RunEventKind
-impl core::cmp::PartialEq for engine::execution::artifacts::RunEventKind
-pub fn engine::execution::artifacts::RunEventKind::eq(&self, &engine::execution::artifacts::RunEventKind) -> bool
-impl core::fmt::Debug for engine::execution::artifacts::RunEventKind
-pub fn engine::execution::artifacts::RunEventKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for engine::execution::artifacts::RunEventKind
-impl serde_core::ser::Serialize for engine::execution::artifacts::RunEventKind
-pub fn engine::execution::artifacts::RunEventKind::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for engine::execution::artifacts::RunEventKind
-pub fn engine::execution::artifacts::RunEventKind::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for engine::execution::artifacts::RunEventKind
-impl core::marker::Send for engine::execution::artifacts::RunEventKind
-impl core::marker::Sync for engine::execution::artifacts::RunEventKind
-impl core::marker::Unpin for engine::execution::artifacts::RunEventKind
-impl core::marker::UnsafeUnpin for engine::execution::artifacts::RunEventKind
-impl core::panic::unwind_safe::RefUnwindSafe for engine::execution::artifacts::RunEventKind
-impl core::panic::unwind_safe::UnwindSafe for engine::execution::artifacts::RunEventKind
-impl<T, U> core::convert::Into<U> for engine::execution::artifacts::RunEventKind where U: core::convert::From<T>
-pub fn engine::execution::artifacts::RunEventKind::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for engine::execution::artifacts::RunEventKind where U: core::convert::Into<T>
-pub type engine::execution::artifacts::RunEventKind::Error = core::convert::Infallible
-pub fn engine::execution::artifacts::RunEventKind::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for engine::execution::artifacts::RunEventKind where U: core::convert::TryFrom<T>
-pub type engine::execution::artifacts::RunEventKind::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn engine::execution::artifacts::RunEventKind::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for engine::execution::artifacts::RunEventKind where T: core::clone::Clone
-pub type engine::execution::artifacts::RunEventKind::Owned = T
-pub fn engine::execution::artifacts::RunEventKind::clone_into(&self, &mut T)
-pub fn engine::execution::artifacts::RunEventKind::to_owned(&self) -> T
-impl<T> core::any::Any for engine::execution::artifacts::RunEventKind where T: 'static + ?core::marker::Sized
-pub fn engine::execution::artifacts::RunEventKind::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for engine::execution::artifacts::RunEventKind where T: ?core::marker::Sized
-pub fn engine::execution::artifacts::RunEventKind::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for engine::execution::artifacts::RunEventKind where T: ?core::marker::Sized
-pub fn engine::execution::artifacts::RunEventKind::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for engine::execution::artifacts::RunEventKind where T: core::clone::Clone
-pub unsafe fn engine::execution::artifacts::RunEventKind::clone_to_uninit(&self, *mut u8)
-impl<T> core::convert::From<T> for engine::execution::artifacts::RunEventKind
-pub fn engine::execution::artifacts::RunEventKind::from(T) -> T
-impl<T> serde_core::de::DeserializeOwned for engine::execution::artifacts::RunEventKind where T: for<'de> serde_core::de::Deserialize<'de>
 pub enum engine::execution::RunTelemetry
 pub engine::execution::RunTelemetry::Aborted
 pub engine::execution::RunTelemetry::AiInvokeFailed
@@ -2138,14 +1845,12 @@ impl engine::execution::interactive_engine::InteractiveEngine
 pub fn engine::execution::interactive_engine::InteractiveEngine::conversation_history(&self, &engine::graph::workflow::NodeId) -> alloc::vec::Vec<engine::conversation::ChatMessage>
 pub fn engine::execution::interactive_engine::InteractiveEngine::mark_node_interrupted(&mut self, &engine::graph::workflow::NodeId)
 pub fn engine::execution::interactive_engine::InteractiveEngine::model_attempt_for_node(&self, &engine::graph::workflow::NodeId) -> u8
-pub fn engine::execution::interactive_engine::InteractiveEngine::new(engine::graph::workflow::Workflow, core::option::Option<alloc::string::String>) -> core::result::Result<Self, engine::graph::validation::WorkflowValidationError>
-pub fn engine::execution::interactive_engine::InteractiveEngine::new_with_run_context(engine::graph::workflow::Workflow, core::option::Option<alloc::string::String>, core::option::Option<alloc::string::String>) -> core::result::Result<Self, engine::graph::validation::WorkflowValidationError>
+pub fn engine::execution::interactive_engine::InteractiveEngine::new(engine::graph::workflow::Workflow, core::option::Option<alloc::string::String>, core::option::Option<alloc::string::String>) -> core::result::Result<Self, engine::graph::validation::WorkflowValidationError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::node_output(&self, &engine::graph::workflow::NodeId) -> core::option::Option<serde_json::value::Value>
 pub fn engine::execution::interactive_engine::InteractiveEngine::note_read_call(&mut self, &engine::graph::workflow::NodeId, &str)
 pub const fn engine::execution::interactive_engine::InteractiveEngine::note_usage(&mut self, &engine::ports::outbound::UsageReport)
 pub fn engine::execution::interactive_engine::InteractiveEngine::on_human_input(&mut self, &engine::graph::workflow::NodeId, &str) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::pending_tool_batch_node(&self, &str) -> core::option::Option<engine::graph::workflow::NodeId>
-pub fn engine::execution::interactive_engine::InteractiveEngine::poll(&mut self) -> engine::execution::interactive_engine::EnginePollResult
 pub fn engine::execution::interactive_engine::InteractiveEngine::record_file_changes(&mut self, &engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>)
 pub fn engine::execution::interactive_engine::InteractiveEngine::record_reads(&mut self, &engine::graph::workflow::NodeId, alloc::vec::Vec<engine::ReadRecord>)
 pub fn engine::execution::interactive_engine::InteractiveEngine::retry_node(&mut self, &engine::graph::workflow::NodeId) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
@@ -2153,8 +1858,7 @@ pub fn engine::execution::interactive_engine::InteractiveEngine::revert_file_cha
 pub async fn engine::execution::interactive_engine::InteractiveEngine::run<A: engine::ports::outbound::AiPort, T: engine::ports::outbound::ToolPort>(&mut self, &A, &T, &tokio_util::sync::cancellation_token::CancellationToken) -> engine::execution::interactive_engine::EngineRunResult
 pub fn engine::execution::interactive_engine::InteractiveEngine::transcript(&self, &engine::graph::workflow::NodeId) -> &[engine::conversation::AgentTranscriptItem]
 impl engine::execution::interactive_engine::InteractiveEngine
-pub fn engine::execution::interactive_engine::InteractiveEngine::from_checkpoint(engine::graph::workflow::Workflow, engine::InteractiveEngineCheckpoint) -> core::result::Result<Self, engine::CheckpointError>
-pub fn engine::execution::interactive_engine::InteractiveEngine::from_checkpoint_with_run_context(engine::graph::workflow::Workflow, engine::InteractiveEngineCheckpoint, core::option::Option<alloc::string::String>) -> core::result::Result<Self, engine::CheckpointError>
+pub fn engine::execution::interactive_engine::InteractiveEngine::from_checkpoint(engine::graph::workflow::Workflow, engine::InteractiveEngineCheckpoint, core::option::Option<alloc::string::String>) -> core::result::Result<Self, engine::CheckpointError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::prepare_resume(&mut self) -> alloc::vec::Vec<engine::graph::workflow::NodeId>
 pub fn engine::execution::interactive_engine::InteractiveEngine::prepare_stop_checkpoint(&mut self) -> engine::InteractiveEngineCheckpoint
 impl engine::execution::interactive_engine::InteractiveEngine
@@ -2193,7 +1897,6 @@ pub struct engine::execution::InteractiveEngineCheckpoint
 pub engine::execution::InteractiveEngineCheckpoint::awaiting_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
 pub engine::execution::InteractiveEngineCheckpoint::changed_files_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>>
 pub engine::execution::InteractiveEngineCheckpoint::entrypoint_text: core::option::Option<alloc::string::String>
-pub engine::execution::InteractiveEngineCheckpoint::events: alloc::vec::Vec<engine::execution::artifacts::RunEvent>
 pub engine::execution::InteractiveEngineCheckpoint::failed_nodes: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::string::String>
 pub engine::execution::InteractiveEngineCheckpoint::interrupted_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
 pub engine::execution::InteractiveEngineCheckpoint::layer_idx: usize
@@ -2328,55 +2031,7 @@ pub unsafe fn engine::execution::artifacts::NodeRunOutput::clone_to_uninit(&self
 impl<T> core::convert::From<T> for engine::execution::artifacts::NodeRunOutput
 pub fn engine::execution::artifacts::NodeRunOutput::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::execution::artifacts::NodeRunOutput where T: for<'de> serde_core::de::Deserialize<'de>
-pub struct engine::execution::RunEvent
-pub engine::execution::RunEvent::kind: engine::execution::artifacts::RunEventKind
-pub engine::execution::RunEvent::message: alloc::string::String
-pub engine::execution::RunEvent::node_id: engine::graph::workflow::NodeId
-pub engine::execution::RunEvent::output: core::option::Option<serde_json::value::Value>
-impl core::clone::Clone for engine::execution::artifacts::RunEvent
-pub fn engine::execution::artifacts::RunEvent::clone(&self) -> engine::execution::artifacts::RunEvent
-impl core::cmp::Eq for engine::execution::artifacts::RunEvent
-impl core::cmp::PartialEq for engine::execution::artifacts::RunEvent
-pub fn engine::execution::artifacts::RunEvent::eq(&self, &engine::execution::artifacts::RunEvent) -> bool
-impl core::fmt::Debug for engine::execution::artifacts::RunEvent
-pub fn engine::execution::artifacts::RunEvent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for engine::execution::artifacts::RunEvent
-impl serde_core::ser::Serialize for engine::execution::artifacts::RunEvent
-pub fn engine::execution::artifacts::RunEvent::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for engine::execution::artifacts::RunEvent
-pub fn engine::execution::artifacts::RunEvent::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for engine::execution::artifacts::RunEvent
-impl core::marker::Send for engine::execution::artifacts::RunEvent
-impl core::marker::Sync for engine::execution::artifacts::RunEvent
-impl core::marker::Unpin for engine::execution::artifacts::RunEvent
-impl core::marker::UnsafeUnpin for engine::execution::artifacts::RunEvent
-impl core::panic::unwind_safe::RefUnwindSafe for engine::execution::artifacts::RunEvent
-impl core::panic::unwind_safe::UnwindSafe for engine::execution::artifacts::RunEvent
-impl<T, U> core::convert::Into<U> for engine::execution::artifacts::RunEvent where U: core::convert::From<T>
-pub fn engine::execution::artifacts::RunEvent::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for engine::execution::artifacts::RunEvent where U: core::convert::Into<T>
-pub type engine::execution::artifacts::RunEvent::Error = core::convert::Infallible
-pub fn engine::execution::artifacts::RunEvent::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for engine::execution::artifacts::RunEvent where U: core::convert::TryFrom<T>
-pub type engine::execution::artifacts::RunEvent::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn engine::execution::artifacts::RunEvent::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for engine::execution::artifacts::RunEvent where T: core::clone::Clone
-pub type engine::execution::artifacts::RunEvent::Owned = T
-pub fn engine::execution::artifacts::RunEvent::clone_into(&self, &mut T)
-pub fn engine::execution::artifacts::RunEvent::to_owned(&self) -> T
-impl<T> core::any::Any for engine::execution::artifacts::RunEvent where T: 'static + ?core::marker::Sized
-pub fn engine::execution::artifacts::RunEvent::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for engine::execution::artifacts::RunEvent where T: ?core::marker::Sized
-pub fn engine::execution::artifacts::RunEvent::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for engine::execution::artifacts::RunEvent where T: ?core::marker::Sized
-pub fn engine::execution::artifacts::RunEvent::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for engine::execution::artifacts::RunEvent where T: core::clone::Clone
-pub unsafe fn engine::execution::artifacts::RunEvent::clone_to_uninit(&self, *mut u8)
-impl<T> core::convert::From<T> for engine::execution::artifacts::RunEvent
-pub fn engine::execution::artifacts::RunEvent::from(T) -> T
-impl<T> serde_core::de::DeserializeOwned for engine::execution::artifacts::RunEvent where T: for<'de> serde_core::de::Deserialize<'de>
 pub struct engine::execution::RunReport
-pub engine::execution::RunReport::events: alloc::vec::Vec<engine::execution::artifacts::RunEvent>
 pub engine::execution::RunReport::outputs: alloc::vec::Vec<engine::execution::artifacts::NodeRunOutput>
 pub engine::execution::RunReport::read_calls: u32
 pub engine::execution::RunReport::redundant_reads: u32
@@ -2462,41 +2117,11 @@ impl<T> core::clone::CloneToUninit for engine::execution::subagent_runtime::Suba
 pub unsafe fn engine::execution::subagent_runtime::SubagentInvokeSession::clone_to_uninit(&self, *mut u8)
 impl<T> core::convert::From<T> for engine::execution::subagent_runtime::SubagentInvokeSession
 pub fn engine::execution::subagent_runtime::SubagentInvokeSession::from(T) -> T
-pub struct engine::execution::WorkflowRunner<A>
-impl<A> engine::execution::workflow_runner::WorkflowRunner<A> where A: engine::ports::outbound::AiPort
-pub const fn engine::execution::workflow_runner::WorkflowRunner<A>::new(A) -> Self
-pub async fn engine::execution::workflow_runner::WorkflowRunner<A>::run(&self, &engine::graph::workflow::Workflow) -> core::result::Result<engine::execution::artifacts::RunReport, engine::execution::artifacts::RunError>
-pub async fn engine::execution::workflow_runner::WorkflowRunner<A>::run_with_entrypoint(&self, &engine::graph::workflow::Workflow, core::option::Option<&str>) -> core::result::Result<engine::execution::artifacts::RunReport, engine::execution::artifacts::RunError>
-impl<A> core::marker::Freeze for engine::execution::workflow_runner::WorkflowRunner<A> where A: core::marker::Freeze
-impl<A> core::marker::Send for engine::execution::workflow_runner::WorkflowRunner<A> where A: core::marker::Send
-impl<A> core::marker::Sync for engine::execution::workflow_runner::WorkflowRunner<A> where A: core::marker::Sync
-impl<A> core::marker::Unpin for engine::execution::workflow_runner::WorkflowRunner<A> where A: core::marker::Unpin
-impl<A> core::marker::UnsafeUnpin for engine::execution::workflow_runner::WorkflowRunner<A> where A: core::marker::UnsafeUnpin
-impl<A> core::panic::unwind_safe::RefUnwindSafe for engine::execution::workflow_runner::WorkflowRunner<A> where A: core::panic::unwind_safe::RefUnwindSafe
-impl<A> core::panic::unwind_safe::UnwindSafe for engine::execution::workflow_runner::WorkflowRunner<A> where A: core::panic::unwind_safe::UnwindSafe
-impl<T, U> core::convert::Into<U> for engine::execution::workflow_runner::WorkflowRunner<A> where U: core::convert::From<T>
-pub fn engine::execution::workflow_runner::WorkflowRunner<A>::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for engine::execution::workflow_runner::WorkflowRunner<A> where U: core::convert::Into<T>
-pub type engine::execution::workflow_runner::WorkflowRunner<A>::Error = core::convert::Infallible
-pub fn engine::execution::workflow_runner::WorkflowRunner<A>::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for engine::execution::workflow_runner::WorkflowRunner<A> where U: core::convert::TryFrom<T>
-pub type engine::execution::workflow_runner::WorkflowRunner<A>::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn engine::execution::workflow_runner::WorkflowRunner<A>::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> core::any::Any for engine::execution::workflow_runner::WorkflowRunner<A> where T: 'static + ?core::marker::Sized
-pub fn engine::execution::workflow_runner::WorkflowRunner<A>::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for engine::execution::workflow_runner::WorkflowRunner<A> where T: ?core::marker::Sized
-pub fn engine::execution::workflow_runner::WorkflowRunner<A>::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for engine::execution::workflow_runner::WorkflowRunner<A> where T: ?core::marker::Sized
-pub fn engine::execution::workflow_runner::WorkflowRunner<A>::borrow_mut(&mut self) -> &mut T
-impl<T> core::convert::From<T> for engine::execution::workflow_runner::WorkflowRunner<A>
-pub fn engine::execution::workflow_runner::WorkflowRunner<A>::from(T) -> T
 pub const engine::execution::CALL_SUBAGENT_TOOL: &str
 pub const engine::execution::DECLARE_SUBAGENTS_TOOL: &str
 pub const engine::execution::NODE_RUNTIME_PREAMBLE: &str
-pub fn engine::execution::adhoc_subagent_base_index(&engine::graph::workflow::NodeId, &alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::SubagentSummary>) -> usize
 pub fn engine::execution::advance_subagent_invoke(engine::execution::subagent_runtime::SubagentInvokeSession, core::result::Result<engine::ports::outbound::AgentTurnOutcome, engine::ports::outbound::AgentError>, alloc::vec::Vec<engine::ToolResult>) -> engine::execution::subagent_runtime::SubagentInvokeStep
 pub fn engine::execution::augment_call_subagent_tool_description(&mut [engine::ToolDefinition], &engine::graph::workflow::Node, &alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::SubagentSummary>, &alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::graph::callable_agent::CallableAgent>)
-pub fn engine::execution::build_adhoc_subagent_summaries(&engine::graph::workflow::NodeId, &[engine::SubagentDeclaration], usize) -> alloc::vec::Vec<engine::SubagentSummary>
 pub fn engine::execution::build_agent_request(&engine::execution::node_invocation::NodeInvocationContext<'_>, &engine::graph::workflow::Node, bool) -> core::result::Result<engine::ports::outbound::AgentRequest, engine::execution::artifacts::RunError>
 pub fn engine::execution::build_node_input<S: core::hash::BuildHasher>(&str, &std::collections::hash::map::HashMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::graph::workflow::NodeId>, S>, &alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, serde_json::value::Value>, core::option::Option<&str>, &alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>>, &alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::ReadRecord>>, bool) -> serde_json::value::Value
 pub fn engine::execution::build_system_messages(&engine::graph::workflow::Workflow, &engine::graph::workflow::Node, core::option::Option<&str>) -> alloc::vec::Vec<alloc::string::String>
@@ -2508,7 +2133,6 @@ pub fn engine::execution::merge_shared_context(&engine::graph::workflow::Workflo
 pub fn engine::execution::merge_subagent_summaries(&mut alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::SubagentSummary>, &[engine::SubagentSummary])
 pub fn engine::execution::start_subagent_invoke(&engine::graph::workflow::Workflow, &engine::graph::workflow::NodeId, &engine::ToolCall, &mut alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::SubagentSummary>, &alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::graph::callable_agent::CallableAgent>, alloc::vec::Vec<engine::ToolDefinition>) -> engine::execution::subagent_runtime::SubagentStartOutcome
 pub fn engine::execution::subagent_runtime_builtin_denied(&engine::ToolCall) -> engine::ToolResult
-pub fn engine::execution::subagents_for_node(&engine::graph::workflow::Node, &alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::SubagentSummary>, &alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::graph::callable_agent::CallableAgent>) -> alloc::vec::Vec<engine::SubagentSummary>
 pub fn engine::execution::upstream_changed_files<S: core::hash::BuildHasher>(&str, &std::collections::hash::map::HashMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::graph::workflow::NodeId>, S>, &alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>>) -> alloc::vec::Vec<engine::FileChangeRecord>
 pub fn engine::execution::upstream_reads<S: core::hash::BuildHasher>(&str, &std::collections::hash::map::HashMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::graph::workflow::NodeId>, S>, &alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::ReadRecord>>) -> alloc::vec::Vec<engine::ReadRecord>
 pub fn engine::execution::validate_checkpoint_against_workflow(&engine::graph::workflow::Workflow, &engine::InteractiveEngineCheckpoint) -> core::result::Result<(), engine::CheckpointError>
@@ -4044,9 +3668,6 @@ pub fn engine::graph::effective_output_schema(&serde_json::value::Value) -> serd
 pub fn engine::graph::execution_layers(&engine::graph::workflow::Workflow) -> core::result::Result<alloc::vec::Vec<alloc::vec::Vec<engine::graph::workflow::NodeId>>, engine::graph::validation::WorkflowValidationError>
 pub fn engine::graph::resolve_callable_agent_snapshots(&engine::graph::workflow::Workflow, &[engine::graph::callable_agent::CallableAgent]) -> alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::graph::callable_agent::CallableAgent>
 pub fn engine::graph::validate_workflow(&engine::graph::workflow::Workflow) -> core::result::Result<(), engine::graph::validation::WorkflowValidationError>
-pub mod engine::model_context
-pub fn engine::model_context::default_context_window_sizes() -> alloc::collections::btree::map::BTreeMap<alloc::string::String, u32>
-pub fn engine::model_context::lookup_context_window_size(&alloc::collections::btree::map::BTreeMap<alloc::string::String, u32>, &str) -> core::option::Option<u32>
 pub mod engine::ports
 pub mod engine::ports::inbound
 pub struct engine::ports::inbound::HumanInput
@@ -6521,60 +6142,6 @@ impl<T> core::clone::CloneToUninit for engine::execution::interactive_engine::En
 pub unsafe fn engine::execution::interactive_engine::EngineInputError::clone_to_uninit(&self, *mut u8)
 impl<T> core::convert::From<T> for engine::execution::interactive_engine::EngineInputError
 pub fn engine::execution::interactive_engine::EngineInputError::from(T) -> T
-pub enum engine::EnginePollResult
-pub engine::EnginePollResult::AwaitInput
-pub engine::EnginePollResult::AwaitInput::context: alloc::string::String
-pub engine::EnginePollResult::AwaitInput::is_initial: bool
-pub engine::EnginePollResult::AwaitInput::label: alloc::string::String
-pub engine::EnginePollResult::AwaitInput::node_id: engine::graph::workflow::NodeId
-pub engine::EnginePollResult::AwaitRetry(engine::execution::interactive_engine::EngineRetryableNode)
-pub engine::EnginePollResult::AwaitToolApproval
-pub engine::EnginePollResult::AwaitToolApproval::approval_id: alloc::string::String
-pub engine::EnginePollResult::AwaitToolApproval::label: alloc::string::String
-pub engine::EnginePollResult::AwaitToolApproval::node_id: engine::graph::workflow::NodeId
-pub engine::EnginePollResult::AwaitToolApproval::tool_calls: alloc::vec::Vec<engine::ToolCall>
-pub engine::EnginePollResult::CallAi
-pub engine::EnginePollResult::CallAi::node_id: engine::graph::workflow::NodeId
-pub engine::EnginePollResult::CallAi::request: alloc::boxed::Box<engine::ports::outbound::AgentRequest>
-pub engine::EnginePollResult::Completed(engine::execution::artifacts::RunReport)
-pub engine::EnginePollResult::Failed(engine::execution::artifacts::RunError)
-pub engine::EnginePollResult::RunTools
-pub engine::EnginePollResult::RunTools::label: alloc::string::String
-pub engine::EnginePollResult::RunTools::node_id: engine::graph::workflow::NodeId
-pub engine::EnginePollResult::RunTools::tool_calls: alloc::vec::Vec<engine::ToolCall>
-impl core::clone::Clone for engine::execution::interactive_engine::EnginePollResult
-pub fn engine::execution::interactive_engine::EnginePollResult::clone(&self) -> engine::execution::interactive_engine::EnginePollResult
-impl core::fmt::Debug for engine::execution::interactive_engine::EnginePollResult
-pub fn engine::execution::interactive_engine::EnginePollResult::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for engine::execution::interactive_engine::EnginePollResult
-impl core::marker::Send for engine::execution::interactive_engine::EnginePollResult
-impl core::marker::Sync for engine::execution::interactive_engine::EnginePollResult
-impl core::marker::Unpin for engine::execution::interactive_engine::EnginePollResult
-impl core::marker::UnsafeUnpin for engine::execution::interactive_engine::EnginePollResult
-impl core::panic::unwind_safe::RefUnwindSafe for engine::execution::interactive_engine::EnginePollResult
-impl core::panic::unwind_safe::UnwindSafe for engine::execution::interactive_engine::EnginePollResult
-impl<T, U> core::convert::Into<U> for engine::execution::interactive_engine::EnginePollResult where U: core::convert::From<T>
-pub fn engine::execution::interactive_engine::EnginePollResult::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for engine::execution::interactive_engine::EnginePollResult where U: core::convert::Into<T>
-pub type engine::execution::interactive_engine::EnginePollResult::Error = core::convert::Infallible
-pub fn engine::execution::interactive_engine::EnginePollResult::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for engine::execution::interactive_engine::EnginePollResult where U: core::convert::TryFrom<T>
-pub type engine::execution::interactive_engine::EnginePollResult::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn engine::execution::interactive_engine::EnginePollResult::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for engine::execution::interactive_engine::EnginePollResult where T: core::clone::Clone
-pub type engine::execution::interactive_engine::EnginePollResult::Owned = T
-pub fn engine::execution::interactive_engine::EnginePollResult::clone_into(&self, &mut T)
-pub fn engine::execution::interactive_engine::EnginePollResult::to_owned(&self) -> T
-impl<T> core::any::Any for engine::execution::interactive_engine::EnginePollResult where T: 'static + ?core::marker::Sized
-pub fn engine::execution::interactive_engine::EnginePollResult::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for engine::execution::interactive_engine::EnginePollResult where T: ?core::marker::Sized
-pub fn engine::execution::interactive_engine::EnginePollResult::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for engine::execution::interactive_engine::EnginePollResult where T: ?core::marker::Sized
-pub fn engine::execution::interactive_engine::EnginePollResult::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for engine::execution::interactive_engine::EnginePollResult where T: core::clone::Clone
-pub unsafe fn engine::execution::interactive_engine::EnginePollResult::clone_to_uninit(&self, *mut u8)
-impl<T> core::convert::From<T> for engine::execution::interactive_engine::EnginePollResult
-pub fn engine::execution::interactive_engine::EnginePollResult::from(T) -> T
 pub enum engine::EngineRunResult
 pub engine::EngineRunResult::Cancelled
 pub engine::EngineRunResult::Completed(engine::execution::artifacts::RunReport)
@@ -6754,54 +6321,6 @@ impl<T> core::clone::CloneToUninit for engine::execution::artifacts::RunError wh
 pub unsafe fn engine::execution::artifacts::RunError::clone_to_uninit(&self, *mut u8)
 impl<T> core::convert::From<T> for engine::execution::artifacts::RunError
 pub fn engine::execution::artifacts::RunError::from(T) -> T
-pub enum engine::RunEventKind
-pub engine::RunEventKind::Completed
-pub engine::RunEventKind::Failed
-pub engine::RunEventKind::Queued
-pub engine::RunEventKind::Retrying
-pub engine::RunEventKind::Started
-impl core::clone::Clone for engine::execution::artifacts::RunEventKind
-pub fn engine::execution::artifacts::RunEventKind::clone(&self) -> engine::execution::artifacts::RunEventKind
-impl core::cmp::Eq for engine::execution::artifacts::RunEventKind
-impl core::cmp::PartialEq for engine::execution::artifacts::RunEventKind
-pub fn engine::execution::artifacts::RunEventKind::eq(&self, &engine::execution::artifacts::RunEventKind) -> bool
-impl core::fmt::Debug for engine::execution::artifacts::RunEventKind
-pub fn engine::execution::artifacts::RunEventKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for engine::execution::artifacts::RunEventKind
-impl serde_core::ser::Serialize for engine::execution::artifacts::RunEventKind
-pub fn engine::execution::artifacts::RunEventKind::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for engine::execution::artifacts::RunEventKind
-pub fn engine::execution::artifacts::RunEventKind::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for engine::execution::artifacts::RunEventKind
-impl core::marker::Send for engine::execution::artifacts::RunEventKind
-impl core::marker::Sync for engine::execution::artifacts::RunEventKind
-impl core::marker::Unpin for engine::execution::artifacts::RunEventKind
-impl core::marker::UnsafeUnpin for engine::execution::artifacts::RunEventKind
-impl core::panic::unwind_safe::RefUnwindSafe for engine::execution::artifacts::RunEventKind
-impl core::panic::unwind_safe::UnwindSafe for engine::execution::artifacts::RunEventKind
-impl<T, U> core::convert::Into<U> for engine::execution::artifacts::RunEventKind where U: core::convert::From<T>
-pub fn engine::execution::artifacts::RunEventKind::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for engine::execution::artifacts::RunEventKind where U: core::convert::Into<T>
-pub type engine::execution::artifacts::RunEventKind::Error = core::convert::Infallible
-pub fn engine::execution::artifacts::RunEventKind::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for engine::execution::artifacts::RunEventKind where U: core::convert::TryFrom<T>
-pub type engine::execution::artifacts::RunEventKind::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn engine::execution::artifacts::RunEventKind::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for engine::execution::artifacts::RunEventKind where T: core::clone::Clone
-pub type engine::execution::artifacts::RunEventKind::Owned = T
-pub fn engine::execution::artifacts::RunEventKind::clone_into(&self, &mut T)
-pub fn engine::execution::artifacts::RunEventKind::to_owned(&self) -> T
-impl<T> core::any::Any for engine::execution::artifacts::RunEventKind where T: 'static + ?core::marker::Sized
-pub fn engine::execution::artifacts::RunEventKind::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for engine::execution::artifacts::RunEventKind where T: ?core::marker::Sized
-pub fn engine::execution::artifacts::RunEventKind::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for engine::execution::artifacts::RunEventKind where T: ?core::marker::Sized
-pub fn engine::execution::artifacts::RunEventKind::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for engine::execution::artifacts::RunEventKind where T: core::clone::Clone
-pub unsafe fn engine::execution::artifacts::RunEventKind::clone_to_uninit(&self, *mut u8)
-impl<T> core::convert::From<T> for engine::execution::artifacts::RunEventKind
-pub fn engine::execution::artifacts::RunEventKind::from(T) -> T
-impl<T> serde_core::de::DeserializeOwned for engine::execution::artifacts::RunEventKind where T: for<'de> serde_core::de::Deserialize<'de>
 pub enum engine::RunTelemetry
 pub engine::RunTelemetry::Aborted
 pub engine::RunTelemetry::AiInvokeFailed
@@ -8221,14 +7740,12 @@ impl engine::execution::interactive_engine::InteractiveEngine
 pub fn engine::execution::interactive_engine::InteractiveEngine::conversation_history(&self, &engine::graph::workflow::NodeId) -> alloc::vec::Vec<engine::conversation::ChatMessage>
 pub fn engine::execution::interactive_engine::InteractiveEngine::mark_node_interrupted(&mut self, &engine::graph::workflow::NodeId)
 pub fn engine::execution::interactive_engine::InteractiveEngine::model_attempt_for_node(&self, &engine::graph::workflow::NodeId) -> u8
-pub fn engine::execution::interactive_engine::InteractiveEngine::new(engine::graph::workflow::Workflow, core::option::Option<alloc::string::String>) -> core::result::Result<Self, engine::graph::validation::WorkflowValidationError>
-pub fn engine::execution::interactive_engine::InteractiveEngine::new_with_run_context(engine::graph::workflow::Workflow, core::option::Option<alloc::string::String>, core::option::Option<alloc::string::String>) -> core::result::Result<Self, engine::graph::validation::WorkflowValidationError>
+pub fn engine::execution::interactive_engine::InteractiveEngine::new(engine::graph::workflow::Workflow, core::option::Option<alloc::string::String>, core::option::Option<alloc::string::String>) -> core::result::Result<Self, engine::graph::validation::WorkflowValidationError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::node_output(&self, &engine::graph::workflow::NodeId) -> core::option::Option<serde_json::value::Value>
 pub fn engine::execution::interactive_engine::InteractiveEngine::note_read_call(&mut self, &engine::graph::workflow::NodeId, &str)
 pub const fn engine::execution::interactive_engine::InteractiveEngine::note_usage(&mut self, &engine::ports::outbound::UsageReport)
 pub fn engine::execution::interactive_engine::InteractiveEngine::on_human_input(&mut self, &engine::graph::workflow::NodeId, &str) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::pending_tool_batch_node(&self, &str) -> core::option::Option<engine::graph::workflow::NodeId>
-pub fn engine::execution::interactive_engine::InteractiveEngine::poll(&mut self) -> engine::execution::interactive_engine::EnginePollResult
 pub fn engine::execution::interactive_engine::InteractiveEngine::record_file_changes(&mut self, &engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>)
 pub fn engine::execution::interactive_engine::InteractiveEngine::record_reads(&mut self, &engine::graph::workflow::NodeId, alloc::vec::Vec<engine::ReadRecord>)
 pub fn engine::execution::interactive_engine::InteractiveEngine::retry_node(&mut self, &engine::graph::workflow::NodeId) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
@@ -8236,8 +7753,7 @@ pub fn engine::execution::interactive_engine::InteractiveEngine::revert_file_cha
 pub async fn engine::execution::interactive_engine::InteractiveEngine::run<A: engine::ports::outbound::AiPort, T: engine::ports::outbound::ToolPort>(&mut self, &A, &T, &tokio_util::sync::cancellation_token::CancellationToken) -> engine::execution::interactive_engine::EngineRunResult
 pub fn engine::execution::interactive_engine::InteractiveEngine::transcript(&self, &engine::graph::workflow::NodeId) -> &[engine::conversation::AgentTranscriptItem]
 impl engine::execution::interactive_engine::InteractiveEngine
-pub fn engine::execution::interactive_engine::InteractiveEngine::from_checkpoint(engine::graph::workflow::Workflow, engine::InteractiveEngineCheckpoint) -> core::result::Result<Self, engine::CheckpointError>
-pub fn engine::execution::interactive_engine::InteractiveEngine::from_checkpoint_with_run_context(engine::graph::workflow::Workflow, engine::InteractiveEngineCheckpoint, core::option::Option<alloc::string::String>) -> core::result::Result<Self, engine::CheckpointError>
+pub fn engine::execution::interactive_engine::InteractiveEngine::from_checkpoint(engine::graph::workflow::Workflow, engine::InteractiveEngineCheckpoint, core::option::Option<alloc::string::String>) -> core::result::Result<Self, engine::CheckpointError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::prepare_resume(&mut self) -> alloc::vec::Vec<engine::graph::workflow::NodeId>
 pub fn engine::execution::interactive_engine::InteractiveEngine::prepare_stop_checkpoint(&mut self) -> engine::InteractiveEngineCheckpoint
 impl engine::execution::interactive_engine::InteractiveEngine
@@ -8276,7 +7792,6 @@ pub struct engine::InteractiveEngineCheckpoint
 pub engine::InteractiveEngineCheckpoint::awaiting_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
 pub engine::InteractiveEngineCheckpoint::changed_files_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>>
 pub engine::InteractiveEngineCheckpoint::entrypoint_text: core::option::Option<alloc::string::String>
-pub engine::InteractiveEngineCheckpoint::events: alloc::vec::Vec<engine::execution::artifacts::RunEvent>
 pub engine::InteractiveEngineCheckpoint::failed_nodes: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::string::String>
 pub engine::InteractiveEngineCheckpoint::interrupted_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
 pub engine::InteractiveEngineCheckpoint::layer_idx: usize
@@ -8765,55 +8280,7 @@ pub unsafe fn engine::graph::workflow::RetryPolicy::clone_to_uninit(&self, *mut 
 impl<T> core::convert::From<T> for engine::graph::workflow::RetryPolicy
 pub fn engine::graph::workflow::RetryPolicy::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::graph::workflow::RetryPolicy where T: for<'de> serde_core::de::Deserialize<'de>
-pub struct engine::RunEvent
-pub engine::RunEvent::kind: engine::execution::artifacts::RunEventKind
-pub engine::RunEvent::message: alloc::string::String
-pub engine::RunEvent::node_id: engine::graph::workflow::NodeId
-pub engine::RunEvent::output: core::option::Option<serde_json::value::Value>
-impl core::clone::Clone for engine::execution::artifacts::RunEvent
-pub fn engine::execution::artifacts::RunEvent::clone(&self) -> engine::execution::artifacts::RunEvent
-impl core::cmp::Eq for engine::execution::artifacts::RunEvent
-impl core::cmp::PartialEq for engine::execution::artifacts::RunEvent
-pub fn engine::execution::artifacts::RunEvent::eq(&self, &engine::execution::artifacts::RunEvent) -> bool
-impl core::fmt::Debug for engine::execution::artifacts::RunEvent
-pub fn engine::execution::artifacts::RunEvent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for engine::execution::artifacts::RunEvent
-impl serde_core::ser::Serialize for engine::execution::artifacts::RunEvent
-pub fn engine::execution::artifacts::RunEvent::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
-impl<'de> serde_core::de::Deserialize<'de> for engine::execution::artifacts::RunEvent
-pub fn engine::execution::artifacts::RunEvent::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
-impl core::marker::Freeze for engine::execution::artifacts::RunEvent
-impl core::marker::Send for engine::execution::artifacts::RunEvent
-impl core::marker::Sync for engine::execution::artifacts::RunEvent
-impl core::marker::Unpin for engine::execution::artifacts::RunEvent
-impl core::marker::UnsafeUnpin for engine::execution::artifacts::RunEvent
-impl core::panic::unwind_safe::RefUnwindSafe for engine::execution::artifacts::RunEvent
-impl core::panic::unwind_safe::UnwindSafe for engine::execution::artifacts::RunEvent
-impl<T, U> core::convert::Into<U> for engine::execution::artifacts::RunEvent where U: core::convert::From<T>
-pub fn engine::execution::artifacts::RunEvent::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for engine::execution::artifacts::RunEvent where U: core::convert::Into<T>
-pub type engine::execution::artifacts::RunEvent::Error = core::convert::Infallible
-pub fn engine::execution::artifacts::RunEvent::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for engine::execution::artifacts::RunEvent where U: core::convert::TryFrom<T>
-pub type engine::execution::artifacts::RunEvent::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn engine::execution::artifacts::RunEvent::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for engine::execution::artifacts::RunEvent where T: core::clone::Clone
-pub type engine::execution::artifacts::RunEvent::Owned = T
-pub fn engine::execution::artifacts::RunEvent::clone_into(&self, &mut T)
-pub fn engine::execution::artifacts::RunEvent::to_owned(&self) -> T
-impl<T> core::any::Any for engine::execution::artifacts::RunEvent where T: 'static + ?core::marker::Sized
-pub fn engine::execution::artifacts::RunEvent::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for engine::execution::artifacts::RunEvent where T: ?core::marker::Sized
-pub fn engine::execution::artifacts::RunEvent::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for engine::execution::artifacts::RunEvent where T: ?core::marker::Sized
-pub fn engine::execution::artifacts::RunEvent::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for engine::execution::artifacts::RunEvent where T: core::clone::Clone
-pub unsafe fn engine::execution::artifacts::RunEvent::clone_to_uninit(&self, *mut u8)
-impl<T> core::convert::From<T> for engine::execution::artifacts::RunEvent
-pub fn engine::execution::artifacts::RunEvent::from(T) -> T
-impl<T> serde_core::de::DeserializeOwned for engine::execution::artifacts::RunEvent where T: for<'de> serde_core::de::Deserialize<'de>
 pub struct engine::RunReport
-pub engine::RunReport::events: alloc::vec::Vec<engine::execution::artifacts::RunEvent>
 pub engine::RunReport::outputs: alloc::vec::Vec<engine::execution::artifacts::NodeRunOutput>
 pub engine::RunReport::read_calls: u32
 pub engine::RunReport::redundant_reads: u32
@@ -9484,34 +8951,6 @@ pub unsafe fn engine::graph::workflow::WorkflowId::clone_to_uninit(&self, *mut u
 impl<T> core::convert::From<T> for engine::graph::workflow::WorkflowId
 pub fn engine::graph::workflow::WorkflowId::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::graph::workflow::WorkflowId where T: for<'de> serde_core::de::Deserialize<'de>
-pub struct engine::WorkflowRunner<A>
-impl<A> engine::execution::workflow_runner::WorkflowRunner<A> where A: engine::ports::outbound::AiPort
-pub const fn engine::execution::workflow_runner::WorkflowRunner<A>::new(A) -> Self
-pub async fn engine::execution::workflow_runner::WorkflowRunner<A>::run(&self, &engine::graph::workflow::Workflow) -> core::result::Result<engine::execution::artifacts::RunReport, engine::execution::artifacts::RunError>
-pub async fn engine::execution::workflow_runner::WorkflowRunner<A>::run_with_entrypoint(&self, &engine::graph::workflow::Workflow, core::option::Option<&str>) -> core::result::Result<engine::execution::artifacts::RunReport, engine::execution::artifacts::RunError>
-impl<A> core::marker::Freeze for engine::execution::workflow_runner::WorkflowRunner<A> where A: core::marker::Freeze
-impl<A> core::marker::Send for engine::execution::workflow_runner::WorkflowRunner<A> where A: core::marker::Send
-impl<A> core::marker::Sync for engine::execution::workflow_runner::WorkflowRunner<A> where A: core::marker::Sync
-impl<A> core::marker::Unpin for engine::execution::workflow_runner::WorkflowRunner<A> where A: core::marker::Unpin
-impl<A> core::marker::UnsafeUnpin for engine::execution::workflow_runner::WorkflowRunner<A> where A: core::marker::UnsafeUnpin
-impl<A> core::panic::unwind_safe::RefUnwindSafe for engine::execution::workflow_runner::WorkflowRunner<A> where A: core::panic::unwind_safe::RefUnwindSafe
-impl<A> core::panic::unwind_safe::UnwindSafe for engine::execution::workflow_runner::WorkflowRunner<A> where A: core::panic::unwind_safe::UnwindSafe
-impl<T, U> core::convert::Into<U> for engine::execution::workflow_runner::WorkflowRunner<A> where U: core::convert::From<T>
-pub fn engine::execution::workflow_runner::WorkflowRunner<A>::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for engine::execution::workflow_runner::WorkflowRunner<A> where U: core::convert::Into<T>
-pub type engine::execution::workflow_runner::WorkflowRunner<A>::Error = core::convert::Infallible
-pub fn engine::execution::workflow_runner::WorkflowRunner<A>::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for engine::execution::workflow_runner::WorkflowRunner<A> where U: core::convert::TryFrom<T>
-pub type engine::execution::workflow_runner::WorkflowRunner<A>::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn engine::execution::workflow_runner::WorkflowRunner<A>::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> core::any::Any for engine::execution::workflow_runner::WorkflowRunner<A> where T: 'static + ?core::marker::Sized
-pub fn engine::execution::workflow_runner::WorkflowRunner<A>::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for engine::execution::workflow_runner::WorkflowRunner<A> where T: ?core::marker::Sized
-pub fn engine::execution::workflow_runner::WorkflowRunner<A>::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for engine::execution::workflow_runner::WorkflowRunner<A> where T: ?core::marker::Sized
-pub fn engine::execution::workflow_runner::WorkflowRunner<A>::borrow_mut(&mut self) -> &mut T
-impl<T> core::convert::From<T> for engine::execution::workflow_runner::WorkflowRunner<A>
-pub fn engine::execution::workflow_runner::WorkflowRunner<A>::from(T) -> T
 pub struct engine::WorkflowSchedule
 pub engine::WorkflowSchedule::cron: alloc::string::String
 pub engine::WorkflowSchedule::enabled: bool
@@ -9648,7 +9087,6 @@ pub fn engine::build_predefined_subagent_summaries(&engine::graph::workflow::Nod
 pub fn engine::build_system_messages(&engine::graph::workflow::Workflow, &engine::graph::workflow::Node, core::option::Option<&str>) -> alloc::vec::Vec<alloc::string::String>
 pub fn engine::build_upstream_map(&engine::graph::workflow::Workflow) -> std::collections::hash::map::HashMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::graph::workflow::NodeId>>
 pub fn engine::collect_checkpoint_node_ids(&engine::InteractiveEngineCheckpoint) -> alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
-pub fn engine::default_context_window_sizes() -> alloc::collections::btree::map::BTreeMap<alloc::string::String, u32>
 pub fn engine::default_structured_output_schema() -> serde_json::value::Value
 pub fn engine::default_templates() -> alloc::vec::Vec<engine::template::Template>
 pub fn engine::effective_output_schema(&serde_json::value::Value) -> serde_json::value::Value
@@ -9657,12 +9095,9 @@ pub fn engine::execution_layers(&engine::graph::workflow::Workflow) -> core::res
 pub fn engine::filter_tool_turn_assistant_message(core::option::Option<alloc::string::String>) -> core::option::Option<alloc::string::String>
 pub fn engine::handle_declare_subagents(&engine::graph::workflow::NodeId, &engine::ToolCall, &mut alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::SubagentSummary>) -> engine::execution::subagent_runtime::DeclareSubagentsOutcome
 pub fn engine::is_clarifying_question(&str) -> bool
-pub fn engine::is_redundant_tool_call_markup(&str) -> bool
 pub fn engine::is_subagent_runtime_builtin(&str) -> bool
-pub fn engine::lookup_context_window_size(&alloc::collections::btree::map::BTreeMap<alloc::string::String, u32>, &str) -> core::option::Option<u32>
 pub fn engine::merge_shared_context(&engine::graph::workflow::Workflow, &str) -> alloc::string::String
 pub fn engine::merge_subagent_summaries(&mut alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::SubagentSummary>, &[engine::SubagentSummary])
-pub const fn engine::requires_approval(engine::ApprovalMode, engine::ToolTier) -> engine::ToolDecision
 pub fn engine::resolve_callable_agent_snapshots(&engine::graph::workflow::Workflow, &[engine::graph::callable_agent::CallableAgent]) -> alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::graph::callable_agent::CallableAgent>
 pub fn engine::start_subagent_invoke(&engine::graph::workflow::Workflow, &engine::graph::workflow::NodeId, &engine::ToolCall, &mut alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::SubagentSummary>, &alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::graph::callable_agent::CallableAgent>, alloc::vec::Vec<engine::ToolDefinition>) -> engine::execution::subagent_runtime::SubagentStartOutcome
 pub fn engine::strip_tool_call_markup(&str) -> alloc::string::String

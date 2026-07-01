@@ -69,15 +69,10 @@ symbols = [
 # Concrete provider client — use create_provider + dyn AiPort instead.
 ban_symbols = ["AiClient"]
 
-# Only these orchestration paths may construct InteractiveEngine / WorkflowRunner.
+# Only these orchestration paths may construct InteractiveEngine.
 [[engine_construction]]
 crate = "orchestration"
 pattern = "InteractiveEngine::new"
-allowed_path_prefixes = ["crates/orchestration/src/run/execution/"]
-
-[[engine_construction]]
-crate = "orchestration"
-pattern = "WorkflowRunner::new"
 allowed_path_prefixes = ["crates/orchestration/src/run/execution/"]
 
 # Domain folders must not import adapters or flat store module paths.

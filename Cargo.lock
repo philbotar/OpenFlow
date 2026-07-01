@@ -1778,7 +1778,6 @@ name = "engine"
 version = "0.1.2"
 dependencies = [
  "async-trait",
- "futures",
  "serde",
  "serde_json",
  "tempfile",

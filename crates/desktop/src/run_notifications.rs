@@ -153,7 +153,6 @@ mod tests {
     fn notifies_when_workflow_finishes() {
         let event = ExecutionEvent::Finished(RunReport {
             workflow_id: WorkflowId("workflow-1".to_string()),
-            events: Vec::new(),
             outputs: vec![
                 NodeRunOutput {
                     node_id: NodeId("node-1".to_string()),

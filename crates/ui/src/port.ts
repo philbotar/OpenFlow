@@ -25,8 +25,10 @@ import type {
 	FileEditPreview,
 	TerminalEvent,
 	TerminalStart,
+	ScheduleDraft,
 	ScheduleStatus,
 	RunSummary,
+	WorkflowSchedule,
 } from "./lib/types";
 import type { AppUpdateAvailability, AppUpdateResult } from "./api";
 
@@ -80,6 +82,7 @@ export interface UiDesktopOutboundPort {
 	verifyBedrockCredentials: (settings: AppSettings) => Promise<string>;
 	validateWorkflow: (workflow: Workflow) => Promise<WorkflowValidationSummary>;
 	startWorkflowAuthoring: (baseWorkflow?: Workflow | null) => Promise<string>;
+	endWorkflowAuthoring: (sessionId: string) => Promise<boolean>;
 	workflowAuthoringTurn: (
 		sessionId: string,
 		message: string,
@@ -131,7 +134,6 @@ export interface UiDesktopOutboundPort {
 		allow: boolean,
 		reason?: string | null,
 	) => Promise<WorkflowRunState>;
-	completeManualNode: () => Promise<WorkflowRunState>;
 	getRunState: () => Promise<WorkflowRunState | null>;
 	clearRunTrace: () => Promise<WorkflowRunState | null>;
 	startTerminal: (
@@ -146,6 +148,9 @@ export interface UiDesktopOutboundPort {
 	listenToRunState: (handler: RunStateListener) => Promise<() => void>;
 	listScheduleStatuses: () => Promise<ScheduleStatus[]>;
 	refreshSchedules: () => Promise<ScheduleStatus[]>;
+	scheduleFromPreset: (draft: ScheduleDraft) => Promise<WorkflowSchedule>;
+	scheduleDraftFromSchedule: (schedule: WorkflowSchedule) => Promise<ScheduleDraft>;
+	describeWorkflowSchedule: (schedule: WorkflowSchedule) => Promise<string>;
 	listenToScheduleStatuses: (handler: (statuses: ScheduleStatus[]) => void) => Promise<() => void>;
 	probeMcpServer: (config: McpServerConfig) => Promise<string[]>;
 	getAppVersion: () => Promise<string>;
@@ -189,6 +194,7 @@ export function createUiDesktopOutboundAdapter(): UiDesktopOutboundPort {
 		verifyBedrockCredentials: desktopApi.verifyBedrockCredentials,
 		validateWorkflow: desktopApi.validateWorkflow,
 		startWorkflowAuthoring: desktopApi.startWorkflowAuthoring,
+		endWorkflowAuthoring: desktopApi.endWorkflowAuthoring,
 		workflowAuthoringTurn: desktopApi.workflowAuthoringTurn,
 		createAgentNode: desktopApi.createAgentNode,
 		startRun: desktopApi.startRun,
@@ -208,7 +214,6 @@ export function createUiDesktopOutboundAdapter(): UiDesktopOutboundPort {
 		revertEditBatch: desktopApi.revertEditBatch,
 		submitUserInput: desktopApi.submitUserInput,
 		submitToolApproval: desktopApi.submitToolApproval,
-		completeManualNode: desktopApi.completeManualNode,
 		getRunState: desktopApi.getRunState,
 		clearRunTrace: desktopApi.clearRunTrace,
 		startTerminal: desktopApi.startTerminal,
@@ -219,6 +224,9 @@ export function createUiDesktopOutboundAdapter(): UiDesktopOutboundPort {
 		listenToRunState: desktopApi.listenToRunState,
 		listScheduleStatuses: desktopApi.listScheduleStatuses,
 		refreshSchedules: desktopApi.refreshSchedules,
+		scheduleFromPreset: desktopApi.scheduleFromPreset,
+		scheduleDraftFromSchedule: desktopApi.scheduleDraftFromSchedule,
+		describeWorkflowSchedule: desktopApi.describeWorkflowSchedule,
 		listenToScheduleStatuses: desktopApi.listenToScheduleStatuses,
 		probeMcpServer: desktopApi.probeMcpServer,
 		getAppVersion: desktopApi.getAppVersion,

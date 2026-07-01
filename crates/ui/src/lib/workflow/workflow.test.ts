@@ -13,6 +13,7 @@ import {
   createEmptyToolConfig,
   canSendChat,
   canSendIdleRunKickoff,
+  dagreLayoutWorkflowLeftToRight,
   executionLayers,
   firstLayerRootNodeIds,
   GLOBAL_RUN_ENTRY_NODE_ID,
@@ -198,6 +199,32 @@ describe("workflow helpers", () => {
     expect(byId.get("node-b")?.y).toBeLessThan(byId.get("node-c")?.y ?? 0);
     expect(byId.get("node-a")?.y).toBe(96);
     expect(byId.get("node-d")?.y).toBe(96);
+  });
+
+  test("dagreLayoutWorkflowLeftToRight lays out workflow left to right", () => {
+    const laidOut = dagreLayoutWorkflowLeftToRight(makeDiamondWorkflow());
+    const byId = new Map(laidOut.nodes.map((node) => [node.id, node.position]));
+
+    expect(byId.get("node-a")?.x).toBe(96);
+    expect(byId.get("node-b")?.x).toBeGreaterThan(byId.get("node-a")?.x ?? 0);
+    expect(byId.get("node-c")?.x).toBe(byId.get("node-b")?.x);
+    expect(byId.get("node-d")?.x).toBeGreaterThan(byId.get("node-b")?.x ?? 0);
+    expect(Math.abs((byId.get("node-b")?.y ?? 0) - (byId.get("node-c")?.y ?? 0))).toBeGreaterThanOrEqual(184);
+  });
+
+  test("dagreLayoutWorkflowLeftToRight only changes node positions", () => {
+    const source = makeDiamondWorkflow();
+    const laidOut = dagreLayoutWorkflowLeftToRight(source);
+
+    expect(source.nodes[0].position).toEqual({ x: 0, y: 0 });
+    expect(laidOut).toMatchObject({
+      id: source.id,
+      name: source.name,
+      edges: source.edges,
+      settings: source.settings,
+    });
+    expect(laidOut.nodes.map((node) => node.id)).toEqual(source.nodes.map((node) => node.id));
+    expect(laidOut.nodes.some((node, index) => node.position.x !== source.nodes[index].position.x || node.position.y !== source.nodes[index].position.y)).toBe(true);
   });
 
   test("withDefaultReasoningFromWorkflow applies workflow default when node unset", () => {

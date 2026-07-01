@@ -1,6 +1,5 @@
 use super::{InteractiveEngine, PendingToolBatch};
 use crate::conversation::AgentTranscriptItem;
-use crate::execution::RunEvent;
 use crate::graph::validation::WorkflowValidationError;
 use crate::graph::{NodeId, Workflow, WorkflowId};
 use crate::tools::{FileChangeRecord, ReadRecord, ToolCall};
@@ -49,7 +48,6 @@ pub struct InteractiveEngineCheckpoint {
     #[serde(default)]
     pub reads_by_node: BTreeMap<NodeId, Vec<ReadRecord>>,
     pub transcripts: BTreeMap<NodeId, Vec<AgentTranscriptItem>>,
-    pub events: Vec<RunEvent>,
     pub queued_nodes: BTreeSet<NodeId>,
     pub started_invocations_by_node: BTreeMap<NodeId, u8>,
     pub awaiting_nodes: BTreeSet<NodeId>,
@@ -95,7 +93,6 @@ pub fn collect_checkpoint_node_ids(checkpoint: &InteractiveEngineCheckpoint) -> 
             .values()
             .map(|batch| batch.node_id.clone()),
     );
-    ids.extend(checkpoint.events.iter().map(|event| event.node_id.clone()));
     ids
 }
 
@@ -137,7 +134,6 @@ impl InteractiveEngine {
             changed_files_by_node: self.changed_files_by_node.clone(),
             reads_by_node: self.reads_by_node.clone(),
             transcripts: self.transcripts.clone(),
-            events: self.events.clone(),
             queued_nodes: self.queued_nodes.clone(),
             started_invocations_by_node: self.started_invocations_by_node.clone(),
             awaiting_nodes: self.awaiting_nodes.clone(),
@@ -163,17 +159,6 @@ impl InteractiveEngine {
     /// # Errors
     /// Returns an error when the workflow fails validation or ids do not match.
     pub fn from_checkpoint(
-        workflow: Workflow,
-        checkpoint: InteractiveEngineCheckpoint,
-    ) -> Result<Self, CheckpointError> {
-        Self::from_checkpoint_with_run_context(workflow, checkpoint, None)
-    }
-
-    /// Restore an engine from a checkpoint for the given workflow.
-    ///
-    /// # Errors
-    /// Returns an error when the workflow fails validation or ids do not match.
-    pub fn from_checkpoint_with_run_context(
         workflow: Workflow,
         checkpoint: InteractiveEngineCheckpoint,
         project_repository_root: Option<String>,
@@ -208,7 +193,6 @@ impl InteractiveEngine {
             redundant_reads: 0,
             tokens_in: 0,
             transcripts: checkpoint.transcripts,
-            events: checkpoint.events,
             queued_nodes: checkpoint.queued_nodes,
             started_invocations_by_node: checkpoint.started_invocations_by_node,
             awaiting_nodes: checkpoint.awaiting_nodes,

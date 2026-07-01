@@ -146,6 +146,7 @@ function makeMockContext(overrides: Partial<AppContextValue> = {}): AppContextVa
     handleSelectNode: () => {},
     handleSelectEdge: () => {},
     handleCanvasNodePosition: () => {},
+    handleAutoLayoutWorkflow: () => {},
     handleCreateEdge: () => {},
     handleReconnectEdge: () => {},
     handleDeleteEdge: () => {},

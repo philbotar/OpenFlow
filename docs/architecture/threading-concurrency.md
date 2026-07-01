@@ -84,32 +84,19 @@ Each run is a **single async task**. Node execution is sequential inside the eng
 
 ```mermaid
 stateDiagram-v2
-    [*] --> PollEngine
+    [*] --> EngineRun
 
-    PollEngine --> CallAi: EnginePollResult::CallAi
-    PollEngine --> AwaitInput: AwaitInput
-    PollEngine --> AwaitTools: AwaitToolApproval
-    PollEngine --> Done: Completed
-    PollEngine --> Failed: Failed
+    EngineRun --> Done: Completed
+    EngineRun --> Failed: Failed
+    EngineRun --> Cancelled: Cancelled
+    EngineRun --> AwaitInteraction: NeedsInteraction
 
-    CallAi --> InvokeProvider: ai.invoke().await
-    InvokeProvider --> PollEngine: engine.on_ai_complete()
-
-    AwaitInput --> WaitUser: action_rx.recv().await
-    WaitUser --> PollEngine: ProvideInput
-
-    AwaitTools --> ToolLoop: for each tool_call
-    ToolLoop --> SubagentLoop: openflow_call_subagent
-    ToolLoop --> ApprovalWait: needs prompt
-    ToolLoop --> ExecuteTool: tool_runner.execute().await
-    SubagentLoop --> InvokeProvider: nested ai.invoke loop
-    ApprovalWait --> WaitApproval: action_rx.recv().await
-    ExecuteTool --> ToolLoop
-    WaitApproval --> ToolLoop
-    ToolLoop --> PollEngine: engine.on_tool_results()
+    AwaitInteraction --> WaitActions: action_rx.recv().await
+    WaitActions --> EngineRun: ProvideInput / ToolApproval / RetryNode
 
     Done --> [*]
     Failed --> [*]
+    Cancelled --> [*]
 ```
 
 The host loop lives in `drive_interactive_workflow()` (`crates/orchestration/src/run/execution/drive.rs`). It calls `InteractiveEngine::run()`, which invokes `AiPort` and `ToolPort` internally until it completes, fails, or returns `NeedsInteraction`.
@@ -227,7 +214,7 @@ sequenceDiagram
     UI->>CH: action_tx.send(ProvideInput)
     UI->>RS: unlock
     CH->>EX: recv ProvideInput
-    EX->>EX: continue poll loop
+    EX->>EX: resume run loop
 ```
 
 ### Issues

@@ -136,7 +136,7 @@ Catalog owns merge policy. Stores only read and write bytes.
 | `run/state/mod.rs` | `run::state` | `WorkflowRunState` projected for UI and IPC. |
 | `adapters/storage/run_checkpoint_store.rs` | `adapters::storage::run_checkpoint_store` | Persist run records and engine checkpoints. |
 
-Only `run/execution/` constructs or drives `InteractiveEngine` and `WorkflowRunner`, as required by the [architecture contract](contract.md).
+Only `run/execution/` constructs or drives `InteractiveEngine`, as required by the [architecture contract](contract.md).
 
 ### Settings
 

@@ -1,25 +1,19 @@
 use crate::api::FileEditPreview;
 use crate::error::BackendError;
-use crate::incident::{incident_from_execution_event, IncidentContext, IncidentRecorder};
+#[cfg(test)]
+use crate::run::execution::NodeInterrupts;
 use crate::run::execution::{
-    apply_event_to_run_state, record_entrypoint_message, record_user_input, resolve_execution_cwd,
-    should_record_entrypoint_in_chat, spawn_interactive_workflow_run, ExecutionAction,
-    ExecutionEvent, InteractiveWorkflowRunParams, NodeInterrupts,
+    apply_event_to_run_state, record_entrypoint_message, resolve_execution_cwd,
+    should_record_entrypoint_in_chat, ExecutionAction, ExecutionEvent,
 };
 use crate::run::persistence::{workflow_hash, RunRecord, RunStatus, RunStoreRoot};
 use crate::run::ports::RunCheckpointStore;
-use crate::run::reasoning_defaults::apply_reasoning_defaults;
 use crate::run::state::{AgentStatus, WorkflowRunState};
-use crate::settings::model::merge_preserved_api_keys;
-use crate::settings::provider::resolve_provider_config;
 use crate::tools::edit::preview::preview_file_edit;
 use chrono::Utc;
-use engine::resolve_callable_agent_snapshots;
 #[cfg(test)]
 use engine::Workflow;
-use engine::{execution_layers, validate_workflow, NodeId};
-use parking_lot::Mutex as ParkingMutex;
-use providers::{create_provider, ProviderId};
+use engine::{execution_layers, validate_workflow, ChatMessage, ChatRole, NodeId};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -34,28 +28,26 @@ mod session;
 
 pub use session::{DurableResumeParams, RunStartParams};
 
-use checkpoint::persist_pending_checkpoint;
+use checkpoint::{load_replay_projection, persist_pending_checkpoint};
 use session::{
-    apply_user_stop_to_session, clear_artifact_root, finish_run_session, RunSession,
-    TerminationMode,
+    apply_user_stop_to_session, attach_execution_handles, clear_artifact_root, finish_run_session,
+    fresh_execution_resources, prepare_workflow_run, spawn_prepared_run, ExecutionResources,
+    RunSession, SpawnRunInput, TerminationMode,
 };
 
 pub struct RunCoordinator {
     runtime_handle: tokio::runtime::Handle,
-    incidents: Arc<IncidentRecorder>,
     session: Mutex<RunSession>,
 }
 
 #[cfg(test)]
-#[path = "../coordinator_tests.rs"]
-mod coordinator_tests;
+mod tests;
 
 impl RunCoordinator {
     #[must_use]
-    pub fn new(runtime_handle: tokio::runtime::Handle, incidents: Arc<IncidentRecorder>) -> Self {
+    pub fn new(runtime_handle: tokio::runtime::Handle) -> Self {
         Self {
             runtime_handle,
-            incidents,
             session: Mutex::new(RunSession {
                 workflow: None,
                 run_state: None,
@@ -78,15 +70,6 @@ impl RunCoordinator {
         }
     }
 
-    #[cfg(test)]
-    #[must_use]
-    pub fn new_with_incidents(
-        runtime_handle: tokio::runtime::Handle,
-        incidents: Arc<IncidentRecorder>,
-    ) -> Self {
-        Self::new(runtime_handle, incidents)
-    }
-
     /// # Errors
     /// Returns an error if the workflow fails validation or provider configuration fails.
     pub async fn start_run(
@@ -107,6 +90,7 @@ impl RunCoordinator {
         } = params;
 
         validate_workflow(&workflow)?;
+
         let cwd_arg = execution_cwd.clone();
         let resolved_cwd = self
             .runtime_handle
@@ -114,25 +98,16 @@ impl RunCoordinator {
             .await
             .map_err(|error| BackendError::PreviewFailed(error.to_string()))?
             .map_err(BackendError::InvalidExecutionCwd)?;
-        let persisted_settings = settings_store.load()?;
-        let mut provider_settings = settings.clone();
-        merge_preserved_api_keys(&mut provider_settings, &persisted_settings);
-        if let Some(provider_id) = workflow
-            .settings
-            .provider_id
-            .as_ref()
-            .filter(|provider_id| !provider_id.trim().is_empty())
-        {
-            provider_settings.active_provider = ProviderId::from(provider_id.as_str());
-        }
-        let provider_config = resolve_provider_config(&provider_settings, transient_api_key, env)?;
-        let ai = create_provider(provider_config);
 
-        let mut workflow = workflow;
-        apply_reasoning_defaults(&mut workflow, provider_settings.active_profile());
-
-        let agents = agent_store.load()?;
-        let agent_snapshots = resolve_callable_agent_snapshots(&workflow, &agents);
+        let prepared = prepare_workflow_run(
+            workflow,
+            settings,
+            transient_api_key,
+            agent_store,
+            settings_store,
+            env,
+        )?;
+        let workflow = prepared.workflow.clone();
 
         self.terminate_active_run(TerminationMode::Replaced).await;
         {
@@ -157,39 +132,20 @@ impl RunCoordinator {
         };
         run_store.create_run(&run_root, &run_record)?;
 
-        let snapshot_store =
-            Arc::new(crate::tools::edit::hashline::snapshots::InMemorySnapshotStore::new());
-        let lsp_settings = crate::lsp::LspSettings::from_persisted(&persisted_settings.lsp);
-        let pending_engine_reverts = Arc::new(parking_lot::Mutex::new(Vec::new()));
-        let node_interrupts: NodeInterrupts =
-            Arc::new(parking_lot::Mutex::new(std::collections::BTreeMap::new()));
-        let checkpoint_sink = Arc::new(ParkingMutex::new(None));
-        let (handle, event_rx, action_tx, cancel_token, _) = spawn_interactive_workflow_run(
+        let resources = fresh_execution_resources(&prepared.persisted_settings);
+        let mut spawned = spawn_prepared_run(
             &self.runtime_handle,
-            InteractiveWorkflowRunParams {
-                workflow: workflow.clone(),
+            prepared,
+            SpawnRunInput {
                 entrypoint: entrypoint.clone(),
                 execution_cwd: resolved_cwd.clone(),
-                project_repository_root: crate::run::execution::project_repository_root(
-                    run_root.project_id.as_deref(),
-                    &resolved_cwd,
-                ),
+                project_id: run_root.project_id.clone(),
                 artifact_root: artifact_root.clone(),
                 resume_checkpoint: None,
-                checkpoint_sink: checkpoint_sink.clone(),
-                ai,
-                agent_snapshots,
-                snapshot_store: snapshot_store.clone(),
-                lsp: lsp_settings.clone(),
-                pending_engine_reverts: pending_engine_reverts.clone(),
-                node_interrupts: node_interrupts.clone(),
-                context_window_sizes: provider_settings
-                    .active_profile()
-                    .context_window_sizes
-                    .clone(),
-                mcp: persisted_settings.mcp.clone(),
             },
+            &resources,
         );
+        let event_rx = spawned.event_rx.take().expect("spawned run event channel");
 
         let mut session = self.session.lock().await;
         session.run_id = Some(run_id.clone());
@@ -206,20 +162,16 @@ impl RunCoordinator {
                 }
             }
         }
-        session.workflow = Some(workflow);
         session.run_state = Some(initial_state.clone());
-        session.execution_cwd = Some(resolved_cwd);
-        session.entrypoint = entrypoint;
-        session.artifact_root = Some(artifact_root);
-        session.engine_checkpoint = None;
-        session.checkpoint_sink = Some(checkpoint_sink);
-        session.snapshot_store = Some(snapshot_store);
-        session.lsp_settings = Some(lsp_settings);
-        session.pending_engine_reverts = Some(pending_engine_reverts);
-        session.action_tx = Some(action_tx);
-        session.handle = Some(handle);
-        session.cancel_token = Some(cancel_token);
-        session.node_interrupts = Some(node_interrupts);
+        attach_execution_handles(
+            &mut session,
+            workflow,
+            entrypoint,
+            resolved_cwd,
+            artifact_root,
+            resources,
+            spawned,
+        );
         Ok((initial_state, event_rx))
     }
 
@@ -291,57 +243,38 @@ impl RunCoordinator {
         engine::validate_checkpoint_against_workflow(&workflow, &checkpoint)
             .map_err(|error| BackendError::CheckpointIncompatible(error.to_string()))?;
 
-        let persisted_settings = settings_store.load()?;
-        let mut provider_settings = settings.clone();
-        merge_preserved_api_keys(&mut provider_settings, &persisted_settings);
-        if let Some(provider_id) = workflow
-            .settings
-            .provider_id
-            .as_ref()
-            .filter(|provider_id| !provider_id.trim().is_empty())
-        {
-            provider_settings.active_provider = ProviderId::from(provider_id.as_str());
-        }
-        let provider_config = resolve_provider_config(&provider_settings, transient_api_key, env)?;
-        let ai = create_provider(provider_config);
-
-        let mut workflow = workflow;
-        apply_reasoning_defaults(&mut workflow, provider_settings.active_profile());
-
-        let agents = agent_store.load()?;
-        let agent_snapshots = resolve_callable_agent_snapshots(&workflow, &agents);
+        let prepared = prepare_workflow_run(
+            workflow,
+            settings,
+            transient_api_key,
+            agent_store,
+            settings_store,
+            env,
+        )?;
+        let workflow = prepared.workflow.clone();
 
         self.terminate_active_run(TerminationMode::Replaced).await;
 
-        let node_interrupts: NodeInterrupts =
-            Arc::new(parking_lot::Mutex::new(std::collections::BTreeMap::new()));
-        let checkpoint_sink = Arc::new(ParkingMutex::new(None));
-        let (handle, event_rx, action_tx, cancel_token, _) = spawn_interactive_workflow_run(
+        let resources = ExecutionResources {
+            snapshot_store,
+            lsp_settings,
+            pending_engine_reverts,
+            node_interrupts: Arc::new(parking_lot::Mutex::new(std::collections::BTreeMap::new())),
+            checkpoint_sink: Arc::new(parking_lot::Mutex::new(None)),
+        };
+        let mut spawned = spawn_prepared_run(
             &self.runtime_handle,
-            InteractiveWorkflowRunParams {
-                workflow: workflow.clone(),
+            prepared,
+            SpawnRunInput {
                 entrypoint: entrypoint.clone(),
                 execution_cwd: execution_cwd.clone(),
-                project_repository_root: crate::run::execution::project_repository_root(
-                    project_id.as_deref(),
-                    &execution_cwd,
-                ),
+                project_id,
                 artifact_root: artifact_root.clone(),
                 resume_checkpoint: Some(checkpoint),
-                checkpoint_sink: checkpoint_sink.clone(),
-                ai,
-                agent_snapshots,
-                snapshot_store: snapshot_store.clone(),
-                lsp: lsp_settings.clone(),
-                pending_engine_reverts: pending_engine_reverts.clone(),
-                node_interrupts: node_interrupts.clone(),
-                context_window_sizes: provider_settings
-                    .active_profile()
-                    .context_window_sizes
-                    .clone(),
-                mcp: persisted_settings.mcp.clone(),
             },
+            &resources,
         );
+        let event_rx = spawned.event_rx.take().expect("spawned run event channel");
 
         let mut session = self.session.lock().await;
         let run_id = session.run_id.clone();
@@ -352,19 +285,15 @@ impl RunCoordinator {
         run_state.active = true;
         run_state.run_id = run_id;
         let resumed_state = run_state.clone();
-        session.workflow = Some(workflow);
-        session.entrypoint = entrypoint;
-        session.execution_cwd = Some(execution_cwd);
-        session.artifact_root = Some(artifact_root);
-        session.engine_checkpoint = None;
-        session.checkpoint_sink = Some(checkpoint_sink);
-        session.snapshot_store = Some(snapshot_store);
-        session.lsp_settings = Some(lsp_settings);
-        session.pending_engine_reverts = Some(pending_engine_reverts);
-        session.action_tx = Some(action_tx);
-        session.handle = Some(handle);
-        session.cancel_token = Some(cancel_token);
-        session.node_interrupts = Some(node_interrupts);
+        attach_execution_handles(
+            &mut session,
+            workflow,
+            entrypoint,
+            execution_cwd,
+            artifact_root,
+            resources,
+            spawned,
+        );
         Ok((resumed_state, event_rx))
     }
 
@@ -376,35 +305,6 @@ impl RunCoordinator {
                 .run_state
                 .as_ref()
                 .is_some_and(|state| !state.active)
-    }
-
-    #[must_use]
-    pub fn incident_context(&self) -> IncidentContext {
-        let Ok(session) = self.session.try_lock() else {
-            return IncidentContext::default();
-        };
-        if !session
-            .run_state
-            .as_ref()
-            .is_some_and(|run_state| run_state.active)
-        {
-            return IncidentContext::default();
-        }
-        IncidentContext {
-            run_id: session.run_id.clone().or_else(|| {
-                session
-                    .run_state
-                    .as_ref()
-                    .and_then(|run_state| run_state.run_id.clone())
-            }),
-            workflow_id: session
-                .workflow
-                .as_ref()
-                .map(|workflow| workflow.id.to_string()),
-            project_id: session.project_id.clone(),
-            node_id: None,
-            node_label: None,
-        }
     }
 
     /// Cancel the in-flight AI invocation for a running node without stopping the run.
@@ -546,42 +446,41 @@ impl RunCoordinator {
         event: ExecutionEvent,
         run_store: &dyn RunCheckpointStore,
     ) -> Result<WorkflowRunState, BackendError> {
-        let mut session = self.session.lock().await;
-        let workflow = session.workflow.clone().ok_or(BackendError::NoActiveRun)?;
-        let incident_context = IncidentContext {
-            run_id: session.run_id.clone(),
-            workflow_id: Some(workflow.id.to_string()),
-            project_id: session.project_id.clone(),
-            node_id: None,
-            node_label: None,
-        };
-        if let Some(record) = incident_from_execution_event(&event, &incident_context) {
-            if let Err(error) = self.incidents.record(record) {
-                log::warn!("failed to record execution incident: {error}");
+        let (snapshot, pending_persist, finished) = {
+            let mut session = self.session.lock().await;
+            let workflow = session.workflow.clone().ok_or(BackendError::NoActiveRun)?;
+            let run_state = session
+                .run_state
+                .as_mut()
+                .ok_or(BackendError::NoActiveRun)?;
+
+            if !run_state.active {
+                return Ok(run_state.clone());
             }
-        }
-        let run_state = session
-            .run_state
-            .as_mut()
-            .ok_or(BackendError::NoActiveRun)?;
-        if !run_state.active {
-            return Ok(run_state.clone());
-        }
-        apply_event_to_run_state(&workflow, run_state, event);
-        let finished = !run_state.active;
-        let snapshot = run_state.clone();
-        let pending_checkpoint = session
-            .checkpoint_sink
-            .as_ref()
-            .and_then(|sink| sink.lock().take());
-        if let (Some(root), Some(run_id), Some(pending)) = (
-            session.run_root.clone(),
-            session.run_id.clone(),
-            pending_checkpoint,
-        ) {
+
+            apply_event_to_run_state(&workflow, run_state, event);
+            let finished = !run_state.active;
+            let snapshot = run_state.clone();
+            let pending_checkpoint = session
+                .checkpoint_sink
+                .as_ref()
+                .and_then(|sink| sink.lock().take());
+            let pending_persist = match (
+                session.run_root.clone(),
+                session.run_id.clone(),
+                pending_checkpoint,
+            ) {
+                (Some(root), Some(run_id), Some(pending)) => Some((root, run_id, pending)),
+                _ => None,
+            };
+            (snapshot, pending_persist, finished)
+        };
+
+        if let Some((root, run_id, pending)) = pending_persist {
             persist_pending_checkpoint(run_store, &root, &run_id, &snapshot, pending)?;
         }
         if finished {
+            let mut session = self.session.lock().await;
             finish_run_session(&mut session);
         }
         Ok(snapshot)
@@ -602,19 +501,7 @@ impl RunCoordinator {
         roots: &[RunStoreRoot],
         run_id: &str,
     ) -> Result<WorkflowRunState, BackendError> {
-        let (root, _) = run_store
-            .load_record(roots, run_id)?
-            .ok_or_else(|| BackendError::RunNotFound(run_id.to_string()))?;
-        let mut checkpoint = run_store
-            .load_latest_checkpoint(&root, run_id)?
-            .ok_or_else(|| BackendError::RunHasNoCheckpoints(run_id.to_string()))?;
-        checkpoint.projection.active = false;
-        checkpoint.projection.pending_approvals.clear();
-        checkpoint.projection.awaiting_node_id = None;
-        checkpoint.projection.awaiting_node_ids.clear();
-        checkpoint.projection.active_manual_node_id = None;
-        checkpoint.projection.active_tool_call_id = None;
-        Ok(checkpoint.projection)
+        load_replay_projection(run_store, roots, run_id)
     }
 
     /// # Errors
@@ -632,89 +519,57 @@ impl RunCoordinator {
         engine::validate_checkpoint_against_workflow(&params.workflow, &params.checkpoint.engine)
             .map_err(|error| BackendError::CheckpointIncompatible(error.to_string()))?;
 
-        let persisted_settings = params.settings_store.load()?;
-        let mut provider_settings = params.settings.clone();
-        merge_preserved_api_keys(&mut provider_settings, &persisted_settings);
-        if let Some(provider_id) = params
-            .workflow
-            .settings
-            .provider_id
-            .as_ref()
-            .filter(|provider_id| !provider_id.trim().is_empty())
-        {
-            provider_settings.active_provider = ProviderId::from(provider_id.as_str());
-        }
-        let provider_config =
-            resolve_provider_config(&provider_settings, params.transient_api_key, params.env)?;
-        let ai = create_provider(provider_config);
-
-        let mut workflow = params.workflow;
-        apply_reasoning_defaults(&mut workflow, provider_settings.active_profile());
-        let agents = params.agent_store.load()?;
-        let agent_snapshots = resolve_callable_agent_snapshots(&workflow, &agents);
+        let prepared = prepare_workflow_run(
+            params.workflow,
+            params.settings,
+            params.transient_api_key,
+            params.agent_store,
+            params.settings_store,
+            params.env,
+        )?;
+        let workflow = prepared.workflow.clone();
+        let engine_checkpoint = params.checkpoint.engine;
 
         self.terminate_active_run(TerminationMode::Replaced).await;
 
-        let snapshot_store =
-            Arc::new(crate::tools::edit::hashline::snapshots::InMemorySnapshotStore::new());
-        let lsp_settings = crate::lsp::LspSettings::from_persisted(&persisted_settings.lsp);
-        let pending_engine_reverts = Arc::new(parking_lot::Mutex::new(Vec::new()));
-        let node_interrupts: NodeInterrupts =
-            Arc::new(parking_lot::Mutex::new(std::collections::BTreeMap::new()));
-        let checkpoint_sink = Arc::new(ParkingMutex::new(None));
+        let resources = fresh_execution_resources(&prepared.persisted_settings);
         let artifact_root = PathBuf::from(&params.record.artifact_root);
         let execution_cwd = PathBuf::from(&params.record.execution_cwd);
-        let (handle, event_rx, action_tx, cancel_token, _) = spawn_interactive_workflow_run(
+        let mut spawned = spawn_prepared_run(
             &self.runtime_handle,
-            InteractiveWorkflowRunParams {
-                workflow: workflow.clone(),
+            prepared,
+            SpawnRunInput {
                 entrypoint: None,
                 execution_cwd: execution_cwd.clone(),
-                project_repository_root: crate::run::execution::project_repository_root(
-                    params.record.project_id.as_deref(),
-                    &execution_cwd,
-                ),
+                project_id: params.record.project_id.clone(),
                 artifact_root: artifact_root.clone(),
-                resume_checkpoint: Some(params.checkpoint.engine),
-                checkpoint_sink: checkpoint_sink.clone(),
-                ai,
-                agent_snapshots,
-                snapshot_store: snapshot_store.clone(),
-                lsp: lsp_settings.clone(),
-                pending_engine_reverts: pending_engine_reverts.clone(),
-                node_interrupts: node_interrupts.clone(),
-                context_window_sizes: provider_settings
-                    .active_profile()
-                    .context_window_sizes
-                    .clone(),
-                mcp: persisted_settings.mcp.clone(),
+                resume_checkpoint: Some(engine_checkpoint),
             },
+            &resources,
         );
+        let event_rx = spawned.event_rx.take().expect("spawned run event channel");
 
         let mut resumed_state = params.checkpoint.projection;
         resumed_state.active = true;
         resumed_state.run_id = Some(params.run_id.to_string());
 
+        let run_root = params.root;
         let mut session = self.session.lock().await;
-        session.workflow = Some(workflow);
         session.run_state = Some(resumed_state.clone());
         session.run_id = Some(params.run_id.to_string());
-        session.run_root = Some(params.root);
+        session.run_root = Some(run_root.clone());
         session.project_id = params.record.project_id;
-        session.execution_cwd = Some(execution_cwd);
-        session.entrypoint = None;
-        session.artifact_root = Some(artifact_root);
-        session.engine_checkpoint = None;
-        session.checkpoint_sink = Some(checkpoint_sink);
-        session.snapshot_store = Some(snapshot_store);
-        session.lsp_settings = Some(lsp_settings);
-        session.pending_engine_reverts = Some(pending_engine_reverts);
-        session.action_tx = Some(action_tx);
-        session.handle = Some(handle);
-        session.cancel_token = Some(cancel_token);
-        session.node_interrupts = Some(node_interrupts);
+        attach_execution_handles(
+            &mut session,
+            workflow,
+            None,
+            execution_cwd,
+            artifact_root,
+            resources,
+            spawned,
+        );
         params.run_store.update_status(
-            session.run_root.as_ref().expect("run root"),
+            &run_root,
             params.run_id,
             RunStatus::Running,
             Utc::now().timestamp_millis(),
@@ -753,15 +608,20 @@ impl RunCoordinator {
             .as_ref()
             .ok_or(BackendError::NoActiveRun)?
             .send(ExecutionAction::ProvideInput {
-                node_id: node_id_key,
+                node_id: node_id_key.clone(),
                 text: text.clone(),
             })
             .map_err(|_| BackendError::RunChannelClosed)?;
+        // ponytail: chat-only optimistic append; awaiting/status follow execution events
         let run_state = session
             .run_state
             .as_mut()
             .ok_or(BackendError::NoActiveRun)?;
-        record_user_input(run_state, node_id, text);
+        run_state
+            .chat_logs
+            .entry(node_id_key)
+            .or_default()
+            .push(ChatMessage::text(ChatRole::User, text));
         Ok(run_state.clone())
     }
 
@@ -773,26 +633,25 @@ impl RunCoordinator {
         allow: bool,
         reason: Option<String>,
     ) -> Result<WorkflowRunState, BackendError> {
-        let mut session = self.session.lock().await;
+        let session = self.session.lock().await;
         let run_state = session
             .run_state
             .as_ref()
             .ok_or(BackendError::NoActiveRun)?;
-        let expected = run_state
+        if !run_state
             .pending_approvals
             .iter()
-            .find(|pending| pending.approval_id == approval_id)
-            .cloned()
-            .ok_or_else(|| {
-                if run_state.pending_approvals.is_empty() {
-                    BackendError::NoPendingApproval
-                } else {
-                    BackendError::WrongApprovalId {
-                        expected: run_state.pending_approvals[0].approval_id.clone(),
-                        received: approval_id.to_string(),
-                    }
+            .any(|pending| pending.approval_id == approval_id)
+        {
+            return Err(if run_state.pending_approvals.is_empty() {
+                BackendError::NoPendingApproval
+            } else {
+                BackendError::WrongApprovalId {
+                    expected: run_state.pending_approvals[0].approval_id.clone(),
+                    received: approval_id.to_string(),
                 }
-            })?;
+            });
+        }
         session
             .action_tx
             .as_ref()
@@ -803,27 +662,7 @@ impl RunCoordinator {
                 reason,
             })
             .map_err(|_| BackendError::RunChannelClosed)?;
-        let run_state = session
-            .run_state
-            .as_mut()
-            .ok_or(BackendError::NoActiveRun)?;
-        run_state
-            .pending_approvals
-            .retain(|pending| pending.approval_id != expected.approval_id);
         Ok(run_state.clone())
-    }
-
-    /// Returns an error because conversational paused nodes advance via `submit_user_input`.
-    pub async fn complete_manual_node(&self) -> Result<WorkflowRunState, BackendError> {
-        let session = self.session.lock().await;
-        let run_state = session
-            .run_state
-            .as_ref()
-            .ok_or(BackendError::NoActiveRun)?;
-        if run_state.awaiting_node_id.is_some() || !run_state.awaiting_node_ids.is_empty() {
-            return Err(BackendError::NoAwaitingInput);
-        }
-        Err(BackendError::NoAwaitingInput)
     }
 
     #[must_use]
@@ -1000,6 +839,29 @@ impl RunCoordinator {
     }
 
     #[cfg(test)]
+    #[allow(dead_code, reason = "coordinator tests seed varied session shapes")]
+    pub(crate) async fn test_seed_full(&self, seed: TestSessionSeed) {
+        let mut session = self.session.lock().await;
+        session.run_id = seed.run_id.or_else(|| seed.run_state.run_id.clone());
+        session.run_root = seed.run_root;
+        session.project_id = seed.project_id;
+        session.workflow = Some(seed.workflow);
+        session.run_state = Some(seed.run_state);
+        session.action_tx = seed.action_tx;
+        session.execution_cwd = seed.execution_cwd;
+        session.entrypoint = seed.entrypoint;
+        session.artifact_root = seed.artifact_root;
+        session.engine_checkpoint = seed.engine_checkpoint;
+        session.checkpoint_sink = seed.checkpoint_sink;
+        session.snapshot_store = seed.snapshot_store;
+        session.lsp_settings = seed.lsp_settings;
+        session.pending_engine_reverts = seed.pending_engine_reverts;
+        session.node_interrupts = seed.node_interrupts;
+        session.cancel_token = seed.cancel_token;
+        session.handle = seed.handle;
+    }
+
+    #[cfg(test)]
     #[allow(dead_code, reason = "used by orchestration integration tests")]
     pub(crate) async fn test_seed_session(
         &self,
@@ -1007,11 +869,47 @@ impl RunCoordinator {
         run_state: WorkflowRunState,
         action_tx: UnboundedSender<ExecutionAction>,
     ) {
-        let mut session = self.session.lock().await;
-        session.run_id = run_state.run_id.clone();
-        session.project_id = None;
-        session.workflow = Some(workflow);
-        session.run_state = Some(run_state);
-        session.action_tx = Some(action_tx);
+        self.test_seed_full(TestSessionSeed {
+            workflow,
+            run_state,
+            action_tx: Some(action_tx),
+            run_id: None,
+            run_root: None,
+            project_id: None,
+            execution_cwd: None,
+            entrypoint: None,
+            artifact_root: None,
+            engine_checkpoint: None,
+            checkpoint_sink: None,
+            snapshot_store: None,
+            lsp_settings: None,
+            pending_engine_reverts: None,
+            node_interrupts: None,
+            cancel_token: None,
+            handle: None,
+        })
+        .await;
     }
+}
+
+#[cfg(test)]
+pub(crate) struct TestSessionSeed {
+    pub workflow: Workflow,
+    pub run_state: WorkflowRunState,
+    pub action_tx: Option<UnboundedSender<ExecutionAction>>,
+    pub run_id: Option<String>,
+    pub run_root: Option<RunStoreRoot>,
+    pub project_id: Option<String>,
+    pub execution_cwd: Option<PathBuf>,
+    pub entrypoint: Option<String>,
+    pub artifact_root: Option<PathBuf>,
+    pub engine_checkpoint: Option<engine::InteractiveEngineCheckpoint>,
+    pub checkpoint_sink:
+        Option<Arc<parking_lot::Mutex<Option<crate::run::persistence::PendingRunCheckpoint>>>>,
+    pub snapshot_store: Option<Arc<crate::tools::edit::hashline::snapshots::InMemorySnapshotStore>>,
+    pub lsp_settings: Option<crate::lsp::LspSettings>,
+    pub pending_engine_reverts: Option<Arc<parking_lot::Mutex<Vec<engine::EditBatch>>>>,
+    pub node_interrupts: Option<NodeInterrupts>,
+    pub cancel_token: Option<tokio_util::sync::CancellationToken>,
+    pub handle: Option<tokio::task::JoinHandle<()>>,
 }

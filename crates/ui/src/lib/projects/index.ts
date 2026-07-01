@@ -1,4 +1,3 @@
-import { executionCwdForRun } from "../executionCwd";
 import type { Project, Workflow } from "../types";
 
 export const EXPANDED_PROJECTS_STORAGE_KEY = "openflow.expandedProjectIds";
@@ -64,7 +63,7 @@ export function executionCwdForWorkflow(
       : undefined;
   const project = active ?? memberships[0];
   const cwd = (project.default_execution_cwd || project.path).trim();
-  return executionCwdForRun(cwd);
+  return cwd === "" ? null : cwd;
 }
 
 export function readExpandedProjectIds(storage: StorageLike): Set<string> {

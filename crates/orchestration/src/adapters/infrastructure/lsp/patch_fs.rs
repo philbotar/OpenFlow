@@ -5,9 +5,9 @@ use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use super::config::LspSettings;
 use super::diagnostics::FileDiagnosticsResult;
 use super::writethrough::after_write;
+use super::LspSettings;
 use crate::tools::edit::normalize::{normalize_to_lf, strip_bom};
 use crate::tools::edit::patch::{PatchFileSystem, StdPatchFileSystem};
 

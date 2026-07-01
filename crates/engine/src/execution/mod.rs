@@ -8,13 +8,12 @@ pub mod subagent_runtime;
 pub mod subagents;
 pub mod telemetry;
 pub(crate) mod tool_results;
-pub mod workflow_runner;
 
-pub use artifacts::{NodeFailureKind, NodeRunOutput, RunError, RunEvent, RunEventKind, RunReport};
+pub use artifacts::{NodeFailureKind, NodeRunOutput, RunError, RunReport};
 pub use interactive_engine::{
     collect_checkpoint_node_ids, validate_checkpoint_against_workflow, CheckpointError,
-    EngineAwaitApproval, EngineAwaitInput, EngineInputError, EnginePollResult, EngineRetryableNode,
-    EngineRunResult, InteractiveEngine, InteractiveEngineCheckpoint,
+    EngineAwaitApproval, EngineAwaitInput, EngineInputError, EngineRetryableNode, EngineRunResult,
+    InteractiveEngine, InteractiveEngineCheckpoint,
 };
 pub use node_invocation::{
     build_agent_request, build_node_input, build_system_messages, build_upstream_map,
@@ -28,9 +27,6 @@ pub use subagent_runtime::{
     DECLARE_SUBAGENTS_TOOL,
 };
 pub use subagents::{
-    adhoc_subagent_base_index, augment_call_subagent_tool_description,
-    build_adhoc_subagent_summaries, merge_subagent_summaries, subagents_for_node,
-    CALL_SUBAGENT_TOOL,
+    augment_call_subagent_tool_description, merge_subagent_summaries, CALL_SUBAGENT_TOOL,
 };
 pub use telemetry::RunTelemetry;
-pub use workflow_runner::WorkflowRunner;

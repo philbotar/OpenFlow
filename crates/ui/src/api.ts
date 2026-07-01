@@ -30,7 +30,9 @@ import type {
   WorkflowAuthoringTurnResult,
   TerminalEvent,
   TerminalStart,
+  ScheduleDraft,
   ScheduleStatus,
+  WorkflowSchedule,
 } from "./lib/types";
 
 export const RUN_STATE_EVENT = "run-state";
@@ -246,6 +248,10 @@ export function startWorkflowAuthoring(baseWorkflow: Workflow | null = null) {
   return invoke<string>("start_workflow_authoring", { baseWorkflow });
 }
 
+export function endWorkflowAuthoring(sessionId: string) {
+  return invoke<boolean>("end_workflow_authoring", { sessionId });
+}
+
 export function workflowAuthoringTurn(
   sessionId: string,
   message: string,
@@ -376,10 +382,6 @@ export function submitToolApproval(
   });
 }
 
-export function completeManualNode() {
-  return invoke<WorkflowRunState>("complete_manual_node");
-}
-
 export function getRunState() {
   return invoke<WorkflowRunState | null>("get_run_state");
 }
@@ -422,6 +424,18 @@ export function listScheduleStatuses() {
 
 export function refreshSchedules() {
   return invoke<ScheduleStatus[]>("refresh_schedules");
+}
+
+export function scheduleFromPreset(draft: ScheduleDraft) {
+  return invoke<WorkflowSchedule>("build_schedule_from_draft", { draft });
+}
+
+export function scheduleDraftFromSchedule(schedule: WorkflowSchedule) {
+  return invoke<ScheduleDraft>("schedule_draft_from_schedule", { schedule });
+}
+
+export function describeWorkflowSchedule(schedule: WorkflowSchedule) {
+  return invoke<string>("describe_workflow_schedule", { schedule });
 }
 
 export function listenToScheduleStatuses(handler: (statuses: ScheduleStatus[]) => void) {

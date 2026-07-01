@@ -1,3 +1,4 @@
+use super::error::AuthoringError;
 use engine::{Edge, EdgeId, Node, NodeId, NodeKind, Workflow, WorkflowId};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -39,6 +40,38 @@ pub enum DraftParseError {
     InvalidJson(String),
     MissingName,
     NoNodes,
+}
+
+/// Extract the workflow draft object from a model submit_output payload.
+///
+/// Accepts camelCase/snake_case wrappers or a flattened top-level draft shape.
+///
+/// # Errors
+/// Returns an error when no draft object is present.
+pub fn workflow_draft_value_from_model_output(output: &Value) -> Result<Value, AuthoringError> {
+    if let Some(draft) = output
+        .get("workflowDraft")
+        .or_else(|| output.get("workflow_draft"))
+    {
+        return Ok(draft.clone());
+    }
+
+    let Some(map) = output.as_object() else {
+        return Err(AuthoringError::MissingDraft(
+            "missing workflowDraft in model output".to_string(),
+        ));
+    };
+
+    if map.contains_key("name") && map.contains_key("nodes") {
+        let mut draft = map.clone();
+        draft.remove("assistantMessage");
+        draft.remove("assistant_message");
+        return Ok(Value::Object(draft));
+    }
+
+    Err(AuthoringError::MissingDraft(
+        "missing workflowDraft in model output — the model must include a workflowDraft object with name, nodes, and edges".to_string(),
+    ))
 }
 
 /// # Errors

@@ -5,7 +5,7 @@ use orchestration::run::execution::{
     InteractiveWorkflowRunParams, ManualInput, NodeInterrupts, WorkflowExecutionError,
     WorkflowRunSnapshot,
 };
-use orchestration::settings::model::McpSettings;
+use orchestration::settings::model::{McpSettings, ProviderProfile};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -18,6 +18,7 @@ pub struct HeadlessRunOpts {
     pub manual_inputs: Vec<ManualInput>,
     pub approvals: Vec<ApprovalResponse>,
     pub cwd: Option<PathBuf>,
+    pub provider_profile: Option<ProviderProfile>,
 }
 
 pub async fn run_headless_script<A>(
@@ -36,6 +37,7 @@ where
         opts.approvals,
         BTreeMap::new(),
         opts.cwd,
+        opts.provider_profile.as_ref(),
     )
     .await
 }

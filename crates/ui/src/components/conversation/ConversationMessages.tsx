@@ -7,7 +7,7 @@ import {
   onCleanup,
   Show,
 } from "solid-js";
-import { labelForAgentStatus } from "../../lib/agentStatus";
+import { labelForAgentStatus } from "../../lib/agentStatusLabels";
 import type { NodeId } from "../../lib/types";
 import { isLiveTranscriptSegment, sortTranscriptSegmentsByNodeOrder } from "../../lib/workflow";
 import { useAppContext } from "../../context/AppContext";
@@ -66,7 +66,11 @@ export function ConversationMessages() {
   return (
     <div class="chat-settled">
       <Show when={showFilterChips()}>
-        <div class="chat-filter-chips" role="toolbar" aria-label="Filter conversation by node">
+        <div
+          class="chat-filter-chips chat-filter-strip"
+          role="toolbar"
+          aria-label="Filter conversation by node"
+        >
           <button
             type="button"
             class="chat-filter-chip"
@@ -116,61 +120,63 @@ export function ConversationMessages() {
       <Conversation class="chat-settled-conversation">
         {(conversation) => (
           <>
-            <ConversationContent conversation={conversation}>
-              <Show
-                when={visibleSettled().length > 0}
-                fallback={
-                  <PanelEmptyState
-                    title="No messages yet"
-                    description="Send a message to start the workflow."
-                    icon={
-                      <MessageCircle
-                        class="conversation-empty-icon-svg"
-                        width={22}
-                        height={22}
-                      />
-                    }
-                  />
-                }
-              >
-                <For each={visibleSettled()}>
-                  {(segment) => (
-                    <section
-                      class="chat-segment"
-                      classList={{ "is-focused": flashNodeId() === segment.nodeId }}
-                      data-node-id={segment.nodeId}
-                      ref={(element) => {
-                        if (element) {
-                          segmentRefs.set(segment.nodeId, element);
-                        } else {
-                          segmentRefs.delete(segment.nodeId);
-                        }
-                      }}
-                    >
-                      <header class="chat-segment-header">
-                        <span class="eyebrow">{segment.label}</span>
-                        <span class={`chat-segment-status status-${segment.status}`}>
-                          {labelForAgentStatus(segment.status)}
-                        </span>
-                        <Show
-                          when={
-                            isLiveTranscriptSegment(ctx.runState(), segment) &&
-                            ctx.composerBusyFor(segment.nodeId)
+            <ConversationContent conversation={conversation} class="chat-transcript-scroll">
+              <div class="chat-transcript-lane">
+                <Show
+                  when={visibleSettled().length > 0}
+                  fallback={
+                    <PanelEmptyState
+                      title="No messages yet"
+                      description="Send a message to start the workflow."
+                      icon={
+                        <MessageCircle
+                          class="conversation-empty-icon-svg"
+                          width={22}
+                          height={22}
+                        />
+                      }
+                    />
+                  }
+                >
+                  <For each={visibleSettled()}>
+                    {(segment) => (
+                      <section
+                        class="chat-segment"
+                        classList={{ "is-focused": flashNodeId() === segment.nodeId }}
+                        data-node-id={segment.nodeId}
+                        ref={(element) => {
+                          if (element) {
+                            segmentRefs.set(segment.nodeId, element);
+                          } else {
+                            segmentRefs.delete(segment.nodeId);
                           }
-                        >
-                          <span class="chat-live-streaming-dot" aria-label="Streaming" />
-                        </Show>
-                      </header>
-                      <ConversationSegmentMessages
-                        nodeId={segment.nodeId}
-                        label={segment.label}
-                        messages={segment.messages}
-                        segmentHeaderShowsNode
-                      />
-                    </section>
-                  )}
-                </For>
-              </Show>
+                        }}
+                      >
+                        <header class="chat-segment-header">
+                          <span class="eyebrow">{segment.label}</span>
+                          <span class={`chat-segment-status status-${segment.status}`}>
+                            {labelForAgentStatus(segment.status)}
+                          </span>
+                          <Show
+                            when={
+                              isLiveTranscriptSegment(ctx.runState(), segment) &&
+                              ctx.composerBusyFor(segment.nodeId)
+                            }
+                          >
+                            <span class="chat-live-streaming-dot" aria-label="Streaming" />
+                          </Show>
+                        </header>
+                        <ConversationSegmentMessages
+                          nodeId={segment.nodeId}
+                          label={segment.label}
+                          messages={segment.messages}
+                          segmentHeaderShowsNode
+                        />
+                      </section>
+                    )}
+                  </For>
+                </Show>
+              </div>
             </ConversationContent>
             <ConversationScrollButton conversation={conversation} />
           </>

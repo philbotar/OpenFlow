@@ -146,7 +146,7 @@ Guidelines:
 | Area | Location | What to test |
 | --- | --- | --- |
 | DTO helpers | `crates/ui/src/lib/*.test.ts` | Project grouping, execution cwd display, workflow utilities |
-| Legacy tool message parsing | `crates/ui/src/lib/parseLegacyToolMessages.test.ts` | Grouping old plain-text tool lines into tool bubbles |
+| Provider vs legacy thinking | `crates/ui/src/components/conversation/providerThinking.test.ts` | Distinguish provider reasoning from legacy tool I/O lines on the thinking role |
 | Component behavior | `crates/ui/src/**/*.test.tsx` | Callable agent editor, app shell routing |
 | Canvas | `crates/ui/src/canvas/*.test.ts` | Graph interaction contracts |
 

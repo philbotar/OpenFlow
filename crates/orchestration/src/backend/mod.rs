@@ -1,6 +1,5 @@
 use crate::adapters::storage::agent_store::FileAgentStore;
 use crate::adapters::storage::app_workflow_store::FileWorkflowStore;
-use crate::adapters::storage::incident_store::FileIncidentStore;
 use crate::adapters::storage::project_store::FileProjectStore;
 use crate::adapters::storage::project_workflow_store::FileProjectWorkflowStore;
 use crate::adapters::storage::run_checkpoint_store::FileRunCheckpointStore;
@@ -8,9 +7,6 @@ use crate::adapters::storage::settings_store::FileSettingsStore;
 use crate::adapters::storage::skill_store::FileSkillCatalog;
 use crate::agent::library::AgentLibrary;
 use crate::agent::ports::AgentStore;
-use crate::incident::{
-    IncidentCategory, IncidentContext, IncidentRecord, IncidentRecorder, IncidentSeverity,
-};
 use crate::project::ports::{Project, ProjectStore};
 use crate::project::registry::ProjectRegistry;
 use crate::run::coordinator::{RunCoordinator, RunStartParams};
@@ -28,14 +24,13 @@ use crate::workflow::authoring::WorkflowAuthoringService;
 use crate::workflow::catalog::WorkflowCatalog;
 use crate::workflow::ports::{ProjectWorkflowStore, WorkflowStore};
 use chrono::{DateTime, Utc};
-use engine::{CallableAgent, Node, Workflow};
+use engine::{CallableAgent, Node, Workflow, WorkflowSchedule};
 use std::io;
-use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedReceiver;
 
 pub use crate::api::{
-    AgentDefinitionSummary, FileEditPreview, IncidentSummary, ProjectFileReference,
-    ProjectFileReferenceContent, ProviderReadiness, ScheduleStatus, ScheduledRunCandidate,
+    AgentDefinitionSummary, FileEditPreview, ProjectFileReference, ProjectFileReferenceContent,
+    ProviderReadiness, ScheduleDraft, ScheduleStatus, ScheduledRunCandidate,
     WorkflowAuthoringTurnResult, WorkflowListItem, WorkflowValidationSummary,
 };
 pub use crate::error::BackendError;
@@ -58,7 +53,6 @@ pub struct AppBackend {
     settings: SettingsFacade,
     runs: RunCoordinator,
     run_store: Box<dyn RunCheckpointStore>,
-    incidents: Arc<IncidentRecorder>,
     terminal: TerminalManager,
     workflow_authoring: WorkflowAuthoringService,
     schedule: ScheduleService,
@@ -69,23 +63,13 @@ pub struct AppBackend {
 impl AppBackend {
     #[must_use]
     pub fn new(deps: AppBackendDeps, owned_runtime: Option<tokio::runtime::Runtime>) -> Self {
-        let retention_max = deps
-            .settings_store
-            .load()
-            .map(|settings| settings.incident_retention_max)
-            .unwrap_or(500);
-        let incidents = Arc::new(IncidentRecorder::with_retention_max(
-            Arc::new(FileIncidentStore::new(FileIncidentStore::default_path())),
-            retention_max,
-        ));
         Self {
             workflows: WorkflowCatalog::new(deps.workflow_store, deps.project_workflow_store),
             agents: AgentLibrary::new(deps.agent_store),
             projects: ProjectRegistry::new(deps.project_store),
             settings: SettingsFacade::new(deps.settings_store, deps.skill_catalog, deps.env),
-            runs: RunCoordinator::new(deps.runtime_handle, incidents.clone()),
+            runs: RunCoordinator::new(deps.runtime_handle),
             run_store: Box::new(FileRunCheckpointStore),
-            incidents,
             terminal: TerminalManager::new(),
             workflow_authoring: WorkflowAuthoringService::new(),
             schedule: ScheduleService::new(),
@@ -93,63 +77,13 @@ impl AppBackend {
         }
     }
 
-    #[must_use]
-    pub fn incidents(&self) -> &IncidentRecorder {
-        self.incidents.as_ref()
-    }
-
     pub fn backend_err(&self, error: BackendError) -> BackendError {
-        let ctx = self.current_incident_context();
-        if let Err(io_error) = self.incidents.record_backend(&error, &ctx) {
-            log::warn!("failed to persist backend incident: {io_error}");
-        }
+        log::warn!("backend error: {error}");
         error
     }
 
-    pub fn list_incidents(&self, limit: usize) -> io::Result<Vec<IncidentRecord>> {
-        self.incidents.list_unresolved(limit)
-    }
-
-    pub fn dismiss_incident(&self, id: &str) -> io::Result<()> {
-        self.incidents.dismiss(id)
-    }
-
-    pub fn clear_resolved_incidents(&self) -> io::Result<usize> {
-        self.incidents.clear_resolved()
-    }
-
-    pub fn list_incident_summaries(&self, limit: usize) -> io::Result<Vec<IncidentSummary>> {
-        self.list_incidents(limit)
-            .map(|records| records.into_iter().map(IncidentSummary::from).collect())
-    }
-
-    fn current_incident_context(&self) -> IncidentContext {
-        self.runs.incident_context()
-    }
-
-    fn record_incident(
-        &self,
-        severity: IncidentSeverity,
-        category: IncidentCategory,
-        code: &str,
-        message: &str,
-    ) {
-        let ctx = self.current_incident_context();
-        if let Err(io_error) = self
-            .incidents
-            .record_custom(&ctx, severity, category, code, message)
-        {
-            log::warn!("failed to persist incident: {io_error}");
-        }
-    }
-
     fn persistence_err(&self, code: &str, error: BackendError) -> BackendError {
-        self.record_incident(
-            IncidentSeverity::Error,
-            IncidentCategory::Persistence,
-            code,
-            &error.to_string(),
-        );
+        log::warn!("{code}: {error}");
         error
     }
 
@@ -283,8 +217,6 @@ impl AppBackend {
         self.settings
             .save(settings)
             .map_err(|error| self.persistence_err("persistence.settings_save", error))?;
-        self.incidents
-            .set_retention_max(settings.incident_retention_max);
         Ok(())
     }
 
@@ -367,6 +299,10 @@ impl AppBackend {
         self.workflow_authoring.start_session(base_workflow)
     }
 
+    pub fn end_workflow_authoring(&self, session_id: &str) -> bool {
+        self.workflow_authoring.end_session(session_id)
+    }
+
     pub async fn workflow_authoring_turn(
         &self,
         session_id: String,
@@ -385,7 +321,7 @@ impl AppBackend {
         self.workflow_authoring
             .send_turn(&session_id, message, &merged, &ai)
             .await
-            .map_err(BackendError::AuthoringFailed)
+            .map_err(Into::into)
     }
 
     pub fn load_projects(&self) -> Result<Vec<Project>, BackendError> {
@@ -661,10 +597,6 @@ impl AppBackend {
             .map_err(|error| self.backend_err(error))
     }
 
-    pub async fn complete_manual_node(&self) -> Result<WorkflowRunState, BackendError> {
-        self.runs.complete_manual_node().await
-    }
-
     pub async fn get_run_state(&self) -> Option<WorkflowRunState> {
         self.runs.get_run_state().await
     }
@@ -706,12 +638,7 @@ impl AppBackend {
         rows: u16,
     ) -> Result<(TerminalStart, UnboundedReceiver<TerminalEvent>), BackendError> {
         self.terminal.start(cwd, cols, rows).map_err(|message| {
-            self.record_incident(
-                IncidentSeverity::Error,
-                IncidentCategory::Terminal,
-                "terminal.start_failed",
-                &message,
-            );
+            log::warn!("terminal.start_failed: {message}");
             BackendError::ProjectOperation(message)
         })
     }
@@ -741,6 +668,25 @@ impl AppBackend {
 
     pub fn stop_all_terminals(&self) {
         self.terminal.stop_all();
+    }
+
+    #[must_use]
+    pub fn build_schedule_from_draft(&self, draft: ScheduleDraft) -> WorkflowSchedule {
+        // Backend owns schedule materialization and persists UTC so schedule behavior
+        // is deterministic across machines instead of inheriting browser local time.
+        let mut schedule = crate::schedule::schedule_from_preset(&draft);
+        schedule.timezone = "UTC".to_string();
+        schedule
+    }
+
+    #[must_use]
+    pub fn describe_schedule(&self, schedule: &WorkflowSchedule) -> String {
+        crate::schedule::describe_workflow_schedule(schedule)
+    }
+
+    #[must_use]
+    pub fn schedule_draft_from_schedule(&self, schedule: &WorkflowSchedule) -> ScheduleDraft {
+        crate::schedule::schedule_preset_from_cron(&schedule.cron, schedule.enabled)
     }
 
     pub fn refresh_schedules(&self) -> Result<Vec<ScheduleStatus>, BackendError> {

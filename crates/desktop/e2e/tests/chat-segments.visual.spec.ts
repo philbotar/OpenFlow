@@ -5,6 +5,7 @@ test.describe("chat segment spacing", () => {
     await context.addInitScript(() => {
       localStorage.setItem("step-through-theme", "dark");
       localStorage.setItem("openflow.rightPanelHidden", "true");
+      localStorage.setItem("openflow.firstRunOnboardingDismissed", "true");
     });
   });
 

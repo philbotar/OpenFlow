@@ -146,11 +146,24 @@ impl WorkflowRunState {
             ..Self::running_for_workflow(workflow)
         }
     }
+
+    /// Read-only replay view: durable history without live pause/approval handles.
+    #[must_use]
+    pub fn into_replay_projection(mut self) -> Self {
+        self.active = false;
+        self.awaiting_node_id = None;
+        self.awaiting_node_ids.clear();
+        self.active_manual_node_id = None;
+        self.active_tool_call_id = None;
+        self.pending_approvals.clear();
+        self
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::AgentStatus;
+    use super::{AgentStatus, WorkflowRunState};
+    use engine::{NodeId, Workflow};
 
     #[test]
     fn agent_status_serializes_snake_case_for_frontend() {
@@ -162,5 +175,35 @@ mod tests {
             serde_json::to_string(&AgentStatus::RunningTool).expect("serialize"),
             "\"running_tool\""
         );
+    }
+
+    #[test]
+    fn into_replay_projection_clears_live_interaction_handles() {
+        let workflow = Workflow::new("Replay");
+        let mut state = WorkflowRunState::running_for_workflow(&workflow);
+        state.awaiting_node_id = Some(NodeId("node-1".to_string()));
+        state.awaiting_node_ids.push(NodeId("node-1".to_string()));
+        state.active_manual_node_id = Some(NodeId("node-1".to_string()));
+        state.active_tool_call_id = Some("call-1".to_string());
+        state.pending_approvals.push(engine::PendingToolApproval {
+            approval_id: "approval-1".to_string(),
+            node_id: NodeId::from("node-1"),
+            node_label: "Node".to_string(),
+            tool_call: engine::ToolCall {
+                id: "call-1".to_string(),
+                name: "read".to_string(),
+                arguments: serde_json::json!({}),
+            },
+            tier: engine::ToolTier::Read,
+        });
+
+        let replay = state.into_replay_projection();
+
+        assert!(!replay.active);
+        assert!(replay.awaiting_node_id.is_none());
+        assert!(replay.awaiting_node_ids.is_empty());
+        assert!(replay.active_manual_node_id.is_none());
+        assert!(replay.active_tool_call_id.is_none());
+        assert!(replay.pending_approvals.is_empty());
     }
 }

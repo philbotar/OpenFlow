@@ -8,7 +8,9 @@
 mod run_notifications;
 mod run_sleep_guard;
 
-use orchestration::api::{DebugLogEntry, DebugLogWrite, McpDiscoveryRow, SettingsLoadPayload};
+use orchestration::api::{
+    DebugLogEntry, DebugLogWrite, McpDiscoveryRow, ScheduleDraft, SettingsLoadPayload,
+};
 use orchestration::backend::{
     AppBackend, BackendError, FileEditPreview, ProviderReadiness, ScheduleStatus,
     WorkflowAuthoringTurnResult, WorkflowListItem, WorkflowValidationSummary,
@@ -17,7 +19,9 @@ use orchestration::run::execution::ExecutionEvent;
 use orchestration::run::state::WorkflowRunState;
 use orchestration::terminal::TerminalStart;
 use orchestration::{AgentDefinition, AppSettings, McpServerConfig, SkillSummary};
-use orchestration::{Project, ProjectFileReference, ProjectFileReferenceContent, Workflow};
+use orchestration::{
+    Project, ProjectFileReference, ProjectFileReferenceContent, Workflow, WorkflowSchedule,
+};
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -147,6 +151,33 @@ fn refresh_schedules(
     backend: tauri::State<AppBackend>,
 ) -> Result<Vec<ScheduleStatus>, CommandError> {
     Ok(backend.refresh_schedules()?)
+}
+
+/// Tauri command: Build workflow schedule from a UI draft.
+#[tauri::command]
+fn build_schedule_from_draft(
+    backend: tauri::State<AppBackend>,
+    draft: ScheduleDraft,
+) -> WorkflowSchedule {
+    backend.build_schedule_from_draft(draft)
+}
+
+/// Tauri command: Build a UI schedule draft from a workflow schedule.
+#[tauri::command]
+fn schedule_draft_from_schedule(
+    backend: tauri::State<AppBackend>,
+    schedule: WorkflowSchedule,
+) -> ScheduleDraft {
+    backend.schedule_draft_from_schedule(&schedule)
+}
+
+/// Tauri command: Describe a workflow schedule for the schedule row UI.
+#[tauri::command]
+fn describe_workflow_schedule(
+    backend: tauri::State<AppBackend>,
+    schedule: WorkflowSchedule,
+) -> String {
+    backend.describe_schedule(&schedule)
 }
 
 /// Tauri command: Load a single workflow.
@@ -354,6 +385,15 @@ fn start_workflow_authoring(
     base_workflow: Option<Workflow>,
 ) -> Result<String, CommandError> {
     Ok(backend.start_workflow_authoring(base_workflow))
+}
+
+/// Tauri command: End a workflow authoring chat session.
+#[tauri::command]
+fn end_workflow_authoring(
+    backend: tauri::State<AppBackend>,
+    session_id: String,
+) -> Result<bool, CommandError> {
+    Ok(backend.end_workflow_authoring(&session_id))
 }
 
 /// Tauri command: Send a message in a workflow authoring session.
@@ -674,14 +714,6 @@ async fn submit_tool_approval(
     Ok(run_state)
 }
 
-/// Tauri command: Complete a manual node.
-#[tauri::command]
-async fn complete_manual_node(
-    backend: tauri::State<'_, AppBackend>,
-) -> Result<WorkflowRunState, CommandError> {
-    Ok(backend.complete_manual_node().await?)
-}
-
 #[tauri::command]
 async fn get_run_state(
     backend: tauri::State<'_, AppBackend>,
@@ -829,42 +861,6 @@ fn delete_workflow(
     Ok(projects)
 }
 
-/// Tauri command: List unresolved incident summaries.
-#[tauri::command]
-fn list_incidents(
-    backend: tauri::State<'_, AppBackend>,
-    limit: Option<usize>,
-) -> Result<Vec<orchestration::api::IncidentSummary>, CommandError> {
-    backend
-        .list_incident_summaries(limit.unwrap_or(200))
-        .map_err(|error| {
-            CommandError::from(
-                backend.backend_err(BackendError::ProjectOperation(error.to_string())),
-            )
-        })
-}
-
-/// Tauri command: Dismiss an incident by id.
-#[tauri::command]
-fn dismiss_incident(backend: tauri::State<'_, AppBackend>, id: String) -> Result<(), CommandError> {
-    backend.dismiss_incident(&id).map_err(|error| {
-        CommandError::from(backend.backend_err(BackendError::ProjectOperation(error.to_string())))
-    })
-}
-
-/// Tauri command: Remove all resolved incidents from the store.
-#[tauri::command]
-fn clear_resolved_incidents(backend: tauri::State<'_, AppBackend>) -> Result<u32, CommandError> {
-    backend
-        .clear_resolved_incidents()
-        .map(|count| count as u32)
-        .map_err(|error| {
-            CommandError::from(
-                backend.backend_err(BackendError::ProjectOperation(error.to_string())),
-            )
-        })
-}
-
 pub fn run() {
     let builder = {
         let builder = tauri::Builder::default();
@@ -894,6 +890,9 @@ pub fn run() {
             load_all_workflows,
             list_schedule_statuses,
             refresh_schedules,
+            build_schedule_from_draft,
+            schedule_draft_from_schedule,
+            describe_workflow_schedule,
             load_workflow,
             create_workflow,
             save_workflow,
@@ -917,6 +916,7 @@ pub fn run() {
             verify_bedrock_credentials,
             validate_workflow,
             start_workflow_authoring,
+            end_workflow_authoring,
             workflow_authoring_turn,
             create_agent_node,
             start_run,
@@ -936,12 +936,8 @@ pub fn run() {
             retry_node,
             submit_user_input,
             submit_tool_approval,
-            complete_manual_node,
             get_run_state,
             clear_run_trace,
-            list_incidents,
-            dismiss_incident,
-            clear_resolved_incidents,
             start_terminal,
             write_terminal,
             resize_terminal,

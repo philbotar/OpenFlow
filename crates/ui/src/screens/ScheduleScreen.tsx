@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createSignal } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
 import type { Workflow } from "@/lib/types";
 import {
   PanelEmptyState,
@@ -10,14 +10,11 @@ import {
 import { useAppContext } from "../context/AppContext";
 import {
   defaultWorkflowSchedule,
-  describeWorkflowSchedule,
   describeScheduleStatus,
   formatScheduleTimestamp,
   INTERVAL_UNIT_OPTIONS,
   intervalValueMax,
   parseIntervalValue,
-  scheduleDraftFromSchedule,
-  scheduleFromPreset,
   scheduleForWorkflow,
   statusForWorkflow,
   workflowsAddableToSchedule,
@@ -25,21 +22,71 @@ import {
 } from "@/lib/schedule";
 import type { IntervalUnit, ScheduleDraft, SchedulePreset } from "@/lib/schedule";
 
+const ALL_WEEKDAYS = ["0", "1", "2", "3", "4", "5", "6"];
+
 function cloneDraft(draft: ScheduleDraft): ScheduleDraft {
   return { ...draft, weekdays: [...draft.weekdays] };
 }
 
+function defaultScheduleDraft(enabled: boolean): ScheduleDraft {
+  return {
+    preset: "timed",
+    time: "09:00",
+    weekdays: [...ALL_WEEKDAYS],
+    intervalValue: "30",
+    intervalUnit: "minutes",
+    enabled,
+  };
+}
+
 function ScheduleRow(props: { workflow: Workflow }) {
   const ctx = useAppContext();
+  const currentSchedule = () => scheduleForWorkflow(props.workflow);
   const [draft, setDraft] = createSignal<ScheduleDraft>(
-    cloneDraft(scheduleDraftFromSchedule(scheduleForWorkflow(props.workflow))),
+    defaultScheduleDraft(currentSchedule().enabled),
   );
+  const [draftSummary, setDraftSummary] = createSignal("Custom schedule");
   const [timePickerOpen, setTimePickerOpen] = createSignal(false);
   const status = () => statusForWorkflow(ctx.scheduleStatuses(), props.workflow.id);
-  const timedSummary = () => describeWorkflowSchedule(scheduleFromPreset(draft()));
+
+  const showScheduleError = (error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    ctx.showErrorToast(message, "schedule");
+  };
+
+  let draftRequestId = 0;
+  let summaryRequestId = 0;
+
+  createEffect(() => {
+    const schedule = currentSchedule();
+    const requestId = ++draftRequestId;
+    void ctx
+      .scheduleDraftFromSchedule(schedule)
+      .then((nextDraft) => {
+        if (requestId !== draftRequestId) return;
+        setDraft(cloneDraft(nextDraft));
+      })
+      .catch(showScheduleError);
+  });
+
+  createEffect(() => {
+    const nextDraft = draft();
+    const requestId = ++summaryRequestId;
+    void ctx
+      .scheduleFromPreset(nextDraft)
+      .then((nextSchedule) => ctx.describeWorkflowSchedule(nextSchedule))
+      .then((summary) => {
+        if (requestId !== summaryRequestId) return;
+        setDraftSummary(summary);
+      })
+      .catch(showScheduleError);
+  });
 
   const save = () => {
-    void ctx.handleSaveWorkflowSchedule(props.workflow.id, scheduleFromPreset(draft()));
+    void ctx
+      .scheduleFromPreset(draft())
+      .then((schedule) => ctx.handleSaveWorkflowSchedule(props.workflow.id, schedule))
+      .catch(showScheduleError);
   };
 
   const remove = () => {
@@ -73,7 +120,7 @@ function ScheduleRow(props: { workflow: Workflow }) {
       <div class="schedule-row-main">
         <div class="schedule-workflow-name">{props.workflow.name}</div>
         <div class="schedule-status-line">
-          {describeScheduleStatus(status())} · {describeWorkflowSchedule(scheduleFromPreset(draft()))}
+          {describeScheduleStatus(status())} · {draftSummary()}
         </div>
       </div>
 
@@ -102,10 +149,10 @@ function ScheduleRow(props: { workflow: Workflow }) {
               type="button"
               class="schedule-time-trigger"
               aria-haspopup="dialog"
-              title={timedSummary()}
+              title={draftSummary()}
               onClick={() => setTimePickerOpen(true)}
             >
-              {timedSummary()}
+              {draftSummary()}
             </button>
             <ScheduleTimePickerModal
               open={timePickerOpen()}

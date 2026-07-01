@@ -35,6 +35,7 @@ import type {
   WorkflowAuthoringValidation,
   WorkflowRunState,
   Screen,
+  ScheduleDraft,
   ScheduleStatus,
   WorkflowSchedule,
 } from "../lib/types";
@@ -48,6 +49,7 @@ import {
   GLOBAL_RUN_ENTRY_NODE_ID,
   inferRunStateWorkflowId,
   isGlobalRunEntryNodeId,
+  dagreLayoutWorkflowLeftToRight,
   nextNodePlacement,
   normalizeWorkflowLayout,
   isChatComposerBusy,
@@ -88,16 +90,13 @@ import {
   zoomOutUi,
 } from "../lib/uiZoom";
 import {
-  readProjectsSectionHidden,
-  readStoredLeftPanelHidden,
-  readStoredRightPanelHidden,
-  readWorkflowsSectionHidden,
-  writeProjectsSectionHidden,
-  writeStoredLeftPanelHidden,
-  writeStoredRightPanelHidden,
-  writeWorkflowsSectionHidden,
+  LEFT_PANEL_VISIBILITY_STORAGE_KEY,
+  PANEL_VISIBILITY_STORAGE_KEY,
+  PROJECTS_SECTION_STORAGE_KEY,
+  readStoredBoolean,
+  WORKFLOWS_SECTION_STORAGE_KEY,
+  writeStoredBoolean,
 } from "../lib/storedBoolean";
-import { resolveCommittedNodeLabel } from "../lib/nodeLabel";
 import { EMPTY_SETTINGS } from "../constants/providers";
 import {
   clampDockHeight,
@@ -120,6 +119,11 @@ import {
   type ThemePreference,
 } from "../lib/theme";
 import { AppContext } from "./AppContext";
+import type { SettingsSectionId } from "../settings/types";
+import {
+  readFirstRunOnboardingOpen,
+  writeFirstRunOnboardingDismissed,
+} from "./appProvider/onboardingStorage";
 
 export function AppProvider(props: ParentProps) {
   const desktop = createUiDesktopOutboundAdapter();
@@ -136,6 +140,8 @@ export function AppProvider(props: ParentProps) {
   const [selectedNodeId, setSelectedNodeId] = createSignal<NodeId | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = createSignal<EdgeId | null>(null);
   const [screen, setScreen] = createSignal<Screen>("editor");
+  const [settingsSection, setSettingsSection] =
+    createSignal<SettingsSectionId>("appearance");
 
   const navigateToScreen = (next: Screen) => {
     if (screen() === next) return;
@@ -209,17 +215,17 @@ export function AppProvider(props: ParentProps) {
   >({} as Record<AiProviderKind, string>);
   const [uiZoom, setUiZoom] = createSignal(readStoredUiZoom(globalThis.localStorage));
   const [rightPanelHidden, setRightPanelHidden] = createSignal(
-    readStoredRightPanelHidden(globalThis.localStorage),
+    readStoredBoolean(globalThis.localStorage, PANEL_VISIBILITY_STORAGE_KEY),
   );
   const [leftPanelHidden, setLeftPanelHidden] = createSignal(
-    readStoredLeftPanelHidden(globalThis.localStorage),
+    readStoredBoolean(globalThis.localStorage, LEFT_PANEL_VISIBILITY_STORAGE_KEY),
   );
   const [workflowsSectionHidden, setWorkflowsSectionHidden] = createSignal(
-    readWorkflowsSectionHidden(globalThis.localStorage),
+    readStoredBoolean(globalThis.localStorage, WORKFLOWS_SECTION_STORAGE_KEY),
   );
   const workflowsSectionExpanded = createMemo(() => !workflowsSectionHidden());
   const [projectsSectionHidden, setProjectsSectionHidden] = createSignal(
-    readProjectsSectionHidden(globalThis.localStorage),
+    readStoredBoolean(globalThis.localStorage, PROJECTS_SECTION_STORAGE_KEY),
   );
   const projectsSectionExpanded = createMemo(() => !projectsSectionHidden());
   const [workflowSettingsOpen, setWorkflowSettingsOpen] = createSignal(false);
@@ -246,9 +252,16 @@ export function AppProvider(props: ParentProps) {
     setWorkflowAuthoringBusy(false);
   };
 
+  const releaseWorkflowAuthoringSession = (sessionId: string | null) => {
+    if (sessionId) {
+      void desktop.endWorkflowAuthoring(sessionId);
+    }
+    resetWorkflowAuthoringSession();
+  };
+
   createEffect(() => {
     if (screen() !== "workflow-authoring" && workflowAuthoringSessionId() !== null) {
-      resetWorkflowAuthoringSession();
+      releaseWorkflowAuthoringSession(workflowAuthoringSessionId());
     }
   });
   const [editingWorkflowId, setEditingWorkflowId] = createSignal<string | null>(null);
@@ -281,6 +294,9 @@ export function AppProvider(props: ParentProps) {
     readStoredTheme(globalThis.localStorage),
   );
   const [shortcutsModalOpen, setShortcutsModalOpen] = createSignal(false);
+  const [firstRunOnboardingOpen, setFirstRunOnboardingOpen] = createSignal(
+    readFirstRunOnboardingOpen(globalThis.localStorage),
+  );
   const [isCompactViewport, setIsCompactViewport] = createSignal(isCompactViewportWidth());
   const [sidebarDrawerOpen, setSidebarDrawerOpen] = createSignal(false);
   const resolvedTheme = createMemo(() => resolveTheme(themePreference()));
@@ -924,7 +940,7 @@ export function AppProvider(props: ParentProps) {
       setWorkflows([...workflows(), workflow]);
       if (!workflowsSectionExpanded()) {
         setWorkflowsSectionHidden(false);
-        writeWorkflowsSectionHidden(globalThis.localStorage, false);
+        writeStoredBoolean(globalThis.localStorage, WORKFLOWS_SECTION_STORAGE_KEY, false);
       }
       if (projectId) {
         const nextProjects = await desktop.assignWorkflowToProject(projectId, workflow.id);
@@ -1080,6 +1096,14 @@ export function AppProvider(props: ParentProps) {
     }
   };
 
+  const scheduleFromPreset = (draft: ScheduleDraft) => desktop.scheduleFromPreset(draft);
+
+  const scheduleDraftFromSchedule = (schedule: WorkflowSchedule) =>
+    desktop.scheduleDraftFromSchedule(schedule);
+
+  const describeWorkflowSchedule = (schedule: WorkflowSchedule) =>
+    desktop.describeWorkflowSchedule(schedule);
+
   // ── Agent handlers ────────────────────────────────────────────────────────
   const updateSelectedAgent = (mutator: (draft: AgentDefinition) => void) => {
     const current = selectedAgent();
@@ -1212,7 +1236,7 @@ export function AppProvider(props: ParentProps) {
       setInspectorOpen(false);
       setGitPanelOpen(false);
       setRightPanelHidden(false);
-      writeStoredRightPanelHidden(globalThis.localStorage, false);
+      writeStoredBoolean(globalThis.localStorage, PANEL_VISIBILITY_STORAGE_KEY, false);
     }
   };
 
@@ -1228,7 +1252,7 @@ export function AppProvider(props: ParentProps) {
       setSelectedNodeId(node);
       setInspectorOpen(true);
       setRightPanelHidden(false);
-      writeStoredRightPanelHidden(globalThis.localStorage, false);
+      writeStoredBoolean(globalThis.localStorage, PANEL_VISIBILITY_STORAGE_KEY, false);
       return;
     }
     setInspectorOpen(false);
@@ -1241,7 +1265,7 @@ export function AppProvider(props: ParentProps) {
       setInspectorOpen(false);
       setWorkflowSettingsOpen(false);
       setRightPanelHidden(false);
-      writeStoredRightPanelHidden(globalThis.localStorage, false);
+      writeStoredBoolean(globalThis.localStorage, PANEL_VISIBILITY_STORAGE_KEY, false);
     }
   };
 
@@ -1249,10 +1273,10 @@ export function AppProvider(props: ParentProps) {
     const currentlyHidden = rightPanelHidden();
     if (currentlyHidden) {
       setRightPanelHidden(false);
-      writeStoredRightPanelHidden(globalThis.localStorage, false);
+      writeStoredBoolean(globalThis.localStorage, PANEL_VISIBILITY_STORAGE_KEY, false);
     } else {
       setRightPanelHidden(true);
-      writeStoredRightPanelHidden(globalThis.localStorage, true);
+      writeStoredBoolean(globalThis.localStorage, PANEL_VISIBILITY_STORAGE_KEY, true);
     }
   };
 
@@ -1260,26 +1284,26 @@ export function AppProvider(props: ParentProps) {
     if (isCompactViewport()) return;
     const next = !leftPanelHidden();
     setLeftPanelHidden(next);
-    writeStoredLeftPanelHidden(globalThis.localStorage, next);
+    writeStoredBoolean(globalThis.localStorage, LEFT_PANEL_VISIBILITY_STORAGE_KEY, next);
   };
 
   const handleToggleWorkflowsSection = () => {
     const next = !workflowsSectionExpanded();
     setWorkflowsSectionHidden(!next);
-    writeWorkflowsSectionHidden(globalThis.localStorage, !next);
+    writeStoredBoolean(globalThis.localStorage, WORKFLOWS_SECTION_STORAGE_KEY, !next);
   };
 
   const revealProjectsSection = () => {
     if (!projectsSectionExpanded()) {
       setProjectsSectionHidden(false);
-      writeProjectsSectionHidden(globalThis.localStorage, false);
+      writeStoredBoolean(globalThis.localStorage, PROJECTS_SECTION_STORAGE_KEY, false);
     }
   };
 
   const handleToggleProjectsSection = () => {
     const next = !projectsSectionExpanded();
     setProjectsSectionHidden(!next);
-    writeProjectsSectionHidden(globalThis.localStorage, !next);
+    writeStoredBoolean(globalThis.localStorage, PROJECTS_SECTION_STORAGE_KEY, !next);
   };
 
   const updateCurrentNode = (mutator: (node: Workflow["nodes"][number]) => void) => {
@@ -1410,6 +1434,10 @@ export function AppProvider(props: ParentProps) {
     ) {
       return;
     }
+    const priorSessionId = workflowAuthoringSessionId();
+    if (priorSessionId !== null) {
+      void desktop.endWorkflowAuthoring(priorSessionId);
+    }
     resetWorkflowAuthoringSession();
     setWorkflowAuthoringMessages([]);
     setWorkflowAuthoringValidation(null);
@@ -1426,7 +1454,7 @@ export function AppProvider(props: ParentProps) {
   };
 
   const handleCloseWorkflowAuthoring = () => {
-    resetWorkflowAuthoringSession();
+    releaseWorkflowAuthoringSession(workflowAuthoringSessionId());
     navigateToScreen("editor");
   };
 
@@ -1620,6 +1648,23 @@ export function AppProvider(props: ParentProps) {
   const openShortcutsModal = () => setShortcutsModalOpen(true);
   const closeShortcutsModal = () => setShortcutsModalOpen(false);
 
+  const dismissFirstRunOnboarding = () => {
+    setFirstRunOnboardingOpen(false);
+    writeFirstRunOnboardingDismissed(globalThis.localStorage);
+  };
+
+  const handleOnboardingBuildWorkflow = async () => {
+    dismissFirstRunOnboarding();
+    await handleOpenWorkflowAuthoring();
+  };
+
+  const handleOnboardingSetupProvider = () => {
+    dismissFirstRunOnboarding();
+    setSettingsSection("providers");
+    closeAddNodePicker();
+    navigateToScreen("settings");
+  };
+
   const handleStopRun = async () => {
     if (!runState()?.active || stoppingRun()) return;
     setStoppingRun(true);
@@ -1789,9 +1834,6 @@ export function AppProvider(props: ParentProps) {
     setEditingNodeId(null);
     setNodeLabelDraft("");
     if (nodeId) {
-      setInspectorOpen(true);
-      setWorkflowSettingsOpen(false);
-      setGitPanelOpen(false);
       setDockOpen(true);
       setBottomTab("chat");
       setDockHeight((current) => clampDockHeight(current, "chat"));
@@ -1819,6 +1861,16 @@ export function AppProvider(props: ParentProps) {
         node.position.y = y;
       }
     });
+  };
+
+  const handleAutoLayoutWorkflow = () => {
+    const workflow = activeWorkflow();
+    if (!workflow) {
+      return;
+    }
+    const next = dagreLayoutWorkflowLeftToRight(workflow);
+    setWorkflows(replaceWorkflow(workflows(), next));
+    setSuccess("Auto-laid out workflow");
   };
 
   const handleCreateEdge = (from: NodeId, to: NodeId) => {
@@ -1935,7 +1987,8 @@ export function AppProvider(props: ParentProps) {
     const nodeId = editingNodeId();
     if (!nodeId) return;
     const currentLabel = currentNode()?.label ?? "";
-    const nextLabel = resolveCommittedNodeLabel(currentLabel, nodeLabelDraft());
+    const trimmed = nodeLabelDraft().trim();
+    const nextLabel = trimmed === "" ? currentLabel : trimmed;
     updateActiveWorkflow((draft) => {
       const nextNode = draft.nodes.find((item) => item.id === nodeId);
       if (nextNode) nextNode.label = nextLabel;
@@ -2230,6 +2283,7 @@ export function AppProvider(props: ParentProps) {
     selectedNodeId,
     selectedEdgeId,
     screen,
+    settingsSection,
     settings,
     discoveredMcp,
     refreshDiscoveredMcp,
@@ -2277,6 +2331,7 @@ export function AppProvider(props: ParentProps) {
     themePreference,
     resolvedTheme,
     shortcutsModalOpen,
+    firstRunOnboardingOpen,
     isCompactViewport,
     sidebarDrawerOpen,
     openSidebarDrawer,
@@ -2303,6 +2358,7 @@ export function AppProvider(props: ParentProps) {
     setSelectedTraceIndex,
     setSelectedAgentId,
     setScreen,
+    setSettingsSection,
     navigateToScreen,
     // Memos
     activeWorkflow,
@@ -2339,6 +2395,9 @@ export function AppProvider(props: ParentProps) {
     handleOpenAgents,
     handleOpenSchedule,
     handleSaveWorkflowSchedule,
+    scheduleFromPreset,
+    scheduleDraftFromSchedule,
+    describeWorkflowSchedule,
     handleAddProject,
     handleSelectProject,
     handleToggleProjectExpanded,
@@ -2363,6 +2422,7 @@ export function AppProvider(props: ParentProps) {
     handleSelectNode,
     handleSelectEdge,
     handleCanvasNodePosition,
+    handleAutoLayoutWorkflow,
     handleCreateEdge,
     handleReconnectEdge,
     handleDeleteEdge,
@@ -2388,6 +2448,9 @@ export function AppProvider(props: ParentProps) {
     handleSetThemePreference,
     openShortcutsModal,
     closeShortcutsModal,
+    dismissFirstRunOnboarding,
+    handleOnboardingBuildWorkflow,
+    handleOnboardingSetupProvider,
     handleClearRunTrace,
     handleRefreshRunHistory,
     handleReplayRun,

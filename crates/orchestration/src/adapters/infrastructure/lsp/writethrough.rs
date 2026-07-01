@@ -2,9 +2,9 @@
 
 use std::path::Path;
 
-use super::config::LspSettings;
 use super::diagnostics::FileDiagnosticsResult;
 use super::formatters::format_file_in_place;
+use super::LspSettings;
 
 /// Run format-on-write (and future diagnostics) after a file is written to disk.
 #[must_use]

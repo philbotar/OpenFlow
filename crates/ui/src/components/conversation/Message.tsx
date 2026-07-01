@@ -27,7 +27,7 @@ export function Message(allProps: MessageProps) {
     local.from === "assistant" || local.from === "user" ? "" : "conversation-item-enter";
   return (
     <div
-      class={`chat-row message message-${local.from} role-${local.from} ${animationClass()} ${local.class ?? ""}`}
+      class={`chat-row chat-message-row chat-message-row--${local.from} message message-${local.from} role-${local.from} ${animationClass()} ${local.class ?? ""}`}
       {...rest}
     >
       <Show when={local.from !== "assistant"}>
@@ -36,7 +36,7 @@ export function Message(allProps: MessageProps) {
         </div>
       </Show>
       <div
-        class="message-content"
+        class={`message-content chat-message-bubble chat-message-bubble--${local.from}`}
         classList={{
           "message-streaming-caret": Boolean(local.streaming),
           "message-content--empty": local.content.trim().length === 0,

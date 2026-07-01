@@ -8,7 +8,6 @@
 pub(crate) mod blocking_ops;
 pub mod cache;
 pub mod errors;
-pub mod hooks;
 pub mod output;
 pub(crate) mod read;
 pub mod registry;

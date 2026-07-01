@@ -4,6 +4,35 @@ use serde::{Deserialize, Serialize};
 
 pub use crate::schedule::{ScheduleStatus, ScheduledRunCandidate};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SchedulePreset {
+    Timed,
+    Interval,
+    Custom,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ScheduleIntervalUnit {
+    Minutes,
+    Hours,
+    Days,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduleDraft {
+    pub preset: SchedulePreset,
+    pub time: String,
+    pub weekdays: Vec<String>,
+    pub interval_value: String,
+    pub interval_unit: ScheduleIntervalUnit,
+    pub enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub custom_cron: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkflowListItem {
@@ -122,26 +151,17 @@ pub struct DebugLogWrite {
     pub path: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct IncidentSummary {
-    pub id: String,
-    pub created_at_ms: u64,
-    pub severity: String,
-    pub category: String,
-    pub code: String,
-    pub message: String,
-    pub retryable: bool,
-    pub resolved: bool,
-    pub workflow_id: Option<String>,
-    pub run_id: Option<String>,
-    pub node_id: Option<String>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WorkflowAuthoringRole {
+    User,
+    Assistant,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkflowAuthoringMessage {
-    pub role: String,
+    pub role: WorkflowAuthoringRole,
     pub content: String,
 }
 
@@ -164,34 +184,4 @@ pub struct WorkflowAuthoringTurnResult {
     pub draft: Option<Workflow>,
     pub validation: WorkflowAuthoringValidation,
     pub messages: Vec<WorkflowAuthoringMessage>,
-}
-
-impl From<crate::incident::IncidentRecord> for IncidentSummary {
-    fn from(record: crate::incident::IncidentRecord) -> Self {
-        let (workflow_id, run_id, node_id) = match record.scope {
-            crate::incident::IncidentScope::Node {
-                run_id,
-                workflow_id,
-                node_id,
-            } => (Some(workflow_id), Some(run_id), Some(node_id.0)),
-            crate::incident::IncidentScope::Run {
-                run_id,
-                workflow_id,
-            } => (Some(workflow_id), Some(run_id), None),
-            _ => (None, None, None),
-        };
-        Self {
-            id: record.id,
-            created_at_ms: record.created_at_ms,
-            severity: format!("{:?}", record.severity).to_lowercase(),
-            category: format!("{:?}", record.category).to_lowercase(),
-            code: record.code,
-            message: record.message,
-            retryable: record.retryable,
-            resolved: record.resolved,
-            workflow_id,
-            run_id,
-            node_id,
-        }
-    }
 }

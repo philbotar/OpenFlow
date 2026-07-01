@@ -192,7 +192,7 @@ where
             };
             if let Some(usage) = usage {
                 let max_context_tokens =
-                    engine::lookup_context_window_size(&self.context_window_sizes, &model);
+                    crate::settings::lookup_context_window_size(&self.context_window_sizes, &model);
                 send_or_log(
                     &self.event_tx,
                     ExecutionEvent::UsageReported {

@@ -198,6 +198,7 @@ async fn manual_node_pauses_accepts_input_and_feeds_downstream_node() {
         vec![],
         BTreeMap::new(),
         None,
+        None,
     )
     .await
     .unwrap();
@@ -268,6 +269,7 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
         vec![],
         BTreeMap::new(),
         None,
+        None,
     )
     .await;
     assert!(matches!(
@@ -286,6 +288,7 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
             reason: None,
         }],
         BTreeMap::new(),
+        None,
         None,
     )
     .await
@@ -356,6 +359,7 @@ async fn write_tool_requires_approval_and_mutates_file_after_allow() {
         vec![],
         BTreeMap::new(),
         execution_cwd.clone(),
+        None,
     )
     .await;
     assert!(matches!(
@@ -376,6 +380,7 @@ async fn write_tool_requires_approval_and_mutates_file_after_allow() {
         }],
         BTreeMap::new(),
         execution_cwd,
+        None,
     )
     .await
     .unwrap();
@@ -605,6 +610,7 @@ async fn failed_read_tool_feeds_error_and_node_completes() {
         vec![],
         BTreeMap::new(),
         Some(temp.path().to_path_buf()),
+        None,
     )
     .await
     .expect("acceptance run completes");
@@ -694,6 +700,7 @@ async fn search_missing_path_surfaces_not_found_not_empty_success() {
         vec![],
         BTreeMap::new(),
         Some(temp.path().to_path_buf()),
+        None,
     )
     .await
     .expect("run should complete after surfacing search path error");

@@ -9,9 +9,10 @@ use engine::{
     NodeId, NodeToolConfig, SubagentInvokeStep, SubagentStartOutcome, ToolCall, ToolResult,
 };
 
+use super::super::abort_run;
 use super::super::emit_phase_timed;
 
-use super::{abort_run, send_run_telemetry, ToolPortImpl};
+use super::{send_run_telemetry, ToolPortImpl};
 
 impl<A> ToolPortImpl<A>
 where
@@ -130,7 +131,7 @@ where
 
         loop {
             if cancel_token.is_cancelled() {
-                abort_run(&self.event_tx, &self.aborted_emitted);
+                abort_run(&self.event_tx, self.aborted_emitted.as_ref());
                 return None;
             }
 
@@ -139,7 +140,7 @@ where
             let result = tokio::select! {
                 biased;
                 _ = cancel_token.cancelled() => {
-                    abort_run(&self.event_tx, &self.aborted_emitted);
+                    abort_run(&self.event_tx, self.aborted_emitted.as_ref());
                     None
                 }
                 result = ai.invoke(request.clone()) => Some(result),
@@ -158,7 +159,7 @@ where
                     tokio::select! {
                         biased;
                         () = cancel_token.cancelled() => {
-                            abort_run(&self.event_tx, &self.aborted_emitted);
+                            abort_run(&self.event_tx, self.aborted_emitted.as_ref());
                             return None;
                         }
                         () = tokio::time::sleep(delay) => {}

@@ -66,7 +66,7 @@ orchestration/src/
 **Forbidden:**
 - `desktop`, `ui`, `tauri`
 - `use providers::AiClient` — use `create_provider()` → `Box<dyn AiPort>`
-- Constructing `InteractiveEngine` / `WorkflowRunner` outside `run/execution/`
+- Constructing `InteractiveEngine` outside `run/execution/`
 
 ## Code standards
 

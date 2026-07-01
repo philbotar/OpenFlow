@@ -28,6 +28,7 @@ pub fn apply_event_to_run_state(
                 output: None,
             });
         }
+
         ExecutionEvent::NodeStarted { node_id, label } => {
             remove_awaiting_node(state, &node_id);
             state
@@ -47,6 +48,7 @@ pub fn apply_event_to_run_state(
                 output: None,
             });
         }
+
         ExecutionEvent::ChatMessage {
             node_id,
             role,
