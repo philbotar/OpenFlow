@@ -13,55 +13,17 @@ use crate::conversation::{AgentTranscriptItem, ChatMessage, ChatRole};
 use crate::execution::node_invocation::{
     build_agent_request, build_upstream_map, NodeInvocationContext,
 };
-use crate::execution::{
-    NodeFailureKind, NodeRunOutput, RunError, RunEvent, RunEventKind, RunReport,
-};
+use crate::execution::{NodeFailureKind, NodeRunOutput, RunError, RunReport};
 use crate::graph::validation::{execution_layers, WorkflowValidationError};
 use crate::graph::{Node, NodeId, Workflow};
 use crate::ports::{AgentRequest, AiPort, ToolPort};
 use crate::tools::{FileChangeRecord, ReadRecord, ToolCall};
-use futures::future::join_all;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write;
 use std::time::Duration;
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
-/// Next action the host runtime must perform after [`InteractiveEngine::poll`].
-#[derive(Debug, Clone)]
-pub enum EnginePollResult {
-    /// Invoke the model with the enclosed request, then call [`InteractiveEngine::on_ai_complete`].
-    CallAi {
-        node_id: NodeId,
-        request: Box<AgentRequest>,
-    },
-    /// Pause until the user submits text via [`InteractiveEngine::on_human_input`].
-    AwaitInput {
-        node_id: NodeId,
-        label: String,
-        context: String,
-        is_initial: bool,
-    },
-    /// Pause until the user approves or denies tools via [`InteractiveEngine::on_tool_decision`].
-    AwaitToolApproval {
-        approval_id: String,
-        node_id: NodeId,
-        label: String,
-        tool_calls: Vec<ToolCall>,
-    },
-    /// Run tools without approval, then call [`InteractiveEngine::on_tool_results`].
-    RunTools {
-        node_id: NodeId,
-        label: String,
-        tool_calls: Vec<ToolCall>,
-    },
-    /// Pause until the host retries the node via [`InteractiveEngine::retry_node`].
-    AwaitRetry(EngineRetryableNode),
-    /// Workflow finished successfully.
-    Completed(RunReport),
-    /// Workflow stopped with a terminal error; further polls return the same failure.
-    Failed(RunError),
-}
 
 /// Pause payload when a node needs human text input.
 #[derive(Debug, Clone)]
@@ -139,7 +101,6 @@ pub struct InteractiveEngine {
     redundant_reads: u32,
     tokens_in: u32,
     transcripts: BTreeMap<NodeId, Vec<AgentTranscriptItem>>,
-    events: Vec<RunEvent>,
     queued_nodes: BTreeSet<NodeId>,
     started_invocations_by_node: BTreeMap<NodeId, u8>,
     awaiting_nodes: BTreeSet<NodeId>,
@@ -169,15 +130,6 @@ impl InteractiveEngine {
     pub fn new(
         workflow: Workflow,
         entrypoint_text: Option<String>,
-    ) -> Result<Self, WorkflowValidationError> {
-        Self::new_with_run_context(workflow, entrypoint_text, None)
-    }
-
-    /// # Errors
-    /// Returns an error if the workflow fails validation.
-    pub fn new_with_run_context(
-        workflow: Workflow,
-        entrypoint_text: Option<String>,
         project_repository_root: Option<String>,
     ) -> Result<Self, WorkflowValidationError> {
         let layers = execution_layers(&workflow)?;
@@ -201,7 +153,6 @@ impl InteractiveEngine {
             redundant_reads: 0,
             tokens_in: 0,
             transcripts: BTreeMap::new(),
-            events: Vec::new(),
             queued_nodes: BTreeSet::new(),
             started_invocations_by_node: BTreeMap::new(),
             awaiting_nodes: BTreeSet::new(),
@@ -258,14 +209,7 @@ impl InteractiveEngine {
             if node.agent.auto_start || !self.transcript(&node_id).is_empty() {
                 continue;
             }
-            if self.queued_nodes.insert(node_id.clone()) {
-                self.events.push(RunEvent {
-                    node_id: node_id.clone(),
-                    kind: RunEventKind::Queued,
-                    message: "queued".to_string(),
-                    output: None,
-                });
-            }
+            self.queued_nodes.insert(node_id.clone());
             self.awaiting_nodes.insert(node_id.clone());
             self.transcripts.entry(node_id).or_default();
         }
@@ -291,25 +235,9 @@ impl InteractiveEngine {
             {
                 continue;
             }
-            self.interrupted_nodes.insert(node_id.clone());
-            self.events.push(RunEvent {
-                node_id,
-                kind: RunEventKind::Failed,
-                message: "model invocation did not complete; node is retryable".to_string(),
-                output: None,
-            });
+            self.interrupted_nodes.insert(node_id);
         }
         true
-    }
-
-    fn layer_retryables(&self) -> Vec<EngineRetryableNode> {
-        self.gather_retryable_nodes()
-            .into_iter()
-            .filter(|retryable| {
-                self.current_layer_nodes().contains(&retryable.node_id)
-                    && !self.outputs.contains_key(&retryable.node_id)
-            })
-            .collect()
     }
 
     fn find_node(&self, node_id: &NodeId) -> Option<&Node> {
@@ -326,7 +254,6 @@ impl InteractiveEngine {
         if self.layer_idx >= self.layers.len() {
             return Some(RunReport {
                 workflow_id: self.workflow.id.clone(),
-                events: std::mem::take(&mut self.events),
                 outputs: std::mem::take(&mut self.outputs)
                     .into_iter()
                     .map(|(node_id, output)| NodeRunOutput { node_id, output })
@@ -339,130 +266,6 @@ impl InteractiveEngine {
         None
     }
 
-    /// Advance the engine one step and return the next action for the host runtime.
-    ///
-    /// Call repeatedly until the result is [`EnginePollResult::Completed`] or
-    /// [`EnginePollResult::Failed`]. For [`EnginePollResult::CallAi`], invoke the model and
-    /// pass the outcome to [`Self::on_ai_complete`]. For input, tool, and retry variants, call
-    /// the matching `on_*` / [`Self::retry_node`] handler before polling again.
-    #[allow(
-        clippy::too_many_lines,
-        reason = "poll dispatches the full engine state machine in one place"
-    )]
-    pub fn poll(&mut self) -> EnginePollResult {
-        loop {
-            if let Some(error) = self.terminal_error.clone() {
-                return EnginePollResult::Failed(error);
-            }
-            if let Some((node_id, message)) = self.failed_nodes.iter().next() {
-                return EnginePollResult::Failed(RunError::NodeFailed {
-                    node_id: node_id.clone(),
-                    kind: NodeFailureKind::Agent(message.clone()),
-                });
-            }
-
-            if let Some((approval_id, pending)) = self.pending_tool_batches.iter().next() {
-                let Some(node) = self.find_node(&pending.node_id) else {
-                    let node_id = pending.node_id.clone();
-                    return self.fail_internal(&node_id, NodeFailureKind::PendingToolNodeNotFound);
-                };
-                if pending.requires_approval {
-                    return EnginePollResult::AwaitToolApproval {
-                        approval_id: approval_id.clone(),
-                        node_id: node.id.clone(),
-                        label: node.label.clone(),
-                        tool_calls: pending.tool_calls.clone(),
-                    };
-                }
-                return EnginePollResult::RunTools {
-                    node_id: node.id.clone(),
-                    label: node.label.clone(),
-                    tool_calls: pending.tool_calls.clone(),
-                };
-            }
-
-            self.schedule_manual_nodes_in_layer();
-            if let Some(awaiting_id) = self.awaiting_nodes.iter().next() {
-                let Some(node) = self.find_node(awaiting_id) else {
-                    let awaiting_id = awaiting_id.clone();
-                    return self.fail_internal(&awaiting_id, NodeFailureKind::AwaitingNodeNotFound);
-                };
-                return EnginePollResult::AwaitInput {
-                    node_id: node.id.clone(),
-                    label: node.label.clone(),
-                    context: self.assemble_context(&node.id),
-                    is_initial: self.conversation_history(&node.id).is_empty(),
-                };
-            }
-
-            if let Some(report) = self.try_advance_layer() {
-                return EnginePollResult::Completed(report);
-            }
-
-            for i in 0..self.current_layer_nodes().len() {
-                let node_id = self.layers[self.layer_idx][i].clone();
-                if self.is_node_blocked(&node_id) {
-                    continue;
-                }
-                let Some(node) = self.find_node(&node_id) else {
-                    return self.fail_internal(&node_id, NodeFailureKind::NodeIdFromLayersNotFound);
-                };
-                if let Some(missing) = self.missing_upstream_outputs(&node_id) {
-                    return self
-                        .fail_internal(&node_id, NodeFailureKind::MissingUpstreamOutput(missing));
-                }
-                if node.agent.auto_start || !self.transcript(&node_id).is_empty() {
-                    if self.queued_nodes.insert(node_id.clone()) {
-                        self.events.push(RunEvent {
-                            node_id: node_id.clone(),
-                            kind: RunEventKind::Queued,
-                            message: "queued".to_string(),
-                            output: None,
-                        });
-                    }
-                    self.emit_started_for_current_attempt(&node_id);
-                    let request = match self.build_request(&node_id) {
-                        Ok(r) => r,
-                        Err(e) => return EnginePollResult::Failed(e),
-                    };
-                    self.in_flight_ai.insert(node_id.clone());
-                    return EnginePollResult::CallAi {
-                        node_id,
-                        request: Box::new(request),
-                    };
-                }
-            }
-
-            if self.recover_stale_in_flight_nodes() {
-                continue;
-            }
-            if !self.in_flight_ai.is_empty() {
-                return EnginePollResult::Failed(RunError::NodeFailed {
-                    node_id: self
-                        .in_flight_ai
-                        .iter()
-                        .next()
-                        .cloned()
-                        .unwrap_or_else(|| NodeId("engine".to_string())),
-                    kind: NodeFailureKind::LayerStalledInFlight,
-                });
-            }
-
-            if let Some(retryable) = self.layer_retryables().into_iter().next() {
-                return EnginePollResult::AwaitRetry(retryable);
-            }
-
-            return EnginePollResult::Failed(RunError::NodeFailed {
-                node_id: self
-                    .current_layer_nodes()
-                    .first()
-                    .cloned()
-                    .unwrap_or_else(|| NodeId("engine".to_string())),
-                kind: NodeFailureKind::NoRunnableNodesInLayer,
-            });
-        }
-    }
-
     /// Drive the engine until it needs host interaction or reaches a terminal state.
     pub async fn run<A: AiPort, T: ToolPort>(
         &mut self,
@@ -473,6 +276,10 @@ impl InteractiveEngine {
         loop {
             if cancel.is_cancelled() {
                 return EngineRunResult::Cancelled;
+            }
+
+            if let Some(error) = self.terminal_error.clone() {
+                return EngineRunResult::Failed(error);
             }
 
             if let Some(report) = self.try_advance_layer() {
@@ -499,20 +306,12 @@ impl InteractiveEngine {
 
             let ai_actions = self.gather_call_ai_actions();
             if !ai_actions.is_empty() {
-                let mut augmented = Vec::with_capacity(ai_actions.len());
                 for (node_id, mut request) in ai_actions {
+                    if cancel.is_cancelled() {
+                        return EngineRunResult::Cancelled;
+                    }
                     tools.augment_request(&node_id, &mut request);
-                    augmented.push((node_id, request));
-                }
-                let outcomes = tokio::select! {
-                    biased;
-                    () = cancel.cancelled() => return EngineRunResult::Cancelled,
-                    outcomes = join_all(augmented.into_iter().map(|(node_id, request)| async {
-                        let outcome = ai.invoke(request).await;
-                        (node_id, outcome)
-                    })) => outcomes,
-                };
-                for (node_id, outcome) in outcomes {
+                    let outcome = ai.invoke(request).await;
                     self.on_ai_complete(&node_id, outcome);
                 }
                 if let Some(error) = self.terminal_error.clone() {
@@ -591,14 +390,7 @@ impl InteractiveEngine {
             if !node.agent.auto_start && self.transcript(&node_id).is_empty() {
                 continue;
             }
-            if self.queued_nodes.insert(node_id.clone()) {
-                self.events.push(RunEvent {
-                    node_id: node_id.clone(),
-                    kind: RunEventKind::Queued,
-                    message: "queued".to_string(),
-                    output: None,
-                });
-            }
+            self.queued_nodes.insert(node_id.clone());
             self.emit_started_for_current_attempt(&node_id);
             self.in_flight_ai.insert(node_id.clone());
             match self.build_request(&node_id) {
@@ -683,12 +475,6 @@ impl InteractiveEngine {
         self.pending_tool_batches
             .retain(|_, batch| batch.node_id != *node_id);
         self.interrupted_nodes.insert(node_id.clone());
-        self.events.push(RunEvent {
-            node_id: node_id.clone(),
-            kind: RunEventKind::Failed,
-            message: "interrupted by user".to_string(),
-            output: None,
-        });
     }
 
     #[must_use]
@@ -873,15 +659,6 @@ impl InteractiveEngine {
         }
     }
 
-    fn fail_internal(&mut self, node_id: &NodeId, kind: NodeFailureKind) -> EnginePollResult {
-        let error = RunError::NodeFailed {
-            node_id: node_id.clone(),
-            kind,
-        };
-        self.terminal_error = Some(error.clone());
-        EnginePollResult::Failed(error)
-    }
-
     fn emit_started_for_current_attempt(&mut self, node_id: &NodeId) {
         let attempt = self.retries_by_node.get(node_id).copied().unwrap_or(0) + 1;
         let emitted = self
@@ -892,21 +669,9 @@ impl InteractiveEngine {
             return;
         }
         *emitted = attempt;
-        self.events.push(RunEvent {
-            node_id: node_id.clone(),
-            kind: RunEventKind::Started,
-            message: "invoking model".to_string(),
-            output: None,
-        });
     }
 
     fn reject_misrouted_completion(&mut self, node_id: &NodeId, message: String) {
-        self.events.push(RunEvent {
-            node_id: node_id.clone(),
-            kind: RunEventKind::Failed,
-            message: message.clone(),
-            output: None,
-        });
         self.terminal_error = Some(RunError::NodeFailed {
             node_id: node_id.clone(),
             kind: NodeFailureKind::MisroutedCompletion(message),
@@ -929,5 +694,21 @@ impl crate::ports::inbound::ToolApprovalPort for InteractiveEngine {
         input: crate::ports::inbound::ToolApprovalInput,
     ) -> Result<(), EngineInputError> {
         self.on_tool_decision(&input.approval_id, input.allow, input.reason.as_deref())
+    }
+}
+
+#[cfg(test)]
+impl InteractiveEngine {
+    pub(crate) fn test_insert_in_flight(&mut self, node_id: NodeId) {
+        self.in_flight_ai.insert(node_id);
+    }
+
+    pub(crate) fn test_insert_output(&mut self, node_id: NodeId, output: Value) {
+        self.outputs.insert(node_id, output);
+    }
+
+    pub(crate) fn test_insert_pending_batch(&mut self, batch: PendingToolBatch) {
+        self.pending_tool_batches
+            .insert(batch.approval_id.clone(), batch);
     }
 }

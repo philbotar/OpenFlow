@@ -210,7 +210,6 @@ mod tests {
                 changed_files_by_node: BTreeMap::new(),
                 reads_by_node: BTreeMap::new(),
                 transcripts: BTreeMap::new(),
-                events: Vec::new(),
                 queued_nodes: BTreeSet::new(),
                 started_invocations_by_node: BTreeMap::new(),
                 awaiting_nodes: BTreeSet::new(),

@@ -155,6 +155,7 @@ async fn run_live_variant(
         vec![],
         BTreeMap::new(),
         Some(cwd),
+        None,
     )
     .await
     .map_err(|error| error.to_string())?;

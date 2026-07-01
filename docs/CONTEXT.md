@@ -21,7 +21,7 @@ Domain terms for the Step-through-agentic-workflow architecture.
 | **Engine forbidden deps** | External crates the engine hexagon must not depend on (Phase A denylist in architecture rules file): transport/GUI deps such as `reqwest`, `tauri`, `tauri-build`. Distinct from workspace-member edges. |
 | **Legacy crate alias** | Pre-rename package paths (`domain`, `workflow_core`) that must not appear in Rust `use` statements. Phase A CI bans them workspace-wide to catch rename regressions. |
 | **Architecture check scope** | Phase A forbidden-import scans cover all Rust in each workspace crate: `src/`, crate-root `tests/`, and `#[cfg(test)]` modules — same ban tables as production code. |
-| **Engine invocation rule** | Only `orchestration/run/execution/` may construct `InteractiveEngine` or `WorkflowRunner`. Enforced in CI (Tier 3). |
+| **Engine invocation rule** | Only `orchestration/run/execution/` may construct `InteractiveEngine`. Enforced in CI (Tier 3). |
 | **UI Tauri seam** | `@tauri-apps/*` imports confined to `api.ts` and `port.ts`; components use `getAppWindow` / `openNativeDialog` wrappers instead of direct Tauri imports. |
 | **Orchestration providers seam** | `orchestration/src` imports only allowlisted symbols from `providers::`; `AiClient` banned — runtime uses `create_provider` → `Box<dyn AiPort>`. |
 | **Violation class** | Taxonomy of architecture violations. Blocking: banned Cargo dep, banned import. Advisory: empty seam, missing re-export. |

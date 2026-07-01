@@ -1,12 +1,11 @@
 use super::{
-    InteractiveEngine, PendingToolBatch, RunError, RunEvent, RunEventKind,
-    MALFORMED_REQUEST_INPUT_FEEDBACK, MAX_MALFORMED_REQUEST_INPUT_RETRIES,
-    MAX_MALFORMED_SUBMIT_OUTPUT_RETRIES,
+    InteractiveEngine, PendingToolBatch, RunError, MALFORMED_REQUEST_INPUT_FEEDBACK,
+    MAX_MALFORMED_REQUEST_INPUT_RETRIES, MAX_MALFORMED_SUBMIT_OUTPUT_RETRIES,
 };
 use crate::conversation::{
     filter_tool_turn_assistant_message, is_clarifying_question, AgentTranscriptItem,
 };
-use crate::execution::retry::{next_retry, retrying_event};
+use crate::execution::retry::next_retry;
 use crate::execution::tool_results::denied_tool_result;
 use crate::execution::NodeFailureKind;
 use crate::graph::NodeId;
@@ -39,7 +38,8 @@ impl InteractiveEngine {
                 self.apply_tool_calls(node_id, batch);
             }
             Ok(AgentTurnOutcome::NeedsUserInput(input)) => {
-                if self.handle_malformed_request_input_retry(node_id, &input) {
+                let retried = self.handle_malformed_request_input_retry(node_id, &input);
+                if retried {
                     return;
                 }
                 self.apply_user_input_request(node_id, input);
@@ -61,13 +61,7 @@ impl InteractiveEngine {
     }
 
     fn handle_interrupted(&mut self, node_id: NodeId) {
-        self.interrupted_nodes.insert(node_id.clone());
-        self.events.push(RunEvent {
-            node_id,
-            kind: RunEventKind::Failed,
-            message: "interrupted by user".to_string(),
-            output: None,
-        });
+        self.interrupted_nodes.insert(node_id);
     }
 
     fn handle_malformed_submit_output_retry(
@@ -102,15 +96,6 @@ impl InteractiveEngine {
                      Node output schema: {schema_hint}"
                 ),
             });
-        self.events.push(RunEvent {
-            node_id: node_id.clone(),
-            kind: RunEventKind::Retrying,
-            message: format!(
-                "retrying after malformed submit-output tool call ({}/{MAX_MALFORMED_SUBMIT_OUTPUT_RETRIES})",
-                *retry_count
-            ),
-            output: None,
-        });
         true
     }
 
@@ -135,15 +120,6 @@ impl InteractiveEngine {
                 content: MALFORMED_REQUEST_INPUT_FEEDBACK.to_string(),
             },
         );
-        self.events.push(RunEvent {
-            node_id: node_id.clone(),
-            kind: RunEventKind::Retrying,
-            message: format!(
-                "retrying after non-question request-user-input ({}/{MAX_MALFORMED_REQUEST_INPUT_RETRIES})",
-                *retry_count
-            ),
-            output: None,
-        });
         true
     }
 
@@ -159,17 +135,10 @@ impl InteractiveEngine {
             self.pending_retry_delay
                 .map_or(delay, |existing| existing.max(delay)),
         );
-        self.events.push(retrying_event(node_id.clone(), delay));
         true
     }
 
     fn fail_node(&mut self, node_id: &NodeId, error: &AgentError) {
-        self.events.push(RunEvent {
-            node_id: node_id.clone(),
-            kind: RunEventKind::Failed,
-            message: error.to_string(),
-            output: None,
-        });
         self.failed_nodes.insert(node_id.clone(), error.to_string());
     }
 
@@ -186,12 +155,6 @@ impl InteractiveEngine {
                 .push(AgentTranscriptItem::AssistantMessage { content: message });
         }
         self.outputs.insert(node_id.clone(), success.output.clone());
-        self.events.push(RunEvent {
-            node_id: node_id.clone(),
-            kind: RunEventKind::Completed,
-            message: "completed".to_string(),
-            output: Some(success.output),
-        });
     }
 
     fn apply_tool_calls(&mut self, node_id: &NodeId, batch: AgentToolCallBatch) {

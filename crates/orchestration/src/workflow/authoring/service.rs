@@ -1,10 +1,11 @@
 use crate::api::{
-    WorkflowAuthoringMessage, WorkflowAuthoringTurnResult, WorkflowAuthoringValidation,
+    WorkflowAuthoringMessage, WorkflowAuthoringRole, WorkflowAuthoringTurnResult,
+    WorkflowAuthoringValidation,
 };
 use crate::settings::model::AppSettings;
 use crate::workflow::authoring::{
     layout_workflow_by_layers, materialize_authoring_draft, validate_authoring_workflow,
-    WorkflowAuthoringDraft,
+    workflow_draft_value_from_model_output, AuthoringError, WorkflowAuthoringDraft,
 };
 use engine::{
     AgentError, AgentNeedUserInput, AgentRequest, AgentTranscriptItem, AgentTurnOutcome,
@@ -12,8 +13,10 @@ use engine::{
 };
 use serde_json::json;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use uuid::Uuid;
+
+const MAX_AUTHORING_SESSIONS: usize = 64;
 
 #[derive(Clone)]
 pub struct WorkflowAuthoringSession {
@@ -23,15 +26,24 @@ pub struct WorkflowAuthoringSession {
 }
 
 pub struct WorkflowAuthoringService {
-    sessions: Arc<tokio::sync::Mutex<HashMap<String, WorkflowAuthoringSession>>>,
+    // ponytail: std mutex; lock only in brief scopes, never held across ai.invoke().await
+    sessions: Arc<Mutex<HashMap<String, WorkflowAuthoringSession>>>,
 }
 
 impl WorkflowAuthoringService {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            sessions: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            sessions: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+
+    #[must_use]
+    pub fn session_count(&self) -> usize {
+        self.sessions
+            .lock()
+            .expect("authoring sessions mutex poisoned")
+            .len()
     }
 
     pub fn start_session(&self, base_workflow: Option<Workflow>) -> String {
@@ -41,20 +53,35 @@ impl WorkflowAuthoringService {
             messages: Vec::new(),
             current_draft: base_workflow,
         };
-        if let Ok(mut sessions) = self.sessions.try_lock() {
-            sessions.insert(id.clone(), session);
-        } else {
-            self.sessions.blocking_lock().insert(id.clone(), session);
+        let mut sessions = self
+            .sessions
+            .lock()
+            .expect("authoring sessions mutex poisoned");
+        // ponytail: drop oldest when cap hit; upgrade to LRU if sessions need fair retention
+        if sessions.len() >= MAX_AUTHORING_SESSIONS {
+            if let Some(oldest) = sessions.keys().next().cloned() {
+                sessions.remove(&oldest);
+            }
         }
+        sessions.insert(id.clone(), session);
         id
+    }
+
+    #[must_use]
+    pub fn end_session(&self, session_id: &str) -> bool {
+        self.sessions
+            .lock()
+            .expect("authoring sessions mutex poisoned")
+            .remove(session_id)
+            .is_some()
     }
 
     pub fn get_session(&self, session_id: &str) -> Option<WorkflowAuthoringSession> {
         self.sessions
-            .try_lock()
-            .ok()
-            .and_then(|sessions| sessions.get(session_id).cloned())
-            .or_else(|| self.sessions.blocking_lock().get(session_id).cloned())
+            .lock()
+            .expect("authoring sessions mutex poisoned")
+            .get(session_id)
+            .cloned()
     }
 
     pub async fn send_turn<A: AiPort + Send + Sync>(
@@ -63,26 +90,21 @@ impl WorkflowAuthoringService {
         user_message: String,
         settings: &AppSettings,
         ai: &A,
-    ) -> Result<WorkflowAuthoringTurnResult, String> {
-        {
-            let mut sessions = self.sessions.lock().await;
+    ) -> Result<WorkflowAuthoringTurnResult, AuthoringError> {
+        let (messages, current_draft) = {
+            let mut sessions = self
+                .sessions
+                .lock()
+                .expect("authoring sessions mutex poisoned");
             let session = sessions
                 .get_mut(session_id)
-                .ok_or_else(|| "authoring session not found".to_string())?;
+                .ok_or(AuthoringError::SessionNotFound)?;
             session.messages.push(WorkflowAuthoringMessage {
-                role: "user".to_string(),
+                role: WorkflowAuthoringRole::User,
                 content: user_message.clone(),
             });
-        }
-
-        let snapshot = {
-            let sessions = self.sessions.lock().await;
-            let session = sessions
-                .get(session_id)
-                .ok_or_else(|| "authoring session not found".to_string())?;
             (session.messages.clone(), session.current_draft.clone())
         };
-        let (messages, current_draft) = snapshot;
 
         let model = settings
             .active_profile()
@@ -92,11 +114,11 @@ impl WorkflowAuthoringService {
 
         let mut transcript: Vec<AgentTranscriptItem> = messages
             .iter()
-            .map(|message| match message.role.as_str() {
-                "assistant" => AgentTranscriptItem::AssistantMessage {
+            .map(|message| match message.role {
+                WorkflowAuthoringRole::Assistant => AgentTranscriptItem::AssistantMessage {
                     content: message.content.clone(),
                 },
-                _ => AgentTranscriptItem::UserMessage {
+                WorkflowAuthoringRole::User => AgentTranscriptItem::UserMessage {
                     content: message.content.clone(),
                 },
             })
@@ -107,6 +129,16 @@ impl WorkflowAuthoringService {
             .map(|workflow| serde_json::to_string_pretty(workflow).unwrap_or_default())
             .unwrap_or_default();
 
+        let system_prompt = authoring_system_prompt();
+        let output_schema = authoring_output_schema();
+        let task_prompt = if base_context.is_empty() {
+            "Create or update the workflow draft from the conversation.".to_string()
+        } else {
+            format!(
+                "Update the workflow draft from the conversation.\n\nCurrent draft JSON:\n{base_context}"
+            )
+        };
+
         let mut model_attempt = 1u8;
         let mut malformed_submit_retries = 0u8;
         let output = loop {
@@ -115,18 +147,13 @@ impl WorkflowAuthoringService {
                 node_id: NodeId::from("authoring"),
                 node_label: "Workflow authoring".to_string(),
                 model: model.clone(),
-                system_messages: vec![authoring_system_prompt()],
-                task_prompt: if base_context.is_empty() {
-                    "Create or update the workflow draft from the conversation.".to_string()
-                } else {
-                    format!(
-                        "Update the workflow draft from the conversation.\n\nCurrent draft JSON:\n{base_context}"
-                    )
-                },
+                system_messages: vec![system_prompt.clone()],
+                task_prompt: task_prompt.clone(),
                 input: json!({ "userMessage": user_message }),
-                output_schema: authoring_output_schema(),
+                output_schema: output_schema.clone(),
                 tool_config: Default::default(),
                 available_tools: Vec::new(),
+                // ponytail: clone per invoke until AgentRequest borrows transcript
                 transcript: transcript.clone(),
                 model_attempt,
                 reasoning_effort: None,
@@ -151,14 +178,17 @@ impl WorkflowAuthoringService {
                     let assistant_message = need.assistant_message;
                     let mut messages = messages;
                     messages.push(WorkflowAuthoringMessage {
-                        role: "assistant".to_string(),
+                        role: WorkflowAuthoringRole::Assistant,
                         content: assistant_message.clone(),
                     });
                     {
-                        let mut sessions = self.sessions.lock().await;
+                        let mut sessions = self
+                            .sessions
+                            .lock()
+                            .expect("authoring sessions mutex poisoned");
                         let session = sessions
                             .get_mut(session_id)
-                            .ok_or_else(|| "authoring session not found".to_string())?;
+                            .ok_or(AuthoringError::SessionNotFound)?;
                         session.messages = messages.clone();
                     }
                     return Ok(WorkflowAuthoringTurnResult {
@@ -177,7 +207,7 @@ impl WorkflowAuthoringService {
                     });
                 }
                 Ok(AgentTurnOutcome::ToolCalls(_)) => {
-                    return Err("authoring model attempted tool calls".to_string());
+                    return Err(AuthoringError::ModelToolCalls);
                 }
                 Err(error)
                     if error.is_malformed_submit_output()
@@ -189,7 +219,7 @@ impl WorkflowAuthoringService {
                         content: malformed_submit_output_feedback(&error),
                     });
                 }
-                Err(error) => return Err(error.to_string()),
+                Err(error) => return Err(error.into()),
             }
         };
 
@@ -200,28 +230,31 @@ impl WorkflowAuthoringService {
             .unwrap_or("Updated workflow draft.")
             .to_string();
 
-        let draft_value = extract_workflow_draft_from_output(&output)?;
+        let draft_value = workflow_draft_value_from_model_output(&output)?;
 
-        let draft: WorkflowAuthoringDraft = serde_json::from_value(draft_value.clone())
-            .map_err(|error| format!("invalid workflowDraft: {error}"))?;
+        let draft: WorkflowAuthoringDraft = serde_json::from_value(draft_value)
+            .map_err(|error| AuthoringError::InvalidDraft(error.to_string()))?;
 
         let base_id = current_draft.as_ref().map(|workflow| workflow.id.clone());
         let mut workflow = materialize_authoring_draft(draft, base_id, &model);
         layout_workflow_by_layers(&mut workflow)
-            .map_err(|error| format!("layout failed: {error}"))?;
+            .map_err(|error| AuthoringError::LayoutFailed(error.to_string()))?;
         let validation = validate_authoring_workflow(&workflow);
 
         let mut messages = messages;
         messages.push(WorkflowAuthoringMessage {
-            role: "assistant".to_string(),
+            role: WorkflowAuthoringRole::Assistant,
             content: assistant_message.clone(),
         });
 
         {
-            let mut sessions = self.sessions.lock().await;
+            let mut sessions = self
+                .sessions
+                .lock()
+                .expect("authoring sessions mutex poisoned");
             let session = sessions
                 .get_mut(session_id)
-                .ok_or_else(|| "authoring session not found".to_string())?;
+                .ok_or(AuthoringError::SessionNotFound)?;
             session.messages = messages.clone();
             session.current_draft = Some(workflow.clone());
         }
@@ -240,33 +273,6 @@ impl Default for WorkflowAuthoringService {
     fn default() -> Self {
         Self::new()
     }
-}
-
-fn extract_workflow_draft_from_output(
-    output: &serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    if let Some(draft) = output
-        .get("workflowDraft")
-        .or_else(|| output.get("workflow_draft"))
-    {
-        return Ok(draft.clone());
-    }
-
-    let Some(map) = output.as_object() else {
-        return Err("missing workflowDraft in model output".to_string());
-    };
-
-    if map.contains_key("name") && map.contains_key("nodes") {
-        let mut draft = map.clone();
-        draft.remove("assistantMessage");
-        draft.remove("assistant_message");
-        return Ok(serde_json::Value::Object(draft));
-    }
-
-    Err(
-        "missing workflowDraft in model output — the model must include a workflowDraft object with name, nodes, and edges"
-            .to_string(),
-    )
 }
 
 const MAX_AUTHORING_CLARIFICATION_RETRIES: u8 = 1;

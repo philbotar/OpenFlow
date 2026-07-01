@@ -46,6 +46,7 @@ type WorkflowCanvasProps = {
   onSelectNode: (nodeId: NodeId | null) => void;
   onSelectEdge: (edgeId: EdgeId | null) => void;
   onUpdateNodePosition: (nodeId: NodeId, x: number, y: number) => void;
+  onAutoLayout: () => void;
   onCreateEdge: (from: NodeId, to: NodeId) => void;
   onReconnectEdge: (edgeId: EdgeId, from: NodeId, to: NodeId) => void;
   onDeleteEdge: (edgeId: EdgeId) => void;
@@ -82,10 +83,24 @@ export const FIT_NODE_VIEWPORT_OPTIONS = {
   duration: 200,
 } as const;
 
+const GRAPH_AUTO_CENTER_DEBOUNCE_MS = 120;
 const NODE_FOCUS_SUPPRESS_MS = 400;
+
+export function graphStructureSignature(graph: WorkflowCanvasGraph | null): string {
+  if (!graph) {
+    return "graph:none";
+  }
+  const nodeIds = graph.nodes.map((node) => node.id).sort().join(",");
+  const edgeKeys = graph.edges
+    .map((edge) => `${edge.id}:${edge.from}->${edge.to}`)
+    .sort()
+    .join(",");
+  return `nodes:${nodeIds}|edges:${edgeKeys}`;
+}
 
 function CanvasViewportController(props: {
   workflowId: string | null;
+  graphSignature: string;
   selectedNodeId: NodeId | null;
   chatFocusNode?: { nodeId: NodeId; tick: number } | null;
   viewportEnabled?: boolean;
@@ -94,13 +109,23 @@ function CanvasViewportController(props: {
   const nodesInitialized = useNodesInitialized();
   const nodesReadyRef = useRef(false);
   const previousWorkflowIdRef = useRef<string | null>(null);
+  const previousGraphSignatureRef = useRef<string | null>(null);
   const previousSelectedNodeIdRef = useRef<NodeId | null>(null);
   const previousChatFocusTickRef = useRef(0);
   const suppressNodeFocusUntilRef = useRef(0);
+  const graphAutoCenterTimerRef = useRef<number | null>(null);
 
   if (nodesInitialized) {
     nodesReadyRef.current = true;
   }
+
+  useEffect(() => {
+    return () => {
+      if (graphAutoCenterTimerRef.current) {
+        window.clearTimeout(graphAutoCenterTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!nodesReadyRef.current || props.viewportEnabled === false) {
@@ -110,12 +135,30 @@ function CanvasViewportController(props: {
     const workflowId = props.workflowId;
     if (workflowId && workflowId !== previousWorkflowIdRef.current) {
       previousWorkflowIdRef.current = workflowId;
+      previousGraphSignatureRef.current = props.graphSignature;
       previousSelectedNodeIdRef.current = props.selectedNodeId;
       previousChatFocusTickRef.current = props.chatFocusNode?.tick ?? 0;
       suppressNodeFocusUntilRef.current = performance.now() + NODE_FOCUS_SUPPRESS_MS;
       void fitView(FIT_ALL_VIEWPORT_OPTIONS);
       return;
     }
+
+    if (
+      previousGraphSignatureRef.current !== null &&
+      props.graphSignature !== previousGraphSignatureRef.current
+    ) {
+      previousGraphSignatureRef.current = props.graphSignature;
+      suppressNodeFocusUntilRef.current = performance.now() + NODE_FOCUS_SUPPRESS_MS;
+      if (graphAutoCenterTimerRef.current) {
+        window.clearTimeout(graphAutoCenterTimerRef.current);
+      }
+      graphAutoCenterTimerRef.current = window.setTimeout(() => {
+        graphAutoCenterTimerRef.current = null;
+        void fitView(FIT_ALL_VIEWPORT_OPTIONS);
+      }, GRAPH_AUTO_CENTER_DEBOUNCE_MS);
+      return;
+    }
+    previousGraphSignatureRef.current = props.graphSignature;
 
     const chatFocus = props.chatFocusNode;
     if (chatFocus && chatFocus.tick !== previousChatFocusTickRef.current) {
@@ -149,6 +192,7 @@ function CanvasViewportController(props: {
   }, [
     fitView,
     props.chatFocusNode,
+    props.graphSignature,
     props.selectedNodeId,
     props.viewportEnabled,
     props.workflowId,
@@ -427,6 +471,8 @@ export function WorkflowCanvas(props: WorkflowCanvasProps) {
     [props.graph, props.selectedEdgeId, runActive, colorMode],
   );
 
+  const graphSignature = useMemo(() => graphStructureSignature(props.graph), [props.graph]);
+
   const flowEdgeDefaults = useMemo(() => defaultEdgeOptions(colorMode), [colorMode]);
 
   // Use xyflow hooks for state management
@@ -527,6 +573,10 @@ export function WorkflowCanvas(props: WorkflowCanvasProps) {
     props.onAddNode();
   }, [props.onAddNode]);
 
+  const handleAutoLayout = useCallback(() => {
+    props.onAutoLayout();
+  }, [props.onAutoLayout]);
+
   return (
     <div className="workflow-flow-shell">
       <ReactFlowProvider>
@@ -561,6 +611,7 @@ export function WorkflowCanvas(props: WorkflowCanvasProps) {
         >
           <CanvasViewportController
             workflowId={props.graph?.id ?? null}
+            graphSignature={graphSignature}
             selectedNodeId={props.selectedNodeId}
             chatFocusNode={props.chatFocusNode}
             viewportEnabled={props.viewportEnabled ?? true}
@@ -573,8 +624,16 @@ export function WorkflowCanvas(props: WorkflowCanvasProps) {
           />
           {!previewMode ? (
             <Panel position="top-left" className="workflow-flow-panel">
-              <button type="button" className="secondary-button small workflow-flow-add-button" onClick={handleAddNode}>
+              <button type="button" className="secondary-button small workflow-flow-action-button" onClick={handleAddNode}>
                 Add node
+              </button>
+              <button
+                type="button"
+                className="secondary-button small workflow-flow-action-button"
+                onClick={handleAutoLayout}
+                title="Arrange workflow left to right"
+              >
+                Auto layout
               </button>
             </Panel>
           ) : null}

@@ -48,4 +48,25 @@ describe("Message", () => {
     expect(row?.classList.contains("conversation-item-enter")).toBe(false);
     dispose();
   });
+
+  it("exposes Codex-inspired transcript layout hooks by role", () => {
+    const user = renderMessage({
+      from: "user",
+      label: "You",
+      content: "Align this on the right",
+    });
+    const assistant = renderMessage({
+      from: "assistant",
+      label: "Assistant",
+      content: "Keep assistant prose open",
+    });
+
+    expect(user.container.querySelector(".chat-message-row--user")).not.toBeNull();
+    expect(user.container.querySelector(".chat-message-bubble--user")).not.toBeNull();
+    expect(assistant.container.querySelector(".chat-message-row--assistant")).not.toBeNull();
+    expect(assistant.container.querySelector(".chat-message-bubble--assistant")).not.toBeNull();
+
+    user.dispose();
+    assistant.dispose();
+  });
 });

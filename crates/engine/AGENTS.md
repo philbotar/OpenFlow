@@ -32,7 +32,7 @@ Pure domain hexagon. No filesystem, HTTP, provider, or UI code.
 | Path | Owns | Glossary terms |
 | --- | --- | --- |
 | `graph/` | `Workflow`, validation, layers, `CallableAgent` | Workflow, Node, Edge, execution layers |
-| `execution/` | `InteractiveEngine`, `WorkflowRunner`, subagent runtime, telemetry | RunTelemetry, subagent builtins |
+| `execution/` | `InteractiveEngine`, subagent runtime, telemetry | RunTelemetry, subagent builtins |
 | `ports/outbound.rs` | `AiPort`, `ToolPort`, `AgentRequest` | LLM + tool seams |
 | `ports/inbound.rs` | `HumanInputPort`, `ToolApprovalPort` | Pause/resume contracts |
 | `conversation/` | `ChatMessage`, `AgentTranscriptItem` | Transcript DTOs |
@@ -43,10 +43,9 @@ Pure domain hexagon. No filesystem, HTTP, provider, or UI code.
 
 | Type | Use | Behavior |
 | --- | --- | --- |
-| `WorkflowRunner` | Batch / headless | One AI turn per node; no tool loop or pauses |
 | `InteractiveEngine` | Desktop app | Self-driving `run()`; calls `AiPort` + `ToolPort`; surfaces `NeedsInteraction` only |
 
-Only **orchestration** `run/execution/` may construct engines. Engine never imports upward crates.
+Only **orchestration** `run/execution/` may construct `InteractiveEngine`. Engine never imports upward crates.
 
 ## Dependency rules
 
@@ -74,7 +73,7 @@ Provider-specific branching stays in `providers/`. Engine does not know which LL
 
 1. **Pure logic** — delegate I/O to ports; no `std::fs`, no HTTP.
 2. **Vocabulary** — use [`docs/glossary.md`](../../docs/glossary.md) terms (`CallableAgent`, not "saved subagent"; `RunTelemetry`, not "execution event").
-3. **Determinism** — sort IDs where order affects behavior (see `validation.rs`, `workflow_runner.rs`).
+3. **Determinism** — sort IDs where order affects behavior (see `validation.rs`, `interactive_engine/`).
 4. **Errors** — `thiserror` enums; actionable messages; no panics outside tests.
 5. **Constants** — name by intent at top of file (`NODE_RUNTIME_PREAMBLE`, tier labels).
 6. **State ownership** — engine owns execution *semantics*; orchestration owns session *state*.
@@ -87,7 +86,7 @@ Provider-specific branching stays in `providers/`. Engine does not know which LL
 | --- | --- |
 | Workflow rule or DAG validation | `graph/validation.rs` |
 | Workflow schema / settings | `graph/workflow.rs` |
-| Batch run behavior | `execution/workflow_runner.rs` |
+| Headless / batch semantics | Covered by `InteractiveEngine` + acceptance tests in orchestration |
 | Interactive pause/resume | `execution/interactive_engine/` |
 | Subagent declare/call | `execution/subagent_runtime.rs` |
 | Shared prompt assembly | `execution/node_invocation.rs` |

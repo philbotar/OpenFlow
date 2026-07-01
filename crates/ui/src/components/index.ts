@@ -1,6 +1,7 @@
 export * from "./AnimatedModal";
 export * from "./AppHeader";
 export * from "./CollapsibleSection";
+export * from "./FirstRunOnboarding";
 export * from "./InspectorSection";
 export * from "./NodePickerModal";
 export * from "./PanelEmptyState";

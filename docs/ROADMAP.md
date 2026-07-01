@@ -154,7 +154,7 @@ Domain supports entrypoint injection (`run_with_entrypoint` → `InteractiveEngi
 
 **Target:** User entrypoint text from the UI reaches root agent nodes as `{ "entrypoint": { "text": "..." }, "upstream": [] }` in `AgentRequest.input`.
 
-**Reference:** Domain test `injects_entrypoint_into_root_node_input_only` in `crates/engine/src/execution/workflow_runner.rs`.
+**Reference:** Domain test `blank_entrypoint_is_not_injected_into_root_input` in `crates/engine/src/execution/node_invocation.rs`.
 
 ### Run lifecycle
 
@@ -1052,9 +1052,9 @@ Structural cleanup by workspace section. Keep engine semantics in `engine`, prov
 | Item | Status |
 | --- | --- |
 | Vocabulary-aligned module tree (`graph/`, `template/`, `execution/`, `conversation/`, `tools/`, `ports/`) | Done |
-| Shared `node_invocation` for `WorkflowRunner` and `InteractiveEngine` | Done |
+| Shared `node_invocation` for desktop and headless runs | Done |
 | `subagent_runtime`, `CallableAgent`, canonical `RunTelemetry` | Done |
-| Remove unused port scaffolding; typed template errors; reduce `InteractiveEngine::poll` cloning | Done |
+| Remove unused port scaffolding; typed template errors; remove `InteractiveEngine::poll` | Done |
 | Collapse `model::NodeTemplate` vs `template::Template` (T2) | Done |
 | Node lookup index — `HashMap<NodeId, usize>` (T3) | Done |
 | Make `HumanInputPort` / `ToolApprovalPort` load-bearing (T14) | Planned |

@@ -112,8 +112,7 @@ Before editing, classify the change with [`docs/contributing/development-lanes.m
 | --- | --- | --- |
 | `Cargo.toml` | Workspace members and shared dependencies | Adding crates or shared dep versions |
 | `crates/engine/src/graph/` | Workflow model, `WorkflowSettings`, node config, `CallableAgent`, DAG validation | Changing schema, graph rules, or scheduling |
-| `crates/engine/src/execution/workflow_runner.rs` | Non-interactive `WorkflowRunner` | Changing batch run semantics |
-| `crates/engine/src/execution/interactive_engine.rs` | Interactive engine `poll()` + `run()` loop | Changing pause/resume or self-driving run behavior |
+| `crates/engine/src/execution/interactive_engine/` | Interactive engine `run()` loop | Changing pause/resume or self-driving run behavior |
 | `crates/engine/src/execution/subagent_runtime.rs` | Subagent declare/call builtins + turn machine | Changing subagent invocation semantics |
 | `crates/engine/src/execution/telemetry.rs` | `RunTelemetry` interactive event enum | Changing run event vocabulary |
 | `crates/engine/src/execution/node_invocation.rs` | Shared `AgentRequest` assembly | Changing upstream input or prompt wiring |
@@ -142,7 +141,7 @@ Before editing, classify the change with [`docs/contributing/development-lanes.m
 | `crates/orchestration/src/project/registry.rs` | Project load/save/create | Changing project registration |
 | `crates/orchestration/src/settings/facade.rs` | Settings, keys, skills, validation summaries | Changing settings or provider readiness UX |
 | `crates/orchestration/src/run/coordinator.rs` | Active run session, start/submit/apply events | Changing run lifecycle coordination |
-| `crates/orchestration/src/run/execution/` | `drive.rs`, `tool_port.rs`, event projection, cwd | Changing execution host semantics |
+| `crates/orchestration/src/run/execution/` | `drive/`, `headless.rs`, `tool_port.rs`, event projection, cwd | Changing execution host semantics |
 | `crates/orchestration/src/run/state/` | Run/edit state, trace, chat logs | Changing run state or editor mutations |
 | `crates/orchestration/src/adapters/storage/app_workflow_store.rs` | App workflows (`workflows.json`) | Changing app workflow persistence |
 | `crates/orchestration/src/adapters/storage/project_workflow_store.rs` | Project workflows (`.flow/workflows/`) | Changing repo workflow file layout |

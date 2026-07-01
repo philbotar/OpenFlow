@@ -1,6 +1,5 @@
 //! Blocking filesystem tool operations (edit, read, search) for [`crate::tool::runner`].
 
-use crate::lsp::LspSettings as RuntimeLspSettings;
 use crate::settings::model::LspSettings;
 use crate::tool::errors::ToolError;
 use crate::tool::read::selector::ReadSelector;
@@ -30,7 +29,7 @@ pub(crate) struct BlockingToolOps {
     cwd: PathBuf,
     ledger: crate::tools::edit::ledger::FileChangeLedger,
     snapshots: Arc<crate::tools::edit::hashline::snapshots::InMemorySnapshotStore>,
-    lsp: RuntimeLspSettings,
+    lsp: LspSettings,
 }
 
 impl BlockingToolOps {
@@ -38,7 +37,7 @@ impl BlockingToolOps {
         cwd: PathBuf,
         ledger: crate::tools::edit::ledger::FileChangeLedger,
         snapshots: Arc<crate::tools::edit::hashline::snapshots::InMemorySnapshotStore>,
-        lsp: RuntimeLspSettings,
+        lsp: LspSettings,
     ) -> Self {
         Self {
             cwd,
@@ -56,7 +55,7 @@ impl BlockingToolOps {
         args: Value,
         batch_ctx: Option<BlockingBatchContext>,
     ) -> BlockingRunOutcome {
-        let lsp = RuntimeLspSettings::from_persisted(&lsp);
+        let lsp = lsp.runtime();
         let edit_batch = batch_ctx.and_then(|context| {
             crate::tools::edit::batch::capture_edit_batch(
                 &cwd,
@@ -102,7 +101,7 @@ impl BlockingToolOps {
             cwd,
             crate::tools::edit::ledger::FileChangeLedger::new(),
             snapshots,
-            RuntimeLspSettings::default(),
+            LspSettings::default(),
         )
         .read_local(path)
     }

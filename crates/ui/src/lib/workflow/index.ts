@@ -1,3 +1,10 @@
+import {
+  Graph,
+  layout as dagreLayout,
+  type EdgeLabel,
+  type GraphLabel,
+  type NodeLabel,
+} from "@dagrejs/dagre";
 import type {
   AgentNodeConfig,
   AgentStatus,
@@ -21,6 +28,10 @@ import { PROVIDER_ORDER } from "../../constants/providers";
 
 export const NODE_WIDTH = 320;
 export const NODE_HEIGHT = 88;
+const DAGRE_LAYOUT_ORIGIN_X = 96;
+const DAGRE_LAYOUT_ORIGIN_Y = 96;
+const DAGRE_LAYOUT_NODE_SEP = 96;
+const DAGRE_LAYOUT_RANK_SEP = 112;
 
 /** Backend historically emitted camelCase multi-word statuses over IPC. */
 const AGENT_STATUS_ALIASES: Record<string, AgentStatus> = {
@@ -85,6 +96,67 @@ export function normalizeWorkflowLayout(workflow: Workflow): Workflow {
       node.position.x = originX + layerIndex * layerGapX;
       node.position.y = layerTop + rowIndex * rowGapY;
     }
+  }
+
+  return next;
+}
+
+export function dagreLayoutWorkflowLeftToRight(workflow: Workflow): Workflow {
+  const next = cloneWorkflow(workflow);
+  if (next.nodes.length === 0) {
+    return next;
+  }
+
+  const graph = new Graph<GraphLabel, NodeLabel, EdgeLabel>()
+    .setGraph({
+      rankdir: "LR",
+      nodesep: DAGRE_LAYOUT_NODE_SEP,
+      ranksep: DAGRE_LAYOUT_RANK_SEP,
+      marginx: 0,
+      marginy: 0,
+      ranker: "network-simplex",
+    })
+    .setDefaultEdgeLabel(() => ({}));
+  const nodeIds = new Set(next.nodes.map((node) => node.id));
+
+  for (const node of next.nodes) {
+    graph.setNode(node.id, {
+      width: NODE_WIDTH,
+      height: NODE_HEIGHT,
+    });
+  }
+  for (const edge of next.edges) {
+    if (nodeIds.has(edge.from) && nodeIds.has(edge.to)) {
+      graph.setEdge(edge.from, edge.to);
+    }
+  }
+
+  dagreLayout(graph);
+
+  const positions = new Map<NodeId, { x: number; y: number }>();
+  for (const node of next.nodes) {
+    const laidOut = graph.node(node.id);
+    if (typeof laidOut?.x !== "number" || typeof laidOut.y !== "number") {
+      continue;
+    }
+    positions.set(node.id, {
+      x: laidOut.x - NODE_WIDTH / 2,
+      y: laidOut.y - NODE_HEIGHT / 2,
+    });
+  }
+  if (positions.size === 0) {
+    return next;
+  }
+
+  const minX = Math.min(...Array.from(positions.values(), (position) => position.x));
+  const minY = Math.min(...Array.from(positions.values(), (position) => position.y));
+  for (const node of next.nodes) {
+    const position = positions.get(node.id);
+    if (!position) {
+      continue;
+    }
+    node.position.x = Math.round(position.x - minX + DAGRE_LAYOUT_ORIGIN_X);
+    node.position.y = Math.round(position.y - minY + DAGRE_LAYOUT_ORIGIN_Y);
   }
 
   return next;

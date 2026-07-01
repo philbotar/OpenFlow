@@ -11,7 +11,6 @@ pub mod api;
 pub mod backend;
 pub mod diagnostics;
 pub mod error;
-pub mod incident;
 pub mod project;
 pub mod run;
 pub mod schedule;
@@ -33,6 +32,7 @@ pub use engine::CallableAgent as AgentDefinition;
 pub use engine::{
     CallableAgent, Node, NodeId, NodeRunOutput, PendingToolApproval, RunReport, RunTelemetry,
     Template, TemplateStore, TemplateStoreError, ToolCall, ToolTier, Workflow, WorkflowId,
+    WorkflowSchedule,
 };
 pub use project::ports::Project;
 pub use settings::model::{AppSettings, McpServerConfig, McpSettings, SkillSummary};

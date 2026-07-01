@@ -19,6 +19,7 @@ type WorkflowCanvasHostProps = {
   onSelectNode: (nodeId: NodeId | null) => void;
   onSelectEdge: (edgeId: EdgeId | null) => void;
   onUpdateNodePosition: (nodeId: NodeId, x: number, y: number) => void;
+  onAutoLayout: () => void;
   onCreateEdge: (from: NodeId, to: NodeId) => void;
   onReconnectEdge: (edgeId: EdgeId, from: NodeId, to: NodeId) => void;
   onDeleteEdge: (edgeId: EdgeId) => void;
@@ -50,6 +51,7 @@ function WorkflowCanvasHost(props: WorkflowCanvasHostProps) {
         onSelectNode: props.onSelectNode,
         onSelectEdge: props.onSelectEdge,
         onUpdateNodePosition: props.onUpdateNodePosition,
+        onAutoLayout: props.onAutoLayout,
         onCreateEdge: props.onCreateEdge,
         onReconnectEdge: props.onReconnectEdge,
         onDeleteEdge: props.onDeleteEdge,

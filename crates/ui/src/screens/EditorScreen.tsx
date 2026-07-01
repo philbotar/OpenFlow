@@ -48,6 +48,7 @@ export function EditorScreen() {
             onSelectNode={ctx.handleSelectNode}
             onSelectEdge={ctx.handleSelectEdge}
             onUpdateNodePosition={ctx.handleCanvasNodePosition}
+            onAutoLayout={ctx.handleAutoLayoutWorkflow}
             onCreateEdge={ctx.handleCreateEdge}
             onReconnectEdge={ctx.handleReconnectEdge}
             onDeleteEdge={ctx.handleDeleteEdge}

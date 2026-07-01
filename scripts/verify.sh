@@ -9,14 +9,38 @@ REQUESTED_STEPS=()
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_DIR="$(mktemp -d)"
-trap 'rm -rf "$LOG_DIR"' EXIT
+VERIFY_TARGET_DIR=""
+
+cleanup_on_exit() {
+	rm -rf "$LOG_DIR"
+	if [[ -n "$VERIFY_TARGET_DIR" && -d "$VERIFY_TARGET_DIR" ]]; then
+		rm -rf "$VERIFY_TARGET_DIR"
+	fi
+}
+trap cleanup_on_exit EXIT
 
 # ponytail: parallel verify runs each get their own target dir so they don't block
 # on target/.cargo-lock. Set VERIFY_SHARE_TARGET=1 to reuse ./target (faster solo,
 # but only one cargo-using verify at a time). CARGO_TARGET_DIR always wins if set.
 if [[ -z "${CARGO_TARGET_DIR:-}" && "${VERIFY_SHARE_TARGET:-0}" != "1" ]]; then
-	export CARGO_TARGET_DIR="$ROOT/target/verify-$$"
+	VERIFY_TARGET_DIR="$ROOT/target/verify-$$"
+	export CARGO_TARGET_DIR="$VERIFY_TARGET_DIR"
 fi
+
+# ponytail: reclaim verify-* dirs from killed/interrupted runs (pid in name no longer alive)
+prune_stale_verify_targets() {
+	local dir base pid
+	shopt -s nullglob
+	for dir in "$ROOT/target/verify-"*; do
+		base=$(basename "$dir")
+		pid=${base#verify-}
+		if [[ "$pid" =~ ^[0-9]+$ ]] && ! kill -0 "$pid" 2>/dev/null; then
+			rm -rf "$dir"
+		fi
+	done
+	shopt -u nullglob
+}
+prune_stale_verify_targets
 
 export CARGO_TERM_COLOR=never
 export CARGO_TERM_PROGRESS_WHEN=never
@@ -223,7 +247,8 @@ while [[ $# -gt 0 ]]; do
 		echo
 		echo "Runs verification steps; default runs all. Set VERIFY_FAIL_FAST=1 to stop on first failure."
 		echo "Set VERIFY_MAX_LINES to control truncated failure output (default: 150)."
-		echo "Parallel agents: default uses target/verify-<pid> (no cargo lock contention)."
+		echo "Parallel agents: default uses target/verify-<pid> (no cargo lock contention);"
+		echo "removed on exit and stale dirs pruned at startup."
 		echo "Set VERIFY_SHARE_TARGET=1 to reuse ./target for faster solo runs."
 		echo "Run scripts/verify/<step>.sh directly for full untruncated output."
 		usage_steps

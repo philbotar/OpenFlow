@@ -2,7 +2,13 @@ import { Match, Show, Switch } from "solid-js";
 import { Toaster } from "solid-sonner";
 import { AppProvider } from "./context/AppProvider";
 import { useAppContext } from "./context/AppContext";
-import { AppHeader, ShortcutsModal, Sidebar, WorkflowPickerModal } from "@/components";
+import {
+  AppHeader,
+  FirstRunOnboarding,
+  ShortcutsModal,
+  Sidebar,
+  WorkflowPickerModal,
+} from "@/components";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { AgentsScreen } from "./screens/AgentsScreen";
 import { EditorScreen } from "./screens/EditorScreen";
@@ -94,6 +100,12 @@ function AppChrome() {
         <ShortcutsModal
           open={ctx.shortcutsModalOpen()}
           onClose={ctx.closeShortcutsModal}
+        />
+        <FirstRunOnboarding
+          open={ctx.firstRunOnboardingOpen()}
+          onClose={ctx.dismissFirstRunOnboarding}
+          onBuildWorkflow={ctx.handleOnboardingBuildWorkflow}
+          onSetupProvider={ctx.handleOnboardingSetupProvider}
         />
         <Show
           when={isSettings()}

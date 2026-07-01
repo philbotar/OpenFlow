@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 /** @jsxRuntime automatic */
 import { Handle, Position } from "@xyflow/react";
-import { labelForAgentStatus } from "../lib/agentStatus";
+import { labelForAgentStatus } from "../lib/agentStatusLabels";
 import type { AgentStatus, SubagentSummary } from "../lib/types";
 
 const MAX_VISIBLE_SUBAGENTS = 3;

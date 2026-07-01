@@ -1,8 +1,4 @@
 use super::*;
-use crate::adapters::storage::incident_store::FileIncidentStore;
-use crate::adapters::storage::run_checkpoint_store::FileRunCheckpointStore;
-use crate::incident::{IncidentRecorder, IncidentScope};
-use crate::run::coordinator::RunCoordinator;
 use crate::run::state::{TraceStatus, WorkflowRunState};
 use crate::tools::ToolRegistry;
 use async_trait::async_trait;
@@ -14,7 +10,6 @@ use engine::{
 use parking_lot::Mutex;
 use serde_json::json;
 use std::collections::BTreeMap;
-use std::fs;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -614,6 +609,7 @@ async fn headless_run_auto_approves_read_tool_and_reenters_model_loop() {
         Vec::new(),
         BTreeMap::new(),
         None,
+        None,
     )
     .await
     .unwrap();
@@ -682,6 +678,7 @@ async fn headless_run_survives_permanent_tool_failure_and_completes() {
         Vec::new(),
         BTreeMap::new(),
         Some(temp.path().to_path_buf()),
+        None,
     )
     .await
     .expect("run should complete after tool failure");
@@ -731,72 +728,11 @@ async fn headless_run_requires_scripted_approval_for_prompted_tool() {
         Vec::new(),
         BTreeMap::new(),
         None,
+        None,
     )
     .await
     .unwrap_err();
     assert!(matches!(error, WorkflowExecutionError::MissingApproval(_)));
-}
-
-#[cfg_attr(miri, ignore)]
-#[tokio::test]
-async fn apply_execution_event_tool_failure_persists_jsonl_incident_scope() {
-    // Coordinator tests already cover direct incident mapping from apply_execution_event.
-    // This execution-side variant also verifies JSONL persistence and scoped fields.
-    let dir = TempDir::new().expect("tempdir");
-    let incident_path = dir.path().join("incidents.jsonl");
-    let incidents = Arc::new(IncidentRecorder::new(Arc::new(FileIncidentStore::new(
-        incident_path.clone(),
-    ))));
-    let coordinator =
-        RunCoordinator::new_with_incidents(tokio::runtime::Handle::current(), incidents.clone());
-
-    let workflow = workflow();
-    let expected_workflow_id = workflow.id.to_string();
-    let mut run_state = WorkflowRunState::running_for_workflow(&workflow);
-    run_state.run_id = Some("run-execution-incident-1".to_string());
-    let (action_tx, _action_rx) = tokio::sync::mpsc::unbounded_channel();
-    coordinator
-        .test_seed_session(workflow, run_state, action_tx)
-        .await;
-
-    coordinator
-        .apply_execution_event(
-            ExecutionEvent::ToolCompleted {
-                node_id: NodeId("first".to_string()),
-                tool_call_id: "tool-incident-1".to_string(),
-                tool_name: "read".to_string(),
-                content: "[not_found] missing file — use project file references".to_string(),
-                is_error: true,
-                output_meta: None,
-                artifact_ids: Vec::new(),
-            },
-            &FileRunCheckpointStore,
-        )
-        .await
-        .expect("apply execution event");
-
-    let persisted_lines = fs::read_to_string(&incident_path).expect("read incidents jsonl");
-    let non_empty_lines: Vec<&str> = persisted_lines
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .collect();
-    assert_eq!(non_empty_lines.len(), 1);
-
-    let listed = incidents.list_unresolved(10).expect("list incidents");
-    assert_eq!(listed.len(), 1);
-    assert_eq!(listed[0].code, "tool.not_found");
-    match &listed[0].scope {
-        IncidentScope::Node {
-            run_id,
-            workflow_id,
-            node_id,
-        } => {
-            assert_eq!(run_id, "run-execution-incident-1");
-            assert_eq!(workflow_id, &expected_workflow_id);
-            assert_eq!(node_id, &NodeId("first".to_string()));
-        }
-        scope => panic!("expected node scope, got {scope:?}"),
-    }
 }
 
 #[test]
@@ -1390,6 +1326,7 @@ async fn headless_retries_transient_node_error() {
         Vec::new(),
         BTreeMap::new(),
         None,
+        None,
     )
     .await
     .expect("headless should auto-retry transient failure");
@@ -1435,6 +1372,7 @@ async fn headless_exhausted_transient_retries_returns_missing_retry() {
         Vec::new(),
         BTreeMap::new(),
         None,
+        None,
     )
     .await
     .expect_err("exhausted transient retries should surface MissingRetry");
@@ -1479,6 +1417,7 @@ async fn headless_run_errors_on_retryable_node_failure_instead_of_hanging() {
         Vec::new(),
         Vec::new(),
         BTreeMap::new(),
+        None,
         None,
     )
     .await
@@ -1632,6 +1571,81 @@ async fn stop_then_continue_restores_awaiting_input() {
     }
     handle.await.expect("resume drive task");
     assert!(saw_awaiting_again, "expected awaiting input after continue");
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+async fn stale_input_is_ignored_and_run_continues() {
+    #[derive(Clone)]
+    struct CompleteAi;
+
+    #[async_trait]
+    impl AiPort for CompleteAi {
+        async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            self.invoke_stream(request, &NoopStreamSink).await
+        }
+
+        async fn invoke_stream(
+            &self,
+            _request: AgentRequest,
+            _sink: &dyn AiStreamSink,
+        ) -> Result<AgentTurnOutcome, AgentError> {
+            Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                output: json!({"summary": "done"}),
+                raw_text: "{}".to_string(),
+                assistant_message: None,
+                usage: None,
+            }))
+        }
+    }
+
+    struct NoopStreamSink;
+
+    impl AiStreamSink for NoopStreamSink {
+        fn on_stream_event(&self, _event: AiStreamEvent) {}
+    }
+
+    let temp = TempDir::new().expect("tempdir");
+    let workflow = manual_review_workflow();
+    let (params, _) =
+        interactive_run_params_with_sink(workflow, temp.path().to_path_buf(), CompleteAi);
+    let (handle, mut event_rx, action_tx, _cancel, _) =
+        spawn_interactive_workflow_run(&tokio::runtime::Handle::current(), params);
+
+    let mut saw_stale_error = false;
+    let mut finished = false;
+    while let Ok(Some(event)) = timeout(Duration::from_secs(5), event_rx.recv()).await {
+        if matches!(
+            event,
+            ExecutionEvent::NodeAwaitingInput { ref node_id, .. } if node_id.0 == "review"
+        ) {
+            action_tx
+                .send(ExecutionAction::ProvideInput {
+                    node_id: NodeId("wrong-node".to_string()),
+                    text: "ignored".to_string(),
+                })
+                .expect("stale input");
+            action_tx
+                .send(ExecutionAction::ProvideInput {
+                    node_id: NodeId("review".to_string()),
+                    text: "continue".to_string(),
+                })
+                .expect("valid input");
+        }
+        if let ExecutionEvent::Error(message) = &event {
+            if message.contains("ignored input for node wrong-node") {
+                saw_stale_error = true;
+            }
+        }
+        if matches!(event, ExecutionEvent::Finished(_)) {
+            finished = true;
+            break;
+        }
+    }
+    handle.await.expect("drive task");
+
+    assert!(saw_stale_error, "expected stale input error event");
+    assert!(finished, "expected run to finish after valid input");
 }
 
 #[cfg_attr(miri, ignore)]
@@ -1835,7 +1849,7 @@ fn pending_checkpoint_records_pause_reason() {
     node.agent.auto_start = true;
     node.agent.model = "test-model".to_string();
     workflow.nodes = vec![node];
-    let mut engine = engine::InteractiveEngine::new(workflow, None).expect("engine");
+    let mut engine = engine::InteractiveEngine::new(workflow, None, None).expect("engine");
     let checkpoint = crate::run::persistence::PendingRunCheckpoint {
         reason: crate::run::persistence::RunCheckpointReason::AwaitingInput,
         engine: engine.prepare_stop_checkpoint(),

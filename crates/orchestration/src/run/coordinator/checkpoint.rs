@@ -8,7 +8,21 @@ use crate::run::ports::RunCheckpointStore;
 use crate::run::state::WorkflowRunState;
 use chrono::Utc;
 
-pub(super) fn status_for_checkpoint(reason: RunCheckpointReason) -> RunStatus {
+pub(super) fn load_replay_projection(
+    run_store: &dyn RunCheckpointStore,
+    roots: &[RunStoreRoot],
+    run_id: &str,
+) -> Result<WorkflowRunState, BackendError> {
+    let (root, _) = run_store
+        .load_record(roots, run_id)?
+        .ok_or_else(|| BackendError::RunNotFound(run_id.to_string()))?;
+    let checkpoint = run_store
+        .load_latest_checkpoint(&root, run_id)?
+        .ok_or_else(|| BackendError::RunHasNoCheckpoints(run_id.to_string()))?;
+    Ok(checkpoint.projection.into_replay_projection())
+}
+
+pub(crate) fn status_for_checkpoint(reason: RunCheckpointReason) -> RunStatus {
     match reason {
         RunCheckpointReason::AwaitingInput
         | RunCheckpointReason::AwaitingToolApproval

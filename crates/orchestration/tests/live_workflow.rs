@@ -200,6 +200,7 @@ async fn live_openai_workflow_preserves_sentinel_and_schema_contract() {
         vec![],
         BTreeMap::new(),
         None,
+        None,
     )
     .await
     .unwrap();
@@ -304,6 +305,7 @@ async fn live_chat_completions_tool_enabled_workflow_completes() {
         vec![],
         vec![],
         BTreeMap::new(),
+        None,
         None,
     )
     .await

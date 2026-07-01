@@ -69,6 +69,7 @@ export function AuthoringDraftPreview(props: {
           onSelectNode={setSelectedNodeId}
           onSelectEdge={setSelectedEdgeId}
           onUpdateNodePosition={noop}
+          onAutoLayout={noop}
           onCreateEdge={noop}
           onReconnectEdge={noop}
           onDeleteEdge={noop}

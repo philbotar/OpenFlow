@@ -137,7 +137,7 @@ Checks run in CI via `./scripts/check-architecture.sh`. Machine-readable rules l
 ### Tier 3 (Phase B) — seams and layout
 
 1. **`orchestration → providers` allowlist** — `orchestration/src` may import only listed config/factory symbols; `AiClient` is banned (use `create_provider`).
-2. **Engine invocation locality** — only `orchestration/src/run/execution/` may call `InteractiveEngine::new` / `WorkflowRunner::new`.
+2. **Engine invocation locality** — only `orchestration/src/run/execution/` may call `InteractiveEngine::new`.
 3. **Orchestration domain folders** — `agent/`, `workflow/`, `project/`, `settings/`, `tool/` must not `use crate::adapters::`.
 4. **UI Tauri seam** — `@tauri-apps/*` imports only in `api.ts`, `port.ts`, and test mocks.
 
@@ -147,7 +147,7 @@ Deferred: `tool/` → `lsp` narrowing; `providers → engine` submodule allowlis
 
 ## Engine Invocation Rule
 
-- Only `orchestration/run/execution/` may construct `InteractiveEngine` or `WorkflowRunner`.
+- Only `orchestration/run/execution/` may construct `InteractiveEngine`.
 - Interactive runs call `InteractiveEngine::run()`; orchestration handles only `NeedsInteraction` and terminal outcomes.
 - Tool and subagent execution goes through `ToolPortImpl` (`engine::ToolPort`).
 - UI, Desktop, and Providers never call the engine directly.

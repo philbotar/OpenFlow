@@ -14,7 +14,7 @@ use tokio::sync::{mpsc::UnboundedSender, Semaphore};
 use tokio_util::sync::CancellationToken;
 
 use super::subagents::{augment_call_subagent_tool_description, merge_subagent_summaries_into_map};
-use super::{emit_phase_timed, send_or_log, ExecutionEvent, NodeInterrupts};
+use super::{abort_run, emit_phase_timed, send_or_log, ExecutionEvent, NodeInterrupts};
 
 pub struct ToolPortImpl<A> {
     tool_runner: Arc<ToolRunner>,
@@ -28,7 +28,7 @@ pub struct ToolPortImpl<A> {
     cancel_token: CancellationToken,
     event_tx: UnboundedSender<ExecutionEvent>,
     node_interrupts: NodeInterrupts,
-    aborted_emitted: parking_lot::Mutex<bool>,
+    aborted_emitted: Arc<parking_lot::Mutex<bool>>,
     exclusive_semaphores: parking_lot::Mutex<BTreeMap<String, Arc<Semaphore>>>,
 }
 
@@ -38,23 +38,19 @@ where
 {
     #[allow(
         clippy::too_many_arguments,
-        reason = "ToolPortImpl wires eight run-scoped dependencies at the execution seam"
+        reason = "ToolPortImpl wires nine run-scoped dependencies at the execution seam"
     )]
     pub fn new(
         tool_runner: Arc<ToolRunner>,
-        lsp: crate::lsp::LspSettings,
+        lsp: crate::settings::model::LspSettings,
         workflow: Arc<Workflow>,
         agent_snapshots: Arc<BTreeMap<String, CallableAgent>>,
         ai: Arc<A>,
         cancel_token: CancellationToken,
         event_tx: UnboundedSender<ExecutionEvent>,
         node_interrupts: NodeInterrupts,
+        aborted_emitted: Arc<parking_lot::Mutex<bool>>,
     ) -> Self {
-        let lsp = crate::settings::model::LspSettings {
-            enabled: lsp.enabled,
-            format_on_write: lsp.format_on_write,
-            diagnostics_on_write: lsp.diagnostics_on_write,
-        };
         let mut declared_subagents = BTreeMap::new();
         for node in &workflow.nodes {
             let summaries = build_predefined_subagent_summaries(node, &agent_snapshots);
@@ -74,7 +70,7 @@ where
             cancel_token,
             event_tx,
             node_interrupts,
-            aborted_emitted: parking_lot::Mutex::new(false),
+            aborted_emitted,
             exclusive_semaphores: parking_lot::Mutex::new(BTreeMap::new()),
         }
     }
@@ -91,6 +87,7 @@ where
 {
     fn augment_request(&self, node_id: &NodeId, request: &mut engine::AgentRequest) {
         let mut predefined_registered = self.predefined_registered.lock();
+
         if !predefined_registered.contains(node_id) {
             if let Some(node) = self.workflow.nodes.iter().find(|node| node.id == *node_id) {
                 let summaries = build_predefined_subagent_summaries(node, &self.agent_snapshots);
@@ -105,12 +102,14 @@ where
             }
             predefined_registered.insert(node_id.clone());
         }
+
         request.available_tools = self
             .tool_runner
             .registry()
             .definitions_for(&request.tool_config);
         if let Some(node) = self.workflow.nodes.iter().find(|node| node.id == *node_id) {
             let declared = self.declared_subagents.lock();
+
             augment_call_subagent_tool_description(
                 &mut request.available_tools,
                 node,
@@ -309,12 +308,11 @@ where
                 None => return None,
             }
         }
-        Some(
-            results
-                .into_iter()
-                .map(|result| result.expect("every parallel tool call is denied or executed"))
-                .collect(),
-        )
+        let mut collected = Vec::with_capacity(results.len());
+        for result in results {
+            collected.push(result?);
+        }
+        Some(collected)
     }
 
     async fn exclusive_permit(&self, tool_name: &str) -> Option<tokio::sync::OwnedSemaphorePermit> {
@@ -598,7 +596,7 @@ where
                 tokio::select! {
                     biased;
                     _ = self.cancel_token.cancelled() => {
-                        abort_run(&self.event_tx, &self.aborted_emitted);
+                        abort_run(&self.event_tx, self.aborted_emitted.as_ref());
                         None
                     }
                     _ = node_token.cancelled() => {
@@ -612,7 +610,7 @@ where
                 tokio::select! {
                     biased;
                     _ = self.cancel_token.cancelled() => {
-                        abort_run(&self.event_tx, &self.aborted_emitted);
+                        abort_run(&self.event_tx, self.aborted_emitted.as_ref());
                         None
                     }
                     result = run_tool => Some(result),
@@ -640,18 +638,6 @@ pub(super) fn send_run_telemetry(
     for event in events {
         let _ = event_tx.send(event);
     }
-}
-
-pub(super) fn abort_run(
-    event_tx: &UnboundedSender<ExecutionEvent>,
-    aborted_emitted: &parking_lot::Mutex<bool>,
-) {
-    let mut emitted = aborted_emitted.lock();
-    if *emitted {
-        return;
-    }
-    *emitted = true;
-    let _ = event_tx.send(ExecutionEvent::Aborted);
 }
 
 fn render_tool_error(error: ToolRunnerError) -> String {

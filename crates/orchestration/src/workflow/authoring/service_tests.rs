@@ -1,4 +1,5 @@
 use super::WorkflowAuthoringService;
+use crate::api::WorkflowAuthoringRole;
 use crate::settings::model::AppSettings;
 use async_trait::async_trait;
 use engine::{
@@ -328,9 +329,9 @@ async fn send_turn_returns_assistant_message_when_clarification_exhausted() {
         .expect("turn");
 
     assert_eq!(result.messages.len(), 2);
-    assert_eq!(result.messages[0].role, "user");
+    assert_eq!(result.messages[0].role, WorkflowAuthoringRole::User);
     assert_eq!(result.messages[0].content, "Build a simple planner");
-    assert_eq!(result.messages[1].role, "assistant");
+    assert_eq!(result.messages[1].role, WorkflowAuthoringRole::Assistant);
     assert_eq!(
         result.messages[1].content,
         "What kind of workflow do you want?"
@@ -433,4 +434,33 @@ async fn send_turn_retries_malformed_submit_output_and_materializes_draft() {
     assert!(result.validation.valid, "{:?}", result.validation.errors);
     assert_eq!(result.draft.as_ref().expect("draft").nodes.len(), 2);
     assert_eq!(ai.calls.load(Ordering::SeqCst), 2);
+}
+
+#[test]
+fn end_session_removes_authoring_session() {
+    let service = WorkflowAuthoringService::new();
+    let session_id = service.start_session(None);
+    assert!(service.get_session(&session_id).is_some());
+    assert!(service.end_session(&session_id));
+    assert!(service.get_session(&session_id).is_none());
+    assert!(!service.end_session(&session_id));
+}
+
+#[test]
+fn start_session_evicts_oldest_when_at_capacity() {
+    let service = WorkflowAuthoringService::new();
+    let mut ids = Vec::with_capacity(65);
+    ids.push(service.start_session(None));
+    for _ in 1..64 {
+        ids.push(service.start_session(None));
+    }
+    assert_eq!(service.session_count(), 64);
+    let latest = service.start_session(None);
+    assert_eq!(service.session_count(), 64);
+    let remaining = ids
+        .iter()
+        .filter(|id| service.get_session(id).is_some())
+        .count();
+    assert_eq!(remaining, 63);
+    assert!(service.get_session(&latest).is_some());
 }

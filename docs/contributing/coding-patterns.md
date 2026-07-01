@@ -20,7 +20,7 @@ Patterns we follow in this repo.
 | --- | --- |
 | Workflow types, defaults, `WorkflowSettings` | `crates/engine/src/graph/workflow.rs` |
 | Graph validity and execution layer order | `crates/engine/src/graph/validation.rs` |
-| Batch run semantics | `crates/engine/src/execution/workflow_runner.rs` |
+| Batch / headless run semantics | `crates/orchestration/src/run/execution/headless.rs` |
 | Interactive pause/resume semantics | `crates/engine/src/execution/interactive_engine/` |
 | Node invocation and prompt assembly | `crates/engine/src/execution/node_invocation.rs` |
 | Node templates, defaults, locked fields, and `TemplateStore` trait | `crates/engine/src/template/` |

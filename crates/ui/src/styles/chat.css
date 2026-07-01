@@ -12,6 +12,7 @@
 
 .chat-settled {
   gap: 0;
+  padding: 0;
 }
 
 .terminal-shell {
@@ -62,22 +63,31 @@
 
 /* ── Chat composer ── */
 .chat-composer-bar {
+  position: relative;
+  z-index: 2;
   padding: 0;
   gap: 0;
-  border-top: 1px solid var(--border-subtle);
+  border-top: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.chat-composer-bar .tool-approval-card {
+  width: min(920px, calc(100% - 72px));
+  margin: 0 auto 8px;
 }
 
 .chat-composer {
-  padding: 0;
+  width: min(920px, calc(100% - 72px));
+  margin: 0 auto;
+  padding: 6px 0;
 }
 
 .chat-composer-pill {
-  border-radius: 0;
+  border-radius: var(--radius-pill);
   box-shadow: none;
-  padding: 8px 10px;
-  border-left: 0;
-  border-right: 0;
-  border-bottom: 0;
+  padding: 4px 7px 4px 10px;
+  border: 1px solid var(--border-subtle);
 }
 
 .chat-composer-pill .composer-input-mirror {
@@ -91,7 +101,7 @@
 
 /* ── Chat messages ── */
 .message-user {
-  align-items: flex-start;
+  align-items: flex-end;
 }
 
 .message {
@@ -99,9 +109,11 @@
 }
 
 .message-user .message-content {
-  background: transparent;
-  border-radius: 0;
-  padding: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 13px;
+  background: var(--surface-emphasis);
+  padding: 6px 12px;
+  line-height: 1.35;
   box-shadow: none;
 }
 
@@ -110,8 +122,12 @@
 }
 
 .conversation-content {
-  gap: 4px;
+  gap: 0;
   padding: 0;
+}
+
+.chat-transcript-scroll {
+  background: transparent;
 }
 
 .node-completed-bubble {

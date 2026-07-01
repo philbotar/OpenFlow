@@ -1,5 +1,22 @@
+//! Shared workflow normalization before execution handoff.
+//!
+// ponytail: at `run/` root (not `coordinator/`) so execution can import without coordinator→execution cycle.
+
 use crate::settings::model::ProviderProfile;
 use engine::Workflow;
+
+/// Normalize a workflow before coordinator spawn or headless execution.
+pub fn prepare_workflow_for_execution(workflow: &mut Workflow, profile: Option<&ProviderProfile>) {
+    apply_workflow_reasoning_defaults(workflow);
+    if let Some(profile) = profile {
+        apply_provider_reasoning_defaults(workflow, profile);
+    }
+}
+
+/// Apply workflow then provider reasoning defaults to unset nodes.
+pub fn apply_reasoning_defaults(workflow: &mut Workflow, profile: &ProviderProfile) {
+    prepare_workflow_for_execution(workflow, Some(profile));
+}
 
 /// Apply workflow-level reasoning defaults to nodes that have no per-node override.
 pub fn apply_workflow_reasoning_defaults(workflow: &mut Workflow) {
@@ -24,12 +41,6 @@ pub fn apply_workflow_reasoning_defaults(workflow: &mut Workflow) {
             node.agent.reasoning_budget_tokens = default_budget;
         }
     }
-}
-
-/// Apply workflow then provider reasoning defaults to unset nodes.
-pub fn apply_reasoning_defaults(workflow: &mut Workflow, profile: &ProviderProfile) {
-    apply_workflow_reasoning_defaults(workflow);
-    apply_provider_reasoning_defaults(workflow, profile);
 }
 
 /// Apply provider-level reasoning defaults to nodes that have no per-node override.
@@ -81,6 +92,19 @@ mod tests {
             agent: AgentNodeConfig::default(),
         });
         workflow
+    }
+
+    #[test]
+    fn prepare_workflow_for_execution_applies_workflow_defaults_without_profile() {
+        let mut workflow = sample_workflow();
+        workflow.settings.reasoning_effort = Some("medium".to_string());
+
+        prepare_workflow_for_execution(&mut workflow, None);
+
+        assert_eq!(
+            workflow.nodes[0].agent.reasoning_effort,
+            Some("medium".to_string())
+        );
     }
 
     #[test]

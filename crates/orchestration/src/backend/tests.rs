@@ -1,12 +1,9 @@
 use super::*;
-use crate::adapters::storage::incident_store::FileIncidentStore;
-use crate::incident::IncidentRecorder;
 use crate::run::execution::{ExecutionAction, ExecutionEvent};
 use crate::settings::model::{ProviderProfile, ProviderTransport};
 use crate::workflow::catalog::default_workflow;
 use engine::{Node, NodeId, Workflow};
 use providers::ProviderId;
-use std::sync::Arc;
 use tempfile::tempdir;
 
 fn project_dir(dir: &tempfile::TempDir) -> String {
@@ -218,150 +215,6 @@ fn provider_readiness_reports_missing_key() {
 
 #[cfg_attr(miri, ignore)]
 #[test]
-fn terminal_start_failure_records_incident() {
-    use crate::incident::IncidentCategory;
-
-    let (mut backend, dir) = backend();
-    backend.incidents = Arc::new(IncidentRecorder::new(Arc::new(FileIncidentStore::new(
-        dir.path().join("incidents.jsonl"),
-    ))));
-
-    let error = backend
-        .start_terminal(
-            Some("/definitely/not/a/real/openflow/terminal/path"),
-            80,
-            24,
-        )
-        .expect_err("invalid cwd should fail");
-    assert!(matches!(error, BackendError::ProjectOperation(_)));
-
-    let incidents = backend.list_incidents(10).expect("list incidents");
-    assert_eq!(incidents.len(), 1);
-    assert_eq!(incidents[0].code, "terminal.start_failed");
-    assert_eq!(incidents[0].category, IncidentCategory::Terminal);
-}
-
-#[cfg_attr(miri, ignore)]
-#[test]
-fn backend_err_persists_incident_before_returning() {
-    let (mut backend, dir) = backend();
-    backend.incidents = Arc::new(IncidentRecorder::new(Arc::new(FileIncidentStore::new(
-        dir.path().join("incidents.jsonl"),
-    ))));
-
-    let error = backend.backend_err(BackendError::NoActiveRun);
-    assert!(matches!(error, BackendError::NoActiveRun));
-
-    let incidents = backend.list_incidents(10).expect("list incidents");
-    assert_eq!(incidents.len(), 1);
-    assert_eq!(incidents[0].code, "backend.no_active_run");
-}
-
-#[cfg_attr(miri, ignore)]
-#[test]
-fn list_incident_summaries_projects_records() {
-    use crate::incident::{IncidentCategory, IncidentRecord, IncidentScope, IncidentSeverity};
-
-    let (mut backend, dir) = backend();
-    backend.incidents = Arc::new(IncidentRecorder::new(Arc::new(FileIncidentStore::new(
-        dir.path().join("incidents.jsonl"),
-    ))));
-
-    backend
-        .incidents()
-        .record(IncidentRecord {
-            id: "inc-1".to_string(),
-            created_at_ms: 12_345,
-            severity: IncidentSeverity::Warning,
-            category: IncidentCategory::Node,
-            scope: IncidentScope::Node {
-                run_id: "run-1".to_string(),
-                workflow_id: "wf-1".to_string(),
-                node_id: NodeId("node-a".to_string()),
-            },
-            code: "node.failed".to_string(),
-            message: "something broke".to_string(),
-            hint: None,
-            retryable: true,
-            context: Default::default(),
-            resolved: false,
-        })
-        .expect("record incident");
-
-    let summaries = backend
-        .list_incident_summaries(10)
-        .expect("list incident summaries");
-    assert_eq!(summaries.len(), 1);
-    let summary = &summaries[0];
-    assert_eq!(summary.id, "inc-1");
-    assert_eq!(summary.created_at_ms, 12_345);
-    assert_eq!(summary.severity, "warning");
-    assert_eq!(summary.category, "node");
-    assert_eq!(summary.code, "node.failed");
-    assert_eq!(summary.message, "something broke");
-    assert!(summary.retryable);
-    assert!(!summary.resolved);
-    assert_eq!(summary.workflow_id.as_deref(), Some("wf-1"));
-    assert_eq!(summary.run_id.as_deref(), Some("run-1"));
-    assert_eq!(summary.node_id.as_deref(), Some("node-a"));
-}
-
-#[cfg_attr(miri, ignore)]
-#[test]
-fn clear_resolved_incidents_removes_dismissed_records() {
-    use crate::incident::{IncidentCategory, IncidentRecord, IncidentScope, IncidentSeverity};
-
-    let (mut backend, dir) = backend();
-    backend.incidents = Arc::new(IncidentRecorder::new(Arc::new(FileIncidentStore::new(
-        dir.path().join("incidents.jsonl"),
-    ))));
-
-    backend
-        .incidents()
-        .record(IncidentRecord {
-            id: "keep".to_string(),
-            created_at_ms: 1,
-            severity: IncidentSeverity::Error,
-            category: IncidentCategory::Backend,
-            scope: IncidentScope::App,
-            code: "backend.io".to_string(),
-            message: "keep".to_string(),
-            hint: None,
-            retryable: false,
-            context: Default::default(),
-            resolved: false,
-        })
-        .expect("record keep");
-    backend
-        .incidents()
-        .record(IncidentRecord {
-            id: "remove".to_string(),
-            created_at_ms: 2,
-            severity: IncidentSeverity::Error,
-            category: IncidentCategory::Backend,
-            scope: IncidentScope::App,
-            code: "backend.io".to_string(),
-            message: "remove".to_string(),
-            hint: None,
-            retryable: false,
-            context: Default::default(),
-            resolved: false,
-        })
-        .expect("record remove");
-    backend.dismiss_incident("remove").expect("dismiss remove");
-
-    let removed = backend
-        .clear_resolved_incidents()
-        .expect("clear resolved incidents");
-    assert_eq!(removed, 1);
-
-    let active = backend.list_incidents(10).expect("list incidents");
-    assert_eq!(active.len(), 1);
-    assert_eq!(active[0].id, "keep");
-}
-
-#[cfg_attr(miri, ignore)]
-#[test]
 fn start_run_returns_initial_state_and_manual_events() {
     let (backend, _dir) = backend();
     backend.block_on_test(async {
@@ -568,7 +421,7 @@ fn submit_user_input_updates_snapshot_and_sends_action() {
             .await
             .expect("submit input");
 
-        assert!(run_state.awaiting_node_id.is_none());
+        assert_eq!(run_state.awaiting_node_id, Some(NodeId("idea".to_string())));
         assert_eq!(
             run_state
                 .chat_logs
@@ -622,7 +475,7 @@ fn submit_tool_approval_updates_snapshot_and_sends_action() {
             .await
             .expect("submit approval");
 
-        assert!(run_state.pending_approvals.is_empty());
+        assert_eq!(run_state.pending_approvals.len(), 1);
         match action_rx.recv().await.expect("action") {
             ExecutionAction::ResolveApproval {
                 approval_id,

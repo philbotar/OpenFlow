@@ -40,6 +40,19 @@ export interface ScheduleStatus {
   lastError: string | null;
 }
 
+export type SchedulePreset = "timed" | "interval" | "custom";
+export type IntervalUnit = "minutes" | "hours" | "days";
+
+export interface ScheduleDraft {
+  preset: SchedulePreset;
+  time: string;
+  weekdays: string[];
+  intervalValue: string;
+  intervalUnit: IntervalUnit;
+  enabled: boolean;
+  customCron?: string;
+}
+
 export interface WorkflowSettings {
   shared_context: string;
   schedule?: WorkflowSchedule | null;
@@ -252,23 +265,6 @@ export interface ToolArtifactSummary {
   sizeBytes: number;
 }
 
-export interface RunEvent {
-  node_id: NodeId;
-  kind:
-    | "queued"
-    | "started"
-    | "retrying"
-    | "completed"
-    | "failed"
-    | "Queued"
-    | "Started"
-    | "Retrying"
-    | "Completed"
-    | "Failed";
-  message: string;
-  output: unknown | null;
-}
-
 export interface NodeRunOutput {
   node_id: NodeId;
   output: unknown;
@@ -276,8 +272,10 @@ export interface NodeRunOutput {
 
 export interface RunReport {
   workflow_id: WorkflowId;
-  events: RunEvent[];
   outputs: NodeRunOutput[];
+  read_calls?: number;
+  redundant_reads?: number;
+  tokens_in?: number;
 }
 
 export type FileChangeOp = "create" | "update" | "delete" | "rename";
@@ -458,7 +456,7 @@ export interface WorkflowValidationSummary {
 }
 
 export interface WorkflowAuthoringMessage {
-  role: string;
+  role: "user" | "assistant";
   content: string;
 }
 

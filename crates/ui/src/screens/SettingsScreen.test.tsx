@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
+import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { AppContext, type AppContextValue } from "../context/AppContext";
 import { SettingsScreen } from "../screens/SettingsScreen";
+import type { SettingsSectionId } from "../settings/types";
 
 describe("SettingsScreen", () => {
   let container: HTMLDivElement;
@@ -19,7 +21,11 @@ describe("SettingsScreen", () => {
   });
 
   function renderScreen(overrides: Partial<AppContextValue> = {}) {
+    const [settingsSection, setSettingsSection] =
+      createSignal<SettingsSectionId>("appearance");
     const ctx = {
+      settingsSection,
+      setSettingsSection,
       themePreference: () => "system" as const,
       handleSetThemePreference: vi.fn(),
       activeProfileMemo: () => ({

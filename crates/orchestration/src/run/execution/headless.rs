@@ -1,5 +1,6 @@
+use crate::run::prep::prepare_workflow_for_execution;
 use crate::run::state::WorkflowRunState;
-use crate::settings::model::McpSettings;
+use crate::settings::model::{McpSettings, ProviderProfile};
 use engine::CallableAgent;
 use engine::{AiPort, NodeId, Workflow};
 use std::collections::{BTreeMap, HashMap, VecDeque};
@@ -25,20 +26,29 @@ fn should_auto_retry_node(workflow: &Workflow, retry_count: u8, error: &str) -> 
 
 /// # Errors
 /// Returns an error if the workflow execution fails.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "headless runner entry bundles workflow prep inputs at the execution seam"
+)]
 pub async fn run_workflow_headless<A>(
-    workflow: Workflow,
+    mut workflow: Workflow,
     entrypoint: Option<String>,
     ai: A,
     manual_inputs: Vec<ManualInput>,
     approvals: Vec<ApprovalResponse>,
     agent_snapshots: BTreeMap<String, CallableAgent>,
     execution_cwd: Option<PathBuf>,
+    provider_profile: Option<&ProviderProfile>,
 ) -> Result<WorkflowRunSnapshot, WorkflowExecutionError>
 where
     A: AiPort + Send + Sync + 'static,
 {
+    prepare_workflow_for_execution(&mut workflow, provider_profile);
+
     let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
+
     let (action_tx, action_rx) = tokio::sync::mpsc::unbounded_channel();
+
     let execution_cwd = match execution_cwd {
         Some(path) => path.canonicalize().map_err(|error| {
             WorkflowExecutionError::Execution(format!(
@@ -47,11 +57,16 @@ where
         })?,
         None => resolve_execution_cwd(None).map_err(WorkflowExecutionError::Execution)?,
     };
+
     let cancel_token = CancellationToken::new();
+
     let snapshot_store =
         Arc::new(crate::tools::edit::hashline::snapshots::InMemorySnapshotStore::new());
+
     let pending_engine_reverts = Arc::new(parking_lot::Mutex::new(Vec::new()));
+
     let node_interrupts: NodeInterrupts = Arc::new(parking_lot::Mutex::new(BTreeMap::new()));
+
     let handle = tokio::spawn(drive_interactive_workflow(
         InteractiveWorkflowRunParams {
             workflow: workflow.clone(),

@@ -65,16 +65,14 @@ For where terms live in code, see [Engine modules](#engine-modules), [Orchestrat
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
 | **Execution layer** | Topologically sorted group of nodes at the same depth; nodes in a layer may run in parallel | Layer, depth level, wave |
-| **RunEvent** | Compact lifecycle record in `RunReport` (queued, started, retrying, completed, failed) | Event, log entry |
 | **RunTelemetry** | Rich interactive run event stream (chat, tools, subagents, pauses); `ExecutionEvent` alias in orchestration | Execution event |
-| **RunEventKind** | Variant of a compact `RunEvent` | Event type |
-| **RunReport** | Aggregated result after a workflow run: events and per-node outputs | Summary, result, run summary |
+| **RunReport** | Aggregated result after a workflow run: per-node outputs plus read/token counters | Summary, result, run summary |
 | **NodeRunOutput** | Structured output from one node | Node output, step result |
 | **EntrypointText** | Initial text for nodes with no upstream dependencies at run start | Seed input, initial prompt |
 | **Project** | Folder-scoped workspace binding workflows to a repo path | Workspace, repo binding |
 | **RetryPolicy** | Workflow-level retry: max attempts and backoff (`WorkflowSettings.retry_policy`) | Retry config |
 | **WorkflowSchedule** | Optional cron schedule on a workflow | Cron schedule |
-| **NodeInvocation** | Shared assembly of upstream inputs and `AgentRequest` for both execution engines | Request builder |
+| **NodeInvocation** | Shared assembly of upstream inputs and `AgentRequest` for `InteractiveEngine` | Request builder |
 
 ## AI boundary
 
@@ -106,18 +104,18 @@ For where terms live in code, see [Engine modules](#engine-modules), [Orchestrat
 
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
-| **InteractiveEngine** | Stateful poll-based engine for step-through runs (desktop app path) | Step engine, interactive runner |
-| **EnginePollResult** | Next action after `poll`: CallAi, AwaitInput, AwaitToolApproval, RunTools, Completed, Failed | Poll result |
-| **WorkflowRunner** | Non-interactive engine: run to completion in one call; no tools or human input | Batch runner, headless runner |
-| **Pause** | Suspend execution awaiting human input or tool approval | Step, break |
-| **Resume** | Continue from a paused state | Continue, step forward |
+| **InteractiveEngine** | Sans-I/O state machine for desktop and headless runs; `run()` invokes `AiPort`/`ToolPort` until terminal or `NeedsInteraction` | Step engine, interactive runner |
+| **EngineRunResult** | Outcome of one `run()` step: `Completed(RunReport)`, `Failed`, `Cancelled`, or `NeedsInteraction` | Run result, poll result |
+| **NeedsInteraction** | `EngineRunResult` variant batching paused nodes (`EngineAwaitInput`, `EngineAwaitApproval`, `EngineRetryableNode`) | Pause batch |
+| **Pause** | Suspend execution awaiting human input, tool approval, or retry | Step, break |
+| **Resume** | Continue from a paused state via `on_*` handlers and another `run()` | Continue, step forward |
 
 ## Tool approval
 
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
 | **ToolApproval** | Explicit human consent before a tool call runs | Tool consent, tool permit |
-| **AwaitToolApproval** | `EnginePollResult` variant when execution waits on approval | Waiting for tool approval |
+| **EngineAwaitApproval** | Pause payload when a node waits on tool approval before `run()` returns | Waiting for tool approval |
 
 ## Engine modules
 
@@ -127,7 +125,7 @@ Map glossary buckets to `crates/engine/src/`:
 | --- | --- |
 | `graph/` | Workflow, Node, Edge, ids, settings, `CallableAgent`, `resolve_callable_agent_snapshots`, `validate_workflow`, execution layers |
 | `template/` | Template, LockedField, TemplateStore trait, builtin presets |
-| `execution/` | WorkflowRunner, InteractiveEngine, RunReport, RunEvent, RunTelemetry, subagent_runtime, NodeInvocation |
+| `execution/` | InteractiveEngine, RunReport, RunTelemetry, subagent_runtime, NodeInvocation |
 | `conversation/` | ChatMessage, ChatRole, AgentTranscriptItem |
 | `tools/` | NodeToolConfig, ApprovalMode, ToolCall, ToolResult, policy helpers |
 | `ports/` | AiPort, AgentRequest, AgentTurnOutcome, human/tool input ports |
@@ -152,6 +150,7 @@ See [orchestration crate layout](architecture/orchestration-layout.md) for the c
 | `orchestration/lib.rs` | `AgentDefinition` type alias for persisted `CallableAgent` JSON |
 | `orchestration/run/coordinator/mod.rs` | Run session, Pause/Resume host path |
 | `orchestration/settings/facade.rs` | Settings, provider readiness |
+| `orchestration/settings/context_window.rs` | Bundled model → context-window lookup (`resources/context_window_sizes.json`) |
 
 ## Relationships
 
@@ -163,8 +162,8 @@ See [orchestration crate layout](architecture/orchestration-layout.md) for the c
 - An **AgentRequest** goes to **AiPort** for one **Node** per turn.
 - **AgentTurnOutcome** is **AgentTurnSuccess**, **AgentToolCallBatch**, or **AgentNeedUserInput**.
 - A **Template** instantiates a **Node** with default config and **LockedField** constraints.
-- **InteractiveEngine** yields **EnginePollResult** until **Completed** or **Failed**.
-- **WorkflowRunner** is the batch path; **InteractiveEngine** is the step-through path.
+- **InteractiveEngine::run** returns **EngineRunResult** until **Completed**, **Failed**, **Cancelled**, or **NeedsInteraction**.
+- Headless acceptance runs use the same **InteractiveEngine** via `run_workflow_headless` in orchestration.
 
 ## Example dialogue
 
@@ -174,16 +173,16 @@ See [orchestration crate layout](architecture/orchestration-layout.md) for the c
 
 > **Dev:** "What happens when the model returns **ToolCalls**?"
 >
-> **Domain expert:** "**InteractiveEngine** emits **AwaitToolApproval** (or **RunTools** in yolo mode). Approved calls run; **ToolResult** feeds the same **Node** for another turn."
+> **Domain expert:** "**InteractiveEngine** returns **NeedsInteraction** with **EngineAwaitApproval** when policy requires a prompt (auto-allowed calls run inside **run**). Approved calls execute; **ToolResult** feeds the same **Node** for another turn."
 
-> **Dev:** "What's the difference between **WorkflowRunner** and **InteractiveEngine**?"
+> **Dev:** "How do headless tests run workflows?"
 >
-> **Domain expert:** "**WorkflowRunner** is headless batch: one model call per node, no tools, no pause. **InteractiveEngine** drives the desktop app: multi-turn chat, tools, approval, resume."
+> **Domain expert:** **`run_workflow_headless`** in orchestration constructs **InteractiveEngine** with scripted inputs and approvals — same state machine as the desktop app, no separate batch runner.
 
 ## Flagged ambiguities
 
 - **Layer** - in `execution_layers`, DAG depth grouping; in CSS/UI, z-index. Here: execution layer only.
-- **Event** - **RunTelemetry** (interactive UI stream) vs compact **RunEvent** in `RunReport` vs OS/Tauri events.
+- **Event** - **RunTelemetry** / **ExecutionEvent** (interactive UI stream) vs OS/Tauri IPC events. Lifecycle detail lives in telemetry, not **RunReport**.
 - **Config** - **AgentNodeConfig** (agent behavior) vs **NodeToolConfig** (tool environment). Distinct concepts.
 - **Template** - canonical type in `engine::template`. Legacy `NodeTemplate` JSON migrates in **FileTemplateStore**.
-- **Runner** - prefer **WorkflowRunner** (batch) or **InteractiveEngine** (step-through). Do not use "runner" alone in docs or module names.
+- **Runner** - prefer **InteractiveEngine** or **run_workflow_headless**. Do not use "runner" alone in docs or module names.

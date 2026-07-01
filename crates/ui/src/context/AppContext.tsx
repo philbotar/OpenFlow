@@ -14,6 +14,7 @@ import type {
   RunSummary,
   Screen,
   ScheduleStatus,
+  ScheduleDraft,
   Project,
   ProjectFileReference,
   SkillSummary,
@@ -33,6 +34,7 @@ import type {
   WorkflowCanvasStatusByNode,
   WorkflowCanvasSubagentsByNode,
 } from "../lib/workflow";
+import type { SettingsSectionId } from "../settings/types";
 
 export interface AppContextValue {
   // ── Signal accessors ──────────────────────────────────────────────────────
@@ -43,6 +45,7 @@ export interface AppContextValue {
   selectedNodeId: Accessor<NodeId | null>;
   selectedEdgeId: Accessor<EdgeId | null>;
   screen: Accessor<Screen>;
+  settingsSection: Accessor<SettingsSectionId>;
   settings: Accessor<AppSettings>;
   discoveredMcp: Accessor<McpDiscoveryRow[]>;
   refreshDiscoveredMcp: (projectPath?: string | null) => Promise<void>;
@@ -93,6 +96,7 @@ export interface AppContextValue {
   closeSidebarDrawer: () => void;
   toggleSidebarDrawer: () => void;
   shortcutsModalOpen: Accessor<boolean>;
+  firstRunOnboardingOpen: Accessor<boolean>;
   chatFilterNodeId: Accessor<NodeId | null>;
   chatFocusNode: Accessor<{ nodeId: NodeId; tick: number } | null>;
   pickedLiveNodeId: Accessor<NodeId | null>;
@@ -120,6 +124,7 @@ export interface AppContextValue {
   setSelectedTraceIndex: Setter<number | null>;
   setSelectedAgentId: Setter<string | null>;
   setScreen: Setter<Screen>;
+  setSettingsSection: Setter<SettingsSectionId>;
   navigateToScreen: (screen: Screen) => void;
 
   // ── Derived memos ─────────────────────────────────────────────────────────
@@ -163,6 +168,9 @@ export interface AppContextValue {
     workflowId: string,
     schedule: WorkflowSchedule | null,
   ) => Promise<void>;
+  scheduleFromPreset: (draft: ScheduleDraft) => Promise<WorkflowSchedule>;
+  scheduleDraftFromSchedule: (schedule: WorkflowSchedule) => Promise<ScheduleDraft>;
+  describeWorkflowSchedule: (schedule: WorkflowSchedule) => Promise<string>;
   handleAddProject: () => Promise<void>;
   handleSelectProject: (projectId: string) => void;
   handleToggleProjectExpanded: (projectId: string) => void;
@@ -193,6 +201,7 @@ export interface AppContextValue {
   handleSelectNode: (nodeId: NodeId | null) => void;
   handleSelectEdge: (edgeId: EdgeId | null) => void;
   handleCanvasNodePosition: (nodeId: NodeId, x: number, y: number) => void;
+  handleAutoLayoutWorkflow: () => void;
   handleCreateEdge: (from: NodeId, to: NodeId) => void;
   handleReconnectEdge: (edgeId: EdgeId, from: NodeId, to: NodeId) => void;
   handleDeleteEdge: (edgeId: EdgeId) => void;
@@ -220,6 +229,9 @@ export interface AppContextValue {
   handleSetThemePreference: (preference: ThemePreference) => void;
   openShortcutsModal: () => void;
   closeShortcutsModal: () => void;
+  dismissFirstRunOnboarding: () => void;
+  handleOnboardingBuildWorkflow: () => Promise<void>;
+  handleOnboardingSetupProvider: () => void;
   handleClearRunTrace: () => Promise<void>;
   handleRefreshRunHistory: () => Promise<void>;
   handleReplayRun: (runId: string) => Promise<void>;

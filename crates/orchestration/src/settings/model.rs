@@ -108,7 +108,7 @@ impl ProviderProfile {
             reasoning_effort_options: spec.default_reasoning_effort_options(),
             default_reasoning_budget_tokens: Self::default_budget_tokens_for_spec(spec),
             default_reasoning_effort: None,
-            context_window_sizes: engine::default_context_window_sizes(),
+            context_window_sizes: crate::settings::default_context_window_sizes(),
         }
     }
 
@@ -145,7 +145,7 @@ impl ProviderProfile {
             reasoning_effort_options: Vec::new(),
             default_reasoning_budget_tokens: BTreeMap::new(),
             default_reasoning_effort: None,
-            context_window_sizes: engine::default_context_window_sizes(),
+            context_window_sizes: crate::settings::default_context_window_sizes(),
         }
     }
 
@@ -217,14 +217,16 @@ pub struct LspSettings {
     pub format_on_write: bool,
     #[serde(default)]
     pub diagnostics_on_write: bool,
+    #[serde(default = "default_lsp_timeout_ms")]
+    pub timeout_ms: u64,
 }
 
 fn default_lsp_enabled() -> bool {
     true
 }
 
-fn default_incident_retention_max() -> u32 {
-    500
+fn default_lsp_timeout_ms() -> u64 {
+    5_000
 }
 
 fn default_true() -> bool {
@@ -272,7 +274,55 @@ impl Default for LspSettings {
             enabled: true,
             format_on_write: false,
             diagnostics_on_write: false,
+            timeout_ms: default_lsp_timeout_ms(),
         }
+    }
+}
+
+impl LspSettings {
+    fn apply_env_overrides(&mut self) {
+        if matches!(
+            std::env::var("PI_LSP_ENABLED").as_deref(),
+            Ok("0") | Ok("false") | Ok("off")
+        ) {
+            self.enabled = false;
+        }
+        if matches!(
+            std::env::var("PI_LSP_FORMAT_ON_WRITE").as_deref(),
+            Ok("1") | Ok("true") | Ok("on")
+        ) {
+            self.format_on_write = true;
+        }
+        if matches!(
+            std::env::var("PI_LSP_DIAGNOSTICS_ON_WRITE").as_deref(),
+            Ok("1") | Ok("true") | Ok("on")
+        ) {
+            self.diagnostics_on_write = true;
+        }
+        if let Ok(value) = std::env::var("PI_LSP_TIMEOUT_MS") {
+            if let Ok(timeout) = value.parse() {
+                self.timeout_ms = timeout;
+            }
+        }
+    }
+
+    #[must_use]
+    pub fn from_env() -> Self {
+        let mut settings = Self::default();
+        settings.apply_env_overrides();
+        settings
+    }
+
+    #[must_use]
+    pub fn runtime(&self) -> Self {
+        let mut settings = self.clone();
+        settings.apply_env_overrides();
+        settings
+    }
+
+    #[must_use]
+    pub fn writethrough_active(&self) -> bool {
+        self.enabled && (self.format_on_write || self.diagnostics_on_write)
     }
 }
 
@@ -294,8 +344,6 @@ pub struct AppSettings {
     pub mcp: McpSettings,
     #[serde(default)]
     pub local_diagnostics: LocalDiagnosticsSettings,
-    #[serde(default = "default_incident_retention_max")]
-    pub incident_retention_max: u32,
 }
 
 fn migrate_bedrock_legacy_profile(profile: &mut ProviderProfile) {
@@ -388,7 +436,6 @@ impl Default for AppSettings {
             lsp: LspSettings::default(),
             mcp: McpSettings::default(),
             local_diagnostics: LocalDiagnosticsSettings::default(),
-            incident_retention_max: default_incident_retention_max(),
         }
     }
 }

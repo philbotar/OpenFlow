@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { render } from "solid-js/web";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { AgentDefinition, AppSettings, BootstrapPayload, Project, ProviderReadiness, SkillSummary, Workflow, WorkflowRunState } from "../lib/types";
+import type { AgentDefinition, AppSettings, BootstrapPayload, Project, ProviderReadiness, ScheduleDraft, SkillSummary, Workflow, WorkflowRunState } from "../lib/types";
 import { defaultWorkflowSchedule } from "../lib/schedule";
 import { createEmptyToolConfig } from "../lib/workflow";
 
@@ -26,6 +26,9 @@ const apiMocks = vi.hoisted(() => ({
   saveWorkflow: vi.fn(),
   listScheduleStatuses: vi.fn(),
   refreshSchedules: vi.fn(),
+  scheduleFromPreset: vi.fn(),
+  scheduleDraftFromSchedule: vi.fn(),
+  describeWorkflowSchedule: vi.fn(),
   listenToScheduleStatuses: vi.fn(),
   startRun: vi.fn(),
   continueRun: vi.fn(),
@@ -38,6 +41,9 @@ const apiMocks = vi.hoisted(() => ({
   resizeTerminal: vi.fn(),
   stopTerminal: vi.fn(),
   listenToTerminalEvent: vi.fn(),
+  startWorkflowAuthoring: vi.fn(),
+  endWorkflowAuthoring: vi.fn(),
+  workflowAuthoringTurn: vi.fn(),
   createProjectFromDirectory: vi.fn(),
   assignWorkflowToProject: vi.fn(),
   copyWorkflowToProject: vi.fn(),
@@ -78,6 +84,9 @@ vi.mock("../api", async (importOriginal) => {
     saveWorkflow: apiMocks.saveWorkflow,
     listScheduleStatuses: apiMocks.listScheduleStatuses,
     refreshSchedules: apiMocks.refreshSchedules,
+    scheduleFromPreset: apiMocks.scheduleFromPreset,
+    scheduleDraftFromSchedule: apiMocks.scheduleDraftFromSchedule,
+    describeWorkflowSchedule: apiMocks.describeWorkflowSchedule,
     listenToScheduleStatuses: apiMocks.listenToScheduleStatuses,
     startRun: apiMocks.startRun,
     continueRun: apiMocks.continueRun,
@@ -94,6 +103,9 @@ vi.mock("../api", async (importOriginal) => {
     resizeTerminal: apiMocks.resizeTerminal,
     stopTerminal: apiMocks.stopTerminal,
     listenToTerminalEvent: apiMocks.listenToTerminalEvent,
+    startWorkflowAuthoring: apiMocks.startWorkflowAuthoring,
+    endWorkflowAuthoring: apiMocks.endWorkflowAuthoring,
+    workflowAuthoringTurn: apiMocks.workflowAuthoringTurn,
     gitIsRepo: apiMocks.gitIsRepo,
     gitDiffRepo: apiMocks.gitDiffRepo,
     gitCurrentBranch: apiMocks.gitCurrentBranch,
@@ -291,6 +303,114 @@ function makeNodeFromAgent(index: number, x: number, y: number, agent: AgentDefi
   };
 }
 
+function parseMockTime(time: string): { hour: number; minute: number } {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(time);
+  if (!match) return { hour: 9, minute: 0 };
+  return {
+    hour: Math.min(Math.max(Number(match[1]), 0), 23),
+    minute: Math.min(Math.max(Number(match[2]), 0), 59),
+  };
+}
+
+function cronDayOfWeekForMock(weekdays: string[]): string {
+  const normalized = [...new Set(weekdays.filter((day) => /^[0-6]$/.test(day)))].sort(
+    (left, right) => Number(left) - Number(right),
+  );
+  if (normalized.length === 0 || normalized.length === 7) {
+    return "*";
+  }
+  if (normalized.join(",") === "1,2,3,4,5") {
+    return "1-5";
+  }
+  if (normalized.length === 1) {
+    return normalized[0];
+  }
+  return normalized.join(",");
+}
+
+function scheduleFromPresetMock(draft: ScheduleDraft) {
+  if (draft.preset === "interval") {
+    const parsed = Number.parseInt(draft.intervalValue.trim(), 10);
+    const value = Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+    if (draft.intervalUnit === "minutes") {
+      return { cron: `*/${value} * * * *`, enabled: draft.enabled, timezone: "UTC" };
+    }
+    if (draft.intervalUnit === "hours") {
+      return {
+        cron: value === 1 ? "0 * * * *" : `0 */${value} * * *`,
+        enabled: draft.enabled,
+        timezone: "UTC",
+      };
+    }
+    const { hour, minute } = parseMockTime(draft.time);
+    return {
+      cron: `${minute} ${hour} */${Math.min(Math.max(value, 1), 31)} * *`,
+      enabled: draft.enabled,
+      timezone: "UTC",
+    };
+  }
+  if (draft.preset === "custom") {
+    return {
+      cron: draft.customCron?.trim() || "0 9 * * *",
+      enabled: draft.enabled,
+      timezone: "UTC",
+    };
+  }
+  const { hour, minute } = parseMockTime(draft.time);
+  return {
+    cron: `${minute} ${hour} * * ${cronDayOfWeekForMock(draft.weekdays)}`,
+    enabled: draft.enabled,
+    timezone: "UTC",
+  };
+}
+
+function scheduleDraftFromScheduleMock(schedule: { cron: string; enabled: boolean }) {
+  const parts = schedule.cron.trim().split(/\s+/);
+  const base: ScheduleDraft = {
+    preset: "timed",
+    time: "09:00",
+    weekdays: ["0", "1", "2", "3", "4", "5", "6"],
+    intervalValue: "30",
+    intervalUnit: "minutes",
+    enabled: schedule.enabled,
+  };
+  if (parts.length === 5) {
+    const [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
+    if (
+      /^\*\/\d+$/.test(minute) &&
+      hour === "*" &&
+      dayOfMonth === "*" &&
+      month === "*" &&
+      dayOfWeek === "*"
+    ) {
+      return { ...base, preset: "interval", intervalValue: minute.slice(2), intervalUnit: "minutes" };
+    }
+    if (minute === "0" && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
+      if (hour === "*") {
+        return { ...base, preset: "interval", intervalValue: "1", intervalUnit: "hours" };
+      }
+      if (/^\*\/\d+$/.test(hour)) {
+        return { ...base, preset: "interval", intervalValue: hour.slice(2), intervalUnit: "hours" };
+      }
+    }
+    if (/^\d{1,2}$/.test(minute) && /^\d{1,2}$/.test(hour) && dayOfMonth === "*" && month === "*") {
+      const weekdays =
+        dayOfWeek === "*"
+          ? [...base.weekdays]
+          : dayOfWeek === "1-5"
+            ? ["1", "2", "3", "4", "5"]
+            : dayOfWeek.split(",").map((value) => value.trim()).filter((value) => /^[0-6]$/.test(value));
+      return {
+        ...base,
+        preset: "timed",
+        time: `${hour.padStart(2, "0")}:${minute.padStart(2, "0")}`,
+        weekdays: weekdays.length > 0 ? weekdays : base.weekdays,
+      };
+    }
+  }
+  return { ...base, preset: "custom", customCron: schedule.cron };
+}
+
 function installDefaultApiMocks() {
   if (!Element.prototype.scrollTo) {
     Element.prototype.scrollTo = vi.fn();
@@ -336,9 +456,22 @@ function installDefaultApiMocks() {
   apiMocks.resizeTerminal.mockResolvedValue(undefined);
   apiMocks.stopTerminal.mockResolvedValue(undefined);
   apiMocks.listenToTerminalEvent.mockResolvedValue(() => {});
+  apiMocks.startWorkflowAuthoring.mockResolvedValue("authoring-session-1");
+  apiMocks.workflowAuthoringTurn.mockResolvedValue({
+    messages: [],
+    validation: null,
+    draft: null,
+  });
   apiMocks.saveWorkflow.mockImplementation(async (workflow) => workflow);
   apiMocks.refreshSchedules.mockResolvedValue([]);
   apiMocks.listScheduleStatuses.mockResolvedValue([]);
+  apiMocks.scheduleFromPreset.mockImplementation(async (draft: ScheduleDraft) =>
+    scheduleFromPresetMock(draft),
+  );
+  apiMocks.scheduleDraftFromSchedule.mockImplementation(async (schedule) =>
+    scheduleDraftFromScheduleMock(schedule),
+  );
+  apiMocks.describeWorkflowSchedule.mockResolvedValue("Mock schedule");
   apiMocks.listenToScheduleStatuses.mockResolvedValue(() => {});
   apiMocks.gitIsRepo.mockResolvedValue(false);
   apiMocks.gitDiffRepo.mockResolvedValue("");
@@ -584,6 +717,46 @@ async function switchWorkflow(container: HTMLElement, name: string) {
   await flush();
 }
 
+function onboardingDialog(container: HTMLElement) {
+  return container.querySelector('[data-testid="first-run-onboarding"]') as HTMLElement | null;
+}
+
+async function dismissOnboardingIntro(container: HTMLElement) {
+  const intro = container.querySelector('[data-testid="first-run-onboarding-intro"]');
+  if (intro instanceof HTMLElement) {
+    intro.click();
+    await flush();
+  }
+}
+
+async function clickOnboardingAction(container: HTMLElement, label: string) {
+  const button = await waitForElement(
+    () =>
+      Array.from(container.querySelectorAll("button")).find((element) =>
+        element.textContent?.trim().includes(label),
+      ) as HTMLButtonElement | null,
+    `onboarding action ${label}`,
+  );
+  button.click();
+  await flush();
+}
+
+async function advanceOnboarding(container: HTMLElement, count: number) {
+  for (let step = 0; step < count; step += 1) {
+    await clickOnboardingAction(container, "Next");
+  }
+}
+
+async function waitForOnboardingClosed(container: HTMLElement) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (!onboardingDialog(container)) {
+      return;
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error("Timed out waiting for first-run onboarding to close");
+}
+
 async function startWorkflowRename(container: HTMLElement, name: string) {
   const renameButton = await waitForElement(
     () => container.querySelector(`[aria-label="Rename ${name}"]`),
@@ -596,6 +769,73 @@ async function startWorkflowRename(container: HTMLElement, name: string) {
     `workflow rename input for ${name}`,
   ) as Promise<HTMLInputElement>;
 }
+
+describe("App first-run onboarding", () => {
+  afterEach(() => {
+    document.body.innerHTML = "";
+    vi.clearAllMocks();
+    window.localStorage.clear();
+  });
+
+  beforeEach(() => {
+    installDefaultApiMocks();
+  });
+
+  test("shows full-screen slide onboarding and opens Build with AI", async () => {
+    const { container, dispose } = await mountApp(
+      makeBootstrapPayload([makeWorkflow("workflow-1", "Workflow One")]),
+    );
+
+    try {
+      const dialog = await waitForElement(
+        () => onboardingDialog(container),
+        "first-run onboarding",
+      );
+      await dismissOnboardingIntro(container);
+      expect(dialog.getAttribute("aria-label")).toBe("Welcome to OpenFlow");
+      expect(dialog.textContent).toContain("Build repeatable AI workflows.");
+
+      await clickOnboardingAction(container, "Next");
+      expect(dialog.textContent).toMatch(/Explain your\s*workflow/i);
+
+      await advanceOnboarding(container, 2);
+      expect(dialog.textContent).toMatch(/Just send\s*a message/i);
+
+      await clickOnboardingAction(container, "Next");
+      expect(dialog.textContent).toMatch(/One thing before\s*you start/i);
+      expect(dialog.textContent).toContain("AI provider key");
+
+      await clickOnboardingAction(container, "Build with AI");
+
+      expect(apiMocks.startWorkflowAuthoring).toHaveBeenCalledWith(null);
+      expect(topbarTitle(container)).toBe("Build workflow with AI");
+      await waitForOnboardingClosed(container);
+      expect(window.localStorage.getItem("openflow.firstRunOnboardingDismissed")).toBe("true");
+    } finally {
+      dispose();
+    }
+  });
+
+  test("opens provider setup from onboarding", async () => {
+    const { container, dispose } = await mountApp(
+      makeBootstrapPayload([makeWorkflow("workflow-1", "Workflow One")]),
+    );
+
+    try {
+      await waitForElement(() => onboardingDialog(container), "first-run onboarding");
+      await dismissOnboardingIntro(container);
+      await advanceOnboarding(container, 4);
+
+      await clickOnboardingAction(container, "Set up provider");
+
+      expect(topbarTitle(container)).toBe("Settings");
+      await waitForOnboardingClosed(container);
+      expect(window.localStorage.getItem("openflow.firstRunOnboardingDismissed")).toBe("true");
+    } finally {
+      dispose();
+    }
+  });
+});
 
 describe("App workflow rename", () => {
   afterEach(() => {
@@ -1465,17 +1705,20 @@ describe("App chat slash commands", () => {
   test("renders compact tool line with invocation target in chat", async () => {
     const workflow = makeWorkflow("workflow-1", "Workflow One");
     workflow.nodes[0].label = "Idea";
+    const nodeId = workflow.nodes[0].id;
     const runState = makeAwaitingRunState(workflow);
-    runState.chatLogs[workflow.nodes[0].id] = [
+    runState.toolCallsByNode[nodeId] = [
       {
-        role: "Thinking",
-        content: "Tool request: read\nArguments:\n{\n  \"path\": \"README.md\"\n}",
-      },
-      {
-        role: "Thinking",
-        content: "Tool result: read\n¶README.md\n1:# OpenFlow",
+        toolCallId: "call-read-1",
+        toolName: "read",
+        status: "completed",
+        arguments: { path: "README.md" },
+        lastOutput: "¶README.md\n1:# OpenFlow",
+        isError: false,
+        streaming: false,
       },
     ];
+    runState.chatLogs[nodeId] = [{ role: "Thinking", content: "", toolCallId: "call-read-1" }];
     const { container, dispose } = await mountApp({
       workflows: [workflow],
       agents: [makeAgent("agent-1", "Research Agent")],
@@ -1962,6 +2205,44 @@ describe("App bottom dock", () => {
         disconnect: vi.fn(),
       })),
     );
+  });
+
+  test("selecting a canvas node does not automatically open the inspector", async () => {
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    apiMocks.bootstrapApp.mockResolvedValue({
+      workflows: [workflow],
+      agents: [makeAgent("agent-1", "Research Agent")],
+      skills: FIXTURE_SKILLS,
+      settings: SETTINGS,
+      projects: [],
+      runState: null,
+    });
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const dispose = render(() => <App />, container);
+
+    try {
+      await waitForElement(() => container.querySelector(".editor-screen"), "editor screen");
+      const nodeButton = await waitForElement(
+        () =>
+          container.querySelector(
+            `button[aria-label="Select node ${workflow.nodes[0].id}"]`,
+          ) as HTMLButtonElement | null,
+        "canvas node button",
+      );
+
+      nodeButton.click();
+      await flush();
+
+      expect(container.querySelector(".inspector-panel")).toBeNull();
+      const chatTab = Array.from(container.querySelectorAll(".dock-tab-switcher button")).find(
+        (button) => button.textContent === "Chat",
+      );
+      expect(chatTab?.classList.contains("active")).toBe(true);
+    } finally {
+      dispose();
+    }
   });
 
   test("opens terminal tab and starts terminal in active workflow cwd", async () => {
