@@ -66,6 +66,58 @@ fn block_on<F: std::future::Future>(future: F) -> F::Output {
         .block_on(future)
 }
 
+#[test]
+fn mark_node_interrupted_closes_dangling_tool_calls() {
+    let mut workflow = Workflow::new("wf");
+    workflow.nodes.push(node("a"));
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let call = ToolCall {
+        id: "call-1".to_string(),
+        name: "bash".to_string(),
+        arguments: json!({}),
+    };
+    engine
+        .transcripts
+        .entry(NodeId("a".to_string()))
+        .or_default()
+        .push(AgentTranscriptItem::ToolCall { call: call.clone() });
+    engine.test_insert_pending_batch(PendingToolBatch {
+        approval_id: "ap-1".to_string(),
+        node_id: NodeId("a".to_string()),
+        tool_calls: vec![call],
+        requires_approval: false,
+    });
+
+    engine.mark_node_interrupted(&NodeId("a".to_string()));
+
+    let transcript = engine.transcript(&NodeId("a".to_string()));
+    assert_eq!(transcript.len(), 2);
+    match &transcript[1] {
+        AgentTranscriptItem::ToolResult { result } => {
+            assert_eq!(result.tool_call_id, "call-1");
+            assert!(result.is_error);
+        }
+        other => panic!("expected tool result, got {other:?}"),
+    }
+}
+
+#[test]
+fn retry_node_saturates_retry_counter() {
+    let mut workflow = Workflow::new("wf");
+    workflow.nodes.push(node("a"));
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    for _ in 0..300 {
+        engine
+            .failed_nodes
+            .insert(NodeId("a".to_string()), "boom".to_string());
+        engine.retry_node(&NodeId("a".to_string())).unwrap();
+    }
+    assert_eq!(
+        engine.model_attempt_for_node(&NodeId("a".to_string())),
+        u8::MAX
+    );
+}
+
 async fn run_once<A: AiPort, T: ToolPort>(
     engine: &mut InteractiveEngine,
     ai: &A,

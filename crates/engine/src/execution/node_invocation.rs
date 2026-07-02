@@ -181,9 +181,6 @@ path is given."
     if !shared.is_empty() {
         messages.push(format!("--- Workflow context ---\n{shared}"));
     }
-    if messages.is_empty() {
-        messages.push(NODE_RUNTIME_PREAMBLE.to_string());
-    }
     messages
 }
 

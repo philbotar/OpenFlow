@@ -75,7 +75,10 @@ where
         pending_engine_reverts: Arc::new(parking_lot::Mutex::new(Vec::new())),
         node_interrupts: Arc::new(parking_lot::Mutex::new(BTreeMap::new())),
         context_window_sizes: BTreeMap::new(),
-        mcp: McpSettings::default(),
+        mcp: McpSettings {
+            discover_external: false,
+            ..McpSettings::default()
+        },
     };
 
     let (handle, event_rx, action_tx, cancel_token, node_interrupts) =

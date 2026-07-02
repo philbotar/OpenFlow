@@ -13,6 +13,7 @@ use crate::conversation::{AgentTranscriptItem, ChatMessage, ChatRole};
 use crate::execution::node_invocation::{
     build_agent_request, build_upstream_map, NodeInvocationContext,
 };
+use crate::execution::tool_results::error_tool_result;
 use crate::execution::{NodeFailureKind, NodeRunOutput, RunError, RunReport};
 use crate::graph::validation::{execution_layers, WorkflowValidationError};
 use crate::graph::{Node, NodeId, Workflow};
@@ -101,8 +102,6 @@ pub struct InteractiveEngine {
     redundant_reads: u32,
     tokens_in: u32,
     transcripts: BTreeMap<NodeId, Vec<AgentTranscriptItem>>,
-    queued_nodes: BTreeSet<NodeId>,
-    started_invocations_by_node: BTreeMap<NodeId, u8>,
     awaiting_nodes: BTreeSet<NodeId>,
     in_flight_ai: BTreeSet<NodeId>,
     pending_tool_batches: BTreeMap<String, PendingToolBatch>,
@@ -153,8 +152,6 @@ impl InteractiveEngine {
             redundant_reads: 0,
             tokens_in: 0,
             transcripts: BTreeMap::new(),
-            queued_nodes: BTreeSet::new(),
-            started_invocations_by_node: BTreeMap::new(),
             awaiting_nodes: BTreeSet::new(),
             in_flight_ai: BTreeSet::new(),
             pending_tool_batches: BTreeMap::new(),
@@ -209,7 +206,6 @@ impl InteractiveEngine {
             if node.agent.auto_start || !self.transcript(&node_id).is_empty() {
                 continue;
             }
-            self.queued_nodes.insert(node_id.clone());
             self.awaiting_nodes.insert(node_id.clone());
             self.transcripts.entry(node_id).or_default();
         }
@@ -390,8 +386,6 @@ impl InteractiveEngine {
             if !node.agent.auto_start && self.transcript(&node_id).is_empty() {
                 continue;
             }
-            self.queued_nodes.insert(node_id.clone());
-            self.emit_started_for_current_attempt(&node_id);
             self.in_flight_ai.insert(node_id.clone());
             match self.build_request(&node_id) {
                 Ok(request) => actions.push((node_id, request)),
@@ -472,6 +466,23 @@ impl InteractiveEngine {
         if self.interrupted_nodes.contains(node_id) {
             return;
         }
+        let dangling_calls: Vec<ToolCall> = self
+            .pending_tool_batches
+            .values()
+            .filter(|batch| batch.node_id == *node_id)
+            .flat_map(|batch| batch.tool_calls.iter().cloned())
+            .collect();
+        if !dangling_calls.is_empty() {
+            let transcript = self.transcripts.entry(node_id.clone()).or_default();
+            for call in &dangling_calls {
+                transcript.push(AgentTranscriptItem::ToolResult {
+                    result: error_tool_result(
+                        call,
+                        "tool execution did not complete (interrupted or cancelled)",
+                    ),
+                });
+            }
+        }
         self.pending_tool_batches
             .retain(|_, batch| batch.node_id != *node_id);
         self.interrupted_nodes.insert(node_id.clone());
@@ -498,7 +509,7 @@ impl InteractiveEngine {
         self.failed_nodes.remove(node_id);
         self.interrupted_nodes.remove(node_id);
         let retry_count = self.retries_by_node.entry(node_id.clone()).or_default();
-        *retry_count += 1;
+        *retry_count = retry_count.saturating_add(1);
         Ok(())
     }
 
@@ -657,18 +668,6 @@ impl InteractiveEngine {
         } else {
             Some(missing)
         }
-    }
-
-    fn emit_started_for_current_attempt(&mut self, node_id: &NodeId) {
-        let attempt = self.retries_by_node.get(node_id).copied().unwrap_or(0) + 1;
-        let emitted = self
-            .started_invocations_by_node
-            .entry(node_id.clone())
-            .or_default();
-        if *emitted >= attempt {
-            return;
-        }
-        *emitted = attempt;
     }
 
     fn reject_misrouted_completion(&mut self, node_id: &NodeId, message: String) {
