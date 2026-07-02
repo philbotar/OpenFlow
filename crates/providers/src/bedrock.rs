@@ -598,7 +598,7 @@ pub(crate) fn humanize_bedrock_sdk_error(message: &str) -> String {
             || lowered.contains("unable to locate")
         {
             return format!(
-                "AWS credentials missing or expired. If you use SSO, enter your AWS profile name in Settings and run `aws sso login --profile <name>` in a terminal first; verify with `aws sts get-caller-identity --profile <name>`. For access keys, run `aws configure`. Raw AWS SDK error: {message}"
+                "AWS credentials missing or expired. If you use SSO, enter your AWS profile name in Settings (the AWS CLI must be installed); OpenFlow will run `aws sso login` automatically when credentials expire. You can also run `aws sso login --profile <name>` in a terminal first and verify with `aws sts get-caller-identity --profile <name>`. For access keys, run `aws configure`. Raw AWS SDK error: {message}"
             );
         }
         return format!(
@@ -609,7 +609,7 @@ pub(crate) fn humanize_bedrock_sdk_error(message: &str) -> String {
         || lowered.contains("unable to load credentials")
         || lowered.contains("no credentials")
     {
-        return "AWS credentials not configured. If you use SSO, enter your AWS profile name in Settings and run `aws sso login --profile <name>` in a terminal first. For access keys, run `aws configure`."
+        return "AWS credentials not configured. If you use SSO, enter your AWS profile name in Settings (the AWS CLI must be installed); OpenFlow will run `aws sso login` automatically when credentials expire. For access keys, run `aws configure`."
             .to_string();
     }
     if lowered.contains("model identifier is invalid") {

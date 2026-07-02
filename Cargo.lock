@@ -3724,7 +3724,7 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
 name = "orchestration"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "async-trait",
  "chrono",
@@ -4245,7 +4245,7 @@ dependencies = [
 
 [[package]]
 name = "providers"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "async-trait",
  "aws-config",
