@@ -17,15 +17,24 @@
 </p>
 
 <p align="center">
+  <a href="#what-is-openflow">What is OpenFlow?</a> ·
   <a href="#install">Install</a> ·
   <a href="#features">Features</a> ·
   <a href="#developing">Developing</a> ·
   <a href="#contributing">Contributing</a>
 </p>
 
+## What is OpenFlow?
+
+Building a multi-agent LLM pipeline usually means gluing prompts, state, and provider SDKs together by hand, then debugging it blind. OpenFlow gives you a canvas instead: drag out agents, wire them into a pipeline, and watch each one think, call tools, and hand off to the next in real time.
+
+Underneath the canvas is a full agent harness. Tool use, approvals, subagents, and multiple LLM providers are all built in, so what you draw is what actually runs, and runs again the same way next time.
+
+You can also choose how it runs. Keep it interactive like a Claude Code session, pausing to chat and approve each tool call, or switch a workflow to auto-approve and let it run standalone from start to finish.
+
 ## Install
 
-Grab the latest build from [Releases](https://github.com/philbotar/OpenFlow/releases/latest) and open it — no Rust or Node required.
+Grab the latest build from [Releases](https://github.com/philbotar/OpenFlow/releases/latest) and open it. No Rust or Node required.
 
 > **macOS gatekeeper:** unsigned builds may be blocked on first launch. Right-click **OpenFlow** → **Open**, or run `xattr -cr /path/to/OpenFlow.app`.
 
@@ -55,14 +64,14 @@ Nodes in the same topological layer run concurrently. Downstream agents receive 
 
 ### Tools & subagents
 
-Built-in filesystem, shell, and search tools with tiered approval policies. Nodes can invoke saved agents as subagents mid-run.
+Agents can read/write files, run shell commands, and search code, each gated by an approval policy you control. Hand off a sub-task to another saved agent mid-run with no manual wiring.
 
 </td>
 <td width="50%" valign="top">
 
 ### Multi-provider LLM support
 
-OpenAI-compatible and Anthropic adapters behind a single `AiPort`. Swap models per node or override at the workflow level.
+Point any node at an OpenAI-compatible or Anthropic model. Mix providers in one workflow, or swap a model out, without touching the rest of the pipeline.
 
 </td>
 </tr>
@@ -71,14 +80,14 @@ OpenAI-compatible and Anthropic adapters behind a single `AiPort`. Swap models p
 
 ### Project-aware persistence
 
-Workflows live in the app store or in-repo under `.flow/workflows/`. Projects bind a repo path so agents run with the right working directory.
+Workflows save automatically, either in the app or checked into your repo, so they stay versioned alongside your code and always run from the right working directory.
 
 </td>
 <td width="50%" valign="top">
 
-### Interactive runs
+### Interactive or standalone runs
 
-Pause, resume, approve tools, and chat with individual nodes. Per-node conversation panels stream thinking, tool calls, and results in real time.
+Run it like a Claude Code session, pausing to approve tools and chat with individual nodes as thinking and results stream in, or flip on auto-approve and let the whole workflow run to completion on its own.
 
 </td>
 </tr>
@@ -108,7 +117,7 @@ Installs dependencies on first run, then launches the desktop app with hot reloa
 ./scripts/install.sh
 ```
 
-Builds a `.dmg` (macOS) and opens it — drag **OpenFlow** to **Applications**.
+Builds a `.dmg` (macOS) and opens it. Drag **OpenFlow** to **Applications**.
 
 ### Other useful commands
 
