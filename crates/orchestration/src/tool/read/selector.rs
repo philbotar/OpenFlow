@@ -2,7 +2,6 @@
 pub enum ReadSelector {
     None,
     Raw,
-    Conflicts,
     Lines { ranges: Vec<LineRange>, raw: bool },
 }
 
@@ -25,10 +24,6 @@ pub fn split_selector(path: &str) -> (String, ReadSelector) {
             return (maybe_base, ReadSelector::Lines { ranges, raw: true });
         }
         return (base.to_string(), ReadSelector::Raw);
-    }
-
-    if suffix.eq_ignore_ascii_case("conflicts") {
-        return (base.to_string(), ReadSelector::Conflicts);
     }
 
     if let Some(ranges) = parse_ranges(suffix) {

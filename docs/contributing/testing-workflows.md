@@ -138,7 +138,7 @@ Guidelines:
 
 1. Test `AiPort` contract behavior with inline `impl AiPort` stubs in the owning test module (see `workflow_acceptance.rs`, `runner.rs` tests).
 2. Test provider wire mapping in `providers/src/mapping.rs`, `openai_compat.rs`, and `anthropic.rs`.
-3. Test UI desktop seam by mocking `UiDesktopOutboundPort` when adding AppProvider behavior tests.
+3. Test UI desktop seam by mocking `api.ts` wrappers when adding AppProvider behavior tests.
 4. End-to-end behavior remains in existing acceptance/live workflows.
 
 ## Frontend test placement

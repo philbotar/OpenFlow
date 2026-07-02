@@ -686,10 +686,6 @@ pub fn engine::execution::interactive_engine::InteractiveEngine::on_ai_complete(
 impl engine::execution::interactive_engine::InteractiveEngine
 pub fn engine::execution::interactive_engine::InteractiveEngine::on_tool_decision(&mut self, &str, bool, core::option::Option<&str>) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::on_tool_results(&mut self, &engine::graph::workflow::NodeId, alloc::vec::Vec<engine::ToolResult>) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
-impl engine::ports::inbound::HumanInputPort for engine::execution::interactive_engine::InteractiveEngine
-pub fn engine::execution::interactive_engine::InteractiveEngine::submit_human_input(&mut self, engine::ports::inbound::HumanInput) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
-impl engine::ports::inbound::ToolApprovalPort for engine::execution::interactive_engine::InteractiveEngine
-pub fn engine::execution::interactive_engine::InteractiveEngine::submit_tool_approval(&mut self, engine::ports::inbound::ToolApprovalInput) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 impl core::marker::Freeze for engine::execution::interactive_engine::InteractiveEngine
 impl core::marker::Send for engine::execution::interactive_engine::InteractiveEngine
 impl core::marker::Sync for engine::execution::interactive_engine::InteractiveEngine
@@ -1863,10 +1859,6 @@ pub fn engine::execution::interactive_engine::InteractiveEngine::on_ai_complete(
 impl engine::execution::interactive_engine::InteractiveEngine
 pub fn engine::execution::interactive_engine::InteractiveEngine::on_tool_decision(&mut self, &str, bool, core::option::Option<&str>) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::on_tool_results(&mut self, &engine::graph::workflow::NodeId, alloc::vec::Vec<engine::ToolResult>) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
-impl engine::ports::inbound::HumanInputPort for engine::execution::interactive_engine::InteractiveEngine
-pub fn engine::execution::interactive_engine::InteractiveEngine::submit_human_input(&mut self, engine::ports::inbound::HumanInput) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
-impl engine::ports::inbound::ToolApprovalPort for engine::execution::interactive_engine::InteractiveEngine
-pub fn engine::execution::interactive_engine::InteractiveEngine::submit_tool_approval(&mut self, engine::ports::inbound::ToolApprovalInput) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 impl core::marker::Freeze for engine::execution::interactive_engine::InteractiveEngine
 impl core::marker::Send for engine::execution::interactive_engine::InteractiveEngine
 impl core::marker::Sync for engine::execution::interactive_engine::InteractiveEngine
@@ -3663,96 +3655,6 @@ pub fn engine::graph::execution_layers(&engine::graph::workflow::Workflow) -> co
 pub fn engine::graph::resolve_callable_agent_snapshots(&engine::graph::workflow::Workflow, &[engine::graph::callable_agent::CallableAgent]) -> alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::graph::callable_agent::CallableAgent>
 pub fn engine::graph::validate_workflow(&engine::graph::workflow::Workflow) -> core::result::Result<(), engine::graph::validation::WorkflowValidationError>
 pub mod engine::ports
-pub mod engine::ports::inbound
-pub struct engine::ports::inbound::HumanInput
-pub engine::ports::inbound::HumanInput::node_id: engine::graph::workflow::NodeId
-pub engine::ports::inbound::HumanInput::text: alloc::string::String
-impl core::clone::Clone for engine::ports::inbound::HumanInput
-pub fn engine::ports::inbound::HumanInput::clone(&self) -> engine::ports::inbound::HumanInput
-impl core::cmp::Eq for engine::ports::inbound::HumanInput
-impl core::cmp::PartialEq for engine::ports::inbound::HumanInput
-pub fn engine::ports::inbound::HumanInput::eq(&self, &engine::ports::inbound::HumanInput) -> bool
-impl core::fmt::Debug for engine::ports::inbound::HumanInput
-pub fn engine::ports::inbound::HumanInput::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for engine::ports::inbound::HumanInput
-impl core::marker::Freeze for engine::ports::inbound::HumanInput
-impl core::marker::Send for engine::ports::inbound::HumanInput
-impl core::marker::Sync for engine::ports::inbound::HumanInput
-impl core::marker::Unpin for engine::ports::inbound::HumanInput
-impl core::marker::UnsafeUnpin for engine::ports::inbound::HumanInput
-impl core::panic::unwind_safe::RefUnwindSafe for engine::ports::inbound::HumanInput
-impl core::panic::unwind_safe::UnwindSafe for engine::ports::inbound::HumanInput
-impl<T, U> core::convert::Into<U> for engine::ports::inbound::HumanInput where U: core::convert::From<T>
-pub fn engine::ports::inbound::HumanInput::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for engine::ports::inbound::HumanInput where U: core::convert::Into<T>
-pub type engine::ports::inbound::HumanInput::Error = core::convert::Infallible
-pub fn engine::ports::inbound::HumanInput::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for engine::ports::inbound::HumanInput where U: core::convert::TryFrom<T>
-pub type engine::ports::inbound::HumanInput::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn engine::ports::inbound::HumanInput::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for engine::ports::inbound::HumanInput where T: core::clone::Clone
-pub type engine::ports::inbound::HumanInput::Owned = T
-pub fn engine::ports::inbound::HumanInput::clone_into(&self, &mut T)
-pub fn engine::ports::inbound::HumanInput::to_owned(&self) -> T
-impl<T> core::any::Any for engine::ports::inbound::HumanInput where T: 'static + ?core::marker::Sized
-pub fn engine::ports::inbound::HumanInput::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for engine::ports::inbound::HumanInput where T: ?core::marker::Sized
-pub fn engine::ports::inbound::HumanInput::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for engine::ports::inbound::HumanInput where T: ?core::marker::Sized
-pub fn engine::ports::inbound::HumanInput::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for engine::ports::inbound::HumanInput where T: core::clone::Clone
-pub unsafe fn engine::ports::inbound::HumanInput::clone_to_uninit(&self, *mut u8)
-impl<T> core::convert::From<T> for engine::ports::inbound::HumanInput
-pub fn engine::ports::inbound::HumanInput::from(T) -> T
-pub struct engine::ports::inbound::ToolApprovalInput
-pub engine::ports::inbound::ToolApprovalInput::allow: bool
-pub engine::ports::inbound::ToolApprovalInput::approval_id: alloc::string::String
-pub engine::ports::inbound::ToolApprovalInput::reason: core::option::Option<alloc::string::String>
-impl core::clone::Clone for engine::ports::inbound::ToolApprovalInput
-pub fn engine::ports::inbound::ToolApprovalInput::clone(&self) -> engine::ports::inbound::ToolApprovalInput
-impl core::cmp::Eq for engine::ports::inbound::ToolApprovalInput
-impl core::cmp::PartialEq for engine::ports::inbound::ToolApprovalInput
-pub fn engine::ports::inbound::ToolApprovalInput::eq(&self, &engine::ports::inbound::ToolApprovalInput) -> bool
-impl core::fmt::Debug for engine::ports::inbound::ToolApprovalInput
-pub fn engine::ports::inbound::ToolApprovalInput::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for engine::ports::inbound::ToolApprovalInput
-impl core::marker::Freeze for engine::ports::inbound::ToolApprovalInput
-impl core::marker::Send for engine::ports::inbound::ToolApprovalInput
-impl core::marker::Sync for engine::ports::inbound::ToolApprovalInput
-impl core::marker::Unpin for engine::ports::inbound::ToolApprovalInput
-impl core::marker::UnsafeUnpin for engine::ports::inbound::ToolApprovalInput
-impl core::panic::unwind_safe::RefUnwindSafe for engine::ports::inbound::ToolApprovalInput
-impl core::panic::unwind_safe::UnwindSafe for engine::ports::inbound::ToolApprovalInput
-impl<T, U> core::convert::Into<U> for engine::ports::inbound::ToolApprovalInput where U: core::convert::From<T>
-pub fn engine::ports::inbound::ToolApprovalInput::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for engine::ports::inbound::ToolApprovalInput where U: core::convert::Into<T>
-pub type engine::ports::inbound::ToolApprovalInput::Error = core::convert::Infallible
-pub fn engine::ports::inbound::ToolApprovalInput::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for engine::ports::inbound::ToolApprovalInput where U: core::convert::TryFrom<T>
-pub type engine::ports::inbound::ToolApprovalInput::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn engine::ports::inbound::ToolApprovalInput::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for engine::ports::inbound::ToolApprovalInput where T: core::clone::Clone
-pub type engine::ports::inbound::ToolApprovalInput::Owned = T
-pub fn engine::ports::inbound::ToolApprovalInput::clone_into(&self, &mut T)
-pub fn engine::ports::inbound::ToolApprovalInput::to_owned(&self) -> T
-impl<T> core::any::Any for engine::ports::inbound::ToolApprovalInput where T: 'static + ?core::marker::Sized
-pub fn engine::ports::inbound::ToolApprovalInput::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for engine::ports::inbound::ToolApprovalInput where T: ?core::marker::Sized
-pub fn engine::ports::inbound::ToolApprovalInput::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for engine::ports::inbound::ToolApprovalInput where T: ?core::marker::Sized
-pub fn engine::ports::inbound::ToolApprovalInput::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for engine::ports::inbound::ToolApprovalInput where T: core::clone::Clone
-pub unsafe fn engine::ports::inbound::ToolApprovalInput::clone_to_uninit(&self, *mut u8)
-impl<T> core::convert::From<T> for engine::ports::inbound::ToolApprovalInput
-pub fn engine::ports::inbound::ToolApprovalInput::from(T) -> T
-pub trait engine::ports::inbound::HumanInputPort
-pub fn engine::ports::inbound::HumanInputPort::submit_human_input(&mut self, engine::ports::inbound::HumanInput) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
-impl engine::ports::inbound::HumanInputPort for engine::execution::interactive_engine::InteractiveEngine
-pub fn engine::execution::interactive_engine::InteractiveEngine::submit_human_input(&mut self, engine::ports::inbound::HumanInput) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
-pub trait engine::ports::inbound::ToolApprovalPort
-pub fn engine::ports::inbound::ToolApprovalPort::submit_tool_approval(&mut self, engine::ports::inbound::ToolApprovalInput) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
-impl engine::ports::inbound::ToolApprovalPort for engine::execution::interactive_engine::InteractiveEngine
-pub fn engine::execution::interactive_engine::InteractiveEngine::submit_tool_approval(&mut self, engine::ports::inbound::ToolApprovalInput) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 pub mod engine::ports::outbound
 pub enum engine::ports::outbound::AgentError
 pub engine::ports::outbound::AgentError::Failed(alloc::string::String)
@@ -4410,87 +4312,6 @@ impl<T> core::clone::CloneToUninit for engine::ports::outbound::AgentTurnSuccess
 pub unsafe fn engine::ports::outbound::AgentTurnSuccess::clone_to_uninit(&self, *mut u8)
 impl<T> core::convert::From<T> for engine::ports::outbound::AgentTurnSuccess
 pub fn engine::ports::outbound::AgentTurnSuccess::from(T) -> T
-pub struct engine::ports::HumanInput
-pub engine::ports::HumanInput::node_id: engine::graph::workflow::NodeId
-pub engine::ports::HumanInput::text: alloc::string::String
-impl core::clone::Clone for engine::ports::inbound::HumanInput
-pub fn engine::ports::inbound::HumanInput::clone(&self) -> engine::ports::inbound::HumanInput
-impl core::cmp::Eq for engine::ports::inbound::HumanInput
-impl core::cmp::PartialEq for engine::ports::inbound::HumanInput
-pub fn engine::ports::inbound::HumanInput::eq(&self, &engine::ports::inbound::HumanInput) -> bool
-impl core::fmt::Debug for engine::ports::inbound::HumanInput
-pub fn engine::ports::inbound::HumanInput::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for engine::ports::inbound::HumanInput
-impl core::marker::Freeze for engine::ports::inbound::HumanInput
-impl core::marker::Send for engine::ports::inbound::HumanInput
-impl core::marker::Sync for engine::ports::inbound::HumanInput
-impl core::marker::Unpin for engine::ports::inbound::HumanInput
-impl core::marker::UnsafeUnpin for engine::ports::inbound::HumanInput
-impl core::panic::unwind_safe::RefUnwindSafe for engine::ports::inbound::HumanInput
-impl core::panic::unwind_safe::UnwindSafe for engine::ports::inbound::HumanInput
-impl<T, U> core::convert::Into<U> for engine::ports::inbound::HumanInput where U: core::convert::From<T>
-pub fn engine::ports::inbound::HumanInput::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for engine::ports::inbound::HumanInput where U: core::convert::Into<T>
-pub type engine::ports::inbound::HumanInput::Error = core::convert::Infallible
-pub fn engine::ports::inbound::HumanInput::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for engine::ports::inbound::HumanInput where U: core::convert::TryFrom<T>
-pub type engine::ports::inbound::HumanInput::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn engine::ports::inbound::HumanInput::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for engine::ports::inbound::HumanInput where T: core::clone::Clone
-pub type engine::ports::inbound::HumanInput::Owned = T
-pub fn engine::ports::inbound::HumanInput::clone_into(&self, &mut T)
-pub fn engine::ports::inbound::HumanInput::to_owned(&self) -> T
-impl<T> core::any::Any for engine::ports::inbound::HumanInput where T: 'static + ?core::marker::Sized
-pub fn engine::ports::inbound::HumanInput::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for engine::ports::inbound::HumanInput where T: ?core::marker::Sized
-pub fn engine::ports::inbound::HumanInput::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for engine::ports::inbound::HumanInput where T: ?core::marker::Sized
-pub fn engine::ports::inbound::HumanInput::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for engine::ports::inbound::HumanInput where T: core::clone::Clone
-pub unsafe fn engine::ports::inbound::HumanInput::clone_to_uninit(&self, *mut u8)
-impl<T> core::convert::From<T> for engine::ports::inbound::HumanInput
-pub fn engine::ports::inbound::HumanInput::from(T) -> T
-pub struct engine::ports::ToolApprovalInput
-pub engine::ports::ToolApprovalInput::allow: bool
-pub engine::ports::ToolApprovalInput::approval_id: alloc::string::String
-pub engine::ports::ToolApprovalInput::reason: core::option::Option<alloc::string::String>
-impl core::clone::Clone for engine::ports::inbound::ToolApprovalInput
-pub fn engine::ports::inbound::ToolApprovalInput::clone(&self) -> engine::ports::inbound::ToolApprovalInput
-impl core::cmp::Eq for engine::ports::inbound::ToolApprovalInput
-impl core::cmp::PartialEq for engine::ports::inbound::ToolApprovalInput
-pub fn engine::ports::inbound::ToolApprovalInput::eq(&self, &engine::ports::inbound::ToolApprovalInput) -> bool
-impl core::fmt::Debug for engine::ports::inbound::ToolApprovalInput
-pub fn engine::ports::inbound::ToolApprovalInput::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for engine::ports::inbound::ToolApprovalInput
-impl core::marker::Freeze for engine::ports::inbound::ToolApprovalInput
-impl core::marker::Send for engine::ports::inbound::ToolApprovalInput
-impl core::marker::Sync for engine::ports::inbound::ToolApprovalInput
-impl core::marker::Unpin for engine::ports::inbound::ToolApprovalInput
-impl core::marker::UnsafeUnpin for engine::ports::inbound::ToolApprovalInput
-impl core::panic::unwind_safe::RefUnwindSafe for engine::ports::inbound::ToolApprovalInput
-impl core::panic::unwind_safe::UnwindSafe for engine::ports::inbound::ToolApprovalInput
-impl<T, U> core::convert::Into<U> for engine::ports::inbound::ToolApprovalInput where U: core::convert::From<T>
-pub fn engine::ports::inbound::ToolApprovalInput::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for engine::ports::inbound::ToolApprovalInput where U: core::convert::Into<T>
-pub type engine::ports::inbound::ToolApprovalInput::Error = core::convert::Infallible
-pub fn engine::ports::inbound::ToolApprovalInput::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for engine::ports::inbound::ToolApprovalInput where U: core::convert::TryFrom<T>
-pub type engine::ports::inbound::ToolApprovalInput::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn engine::ports::inbound::ToolApprovalInput::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for engine::ports::inbound::ToolApprovalInput where T: core::clone::Clone
-pub type engine::ports::inbound::ToolApprovalInput::Owned = T
-pub fn engine::ports::inbound::ToolApprovalInput::clone_into(&self, &mut T)
-pub fn engine::ports::inbound::ToolApprovalInput::to_owned(&self) -> T
-impl<T> core::any::Any for engine::ports::inbound::ToolApprovalInput where T: 'static + ?core::marker::Sized
-pub fn engine::ports::inbound::ToolApprovalInput::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for engine::ports::inbound::ToolApprovalInput where T: ?core::marker::Sized
-pub fn engine::ports::inbound::ToolApprovalInput::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for engine::ports::inbound::ToolApprovalInput where T: ?core::marker::Sized
-pub fn engine::ports::inbound::ToolApprovalInput::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for engine::ports::inbound::ToolApprovalInput where T: core::clone::Clone
-pub unsafe fn engine::ports::inbound::ToolApprovalInput::clone_to_uninit(&self, *mut u8)
-impl<T> core::convert::From<T> for engine::ports::inbound::ToolApprovalInput
-pub fn engine::ports::inbound::ToolApprovalInput::from(T) -> T
 pub struct engine::ports::UsageReport
 pub engine::ports::UsageReport::completion_tokens: u32
 pub engine::ports::UsageReport::prompt_tokens: u32
@@ -4540,14 +4361,6 @@ pub fn alloc::boxed::Box<T>::invoke<'life0, 'async_trait>(&'life0 self, engine::
 pub fn alloc::boxed::Box<T>::invoke_stream<'life0, 'life1, 'async_trait>(&'life0 self, engine::ports::outbound::AgentRequest, &'life1 dyn engine::ports::outbound::AiStreamSink) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = core::result::Result<engine::ports::outbound::AgentTurnOutcome, engine::ports::outbound::AgentError>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
 pub trait engine::ports::AiStreamSink: core::marker::Send + core::marker::Sync
 pub fn engine::ports::AiStreamSink::on_stream_event(&self, engine::ports::outbound::AiStreamEvent)
-pub trait engine::ports::HumanInputPort
-pub fn engine::ports::HumanInputPort::submit_human_input(&mut self, engine::ports::inbound::HumanInput) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
-impl engine::ports::inbound::HumanInputPort for engine::execution::interactive_engine::InteractiveEngine
-pub fn engine::execution::interactive_engine::InteractiveEngine::submit_human_input(&mut self, engine::ports::inbound::HumanInput) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
-pub trait engine::ports::ToolApprovalPort
-pub fn engine::ports::ToolApprovalPort::submit_tool_approval(&mut self, engine::ports::inbound::ToolApprovalInput) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
-impl engine::ports::inbound::ToolApprovalPort for engine::execution::interactive_engine::InteractiveEngine
-pub fn engine::execution::interactive_engine::InteractiveEngine::submit_tool_approval(&mut self, engine::ports::inbound::ToolApprovalInput) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 pub trait engine::ports::ToolPort: core::marker::Send + core::marker::Sync
 pub fn engine::ports::ToolPort::augment_request(&self, &engine::graph::workflow::NodeId, &mut engine::ports::outbound::AgentRequest)
 pub fn engine::ports::ToolPort::execute_batch<'life0, 'life1, 'life2, 'life3, 'async_trait>(&'life0 self, &'life1 mut engine::execution::interactive_engine::InteractiveEngine, &'life2 engine::graph::workflow::NodeId, &'life3 str, alloc::vec::Vec<engine::ToolCall>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = alloc::vec::Vec<engine::ToolResult>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait, 'life3: 'async_trait
@@ -7689,46 +7502,6 @@ pub unsafe fn engine::FileSnapshot::clone_to_uninit(&self, *mut u8)
 impl<T> core::convert::From<T> for engine::FileSnapshot
 pub fn engine::FileSnapshot::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::FileSnapshot where T: for<'de> serde_core::de::Deserialize<'de>
-pub struct engine::HumanInput
-pub engine::HumanInput::node_id: engine::graph::workflow::NodeId
-pub engine::HumanInput::text: alloc::string::String
-impl core::clone::Clone for engine::ports::inbound::HumanInput
-pub fn engine::ports::inbound::HumanInput::clone(&self) -> engine::ports::inbound::HumanInput
-impl core::cmp::Eq for engine::ports::inbound::HumanInput
-impl core::cmp::PartialEq for engine::ports::inbound::HumanInput
-pub fn engine::ports::inbound::HumanInput::eq(&self, &engine::ports::inbound::HumanInput) -> bool
-impl core::fmt::Debug for engine::ports::inbound::HumanInput
-pub fn engine::ports::inbound::HumanInput::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for engine::ports::inbound::HumanInput
-impl core::marker::Freeze for engine::ports::inbound::HumanInput
-impl core::marker::Send for engine::ports::inbound::HumanInput
-impl core::marker::Sync for engine::ports::inbound::HumanInput
-impl core::marker::Unpin for engine::ports::inbound::HumanInput
-impl core::marker::UnsafeUnpin for engine::ports::inbound::HumanInput
-impl core::panic::unwind_safe::RefUnwindSafe for engine::ports::inbound::HumanInput
-impl core::panic::unwind_safe::UnwindSafe for engine::ports::inbound::HumanInput
-impl<T, U> core::convert::Into<U> for engine::ports::inbound::HumanInput where U: core::convert::From<T>
-pub fn engine::ports::inbound::HumanInput::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for engine::ports::inbound::HumanInput where U: core::convert::Into<T>
-pub type engine::ports::inbound::HumanInput::Error = core::convert::Infallible
-pub fn engine::ports::inbound::HumanInput::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for engine::ports::inbound::HumanInput where U: core::convert::TryFrom<T>
-pub type engine::ports::inbound::HumanInput::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn engine::ports::inbound::HumanInput::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for engine::ports::inbound::HumanInput where T: core::clone::Clone
-pub type engine::ports::inbound::HumanInput::Owned = T
-pub fn engine::ports::inbound::HumanInput::clone_into(&self, &mut T)
-pub fn engine::ports::inbound::HumanInput::to_owned(&self) -> T
-impl<T> core::any::Any for engine::ports::inbound::HumanInput where T: 'static + ?core::marker::Sized
-pub fn engine::ports::inbound::HumanInput::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for engine::ports::inbound::HumanInput where T: ?core::marker::Sized
-pub fn engine::ports::inbound::HumanInput::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for engine::ports::inbound::HumanInput where T: ?core::marker::Sized
-pub fn engine::ports::inbound::HumanInput::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for engine::ports::inbound::HumanInput where T: core::clone::Clone
-pub unsafe fn engine::ports::inbound::HumanInput::clone_to_uninit(&self, *mut u8)
-impl<T> core::convert::From<T> for engine::ports::inbound::HumanInput
-pub fn engine::ports::inbound::HumanInput::from(T) -> T
 pub struct engine::InteractiveEngine
 impl engine::execution::interactive_engine::InteractiveEngine
 pub fn engine::execution::interactive_engine::InteractiveEngine::conversation_history(&self, &engine::graph::workflow::NodeId) -> alloc::vec::Vec<engine::conversation::ChatMessage>
@@ -7755,10 +7528,6 @@ pub fn engine::execution::interactive_engine::InteractiveEngine::on_ai_complete(
 impl engine::execution::interactive_engine::InteractiveEngine
 pub fn engine::execution::interactive_engine::InteractiveEngine::on_tool_decision(&mut self, &str, bool, core::option::Option<&str>) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::on_tool_results(&mut self, &engine::graph::workflow::NodeId, alloc::vec::Vec<engine::ToolResult>) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
-impl engine::ports::inbound::HumanInputPort for engine::execution::interactive_engine::InteractiveEngine
-pub fn engine::execution::interactive_engine::InteractiveEngine::submit_human_input(&mut self, engine::ports::inbound::HumanInput) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
-impl engine::ports::inbound::ToolApprovalPort for engine::execution::interactive_engine::InteractiveEngine
-pub fn engine::execution::interactive_engine::InteractiveEngine::submit_tool_approval(&mut self, engine::ports::inbound::ToolApprovalInput) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 impl core::marker::Freeze for engine::execution::interactive_engine::InteractiveEngine
 impl core::marker::Send for engine::execution::interactive_engine::InteractiveEngine
 impl core::marker::Sync for engine::execution::interactive_engine::InteractiveEngine
@@ -8503,47 +8272,6 @@ pub unsafe fn engine::template::Template::clone_to_uninit(&self, *mut u8)
 impl<T> core::convert::From<T> for engine::template::Template
 pub fn engine::template::Template::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::template::Template where T: for<'de> serde_core::de::Deserialize<'de>
-pub struct engine::ToolApprovalInput
-pub engine::ToolApprovalInput::allow: bool
-pub engine::ToolApprovalInput::approval_id: alloc::string::String
-pub engine::ToolApprovalInput::reason: core::option::Option<alloc::string::String>
-impl core::clone::Clone for engine::ports::inbound::ToolApprovalInput
-pub fn engine::ports::inbound::ToolApprovalInput::clone(&self) -> engine::ports::inbound::ToolApprovalInput
-impl core::cmp::Eq for engine::ports::inbound::ToolApprovalInput
-impl core::cmp::PartialEq for engine::ports::inbound::ToolApprovalInput
-pub fn engine::ports::inbound::ToolApprovalInput::eq(&self, &engine::ports::inbound::ToolApprovalInput) -> bool
-impl core::fmt::Debug for engine::ports::inbound::ToolApprovalInput
-pub fn engine::ports::inbound::ToolApprovalInput::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for engine::ports::inbound::ToolApprovalInput
-impl core::marker::Freeze for engine::ports::inbound::ToolApprovalInput
-impl core::marker::Send for engine::ports::inbound::ToolApprovalInput
-impl core::marker::Sync for engine::ports::inbound::ToolApprovalInput
-impl core::marker::Unpin for engine::ports::inbound::ToolApprovalInput
-impl core::marker::UnsafeUnpin for engine::ports::inbound::ToolApprovalInput
-impl core::panic::unwind_safe::RefUnwindSafe for engine::ports::inbound::ToolApprovalInput
-impl core::panic::unwind_safe::UnwindSafe for engine::ports::inbound::ToolApprovalInput
-impl<T, U> core::convert::Into<U> for engine::ports::inbound::ToolApprovalInput where U: core::convert::From<T>
-pub fn engine::ports::inbound::ToolApprovalInput::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for engine::ports::inbound::ToolApprovalInput where U: core::convert::Into<T>
-pub type engine::ports::inbound::ToolApprovalInput::Error = core::convert::Infallible
-pub fn engine::ports::inbound::ToolApprovalInput::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for engine::ports::inbound::ToolApprovalInput where U: core::convert::TryFrom<T>
-pub type engine::ports::inbound::ToolApprovalInput::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn engine::ports::inbound::ToolApprovalInput::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for engine::ports::inbound::ToolApprovalInput where T: core::clone::Clone
-pub type engine::ports::inbound::ToolApprovalInput::Owned = T
-pub fn engine::ports::inbound::ToolApprovalInput::clone_into(&self, &mut T)
-pub fn engine::ports::inbound::ToolApprovalInput::to_owned(&self) -> T
-impl<T> core::any::Any for engine::ports::inbound::ToolApprovalInput where T: 'static + ?core::marker::Sized
-pub fn engine::ports::inbound::ToolApprovalInput::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for engine::ports::inbound::ToolApprovalInput where T: ?core::marker::Sized
-pub fn engine::ports::inbound::ToolApprovalInput::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for engine::ports::inbound::ToolApprovalInput where T: ?core::marker::Sized
-pub fn engine::ports::inbound::ToolApprovalInput::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for engine::ports::inbound::ToolApprovalInput where T: core::clone::Clone
-pub unsafe fn engine::ports::inbound::ToolApprovalInput::clone_to_uninit(&self, *mut u8)
-impl<T> core::convert::From<T> for engine::ports::inbound::ToolApprovalInput
-pub fn engine::ports::inbound::ToolApprovalInput::from(T) -> T
 pub struct engine::ToolCall
 pub engine::ToolCall::arguments: serde_json::value::Value
 pub engine::ToolCall::id: alloc::string::String
@@ -9051,19 +8779,11 @@ pub fn alloc::boxed::Box<T>::invoke<'life0, 'async_trait>(&'life0 self, engine::
 pub fn alloc::boxed::Box<T>::invoke_stream<'life0, 'life1, 'async_trait>(&'life0 self, engine::ports::outbound::AgentRequest, &'life1 dyn engine::ports::outbound::AiStreamSink) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = core::result::Result<engine::ports::outbound::AgentTurnOutcome, engine::ports::outbound::AgentError>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
 pub trait engine::AiStreamSink: core::marker::Send + core::marker::Sync
 pub fn engine::AiStreamSink::on_stream_event(&self, engine::ports::outbound::AiStreamEvent)
-pub trait engine::HumanInputPort
-pub fn engine::HumanInputPort::submit_human_input(&mut self, engine::ports::inbound::HumanInput) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
-impl engine::ports::inbound::HumanInputPort for engine::execution::interactive_engine::InteractiveEngine
-pub fn engine::execution::interactive_engine::InteractiveEngine::submit_human_input(&mut self, engine::ports::inbound::HumanInput) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 pub trait engine::TemplateStore
 pub fn engine::TemplateStore::add(&self, engine::template::Template) -> core::result::Result<(), engine::template::store::TemplateStoreError>
 pub fn engine::TemplateStore::list(&self) -> alloc::vec::Vec<engine::template::Template>
 pub fn engine::TemplateStore::remove(&self, &str) -> core::result::Result<(), engine::template::store::TemplateStoreError>
 pub fn engine::TemplateStore::update(&self, engine::template::Template) -> core::result::Result<(), engine::template::store::TemplateStoreError>
-pub trait engine::ToolApprovalPort
-pub fn engine::ToolApprovalPort::submit_tool_approval(&mut self, engine::ports::inbound::ToolApprovalInput) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
-impl engine::ports::inbound::ToolApprovalPort for engine::execution::interactive_engine::InteractiveEngine
-pub fn engine::execution::interactive_engine::InteractiveEngine::submit_tool_approval(&mut self, engine::ports::inbound::ToolApprovalInput) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 pub trait engine::ToolPort: core::marker::Send + core::marker::Sync
 pub fn engine::ToolPort::augment_request(&self, &engine::graph::workflow::NodeId, &mut engine::ports::outbound::AgentRequest)
 pub fn engine::ToolPort::execute_batch<'life0, 'life1, 'life2, 'life3, 'async_trait>(&'life0 self, &'life1 mut engine::execution::interactive_engine::InteractiveEngine, &'life2 engine::graph::workflow::NodeId, &'life3 str, alloc::vec::Vec<engine::ToolCall>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = alloc::vec::Vec<engine::ToolResult>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait, 'life3: 'async_trait

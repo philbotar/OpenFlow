@@ -161,11 +161,6 @@ export function dagreLayoutWorkflowLeftToRight(workflow: Workflow): Workflow {
 
   return next;
 }
-export function createEmptyToolConfig(): NodeToolConfig {
-  return {
-    approvalMode: "write",
-  };
-}
 export type WorkflowCanvasGraphNode = {
   id: NodeId;
   label: string;

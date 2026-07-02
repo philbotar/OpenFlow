@@ -7,10 +7,10 @@ import type {
   Workflow,
   WorkflowRunState,
 } from "../types";
+import { createEmptyToolConfig } from "./testHelpers";
 import {
   cloneSettings,
   cloneWorkflow,
-  createEmptyToolConfig,
   canSendChat,
   canSendIdleRunKickoff,
   dagreLayoutWorkflowLeftToRight,

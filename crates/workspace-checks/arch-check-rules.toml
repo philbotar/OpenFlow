@@ -49,6 +49,7 @@ symbols = [
     "ProviderId",
     "ProviderKind",
     "ProviderSpec",
+    "ReasoningEffortOption",
     "WireApi",
     "builtin_provider_specs",
     "provider_spec",

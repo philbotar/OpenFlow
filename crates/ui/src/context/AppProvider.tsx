@@ -9,8 +9,8 @@ import {
 import type { ParentProps } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { toast } from "solid-sonner";
+import * as desktop from "../api";
 import { getAppWindow, confirmNativeDialog, openNativeDialog } from "../api";
-import { createUiDesktopOutboundAdapter } from "../port";
 import { resolveChatSubmission } from "../lib/chatCommands";
 import {
   extractReferencedFilePaths,
@@ -120,14 +120,10 @@ import {
 } from "../lib/theme";
 import { AppContext } from "./AppContext";
 import type { SettingsSectionId } from "../settings/types";
-import {
-  readFirstRunOnboardingOpen,
-  writeFirstRunOnboardingDismissed,
-} from "./appProvider/onboardingStorage";
+
+const FIRST_RUN_ONBOARDING_STORAGE_KEY = "openflow.firstRunOnboardingDismissed";
 
 export function AppProvider(props: ParentProps) {
-  const desktop = createUiDesktopOutboundAdapter();
-
   // ── Signals ───────────────────────────────────────────────────────────────
   const [workflows, setWorkflows] = createSignal<Workflow[]>([]);
   const [projects, setProjects] = createSignal<Project[]>([]);
@@ -295,7 +291,7 @@ export function AppProvider(props: ParentProps) {
   );
   const [shortcutsModalOpen, setShortcutsModalOpen] = createSignal(false);
   const [firstRunOnboardingOpen, setFirstRunOnboardingOpen] = createSignal(
-    readFirstRunOnboardingOpen(globalThis.localStorage),
+    !readStoredBoolean(globalThis.localStorage, FIRST_RUN_ONBOARDING_STORAGE_KEY),
   );
   const [isCompactViewport, setIsCompactViewport] = createSignal(isCompactViewportWidth());
   const [sidebarDrawerOpen, setSidebarDrawerOpen] = createSignal(false);
@@ -1650,7 +1646,7 @@ export function AppProvider(props: ParentProps) {
 
   const dismissFirstRunOnboarding = () => {
     setFirstRunOnboardingOpen(false);
-    writeFirstRunOnboardingDismissed(globalThis.localStorage);
+    writeStoredBoolean(globalThis.localStorage, FIRST_RUN_ONBOARDING_STORAGE_KEY, true);
   };
 
   const handleOnboardingBuildWorkflow = async () => {

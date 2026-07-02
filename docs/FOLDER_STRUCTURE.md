@@ -32,8 +32,7 @@ domain_name/
 ```
 
 **Examples:**
-- `agent/ports.rs` - AgentStore trait
-- `agent/library.rs` - agent CRUD using AgentStore
+- `agent.rs` - AgentStore trait and agent CRUD
 - `workflow/ports.rs` - WorkflowStore trait
 - `workflow/catalog.rs` - workflow catalog
 - `run/coordinator/mod.rs` - run coordination
@@ -87,7 +86,7 @@ agent/adapters/store.rs  # adapters belong in adapters/, not domains
 
 **Example:**
 ```rust
-// agent/ports.rs (domain port definitions)
+// agent.rs (domain port definitions)
 pub trait AgentStore {
     fn load(&self) -> io::Result<Vec<CallableAgent>>;
     fn save(&self, agents: &[CallableAgent]) -> io::Result<()>;
@@ -95,8 +94,8 @@ pub trait AgentStore {
 ```
 
 ```rust
-// agent/library.rs (domain logic uses the port)
-use crate::agent::ports::AgentStore;
+// agent.rs (domain logic uses the port)
+use crate::agent::AgentStore;
 
 pub struct AgentLibrary {
     store: Box<dyn AgentStore>,
@@ -105,7 +104,7 @@ pub struct AgentLibrary {
 
 ```rust
 // adapters/storage/agent_store.rs (adapter implements the port)
-use crate::agent::ports::AgentStore;
+use crate::agent::AgentStore;
 
 pub struct AgentFileStore { ... }
 
@@ -132,14 +131,14 @@ engine/src/
 ├── conversation/  # domain concept (chat history)
 ├── execution/  # domain concept (run execution)
 ├── graph/  # domain concept (workflow structure)
-├── ports/  # inbound/outbound ports for engine
+├── ports/  # outbound ports consumed by engine
 ├── template/  # domain concept
 ├── tools/  # domain concept (tool catalog, policies)
 ├── lib.rs
 └── mod declarations
 ```
 
-**Special case:** Engine defines its own `ports/inbound` and `ports/outbound` (boundaries for external systems). This is the exception: engine is the core and exports ports that others implement.
+**Special case:** Engine defines its own outbound ports (boundaries for external systems). This is the exception: engine is the core and exports ports that adapters implement.
 
 ### `crates/orchestration` - Composition root
 
@@ -148,9 +147,7 @@ engine/src/
 **Structure:**
 ```
 orchestration/src/
-├── agent/
-│   ├── ports.rs  # AgentStore trait
-│   └── library.rs  # agent CRUD
+├── agent.rs      # AgentStore trait and AgentLibrary
 ├── workflow/
 │   ├── ports.rs  # WorkflowStore trait
 │   └── catalog.rs  # workflow catalog
@@ -160,7 +157,8 @@ orchestration/src/
 ├── run/
 │   ├── coordinator/                    # run coordination
 │   ├── execution/  # execution details
-│   └── state/mod.rs  # state projection
+│   ├── persistence.rs
+│   └── state.rs  # state projection
 ├── settings/
 │   ├── ports.rs  # SettingsStore trait
 │   └── facade.rs  # settings aggregation
@@ -177,8 +175,7 @@ orchestration/src/
 │   │   ├── project_workflow_store.rs
 │   │   ├── project_store.rs
 │   │   ├── settings_store.rs
-│   │   ├── skill_store.rs
-│   │   └── template_store.rs
+│   │   └── skill_store.rs
 │   ├── tool_impl/  # tool implementation (edit, patching)
 │   │   ├── edit/
 │   │   ├── errors.rs
@@ -272,7 +269,7 @@ Adapters are terminal implementations. They don't have sub-adapters. Nesting (`a
 engine (core domain)
   ↑
   └─ orchestration (domains + adapters)
-       ├─ agent/library -> adapters/storage/agent_store
+       ├─ agent -> adapters/storage/agent_store
        ├─ workflow/catalog -> adapters/storage/{app,project}_workflow_store
        └─ tool/runner -> adapters/tool_impl/
 

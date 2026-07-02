@@ -5,8 +5,7 @@ use crate::adapters::storage::project_workflow_store::FileProjectWorkflowStore;
 use crate::adapters::storage::run_checkpoint_store::FileRunCheckpointStore;
 use crate::adapters::storage::settings_store::FileSettingsStore;
 use crate::adapters::storage::skill_store::FileSkillCatalog;
-use crate::agent::library::AgentLibrary;
-use crate::agent::ports::AgentStore;
+use crate::agent::{AgentLibrary, AgentStore};
 use crate::project::ports::{Project, ProjectStore};
 use crate::project::registry::ProjectRegistry;
 use crate::run::coordinator::{RunCoordinator, RunStartParams};
@@ -104,13 +103,6 @@ impl AppBackend {
     #[must_use]
     pub fn with_runtime_handle(runtime_handle: tokio::runtime::Handle) -> Self {
         Self::new(Self::default_deps(runtime_handle), None)
-    }
-
-    #[must_use]
-    pub fn with_default_paths() -> Self {
-        let runtime = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
-        let handle = runtime.handle().clone();
-        Self::new(Self::default_deps(handle), Some(runtime))
     }
 
     #[cfg(test)]

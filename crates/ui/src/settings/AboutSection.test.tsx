@@ -9,11 +9,9 @@ const { getAppVersion, installAppUpdate } = vi.hoisted(() => ({
   installAppUpdate: vi.fn(),
 }));
 
-vi.mock("../port", () => ({
-  createUiDesktopOutboundAdapter: () => ({
-    getAppVersion,
-    installAppUpdate,
-  }),
+vi.mock("../api", () => ({
+  getAppVersion,
+  installAppUpdate,
 }));
 
 describe("AboutSection", () => {

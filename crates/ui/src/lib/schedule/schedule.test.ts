@@ -11,7 +11,7 @@ import {
   workflowsAddableToSchedule,
   workflowsWithSchedules,
 } from "../schedule";
-import { createEmptyToolConfig } from "../workflow";
+import { createEmptyToolConfig } from "../workflow/testHelpers";
 
 function workflow(schedule: Workflow["settings"]["schedule"] = null): Workflow {
   return {

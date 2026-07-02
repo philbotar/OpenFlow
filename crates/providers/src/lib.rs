@@ -31,10 +31,6 @@ pub use spec::{
     OpenAiCompatibleSpec, ProviderId, ProviderKind, ProviderSpec, ReasoningEffortOption, WireApi,
 };
 
-pub type OpenAiClient = AiClient;
-pub type OpenAiClientConfig = AiClientConfig;
-pub type OpenAiWireApi = WireApi;
-
 #[must_use]
 pub fn create_provider(config: AiClientConfig) -> Box<dyn AiPort> {
     Box::new(AiClient::with_config(config))

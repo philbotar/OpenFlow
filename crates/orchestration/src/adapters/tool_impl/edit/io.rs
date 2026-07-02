@@ -302,6 +302,7 @@ impl EditIo {
     }
 
     /// Write new file content with a trailing newline (create semantics).
+    #[cfg(test)]
     pub fn write_text_create(
         &self,
         user_path: &str,

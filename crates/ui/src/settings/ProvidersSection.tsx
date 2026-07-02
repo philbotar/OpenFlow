@@ -1,6 +1,6 @@
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { refreshBedrockModels, verifyBedrockCredentials } from "../api";
-import { TextSelect } from "../components/TextSelect";
+import { TextSelect } from "../components";
 import { useAppContext } from "../context/AppContext";
 import { normalizeError } from "../lib/utils";
 import {

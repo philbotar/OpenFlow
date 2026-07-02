@@ -3,9 +3,11 @@ use crate::tool::retry::execute_with_retry;
 use crate::tools::{ToolExecutionContext, ToolExecutionRecord, ToolRunner, ToolRunnerError};
 use async_trait::async_trait;
 use engine::{
-    build_predefined_subagent_summaries, handle_declare_subagents, AiPort, CallableAgent,
-    InteractiveEngine, NodeId, NodeToolConfig, RunTelemetry, SubagentSummary, ToolCall,
-    ToolConcurrency, ToolPort, ToolResult, Workflow, CALL_SUBAGENT_TOOL, DECLARE_SUBAGENTS_TOOL,
+    augment_call_subagent_tool_description, build_predefined_subagent_summaries,
+    handle_declare_subagents, merge_subagent_summaries as merge_subagent_summaries_into_map,
+    AiPort, CallableAgent, InteractiveEngine, NodeId, NodeToolConfig, RunTelemetry,
+    SubagentSummary, ToolCall, ToolConcurrency, ToolPort, ToolResult, Workflow, CALL_SUBAGENT_TOOL,
+    DECLARE_SUBAGENTS_TOOL,
 };
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
@@ -13,7 +15,6 @@ use std::time::Instant;
 use tokio::sync::{mpsc::UnboundedSender, Semaphore};
 use tokio_util::sync::CancellationToken;
 
-use super::subagents::{augment_call_subagent_tool_description, merge_subagent_summaries_into_map};
 use super::{abort_run, emit_phase_timed, send_or_log, ExecutionEvent, NodeInterrupts};
 
 pub struct ToolPortImpl<A> {
@@ -418,24 +419,6 @@ where
             tool_call_id: tool_call.id.clone(),
             tool_name: tool_call.name.clone(),
             arguments: tool_call.arguments.clone(),
-        });
-    }
-
-    #[allow(dead_code, reason = "wired by live-output tools in the next task")]
-    fn emit_tool_updated(
-        &self,
-        node_id: &NodeId,
-        tool_call_id: &str,
-        tool_name: &str,
-        content: String,
-        output_meta: Option<engine::ToolOutputMeta>,
-    ) {
-        let _ = self.event_tx.send(ExecutionEvent::ToolUpdated {
-            node_id: node_id.clone(),
-            tool_call_id: tool_call_id.to_string(),
-            tool_name: tool_name.to_string(),
-            content,
-            output_meta,
         });
     }
 

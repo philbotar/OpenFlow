@@ -3,7 +3,7 @@ import { render } from "solid-js/web";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { AgentDefinition, AppSettings, BootstrapPayload, Project, ProviderReadiness, ScheduleDraft, SkillSummary, Workflow, WorkflowRunState } from "../lib/types";
 import { defaultWorkflowSchedule } from "../lib/schedule";
-import { createEmptyToolConfig } from "../lib/workflow";
+import { createEmptyToolConfig } from "../lib/workflow/testHelpers";
 
 const apiMocks = vi.hoisted(() => ({
   bootstrapApp: vi.fn(),

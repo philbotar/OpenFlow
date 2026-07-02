@@ -14,10 +14,6 @@ pub const END_PATCH_MARKER: &str = "*** End Patch";
 /// Recovery sentinel for truncated tool-call streams.
 pub const ABORT_MARKER: &str = "*** Abort";
 
-pub const REPLACE_PAIR_COALESCED_WARNING: &str = "Detected two identical-range hashline hunks; kept only the second hunk. Issue ONE `replace N..M:` hunk per range — payload is the final desired content, never both old and new.";
-
-pub const REPLACE_PAIR_COALESCED_OVERLAP_WARNING: &str = "Detected an overlapping bare hashline hunk immediately followed by a concrete hunk; dropped the earlier bare hunk. Issue ONE `replace N..M:` hunk per range — payload is the final desired content, never both old and new.";
-
 pub const BARE_BODY_AUTO_PIPED_WARNING: &str = "Auto-prefixed bare body row(s) with `+`. Body rows must be `+TEXT` literal lines; pasting raw code as payload is not a portable shape.";
 
 pub const MINUS_ROW_REJECTED: &str = "`-` rows are not valid; hashline ranges already name the lines being changed. To insert a literal line starting with `-`, write `+-…`.";

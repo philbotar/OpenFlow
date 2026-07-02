@@ -15,7 +15,7 @@ flowchart TD
     subgraph UI["crates/ui — React + TypeScript"]
         Canvas["Canvas (nodes & edges)"]
         Chat["Per-node chat panels"]
-        Port["port.ts / api.ts<br/>(only files allowed to import @tauri-apps)"]
+        Port["api.ts<br/>(only production file allowed to import @tauri-apps)"]
     end
 
     subgraph Desktop["crates/desktop — Tauri adapter"]
@@ -33,7 +33,7 @@ flowchart TD
     subgraph Engine["crates/engine — I/O-free hexagon"]
         IE["InteractiveEngine<br/>(state machine)"]
         Graph["Workflow / Node / Edge<br/>+ DAG validation"]
-        Ports["Ports: AiPort, ToolPort,<br/>HumanInputPort, ToolApprovalPort"]
+        Ports["Ports: AiPort, ToolPort"]
         Policy["Tool approval policy<br/>(tiers, modes)"]
     end
 
@@ -257,7 +257,7 @@ Malformed control-tool calls get **class-specific retry budgets** with targeted 
 
 ### 5.2 Humans are nodes, not interrupts
 
-Toggling **auto-start off** turns any agent node into a human checkpoint *at the same position in the graph*. The engine schedules it like any other node — it waits for upstream outputs, shows the assembled context (`assemble_context`) in the chat before you type, and your text becomes the node's contribution. Human input is a first-class **inbound port** (`HumanInputPort`, `ToolApprovalPort`) implemented *by the engine itself* — the same state machine, addressable from outside.
+Toggling **auto-start off** turns any agent node into a human checkpoint *at the same position in the graph*. The engine schedules it like any other node — it waits for upstream outputs, shows the assembled context (`assemble_context`) in the chat before you type, and your text becomes the node's contribution. Orchestration resumes the same state machine through `InteractiveEngine::on_human_input` and `InteractiveEngine::on_tool_decision`.
 
 Because `NeedsInteraction` batches all paused nodes, parallel branches don't serialize on the human: branch A can await your input while branch B keeps executing tools.
 
@@ -313,7 +313,7 @@ Approval policy lives in the **engine**, not the UI ([tools/config.rs](../../cra
 | State machine, `run()` loop | `crates/engine/src/execution/interactive_engine/` |
 | Context assembly, runtime preamble | `crates/engine/src/execution/node_invocation.rs` |
 | Layering / DAG validation | `crates/engine/src/graph/validation.rs` |
-| Ports (AiPort, ToolPort, inbound) | `crates/engine/src/ports/` |
+| Ports (AiPort, ToolPort) | `crates/engine/src/ports/` |
 | Subagent state machine | `crates/engine/src/execution/subagent_runtime.rs` |
 | Approval policy / tiers | `crates/engine/src/tools/config.rs` |
 | Run driver (only engine constructor) | `crates/orchestration/src/run/execution/drive.rs` |

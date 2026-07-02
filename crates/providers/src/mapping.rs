@@ -324,7 +324,10 @@ pub fn normalize_submit_output_arguments(value: Value, output_schema: Option<&Va
 }
 
 /// Attach token usage to an outcome, if usage data is available.
-fn attach_usage(outcome: AgentTurnOutcome, usage: Option<engine::UsageReport>) -> AgentTurnOutcome {
+pub(crate) fn attach_usage(
+    outcome: AgentTurnOutcome,
+    usage: Option<engine::UsageReport>,
+) -> AgentTurnOutcome {
     match usage {
         None => outcome,
         Some(u) => match outcome {
@@ -350,6 +353,22 @@ pub fn extract_usage_from_openai(payload: &Value) -> Option<engine::UsageReport>
     let usage = payload.get("usage")?;
     let prompt_tokens = usage.get("prompt_tokens").and_then(usage_token)?;
     let completion_tokens = usage.get("completion_tokens").and_then(usage_token)?;
+    let total_tokens = usage
+        .get("total_tokens")
+        .and_then(usage_token)
+        .unwrap_or_else(|| prompt_tokens.saturating_add(completion_tokens));
+    Some(engine::UsageReport {
+        prompt_tokens,
+        completion_tokens,
+        total_tokens,
+    })
+}
+
+/// Extract token usage from an Anthropic Messages API response payload.
+pub fn extract_usage_from_anthropic(payload: &Value) -> Option<engine::UsageReport> {
+    let usage = payload.get("usage")?;
+    let prompt_tokens = usage.get("input_tokens").and_then(usage_token)?;
+    let completion_tokens = usage.get("output_tokens").and_then(usage_token)?;
     let total_tokens = usage
         .get("total_tokens")
         .and_then(usage_token)

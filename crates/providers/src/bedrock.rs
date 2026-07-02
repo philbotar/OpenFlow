@@ -2,13 +2,14 @@ use crate::auth::AuthConfig;
 use crate::aws_runtime::load_aws_sdk_config;
 use crate::client::BedrockConfig;
 use crate::mapping::{
-    all_tool_specs, build_node_context, parse_internal_tool_outcome, parse_plain_json_completion,
-    should_allow_user_input, ToolSpec, REQUEST_INPUT_TOOL, SUBMIT_OUTPUT_TOOL,
+    all_tool_specs, attach_usage, build_node_context, parse_internal_tool_outcome,
+    parse_plain_json_completion, should_allow_user_input, ToolSpec, REQUEST_INPUT_TOOL,
+    SUBMIT_OUTPUT_TOOL,
 };
 use aws_sdk_bedrockruntime::error::ProvideErrorMetadata;
 use aws_sdk_bedrockruntime::types::{
     AutoToolChoice, ContentBlock, ConversationRole, ConverseStreamOutput, InferenceConfiguration,
-    Message, SystemContentBlock, Tool, ToolChoice, ToolConfiguration, ToolInputSchema,
+    Message, SystemContentBlock, TokenUsage, Tool, ToolChoice, ToolConfiguration, ToolInputSchema,
     ToolResultBlock, ToolResultContentBlock, ToolResultStatus, ToolSpecification, ToolUseBlock,
 };
 use aws_sdk_bedrockruntime::Client as BedrockRuntimeClient;
@@ -100,6 +101,7 @@ pub async fn invoke(
         .send()
         .await
         .map_err(|error| map_bedrock_runtime_error(&error))?;
+    let usage = usage_report_from_bedrock(response.usage());
     let message = response
         .output
         .ok_or_else(|| AgentError::Failed("Bedrock Converse response missing output".into()))?
@@ -111,6 +113,7 @@ pub async fn invoke(
         &input.tool_names,
         allow_follow_up,
         Some(&output_schema),
+        usage,
     )
 }
 
@@ -146,12 +149,14 @@ pub async fn invoke_stream(
             sink.on_stream_event(AiStreamEvent::AssistantDelta { content: delta });
         }
     }
+    let usage = aggregator.usage();
     let message = aggregator.into_message();
     parse_converse_message(
         &message,
         &input.tool_names,
         allow_follow_up,
         Some(&output_schema),
+        usage,
     )
 }
 
@@ -351,6 +356,7 @@ fn parse_converse_message(
     tool_names: &BedrockToolNames,
     allow_plain_text_follow_up: bool,
     output_schema: Option<&Value>,
+    usage: Option<engine::UsageReport>,
 ) -> Result<AgentTurnOutcome, AgentError> {
     let mut assistant_text_parts = Vec::new();
     let mut tool_calls = Vec::new();
@@ -373,7 +379,7 @@ fn parse_converse_message(
 
     if tool_calls.is_empty() {
         if let Some(outcome) = parse_plain_json_completion(assistant_message.as_deref()) {
-            return Ok(outcome);
+            return Ok(attach_usage(outcome, usage));
         }
         if allow_plain_text_follow_up {
             if let Some(assistant_message) = assistant_message {
@@ -405,15 +411,28 @@ fn parse_converse_message(
             assistant_message,
             "Bedrock",
             output_schema,
-        );
+        )
+        .map(|outcome| attach_usage(outcome, usage));
     }
 
-    Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
-        raw_text: assistant_message.clone().unwrap_or_default(),
-        assistant_message,
-        tool_calls,
-        usage: None,
-    }))
+    Ok(attach_usage(
+        AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+            raw_text: assistant_message.clone().unwrap_or_default(),
+            assistant_message,
+            tool_calls,
+            usage: None,
+        }),
+        usage,
+    ))
+}
+
+fn usage_report_from_bedrock(usage: Option<&TokenUsage>) -> Option<engine::UsageReport> {
+    let usage = usage?;
+    Some(engine::UsageReport {
+        prompt_tokens: u32::try_from(usage.input_tokens()).ok()?,
+        completion_tokens: u32::try_from(usage.output_tokens()).ok()?,
+        total_tokens: u32::try_from(usage.total_tokens()).ok()?,
+    })
 }
 
 fn parse_tool_use_block(
@@ -631,6 +650,7 @@ struct ConverseStreamAggregator {
     text_by_block: BTreeMap<i32, String>,
     pending_tools: BTreeMap<i32, PendingToolUse>,
     tool_uses: Vec<ToolUseBlock>,
+    usage: Option<engine::UsageReport>,
 }
 
 impl ConverseStreamAggregator {
@@ -680,12 +700,16 @@ impl ConverseStreamAggregator {
                     }
                 }
             }
-            ConverseStreamOutput::MessageStop(_)
-            | ConverseStreamOutput::Metadata(_)
-            | ConverseStreamOutput::MessageStart(_)
-            | _ => {}
+            ConverseStreamOutput::Metadata(metadata) => {
+                self.usage = usage_report_from_bedrock(metadata.usage());
+            }
+            ConverseStreamOutput::MessageStop(_) | ConverseStreamOutput::MessageStart(_) | _ => {}
         }
         None
+    }
+
+    fn usage(&self) -> Option<engine::UsageReport> {
+        self.usage.clone()
     }
 
     fn into_message(self) -> Message {
@@ -720,8 +744,10 @@ fn empty_assistant_message() -> Message {
 #[allow(clippy::expect_used)]
 mod tests {
     use super::*;
-    use aws_sdk_bedrockruntime::types::ContentBlockDelta;
-    use engine::{NodeId, NodeToolConfig, ToolDefinition, ToolTier, WorkflowId};
+    use aws_sdk_bedrockruntime::types::{
+        ContentBlockDelta, ConverseStreamMetadataEvent, TokenUsage,
+    };
+    use engine::{NodeId, NodeToolConfig, ToolDefinition, ToolTier, UsageReport, WorkflowId};
 
     fn sample_agent_request() -> AgentRequest {
         AgentRequest {
@@ -896,6 +922,92 @@ mod tests {
         assert_eq!(
             message.content()[0].as_text().map(String::as_str),
             Ok("Hello world")
+        );
+    }
+
+    #[test]
+    fn stream_aggregator_collects_usage_from_metadata() {
+        let mut agg = ConverseStreamAggregator::default();
+        let metadata = ConverseStreamMetadataEvent::builder()
+            .usage(
+                TokenUsage::builder()
+                    .input_tokens(23)
+                    .output_tokens(7)
+                    .total_tokens(30)
+                    .build()
+                    .expect("usage"),
+            )
+            .build();
+        let event = ConverseStreamOutput::Metadata(metadata);
+        assert_eq!(agg.apply_event(&event), None);
+        assert_eq!(
+            agg.usage(),
+            Some(UsageReport {
+                prompt_tokens: 23,
+                completion_tokens: 7,
+                total_tokens: 30,
+            })
+        );
+    }
+
+    #[test]
+    fn parse_converse_message_attaches_usage_to_tool_calls() {
+        let tool_names = BedrockToolNames::from_specs(&[ToolSpec {
+            name: "read".to_string(),
+            description: "Read a file.".to_string(),
+            parameters: serde_json::json!({
+                "type": "object",
+                "properties": { "path": { "type": "string" } },
+                "required": ["path"]
+            }),
+        }])
+        .expect("tool names");
+        let message = Message::builder()
+            .role(ConversationRole::Assistant)
+            .content(ContentBlock::Text("Read that file.".to_string()))
+            .content(ContentBlock::ToolUse(
+                ToolUseBlock::builder()
+                    .tool_use_id("toolu_1")
+                    .name("read")
+                    .input(Document::Object(std::collections::HashMap::from([(
+                        "path".to_string(),
+                        Document::String("README.md".to_string()),
+                    )])))
+                    .build()
+                    .expect("tool use"),
+            ))
+            .build()
+            .expect("message");
+
+        let outcome = parse_converse_message(
+            &message,
+            &tool_names,
+            false,
+            None,
+            Some(UsageReport {
+                prompt_tokens: 9,
+                completion_tokens: 4,
+                total_tokens: 13,
+            }),
+        )
+        .expect("outcome");
+
+        assert_eq!(
+            outcome,
+            AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+                raw_text: "Read that file.".to_string(),
+                assistant_message: Some("Read that file.".to_string()),
+                tool_calls: vec![ToolCall {
+                    id: "toolu_1".to_string(),
+                    name: "read".to_string(),
+                    arguments: serde_json::json!({"path": "README.md"}),
+                }],
+                usage: Some(UsageReport {
+                    prompt_tokens: 9,
+                    completion_tokens: 4,
+                    total_tokens: 13,
+                }),
+            })
         );
     }
 

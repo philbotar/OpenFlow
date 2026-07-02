@@ -832,13 +832,6 @@ impl RunCoordinator {
     }
 
     #[cfg(test)]
-    #[must_use]
-    #[allow(dead_code, reason = "used by orchestration integration tests")]
-    pub(crate) fn runtime_handle(&self) -> &tokio::runtime::Handle {
-        &self.runtime_handle
-    }
-
-    #[cfg(test)]
     #[allow(dead_code, reason = "coordinator tests seed varied session shapes")]
     pub(crate) async fn test_seed_full(&self, seed: TestSessionSeed) {
         let mut session = self.session.lock().await;

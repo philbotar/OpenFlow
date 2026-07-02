@@ -26,12 +26,12 @@ desktop / ui
 backend/                  AppBackend facade and composition root
     │
     ├── workflow/          workflow catalog and authoring services
-    ├── agent/             saved agent library
+    ├── agent.rs           saved agent library
     ├── project/           project registry and file references
     ├── settings/          settings facade, provider readiness, skills
     ├── schedule/          schedule evaluation and status
     ├── run/               active runs, checkpoints, state projection
-    ├── terminal/          embedded terminal sessions
+    ├── terminal.rs        embedded terminal sessions
     └── tool/              tool registry, dispatch, retry, output
 
 adapters/
@@ -44,9 +44,9 @@ adapters/
 | Role | Folder | Job |
 | --- | --- | --- |
 | Composition | `backend/` | Construct services, expose the stable facade that desktop calls. |
-| Application services | `workflow/`, `agent/`, `project/`, `settings/`, `schedule/`, `run/`, `terminal/`, `tool/` | Apply app rules, coordinate ports, and return API DTOs. |
+| Application services | `workflow/`, `agent.rs`, `project/`, `settings/`, `schedule/`, `run/`, `terminal.rs`, `tool/` | Apply app rules, coordinate ports, and return API DTOs. |
 | Port traits | `{entity}/ports.rs` | Define store/catalog seams consumed by entity services. |
-| Run state | `run/state/` | Project `RunTelemetry` into `WorkflowRunState` for UI and IPC. |
+| Run state | `run/state.rs` | Project `RunTelemetry` into `WorkflowRunState` for UI and IPC. |
 | Concrete storage | `adapters/storage/` | Read and write JSON files under `{data_local}/openflow/`, project workflow files, incidents, and run checkpoints. |
 | Runtime I/O | `adapters/tool_impl/`, `adapters/mcp/`, `adapters/infrastructure/` | Perform filesystem, subprocess, MCP, git, and LSP work. |
 | Shared DTOs | `api.rs`, `error.rs` | Define transport shapes and `BackendError` used across the crate. |
@@ -72,22 +72,21 @@ orchestration/src/
 │   │   ├── project_workflow_store.rs
 │   │   ├── run_checkpoint_store.rs
 │   │   ├── settings_store.rs
-│   │   ├── skill_store.rs
-│   │   └── template_store.rs
+│   │   └── skill_store.rs
 │   ├── tool_impl/
 │   ├── mcp/
 │   └── infrastructure/
-├── agent/
+├── agent.rs
 ├── incident/
 ├── project/
 ├── run/
 │   ├── coordinator/
 │   ├── execution/
 │   ├── persistence.rs
-│   └── state/
+│   └── state.rs
 ├── schedule/
 ├── settings/
-├── terminal/
+├── terminal.rs
 ├── tool/
 └── workflow/
     ├── authoring/
@@ -112,8 +111,7 @@ Catalog owns merge policy. Stores only read and write bytes.
 
 | File | Module path | Responsibility |
 | --- | --- | --- |
-| `agent/library.rs` | `agent::library` | Callable agent CRUD and `create_agent_node`. |
-| `agent/ports.rs` | `agent::ports` | Agent store trait. |
+| `agent.rs` | `agent` | Callable agent CRUD, `create_agent_node`, and agent store trait. |
 | `adapters/storage/agent_store.rs` | `adapters::storage::agent_store` | Persist `openflow/agents.json`. |
 
 ### Project
@@ -133,7 +131,7 @@ Catalog owns merge policy. Stores only read and write bytes.
 | `run/execution/` | `run::execution` | Host loop, AI adapter, `ToolPortImpl`, headless execution, telemetry event projection. |
 | `run/persistence.rs` | `run::persistence` | Durable run roots, records, and checkpoint metadata. |
 | `run/ports.rs` | `run::ports` | Run checkpoint store trait. |
-| `run/state/mod.rs` | `run::state` | `WorkflowRunState` projected for UI and IPC. |
+| `run/state.rs` | `run::state` | `WorkflowRunState` projected for UI and IPC. |
 | `adapters/storage/run_checkpoint_store.rs` | `adapters::storage::run_checkpoint_store` | Persist run records and engine checkpoints. |
 
 Only `run/execution/` constructs or drives `InteractiveEngine`, as required by the [architecture contract](contract.md).
@@ -168,8 +166,7 @@ Only `run/execution/` constructs or drives `InteractiveEngine`, as required by t
 | --- | --- | --- |
 | `incident/` | `incident` | Record, list, dismiss, and clear backend incidents. |
 | `schedule/` | `schedule` | Evaluate workflow schedules and status. |
-| `terminal/` | `terminal` | Manage embedded terminal sessions. |
-| `adapters/storage/template_store.rs` | `adapters::storage::template_store` | Persist node templates in `openflow/templates.json`. |
+| `terminal.rs` | `terminal` | Manage embedded terminal sessions. |
 
 ## Request flow: start a run
 
@@ -205,7 +202,7 @@ sequenceDiagram
 | New workflow file layout | `adapters/storage/app_workflow_store.rs` or `adapters/storage/project_workflow_store.rs`. |
 | New project registry behavior | `project/registry.rs` plus `project/ports.rs` if the store seam changes. |
 | New run lifecycle step | `run/coordinator/mod.rs` or `run/execution/`. |
-| New UI run field | `run/state/mod.rs` plus `engine::RunTelemetry` if the engine emits new state. |
+| New UI run field | `run/state.rs` plus `engine::RunTelemetry` if the engine emits new state. |
 | New builtin tool | `adapters/tool_impl/`, `tool/registry.rs`, `tool/dispatch.rs`, and `crates/engine/src/tools/config.rs`; also update `NODE_RUNTIME_PREAMBLE` in `crates/engine/src/execution/node_invocation.rs`. |
 | New settings field | `settings/model.rs`, `adapters/storage/settings_store.rs`, and `settings/facade.rs` if UI-facing. |
 | New desktop command | Delegate in `backend/mod.rs`; implement in the owning service module. |
@@ -231,7 +228,6 @@ Cross-entity work goes through services or `backend/`. Entity services should de
 | `agent_store` | `{data_local}/openflow/agents.json` |
 | `project_store` | `{data_local}/openflow/projects.json` |
 | `settings_store` | `{data_local}/openflow/settings.json` |
-| `template_store` | `{data_local}/openflow/templates.json` |
 | `incident_store` | `{data_local}/openflow/incidents.json` |
 | `run_checkpoint_store` | `{data_local}/openflow/runs/` or the project-scoped run root selected by orchestration |
 

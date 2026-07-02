@@ -5,92 +5,32 @@
     reason = "Tauri desktop shell; strict pedantic/nursery lint not enforced on thin IPC glue"
 )]
 
+mod app_lifecycle;
+mod ipc_types;
+mod run_event_bridge;
 mod run_notifications;
 mod run_sleep_guard;
+mod schedule_events;
+mod terminal_events;
 
-use orchestration::api::{
-    DebugLogEntry, DebugLogWrite, McpDiscoveryRow, ScheduleDraft, SettingsLoadPayload,
-};
+use orchestration::api::{DebugLogEntry, DebugLogWrite, ScheduleDraft, SettingsLoadPayload};
 use orchestration::backend::{
     AppBackend, BackendError, FileEditPreview, ProviderReadiness, ScheduleStatus,
     WorkflowAuthoringTurnResult, WorkflowListItem, WorkflowValidationSummary,
 };
-use orchestration::run::execution::ExecutionEvent;
 use orchestration::run::state::WorkflowRunState;
 use orchestration::terminal::TerminalStart;
 use orchestration::{AgentDefinition, AppSettings, McpServerConfig, SkillSummary};
 use orchestration::{
     Project, ProjectFileReference, ProjectFileReferenceContent, Workflow, WorkflowSchedule,
 };
-use serde::{Deserialize, Serialize};
-use tauri::{Emitter, Manager};
-use tokio::sync::mpsc::UnboundedReceiver;
+use tauri::Emitter;
 
-const TERMINAL_EVENT: &str = "terminal-event";
-const SCHEDULE_EVENT: &str = "schedule-event";
-const SCHEDULE_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
-
-fn emit_schedule_statuses(app: &tauri::AppHandle) {
-    let backend = app.state::<AppBackend>();
-    backend.tick_schedules();
-    let _ = app.emit(SCHEDULE_EVENT, backend.list_schedule_statuses());
-}
-
-fn spawn_schedule_loop(app: tauri::AppHandle) {
-    tauri::async_runtime::spawn(async move {
-        let mut interval = tokio::time::interval(SCHEDULE_POLL_INTERVAL);
-        loop {
-            interval.tick().await;
-            let backend = app.state::<AppBackend>();
-            match backend.start_due_scheduled_run().await {
-                Ok(Some((initial_state, event_rx, workflow_name))) => {
-                    let run_id = initial_state.run_id.clone();
-                    let _ = app.emit("run-state", initial_state);
-                    emit_schedule_statuses(&app);
-                    spawn_run_event_bridge(app.clone(), workflow_name, event_rx, run_id);
-                }
-                Ok(None) => {
-                    emit_schedule_statuses(&app);
-                }
-                Err(error) => {
-                    log::warn!("scheduled workflow failed to start: {error}");
-                    emit_schedule_statuses(&app);
-                }
-            }
-        }
-    });
-}
-
-/// Bootstrap payload returned on app startup.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct BootstrapPayload {
-    workflows: Vec<Workflow>,
-    agents: Vec<AgentDefinition>,
-    projects: Vec<Project>,
-    skills: Vec<SkillSummary>,
-    settings: AppSettings,
-    discovered_mcp: Vec<McpDiscoveryRow>,
-    run_state: Option<WorkflowRunState>,
-    run_continuable: bool,
-    schedule_statuses: Vec<ScheduleStatus>,
-}
-
-/// Error type returned to Tauri frontend.
-#[derive(Debug, thiserror::Error)]
-enum CommandError {
-    #[error(transparent)]
-    Backend(#[from] BackendError),
-}
-
-impl serde::Serialize for CommandError {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_str(&self.to_string())
-    }
-}
+use crate::app_lifecycle::{handle_window_event, setup_app};
+use crate::ipc_types::{BootstrapPayload, CommandError};
+use crate::run_event_bridge::spawn_run_event_bridge;
+use crate::schedule_events::emit_schedule_statuses;
+use crate::terminal_events::spawn_terminal_event_bridge;
 
 /// Tauri command: Initialize the application.
 #[tauri::command]
@@ -422,97 +362,6 @@ fn create_agent_node(
     Ok(backend.create_agent_node(index, x, y, agent_id.as_deref())?)
 }
 
-const RUN_STATE_COALESCE_WINDOW: std::time::Duration = std::time::Duration::from_millis(30);
-
-async fn bridge_still_owns_run(backend: &AppBackend, bridge_run_id: &Option<String>) -> bool {
-    match (bridge_run_id, backend.current_run_id().await) {
-        (Some(expected), Some(current)) => expected == &current,
-        (None, _) => true,
-        (Some(_), None) => false,
-    }
-}
-
-fn spawn_run_event_bridge(
-    app: tauri::AppHandle,
-    workflow_name: String,
-    mut event_rx: UnboundedReceiver<ExecutionEvent>,
-    bridge_run_id: Option<String>,
-) {
-    run_sleep_guard::start_for_app(&app);
-    tauri::async_runtime::spawn(async move {
-        let mut failed = false;
-        while !failed {
-            let Some(event) = event_rx.recv().await else {
-                break;
-            };
-            let notification =
-                run_notifications::notification_for_event(&event, workflow_name.as_str());
-            let backend = app.state::<AppBackend>();
-            if !bridge_still_owns_run(&backend, &bridge_run_id).await {
-                break;
-            }
-            let mut run_state = match backend.apply_execution_event(event).await {
-                Ok(state) => state,
-                Err(_) => break,
-            };
-            if let Some(notification) = notification.as_ref() {
-                run_notifications::show_run_notification(&app, notification);
-            }
-            let deadline = tokio::time::Instant::now() + RUN_STATE_COALESCE_WINDOW;
-            while run_state.active {
-                tokio::select! {
-                    () = tokio::time::sleep_until(deadline) => break,
-                    maybe_event = event_rx.recv() => match maybe_event {
-                        Some(event) => {
-                            let notification = run_notifications::notification_for_event(
-                                &event,
-                                workflow_name.as_str(),
-                            );
-                            let backend = app.state::<AppBackend>();
-                            if !bridge_still_owns_run(&backend, &bridge_run_id).await {
-                                failed = true;
-                                break;
-                            }
-                            match backend.apply_execution_event(event).await {
-                                Ok(state) => {
-                                    run_state = state;
-                                    if let Some(notification) = notification.as_ref() {
-                                        run_notifications::show_run_notification(
-                                            &app, notification,
-                                        );
-                                    }
-                                }
-                                Err(_) => {
-                                    failed = true;
-                                    break;
-                                }
-                            }
-                        },
-                        None => break,
-                    },
-                }
-            }
-            let backend = app.state::<AppBackend>();
-            if !bridge_still_owns_run(&backend, &bridge_run_id).await {
-                break;
-            }
-            run_state = backend.get_run_state().await.unwrap_or(run_state);
-            let active = run_state.active;
-            let _ = app.emit("run-state", run_state);
-            if !active {
-                if !backend.is_run_active().await {
-                    run_sleep_guard::stop_for_app(&app);
-                }
-                break;
-            }
-        }
-        let backend = app.state::<AppBackend>();
-        if !backend.is_run_active().await {
-            run_sleep_guard::stop_for_app(&app);
-        }
-    });
-}
-
 /// Tauri command: Start a workflow run.
 #[tauri::command]
 async fn start_run(
@@ -737,13 +586,8 @@ async fn start_terminal(
     cols: u16,
     rows: u16,
 ) -> Result<TerminalStart, CommandError> {
-    let (session, mut events) = backend.start_terminal(cwd.as_deref(), cols, rows)?;
-    let app_handle = app.clone();
-    tauri::async_runtime::spawn(async move {
-        while let Some(event) = events.recv().await {
-            let _ = app_handle.emit(TERMINAL_EVENT, event);
-        }
-    });
+    let (session, events) = backend.start_terminal(cwd.as_deref(), cols, rows)?;
+    spawn_terminal_event_bridge(app, events);
     Ok(session)
 }
 
@@ -943,28 +787,8 @@ pub fn run() {
             resize_terminal,
             stop_terminal,
         ])
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { .. } = event {
-                let app_handle = window.app_handle().clone();
-                tauri::async_runtime::block_on(async move {
-                    let backend = app_handle.state::<AppBackend>();
-                    if backend.is_run_active().await {
-                        let _ = backend.stop_run().await;
-                    }
-                    backend.stop_all_terminals();
-                    run_sleep_guard::stop_for_app(&app_handle);
-                });
-            }
-        })
-        .setup(|app| {
-            let runtime_handle = tauri::async_runtime::handle().inner().clone();
-            app.manage(AppBackend::with_runtime_handle(runtime_handle));
-            app.manage(run_sleep_guard::RunSleepGuard::new());
-            spawn_schedule_loop(app.handle().clone());
-            #[cfg(debug_assertions)]
-            app.get_webview_window("main").unwrap().open_devtools();
-            Ok(())
-        })
+        .on_window_event(handle_window_event)
+        .setup(setup_app)
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
