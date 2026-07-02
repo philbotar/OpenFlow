@@ -324,7 +324,7 @@ pub fn normalize_submit_output_arguments(value: Value, output_schema: Option<&Va
 }
 
 /// Attach token usage to an outcome, if usage data is available.
-pub(crate) fn attach_usage(
+pub fn attach_usage(
     outcome: AgentTurnOutcome,
     usage: Option<engine::UsageReport>,
 ) -> AgentTurnOutcome {
