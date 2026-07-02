@@ -100,13 +100,12 @@ async fn sso_login_and_retry(profile: Option<&str>) -> Option<Credentials> {
     }
     // ponytail: 120s cap — browser flow needs human time but must not hang a run forever
     let mut child = command.spawn().ok()?;
-    let status = match tokio::time::timeout(std::time::Duration::from_mins(2), child.wait()).await {
-        Ok(status) => status.ok()?,
-        Err(_) => {
-            let _ = child.kill().await;
-            return None;
-        }
+    let Ok(status) = tokio::time::timeout(std::time::Duration::from_mins(2), child.wait()).await
+    else {
+        let _ = child.kill().await;
+        return None;
     };
+    let status = status.ok()?;
     if !status.success() {
         return None;
     }
@@ -114,17 +113,7 @@ async fn sso_login_and_retry(profile: Option<&str>) -> Option<Credentials> {
 }
 
 fn sanitize_profile(profile: Option<&str>) -> Option<&str> {
-    match profile {
-        Some(name) => {
-            let trimmed = name.trim();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed)
-            }
-        }
-        None => None,
-    }
+    profile.map(str::trim).filter(|name| !name.is_empty())
 }
 
 fn resolve_home_for_aws() -> Option<PathBuf> {

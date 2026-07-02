@@ -1,13 +1,14 @@
-import { For, Show } from "solid-js";
+import { Show } from "solid-js";
 import Sparkles from "lucide-solid/icons/sparkles";
 import { useAppContext } from "../context/AppContext";
 import {
   AuthoringComposer,
   AuthoringDraftPreview,
-  AuthoringValidationBanner,
-  Message,
+  AuthoringMessages,
+  Conversation,
+  ConversationContent,
+  ConversationScrollButton,
   PanelEmptyState,
-  ThinkingBubble,
 } from "@/components";
 
 export function WorkflowAuthoringScreen() {
@@ -32,43 +33,35 @@ export function WorkflowAuthoringScreen() {
           />
         </Show>
 
-        <div class="workflow-authoring-chat">
-          <div class="workflow-authoring-messages">
-            <Show
-              when={ctx.workflowAuthoringMessages().length > 0}
-              fallback={
-                <PanelEmptyState
-                  icon={<Sparkles width={22} height={22} />}
-                  title="Start with a goal"
-                  description="Example: clarify an idea, run plan and risk in parallel, then write a brief."
-                />
-              }
-            >
-              <For each={ctx.workflowAuthoringMessages()}>
-                {(message) => (
-                  <Show
-                    when={message.role.toLowerCase() === "thinking"}
-                    fallback={
-                      <Message
-                        from={message.role === "assistant" ? "assistant" : "user"}
-                        label={message.role === "assistant" ? "Assistant" : "You"}
-                        content={message.content}
-                      />
-                    }
-                  >
-                    <ThinkingBubble message={{ role: "thinking", content: message.content }} />
-                  </Show>
-                )}
-              </For>
-              <Show when={ctx.workflowAuthoringBusy()}>
-                <div class="chat-live-strip chat-live-strip--pending" aria-live="polite">
-                  <p class="chat-live-starting">Building workflow draft…</p>
-                </div>
-              </Show>
-            </Show>
+        <div class="chat-layout workflow-authoring-chat">
+          <div class="chat-settled">
+            <Conversation class="chat-settled-conversation">
+              {(conversation) => (
+                <>
+                  <ConversationContent conversation={conversation} class="chat-transcript-scroll">
+                    <div class="chat-transcript-lane">
+                      <Show
+                        when={ctx.workflowAuthoringMessages().length > 0 || ctx.workflowAuthoringBusy()}
+                        fallback={
+                          <PanelEmptyState
+                            icon={<Sparkles width={22} height={22} />}
+                            title="Start with a goal"
+                            description="Example: clarify an idea, run plan and risk in parallel, then write a brief."
+                          />
+                        }
+                      >
+                        <AuthoringMessages
+                          messages={ctx.workflowAuthoringMessages()}
+                          busy={ctx.workflowAuthoringBusy()}
+                        />
+                      </Show>
+                    </div>
+                  </ConversationContent>
+                  <ConversationScrollButton conversation={conversation} />
+                </>
+              )}
+            </Conversation>
           </div>
-
-          {/* <AuthoringValidationBanner validation={ctx.workflowAuthoringValidation()} /> */}
 
           <Show when={ctx.readiness()?.ready === false ? ctx.readiness() : undefined}>
             {(readiness) => (
@@ -78,16 +71,23 @@ export function WorkflowAuthoringScreen() {
             )}
           </Show>
 
-          <footer class="workflow-authoring-footer">
-            <div class="workflow-authoring-composer-container">
-              <AuthoringComposer
-                busy={ctx.workflowAuthoringBusy()}
-                sessionReady={ctx.workflowAuthoringSessionReady()}
-                providerReady={ctx.readiness()?.ready === true}
-                providerMessage={ctx.readiness()?.message ?? "Checking provider..."}
-                onSend={(message) => void ctx.handleWorkflowAuthoringSend(message)}
-              />
-              <div class="workflow-authoring-actions">
+          <div class="chat-composer-bar">
+            <Show
+              when={ctx.workflowAuthoringSessionReady()}
+              fallback={
+                <div class="chat-live-strip chat-live-strip--pending" aria-live="polite">
+                  <p class="chat-live-starting">Starting authoring session…</p>
+                </div>
+              }
+            >
+              <div class="workflow-authoring-composer-row">
+                <AuthoringComposer
+                  busy={ctx.workflowAuthoringBusy()}
+                  sessionReady={ctx.workflowAuthoringSessionReady()}
+                  providerReady={ctx.readiness()?.ready === true}
+                  providerMessage={ctx.readiness()?.message ?? "Checking provider..."}
+                  onSend={(message) => void ctx.handleWorkflowAuthoringSend(message)}
+                />
                 <button
                   type="button"
                   class="primary-button workflow-authoring-apply"
@@ -99,8 +99,8 @@ export function WorkflowAuthoringScreen() {
                   Create Workflow
                 </button>
               </div>
-            </div>
-          </footer>
+            </Show>
+          </div>
         </div>
       </div>
     </section>

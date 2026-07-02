@@ -35,35 +35,34 @@ export function AuthoringComposer(props: {
   };
 
   return (
-    <div class="workflow-authoring-composer">
-      <div
-        class="chat-composer-pill workflow-authoring-composer-pill"
-        classList={{ "is-busy": props.busy }}
-      >
-        <textarea
-          class="text-area composer-input"
-          rows={2}
-          value={draft()}
-          placeholder={placeholder()}
-          onInput={(event) => setDraft(event.currentTarget.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              handleSend();
-            }
-          }}
-        />
-        <button
-          type="button"
-          class="primary-button composer-send-button"
-          aria-label="Send message"
-          disabled={!canSend()}
-          onClick={handleSend}
-        >
-          <Show when={props.busy} fallback={<ArrowUp class="composer-send-icon" />}>
-            <Spinner size="sm" />
-          </Show>
-        </button>
+    <div class="chat-composer">
+      <div class="chat-composer-input-shell">
+        <div class="chat-composer-pill" classList={{ "is-busy": props.busy }}>
+          <textarea
+            class="text-area composer-input"
+            rows={2}
+            value={draft()}
+            placeholder={placeholder()}
+            onInput={(event) => setDraft(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                handleSend();
+              }
+            }}
+          />
+          <button
+            type="button"
+            class="primary-button composer-send-button"
+            aria-label="Send message"
+            disabled={!canSend()}
+            onClick={handleSend}
+          >
+            <Show when={props.busy} fallback={<ArrowUp class="composer-send-icon" />}>
+              <Spinner size="sm" />
+            </Show>
+          </button>
+        </div>
       </div>
     </div>
   );

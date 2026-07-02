@@ -456,7 +456,7 @@ export interface WorkflowValidationSummary {
 }
 
 export interface WorkflowAuthoringMessage {
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "thinking";
   content: string;
 }
 

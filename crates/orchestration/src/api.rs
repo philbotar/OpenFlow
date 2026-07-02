@@ -156,6 +156,8 @@ pub struct DebugLogWrite {
 pub enum WorkflowAuthoringRole {
     User,
     Assistant,
+    /// Internal repair-loop progress surfaced to the UI; excluded from the model transcript.
+    Thinking,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
