@@ -24,6 +24,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
 pub(super) struct PreparedWorkflowRun {
@@ -142,6 +143,46 @@ pub(super) fn spawn_prepared_run(
         action_tx,
         cancel_token,
     }
+}
+
+pub(super) struct RunLaunchTail {
+    pub spawn_input: SpawnRunInput,
+    pub resources: ExecutionResources,
+    pub entrypoint: Option<String>,
+    pub execution_cwd: PathBuf,
+    pub artifact_root: PathBuf,
+}
+
+/// Shared tail for fresh start, in-session continue, and durable resume launches.
+pub(super) async fn finalize_run_launch(
+    runtime_handle: &tokio::runtime::Handle,
+    session: &Mutex<RunSession>,
+    prepared: PreparedWorkflowRun,
+    tail: RunLaunchTail,
+    configure_session: impl FnOnce(&mut RunSession) -> Result<WorkflowRunState, BackendError>,
+) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
+    let workflow = prepared.workflow.clone();
+    let RunLaunchTail {
+        spawn_input,
+        resources,
+        entrypoint,
+        execution_cwd,
+        artifact_root,
+    } = tail;
+    let mut spawned = spawn_prepared_run(runtime_handle, prepared, spawn_input, &resources);
+    let event_rx = spawned.event_rx.take().expect("spawned run event channel");
+    let mut session_guard = session.lock().await;
+    let initial_state = configure_session(&mut session_guard)?;
+    attach_execution_handles(
+        &mut session_guard,
+        workflow,
+        entrypoint,
+        execution_cwd,
+        artifact_root,
+        resources,
+        spawned,
+    );
+    Ok((initial_state, event_rx))
 }
 
 pub(super) fn attach_execution_handles(

@@ -30,9 +30,9 @@ pub use session::{DurableResumeParams, RunStartParams};
 
 use checkpoint::{load_replay_projection, persist_pending_checkpoint};
 use session::{
-    apply_user_stop_to_session, attach_execution_handles, clear_artifact_root, finish_run_session,
-    fresh_execution_resources, prepare_workflow_run, spawn_prepared_run, ExecutionResources,
-    RunSession, SpawnRunInput, TerminationMode,
+    apply_user_stop_to_session, clear_artifact_root, finalize_run_launch, finish_run_session,
+    fresh_execution_resources, prepare_workflow_run, ExecutionResources, RunLaunchTail, RunSession,
+    SpawnRunInput, TerminationMode,
 };
 
 pub struct RunCoordinator {
@@ -133,46 +133,44 @@ impl RunCoordinator {
         run_store.create_run(&run_root, &run_record)?;
 
         let resources = fresh_execution_resources(&prepared.persisted_settings);
-        let mut spawned = spawn_prepared_run(
+        let entrypoint_for_chat = entrypoint.clone();
+        finalize_run_launch(
             &self.runtime_handle,
+            &self.session,
             prepared,
-            SpawnRunInput {
-                entrypoint: entrypoint.clone(),
-                execution_cwd: resolved_cwd.clone(),
-                project_id: run_root.project_id.clone(),
-                artifact_root: artifact_root.clone(),
-                resume_checkpoint: None,
+            RunLaunchTail {
+                spawn_input: SpawnRunInput {
+                    entrypoint: entrypoint.clone(),
+                    execution_cwd: resolved_cwd.clone(),
+                    project_id: run_root.project_id.clone(),
+                    artifact_root: artifact_root.clone(),
+                    resume_checkpoint: None,
+                },
+                resources,
+                entrypoint,
+                execution_cwd: resolved_cwd,
+                artifact_root,
             },
-            &resources,
-        );
-        let event_rx = spawned.event_rx.take().expect("spawned run event channel");
-
-        let mut session = self.session.lock().await;
-        session.run_id = Some(run_id.clone());
-        session.run_root = Some(run_root);
-        session.project_id = run_record.project_id.clone();
-        let mut initial_state = WorkflowRunState::running_for_workflow(&workflow);
-        initial_state.run_id = session.run_id.clone();
-        if let Some(text) = entrypoint.clone().filter(|t| !t.trim().is_empty()) {
-            if let Ok(layers) = execution_layers(&workflow) {
-                if let Some(root_id) = layers.first().and_then(|layer| layer.first()) {
-                    if should_record_entrypoint_in_chat(&workflow, root_id) {
-                        record_entrypoint_message(&mut initial_state, &root_id.0, text);
+            |session| {
+                session.run_id = Some(run_id.clone());
+                session.run_root = Some(run_root);
+                session.project_id = run_record.project_id.clone();
+                let mut initial_state = WorkflowRunState::running_for_workflow(&workflow);
+                initial_state.run_id = session.run_id.clone();
+                if let Some(text) = entrypoint_for_chat.filter(|t| !t.trim().is_empty()) {
+                    if let Ok(layers) = execution_layers(&workflow) {
+                        if let Some(root_id) = layers.first().and_then(|layer| layer.first()) {
+                            if should_record_entrypoint_in_chat(&workflow, root_id) {
+                                record_entrypoint_message(&mut initial_state, &root_id.0, text);
+                            }
+                        }
                     }
                 }
-            }
-        }
-        session.run_state = Some(initial_state.clone());
-        attach_execution_handles(
-            &mut session,
-            workflow,
-            entrypoint,
-            resolved_cwd,
-            artifact_root,
-            resources,
-            spawned,
-        );
-        Ok((initial_state, event_rx))
+                session.run_state = Some(initial_state.clone());
+                Ok(initial_state)
+            },
+        )
+        .await
     }
 
     /// Resume a stopped run from the latest in-session checkpoint.
@@ -251,8 +249,6 @@ impl RunCoordinator {
             settings_store,
             env,
         )?;
-        let workflow = prepared.workflow.clone();
-
         self.terminate_active_run(TerminationMode::Replaced).await;
 
         let resources = ExecutionResources {
@@ -262,39 +258,35 @@ impl RunCoordinator {
             node_interrupts: Arc::new(parking_lot::Mutex::new(std::collections::BTreeMap::new())),
             checkpoint_sink: Arc::new(parking_lot::Mutex::new(None)),
         };
-        let mut spawned = spawn_prepared_run(
+        finalize_run_launch(
             &self.runtime_handle,
+            &self.session,
             prepared,
-            SpawnRunInput {
-                entrypoint: entrypoint.clone(),
-                execution_cwd: execution_cwd.clone(),
-                project_id,
-                artifact_root: artifact_root.clone(),
-                resume_checkpoint: Some(checkpoint),
+            RunLaunchTail {
+                spawn_input: SpawnRunInput {
+                    entrypoint: entrypoint.clone(),
+                    execution_cwd: execution_cwd.clone(),
+                    project_id,
+                    artifact_root: artifact_root.clone(),
+                    resume_checkpoint: Some(checkpoint),
+                },
+                resources,
+                entrypoint,
+                execution_cwd,
+                artifact_root,
             },
-            &resources,
-        );
-        let event_rx = spawned.event_rx.take().expect("spawned run event channel");
-
-        let mut session = self.session.lock().await;
-        let run_id = session.run_id.clone();
-        let run_state = session
-            .run_state
-            .as_mut()
-            .ok_or(BackendError::NoContinuableRun)?;
-        run_state.active = true;
-        run_state.run_id = run_id;
-        let resumed_state = run_state.clone();
-        attach_execution_handles(
-            &mut session,
-            workflow,
-            entrypoint,
-            execution_cwd,
-            artifact_root,
-            resources,
-            spawned,
-        );
-        Ok((resumed_state, event_rx))
+            |session| {
+                let run_id = session.run_id.clone();
+                let run_state = session
+                    .run_state
+                    .as_mut()
+                    .ok_or(BackendError::NoContinuableRun)?;
+                run_state.active = true;
+                run_state.run_id = run_id;
+                Ok(run_state.clone())
+            },
+        )
+        .await
     }
 
     #[must_use]
@@ -527,7 +519,6 @@ impl RunCoordinator {
             params.settings_store,
             params.env,
         )?;
-        let workflow = prepared.workflow.clone();
         let engine_checkpoint = params.checkpoint.engine;
 
         self.terminate_active_run(TerminationMode::Replaced).await;
@@ -535,46 +526,46 @@ impl RunCoordinator {
         let resources = fresh_execution_resources(&prepared.persisted_settings);
         let artifact_root = PathBuf::from(&params.record.artifact_root);
         let execution_cwd = PathBuf::from(&params.record.execution_cwd);
-        let mut spawned = spawn_prepared_run(
-            &self.runtime_handle,
-            prepared,
-            SpawnRunInput {
-                entrypoint: None,
-                execution_cwd: execution_cwd.clone(),
-                project_id: params.record.project_id.clone(),
-                artifact_root: artifact_root.clone(),
-                resume_checkpoint: Some(engine_checkpoint),
-            },
-            &resources,
-        );
-        let event_rx = spawned.event_rx.take().expect("spawned run event channel");
-
+        let run_root = params.root.clone();
+        let run_id = params.run_id.to_string();
+        let project_id = params.record.project_id.clone();
         let mut resumed_state = params.checkpoint.projection;
         resumed_state.active = true;
-        resumed_state.run_id = Some(params.run_id.to_string());
+        resumed_state.run_id = Some(run_id.clone());
 
-        let run_root = params.root;
-        let mut session = self.session.lock().await;
-        session.run_state = Some(resumed_state.clone());
-        session.run_id = Some(params.run_id.to_string());
-        session.run_root = Some(run_root.clone());
-        session.project_id = params.record.project_id;
-        attach_execution_handles(
-            &mut session,
-            workflow,
-            None,
-            execution_cwd,
-            artifact_root,
-            resources,
-            spawned,
-        );
+        let (state, event_rx) = finalize_run_launch(
+            &self.runtime_handle,
+            &self.session,
+            prepared,
+            RunLaunchTail {
+                spawn_input: SpawnRunInput {
+                    entrypoint: None,
+                    execution_cwd: execution_cwd.clone(),
+                    project_id: project_id.clone(),
+                    artifact_root: artifact_root.clone(),
+                    resume_checkpoint: Some(engine_checkpoint),
+                },
+                resources,
+                entrypoint: None,
+                execution_cwd,
+                artifact_root,
+            },
+            |session| {
+                session.run_state = Some(resumed_state.clone());
+                session.run_id = Some(run_id.clone());
+                session.run_root = Some(run_root.clone());
+                session.project_id = project_id;
+                Ok(resumed_state.clone())
+            },
+        )
+        .await?;
         params.run_store.update_status(
             &run_root,
-            params.run_id,
+            &run_id,
             RunStatus::Running,
             Utc::now().timestamp_millis(),
         )?;
-        Ok((resumed_state, event_rx))
+        Ok((state, event_rx))
     }
 
     /// # Errors

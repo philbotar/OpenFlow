@@ -47,7 +47,7 @@ pub fn merge_subagent_summaries(
 }
 
 #[must_use]
-pub fn subagents_for_node(
+fn subagents_for_node(
     node: &Node,
     declared_subagents: &BTreeMap<String, SubagentSummary>,
     agent_snapshots: &BTreeMap<String, CallableAgent>,

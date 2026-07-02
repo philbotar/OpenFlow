@@ -1011,7 +1011,6 @@ pub fn engine::execution::subagents::adhoc_subagent_base_index(&engine::graph::w
 pub fn engine::execution::subagents::augment_call_subagent_tool_description(&mut [engine::ToolDefinition], &engine::graph::workflow::Node, &alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::SubagentSummary>, &alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::graph::callable_agent::CallableAgent>)
 pub fn engine::execution::subagents::build_adhoc_subagent_summaries(&engine::graph::workflow::NodeId, &[engine::SubagentDeclaration], usize) -> alloc::vec::Vec<engine::SubagentSummary>
 pub fn engine::execution::subagents::merge_subagent_summaries(&mut alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::SubagentSummary>, &[engine::SubagentSummary])
-pub fn engine::execution::subagents::subagents_for_node(&engine::graph::workflow::Node, &alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::SubagentSummary>, &alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::graph::callable_agent::CallableAgent>) -> alloc::vec::Vec<engine::SubagentSummary>
 pub mod engine::execution::telemetry
 pub enum engine::execution::telemetry::RunTelemetry
 pub engine::execution::telemetry::RunTelemetry::Aborted

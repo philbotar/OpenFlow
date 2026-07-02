@@ -34,6 +34,12 @@ Completed:
 - Removed the UI dead/export-only helpers listed in section 3: `withoutNodeRemovals`, `selectionIdsFromChange`, and `shouldEmitSelectionChange`; moved `createEmptyToolConfig` to `lib/workflow/testHelpers.ts` so it no longer lives in the production workflow helper surface.
 - Updated docs that referenced removed template-store and `with_default_paths` code.
 - Updated `crates/workspace-checks/arch-check-rules.toml` so the existing `ReasoningEffortOption` import in orchestration passes the architecture check.
+- Deduplicated run launch paths in `RunCoordinator` via shared `finalize_run_launch` in `run/coordinator/session.rs` (covers `start_run`, `continue_run`, `resume_durable_run`).
+- Removed duplicate `AppBackend::load_projects()` (`list_projects` already delegates to the same registry path).
+- Split desktop Tauri commands from `lib.rs` into `commands/{bootstrap,project,workflow,agent,settings,authoring,run,git,terminal}.rs`; `lib.rs` is now builder + handler registration only.
+- Made `subagents_for_node` private in engine (test-only public API trim).
+- Split `AppProvider.tsx` god-context into `context/appProvider/`: `shared.ts` + 8 hooks (`useAppShell`, `useSettings`, `useWorkspaceCatalog`, `useWorkflowEditor`, `useRunSession`, `useChatComposer`, `useDock`, `useWorkflowAuthoring`) composed by thin `useAppProviderState.ts`; `AppProvider.tsx` is now a 7-line context wrapper. `AppContextValue` unchanged.
+- Split `backend::AppBackend` facade into domain modules: `workflow.rs`, `agents.rs`, `projects.rs`, `settings.rs`, `authoring.rs`, `runs.rs`, `schedule.rs`, `terminal.rs`, `helpers.rs`; `mod.rs` is now composition root (~117 lines). Public `AppBackend` API unchanged.
 
 Verification already run during the follow-up pass:
 
@@ -58,7 +64,7 @@ Verification already run during the follow-up pass:
 
 Still open:
 
-- Larger structural refactors from sections 5, including `AppProvider`, desktop command organization, backend/run coordinator simplification, and the larger edit-tool/provider decomposition work.
+- Provider response-parsing unification and edit-tool subsystem deduplication (sections 2 and 5).
 
 ## How to read this
 
