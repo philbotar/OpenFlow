@@ -128,6 +128,7 @@ pub fn assert_editable_file(
 }
 
 /// Reject edits when content prefix appears auto-generated.
+#[cfg(test)]
 pub fn assert_editable_file_content(
     content: &str,
     display_path: &str,

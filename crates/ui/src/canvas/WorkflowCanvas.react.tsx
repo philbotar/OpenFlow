@@ -15,7 +15,6 @@ import {
   type EdgeChange,
   type Node as FlowNode,
   type NodeChange,
-  type OnSelectionChangeParams,
   useEdgesState,
   useNodesState,
 } from "@xyflow/react";
@@ -374,12 +373,6 @@ export function reconcileFlowEdges(
   return changed ? result : currentEdges;
 }
 
-export function withoutNodeRemovals(
-  changes: NodeChange<WorkflowCanvasNode>[],
-): NodeChange<WorkflowCanvasNode>[] {
-  return changes.filter((change) => change.type !== "remove");
-}
-
 export function withoutProgrammaticNodeChanges(
   changes: NodeChange<WorkflowCanvasNode>[],
 ): NodeChange<WorkflowCanvasNode>[] {
@@ -414,25 +407,6 @@ export function forEachRemovedEdge(
       onDeleteEdge(change.id);
     }
   }
-}
-
-export function selectionIdsFromChange(
-  selection: OnSelectionChangeParams<WorkflowCanvasNode, WorkflowCanvasEdge>,
-) {
-  return {
-    selectedNodeId: selection.nodes[0]?.id ?? null,
-    selectedEdgeId: selection.edges[0]?.id ?? null,
-  };
-}
-
-export function shouldEmitSelectionChange(
-  current: { selectedNodeId: NodeId | null; selectedEdgeId: EdgeId | null },
-  next: { selectedNodeId: NodeId | null; selectedEdgeId: EdgeId | null },
-): boolean {
-  return (
-    current.selectedNodeId !== next.selectedNodeId ||
-    current.selectedEdgeId !== next.selectedEdgeId
-  );
 }
 
 export function isValidCanvasConnection(connection: { source: string | null; target: string | null }) {

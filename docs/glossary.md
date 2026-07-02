@@ -57,8 +57,7 @@ For where terms live in code, see [Engine modules](#engine-modules), [Orchestrat
 | --- | --- | --- |
 | **Template** | Reusable node definition with default `AgentNodeConfig` and locked fields | Node preset, blueprint |
 | **LockedField** | Field name users cannot edit when a template is applied (e.g. `output_schema`, `auto_start`) | Protected field, frozen field |
-| **TemplateStore** | Persistence seam for listing and mutating templates | |
-| **FileTemplateStore** | Orchestration adapter that persists templates to `openflow/templates.json` | |
+| **TemplateStore** | Engine-level seam for listing and mutating templates | |
 
 ## Execution model
 
@@ -134,7 +133,6 @@ Persistence adapters outside engine:
 
 | Location | Terms |
 | --- | --- |
-| `orchestration/adapters/storage/template_store.rs` | FileTemplateStore |
 | `orchestration/adapters/storage/project_store.rs` | Project |
 | `orchestration/adapters/storage/project_workflow_store.rs` | Project workflow files (`.flow/workflows/`) |
 | `orchestration/adapters/storage/app_workflow_store.rs` | App-level workflows (`workflows.json`) |
@@ -146,7 +144,7 @@ See [orchestration crate layout](architecture/orchestration-layout.md) for the c
 | Module | Terms |
 | --- | --- |
 | `orchestration/workflow/catalog.rs` | Workflow merge/split, project assign |
-| `orchestration/agent/library.rs` | CallableAgent library CRUD (`FileAgentStore` adapter) |
+| `orchestration/agent.rs` | CallableAgent library CRUD (`FileAgentStore` adapter) |
 | `orchestration/lib.rs` | `AgentDefinition` type alias for persisted `CallableAgent` JSON |
 | `orchestration/run/coordinator/mod.rs` | Run session, Pause/Resume host path |
 | `orchestration/settings/facade.rs` | Settings, provider readiness |
@@ -184,5 +182,5 @@ See [orchestration crate layout](architecture/orchestration-layout.md) for the c
 - **Layer** - in `execution_layers`, DAG depth grouping; in CSS/UI, z-index. Here: execution layer only.
 - **Event** - **RunTelemetry** / **ExecutionEvent** (interactive UI stream) vs OS/Tauri IPC events. Lifecycle detail lives in telemetry, not **RunReport**.
 - **Config** - **AgentNodeConfig** (agent behavior) vs **NodeToolConfig** (tool environment). Distinct concepts.
-- **Template** - canonical type in `engine::template`. Legacy `NodeTemplate` JSON migrates in **FileTemplateStore**.
+- **Template** - canonical type in `engine::template`. Do not confuse it with older `NodeTemplate` naming in historical docs.
 - **Runner** - prefer **InteractiveEngine** or **run_workflow_headless**. Do not use "runner" alone in docs or module names.

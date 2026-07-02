@@ -2,7 +2,7 @@
 import { render } from "solid-js/web";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Project, Workflow } from "../../lib/types";
-import { createEmptyToolConfig } from "../../lib/workflow";
+import { createEmptyToolConfig } from "../../lib/workflow/testHelpers";
 import { ProjectFolderRow } from "./ProjectFolderRow";
 
 const project: Project = {

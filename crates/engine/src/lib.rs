@@ -36,7 +36,7 @@ pub use graph::{
 pub use ports::{
     emit_assistant_deltas_from_outcome, AgentError, AgentNeedUserInput, AgentRequest,
     AgentToolCallBatch, AgentTurnOutcome, AgentTurnSuccess, AiPort, AiStreamEvent, AiStreamSink,
-    HumanInput, HumanInputPort, ToolApprovalInput, ToolApprovalPort, ToolPort, UsageReport,
+    ToolPort, UsageReport,
 };
 pub use template::{default_templates, Template, TemplateStore, TemplateStoreError};
 pub use tools::{

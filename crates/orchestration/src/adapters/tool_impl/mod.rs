@@ -2,10 +2,13 @@
 
 pub mod bash;
 pub mod edit;
-pub mod errors;
 pub mod grep;
 
 // Re-export modules from tool application layer for backward compatibility
+pub mod errors {
+    pub use crate::tool::errors::ToolError;
+}
+
 pub mod output {
     pub use crate::tool::output::*;
 }

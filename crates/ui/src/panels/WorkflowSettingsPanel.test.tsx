@@ -3,7 +3,7 @@ import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { AppSettings, Workflow, WorkflowRunState } from "../lib/types";
-import { createEmptyToolConfig } from "../lib/workflow";
+import { createEmptyToolConfig } from "../lib/workflow/testHelpers";
 import { AppContext, type AppContextValue } from "../context/AppContext";
 import { WorkflowSettingsPanel } from "./WorkflowSettingsPanel";
 

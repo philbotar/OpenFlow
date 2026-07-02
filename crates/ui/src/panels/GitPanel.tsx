@@ -1,12 +1,10 @@
 import { createMemo, createResource, Show } from "solid-js";
+import * as desktop from "../api";
 import { useAppContext } from "../context/AppContext";
-import { createUiDesktopOutboundAdapter } from "../port";
 import { Spinner } from "@/components";
 import { parseUnifiedDiff, formatDiffFileSummary } from "@/lib/diff";
 import type { WorkflowRunState } from "@/lib/types";
 import { GitDiffView } from "./GitDiffView";
-
-const desktop = createUiDesktopOutboundAdapter();
 
 function errorText(error: unknown): string {
   if (error instanceof Error) return error.message;

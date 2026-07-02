@@ -21,18 +21,6 @@ pub enum AuthConfig {
 
 impl AuthConfig {
     #[must_use]
-    pub fn has_key(&self) -> bool {
-        match self {
-            Self::Bearer { api_key, .. } | Self::Header { api_key, .. } => api_key
-                .as_deref()
-                .map(str::trim)
-                .is_some_and(|key| !key.is_empty()),
-            Self::NoneAllowed => true,
-            Self::AwsCredentials { region, .. } => !region.trim().is_empty(),
-        }
-    }
-
-    #[must_use]
     pub const fn requires_key(&self) -> bool {
         match self {
             Self::Bearer { required, .. } | Self::Header { required, .. } => *required,

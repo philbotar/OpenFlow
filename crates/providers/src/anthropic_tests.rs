@@ -209,6 +209,10 @@ async fn messages_request_sends_headers_body_and_parses_internal_submit_output()
             }]
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "usage": {
+                "input_tokens": 101,
+                "output_tokens": 19
+            },
             "content": [{
                 "type": "tool_use",
                 "id": "toolu_1",
@@ -231,6 +235,14 @@ async fn messages_request_sends_headers_body_and_parses_internal_submit_output()
         serde_json::from_str::<Value>(&success.raw_text).unwrap(),
         json!({"output": {"summary": "done"}, "assistant_message": null})
     );
+    assert_eq!(
+        success.usage,
+        Some(engine::UsageReport {
+            prompt_tokens: 101,
+            completion_tokens: 19,
+            total_tokens: 120,
+        })
+    );
 }
 
 #[tokio::test]
@@ -239,6 +251,11 @@ async fn messages_response_routes_external_tool_calls() {
     Mock::given(method("POST"))
         .and(path("/v1/messages"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "usage": {
+                "input_tokens": 88,
+                "output_tokens": 12,
+                "total_tokens": 111
+            },
             "content": [
                 {"type": "text", "text": "I need to inspect the README."},
                 {
@@ -266,7 +283,11 @@ async fn messages_response_routes_external_tool_calls() {
                 name: "read".to_string(),
                 arguments: json!({"path": "README.md"}),
             }],
-            usage: None,
+            usage: Some(engine::UsageReport {
+                prompt_tokens: 88,
+                completion_tokens: 12,
+                total_tokens: 111,
+            }),
         })
     );
 }

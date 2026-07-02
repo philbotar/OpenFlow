@@ -678,24 +678,6 @@ impl InteractiveEngine {
     }
 }
 
-impl crate::ports::inbound::HumanInputPort for InteractiveEngine {
-    fn submit_human_input(
-        &mut self,
-        input: crate::ports::inbound::HumanInput,
-    ) -> Result<(), EngineInputError> {
-        self.on_human_input(&input.node_id, &input.text)
-    }
-}
-
-impl crate::ports::inbound::ToolApprovalPort for InteractiveEngine {
-    fn submit_tool_approval(
-        &mut self,
-        input: crate::ports::inbound::ToolApprovalInput,
-    ) -> Result<(), EngineInputError> {
-        self.on_tool_decision(&input.approval_id, input.allow, input.reason.as_deref())
-    }
-}
-
 #[cfg(test)]
 impl InteractiveEngine {
     pub(crate) fn test_insert_in_flight(&mut self, node_id: NodeId) {

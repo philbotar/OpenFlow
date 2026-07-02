@@ -1,8 +1,9 @@
 use crate::auth::{apply_auth, AuthConfig};
 use crate::client::AnthropicConfig;
 use crate::mapping::{
-    all_tool_specs, build_node_context, parse_internal_tool_outcome, parse_plain_json_completion,
-    should_allow_user_input, ToolSpec, REQUEST_INPUT_TOOL, SUBMIT_OUTPUT_TOOL,
+    all_tool_specs, attach_usage, build_node_context, extract_usage_from_anthropic,
+    parse_internal_tool_outcome, parse_plain_json_completion, should_allow_user_input, ToolSpec,
+    REQUEST_INPUT_TOOL, SUBMIT_OUTPUT_TOOL,
 };
 use crate::prompt_cache::{
     apply_cache_control_to_message, ephemeral_cache_control, second_to_last_index,
@@ -188,6 +189,7 @@ fn parse_anthropic_output(
     allow_plain_text_follow_up: bool,
     output_schema: Option<&Value>,
 ) -> Result<AgentTurnOutcome, AgentError> {
+    let usage = extract_usage_from_anthropic(payload);
     let content = payload
         .get("content")
         .and_then(Value::as_array)
@@ -218,7 +220,7 @@ fn parse_anthropic_output(
 
     if tool_calls.is_empty() {
         if let Some(outcome) = parse_plain_json_completion(assistant_message.as_deref()) {
-            return Ok(outcome);
+            return Ok(attach_usage(outcome, usage));
         }
         if allow_plain_text_follow_up {
             if let Some(assistant_message) = assistant_message {
@@ -250,15 +252,19 @@ fn parse_anthropic_output(
             assistant_message,
             "Anthropic",
             output_schema,
-        );
+        )
+        .map(|outcome| attach_usage(outcome, usage));
     }
 
-    Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
-        raw_text: assistant_message.clone().unwrap_or_default(),
-        assistant_message,
-        tool_calls,
-        usage: None,
-    }))
+    Ok(attach_usage(
+        AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+            raw_text: assistant_message.clone().unwrap_or_default(),
+            assistant_message,
+            tool_calls,
+            usage: None,
+        }),
+        usage,
+    ))
 }
 
 fn parse_anthropic_tool_call(block: &Value) -> Result<ToolCall, AgentError> {

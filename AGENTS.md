@@ -41,9 +41,8 @@ Add a port/trait only when a consumer is typed on that interface. Otherwise call
 | --- | --- |
 | LLM invocation (`AiPort`, `AgentRequest`) | `crates/engine/src/ports/outbound.rs` |
 | Tool and subagent execution (`ToolPort`) | `crates/engine/src/ports/outbound.rs` → `crates/orchestration/src/run/execution/tool_port.rs` |
-| Human input / tool approval | `crates/engine/src/ports/inbound.rs` |
 | Provider client (`AiClient: AiPort`) | `crates/providers/src/client.rs` |
-| UI → desktop IPC | `crates/ui/src/port.ts` (`UiDesktopOutboundPort`) |
+| UI → desktop IPC | `crates/ui/src/api.ts` |
 
 ## Documentation
 
@@ -117,9 +116,8 @@ Before editing, classify the change with [`docs/contributing/development-lanes.m
 | `crates/engine/src/execution/telemetry.rs` | `RunTelemetry` interactive event enum | Changing run event vocabulary |
 | `crates/engine/src/execution/node_invocation.rs` | Shared `AgentRequest` assembly | Changing upstream input or prompt wiring |
 | `crates/engine/src/template/` | `Template`, locked fields, builtins | Changing template definitions |
-| `crates/orchestration/src/template_store.rs` | Template persistence (`openflow/templates.json`) | Changing template file format |
 | `crates/engine/src/ports/outbound.rs` | `AiPort`, `AgentRequest`, turn outcomes | Changing LLM invocation contract |
-| `crates/engine/src/ports/inbound.rs` | Human input and tool approval ports | Adding engine input contracts |
+| `crates/engine/src/execution/interactive_engine/` | Human input and tool approval resume methods | Changing pause/resume behavior |
 
 ### Providers
 
@@ -137,12 +135,12 @@ Before editing, classify the change with [`docs/contributing/development-lanes.m
 | --- | --- | --- |
 | `crates/orchestration/src/backend/mod.rs` | Thin `AppBackend` orchestrator; delegates to catalog modules | Adding/remapping desktop IPC commands |
 | `crates/orchestration/src/workflow/catalog.rs` | Workflow CRUD, app/project merge, assign/unassign | Changing workflow persistence rules |
-| `crates/orchestration/src/agent/library.rs` | Saved agent CRUD, `create_agent_node` | Changing callable agent library behavior |
+| `crates/orchestration/src/agent.rs` | Saved agent CRUD, `create_agent_node`, `AgentStore` port | Changing callable agent library behavior |
 | `crates/orchestration/src/project/registry.rs` | Project load/save/create | Changing project registration |
 | `crates/orchestration/src/settings/facade.rs` | Settings, keys, skills, validation summaries | Changing settings or provider readiness UX |
 | `crates/orchestration/src/run/coordinator.rs` | Active run session, start/submit/apply events | Changing run lifecycle coordination |
 | `crates/orchestration/src/run/execution/` | `drive/`, `headless.rs`, `tool_port.rs`, event projection, cwd | Changing execution host semantics |
-| `crates/orchestration/src/run/state/` | Run/edit state, trace, chat logs | Changing run state or editor mutations |
+| `crates/orchestration/src/run/state.rs` | Run/edit state, trace, chat logs | Changing run state or editor mutations |
 | `crates/orchestration/src/adapters/storage/app_workflow_store.rs` | App workflows (`workflows.json`) | Changing app workflow persistence |
 | `crates/orchestration/src/adapters/storage/project_workflow_store.rs` | Project workflows (`.flow/workflows/`) | Changing repo workflow file layout |
 | `crates/orchestration/src/adapters/storage/project_store.rs` | Projects (`openflow/projects.json`) | Changing project bindings |
@@ -164,8 +162,7 @@ Before editing, classify the change with [`docs/contributing/development-lanes.m
 | `crates/ui/src/panels/` | Inspector, workflow settings, dock | Changing editor side panels |
 | `crates/ui/src/canvas/` | Workflow graph rendering | Changing canvas look/behavior |
 | `crates/ui/src/forms/` | Node/agent configuration editors | Changing inspector forms |
-| `crates/ui/src/api.ts` | Typed Tauri invoke/event wrappers | Changing RPC names or payloads |
-| `crates/ui/src/port.ts` | `UiDesktopOutboundPort` + factory for swappable desktop backend | Changing how UI talks to Tauri |
+| `crates/ui/src/api.ts` | Typed Tauri invoke/event wrappers and UI desktop boundary | Changing RPC names, event listeners, or payloads |
 | `crates/ui/src/lib/types.ts` | Frontend DTO mirror types | Changing command payload shapes |
 | `crates/ui/src/styles/index.css` | Global styles and layout tokens | Changing spacing, inspector, dock CSS |
 
@@ -188,14 +185,14 @@ Before editing, classify the change with [`docs/contributing/development-lanes.m
 | --- | --- |
 | Add a workflow rule or validation | `engine/src/graph/validation.rs`, tests in same file |
 | Add a new provider adapter | Implement `AiPort` in `providers/`, wire via `create_provider` |
-| Add or change `AiPort`, `ToolPort`, or engine input contracts | `engine/src/ports/` |
-| Add or change UI desktop seam | `ui/src/port.ts` |
+| Add or change `AiPort` or `ToolPort` contracts | `engine/src/ports/` |
+| Add or change UI desktop seam | `ui/src/api.ts` |
 | Change run execution semantics | `orchestration/src/run/execution/drive.rs`, `engine/src/execution/interactive_engine.rs` |
 | Add a new builtin tool | `orchestration/src/adapters/tool_impl/`, `orchestration/src/tool/registry.rs`, `engine/src/tools/config.rs` (tier); **also update `NODE_RUNTIME_PREAMBLE`** in `engine/src/execution/node_invocation.rs` so agents get when-to-use guidance in every node's system prompt |
 | Change tool/subagent execution wiring | `orchestration/src/run/execution/tool_port.rs` |
 | Change shared context or workflow settings | `engine/src/graph/workflow.rs`, `orchestration/src/run/execution/`, `ui/src/panels/WorkflowSettingsPanel.tsx` |
 | Change project/workflow linking | `orchestration/src/adapters/storage/project_store.rs`, `project_workflow_store.rs`, `backend/mod.rs`, `ui/src/components/sidebar/` |
-| Change saved agents or callable subagents | `orchestration/src/adapters/storage/agent_store.rs`, `agent/library.rs`, `ui/src/forms/CallableAgentsEditor.tsx` |
+| Change saved agents or callable subagents | `orchestration/src/adapters/storage/agent_store.rs`, `agent.rs`, `ui/src/forms/CallableAgentsEditor.tsx` |
 | Change skill discovery or invocation UX | `orchestration/src/adapters/storage/skill_store.rs`, `ui/src/components/conversation/` |
 | Change canvas look/behavior | `ui/src/canvas/`, `ui/src/styles/index.css` |
 | Change inspector or editor panels | `ui/src/panels/`, `ui/src/screens/EditorScreen.tsx` |
@@ -216,7 +213,6 @@ Before editing, classify the change with [`docs/contributing/development-lanes.m
 | Settings | `{data_local}/openflow/settings.json` |
 | Projects | `{data_local}/openflow/projects.json` (migrates from legacy slug) |
 | Saved agents | `{data_local}/openflow/agents.json` (migrates from legacy slug) |
-| Node templates | `{data_local}/openflow/templates.json` (migrates from legacy slug) |
 | Project workflows | `{project}/.flow/workflows/{workflowId}.workflow.json` |
 | Provider API keys | Plaintext in `settings.json` (`ProviderProfile.api_key`) |
 

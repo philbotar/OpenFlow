@@ -12,7 +12,7 @@ Domain terms for the Step-through-agentic-workflow architecture.
 | **CallableAgent** | Engine type (`engine::CallableAgent`): saved agent snapshotted at run start for subagent invocation. Persisted as `openflow/agents.json`; orchestration alias `AgentDefinition`. |
 | **RunTelemetry** | Domain enum for interactive run events (chat, tools, subagents). Orchestration type alias `ExecutionEvent`; projected into `WorkflowRunState` by `events.rs`. |
 | **Factory pattern** | The `providers` crate exposes a single public factory function (`create_provider`) that returns `Box<dyn AiPort>`. Orchestration never names a concrete provider type. This is the contract boundary between orchestration and providers. |
-| **Seam** | A typed boundary between layers. Examples: `engine::AiPort`, `UiDesktopOutboundPort` in `ui/src/port.ts`. Add a seam only when a consumer depends on the interface, not the concrete type. |
+| **Seam** | A typed boundary between layers. Examples: `engine::AiPort` and provider `create_provider() -> Box<dyn AiPort>`. Add a seam only when a consumer depends on the interface, not the concrete type. |
 | **Dependency graph** | `engine → (none)`, `providers → engine`, `orchestration → engine + providers`, `desktop → orchestration`, `ui → desktop`. |
 | **Allowed import scope** | Target-state submodule limits on cross-crate imports (e.g. `orchestration → providers`: factory + config types only). Not enforced in baseline CI; deferred to Phase B after code matches. |
 | **Architecture check rollout** | **Phase A (Tier 2):** inter-crate Cargo graph + forbidden `use`. **Phase B (Tier 3):** providers allowlist, engine invocation locality, domain `adapters::` ban, UI Tauri seam. **Phase C (Tier 3 continued):** domain folders must not import flat `*_store` modules — use port traits; `backend/` wires adapters. **Deferred:** `tool/` → `lsp` ban; `pub(crate)` on all concrete adapters. |
@@ -22,7 +22,7 @@ Domain terms for the Step-through-agentic-workflow architecture.
 | **Legacy crate alias** | Pre-rename package paths (`domain`, `workflow_core`) that must not appear in Rust `use` statements. Phase A CI bans them workspace-wide to catch rename regressions. |
 | **Architecture check scope** | Phase A forbidden-import scans cover all Rust in each workspace crate: `src/`, crate-root `tests/`, and `#[cfg(test)]` modules — same ban tables as production code. |
 | **Engine invocation rule** | Only `orchestration/run/execution/` may construct `InteractiveEngine`. Enforced in CI (Tier 3). |
-| **UI Tauri seam** | `@tauri-apps/*` imports confined to `api.ts` and `port.ts`; components use `getAppWindow` / `openNativeDialog` wrappers instead of direct Tauri imports. |
+| **UI Tauri seam** | `@tauri-apps/*` imports confined to `api.ts`; components use API wrappers instead of direct Tauri imports. |
 | **Orchestration providers seam** | `orchestration/src` imports only allowlisted symbols from `providers::`; `AiClient` banned — runtime uses `create_provider` → `Box<dyn AiPort>`. |
 | **Violation class** | Taxonomy of architecture violations. Blocking: banned Cargo dep, banned import. Advisory: empty seam, missing re-export. |
 | **Re-export boundary** | Engine types that cross layers (e.g., `Workflow`, `Node`) are re-exported through orchestration via `pub use`. Desktop imports `orchestration::Workflow`, never `engine::Workflow`. This satisfies the "desktop must not depend on engine" rule without a DTO mapping layer. |
@@ -43,10 +43,10 @@ Flat structure for domains with application-level logic:
 
 | Folder | Files | Purpose |
 |--------|-------|---------|
-| `agent/` | `library.rs` | Agent CRUD & metadata |
+| `agent.rs` | `AgentLibrary`, `AgentStore` | Agent CRUD & metadata |
 | `workflow/` | `catalog.rs` | Workflow CRUD & merge logic |
 | `project/` | `registry.rs` | Project discovery & loading |
-| `run/` | `coordinator.rs` + `execution/` + `state/` | Run coordination, execution, state projection |
+| `run/` | `coordinator/` + `execution/` + `state.rs` | Run coordination, execution, state projection |
 | `settings/` | `facade.rs` | Settings aggregation |
 | `tool/` | `mod.rs` + `registry.rs` + `runner.rs` + `dispatch.rs` + `blocking_ops.rs` + `output.rs` | Tool catalog, execution, blocking I/O dispatch, artifacts |
 
@@ -65,7 +65,6 @@ Persistence implementations (CRUD adapters for each domain):
 - `project_store.rs` - Project file persistence
 - `settings_store.rs` - Settings file persistence + `provider_config.rs`
 - `skill_store.rs` - Skill catalog persistence
-- `template_store.rs` - Template persistence
 
 **Rationale:** Consolidate all persistence by *concern* (storage), not by domain. Easier to reason about where data goes.
 
@@ -87,7 +86,7 @@ External system integration (don't modify for business logic):
 ### Module Exposure (lib.rs)
 
 Top-level `pub mod` declarations in `lib.rs` re-export modules for consumers:
-- Domain modules: `agent::library`, `workflow::catalog`, etc.
+- Domain modules: `agent`, `workflow::catalog`, etc.
 - Stores: `agent_store`, `workflow_store`, etc. (from `adapters/storage/`)
 - Tool modules: `tool`, `tool_registry`, `tool_runner`, `tool_output`
 - Infrastructure: `lsp`, `git`

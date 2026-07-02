@@ -17,13 +17,6 @@ pub enum AuthoringError {
     LayoutFailed(String),
 }
 
-impl AuthoringError {
-    #[must_use]
-    pub fn is_session_not_found(&self) -> bool {
-        matches!(self, Self::SessionNotFound)
-    }
-}
-
 impl From<AgentError> for AuthoringError {
     fn from(error: AgentError) -> Self {
         Self::Agent(error.to_string())

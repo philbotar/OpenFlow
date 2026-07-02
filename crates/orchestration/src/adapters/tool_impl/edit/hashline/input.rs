@@ -9,7 +9,7 @@ use regex::Regex;
 use super::apply::apply_edits;
 use super::block::{resolve_block_edits, OnUnresolved, ResolveBlockEditsOptions};
 use super::format::{HL_FILE_HASH_LENGTH, HL_FILE_HASH_SEP, HL_FILE_PREFIX};
-use super::parser::{parse_patch, parse_patch_streaming, ParseResult};
+use super::parser::{parse_patch, ParseResult};
 use super::tokenizer::Tokenizer;
 use super::types::{ApplyResult, BlockResolver, Edit, SplitOptions};
 
@@ -379,30 +379,6 @@ impl PatchSection {
         let mut result = apply_edits(text, &resolved)?;
         if !parsed.warnings.is_empty() {
             let mut merged = parsed.warnings.clone();
-            merged.append(&mut result.warnings);
-            result.warnings = merged;
-        }
-        Ok(result)
-    }
-
-    pub fn apply_partial_to(
-        &self,
-        text: &str,
-        block_resolver: Option<&BlockResolver>,
-    ) -> Result<ApplyResult, String> {
-        let parsed = parse_patch_streaming(&self.diff)?;
-        let resolved = resolve_block_edits(
-            &parsed.edits,
-            text,
-            &self.path,
-            block_resolver,
-            ResolveBlockEditsOptions {
-                on_unresolved: OnUnresolved::Drop,
-            },
-        )?;
-        let mut result = apply_edits(text, &resolved)?;
-        if !parsed.warnings.is_empty() {
-            let mut merged = parsed.warnings;
             merged.append(&mut result.warnings);
             result.warnings = merged;
         }

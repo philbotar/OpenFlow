@@ -34,7 +34,6 @@ Pure domain hexagon. No filesystem, HTTP, provider, or UI code.
 | `graph/` | `Workflow`, validation, layers, `CallableAgent` | Workflow, Node, Edge, execution layers |
 | `execution/` | `InteractiveEngine`, subagent runtime, telemetry | RunTelemetry, subagent builtins |
 | `ports/outbound.rs` | `AiPort`, `ToolPort`, `AgentRequest` | LLM + tool seams |
-| `ports/inbound.rs` | `HumanInputPort`, `ToolApprovalPort` | Pause/resume contracts |
 | `conversation/` | `ChatMessage`, `AgentTranscriptItem` | Transcript DTOs |
 | `template/` | `Template`, `TemplateStore` trait | Node presets |
 | `tools/` | `NodeToolConfig`, approval tiers, truncation | ToolPolicy, ApprovalMode |
@@ -64,8 +63,10 @@ Add a port **only** when a consumer is typed on `dyn ThatPort`.
 | --- | --- | --- |
 | `AiPort` | Outbound | `providers::AiClient` |
 | `ToolPort` | Outbound | `orchestration::run::execution::tool_port` |
-| `HumanInputPort` | Inbound | orchestration execution host |
-| `ToolApprovalPort` | Inbound | orchestration execution host |
+
+Pause/resume input is applied through `InteractiveEngine::on_human_input` and
+`InteractiveEngine::on_tool_decision`; do not add inbound traits unless a real
+consumer is typed on them.
 
 Provider-specific branching stays in `providers/`. Engine does not know which LLM is active.
 

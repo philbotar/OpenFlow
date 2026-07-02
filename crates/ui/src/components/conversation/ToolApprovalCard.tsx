@@ -1,11 +1,9 @@
 import { createResource, For, Show } from "solid-js";
-import { createUiDesktopOutboundAdapter } from "../../port";
+import * as desktop from "../../api";
 import type { PendingToolApproval } from "../../lib/types";
 import { Spinner } from "../Spinner";
 import { isFileEditTool } from "./FileChangesPanel";
 import { formatToolDisplayName } from "./toolBubbleState";
-
-const desktop = createUiDesktopOutboundAdapter();
 
 function opLabel(op: string): string {
   switch (op) {

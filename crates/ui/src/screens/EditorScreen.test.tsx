@@ -8,7 +8,8 @@ vi.mock("../canvas/WorkflowCanvasHost", () => ({
   default: () => <div data-testid="canvas" />,
 }));
 
-vi.mock("../components/NodePickerModal", () => ({
+vi.mock("../components", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../components")>()),
   NodePickerModal: () => <div data-testid="node-picker" />,
 }));
 

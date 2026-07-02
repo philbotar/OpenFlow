@@ -3,7 +3,6 @@
 pub mod artifacts;
 pub mod interactive_engine;
 pub mod node_invocation;
-pub(crate) mod retry;
 pub mod subagent_runtime;
 pub mod subagents;
 pub mod telemetry;

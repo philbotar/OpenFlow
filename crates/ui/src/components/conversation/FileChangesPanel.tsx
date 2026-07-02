@@ -1,13 +1,11 @@
 import ChevronRight from "lucide-solid/icons/chevron-right";
 import { createSignal, For, Show } from "solid-js";
-import { createUiDesktopOutboundAdapter } from "../../port";
+import * as desktop from "../../api";
 import { useAppContext } from "../../context/AppContext";
 import { Spinner } from "../Spinner";
 import type { EditBatch, FileChangeRecord } from "../../lib/types";
 import { effectiveChangePath, latestChangesByPath, nodeChangedFiles, nodeEditBatches } from "../../lib/workflow";
 import { formatToolDisplayName } from "./toolBubbleState";
-
-const desktop = createUiDesktopOutboundAdapter();
 
 const EDIT_TOOLS = new Set(["write", "edit", "apply_patch"]);
 

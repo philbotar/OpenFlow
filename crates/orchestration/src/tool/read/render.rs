@@ -6,7 +6,6 @@ const MAX_LINE_COLUMNS: usize = 2000;
 pub fn render_text(label: &str, text: &str, selector: ReadSelector) -> String {
     match selector {
         ReadSelector::Raw => text.to_string(),
-        ReadSelector::Conflicts => format!("¶{label}\n{text}"),
         ReadSelector::Lines { ranges, raw } => render_ranges(label, text, &ranges, raw),
         ReadSelector::None => render_default_numbered(label, text, DEFAULT_READ_LINE_LIMIT),
     }

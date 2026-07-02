@@ -8,8 +8,7 @@ A **CallableAgent** is a saved agent definition a workflow node may invoke as a 
 
 **Hexagonal pattern:**
 
-- **Core:** `agent/library.rs` - CRUD and validation.
-- **Port:** `agent/ports.rs` - `AgentStore` trait.
+- **Core:** `agent.rs` - CRUD, validation, and the `AgentStore` trait.
 - **Adapter:** `adapters/storage/agent_store.rs` - `openflow/agents.json`.
 
 ## Data model
@@ -32,12 +31,12 @@ Orchestration working copy with filesystem backing. Converted to `CallableAgent`
 
 1. Add the field to `engine::CallableAgent`.
 2. Add the field to orchestration `AgentDefinition` JSON.
-3. Update `agent/library.rs` validation if needed.
+3. Update `agent.rs` validation if needed.
 4. Update `RunCoordinator::start_run()` if snapshot semantics change.
 
 ## References
 
-- [`agent/library.rs`](../../crates/orchestration/src/agent/library.rs)
+- [`agent.rs`](../../crates/orchestration/src/agent.rs)
 - [`adapters/storage/agent_store.rs`](../../crates/orchestration/src/adapters/storage/agent_store.rs)
 - [`run/coordinator/mod.rs`](../../crates/orchestration/src/run/coordinator/mod.rs)
 - [`engine::CallableAgent`](../../crates/engine/src/graph/callable_agent.rs)

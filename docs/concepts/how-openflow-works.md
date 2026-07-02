@@ -44,7 +44,7 @@ Ports are added only when a consumer is typed against the interface. OpenFlow cu
 - `AiPort` and `AgentRequest` for model invocation.
 - `ToolPort` for tool and subagent execution.
 - Human input and tool approval ports for pauses.
-- `UiDesktopOutboundPort` for UI-to-desktop calls.
+- `api.ts` wrappers for UI-to-desktop calls.
 
 If there is no typed consumer, prefer calling the concrete type directly instead of adding a trait.
 

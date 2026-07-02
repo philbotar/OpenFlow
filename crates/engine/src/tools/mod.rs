@@ -1,7 +1,6 @@
 //! Tool catalog, approval policy, and tool call types for agent nodes.
 
 mod config;
-mod edit_batch;
 mod file_change;
 mod read_record;
 
@@ -11,8 +10,8 @@ pub use config::{
     SubagentSummary, ToolCall, ToolCallStatus, ToolConcurrency, ToolDecision, ToolDefinition,
     ToolOutputMeta, ToolResult, ToolTier, ToolTruncation, ToolTruncationStrategy,
 };
-pub use edit_batch::{EditBatch, FileSnapshot};
 pub use file_change::{
-    effective_change_path, merge_file_change_record, summarize_diff, FileChangeOp, FileChangeRecord,
+    effective_change_path, merge_file_change_record, summarize_diff, EditBatch, FileChangeOp,
+    FileChangeRecord, FileSnapshot,
 };
 pub use read_record::{merge_read_record, ReadRecord};

@@ -113,13 +113,6 @@ impl ProviderProfile {
     }
 
     #[must_use]
-    pub fn openai_default() -> Self {
-        provider_spec(&ProviderId::from("openai"))
-            .map(Self::from_spec)
-            .unwrap_or_else(|| Self::fallback("openai", "OpenAI"))
-    }
-
-    #[must_use]
     pub fn compatible_default() -> Self {
         provider_spec(&ProviderId::from("custom_openai_compatible"))
             .map(Self::from_spec)
@@ -360,34 +353,6 @@ impl AppSettings {
         self.providers
             .get(&self.active_provider)
             .expect("active provider profile exists")
-    }
-
-    #[must_use]
-    pub fn active_profile_mut(&mut self) -> &mut ProviderProfile {
-        self.providers
-            .get_mut(&self.active_provider)
-            .expect("active provider profile exists")
-    }
-
-    #[must_use]
-    pub fn active_models(&self) -> &[String] {
-        &self.active_profile().known_models
-    }
-
-    #[must_use]
-    pub fn provider_display_order(&self) -> Vec<ProviderId> {
-        let mut ids = builtin_provider_specs()
-            .iter()
-            .map(|spec| ProviderId::from(spec.id))
-            .filter(|id| self.providers.contains_key(id))
-            .collect::<Vec<_>>();
-        ids.extend(
-            self.providers
-                .keys()
-                .filter(|id| provider_spec(id).is_none())
-                .cloned(),
-        );
-        ids
     }
 
     #[must_use]

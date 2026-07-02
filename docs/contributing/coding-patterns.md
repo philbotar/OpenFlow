@@ -12,7 +12,7 @@ Patterns we follow in this repo.
 6. `engine` must not depend on HTTP clients, filesystem/tool I/O, Tauri, providers, orchestration, desktop, or UI.
 7. `orchestration` must call engine APIs; do not duplicate workflow validity or execution rules in `orchestration`.
 8. Add a port/trait only when a consumer is typed on that interface; otherwise call the concrete type directly.
-9. Real seams today: `engine/src/ports/` (`AiPort`, `ToolPort`, human input, tool approval), `providers/src/client.rs` (`AiClient`), and `ui/src/port.ts` (`UiDesktopOutboundPort`).
+9. Real seams today: `engine/src/ports/` (`AiPort`, `ToolPort`), `providers/src/client.rs` (`AiClient`), and `ui/src/api.ts` (typed Tauri invoke/event wrappers).
 
 ## Ownership by concern
 
@@ -24,16 +24,15 @@ Patterns we follow in this repo.
 | Interactive pause/resume semantics | `crates/engine/src/execution/interactive_engine/` |
 | Node invocation and prompt assembly | `crates/engine/src/execution/node_invocation.rs` |
 | Node templates, defaults, locked fields, and `TemplateStore` trait | `crates/engine/src/template/` |
-| Template persistence | `crates/orchestration/src/adapters/storage/template_store.rs` |
 | LLM invocation contract (`AiPort`, `AgentRequest`) | `crates/engine/src/ports/outbound.rs` |
 | Tool execution contract (`ToolPort`) | `crates/engine/src/ports/outbound.rs`, `crates/orchestration/src/run/execution/tool_port.rs` |
-| Human input and tool approval inbound ports | `crates/engine/src/ports/inbound.rs` |
+| Human input and tool approval resume behavior | `crates/engine/src/execution/interactive_engine/` |
 | LLM transport mapping and tool-arg repair | `crates/providers/src/mapping.rs`, `openai_compat.rs`, `anthropic.rs` |
 | Provider client (`AiClient`, `create_provider`) | `crates/providers/src/client.rs`, `lib.rs` |
-| UI desktop seam | `crates/ui/src/port.ts` |
+| UI desktop seam | `crates/ui/src/api.ts` |
 | App backend composition and IPC surface | `crates/orchestration/src/backend/mod.rs` |
 | Run execution, shared context, callable agents, execution cwd | `crates/orchestration/src/run/execution/` |
-| Mutable run/edit state transitions | `crates/orchestration/src/run/state/` |
+| Mutable run/edit state transitions | `crates/orchestration/src/run/state.rs` |
 | App workflow file store | `crates/orchestration/src/adapters/storage/app_workflow_store.rs` |
 | Project metadata and workflow bindings | `crates/orchestration/src/adapters/storage/project_store.rs` |
 | Project workflow files (`.flow/workflows/`) | `crates/orchestration/src/adapters/storage/project_workflow_store.rs` |
@@ -62,7 +61,7 @@ Keep these execution rules in `crates/orchestration/src/run/**` and `crates/engi
 
 ## Persistence conventions
 
-1. All app persistence files live under `{data_local}/openflow/` (`agents.json`, `projects.json`, `templates.json`, `workflows.json`, `settings.json`).
+1. All app persistence files live under `{data_local}/openflow/` (`agents.json`, `projects.json`, `workflows.json`, `settings.json`).
 2. Project workflow files use the `{workflowId}.workflow.json` suffix under `.flow/workflows/`.
 3. Provider API keys persist in `settings.json` on each `ProviderProfile.api_key` (plaintext on disk). UI loads settings redacted and fetches keys via dedicated IPC. Env vars (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, and provider-specific fallbacks) remain fallbacks.
 
