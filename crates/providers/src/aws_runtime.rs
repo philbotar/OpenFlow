@@ -34,9 +34,10 @@ pub(crate) async fn load_aws_sdk_config(
 ) -> aws_config::SdkConfig {
     ensure_process_home_env();
     let trimmed_region = region.trim();
+    let profile_name = sanitize_profile(profile);
     let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest())
         .region(aws_config::Region::new(trimmed_region.to_string()));
-    if let Some(name) = profile.map(str::trim).filter(|value| !value.is_empty()) {
+    if let Some(name) = profile_name {
         loader = loader.profile_name(name);
     }
     let shared = loader.load().await;
@@ -48,9 +49,9 @@ pub(crate) async fn load_aws_sdk_config(
         return shared;
     }
     // ponytail: probe-then-CLI-fallback runs once per client build; cache if latency matters
-    let credentials = match cli_export_credentials(profile).await {
+    let credentials = match cli_export_credentials(profile_name).await {
         Some(credentials) => Some(credentials),
-        None => sso_login_and_retry(profile).await,
+        None => sso_login_and_retry(profile_name).await,
     };
     if let Some(credentials) = credentials {
         return aws_config::defaults(aws_config::BehaviorVersion::latest())
@@ -98,14 +99,32 @@ async fn sso_login_and_retry(profile: Option<&str>) -> Option<Credentials> {
         command.args(["--profile", name]);
     }
     // ponytail: 120s cap — browser flow needs human time but must not hang a run forever
-    let status = tokio::time::timeout(std::time::Duration::from_mins(2), command.status())
-        .await
-        .ok()?
-        .ok()?;
+    let mut child = command.spawn().ok()?;
+    let status = match tokio::time::timeout(std::time::Duration::from_mins(2), child.wait()).await {
+        Ok(status) => status.ok()?,
+        Err(_) => {
+            let _ = child.kill().await;
+            return None;
+        }
+    };
     if !status.success() {
         return None;
     }
     cli_export_credentials(profile).await
+}
+
+fn sanitize_profile(profile: Option<&str>) -> Option<&str> {
+    match profile {
+        Some(name) => {
+            let trimmed = name.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        }
+        None => None,
+    }
 }
 
 fn resolve_home_for_aws() -> Option<PathBuf> {
@@ -162,6 +181,14 @@ mod tests {
 
         restore_env_var("HOME", previous_home);
         restore_env_var("USERPROFILE", previous_userprofile);
+    }
+
+    #[test]
+    fn sanitize_profile_trims_and_rejects_blank() {
+        assert_eq!(sanitize_profile(Some("  my-profile  ")), Some("my-profile"));
+        assert_eq!(sanitize_profile(Some("   ")), None);
+        assert_eq!(sanitize_profile(Some("")), None);
+        assert_eq!(sanitize_profile(None), None);
     }
 
     #[test]
