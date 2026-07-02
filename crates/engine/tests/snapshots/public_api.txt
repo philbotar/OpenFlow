@@ -721,13 +721,10 @@ pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::failed_n
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::interrupted_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::layer_idx: usize
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::outputs: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, serde_json::value::Value>
-pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::pending_retry_delay_ms: core::option::Option<u64>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::pending_tool_batches: alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::execution::interactive_engine::checkpoint::CheckpointPendingToolBatch>
-pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::queued_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::reads_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::ReadRecord>>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::request_input_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
-pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::started_invocations_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::submit_output_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::transcripts: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::conversation::AgentTranscriptItem>>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::workflow_id: engine::graph::workflow::WorkflowId
@@ -1901,13 +1898,10 @@ pub engine::execution::InteractiveEngineCheckpoint::failed_nodes: alloc::collect
 pub engine::execution::InteractiveEngineCheckpoint::interrupted_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
 pub engine::execution::InteractiveEngineCheckpoint::layer_idx: usize
 pub engine::execution::InteractiveEngineCheckpoint::outputs: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, serde_json::value::Value>
-pub engine::execution::InteractiveEngineCheckpoint::pending_retry_delay_ms: core::option::Option<u64>
 pub engine::execution::InteractiveEngineCheckpoint::pending_tool_batches: alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::execution::interactive_engine::checkpoint::CheckpointPendingToolBatch>
-pub engine::execution::InteractiveEngineCheckpoint::queued_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
 pub engine::execution::InteractiveEngineCheckpoint::reads_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::ReadRecord>>
 pub engine::execution::InteractiveEngineCheckpoint::request_input_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::execution::InteractiveEngineCheckpoint::retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
-pub engine::execution::InteractiveEngineCheckpoint::started_invocations_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::execution::InteractiveEngineCheckpoint::submit_output_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::execution::InteractiveEngineCheckpoint::transcripts: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::conversation::AgentTranscriptItem>>
 pub engine::execution::InteractiveEngineCheckpoint::workflow_id: engine::graph::workflow::WorkflowId
@@ -7796,13 +7790,10 @@ pub engine::InteractiveEngineCheckpoint::failed_nodes: alloc::collections::btree
 pub engine::InteractiveEngineCheckpoint::interrupted_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
 pub engine::InteractiveEngineCheckpoint::layer_idx: usize
 pub engine::InteractiveEngineCheckpoint::outputs: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, serde_json::value::Value>
-pub engine::InteractiveEngineCheckpoint::pending_retry_delay_ms: core::option::Option<u64>
 pub engine::InteractiveEngineCheckpoint::pending_tool_batches: alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::execution::interactive_engine::checkpoint::CheckpointPendingToolBatch>
-pub engine::InteractiveEngineCheckpoint::queued_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
 pub engine::InteractiveEngineCheckpoint::reads_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::ReadRecord>>
 pub engine::InteractiveEngineCheckpoint::request_input_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::InteractiveEngineCheckpoint::retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
-pub engine::InteractiveEngineCheckpoint::started_invocations_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::InteractiveEngineCheckpoint::submit_output_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::InteractiveEngineCheckpoint::transcripts: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::conversation::AgentTranscriptItem>>
 pub engine::InteractiveEngineCheckpoint::workflow_id: engine::graph::workflow::WorkflowId

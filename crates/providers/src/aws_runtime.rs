@@ -79,11 +79,16 @@ fn parse_cli_export_credentials(json: &[u8]) -> Option<Credentials> {
 /// (IAM Identity Center support is partial in aws-config; the CLI handles all shapes).
 async fn cli_export_credentials(profile: Option<&str>) -> Option<Credentials> {
     let mut command = tokio::process::Command::new("aws");
+    command.kill_on_drop(true);
     command.args(["configure", "export-credentials", "--format", "process"]);
     if let Some(name) = profile {
         command.args(["--profile", name]);
     }
-    let output = command.output().await.ok()?;
+    // ponytail: 30s cap — export should be fast; kill_on_drop cleans up on timeout
+    let output = tokio::time::timeout(std::time::Duration::from_secs(30), command.output())
+        .await
+        .ok()?
+        .ok()?;
     if !output.status.success() {
         return None;
     }

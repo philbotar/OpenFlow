@@ -193,7 +193,7 @@ impl WorkflowAuthoringService {
                             });
                             transcript.push(AgentTranscriptItem::UserMessage {
                                 content: format!(
-                                    "Your workflowDraft failed validation: {errors}. Fix these issues and call submit_output again with the complete corrected workflowDraft."
+                                    "Your workflowDraft failed validation: {errors}. Fix these issues and call openflow_submit_node_output again with the complete corrected workflowDraft."
                                 ),
                             });
                         }
@@ -211,7 +211,7 @@ impl WorkflowAuthoringService {
                             });
                             transcript.push(AgentTranscriptItem::UserMessage {
                                 content: format!(
-                                    "Your workflowDraft was rejected: {error}. Call submit_output again with a complete workflowDraft that exactly matches the required schema (all required fields present, correct types, camelCase names)."
+                                    "Your workflowDraft was rejected: {error}. Call openflow_submit_node_output again with a complete workflowDraft that exactly matches the required schema (all required fields present, correct types, camelCase names)."
                                 ),
                             });
                         }
@@ -332,7 +332,7 @@ fn build_workflow_from_output(
     let validation = validate_authoring_workflow(&workflow);
     Ok((workflow, validation))
 }
-const AUTHORING_DRAFT_REQUIRED_FEEDBACK: &str = "You must call submit_output with a complete workflowDraft. Do not ask clarifying questions — make reasonable assumptions and produce the best draft you can from what you have.";
+const AUTHORING_DRAFT_REQUIRED_FEEDBACK: &str = "You must call openflow_submit_node_output with a complete workflowDraft. Do not ask clarifying questions — make reasonable assumptions and produce the best draft you can from what you have.";
 
 fn malformed_submit_output_feedback(error: &AgentError) -> String {
     format!(

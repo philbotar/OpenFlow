@@ -192,7 +192,7 @@ pub fn start_subagent_invoke(
         )
     };
     if sub_request.model.trim().is_empty() {
-        sub_request.model = parent_node.agent.model.clone();
+        sub_request.model.clone_from(&parent_node.agent.model);
     }
 
     let telemetry = vec![RunTelemetry::SubagentStarted {
