@@ -436,6 +436,78 @@ async fn send_turn_retries_malformed_submit_output_and_materializes_draft() {
     assert_eq!(ai.calls.load(Ordering::SeqCst), 2);
 }
 
+struct InvalidDraftThenValidAi {
+    calls: AtomicUsize,
+}
+
+#[async_trait]
+impl AiPort for InvalidDraftThenValidAi {
+    async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+        let call = self.calls.fetch_add(1, Ordering::SeqCst);
+        let output = if call == 0 {
+            // Missing `edges` — must trigger a correction retry, not a hard failure.
+            json!({
+                "assistantMessage": "Draft without edges.",
+                "workflowDraft": {
+                    "name": "Demo",
+                    "nodes": [{
+                        "id": "root",
+                        "label": "Root",
+                        "systemPrompt": "You are root.",
+                        "taskPrompt": "Do the work."
+                    }]
+                }
+            })
+        } else {
+            assert!(
+                request.transcript.iter().any(|item| matches!(
+                    item,
+                    AgentTranscriptItem::UserMessage { content }
+                        if content.contains("missing field `edges`")
+                )),
+                "expected invalid-draft feedback in transcript"
+            );
+            single_node_draft("Demo", "root", "Root")
+        };
+        Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+            output: output.clone(),
+            raw_text: output.to_string(),
+            assistant_message: Some("Built draft".to_string()),
+            usage: None,
+        }))
+    }
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+async fn send_turn_retries_invalid_draft_until_it_converges() {
+    let ai = InvalidDraftThenValidAi {
+        calls: AtomicUsize::new(0),
+    };
+    let service = WorkflowAuthoringService::new();
+    let session_id = service.start_session(None);
+    let settings = AppSettings::default();
+    let result = service
+        .send_turn(
+            &session_id,
+            "Build a one-node workflow".to_string(),
+            &settings,
+            &ai,
+        )
+        .await
+        .expect("turn");
+
+    assert!(result.validation.valid, "{:?}", result.validation.errors);
+    assert_eq!(ai.calls.load(Ordering::SeqCst), 2);
+    assert!(
+        result
+            .messages
+            .iter()
+            .any(|message| message.role == WorkflowAuthoringRole::Thinking),
+        "expected a thinking message describing the retry"
+    );
+}
+
 #[test]
 fn end_session_removes_authoring_session() {
     let service = WorkflowAuthoringService::new();

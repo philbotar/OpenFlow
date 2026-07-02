@@ -31,6 +31,9 @@ fi
 prune_stale_verify_targets() {
 	local dir base pid
 	shopt -s nullglob
+	for dir in "$ROOT"/target/verify-*; do
+		base="${dir##*/}"
+		pid="${base#verify-}"
 		if [[ "$pid" =~ ^[0-9]+$ ]] && ! ps -p "$pid" >/dev/null 2>&1; then
 			rm -rf "$dir"
 		fi

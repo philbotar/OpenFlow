@@ -5,72 +5,40 @@
 <h1 align="center">OpenFlow</h1>
 
 <p align="center">
-  <strong>Compose and run AI agent workflows, visually.</strong><br/>
-  An agent harness built for repeatable workflows, with the extensibility and feel of Claude Code.
+  <strong>The visual IDE for multi-agent workflows.</strong><br/>
+  Built for repeatable pipelines, with the extensibility and feel of Claude Code.
 </p>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License" /></a>
   <img src="https://img.shields.io/badge/rust-2021-orange?logo=rust&logoColor=white" alt="Rust 2021" />
   <img src="https://img.shields.io/badge/tauri-2.0-FFC131?logo=tauri&logoColor=white" alt="Tauri 2" />
-  <img src="https://img.shields.io/badge/react-18-61DAFB?logo=react&logoColor=white" alt="React" />
+  <img src="https://img.shields.io/badge/solidjs-1.9-2C4F7C?logo=solid&logoColor=white" alt="SolidJS" />
 </p>
 
 <p align="center">
-  <a href="#quick-start">Quick Start</a> ·
-  <a href="#screenshots">Screenshots</a> ·
+  <a href="#what-is-openflow">What is OpenFlow?</a> ·
+  <a href="#install">Install</a> ·
   <a href="#features">Features</a> ·
-  <a href="#architecture">Architecture</a> ·
-  <a href="#development">Development</a> ·
+  <a href="#developing">Developing</a> ·
   <a href="#contributing">Contributing</a>
 </p>
 
-## Quick Start
+## What is OpenFlow?
 
-### Prerequisites
+Building a multi-agent LLM pipeline usually means gluing prompts, state, and provider SDKs together by hand, then debugging it blind. OpenFlow gives you a canvas instead: drag out agents, wire them into a pipeline, and watch each one think, call tools, and hand off to the next in real time.
 
-- [Rust](https://rustup.rs/) (stable)
-- [Node.js](https://nodejs.org/) 18+
-- Platform build tools for [Tauri](https://v2.tauri.app/start/prerequisites/)
+Underneath the canvas is a full agent harness. Tool use, approvals, subagents, and multiple LLM providers are all built in, so what you draw is what actually runs, and runs again the same way next time.
 
-### Run
+You can also choose how it runs. Keep it interactive like a Claude Code session, pausing to chat and approve each tool call, or switch a workflow to auto-approve and let it run standalone from start to finish.
 
-```bash
-./scripts/start.sh
-```
+## Install
 
-Installs dependencies on first run, then launches the desktop app.
+Grab the latest build from [Releases](https://github.com/philbotar/OpenFlow/releases/latest) and open it. No Rust or Node required.
 
-### Install (macOS)
+> **macOS gatekeeper:** unsigned builds may be blocked on first launch. Right-click **OpenFlow** → **Open**, or run `xattr -cr /path/to/OpenFlow.app`.
 
-```bash
-./scripts/install.sh
-```
-
-Builds a `.dmg` and opens it — drag **OpenFlow** to **Applications**.
-
-> **macOS gatekeeper:** Unsigned local builds may be blocked on first launch. Right-click **OpenFlow** → **Open**, or run `xattr -cr /path/to/OpenFlow.app`.
----
-
-## Screenshots
-
-<p align="center">
-  <img src="docs/assets/workflow-run.png" alt="Workflow run with parallel agent layers and per-node chat" width="900" />
-  <br/>
-  <em>Run a multi-agent pipeline — parallel layers, live status, and per-node conversation.</em>
-</p>
-
-<p align="center">
-  <img src="docs/assets/agent-editor.png" alt="Agent editor for model, prompts, and approval settings" width="900" />
-  <br/>
-  <em>Configure reusable agents — model, prompts, JSON schema, and tool approval.</em>
-</p>
-
-<p align="center">
-  <img src="docs/assets/build-workflow-with-ai.png" alt="Build workflow with AI from a natural language goal" width="900" />
-  <br/>
-  <em>Describe a workflow in natural language, iterate, then apply to the editor.</em>
-</p>
+Want to build the installer yourself instead? See [Developing](#developing) below.
 
 ## Features
 
@@ -96,14 +64,14 @@ Nodes in the same topological layer run concurrently. Downstream agents receive 
 
 ### Tools & subagents
 
-Built-in filesystem, shell, and search tools with tiered approval policies. Nodes can invoke saved agents as subagents mid-run.
+Agents can read/write files, run shell commands, and search code, each gated by an approval policy you control. Hand off a sub-task to another saved agent mid-run with no manual wiring.
 
 </td>
 <td width="50%" valign="top">
 
 ### Multi-provider LLM support
 
-OpenAI-compatible and Anthropic adapters behind a single `AiPort`. Swap models per node or override at the workflow level.
+Point any node at an OpenAI-compatible or Anthropic model. Mix providers in one workflow, or swap a model out, without touching the rest of the pipeline.
 
 </td>
 </tr>
@@ -112,48 +80,46 @@ OpenAI-compatible and Anthropic adapters behind a single `AiPort`. Swap models p
 
 ### Project-aware persistence
 
-Workflows live in the app store or in-repo under `.flow/workflows/`. Projects bind a repo path so agents run with the right working directory.
+Workflows save automatically, either in the app or checked into your repo, so they stay versioned alongside your code and always run from the right working directory.
 
 </td>
 <td width="50%" valign="top">
 
-### Interactive runs
+### Interactive or standalone runs
 
-Pause, resume, approve tools, and chat with individual nodes. Per-node conversation panels stream thinking, tool calls, and results in real time.
+Run it like a Claude Code session, pausing to approve tools and chat with individual nodes as thinking and results stream in, or flip on auto-approve and let the whole workflow run to completion on its own.
 
 </td>
 </tr>
 </table>
 
-## Architecture
+## Developing
 
-OpenFlow uses nested hexagonal architecture: five layers, dependencies pointing strictly inward, enforced in CI.
+Making changes to OpenFlow itself? Build and run it from source.
 
+### Prerequisites
+
+- [Rust](https://rustup.rs/) (stable)
+- [Node.js](https://nodejs.org/) 18+
+- Platform build tools for [Tauri](https://v2.tauri.app/start/prerequisites/)
+
+### Run in dev mode
+
+```bash
+./scripts/start.sh
 ```
-┌─────────────────────────────────────────────────────────┐
-│  UI (React + TypeScript)          crates/ui             │
-├─────────────────────────────────────────────────────────┤
-│  Desktop adapter (Tauri IPC)        crates/desktop      │
-├─────────────────────────────────────────────────────────┤
-│  Orchestration (runs, storage)      crates/orchestration│
-├──────────────────────────┬──────────────────────────────┤
-│  Engine (I/O-free core)  │  Providers (LLM transport)   │
-│  crates/engine           │  crates/providers            │
-└──────────────────────────┴──────────────────────────────┘
+
+Installs dependencies on first run, then launches the desktop app with hot reload.
+
+### Build an installer
+
+```bash
+./scripts/install.sh
 ```
 
-| Crate | Responsibility |
-| --- | --- |
-| **engine** | Workflow model, DAG validation, run state machine, ports |
-| **orchestration** | Persistence, run coordination, tool execution, composition root |
-| **providers** | OpenAI-compatible and Anthropic wire adapters |
-| **desktop** | Tauri commands and IPC boundary |
-| **ui** | Canvas, conversation panels, settings, workflow editor |
+Builds a `.dmg` (macOS) and opens it. Drag **OpenFlow** to **Applications**.
 
-Deep dive: [`docs/architecture/technical-overview.md`](docs/architecture/technical-overview.md)
-
-
-## Development
+### Other useful commands
 
 ```bash
 # Full verification gate (fmt, clippy, test, arch, UI typecheck, …)
@@ -172,10 +138,10 @@ cargo test -p orchestration --test workflow_acceptance -- --nocapture
 | Resource | Path |
 | --- | --- |
 | Repo map & change paths | [`AGENTS.md`](AGENTS.md) |
+| Architecture overview | [`docs/architecture/technical-overview.md`](docs/architecture/technical-overview.md) |
 | Coding patterns | [`docs/contributing/coding-patterns.md`](docs/contributing/coding-patterns.md) |
 | Testing workflows | [`docs/contributing/testing-workflows.md`](docs/contributing/testing-workflows.md) |
 | Domain glossary | [`docs/glossary.md`](docs/glossary.md) |
-| Layer contract | [`docs/architecture/contract.md`](docs/architecture/contract.md) |
 
 ## Contributing
 

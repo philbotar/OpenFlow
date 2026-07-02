@@ -114,13 +114,14 @@ impl WorkflowAuthoringService {
 
         let mut transcript: Vec<AgentTranscriptItem> = messages
             .iter()
-            .map(|message| match message.role {
-                WorkflowAuthoringRole::Assistant => AgentTranscriptItem::AssistantMessage {
+            .filter_map(|message| match message.role {
+                WorkflowAuthoringRole::Assistant => Some(AgentTranscriptItem::AssistantMessage {
                     content: message.content.clone(),
-                },
-                WorkflowAuthoringRole::User => AgentTranscriptItem::UserMessage {
+                }),
+                WorkflowAuthoringRole::User => Some(AgentTranscriptItem::UserMessage {
                     content: message.content.clone(),
-                },
+                }),
+                WorkflowAuthoringRole::Thinking => None,
             })
             .collect();
 
@@ -141,7 +142,9 @@ impl WorkflowAuthoringService {
 
         let mut model_attempt = 1u8;
         let mut malformed_submit_retries = 0u8;
-        let output = loop {
+        let mut invalid_draft_retries = 0u8;
+        let mut messages = messages;
+        let (assistant_message, workflow, validation) = loop {
             let request = AgentRequest {
                 workflow_id: WorkflowId::from("workflow-authoring"),
                 node_id: NodeId::from("authoring"),
@@ -161,7 +164,60 @@ impl WorkflowAuthoringService {
             };
 
             match ai.invoke(request).await {
-                Ok(AgentTurnOutcome::Completed(AgentTurnSuccess { output, .. })) => break output,
+                Ok(AgentTurnOutcome::Completed(AgentTurnSuccess { output, .. })) => {
+                    let assistant_message = output
+                        .get("assistantMessage")
+                        .or_else(|| output.get("assistant_message"))
+                        .and_then(|value| value.as_str())
+                        .unwrap_or("Updated workflow draft.")
+                        .to_string();
+                    match build_workflow_from_output(&output, current_draft.as_ref(), &model) {
+                        Ok((workflow, validation)) if validation.valid => {
+                            break (assistant_message, workflow, validation)
+                        }
+                        Ok((workflow, validation)) => {
+                            if invalid_draft_retries >= MAX_INVALID_DRAFT_RETRIES {
+                                break (assistant_message, workflow, validation);
+                            }
+                            invalid_draft_retries += 1;
+                            model_attempt += 1;
+                            let errors = validation.errors.join("; ");
+                            messages.push(WorkflowAuthoringMessage {
+                                role: WorkflowAuthoringRole::Thinking,
+                                content: format!(
+                                    "Draft failed validation ({errors}); asking the model to fix it (attempt {invalid_draft_retries}/{MAX_INVALID_DRAFT_RETRIES})."
+                                ),
+                            });
+                            transcript.push(AgentTranscriptItem::AssistantMessage {
+                                content: assistant_message,
+                            });
+                            transcript.push(AgentTranscriptItem::UserMessage {
+                                content: format!(
+                                    "Your workflowDraft failed validation: {errors}. Fix these issues and call openflow_submit_node_output again with the complete corrected workflowDraft."
+                                ),
+                            });
+                        }
+                        Err(error) if invalid_draft_retries < MAX_INVALID_DRAFT_RETRIES => {
+                            invalid_draft_retries += 1;
+                            model_attempt += 1;
+                            messages.push(WorkflowAuthoringMessage {
+                                role: WorkflowAuthoringRole::Thinking,
+                                content: format!(
+                                    "Draft was rejected ({error}); asking the model to fix it (attempt {invalid_draft_retries}/{MAX_INVALID_DRAFT_RETRIES})."
+                                ),
+                            });
+                            transcript.push(AgentTranscriptItem::AssistantMessage {
+                                content: assistant_message,
+                            });
+                            transcript.push(AgentTranscriptItem::UserMessage {
+                                content: format!(
+                                    "Your workflowDraft was rejected: {error}. Call openflow_submit_node_output again with a complete workflowDraft that exactly matches the required schema (all required fields present, correct types, camelCase names)."
+                                ),
+                            });
+                        }
+                        Err(error) => return Err(error),
+                    }
+                }
                 Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
                     assistant_message,
                     ..
@@ -176,7 +232,6 @@ impl WorkflowAuthoringService {
                 }
                 Ok(AgentTurnOutcome::NeedsUserInput(need)) => {
                     let assistant_message = need.assistant_message;
-                    let mut messages = messages;
                     messages.push(WorkflowAuthoringMessage {
                         role: WorkflowAuthoringRole::Assistant,
                         content: assistant_message.clone(),
@@ -223,25 +278,6 @@ impl WorkflowAuthoringService {
             }
         };
 
-        let assistant_message = output
-            .get("assistantMessage")
-            .or_else(|| output.get("assistant_message"))
-            .and_then(|value| value.as_str())
-            .unwrap_or("Updated workflow draft.")
-            .to_string();
-
-        let draft_value = workflow_draft_value_from_model_output(&output)?;
-
-        let draft: WorkflowAuthoringDraft = serde_json::from_value(draft_value)
-            .map_err(|error| AuthoringError::InvalidDraft(error.to_string()))?;
-
-        let base_id = current_draft.as_ref().map(|workflow| workflow.id.clone());
-        let mut workflow = materialize_authoring_draft(draft, base_id, &model);
-        layout_workflow_by_layers(&mut workflow)
-            .map_err(|error| AuthoringError::LayoutFailed(error.to_string()))?;
-        let validation = validate_authoring_workflow(&workflow);
-
-        let mut messages = messages;
         messages.push(WorkflowAuthoringMessage {
             role: WorkflowAuthoringRole::Assistant,
             content: assistant_message.clone(),
@@ -277,7 +313,26 @@ impl Default for WorkflowAuthoringService {
 
 const MAX_AUTHORING_CLARIFICATION_RETRIES: u8 = 1;
 const MAX_MALFORMED_SUBMIT_OUTPUT_RETRIES: u8 = 3;
-const AUTHORING_DRAFT_REQUIRED_FEEDBACK: &str = "You must call submit_output with a complete workflowDraft. Do not ask clarifying questions — make reasonable assumptions and produce the best draft you can from what you have.";
+// ponytail: bounded retry, not truly infinite — caps model spend; raise if drafts still diverge.
+const MAX_INVALID_DRAFT_RETRIES: u8 = 5;
+
+/// Parse, materialize, lay out, and validate a workflow draft from model output.
+fn build_workflow_from_output(
+    output: &serde_json::Value,
+    current_draft: Option<&Workflow>,
+    model: &str,
+) -> Result<(Workflow, WorkflowAuthoringValidation), AuthoringError> {
+    let draft_value = workflow_draft_value_from_model_output(output)?;
+    let draft: WorkflowAuthoringDraft = serde_json::from_value(draft_value)
+        .map_err(|error| AuthoringError::InvalidDraft(error.to_string()))?;
+    let base_id = current_draft.map(|workflow| workflow.id.clone());
+    let mut workflow = materialize_authoring_draft(draft, base_id, model);
+    layout_workflow_by_layers(&mut workflow)
+        .map_err(|error| AuthoringError::LayoutFailed(error.to_string()))?;
+    let validation = validate_authoring_workflow(&workflow);
+    Ok((workflow, validation))
+}
+const AUTHORING_DRAFT_REQUIRED_FEEDBACK: &str = "You must call openflow_submit_node_output with a complete workflowDraft. Do not ask clarifying questions — make reasonable assumptions and produce the best draft you can from what you have.";
 
 fn malformed_submit_output_feedback(error: &AgentError) -> String {
     format!(

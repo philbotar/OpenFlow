@@ -837,6 +837,98 @@ describe("App first-run onboarding", () => {
   });
 });
 
+describe("workflow authoring chat layout", () => {
+  afterEach(() => {
+    document.body.innerHTML = "";
+    vi.clearAllMocks();
+    window.localStorage.clear();
+  });
+
+  beforeEach(() => {
+    installDefaultApiMocks();
+    window.localStorage.setItem("openflow.firstRunOnboardingDismissed", "true");
+  });
+
+  async function openWorkflowAuthoring(container: HTMLElement) {
+    const button = await waitForElement(
+      () =>
+        container.querySelector(
+          'button[aria-label="Build with AI"]',
+        ) as HTMLButtonElement | null,
+      "build with ai button",
+    );
+    button.click();
+    await flush();
+    await waitForElement(
+      () => container.querySelector(".workflow-authoring-screen"),
+      "workflow authoring screen",
+    );
+  }
+
+  test("uses dock chat shell with bubble composer and thinking indicator while busy", async () => {
+    let resolveTurn!: (value: {
+      messages: { role: string; content: string }[];
+      validation: { valid: boolean; errors: string[]; warnings: string[] };
+      draft: null;
+    }) => void;
+    const turnPromise = new Promise<{
+      messages: { role: string; content: string }[];
+      validation: { valid: boolean; errors: string[]; warnings: string[] };
+      draft: null;
+    }>((resolve) => {
+      resolveTurn = resolve;
+    });
+    apiMocks.workflowAuthoringTurn.mockReturnValue(turnPromise);
+
+    const { container, dispose } = await mountApp(
+      makeBootstrapPayload([makeWorkflow("workflow-1", "Workflow One")]),
+    );
+
+    try {
+      await openWorkflowAuthoring(container);
+
+      expect(container.querySelector(".chat-layout")).not.toBeNull();
+      expect(container.querySelector(".chat-composer-bar")).not.toBeNull();
+
+      const pill = await waitForElement(
+        () => container.querySelector(".chat-composer-pill") as HTMLElement | null,
+        "authoring composer pill",
+      );
+      const pillRadius = window.getComputedStyle(pill).borderRadius;
+      expect(pillRadius).not.toBe("0px");
+
+      const textarea = pill.querySelector("textarea") as HTMLTextAreaElement;
+      textarea.value = "Build a research workflow";
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      await flush();
+
+      pill.querySelector(".composer-send-button")?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+      await flush();
+
+      const thinking = await waitForElement(
+        () => container.querySelector(".tool-line--thinking") as HTMLElement | null,
+        "authoring thinking bubble",
+      );
+      expect(thinking.querySelector(".tool-line-name-text")?.textContent).toBe("Thinking");
+
+      resolveTurn({
+        messages: [
+          { role: "user", content: "Build a research workflow" },
+          { role: "assistant", content: "Here is a draft." },
+        ],
+        validation: { valid: false, errors: [], warnings: [] },
+        draft: null,
+      });
+      await flush();
+      await flush();
+    } finally {
+      dispose();
+    }
+  });
+});
+
 describe("App workflow rename", () => {
   afterEach(() => {
     document.body.innerHTML = "";

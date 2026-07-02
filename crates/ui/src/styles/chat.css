@@ -138,13 +138,7 @@
 }
 
 /* ── Workflow authoring (match dock chat) ── */
-.workflow-authoring-messages {
-  padding: 0;
-  margin: 8px;
-  gap: 4px;
-}
-
-.workflow-authoring-messages .panel-empty {
+.chat-transcript-lane .panel-empty {
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -152,7 +146,7 @@
   min-height: 0;
 }
 
-.workflow-authoring-messages .panel-empty-icon {
+.chat-transcript-lane .panel-empty-icon {
   border: 0;
   background: transparent;
   width: auto;
@@ -160,53 +154,36 @@
   margin-bottom: 0;
 }
 
-.workflow-authoring-footer {
-  flex-direction: column;
-  align-items: stretch;
-  padding: 0;
-  gap: 0;
-  border-top: 1px solid var(--border-subtle);
-  background: var(--composer-bg);
-}
-
-.workflow-authoring-composer-container {
+.workflow-authoring-composer-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  background: var(--composer-bg);
+  gap: 12px;
+  width: min(920px, calc(100% - 72px));
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 6px 0;
+  box-sizing: border-box;
 }
 
-.workflow-authoring-composer-container .workflow-authoring-composer {
-  flex: 1;
+.workflow-authoring-composer-row .chat-composer {
+  flex: 1 1 0;
   min-width: 0;
-}
-
-.workflow-authoring-composer-pill {
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
+  width: auto;
+  max-width: none;
+  margin: 0;
   padding: 0;
 }
 
-.workflow-authoring-actions {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  padding: 0;
-  border-top: 0;
-  background: transparent;
-}
-
-.workflow-authoring-composer-pill .composer-input {
-  caret-color: var(--text);
-  caret-shape: block;
+.workflow-authoring-composer-row .chat-composer-input-shell {
+  width: 100%;
 }
 
 .workflow-authoring-apply {
-  min-width: auto;
+  flex-shrink: 0;
+  align-self: center;
+  min-width: 0;
   padding: 8px 16px;
   border-radius: var(--radius-sm);
   box-shadow: none;
+  white-space: nowrap;
 }

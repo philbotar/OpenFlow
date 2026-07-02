@@ -1,6 +1,6 @@
 [package]
 name = "providers"
-version = "0.1.9"
+version = "0.1.11"
 edition.workspace = true
 description.workspace = true
 license.workspace = true
@@ -25,7 +25,7 @@ serde_json.workspace = true
 jsonrepair-rs.workspace = true
 engine = { path = "../engine", version = "0.1.1" }
 futures.workspace = true
-tokio = { workspace = true, features = ["time"] }
+tokio = { workspace = true, features = ["time", "process"] }
 aws-config = { workspace = true, optional = true }
 aws-sdk-bedrock = { workspace = true, optional = true }
 aws-sdk-bedrockruntime = { workspace = true, optional = true }

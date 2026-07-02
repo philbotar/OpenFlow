@@ -5650,16 +5650,6 @@ label {
   color: #b45309;
 }
 
-.workflow-authoring-messages {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: var(--card-padding-md) var(--page-gutter);
-  display: flex;
-  flex-direction: column;
-  gap: var(--chat-item-gap);
-}
-
 .workflow-authoring-validation {
   margin: 0 var(--page-gutter) 12px;
   padding: 12px 14px;
@@ -5697,31 +5687,6 @@ label {
 
 .workflow-authoring-validation-warnings {
   color: #b45309;
-}
-
-.workflow-authoring-footer {
-  display: flex;
-  align-items: flex-end;
-  gap: 12px;
-  flex-shrink: 0;
-  margin-top: auto;
-  padding: 0;
-  border-top: 1px solid var(--border-subtle);
-  background: var(--composer-bg);
-}
-
-.workflow-authoring-composer {
-  flex: 1;
-  min-width: 0;
-}
-
-.workflow-authoring-composer-pill {
-  width: 100%;
-}
-
-.workflow-authoring-apply {
-  flex-shrink: 0;
-  min-width: 140px;
 }
 
 .schedule-screen {

@@ -19,7 +19,7 @@ export function ThinkingBubble(allProps: ThinkingBubbleProps) {
     local.message.streaming ? "Thinking" : "Thought for a while";
 
   return (
-    <Show when={content().trim()}>
+    <Show when={content().trim() || local.message.streaming}>
       <div
         class={`tool-line tool-line--thinking tool-line--expandable conversation-item-enter ${local.class ?? ""}`}
         data-streaming={local.message.streaming ? "true" : "false"}

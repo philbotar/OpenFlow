@@ -5,7 +5,6 @@ use crate::graph::{NodeId, Workflow, WorkflowId};
 use crate::tools::{FileChangeRecord, ReadRecord, ToolCall};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
-use std::time::Duration;
 use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -48,12 +47,9 @@ pub struct InteractiveEngineCheckpoint {
     #[serde(default)]
     pub reads_by_node: BTreeMap<NodeId, Vec<ReadRecord>>,
     pub transcripts: BTreeMap<NodeId, Vec<AgentTranscriptItem>>,
-    pub queued_nodes: BTreeSet<NodeId>,
-    pub started_invocations_by_node: BTreeMap<NodeId, u8>,
     pub awaiting_nodes: BTreeSet<NodeId>,
     pub pending_tool_batches: BTreeMap<String, CheckpointPendingToolBatch>,
     pub retries_by_node: BTreeMap<NodeId, u8>,
-    pub pending_retry_delay_ms: Option<u64>,
     pub submit_output_retries_by_node: BTreeMap<NodeId, u8>,
     pub request_input_retries_by_node: BTreeMap<NodeId, u8>,
     pub entrypoint_text: Option<String>,
@@ -81,8 +77,6 @@ pub fn collect_checkpoint_node_ids(checkpoint: &InteractiveEngineCheckpoint) -> 
     ids.extend(checkpoint.transcripts.keys().cloned());
     ids.extend(checkpoint.changed_files_by_node.keys().cloned());
     ids.extend(checkpoint.reads_by_node.keys().cloned());
-    ids.extend(checkpoint.started_invocations_by_node.keys().cloned());
-    ids.extend(checkpoint.queued_nodes.iter().cloned());
     ids.extend(checkpoint.awaiting_nodes.iter().cloned());
     ids.extend(checkpoint.interrupted_nodes.iter().cloned());
     ids.extend(checkpoint.failed_nodes.keys().cloned());
@@ -134,8 +128,6 @@ impl InteractiveEngine {
             changed_files_by_node: self.changed_files_by_node.clone(),
             reads_by_node: self.reads_by_node.clone(),
             transcripts: self.transcripts.clone(),
-            queued_nodes: self.queued_nodes.clone(),
-            started_invocations_by_node: self.started_invocations_by_node.clone(),
             awaiting_nodes: self.awaiting_nodes.clone(),
             pending_tool_batches: self
                 .pending_tool_batches
@@ -143,9 +135,6 @@ impl InteractiveEngine {
                 .map(|(id, batch)| (id.clone(), CheckpointPendingToolBatch::from(batch)))
                 .collect(),
             retries_by_node: self.retries_by_node.clone(),
-            pending_retry_delay_ms: self
-                .pending_retry_delay
-                .and_then(|delay| u64::try_from(delay.as_millis()).ok()),
             submit_output_retries_by_node: self.submit_output_retries_by_node.clone(),
             request_input_retries_by_node: self.request_input_retries_by_node.clone(),
             entrypoint_text: self.entrypoint_text.clone(),
@@ -163,12 +152,6 @@ impl InteractiveEngine {
         checkpoint: InteractiveEngineCheckpoint,
         project_repository_root: Option<String>,
     ) -> Result<Self, CheckpointError> {
-        if workflow.id != checkpoint.workflow_id {
-            return Err(CheckpointError::WorkflowMismatch {
-                checkpoint: checkpoint.workflow_id,
-                workflow: workflow.id,
-            });
-        }
         validate_checkpoint_against_workflow(&workflow, &checkpoint)?;
 
         let layers = crate::graph::validation::execution_layers(&workflow)?;
@@ -193,8 +176,6 @@ impl InteractiveEngine {
             redundant_reads: 0,
             tokens_in: 0,
             transcripts: checkpoint.transcripts,
-            queued_nodes: checkpoint.queued_nodes,
-            started_invocations_by_node: checkpoint.started_invocations_by_node,
             awaiting_nodes: checkpoint.awaiting_nodes,
             in_flight_ai: BTreeSet::new(),
             pending_tool_batches: checkpoint
@@ -203,7 +184,7 @@ impl InteractiveEngine {
                 .map(|(id, batch)| (id.clone(), PendingToolBatch::from(batch)))
                 .collect(),
             retries_by_node: checkpoint.retries_by_node,
-            pending_retry_delay: checkpoint.pending_retry_delay_ms.map(Duration::from_millis),
+            pending_retry_delay: None,
             submit_output_retries_by_node: checkpoint.submit_output_retries_by_node,
             request_input_retries_by_node: checkpoint.request_input_retries_by_node,
             entrypoint_text: checkpoint.entrypoint_text,

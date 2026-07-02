@@ -44,10 +44,23 @@ pub fn handle_declare_subagents(
     tool_call: &ToolCall,
     declared_subagents: &mut BTreeMap<String, SubagentSummary>,
 ) -> DeclareSubagentsOutcome {
-    let declarations =
-        serde_json::from_value::<SubagentDeclarationBatch>(tool_call.arguments.clone())
-            .map(|batch| batch.subagents)
-            .unwrap_or_default();
+    let declarations = match serde_json::from_value::<SubagentDeclarationBatch>(
+        tool_call.arguments.clone(),
+    ) {
+        Ok(batch) => batch.subagents,
+        Err(err) => {
+            return DeclareSubagentsOutcome {
+                    summaries: Vec::new(),
+                    tool_result: error_tool_result(
+                        tool_call,
+                        format!(
+                            "Invalid arguments for {DECLARE_SUBAGENTS_TOOL}: {err}. \
+                             Expected {{\"subagents\": [{{\"name\": \"...\", \"purpose\": \"...\"}}]}}."
+                        ),
+                    ),
+                };
+        }
+    };
     let base_index = adhoc_subagent_base_index(node_id, declared_subagents);
     let summaries = build_adhoc_subagent_summaries(node_id, &declarations, base_index);
     merge_subagent_summaries(declared_subagents, &summaries);
@@ -151,9 +164,6 @@ pub fn start_subagent_invoke(
         ));
     }
 
-    subagent.status = SubagentStatus::Active;
-    declared_subagents.insert(subagent.id.clone(), subagent.clone());
-
     let Some(parent_node) = workflow.nodes.iter().find(|n| n.id == *parent_node_id) else {
         return SubagentStartOutcome::Failed(error_tool_result(
             tool_call,
@@ -161,7 +171,10 @@ pub fn start_subagent_invoke(
         ));
     };
 
-    let sub_request = if let Some(agent_def) = agent_snapshots.get(&call_args.subagent_id) {
+    subagent.status = SubagentStatus::Active;
+    declared_subagents.insert(subagent.id.clone(), subagent.clone());
+
+    let mut sub_request = if let Some(agent_def) = agent_snapshots.get(&call_args.subagent_id) {
         build_saved_agent_request(
             workflow,
             agent_def,
@@ -178,6 +191,9 @@ pub fn start_subagent_invoke(
             available_tools,
         )
     };
+    if sub_request.model.trim().is_empty() {
+        sub_request.model.clone_from(&parent_node.agent.model);
+    }
 
     let telemetry = vec![RunTelemetry::SubagentStarted {
         node_id: parent_node_id.clone(),
@@ -453,6 +469,92 @@ mod tests {
                 assert_eq!(session.request.output_schema["type"], "object");
             }
             SubagentStartOutcome::Failed(_) => panic!("expected subagent start"),
+        }
+    }
+
+    #[test]
+    fn failed_start_does_not_mark_subagent_active() {
+        let workflow = Workflow::new("Test");
+        let mut declared = std::collections::BTreeMap::new();
+        declared.insert(
+            "sub-1".to_string(),
+            SubagentSummary {
+                id: "sub-1".to_string(),
+                name: "Researcher".to_string(),
+                purpose: "Find facts".to_string(),
+                status: SubagentStatus::Declared,
+            },
+        );
+        let tool_call = ToolCall {
+            id: "call-1".to_string(),
+            name: CALL_SUBAGENT_TOOL.to_string(),
+            arguments: json!({ "subagent_id": "sub-1", "input": "go" }),
+        };
+
+        match start_subagent_invoke(
+            &workflow,
+            &NodeId("missing-parent".to_string()),
+            &tool_call,
+            &mut declared,
+            &std::collections::BTreeMap::new(),
+            Vec::new(),
+        ) {
+            SubagentStartOutcome::Failed(result) => assert!(result.is_error),
+            SubagentStartOutcome::Started(..) => panic!("expected failure"),
+        }
+        assert_eq!(declared["sub-1"].status, SubagentStatus::Declared);
+    }
+
+    #[test]
+    fn declare_subagents_rejects_malformed_arguments() {
+        let mut declared = std::collections::BTreeMap::new();
+        let tool_call = ToolCall {
+            id: "call-1".to_string(),
+            name: DECLARE_SUBAGENTS_TOOL.to_string(),
+            arguments: json!({ "subagents": "not-an-array" }),
+        };
+
+        let outcome =
+            handle_declare_subagents(&NodeId("n1".to_string()), &tool_call, &mut declared);
+
+        assert!(outcome.tool_result.is_error);
+        assert!(outcome.summaries.is_empty());
+        assert!(declared.is_empty());
+    }
+
+    #[test]
+    fn saved_agent_without_model_inherits_parent_model() {
+        let mut workflow = Workflow::new("Test");
+        let mut node = crate::Node::agent("Parent", 0.0, 0.0);
+        node.id = NodeId("parent".to_string());
+        node.agent.model = "parent-model".to_string();
+        workflow.nodes.push(node);
+
+        let mut agent = CallableAgent::new("Helper");
+        agent.id = "agent-1".to_string();
+        let mut snapshots = std::collections::BTreeMap::new();
+        snapshots.insert("agent-1".to_string(), agent);
+
+        let tool_call = ToolCall {
+            id: "call-1".to_string(),
+            name: CALL_SUBAGENT_TOOL.to_string(),
+            arguments: json!({ "subagent_id": "agent-1", "input": "go" }),
+        };
+
+        match start_subagent_invoke(
+            &workflow,
+            &NodeId("parent".to_string()),
+            &tool_call,
+            &mut std::collections::BTreeMap::new(),
+            &snapshots,
+            Vec::new(),
+        ) {
+            SubagentStartOutcome::Started(session, _) => {
+                assert_eq!(session.request.model, "parent-model");
+            }
+            SubagentStartOutcome::Failed(result) => {
+                panic!("unexpected failure: {}", result.content);
+            }
         }
     }
 

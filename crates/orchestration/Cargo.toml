@@ -1,6 +1,6 @@
 [package]
 name = "orchestration"
-version = "0.1.10"
+version = "0.1.12"
 edition.workspace = true
 description.workspace = true
 license.workspace = true
@@ -23,7 +23,7 @@ chrono-tz.workspace = true
 cron.workspace = true
 dirs.workspace = true
 log = "0.4"
-providers = { path = "../providers", version = "0.1.9" }
+providers = { path = "../providers", version = "0.1.11" }
 serde.workspace = true
 glob = "0.3.2"
 grep-regex = "0.1"
