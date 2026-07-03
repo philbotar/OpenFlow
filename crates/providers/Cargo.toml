@@ -1,6 +1,6 @@
 [package]
 name = "providers"
-version = "0.1.11"
+version = "0.1.12"
 edition.workspace = true
 description.workspace = true
 license.workspace = true
@@ -23,7 +23,7 @@ reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 jsonrepair-rs.workspace = true
-engine = { path = "../engine", version = "0.1.1" }
+engine = { path = "../engine", version = "0.1.5" }
 futures.workspace = true
 tokio = { workspace = true, features = ["time", "process"] }
 aws-config = { workspace = true, optional = true }
