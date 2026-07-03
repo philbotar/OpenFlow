@@ -266,9 +266,7 @@ pub(super) async fn await_interaction_actions(
                 reason,
             } => {
                 if !pause.approvals.contains(&approval_id) {
-                    log::warn!(
-                        "ignored approval {approval_id}: not in current interaction pause"
-                    );
+                    log::warn!("ignored approval {approval_id}: not in current interaction pause");
                     continue;
                 }
                 let Some(node_id) = engine

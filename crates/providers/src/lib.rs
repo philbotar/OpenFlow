@@ -5,7 +5,6 @@
 
 pub(crate) mod anthropic;
 pub(crate) mod auth;
-pub(crate) mod http_errors;
 #[cfg(feature = "bedrock")]
 pub(crate) mod aws_runtime;
 #[cfg(feature = "bedrock")]
@@ -15,6 +14,7 @@ pub(crate) mod bedrock_errors;
 #[cfg(feature = "bedrock")]
 pub(crate) mod bedrock_models;
 mod client;
+pub(crate) mod http_errors;
 pub(crate) mod mapping;
 pub(crate) mod openai_compat;
 pub(crate) mod prompt_cache;

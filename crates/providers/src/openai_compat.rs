@@ -2,8 +2,9 @@ use crate::auth::{apply_auth, AuthConfig};
 use crate::client::AiClientConfig;
 use crate::http_errors::classify_http_status;
 use crate::mapping::{
-    all_tool_specs, chat_completions_tool_payload, parse_chat_completion_output, parse_responses_output,
-    should_allow_user_input, tool_payload, transcript_to_chat_messages, transcript_to_responses_input,
+    all_tool_specs, chat_completions_tool_payload, parse_chat_completion_output,
+    parse_responses_output, should_allow_user_input, tool_payload, transcript_to_chat_messages,
+    transcript_to_responses_input,
 };
 use crate::prompt_cache::{apply_openai_cache_key, openai_compat_cache_key_enabled};
 use crate::spec::WireApi;

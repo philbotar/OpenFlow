@@ -44,15 +44,14 @@ mod tests {
 
     #[test]
     fn rate_limit_and_server_errors_are_transient() {
-        assert!(
-            classify_http_status(429, "rate limited", "OpenAI-compatible").is_retryable()
-        );
+        assert!(classify_http_status(429, "rate limited", "OpenAI-compatible").is_retryable());
         assert!(classify_http_status(500, "boom", "OpenAI-compatible").is_retryable());
     }
 
     #[test]
     fn opaque_proxy_upstream_400_is_transient() {
-        let body = r#"{"error":{"message":"Error from provider (Console Go): Upstream request failed"}}"#;
+        let body =
+            r#"{"error":{"message":"Error from provider (Console Go): Upstream request failed"}}"#;
         let err = classify_http_status(400, body, "OpenAI-compatible");
         assert!(err.is_retryable(), "expected transient, got {err}");
     }
