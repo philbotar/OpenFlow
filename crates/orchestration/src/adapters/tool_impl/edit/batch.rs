@@ -6,7 +6,6 @@ use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use engine::{EditBatch, FileSnapshot, NodeId};
-use serde::Deserialize;
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -16,6 +15,7 @@ use super::hashline::input::Patch;
 use super::hashline::snapshots::{InMemorySnapshotStore, SnapshotStore};
 use super::hashline::types::SplitOptions;
 use super::path::resolve_writable;
+use super::tool_args::{PatchEnvelopeArgs, ToolPathArg};
 use crate::tools::registry::BuiltinToolKind;
 
 pub fn capture_edit_batch(
@@ -102,20 +102,12 @@ fn revert_restore_existing(cwd: &Path, snapshot: &FileSnapshot) -> Result<(), St
 fn collect_edit_paths(kind: BuiltinToolKind, args: &Value, cwd: &Path) -> Option<Vec<String>> {
     match kind {
         BuiltinToolKind::Write => {
-            #[derive(Deserialize)]
-            struct WriteArgs {
-                path: String,
-            }
-            let args: WriteArgs = serde_json::from_value(args.clone()).ok()?;
+            let args: ToolPathArg = serde_json::from_value(args.clone()).ok()?;
             Some(vec![args.path])
         }
         BuiltinToolKind::Edit => {
             if args.get("input").is_some() {
-                #[derive(Deserialize)]
-                struct HashlineArgs {
-                    input: String,
-                }
-                let args: HashlineArgs = serde_json::from_value(args.clone()).ok()?;
+                let args: PatchEnvelopeArgs = serde_json::from_value(args.clone()).ok()?;
                 let cwd_display = cwd.to_string_lossy().into_owned();
                 let patch = Patch::parse(
                     &args.input,
@@ -132,20 +124,12 @@ fn collect_edit_paths(kind: BuiltinToolKind, args: &Value, cwd: &Path) -> Option
                     .collect::<Vec<_>>();
                 Some(paths)
             } else {
-                #[derive(Deserialize)]
-                struct EditArgs {
-                    path: String,
-                }
-                let args: EditArgs = serde_json::from_value(args.clone()).ok()?;
+                let args: ToolPathArg = serde_json::from_value(args.clone()).ok()?;
                 Some(vec![args.path])
             }
         }
         BuiltinToolKind::ApplyPatch => {
-            #[derive(Deserialize)]
-            struct ApplyPatchArgs {
-                input: String,
-            }
-            let args: ApplyPatchArgs = serde_json::from_value(args.clone()).ok()?;
+            let args: PatchEnvelopeArgs = serde_json::from_value(args.clone()).ok()?;
             let inputs = expand_apply_patch_to_inputs(&args.input).ok()?;
             let mut paths = BTreeSet::new();
             for input in inputs {

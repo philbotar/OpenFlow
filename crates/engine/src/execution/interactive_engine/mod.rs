@@ -4,10 +4,7 @@ mod completion;
 mod tests;
 mod tools;
 
-pub use checkpoint::{
-    collect_checkpoint_node_ids, validate_checkpoint_against_workflow, CheckpointError,
-    InteractiveEngineCheckpoint,
-};
+pub use checkpoint::{validate_checkpoint_against_workflow, InteractiveEngineCheckpoint};
 
 use crate::conversation::{AgentTranscriptItem, ChatMessage, ChatRole};
 use crate::execution::node_invocation::{
@@ -675,24 +672,6 @@ impl InteractiveEngine {
             node_id: node_id.clone(),
             kind: NodeFailureKind::MisroutedCompletion(message),
         });
-    }
-}
-
-impl crate::ports::inbound::HumanInputPort for InteractiveEngine {
-    fn submit_human_input(
-        &mut self,
-        input: crate::ports::inbound::HumanInput,
-    ) -> Result<(), EngineInputError> {
-        self.on_human_input(&input.node_id, &input.text)
-    }
-}
-
-impl crate::ports::inbound::ToolApprovalPort for InteractiveEngine {
-    fn submit_tool_approval(
-        &mut self,
-        input: crate::ports::inbound::ToolApprovalInput,
-    ) -> Result<(), EngineInputError> {
-        self.on_tool_decision(&input.approval_id, input.allow, input.reason.as_deref())
     }
 }
 

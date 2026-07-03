@@ -21,12 +21,7 @@ pub const HL_FILE_HASH_SEP: &str = "#";
 pub const HL_RANGE_SEP: &str = "..";
 pub const HL_LINE_BODY_SEP: &str = ":";
 
-pub const HL_LINE_RE_RAW: &str = r"[1-9]\d*";
-pub const HL_LINE_CAPTURE_RE_RAW: &str = r"([1-9]\d*)";
 pub const HL_FILE_HASH_LENGTH: usize = 4;
-pub const HL_FILE_HASH_RE_RAW: &str = "[0-9A-F]{4}";
-pub const HL_FILE_HASH_CAPTURE_RE_RAW: &str = "([0-9A-F]{4})";
-pub const HL_LINE_BODY_SEP_RE_RAW: &str = ":";
 
 pub const HL_FILE_HASH_EXAMPLES: [&str; 3] = ["1A2B", "3C4D", "9F3E"];
 

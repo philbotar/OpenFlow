@@ -353,9 +353,9 @@ impl AiPort for MalformedSubmitThenDraftAi {
     async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
         let call = self.calls.fetch_add(1, Ordering::SeqCst);
         if call == 0 {
-            return Err(AgentError::Failed(
-                "OpenAI-compatible final output tool arguments were not valid JSON: missing field `output`"
-                    .to_string(),
+            return Err(AgentError::malformed_submit_output(
+                "OpenAI-compatible",
+                "missing field `output`",
             ));
         }
         assert!(

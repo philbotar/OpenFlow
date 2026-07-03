@@ -5,6 +5,7 @@ export * from "./FirstRunOnboarding";
 export * from "./InspectorSection";
 export * from "./NodePickerModal";
 export * from "./PanelEmptyState";
+export * from "./PickerModal";
 export * from "./ScheduleTimePickerModal";
 export * from "./ScheduleWorkflowPickerModal";
 export * from "./ShortcutsModal";

@@ -609,7 +609,7 @@ Agents can already ask for free-text input via `openflow_request_user_input` (`A
 | Layer | Role |
 | --- | --- |
 | `crates/ui/src/lib/workflow.ts` | `projectChatLayout` — layer order, settled vs live columns, overflow tabs |
-| `crates/ui/src/context/AppProvider.tsx` | Merged layout state, kickoff/flush, per-node draft + submit routing |
+| `crates/ui/src/context/appProvider/useRunSession.ts` + `useChatComposer.ts` | Merged layout state, kickoff/flush, per-node draft + submit routing |
 | `crates/ui/src/components/conversation/ChatPanel.tsx` | Settled segments + live column strip |
 | `crates/orchestration/src/run/state/` | `chatLogs: Record<NodeId, ChatMessage[]>` — source of truth |
 
@@ -684,7 +684,7 @@ Users can invoke skills with `/skill` tokens and attach project context with `@{
 | `crates/ui/src/lib/fileReferences.ts` | `@` / `@{path}` token parsing, completion, path extraction, inline formatting — **Done** |
 | `crates/ui/src/components/conversation/FileReferenceCombobox.tsx` | Project file combobox in composer — **Done** |
 | `crates/orchestration/src/project/file_refs.rs` | List + read referenced paths under execution cwd jail — **Done** |
-| `crates/ui/src/context/AppProvider.tsx` | `resolveChatSubmittedText` reads refs before `submit_user_input` / run kickoff — **Done** |
+| `crates/ui/src/context/appProvider/useChatComposer.ts` | `resolveChatSubmission` reads refs before `submit_user_input` / run kickoff — **Done** |
 | `crates/ui/src/components/conversation/` | No attach button, drag-drop target, reference pills, or preview chrome |
 | `crates/engine/src/execution/` | User input is a single string; no structured `referenced_files` in transcript or node input |
 
@@ -1057,7 +1057,7 @@ Structural cleanup by workspace section. Keep engine semantics in `engine`, prov
 | Remove unused port scaffolding; typed template errors; remove `InteractiveEngine::poll` | Done |
 | Collapse `model::NodeTemplate` vs `template::Template` (T2) | Done |
 | Node lookup index — `HashMap<NodeId, usize>` (T3) | Done |
-| Make `HumanInputPort` / `ToolApprovalPort` load-bearing (T14) | Planned |
+| Remove unused inbound port scaffolding; use inherent resume methods (T14) | Done |
 | Move `ScriptedAiAdapter` to outbound placement (T15) | Planned |
 | Unify serde casing on wire types (T16) | Planned |
 | Remove legacy snake_case ↔ camelCase / PascalCase serde aliases — `ChatRole`, `NodeKind`, `CallableAgent` fields, run report enums; after T16 | Planned |
@@ -1101,7 +1101,7 @@ Structural cleanup by workspace section. Keep engine semantics in `engine`, prov
 | Item | Status |
 | --- | --- |
 | Split shell — `context/`, `screens/`, `panels/`, `components/`, `forms/` | Done |
-| `UiDesktopOutboundPort` in `port.ts` | Done |
+| UI desktop wrappers in `api.ts` | Done |
 | Reusable sidebar primitives; shared Agents screen list rows | Done |
 | Run stop button + `stopRun` IPC wiring | Done |
 | Slim `AppProvider` — extract run listeners, zoom, dock resize into hooks/modules | Planned |
@@ -1159,7 +1159,7 @@ Remediation for modeled-but-unwired behavior and correctness gaps in `crates/eng
 | T11 Fix run-event semantics | P2 | Emit `Started` at `CallAi`; remove provider branding — Done |
 | T12 Surface template store persistence errors | P1 | Return `Result` from store mutations — Done |
 | T13 Engine input error enum | P2 | Replace `Result<(), String>` with `EngineInputError` |
-| T14 Make inbound ports load-bearing | P2 | Implement `HumanInputPort` / `ToolApprovalPort` on engine |
+| T14 Remove inbound port scaffolding | P2 | Done — use `InteractiveEngine::on_human_input` / `on_tool_decision`; add traits only if a real consumer is typed on them |
 
 ### Phase 4 — Cleanup
 

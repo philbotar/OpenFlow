@@ -4,8 +4,8 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { SubagentStatus, Workflow } from "../lib/types";
+import { createEmptyToolConfig } from "../lib/workflow/testHelpers";
 import {
-  createEmptyToolConfig,
   projectWorkflowCanvasGraph,
   type WorkflowCanvasStatusByNode,
   type WorkflowCanvasSubagentsByNode,
@@ -17,11 +17,8 @@ import {
   forEachNodePositionChange,
   forEachRemovedEdge,
   graphStructureSignature,
-  withoutNodeRemovals,
   isValidCanvasConnection,
   reconcileFlowNodes,
-  selectionIdsFromChange,
-  shouldEmitSelectionChange,
   withoutProgrammaticNodeChanges,
   type WorkflowCanvasEdge,
   type WorkflowCanvasNode,
@@ -217,19 +214,6 @@ describe("WorkflowCanvas adapter helpers", () => {
     expect(reconcileFlowNodes(current, incoming)).toBe(current);
   });
 
-  test("withoutNodeRemovals drops remove changes", () => {
-    const changes: NodeChange<WorkflowCanvasNode>[] = [
-      { id: "node-1", type: "select", selected: true },
-      { id: "node-2", type: "remove" },
-      { id: "node-1", type: "position", position: { x: 128, y: 128 }, positionAbsolute: { x: 128, y: 128 }, dragging: false },
-    ];
-
-    expect(withoutNodeRemovals(changes)).toEqual([
-      { id: "node-1", type: "select", selected: true },
-      { id: "node-1", type: "position", position: { x: 128, y: 128 }, positionAbsolute: { x: 128, y: 128 }, dragging: false },
-    ]);
-  });
-
   test("withoutProgrammaticNodeChanges drops select and remove changes", () => {
     const changes: NodeChange<WorkflowCanvasNode>[] = [
       { id: "node-1", type: "select", selected: true },
@@ -267,42 +251,6 @@ describe("WorkflowCanvas adapter helpers", () => {
 
     expect(onDeleteEdge).toHaveBeenCalledTimes(1);
     expect(onDeleteEdge).toHaveBeenCalledWith("edge-2");
-  });
-
-  test("selectionIdsFromChange prefers the first selected node and edge", () => {
-    expect(
-      selectionIdsFromChange({
-        nodes: [{ id: "node-2" } as WorkflowCanvasNode],
-        edges: [{ id: "edge-1" } as WorkflowCanvasEdge],
-      }),
-    ).toEqual({
-      selectedNodeId: "node-2",
-      selectedEdgeId: "edge-1",
-    });
-  });
-
-  test("shouldEmitSelectionChange returns false when selection is unchanged", () => {
-    expect(
-      shouldEmitSelectionChange(
-        { selectedNodeId: "node-1", selectedEdgeId: null },
-        { selectedNodeId: "node-1", selectedEdgeId: null },
-      ),
-    ).toBe(false);
-  });
-
-  test("shouldEmitSelectionChange returns true when node or edge changes", () => {
-    expect(
-      shouldEmitSelectionChange(
-        { selectedNodeId: "node-1", selectedEdgeId: null },
-        { selectedNodeId: "node-2", selectedEdgeId: null },
-      ),
-    ).toBe(true);
-    expect(
-      shouldEmitSelectionChange(
-        { selectedNodeId: "node-1", selectedEdgeId: null },
-        { selectedNodeId: "node-1", selectedEdgeId: "edge-1" },
-      ),
-    ).toBe(true);
   });
 
   test("isValidCanvasConnection rejects self loops", () => {

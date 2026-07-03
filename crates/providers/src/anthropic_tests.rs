@@ -2,7 +2,7 @@ use super::*;
 use crate::auth::AuthConfig;
 use crate::client::AnthropicConfig;
 use crate::{AiClient, AiClientConfig, ProviderAdapterConfig, ProviderId};
-use engine::{AiPort, ToolDefinition};
+use engine::{AgentToolCallBatch, AiPort, ToolDefinition};
 use wiremock::matchers::{body_json, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -152,8 +152,8 @@ fn tool_loop_cache_control_expected_body() -> Value {
                         "required": ["summary"]
                     },
                     "assistant_message": {
-                        "type": ["string", "null"],
-                        "description": "Optional human-facing note to show alongside the final result."
+                        "type": "string",
+                        "description": "Optional human-facing note to show alongside the final result. Use an empty string when none."
                     }
                 },
                 "required": ["output", "assistant_message"]
@@ -200,8 +200,8 @@ async fn messages_request_sends_headers_body_and_parses_internal_submit_output()
                             "required": ["summary"]
                         },
                         "assistant_message": {
-                            "type": ["string", "null"],
-                            "description": "Optional human-facing note to show alongside the final result."
+                            "type": "string",
+                            "description": "Optional human-facing note to show alongside the final result. Use an empty string when none."
                         }
                     },
                     "required": ["output", "assistant_message"]
@@ -209,6 +209,10 @@ async fn messages_request_sends_headers_body_and_parses_internal_submit_output()
             }]
         })))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "usage": {
+                "input_tokens": 101,
+                "output_tokens": 19
+            },
             "content": [{
                 "type": "tool_use",
                 "id": "toolu_1",
@@ -231,6 +235,14 @@ async fn messages_request_sends_headers_body_and_parses_internal_submit_output()
         serde_json::from_str::<Value>(&success.raw_text).unwrap(),
         json!({"output": {"summary": "done"}, "assistant_message": null})
     );
+    assert_eq!(
+        success.usage,
+        Some(engine::UsageReport {
+            prompt_tokens: 101,
+            completion_tokens: 19,
+            total_tokens: 120,
+        })
+    );
 }
 
 #[tokio::test]
@@ -239,6 +251,11 @@ async fn messages_response_routes_external_tool_calls() {
     Mock::given(method("POST"))
         .and(path("/v1/messages"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "usage": {
+                "input_tokens": 88,
+                "output_tokens": 12,
+                "total_tokens": 111
+            },
             "content": [
                 {"type": "text", "text": "I need to inspect the README."},
                 {
@@ -266,7 +283,11 @@ async fn messages_response_routes_external_tool_calls() {
                 name: "read".to_string(),
                 arguments: json!({"path": "README.md"}),
             }],
-            usage: None,
+            usage: Some(engine::UsageReport {
+                prompt_tokens: 88,
+                completion_tokens: 12,
+                total_tokens: 111,
+            }),
         })
     );
 }
@@ -305,8 +326,8 @@ async fn messages_tool_loop_places_cache_control_on_second_to_last_message() {
 #[tokio::test]
 async fn messages_errors_map_auth_and_rate_limit_statuses() {
     for (status, expected, retryable) in [
-        (401, "Anthropic authentication failed", false),
-        (429, "Anthropic rate limit exceeded", true),
+        (401, "Anthropic returned HTTP 401", false),
+        (429, "Anthropic returned HTTP 429", true),
     ] {
         let server = MockServer::start().await;
         Mock::given(method("POST"))

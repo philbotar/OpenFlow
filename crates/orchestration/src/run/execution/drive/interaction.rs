@@ -249,11 +249,8 @@ pub(super) async fn await_interaction_actions(
             ExecutionAction::ProvideInput { node_id, text } => {
                 // Stale actions (wrong pause) are logged and skipped — UI may race with resume.
                 if !pause.inputs.contains(&node_id) {
-                    send_or_log(
-                        event_tx,
-                        ExecutionEvent::Error(format!(
-                            "ignored input for node {node_id}: not in current interaction pause"
-                        )),
+                    log::warn!(
+                        "ignored input for node {node_id}: not in current interaction pause"
                     );
                     continue;
                 }
@@ -269,12 +266,7 @@ pub(super) async fn await_interaction_actions(
                 reason,
             } => {
                 if !pause.approvals.contains(&approval_id) {
-                    send_or_log(
-                        event_tx,
-                        ExecutionEvent::Error(format!(
-                            "ignored approval {approval_id}: not in current interaction pause"
-                        )),
-                    );
+                    log::warn!("ignored approval {approval_id}: not in current interaction pause");
                     continue;
                 }
                 let Some(node_id) = engine
@@ -326,11 +318,8 @@ pub(super) async fn await_interaction_actions(
             }
             ExecutionAction::RetryNode { node_id } => {
                 if !pause.retryables.contains(&node_id) {
-                    send_or_log(
-                        event_tx,
-                        ExecutionEvent::Error(format!(
-                            "ignored retry for node {node_id}: not in current interaction pause"
-                        )),
+                    log::warn!(
+                        "ignored retry for node {node_id}: not in current interaction pause"
                     );
                     continue;
                 }

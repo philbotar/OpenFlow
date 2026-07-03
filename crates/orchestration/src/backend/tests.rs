@@ -1,6 +1,7 @@
 use super::*;
 use crate::run::execution::{ExecutionAction, ExecutionEvent};
-use crate::settings::model::{ProviderProfile, ProviderTransport};
+use crate::run::state::WorkflowRunState;
+use crate::settings::model::{AppSettings, ProviderProfile, ProviderTransport};
 use crate::workflow::catalog::default_workflow;
 use engine::{Node, NodeId, Workflow};
 use providers::ProviderId;
@@ -566,7 +567,7 @@ fn assign_workflow_to_project_round_trips() {
         .expect("assign workflow");
 
     assert_eq!(projects[0].workflow_ids, vec![workflow.id.to_string()]);
-    let loaded = backend.load_projects().expect("load projects");
+    let loaded = backend.list_projects().expect("list projects");
     assert_eq!(loaded[0].workflow_ids, vec![workflow.id.to_string()]);
 }
 

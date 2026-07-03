@@ -2,14 +2,13 @@
 
 use super::normalize::{normalize_for_fuzzy, normalize_unicode};
 use super::replace::{
-    find_match, line_similarity, FindMatchOptions, DOMINANT_FUZZY_DELTA,
-    DOMINANT_FUZZY_MIN_CONFIDENCE,
+    find_match, fuzzy_line_partial_includes, fuzzy_line_starts_with, fuzzy_sequence_score_at,
+    is_dominant_fuzzy_match, line_similarity, FindMatchOptions, PARTIAL_MATCH_MIN_LENGTH,
+    PARTIAL_MATCH_MIN_RATIO,
 };
 
 const SEQUENCE_FUZZY_THRESHOLD: f64 = 0.92;
 const CONTEXT_FUZZY_THRESHOLD: f64 = 0.8;
-const PARTIAL_MATCH_MIN_LENGTH: usize = 6;
-const PARTIAL_MATCH_MIN_RATIO: f64 = 0.3;
 const MAX_RECORDED_MATCHES: usize = 5;
 const CHARACTER_MATCH_THRESHOLD: f64 = 0.92;
 
@@ -100,40 +99,6 @@ fn matches_at(
         .iter()
         .enumerate()
         .all(|(j, pat_line)| compare(&lines[i + j], pat_line))
-}
-
-fn fuzzy_score_at(lines: &[String], pattern: &[String], i: usize) -> f64 {
-    let mut total = 0.0;
-    for (j, pat_line) in pattern.iter().enumerate() {
-        let line_norm = normalize_for_fuzzy(&lines[i + j]);
-        let pattern_norm = normalize_for_fuzzy(pat_line);
-        total += line_similarity(&line_norm, &pattern_norm);
-    }
-    total / pattern.len() as f64
-}
-
-fn line_starts_with_pattern(line: &str, pattern: &str) -> bool {
-    let line_norm = normalize_for_fuzzy(line);
-    let pattern_norm = normalize_for_fuzzy(pattern);
-    if pattern_norm.is_empty() {
-        return line_norm.is_empty();
-    }
-    line_norm.starts_with(&pattern_norm)
-}
-
-fn line_includes_pattern(line: &str, pattern: &str) -> bool {
-    let line_norm = normalize_for_fuzzy(line);
-    let pattern_norm = normalize_for_fuzzy(pattern);
-    if pattern_norm.is_empty() {
-        return line_norm.is_empty();
-    }
-    if pattern_norm.len() < PARTIAL_MATCH_MIN_LENGTH {
-        return false;
-    }
-    if !line_norm.contains(&pattern_norm) {
-        return false;
-    }
-    pattern_norm.len() as f64 / line_norm.len().max(1) as f64 >= PARTIAL_MATCH_MIN_RATIO
 }
 
 fn strip_comment_prefix(line: &str) -> String {
@@ -247,13 +212,13 @@ pub fn seek_sequence(
         }
 
         try_pass!(
-            line_starts_with_pattern,
+            fuzzy_line_starts_with,
             0.965,
             SequenceMatchStrategy::Prefix,
             true
         );
         try_pass!(
-            line_includes_pattern,
+            fuzzy_line_partial_includes,
             0.94,
             SequenceMatchStrategy::Substring,
             true
@@ -288,7 +253,7 @@ pub fn seek_sequence(
 
     let mut score_fuzzy_range = |from: usize, to: usize| {
         for i in from..=to {
-            let score = fuzzy_score_at(lines, pattern, i);
+            let score = fuzzy_sequence_score_at(lines, pattern, i);
             if score >= SEQUENCE_FUZZY_THRESHOLD {
                 if fuzzy_first.is_none() {
                     fuzzy_first = Some(i);
@@ -314,10 +279,7 @@ pub fn seek_sequence(
     }
 
     if let Some(index) = best_index.filter(|_| best_score >= SEQUENCE_FUZZY_THRESHOLD) {
-        if fuzzy_count > 1
-            && best_score >= DOMINANT_FUZZY_MIN_CONFIDENCE
-            && best_score - second_best_score >= DOMINANT_FUZZY_DELTA
-        {
+        if is_dominant_fuzzy_match(fuzzy_count, best_score, second_best_score) {
             return SequenceSearchResult {
                 index: Some(index),
                 confidence: best_score,
@@ -403,7 +365,7 @@ pub fn find_closest_sequence_match(
     let mut best_score = 0.0;
 
     for i in search_start..=max_start {
-        let score = fuzzy_score_at(lines, pattern, i);
+        let score = fuzzy_sequence_score_at(lines, pattern, i);
         if score > best_score {
             best_score = score;
             best_index = Some(i);
@@ -412,7 +374,7 @@ pub fn find_closest_sequence_match(
 
     if eof && search_start > start {
         for i in start..search_start {
-            let score = fuzzy_score_at(lines, pattern, i);
+            let score = fuzzy_sequence_score_at(lines, pattern, i);
             if score > best_score {
                 best_score = score;
                 best_index = Some(i);

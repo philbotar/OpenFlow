@@ -14,7 +14,7 @@ Thin Tauri adapter. Maps commands/events to `orchestration::AppBackend`. No engi
 
 ```
 ui (React)
-  │ UiDesktopOutboundPort → api.ts
+  │ api.ts
   ▼
 desktop (Tauri commands + events)
   │ AppBackend methods
@@ -26,8 +26,13 @@ orchestration
 
 | Path | Owns |
 | --- | --- |
-| `lib.rs` | Tauri command handlers, event bridge, app bootstrap |
+| `lib.rs` | Tauri command handlers and app bootstrap |
+| `ipc_types.rs` | Desktop IPC payload and command error types |
 | `main.rs` | Binary entry, Tauri builder |
+| `app_lifecycle.rs` | Window lifecycle cleanup |
+| `run_event_bridge.rs` | Run-state event bridge and coalescing |
+| `schedule_events.rs` | Schedule polling and status event emission |
+| `terminal_events.rs` | Terminal event forwarding |
 | `run_sleep_guard.rs` | macOS sleep prevention during runs |
 
 Desktop is **transport only**: serialize DTOs, call `AppBackend`, emit events to UI.
@@ -56,8 +61,8 @@ Desktop is **transport only**: serialize DTOs, call `AppBackend`, emit events to
 | Change | Location |
 | --- | --- |
 | New IPC command | `lib.rs` handler + matching method in `orchestration/backend/mod.rs` |
-| New event to UI | `lib.rs` emit + `ui/src/api.ts` listener + `port.ts` if part of seam |
-| App bootstrap payload | `BootstrapPayload` in `lib.rs` + `ui/lib/types.ts` |
+| New event to UI | `lib.rs` emit + `ui/src/api.ts` listener |
+| App bootstrap payload | `BootstrapPayload` in `ipc_types.rs` + `ui/lib/types.ts` |
 | Tauri plugin/window setup | `main.rs` or `lib.rs` setup hook |
 
 ### Request flow (run state)
@@ -88,7 +93,7 @@ Test command wiring and payload shapes. Mock `AppBackend` where needed.
 
 1. Handler delegates to `AppBackend` — no orchestration logic inlined?
 2. No `engine` or `providers` imports?
-3. Frontend seam updated (`api.ts`, `port.ts`, `types.ts`) if contract changed?
+3. Frontend seam updated (`api.ts`, `types.ts`) if contract changed?
 4. Run `./scripts/verify.sh test arch`.
 
 ## Related docs

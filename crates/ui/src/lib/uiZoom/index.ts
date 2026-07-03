@@ -1,7 +1,7 @@
 export const DEFAULT_UI_ZOOM = 1;
 export const MIN_UI_ZOOM = 0.7;
 export const MAX_UI_ZOOM = 1.4;
-export const UI_ZOOM_STEP = 0.1;
+const UI_ZOOM_STEP = 0.1;
 export const UI_ZOOM_STORAGE_KEY = "openflow.uiZoom";
 
 type StorageLike = Pick<Storage, "getItem" | "setItem"> | null | undefined;

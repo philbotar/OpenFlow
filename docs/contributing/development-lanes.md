@@ -8,7 +8,7 @@ Architecture facts live in [`../architecture/contract.md`](../architecture/contr
 
 1. Identify the primary touched path.
 2. Read the matching crate `AGENTS.md`.
-3. Check whether the change crosses a seam (`AiPort`, `ToolPort`, `AppBackend`, `UiDesktopOutboundPort`, provider factory, storage port).
+3. Check whether the change crosses a seam (`AiPort`, `ToolPort`, `AppBackend`, UI `api.ts`, provider factory, storage port).
 4. Pick the narrowest verification lane that proves the behavior.
 5. Run `./scripts/verify.sh` before handoff, commit, or PR.
 
@@ -22,7 +22,7 @@ Architecture facts live in [`../architecture/contract.md`](../architecture/contr
 | Adapter/I/O | Storage files, tool implementations, git/LSP, filesystem or subprocess behavior | `crates/orchestration/AGENTS.md`, `docs/architecture/contract.md` | Focused adapter tests plus `./scripts/check-architecture.sh` |
 | Provider adapter | OpenAI-compatible, Anthropic, request/response mapping, auth, SSE, tool argument repair | `crates/providers/AGENTS.md` | `cargo test -p providers` |
 | Desktop IPC | Tauri command handlers, event bridge, app bootstrap, macOS integration | `crates/desktop/AGENTS.md` | `cargo test -p desktop` |
-| UI/Desktop seam | `UiDesktopOutboundPort`, `api.ts`, frontend DTOs, AppProvider, screens, panels, canvas | `crates/ui/AGENTS.md` | `npm --prefix crates/ui run typecheck` and focused Vitest |
+| UI/Desktop seam | `api.ts`, frontend DTOs, AppProvider, screens, panels, canvas | `crates/ui/AGENTS.md` | `npm --prefix crates/ui run typecheck` and focused Vitest |
 | Cross-crate workflow | A user-visible workflow that crosses engine, orchestration, desktop, and UI | Root `AGENTS.md`, `docs/contributing/testing-workflows.md` | `./scripts/test-fast.sh --execution`; full `./scripts/verify.sh` before handoff |
 
 ## Skill recommendations

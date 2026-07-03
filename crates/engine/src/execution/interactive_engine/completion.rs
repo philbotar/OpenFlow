@@ -5,14 +5,14 @@ use super::{
 use crate::conversation::{
     filter_tool_turn_assistant_message, is_clarifying_question, AgentTranscriptItem,
 };
-use crate::execution::retry::next_retry;
 use crate::execution::tool_results::denied_tool_result;
 use crate::execution::NodeFailureKind;
-use crate::graph::NodeId;
+use crate::graph::{NodeId, RetryPolicy};
 use crate::ports::{
     AgentError, AgentNeedUserInput, AgentToolCallBatch, AgentTurnOutcome, AgentTurnSuccess,
 };
 use crate::tools::{tool_decision_for_call, ToolDecision};
+use std::time::Duration;
 use uuid::Uuid;
 
 impl InteractiveEngine {
@@ -72,18 +72,23 @@ impl InteractiveEngine {
         if !error.is_malformed_submit_output() {
             return false;
         }
+
         let schema_hint = self.find_node(node_id).map_or_else(
             || "see the node output schema".to_string(),
             |node| node.agent.output_schema.to_string(),
         );
+
         let retry_count = self
             .submit_output_retries_by_node
             .entry(node_id.clone())
             .or_default();
+
         if *retry_count >= MAX_MALFORMED_SUBMIT_OUTPUT_RETRIES {
             return false;
         }
+
         *retry_count += 1;
+
         self.transcripts
             .entry(node_id.clone())
             .or_default()
@@ -107,13 +112,16 @@ impl InteractiveEngine {
         if is_clarifying_question(&input.assistant_message) {
             return false;
         }
+
         let retry_count = self
             .request_input_retries_by_node
             .entry(node_id.clone())
             .or_default();
+
         if *retry_count >= MAX_MALFORMED_REQUEST_INPUT_RETRIES {
             return false;
         }
+
         *retry_count += 1;
         self.transcripts.entry(node_id.clone()).or_default().push(
             AgentTranscriptItem::UserMessage {
@@ -219,4 +227,12 @@ impl InteractiveEngine {
         );
         self.awaiting_nodes.insert(node_id.clone());
     }
+}
+
+fn next_retry(policy: &RetryPolicy, retry_count: &mut u8) -> Option<Duration> {
+    if *retry_count >= policy.max_attempts {
+        return None;
+    }
+    *retry_count += 1;
+    Some(policy.delay_for_attempt(*retry_count))
 }

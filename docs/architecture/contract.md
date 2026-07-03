@@ -52,7 +52,7 @@ OpenFlow uses **Hexagonal Architecture with Layers** — nested ports-and-adapte
 
 ### 1. **Engine (crates/engine)**
 - **Role:** Hexagon — workflow execution engine
-- **Scope:** Workflow model, state machine, ports (`AiPort`, `ToolPort`, `HumanInputPort`, `ToolApprovalPort`); self-driving `InteractiveEngine::run()` calls `AiPort` and `ToolPort` internally; surfaces only interaction pauses (`NeedsInteraction`) to orchestration
+- **Scope:** Workflow model, state machine, ports (`AiPort`, `ToolPort`); self-driving `InteractiveEngine::run()` calls `AiPort` and `ToolPort` internally; surfaces only interaction pauses (`NeedsInteraction`) to orchestration
 - **Public interface:** Traits in `ports/` + model types
 - **Dependencies:** None upward; only serialization, async traits, tokio
 
@@ -139,7 +139,7 @@ Checks run in CI via `./scripts/check-architecture.sh`. Machine-readable rules l
 1. **`orchestration → providers` allowlist** — `orchestration/src` may import only listed config/factory symbols; `AiClient` is banned (use `create_provider`).
 2. **Engine invocation locality** — only `orchestration/src/run/execution/` may call `InteractiveEngine::new`.
 3. **Orchestration domain folders** — `agent/`, `workflow/`, `project/`, `settings/`, `tool/` must not `use crate::adapters::`.
-4. **UI Tauri seam** — `@tauri-apps/*` imports only in `api.ts`, `port.ts`, and test mocks.
+4. **UI Tauri seam** — `@tauri-apps/*` imports only in `api.ts` and test mocks.
 
 5. **Orchestration domain store ban** — `agent/`, `workflow/`, `project/`, `settings/`, `tool/` must not `use crate::{agent_store, flow_store, ...}`; depend on port traits; wire `File*Store` in `backend/`.
 
@@ -154,19 +154,20 @@ Deferred: `tool/` → `lsp` narrowing; `providers → engine` submodule allowlis
 
 ## Port Rule
 
-Engine defines ports (traits) for:
-- **Inbound:** What orchestration must implement for the engine (e.g., `HumanInputPort`, `ToolApprovalPort`)
-- **Outbound:** What the engine requires from external systems (`AiPort`, `ToolPort`)
+Engine defines outbound ports (traits) for what it requires from external systems:
+`AiPort` and `ToolPort`.
 
-Orchestration implements inbound ports, `ToolPortImpl`, and calls `AiPort` via `Box<dyn>`.
+Orchestration implements `ToolPortImpl`, calls `AiPort` via `Box<dyn>`, and resumes
+paused engines through `InteractiveEngine::on_human_input` /
+`InteractiveEngine::on_tool_decision`.
 
 Provider-specific branching stays in `providers/`. Engine does not know which LLM is being called.
 
-UI-to-Desktop contract via `UiDesktopOutboundPort` (TypeScript trait). Add a new port only when code is typed on `dyn ThatPort`.
+UI-to-Desktop calls go through typed wrappers in `crates/ui/src/api.ts`. Add a new port only when code is typed on that interface.
 
 ## Testability Rule
 
-- **UI tests:** Mock `UiDesktopOutboundPort` (Tauri invoke mock)
+- **UI tests:** Mock `api.ts` wrappers or Tauri invoke/event APIs at the boundary
 - **Desktop tests:** Mock `AppBackend` methods
 - **Orchestration tests:** Inline `impl AiPort` stubs; use acceptance fixtures for critical paths
 - **Provider tests:** Verify wire format mapping; test `AiClient` contract compliance

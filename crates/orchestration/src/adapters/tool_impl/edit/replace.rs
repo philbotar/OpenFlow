@@ -53,10 +53,7 @@ pub fn find_match(content: &str, target: &str, options: &FindMatchOptions) -> Ma
                 ..Default::default()
             };
         }
-        if above_threshold_count > 1
-            && best.confidence >= DOMINANT_FUZZY_MIN_CONFIDENCE
-            && best.confidence - second_best_score >= DOMINANT_FUZZY_DELTA
-        {
+        if is_dominant_fuzzy_match(above_threshold_count, best.confidence, second_best_score) {
             return MatchOutcome {
                 matched: Some(best.clone()),
                 closest: Some(best),
@@ -138,6 +135,54 @@ pub(crate) fn line_similarity(a: &str, b: &str) -> f64 {
     }
     let distance = levenshtein_distance(a, b);
     1.0 - (distance as f64 / max_len as f64)
+}
+
+pub(crate) const PARTIAL_MATCH_MIN_LENGTH: usize = 6;
+pub(crate) const PARTIAL_MATCH_MIN_RATIO: f64 = 0.3;
+
+pub(crate) fn is_dominant_fuzzy_match(
+    above_threshold_count: usize,
+    best_score: f64,
+    second_best_score: f64,
+) -> bool {
+    above_threshold_count > 1
+        && best_score >= DOMINANT_FUZZY_MIN_CONFIDENCE
+        && best_score - second_best_score >= DOMINANT_FUZZY_DELTA
+}
+
+/// Average per-line fuzzy similarity for a multi-line window (patch seek / replace).
+pub(crate) fn fuzzy_sequence_score_at(lines: &[String], pattern: &[String], index: usize) -> f64 {
+    let mut total = 0.0;
+    for (j, pat_line) in pattern.iter().enumerate() {
+        let line_norm = normalize_for_fuzzy(&lines[index + j]);
+        let pattern_norm = normalize_for_fuzzy(pat_line);
+        total += line_similarity(&line_norm, &pattern_norm);
+    }
+    total / pattern.len() as f64
+}
+
+pub(crate) fn fuzzy_line_starts_with(line: &str, pattern: &str) -> bool {
+    let line_norm = normalize_for_fuzzy(line);
+    let pattern_norm = normalize_for_fuzzy(pattern);
+    if pattern_norm.is_empty() {
+        return line_norm.is_empty();
+    }
+    line_norm.starts_with(&pattern_norm)
+}
+
+pub(crate) fn fuzzy_line_partial_includes(line: &str, pattern: &str) -> bool {
+    let line_norm = normalize_for_fuzzy(line);
+    let pattern_norm = normalize_for_fuzzy(pattern);
+    if pattern_norm.is_empty() {
+        return line_norm.is_empty();
+    }
+    if pattern_norm.len() < PARTIAL_MATCH_MIN_LENGTH {
+        return false;
+    }
+    if !line_norm.contains(&pattern_norm) {
+        return false;
+    }
+    pattern_norm.len() as f64 / line_norm.len().max(1) as f64 >= PARTIAL_MATCH_MIN_RATIO
 }
 
 fn compute_relative_indent_depths(lines: &[&str]) -> Vec<usize> {

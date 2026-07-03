@@ -26,10 +26,10 @@ desktop → AppBackend (backend/mod.rs)
 
 ```text
 orchestration/src/
-├── agent/          ports.rs + library.rs
+├── agent.rs        saved CallableAgent definitions and AgentStore port
 ├── workflow/       ports.rs + catalog.rs
 ├── project/        ports.rs + registry.rs
-├── run/            coordinator.rs, execution/, state/
+├── run/            coordinator/, execution/, state.rs
 ├── settings/       ports.rs + facade.rs
 ├── tool/           registry.rs, runner.rs, hooks.rs
 ├── adapters/
@@ -86,9 +86,9 @@ orchestration/src/
 | --- | --- |
 | New desktop command surface | Delegate in `backend/mod.rs`; logic in entity folder |
 | Workflow merge / project assign | `workflow/catalog.rs`, `adapters/storage/*_workflow_store.rs` |
-| Saved agents | `agent/library.rs`, `adapters/storage/agent_store.rs` |
+| Saved agents | `agent.rs`, `adapters/storage/agent_store.rs` |
 | Run start, input, approval | `run/coordinator.rs`, `run/execution/` |
-| UI run snapshot fields | `run/state/mod.rs` + engine telemetry if needed |
+| UI run snapshot fields | `run/state.rs` + engine telemetry if needed |
 | New builtin tool | `adapters/tool_impl/` + `tool/registry.rs`; tier in `engine/tools/config.rs`; update `NODE_RUNTIME_PREAMBLE` |
 | Tool execution wiring | `run/execution/tool_port.rs` |
 | Settings / API keys | `settings/facade.rs`, `settings/provider.rs`, `adapters/storage/settings_store.rs` |
@@ -114,8 +114,6 @@ See [`docs/architecture/orchestration-layout.md`](../../docs/architecture/orches
 | Agents | `{data_local}/openflow/agents.json` |
 | Projects | `{data_local}/openflow/projects.json` |
 | Settings | `{data_local}/openflow/settings.json` |
-| Templates | `{data_local}/openflow/templates.json` |
-
 API key precedence: transient input → stored `ProviderProfile.api_key` → env var fallback.
 
 ### Testing

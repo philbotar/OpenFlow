@@ -25,7 +25,6 @@ Use this page for commands, storage paths, and operational facts that should be 
 | Settings | `{data_local}/openflow/settings.json` |
 | Projects | `{data_local}/openflow/projects.json` |
 | Saved agents | `{data_local}/openflow/agents.json` |
-| Node templates | `{data_local}/openflow/templates.json` |
 | Project workflows | `{project}/.flow/workflows/{workflowId}.workflow.json` |
 | Provider API keys | Plaintext in `settings.json` as `ProviderProfile.api_key` |
 

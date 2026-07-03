@@ -20,7 +20,7 @@ pub fn adhoc_subagent_base_index(
 }
 
 #[must_use]
-pub fn build_adhoc_subagent_summaries(
+pub(crate) fn build_adhoc_subagent_summaries(
     node_id: &NodeId,
     declarations: &[SubagentDeclaration],
     base_index: usize,
@@ -47,7 +47,7 @@ pub fn merge_subagent_summaries(
 }
 
 #[must_use]
-pub fn subagents_for_node(
+fn subagents_for_node(
     node: &Node,
     declared_subagents: &BTreeMap<String, SubagentSummary>,
     agent_snapshots: &BTreeMap<String, CallableAgent>,

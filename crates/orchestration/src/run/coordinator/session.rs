@@ -24,6 +24,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
 pub(super) struct PreparedWorkflowRun {
@@ -62,7 +63,7 @@ pub(super) fn prepare_workflow_run(
     workflow: Workflow,
     settings: &AppSettings,
     transient_api_key: Option<&str>,
-    agent_store: &dyn crate::agent::ports::AgentStore,
+    agent_store: &dyn crate::agent::AgentStore,
     settings_store: &dyn crate::settings::ports::SettingsStore,
     env: &ProviderEnv,
 ) -> Result<PreparedWorkflowRun, BackendError> {
@@ -142,6 +143,46 @@ pub(super) fn spawn_prepared_run(
         action_tx,
         cancel_token,
     }
+}
+
+pub(super) struct RunLaunchTail {
+    pub spawn_input: SpawnRunInput,
+    pub resources: ExecutionResources,
+    pub entrypoint: Option<String>,
+    pub execution_cwd: PathBuf,
+    pub artifact_root: PathBuf,
+}
+
+/// Shared tail for fresh start, in-session continue, and durable resume launches.
+pub(super) async fn finalize_run_launch(
+    runtime_handle: &tokio::runtime::Handle,
+    session: &Mutex<RunSession>,
+    prepared: PreparedWorkflowRun,
+    tail: RunLaunchTail,
+    configure_session: impl FnOnce(&mut RunSession) -> Result<WorkflowRunState, BackendError>,
+) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
+    let workflow = prepared.workflow.clone();
+    let RunLaunchTail {
+        spawn_input,
+        resources,
+        entrypoint,
+        execution_cwd,
+        artifact_root,
+    } = tail;
+    let mut spawned = spawn_prepared_run(runtime_handle, prepared, spawn_input, &resources);
+    let event_rx = spawned.event_rx.take().expect("spawned run event channel");
+    let mut session_guard = session.lock().await;
+    let initial_state = configure_session(&mut session_guard)?;
+    attach_execution_handles(
+        &mut session_guard,
+        workflow,
+        entrypoint,
+        execution_cwd,
+        artifact_root,
+        resources,
+        spawned,
+    );
+    Ok((initial_state, event_rx))
 }
 
 pub(super) fn attach_execution_handles(
@@ -257,7 +298,7 @@ pub struct RunStartParams<'a> {
     pub run_root: RunStoreRoot,
     pub settings: &'a AppSettings,
     pub transient_api_key: Option<&'a str>,
-    pub agent_store: &'a dyn crate::agent::ports::AgentStore,
+    pub agent_store: &'a dyn crate::agent::AgentStore,
     pub settings_store: &'a dyn crate::settings::ports::SettingsStore,
     pub run_store: &'a dyn RunCheckpointStore,
     pub env: &'a ProviderEnv,
@@ -271,7 +312,7 @@ pub struct DurableResumeParams<'a> {
     pub checkpoint: RunCheckpointPayload,
     pub settings: &'a AppSettings,
     pub transient_api_key: Option<&'a str>,
-    pub agent_store: &'a dyn crate::agent::ports::AgentStore,
+    pub agent_store: &'a dyn crate::agent::AgentStore,
     pub settings_store: &'a dyn crate::settings::ports::SettingsStore,
     pub run_store: &'a dyn RunCheckpointStore,
     pub env: &'a ProviderEnv,

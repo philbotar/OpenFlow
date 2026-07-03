@@ -222,7 +222,7 @@ fn reducer_node_completed_pushes_summary_completion_message() {
 }
 
 #[test]
-fn reducer_node_completed_skips_chat_when_summary_missing() {
+fn reducer_node_completed_pushes_json_when_summary_missing() {
     let workflow = workflow();
     let mut state = WorkflowRunState::running_for_workflow(&workflow);
     apply_event_to_run_state(
@@ -235,7 +235,13 @@ fn reducer_node_completed_skips_chat_when_summary_missing() {
         },
     );
 
-    assert!(!state.chat_logs.contains_key(&NodeId("first".to_string())));
+    let chat = &state.chat_logs[&NodeId("first".to_string())];
+    assert_eq!(chat.len(), 1);
+    assert_eq!(
+        chat[0].message_kind,
+        Some(engine::ChatMessageKind::NodeCompleted)
+    );
+    assert!(chat[0].content.contains("\"ok\": true"));
 }
 
 #[test]
@@ -1612,7 +1618,6 @@ async fn stale_input_is_ignored_and_run_continues() {
     let (handle, mut event_rx, action_tx, _cancel, _) =
         spawn_interactive_workflow_run(&tokio::runtime::Handle::current(), params);
 
-    let mut saw_stale_error = false;
     let mut finished = false;
     while let Ok(Some(event)) = timeout(Duration::from_secs(5), event_rx.recv()).await {
         if matches!(
@@ -1632,11 +1637,6 @@ async fn stale_input_is_ignored_and_run_continues() {
                 })
                 .expect("valid input");
         }
-        if let ExecutionEvent::Error(message) = &event {
-            if message.contains("ignored input for node wrong-node") {
-                saw_stale_error = true;
-            }
-        }
         if matches!(event, ExecutionEvent::Finished(_)) {
             finished = true;
             break;
@@ -1644,7 +1644,6 @@ async fn stale_input_is_ignored_and_run_continues() {
     }
     handle.await.expect("drive task");
 
-    assert!(saw_stale_error, "expected stale input error event");
     assert!(finished, "expected run to finish after valid input");
 }
 

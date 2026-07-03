@@ -37,31 +37,6 @@ pub fn format_full_anchor_requirement(raw: Option<&str>) -> String {
     )
 }
 
-pub fn parse_tag(ref_text: &str) -> Result<u32, String> {
-    static LINE_REF_RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let re = LINE_REF_RE.get_or_init(|| {
-        regex::Regex::new(r"^\s*[>+\-*]*\s*(\d+)(?::.*)?\s*$").expect("valid regex")
-    });
-    let caps = re.captures(ref_text).ok_or_else(|| {
-        format!(
-            "Invalid line reference. Expected {}.",
-            format_full_anchor_requirement(Some(ref_text))
-        )
-    })?;
-    let line: u32 = caps[1].parse().map_err(|_| {
-        format!(
-            "Invalid line reference. Expected {}.",
-            format_full_anchor_requirement(Some(ref_text))
-        )
-    })?;
-    if line < 1 {
-        return Err(format!(
-            "Line number must be >= 1, got {line} in \"{ref_text}\"."
-        ));
-    }
-    Ok(line)
-}
-
 fn get_mismatch_display_lines(anchor_lines: &[u32], file_lines: &[String]) -> Vec<u32> {
     let mut display_lines = std::collections::BTreeSet::new();
     let len = file_lines.len() as u32;
@@ -91,10 +66,6 @@ impl MismatchError {
             hash_recognized,
             message,
         }
-    }
-
-    pub fn display_message(&self) -> &str {
-        &self.message
     }
 
     fn rejection_header(details: &MismatchDetails, hash_recognized: bool) -> Vec<String> {
@@ -162,11 +133,3 @@ impl fmt::Display for MismatchError {
 }
 
 impl std::error::Error for MismatchError {}
-
-pub fn validate_line_ref(line: u32, file_lines: &[String]) -> Result<(), String> {
-    let len = file_lines.len() as u32;
-    if line < 1 || line > len {
-        return Err(format!("Line {line} does not exist (file has {len} lines)"));
-    }
-    Ok(())
-}

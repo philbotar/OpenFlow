@@ -1,7 +1,7 @@
 use crate::adapters::storage::json_file_store::{
     read_json_file, write_json_file, OPENFLOW_DATA_DIR_SLUG,
 };
-use crate::agent::ports::AgentStore;
+use crate::agent::AgentStore;
 use engine::CallableAgent;
 use serde::{Deserialize, Serialize};
 use std::io;

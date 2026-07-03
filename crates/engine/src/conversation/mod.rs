@@ -108,15 +108,31 @@ impl ChatMessage {
     }
 }
 
-/// Human-facing summary from structured node output, when present.
+/// Human-facing summary from structured node output.
 #[must_use]
 pub fn summary_from_node_output(output: &Value) -> Option<String> {
-    output
+    if let Some(summary) = output
         .get("summary")
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|summary| !summary.is_empty())
-        .map(str::to_string)
+    {
+        return Some(summary.to_string());
+    }
+    if output.is_null() {
+        return None;
+    }
+    if let Some(obj) = output.as_object() {
+        if obj.len() == 1 {
+            if let Some(value) = obj.values().next().and_then(Value::as_str) {
+                let trimmed = value.trim();
+                if !trimmed.is_empty() {
+                    return Some(trimmed.to_string());
+                }
+            }
+        }
+    }
+    serde_json::to_string_pretty(output).ok()
 }
 
 fn consume_tool_call_fence_block(content: &str) -> usize {
@@ -245,7 +261,7 @@ pub fn filter_tool_turn_assistant_message(message: Option<String>) -> Option<Str
 
 /// Whether `openflow_request_user_input` assistant text is a direct human-facing question.
 #[must_use]
-pub fn is_clarifying_question(message: &str) -> bool {
+pub(crate) fn is_clarifying_question(message: &str) -> bool {
     let trimmed = message.trim();
     if trimmed.is_empty() {
         return false;
@@ -316,8 +332,14 @@ mod tests {
             summary_from_node_output(&json!({"summary": "Done."})),
             Some("Done.".to_string())
         );
-        assert_eq!(summary_from_node_output(&json!({"summary": "  "})), None);
-        assert_eq!(summary_from_node_output(&json!({"ok": true})), None);
+        assert_eq!(
+            summary_from_node_output(&json!({"message": "yo"})),
+            Some("yo".to_string())
+        );
+        assert_eq!(
+            summary_from_node_output(&json!({"summary": "  "})),
+            Some("{\n  \"summary\": \"  \"\n}".to_string())
+        );
     }
 
     #[test]

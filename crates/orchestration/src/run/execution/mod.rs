@@ -2,7 +2,6 @@ mod ai_adapter;
 mod drive;
 mod events;
 mod headless;
-mod subagents;
 mod tool_port;
 
 pub use ai_adapter::AiInvocationAdapter;

@@ -3,9 +3,11 @@ use crate::tool::retry::execute_with_retry;
 use crate::tools::{ToolExecutionContext, ToolExecutionRecord, ToolRunner, ToolRunnerError};
 use async_trait::async_trait;
 use engine::{
-    build_predefined_subagent_summaries, handle_declare_subagents, AiPort, CallableAgent,
-    InteractiveEngine, NodeId, NodeToolConfig, RunTelemetry, SubagentSummary, ToolCall,
-    ToolConcurrency, ToolPort, ToolResult, Workflow, CALL_SUBAGENT_TOOL, DECLARE_SUBAGENTS_TOOL,
+    augment_call_subagent_tool_description, build_predefined_subagent_summaries,
+    handle_declare_subagents, merge_subagent_summaries as merge_subagent_summaries_into_map,
+    AiPort, CallableAgent, InteractiveEngine, NodeId, NodeToolConfig, RunTelemetry,
+    SubagentSummary, ToolCall, ToolConcurrency, ToolPort, ToolResult, Workflow, CALL_SUBAGENT_TOOL,
+    DECLARE_SUBAGENTS_TOOL,
 };
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
@@ -13,7 +15,6 @@ use std::time::Instant;
 use tokio::sync::{mpsc::UnboundedSender, Semaphore};
 use tokio_util::sync::CancellationToken;
 
-use super::subagents::{augment_call_subagent_tool_description, merge_subagent_summaries_into_map};
 use super::{abort_run, emit_phase_timed, send_or_log, ExecutionEvent, NodeInterrupts};
 
 pub struct ToolPortImpl<A> {
@@ -248,30 +249,17 @@ where
                     lsp,
                     update_tx: None,
                 };
-                let retry_node_id = node_id_for_task.clone();
-                let retry_tool_call_id = call.id.clone();
-                let retry_tool_name = call.name.clone();
                 tokio::select! {
                     biased;
                     _ = cancel_token.cancelled() => None,
-                    result = execute_with_retry(
+                    result = run_registered_tool_with_retry(
+                        tool_runner,
                         &retry_policy,
                         &cancel_token,
-                        |attempt, delay| {
-                            let _ = event_tx.send(ExecutionEvent::ToolRetrying {
-                                node_id: retry_node_id.clone(),
-                                tool_call_id: retry_tool_call_id.clone(),
-                                tool_name: retry_tool_name.clone(),
-                                attempt,
-                                backoff_ms: delay.as_millis() as u64,
-                            });
-                        },
-                        || {
-                            let tool_runner = Arc::clone(&tool_runner);
-                            let call = call.clone();
-                            let ctx = ctx.clone();
-                            async move { tool_runner.execute(call, Some(ctx)).await }
-                        },
+                        &event_tx,
+                        &node_id_for_task,
+                        &call,
+                        ctx,
                     ) => Some(result),
                 }
             }));
@@ -421,24 +409,6 @@ where
         });
     }
 
-    #[allow(dead_code, reason = "wired by live-output tools in the next task")]
-    fn emit_tool_updated(
-        &self,
-        node_id: &NodeId,
-        tool_call_id: &str,
-        tool_name: &str,
-        content: String,
-        output_meta: Option<engine::ToolOutputMeta>,
-    ) {
-        let _ = self.event_tx.send(ExecutionEvent::ToolUpdated {
-            node_id: node_id.clone(),
-            tool_call_id: tool_call_id.to_string(),
-            tool_name: tool_name.to_string(),
-            content,
-            output_meta,
-        });
-    }
-
     fn emit_tool_completed(&self, node_id: &NodeId, _tool_call: &ToolCall, result: &ToolResult) {
         send_or_log(
             &self.event_tx,
@@ -566,30 +536,14 @@ where
         let node_token = self.node_interrupt_token(node_id);
         let policy = self.workflow.settings.retry_policy.clone();
         let cancel_for_retry = self.cancel_token.clone();
-        let retry_event_tx = self.event_tx.clone();
-        let retry_node_id = node_id.clone();
-        let retry_tool_call_id = tool_call.id.clone();
-        let retry_tool_name = tool_call.name.clone();
-        let call_for_attempt = tool_call.clone();
-        let ctx_for_attempt = ctx.clone();
-        let run_tool = execute_with_retry(
+        let run_tool = run_registered_tool_with_retry(
+            tool_runner,
             &policy,
             &cancel_for_retry,
-            |attempt, delay| {
-                let _ = retry_event_tx.send(ExecutionEvent::ToolRetrying {
-                    node_id: retry_node_id.clone(),
-                    tool_call_id: retry_tool_call_id.clone(),
-                    tool_name: retry_tool_name.clone(),
-                    attempt,
-                    backoff_ms: delay.as_millis() as u64,
-                });
-            },
-            || {
-                let tool_runner = Arc::clone(&tool_runner);
-                let call = call_for_attempt.clone();
-                let ctx = ctx_for_attempt.clone();
-                async move { tool_runner.execute(call, Some(ctx)).await }
-            },
+            &self.event_tx,
+            node_id,
+            &tool_call,
+            ctx,
         );
         let result = match node_token {
             Some(node_token) => {
@@ -642,6 +596,59 @@ pub(super) fn send_run_telemetry(
 
 fn render_tool_error(error: ToolRunnerError) -> String {
     error.to_string()
+}
+
+fn emit_tool_retrying(
+    event_tx: &UnboundedSender<ExecutionEvent>,
+    node_id: &NodeId,
+    tool_call_id: &str,
+    tool_name: &str,
+    attempt: u8,
+    delay: std::time::Duration,
+) {
+    let _ = event_tx.send(ExecutionEvent::ToolRetrying {
+        node_id: node_id.clone(),
+        tool_call_id: tool_call_id.to_string(),
+        tool_name: tool_name.to_string(),
+        attempt,
+        backoff_ms: delay.as_millis() as u64,
+    });
+}
+
+async fn run_registered_tool_with_retry(
+    tool_runner: Arc<ToolRunner>,
+    policy: &engine::RetryPolicy,
+    cancel_token: &CancellationToken,
+    event_tx: &UnboundedSender<ExecutionEvent>,
+    node_id: &NodeId,
+    call: &ToolCall,
+    ctx: ToolExecutionContext,
+) -> Result<ToolExecutionRecord, ToolRunnerError> {
+    let node_id = node_id.clone();
+    let tool_call_id = call.id.clone();
+    let tool_name = call.name.clone();
+    let event_tx = event_tx.clone();
+    execute_with_retry(
+        policy,
+        cancel_token,
+        |attempt, delay| {
+            emit_tool_retrying(
+                &event_tx,
+                &node_id,
+                &tool_call_id,
+                &tool_name,
+                attempt,
+                delay,
+            );
+        },
+        || {
+            let tool_runner = Arc::clone(&tool_runner);
+            let call = call.clone();
+            let ctx = ctx.clone();
+            async move { tool_runner.execute(call, Some(ctx)).await }
+        },
+    )
+    .await
 }
 
 #[path = "subagent_session.rs"]

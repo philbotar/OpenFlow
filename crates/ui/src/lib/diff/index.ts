@@ -116,7 +116,7 @@ export function parseUnifiedDiff(input: string): DiffFile[] {
   return files;
 }
 
-export function summarizeDiffFiles(files: DiffFile[]): {
+function summarizeDiffFiles(files: DiffFile[]): {
   total: number;
   created: number;
   changed: number;

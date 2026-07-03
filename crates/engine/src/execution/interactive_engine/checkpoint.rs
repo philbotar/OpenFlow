@@ -71,7 +71,7 @@ pub enum CheckpointError {
 }
 
 #[must_use]
-pub fn collect_checkpoint_node_ids(checkpoint: &InteractiveEngineCheckpoint) -> BTreeSet<NodeId> {
+fn collect_checkpoint_node_ids(checkpoint: &InteractiveEngineCheckpoint) -> BTreeSet<NodeId> {
     let mut ids = BTreeSet::new();
     ids.extend(checkpoint.outputs.keys().cloned());
     ids.extend(checkpoint.transcripts.keys().cloned());
@@ -91,7 +91,7 @@ pub fn collect_checkpoint_node_ids(checkpoint: &InteractiveEngineCheckpoint) -> 
 }
 
 /// # Errors
-/// Returns [`CheckpointError::WorkflowMismatch`] or [`CheckpointError::StaleNodeIds`].
+/// Returns `CheckpointError::WorkflowMismatch` or `CheckpointError::StaleNodeIds` when invalid.
 pub fn validate_checkpoint_against_workflow(
     workflow: &Workflow,
     checkpoint: &InteractiveEngineCheckpoint,

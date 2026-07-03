@@ -1,4 +1,4 @@
-import { TextSelect } from "../components/TextSelect";
+import { TextSelect } from "../components";
 import type { ApprovalMode, NodeToolConfig } from "../lib/types";
 
 const APPROVAL_MODE_OPTIONS: { value: ApprovalMode; label: string }[] = [

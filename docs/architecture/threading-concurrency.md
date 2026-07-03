@@ -6,9 +6,9 @@ Related: [`contract.md`](contract.md)
 
 ## Executive summary
 
-This app is **not heavily threaded**. In the desktop app, orchestration uses the Tauri Tokio runtime handle. Non-Tauri entry points can still create an owned runtime through `AppBackend::with_default_paths()`. Each workflow run has one execution task, with sequential node execution and parallel batches only for shared tools. The main risks are:
+This app is **not heavily threaded**. In the desktop app, orchestration uses the Tauri Tokio runtime handle. Tests can still construct `AppBackend` with an owned Tokio runtime through `AppBackend::new(...)`. Each workflow run has one execution task, with sequential node execution and parallel batches only for shared tools. The main risks are:
 
-1. **Runtime split outside Tauri** when `AppBackend::with_default_paths()` creates an owned runtime for tests and non-desktop entry points.
+1. **Runtime split outside Tauri** when tests or helper entry points construct `AppBackend` with a separate owned runtime.
 2. **Blocking I/O coverage** that depends on dispatching filesystem and subprocess work through `spawn_blocking`.
 3. **Sequential node execution** even though DAG layers identify nodes that could run independently.
 4. **A single active-run mutex** around live run state.
@@ -64,7 +64,7 @@ flowchart TB
 | Tauri commands + event fanout | `tauri::async_runtime` | `crates/desktop/src/lib.rs` |
 | Sync file commands | Tauri blocking pool | `crates/desktop/src/lib.rs` |
 
-`AppBackend::with_runtime_handle()` uses the runtime handle passed by desktop. `AppBackend::with_default_paths()` still creates an owned `tokio::runtime::Runtime` for tests and non-Tauri entry points.
+`AppBackend::with_runtime_handle()` uses the runtime handle passed by desktop. Tests can still create an owned `tokio::runtime::Runtime` and pass its handle into `AppBackend::new(...)`.
 
 Workflow runs are spawned by `spawn_interactive_workflow_run()` (`crates/orchestration/src/run/execution/mod.rs`).
 
@@ -72,9 +72,9 @@ The event bridge runs on Tauri's runtime in `start_run()` (`crates/desktop/src/l
 
 ### Issue: runtime split outside the desktop path
 
-In the desktop path, the same Tauri runtime handle is used for command tasks and run execution. In tests or non-Tauri entry points that use `with_default_paths()`, `AppBackend` owns a separate runtime. That split is useful for local construction, but it should not become the production path.
+In the desktop path, the same Tauri runtime handle is used for command tasks and run execution. In tests or bespoke non-Tauri entry points, `AppBackend` may still be constructed with a separate owned runtime. That split is useful for local construction, but it should not become the production path.
 
-**Recommendation direction:** Keep desktop execution on the injected Tauri runtime handle. Avoid adding production code paths that call `with_default_paths()`.
+**Recommendation direction:** Keep desktop execution on the injected Tauri runtime handle. Avoid adding production code paths that construct their own runtime around `AppBackend`.
 
 ---
 
@@ -250,7 +250,7 @@ flowchart LR
     Emit -.->|"one event per<br/>execution step"| Solid
 ```
 
-`AppProvider` listens for `run-state` events and updates signals (`crates/ui/src/context/AppProvider.tsx`). Each execution step (node start, tool call, chat message) triggers a full state snapshot emit. High-frequency tool loops mean many serializations and IPC round-trips.
+`useRunSession` (via `context/appProvider/`) listens for `run-state` events and updates run signals. Each execution step (node start, tool call, chat message) triggers a full state snapshot emit. High-frequency tool loops mean many serializations and IPC round-trips.
 
 ---
 
@@ -269,7 +269,7 @@ This is not a full bulkhead model. It does not cap all provider calls, all read 
 | Priority | Issue | Symptom |
 | --- | --- | --- |
 | **P0** | Long blocking filesystem or subprocess tasks | UI commands can wait behind search/find/ast-grep on large repos |
-| **P1** | Non-Tauri owned runtime path | Extra runtime split if production code accidentally uses `with_default_paths()` |
+| **P1** | Non-Tauri owned runtime path | Extra runtime split if production code accidentally constructs `AppBackend` around its own runtime |
 | **P1** | Sequential node execution despite DAG layers | Slow multi-branch workflows |
 | **P1** | Sync Tauri commands for persistence | Invoke hangs on save/load during heavy I/O |
 | **P2** | Subagents in nested loop, same task | Parent node frozen while subagent runs |
@@ -285,7 +285,7 @@ These are architectural options, not a mandate.
 ### A. Keep production on one runtime
 
 - Continue injecting `tauri::async_runtime::handle()` in desktop.
-- Keep `with_default_paths()` as a test or non-Tauri helper.
+- Keep any non-Tauri `AppBackend` construction clearly scoped to tests or explicit helper entry points.
 
 ### B. Keep blocking work off async workers
 
@@ -360,4 +360,4 @@ flowchart TB
 | Blocking tool I/O | `crates/orchestration/src/tool/dispatch.rs`, `crates/orchestration/src/tool/runner.rs` |
 | Sync file persistence | `crates/orchestration/src/adapters/storage/` |
 | Tauri command + event bridge | `crates/desktop/src/lib.rs` |
-| UI event listener | `crates/ui/src/context/AppProvider.tsx` |
+| UI event listener | `crates/ui/src/context/appProvider/useRunSession.ts` |

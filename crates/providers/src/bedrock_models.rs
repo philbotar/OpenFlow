@@ -47,7 +47,7 @@ pub async fn verify_bedrock_credentials(
         AgentError::Permanent("AWS credentials provider not configured".to_string())
     })?;
     let credentials = provider.provide_credentials().await.map_err(|error| {
-        AgentError::Permanent(crate::bedrock::humanize_bedrock_sdk_error(
+        AgentError::Permanent(crate::bedrock_errors::humanize_bedrock_sdk_error(
             &error.to_string(),
         ))
     })?;
@@ -113,8 +113,9 @@ fn map_bedrock_control_error<E>(error: &aws_sdk_bedrock::error::SdkError<E>) -> 
 where
     E: std::error::Error + Send + Sync + 'static,
 {
-    let message =
-        crate::bedrock::humanize_bedrock_sdk_error(&crate::bedrock::format_aws_sdk_error(error));
+    let message = crate::bedrock_errors::humanize_bedrock_sdk_error(
+        &crate::bedrock_errors::format_aws_sdk_error(error),
+    );
     match classify_sdk_error_code(&message) {
         SdkErrorClass::Transient => {
             AgentError::Transient(format!("Bedrock list models failed: {message}"))

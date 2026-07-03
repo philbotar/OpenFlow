@@ -6,8 +6,8 @@
 )]
 
 use super::{
-    CheckpointError, EngineInputError, EngineRunResult, InteractiveEngine, PendingToolBatch,
-    RunError,
+    checkpoint::CheckpointError, EngineInputError, EngineRunResult, InteractiveEngine,
+    PendingToolBatch, RunError,
 };
 use crate::conversation::AgentTranscriptItem;
 use crate::execution::NodeFailureKind;

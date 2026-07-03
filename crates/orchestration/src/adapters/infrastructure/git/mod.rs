@@ -55,21 +55,6 @@ pub fn current_branch(cwd: &Path) -> Result<String, GitError> {
     Ok(branch)
 }
 
-pub fn stage_file(cwd: &Path, user_path: &str) -> Result<(), GitError> {
-    ensure_repo(cwd)?;
-    let relative = relative_path(cwd, user_path)?;
-    run_git(cwd, &["add", "--", &relative]).map(|_| ())
-}
-
-pub fn restore_file(cwd: &Path, user_path: &str) -> Result<(), GitError> {
-    ensure_repo(cwd)?;
-    let relative = relative_path(cwd, user_path)?;
-    if run_git(cwd, &["restore", "--", &relative]).is_ok() {
-        return Ok(());
-    }
-    run_git(cwd, &["checkout", "--", &relative]).map(|_| ())
-}
-
 fn ensure_repo(cwd: &Path) -> Result<(), GitError> {
     if is_repo(cwd) {
         Ok(())

@@ -1,3 +1,4 @@
+use crate::http_errors::classify_http_status;
 use engine::AgentError;
 use futures::Stream;
 use futures::StreamExt;
@@ -82,12 +83,7 @@ async fn stream_sse_http_error(response: Response, label: &str) -> Result<(), Ag
         .text()
         .await
         .unwrap_or_else(|_| "<unavailable>".to_string());
-    let message = format!("{label} returned HTTP {status}: {body}");
-    if status.as_u16() == 429 || status.is_server_error() {
-        Err(AgentError::Transient(message))
-    } else {
-        Err(AgentError::Permanent(message))
-    }
+    Err(classify_http_status(status.as_u16(), &body, label))
 }
 
 #[derive(Debug, Default)]

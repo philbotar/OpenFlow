@@ -6,6 +6,7 @@ pub mod diff;
 pub mod edit_tool;
 pub mod errors;
 pub mod file_snapshot_store;
+pub mod fuzzy_settings;
 pub mod hashline;
 pub mod io;
 pub mod ledger;
@@ -15,6 +16,8 @@ pub mod path;
 pub mod preview;
 pub mod replace;
 pub mod replace_sequence;
+pub mod text_replace;
+pub mod tool_args;
 pub mod write;
 
 pub use apply_patch::{

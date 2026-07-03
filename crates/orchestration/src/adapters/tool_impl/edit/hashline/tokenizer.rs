@@ -549,33 +549,12 @@ impl Tokenizer {
         self.closed = false;
     }
 
-    pub fn tokenize_all(&mut self, text: &str) -> Result<Vec<Token>, String> {
-        self.reset();
-        let mut tokens = self.feed(text)?;
-        let last = self.end();
-        if !last.is_empty() {
-            tokens.extend(last);
-        }
-        Ok(tokens)
-    }
-
     pub fn tokenize(&self, line: &str, line_num: u32) -> Token {
         classify_line(line, line_num)
     }
 
     pub fn is_op(&self, line: &str) -> bool {
         try_parse_hunk_header(line).is_some()
-    }
-
-    pub fn is_header(&self, line: &str) -> bool {
-        try_parse_header(line).is_some()
-    }
-
-    pub fn is_envelope_marker(&self, line: &str) -> bool {
-        let bytes = line.as_bytes();
-        marker_line_equals(bytes, BEGIN_PATCH_MARKER)
-            || marker_line_equals(bytes, END_PATCH_MARKER)
-            || marker_line_equals(bytes, ABORT_MARKER)
     }
 
     fn drain_complete_lines(&mut self) -> Vec<Token> {

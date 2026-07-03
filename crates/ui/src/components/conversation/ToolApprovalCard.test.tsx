@@ -5,10 +5,8 @@ import type { PendingToolApproval } from "../../lib/types";
 
 const previewFileEdit = vi.hoisted(() => vi.fn());
 
-vi.mock("../../port", () => ({
-  createUiDesktopOutboundAdapter: () => ({
-    previewFileEdit,
-  }),
+vi.mock("../../api", () => ({
+  previewFileEdit,
 }));
 
 import { ToolApprovalCardBody } from "./ToolApprovalCard";

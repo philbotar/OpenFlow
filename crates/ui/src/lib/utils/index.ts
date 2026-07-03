@@ -5,10 +5,10 @@ export const STATUS_TOAST_ID = "app-status";
 export const BANNER_DISMISS_MS = 4000;
 export const DEFAULT_DOCK_HEIGHT = 188;
 export const COLLAPSED_DOCK_HEIGHT = 52;
-export const RESTORED_CHAT_DOCK_HEIGHT_RATIO = 0.7;
-export const DOCK_VIEWPORT_MARGIN = 160;
-export const COMPACT_VIEWPORT_MAX = 980;
-export const COMPACT_DOCK_VIEWPORT_MARGIN = 240;
+const RESTORED_CHAT_DOCK_HEIGHT_RATIO = 0.7;
+const DOCK_VIEWPORT_MARGIN = 160;
+const COMPACT_VIEWPORT_MAX = 980;
+const COMPACT_DOCK_VIEWPORT_MARGIN = 240;
 
 export function isCompactViewportWidth(width = globalThis.innerWidth ?? 1280): boolean {
   return width <= COMPACT_VIEWPORT_MAX;

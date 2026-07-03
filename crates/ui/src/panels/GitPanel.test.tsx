@@ -11,8 +11,9 @@ const mocks = vi.hoisted(() => ({
   executionCwd: "/tmp/project" as string | null,
 }));
 
-vi.mock("../port", () => ({
-  createUiDesktopOutboundAdapter: () => mocks,
+vi.mock("../api", () => ({
+  gitDiffRepo: mocks.gitDiffRepo,
+  gitCurrentBranch: mocks.gitCurrentBranch,
 }));
 
 vi.mock("../context/AppContext", () => ({

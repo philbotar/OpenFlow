@@ -21,7 +21,7 @@ use std::collections::BTreeMap;
 pub const DECLARE_SUBAGENTS_TOOL: &str = "openflow_declare_subagents";
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct CallSubagentArgs {
+pub(crate) struct CallSubagentArgs {
     pub subagent_id: String,
     pub input: String,
 }

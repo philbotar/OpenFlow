@@ -10,8 +10,11 @@ pub(crate) mod aws_runtime;
 #[cfg(feature = "bedrock")]
 pub(crate) mod bedrock;
 #[cfg(feature = "bedrock")]
+pub(crate) mod bedrock_errors;
+#[cfg(feature = "bedrock")]
 pub(crate) mod bedrock_models;
 mod client;
+pub(crate) mod http_errors;
 pub(crate) mod mapping;
 pub(crate) mod openai_compat;
 pub(crate) mod prompt_cache;
@@ -30,10 +33,6 @@ pub use spec::{
     builtin_provider_specs, provider_spec, AnthropicSpec, AuthSpec, BedrockSpec,
     OpenAiCompatibleSpec, ProviderId, ProviderKind, ProviderSpec, ReasoningEffortOption, WireApi,
 };
-
-pub type OpenAiClient = AiClient;
-pub type OpenAiClientConfig = AiClientConfig;
-pub type OpenAiWireApi = WireApi;
 
 #[must_use]
 pub fn create_provider(config: AiClientConfig) -> Box<dyn AiPort> {

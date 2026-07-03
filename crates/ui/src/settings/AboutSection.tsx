@@ -1,8 +1,6 @@
 import { createSignal, onMount, Show } from "solid-js";
+import * as desktop from "../api";
 import { useAppContext } from "../context/AppContext";
-import { createUiDesktopOutboundAdapter } from "../port";
-
-const desktop = createUiDesktopOutboundAdapter();
 
 type UpdateUiState =
   | { kind: "idle" }

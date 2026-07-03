@@ -39,7 +39,7 @@ import {
   workflowAuthoringTurn,
 } from "./api";
 import type { AppSettings, Workflow } from "./lib/types";
-import { createEmptyToolConfig } from "./lib/workflow";
+import { createEmptyToolConfig } from "./lib/workflow/testHelpers";
 
 const settings: AppSettings = {
   active_provider: "openai",

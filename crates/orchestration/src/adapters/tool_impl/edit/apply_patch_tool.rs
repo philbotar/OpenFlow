@@ -5,7 +5,6 @@
 
 use std::path::PathBuf;
 
-use serde::Deserialize;
 use serde_json::Value;
 
 use engine::{summarize_diff, FileChangeOp};
@@ -13,18 +12,14 @@ use engine::{summarize_diff, FileChangeOp};
 use super::apply_patch::expand_apply_patch_to_inputs;
 use super::diff::generate_diff_string;
 use super::errors::ApplyPatchError;
+use super::fuzzy_settings::{allow_fuzzy, patch_fuzzy_threshold};
 use super::ledger::FileChangeLedger;
 use super::patch::{
     apply_patch_entry, PatchApplyResult, PatchError, PatchInput, PatchOp, PatchOptions,
 };
-use super::replace::DEFAULT_FUZZY_THRESHOLD;
+use super::tool_args::PatchEnvelopeArgs;
 use crate::lsp::{append_writethrough_to_output, LspSettings, WritethroughPatchFileSystem};
 use crate::tools::errors::ToolError;
-
-#[derive(Debug, Deserialize)]
-struct ApplyPatchArgs {
-    input: String,
-}
 
 pub fn execute_apply_patch(
     cwd: PathBuf,
@@ -32,7 +27,7 @@ pub fn execute_apply_patch(
     ledger: FileChangeLedger,
     lsp: LspSettings,
 ) -> Result<String, ToolError> {
-    let args: ApplyPatchArgs =
+    let args: PatchEnvelopeArgs =
         serde_json::from_value(args).map_err(|error| ToolError::InvalidArgs {
             tool: "apply_patch".to_string(),
             problem: error.to_string(),
@@ -44,7 +39,7 @@ pub fn execute_apply_patch(
         cwd: cwd.clone(),
         dry_run: false,
         allow_fuzzy: allow_fuzzy(),
-        fuzzy_threshold: fuzzy_threshold(),
+        fuzzy_threshold: patch_fuzzy_threshold(),
     };
     let fs = WritethroughPatchFileSystem::new(lsp);
     let mut lines = Vec::new();
@@ -148,20 +143,6 @@ fn summarize_patch(input: &PatchInput, _result: &PatchApplyResult) -> String {
             }
         }
     }
-}
-
-fn allow_fuzzy() -> bool {
-    !matches!(
-        std::env::var("PI_EDIT_FUZZY").as_deref(),
-        Ok("0") | Ok("false") | Ok("off")
-    )
-}
-
-fn fuzzy_threshold() -> f64 {
-    std::env::var("PI_EDIT_FUZZY_THRESHOLD")
-        .ok()
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(DEFAULT_FUZZY_THRESHOLD)
 }
 
 fn map_apply_patch_error(error: ApplyPatchError) -> ToolError {

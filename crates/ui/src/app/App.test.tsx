@@ -3,7 +3,7 @@ import { render } from "solid-js/web";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { AgentDefinition, AppSettings, BootstrapPayload, Project, ProviderReadiness, ScheduleDraft, SkillSummary, Workflow, WorkflowRunState } from "../lib/types";
 import { defaultWorkflowSchedule } from "../lib/schedule";
-import { createEmptyToolConfig } from "../lib/workflow";
+import { createEmptyToolConfig } from "../lib/workflow/testHelpers";
 
 const apiMocks = vi.hoisted(() => ({
   bootstrapApp: vi.fn(),
@@ -1917,6 +1917,50 @@ describe("Global chat layout", () => {
       expect(hint?.textContent).toContain("2");
       expect(hint?.textContent).toContain("agents are running in parallel");
       expect(hint?.textContent).toContain("Select a node above to view and reply");
+    } finally {
+      dispose();
+    }
+  });
+
+  test("shows tool approval while parallel siblings are still unpicked", async () => {
+    const workflow = makeParallelWorkflow();
+    const runState = makeParallelAwaitingRunState(workflow);
+    const [, b, c] = workflow.nodes;
+    runState.awaitingNodeIds = [b.id];
+    runState.awaitingNodeId = b.id;
+    runState.statusByNode[b.id] = "awaiting_input";
+    runState.statusByNode[c.id] = "awaiting_tool_approval";
+    runState.pendingApprovals = [
+      {
+        approvalId: "approval-parallel",
+        nodeId: c.id,
+        nodeLabel: c.label,
+        toolCall: {
+          id: "call-bash",
+          name: "bash",
+          arguments: { command: "ls -la" },
+        },
+        tier: "read",
+      },
+    ];
+    apiMocks.submitToolApproval.mockResolvedValue(runState);
+    const { container, dispose } = await mountApp({
+      workflows: [workflow],
+      agents: [makeAgent("agent-1", "Research Agent")],
+      skills: FIXTURE_SKILLS,
+      settings: SETTINGS,
+      runState,
+    });
+    await openChatTab(container);
+
+    try {
+      expect(container.querySelector(".chat-parallel-hint")).not.toBeNull();
+      expect(container.querySelectorAll(".chat-composer-pill textarea").length).toBe(0);
+      const card = container.querySelector(".chat-composer-bar .tool-approval-card");
+      expect(card).not.toBeNull();
+      card?.querySelector(".primary-button")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await flush();
+      expect(apiMocks.submitToolApproval).toHaveBeenCalledWith("approval-parallel", true);
     } finally {
       dispose();
     }
