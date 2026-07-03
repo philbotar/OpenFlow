@@ -433,6 +433,10 @@ pub fn apply_event_to_run_state(
                 }
             }
         }
+        ExecutionEvent::Error(error) if error.starts_with("ignored ") => {
+            // Stale UI actions during an interaction pause must not tear down the session.
+            log::warn!("stale run action: {error}");
+        }
         ExecutionEvent::Error(error) => {
             state.active = false;
             state.awaiting_node_id = None;
@@ -796,6 +800,38 @@ mod tests {
         let node = Node::agent("Root", 0.0, 0.0);
         workflow.nodes = vec![node.clone()];
         assert!(should_record_entrypoint_in_chat(&workflow, &node.id));
+    }
+
+    #[test]
+    fn ignored_error_does_not_stop_active_run() {
+        use crate::run::state::WorkflowRunState;
+        use engine::tools::{ToolCall, ToolTier};
+
+        let workflow = Workflow::new("w");
+        let mut state = WorkflowRunState::running_for_workflow(&workflow);
+        state.pending_approvals.push(engine::PendingToolApproval {
+            approval_id: "approval-1".to_string(),
+            node_id: NodeId("plan".to_string()),
+            node_label: "Plan".to_string(),
+            tool_call: ToolCall {
+                id: "call-1".to_string(),
+                name: "bash".to_string(),
+                arguments: serde_json::json!({}),
+            },
+            tier: ToolTier::Read,
+        });
+
+        apply_event_to_run_state(
+            &workflow,
+            &mut state,
+            ExecutionEvent::Error(
+                "ignored retry for node design: not in current interaction pause".to_string(),
+            ),
+        );
+
+        assert!(state.active);
+        assert_eq!(state.pending_approvals.len(), 1);
+        assert!(state.last_error.is_none());
     }
 
     #[test]

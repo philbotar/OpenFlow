@@ -1922,6 +1922,50 @@ describe("Global chat layout", () => {
     }
   });
 
+  test("shows tool approval while parallel siblings are still unpicked", async () => {
+    const workflow = makeParallelWorkflow();
+    const runState = makeParallelAwaitingRunState(workflow);
+    const [, b, c] = workflow.nodes;
+    runState.awaitingNodeIds = [b.id];
+    runState.awaitingNodeId = b.id;
+    runState.statusByNode[b.id] = "awaiting_input";
+    runState.statusByNode[c.id] = "awaiting_tool_approval";
+    runState.pendingApprovals = [
+      {
+        approvalId: "approval-parallel",
+        nodeId: c.id,
+        nodeLabel: c.label,
+        toolCall: {
+          id: "call-bash",
+          name: "bash",
+          arguments: { command: "ls -la" },
+        },
+        tier: "read",
+      },
+    ];
+    apiMocks.submitToolApproval.mockResolvedValue(runState);
+    const { container, dispose } = await mountApp({
+      workflows: [workflow],
+      agents: [makeAgent("agent-1", "Research Agent")],
+      skills: FIXTURE_SKILLS,
+      settings: SETTINGS,
+      runState,
+    });
+    await openChatTab(container);
+
+    try {
+      expect(container.querySelector(".chat-parallel-hint")).not.toBeNull();
+      expect(container.querySelectorAll(".chat-composer-pill textarea").length).toBe(0);
+      const card = container.querySelector(".chat-composer-bar .tool-approval-card");
+      expect(card).not.toBeNull();
+      card?.querySelector(".primary-button")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await flush();
+      expect(apiMocks.submitToolApproval).toHaveBeenCalledWith("approval-parallel", true);
+    } finally {
+      dispose();
+    }
+  });
+
   test("picking a parallel node streams it inline and routes the composer to it", async () => {
     const workflow = makeParallelWorkflow();
     const runState = makeParallelAwaitingRunState(workflow);

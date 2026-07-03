@@ -5,6 +5,7 @@
 
 pub(crate) mod anthropic;
 pub(crate) mod auth;
+pub(crate) mod http_errors;
 #[cfg(feature = "bedrock")]
 pub(crate) mod aws_runtime;
 #[cfg(feature = "bedrock")]

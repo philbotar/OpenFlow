@@ -5,6 +5,7 @@ import { useAppContext } from "../../context/AppContext";
 import { ConversationComposer } from "./ConversationComposer";
 import { ConversationMessages } from "./ConversationMessages";
 import { LiveSegmentFooter } from "./LiveSegmentFooter";
+import { ToolApprovalCardBody } from "./ToolApprovalCard";
 
 export function ChatPanel() {
   const ctx = useAppContext();
@@ -33,6 +34,10 @@ export function ChatPanel() {
   );
 
   const parallelLiveCount = createMemo(() => ctx.chatLayout().live.length);
+
+  // Surface approval outside the parallel-live picker — otherwise the card only
+  // appears after the user picks (or the sibling finishes and folds inline).
+  const pendingApproval = createMemo(() => ctx.runState()?.pendingApprovals[0] ?? null);
 
   return (
     <div class="chat-layout">
@@ -64,6 +69,16 @@ export function ChatPanel() {
         </div>
       </Show>
       <div class="chat-composer-bar">
+        <Show when={pendingApproval()}>
+          {(approval) => (
+            <ToolApprovalCardBody
+              approval={approval()}
+              onApprove={(allow) =>
+                void ctx.handleToolApproval(approval().approvalId, allow)
+              }
+            />
+          )}
+        </Show>
         <Show when={inlineLiveSegment()}>
           {(segment) => <LiveSegmentFooter segment={segment()} />}
         </Show>

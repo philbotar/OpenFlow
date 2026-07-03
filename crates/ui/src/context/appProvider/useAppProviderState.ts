@@ -185,7 +185,7 @@ export function useAppProviderState(): AppContextValue {
         void chatComposer.flushPendingKickoff(nextRunState);
         if (nextRunState.pendingApprovals.length > 0) {
           const approval = nextRunState.pendingApprovals[0];
-          chatComposer.focusChatNode(approval.nodeId);
+          chatComposer.navigateChatToNode(approval.nodeId);
           dock.focusChatDock();
           toastApi.showInfoToast(`${approval.nodeLabel} needs tool approval`, "run-state");
         } else {
@@ -200,7 +200,7 @@ export function useAppProviderState(): AppContextValue {
             const label =
               workspace.activeWorkflow()?.nodes.find((node) => node.id === focusId)?.label ??
               "Node";
-            chatComposer.focusChatNode(focusId);
+            chatComposer.navigateChatToNode(focusId);
             dock.focusChatDock();
             const suffix = awaitingIds.length > 1 ? ` (+${awaitingIds.length - 1} more)` : "";
             toastApi.showInfoToast(`${label} is waiting for input${suffix}`, "run-state");

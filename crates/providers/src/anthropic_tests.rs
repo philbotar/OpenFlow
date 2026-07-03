@@ -152,8 +152,8 @@ fn tool_loop_cache_control_expected_body() -> Value {
                         "required": ["summary"]
                     },
                     "assistant_message": {
-                        "type": ["string", "null"],
-                        "description": "Optional human-facing note to show alongside the final result."
+                        "type": "string",
+                        "description": "Optional human-facing note to show alongside the final result. Use an empty string when none."
                     }
                 },
                 "required": ["output", "assistant_message"]
@@ -200,8 +200,8 @@ async fn messages_request_sends_headers_body_and_parses_internal_submit_output()
                             "required": ["summary"]
                         },
                         "assistant_message": {
-                            "type": ["string", "null"],
-                            "description": "Optional human-facing note to show alongside the final result."
+                            "type": "string",
+                            "description": "Optional human-facing note to show alongside the final result. Use an empty string when none."
                         }
                     },
                     "required": ["output", "assistant_message"]
@@ -326,8 +326,8 @@ async fn messages_tool_loop_places_cache_control_on_second_to_last_message() {
 #[tokio::test]
 async fn messages_errors_map_auth_and_rate_limit_statuses() {
     for (status, expected, retryable) in [
-        (401, "Anthropic authentication failed", false),
-        (429, "Anthropic rate limit exceeded", true),
+        (401, "Anthropic returned HTTP 401", false),
+        (429, "Anthropic returned HTTP 429", true),
     ] {
         let server = MockServer::start().await;
         Mock::given(method("POST"))

@@ -1,4 +1,5 @@
 use crate::auth::{apply_auth, AuthConfig};
+use crate::http_errors::classify_http_status;
 use crate::client::AnthropicConfig;
 use crate::mapping::{
     all_tool_specs, build_node_context, extract_usage_from_anthropic, resolve_tool_turn_outcome,
@@ -151,17 +152,8 @@ async fn post_json(
         .map_err(|error| AgentError::Failed(format!("Anthropic response JSON failed: {error}")))?;
 
     if !status.is_success() {
-        let prefix = match status.as_u16() {
-            401 | 403 => "Anthropic authentication failed",
-            429 => "Anthropic rate limit exceeded",
-            _ => "Anthropic returned",
-        };
-        let message = format!("{prefix} HTTP {status}: {payload}");
-        return if status.as_u16() == 429 || status.is_server_error() {
-            Err(AgentError::Transient(message))
-        } else {
-            Err(AgentError::Permanent(message))
-        };
+        let body = payload.to_string();
+        return Err(classify_http_status(status.as_u16(), &body, "Anthropic"));
     }
 
     Ok(payload)

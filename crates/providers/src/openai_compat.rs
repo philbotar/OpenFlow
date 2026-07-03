@@ -1,8 +1,9 @@
 use crate::auth::{apply_auth, AuthConfig};
 use crate::client::AiClientConfig;
+use crate::http_errors::classify_http_status;
 use crate::mapping::{
-    all_tool_specs, parse_chat_completion_output, parse_responses_output, should_allow_user_input,
-    tool_payload, transcript_to_chat_messages, transcript_to_responses_input,
+    all_tool_specs, chat_completions_tool_payload, parse_chat_completion_output, parse_responses_output,
+    should_allow_user_input, tool_payload, transcript_to_chat_messages, transcript_to_responses_input,
 };
 use crate::prompt_cache::{apply_openai_cache_key, openai_compat_cache_key_enabled};
 use crate::spec::WireApi;
@@ -103,15 +104,7 @@ fn chat_completions_body(
         "messages": transcript_to_chat_messages(request)?,
         "tools": all_tool_specs(request)
             .into_iter()
-            .map(|tool| json!({
-                "type": "function",
-                "function": {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": tool.parameters,
-                    "strict": true
-                }
-            }))
+            .map(|tool| chat_completions_tool_payload(&tool))
             .collect::<Vec<_>>()
     });
     if let Some(effort) = request
@@ -223,12 +216,8 @@ async fn post_json(
         .map_err(|error| AgentError::Failed(format!("{label} response JSON failed: {error}")))?;
 
     if !status.is_success() {
-        let message = format!("{label} returned HTTP {status}: {payload}");
-        return if status.as_u16() == 429 || status.is_server_error() {
-            Err(AgentError::Transient(message))
-        } else {
-            Err(AgentError::Permanent(message))
-        };
+        let body = payload.to_string();
+        return Err(classify_http_status(status.as_u16(), &body, label));
     }
 
     Ok(payload)
@@ -366,13 +355,12 @@ mod tests {
                                 "required": ["summary"]
                             },
                             "assistant_message": {
-                                "type": ["string", "null"],
-                                "description": "Optional human-facing note to show alongside the final result."
+                                "type": "string",
+                                "description": "Optional human-facing note to show alongside the final result. Use an empty string when none."
                             }
                         },
                         "required": ["output", "assistant_message"]
-                    },
-                    "strict": true
+                    }
                 }]
             })))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
@@ -429,8 +417,7 @@ mod tests {
                                     "path": { "type": "string" }
                                 },
                                 "required": ["path"]
-                            },
-                            "strict": true
+                            }
                         }
                     },
                     {
@@ -451,13 +438,12 @@ mod tests {
                                         "required": ["summary"]
                                     },
                                     "assistant_message": {
-                                        "type": ["string", "null"],
-                                        "description": "Optional human-facing note to show alongside the final result."
+                                        "type": "string",
+                                        "description": "Optional human-facing note to show alongside the final result. Use an empty string when none."
                                     }
                                 },
                                 "required": ["output", "assistant_message"]
-                            },
-                            "strict": true
+                            }
                         }
                     }
                 ]

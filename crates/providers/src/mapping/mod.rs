@@ -46,8 +46,8 @@ pub fn submit_output_tool(request: &AgentRequest) -> ToolSpec {
             "properties": {
                 "output": effective_output_schema(&request.output_schema),
                 "assistant_message": {
-                    "type": ["string", "null"],
-                    "description": "Optional human-facing note to show alongside the final result."
+                    "type": "string",
+                    "description": "Optional human-facing note to show alongside the final result. Use an empty string when none."
                 }
             },
             "required": ["output", "assistant_message"]
@@ -102,7 +102,18 @@ pub fn tool_payload(tool: &ToolSpec) -> Value {
         "name": tool.name,
         "description": tool.description,
         "parameters": tool.parameters,
-        "strict": true
+    })
+}
+
+/// Chat Completions wire shape (`tools[].function`).
+pub fn chat_completions_tool_payload(tool: &ToolSpec) -> Value {
+    json!({
+        "type": "function",
+        "function": {
+            "name": tool.name,
+            "description": tool.description,
+            "parameters": tool.parameters,
+        }
     })
 }
 
