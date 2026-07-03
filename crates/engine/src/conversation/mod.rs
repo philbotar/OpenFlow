@@ -245,7 +245,7 @@ pub fn filter_tool_turn_assistant_message(message: Option<String>) -> Option<Str
 
 /// Whether `openflow_request_user_input` assistant text is a direct human-facing question.
 #[must_use]
-pub fn is_clarifying_question(message: &str) -> bool {
+pub(crate) fn is_clarifying_question(message: &str) -> bool {
     let trimmed = message.trim();
     if trimmed.is_empty() {
         return false;

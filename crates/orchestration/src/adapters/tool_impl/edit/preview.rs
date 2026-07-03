@@ -3,45 +3,15 @@
 use std::path::PathBuf;
 
 use engine::FileChangeOp;
-use serde::Deserialize;
 use serde_json::Value;
 
 use super::apply_patch::expand_apply_patch_to_inputs;
 use super::diff::{generate_diff_string, replace_text, ReplaceOptions};
+use super::fuzzy_settings::{allow_fuzzy, edit_fuzzy_threshold, patch_fuzzy_threshold};
 use super::io::EditIo;
 use super::patch::{apply_patch_entry, PatchOp, PatchOptions, StdPatchFileSystem};
-use super::replace::DEFAULT_FUZZY_THRESHOLD;
+use super::tool_args::{EditToolArgs, PatchEnvelopeArgs, WriteToolArgs};
 use crate::api::{FileEditPreview, FileEditPreviewEntry};
-
-#[derive(Debug, Deserialize)]
-struct WriteArgs {
-    path: String,
-    content: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct EditArgs {
-    path: String,
-    edits: Vec<EditEntry>,
-}
-
-#[derive(Debug, Deserialize)]
-struct HashlineEditArgs {
-    input: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct EditEntry {
-    old_text: String,
-    new_text: String,
-    #[serde(default)]
-    all: bool,
-}
-
-#[derive(Debug, Deserialize)]
-struct ApplyPatchArgs {
-    input: String,
-}
 
 /// Compute numbered diffs without writing to disk.
 pub fn preview_file_edit(
@@ -59,7 +29,7 @@ pub fn preview_file_edit(
 }
 
 fn preview_write(cwd: PathBuf, args: &Value) -> Result<FileEditPreview, String> {
-    let args: WriteArgs = serde_json::from_value(args.clone())
+    let args: WriteToolArgs = serde_json::from_value(args.clone())
         .map_err(|error| format!("invalid write args: {error}"))?;
     let io = EditIo::new(cwd);
 
@@ -96,7 +66,7 @@ fn preview_edit(
         return preview_hashline_edit(cwd, args, snapshots);
     }
 
-    let args: EditArgs = serde_json::from_value(args.clone())
+    let args: EditToolArgs = serde_json::from_value(args.clone())
         .map_err(|error| format!("invalid edit args: {error}"))?;
     if args.edits.is_empty() {
         return Err("edits must contain at least one entry".to_string());
@@ -145,7 +115,7 @@ fn preview_hashline_edit(
     args: &Value,
     snapshots: std::sync::Arc<super::hashline::snapshots::InMemorySnapshotStore>,
 ) -> Result<FileEditPreview, String> {
-    let args: HashlineEditArgs = serde_json::from_value(args.clone())
+    let args: PatchEnvelopeArgs = serde_json::from_value(args.clone())
         .map_err(|error| format!("invalid hashline edit args: {error}"))?;
     use super::hashline::execute::EditHashlineFs;
     use super::hashline::input::Patch;
@@ -198,7 +168,7 @@ fn preview_hashline_edit(
 }
 
 fn preview_apply_patch(cwd: PathBuf, args: &Value) -> Result<FileEditPreview, String> {
-    let args: ApplyPatchArgs = serde_json::from_value(args.clone())
+    let args: PatchEnvelopeArgs = serde_json::from_value(args.clone())
         .map_err(|error| format!("invalid apply_patch args: {error}"))?;
     let inputs = expand_apply_patch_to_inputs(&args.input).map_err(|error| error.0)?;
     let options = PatchOptions {
@@ -257,26 +227,6 @@ fn preview_entry(
         diff,
         rename_to,
     }
-}
-
-fn allow_fuzzy() -> bool {
-    !matches!(
-        std::env::var("PI_EDIT_FUZZY").as_deref(),
-        Ok("0") | Ok("false") | Ok("off")
-    )
-}
-
-fn edit_fuzzy_threshold() -> Option<f64> {
-    std::env::var("PI_EDIT_FUZZY_THRESHOLD")
-        .ok()
-        .and_then(|value| value.parse().ok())
-}
-
-fn patch_fuzzy_threshold() -> f64 {
-    std::env::var("PI_EDIT_FUZZY_THRESHOLD")
-        .ok()
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(DEFAULT_FUZZY_THRESHOLD)
 }
 
 fn map_io_error(error: super::io::EditIoError) -> String {

@@ -4,10 +4,7 @@ mod completion;
 mod tests;
 mod tools;
 
-pub use checkpoint::{
-    collect_checkpoint_node_ids, validate_checkpoint_against_workflow, CheckpointError,
-    InteractiveEngineCheckpoint,
-};
+pub use checkpoint::{validate_checkpoint_against_workflow, InteractiveEngineCheckpoint};
 
 use crate::conversation::{AgentTranscriptItem, ChatMessage, ChatRole};
 use crate::execution::node_invocation::{

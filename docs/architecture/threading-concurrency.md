@@ -250,7 +250,7 @@ flowchart LR
     Emit -.->|"one event per<br/>execution step"| Solid
 ```
 
-`AppProvider` listens for `run-state` events and updates signals (`crates/ui/src/context/AppProvider.tsx`). Each execution step (node start, tool call, chat message) triggers a full state snapshot emit. High-frequency tool loops mean many serializations and IPC round-trips.
+`useRunSession` (via `context/appProvider/`) listens for `run-state` events and updates run signals. Each execution step (node start, tool call, chat message) triggers a full state snapshot emit. High-frequency tool loops mean many serializations and IPC round-trips.
 
 ---
 
@@ -360,4 +360,4 @@ flowchart TB
 | Blocking tool I/O | `crates/orchestration/src/tool/dispatch.rs`, `crates/orchestration/src/tool/runner.rs` |
 | Sync file persistence | `crates/orchestration/src/adapters/storage/` |
 | Tauri command + event bridge | `crates/desktop/src/lib.rs` |
-| UI event listener | `crates/ui/src/context/AppProvider.tsx` |
+| UI event listener | `crates/ui/src/context/appProvider/useRunSession.ts` |

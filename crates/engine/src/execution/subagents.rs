@@ -20,7 +20,7 @@ pub fn adhoc_subagent_base_index(
 }
 
 #[must_use]
-pub fn build_adhoc_subagent_summaries(
+pub(crate) fn build_adhoc_subagent_summaries(
     node_id: &NodeId,
     declarations: &[SubagentDeclaration],
     base_index: usize,

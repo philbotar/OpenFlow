@@ -2,6 +2,7 @@
 
 pub mod apply;
 pub mod block;
+pub mod boundary_repair;
 pub mod execute;
 pub mod format;
 pub mod fs;

@@ -249,7 +249,7 @@ const fn default_auto_start() -> bool {
 
 /// Default JSON Schema for structured node or subagent output.
 #[must_use]
-pub fn default_structured_output_schema() -> Value {
+pub(crate) fn default_structured_output_schema() -> Value {
     json!({
         "type": "object",
         "additionalProperties": false,
@@ -260,7 +260,7 @@ pub fn default_structured_output_schema() -> Value {
     })
 }
 
-/// Use `schema` when it is a non-empty object schema; otherwise fall back to [`default_structured_output_schema`].
+/// Use `schema` when it is a non-empty object schema; otherwise fall back to the default structured output schema.
 #[must_use]
 pub fn effective_output_schema(schema: &Value) -> Value {
     match schema {
@@ -362,9 +362,8 @@ mod tests {
     }
 
     #[test]
-    fn agent_node_defaults_tools_enabled() {
+    fn agent_node_defaults_tools_use_write_approval_mode() {
         let node = Node::agent("Plan", 0.0, 0.0);
-        assert!(node.agent.tools.is_enabled());
         assert_eq!(node.agent.tools.approval_mode, None);
     }
 

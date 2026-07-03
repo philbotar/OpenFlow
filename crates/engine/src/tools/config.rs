@@ -39,11 +39,6 @@ pub struct NodeToolConfig {
 
 impl NodeToolConfig {
     #[must_use]
-    pub const fn is_enabled(&self) -> bool {
-        true
-    }
-
-    #[must_use]
     pub const fn effective_approval_mode(&self) -> ApprovalMode {
         match self.approval_mode {
             Some(mode) => mode,
@@ -56,10 +51,15 @@ impl NodeToolConfig {
 pub enum ToolDecision {
     AutoAllow,
     Prompt,
+    #[allow(
+        dead_code,
+        reason = "matched in completion; reserved for future deny policy"
+    )]
     Deny,
 }
 
 #[must_use]
+#[cfg_attr(not(test), allow(dead_code, reason = "exercised by config unit tests"))]
 pub const fn requires_approval(mode: ApprovalMode, tier: ToolTier) -> ToolDecision {
     decision_from_mode(mode, tier)
 }
@@ -231,7 +231,6 @@ mod tests {
     #[test]
     fn node_tool_config_defaults_to_write_mode() {
         let config = NodeToolConfig::default();
-        assert!(config.is_enabled());
         assert_eq!(config.approval_mode, None);
         assert_eq!(config.effective_approval_mode(), ApprovalMode::Write);
     }

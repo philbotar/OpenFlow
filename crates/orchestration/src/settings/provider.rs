@@ -150,6 +150,20 @@ pub fn active_provider_label(settings: &AppSettings) -> String {
         .unwrap_or_else(|| settings.active_provider.to_string())
 }
 
+fn first_trimmed_string<'a>(sources: impl IntoIterator<Item = Option<&'a str>>) -> Option<String> {
+    sources
+        .into_iter()
+        .find_map(|source| trimmed(source).map(str::to_string))
+}
+
+fn env_trimmed_string(env: &ProviderEnv, env_var: &str) -> Option<String> {
+    first_trimmed_string([env.get(env_var)]).or_else(|| {
+        std::env::var(env_var)
+            .ok()
+            .and_then(|value| trimmed(Some(&value)).map(str::to_string))
+    })
+}
+
 fn resolve_api_key(
     transient_api_key: Option<&str>,
     stored_api_key: &str,
@@ -157,14 +171,11 @@ fn resolve_api_key(
     auth: AuthSpec,
     env: &ProviderEnv,
 ) -> Result<Option<String>, ProviderConfigError> {
-    let api_key = trimmed(transient_api_key)
-        .map(str::to_string)
-        .or_else(|| trimmed(Some(stored_api_key)).map(str::to_string))
-        .or_else(|| {
-            auth.env_var()
-                .and_then(|env_var| env.get(env_var))
-                .and_then(|value| trimmed(Some(value)).map(str::to_string))
-        });
+    let api_key = first_trimmed_string([
+        transient_api_key,
+        Some(stored_api_key),
+        auth.env_var().and_then(|env_var| env.get(env_var)),
+    ]);
 
     if api_key.is_none() && auth.requires_key() {
         return Err(ProviderConfigError::MissingApiKey {
@@ -203,21 +214,11 @@ fn resolve_bedrock_region(
     auth: AuthSpec,
     env: &ProviderEnv,
 ) -> Option<String> {
-    trimmed(Some(profile.aws_region.as_str()))
-        .map(str::to_string)
-        .or_else(|| trimmed(Some(profile.base_url.as_str())).map(str::to_string))
-        .or_else(|| {
-            bedrock_region_env_var(auth)
-                .and_then(|env_var| env.get(env_var))
-                .and_then(|value| trimmed(Some(value)).map(str::to_string))
-        })
-        .or_else(|| {
-            bedrock_region_env_var(auth).and_then(|env_var| {
-                std::env::var(env_var)
-                    .ok()
-                    .and_then(|value| trimmed(Some(&value)).map(str::to_string))
-            })
-        })
+    first_trimmed_string([
+        Some(profile.aws_region.as_str()),
+        Some(profile.base_url.as_str()),
+    ])
+    .or_else(|| bedrock_region_env_var(auth).and_then(|env_var| env_trimmed_string(env, env_var)))
 }
 
 fn resolve_bedrock_profile(
@@ -225,19 +226,12 @@ fn resolve_bedrock_profile(
     auth: AuthSpec,
     env: &ProviderEnv,
 ) -> Option<String> {
-    trimmed(Some(profile.aws_profile.as_str()))
-        .map(str::to_string)
-        .or_else(|| {
-            auth.env_var()
-                .and_then(|env_var| env.get(env_var))
-                .and_then(|value| trimmed(Some(value)).map(str::to_string))
-        })
+    first_trimmed_string([Some(profile.aws_profile.as_str())])
+        .or_else(|| first_trimmed_string([auth.env_var().and_then(|env_var| env.get(env_var))]))
         .or_else(|| match auth {
             AuthSpec::AwsCredentials {
                 profile_env_var, ..
-            } => std::env::var(profile_env_var)
-                .ok()
-                .and_then(|value| trimmed(Some(&value)).map(str::to_string)),
+            } => env_trimmed_string(env, profile_env_var),
             _ => None,
         })
 }

@@ -72,18 +72,23 @@ impl InteractiveEngine {
         if !error.is_malformed_submit_output() {
             return false;
         }
+
         let schema_hint = self.find_node(node_id).map_or_else(
             || "see the node output schema".to_string(),
             |node| node.agent.output_schema.to_string(),
         );
+
         let retry_count = self
             .submit_output_retries_by_node
             .entry(node_id.clone())
             .or_default();
+
         if *retry_count >= MAX_MALFORMED_SUBMIT_OUTPUT_RETRIES {
             return false;
         }
+
         *retry_count += 1;
+
         self.transcripts
             .entry(node_id.clone())
             .or_default()
@@ -107,13 +112,16 @@ impl InteractiveEngine {
         if is_clarifying_question(&input.assistant_message) {
             return false;
         }
+
         let retry_count = self
             .request_input_retries_by_node
             .entry(node_id.clone())
             .or_default();
+
         if *retry_count >= MAX_MALFORMED_REQUEST_INPUT_RETRIES {
             return false;
         }
+
         *retry_count += 1;
         self.transcripts.entry(node_id.clone()).or_default().push(
             AgentTranscriptItem::UserMessage {

@@ -2,20 +2,14 @@
 
 use std::path::PathBuf;
 
-use serde::Deserialize;
 use serde_json::Value;
 
 use super::diff::generate_diff_string;
 use super::io::{EditIo, EditIoError, WriteTextOutcome};
 use super::ledger::FileChangeLedger;
+use super::tool_args::WriteToolArgs;
 use crate::lsp::{append_writethrough_to_output, LspSettings};
 use crate::tools::errors::ToolError;
-
-#[derive(Debug, Deserialize)]
-struct WriteArgs {
-    path: String,
-    content: String,
-}
 
 pub fn execute_write(
     cwd: PathBuf,
@@ -23,11 +17,12 @@ pub fn execute_write(
     ledger: FileChangeLedger,
     lsp: LspSettings,
 ) -> Result<String, ToolError> {
-    let args: WriteArgs = serde_json::from_value(args).map_err(|error| ToolError::InvalidArgs {
-        tool: "write".to_string(),
-        problem: error.to_string(),
-        hint: "required fields: path (string), content (string)".to_string(),
-    })?;
+    let args: WriteToolArgs =
+        serde_json::from_value(args).map_err(|error| ToolError::InvalidArgs {
+            tool: "write".to_string(),
+            problem: error.to_string(),
+            hint: "required fields: path (string), content (string)".to_string(),
+        })?;
     let io = EditIo::new(cwd).with_ledger(ledger).with_lsp_settings(lsp);
 
     let existed = io.exists(&args.path).map_err(map_io_error)?;

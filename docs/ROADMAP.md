@@ -609,7 +609,7 @@ Agents can already ask for free-text input via `openflow_request_user_input` (`A
 | Layer | Role |
 | --- | --- |
 | `crates/ui/src/lib/workflow.ts` | `projectChatLayout` — layer order, settled vs live columns, overflow tabs |
-| `crates/ui/src/context/AppProvider.tsx` | Merged layout state, kickoff/flush, per-node draft + submit routing |
+| `crates/ui/src/context/appProvider/useRunSession.ts` + `useChatComposer.ts` | Merged layout state, kickoff/flush, per-node draft + submit routing |
 | `crates/ui/src/components/conversation/ChatPanel.tsx` | Settled segments + live column strip |
 | `crates/orchestration/src/run/state/` | `chatLogs: Record<NodeId, ChatMessage[]>` — source of truth |
 
@@ -684,7 +684,7 @@ Users can invoke skills with `/skill` tokens and attach project context with `@{
 | `crates/ui/src/lib/fileReferences.ts` | `@` / `@{path}` token parsing, completion, path extraction, inline formatting — **Done** |
 | `crates/ui/src/components/conversation/FileReferenceCombobox.tsx` | Project file combobox in composer — **Done** |
 | `crates/orchestration/src/project/file_refs.rs` | List + read referenced paths under execution cwd jail — **Done** |
-| `crates/ui/src/context/AppProvider.tsx` | `resolveChatSubmittedText` reads refs before `submit_user_input` / run kickoff — **Done** |
+| `crates/ui/src/context/appProvider/useChatComposer.ts` | `resolveChatSubmission` reads refs before `submit_user_input` / run kickoff — **Done** |
 | `crates/ui/src/components/conversation/` | No attach button, drag-drop target, reference pills, or preview chrome |
 | `crates/engine/src/execution/` | User input is a single string; no structured `referenced_files` in transcript or node input |
 

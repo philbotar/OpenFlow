@@ -8,8 +8,6 @@ use serde_json::{json, Value};
 
 pub const SUBMIT_OUTPUT_TOOL: &str = "openflow_submit_node_output";
 pub const REQUEST_INPUT_TOOL: &str = "openflow_request_user_input";
-pub const MALFORMED_SUBMIT_OUTPUT_MARKER: &str = "final output tool arguments were not valid JSON";
-
 #[derive(Debug, Clone)]
 pub struct ToolSpec {
     pub name: String,
@@ -395,13 +393,11 @@ pub fn parse_internal_tool_outcome(
                 assistant_message: Option<String>,
             }
 
-            let raw = try_parse_or_recover_json(arguments).map_err(|error| {
-                AgentError::Failed(format!("{label} {MALFORMED_SUBMIT_OUTPUT_MARKER}: {error}"))
-            })?;
+            let raw = try_parse_or_recover_json(arguments)
+                .map_err(|error| AgentError::malformed_submit_output(label, error.to_string()))?;
             let normalized = normalize_submit_output_arguments(raw, output_schema);
-            let args: SubmitOutputArgs = serde_json::from_value(normalized).map_err(|error| {
-                AgentError::Failed(format!("{label} {MALFORMED_SUBMIT_OUTPUT_MARKER}: {error}"))
-            })?;
+            let args: SubmitOutputArgs = serde_json::from_value(normalized)
+                .map_err(|error| AgentError::malformed_submit_output(label, error.to_string()))?;
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
                 output: args.output,
                 raw_text: arguments.to_string(),
@@ -434,6 +430,101 @@ pub fn parse_internal_tool_outcome(
     }
 }
 
+/// How to handle a provider turn that collected no tool calls.
+pub enum NoToolCallsPolicy {
+    /// Fail immediately (e.g. `OpenAI Responses API`).
+    Error(&'static str),
+    /// Try plain JSON completion, optional follow-up prompt, then fail.
+    Recover {
+        allow_plain_text_follow_up: bool,
+        error: &'static str,
+    },
+}
+
+pub struct ResolveToolTurnParams<'a> {
+    pub tool_calls: Vec<ToolCall>,
+    pub assistant_message: Option<String>,
+    pub no_tool_calls: NoToolCallsPolicy,
+    pub output_schema: Option<&'a Value>,
+    pub provider_label: &'static str,
+    pub usage: Option<engine::UsageReport>,
+    /// When true, `OpenAI` wire formats strip boilerplate from `assistant_message` on external tool batches.
+    pub filter_assistant_on_external_batch: bool,
+}
+
+/// Shared tail for provider parsers: empty-turn recovery, internal-tool routing, external batch.
+pub fn resolve_tool_turn_outcome(
+    params: ResolveToolTurnParams<'_>,
+) -> Result<AgentTurnOutcome, AgentError> {
+    let ResolveToolTurnParams {
+        tool_calls,
+        assistant_message,
+        no_tool_calls,
+        output_schema,
+        provider_label,
+        usage,
+        filter_assistant_on_external_batch,
+    } = params;
+
+    if tool_calls.is_empty() {
+        return match no_tool_calls {
+            NoToolCallsPolicy::Error(message) => Err(AgentError::Failed(message.to_string())),
+            NoToolCallsPolicy::Recover {
+                allow_plain_text_follow_up,
+                error,
+            } => {
+                if let Some(outcome) = parse_plain_json_completion(assistant_message.as_deref()) {
+                    return Ok(attach_usage(outcome, usage));
+                }
+                if allow_plain_text_follow_up {
+                    if let Some(assistant_message) = assistant_message {
+                        return Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
+                            raw_text: assistant_message.clone(),
+                            assistant_message,
+                        }));
+                    }
+                }
+                Err(AgentError::Failed(error.to_string()))
+            }
+        };
+    }
+
+    if let Some(index) = tool_calls
+        .iter()
+        .position(|call| call.name == SUBMIT_OUTPUT_TOOL || call.name == REQUEST_INPUT_TOOL)
+    {
+        if tool_calls.len() != 1 {
+            return Err(AgentError::Failed(format!(
+                "{provider_label} response mixed internal and external tool calls"
+            )));
+        }
+        let call = &tool_calls[index];
+        return parse_internal_tool_outcome(
+            &call.name,
+            &call.arguments.to_string(),
+            assistant_message,
+            provider_label,
+            output_schema,
+        )
+        .map(|outcome| attach_usage(outcome, usage.clone()));
+    }
+
+    let assistant_message = if filter_assistant_on_external_batch {
+        filter_tool_turn_assistant_message(assistant_message)
+    } else {
+        assistant_message
+    };
+    Ok(attach_usage(
+        AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+            raw_text: assistant_message.clone().unwrap_or_default(),
+            assistant_message,
+            tool_calls,
+            usage: None,
+        }),
+        usage,
+    ))
+}
+
 pub fn parse_plain_json_completion(content: Option<&str>) -> Option<AgentTurnOutcome> {
     let content = content
         .map(str::trim)
@@ -460,29 +551,9 @@ pub fn parse_plain_json_completion(content: Option<&str>) -> Option<AgentTurnOut
     }))
 }
 
-pub fn extract_chat_message_text(content: Option<&Value>) -> Option<String> {
-    match content {
-        Some(Value::String(text)) => Some(text.clone()),
-        Some(Value::Array(parts)) => {
-            let mut text = String::new();
-            for part in parts {
-                match part {
-                    Value::String(value) => text.push_str(value),
-                    Value::Object(map) => {
-                        if let Some(value) = map.get("text").and_then(Value::as_str) {
-                            text.push_str(value);
-                        } else if let Some(value) = map.get("refusal").and_then(Value::as_str) {
-                            text.push_str(value);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            (!text.trim().is_empty()).then_some(text)
-        }
-        _ => None,
-    }
-}
+mod wire_output;
+
+pub use wire_output::{parse_chat_completion_output, parse_responses_output};
 
 /// Attempt to parse a JSON string, repairing common LLM output issues when needed.
 /// Uses `jsonrepair-rs` for truncation, trailing commas, single quotes, and similar
@@ -509,239 +580,6 @@ fn try_deserialize_or_recover_json<T: for<'de> Deserialize<'de>>(
     serde_json::from_value(value)
 }
 
-pub fn parse_compatible_tool_call(call: &Value) -> Result<ToolCall, AgentError> {
-    let call_id = call
-        .get("id")
-        .and_then(Value::as_str)
-        .or_else(|| call.get("call_id").and_then(Value::as_str))
-        .unwrap_or("call-legacy");
-
-    let function = call.get("function").unwrap_or(call);
-
-    let name = function
-        .get("name")
-        .and_then(Value::as_str)
-        .ok_or_else(|| {
-            AgentError::Failed("OpenAI-compatible tool call missing function.name".to_string())
-        })?;
-
-    let arguments = function
-        .get("arguments")
-        .and_then(Value::as_str)
-        .ok_or_else(|| {
-            AgentError::Failed("OpenAI-compatible tool call missing function.arguments".to_string())
-        })?;
-
-    Ok(ToolCall {
-        id: call_id.to_string(),
-        name: name.to_string(),
-        arguments: try_parse_or_recover_json(arguments).map_err(|error| {
-            AgentError::Failed(format!(
-                "OpenAI-compatible tool call arguments were not valid JSON: {error}"
-            ))
-        })?,
-    })
-}
-
-pub fn parse_responses_output(
-    payload: &Value,
-    output_schema: Option<&Value>,
-) -> Result<AgentTurnOutcome, AgentError> {
-    let usage = extract_usage_from_openai(payload);
-    let output = payload
-        .get("output")
-        .and_then(Value::as_array)
-        .ok_or_else(|| AgentError::Failed("OpenAI response missing output array".to_string()))?;
-
-    let mut assistant_message = None;
-    let mut tool_calls = Vec::new();
-
-    for item in output {
-        match item.get("type").and_then(Value::as_str) {
-            Some("message") => {
-                let content = item
-                    .get("content")
-                    .and_then(Value::as_array)
-                    .ok_or_else(|| {
-                        AgentError::Failed("OpenAI message missing content array".to_string())
-                    })?;
-                for content_item in content {
-                    match content_item.get("type").and_then(Value::as_str) {
-                        Some("output_text") => {
-                            if let Some(text) = content_item.get("text").and_then(Value::as_str) {
-                                assistant_message = Some(text.to_string());
-                            }
-                        }
-                        Some("refusal") => {
-                            let refusal = content_item
-                                .get("refusal")
-                                .and_then(Value::as_str)
-                                .unwrap_or("model refused the request");
-                            return Err(AgentError::Failed(format!("OpenAI refusal: {refusal}")));
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            Some("function_call") => {
-                let call_id = item
-                    .get("call_id")
-                    .or_else(|| item.get("id"))
-                    .and_then(Value::as_str)
-                    .ok_or_else(|| {
-                        AgentError::Failed("OpenAI function_call missing call id".to_string())
-                    })?;
-
-                let name = item.get("name").and_then(Value::as_str).ok_or_else(|| {
-                    AgentError::Failed("OpenAI function_call missing name".to_string())
-                })?;
-
-                let arguments = item
-                    .get("arguments")
-                    .and_then(Value::as_str)
-                    .ok_or_else(|| {
-                        AgentError::Failed("OpenAI function_call missing arguments".to_string())
-                    })?;
-
-                tool_calls.push(ToolCall {
-                    id: call_id.to_string(),
-                    name: name.to_string(),
-                    arguments: try_parse_or_recover_json(arguments).map_err(|error| {
-                        AgentError::Failed(format!(
-                            "OpenAI function_call arguments were not valid JSON: {error}"
-                        ))
-                    })?,
-                });
-            }
-            _ => {}
-        }
-    }
-
-    if tool_calls.is_empty() {
-        return Err(AgentError::Failed(
-            "OpenAI response did not contain a function call".to_string(),
-        ));
-    }
-
-    if let Some(index) = tool_calls
-        .iter()
-        .position(|call| call.name == SUBMIT_OUTPUT_TOOL || call.name == REQUEST_INPUT_TOOL)
-    {
-        if tool_calls.len() != 1 {
-            return Err(AgentError::Failed(
-                "OpenAI response mixed internal and external tool calls".to_string(),
-            ));
-        }
-        let call = &tool_calls[index];
-        return parse_internal_tool_outcome(
-            &call.name,
-            &call.arguments.to_string(),
-            assistant_message,
-            "OpenAI",
-            output_schema,
-        )
-        .map(|outcome| attach_usage(outcome, usage.clone()));
-    }
-
-    let assistant_message = filter_tool_turn_assistant_message(assistant_message);
-    Ok(attach_usage(
-        AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
-            raw_text: assistant_message.clone().unwrap_or_default(),
-            assistant_message,
-            tool_calls,
-            usage: None,
-        }),
-        usage,
-    ))
-}
-
-pub fn parse_chat_completion_output(
-    payload: &Value,
-    allow_plain_text_follow_up: bool,
-    output_schema: Option<&Value>,
-) -> Result<AgentTurnOutcome, AgentError> {
-    let usage = extract_usage_from_openai(payload);
-    let message = payload
-        .get("choices")
-        .and_then(Value::as_array)
-        .and_then(|choices| choices.first())
-        .and_then(|choice| choice.get("message"))
-        .ok_or_else(|| {
-            AgentError::Failed("OpenAI-compatible response missing choices[0].message".to_string())
-        })?;
-
-    if let Some(refusal) = message.get("refusal").and_then(Value::as_str) {
-        return Err(AgentError::Failed(format!(
-            "OpenAI-compatible refusal: {refusal}"
-        )));
-    }
-
-    let assistant_message = extract_chat_message_text(message.get("content"))
-        .map(|content| content.trim().to_string())
-        .filter(|content| !content.is_empty());
-
-    let tool_calls = message
-        .get("tool_calls")
-        .and_then(Value::as_array)
-        .cloned()
-        .or_else(|| message.get("function_call").cloned().map(|call| vec![call]))
-        .unwrap_or_default();
-
-    if tool_calls.is_empty() {
-        if let Some(outcome) = parse_plain_json_completion(assistant_message.as_deref()) {
-            return Ok(attach_usage(outcome, usage));
-        }
-        if allow_plain_text_follow_up {
-            if let Some(assistant_message) = assistant_message {
-                return Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
-                    raw_text: assistant_message.clone(),
-                    assistant_message,
-                }));
-            }
-        }
-        return Err(AgentError::Failed(
-            "OpenAI-compatible response did not contain a tool call, plain JSON completion, or follow-up prompt"
-                .to_string(),
-        ));
-    }
-
-    let parsed = tool_calls
-        .iter()
-        .map(parse_compatible_tool_call)
-        .collect::<Result<Vec<_>, AgentError>>()?;
-
-    if let Some(index) = parsed
-        .iter()
-        .position(|call| call.name == SUBMIT_OUTPUT_TOOL || call.name == REQUEST_INPUT_TOOL)
-    {
-        if parsed.len() != 1 {
-            return Err(AgentError::Failed(
-                "OpenAI-compatible response mixed internal and external tool calls".to_string(),
-            ));
-        }
-        let call = &parsed[index];
-        return parse_internal_tool_outcome(
-            &call.name,
-            &call.arguments.to_string(),
-            assistant_message,
-            "OpenAI-compatible",
-            output_schema,
-        )
-        .map(|outcome| attach_usage(outcome, usage.clone()));
-    }
-
-    let assistant_message = filter_tool_turn_assistant_message(assistant_message);
-    Ok(attach_usage(
-        AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
-            raw_text: assistant_message.clone().unwrap_or_default(),
-            assistant_message,
-            tool_calls: parsed,
-            usage: None,
-        }),
-        usage,
-    ))
-}
-
 #[cfg(test)]
 #[allow(
     clippy::expect_used,
@@ -751,6 +589,7 @@ pub fn parse_chat_completion_output(
     reason = "mapping tests are long and use unwrap/expect for brevity"
 )]
 mod tests {
+    use super::wire_output::parse_compatible_tool_call;
     use super::*;
     fn make_tool_call_value(name: &str, arguments: &str) -> Value {
         json!({
@@ -1029,9 +868,8 @@ mod tests {
             "test",
             Some(&schema),
         )
-        .unwrap_err()
-        .to_string();
-        assert!(err.contains(MALFORMED_SUBMIT_OUTPUT_MARKER));
+        .unwrap_err();
+        assert!(err.is_malformed_submit_output());
     }
 
     #[test]
@@ -1082,6 +920,36 @@ mod tests {
         assert_eq!(batch.tool_calls.len(), 1);
         assert_eq!(batch.tool_calls[0].name, "search");
         assert_eq!(batch.assistant_message, None);
+    }
+
+    #[test]
+    fn resolve_tool_turn_rejects_mixed_internal_and_external_calls() {
+        let err = resolve_tool_turn_outcome(ResolveToolTurnParams {
+            tool_calls: vec![
+                ToolCall {
+                    id: "1".to_string(),
+                    name: SUBMIT_OUTPUT_TOOL.to_string(),
+                    arguments: json!({"output": {"x": 1}}),
+                },
+                ToolCall {
+                    id: "2".to_string(),
+                    name: "search".to_string(),
+                    arguments: json!({"pattern": "x"}),
+                },
+            ],
+            assistant_message: None,
+            no_tool_calls: NoToolCallsPolicy::Recover {
+                allow_plain_text_follow_up: false,
+                error: "unused",
+            },
+            output_schema: None,
+            provider_label: "test",
+            usage: None,
+            filter_assistant_on_external_batch: false,
+        })
+        .expect_err("mixed calls should fail");
+
+        assert!(err.to_string().contains("mixed internal and external"));
     }
 
     #[test]

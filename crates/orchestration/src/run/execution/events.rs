@@ -30,13 +30,7 @@ pub fn apply_event_to_run_state(
         }
 
         ExecutionEvent::NodeStarted { node_id, label } => {
-            remove_awaiting_node(state, &node_id);
-            state
-                .pending_approvals
-                .retain(|approval| approval.node_id != *node_id);
-            if state.active_manual_node_id.as_ref() == Some(&node_id) {
-                state.active_manual_node_id = None;
-            }
+            clear_node_awaiting_and_approvals(state, &node_id);
             state
                 .status_by_node
                 .insert(node_id.clone(), AgentStatus::Started);
@@ -347,14 +341,7 @@ pub fn apply_event_to_run_state(
             label,
             output,
         } => {
-            remove_awaiting_node(state, &node_id);
-            state
-                .pending_approvals
-                .retain(|approval| approval.node_id != *node_id);
-            if state.active_manual_node_id.as_ref() == Some(&node_id) {
-                state.active_manual_node_id = None;
-            }
-            state.active_tool_call_id = None;
+            clear_node_session_focus(state, &node_id);
             state
                 .status_by_node
                 .insert(node_id.clone(), AgentStatus::Completed);
@@ -375,14 +362,7 @@ pub fn apply_event_to_run_state(
             }
         }
         ExecutionEvent::NodeInterrupted { node_id, label } => {
-            remove_awaiting_node(state, &node_id);
-            state
-                .pending_approvals
-                .retain(|approval| approval.node_id != *node_id);
-            if state.active_manual_node_id.as_ref() == Some(&node_id) {
-                state.active_manual_node_id = None;
-            }
-            state.active_tool_call_id = None;
+            clear_node_session_focus(state, &node_id);
             state
                 .status_by_node
                 .insert(node_id.clone(), AgentStatus::Interrupted);
@@ -406,69 +386,12 @@ pub fn apply_event_to_run_state(
             node_id,
             label,
             error,
-        } => {
-            remove_awaiting_node(state, &node_id);
-            state
-                .pending_approvals
-                .retain(|approval| approval.node_id != *node_id);
-            if state.active_manual_node_id.as_ref() == Some(&node_id) {
-                state.active_manual_node_id = None;
-            }
-            state.active_tool_call_id = None;
-            state
-                .status_by_node
-                .insert(node_id.clone(), AgentStatus::Failed);
-            state.run_trace.push(RunTraceEntry {
-                node_id: node_id.clone(),
-                node_label: label,
-                status: TraceStatus::Failed,
-                message: error.clone(),
-                output: None,
-            });
-            state.last_error = Some(error.clone());
-            state
-                .chat_logs
-                .entry(node_id.clone())
-                .or_default()
-                .push(ChatMessage::text(
-                    ChatRole::System,
-                    format!("Failed: {error}"),
-                ));
-        }
+        } => record_node_failure(state, node_id, label, error, false),
         ExecutionEvent::NodeFailed {
             node_id,
             label,
             error,
-        } => {
-            state.active = false;
-            remove_awaiting_node(state, &node_id);
-            state
-                .pending_approvals
-                .retain(|approval| approval.node_id != *node_id);
-            if state.active_manual_node_id.as_ref() == Some(&node_id) {
-                state.active_manual_node_id = None;
-            }
-            state.active_tool_call_id = None;
-            state
-                .status_by_node
-                .insert(node_id.clone(), AgentStatus::Failed);
-            state.run_trace.push(RunTraceEntry {
-                node_id: node_id.clone(),
-                node_label: label,
-                status: TraceStatus::Failed,
-                message: error.clone(),
-                output: None,
-            });
-            state.last_error = Some(error.clone());
-            state
-                .chat_logs
-                .entry(node_id)
-                .or_default()
-                .push(ChatMessage::text(
-                    ChatRole::System,
-                    format!("Failed: {error}"),
-                ));
-        }
+        } => record_node_failure(state, node_id, label, error, true),
         ExecutionEvent::Finished(report) => {
             state.active = false;
             state.awaiting_node_id = None;
@@ -744,6 +667,53 @@ fn remove_awaiting_node(state: &mut WorkflowRunState, node_id: &NodeId) {
     if state.awaiting_node_id.as_ref() == Some(node_id) {
         state.awaiting_node_id = state.awaiting_node_ids.first().cloned();
     }
+}
+
+fn clear_node_awaiting_and_approvals(state: &mut WorkflowRunState, node_id: &NodeId) {
+    remove_awaiting_node(state, node_id);
+    state
+        .pending_approvals
+        .retain(|approval| approval.node_id != *node_id);
+    if state.active_manual_node_id.as_ref() == Some(node_id) {
+        state.active_manual_node_id = None;
+    }
+}
+
+fn clear_node_session_focus(state: &mut WorkflowRunState, node_id: &NodeId) {
+    clear_node_awaiting_and_approvals(state, node_id);
+    state.active_tool_call_id = None;
+}
+
+fn record_node_failure(
+    state: &mut WorkflowRunState,
+    node_id: NodeId,
+    label: String,
+    error: String,
+    deactivate_run: bool,
+) {
+    if deactivate_run {
+        state.active = false;
+    }
+    clear_node_session_focus(state, &node_id);
+    state
+        .status_by_node
+        .insert(node_id.clone(), AgentStatus::Failed);
+    state.run_trace.push(RunTraceEntry {
+        node_id: node_id.clone(),
+        node_label: label,
+        status: TraceStatus::Failed,
+        message: error.clone(),
+        output: None,
+    });
+    state.last_error = Some(error.clone());
+    state
+        .chat_logs
+        .entry(node_id)
+        .or_default()
+        .push(ChatMessage::text(
+            ChatRole::System,
+            format!("Failed: {error}"),
+        ));
 }
 
 fn remove_pending_approval(state: &mut WorkflowRunState, approval_id: &str) {

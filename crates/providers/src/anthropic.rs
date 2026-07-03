@@ -1,16 +1,15 @@
 use crate::auth::{apply_auth, AuthConfig};
 use crate::client::AnthropicConfig;
 use crate::mapping::{
-    all_tool_specs, attach_usage, build_node_context, extract_usage_from_anthropic,
-    parse_internal_tool_outcome, parse_plain_json_completion, should_allow_user_input, ToolSpec,
-    REQUEST_INPUT_TOOL, SUBMIT_OUTPUT_TOOL,
+    all_tool_specs, build_node_context, extract_usage_from_anthropic, resolve_tool_turn_outcome,
+    should_allow_user_input, NoToolCallsPolicy, ResolveToolTurnParams, ToolSpec,
 };
 use crate::prompt_cache::{
     apply_cache_control_to_message, ephemeral_cache_control, second_to_last_index,
 };
 use engine::{
-    emit_assistant_deltas_from_outcome, AgentError, AgentNeedUserInput, AgentRequest,
-    AgentToolCallBatch, AgentTranscriptItem, AgentTurnOutcome, AiStreamSink, ToolCall,
+    emit_assistant_deltas_from_outcome, AgentError, AgentRequest, AgentTranscriptItem,
+    AgentTurnOutcome, AiStreamSink, ToolCall,
 };
 use reqwest::Client;
 use serde_json::{json, Value};
@@ -218,53 +217,18 @@ fn parse_anthropic_output(
     let assistant_message =
         (!assistant_text_parts.is_empty()).then(|| assistant_text_parts.join("\n"));
 
-    if tool_calls.is_empty() {
-        if let Some(outcome) = parse_plain_json_completion(assistant_message.as_deref()) {
-            return Ok(attach_usage(outcome, usage));
-        }
-        if allow_plain_text_follow_up {
-            if let Some(assistant_message) = assistant_message {
-                return Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
-                    raw_text: assistant_message.clone(),
-                    assistant_message,
-                }));
-            }
-        }
-        return Err(AgentError::Failed(
-            "Anthropic response did not contain a tool call, plain JSON completion, or follow-up prompt"
-                .to_string(),
-        ));
-    }
-
-    if let Some(index) = tool_calls
-        .iter()
-        .position(|call| call.name == SUBMIT_OUTPUT_TOOL || call.name == REQUEST_INPUT_TOOL)
-    {
-        if tool_calls.len() != 1 {
-            return Err(AgentError::Failed(
-                "Anthropic response mixed internal and external tool calls".to_string(),
-            ));
-        }
-        let call = &tool_calls[index];
-        return parse_internal_tool_outcome(
-            &call.name,
-            &call.arguments.to_string(),
-            assistant_message,
-            "Anthropic",
-            output_schema,
-        )
-        .map(|outcome| attach_usage(outcome, usage));
-    }
-
-    Ok(attach_usage(
-        AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
-            raw_text: assistant_message.clone().unwrap_or_default(),
-            assistant_message,
-            tool_calls,
-            usage: None,
-        }),
+    resolve_tool_turn_outcome(ResolveToolTurnParams {
+        tool_calls,
+        assistant_message,
+        no_tool_calls: NoToolCallsPolicy::Recover {
+            allow_plain_text_follow_up,
+            error: "Anthropic response did not contain a tool call, plain JSON completion, or follow-up prompt",
+        },
+        output_schema,
+        provider_label: "Anthropic",
         usage,
-    ))
+        filter_assistant_on_external_batch: false,
+    })
 }
 
 fn parse_anthropic_tool_call(block: &Value) -> Result<ToolCall, AgentError> {

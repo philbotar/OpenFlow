@@ -67,6 +67,15 @@ fn does_not_go_negative_on_removal() {
 }
 
 #[test]
+fn converts_space_indented_patch_to_tabs_when_file_uses_tabs() {
+    let old_text = "  foo\n    bar";
+    let actual_text = "\tfoo\n\t\tbar";
+    let new_text = "  foo\n    baz";
+    let result = adjust_indentation(old_text, actual_text, new_text);
+    assert_eq!(result, "\tfoo\n\t\tbaz");
+}
+
+#[test]
 fn detect_line_ending_lf() {
     assert_eq!(detect_line_ending("a\nb"), LineEnding::Lf);
 }

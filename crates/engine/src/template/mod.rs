@@ -55,7 +55,8 @@ impl Template {
     }
 
     #[must_use]
-    pub fn instantiate(&self, x: f32, y: f32) -> Node {
+    #[cfg_attr(not(test), allow(dead_code, reason = "used by template unit tests"))]
+    pub(crate) fn instantiate(&self, x: f32, y: f32) -> Node {
         Node {
             id: NodeId(Uuid::new_v4().to_string()),
             label: self.display_name.clone(),
@@ -66,15 +67,18 @@ impl Template {
     }
 
     #[must_use]
-    pub fn is_field_locked(&self, field_name: &str) -> bool {
+    #[cfg_attr(not(test), allow(dead_code, reason = "used by template unit tests"))]
+    pub(crate) fn is_field_locked(&self, field_name: &str) -> bool {
         self.locked_fields.contains(field_name)
     }
 
-    pub fn lock_field(&mut self, field_name: impl Into<String>) -> bool {
+    #[cfg_attr(not(test), allow(dead_code, reason = "used by template unit tests"))]
+    pub(crate) fn lock_field(&mut self, field_name: impl Into<String>) -> bool {
         self.locked_fields.insert(field_name.into())
     }
 
-    pub fn unlock_field(&mut self, field_name: &str) -> bool {
+    #[cfg_attr(not(test), allow(dead_code, reason = "used by template unit tests"))]
+    pub(crate) fn unlock_field(&mut self, field_name: &str) -> bool {
         self.locked_fields.remove(field_name)
     }
 }

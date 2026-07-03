@@ -1,12 +1,11 @@
 use crate::auth::AuthConfig;
 use crate::aws_runtime::load_aws_sdk_config;
+use crate::bedrock_errors::{map_bedrock_runtime_error, map_bedrock_stream_error};
 use crate::client::BedrockConfig;
 use crate::mapping::{
-    all_tool_specs, attach_usage, build_node_context, parse_internal_tool_outcome,
-    parse_plain_json_completion, should_allow_user_input, ToolSpec, REQUEST_INPUT_TOOL,
-    SUBMIT_OUTPUT_TOOL,
+    all_tool_specs, build_node_context, resolve_tool_turn_outcome, should_allow_user_input,
+    NoToolCallsPolicy, ResolveToolTurnParams, ToolSpec,
 };
-use aws_sdk_bedrockruntime::error::ProvideErrorMetadata;
 use aws_sdk_bedrockruntime::types::{
     AutoToolChoice, ContentBlock, ConversationRole, ConverseStreamOutput, InferenceConfiguration,
     Message, SystemContentBlock, TokenUsage, Tool, ToolChoice, ToolConfiguration, ToolInputSchema,
@@ -15,8 +14,8 @@ use aws_sdk_bedrockruntime::types::{
 use aws_sdk_bedrockruntime::Client as BedrockRuntimeClient;
 use aws_smithy_types::{Document, Number};
 use engine::{
-    AgentError, AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTranscriptItem,
-    AgentTurnOutcome, AiStreamEvent, AiStreamSink, ToolCall,
+    AgentError, AgentRequest, AgentTranscriptItem, AgentTurnOutcome, AiStreamEvent, AiStreamSink,
+    ToolCall,
 };
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -377,53 +376,18 @@ fn parse_converse_message(
     let assistant_message =
         (!assistant_text_parts.is_empty()).then(|| assistant_text_parts.join("\n"));
 
-    if tool_calls.is_empty() {
-        if let Some(outcome) = parse_plain_json_completion(assistant_message.as_deref()) {
-            return Ok(attach_usage(outcome, usage));
-        }
-        if allow_plain_text_follow_up {
-            if let Some(assistant_message) = assistant_message {
-                return Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
-                    raw_text: assistant_message.clone(),
-                    assistant_message,
-                }));
-            }
-        }
-        return Err(AgentError::Failed(
-            "Bedrock response did not contain a tool call, plain JSON completion, or follow-up prompt"
-                .into(),
-        ));
-    }
-
-    if let Some(index) = tool_calls
-        .iter()
-        .position(|call| call.name == SUBMIT_OUTPUT_TOOL || call.name == REQUEST_INPUT_TOOL)
-    {
-        if tool_calls.len() != 1 {
-            return Err(AgentError::Failed(
-                "Bedrock response mixed internal and external tool calls".into(),
-            ));
-        }
-        let call = &tool_calls[index];
-        return parse_internal_tool_outcome(
-            &call.name,
-            &call.arguments.to_string(),
-            assistant_message,
-            "Bedrock",
-            output_schema,
-        )
-        .map(|outcome| attach_usage(outcome, usage));
-    }
-
-    Ok(attach_usage(
-        AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
-            raw_text: assistant_message.clone().unwrap_or_default(),
-            assistant_message,
-            tool_calls,
-            usage: None,
-        }),
+    resolve_tool_turn_outcome(ResolveToolTurnParams {
+        tool_calls,
+        assistant_message,
+        no_tool_calls: NoToolCallsPolicy::Recover {
+            allow_plain_text_follow_up,
+            error: "Bedrock response did not contain a tool call, plain JSON completion, or follow-up prompt",
+        },
+        output_schema,
+        provider_label: "Bedrock",
         usage,
-    ))
+        filter_assistant_on_external_batch: false,
+    })
 }
 
 fn usage_report_from_bedrock(usage: Option<&TokenUsage>) -> Option<engine::UsageReport> {
@@ -476,167 +440,6 @@ async fn bedrock_runtime_client(
         .filter(|value| !value.is_empty());
     let shared = load_aws_sdk_config(&region_value, profile_name).await;
     Ok(BedrockRuntimeClient::new(&shared))
-}
-
-fn map_bedrock_runtime_error<E>(error: &aws_sdk_bedrockruntime::error::SdkError<E>) -> AgentError
-where
-    E: ProvideErrorMetadata + std::error::Error + Send + Sync + 'static,
-{
-    classify_bedrock_error(
-        bedrock_service_error_code(error),
-        &bedrock_error_message(error),
-    )
-}
-
-fn map_bedrock_stream_error<E>(
-    error: &aws_sdk_bedrockruntime::error::SdkError<E, aws_smithy_types::event_stream::RawMessage>,
-) -> AgentError
-where
-    E: ProvideErrorMetadata + std::error::Error + Send + Sync + 'static,
-{
-    classify_bedrock_error(
-        bedrock_stream_service_error_code(error),
-        &bedrock_stream_error_message(error),
-    )
-}
-
-fn bedrock_service_error_code<E>(error: &aws_sdk_bedrockruntime::error::SdkError<E>) -> &str
-where
-    E: ProvideErrorMetadata,
-{
-    error
-        .as_service_error()
-        .and_then(|service| service.code())
-        .unwrap_or_default()
-}
-
-fn bedrock_stream_service_error_code<E>(
-    error: &aws_sdk_bedrockruntime::error::SdkError<E, aws_smithy_types::event_stream::RawMessage>,
-) -> &str
-where
-    E: ProvideErrorMetadata,
-{
-    error
-        .as_service_error()
-        .and_then(|service| service.code())
-        .unwrap_or_default()
-}
-
-/// Formats an AWS SDK error by walking the full `source` chain.
-///
-/// `SdkError::to_string()` only yields a generic label (e.g. "dispatch failure");
-/// the actionable detail lives on inner sources.
-#[allow(
-    clippy::redundant_pub_crate,
-    reason = "bedrock_models calls this across submodule boundary"
-)]
-pub(crate) fn format_aws_sdk_error(error: &dyn std::error::Error) -> String {
-    let mut parts = vec![error.to_string()];
-    let mut current = error.source();
-    while let Some(source) = current {
-        parts.push(source.to_string());
-        current = source.source();
-    }
-    parts.join(": ")
-}
-
-fn bedrock_error_message<E>(error: &aws_sdk_bedrockruntime::error::SdkError<E>) -> String
-where
-    E: ProvideErrorMetadata + std::error::Error + Send + Sync + 'static,
-{
-    let service = error.as_service_error();
-    format_bedrock_service_error(
-        "Bedrock request failed",
-        service
-            .and_then(|service| service.code())
-            .unwrap_or_default(),
-        service
-            .and_then(|service| service.message())
-            .unwrap_or_default(),
-        &format_aws_sdk_error(error),
-    )
-}
-
-fn bedrock_stream_error_message<E>(
-    error: &aws_sdk_bedrockruntime::error::SdkError<E, aws_smithy_types::event_stream::RawMessage>,
-) -> String
-where
-    E: ProvideErrorMetadata + std::error::Error + Send + Sync + 'static,
-{
-    let service = error.as_service_error();
-    format_bedrock_service_error(
-        "Bedrock stream failed",
-        service
-            .and_then(|service| service.code())
-            .unwrap_or_default(),
-        service
-            .and_then(|service| service.message())
-            .unwrap_or_default(),
-        &format_aws_sdk_error(error),
-    )
-}
-
-fn format_bedrock_service_error(prefix: &str, code: &str, message: &str, fallback: &str) -> String {
-    if !code.is_empty() && !message.is_empty() {
-        return format!("{prefix} ({code}): {message}");
-    }
-    if !message.is_empty() {
-        return format!("{prefix}: {message}");
-    }
-    if !code.is_empty() {
-        return format!("{prefix}: {code}");
-    }
-    format!("{prefix}: {fallback}")
-}
-
-fn classify_bedrock_error(code: &str, message: &str) -> AgentError {
-    let message = humanize_bedrock_sdk_error(message);
-    match code {
-        "ThrottlingException" | "ServiceUnavailableException" | "ModelStreamErrorException" => {
-            AgentError::Transient(message)
-        }
-        "InternalServerException" => AgentError::Transient(message),
-        "AccessDeniedException" | "ValidationException" | "ResourceNotFoundException" => {
-            AgentError::Permanent(message)
-        }
-        _ if message.to_ascii_lowercase().contains("timeout") => AgentError::Transient(message),
-        _ => AgentError::Failed(message),
-    }
-}
-
-#[allow(
-    clippy::redundant_pub_crate,
-    reason = "bedrock_models calls this across submodule boundary"
-)]
-pub(crate) fn humanize_bedrock_sdk_error(message: &str) -> String {
-    let lowered = message.to_ascii_lowercase();
-    if lowered.contains("dispatch failure") {
-        if lowered.contains("credentials")
-            || lowered.contains("session token")
-            || lowered.contains("not found or invalid")
-            || lowered.contains("unable to locate")
-        {
-            return format!(
-                "AWS credentials missing or expired. If you use SSO, enter your AWS profile name in Settings (the AWS CLI must be installed); OpenFlow will run `aws sso login` automatically when credentials expire. You can also run `aws sso login --profile <name>` in a terminal first and verify with `aws sts get-caller-identity --profile <name>`. For access keys, run `aws configure`. Raw AWS SDK error: {message}"
-            );
-        }
-        return format!(
-            "Could not reach Amazon Bedrock. Raw AWS SDK error: {message}. Check AWS region in Settings, network/VPN, proxy/TLS settings, and credentials (SSO: `aws sso login --profile <name>`; access keys: `aws configure`)."
-        );
-    }
-    if lowered.contains("credentialsnotloaded")
-        || lowered.contains("unable to load credentials")
-        || lowered.contains("no credentials")
-    {
-        return "AWS credentials not configured. If you use SSO, enter your AWS profile name in Settings (the AWS CLI must be installed); OpenFlow will run `aws sso login` automatically when credentials expire. For access keys, run `aws configure`."
-            .to_string();
-    }
-    if lowered.contains("model identifier is invalid") {
-        return format!(
-            "{message} Check the default model in Settings matches a Bedrock model ID exactly (for example `amazon.nova-pro-v1:0`)."
-        );
-    }
-    message.to_string()
 }
 
 struct PendingToolUse {
@@ -747,7 +550,10 @@ mod tests {
     use aws_sdk_bedrockruntime::types::{
         ContentBlockDelta, ConverseStreamMetadataEvent, TokenUsage,
     };
-    use engine::{NodeId, NodeToolConfig, ToolDefinition, ToolTier, UsageReport, WorkflowId};
+    use engine::{
+        AgentToolCallBatch, NodeId, NodeToolConfig, ToolDefinition, ToolTier, UsageReport,
+        WorkflowId,
+    };
 
     fn sample_agent_request() -> AgentRequest {
         AgentRequest {
@@ -1017,88 +823,6 @@ mod tests {
             bedrock_wire_tool_name("mcp/playwright/browser_click"),
             "mcp_playwright_browser_click"
         );
-    }
-
-    #[test]
-    fn format_aws_sdk_error_unwraps_source_chain() {
-        #[derive(Debug)]
-        struct LeafError(&'static str);
-        impl std::fmt::Display for LeafError {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "{}", self.0)
-            }
-        }
-        impl std::error::Error for LeafError {}
-
-        #[derive(Debug)]
-        struct ConnectorError {
-            source: LeafError,
-        }
-        impl std::fmt::Display for ConnectorError {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "other")
-            }
-        }
-        impl std::error::Error for ConnectorError {
-            fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-                Some(&self.source)
-            }
-        }
-
-        #[derive(Debug)]
-        struct DispatchFailure {
-            source: ConnectorError,
-        }
-        impl std::fmt::Display for DispatchFailure {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "dispatch failure")
-            }
-        }
-        impl std::error::Error for DispatchFailure {
-            fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-                Some(&self.source)
-            }
-        }
-
-        let error = DispatchFailure {
-            source: ConnectorError {
-                source: LeafError("unable to locate credentials"),
-            },
-        };
-        assert_eq!(
-            format_aws_sdk_error(&error),
-            "dispatch failure: other: unable to locate credentials"
-        );
-
-        let message = humanize_bedrock_sdk_error(&format_aws_sdk_error(&error));
-        assert!(message.contains("unable to locate credentials"));
-        assert!(message.contains("aws sso login"));
-    }
-
-    #[test]
-    fn humanize_bedrock_sdk_error_mentions_sso_for_credential_failures() {
-        let message = humanize_bedrock_sdk_error(
-            "dispatch failure: credentials provider failed: unable to locate credentials",
-        );
-        assert!(message.contains("aws sso login"));
-        assert!(message.contains("AWS profile name in Settings"));
-        assert!(message.contains("Raw AWS SDK error"));
-        assert!(message.contains("unable to locate credentials"));
-
-        let message = humanize_bedrock_sdk_error("CredentialsNotLoaded: no credentials configured");
-        assert!(message.contains("aws sso login"));
-    }
-
-    #[test]
-    fn humanize_bedrock_sdk_error_preserves_dispatch_failure_detail() {
-        let message = humanize_bedrock_sdk_error(
-            "dispatch failure: connector error: certificate verify failed for bedrock-runtime.ap-southeast-2.amazonaws.com",
-        );
-
-        assert!(message.contains("Could not reach Amazon Bedrock"));
-        assert!(message.contains("Raw AWS SDK error"));
-        assert!(message.contains("certificate verify failed"));
-        assert!(message.contains("proxy/TLS settings"));
     }
 
     #[test]

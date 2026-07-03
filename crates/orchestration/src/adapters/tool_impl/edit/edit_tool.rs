@@ -3,37 +3,19 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use serde::Deserialize;
 use serde_json::Value;
 
 use super::diff::{generate_diff_string, replace_text, ReplaceOptions};
 use super::errors::EditMatchError;
+use super::fuzzy_settings::{allow_fuzzy, edit_fuzzy_threshold};
 use super::hashline::execute::execute_hashline;
 use super::hashline::snapshots::InMemorySnapshotStore;
 use super::io::{EditIo, EditIoError};
 use super::ledger::FileChangeLedger;
 use super::replace::{find_match, FindMatchOptions, DEFAULT_FUZZY_THRESHOLD};
+use super::tool_args::{EditToolArgs, PatchEnvelopeArgs};
 use crate::lsp::{append_writethrough_to_output, LspSettings};
 use crate::tools::errors::ToolError;
-
-#[derive(Debug, Deserialize)]
-struct EditArgs {
-    path: String,
-    edits: Vec<EditEntry>,
-}
-
-#[derive(Debug, Deserialize)]
-struct EditEntry {
-    old_text: String,
-    new_text: String,
-    #[serde(default)]
-    all: bool,
-}
-
-#[derive(Debug, Deserialize)]
-struct HashlineArgs {
-    input: String,
-}
 
 pub fn execute_edit(
     cwd: PathBuf,
@@ -43,7 +25,7 @@ pub fn execute_edit(
     lsp: LspSettings,
 ) -> Result<String, ToolError> {
     if args.get("input").is_some() {
-        let args: HashlineArgs =
+        let args: PatchEnvelopeArgs =
             serde_json::from_value(args).map_err(|error| ToolError::InvalidArgs {
                 tool: "edit".to_string(),
                 problem: error.to_string(),
@@ -54,12 +36,13 @@ pub fn execute_edit(
         return execute_hashline(cwd, args.input, ledger, snapshots, lsp);
     }
 
-    let args: EditArgs = serde_json::from_value(args).map_err(|error| ToolError::InvalidArgs {
-        tool: "edit".to_string(),
-        problem: error.to_string(),
-        hint: "replace mode requires path + edits[]; hashline mode requires input (string)"
-            .to_string(),
-    })?;
+    let args: EditToolArgs =
+        serde_json::from_value(args).map_err(|error| ToolError::InvalidArgs {
+            tool: "edit".to_string(),
+            problem: error.to_string(),
+            hint: "replace mode requires path + edits[]; hashline mode requires input (string)"
+                .to_string(),
+        })?;
     if args.edits.is_empty() {
         return Err(ToolError::InvalidArgs {
             tool: "edit".to_string(),
@@ -75,7 +58,7 @@ pub fn execute_edit(
     let options = ReplaceOptions {
         fuzzy: allow_fuzzy(),
         all: false,
-        threshold: fuzzy_threshold(),
+        threshold: edit_fuzzy_threshold(),
     };
 
     let mut total_replacements = 0usize;
@@ -144,19 +127,6 @@ pub fn execute_edit(
         output = append_writethrough_to_output(&output, std::slice::from_ref(&diagnostics));
     }
     Ok(output)
-}
-
-fn allow_fuzzy() -> bool {
-    !matches!(
-        std::env::var("PI_EDIT_FUZZY").as_deref(),
-        Ok("0") | Ok("false") | Ok("off")
-    )
-}
-
-fn fuzzy_threshold() -> Option<f64> {
-    std::env::var("PI_EDIT_FUZZY_THRESHOLD")
-        .ok()
-        .and_then(|value| value.parse().ok())
 }
 
 fn map_io_error(error: EditIoError) -> ToolError {

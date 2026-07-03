@@ -82,11 +82,27 @@ pub enum AgentError {
     Permanent(String),
     #[error("{0}")]
     Failed(String),
+    #[error("{provider_label} final output tool arguments were not valid JSON: {detail}")]
+    MalformedSubmitOutput {
+        provider_label: String,
+        detail: String,
+    },
     #[error("interrupted")]
     Interrupted,
 }
 
 impl AgentError {
+    #[must_use]
+    pub fn malformed_submit_output(
+        provider_label: impl Into<String>,
+        detail: impl Into<String>,
+    ) -> Self {
+        Self::MalformedSubmitOutput {
+            provider_label: provider_label.into(),
+            detail: detail.into(),
+        }
+    }
+
     #[must_use]
     pub const fn is_retryable(&self) -> bool {
         matches!(self, Self::Transient(_))
@@ -98,12 +114,8 @@ impl AgentError {
     }
 
     #[must_use]
-    pub fn is_malformed_submit_output(&self) -> bool {
-        matches!(
-            self,
-            Self::Failed(message)
-                if message.contains("final output tool arguments were not valid JSON")
-        )
+    pub const fn is_malformed_submit_output(&self) -> bool {
+        matches!(self, Self::MalformedSubmitOutput { .. })
     }
 }
 
@@ -212,10 +224,10 @@ mod tests {
         assert!(!AgentError::Failed("unknown".to_string()).is_retryable());
         assert!(!AgentError::Interrupted.is_retryable());
         assert!(AgentError::Interrupted.is_interrupted());
-        assert!(AgentError::Failed(
-            "AI provider final output tool arguments were not valid JSON: missing field `output`"
-                .to_string()
-        )
-        .is_malformed_submit_output());
+        assert!(
+            AgentError::malformed_submit_output("AI provider", "missing field `output`")
+                .is_malformed_submit_output()
+        );
+        assert!(!AgentError::Failed("unrelated".to_string()).is_malformed_submit_output());
     }
 }

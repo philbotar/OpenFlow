@@ -1,5 +1,6 @@
 //! Text normalization for the edit engine (OMP `normalize.ts` port).
 
+use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use regex::Regex;
@@ -364,29 +365,35 @@ fn compute_uniform_indent_delta(
 
 fn apply_indent_delta(text: &str, delta: isize, indent_char: char) -> String {
     text.split('\n')
-        .map(|line| {
-            if !is_non_empty_line(line) {
-                return line.to_string();
-            }
-            if delta > 0 {
-                let prefix = indent_char.to_string().repeat(delta as usize);
-                return format!("{prefix}{line}");
-            }
-            let to_remove = (-delta as usize).min(leading_whitespace_byte_len(line));
-            line[to_remove..].to_string()
-        })
+        .map(|line| apply_indent_delta_line(line, delta, indent_char))
         .collect::<Vec<_>>()
         .join("\n")
 }
 
-fn detect_indent_char(text: &str) -> char {
-    for line in text.split('\n') {
+/// Shift leading whitespace on one line by `delta` columns (patch + replace paths).
+pub(crate) fn apply_indent_delta_line(line: &str, delta: isize, indent_char: char) -> String {
+    if line.trim().is_empty() {
+        return line.to_string();
+    }
+    if delta > 0 {
+        return format!("{}{line}", indent_char.to_string().repeat(delta as usize));
+    }
+    let to_remove = (-delta as usize).min(leading_whitespace_byte_len(line));
+    line[to_remove..].to_string()
+}
+
+pub(crate) fn detect_indent_char_from_lines<'a>(lines: impl IntoIterator<Item = &'a str>) -> char {
+    for line in lines {
         let ws = get_leading_whitespace(line);
-        if let Some(ch) = ws.chars().next() {
-            return ch;
+        if !ws.is_empty() {
+            return ws.chars().next().unwrap_or(' ');
         }
     }
     ' '
+}
+
+fn detect_indent_char(text: &str) -> char {
+    detect_indent_char_from_lines(text.split('\n'))
 }
 
 /// Normalize a line for fuzzy comparison.
@@ -470,6 +477,11 @@ pub fn adjust_indentation(old_text: &str, actual_text: &str, new_text: &str) -> 
             {
                 return converted;
             }
+            if let Some(converted) =
+                maybe_convert_spaces_to_tab_indentation(&old_profile, &actual_profile, new_text)
+            {
+                return converted;
+            }
             return new_text.to_string();
         }
     }
@@ -496,4 +508,237 @@ pub fn adjust_indentation(old_text: &str, actual_text: &str, new_text: &str) -> 
         .unwrap_or_else(|| detect_indent_char(actual_text));
 
     apply_indent_delta(new_text, delta, indent_char)
+}
+
+fn maybe_convert_spaces_to_tab_indentation(
+    old_profile: &IndentProfile,
+    actual_profile: &IndentProfile,
+    new_text: &str,
+) -> Option<String> {
+    if old_profile.mixed
+        || actual_profile.mixed
+        || !old_profile.space_only
+        || !actual_profile.tab_only
+    {
+        return None;
+    }
+
+    let mut samples: HashMap<usize, usize> = HashMap::new();
+    let line_count = old_profile.lines.len().min(actual_profile.lines.len());
+    let mut consistent = true;
+    for i in 0..line_count {
+        let old_line = &old_profile.lines[i];
+        let actual_line = &actual_profile.lines[i];
+        if !is_non_empty_line(old_line) || !is_non_empty_line(actual_line) {
+            continue;
+        }
+        let spaces = count_leading_whitespace(old_line);
+        let tabs = count_leading_whitespace(actual_line);
+        if tabs == 0 {
+            continue;
+        }
+        if let Some(existing) = samples.get(&tabs) {
+            if *existing != spaces {
+                consistent = false;
+                break;
+            }
+        }
+        samples.insert(tabs, spaces);
+    }
+
+    if !consistent || samples.is_empty() {
+        return None;
+    }
+
+    let tab_width = resolve_tab_width(&samples)?;
+    let offset = samples
+        .iter()
+        .next()
+        .map(|(tabs, spaces)| *spaces as isize - *tabs as isize * tab_width)
+        .unwrap_or(0);
+    Some(
+        new_text
+            .split('\n')
+            .map(|line| convert_spaces_to_tabs_line(line, tab_width, offset))
+            .collect::<Vec<_>>()
+            .join("\n"),
+    )
+}
+
+fn resolve_tab_width(samples: &HashMap<usize, usize>) -> Option<isize> {
+    if samples.len() == 1 {
+        let (&tabs, &spaces) = samples.iter().next()?;
+        if spaces % tabs == 0 {
+            return Some((spaces / tabs) as isize);
+        }
+        return None;
+    }
+
+    let entries: Vec<(usize, usize)> = samples.iter().map(|(k, v)| (*k, *v)).collect();
+    let (t1, s1) = entries[0];
+    let (t2, s2) = entries[1];
+    if t1 == t2 {
+        return None;
+    }
+    let w = (s2 as isize - s1 as isize) / (t2 as isize - t1 as isize);
+    if w <= 0 {
+        return None;
+    }
+    let b = s1 as isize - t1 as isize * w;
+    for (&t, &s) in samples {
+        if t as isize * w + b != s as isize {
+            return None;
+        }
+    }
+    Some(w)
+}
+
+fn convert_spaces_to_tabs_line(line: &str, tab_width: isize, offset: isize) -> String {
+    if line.trim().is_empty() {
+        return line.to_string();
+    }
+    let ws = count_leading_whitespace(line);
+    let ws_bytes = leading_whitespace_byte_len(line);
+    if ws == 0 {
+        return line.to_string();
+    }
+    let adjusted = ws as isize - offset;
+    if adjusted >= 0 && adjusted % tab_width == 0 {
+        return format!(
+            "{}{}",
+            "\t".repeat((adjusted / tab_width) as usize),
+            &line[ws_bytes..]
+        );
+    }
+    let tab_count = adjusted.div_euclid(tab_width);
+    let remainder = adjusted - tab_count * tab_width;
+    if tab_count >= 0 {
+        return format!(
+            "{}{}{}",
+            "\t".repeat(tab_count as usize),
+            " ".repeat(remainder as usize),
+            &line[ws_bytes..]
+        );
+    }
+    line.to_string()
+}
+
+fn collect_line_indent_deltas(old_lines: &[String], actual_lines: &[String]) -> Vec<isize> {
+    let line_count = old_lines.len().min(actual_lines.len());
+    let mut deltas = Vec::new();
+    for i in 0..line_count {
+        let old_line = &old_lines[i];
+        let actual_line = &actual_lines[i];
+        if old_line.trim().is_empty() || actual_line.trim().is_empty() {
+            continue;
+        }
+        deltas.push(
+            count_leading_whitespace(actual_line) as isize
+                - count_leading_whitespace(old_line) as isize,
+        );
+    }
+    deltas
+}
+
+fn overlay_matching_actual_indents(
+    pattern_lines: &[String],
+    actual_lines: &[String],
+    adjusted_text: String,
+) -> Vec<String> {
+    let new_lines: Vec<String> = adjusted_text.split('\n').map(str::to_string).collect();
+
+    let mut content_to_actual_lines: HashMap<String, Vec<String>> = HashMap::new();
+    for line in actual_lines {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        content_to_actual_lines
+            .entry(trimmed.to_string())
+            .or_default()
+            .push(line.clone());
+    }
+
+    let mut pattern_min = usize::MAX;
+    for line in pattern_lines {
+        if line.trim().is_empty() {
+            continue;
+        }
+        pattern_min = pattern_min.min(count_leading_whitespace(line));
+    }
+    if pattern_min == usize::MAX {
+        pattern_min = 0;
+    }
+
+    let deltas = collect_line_indent_deltas(pattern_lines, actual_lines);
+    let delta = if !deltas.is_empty() && deltas.iter().all(|d| *d == deltas[0]) {
+        Some(deltas[0])
+    } else {
+        None
+    };
+    let indent_char = detect_indent_char_from_lines(actual_lines.iter().map(String::as_str));
+
+    let mut used_actual_lines: HashMap<String, usize> = HashMap::new();
+
+    new_lines
+        .into_iter()
+        .map(|new_line| {
+            if new_line.trim().is_empty() {
+                return new_line;
+            }
+
+            let trimmed = new_line.trim();
+            if let Some(matching_actual_lines) = content_to_actual_lines.get(trimmed) {
+                if matching_actual_lines.len() == 1 {
+                    return matching_actual_lines[0].clone();
+                }
+                if matching_actual_lines.contains(&new_line) {
+                    return new_line;
+                }
+                let used_count = used_actual_lines.entry(trimmed.to_string()).or_insert(0);
+                if *used_count < matching_actual_lines.len() {
+                    let result = matching_actual_lines[*used_count].clone();
+                    *used_count += 1;
+                    return result;
+                }
+            }
+
+            if let Some(delta) = delta.filter(|&d| d != 0) {
+                let new_indent = count_leading_whitespace(&new_line);
+                if new_indent == pattern_min {
+                    return apply_indent_delta_line(&new_line, delta, indent_char);
+                }
+            }
+            new_line
+        })
+        .collect()
+}
+
+/// Line-oriented indentation adjustment for patch hunks; delegates to [`adjust_indentation`].
+pub(crate) fn adjust_lines_indentation(
+    pattern_lines: &[String],
+    actual_lines: &[String],
+    new_lines: &[String],
+) -> Vec<String> {
+    if pattern_lines.is_empty() || actual_lines.is_empty() || new_lines.is_empty() {
+        return new_lines.to_vec();
+    }
+    if pattern_lines == actual_lines {
+        return new_lines.to_vec();
+    }
+    if pattern_lines.len() == new_lines.len()
+        && pattern_lines
+            .iter()
+            .zip(new_lines.iter())
+            .all(|(l, r)| l.trim() == r.trim())
+    {
+        return new_lines.to_vec();
+    }
+
+    let adjusted = adjust_indentation(
+        &pattern_lines.join("\n"),
+        &actual_lines.join("\n"),
+        &new_lines.join("\n"),
+    );
+    overlay_matching_actual_indents(pattern_lines, actual_lines, adjusted)
 }

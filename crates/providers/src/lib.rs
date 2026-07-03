@@ -10,6 +10,8 @@ pub(crate) mod aws_runtime;
 #[cfg(feature = "bedrock")]
 pub(crate) mod bedrock;
 #[cfg(feature = "bedrock")]
+pub(crate) mod bedrock_errors;
+#[cfg(feature = "bedrock")]
 pub(crate) mod bedrock_models;
 mod client;
 pub(crate) mod mapping;

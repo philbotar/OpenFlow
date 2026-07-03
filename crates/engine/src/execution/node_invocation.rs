@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 /// Resolved upstream adjacency for a workflow graph.
 #[must_use]
-pub fn build_upstream_map(workflow: &Workflow) -> HashMap<NodeId, Vec<NodeId>> {
+pub(crate) fn build_upstream_map(workflow: &Workflow) -> HashMap<NodeId, Vec<NodeId>> {
     let mut upstream_map: HashMap<NodeId, Vec<NodeId>> = workflow
         .nodes
         .iter()
@@ -32,7 +32,7 @@ pub fn build_upstream_map(workflow: &Workflow) -> HashMap<NodeId, Vec<NodeId>> {
 
 /// Append workflow shared context to an arbitrary system prompt base.
 #[must_use]
-pub fn merge_shared_context(workflow: &Workflow, base: &str) -> String {
+pub(crate) fn merge_shared_context(workflow: &Workflow, base: &str) -> String {
     let shared = workflow.settings.shared_context.trim();
     if shared.is_empty() {
         base.to_string()
@@ -45,7 +45,7 @@ pub fn merge_shared_context(workflow: &Workflow, base: &str) -> String {
 ///
 /// Keep the `## Available tools` section in sync with `orchestration/src/tool/registry.rs`
 /// whenever builtins or harness tools are added or materially changed.
-pub const NODE_RUNTIME_PREAMBLE: &str = "\
+pub(crate) const NODE_RUNTIME_PREAMBLE: &str = "\
 --- OpenFlow runtime ---\n\
 You are one agent node in a workflow graph. Downstream nodes start only after you \
 successfully submit this node's output.\n\
@@ -148,7 +148,7 @@ the task targets them. A follow-on system block may include the exact repository
 
 /// Assemble ordered system messages for a workflow agent node (engine-owned; providers do not edit).
 #[must_use]
-pub fn build_system_messages(
+pub(crate) fn build_system_messages(
     workflow: &Workflow,
     node: &Node,
     project_repository_root: Option<&str>,
@@ -186,7 +186,7 @@ path is given."
 
 /// Collect file-change records from all transitive upstream nodes (deduped by path, latest timestamp wins).
 #[must_use]
-pub fn upstream_changed_files<S: std::hash::BuildHasher>(
+pub(crate) fn upstream_changed_files<S: std::hash::BuildHasher>(
     node_id: &str,
     upstream_by_node: &HashMap<NodeId, Vec<NodeId>, S>,
     changed_files_by_node: &BTreeMap<NodeId, Vec<FileChangeRecord>>,
@@ -204,7 +204,7 @@ pub fn upstream_changed_files<S: std::hash::BuildHasher>(
 
 /// Collect read records from all transitive upstream nodes (deduped by path, latest outline wins).
 #[must_use]
-pub fn upstream_reads<S: std::hash::BuildHasher>(
+pub(crate) fn upstream_reads<S: std::hash::BuildHasher>(
     node_id: &str,
     upstream_by_node: &HashMap<NodeId, Vec<NodeId>, S>,
     reads_by_node: &BTreeMap<NodeId, Vec<ReadRecord>>,
@@ -242,7 +242,7 @@ fn transitive_upstream_ids<S: std::hash::BuildHasher>(
 
 /// Build the JSON input payload for a node from upstream outputs and optional entrypoint text.
 #[must_use]
-pub fn build_node_input<S: std::hash::BuildHasher>(
+pub(crate) fn build_node_input<S: std::hash::BuildHasher>(
     node_id: &str,
     upstream_by_node: &HashMap<NodeId, Vec<NodeId>, S>,
     outputs_by_node: &BTreeMap<NodeId, Value>,
@@ -298,7 +298,7 @@ pub fn build_node_input<S: std::hash::BuildHasher>(
 }
 
 /// Snapshot of runtime state needed to build an [`AgentRequest`].
-pub struct NodeInvocationContext<'a> {
+pub(crate) struct NodeInvocationContext<'a> {
     pub workflow: &'a Workflow,
     pub upstream_map: &'a HashMap<NodeId, Vec<NodeId>>,
     pub outputs: &'a BTreeMap<NodeId, Value>,
@@ -312,7 +312,7 @@ pub struct NodeInvocationContext<'a> {
 
 /// # Errors
 /// Returns [`RunError::NodeFailed`] when the node has no model configured.
-pub fn build_agent_request(
+pub(crate) fn build_agent_request(
     ctx: &NodeInvocationContext<'_>,
     node: &Node,
     require_model: bool,

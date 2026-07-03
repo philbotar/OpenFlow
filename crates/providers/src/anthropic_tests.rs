@@ -2,7 +2,7 @@ use super::*;
 use crate::auth::AuthConfig;
 use crate::client::AnthropicConfig;
 use crate::{AiClient, AiClientConfig, ProviderAdapterConfig, ProviderId};
-use engine::{AiPort, ToolDefinition};
+use engine::{AgentToolCallBatch, AiPort, ToolDefinition};
 use wiremock::matchers::{body_json, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
