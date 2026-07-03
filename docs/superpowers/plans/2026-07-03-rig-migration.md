@@ -56,13 +56,13 @@
 - Modify: `crates/providers/Cargo.toml`
 - Create: `crates/providers/examples/rig_spike.rs` (temporary, deleted in this task)
 
-- [ ] **Step 1: Add workspace dependencies**
+- [x] **Step 1: Add workspace dependencies**
 
 In the workspace root `Cargo.toml` under `[workspace.dependencies]`:
 
 ```toml
-rig-core = { version = "0.39", default-features = false, features = ["reqwest-rustls"] }
-rig-bedrock = "0.39"
+rig-core = { version = "=0.39.0", default-features = false, features = ["reqwest", "rustls"] }
+rig-bedrock = "=0.39.0"
 schemars = "1"
 ```
 
@@ -82,12 +82,12 @@ and extend the bedrock feature:
 bedrock = ["dep:rig-bedrock", "dep:aws-config", "dep:aws-sdk-bedrock", "dep:aws-sdk-bedrockruntime", "dep:aws-smithy-types", "dep:dirs"]
 ```
 
-- [ ] **Step 2: Verify it compiles**
+- [x] **Step 2: Verify it compiles**
 
 Run: `cargo check -p providers`
 Expected: clean check (no code uses rig yet).
 
-- [ ] **Step 3: Write a throwaway spike that exercises all five risks**
+- [x] **Step 3: Write a throwaway spike that exercises all five risks**
 
 Create `crates/providers/examples/rig_spike.rs` that (compile-only, no network):
 
@@ -112,7 +112,7 @@ fn main() {
 
 Extend it until each of the five risks is proven or disproven — check `ToolChoice` variants (`cargo doc -p rig-core --no-deps --open` or read `~/.cargo/registry/src/*/rig-core-0.39*/src/`), the openai builder's `headers_mut()`/custom-client hooks, and the Responses API entry point (`rig::providers::openai` — look for a `responses_api` module or a client flag).
 
-- [ ] **Step 4: Record findings and delete the spike**
+- [x] **Step 4: Record findings and delete the spike**
 
 Write findings as a short comparison table at the bottom of THIS plan file (section "Spike findings"), including the exact type paths (e.g. `rig::providers::openai::responses_api::ResponsesCompletionModel`). Adjust later task code blocks if names differ. Then `rm crates/providers/examples/rig_spike.rs`.
 
@@ -136,7 +136,7 @@ git commit -m "feat(providers): add rig-core and rig-bedrock dependencies"
 
 The conversion reuses `mapping.rs` domain helpers. Transcript mapping: `AgentTranscriptItem` (engine `conversation/mod.rs:280`) has four variants — `AssistantMessage`, `UserMessage`, `ToolCall { call }`, `ToolResult { result }` — which map onto rig `Message::assistant(..)`, `Message::user(..)`, assistant `AssistantContent::ToolCall`, and `UserContent::ToolResult` respectively. Study how the current `transcript_to_chat_messages` (`mapping.rs:144`) orders and pairs them (tool results must follow their calls) and preserve that exact pairing.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 In `convert.rs` `#[cfg(test)]`:
 
@@ -218,12 +218,12 @@ mod tests {
 
 (Adjust `engine::ToolResult` construction to its real fields — it has more than shown; check `crates/engine/src/tools/config.rs:143`.)
 
-- [ ] **Step 2: Run tests, verify they fail**
+- [x] **Step 2: Run tests, verify they fail**
 
 Run: `cargo test -p providers rig_adapter::convert -- --nocapture`
 Expected: FAIL — `to_completion_request` not defined.
 
-- [ ] **Step 3: Implement `convert.rs`**
+- [x] **Step 3: Implement `convert.rs`**
 
 ```rust
 //! `AgentRequest` → rig `CompletionRequest` translation.
@@ -305,7 +305,7 @@ fn user_tool_result_message(result: &engine::ToolResult) -> Message {
 
 Note: provider-specific `additional_params` handling (how `reasoning_budget_tokens` becomes Anthropic `thinking.budget_tokens` vs OpenAI `reasoning_effort`) is applied at dispatch time in Task 6/7, not here — this function carries the raw values.
 
-- [ ] **Step 4: Run tests, verify they pass**
+- [x] **Step 4: Run tests, verify they pass**
 
 Run: `cargo test -p providers rig_adapter::convert`
 Expected: PASS.
@@ -324,7 +324,7 @@ git commit -m "feat(providers): map AgentRequest to rig CompletionRequest"
 **Files:**
 - Create: `crates/providers/src/rig_adapter/outcome.rs`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[cfg(test)]
@@ -405,12 +405,12 @@ mod tests {
 
 (`tool_call_raw_args` may not exist in rig — if rig's `ToolCall.arguments` is a `serde_json::Value` parsed upstream, the jsonrepair test moves to the streaming path where raw argument strings appear; check the spike findings and adjust. The behavior requirement stands: malformed-but-recoverable JSON in submit_output arguments must not fail the node.)
 
-- [ ] **Step 2: Run tests, verify they fail**
+- [x] **Step 2: Run tests, verify they fail**
 
 Run: `cargo test -p providers rig_adapter::outcome`
 Expected: FAIL — `resolve_outcome` not defined.
 
-- [ ] **Step 3: Implement `outcome.rs`**
+- [x] **Step 3: Implement `outcome.rs`**
 
 ```rust
 //! rig `CompletionResponse` → `AgentTurnOutcome`, reusing the mapping.rs node protocol.
@@ -470,7 +470,7 @@ pub fn resolve_outcome(
 
 (`AssistantContent`/`ToolCall` field paths per spike findings — rig's `ToolCall` is `{ id, call_id, function: ToolFunction { name, arguments } }`-shaped in 0.39; confirm.) `resolve_tool_turn_outcome` and `ResolveToolTurnParams` are already `pub` in `mapping.rs`; `NoToolCallsPolicy` too.
 
-- [ ] **Step 4: Run tests, verify they pass**
+- [x] **Step 4: Run tests, verify they pass**
 
 Run: `cargo test -p providers rig_adapter::outcome`
 Expected: PASS.
@@ -494,7 +494,7 @@ Classification contract (must match today's behavior — `engine::AgentError::is
 - HTTP 401, 403 → `Permanent` (auth), 400/404/422 → `Failed`
 - JSON/parse errors → `Failed`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```rust
 #[cfg(test)]
@@ -536,12 +536,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run tests, verify they fail**
+- [x] **Step 2: Run tests, verify they fail**
 
 Run: `cargo test -p providers rig_adapter::error`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement `error.rs`**
+- [x] **Step 3: Implement `error.rs`**
 
 ```rust
 //! rig `CompletionError` → `AgentError` with retryability classification.
@@ -577,7 +577,7 @@ pub fn to_agent_error(error: CompletionError, label: &str) -> AgentError {
 
 (`ProviderResponseError` accessor names per spike; if `HttpError` wraps non-2xx responses with statuses too, route those through `classify_status` — inspect `rig::http_client::Error` in the spike and match today's classification table exactly.)
 
-- [ ] **Step 4: Run tests, verify they pass**
+- [x] **Step 4: Run tests, verify they pass**
 
 Run: `cargo test -p providers rig_adapter::error`
 Expected: PASS.
@@ -597,7 +597,7 @@ git commit -m "feat(providers): classify rig errors into AgentError retryability
 - Create: `crates/providers/src/rig_adapter/model.rs`
 - Test: `crates/providers/tests/rig_anthropic.rs` (wiremock, HTTP-level — ports scenarios from `src/anthropic_tests.rs`)
 
-- [ ] **Step 1: Write failing wiremock test**
+- [x] **Step 1: Write failing wiremock test**
 
 The test speaks real Anthropic wire format because rig now produces it; wiremock asserts on what rig sends and returns canned Anthropic JSON. Port the response fixtures from `src/anthropic_tests.rs` (they already encode correct Anthropic response shapes — reuse the JSON bodies verbatim).
 
@@ -643,12 +643,12 @@ async fn anthropic_429_maps_to_transient() {
 
 `anthropic_test_config` / `test_request` are small local helpers building `AiClientConfig { adapter: ProviderAdapterConfig::Anthropic(AnthropicConfig { base_url: server.uri(), .. }), auth: AuthConfig::Header { name: "x-api-key".into(), api_key: Some("test-key".into()), required: true }, .. }` — copy the fixture style from `crates/providers/tests/mock_factory.rs`.
 
-- [ ] **Step 2: Run tests, verify they fail**
+- [x] **Step 2: Run tests, verify they fail**
 
 Run: `cargo test -p providers --test rig_anthropic`
 Expected: FAIL (old anthropic.rs path still active, or compile error on missing model.rs — either is fine; the point is the new path doesn't exist yet).
 
-- [ ] **Step 3: Implement `model.rs` with the dispatch enum, wire Anthropic only**
+- [x] **Step 3: Implement `model.rs` with the dispatch enum, wire Anthropic only**
 
 ```rust
 //! Enum dispatch over rig provider models (CompletionModel is not dyn-safe).
@@ -730,7 +730,7 @@ ProviderAdapterConfig::Anthropic(_) => {
 
 `resolve_tool_turn_outcome`'s `ResolveToolTurnParams.provider_label` is `&'static str` today; loosen it to `&str` in `mapping.rs` in this step (mechanical change, no behavior change) so runtime labels flow through without leaking strings.
 
-- [ ] **Step 4: Run tests, verify they pass**
+- [x] **Step 4: Run tests, verify they pass**
 
 Run: `cargo test -p providers --test rig_anthropic && cargo test -p providers`
 Expected: new tests PASS; old anthropic wire-format unit tests in `src/anthropic_tests.rs` may now fail — port any that assert *behavior* (outcome mapping, error mapping) into the new test files and delete the ones that assert hand-rolled wire JSON (rig owns that now). Full suite green at the end of this step.
@@ -751,7 +751,7 @@ git commit -m "feat(providers): route Anthropic invoke through rig"
 - Modify: `crates/providers/src/rig_adapter/model.rs`
 - Test: extend `crates/providers/tests/rig_anthropic.rs` with SSE fixtures (port event sequences from the old `anthropic_tests.rs` streaming tests)
 
-- [ ] **Step 1: Write failing streaming test**
+- [x] **Step 1: Write failing streaming test**
 
 Use wiremock with an SSE body (`ResponseTemplate::new(200).set_body_raw(SSE_BODY, "text/event-stream")`). Port the SSE fixture from the existing anthropic streaming tests — the event sequence (message_start, content_block_start tool_use, input_json_delta…, message_delta with usage, message_stop) is already written there.
 
@@ -774,12 +774,12 @@ async fn anthropic_stream_emits_deltas_and_completes() {
 }
 ```
 
-- [ ] **Step 2: Run test, verify it fails**
+- [x] **Step 2: Run test, verify it fails**
 
 Run: `cargo test -p providers --test rig_anthropic anthropic_stream`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement `stream.rs`**
+- [x] **Step 3: Implement `stream.rs`**
 
 ```rust
 //! Drains a rig streaming response into an AiStreamSink and a final outcome.
@@ -840,13 +840,13 @@ pub async fn invoke_stream(
 }
 ```
 
-- [ ] **Step 4: Add Anthropic prompt-cache breakpoints**
+- [x] **Step 4: Add Anthropic prompt-cache breakpoints**
 
 Today: `cache_control` on the system block and on the second-to-last message (`prompt_cache.rs::second_to_last_index`). rig's Anthropic message type carries `cache_control: Option<CacheControl>` natively. In `convert.rs`, this can't be expressed on the generic `rig::message::Message` — so apply it Anthropic-side via `additional_params` if rig honors it there, OR mark the messages using whatever mechanism the spike found. If rig 0.39 offers no per-message cache-control hook from the generic request: **accept the regression on BP2, keep system-prompt caching only if reachable via `additional_params`, and record the decision in the findings table**. Do not fork rig for this.
 
 Test (only if the hook exists): wiremock body assertion that `cache_control` appears in the outgoing request JSON at the expected positions.
 
-- [ ] **Step 5: Run full providers suite**
+- [x] **Step 5: Run full providers suite**
 
 Run: `cargo test -p providers`
 Expected: PASS.
@@ -866,7 +866,7 @@ git commit -m "feat(providers): stream Anthropic through rig with delta bridging
 - Modify: `crates/providers/src/rig_adapter/model.rs`
 - Test: `crates/providers/tests/rig_openai_compat.rs` (port behavior scenarios from `src/openai_compat.rs` tests / `tests/mock_factory.rs`)
 
-- [ ] **Step 1: Write failing wiremock tests**
+- [x] **Step 1: Write failing wiremock tests**
 
 Cover, at minimum (port fixtures from existing tests):
 - Chat Completions: submit_output tool call → Completed; external tool call batch; 429 → Transient; streaming deltas.
@@ -874,12 +874,12 @@ Cover, at minimum (port fixtures from existing tests):
 - `AuthConfig::Header` custom header name reaches the wire (wiremock `header(name, value)` matcher).
 - Responses API (`WireApi::Responses`): one submit_output round-trip against rig's Responses path — exact fixture shape per spike findings.
 
-- [ ] **Step 2: Run tests, verify they fail**
+- [x] **Step 2: Run tests, verify they fail**
 
 Run: `cargo test -p providers --test rig_openai_compat`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement OpenAI arms in `model.rs`**
+- [x] **Step 3: Implement OpenAI arms in `model.rs`**
 
 ```rust
 // Added variants:
@@ -906,7 +906,7 @@ fn openai_additional_params(request: &AgentRequest, config: &OpenAiCompatibleCon
 
 (rig merges `additional_params` into the request body JSON — confirmed pattern in rig provider impls.)
 
-- [ ] **Step 4: Run tests, verify they pass; rewire `AiClient` OpenAI arm**
+- [x] **Step 4: Run tests, verify they pass; rewire `AiClient` OpenAI arm**
 
 Run: `cargo test -p providers`
 Expected: PASS with `AiClient::invoke`/`invoke_stream` OpenAI arms now calling `rig_adapter::model` and old `openai_compat::invoke*` no longer referenced.
@@ -929,7 +929,7 @@ git commit -m "feat(providers): route OpenAI-compatible providers through rig"
 
 Bedrock has no HTTP mock in the current suite (SDK-based); mirror whatever test strategy `src/bedrock.rs` uses today (unit tests on mapping + optionally `aws-smithy-mocks` if already available). The heavy Converse mapping is rig-bedrock's problem now, so the test surface shrinks to: client construction resolves profile/region correctly, and outcome/error conversion (already covered by Tasks 3–4).
 
-- [ ] **Step 1: Write failing construction test**
+- [x] **Step 1: Write failing construction test**
 
 ```rust
 #[cfg(feature = "bedrock")]
@@ -943,12 +943,12 @@ async fn bedrock_model_builds_with_profile_and_region() {
 
 (Expose a `#[doc(hidden)] pub` test hook or make this an integration test through `create_provider` + an invoke that fails at the network layer with a classified error — pick whichever the existing bedrock tests do.)
 
-- [ ] **Step 2: Run test, verify it fails**
+- [x] **Step 2: Run test, verify it fails**
 
 Run: `cargo test -p providers --test rig_bedrock --features bedrock`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement the Bedrock arm**
+- [x] **Step 3: Implement the Bedrock arm**
 
 Reuse `aws_runtime.rs` to build the SDK config (it already handles `ensure_process_home_env` + profile resolution — SSO keeps working), then hand the SDK client to rig:
 
@@ -966,7 +966,7 @@ async fn build_bedrock(config: &BedrockConfig, auth: &AuthConfig, model: &str) -
 
 (`load_sdk_config` may need to be factored out of the existing `bedrock.rs` client-construction code into `aws_runtime.rs` — move, don't rewrite.) `RigModel::invoke`/`invoke_stream` gain a `Bedrock` arm identical in shape to Anthropic's. Note `build_model` becomes `async` here — Bedrock client construction awaits config load; Anthropic/OpenAI arms are just not-async internally, fine.
 
-- [ ] **Step 4: Run tests, verify they pass**
+- [x] **Step 4: Run tests, verify they pass**
 
 Run: `cargo test -p providers --features bedrock && cargo test -p providers --no-default-features`
 Expected: PASS both (the second proves the feature gate still compiles without bedrock).
@@ -987,22 +987,22 @@ git commit -m "feat(providers): route Bedrock through rig-bedrock reusing SSO ru
 - Modify: `crates/providers/src/mapping.rs` (delete wire builders/parsers listed in "What dies"), `crates/providers/src/lib.rs`, `crates/providers/src/prompt_cache.rs` (delete Anthropic JSON-injection helpers if unused)
 - Modify: `crates/engine/tests/snapshots/public_api.txt` (if engine-visible types changed — they shouldn't)
 
-- [ ] **Step 1: Delete old wire modules and fix compilation**
+- [x] **Step 1: Delete old wire modules and fix compilation**
 
 Remove the files/functions listed above. `OpenAiCompatibleConfig` moves to `client.rs` (it's re-exported from `lib.rs` — public API must not change). Run `cargo check -p providers --all-features` and chase unused-import/dead-code errors (`warnings = "deny"` makes the compiler find every orphan for you).
 
-- [ ] **Step 2: Confirm nothing outside providers noticed**
+- [x] **Step 2: Confirm nothing outside providers noticed**
 
 Run: `cargo check --workspace --all-features && cargo test --workspace`
 Expected: PASS with zero changes required in orchestration/engine/desktop code. If a consumer breaks, the public API leaked — fix inside providers, do not touch consumers.
 
-- [ ] **Step 3: Clippy + public API snapshot**
+- [x] **Step 3: Clippy + public API snapshot**
 
 Run: `cargo clippy --workspace --all-targets --all-features` (this workspace denies warnings/unwrap/expect/panic — the new adapter code must already comply)
 Run: whatever regenerates `crates/engine/tests/snapshots/public_api.txt` if it fails (check the test's own instructions; providers isn't snapshot-tracked but confirm).
 Expected: clean.
 
-- [ ] **Step 4: Line-count sanity check**
+- [x] **Step 4: Line-count sanity check**
 
 Run: `wc -l crates/providers/src/*.rs crates/providers/src/rig_adapter/*.rs`
 Expected: net deletion on the order of 2,500–3,000 lines (anthropic 263 + openai_compat 764 + bedrock ~1000 + sse 246 + mapping wire half ~600, replaced by ~700 lines of adapter).
@@ -1032,10 +1032,12 @@ Report pass/fail per provider to the user before merging. Bedrock smoke requires
 
 | Question | Finding |
 |---|---|
-| reqwest client injection / read timeout | _pending_ |
-| Responses API module + model type | _pending_ |
-| Custom header on openai builder | _pending_ |
-| ToolChoice required variant | _pending_ |
-| ProviderResponseError accessors | _pending_ |
-| Anthropic per-message cache_control from generic request | _pending_ |
-| rig Message/AssistantContent constructor shapes | _pending_ |
+| reqwest client injection / read timeout | **PASS.** `rig_core::client::ClientBuilder::http_client(reqwest::Client)` accepts a custom client. Build with `.connect_timeout(10s).read_timeout(120s)` matching current `AiClient` (`client.rs:40-45`). |
+| Responses API module + model type | **PASS.** Default OpenAI client is Responses API. Types: `rig_core::providers::openai::Client<H>` → `completion_model()` returns `rig_core::providers::openai::responses_api::ResponsesCompletionModel<H>`. Chat Completions: `openai::CompletionsClient<H>` / `.completions_api()` switch. Requires `use rig_core::client::CompletionClient` in scope. |
+| Custom header on openai builder | **PASS.** Public `ClientBuilder::http_headers(HeaderMap)` on all providers (anthropic uses `headers_mut` only in `finish_anthropic_builder` internally). Custom `AuthConfig::Header` → build `HeaderMap` and pass to `http_headers`. |
+| ToolChoice required variant | **PASS.** `rig_core::message::ToolChoice::Required` exists. Anthropic maps it to wire `Any` via `TryFrom<message::ToolChoice>` in `providers/anthropic/completion.rs`. OpenAI Responses/Chat have their own `ToolChoice` enums with `Required`/`required` serde. |
+| ProviderResponseError accessors | **CHANGED in 0.39.** No `ProviderResponseError` type. Use `CompletionError::HttpError(http_client::Error::InvalidStatusCodeWithMessage(StatusCode, String))` for status+body, or `CompletionError::ProviderError(String)`. Classify transient via `status.as_u16()` on the HttpError arm. |
+| Anthropic per-message cache_control from generic request | **PASS (via additional_params).** Anthropic provider reads `additional_params.cache_control` (`extract_top_level_cache_control` in `providers/anthropic/completion.rs`). Shape: `{"type":"ephemeral"}` or `CacheControl::Ephemeral { ttl }`. Rig also applies automatic caching on last message when enabled on the model. OpenAI cache key still goes in `additional_params` / request body merge (unchanged plan). **BP2 regression accepted:** legacy second-to-last-message breakpoint (`prompt_cache::second_to_last_index`) is not replicated; only top-level/system caching via `additional_params.cache_control` in `rig_adapter/model.rs`. |
+| rig Message/AssistantContent constructor shapes | **PASS.** `rig_core::message::Message::{user, assistant, tool_result}`, `AssistantContent::tool_call(id, name, arguments)`. ToolCall via `ToolCall::new(id, ToolFunction { name, arguments })`. Import path is **`rig_core`**, not `rig` — update all later task snippets. |
+| rig-bedrock From SDK client | **PASS.** `rig_bedrock::client::Client` has `From<aws_sdk_bedrockruntime::Client>`. |
+| rig-core feature flags | Plan said `reqwest-rustls`; actual 0.39 features are `reqwest` + `rustls` (no combined feature). Pinned `=0.39.0`. |

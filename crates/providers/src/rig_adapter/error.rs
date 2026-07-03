@@ -1,0 +1,112 @@
+//! rig `CompletionError` → `AgentError` with retryability classification.
+
+#![cfg_attr(
+    not(test),
+    allow(
+        dead_code,
+        reason = "rig migration: wired when AiClient switches to rig_adapter"
+    )
+)]
+
+use crate::http_errors::classify_http_status;
+use engine::AgentError;
+use rig_core::completion::CompletionError;
+use rig_core::http_client::Error as HttpClientError;
+
+/// Map HTTP status + body to [`AgentError`], reusing the existing provider classification table.
+#[must_use]
+pub fn classify_status(status: u16, body: &str, label: &str) -> AgentError {
+    classify_http_status(status, body, label)
+}
+
+#[must_use]
+pub fn to_agent_error(error: CompletionError, label: &str) -> AgentError {
+    match error {
+        CompletionError::HttpError(http) => http_client_error(http, label),
+        CompletionError::JsonError(error) => {
+            AgentError::Failed(format!("{label} response JSON error: {error}"))
+        }
+        CompletionError::UrlError(error) => {
+            AgentError::Failed(format!("{label} request URL error: {error}"))
+        }
+        CompletionError::RequestError(error) => {
+            AgentError::Failed(format!("{label} request error: {error}"))
+        }
+        CompletionError::ResponseError(message) => {
+            AgentError::Failed(format!("{label} response error: {message}"))
+        }
+        CompletionError::ProviderError(message) => {
+            AgentError::Failed(format!("{label} provider error: {message}"))
+        }
+    }
+}
+
+fn http_client_error(error: HttpClientError, label: &str) -> AgentError {
+    match error {
+        HttpClientError::InvalidStatusCodeWithMessage(status, body) => {
+            classify_status(status.as_u16(), &body, label)
+        }
+        HttpClientError::InvalidStatusCode(status) => classify_status(status.as_u16(), "", label),
+        HttpClientError::StreamEnded
+        | HttpClientError::Protocol(_)
+        | HttpClientError::Instance(_) => {
+            AgentError::Transient(format!("{label} HTTP transport error: {error}"))
+        }
+        HttpClientError::NoHeaders
+        | HttpClientError::InvalidContentType(_)
+        | HttpClientError::InvalidHeaderValue(_) => {
+            AgentError::Failed(format!("{label} HTTP client error: {error}"))
+        }
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    reason = "construct invalid JSON for error-path test"
+)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rate_limit_is_transient() {
+        let err = classify_status(429, "rate limited", "Anthropic");
+        assert!(err.is_retryable());
+    }
+
+    #[test]
+    fn server_errors_are_transient() {
+        assert!(classify_status(500, "boom", "Anthropic").is_retryable());
+        assert!(classify_status(529, "overloaded", "Anthropic").is_retryable());
+    }
+
+    #[test]
+    fn auth_errors_are_permanent() {
+        let err = classify_status(401, "bad key", "Anthropic");
+        assert!(!err.is_retryable());
+        assert!(matches!(err, AgentError::Permanent(_)));
+    }
+
+    #[test]
+    fn bad_request_is_failed_not_retryable() {
+        let err = classify_status(400, "invalid model", "Anthropic");
+        assert!(matches!(err, AgentError::Failed(_)));
+    }
+
+    #[test]
+    fn error_message_includes_provider_label_and_body() {
+        let err = classify_status(429, "rate limited", "OpenRouter");
+        let msg = err.to_string();
+        assert!(msg.contains("OpenRouter"));
+        assert!(msg.contains("rate limited"));
+    }
+
+    #[test]
+    fn json_error_is_failed() {
+        let err = to_agent_error(
+            CompletionError::JsonError(serde_json::from_str::<serde_json::Value>("x").unwrap_err()),
+            "Anthropic",
+        );
+        assert!(matches!(err, AgentError::Failed(_)));
+    }
+}

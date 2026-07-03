@@ -96,103 +96,6 @@ pub fn all_tool_specs(request: &AgentRequest) -> Vec<ToolSpec> {
     tools
 }
 
-pub fn tool_payload(tool: &ToolSpec) -> Value {
-    json!({
-        "type": "function",
-        "name": tool.name,
-        "description": tool.description,
-        "parameters": tool.parameters,
-    })
-}
-
-/// Chat Completions wire shape (`tools[].function`).
-pub fn chat_completions_tool_payload(tool: &ToolSpec) -> Value {
-    json!({
-        "type": "function",
-        "function": {
-            "name": tool.name,
-            "description": tool.description,
-            "parameters": tool.parameters,
-        }
-    })
-}
-
-pub fn transcript_to_responses_input(request: &AgentRequest) -> Result<Vec<Value>, AgentError> {
-    let mut input = vec![
-        json!({ "role": "system", "content": request.system_content() }),
-        json!({ "role": "user", "content": build_node_context(request) }),
-    ];
-
-    for item in &request.transcript {
-        match item {
-            AgentTranscriptItem::AssistantMessage { content } => {
-                input.push(json!({ "role": "assistant", "content": content }));
-            }
-            AgentTranscriptItem::UserMessage { content } => {
-                input.push(json!({ "role": "user", "content": content }));
-            }
-            AgentTranscriptItem::ToolCall { call } => {
-                input.push(json!({
-                    "type": "function_call",
-                    "call_id": call.id,
-                    "name": call.name,
-                    "arguments": serde_json::to_string(&call.arguments).map_err(|e| AgentError::Failed(format!("tool arguments serialize: {e}")))?
-                }));
-            }
-            AgentTranscriptItem::ToolResult { result } => {
-                input.push(json!({
-                    "type": "function_call_output",
-                    "call_id": result.tool_call_id,
-                    "output": result.content
-                }));
-            }
-        }
-    }
-
-    Ok(input)
-}
-
-pub fn transcript_to_chat_messages(request: &AgentRequest) -> Result<Vec<Value>, AgentError> {
-    let mut messages = vec![
-        json!({ "role": "system", "content": request.system_content() }),
-        json!({ "role": "user", "content": build_node_context(request) }),
-    ];
-
-    for item in &request.transcript {
-        match item {
-            AgentTranscriptItem::AssistantMessage { content } => {
-                messages.push(json!({ "role": "assistant", "content": content }));
-            }
-            AgentTranscriptItem::UserMessage { content } => {
-                messages.push(json!({ "role": "user", "content": content }));
-            }
-            AgentTranscriptItem::ToolCall { call } => {
-                messages.push(json!({
-                    "role": "assistant",
-                    "content": Value::Null,
-                    "tool_calls": [{
-                        "id": call.id,
-                        "type": "function",
-                        "function": {
-                            "name": call.name,
-                            "arguments": serde_json::to_string(&call.arguments).map_err(|e| AgentError::Failed(format!("tool arguments serialize: {e}")))?
-                        }
-                    }]
-                }));
-            }
-            AgentTranscriptItem::ToolResult { result } => {
-                messages.push(json!({
-                    "role": "tool",
-                    "tool_call_id": result.tool_call_id,
-                    "content": result.content
-                }));
-            }
-        }
-    }
-
-    Ok(messages)
-}
-
 /// When models flatten nested object schema fields, group them under the parent property.
 fn nest_flat_fields_into_object_properties(
     map: &mut serde_json::Map<String, Value>,
@@ -353,42 +256,6 @@ pub fn attach_usage(
     }
 }
 
-fn usage_token(value: &Value) -> Option<u32> {
-    value.as_u64().and_then(|tokens| u32::try_from(tokens).ok())
-}
-
-/// Extract token usage from an OpenAI-compatible API response payload.
-pub fn extract_usage_from_openai(payload: &Value) -> Option<engine::UsageReport> {
-    let usage = payload.get("usage")?;
-    let prompt_tokens = usage.get("prompt_tokens").and_then(usage_token)?;
-    let completion_tokens = usage.get("completion_tokens").and_then(usage_token)?;
-    let total_tokens = usage
-        .get("total_tokens")
-        .and_then(usage_token)
-        .unwrap_or_else(|| prompt_tokens.saturating_add(completion_tokens));
-    Some(engine::UsageReport {
-        prompt_tokens,
-        completion_tokens,
-        total_tokens,
-    })
-}
-
-/// Extract token usage from an Anthropic Messages API response payload.
-pub fn extract_usage_from_anthropic(payload: &Value) -> Option<engine::UsageReport> {
-    let usage = payload.get("usage")?;
-    let prompt_tokens = usage.get("input_tokens").and_then(usage_token)?;
-    let completion_tokens = usage.get("output_tokens").and_then(usage_token)?;
-    let total_tokens = usage
-        .get("total_tokens")
-        .and_then(usage_token)
-        .unwrap_or_else(|| prompt_tokens.saturating_add(completion_tokens));
-    Some(engine::UsageReport {
-        prompt_tokens,
-        completion_tokens,
-        total_tokens,
-    })
-}
-
 pub fn parse_internal_tool_outcome(
     tool_name: &str,
     arguments: &str,
@@ -443,8 +310,6 @@ pub fn parse_internal_tool_outcome(
 
 /// How to handle a provider turn that collected no tool calls.
 pub enum NoToolCallsPolicy {
-    /// Fail immediately (e.g. `OpenAI Responses API`).
-    Error(&'static str),
     /// Try plain JSON completion, optional follow-up prompt, then fail.
     Recover {
         allow_plain_text_follow_up: bool,
@@ -457,7 +322,7 @@ pub struct ResolveToolTurnParams<'a> {
     pub assistant_message: Option<String>,
     pub no_tool_calls: NoToolCallsPolicy,
     pub output_schema: Option<&'a Value>,
-    pub provider_label: &'static str,
+    pub provider_label: &'a str,
     pub usage: Option<engine::UsageReport>,
     /// When true, `OpenAI` wire formats strip boilerplate from `assistant_message` on external tool batches.
     pub filter_assistant_on_external_batch: bool,
@@ -478,26 +343,22 @@ pub fn resolve_tool_turn_outcome(
     } = params;
 
     if tool_calls.is_empty() {
-        return match no_tool_calls {
-            NoToolCallsPolicy::Error(message) => Err(AgentError::Failed(message.to_string())),
-            NoToolCallsPolicy::Recover {
-                allow_plain_text_follow_up,
-                error,
-            } => {
-                if let Some(outcome) = parse_plain_json_completion(assistant_message.as_deref()) {
-                    return Ok(attach_usage(outcome, usage));
-                }
-                if allow_plain_text_follow_up {
-                    if let Some(assistant_message) = assistant_message {
-                        return Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
-                            raw_text: assistant_message.clone(),
-                            assistant_message,
-                        }));
-                    }
-                }
-                Err(AgentError::Failed(error.to_string()))
+        let NoToolCallsPolicy::Recover {
+            allow_plain_text_follow_up,
+            error,
+        } = no_tool_calls;
+        if let Some(outcome) = parse_plain_json_completion(assistant_message.as_deref()) {
+            return Ok(attach_usage(outcome, usage));
+        }
+        if allow_plain_text_follow_up {
+            if let Some(assistant_message) = assistant_message {
+                return Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
+                    raw_text: assistant_message.clone(),
+                    assistant_message,
+                }));
             }
-        };
+        }
+        return Err(AgentError::Failed(error.to_string()));
     }
 
     if let Some(index) = tool_calls
@@ -562,10 +423,6 @@ pub fn parse_plain_json_completion(content: Option<&str>) -> Option<AgentTurnOut
     }))
 }
 
-mod wire_output;
-
-pub use wire_output::{parse_chat_completion_output, parse_responses_output};
-
 /// Attempt to parse a JSON string, repairing common LLM output issues when needed.
 /// Uses `jsonrepair-rs` for truncation, trailing commas, single quotes, and similar
 /// malformed JSON before falling back to the original serde error.
@@ -600,7 +457,6 @@ fn try_deserialize_or_recover_json<T: for<'de> Deserialize<'de>>(
     reason = "mapping tests are long and use unwrap/expect for brevity"
 )]
 mod tests {
-    use super::wire_output::parse_compatible_tool_call;
     use super::*;
     fn make_tool_call_value(name: &str, arguments: &str) -> Value {
         json!({
@@ -610,6 +466,29 @@ mod tests {
                 "name": name,
                 "arguments": arguments
             }
+        })
+    }
+
+    fn parse_compatible_tool_call(call: &Value) -> Result<ToolCall, AgentError> {
+        let call_id = call
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or("call-legacy");
+        let function = call.get("function").unwrap_or(call);
+        let name = function
+            .get("name")
+            .and_then(Value::as_str)
+            .ok_or_else(|| AgentError::Failed("tool call missing function.name".into()))?;
+        let arguments = function
+            .get("arguments")
+            .and_then(Value::as_str)
+            .ok_or_else(|| AgentError::Failed("tool call missing function.arguments".into()))?;
+        Ok(ToolCall {
+            id: call_id.to_string(),
+            name: name.to_string(),
+            arguments: try_parse_or_recover_json(arguments).map_err(|error| {
+                AgentError::Failed(format!("tool call arguments were not valid JSON: {error}"))
+            })?,
         })
     }
     #[test]
@@ -889,24 +768,29 @@ mod tests {
         let echoed = format!(
             "{preamble}<tool_call>\n<function=openflow_submit_node_output>\n<parameter=output>{{\"summary\":\"done\"}}</parameter>\n</function>\n</tool_call>"
         );
-        let payload = json!({
-            "choices": [{
-                "message": {
-                    "content": echoed,
-                    "tool_calls": [make_tool_call_value(
-                        SUBMIT_OUTPUT_TOOL,
-                        r#"{"output":{"summary":"done"},"assistant_message":null}"#
-                    )]
-                }
-            }]
-        });
-
         let schema = json!({
             "type": "object",
             "properties": { "summary": { "type": "string" } },
             "required": ["summary"]
         });
-        let outcome = parse_chat_completion_output(&payload, false, Some(&schema)).unwrap();
+        let tool_call = parse_compatible_tool_call(&make_tool_call_value(
+            SUBMIT_OUTPUT_TOOL,
+            r#"{"output":{"summary":"done"},"assistant_message":null}"#,
+        ))
+        .unwrap();
+        let outcome = resolve_tool_turn_outcome(ResolveToolTurnParams {
+            tool_calls: vec![tool_call],
+            assistant_message: Some(echoed),
+            no_tool_calls: NoToolCallsPolicy::Recover {
+                allow_plain_text_follow_up: false,
+                error: "unused",
+            },
+            output_schema: Some(&schema),
+            provider_label: "test",
+            usage: None,
+            filter_assistant_on_external_batch: true,
+        })
+        .unwrap();
         let AgentTurnOutcome::Completed(success) = outcome else {
             panic!("expected completed outcome");
         };
@@ -915,16 +799,24 @@ mod tests {
 
     #[test]
     fn tool_call_batch_strips_redundant_xml_assistant_message() {
-        let payload = json!({
-            "choices": [{
-                "message": {
-                    "content": "<tool_call>\n<function=search>\n<parameter=pattern>TODO</parameter>\n</function>\n</tool_call>",
-                    "tool_calls": [make_tool_call_value("search", r#"{"pattern":"TODO","paths":"rpo"}"#)]
-                }
-            }]
-        });
-
-        let outcome = parse_chat_completion_output(&payload, false, None).unwrap();
+        let tool_call = parse_compatible_tool_call(&make_tool_call_value(
+            "search",
+            r#"{"pattern":"TODO","paths":"rpo"}"#,
+        ))
+        .unwrap();
+        let outcome = resolve_tool_turn_outcome(ResolveToolTurnParams {
+            tool_calls: vec![tool_call],
+            assistant_message: Some("<tool_call>\n<function=search>\n<parameter=pattern>TODO</parameter>\n</function>\n</tool_call>".into()),
+            no_tool_calls: NoToolCallsPolicy::Recover {
+                allow_plain_text_follow_up: false,
+                error: "unused",
+            },
+            output_schema: None,
+            provider_label: "test",
+            usage: None,
+            filter_assistant_on_external_batch: true,
+        })
+        .unwrap();
         let AgentTurnOutcome::ToolCalls(batch) = outcome else {
             panic!("expected tool call batch");
         };

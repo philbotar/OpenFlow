@@ -1,13 +1,27 @@
-use crate::anthropic;
 use crate::auth::AuthConfig;
-#[cfg(feature = "bedrock")]
-use crate::bedrock;
-use crate::openai_compat;
-use crate::openai_compat::OpenAiCompatibleConfig;
-use crate::spec::ProviderId;
+use crate::spec::{ProviderId, WireApi};
 use async_trait::async_trait;
 use engine::{AgentError, AgentRequest, AgentTurnOutcome, AiPort, AiStreamSink};
-use reqwest::Client;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpenAiCompatibleConfig {
+    pub base_url: String,
+    pub wire_api: WireApi,
+    pub responses_path: String,
+    pub chat_completions_path: String,
+}
+
+impl OpenAiCompatibleConfig {
+    #[must_use]
+    pub fn openai_default() -> Self {
+        Self {
+            base_url: "https://api.openai.com".to_string(),
+            wire_api: WireApi::Responses,
+            responses_path: "v1/responses".to_string(),
+            chat_completions_path: "v1/chat/completions".to_string(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AnthropicConfig {
@@ -37,28 +51,19 @@ pub struct AiClientConfig {
     pub adapter: ProviderAdapterConfig,
 }
 
-/// Time allowed to establish a connection to the provider.
-const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
-/// Time allowed between reads on a response. Converts a stalled SSE stream
-/// (provider stops sending, dead TCP path after sleep/wake) into a transient
-/// error the retry policy can handle, instead of hanging the node forever.
-const READ_TIMEOUT: std::time::Duration = std::time::Duration::from_mins(2);
-
 #[derive(Debug, Clone)]
 pub struct AiClient {
-    http: Client,
     config: AiClientConfig,
 }
 
 impl AiClient {
     #[must_use]
+    #[allow(
+        clippy::missing_const_for_fn,
+        reason = "AiClientConfig is not const-constructible"
+    )]
     pub fn with_config(config: AiClientConfig) -> Self {
-        let http = Client::builder()
-            .connect_timeout(CONNECT_TIMEOUT)
-            .read_timeout(READ_TIMEOUT)
-            .build()
-            .unwrap_or_else(|_| Client::new());
-        Self { http, config }
+        Self { config }
     }
 }
 
@@ -66,16 +71,13 @@ impl AiClient {
 impl AiPort for AiClient {
     async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
         match &self.config.adapter {
-            ProviderAdapterConfig::OpenAiCompatible(config) => {
-                openai_compat::invoke(&self.http, config, &self.config.auth, &self.config, request)
-                    .await
+            ProviderAdapterConfig::OpenAiCompatible(_) => {
+                crate::rig_adapter::invoke_openai_compatible(&self.config, request).await
             }
-            ProviderAdapterConfig::Anthropic(config) => {
-                anthropic::invoke(&self.http, config, &self.config.auth, request).await
+            ProviderAdapterConfig::Anthropic(_) => {
+                crate::rig_adapter::invoke_anthropic(&self.config, request).await
             }
-            ProviderAdapterConfig::Bedrock(config) => {
-                bedrock_invoke(config, &self.config.auth, request).await
-            }
+            ProviderAdapterConfig::Bedrock(_) => bedrock_invoke(&self.config, request).await,
         }
     }
 
@@ -85,22 +87,15 @@ impl AiPort for AiClient {
         sink: &dyn AiStreamSink,
     ) -> Result<AgentTurnOutcome, AgentError> {
         match &self.config.adapter {
-            ProviderAdapterConfig::OpenAiCompatible(config) => {
-                openai_compat::invoke_stream(
-                    &self.http,
-                    config,
-                    &self.config.auth,
-                    &self.config,
-                    request,
-                    sink,
-                )
-                .await
+            ProviderAdapterConfig::OpenAiCompatible(_) => {
+                crate::rig_adapter::invoke_openai_compatible_stream(&self.config, request, sink)
+                    .await
             }
-            ProviderAdapterConfig::Anthropic(config) => {
-                anthropic::invoke_stream(&self.http, config, &self.config.auth, request, sink).await
+            ProviderAdapterConfig::Anthropic(_) => {
+                crate::rig_adapter::invoke_anthropic_stream(&self.config, request, sink).await
             }
-            ProviderAdapterConfig::Bedrock(config) => {
-                bedrock_invoke_stream(config, &self.config.auth, request, sink).await
+            ProviderAdapterConfig::Bedrock(_) => {
+                bedrock_invoke_stream(&self.config, request, sink).await
             }
         }
     }
@@ -108,42 +103,38 @@ impl AiPort for AiClient {
 
 #[cfg(feature = "bedrock")]
 async fn bedrock_invoke(
-    config: &BedrockConfig,
-    auth: &AuthConfig,
+    config: &AiClientConfig,
     request: AgentRequest,
 ) -> Result<AgentTurnOutcome, AgentError> {
-    bedrock::invoke(config, auth, request).await
+    crate::rig_adapter::invoke_bedrock(config, request).await
 }
 
 #[cfg(not(feature = "bedrock"))]
-fn bedrock_invoke(
-    _config: &BedrockConfig,
-    _auth: &AuthConfig,
+async fn bedrock_invoke(
+    _config: &AiClientConfig,
     _request: AgentRequest,
-) -> std::future::Ready<Result<AgentTurnOutcome, AgentError>> {
-    std::future::ready(Err(AgentError::Failed(
-        "Bedrock provider requires the providers `bedrock` feature".into(),
-    )))
+) -> Result<AgentTurnOutcome, AgentError> {
+    Err(AgentError::Failed(
+        "Bedrock support is disabled (enable the `bedrock` feature)".into(),
+    ))
 }
 
 #[cfg(feature = "bedrock")]
 async fn bedrock_invoke_stream(
-    config: &BedrockConfig,
-    auth: &AuthConfig,
+    config: &AiClientConfig,
     request: AgentRequest,
     sink: &dyn AiStreamSink,
 ) -> Result<AgentTurnOutcome, AgentError> {
-    bedrock::invoke_stream(config, auth, request, sink).await
+    crate::rig_adapter::invoke_bedrock_stream(config, request, sink).await
 }
 
 #[cfg(not(feature = "bedrock"))]
-fn bedrock_invoke_stream(
-    _config: &BedrockConfig,
-    _auth: &AuthConfig,
+async fn bedrock_invoke_stream(
+    _config: &AiClientConfig,
     _request: AgentRequest,
     _sink: &dyn AiStreamSink,
-) -> std::future::Ready<Result<AgentTurnOutcome, AgentError>> {
-    std::future::ready(Err(AgentError::Failed(
-        "Bedrock provider requires the providers `bedrock` feature".into(),
-    )))
+) -> Result<AgentTurnOutcome, AgentError> {
+    Err(AgentError::Failed(
+        "Bedrock support is disabled (enable the `bedrock` feature)".into(),
+    ))
 }

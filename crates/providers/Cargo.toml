@@ -1,6 +1,6 @@
 [package]
 name = "providers"
-version = "0.1.12"
+version = "0.1.13"
 edition.workspace = true
 description.workspace = true
 license.workspace = true
@@ -14,11 +14,18 @@ name = "providers"
 
 [features]
 default = ["bedrock"]
-bedrock = ["dep:aws-config", "dep:aws-sdk-bedrock", "dep:aws-sdk-bedrockruntime", "dep:aws-smithy-types", "dep:dirs"]
+bedrock = [
+    "dep:rig-bedrock",
+    "dep:aws-config",
+    "dep:aws-sdk-bedrock",
+    "dep:aws-sdk-bedrockruntime",
+    "dep:dirs",
+]
 
 [dependencies]
+rig-core = { workspace = true }
+rig-bedrock = { workspace = true, optional = true }
 async-trait.workspace = true
-bytes.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -29,11 +36,9 @@ tokio = { workspace = true, features = ["time", "process"] }
 aws-config = { workspace = true, optional = true }
 aws-sdk-bedrock = { workspace = true, optional = true }
 aws-sdk-bedrockruntime = { workspace = true, optional = true }
-aws-smithy-types = { workspace = true, optional = true }
 dirs = { workspace = true, optional = true }
 
 [dev-dependencies]
-bytes.workspace = true
 tokio.workspace = true
 wiremock.workspace = true
 
