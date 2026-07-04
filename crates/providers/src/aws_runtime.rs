@@ -31,9 +31,21 @@ pub fn process_home_dir() -> Option<PathBuf> {
 pub(crate) async fn load_aws_sdk_config(
     region: &str,
     profile: Option<&str>,
+    credential_command: Option<&str>,
 ) -> aws_config::SdkConfig {
     ensure_process_home_env();
     let trimmed_region = region.trim();
+    // ponytail: user command wins outright — skip the chain probe entirely
+    if let Some(command_line) = credential_command.map(str::trim).filter(|c| !c.is_empty()) {
+        if let Some(credentials) = custom_command_credentials(command_line).await {
+            return aws_config::defaults(aws_config::BehaviorVersion::latest())
+                .region(aws_config::Region::new(trimmed_region.to_string()))
+                .credentials_provider(credentials)
+                .load()
+                .await;
+        }
+        // command failed → fall through to the default chain + built-in fallbacks
+    }
     let profile_name = sanitize_profile(profile);
     let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest())
         .region(aws_config::Region::new(trimmed_region.to_string()));
@@ -85,6 +97,35 @@ async fn cli_export_credentials(profile: Option<&str>) -> Option<Credentials> {
         command.args(["--profile", name]);
     }
     // ponytail: 30s cap — export should be fast; kill_on_drop cleans up on timeout
+    let output = tokio::time::timeout(std::time::Duration::from_secs(30), command.output())
+        .await
+        .ok()?
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    parse_cli_export_credentials(&output.stdout)
+}
+
+/// Runs a user-configured shell command and parses its stdout as
+/// `aws configure export-credentials` JSON. This is how users sidestep the
+/// Rust SDK credential chain entirely (its IAM Identity Center support is
+/// partial); same pattern Claude Code uses for `awsAuthRefresh`.
+async fn custom_command_credentials(command_line: &str) -> Option<Credentials> {
+    #[cfg(windows)]
+    let mut command = {
+        let mut c = tokio::process::Command::new("cmd");
+        c.args(["/C", command_line]);
+        c
+    };
+    #[cfg(not(windows))]
+    let mut command = {
+        let mut c = tokio::process::Command::new("sh");
+        c.args(["-c", command_line]);
+        c
+    };
+    command.kill_on_drop(true);
+    // ponytail: 30s cap, same budget as cli_export_credentials
     let output = tokio::time::timeout(std::time::Duration::from_secs(30), command.output())
         .await
         .ok()?
@@ -193,6 +234,26 @@ mod tests {
         assert_eq!(creds.access_key_id(), "AKIA1");
         assert_eq!(creds.session_token(), Some("tok"));
         assert!(parse_cli_export_credentials(b"{}").is_none());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    #[allow(clippy::expect_used)]
+    async fn custom_command_credentials_parses_shell_output() {
+        let creds = custom_command_credentials(
+            r#"printf '{"AccessKeyId":"AKIA2","SecretAccessKey":"s","SessionToken":"t"}'"#,
+        )
+        .await
+        .expect("credentials");
+        assert_eq!(creds.access_key_id(), "AKIA2");
+        assert_eq!(creds.session_token(), Some("t"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn custom_command_credentials_none_on_failure() {
+        assert!(custom_command_credentials("exit 1").await.is_none());
+        assert!(custom_command_credentials("printf 'not json'").await.is_none());
     }
 
     fn restore_env_var(name: &str, value: Option<std::ffi::OsString>) {

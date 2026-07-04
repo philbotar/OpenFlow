@@ -126,6 +126,9 @@ pub fn resolve_provider_config(
             ProviderAdapterConfig::Bedrock(BedrockConfig {
                 region,
                 aws_profile: bedrock_aws_profile,
+                aws_credential_command: first_trimmed_string([Some(
+                    profile.aws_credential_command.as_str(),
+                )]),
             })
         }
     };
@@ -521,6 +524,31 @@ mod tests {
             panic!("expected Bedrock adapter");
         };
         assert_eq!(config.region, "ap-southeast-2");
+    }
+
+    #[test]
+    fn bedrock_credential_command_flows_to_adapter_config() {
+        let mut settings = AppSettings {
+            active_provider: ProviderId::from("bedrock"),
+            ..Default::default()
+        };
+        let profile = settings
+            .providers
+            .get_mut(&ProviderId::from("bedrock"))
+            .expect("bedrock profile");
+        profile.aws_credential_command =
+            "  aws configure export-credentials --profile bedrock  ".to_string();
+
+        let config = resolve_provider_config(&settings, None, &ProviderEnv::default())
+            .expect("provider config");
+
+        let ProviderAdapterConfig::Bedrock(bedrock) = config.adapter else {
+            panic!("expected bedrock adapter");
+        };
+        assert_eq!(
+            bedrock.aws_credential_command.as_deref(),
+            Some("aws configure export-credentials --profile bedrock")
+        );
     }
 
     #[test]

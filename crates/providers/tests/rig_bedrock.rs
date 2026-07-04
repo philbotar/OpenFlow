@@ -19,6 +19,7 @@ fn bedrock_test_config() -> AiClientConfig {
         adapter: ProviderAdapterConfig::Bedrock(BedrockConfig {
             region: "eu-west-1".into(),
             aws_profile: Some("dev".into()),
+            aws_credential_command: None,
         }),
     }
 }

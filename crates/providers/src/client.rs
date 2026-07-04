@@ -34,6 +34,7 @@ pub struct AnthropicConfig {
 pub struct BedrockConfig {
     pub region: String,
     pub aws_profile: Option<String>,
+    pub aws_credential_command: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

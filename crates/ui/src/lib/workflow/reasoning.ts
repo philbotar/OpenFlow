@@ -114,6 +114,7 @@ export function cloneProviderProfile(profile: ProviderProfile): ProviderProfile 
     editable: profile.editable,
     aws_profile: profile.aws_profile,
     aws_region: profile.aws_region,
+    aws_credential_command: profile.aws_credential_command,
     reasoning_effort_options: reasoningOptions.map((option) => ({ ...option })),
     default_reasoning_budget_tokens: { ...budgetTokens },
     default_reasoning_effort: defaultReasoningEffort(profile),

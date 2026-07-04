@@ -186,9 +186,13 @@ impl SettingsFacade {
                     "active provider is not Amazon Bedrock",
                 )));
             };
-            return list_bedrock_foundation_models(&bedrock.region, bedrock.aws_profile.as_deref())
-                .await
-                .map_err(map_agent_error_to_backend);
+            return list_bedrock_foundation_models(
+                &bedrock.region,
+                bedrock.aws_profile.as_deref(),
+                bedrock.aws_credential_command.as_deref(),
+            )
+            .await
+            .map_err(map_agent_error_to_backend);
         }
         #[cfg(not(feature = "bedrock"))]
         {
@@ -222,9 +226,13 @@ impl SettingsFacade {
                     "active provider is not Amazon Bedrock",
                 )));
             };
-            return verify_bedrock_credentials(&bedrock.region, bedrock.aws_profile.as_deref())
-                .await
-                .map_err(map_agent_error_to_backend);
+            return verify_bedrock_credentials(
+                &bedrock.region,
+                bedrock.aws_profile.as_deref(),
+                bedrock.aws_credential_command.as_deref(),
+            )
+            .await
+            .map_err(map_agent_error_to_backend);
         }
         #[cfg(not(feature = "bedrock"))]
         {

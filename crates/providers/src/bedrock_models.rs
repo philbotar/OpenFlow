@@ -14,8 +14,9 @@ use engine::AgentError;
 pub async fn list_bedrock_foundation_models(
     region: &str,
     aws_profile: Option<&str>,
+    aws_credential_command: Option<&str>,
 ) -> Result<Vec<String>, AgentError> {
-    let client = bedrock_control_client(region, aws_profile).await?;
+    let client = bedrock_control_client(region, aws_profile, aws_credential_command).await?;
     let response = client
         .list_foundation_models()
         .by_output_modality(ModelModality::Text)
@@ -35,6 +36,7 @@ pub async fn list_bedrock_foundation_models(
 pub async fn verify_bedrock_credentials(
     region: &str,
     aws_profile: Option<&str>,
+    aws_credential_command: Option<&str>,
 ) -> Result<String, AgentError> {
     let trimmed_region = region.trim();
     if trimmed_region.is_empty() {
@@ -42,7 +44,7 @@ pub async fn verify_bedrock_credentials(
             "Amazon Bedrock AWS region missing".to_string(),
         ));
     }
-    let config = load_aws_sdk_config(trimmed_region, aws_profile).await;
+    let config = load_aws_sdk_config(trimmed_region, aws_profile, aws_credential_command).await;
     let provider = config.credentials_provider().ok_or_else(|| {
         AgentError::Permanent("AWS credentials provider not configured".to_string())
     })?;
@@ -94,6 +96,7 @@ fn is_converse_chat_model(summary: &FoundationModelSummary) -> bool {
 async fn bedrock_control_client(
     region: &str,
     aws_profile: Option<&str>,
+    aws_credential_command: Option<&str>,
 ) -> Result<BedrockControlClient, AgentError> {
     let trimmed_region = region.trim();
     if trimmed_region.is_empty() {
@@ -104,6 +107,7 @@ async fn bedrock_control_client(
     let shared = load_aws_sdk_config(
         trimmed_region,
         aws_profile.map(str::trim).filter(|value| !value.is_empty()),
+        aws_credential_command,
     )
     .await;
     Ok(BedrockControlClient::new(&shared))
