@@ -16,7 +16,7 @@ pub fn classify_http_status(status: u16, body: &str, label: &str) -> AgentError 
     }
 }
 
-fn is_retryable_proxy_body(body: &str) -> bool {
+pub(crate) fn is_retryable_proxy_body(body: &str) -> bool {
     let lower = body.to_lowercase();
     [
         "upstream request failed",
