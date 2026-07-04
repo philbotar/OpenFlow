@@ -29,18 +29,28 @@ pub fn list_project_file_references(
         .unwrap_or(DEFAULT_FILE_REFERENCE_LIMIT)
         .clamp(1, DEFAULT_FILE_REFERENCE_LIMIT);
 
-    let mut cache = FILE_LIST_CACHE.lock().expect("file list cache lock");
-    let fresh = cache
-        .as_ref()
-        .is_some_and(|entry| entry.cwd == cwd && entry.built_at.elapsed() < FILE_LIST_CACHE_TTL);
-    if !fresh {
-        *cache = Some(FileListCache {
-            entries: walk_project_files(&cwd)?,
-            cwd: cwd.clone(),
-            built_at: Instant::now(),
+    let needs_refresh = {
+        let cache = FILE_LIST_CACHE.lock().expect("file list cache lock");
+        !cache
+            .as_ref()
+            .is_some_and(|entry| entry.cwd == cwd && entry.built_at.elapsed() < FILE_LIST_CACHE_TTL)
+    };
+    if needs_refresh {
+        let entries = walk_project_files(&cwd)?;
+        let mut cache = FILE_LIST_CACHE.lock().expect("file list cache lock");
+        let fresh = cache.as_ref().is_some_and(|entry| {
+            entry.cwd == cwd && entry.built_at.elapsed() < FILE_LIST_CACHE_TTL
         });
+        if !fresh {
+            *cache = Some(FileListCache {
+                entries,
+                cwd: cwd.clone(),
+                built_at: Instant::now(),
+            });
+        }
     }
-    let entries = &cache.as_ref().expect("cache just filled").entries;
+    let cache = FILE_LIST_CACHE.lock().expect("file list cache lock");
+    let entries = &cache.as_ref().expect("cache populated").entries;
     Ok(entries
         .iter()
         .filter(|reference| matches_query(&reference.path, normalized_query.as_deref()))

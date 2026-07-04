@@ -11,7 +11,7 @@ pub struct LineRange {
     pub end: Option<usize>,
 }
 
-// So that we can pass in line ranges and paths that arent full (e.g. src/lib instead of the full path. )
+// Allow line-range suffixes on partial paths (e.g. `src/lib:10-20`).
 pub fn split_selector(path: &str) -> (String, ReadSelector) {
     let Some(index) = path.rfind(':') else {
         return (path.to_string(), ReadSelector::None);

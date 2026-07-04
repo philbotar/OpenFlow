@@ -8,8 +8,8 @@ pub fn list_projects(backend: tauri::State<AppBackend>) -> Result<Vec<Project>, 
 }
 
 #[tauri::command]
-pub async fn list_project_file_references(
-    backend: tauri::State<'_, AppBackend>,
+pub fn list_project_file_references(
+    backend: tauri::State<AppBackend>,
     execution_cwd: String,
     query: Option<String>,
     limit: Option<usize>,

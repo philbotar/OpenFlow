@@ -30,7 +30,7 @@ pub struct ToolPortImpl<A> {
     event_tx: UnboundedSender<ExecutionEvent>,
     node_interrupts: NodeInterrupts,
     aborted_emitted: Arc<parking_lot::Mutex<bool>>,
-    exclusive_locks: ExclusiveLocks,
+    exclusive_locks: Arc<ExclusiveLocks>,
 }
 
 impl<A> ToolPortImpl<A>
@@ -72,7 +72,7 @@ where
             event_tx,
             node_interrupts,
             aborted_emitted,
-            exclusive_locks: ExclusiveLocks::default(),
+            exclusive_locks: Arc::new(ExclusiveLocks::default()),
         }
     }
 
@@ -239,9 +239,10 @@ where
             let lsp = lsp_settings.clone();
             let event_tx = self.event_tx.clone();
             let retry_policy = retry_policy.clone();
-            let exclusive_permits = self.exclusive_permits(&call).await;
+            let exclusive_locks = Arc::clone(&self.exclusive_locks);
+            let exclusive_keys = self.exclusive_lock_keys_for(&call);
             join_handles.push(tokio::spawn(async move {
-                let _permits = exclusive_permits;
+                let _permits = exclusive_locks.acquire(exclusive_keys).await;
                 let conversation_id = node_id_for_task.0.clone();
                 let ctx = ToolExecutionContext {
                     node_id: node_id_for_task.clone(),
@@ -303,11 +304,15 @@ where
         Some(collected)
     }
 
-    async fn exclusive_permits(&self, call: &ToolCall) -> Vec<tokio::sync::OwnedSemaphorePermit> {
+    fn exclusive_lock_keys_for(&self, call: &ToolCall) -> Vec<String> {
         let Ok(registered) = self.tool_runner.registry().get(&call.name) else {
             return Vec::new();
         };
-        let keys = exclusive_lock_keys(registered.kind, registered.definition.concurrency, call);
+        exclusive_lock_keys(registered.kind, registered.definition.concurrency, call)
+    }
+
+    async fn exclusive_permits(&self, call: &ToolCall) -> Vec<tokio::sync::OwnedSemaphorePermit> {
+        let keys = self.exclusive_lock_keys_for(call);
         self.exclusive_locks.acquire(keys).await
     }
 
@@ -674,10 +679,6 @@ fn exclusive_lock_keys(
     }
     let fallback = vec![format!("tool:{}", call.name)];
     match kind {
-        // bash cannot declare its side effects; serializing it run-wide
-        // starves parallel nodes for no correctness gain (git/cargo hold
-        // their own locks), so it takes no cross-node lock.
-        Kind::Bash => Vec::new(),
         Kind::Write => match call.arguments.get("path").and_then(|v| v.as_str()) {
             Some(path) => path_keys(vec![path.to_string()]),
             None => fallback,
@@ -811,13 +812,13 @@ mod tests {
     }
 
     #[test]
-    fn bash_takes_no_cross_node_lock() {
+    fn bash_falls_back_to_tool_key() {
         let keys = exclusive_lock_keys(
             BuiltinToolKind::Bash,
             ToolConcurrency::Exclusive,
             &call("bash", serde_json::json!({"command": "cargo test"})),
         );
-        assert!(keys.is_empty());
+        assert_eq!(keys, vec!["tool:bash".to_string()]);
     }
 
     #[test]
