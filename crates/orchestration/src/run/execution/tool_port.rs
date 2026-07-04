@@ -5,9 +5,9 @@ use async_trait::async_trait;
 use engine::{
     augment_call_subagent_tool_description, build_predefined_subagent_summaries,
     handle_declare_subagents, merge_subagent_summaries as merge_subagent_summaries_into_map,
-    AiPort, CallableAgent, InteractiveEngine, NodeId, NodeToolConfig, RunTelemetry,
-    SubagentSummary, ToolCall, ToolConcurrency, ToolPort, ToolResult, Workflow, CALL_SUBAGENT_TOOL,
-    DECLARE_SUBAGENTS_TOOL,
+    AiPort, CallableAgent, NodeId, NodeToolConfig, RunTelemetry, SubagentSummary, ToolBatchEffects,
+    ToolBatchOutput, ToolCall, ToolConcurrency, ToolPort, ToolResult, Workflow,
+    CALL_SUBAGENT_TOOL, DECLARE_SUBAGENTS_TOOL,
 };
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
@@ -122,11 +122,10 @@ where
 
     async fn execute_batch(
         &self,
-        engine: &mut InteractiveEngine,
         node_id: &NodeId,
         label: &str,
         calls: Vec<ToolCall>,
-    ) -> Vec<ToolResult> {
+    ) -> ToolBatchOutput {
         let node_config = self
             .workflow
             .nodes
@@ -134,6 +133,7 @@ where
             .find(|node| node.id == *node_id)
             .map(|node| node.agent.tools.clone())
             .unwrap_or_default();
+        let mut effects = ToolBatchEffects::default();
         let mut results = Vec::with_capacity(calls.len());
         let mut index = 0usize;
         while index < calls.len() {
@@ -141,7 +141,7 @@ where
                 break;
             }
             if self.node_interrupt_is_cancelled(node_id) {
-                engine.mark_node_interrupted(node_id);
+                effects.interrupted = true;
                 break;
             }
             if self.is_parallel_shared_tool(&calls[index]) {
@@ -150,7 +150,7 @@ where
                     index += 1;
                 }
                 match self
-                    .run_parallel_regular_tools(engine, node_id, label, &calls[start..index])
+                    .run_parallel_regular_tools(&mut effects, node_id, label, &calls[start..index])
                     .await
                 {
                     Some(batch_results) => results.extend(batch_results),
@@ -165,7 +165,7 @@ where
                 self.run_declare_subagents(node_id, label, &tool_call)
             } else if tool_call.name == CALL_SUBAGENT_TOOL {
                 match self
-                    .run_call_subagent(engine, node_id, label, &tool_call, &node_config)
+                    .run_call_subagent(&mut effects, node_id, label, &tool_call, &node_config)
                     .await
                 {
                     Some(result) => result,
@@ -173,7 +173,7 @@ where
                 }
             } else {
                 match self
-                    .run_regular_tool(engine, node_id, label, tool_call, &node_config)
+                    .run_regular_tool(&mut effects, node_id, label, tool_call, &node_config)
                     .await
                 {
                     Some(result) => result,
@@ -182,7 +182,7 @@ where
             };
             results.push(result);
         }
-        results
+        ToolBatchOutput { results, effects }
     }
 }
 
@@ -203,7 +203,7 @@ where
 
     async fn run_parallel_regular_tools(
         &self,
-        engine: &mut InteractiveEngine,
+        effects: &mut ToolBatchEffects,
         node_id: &NodeId,
         label: &str,
         tool_calls: &[ToolCall],
@@ -221,7 +221,7 @@ where
                 self.emit_tool_completed(node_id, tool_call, &record.result);
                 results[index] = Some(record.result);
             } else {
-                self.note_read_call(engine, node_id, tool_call);
+                self.note_read_call(effects, tool_call);
                 self.emit_tool_started(node_id, tool_call);
                 runnable_indices.push(index);
             }
@@ -281,8 +281,8 @@ where
                             size_bytes: artifact.size_bytes,
                         });
                     }
-                    self.record_tool_file_changes(engine, node_id, &record);
-                    self.record_tool_reads(engine, node_id, &record);
+                    self.record_tool_file_changes(effects, node_id, &record);
+                    self.record_tool_reads(effects, node_id, &record);
                     self.emit_tool_completed(node_id, tool_call, &record.result);
                     results[index] = Some(record.result);
                 }
@@ -344,7 +344,7 @@ where
 
     async fn run_regular_tool(
         &self,
-        engine: &mut InteractiveEngine,
+        effects: &mut ToolBatchEffects,
         node_id: &NodeId,
         label: &str,
         tool_call: ToolCall,
@@ -360,7 +360,7 @@ where
         }
         self.emit_tool_started(node_id, &tool_call);
         match self
-            .execute_tool_or_cancel(engine, tool_call.clone(), node_id, &node_id.0)
+            .execute_tool_or_cancel(effects, tool_call.clone(), node_id, &node_id.0)
             .await
         {
             Some(Ok(record)) => {
@@ -373,8 +373,8 @@ where
                         size_bytes: artifact.size_bytes,
                     });
                 }
-                self.record_tool_file_changes(engine, node_id, &record);
-                self.record_tool_reads(engine, node_id, &record);
+                self.record_tool_file_changes(effects, node_id, &record);
+                self.record_tool_reads(effects, node_id, &record);
                 self.emit_tool_completed(node_id, &tool_call, &record.result);
                 Some(record.result)
             }
@@ -426,7 +426,7 @@ where
 
     fn record_tool_file_changes(
         &self,
-        engine: &mut InteractiveEngine,
+        effects: &mut ToolBatchEffects,
         node_id: &NodeId,
         record: &ToolExecutionRecord,
     ) {
@@ -439,7 +439,9 @@ where
         if record.file_changes.is_empty() {
             return;
         }
-        engine.record_file_changes(node_id, record.file_changes.clone());
+        effects
+            .file_changes
+            .extend(record.file_changes.iter().cloned());
         for change in &record.file_changes {
             let _ = self.event_tx.send(ExecutionEvent::FileChanged {
                 node_id: node_id.clone(),
@@ -450,22 +452,17 @@ where
 
     fn record_tool_reads(
         &self,
-        engine: &mut InteractiveEngine,
-        node_id: &NodeId,
+        effects: &mut ToolBatchEffects,
+        _node_id: &NodeId,
         record: &ToolExecutionRecord,
     ) {
         if record.reads.is_empty() {
             return;
         }
-        engine.record_reads(node_id, record.reads.clone());
+        effects.reads.extend(record.reads.iter().cloned());
     }
 
-    fn note_read_call(
-        &self,
-        engine: &mut InteractiveEngine,
-        node_id: &NodeId,
-        tool_call: &ToolCall,
-    ) {
+    fn note_read_call(&self, effects: &mut ToolBatchEffects, tool_call: &ToolCall) {
         if tool_call.name != "read" {
             return;
         }
@@ -483,7 +480,7 @@ where
         {
             return;
         }
-        engine.note_read_call(node_id, &path);
+        effects.read_call_paths.push(path.to_string());
     }
 
     fn node_interrupt_token(&self, node_id: &NodeId) -> Option<CancellationToken> {
@@ -500,12 +497,12 @@ where
 
     async fn execute_tool_or_cancel(
         &self,
-        engine: &mut InteractiveEngine,
+        effects: &mut ToolBatchEffects,
         tool_call: ToolCall,
         node_id: &NodeId,
         conversation_id: &str,
     ) -> Option<Result<ToolExecutionRecord, ToolRunnerError>> {
-        self.note_read_call(engine, node_id, &tool_call);
+        self.note_read_call(effects, &tool_call);
         let tool_runner = Arc::clone(&self.tool_runner);
         let tool_name = tool_call.name.clone();
         let (update_tx, mut update_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -554,7 +551,7 @@ where
                         None
                     }
                     _ = node_token.cancelled() => {
-                        engine.mark_node_interrupted(node_id);
+                        effects.interrupted = true;
                         None
                     }
                     result = run_tool => Some(result),

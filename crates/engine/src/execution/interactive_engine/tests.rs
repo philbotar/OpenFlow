@@ -14,7 +14,7 @@ use crate::execution::NodeFailureKind;
 use crate::graph::{Node, NodeId, Workflow};
 use crate::ports::{
     AgentError, AgentRequest, AgentToolCallBatch, AgentTurnOutcome, AgentTurnSuccess, AiPort,
-    ToolPort,
+    ToolBatchEffects, ToolBatchOutput, ToolPort,
 };
 use crate::tools::{ApprovalMode, FileChangeRecord, ToolCall, ToolResult};
 use async_trait::async_trait;
@@ -37,22 +37,24 @@ struct NoopToolPort;
 impl ToolPort for NoopToolPort {
     async fn execute_batch(
         &self,
-        _engine: &mut InteractiveEngine,
         _node_id: &NodeId,
         _label: &str,
         calls: Vec<ToolCall>,
-    ) -> Vec<ToolResult> {
-        calls
-            .into_iter()
-            .map(|call| ToolResult {
-                tool_call_id: call.id,
-                tool_name: call.name,
-                content: "noop".to_string(),
-                is_error: false,
-                artifact_ids: Vec::new(),
-                output_meta: None,
-            })
-            .collect()
+    ) -> ToolBatchOutput {
+        ToolBatchOutput {
+            results: calls
+                .into_iter()
+                .map(|call| ToolResult {
+                    tool_call_id: call.id,
+                    tool_name: call.name,
+                    content: "noop".to_string(),
+                    is_error: false,
+                    artifact_ids: Vec::new(),
+                    output_meta: None,
+                })
+                .collect(),
+            effects: ToolBatchEffects::default(),
+        }
     }
 
     fn augment_request(&self, _node_id: &NodeId, _request: &mut AgentRequest) {}

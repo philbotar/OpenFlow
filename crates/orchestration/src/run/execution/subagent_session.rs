@@ -5,8 +5,9 @@ use std::time::Instant;
 
 use engine::{
     advance_subagent_invoke, is_subagent_runtime_builtin, start_subagent_invoke,
-    subagent_runtime_builtin_denied, AgentToolCallBatch, AgentTurnOutcome, InteractiveEngine,
-    NodeId, NodeToolConfig, SubagentInvokeStep, SubagentStartOutcome, ToolCall, ToolResult,
+    subagent_runtime_builtin_denied, AgentToolCallBatch, AgentTurnOutcome, NodeId,
+    NodeToolConfig, SubagentInvokeStep, SubagentStartOutcome, ToolBatchEffects, ToolCall,
+    ToolResult,
 };
 
 use super::super::abort_run;
@@ -20,7 +21,7 @@ where
 {
     pub(super) async fn run_call_subagent(
         &self,
-        engine: &mut InteractiveEngine,
+        effects: &mut ToolBatchEffects,
         node_id: &NodeId,
         label: &str,
         tool_call: &ToolCall,
@@ -56,7 +57,7 @@ where
         let mut outcome = self.invoke_ai_or_cancel(session.request.clone()).await?;
         loop {
             let tool_results = if let Ok(AgentTurnOutcome::ToolCalls(batch)) = &outcome {
-                self.execute_subagent_tool_batch(engine, node_id, &conversation_id, batch)
+                self.execute_subagent_tool_batch(effects, node_id, &conversation_id, batch)
                     .await?
             } else {
                 Vec::new()
@@ -84,7 +85,7 @@ where
 
     pub(super) async fn execute_subagent_tool_batch(
         &self,
-        engine: &mut InteractiveEngine,
+        effects: &mut ToolBatchEffects,
         node_id: &NodeId,
         conversation_id: &str,
         batch: &AgentToolCallBatch,
@@ -96,12 +97,12 @@ where
                 continue;
             }
             match self
-                .execute_tool_or_cancel(engine, tool_call.clone(), node_id, conversation_id)
+                .execute_tool_or_cancel(effects, tool_call.clone(), node_id, conversation_id)
                 .await
             {
                 Some(Ok(record)) => {
-                    self.record_tool_file_changes(engine, node_id, &record);
-                    self.record_tool_reads(engine, node_id, &record);
+                    self.record_tool_file_changes(effects, node_id, &record);
+                    self.record_tool_reads(effects, node_id, &record);
                     results.push(record.result);
                 }
                 Some(Err(err)) => results.push(ToolResult {

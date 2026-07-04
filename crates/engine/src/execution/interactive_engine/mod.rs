@@ -14,7 +14,7 @@ use crate::execution::tool_results::error_tool_result;
 use crate::execution::{NodeFailureKind, NodeRunOutput, RunError, RunReport};
 use crate::graph::validation::{execution_layers, WorkflowValidationError};
 use crate::graph::{Node, NodeId, Workflow};
-use crate::ports::{AgentRequest, AiPort, ToolPort};
+use crate::ports::{AgentRequest, AiPort, ToolBatchOutput, ToolPort};
 use crate::tools::{FileChangeRecord, ReadRecord, ToolCall};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -280,16 +280,11 @@ impl InteractiveEngine {
             }
 
             while let Some((node_id, label, tool_calls)) = self.next_run_tools_action() {
-                let results = tools
-                    .execute_batch(self, &node_id, &label, tool_calls)
-                    .await;
+                let output = tools.execute_batch(&node_id, &label, tool_calls).await;
                 if cancel.is_cancelled() {
                     return EngineRunResult::Cancelled;
                 }
-                if self.interrupted_nodes.contains(&node_id) {
-                    continue;
-                }
-                if let Err(error) = self.on_tool_results(&node_id, results) {
+                if let Err(error) = self.apply_tool_batch_output(&node_id, output) {
                     return EngineRunResult::Failed(RunError::NodeFailed {
                         node_id,
                         kind: NodeFailureKind::EngineInput(error.to_string()),
@@ -483,6 +478,27 @@ impl InteractiveEngine {
         self.pending_tool_batches
             .retain(|_, batch| batch.node_id != *node_id);
         self.interrupted_nodes.insert(node_id.clone());
+    }
+
+    /// Apply a completed tool batch: record effects, then feed results back.
+    fn apply_tool_batch_output(
+        &mut self,
+        node_id: &NodeId,
+        output: ToolBatchOutput,
+    ) -> Result<(), EngineInputError> {
+        for path in &output.effects.read_call_paths {
+            self.note_read_call(node_id, path);
+        }
+        self.record_file_changes(node_id, output.effects.file_changes.clone());
+        self.record_reads(node_id, output.effects.reads.clone());
+        if output.effects.interrupted {
+            self.mark_node_interrupted(node_id);
+            return Ok(());
+        }
+        if self.interrupted_nodes.contains(node_id) {
+            return Ok(());
+        }
+        self.on_tool_results(node_id, output.results)
     }
 
     #[must_use]
