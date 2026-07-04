@@ -5,9 +5,8 @@ use std::time::Instant;
 
 use engine::{
     advance_subagent_invoke, is_subagent_runtime_builtin, start_subagent_invoke,
-    subagent_runtime_builtin_denied, AgentToolCallBatch, AgentTurnOutcome, NodeId,
-    NodeToolConfig, SubagentInvokeStep, SubagentStartOutcome, ToolBatchEffects, ToolCall,
-    ToolResult,
+    subagent_runtime_builtin_denied, AgentToolCallBatch, AgentTurnOutcome, NodeId, NodeToolConfig,
+    SubagentInvokeStep, SubagentStartOutcome, ToolBatchEffects, ToolCall, ToolResult,
 };
 
 use super::super::abort_run;

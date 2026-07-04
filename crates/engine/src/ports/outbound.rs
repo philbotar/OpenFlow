@@ -180,7 +180,7 @@ where
 }
 
 /// Side effects a tool batch produced; the engine applies these when the batch returns.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ToolBatchEffects {
     pub file_changes: Vec<FileChangeRecord>,
     pub reads: Vec<ReadRecord>,
@@ -191,7 +191,7 @@ pub struct ToolBatchEffects {
 }
 
 /// Result of executing one tool batch.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ToolBatchOutput {
     /// One result per completed call, in order. May be shorter than the
     /// input when the batch was interrupted or the run was cancelled.

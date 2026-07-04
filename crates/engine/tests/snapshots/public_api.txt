@@ -3635,6 +3635,92 @@ impl<T> core::clone::CloneToUninit for engine::ports::outbound::AgentTurnSuccess
 pub unsafe fn engine::ports::outbound::AgentTurnSuccess::clone_to_uninit(&self, *mut u8)
 impl<T> core::convert::From<T> for engine::ports::outbound::AgentTurnSuccess
 pub fn engine::ports::outbound::AgentTurnSuccess::from(T) -> T
+pub struct engine::ports::outbound::ToolBatchEffects
+pub engine::ports::outbound::ToolBatchEffects::file_changes: alloc::vec::Vec<engine::FileChangeRecord>
+pub engine::ports::outbound::ToolBatchEffects::interrupted: bool
+pub engine::ports::outbound::ToolBatchEffects::read_call_paths: alloc::vec::Vec<alloc::string::String>
+pub engine::ports::outbound::ToolBatchEffects::reads: alloc::vec::Vec<engine::ReadRecord>
+impl core::clone::Clone for engine::ports::outbound::ToolBatchEffects
+pub fn engine::ports::outbound::ToolBatchEffects::clone(&self) -> engine::ports::outbound::ToolBatchEffects
+impl core::cmp::Eq for engine::ports::outbound::ToolBatchEffects
+impl core::cmp::PartialEq for engine::ports::outbound::ToolBatchEffects
+pub fn engine::ports::outbound::ToolBatchEffects::eq(&self, &engine::ports::outbound::ToolBatchEffects) -> bool
+impl core::default::Default for engine::ports::outbound::ToolBatchEffects
+pub fn engine::ports::outbound::ToolBatchEffects::default() -> engine::ports::outbound::ToolBatchEffects
+impl core::fmt::Debug for engine::ports::outbound::ToolBatchEffects
+pub fn engine::ports::outbound::ToolBatchEffects::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::ports::outbound::ToolBatchEffects
+impl core::marker::Freeze for engine::ports::outbound::ToolBatchEffects
+impl core::marker::Send for engine::ports::outbound::ToolBatchEffects
+impl core::marker::Sync for engine::ports::outbound::ToolBatchEffects
+impl core::marker::Unpin for engine::ports::outbound::ToolBatchEffects
+impl core::marker::UnsafeUnpin for engine::ports::outbound::ToolBatchEffects
+impl core::panic::unwind_safe::RefUnwindSafe for engine::ports::outbound::ToolBatchEffects
+impl core::panic::unwind_safe::UnwindSafe for engine::ports::outbound::ToolBatchEffects
+impl<T, U> core::convert::Into<U> for engine::ports::outbound::ToolBatchEffects where U: core::convert::From<T>
+pub fn engine::ports::outbound::ToolBatchEffects::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::ports::outbound::ToolBatchEffects where U: core::convert::Into<T>
+pub type engine::ports::outbound::ToolBatchEffects::Error = core::convert::Infallible
+pub fn engine::ports::outbound::ToolBatchEffects::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::ports::outbound::ToolBatchEffects where U: core::convert::TryFrom<T>
+pub type engine::ports::outbound::ToolBatchEffects::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::ports::outbound::ToolBatchEffects::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::ports::outbound::ToolBatchEffects where T: core::clone::Clone
+pub type engine::ports::outbound::ToolBatchEffects::Owned = T
+pub fn engine::ports::outbound::ToolBatchEffects::clone_into(&self, &mut T)
+pub fn engine::ports::outbound::ToolBatchEffects::to_owned(&self) -> T
+impl<T> core::any::Any for engine::ports::outbound::ToolBatchEffects where T: 'static + ?core::marker::Sized
+pub fn engine::ports::outbound::ToolBatchEffects::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::ports::outbound::ToolBatchEffects where T: ?core::marker::Sized
+pub fn engine::ports::outbound::ToolBatchEffects::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::ports::outbound::ToolBatchEffects where T: ?core::marker::Sized
+pub fn engine::ports::outbound::ToolBatchEffects::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::ports::outbound::ToolBatchEffects where T: core::clone::Clone
+pub unsafe fn engine::ports::outbound::ToolBatchEffects::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::ports::outbound::ToolBatchEffects
+pub fn engine::ports::outbound::ToolBatchEffects::from(T) -> T
+pub struct engine::ports::outbound::ToolBatchOutput
+pub engine::ports::outbound::ToolBatchOutput::effects: engine::ports::outbound::ToolBatchEffects
+pub engine::ports::outbound::ToolBatchOutput::results: alloc::vec::Vec<engine::ToolResult>
+impl core::clone::Clone for engine::ports::outbound::ToolBatchOutput
+pub fn engine::ports::outbound::ToolBatchOutput::clone(&self) -> engine::ports::outbound::ToolBatchOutput
+impl core::cmp::Eq for engine::ports::outbound::ToolBatchOutput
+impl core::cmp::PartialEq for engine::ports::outbound::ToolBatchOutput
+pub fn engine::ports::outbound::ToolBatchOutput::eq(&self, &engine::ports::outbound::ToolBatchOutput) -> bool
+impl core::default::Default for engine::ports::outbound::ToolBatchOutput
+pub fn engine::ports::outbound::ToolBatchOutput::default() -> engine::ports::outbound::ToolBatchOutput
+impl core::fmt::Debug for engine::ports::outbound::ToolBatchOutput
+pub fn engine::ports::outbound::ToolBatchOutput::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::ports::outbound::ToolBatchOutput
+impl core::marker::Freeze for engine::ports::outbound::ToolBatchOutput
+impl core::marker::Send for engine::ports::outbound::ToolBatchOutput
+impl core::marker::Sync for engine::ports::outbound::ToolBatchOutput
+impl core::marker::Unpin for engine::ports::outbound::ToolBatchOutput
+impl core::marker::UnsafeUnpin for engine::ports::outbound::ToolBatchOutput
+impl core::panic::unwind_safe::RefUnwindSafe for engine::ports::outbound::ToolBatchOutput
+impl core::panic::unwind_safe::UnwindSafe for engine::ports::outbound::ToolBatchOutput
+impl<T, U> core::convert::Into<U> for engine::ports::outbound::ToolBatchOutput where U: core::convert::From<T>
+pub fn engine::ports::outbound::ToolBatchOutput::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::ports::outbound::ToolBatchOutput where U: core::convert::Into<T>
+pub type engine::ports::outbound::ToolBatchOutput::Error = core::convert::Infallible
+pub fn engine::ports::outbound::ToolBatchOutput::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::ports::outbound::ToolBatchOutput where U: core::convert::TryFrom<T>
+pub type engine::ports::outbound::ToolBatchOutput::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::ports::outbound::ToolBatchOutput::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::ports::outbound::ToolBatchOutput where T: core::clone::Clone
+pub type engine::ports::outbound::ToolBatchOutput::Owned = T
+pub fn engine::ports::outbound::ToolBatchOutput::clone_into(&self, &mut T)
+pub fn engine::ports::outbound::ToolBatchOutput::to_owned(&self) -> T
+impl<T> core::any::Any for engine::ports::outbound::ToolBatchOutput where T: 'static + ?core::marker::Sized
+pub fn engine::ports::outbound::ToolBatchOutput::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::ports::outbound::ToolBatchOutput where T: ?core::marker::Sized
+pub fn engine::ports::outbound::ToolBatchOutput::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::ports::outbound::ToolBatchOutput where T: ?core::marker::Sized
+pub fn engine::ports::outbound::ToolBatchOutput::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::ports::outbound::ToolBatchOutput where T: core::clone::Clone
+pub unsafe fn engine::ports::outbound::ToolBatchOutput::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::ports::outbound::ToolBatchOutput
+pub fn engine::ports::outbound::ToolBatchOutput::from(T) -> T
 pub struct engine::ports::outbound::UsageReport
 pub engine::ports::outbound::UsageReport::completion_tokens: u32
 pub engine::ports::outbound::UsageReport::prompt_tokens: u32
@@ -3686,10 +3772,10 @@ pub trait engine::ports::outbound::AiStreamSink: core::marker::Send + core::mark
 pub fn engine::ports::outbound::AiStreamSink::on_stream_event(&self, engine::ports::outbound::AiStreamEvent)
 pub trait engine::ports::outbound::ToolPort: core::marker::Send + core::marker::Sync
 pub fn engine::ports::outbound::ToolPort::augment_request(&self, &engine::graph::workflow::NodeId, &mut engine::ports::outbound::AgentRequest)
-pub fn engine::ports::outbound::ToolPort::execute_batch<'life0, 'life1, 'life2, 'life3, 'async_trait>(&'life0 self, &'life1 mut engine::execution::interactive_engine::InteractiveEngine, &'life2 engine::graph::workflow::NodeId, &'life3 str, alloc::vec::Vec<engine::ToolCall>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = alloc::vec::Vec<engine::ToolResult>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait, 'life3: 'async_trait
+pub fn engine::ports::outbound::ToolPort::execute_batch<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 engine::graph::workflow::NodeId, &'life2 str, alloc::vec::Vec<engine::ToolCall>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = engine::ports::outbound::ToolBatchOutput> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
 impl<T> engine::ports::outbound::ToolPort for alloc::boxed::Box<T> where T: engine::ports::outbound::ToolPort + ?core::marker::Sized
 pub fn alloc::boxed::Box<T>::augment_request(&self, &engine::graph::workflow::NodeId, &mut engine::ports::outbound::AgentRequest)
-pub fn alloc::boxed::Box<T>::execute_batch<'life0, 'life1, 'life2, 'life3, 'async_trait>(&'life0 self, &'life1 mut engine::execution::interactive_engine::InteractiveEngine, &'life2 engine::graph::workflow::NodeId, &'life3 str, alloc::vec::Vec<engine::ToolCall>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = alloc::vec::Vec<engine::ToolResult>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait, 'life3: 'async_trait
+pub fn alloc::boxed::Box<T>::execute_batch<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 engine::graph::workflow::NodeId, &'life2 str, alloc::vec::Vec<engine::ToolCall>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = engine::ports::outbound::ToolBatchOutput> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
 pub fn engine::ports::outbound::emit_assistant_deltas_from_outcome(&dyn engine::ports::outbound::AiStreamSink, &engine::ports::outbound::AgentTurnOutcome)
 pub enum engine::ports::AgentError
 pub engine::ports::AgentError::Failed(alloc::string::String)
@@ -3995,6 +4081,92 @@ impl<T> core::clone::CloneToUninit for engine::ports::outbound::AgentTurnSuccess
 pub unsafe fn engine::ports::outbound::AgentTurnSuccess::clone_to_uninit(&self, *mut u8)
 impl<T> core::convert::From<T> for engine::ports::outbound::AgentTurnSuccess
 pub fn engine::ports::outbound::AgentTurnSuccess::from(T) -> T
+pub struct engine::ports::ToolBatchEffects
+pub engine::ports::ToolBatchEffects::file_changes: alloc::vec::Vec<engine::FileChangeRecord>
+pub engine::ports::ToolBatchEffects::interrupted: bool
+pub engine::ports::ToolBatchEffects::read_call_paths: alloc::vec::Vec<alloc::string::String>
+pub engine::ports::ToolBatchEffects::reads: alloc::vec::Vec<engine::ReadRecord>
+impl core::clone::Clone for engine::ports::outbound::ToolBatchEffects
+pub fn engine::ports::outbound::ToolBatchEffects::clone(&self) -> engine::ports::outbound::ToolBatchEffects
+impl core::cmp::Eq for engine::ports::outbound::ToolBatchEffects
+impl core::cmp::PartialEq for engine::ports::outbound::ToolBatchEffects
+pub fn engine::ports::outbound::ToolBatchEffects::eq(&self, &engine::ports::outbound::ToolBatchEffects) -> bool
+impl core::default::Default for engine::ports::outbound::ToolBatchEffects
+pub fn engine::ports::outbound::ToolBatchEffects::default() -> engine::ports::outbound::ToolBatchEffects
+impl core::fmt::Debug for engine::ports::outbound::ToolBatchEffects
+pub fn engine::ports::outbound::ToolBatchEffects::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::ports::outbound::ToolBatchEffects
+impl core::marker::Freeze for engine::ports::outbound::ToolBatchEffects
+impl core::marker::Send for engine::ports::outbound::ToolBatchEffects
+impl core::marker::Sync for engine::ports::outbound::ToolBatchEffects
+impl core::marker::Unpin for engine::ports::outbound::ToolBatchEffects
+impl core::marker::UnsafeUnpin for engine::ports::outbound::ToolBatchEffects
+impl core::panic::unwind_safe::RefUnwindSafe for engine::ports::outbound::ToolBatchEffects
+impl core::panic::unwind_safe::UnwindSafe for engine::ports::outbound::ToolBatchEffects
+impl<T, U> core::convert::Into<U> for engine::ports::outbound::ToolBatchEffects where U: core::convert::From<T>
+pub fn engine::ports::outbound::ToolBatchEffects::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::ports::outbound::ToolBatchEffects where U: core::convert::Into<T>
+pub type engine::ports::outbound::ToolBatchEffects::Error = core::convert::Infallible
+pub fn engine::ports::outbound::ToolBatchEffects::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::ports::outbound::ToolBatchEffects where U: core::convert::TryFrom<T>
+pub type engine::ports::outbound::ToolBatchEffects::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::ports::outbound::ToolBatchEffects::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::ports::outbound::ToolBatchEffects where T: core::clone::Clone
+pub type engine::ports::outbound::ToolBatchEffects::Owned = T
+pub fn engine::ports::outbound::ToolBatchEffects::clone_into(&self, &mut T)
+pub fn engine::ports::outbound::ToolBatchEffects::to_owned(&self) -> T
+impl<T> core::any::Any for engine::ports::outbound::ToolBatchEffects where T: 'static + ?core::marker::Sized
+pub fn engine::ports::outbound::ToolBatchEffects::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::ports::outbound::ToolBatchEffects where T: ?core::marker::Sized
+pub fn engine::ports::outbound::ToolBatchEffects::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::ports::outbound::ToolBatchEffects where T: ?core::marker::Sized
+pub fn engine::ports::outbound::ToolBatchEffects::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::ports::outbound::ToolBatchEffects where T: core::clone::Clone
+pub unsafe fn engine::ports::outbound::ToolBatchEffects::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::ports::outbound::ToolBatchEffects
+pub fn engine::ports::outbound::ToolBatchEffects::from(T) -> T
+pub struct engine::ports::ToolBatchOutput
+pub engine::ports::ToolBatchOutput::effects: engine::ports::outbound::ToolBatchEffects
+pub engine::ports::ToolBatchOutput::results: alloc::vec::Vec<engine::ToolResult>
+impl core::clone::Clone for engine::ports::outbound::ToolBatchOutput
+pub fn engine::ports::outbound::ToolBatchOutput::clone(&self) -> engine::ports::outbound::ToolBatchOutput
+impl core::cmp::Eq for engine::ports::outbound::ToolBatchOutput
+impl core::cmp::PartialEq for engine::ports::outbound::ToolBatchOutput
+pub fn engine::ports::outbound::ToolBatchOutput::eq(&self, &engine::ports::outbound::ToolBatchOutput) -> bool
+impl core::default::Default for engine::ports::outbound::ToolBatchOutput
+pub fn engine::ports::outbound::ToolBatchOutput::default() -> engine::ports::outbound::ToolBatchOutput
+impl core::fmt::Debug for engine::ports::outbound::ToolBatchOutput
+pub fn engine::ports::outbound::ToolBatchOutput::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::ports::outbound::ToolBatchOutput
+impl core::marker::Freeze for engine::ports::outbound::ToolBatchOutput
+impl core::marker::Send for engine::ports::outbound::ToolBatchOutput
+impl core::marker::Sync for engine::ports::outbound::ToolBatchOutput
+impl core::marker::Unpin for engine::ports::outbound::ToolBatchOutput
+impl core::marker::UnsafeUnpin for engine::ports::outbound::ToolBatchOutput
+impl core::panic::unwind_safe::RefUnwindSafe for engine::ports::outbound::ToolBatchOutput
+impl core::panic::unwind_safe::UnwindSafe for engine::ports::outbound::ToolBatchOutput
+impl<T, U> core::convert::Into<U> for engine::ports::outbound::ToolBatchOutput where U: core::convert::From<T>
+pub fn engine::ports::outbound::ToolBatchOutput::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::ports::outbound::ToolBatchOutput where U: core::convert::Into<T>
+pub type engine::ports::outbound::ToolBatchOutput::Error = core::convert::Infallible
+pub fn engine::ports::outbound::ToolBatchOutput::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::ports::outbound::ToolBatchOutput where U: core::convert::TryFrom<T>
+pub type engine::ports::outbound::ToolBatchOutput::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::ports::outbound::ToolBatchOutput::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::ports::outbound::ToolBatchOutput where T: core::clone::Clone
+pub type engine::ports::outbound::ToolBatchOutput::Owned = T
+pub fn engine::ports::outbound::ToolBatchOutput::clone_into(&self, &mut T)
+pub fn engine::ports::outbound::ToolBatchOutput::to_owned(&self) -> T
+impl<T> core::any::Any for engine::ports::outbound::ToolBatchOutput where T: 'static + ?core::marker::Sized
+pub fn engine::ports::outbound::ToolBatchOutput::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::ports::outbound::ToolBatchOutput where T: ?core::marker::Sized
+pub fn engine::ports::outbound::ToolBatchOutput::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::ports::outbound::ToolBatchOutput where T: ?core::marker::Sized
+pub fn engine::ports::outbound::ToolBatchOutput::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::ports::outbound::ToolBatchOutput where T: core::clone::Clone
+pub unsafe fn engine::ports::outbound::ToolBatchOutput::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::ports::outbound::ToolBatchOutput
+pub fn engine::ports::outbound::ToolBatchOutput::from(T) -> T
 pub struct engine::ports::UsageReport
 pub engine::ports::UsageReport::completion_tokens: u32
 pub engine::ports::UsageReport::prompt_tokens: u32
@@ -4046,10 +4218,10 @@ pub trait engine::ports::AiStreamSink: core::marker::Send + core::marker::Sync
 pub fn engine::ports::AiStreamSink::on_stream_event(&self, engine::ports::outbound::AiStreamEvent)
 pub trait engine::ports::ToolPort: core::marker::Send + core::marker::Sync
 pub fn engine::ports::ToolPort::augment_request(&self, &engine::graph::workflow::NodeId, &mut engine::ports::outbound::AgentRequest)
-pub fn engine::ports::ToolPort::execute_batch<'life0, 'life1, 'life2, 'life3, 'async_trait>(&'life0 self, &'life1 mut engine::execution::interactive_engine::InteractiveEngine, &'life2 engine::graph::workflow::NodeId, &'life3 str, alloc::vec::Vec<engine::ToolCall>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = alloc::vec::Vec<engine::ToolResult>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait, 'life3: 'async_trait
+pub fn engine::ports::ToolPort::execute_batch<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 engine::graph::workflow::NodeId, &'life2 str, alloc::vec::Vec<engine::ToolCall>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = engine::ports::outbound::ToolBatchOutput> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
 impl<T> engine::ports::outbound::ToolPort for alloc::boxed::Box<T> where T: engine::ports::outbound::ToolPort + ?core::marker::Sized
 pub fn alloc::boxed::Box<T>::augment_request(&self, &engine::graph::workflow::NodeId, &mut engine::ports::outbound::AgentRequest)
-pub fn alloc::boxed::Box<T>::execute_batch<'life0, 'life1, 'life2, 'life3, 'async_trait>(&'life0 self, &'life1 mut engine::execution::interactive_engine::InteractiveEngine, &'life2 engine::graph::workflow::NodeId, &'life3 str, alloc::vec::Vec<engine::ToolCall>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = alloc::vec::Vec<engine::ToolResult>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait, 'life3: 'async_trait
+pub fn alloc::boxed::Box<T>::execute_batch<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 engine::graph::workflow::NodeId, &'life2 str, alloc::vec::Vec<engine::ToolCall>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = engine::ports::outbound::ToolBatchOutput> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
 pub fn engine::ports::emit_assistant_deltas_from_outcome(&dyn engine::ports::outbound::AiStreamSink, &engine::ports::outbound::AgentTurnOutcome)
 pub mod engine::template
 pub mod engine::template::builtins
@@ -7597,6 +7769,92 @@ pub unsafe fn engine::template::Template::clone_to_uninit(&self, *mut u8)
 impl<T> core::convert::From<T> for engine::template::Template
 pub fn engine::template::Template::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::template::Template where T: for<'de> serde_core::de::Deserialize<'de>
+pub struct engine::ToolBatchEffects
+pub engine::ToolBatchEffects::file_changes: alloc::vec::Vec<engine::FileChangeRecord>
+pub engine::ToolBatchEffects::interrupted: bool
+pub engine::ToolBatchEffects::read_call_paths: alloc::vec::Vec<alloc::string::String>
+pub engine::ToolBatchEffects::reads: alloc::vec::Vec<engine::ReadRecord>
+impl core::clone::Clone for engine::ports::outbound::ToolBatchEffects
+pub fn engine::ports::outbound::ToolBatchEffects::clone(&self) -> engine::ports::outbound::ToolBatchEffects
+impl core::cmp::Eq for engine::ports::outbound::ToolBatchEffects
+impl core::cmp::PartialEq for engine::ports::outbound::ToolBatchEffects
+pub fn engine::ports::outbound::ToolBatchEffects::eq(&self, &engine::ports::outbound::ToolBatchEffects) -> bool
+impl core::default::Default for engine::ports::outbound::ToolBatchEffects
+pub fn engine::ports::outbound::ToolBatchEffects::default() -> engine::ports::outbound::ToolBatchEffects
+impl core::fmt::Debug for engine::ports::outbound::ToolBatchEffects
+pub fn engine::ports::outbound::ToolBatchEffects::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::ports::outbound::ToolBatchEffects
+impl core::marker::Freeze for engine::ports::outbound::ToolBatchEffects
+impl core::marker::Send for engine::ports::outbound::ToolBatchEffects
+impl core::marker::Sync for engine::ports::outbound::ToolBatchEffects
+impl core::marker::Unpin for engine::ports::outbound::ToolBatchEffects
+impl core::marker::UnsafeUnpin for engine::ports::outbound::ToolBatchEffects
+impl core::panic::unwind_safe::RefUnwindSafe for engine::ports::outbound::ToolBatchEffects
+impl core::panic::unwind_safe::UnwindSafe for engine::ports::outbound::ToolBatchEffects
+impl<T, U> core::convert::Into<U> for engine::ports::outbound::ToolBatchEffects where U: core::convert::From<T>
+pub fn engine::ports::outbound::ToolBatchEffects::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::ports::outbound::ToolBatchEffects where U: core::convert::Into<T>
+pub type engine::ports::outbound::ToolBatchEffects::Error = core::convert::Infallible
+pub fn engine::ports::outbound::ToolBatchEffects::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::ports::outbound::ToolBatchEffects where U: core::convert::TryFrom<T>
+pub type engine::ports::outbound::ToolBatchEffects::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::ports::outbound::ToolBatchEffects::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::ports::outbound::ToolBatchEffects where T: core::clone::Clone
+pub type engine::ports::outbound::ToolBatchEffects::Owned = T
+pub fn engine::ports::outbound::ToolBatchEffects::clone_into(&self, &mut T)
+pub fn engine::ports::outbound::ToolBatchEffects::to_owned(&self) -> T
+impl<T> core::any::Any for engine::ports::outbound::ToolBatchEffects where T: 'static + ?core::marker::Sized
+pub fn engine::ports::outbound::ToolBatchEffects::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::ports::outbound::ToolBatchEffects where T: ?core::marker::Sized
+pub fn engine::ports::outbound::ToolBatchEffects::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::ports::outbound::ToolBatchEffects where T: ?core::marker::Sized
+pub fn engine::ports::outbound::ToolBatchEffects::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::ports::outbound::ToolBatchEffects where T: core::clone::Clone
+pub unsafe fn engine::ports::outbound::ToolBatchEffects::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::ports::outbound::ToolBatchEffects
+pub fn engine::ports::outbound::ToolBatchEffects::from(T) -> T
+pub struct engine::ToolBatchOutput
+pub engine::ToolBatchOutput::effects: engine::ports::outbound::ToolBatchEffects
+pub engine::ToolBatchOutput::results: alloc::vec::Vec<engine::ToolResult>
+impl core::clone::Clone for engine::ports::outbound::ToolBatchOutput
+pub fn engine::ports::outbound::ToolBatchOutput::clone(&self) -> engine::ports::outbound::ToolBatchOutput
+impl core::cmp::Eq for engine::ports::outbound::ToolBatchOutput
+impl core::cmp::PartialEq for engine::ports::outbound::ToolBatchOutput
+pub fn engine::ports::outbound::ToolBatchOutput::eq(&self, &engine::ports::outbound::ToolBatchOutput) -> bool
+impl core::default::Default for engine::ports::outbound::ToolBatchOutput
+pub fn engine::ports::outbound::ToolBatchOutput::default() -> engine::ports::outbound::ToolBatchOutput
+impl core::fmt::Debug for engine::ports::outbound::ToolBatchOutput
+pub fn engine::ports::outbound::ToolBatchOutput::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::ports::outbound::ToolBatchOutput
+impl core::marker::Freeze for engine::ports::outbound::ToolBatchOutput
+impl core::marker::Send for engine::ports::outbound::ToolBatchOutput
+impl core::marker::Sync for engine::ports::outbound::ToolBatchOutput
+impl core::marker::Unpin for engine::ports::outbound::ToolBatchOutput
+impl core::marker::UnsafeUnpin for engine::ports::outbound::ToolBatchOutput
+impl core::panic::unwind_safe::RefUnwindSafe for engine::ports::outbound::ToolBatchOutput
+impl core::panic::unwind_safe::UnwindSafe for engine::ports::outbound::ToolBatchOutput
+impl<T, U> core::convert::Into<U> for engine::ports::outbound::ToolBatchOutput where U: core::convert::From<T>
+pub fn engine::ports::outbound::ToolBatchOutput::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::ports::outbound::ToolBatchOutput where U: core::convert::Into<T>
+pub type engine::ports::outbound::ToolBatchOutput::Error = core::convert::Infallible
+pub fn engine::ports::outbound::ToolBatchOutput::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::ports::outbound::ToolBatchOutput where U: core::convert::TryFrom<T>
+pub type engine::ports::outbound::ToolBatchOutput::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::ports::outbound::ToolBatchOutput::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::ports::outbound::ToolBatchOutput where T: core::clone::Clone
+pub type engine::ports::outbound::ToolBatchOutput::Owned = T
+pub fn engine::ports::outbound::ToolBatchOutput::clone_into(&self, &mut T)
+pub fn engine::ports::outbound::ToolBatchOutput::to_owned(&self) -> T
+impl<T> core::any::Any for engine::ports::outbound::ToolBatchOutput where T: 'static + ?core::marker::Sized
+pub fn engine::ports::outbound::ToolBatchOutput::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::ports::outbound::ToolBatchOutput where T: ?core::marker::Sized
+pub fn engine::ports::outbound::ToolBatchOutput::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::ports::outbound::ToolBatchOutput where T: ?core::marker::Sized
+pub fn engine::ports::outbound::ToolBatchOutput::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::ports::outbound::ToolBatchOutput where T: core::clone::Clone
+pub unsafe fn engine::ports::outbound::ToolBatchOutput::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::ports::outbound::ToolBatchOutput
+pub fn engine::ports::outbound::ToolBatchOutput::from(T) -> T
 pub struct engine::ToolCall
 pub engine::ToolCall::arguments: serde_json::value::Value
 pub engine::ToolCall::id: alloc::string::String
@@ -8110,10 +8368,10 @@ pub fn engine::TemplateStore::remove(&self, &str) -> core::result::Result<(), en
 pub fn engine::TemplateStore::update(&self, engine::template::Template) -> core::result::Result<(), engine::template::store::TemplateStoreError>
 pub trait engine::ToolPort: core::marker::Send + core::marker::Sync
 pub fn engine::ToolPort::augment_request(&self, &engine::graph::workflow::NodeId, &mut engine::ports::outbound::AgentRequest)
-pub fn engine::ToolPort::execute_batch<'life0, 'life1, 'life2, 'life3, 'async_trait>(&'life0 self, &'life1 mut engine::execution::interactive_engine::InteractiveEngine, &'life2 engine::graph::workflow::NodeId, &'life3 str, alloc::vec::Vec<engine::ToolCall>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = alloc::vec::Vec<engine::ToolResult>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait, 'life3: 'async_trait
+pub fn engine::ToolPort::execute_batch<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 engine::graph::workflow::NodeId, &'life2 str, alloc::vec::Vec<engine::ToolCall>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = engine::ports::outbound::ToolBatchOutput> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
 impl<T> engine::ports::outbound::ToolPort for alloc::boxed::Box<T> where T: engine::ports::outbound::ToolPort + ?core::marker::Sized
 pub fn alloc::boxed::Box<T>::augment_request(&self, &engine::graph::workflow::NodeId, &mut engine::ports::outbound::AgentRequest)
-pub fn alloc::boxed::Box<T>::execute_batch<'life0, 'life1, 'life2, 'life3, 'async_trait>(&'life0 self, &'life1 mut engine::execution::interactive_engine::InteractiveEngine, &'life2 engine::graph::workflow::NodeId, &'life3 str, alloc::vec::Vec<engine::ToolCall>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = alloc::vec::Vec<engine::ToolResult>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait, 'life3: 'async_trait
+pub fn alloc::boxed::Box<T>::execute_batch<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 engine::graph::workflow::NodeId, &'life2 str, alloc::vec::Vec<engine::ToolCall>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = engine::ports::outbound::ToolBatchOutput> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
 pub fn engine::advance_subagent_invoke(engine::execution::subagent_runtime::SubagentInvokeSession, core::result::Result<engine::ports::outbound::AgentTurnOutcome, engine::ports::outbound::AgentError>, alloc::vec::Vec<engine::ToolResult>) -> engine::execution::subagent_runtime::SubagentInvokeStep
 pub fn engine::augment_call_subagent_tool_description(&mut [engine::ToolDefinition], &engine::graph::workflow::Node, &alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::SubagentSummary>, &alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::graph::callable_agent::CallableAgent>)
 pub fn engine::build_predefined_subagent_summaries(&engine::graph::workflow::Node, &alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::graph::callable_agent::CallableAgent>) -> alloc::vec::Vec<engine::SubagentSummary>

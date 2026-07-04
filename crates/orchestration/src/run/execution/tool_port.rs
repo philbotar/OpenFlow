@@ -6,8 +6,8 @@ use engine::{
     augment_call_subagent_tool_description, build_predefined_subagent_summaries,
     handle_declare_subagents, merge_subagent_summaries as merge_subagent_summaries_into_map,
     AiPort, CallableAgent, NodeId, NodeToolConfig, RunTelemetry, SubagentSummary, ToolBatchEffects,
-    ToolBatchOutput, ToolCall, ToolConcurrency, ToolPort, ToolResult, Workflow,
-    CALL_SUBAGENT_TOOL, DECLARE_SUBAGENTS_TOOL,
+    ToolBatchOutput, ToolCall, ToolConcurrency, ToolPort, ToolResult, Workflow, CALL_SUBAGENT_TOOL,
+    DECLARE_SUBAGENTS_TOOL,
 };
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
