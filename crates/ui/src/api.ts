@@ -16,7 +16,6 @@ import type {
   Node,
   Project,
   ProjectFileReference,
-  ProjectFileReferenceContent,
   CopyWorkflowToProjectResult,
   McpServerConfig,
   SettingsLoadPayload,
@@ -104,16 +103,6 @@ export function listProjectFileReferences(
     executionCwd,
     query,
     limit,
-  });
-}
-
-export function readProjectFileReferences(
-  executionCwd: string,
-  paths: string[],
-) {
-  return invoke<ProjectFileReferenceContent[]>("read_project_file_references", {
-    executionCwd,
-    paths,
   });
 }
 

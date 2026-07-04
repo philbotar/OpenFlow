@@ -107,16 +107,6 @@ pub struct ProjectFileReference {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ProjectFileReferenceContent {
-    pub path: String,
-    pub kind: ProjectFileReferenceKind,
-    pub content: String,
-    pub truncated: bool,
-    pub size_bytes: u64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct McpDiscoveryRow {
     pub id: String,
     pub display_name: String,

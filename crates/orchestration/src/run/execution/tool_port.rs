@@ -30,7 +30,7 @@ pub struct ToolPortImpl<A> {
     event_tx: UnboundedSender<ExecutionEvent>,
     node_interrupts: NodeInterrupts,
     aborted_emitted: Arc<parking_lot::Mutex<bool>>,
-    exclusive_semaphores: parking_lot::Mutex<BTreeMap<String, Arc<Semaphore>>>,
+    exclusive_locks: ExclusiveLocks,
 }
 
 impl<A> ToolPortImpl<A>
@@ -72,7 +72,7 @@ where
             event_tx,
             node_interrupts,
             aborted_emitted,
-            exclusive_semaphores: parking_lot::Mutex::new(BTreeMap::new()),
+            exclusive_locks: ExclusiveLocks::default(),
         }
     }
 
@@ -239,9 +239,9 @@ where
             let lsp = lsp_settings.clone();
             let event_tx = self.event_tx.clone();
             let retry_policy = retry_policy.clone();
-            let exclusive_permit = self.exclusive_permit(&call.name).await;
+            let exclusive_permits = self.exclusive_permits(&call).await;
             join_handles.push(tokio::spawn(async move {
-                let _permit = exclusive_permit;
+                let _permits = exclusive_permits;
                 let conversation_id = node_id_for_task.0.clone();
                 let ctx = ToolExecutionContext {
                     node_id: node_id_for_task.clone(),
@@ -303,25 +303,12 @@ where
         Some(collected)
     }
 
-    async fn exclusive_permit(&self, tool_name: &str) -> Option<tokio::sync::OwnedSemaphorePermit> {
-        let concurrency = self
-            .tool_runner
-            .registry()
-            .get(tool_name)
-            .ok()?
-            .definition
-            .concurrency;
-        if concurrency != ToolConcurrency::Exclusive {
-            return None;
-        }
-        let semaphore = {
-            let mut semaphores = self.exclusive_semaphores.lock();
-            semaphores
-                .entry(tool_name.to_string())
-                .or_insert_with(|| Arc::new(Semaphore::new(1)))
-                .clone()
+    async fn exclusive_permits(&self, call: &ToolCall) -> Vec<tokio::sync::OwnedSemaphorePermit> {
+        let Ok(registered) = self.tool_runner.registry().get(&call.name) else {
+            return Vec::new();
         };
-        semaphore.acquire_owned().await.ok()
+        let keys = exclusive_lock_keys(registered.kind, registered.definition.concurrency, call);
+        self.exclusive_locks.acquire(keys).await
     }
 
     fn run_declare_subagents(
@@ -531,8 +518,10 @@ where
                 });
             }
         });
+        let wait_started = Instant::now();
+        let exclusive_permits = self.exclusive_permits(&tool_call).await;
+        maybe_emit_exclusive_wait(&self.event_tx, node_id, &tool_name, wait_started.elapsed());
         let started = Instant::now();
-        let exclusive_permit = self.exclusive_permit(&tool_name).await;
         let node_token = self.node_interrupt_token(node_id);
         let policy = self.workflow.settings.retry_policy.clone();
         let cancel_for_retry = self.cancel_token.clone();
@@ -571,7 +560,7 @@ where
                 }
             }
         };
-        drop(exclusive_permit);
+        drop(exclusive_permits);
         if result.is_some() {
             emit_phase_timed(
                 &self.event_tx,
@@ -596,6 +585,152 @@ pub(super) fn send_run_telemetry(
 
 fn render_tool_error(error: ToolRunnerError) -> String {
     error.to_string()
+}
+
+/// Run-wide lock table for exclusive tool calls, keyed by lock key
+/// (`path:<p>` or `tool:<name>`). Keys must be pre-sorted (they are, by
+/// `exclusive_lock_keys`) so overlapping acquisitions cannot deadlock.
+#[derive(Default)]
+struct ExclusiveLocks {
+    semaphores: parking_lot::Mutex<BTreeMap<String, Arc<Semaphore>>>,
+}
+
+impl ExclusiveLocks {
+    async fn acquire(&self, keys: Vec<String>) -> Vec<tokio::sync::OwnedSemaphorePermit> {
+        let mut permits = Vec::with_capacity(keys.len());
+        for key in keys {
+            let semaphore = {
+                let mut semaphores = self.semaphores.lock();
+                semaphores
+                    .entry(key)
+                    .or_insert_with(|| Arc::new(Semaphore::new(1)))
+                    .clone()
+            };
+            if let Ok(permit) = semaphore.acquire_owned().await {
+                permits.push(permit);
+            }
+        }
+        permits
+    }
+}
+
+/// Normalize a tool-supplied relative path for use as a lock key.
+/// This is lexical only — the runner still does real path validation.
+fn normalize_lock_path(path: &str) -> String {
+    let mut parts: Vec<&str> = Vec::new();
+    for part in path.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                parts.pop();
+            }
+            other => parts.push(other),
+        }
+    }
+    parts.join("/")
+}
+
+fn path_keys(paths: Vec<String>) -> Vec<String> {
+    let mut keys: Vec<String> = paths
+        .into_iter()
+        .map(|path| format!("path:{}", normalize_lock_path(&path)))
+        .collect();
+    keys.sort();
+    keys.dedup();
+    keys
+}
+
+fn hashline_paths(input: &str) -> Vec<String> {
+    input
+        .lines()
+        .filter_map(|line| line.strip_prefix('¶'))
+        .filter_map(|rest| rest.split('#').next())
+        .map(|path| path.trim().to_string())
+        .filter(|path| !path.is_empty())
+        .collect()
+}
+
+fn apply_patch_paths(input: &str) -> Vec<String> {
+    const MARKERS: [&str; 3] = ["*** Update File: ", "*** Add File: ", "*** Delete File: "];
+    input
+        .lines()
+        .filter_map(|line| MARKERS.iter().find_map(|marker| line.strip_prefix(marker)))
+        .map(|path| path.trim().to_string())
+        .filter(|path| !path.is_empty())
+        .collect()
+}
+
+/// Lock keys a call must hold before executing. Empty = no cross-node lock.
+/// Keys are sorted; acquiring in order prevents deadlock between calls
+/// that lock overlapping path sets.
+fn exclusive_lock_keys(
+    kind: crate::tool::registry::BuiltinToolKind,
+    concurrency: ToolConcurrency,
+    call: &ToolCall,
+) -> Vec<String> {
+    use crate::tool::registry::BuiltinToolKind as Kind;
+    if concurrency != ToolConcurrency::Exclusive {
+        return Vec::new();
+    }
+    let fallback = vec![format!("tool:{}", call.name)];
+    match kind {
+        // bash cannot declare its side effects; serializing it run-wide
+        // starves parallel nodes for no correctness gain (git/cargo hold
+        // their own locks), so it takes no cross-node lock.
+        Kind::Bash => Vec::new(),
+        Kind::Write => match call.arguments.get("path").and_then(|v| v.as_str()) {
+            Some(path) => path_keys(vec![path.to_string()]),
+            None => fallback,
+        },
+        Kind::Edit => {
+            if let Some(path) = call.arguments.get("path").and_then(|v| v.as_str()) {
+                return path_keys(vec![path.to_string()]);
+            }
+            if let Some(input) = call.arguments.get("input").and_then(|v| v.as_str()) {
+                let paths = hashline_paths(input);
+                if !paths.is_empty() {
+                    return path_keys(paths);
+                }
+            }
+            fallback
+        }
+        Kind::ApplyPatch => {
+            let paths = call
+                .arguments
+                .get("input")
+                .and_then(|v| v.as_str())
+                .map(apply_patch_paths)
+                .unwrap_or_default();
+            if paths.is_empty() {
+                fallback
+            } else {
+                path_keys(paths)
+            }
+        }
+        _ => fallback,
+    }
+}
+
+/// Queue waits shorter than this are normal scheduling jitter, not contention.
+const EXCLUSIVE_WAIT_REPORT_THRESHOLD: std::time::Duration = std::time::Duration::from_millis(100);
+
+fn maybe_emit_exclusive_wait(
+    event_tx: &UnboundedSender<ExecutionEvent>,
+    node_id: &NodeId,
+    tool_name: &str,
+    waited: std::time::Duration,
+) {
+    if waited < EXCLUSIVE_WAIT_REPORT_THRESHOLD {
+        return;
+    }
+    let duration_ms = waited.as_millis() as u64;
+    log::info!("[perf] tool-wait · {tool_name}: {duration_ms}ms");
+    let _ = event_tx.send(RunTelemetry::PhaseTimed {
+        phase: "tool-wait".to_string(),
+        label: tool_name.to_string(),
+        node_id: Some(node_id.clone()),
+        duration_ms,
+    });
 }
 
 fn emit_tool_retrying(
@@ -649,6 +784,198 @@ async fn run_registered_tool_with_retry(
         },
     )
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tool::registry::BuiltinToolKind;
+    use std::time::Duration;
+
+    fn call(name: &str, args: serde_json::Value) -> ToolCall {
+        ToolCall {
+            id: "tc1".to_string(),
+            name: name.to_string(),
+            arguments: args,
+        }
+    }
+
+    #[test]
+    fn shared_tools_take_no_lock() {
+        let keys = exclusive_lock_keys(
+            BuiltinToolKind::Read,
+            ToolConcurrency::Shared,
+            &call("read", serde_json::json!({"path": "a.txt"})),
+        );
+        assert!(keys.is_empty());
+    }
+
+    #[test]
+    fn bash_takes_no_cross_node_lock() {
+        let keys = exclusive_lock_keys(
+            BuiltinToolKind::Bash,
+            ToolConcurrency::Exclusive,
+            &call("bash", serde_json::json!({"command": "cargo test"})),
+        );
+        assert!(keys.is_empty());
+    }
+
+    #[test]
+    fn write_locks_its_path() {
+        let keys = exclusive_lock_keys(
+            BuiltinToolKind::Write,
+            ToolConcurrency::Exclusive,
+            &call(
+                "write",
+                serde_json::json!({"path": "./src/lib.rs", "content": "x"}),
+            ),
+        );
+        assert_eq!(keys, vec!["path:src/lib.rs".to_string()]);
+    }
+
+    #[test]
+    fn edit_replace_mode_locks_its_path() {
+        let keys = exclusive_lock_keys(
+            BuiltinToolKind::Edit,
+            ToolConcurrency::Exclusive,
+            &call(
+                "edit",
+                serde_json::json!({"path": "src/a.rs", "edits": [{"old_text": "x", "new_text": "y"}]}),
+            ),
+        );
+        assert_eq!(keys, vec!["path:src/a.rs".to_string()]);
+    }
+
+    #[test]
+    fn edit_hashline_mode_locks_each_section_path_sorted_deduped() {
+        let input = "¶src/b.rs#A1\nline\n¶src/a.rs#B2\nline\n¶src/a.rs#C3\nline\n";
+        let keys = exclusive_lock_keys(
+            BuiltinToolKind::Edit,
+            ToolConcurrency::Exclusive,
+            &call("edit", serde_json::json!({"input": input})),
+        );
+        assert_eq!(
+            keys,
+            vec!["path:src/a.rs".to_string(), "path:src/b.rs".to_string()]
+        );
+    }
+
+    #[test]
+    fn edit_with_unparsable_args_falls_back_to_tool_key() {
+        let keys = exclusive_lock_keys(
+            BuiltinToolKind::Edit,
+            ToolConcurrency::Exclusive,
+            &call("edit", serde_json::json!({})),
+        );
+        assert_eq!(keys, vec!["tool:edit".to_string()]);
+    }
+
+    #[test]
+    fn apply_patch_locks_paths_from_envelope() {
+        let input = "*** Begin Patch\n*** Update File: src/b.rs\n@@\n-x\n+y\n*** Add File: src/a.rs\n+new\n*** End Patch";
+        let keys = exclusive_lock_keys(
+            BuiltinToolKind::ApplyPatch,
+            ToolConcurrency::Exclusive,
+            &call("apply_patch", serde_json::json!({"input": input})),
+        );
+        assert_eq!(
+            keys,
+            vec!["path:src/a.rs".to_string(), "path:src/b.rs".to_string()]
+        );
+    }
+
+    #[test]
+    fn apply_patch_without_recognizable_paths_falls_back_to_tool_key() {
+        let keys = exclusive_lock_keys(
+            BuiltinToolKind::ApplyPatch,
+            ToolConcurrency::Exclusive,
+            &call("apply_patch", serde_json::json!({"input": "garbage"})),
+        );
+        assert_eq!(keys, vec!["tool:apply_patch".to_string()]);
+    }
+
+    #[test]
+    fn exclusive_mcp_tool_keeps_per_tool_lock() {
+        let keys = exclusive_lock_keys(
+            BuiltinToolKind::Mcp,
+            ToolConcurrency::Exclusive,
+            &call("some_mcp_tool", serde_json::json!({})),
+        );
+        assert_eq!(keys, vec!["tool:some_mcp_tool".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn permits_for_disjoint_paths_do_not_contend() {
+        let locks = ExclusiveLocks::default();
+        let a = locks.acquire(vec!["path:src/a.rs".to_string()]).await;
+        let b = tokio::time::timeout(
+            std::time::Duration::from_millis(50),
+            locks.acquire(vec!["path:src/b.rs".to_string()]),
+        )
+        .await
+        .expect("disjoint path lock must not block");
+        drop(a);
+        drop(b);
+    }
+
+    #[tokio::test]
+    async fn permits_for_same_path_serialize() {
+        let locks = ExclusiveLocks::default();
+        let a = locks.acquire(vec!["path:src/a.rs".to_string()]).await;
+        let contended = tokio::time::timeout(
+            std::time::Duration::from_millis(50),
+            locks.acquire(vec!["path:src/a.rs".to_string()]),
+        )
+        .await;
+        assert!(contended.is_err(), "same path must block until released");
+        drop(a);
+        let b = tokio::time::timeout(
+            std::time::Duration::from_millis(50),
+            locks.acquire(vec!["path:src/a.rs".to_string()]),
+        )
+        .await
+        .expect("released path must be acquirable");
+        drop(b);
+    }
+
+    #[tokio::test]
+    async fn empty_key_list_acquires_nothing() {
+        let locks = ExclusiveLocks::default();
+        let permits = locks.acquire(Vec::new()).await;
+        assert!(permits.is_empty());
+    }
+
+    #[test]
+    fn exclusive_wait_below_threshold_is_silent() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        maybe_emit_exclusive_wait(&tx, &NodeId("n1".into()), "bash", Duration::from_millis(5));
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn exclusive_wait_above_threshold_emits_phase_timed() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        maybe_emit_exclusive_wait(
+            &tx,
+            &NodeId("n1".into()),
+            "bash",
+            Duration::from_millis(250),
+        );
+        match rx.try_recv().expect("expected a PhaseTimed event") {
+            RunTelemetry::PhaseTimed {
+                phase,
+                label,
+                node_id,
+                duration_ms,
+            } => {
+                assert_eq!(phase, "tool-wait");
+                assert_eq!(label, "bash");
+                assert_eq!(node_id, Some(NodeId("n1".into())));
+                assert_eq!(duration_ms, 250);
+            }
+            other => panic!("unexpected event: {other:?}"),
+        }
+    }
 }
 
 #[path = "subagent_session.rs"]

@@ -9,10 +9,12 @@ use super::summary::{should_summarize_path, structural_summary};
 #[must_use]
 pub fn capture_read_record(cwd: &Path, path_arg: &str) -> Option<ReadRecord> {
     let (path, selector) = split_selector(path_arg);
+    // Skip if not a valid filepath
     if path.starts_with("http://") || path.starts_with("https://") || path.starts_with("artifact:")
     {
         return None;
     }
+    //
     if !matches!(selector, ReadSelector::None) {
         return Some(ReadRecord {
             path,

@@ -1,5 +1,3 @@
-import type { ProjectFileReferenceContent } from "../types";
-
 export interface ActiveFileReferenceToken {
   query: string;
   replaceStart: number;
@@ -145,39 +143,16 @@ export function extractReferencedFilePaths(input: string): string[] {
 
 export function formatSubmissionWithFileReferences(
   submittedText: string,
-  references: readonly ProjectFileReferenceContent[],
+  paths: readonly string[],
 ): string {
-  if (references.length === 0) {
+  if (paths.length === 0) {
     return submittedText;
   }
-
-  const lines = ["User message:", submittedText, "", "Referenced context:"];
-  for (const reference of references) {
-    lines.push("");
-    lines.push(fileReferenceHeader(reference));
-    if (reference.kind === "directory") {
-      lines.push(stripTrailingNewline(reference.content));
-    } else {
-      lines.push("```text");
-      lines.push(stripTrailingNewline(reference.content));
-      lines.push("```");
-    }
-  }
-  return lines.join("\n");
-}
-
-function fileReferenceHeader(reference: ProjectFileReferenceContent): string {
-  if (reference.kind === "directory") {
-    return reference.truncated
-      ? `Directory: ${reference.path} (truncated)`
-      : `Directory: ${reference.path}`;
-  }
-  if (!reference.truncated) {
-    return `File: ${reference.path}`;
-  }
-  return `File: ${reference.path} (truncated at 65536 bytes of ${reference.sizeBytes})`;
-}
-
-function stripTrailingNewline(value: string): string {
-  return value.replace(/\n$/, "");
+  return [
+    "User message:",
+    submittedText,
+    "",
+    "Referenced paths (relative to the execution folder; use your read and search tools to inspect them):",
+    ...paths.map((path) => `- ${path}`),
+  ].join("\n");
 }

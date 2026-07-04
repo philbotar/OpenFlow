@@ -27,7 +27,7 @@ pub use adapters::infrastructure::git;
 pub use adapters::infrastructure::lsp;
 
 // Re-exports of engine types consumed by downstream layers
-pub use api::{ProjectFileReference, ProjectFileReferenceContent, ProjectFileReferenceKind};
+pub use api::{ProjectFileReference, ProjectFileReferenceKind};
 pub use engine::CallableAgent as AgentDefinition;
 pub use engine::{
     Node, NodeId, NodeRunOutput, PendingToolApproval, RunReport, RunTelemetry, ToolCall, ToolTier,

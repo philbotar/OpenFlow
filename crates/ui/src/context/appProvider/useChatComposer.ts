@@ -97,15 +97,7 @@ export function useChatComposer(params: UseChatComposerParams) {
   const resolveChatSubmittedText = async (nodeId: NodeId): Promise<string> => {
     const submission = chatSubmissionFor(nodeId);
     const paths = extractReferencedFilePaths(chatDraft(nodeId));
-    if (paths.length === 0) {
-      return submission.submittedText;
-    }
-    const executionCwd = params.executionCwdForActiveWorkflow();
-    if (!executionCwd) {
-      throw new Error("File references require a project execution folder.");
-    }
-    const references = await desktop.readProjectFileReferences(executionCwd, paths);
-    return formatSubmissionWithFileReferences(submission.submittedText, references);
+    return formatSubmissionWithFileReferences(submission.submittedText, paths);
   };
 
   const canSendChatFor = (nodeId: NodeId) => {

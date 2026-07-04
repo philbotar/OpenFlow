@@ -1,6 +1,6 @@
 use crate::project::ports::Project;
 
-use super::{AppBackend, BackendError, ProjectFileReference, ProjectFileReferenceContent};
+use super::{AppBackend, BackendError, ProjectFileReference};
 
 impl AppBackend {
     pub fn list_projects(&self) -> Result<Vec<Project>, BackendError> {
@@ -18,14 +18,6 @@ impl AppBackend {
             query.as_deref(),
             limit,
         )
-    }
-
-    pub fn read_project_file_references(
-        &self,
-        execution_cwd: String,
-        paths: Vec<String>,
-    ) -> Result<Vec<ProjectFileReferenceContent>, BackendError> {
-        crate::project::file_refs::read_project_file_references(&execution_cwd, &paths)
     }
 
     pub fn save_projects(&self, projects: &[Project]) -> Result<(), BackendError> {
