@@ -46,6 +46,9 @@ aws-config = { version = "1.8", features = ["behavior-version-latest", "credenti
 aws-sdk-bedrock = "1.146"
 aws-sdk-bedrockruntime = "1.116"
 aws-smithy-types = "1.3"
+rig-core = { version = "=0.39.0", default-features = false, features = ["reqwest", "rustls"] }
+rig-bedrock = "=0.39.0"
+schemars = "1"
 
 [workspace.lints.rust]
 warnings = "deny"
