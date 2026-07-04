@@ -16,9 +16,12 @@ use crate::graph::validation::{execution_layers, WorkflowValidationError};
 use crate::graph::{Node, NodeId, Workflow};
 use crate::ports::{AgentRequest, AiPort, ToolBatchOutput, ToolPort};
 use crate::tools::{FileChangeRecord, ReadRecord, ToolCall};
+use futures::stream::{FuturesUnordered, StreamExt};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write;
+use std::future::Future;
+use std::pin::Pin;
 use std::time::Duration;
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
@@ -102,6 +105,9 @@ pub struct InteractiveEngine {
     awaiting_nodes: BTreeSet<NodeId>,
     in_flight_ai: BTreeSet<NodeId>,
     pending_tool_batches: BTreeMap<String, PendingToolBatch>,
+    /// Approval ids of tool batches currently executing (not persisted; a
+    /// restored engine re-dispatches any pending non-approval batch).
+    in_flight_tools: BTreeSet<String>,
     retries_by_node: BTreeMap<NodeId, u8>,
     pending_retry_delay: Option<Duration>,
     submit_output_retries_by_node: BTreeMap<NodeId, u8>,
@@ -119,6 +125,26 @@ pub(crate) const MALFORMED_REQUEST_INPUT_FEEDBACK: &str =
     "Your openflow_request_user_input call must set \
     assistant_message to one direct clarifying question for the human (typically ending with ?). \
     Do not send preamble, narration, or plans — ask the question in assistant_message now.";
+
+enum WorkOutput {
+    Ai {
+        node_id: NodeId,
+        outcome: Result<crate::ports::AgentTurnOutcome, crate::ports::AgentError>,
+    },
+    Tools {
+        approval_id: String,
+        node_id: NodeId,
+        output: ToolBatchOutput,
+    },
+}
+
+/// Sleep for `delay` if set; otherwise never resolve (used inside `select!`).
+async fn maybe_sleep(delay: Option<Duration>) {
+    match delay {
+        Some(delay) => tokio::time::sleep(delay).await,
+        None => std::future::pending().await,
+    }
+}
 
 impl InteractiveEngine {
     /// # Errors
@@ -152,6 +178,7 @@ impl InteractiveEngine {
             awaiting_nodes: BTreeSet::new(),
             in_flight_ai: BTreeSet::new(),
             pending_tool_batches: BTreeMap::new(),
+            in_flight_tools: BTreeSet::new(),
             retries_by_node: BTreeMap::new(),
             pending_retry_delay: None,
             submit_output_retries_by_node: BTreeMap::new(),
@@ -260,102 +287,142 @@ impl InteractiveEngine {
     }
 
     /// Drive the engine until it needs host interaction or reaches a terminal state.
+    ///
+    /// All runnable work in the current layer (model calls and tool batches
+    /// across nodes) executes concurrently; completions are applied to engine
+    /// state one at a time as they arrive.
     pub async fn run<A: AiPort, T: ToolPort>(
         &mut self,
         ai: &A,
         tools: &T,
         cancel: &CancellationToken,
     ) -> EngineRunResult {
+        type WorkFuture<'a> = Pin<Box<dyn Future<Output = WorkOutput> + Send + 'a>>;
+        let mut in_flight: FuturesUnordered<WorkFuture<'_>> = FuturesUnordered::new();
+
         loop {
             if cancel.is_cancelled() {
                 return EngineRunResult::Cancelled;
             }
-
             if let Some(error) = self.terminal_error.clone() {
                 return EngineRunResult::Failed(error);
             }
-
-            if let Some(report) = self.try_advance_layer() {
-                return EngineRunResult::Completed(report);
+            if in_flight.is_empty() {
+                if let Some(report) = self.try_advance_layer() {
+                    return EngineRunResult::Completed(report);
+                }
             }
 
-            while let Some((node_id, label, tool_calls)) = self.next_run_tools_action() {
-                let output = tools.execute_batch(&node_id, &label, tool_calls).await;
-                if cancel.is_cancelled() {
-                    return EngineRunResult::Cancelled;
-                }
-                if let Err(error) = self.apply_tool_batch_output(&node_id, output) {
-                    return EngineRunResult::Failed(RunError::NodeFailed {
+            for (approval_id, node_id, label, tool_calls) in self.take_ready_tool_batches() {
+                in_flight.push(Box::pin(async move {
+                    let output = tools.execute_batch(&node_id, &label, tool_calls).await;
+                    WorkOutput::Tools {
+                        approval_id,
                         node_id,
-                        kind: NodeFailureKind::EngineInput(error.to_string()),
-                    });
-                }
-            }
-
-            let ai_actions = self.gather_call_ai_actions();
-            if !ai_actions.is_empty() {
-                for (node_id, mut request) in ai_actions {
-                    if cancel.is_cancelled() {
-                        return EngineRunResult::Cancelled;
+                        output,
                     }
+                }));
+            }
+            if self.pending_retry_delay.is_none() {
+                for (node_id, mut request) in self.gather_call_ai_actions() {
                     tools.augment_request(&node_id, &mut request);
-                    let outcome = ai.invoke(request).await;
-                    self.on_ai_complete(&node_id, outcome);
+                    in_flight.push(Box::pin(async move {
+                        let outcome = ai.invoke(request).await;
+                        WorkOutput::Ai { node_id, outcome }
+                    }));
                 }
                 if let Some(error) = self.terminal_error.clone() {
                     return EngineRunResult::Failed(error);
                 }
+            }
+
+            if in_flight.is_empty() {
                 if let Some(delay) = self.pending_retry_delay.take() {
                     tokio::select! {
                         biased;
                         () = cancel.cancelled() => return EngineRunResult::Cancelled,
                         () = tokio::time::sleep(delay) => {}
                     }
+                    continue;
                 }
-                continue;
+                self.schedule_manual_nodes_in_layer();
+                self.recover_stale_in_flight_nodes();
+                let inputs = self.gather_await_inputs();
+                let approvals = self.gather_await_approvals();
+                let retryables = self.gather_retryable_nodes();
+                if !inputs.is_empty() || !approvals.is_empty() || !retryables.is_empty() {
+                    return EngineRunResult::NeedsInteraction {
+                        inputs,
+                        approvals,
+                        retryables,
+                    };
+                }
+                if let Some(report) = self.try_advance_layer() {
+                    return EngineRunResult::Completed(report);
+                }
+                return EngineRunResult::Failed(RunError::NodeFailed {
+                    node_id: self
+                        .current_layer_nodes()
+                        .first()
+                        .cloned()
+                        .unwrap_or_else(|| NodeId("engine".to_string())),
+                    kind: NodeFailureKind::NoRunnableNodesInLayer,
+                });
             }
 
-            self.schedule_manual_nodes_in_layer();
-            self.recover_stale_in_flight_nodes();
-            let inputs = self.gather_await_inputs();
-            let approvals = self.gather_await_approvals();
-            let retryables = self.gather_retryable_nodes();
-            if !inputs.is_empty() || !approvals.is_empty() || !retryables.is_empty() {
-                return EngineRunResult::NeedsInteraction {
-                    inputs,
-                    approvals,
-                    retryables,
-                };
+            let retry_delay = self.pending_retry_delay;
+            let work = tokio::select! {
+                biased;
+                () = cancel.cancelled() => return EngineRunResult::Cancelled,
+                () = maybe_sleep(retry_delay) => {
+                    self.pending_retry_delay = None;
+                    continue;
+                }
+                Some(work) = in_flight.next() => work,
+            };
+            match work {
+                WorkOutput::Ai { node_id, outcome } => {
+                    self.on_ai_complete(&node_id, outcome);
+                }
+                WorkOutput::Tools {
+                    approval_id,
+                    node_id,
+                    output,
+                } => {
+                    self.in_flight_tools.remove(&approval_id);
+                    if let Err(error) = self.apply_tool_batch_output(&node_id, output) {
+                        return EngineRunResult::Failed(RunError::NodeFailed {
+                            node_id,
+                            kind: NodeFailureKind::EngineInput(error.to_string()),
+                        });
+                    }
+                }
             }
-
-            if let Some(report) = self.try_advance_layer() {
-                return EngineRunResult::Completed(report);
-            }
-
-            return EngineRunResult::Failed(RunError::NodeFailed {
-                node_id: self
-                    .current_layer_nodes()
-                    .first()
-                    .cloned()
-                    .unwrap_or_else(|| NodeId("engine".to_string())),
-                kind: NodeFailureKind::NoRunnableNodesInLayer,
-            });
         }
     }
 
-    fn next_run_tools_action(&self) -> Option<(NodeId, String, Vec<ToolCall>)> {
-        let approval_id = self
+    /// All non-approval tool batches not yet dispatched; marks them in flight.
+    fn take_ready_tool_batches(&mut self) -> Vec<(String, NodeId, String, Vec<ToolCall>)> {
+        let ready: Vec<(String, NodeId, String, Vec<ToolCall>)> = self
             .pending_tool_batches
             .iter()
-            .find(|(_, batch)| !batch.requires_approval)
-            .map(|(approval_id, _)| approval_id.clone())?;
-        let batch = self.pending_tool_batches.get(&approval_id)?;
-        let node = self.find_node(&batch.node_id)?;
-        Some((
-            batch.node_id.clone(),
-            node.label.clone(),
-            batch.tool_calls.clone(),
-        ))
+            .filter(|(approval_id, batch)| {
+                !batch.requires_approval && !self.in_flight_tools.contains(*approval_id)
+            })
+            .filter_map(|(approval_id, batch)| {
+                let node = self.find_node(&batch.node_id)?;
+                Some((
+                    approval_id.clone(),
+                    batch.node_id.clone(),
+                    node.label.clone(),
+                    batch.tool_calls.clone(),
+                ))
+            })
+            .collect();
+        for (approval_id, ..) in &ready {
+            self.in_flight_tools.insert(approval_id.clone());
+        }
+        ready
     }
 
     fn gather_call_ai_actions(&mut self) -> Vec<(NodeId, AgentRequest)> {

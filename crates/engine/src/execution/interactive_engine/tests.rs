@@ -602,6 +602,220 @@ fn checkpoint_rejects_workflow_id_mismatch() {
     }
 }
 
+struct BarrierAi {
+    barrier: Arc<tokio::sync::Barrier>,
+}
+
+#[async_trait]
+impl AiPort for BarrierAi {
+    async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+        // Completes only when both nodes' invocations are in flight simultaneously.
+        self.barrier.wait().await;
+        Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+            output: json!({ "node": request.node_id.0 }),
+            raw_text: String::new(),
+            assistant_message: None,
+            usage: None,
+        }))
+    }
+}
+
+#[test]
+fn same_layer_nodes_invoke_ai_concurrently() {
+    block_on(async {
+        let mut workflow = Workflow::new("wf");
+        workflow.nodes.push(node("a"));
+        workflow.nodes.push(node("b"));
+        let mut engine = InteractiveEngine::new(workflow, Some("go".to_string()), None).unwrap();
+        let ai = BarrierAi {
+            barrier: Arc::new(tokio::sync::Barrier::new(2)),
+        };
+        let cancel = CancellationToken::new();
+        let result = tokio::time::timeout(
+            Duration::from_secs(5),
+            engine.run(&ai, &NoopToolPort, &cancel),
+        )
+        .await
+        .expect("serial engine would deadlock on the barrier");
+        assert!(matches!(result, EngineRunResult::Completed(_)));
+    });
+}
+
+struct ToolOverlapAi {
+    barrier: Arc<tokio::sync::Barrier>,
+}
+
+#[async_trait]
+impl AiPort for ToolOverlapAi {
+    async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+        if request.node_id.0 == "b" {
+            // Held open until node a's tool batch reaches the same barrier.
+            self.barrier.wait().await;
+            return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                output: json!({ "node": "b" }),
+                raw_text: String::new(),
+                assistant_message: None,
+                usage: None,
+            }));
+        }
+        let has_tool_result = request
+            .transcript
+            .iter()
+            .any(|item| matches!(item, AgentTranscriptItem::ToolResult { .. }));
+        if has_tool_result {
+            return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                output: json!({ "node": "a" }),
+                raw_text: String::new(),
+                assistant_message: None,
+                usage: None,
+            }));
+        }
+        Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+            raw_text: String::new(),
+            assistant_message: None,
+            usage: None,
+            tool_calls: vec![ToolCall {
+                id: "t1".to_string(),
+                name: "bash".to_string(),
+                arguments: json!({}),
+            }],
+        }))
+    }
+}
+
+struct BarrierToolPort {
+    barrier: Arc<tokio::sync::Barrier>,
+}
+
+#[async_trait]
+impl ToolPort for BarrierToolPort {
+    async fn execute_batch(
+        &self,
+        _node_id: &NodeId,
+        _label: &str,
+        calls: Vec<ToolCall>,
+    ) -> ToolBatchOutput {
+        self.barrier.wait().await;
+        ToolBatchOutput {
+            results: calls
+                .into_iter()
+                .map(|call| ToolResult {
+                    tool_call_id: call.id,
+                    tool_name: call.name,
+                    content: "ok".to_string(),
+                    is_error: false,
+                    artifact_ids: Vec::new(),
+                    output_meta: None,
+                })
+                .collect(),
+            effects: ToolBatchEffects::default(),
+        }
+    }
+
+    fn augment_request(&self, _node_id: &NodeId, _request: &mut AgentRequest) {}
+}
+
+#[test]
+fn tool_batch_runs_while_other_node_ai_is_in_flight() {
+    block_on(async {
+        let mut workflow = Workflow::new("wf");
+        let mut a = node("a");
+        a.agent.tools.approval_mode = Some(ApprovalMode::Yolo);
+        workflow.nodes.push(a);
+        workflow.nodes.push(node("b"));
+        let mut engine = InteractiveEngine::new(workflow, Some("go".to_string()), None).unwrap();
+        let barrier = Arc::new(tokio::sync::Barrier::new(2));
+        let ai = ToolOverlapAi {
+            barrier: Arc::clone(&barrier),
+        };
+        let tools = BarrierToolPort { barrier };
+        let cancel = CancellationToken::new();
+        let result = tokio::time::timeout(Duration::from_secs(5), engine.run(&ai, &tools, &cancel))
+            .await
+            .expect("tool batch and AI call must overlap");
+        assert!(matches!(result, EngineRunResult::Completed(_)));
+    });
+}
+
+struct EffectsToolPort;
+
+#[async_trait]
+impl ToolPort for EffectsToolPort {
+    async fn execute_batch(
+        &self,
+        _node_id: &NodeId,
+        _label: &str,
+        calls: Vec<ToolCall>,
+    ) -> ToolBatchOutput {
+        ToolBatchOutput {
+            results: calls
+                .into_iter()
+                .map(|call| ToolResult {
+                    tool_call_id: call.id,
+                    tool_name: call.name,
+                    content: "ok".to_string(),
+                    is_error: false,
+                    artifact_ids: Vec::new(),
+                    output_meta: None,
+                })
+                .collect(),
+            effects: ToolBatchEffects {
+                file_changes: vec![FileChangeRecord {
+                    path: "src/x.rs".to_string(),
+                    op: crate::tools::FileChangeOp::Update,
+                    rename_to: None,
+                    diff_summary: None,
+                    batch_id: None,
+                    timestamp_ms: 1,
+                }],
+                reads: Vec::new(),
+                read_call_paths: vec!["src/x.rs".to_string()],
+                interrupted: false,
+            },
+        }
+    }
+
+    fn augment_request(&self, _node_id: &NodeId, _request: &mut AgentRequest) {}
+}
+
+#[test]
+fn tool_batch_effects_are_recorded_on_engine() {
+    block_on(async {
+        let mut workflow = Workflow::new("wf");
+        let mut a = node("a");
+        a.agent.tools.approval_mode = Some(ApprovalMode::Yolo);
+        workflow.nodes.push(a);
+        let mut engine = InteractiveEngine::new(workflow, Some("go".to_string()), None).unwrap();
+        let ai = ScriptedAi::new(vec![
+            Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+                raw_text: String::new(),
+                assistant_message: None,
+                usage: None,
+                tool_calls: vec![ToolCall {
+                    id: "t1".to_string(),
+                    name: "write".to_string(),
+                    arguments: json!({}),
+                }],
+            })),
+            Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                output: json!({ "ok": true }),
+                raw_text: String::new(),
+                assistant_message: None,
+                usage: None,
+            })),
+        ]);
+        let cancel = CancellationToken::new();
+        let result = engine.run(&ai, &EffectsToolPort, &cancel).await;
+        assert!(matches!(result, EngineRunResult::Completed(_)));
+        let checkpoint = engine.prepare_stop_checkpoint();
+        let changes = checkpoint
+            .changed_files_by_node
+            .get(&NodeId("a".to_string()))
+            .expect("file change recorded");
+        assert_eq!(changes[0].path, "src/x.rs");
+    });
+}
+
 #[test]
 fn checkpoint_stop_mid_tool_execution_retains_approved_batch() {
     let mut workflow = Workflow::new("mid-tool");

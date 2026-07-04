@@ -178,6 +178,7 @@ impl InteractiveEngine {
             transcripts: checkpoint.transcripts,
             awaiting_nodes: checkpoint.awaiting_nodes,
             in_flight_ai: BTreeSet::new(),
+            in_flight_tools: BTreeSet::new(),
             pending_tool_batches: checkpoint
                 .pending_tool_batches
                 .iter()
