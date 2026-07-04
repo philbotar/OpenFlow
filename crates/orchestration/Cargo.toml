@@ -1,6 +1,6 @@
 [package]
 name = "orchestration"
-version = "0.1.14"
+version = "0.1.15"
 edition.workspace = true
 description.workspace = true
 license.workspace = true
@@ -23,7 +23,7 @@ chrono-tz.workspace = true
 cron.workspace = true
 dirs.workspace = true
 log = "0.4"
-providers = { path = "../providers", version = "0.1.14" }
+providers = { path = "../providers", version = "0.1.15" }
 serde.workspace = true
 glob = "0.3.2"
 grep-regex = "0.1"
@@ -44,7 +44,7 @@ tokio.workspace = true
 twox-hash = "2.1.0"
 tokio-util.workspace = true
 uuid.workspace = true
-engine = { path = "../engine", version = "0.1.5" }
+engine = { path = "../engine", version = "0.1.6" }
 rmcp.workspace = true
 
 [target.'cfg(unix)'.dependencies]
