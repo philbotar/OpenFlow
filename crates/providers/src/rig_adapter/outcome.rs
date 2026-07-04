@@ -174,7 +174,8 @@ mod tests {
             REQUEST_INPUT_TOOL,
             json!({"assistant_message": "Which env?"}),
         )];
-        let outcome = resolve_outcome(choice, usage(), "Test provider", None, recover(true)).unwrap();
+        let outcome =
+            resolve_outcome(choice, usage(), "Test provider", None, recover(true)).unwrap();
         assert!(matches!(
             outcome,
             engine::AgentTurnOutcome::NeedsUserInput(n) if n.assistant_message == "Which env?"
@@ -187,7 +188,8 @@ mod tests {
             AssistantContent::text("Let me search."),
             AssistantContent::tool_call("c1", "search", json!({"q": "x"})),
         ];
-        let outcome = resolve_outcome(choice, usage(), "Test provider", None, recover(true)).unwrap();
+        let outcome =
+            resolve_outcome(choice, usage(), "Test provider", None, recover(true)).unwrap();
         match outcome {
             engine::AgentTurnOutcome::ToolCalls(batch) => {
                 assert_eq!(batch.tool_calls.len(), 1);
@@ -214,21 +216,16 @@ mod tests {
         let choice = vec![AssistantContent::text(
             r#"{"output": {"r": "v"}, "assistant_message": null}"#,
         )];
-        let outcome = resolve_outcome(choice, usage(), "Test provider", None, recover(true)).unwrap();
+        let outcome =
+            resolve_outcome(choice, usage(), "Test provider", None, recover(true)).unwrap();
         assert!(matches!(outcome, engine::AgentTurnOutcome::Completed(_)));
     }
 
     #[test]
     fn plain_text_without_user_input_tool_fails() {
         let choice = vec![AssistantContent::text("Hello without tools")];
-        let err = resolve_outcome(
-            choice,
-            usage(),
-            "Test provider",
-            None,
-            recover(false),
-        )
-        .unwrap_err();
+        let err =
+            resolve_outcome(choice, usage(), "Test provider", None, recover(false)).unwrap_err();
         assert!(matches!(err, AgentError::Failed(_)));
     }
 

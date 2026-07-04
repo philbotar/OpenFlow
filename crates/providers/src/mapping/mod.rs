@@ -310,7 +310,7 @@ pub fn parse_internal_tool_outcome(
 
 /// How to handle a provider turn that collected no tool calls.
 pub enum NoToolCallsPolicy {
-    /// Fail immediately (e.g. OpenAI Responses API).
+    /// Fail immediately (e.g. `OpenAI Responses` API).
     Error(&'static str),
     /// Try plain JSON completion, optional follow-up prompt, then fail.
     Recover {
