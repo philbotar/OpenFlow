@@ -2518,6 +2518,7 @@ pub fn engine::graph::workflow::WorkflowSchedule::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::graph::workflow::WorkflowSchedule where T: for<'de> serde_core::de::Deserialize<'de>
 pub struct engine::graph::workflow::WorkflowSettings
 pub engine::graph::workflow::WorkflowSettings::forward_upstream_reads: bool
+pub engine::graph::workflow::WorkflowSettings::max_concurrent_ai_calls: u8
 pub engine::graph::workflow::WorkflowSettings::provider_id: core::option::Option<alloc::string::String>
 pub engine::graph::workflow::WorkflowSettings::reasoning_budget_tokens: core::option::Option<u32>
 pub engine::graph::workflow::WorkflowSettings::reasoning_effort: core::option::Option<alloc::string::String>
@@ -2529,7 +2530,7 @@ pub fn engine::graph::workflow::WorkflowSettings::clone(&self) -> engine::graph:
 impl core::cmp::PartialEq for engine::graph::workflow::WorkflowSettings
 pub fn engine::graph::workflow::WorkflowSettings::eq(&self, &engine::graph::workflow::WorkflowSettings) -> bool
 impl core::default::Default for engine::graph::workflow::WorkflowSettings
-pub fn engine::graph::workflow::WorkflowSettings::default() -> engine::graph::workflow::WorkflowSettings
+pub fn engine::graph::workflow::WorkflowSettings::default() -> Self
 impl core::fmt::Debug for engine::graph::workflow::WorkflowSettings
 pub fn engine::graph::workflow::WorkflowSettings::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for engine::graph::workflow::WorkflowSettings
@@ -3275,6 +3276,7 @@ pub fn engine::graph::workflow::WorkflowSchedule::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::graph::workflow::WorkflowSchedule where T: for<'de> serde_core::de::Deserialize<'de>
 pub struct engine::graph::WorkflowSettings
 pub engine::graph::WorkflowSettings::forward_upstream_reads: bool
+pub engine::graph::WorkflowSettings::max_concurrent_ai_calls: u8
 pub engine::graph::WorkflowSettings::provider_id: core::option::Option<alloc::string::String>
 pub engine::graph::WorkflowSettings::reasoning_budget_tokens: core::option::Option<u32>
 pub engine::graph::WorkflowSettings::reasoning_effort: core::option::Option<alloc::string::String>
@@ -3286,7 +3288,7 @@ pub fn engine::graph::workflow::WorkflowSettings::clone(&self) -> engine::graph:
 impl core::cmp::PartialEq for engine::graph::workflow::WorkflowSettings
 pub fn engine::graph::workflow::WorkflowSettings::eq(&self, &engine::graph::workflow::WorkflowSettings) -> bool
 impl core::default::Default for engine::graph::workflow::WorkflowSettings
-pub fn engine::graph::workflow::WorkflowSettings::default() -> engine::graph::workflow::WorkflowSettings
+pub fn engine::graph::workflow::WorkflowSettings::default() -> Self
 impl core::fmt::Debug for engine::graph::workflow::WorkflowSettings
 pub fn engine::graph::workflow::WorkflowSettings::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for engine::graph::workflow::WorkflowSettings
@@ -8302,6 +8304,7 @@ pub fn engine::graph::workflow::WorkflowSchedule::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::graph::workflow::WorkflowSchedule where T: for<'de> serde_core::de::Deserialize<'de>
 pub struct engine::WorkflowSettings
 pub engine::WorkflowSettings::forward_upstream_reads: bool
+pub engine::WorkflowSettings::max_concurrent_ai_calls: u8
 pub engine::WorkflowSettings::provider_id: core::option::Option<alloc::string::String>
 pub engine::WorkflowSettings::reasoning_budget_tokens: core::option::Option<u32>
 pub engine::WorkflowSettings::reasoning_effort: core::option::Option<alloc::string::String>
@@ -8313,7 +8316,7 @@ pub fn engine::graph::workflow::WorkflowSettings::clone(&self) -> engine::graph:
 impl core::cmp::PartialEq for engine::graph::workflow::WorkflowSettings
 pub fn engine::graph::workflow::WorkflowSettings::eq(&self, &engine::graph::workflow::WorkflowSettings) -> bool
 impl core::default::Default for engine::graph::workflow::WorkflowSettings
-pub fn engine::graph::workflow::WorkflowSettings::default() -> engine::graph::workflow::WorkflowSettings
+pub fn engine::graph::workflow::WorkflowSettings::default() -> Self
 impl core::fmt::Debug for engine::graph::workflow::WorkflowSettings
 pub fn engine::graph::workflow::WorkflowSettings::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for engine::graph::workflow::WorkflowSettings

@@ -139,8 +139,10 @@ impl InteractiveEngine {
         let Some(delay) = next_retry(&self.workflow.settings.retry_policy, retry_count) else {
             return false;
         };
-        self.retry_after_by_node
-            .insert(node_id.clone(), Instant::now() + delay);
+        self.retry_after_by_node.insert(
+            node_id.clone(),
+            Instant::now() + delay + retry_jitter(node_id),
+        );
         true
     }
 
@@ -235,4 +237,12 @@ fn next_retry(policy: &RetryPolicy, retry_count: &mut u8) -> Option<Duration> {
     }
     *retry_count += 1;
     Some(policy.delay_for_attempt(*retry_count))
+}
+
+/// Spread sibling retry times so they do not hit the provider in the same tick.
+fn retry_jitter(node_id: &NodeId) -> Duration {
+    let hash = node_id.0.bytes().fold(0u64, |acc, byte| {
+        acc.wrapping_mul(31).wrapping_add(u64::from(byte))
+    });
+    Duration::from_millis(100 + (hash % 400))
 }

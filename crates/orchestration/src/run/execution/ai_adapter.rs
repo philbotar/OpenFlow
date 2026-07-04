@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::{mpsc::UnboundedSender, Semaphore};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -21,6 +21,8 @@ pub struct AiInvocationAdapter<A> {
     node_interrupts: NodeInterrupts,
     run_cancel_token: CancellationToken,
     context_window_sizes: BTreeMap<String, u32>,
+    /// Limits in-flight provider HTTP calls per run (`None` = unlimited).
+    invoke_slots: Option<Arc<Semaphore>>,
 }
 
 impl<A> AiInvocationAdapter<A>
@@ -33,7 +35,15 @@ where
         node_interrupts: NodeInterrupts,
         run_cancel_token: CancellationToken,
         context_window_sizes: BTreeMap<String, u32>,
+        max_concurrent_ai_calls: u8,
     ) -> Self {
+        let invoke_slots = if max_concurrent_ai_calls == 0 {
+            None
+        } else {
+            Some(Arc::new(Semaphore::new(usize::from(
+                max_concurrent_ai_calls,
+            ))))
+        };
         Self {
             inner,
             event_tx,
@@ -41,6 +51,7 @@ where
             node_interrupts,
             run_cancel_token,
             context_window_sizes,
+            invoke_slots,
         }
     }
 
@@ -140,6 +151,16 @@ where
             thinking_streamed: Arc::clone(&thinking_streamed),
         };
         let node_token = self.node_token_for(&node_id, attempt);
+        let _invoke_slot = if let Some(sem) = &self.invoke_slots {
+            Some(tokio::select! {
+                biased;
+                () = self.run_cancel_token.cancelled() => return Err(AgentError::Interrupted),
+                () = node_token.cancelled() => return Err(AgentError::Interrupted),
+                permit = sem.clone().acquire_owned() => permit.ok(),
+            })
+        } else {
+            None
+        };
         let started = Instant::now();
         let result = tokio::select! {
             biased;

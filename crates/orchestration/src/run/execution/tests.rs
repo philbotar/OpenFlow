@@ -73,6 +73,7 @@ async fn adapter_emits_clarifying_question_after_streamed_preamble() {
         node_interrupts,
         CancellationToken::new(),
         BTreeMap::new(),
+        0,
     );
     adapter
         .invoke(sample_agent_request())

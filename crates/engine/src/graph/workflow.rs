@@ -115,6 +115,10 @@ const fn default_retry_backoff_ms() -> u64 {
     1_000
 }
 
+const fn default_max_concurrent_ai_calls() -> u8 {
+    1
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct WorkflowSchedule {
     pub cron: String,
@@ -128,7 +132,7 @@ const fn default_true() -> bool {
     true
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct WorkflowSettings {
     #[serde(default)]
     pub shared_context: String,
@@ -151,6 +155,28 @@ pub struct WorkflowSettings {
     /// Forward upstream read outlines to downstream node input JSON.
     #[serde(default = "default_true", rename = "forwardUpstreamReads")]
     pub forward_upstream_reads: bool,
+    /// Max simultaneous provider HTTP calls per run (`0` = unlimited).
+    /// ponytail: default 1 — compat proxies (Console Go, Zen) 400 under concurrency.
+    #[serde(
+        default = "default_max_concurrent_ai_calls",
+        rename = "maxConcurrentAiCalls"
+    )]
+    pub max_concurrent_ai_calls: u8,
+}
+
+impl Default for WorkflowSettings {
+    fn default() -> Self {
+        Self {
+            shared_context: String::new(),
+            schedule: None,
+            retry_policy: RetryPolicy::default(),
+            provider_id: None,
+            reasoning_effort: None,
+            reasoning_budget_tokens: None,
+            forward_upstream_reads: default_true(),
+            max_concurrent_ai_calls: default_max_concurrent_ai_calls(),
+        }
+    }
 }
 
 /// A directed workflow graph with settings applied at run time.
@@ -477,6 +503,13 @@ mod tests {
         );
         let parsed: RetryPolicy = serde_json::from_value(json!({})).unwrap();
         assert_eq!(parsed, RetryPolicy::default());
+    }
+
+    #[test]
+    fn workflow_settings_default_max_concurrent_ai_calls_is_one() {
+        assert_eq!(WorkflowSettings::default().max_concurrent_ai_calls, 1);
+        let parsed: WorkflowSettings = serde_json::from_value(json!({})).unwrap();
+        assert_eq!(parsed.max_concurrent_ai_calls, 1);
     }
 
     #[test]
