@@ -12,7 +12,7 @@ use crate::ports::{
     AgentError, AgentNeedUserInput, AgentToolCallBatch, AgentTurnOutcome, AgentTurnSuccess,
 };
 use crate::tools::{tool_decision_for_call, ToolDecision};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 impl InteractiveEngine {
@@ -139,18 +139,18 @@ impl InteractiveEngine {
         let Some(delay) = next_retry(&self.workflow.settings.retry_policy, retry_count) else {
             return false;
         };
-        self.pending_retry_delay = Some(
-            self.pending_retry_delay
-                .map_or(delay, |existing| existing.max(delay)),
-        );
+        self.retry_after_by_node
+            .insert(node_id.clone(), Instant::now() + delay);
         true
     }
 
     fn fail_node(&mut self, node_id: &NodeId, error: &AgentError) {
+        self.retry_after_by_node.remove(node_id);
         self.failed_nodes.insert(node_id.clone(), error.to_string());
     }
 
     fn apply_completion(&mut self, node_id: &NodeId, success: AgentTurnSuccess) {
+        self.retry_after_by_node.remove(node_id);
         if let Some(usage) = &success.usage {
             self.note_usage(usage);
         }

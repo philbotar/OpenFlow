@@ -119,7 +119,7 @@ impl InteractiveEngine {
     pub fn prepare_stop_checkpoint(&mut self) -> InteractiveEngineCheckpoint {
         self.interrupted_nodes
             .extend(std::mem::take(&mut self.in_flight_ai));
-        self.pending_retry_delay = None;
+        self.retry_after_by_node.clear();
 
         InteractiveEngineCheckpoint {
             workflow_id: self.workflow.id.clone(),
@@ -185,7 +185,7 @@ impl InteractiveEngine {
                 .map(|(id, batch)| (id.clone(), PendingToolBatch::from(batch)))
                 .collect(),
             retries_by_node: checkpoint.retries_by_node,
-            pending_retry_delay: None,
+            retry_after_by_node: BTreeMap::new(),
             submit_output_retries_by_node: checkpoint.submit_output_retries_by_node,
             request_input_retries_by_node: checkpoint.request_input_retries_by_node,
             entrypoint_text: checkpoint.entrypoint_text,

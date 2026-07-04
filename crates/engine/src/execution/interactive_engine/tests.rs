@@ -251,6 +251,29 @@ async fn run_cancel_during_backoff_returns_cancelled() {
 }
 
 #[test]
+fn transient_retry_backoff_blocks_only_the_failing_node() {
+    let mut workflow = Workflow::new("wf");
+    workflow.settings.retry_policy.max_attempts = 3;
+    workflow.settings.retry_policy.backoff_ms = 60_000;
+    workflow.nodes = vec![node("a"), node("b")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let node_a = NodeId("a".to_string());
+    let node_b = NodeId("b".to_string());
+
+    engine.test_insert_in_flight(node_a.clone());
+    engine.on_ai_complete(
+        &node_a,
+        Err(AgentError::Transient("proxy blip".to_string())),
+    );
+
+    assert!(engine.test_is_in_retry_backoff(&node_a));
+    assert!(!engine.test_is_in_retry_backoff(&node_b));
+    let dispatchable = engine.test_gather_ai_node_ids();
+    assert!(!dispatchable.contains(&node_a));
+    assert!(dispatchable.contains(&node_b));
+}
+
+#[test]
 fn revert_file_changes_for_batch_removes_only_matching_records() {
     let mut workflow = Workflow::new("revert");
     workflow.nodes = vec![node("idea")];

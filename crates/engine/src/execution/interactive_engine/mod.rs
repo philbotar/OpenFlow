@@ -22,7 +22,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write;
 use std::future::Future;
 use std::pin::Pin;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
@@ -109,7 +109,8 @@ pub struct InteractiveEngine {
     /// restored engine re-dispatches any pending non-approval batch).
     in_flight_tools: BTreeSet<String>,
     retries_by_node: BTreeMap<NodeId, u8>,
-    pending_retry_delay: Option<Duration>,
+    /// Per-node: do not dispatch AI again until this instant (transient retry backoff).
+    retry_after_by_node: BTreeMap<NodeId, Instant>,
     submit_output_retries_by_node: BTreeMap<NodeId, u8>,
     request_input_retries_by_node: BTreeMap<NodeId, u8>,
     entrypoint_text: Option<String>,
@@ -136,14 +137,6 @@ enum WorkOutput {
         node_id: NodeId,
         output: ToolBatchOutput,
     },
-}
-
-/// Sleep for `delay` if set; otherwise never resolve (used inside `select!`).
-async fn maybe_sleep(delay: Option<Duration>) {
-    match delay {
-        Some(delay) => tokio::time::sleep(delay).await,
-        None => std::future::pending().await,
-    }
 }
 
 impl InteractiveEngine {
@@ -180,7 +173,7 @@ impl InteractiveEngine {
             pending_tool_batches: BTreeMap::new(),
             in_flight_tools: BTreeSet::new(),
             retries_by_node: BTreeMap::new(),
-            pending_retry_delay: None,
+            retry_after_by_node: BTreeMap::new(),
             submit_output_retries_by_node: BTreeMap::new(),
             request_input_retries_by_node: BTreeMap::new(),
             entrypoint_text,
@@ -216,6 +209,28 @@ impl InteractiveEngine {
             || self.node_has_pending_tools(node_id)
             || self.interrupted_nodes.contains(node_id)
             || self.failed_nodes.contains_key(node_id)
+            || self.is_node_in_retry_backoff(node_id)
+    }
+
+    fn is_node_in_retry_backoff(&self, node_id: &NodeId) -> bool {
+        self.retry_after_by_node
+            .get(node_id)
+            .is_some_and(|deadline| Instant::now() < *deadline)
+    }
+
+    /// Shortest wait until any node leaves transient retry backoff.
+    fn earliest_retry_delay(&self) -> Option<Duration> {
+        let now = Instant::now();
+        self.retry_after_by_node
+            .values()
+            .filter_map(|deadline| deadline.checked_duration_since(now))
+            .min()
+    }
+
+    fn prune_elapsed_retries(&mut self) {
+        let now = Instant::now();
+        self.retry_after_by_node
+            .retain(|_, deadline| now < *deadline);
     }
 
     fn schedule_manual_nodes_in_layer(&mut self) {
@@ -323,27 +338,27 @@ impl InteractiveEngine {
                     }
                 }));
             }
-            if self.pending_retry_delay.is_none() {
-                for (node_id, mut request) in self.gather_call_ai_actions() {
-                    tools.augment_request(&node_id, &mut request);
-                    in_flight.push(Box::pin(async move {
-                        let outcome = ai.invoke(request).await;
-                        WorkOutput::Ai { node_id, outcome }
-                    }));
-                }
-                if let Some(error) = self.terminal_error.clone() {
-                    return EngineRunResult::Failed(error);
-                }
+            for (node_id, mut request) in self.gather_call_ai_actions() {
+                tools.augment_request(&node_id, &mut request);
+                in_flight.push(Box::pin(async move {
+                    let outcome = ai.invoke(request).await;
+                    WorkOutput::Ai { node_id, outcome }
+                }));
+            }
+            if let Some(error) = self.terminal_error.clone() {
+                return EngineRunResult::Failed(error);
             }
 
             if in_flight.is_empty() {
-                if let Some(delay) = self.pending_retry_delay.take() {
+                if let Some(delay) = self.earliest_retry_delay() {
                     tokio::select! {
                         biased;
                         () = cancel.cancelled() => return EngineRunResult::Cancelled,
-                        () = tokio::time::sleep(delay) => {}
+                        () = tokio::time::sleep(delay) => {
+                            self.prune_elapsed_retries();
+                            continue;
+                        }
                     }
-                    continue;
                 }
                 self.schedule_manual_nodes_in_layer();
                 self.recover_stale_in_flight_nodes();
@@ -370,14 +385,9 @@ impl InteractiveEngine {
                 });
             }
 
-            let retry_delay = self.pending_retry_delay;
             let work = tokio::select! {
                 biased;
                 () = cancel.cancelled() => return EngineRunResult::Cancelled,
-                () = maybe_sleep(retry_delay) => {
-                    self.pending_retry_delay = None;
-                    continue;
-                }
                 Some(work) = in_flight.next() => work,
             };
             match work {
@@ -588,6 +598,7 @@ impl InteractiveEngine {
         }
         self.failed_nodes.remove(node_id);
         self.interrupted_nodes.remove(node_id);
+        self.retry_after_by_node.remove(node_id);
         let retry_count = self.retries_by_node.entry(node_id.clone()).or_default();
         *retry_count = retry_count.saturating_add(1);
         Ok(())
@@ -771,5 +782,16 @@ impl InteractiveEngine {
     pub(crate) fn test_insert_pending_batch(&mut self, batch: PendingToolBatch) {
         self.pending_tool_batches
             .insert(batch.approval_id.clone(), batch);
+    }
+
+    pub(crate) fn test_is_in_retry_backoff(&self, node_id: &NodeId) -> bool {
+        self.is_node_in_retry_backoff(node_id)
+    }
+
+    pub(crate) fn test_gather_ai_node_ids(&mut self) -> Vec<NodeId> {
+        self.gather_call_ai_actions()
+            .into_iter()
+            .map(|(node_id, _)| node_id)
+            .collect()
     }
 }
