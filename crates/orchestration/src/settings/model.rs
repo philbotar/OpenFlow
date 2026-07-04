@@ -25,6 +25,11 @@ pub struct ProviderProfile {
     pub aws_profile: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub aws_region: String,
+    /// Optional shell command whose stdout is `aws configure export-credentials`
+    /// JSON; when set it supplies explicit credentials and the SDK default
+    /// credential chain is skipped entirely.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub aws_credential_command: String,
     #[serde(default)]
     pub editable: bool,
     #[serde(skip)]
@@ -103,6 +108,7 @@ impl ProviderProfile {
             api_key: String::new(),
             aws_profile: String::new(),
             aws_region,
+            aws_credential_command: String::new(),
             editable: spec.editable,
             new_model_input: String::new(),
             reasoning_effort_options: spec.default_reasoning_effort_options(),
@@ -133,6 +139,7 @@ impl ProviderProfile {
             api_key: String::new(),
             aws_profile: String::new(),
             aws_region: String::new(),
+            aws_credential_command: String::new(),
             editable: false,
             new_model_input: String::new(),
             reasoning_effort_options: Vec::new(),
@@ -163,6 +170,7 @@ impl ProviderProfile {
                         self.base_url = spec.default_base_url.to_string();
                     }
                     self.aws_region.clear();
+                    self.aws_credential_command.clear();
                 }
             }
             if self.known_models.is_empty() {
@@ -428,6 +436,44 @@ pub fn merge_preserved_api_keys(incoming: &mut AppSettings, existing: &AppSettin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn provider_profile_roundtrips_aws_credential_command() {
+        let mut settings = AppSettings::default();
+        settings
+            .providers
+            .get_mut(&ProviderId::from("bedrock"))
+            .expect("bedrock profile")
+            .aws_credential_command =
+            "aws configure export-credentials --profile bedrock".to_string();
+        let json = serde_json::to_string(&settings).unwrap();
+        let parsed: AppSettings = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            parsed
+                .providers
+                .get(&ProviderId::from("bedrock"))
+                .expect("bedrock profile")
+                .aws_credential_command,
+            "aws configure export-credentials --profile bedrock"
+        );
+    }
+
+    #[test]
+    fn normalized_clears_credential_command_for_non_bedrock() {
+        let mut settings = AppSettings::default();
+        settings
+            .providers
+            .get_mut(&ProviderId::from("openai"))
+            .expect("openai profile")
+            .aws_credential_command = "aws configure export-credentials".to_string();
+        let normalized = settings.normalized();
+        assert!(normalized
+            .providers
+            .get(&ProviderId::from("openai"))
+            .expect("openai profile")
+            .aws_credential_command
+            .is_empty());
+    }
 
     #[test]
     fn normalized_clears_bedrock_api_key() {

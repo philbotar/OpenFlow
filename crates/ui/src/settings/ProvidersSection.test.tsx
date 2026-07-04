@@ -274,6 +274,18 @@ describe("ProvidersSection", () => {
     expect(settings().providers.bedrock?.aws_profile).toBe("work-profile");
   });
 
+  test("bedrock credential command input updates settings", async () => {
+    const { settings } = renderSection("bedrock");
+    const commandInput = Array.from(container.querySelectorAll("label")).find((label) =>
+      label.textContent?.includes("Credential command"),
+    )?.querySelector("input") as HTMLInputElement;
+    commandInput.value = "aws configure export-credentials --profile bedrock";
+    commandInput.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(settings().providers.bedrock?.aws_credential_command).toBe(
+      "aws configure export-credentials --profile bedrock",
+    );
+  });
+
   test("bedrock shows test aws connection button", () => {
     renderSection("bedrock");
     expect(

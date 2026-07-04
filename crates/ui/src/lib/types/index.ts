@@ -354,6 +354,7 @@ export interface ProviderProfile {
   editable: boolean;
   aws_profile?: string;
   aws_region?: string;
+  aws_credential_command?: string;
   reasoning_effort_options?: ReasoningEffortOption[];
   default_reasoning_budget_tokens?: Record<string, number>;
   default_reasoning_effort?: string | null;

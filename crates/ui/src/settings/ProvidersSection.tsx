@@ -118,7 +118,8 @@ export function ProvidersSection() {
                 Uses the AWS credential chain (env vars, shared config, SSO, instance role). For
                 SSO, enter your AWS profile name below (required) and run{" "}
                 <code>aws sso login --profile &lt;name&gt;</code> in a terminal first. Access-key
-                users can leave the profile blank.
+                users can leave the profile blank. To bypass the SDK credential chain entirely, set
+                a credential command below — OpenFlow runs it and uses the exported keys directly.
               </p>
               <label>
                 <span>AWS profile</span>
@@ -130,6 +131,20 @@ export function ProvidersSection() {
                   onInput={(event) =>
                     void ctx.updateSettings((draft) => {
                       activeProfile(draft).aws_profile = event.currentTarget.value;
+                    })
+                  }
+                />
+              </label>
+              <label>
+                <span>Credential command (optional)</span>
+                <input
+                  type="text"
+                  class="text-input"
+                  value={ctx.activeProfileMemo().aws_credential_command ?? ""}
+                  placeholder="e.g. aws configure export-credentials --profile bedrock"
+                  onInput={(event) =>
+                    void ctx.updateSettings((draft) => {
+                      activeProfile(draft).aws_credential_command = event.currentTarget.value;
                     })
                   }
                 />

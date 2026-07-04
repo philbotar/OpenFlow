@@ -120,6 +120,7 @@ async fn build_bedrock(
     let sdk_config = crate::aws_runtime::load_aws_sdk_config(
         &bedrock_config.region,
         bedrock_config.aws_profile.as_deref(),
+        bedrock_config.aws_credential_command.as_deref(),
     )
     .await;
     let sdk_client = aws_sdk_bedrockruntime::Client::new(&sdk_config);
