@@ -310,6 +310,8 @@ pub fn parse_internal_tool_outcome(
 
 /// How to handle a provider turn that collected no tool calls.
 pub enum NoToolCallsPolicy {
+    /// Fail immediately (e.g. OpenAI Responses API).
+    Error(&'static str),
     /// Try plain JSON completion, optional follow-up prompt, then fail.
     Recover {
         allow_plain_text_follow_up: bool,
@@ -343,22 +345,26 @@ pub fn resolve_tool_turn_outcome(
     } = params;
 
     if tool_calls.is_empty() {
-        let NoToolCallsPolicy::Recover {
-            allow_plain_text_follow_up,
-            error,
-        } = no_tool_calls;
-        if let Some(outcome) = parse_plain_json_completion(assistant_message.as_deref()) {
-            return Ok(attach_usage(outcome, usage));
-        }
-        if allow_plain_text_follow_up {
-            if let Some(assistant_message) = assistant_message {
-                return Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
-                    raw_text: assistant_message.clone(),
-                    assistant_message,
-                }));
+        return match no_tool_calls {
+            NoToolCallsPolicy::Error(message) => Err(AgentError::Failed(message.to_string())),
+            NoToolCallsPolicy::Recover {
+                allow_plain_text_follow_up,
+                error,
+            } => {
+                if let Some(outcome) = parse_plain_json_completion(assistant_message.as_deref()) {
+                    return Ok(attach_usage(outcome, usage));
+                }
+                if allow_plain_text_follow_up {
+                    if let Some(assistant_message) = assistant_message {
+                        return Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
+                            raw_text: assistant_message.clone(),
+                            assistant_message,
+                        }));
+                    }
+                }
+                Err(AgentError::Failed(error.to_string()))
             }
-        }
-        return Err(AgentError::Failed(error.to_string()));
+        };
     }
 
     if let Some(index) = tool_calls

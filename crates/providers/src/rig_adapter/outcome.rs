@@ -8,10 +8,12 @@
     )
 )]
 
+use crate::client::OpenAiCompatibleConfig;
 use crate::mapping::{
-    attach_usage, parse_internal_tool_outcome, resolve_tool_turn_outcome, NoToolCallsPolicy,
-    ResolveToolTurnParams,
+    attach_usage, parse_internal_tool_outcome, resolve_tool_turn_outcome, should_allow_user_input,
+    NoToolCallsPolicy, ResolveToolTurnParams,
 };
+use crate::spec::WireApi;
 use engine::{AgentError, AgentTurnOutcome, UsageReport};
 use rig_core::completion::Usage;
 use rig_core::message::{AssistantContent, Text};
@@ -27,11 +29,26 @@ pub fn to_usage_report(usage: &Usage) -> Option<UsageReport> {
     })
 }
 
+pub fn no_tool_calls_policy(
+    request: &engine::AgentRequest,
+    openai_config: Option<&OpenAiCompatibleConfig>,
+) -> NoToolCallsPolicy {
+    if matches!(openai_config.map(|c| c.wire_api), Some(WireApi::Responses)) {
+        NoToolCallsPolicy::Error("OpenAI response did not contain a function call")
+    } else {
+        NoToolCallsPolicy::Recover {
+            allow_plain_text_follow_up: should_allow_user_input(request),
+            error: "provider returned neither tool calls nor recoverable output",
+        }
+    }
+}
+
 pub fn resolve_outcome(
     choice: Vec<AssistantContent>,
     usage: Usage,
     provider_label: &str,
     output_schema: Option<&serde_json::Value>,
+    no_tool_calls: NoToolCallsPolicy,
 ) -> Result<AgentTurnOutcome, AgentError> {
     let (text_parts, tool_calls) = partition_choice(choice);
     resolve_collected(
@@ -40,6 +57,7 @@ pub fn resolve_outcome(
         usage,
         provider_label,
         output_schema,
+        no_tool_calls,
     )
 }
 
@@ -61,6 +79,7 @@ fn resolve_collected(
     usage: Usage,
     provider_label: &str,
     output_schema: Option<&serde_json::Value>,
+    no_tool_calls: NoToolCallsPolicy,
 ) -> Result<AgentTurnOutcome, AgentError> {
     let assistant_message = if text_parts.is_empty() {
         None
@@ -70,10 +89,7 @@ fn resolve_collected(
     resolve_tool_turn_outcome(ResolveToolTurnParams {
         tool_calls,
         assistant_message,
-        no_tool_calls: NoToolCallsPolicy::Recover {
-            allow_plain_text_follow_up: true,
-            error: "provider returned neither tool calls nor recoverable output",
-        },
+        no_tool_calls,
         output_schema,
         provider_label,
         usage: to_usage_report(&usage),
@@ -120,6 +136,13 @@ mod tests {
         }
     }
 
+    fn recover(allow_plain_text_follow_up: bool) -> NoToolCallsPolicy {
+        NoToolCallsPolicy::Recover {
+            allow_plain_text_follow_up,
+            error: "provider returned neither tool calls nor recoverable output",
+        }
+    }
+
     #[test]
     fn submit_output_tool_call_becomes_completed() {
         let choice = vec![AssistantContent::tool_call(
@@ -132,6 +155,7 @@ mod tests {
             usage(),
             "Test provider",
             Some(&json!({"type": "object"})),
+            recover(true),
         )
         .unwrap();
         match outcome {
@@ -150,7 +174,7 @@ mod tests {
             REQUEST_INPUT_TOOL,
             json!({"assistant_message": "Which env?"}),
         )];
-        let outcome = resolve_outcome(choice, usage(), "Test provider", None).unwrap();
+        let outcome = resolve_outcome(choice, usage(), "Test provider", None, recover(true)).unwrap();
         assert!(matches!(
             outcome,
             engine::AgentTurnOutcome::NeedsUserInput(n) if n.assistant_message == "Which env?"
@@ -163,7 +187,7 @@ mod tests {
             AssistantContent::text("Let me search."),
             AssistantContent::tool_call("c1", "search", json!({"q": "x"})),
         ];
-        let outcome = resolve_outcome(choice, usage(), "Test provider", None).unwrap();
+        let outcome = resolve_outcome(choice, usage(), "Test provider", None, recover(true)).unwrap();
         match outcome {
             engine::AgentTurnOutcome::ToolCalls(batch) => {
                 assert_eq!(batch.tool_calls.len(), 1);
@@ -190,7 +214,35 @@ mod tests {
         let choice = vec![AssistantContent::text(
             r#"{"output": {"r": "v"}, "assistant_message": null}"#,
         )];
-        let outcome = resolve_outcome(choice, usage(), "Test provider", None).unwrap();
+        let outcome = resolve_outcome(choice, usage(), "Test provider", None, recover(true)).unwrap();
         assert!(matches!(outcome, engine::AgentTurnOutcome::Completed(_)));
+    }
+
+    #[test]
+    fn plain_text_without_user_input_tool_fails() {
+        let choice = vec![AssistantContent::text("Hello without tools")];
+        let err = resolve_outcome(
+            choice,
+            usage(),
+            "Test provider",
+            None,
+            recover(false),
+        )
+        .unwrap_err();
+        assert!(matches!(err, AgentError::Failed(_)));
+    }
+
+    #[test]
+    fn responses_api_no_tool_calls_errors() {
+        let choice = vec![AssistantContent::text("plain")];
+        let err = resolve_outcome(
+            choice,
+            usage(),
+            "Test provider",
+            None,
+            NoToolCallsPolicy::Error("OpenAI response did not contain a function call"),
+        )
+        .unwrap_err();
+        assert!(matches!(err, AgentError::Failed(_)));
     }
 }

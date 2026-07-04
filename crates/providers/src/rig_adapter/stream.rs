@@ -1,5 +1,6 @@
 //! Drains a rig streaming response into an [`AiStreamSink`] and a final outcome.
 
+use crate::mapping::NoToolCallsPolicy;
 use crate::rig_adapter::{error, outcome};
 use engine::{AgentError, AgentTurnOutcome, AiStreamEvent, AiStreamSink};
 use futures::StreamExt;
@@ -12,6 +13,7 @@ pub async fn drain<R>(
     sink: &dyn AiStreamSink,
     provider_label: &str,
     output_schema: Option<&serde_json::Value>,
+    no_tool_calls: NoToolCallsPolicy,
 ) -> Result<AgentTurnOutcome, AgentError>
 where
     R: Clone + Unpin + GetTokenUsage + Send + 'static,
@@ -42,7 +44,7 @@ where
         .map(GetTokenUsage::token_usage)
         .unwrap_or_default();
 
-    outcome::resolve_outcome(choice, usage, provider_label, output_schema)
+    outcome::resolve_outcome(choice, usage, provider_label, output_schema, no_tool_calls)
 }
 
 fn emit_reasoning(sink: &dyn AiStreamSink, reasoning: &Reasoning) {

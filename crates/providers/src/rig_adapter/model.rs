@@ -135,6 +135,7 @@ impl RigModel {
         provider_id: &ProviderId,
         openai_config: Option<&OpenAiCompatibleConfig>,
     ) -> Result<AgentTurnOutcome, AgentError> {
+        let no_tool_calls = outcome::no_tool_calls_policy(request, openai_config);
         let mut completion_request =
             completion_request_for(self, request, provider_id, openai_config);
         match self {
@@ -150,6 +151,7 @@ impl RigModel {
                     response.usage,
                     provider_label,
                     Some(&request.output_schema),
+                    no_tool_calls,
                 )
             }
             Self::OpenAiChat(model) => {
@@ -163,6 +165,7 @@ impl RigModel {
                     response.usage,
                     provider_label,
                     Some(&request.output_schema),
+                    no_tool_calls,
                 )
             }
             Self::OpenAiResponses(model) => {
@@ -176,6 +179,7 @@ impl RigModel {
                     response.usage,
                     provider_label,
                     Some(&request.output_schema),
+                    no_tool_calls,
                 )
             }
             #[cfg(feature = "bedrock")]
@@ -190,6 +194,7 @@ impl RigModel {
                     response.usage,
                     provider_label,
                     Some(&request.output_schema),
+                    no_tool_calls,
                 )
             }
         }
@@ -203,6 +208,7 @@ impl RigModel {
         provider_id: &ProviderId,
         openai_config: Option<&OpenAiCompatibleConfig>,
     ) -> Result<AgentTurnOutcome, AgentError> {
+        let no_tool_calls = outcome::no_tool_calls_policy(request, openai_config);
         let mut completion_request =
             completion_request_for(self, request, provider_id, openai_config);
         match self {
@@ -217,6 +223,7 @@ impl RigModel {
                     sink,
                     provider_label,
                     Some(&request.output_schema),
+                    no_tool_calls,
                 )
                 .await
             }
@@ -230,6 +237,7 @@ impl RigModel {
                     sink,
                     provider_label,
                     Some(&request.output_schema),
+                    no_tool_calls,
                 )
                 .await
             }
@@ -243,6 +251,7 @@ impl RigModel {
                     sink,
                     provider_label,
                     Some(&request.output_schema),
+                    no_tool_calls,
                 )
                 .await
             }
@@ -257,6 +266,7 @@ impl RigModel {
                     sink,
                     provider_label,
                     Some(&request.output_schema),
+                    no_tool_calls,
                 )
                 .await
             }
