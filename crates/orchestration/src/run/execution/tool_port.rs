@@ -505,13 +505,13 @@ where
         conversation_id: &str,
     ) -> Option<Result<ToolExecutionRecord, ToolRunnerError>> {
         self.note_read_call(effects, &tool_call);
-        
+
         let tool_runner = Arc::clone(&self.tool_runner);
-        
+
         let tool_name = tool_call.name.clone();
-        
+
         let (update_tx, mut update_rx) = tokio::sync::mpsc::unbounded_channel();
-        
+
         let node_id_for_task = node_id.clone();
 
         let ctx = ToolExecutionContext {
@@ -522,13 +522,13 @@ where
         };
 
         let event_tx = self.event_tx.clone();
-        
+
         let update_node_id = node_id.clone();
-        
+
         let update_tool_call_id = tool_call.id.clone();
-        
+
         let update_tool_name = tool_call.name.clone();
-        
+
         tokio::spawn(async move {
             while let Some(update) = update_rx.recv().await {
                 let _ = event_tx.send(ExecutionEvent::ToolUpdated {
