@@ -24,7 +24,7 @@ tauri-build.workspace = true
 keepawake = "0.6.0"
 env_logger = "0.11"
 log = "0.4"
-orchestration = { path = "../orchestration", version = "0.1.15" }
+orchestration = { path = "../orchestration", version = "0.1.16" }
 serde.workspace = true
 serde_json.workspace = true
 tauri.workspace = true
