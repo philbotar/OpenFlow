@@ -124,7 +124,6 @@ impl InteractiveEngine {
         self.interrupted_nodes
             .extend(std::mem::take(&mut self.in_flight_ai));
         self.retry_after_by_node.clear();
-        self.transient_streaks_by_node.clear();
 
         InteractiveEngineCheckpoint {
             workflow_id: self.workflow.id.clone(),

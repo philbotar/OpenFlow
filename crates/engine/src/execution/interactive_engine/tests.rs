@@ -251,6 +251,25 @@ async fn run_cancel_during_backoff_returns_cancelled() {
 }
 
 #[test]
+fn checkpoint_preserves_transient_streaks_by_node() {
+    let mut workflow = Workflow::new("wf");
+    workflow.settings.retry_policy.max_attempts = 5;
+    workflow.nodes = vec![node("a")];
+    let mut engine = InteractiveEngine::new(workflow.clone(), None, None).unwrap();
+    let node_a = NodeId("a".to_string());
+    engine.test_insert_in_flight(node_a.clone());
+    engine.on_ai_complete(&node_a, Err(AgentError::Transient("blip".into())));
+
+    let checkpoint = engine.prepare_stop_checkpoint();
+    assert_eq!(checkpoint.transient_streaks_by_node.get(&node_a), Some(&1));
+
+    let mut restored =
+        InteractiveEngine::from_checkpoint(workflow, checkpoint, None).expect("restore");
+    let again = restored.prepare_stop_checkpoint();
+    assert_eq!(again.transient_streaks_by_node.get(&node_a), Some(&1));
+}
+
+#[test]
 fn transient_streak_resets_after_successful_turn() {
     let mut workflow = Workflow::new("wf");
     workflow.settings.retry_policy.max_attempts = 2;
