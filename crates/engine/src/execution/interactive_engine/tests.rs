@@ -13,8 +13,8 @@ use crate::conversation::AgentTranscriptItem;
 use crate::execution::NodeFailureKind;
 use crate::graph::{Node, NodeId, Workflow};
 use crate::ports::{
-    AgentError, AgentRequest, AgentToolCallBatch, AgentTurnOutcome, AgentTurnSuccess, AiPort,
-    ToolBatchEffects, ToolBatchOutput, ToolPort,
+    AgentError, AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTurnOutcome,
+    AgentTurnSuccess, AiPort, ToolBatchEffects, ToolBatchOutput, ToolPort,
 };
 use crate::tools::{ApprovalMode, FileChangeRecord, ToolCall, ToolResult};
 use async_trait::async_trait;
@@ -248,6 +248,74 @@ async fn run_cancel_during_backoff_returns_cancelled() {
 
     assert!(matches!(result, EngineRunResult::Cancelled));
     assert!(started.elapsed() < Duration::from_secs(5));
+}
+
+#[test]
+fn transient_streak_resets_after_successful_turn() {
+    let mut workflow = Workflow::new("wf");
+    workflow.settings.retry_policy.max_attempts = 2;
+    workflow.settings.retry_policy.backoff_ms = 10;
+    workflow.nodes = vec![node("a")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let node_a = NodeId("a".to_string());
+
+    for _ in 0..2 {
+        engine.test_insert_in_flight(node_a.clone());
+        engine.on_ai_complete(&node_a, Err(AgentError::Transient("blip".into())));
+        assert!(!engine.failed_nodes.contains_key(&node_a));
+    }
+
+    engine.test_insert_in_flight(node_a.clone());
+    engine.on_ai_complete(
+        &node_a,
+        Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+            raw_text: String::new(),
+            tool_calls: vec![],
+            assistant_message: Some("working".to_string()),
+            usage: None,
+        })),
+    );
+
+    for _ in 0..2 {
+        engine.test_insert_in_flight(node_a.clone());
+        engine.on_ai_complete(&node_a, Err(AgentError::Transient("blip".into())));
+        assert!(
+            !engine.failed_nodes.contains_key(&node_a),
+            "streak should have reset after successful turn"
+        );
+    }
+}
+
+#[test]
+fn model_attempt_does_not_decrease_after_streak_reset() {
+    let mut workflow = Workflow::new("wf");
+    workflow.settings.retry_policy.max_attempts = 2;
+    workflow.settings.retry_policy.backoff_ms = 10;
+    workflow.nodes = vec![node("a")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let node_a = NodeId("a".to_string());
+
+    for _ in 0..2 {
+        engine.test_insert_in_flight(node_a.clone());
+        engine.on_ai_complete(&node_a, Err(AgentError::Transient("blip".into())));
+    }
+
+    let before = engine.model_attempt_for_node(&node_a);
+    engine.test_insert_in_flight(node_a.clone());
+    engine.on_ai_complete(
+        &node_a,
+        Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+            raw_text: String::new(),
+            tool_calls: vec![],
+            assistant_message: Some("working".to_string()),
+            usage: None,
+        })),
+    );
+    engine.test_insert_in_flight(node_a.clone());
+    engine.on_ai_complete(&node_a, Err(AgentError::Transient("blip".into())));
+
+    let after = engine.model_attempt_for_node(&node_a);
+    assert!(after >= before);
 }
 
 #[test]
@@ -859,4 +927,173 @@ fn checkpoint_stop_mid_tool_execution_retains_approved_batch() {
 
     let checkpoint = engine.prepare_stop_checkpoint();
     assert!(checkpoint.pending_tool_batches.contains_key("batch-1"));
+}
+
+fn autonomous_node(id: &str) -> Node {
+    let mut node = node(id);
+    node.agent.request_user_input = false;
+    node
+}
+
+fn needs_input(message: &str) -> AgentTurnOutcome {
+    AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
+        raw_text: message.to_string(),
+        assistant_message: message.to_string(),
+    })
+}
+
+#[test]
+fn autonomous_node_auto_continues_instead_of_awaiting_input() {
+    let mut workflow = Workflow::new("wf");
+    workflow.nodes = vec![autonomous_node("a")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let node_a = NodeId("a".to_string());
+
+    engine.test_insert_in_flight(node_a.clone());
+    engine.on_ai_complete(&node_a, Ok(needs_input("Now I'll write the tests.")));
+
+    assert!(!engine.awaiting_nodes.contains(&node_a), "must not pause");
+    assert!(!engine.failed_nodes.contains_key(&node_a));
+    let transcript = engine.transcript(&node_a);
+    assert!(matches!(
+        transcript.last(),
+        Some(AgentTranscriptItem::UserMessage { content })
+            if content.contains("call a tool")
+    ));
+    assert!(matches!(
+        &transcript[transcript.len() - 2],
+        AgentTranscriptItem::AssistantMessage { content }
+            if content == "Now I'll write the tests."
+    ));
+}
+
+#[test]
+fn autonomous_node_fails_after_consecutive_auto_continue_cap() {
+    let mut workflow = Workflow::new("wf");
+    workflow.nodes = vec![autonomous_node("a")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let node_a = NodeId("a".to_string());
+
+    for _ in 0..10 {
+        engine.test_insert_in_flight(node_a.clone());
+        engine.on_ai_complete(&node_a, Ok(needs_input("still narrating")));
+        assert!(!engine.failed_nodes.contains_key(&node_a));
+    }
+    engine.test_insert_in_flight(node_a.clone());
+    engine.on_ai_complete(&node_a, Ok(needs_input("still narrating")));
+    assert!(engine.failed_nodes.contains_key(&node_a));
+    assert!(!engine.awaiting_nodes.contains(&node_a));
+}
+
+#[test]
+fn autonomous_auto_continue_streak_resets_on_tool_calls() {
+    let mut workflow = Workflow::new("wf");
+    workflow.nodes = vec![autonomous_node("a")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let node_a = NodeId("a".to_string());
+
+    for _ in 0..9 {
+        engine.test_insert_in_flight(node_a.clone());
+        engine.on_ai_complete(&node_a, Ok(needs_input("narration")));
+    }
+    engine.test_insert_in_flight(node_a.clone());
+    engine.on_ai_complete(
+        &node_a,
+        Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+            raw_text: String::new(),
+            tool_calls: vec![ToolCall {
+                id: "c1".to_string(),
+                name: "read".to_string(),
+                arguments: json!({}),
+            }],
+            assistant_message: None,
+            usage: None,
+        })),
+    );
+    for _ in 0..10 {
+        engine.test_insert_in_flight(node_a.clone());
+        engine.on_ai_complete(&node_a, Ok(needs_input("narration")));
+        assert!(
+            !engine.failed_nodes.contains_key(&node_a),
+            "streak should have reset after tool-call progress"
+        );
+    }
+}
+
+#[test]
+fn interactive_node_still_pauses_for_real_questions() {
+    let mut workflow = Workflow::new("wf");
+    workflow.nodes = vec![node("a")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let node_a = NodeId("a".to_string());
+
+    engine.test_insert_in_flight(node_a.clone());
+    engine.on_ai_complete(
+        &node_a,
+        Ok(needs_input("Which environment should I target?")),
+    );
+    assert!(engine.awaiting_nodes.contains(&node_a));
+}
+
+#[test]
+fn malformed_request_input_retries_reset_on_tool_call_progress() {
+    let mut workflow = Workflow::new("wf");
+    workflow.nodes = vec![node("a")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let node_a = NodeId("a".to_string());
+
+    for _ in 0..3 {
+        engine.test_insert_in_flight(node_a.clone());
+        engine.on_ai_complete(&node_a, Ok(needs_input("Working on the next file.")));
+        assert!(!engine.awaiting_nodes.contains(&node_a));
+    }
+
+    engine.test_insert_in_flight(node_a.clone());
+    engine.on_ai_complete(
+        &node_a,
+        Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+            raw_text: String::new(),
+            tool_calls: vec![ToolCall {
+                id: "c1".to_string(),
+                name: "read".to_string(),
+                arguments: json!({}),
+            }],
+            assistant_message: None,
+            usage: None,
+        })),
+    );
+
+    engine.test_insert_in_flight(node_a.clone());
+    engine.on_ai_complete(&node_a, Ok(needs_input("Now updating the route.")));
+    assert!(
+        !engine.awaiting_nodes.contains(&node_a),
+        "narration after progress must self-nudge, not pause"
+    );
+}
+
+#[test]
+fn checkpoint_roundtrips_auto_continue_streaks() {
+    let mut workflow = Workflow::new("wf");
+    workflow.nodes = vec![autonomous_node("a")];
+    let mut engine = InteractiveEngine::new(workflow.clone(), None, None).unwrap();
+    let node_a = NodeId("a".to_string());
+
+    engine.test_insert_in_flight(node_a.clone());
+    engine.on_ai_complete(&node_a, Ok(needs_input("narration")));
+
+    let checkpoint = engine.prepare_stop_checkpoint();
+    let mut value = serde_json::to_value(&checkpoint).unwrap();
+    value
+        .as_object_mut()
+        .unwrap()
+        .remove("auto_continue_streaks_by_node");
+    let legacy: super::checkpoint::InteractiveEngineCheckpoint =
+        serde_json::from_value(value).unwrap();
+    assert!(legacy.auto_continue_streaks_by_node.is_empty());
+
+    let restored = InteractiveEngine::from_checkpoint(workflow, checkpoint, None).unwrap();
+    assert_eq!(
+        restored.auto_continue_streaks_by_node.get(&node_a),
+        Some(&1)
+    );
 }

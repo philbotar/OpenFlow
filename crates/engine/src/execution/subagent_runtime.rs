@@ -241,6 +241,7 @@ fn build_saved_agent_request(
         model_attempt: 1,
         reasoning_effort: None,
         reasoning_budget_tokens: None,
+        allow_user_input: false,
     }
 }
 
@@ -277,6 +278,7 @@ fn build_adhoc_agent_request(
         model_attempt: 1,
         reasoning_effort: None,
         reasoning_budget_tokens: None,
+        allow_user_input: false,
     }
 }
 
@@ -423,6 +425,7 @@ mod tests {
                 model_attempt: 1,
                 reasoning_effort: None,
                 reasoning_budget_tokens: None,
+                allow_user_input: false,
             },
             tool_call_id: "parent-call".to_string(),
             parent_node_id: NodeId("node-1".to_string()),

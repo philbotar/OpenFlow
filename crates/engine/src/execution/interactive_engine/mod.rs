@@ -109,10 +109,15 @@ pub struct InteractiveEngine {
     /// restored engine re-dispatches any pending non-approval batch).
     in_flight_tools: BTreeSet<String>,
     retries_by_node: BTreeMap<NodeId, u8>,
+    /// Consecutive transient failures since the node's last successful turn.
+    transient_streaks_by_node: BTreeMap<NodeId, u8>,
     /// Per-node: do not dispatch AI again until this instant (transient retry backoff).
     retry_after_by_node: BTreeMap<NodeId, Instant>,
     submit_output_retries_by_node: BTreeMap<NodeId, u8>,
     request_input_retries_by_node: BTreeMap<NodeId, u8>,
+    /// Consecutive auto-continued text-only turns for nodes that disallow
+    /// user input; reset whenever the node makes tool-call progress.
+    auto_continue_streaks_by_node: BTreeMap<NodeId, u8>,
     entrypoint_text: Option<String>,
     project_repository_root: Option<String>,
     terminal_error: Option<RunError>,
@@ -122,10 +127,17 @@ pub struct InteractiveEngine {
 
 pub(crate) const MAX_MALFORMED_SUBMIT_OUTPUT_RETRIES: u8 = 3;
 pub(crate) const MAX_MALFORMED_REQUEST_INPUT_RETRIES: u8 = 3;
+pub(crate) const MAX_AUTO_CONTINUE_STREAK: u8 = 10;
 pub(crate) const MALFORMED_REQUEST_INPUT_FEEDBACK: &str =
-    "Your openflow_request_user_input call must set \
-    assistant_message to one direct clarifying question for the human (typically ending with ?). \
-    Do not send preamble, narration, or plans — ask the question in assistant_message now.";
+    "Your last turn ended as a request for human input, but without a direct question. \
+    If you need human clarification, call openflow_request_user_input with \
+    assistant_message set to one direct question (usually ending with ?). If you do not \
+    need human input, continue working: call a tool or call openflow_submit_node_output. \
+    Do not end a turn with plain narration.";
+pub(crate) const AUTONOMOUS_CONTINUE_FEEDBACK: &str =
+    "No human input is available for this node. Continue working: call a tool to make \
+    progress, or call openflow_submit_node_output when the task is complete. Do not end \
+    a turn with plain text only.";
 
 enum WorkOutput {
     Ai {
@@ -173,9 +185,11 @@ impl InteractiveEngine {
             pending_tool_batches: BTreeMap::new(),
             in_flight_tools: BTreeSet::new(),
             retries_by_node: BTreeMap::new(),
+            transient_streaks_by_node: BTreeMap::new(),
             retry_after_by_node: BTreeMap::new(),
             submit_output_retries_by_node: BTreeMap::new(),
             request_input_retries_by_node: BTreeMap::new(),
+            auto_continue_streaks_by_node: BTreeMap::new(),
             entrypoint_text,
             project_repository_root,
             terminal_error: None,

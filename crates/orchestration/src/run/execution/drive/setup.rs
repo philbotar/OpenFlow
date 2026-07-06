@@ -143,7 +143,6 @@ where
         node_interrupts,
         cancel_token.clone(),
         context_window_sizes,
-        workflow.settings.max_concurrent_ai_calls,
     ));
     let aborted_emitted = Arc::new(Mutex::new(false));
     let tool_port = ToolPortImpl::new(

@@ -657,6 +657,7 @@ pub fn engine::execution::interactive_engine::InteractiveEngine::borrow_mut(&mut
 impl<T> core::convert::From<T> for engine::execution::interactive_engine::InteractiveEngine
 pub fn engine::execution::interactive_engine::InteractiveEngine::from(T) -> T
 pub struct engine::execution::interactive_engine::InteractiveEngineCheckpoint
+pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::auto_continue_streaks_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::awaiting_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::changed_files_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::entrypoint_text: core::option::Option<alloc::string::String>
@@ -670,6 +671,7 @@ pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::request_
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::submit_output_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::transcripts: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::conversation::AgentTranscriptItem>>
+pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::transient_streaks_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::workflow_id: engine::graph::workflow::WorkflowId
 impl core::clone::Clone for engine::InteractiveEngineCheckpoint
 pub fn engine::InteractiveEngineCheckpoint::clone(&self) -> engine::InteractiveEngineCheckpoint
@@ -1606,6 +1608,7 @@ pub fn engine::execution::interactive_engine::InteractiveEngine::borrow_mut(&mut
 impl<T> core::convert::From<T> for engine::execution::interactive_engine::InteractiveEngine
 pub fn engine::execution::interactive_engine::InteractiveEngine::from(T) -> T
 pub struct engine::execution::InteractiveEngineCheckpoint
+pub engine::execution::InteractiveEngineCheckpoint::auto_continue_streaks_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::execution::InteractiveEngineCheckpoint::awaiting_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
 pub engine::execution::InteractiveEngineCheckpoint::changed_files_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>>
 pub engine::execution::InteractiveEngineCheckpoint::entrypoint_text: core::option::Option<alloc::string::String>
@@ -1619,6 +1622,7 @@ pub engine::execution::InteractiveEngineCheckpoint::request_input_retries_by_nod
 pub engine::execution::InteractiveEngineCheckpoint::retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::execution::InteractiveEngineCheckpoint::submit_output_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::execution::InteractiveEngineCheckpoint::transcripts: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::conversation::AgentTranscriptItem>>
+pub engine::execution::InteractiveEngineCheckpoint::transient_streaks_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::execution::InteractiveEngineCheckpoint::workflow_id: engine::graph::workflow::WorkflowId
 impl core::clone::Clone for engine::InteractiveEngineCheckpoint
 pub fn engine::InteractiveEngineCheckpoint::clone(&self) -> engine::InteractiveEngineCheckpoint
@@ -1973,6 +1977,7 @@ pub engine::graph::workflow::AgentNodeConfig::output_schema: serde_json::value::
 pub engine::graph::workflow::AgentNodeConfig::provider_id: core::option::Option<alloc::string::String>
 pub engine::graph::workflow::AgentNodeConfig::reasoning_budget_tokens: core::option::Option<u32>
 pub engine::graph::workflow::AgentNodeConfig::reasoning_effort: core::option::Option<alloc::string::String>
+pub engine::graph::workflow::AgentNodeConfig::request_user_input: bool
 pub engine::graph::workflow::AgentNodeConfig::system_prompt: alloc::string::String
 pub engine::graph::workflow::AgentNodeConfig::task_prompt: alloc::string::String
 pub engine::graph::workflow::AgentNodeConfig::tools: engine::NodeToolConfig
@@ -2518,7 +2523,6 @@ pub fn engine::graph::workflow::WorkflowSchedule::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::graph::workflow::WorkflowSchedule where T: for<'de> serde_core::de::Deserialize<'de>
 pub struct engine::graph::workflow::WorkflowSettings
 pub engine::graph::workflow::WorkflowSettings::forward_upstream_reads: bool
-pub engine::graph::workflow::WorkflowSettings::max_concurrent_ai_calls: u8
 pub engine::graph::workflow::WorkflowSettings::provider_id: core::option::Option<alloc::string::String>
 pub engine::graph::workflow::WorkflowSettings::reasoning_budget_tokens: core::option::Option<u32>
 pub engine::graph::workflow::WorkflowSettings::reasoning_effort: core::option::Option<alloc::string::String>
@@ -2676,6 +2680,7 @@ pub engine::graph::AgentNodeConfig::output_schema: serde_json::value::Value
 pub engine::graph::AgentNodeConfig::provider_id: core::option::Option<alloc::string::String>
 pub engine::graph::AgentNodeConfig::reasoning_budget_tokens: core::option::Option<u32>
 pub engine::graph::AgentNodeConfig::reasoning_effort: core::option::Option<alloc::string::String>
+pub engine::graph::AgentNodeConfig::request_user_input: bool
 pub engine::graph::AgentNodeConfig::system_prompt: alloc::string::String
 pub engine::graph::AgentNodeConfig::task_prompt: alloc::string::String
 pub engine::graph::AgentNodeConfig::tools: engine::NodeToolConfig
@@ -3276,7 +3281,6 @@ pub fn engine::graph::workflow::WorkflowSchedule::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::graph::workflow::WorkflowSchedule where T: for<'de> serde_core::de::Deserialize<'de>
 pub struct engine::graph::WorkflowSettings
 pub engine::graph::WorkflowSettings::forward_upstream_reads: bool
-pub engine::graph::WorkflowSettings::max_concurrent_ai_calls: u8
 pub engine::graph::WorkflowSettings::provider_id: core::option::Option<alloc::string::String>
 pub engine::graph::WorkflowSettings::reasoning_budget_tokens: core::option::Option<u32>
 pub engine::graph::WorkflowSettings::reasoning_effort: core::option::Option<alloc::string::String>
@@ -3500,6 +3504,7 @@ pub unsafe fn engine::ports::outbound::AgentNeedUserInput::clone_to_uninit(&self
 impl<T> core::convert::From<T> for engine::ports::outbound::AgentNeedUserInput
 pub fn engine::ports::outbound::AgentNeedUserInput::from(T) -> T
 pub struct engine::ports::outbound::AgentRequest
+pub engine::ports::outbound::AgentRequest::allow_user_input: bool
 pub engine::ports::outbound::AgentRequest::available_tools: alloc::vec::Vec<engine::ToolDefinition>
 pub engine::ports::outbound::AgentRequest::input: serde_json::value::Value
 pub engine::ports::outbound::AgentRequest::model: alloc::string::String
@@ -3946,6 +3951,7 @@ pub unsafe fn engine::ports::outbound::AgentNeedUserInput::clone_to_uninit(&self
 impl<T> core::convert::From<T> for engine::ports::outbound::AgentNeedUserInput
 pub fn engine::ports::outbound::AgentNeedUserInput::from(T) -> T
 pub struct engine::ports::AgentRequest
+pub engine::ports::AgentRequest::allow_user_input: bool
 pub engine::ports::AgentRequest::available_tools: alloc::vec::Vec<engine::ToolDefinition>
 pub engine::ports::AgentRequest::input: serde_json::value::Value
 pub engine::ports::AgentRequest::model: alloc::string::String
@@ -4232,13 +4238,13 @@ pub mod engine::template::store
 pub enum engine::template::store::TemplateStoreError
 pub engine::template::store::TemplateStoreError::CannotCreateDir
 pub engine::template::store::TemplateStoreError::CannotCreateDir::path: alloc::string::String
-pub engine::template::store::TemplateStoreError::CannotCreateDir::source: core::io::error::Error
+pub engine::template::store::TemplateStoreError::CannotCreateDir::source: std::io::error::Error
 pub engine::template::store::TemplateStoreError::CannotRead
 pub engine::template::store::TemplateStoreError::CannotRead::path: alloc::string::String
-pub engine::template::store::TemplateStoreError::CannotRead::source: core::io::error::Error
+pub engine::template::store::TemplateStoreError::CannotRead::source: std::io::error::Error
 pub engine::template::store::TemplateStoreError::CannotWrite
 pub engine::template::store::TemplateStoreError::CannotWrite::path: alloc::string::String
-pub engine::template::store::TemplateStoreError::CannotWrite::source: core::io::error::Error
+pub engine::template::store::TemplateStoreError::CannotWrite::source: std::io::error::Error
 pub engine::template::store::TemplateStoreError::DataDirUnavailable
 pub engine::template::store::TemplateStoreError::NotFound
 pub engine::template::store::TemplateStoreError::NotFound::id: alloc::string::String
@@ -4284,13 +4290,13 @@ pub fn engine::template::store::TemplateStore::update(&self, engine::template::T
 pub enum engine::template::TemplateStoreError
 pub engine::template::TemplateStoreError::CannotCreateDir
 pub engine::template::TemplateStoreError::CannotCreateDir::path: alloc::string::String
-pub engine::template::TemplateStoreError::CannotCreateDir::source: core::io::error::Error
+pub engine::template::TemplateStoreError::CannotCreateDir::source: std::io::error::Error
 pub engine::template::TemplateStoreError::CannotRead
 pub engine::template::TemplateStoreError::CannotRead::path: alloc::string::String
-pub engine::template::TemplateStoreError::CannotRead::source: core::io::error::Error
+pub engine::template::TemplateStoreError::CannotRead::source: std::io::error::Error
 pub engine::template::TemplateStoreError::CannotWrite
 pub engine::template::TemplateStoreError::CannotWrite::path: alloc::string::String
-pub engine::template::TemplateStoreError::CannotWrite::source: core::io::error::Error
+pub engine::template::TemplateStoreError::CannotWrite::source: std::io::error::Error
 pub engine::template::TemplateStoreError::DataDirUnavailable
 pub engine::template::TemplateStoreError::NotFound
 pub engine::template::TemplateStoreError::NotFound::id: alloc::string::String
@@ -4583,6 +4589,7 @@ pub fn engine::ToolCallStatus::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::ToolCallStatus where T: for<'de> serde_core::de::Deserialize<'de>
 pub enum engine::tools::ToolConcurrency
 pub engine::tools::ToolConcurrency::Exclusive
+pub engine::tools::ToolConcurrency::NodeExclusive
 pub engine::tools::ToolConcurrency::Shared
 impl core::clone::Clone for engine::ToolConcurrency
 pub fn engine::ToolConcurrency::clone(&self) -> engine::ToolConcurrency
@@ -6072,13 +6079,13 @@ impl<T> serde_core::de::DeserializeOwned for engine::SubagentStatus where T: for
 pub enum engine::TemplateStoreError
 pub engine::TemplateStoreError::CannotCreateDir
 pub engine::TemplateStoreError::CannotCreateDir::path: alloc::string::String
-pub engine::TemplateStoreError::CannotCreateDir::source: core::io::error::Error
+pub engine::TemplateStoreError::CannotCreateDir::source: std::io::error::Error
 pub engine::TemplateStoreError::CannotRead
 pub engine::TemplateStoreError::CannotRead::path: alloc::string::String
-pub engine::TemplateStoreError::CannotRead::source: core::io::error::Error
+pub engine::TemplateStoreError::CannotRead::source: std::io::error::Error
 pub engine::TemplateStoreError::CannotWrite
 pub engine::TemplateStoreError::CannotWrite::path: alloc::string::String
-pub engine::TemplateStoreError::CannotWrite::source: core::io::error::Error
+pub engine::TemplateStoreError::CannotWrite::source: std::io::error::Error
 pub engine::TemplateStoreError::DataDirUnavailable
 pub engine::TemplateStoreError::NotFound
 pub engine::TemplateStoreError::NotFound::id: alloc::string::String
@@ -6169,6 +6176,7 @@ pub fn engine::ToolCallStatus::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::ToolCallStatus where T: for<'de> serde_core::de::Deserialize<'de>
 pub enum engine::ToolConcurrency
 pub engine::ToolConcurrency::Exclusive
+pub engine::ToolConcurrency::NodeExclusive
 pub engine::ToolConcurrency::Shared
 impl core::clone::Clone for engine::ToolConcurrency
 pub fn engine::ToolConcurrency::clone(&self) -> engine::ToolConcurrency
@@ -6409,6 +6417,7 @@ pub engine::AgentNodeConfig::output_schema: serde_json::value::Value
 pub engine::AgentNodeConfig::provider_id: core::option::Option<alloc::string::String>
 pub engine::AgentNodeConfig::reasoning_budget_tokens: core::option::Option<u32>
 pub engine::AgentNodeConfig::reasoning_effort: core::option::Option<alloc::string::String>
+pub engine::AgentNodeConfig::request_user_input: bool
 pub engine::AgentNodeConfig::system_prompt: alloc::string::String
 pub engine::AgentNodeConfig::task_prompt: alloc::string::String
 pub engine::AgentNodeConfig::tools: engine::NodeToolConfig
@@ -6457,6 +6466,7 @@ impl<T> core::convert::From<T> for engine::graph::workflow::AgentNodeConfig
 pub fn engine::graph::workflow::AgentNodeConfig::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::graph::workflow::AgentNodeConfig where T: for<'de> serde_core::de::Deserialize<'de>
 pub struct engine::AgentRequest
+pub engine::AgentRequest::allow_user_input: bool
 pub engine::AgentRequest::available_tools: alloc::vec::Vec<engine::ToolDefinition>
 pub engine::AgentRequest::input: serde_json::value::Value
 pub engine::AgentRequest::model: alloc::string::String
@@ -7134,6 +7144,7 @@ pub fn engine::execution::interactive_engine::InteractiveEngine::borrow_mut(&mut
 impl<T> core::convert::From<T> for engine::execution::interactive_engine::InteractiveEngine
 pub fn engine::execution::interactive_engine::InteractiveEngine::from(T) -> T
 pub struct engine::InteractiveEngineCheckpoint
+pub engine::InteractiveEngineCheckpoint::auto_continue_streaks_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::InteractiveEngineCheckpoint::awaiting_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
 pub engine::InteractiveEngineCheckpoint::changed_files_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>>
 pub engine::InteractiveEngineCheckpoint::entrypoint_text: core::option::Option<alloc::string::String>
@@ -7147,6 +7158,7 @@ pub engine::InteractiveEngineCheckpoint::request_input_retries_by_node: alloc::c
 pub engine::InteractiveEngineCheckpoint::retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::InteractiveEngineCheckpoint::submit_output_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::InteractiveEngineCheckpoint::transcripts: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::conversation::AgentTranscriptItem>>
+pub engine::InteractiveEngineCheckpoint::transient_streaks_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::InteractiveEngineCheckpoint::workflow_id: engine::graph::workflow::WorkflowId
 impl core::clone::Clone for engine::InteractiveEngineCheckpoint
 pub fn engine::InteractiveEngineCheckpoint::clone(&self) -> engine::InteractiveEngineCheckpoint
@@ -8304,7 +8316,6 @@ pub fn engine::graph::workflow::WorkflowSchedule::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::graph::workflow::WorkflowSchedule where T: for<'de> serde_core::de::Deserialize<'de>
 pub struct engine::WorkflowSettings
 pub engine::WorkflowSettings::forward_upstream_reads: bool
-pub engine::WorkflowSettings::max_concurrent_ai_calls: u8
 pub engine::WorkflowSettings::provider_id: core::option::Option<alloc::string::String>
 pub engine::WorkflowSettings::reasoning_budget_tokens: core::option::Option<u32>
 pub engine::WorkflowSettings::reasoning_effort: core::option::Option<alloc::string::String>

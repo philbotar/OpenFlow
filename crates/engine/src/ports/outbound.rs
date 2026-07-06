@@ -29,6 +29,10 @@ pub struct AgentRequest {
     pub reasoning_effort: Option<String>,
     /// Optional reasoning budget token count forwarded to the provider.
     pub reasoning_budget_tokens: Option<u32>,
+    /// Whether this node may pause for human input. When false, providers must
+    /// not offer the request-input tool nor convert plain-text turns into
+    /// input requests.
+    pub allow_user_input: bool,
 }
 
 impl AgentRequest {

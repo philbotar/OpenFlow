@@ -239,7 +239,7 @@ where
             let lsp = lsp_settings.clone();
             let event_tx = self.event_tx.clone();
             let retry_policy = retry_policy.clone();
-            let exclusive_permit = self.exclusive_permit(&call.name).await;
+            let exclusive_permit = self.exclusive_permit(node_id, &call.name).await;
             join_handles.push(tokio::spawn(async move {
                 let _permit = exclusive_permit;
                 let conversation_id = node_id_for_task.0.clone();
@@ -303,7 +303,11 @@ where
         Some(collected)
     }
 
-    async fn exclusive_permit(&self, tool_name: &str) -> Option<tokio::sync::OwnedSemaphorePermit> {
+    async fn exclusive_permit(
+        &self,
+        node_id: &NodeId,
+        tool_name: &str,
+    ) -> Option<tokio::sync::OwnedSemaphorePermit> {
         let concurrency = self
             .tool_runner
             .registry()
@@ -311,13 +315,11 @@ where
             .ok()?
             .definition
             .concurrency;
-        if concurrency != ToolConcurrency::Exclusive {
-            return None;
-        }
+        let key = exclusive_scope_key(concurrency, node_id, tool_name)?;
         let semaphore = {
             let mut semaphores = self.exclusive_semaphores.lock();
             semaphores
-                .entry(tool_name.to_string())
+                .entry(key)
                 .or_insert_with(|| Arc::new(Semaphore::new(1)))
                 .clone()
         };
@@ -503,20 +505,30 @@ where
         conversation_id: &str,
     ) -> Option<Result<ToolExecutionRecord, ToolRunnerError>> {
         self.note_read_call(effects, &tool_call);
+        
         let tool_runner = Arc::clone(&self.tool_runner);
+        
         let tool_name = tool_call.name.clone();
+        
         let (update_tx, mut update_rx) = tokio::sync::mpsc::unbounded_channel();
+        
         let node_id_for_task = node_id.clone();
+
         let ctx = ToolExecutionContext {
             node_id: node_id_for_task,
             conversation_id: conversation_id.to_string(),
             lsp: self.lsp.clone(),
             update_tx: Some(update_tx),
         };
+
         let event_tx = self.event_tx.clone();
+        
         let update_node_id = node_id.clone();
+        
         let update_tool_call_id = tool_call.id.clone();
+        
         let update_tool_name = tool_call.name.clone();
+        
         tokio::spawn(async move {
             while let Some(update) = update_rx.recv().await {
                 let _ = event_tx.send(ExecutionEvent::ToolUpdated {
@@ -529,7 +541,7 @@ where
             }
         });
         let started = Instant::now();
-        let exclusive_permit = self.exclusive_permit(&tool_name).await;
+        let exclusive_permit = self.exclusive_permit(node_id, &tool_name).await;
         let node_token = self.node_interrupt_token(node_id);
         let policy = self.workflow.settings.retry_policy.clone();
         let cancel_for_retry = self.cancel_token.clone();
@@ -648,5 +660,57 @@ async fn run_registered_tool_with_retry(
     .await
 }
 
+/// Semaphore key for a tool call, or `None` when the tool needs no permit.
+fn exclusive_scope_key(
+    concurrency: ToolConcurrency,
+    node_id: &NodeId,
+    tool_name: &str,
+) -> Option<String> {
+    match concurrency {
+        ToolConcurrency::Shared => None,
+        ToolConcurrency::Exclusive => Some(tool_name.to_string()),
+        ToolConcurrency::NodeExclusive => Some(format!("{}\u{1f}{}", node_id.0, tool_name)),
+    }
+}
+
 #[path = "subagent_session.rs"]
 mod subagent_session;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn node(id: &str) -> NodeId {
+        NodeId(id.to_string())
+    }
+
+    #[test]
+    fn shared_tools_have_no_exclusive_scope() {
+        assert_eq!(
+            exclusive_scope_key(ToolConcurrency::Shared, &node("a"), "read"),
+            None
+        );
+    }
+
+    #[test]
+    fn exclusive_tools_scope_per_run() {
+        let a = exclusive_scope_key(ToolConcurrency::Exclusive, &node("a"), "edit");
+        let b = exclusive_scope_key(ToolConcurrency::Exclusive, &node("b"), "edit");
+        assert_eq!(a, Some("edit".to_string()));
+        assert_eq!(
+            a, b,
+            "different nodes must share one permit for Exclusive tools"
+        );
+    }
+
+    #[test]
+    fn node_exclusive_tools_scope_per_node() {
+        let a = exclusive_scope_key(ToolConcurrency::NodeExclusive, &node("a"), "bash");
+        let b = exclusive_scope_key(ToolConcurrency::NodeExclusive, &node("b"), "bash");
+        assert_eq!(a, Some("a\u{1f}bash".to_string()));
+        assert_ne!(
+            a, b,
+            "different nodes must not share a permit for NodeExclusive tools"
+        );
+    }
+}

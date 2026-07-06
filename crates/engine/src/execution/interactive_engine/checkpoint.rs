@@ -50,8 +50,12 @@ pub struct InteractiveEngineCheckpoint {
     pub awaiting_nodes: BTreeSet<NodeId>,
     pub pending_tool_batches: BTreeMap<String, CheckpointPendingToolBatch>,
     pub retries_by_node: BTreeMap<NodeId, u8>,
+    #[serde(default)]
+    pub transient_streaks_by_node: BTreeMap<NodeId, u8>,
     pub submit_output_retries_by_node: BTreeMap<NodeId, u8>,
     pub request_input_retries_by_node: BTreeMap<NodeId, u8>,
+    #[serde(default)]
+    pub auto_continue_streaks_by_node: BTreeMap<NodeId, u8>,
     pub entrypoint_text: Option<String>,
     pub interrupted_nodes: BTreeSet<NodeId>,
     pub failed_nodes: BTreeMap<NodeId, String>,
@@ -120,6 +124,7 @@ impl InteractiveEngine {
         self.interrupted_nodes
             .extend(std::mem::take(&mut self.in_flight_ai));
         self.retry_after_by_node.clear();
+        self.transient_streaks_by_node.clear();
 
         InteractiveEngineCheckpoint {
             workflow_id: self.workflow.id.clone(),
@@ -135,8 +140,10 @@ impl InteractiveEngine {
                 .map(|(id, batch)| (id.clone(), CheckpointPendingToolBatch::from(batch)))
                 .collect(),
             retries_by_node: self.retries_by_node.clone(),
+            transient_streaks_by_node: self.transient_streaks_by_node.clone(),
             submit_output_retries_by_node: self.submit_output_retries_by_node.clone(),
             request_input_retries_by_node: self.request_input_retries_by_node.clone(),
+            auto_continue_streaks_by_node: self.auto_continue_streaks_by_node.clone(),
             entrypoint_text: self.entrypoint_text.clone(),
             interrupted_nodes: self.interrupted_nodes.clone(),
             failed_nodes: self.failed_nodes.clone(),
@@ -185,9 +192,11 @@ impl InteractiveEngine {
                 .map(|(id, batch)| (id.clone(), PendingToolBatch::from(batch)))
                 .collect(),
             retries_by_node: checkpoint.retries_by_node,
+            transient_streaks_by_node: checkpoint.transient_streaks_by_node,
             retry_after_by_node: BTreeMap::new(),
             submit_output_retries_by_node: checkpoint.submit_output_retries_by_node,
             request_input_retries_by_node: checkpoint.request_input_retries_by_node,
+            auto_continue_streaks_by_node: checkpoint.auto_continue_streaks_by_node,
             entrypoint_text: checkpoint.entrypoint_text,
             project_repository_root,
             terminal_error: None,
