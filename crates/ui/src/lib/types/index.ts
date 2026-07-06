@@ -84,14 +84,6 @@ export interface ProjectFileReference {
   sizeBytes: number;
 }
 
-export interface ProjectFileReferenceContent {
-  path: string;
-  kind: "file" | "directory";
-  content: string;
-  truncated: boolean;
-  sizeBytes: number;
-}
-
 export interface Workflow {
   id: WorkflowId;
   name: string;

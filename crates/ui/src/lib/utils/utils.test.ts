@@ -1,5 +1,6 @@
-import { describe, expect, test } from "vitest";
-import { toastMessageForDebugMode } from "./index";
+import { createRoot, createSignal } from "solid-js";
+import { describe, expect, test, vi } from "vitest";
+import { createDebounced, toastMessageForDebugMode } from "./index";
 
 describe("toastMessageForDebugMode", () => {
   test("preserves raw detail when debug output is enabled", () => {
@@ -17,4 +18,26 @@ describe("toastMessageForDebugMode", () => {
       "Could not reach Amazon Bedrock. Check AWS region.",
     );
   });
+});
+
+test("createDebounced trails the source by the delay", () => {
+  vi.useFakeTimers();
+  try {
+    let debounced!: () => string;
+    let setSource!: (value: string) => void;
+    const dispose = createRoot((d) => {
+      const [source, set] = createSignal("a");
+      setSource = set;
+      debounced = createDebounced(source, 150);
+      return d;
+    });
+    expect(debounced()).toBe("a");
+    setSource("ab");
+    expect(debounced()).toBe("a");
+    vi.advanceTimersByTime(150);
+    expect(debounced()).toBe("ab");
+    dispose();
+  } finally {
+    vi.useRealTimers();
+  }
 });

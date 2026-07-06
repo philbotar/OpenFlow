@@ -10,6 +10,7 @@ import {
   applyFileReferenceCompletion,
   getActiveFileReferenceToken,
 } from "../../lib/fileReferences";
+import { createDebounced } from "../../lib/utils";
 import type { NodeId, ProjectFileReference, SkillSummary } from "../../lib/types";
 import { pendingApprovalForNode } from "../../lib/workflow";
 import { ComposerInput } from "./ComposerInput";
@@ -75,7 +76,8 @@ export function ConversationComposer(props: {
   const fileQuery = createMemo(() =>
     inputEnabled() && activeFileToken() ? activeFileToken()!.query : null,
   );
-  const [fileSuggestions] = createResource(fileQuery, async (query) => {
+  const debouncedFileQuery = createDebounced(fileQuery, 150);
+  const [fileSuggestions] = createResource(debouncedFileQuery, async (query) => {
     if (query === null) {
       return [] as ProjectFileReference[];
     }

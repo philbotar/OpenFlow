@@ -761,31 +761,6 @@ fn list_project_file_references_returns_gitignore_aware_matches() {
 
 #[cfg_attr(miri, ignore)]
 #[test]
-fn read_project_file_references_returns_bounded_content() {
-    let dir = tempfile::TempDir::new().expect("tempdir");
-    std::fs::create_dir_all(dir.path().join("src")).expect("create src");
-    std::fs::write(
-        dir.path().join("src/lib.rs"),
-        "pub fn value() -> u8 { 7 }\n",
-    )
-    .expect("write lib");
-
-    let (backend, _guard) = backend();
-    let refs = backend
-        .read_project_file_references(
-            dir.path().to_str().expect("utf8 path").to_string(),
-            vec!["src/lib.rs".to_string()],
-        )
-        .expect("read refs");
-
-    assert_eq!(refs.len(), 1);
-    assert_eq!(refs[0].path, "src/lib.rs");
-    assert_eq!(refs[0].content, "pub fn value() -> u8 { 7 }\n");
-    assert!(!refs[0].truncated);
-}
-
-#[cfg_attr(miri, ignore)]
-#[test]
 fn saving_workflow_refreshes_schedule_statuses() {
     let (backend, _dir) = backend();
     let mut workflow = backend

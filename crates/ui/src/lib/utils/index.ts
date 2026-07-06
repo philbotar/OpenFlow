@@ -1,3 +1,4 @@
+import { createEffect, createSignal, onCleanup, type Accessor } from "solid-js";
 import type { BottomTab, ChatRole } from "../types";
 
 export const ICON_STROKE_WIDTH = 1.9;
@@ -124,4 +125,14 @@ export function isTextInputTarget(target: EventTarget | null): boolean {
 
 export function isMacOS(): boolean {
   return typeof navigator === "object" && /Mac/i.test(navigator.userAgent);
+}
+
+export function createDebounced<T>(source: Accessor<T>, delayMs: number): Accessor<T> {
+  const [value, setValue] = createSignal(source());
+  createEffect(() => {
+    const next = source();
+    const handle = setTimeout(() => setValue(() => next), delayMs);
+    onCleanup(() => clearTimeout(handle));
+  });
+  return value;
 }

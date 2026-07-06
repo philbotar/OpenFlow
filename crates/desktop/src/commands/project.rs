@@ -1,6 +1,6 @@
 use crate::ipc_types::CommandError;
 use orchestration::backend::AppBackend;
-use orchestration::{Project, ProjectFileReference, ProjectFileReferenceContent};
+use orchestration::{Project, ProjectFileReference};
 
 #[tauri::command]
 pub fn list_projects(backend: tauri::State<AppBackend>) -> Result<Vec<Project>, CommandError> {
@@ -15,15 +15,6 @@ pub fn list_project_file_references(
     limit: Option<usize>,
 ) -> Result<Vec<ProjectFileReference>, CommandError> {
     Ok(backend.list_project_file_references(execution_cwd, query, limit)?)
-}
-
-#[tauri::command]
-pub fn read_project_file_references(
-    backend: tauri::State<AppBackend>,
-    execution_cwd: String,
-    paths: Vec<String>,
-) -> Result<Vec<ProjectFileReferenceContent>, CommandError> {
-    Ok(backend.read_project_file_references(execution_cwd, paths)?)
 }
 
 #[tauri::command]

@@ -30,9 +30,9 @@ mod terminal;
 mod workflow;
 
 pub use crate::api::{
-    AgentDefinitionSummary, FileEditPreview, ProjectFileReference, ProjectFileReferenceContent,
-    ProviderReadiness, ScheduleDraft, ScheduleStatus, ScheduledRunCandidate,
-    WorkflowAuthoringTurnResult, WorkflowListItem, WorkflowValidationSummary,
+    AgentDefinitionSummary, FileEditPreview, ProjectFileReference, ProviderReadiness,
+    ScheduleDraft, ScheduleStatus, ScheduledRunCandidate, WorkflowAuthoringTurnResult,
+    WorkflowListItem, WorkflowValidationSummary,
 };
 pub use crate::error::BackendError;
 

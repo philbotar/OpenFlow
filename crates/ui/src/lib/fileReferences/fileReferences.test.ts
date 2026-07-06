@@ -1,5 +1,4 @@
 import { describe, expect, test } from "vitest";
-import type { ProjectFileReferenceContent } from "../types";
 import {
   applyFileReferenceCompletion,
   extractReferencedFilePaths,
@@ -95,105 +94,23 @@ describe("file reference token helpers", () => {
 });
 
 describe("formatSubmissionWithFileReferences", () => {
-  const refs: ProjectFileReferenceContent[] = [
-    {
-      path: "src/lib.rs",
-      kind: "file",
-      content: "pub fn value() -> u8 { 7 }\n",
-      truncated: false,
-      sizeBytes: 28,
-    },
-    {
-      path: "src/large.rs",
-      kind: "file",
-      content: "pub fn partial() {}\n",
-      truncated: true,
-      sizeBytes: 70000,
-    },
-    {
-      path: "src/components/",
-      kind: "directory",
-      content: [
-        "Directory tree:",
-        "src/components/",
-        "- Button.tsx",
-        "",
-        "File: src/components/Button.tsx",
-        "```text",
-        "export function Button() {}",
-        "```",
-      ].join("\n"),
-      truncated: false,
-      sizeBytes: 27,
-    },
-  ];
-
-  test("leaves submissions without files unchanged", () => {
-    expect(formatSubmissionWithFileReferences("Plain message", [])).toBe("Plain message");
+  test("leaves submissions without paths unchanged", () => {
+    expect(formatSubmissionWithFileReferences("hello", [])).toBe("hello");
   });
 
-  test("appends file contents after the user message", () => {
-    expect(formatSubmissionWithFileReferences("Review @{src/lib.rs}", refs)).toBe(
+  test("appends referenced paths after the user message", () => {
+    const result = formatSubmissionWithFileReferences("check these", [
+      "src/main.rs",
+      "src/components/",
+    ]);
+    expect(result).toBe(
       [
         "User message:",
-        "Review @{src/lib.rs}",
+        "check these",
         "",
-        "Referenced context:",
-        "",
-        "File: src/lib.rs",
-        "```text",
-        "pub fn value() -> u8 { 7 }",
-        "```",
-        "",
-        "File: src/large.rs (truncated at 65536 bytes of 70000)",
-        "```text",
-        "pub fn partial() {}",
-        "```",
-        "",
-        "Directory: src/components/",
-        "Directory tree:",
-        "src/components/",
-        "- Button.tsx",
-        "",
-        "File: src/components/Button.tsx",
-        "```text",
-        "export function Button() {}",
-        "```",
-      ].join("\n"),
-    );
-  });
-
-  test("preserves structured skill submissions while appending references", () => {
-    const skillRefs: ProjectFileReferenceContent[] = [
-      {
-        path: "README.md",
-        kind: "file",
-        content: "# Project\n",
-        truncated: false,
-        sizeBytes: 10,
-      },
-    ];
-
-    expect(
-      formatSubmissionWithFileReferences(
-        "Skill invocation:\n- brainstorming\n\nUser message:\nReview @{README.md}",
-        skillRefs,
-      ),
-    ).toBe(
-      [
-        "User message:",
-        "Skill invocation:",
-        "- brainstorming",
-        "",
-        "User message:",
-        "Review @{README.md}",
-        "",
-        "Referenced context:",
-        "",
-        "File: README.md",
-        "```text",
-        "# Project",
-        "```",
+        "Referenced paths (relative to the execution folder; use your read and search tools to inspect them):",
+        "- src/main.rs",
+        "- src/components/",
       ].join("\n"),
     );
   });

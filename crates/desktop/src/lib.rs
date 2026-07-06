@@ -34,7 +34,6 @@ pub fn run() {
             commands::bootstrap::bootstrap_app,
             commands::project::list_projects,
             commands::project::list_project_file_references,
-            commands::project::read_project_file_references,
             commands::project::save_projects,
             commands::project::create_project_from_directory,
             commands::project::assign_workflow_to_project,
