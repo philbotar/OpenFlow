@@ -1034,12 +1034,7 @@ mod tests {
     #[test]
     fn exclusive_wait_above_threshold_emits_phase_timed() {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        maybe_emit_exclusive_wait(
-            &tx,
-            &node("n1"),
-            "bash",
-            Duration::from_millis(250),
-        );
+        maybe_emit_exclusive_wait(&tx, &node("n1"), "bash", Duration::from_millis(250));
         match rx.try_recv().expect("expected a PhaseTimed event") {
             RunTelemetry::PhaseTimed {
                 phase,
