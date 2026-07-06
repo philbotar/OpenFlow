@@ -13,8 +13,8 @@ use crate::conversation::AgentTranscriptItem;
 use crate::execution::NodeFailureKind;
 use crate::graph::{Node, NodeId, Workflow};
 use crate::ports::{
-    AgentError, AgentRequest, AgentToolCallBatch, AgentTurnOutcome, AgentTurnSuccess, AiPort,
-    ToolPort,
+    AgentError, AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTurnOutcome,
+    AgentTurnSuccess, AiPort, ToolBatchEffects, ToolBatchOutput, ToolPort,
 };
 use crate::tools::{ApprovalMode, FileChangeRecord, ToolCall, ToolResult};
 use async_trait::async_trait;
@@ -37,22 +37,24 @@ struct NoopToolPort;
 impl ToolPort for NoopToolPort {
     async fn execute_batch(
         &self,
-        _engine: &mut InteractiveEngine,
         _node_id: &NodeId,
         _label: &str,
         calls: Vec<ToolCall>,
-    ) -> Vec<ToolResult> {
-        calls
-            .into_iter()
-            .map(|call| ToolResult {
-                tool_call_id: call.id,
-                tool_name: call.name,
-                content: "noop".to_string(),
-                is_error: false,
-                artifact_ids: Vec::new(),
-                output_meta: None,
-            })
-            .collect()
+    ) -> ToolBatchOutput {
+        ToolBatchOutput {
+            results: calls
+                .into_iter()
+                .map(|call| ToolResult {
+                    tool_call_id: call.id,
+                    tool_name: call.name,
+                    content: "noop".to_string(),
+                    is_error: false,
+                    artifact_ids: Vec::new(),
+                    output_meta: None,
+                })
+                .collect(),
+            effects: ToolBatchEffects::default(),
+        }
     }
 
     fn augment_request(&self, _node_id: &NodeId, _request: &mut AgentRequest) {}
@@ -246,6 +248,116 @@ async fn run_cancel_during_backoff_returns_cancelled() {
 
     assert!(matches!(result, EngineRunResult::Cancelled));
     assert!(started.elapsed() < Duration::from_secs(5));
+}
+
+#[test]
+fn checkpoint_preserves_transient_streaks_by_node() {
+    let mut workflow = Workflow::new("wf");
+    workflow.settings.retry_policy.max_attempts = 5;
+    workflow.nodes = vec![node("a")];
+    let mut engine = InteractiveEngine::new(workflow.clone(), None, None).unwrap();
+    let node_a = NodeId("a".to_string());
+    engine.test_insert_in_flight(node_a.clone());
+    engine.on_ai_complete(&node_a, Err(AgentError::Transient("blip".into())));
+
+    let checkpoint = engine.prepare_stop_checkpoint();
+    assert_eq!(checkpoint.transient_streaks_by_node.get(&node_a), Some(&1));
+
+    let mut restored =
+        InteractiveEngine::from_checkpoint(workflow, checkpoint, None).expect("restore");
+    let again = restored.prepare_stop_checkpoint();
+    assert_eq!(again.transient_streaks_by_node.get(&node_a), Some(&1));
+}
+
+#[test]
+fn transient_streak_resets_after_successful_turn() {
+    let mut workflow = Workflow::new("wf");
+    workflow.settings.retry_policy.max_attempts = 2;
+    workflow.settings.retry_policy.backoff_ms = 10;
+    workflow.nodes = vec![node("a")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let node_a = NodeId("a".to_string());
+
+    for _ in 0..2 {
+        engine.test_insert_in_flight(node_a.clone());
+        engine.on_ai_complete(&node_a, Err(AgentError::Transient("blip".into())));
+        assert!(!engine.failed_nodes.contains_key(&node_a));
+    }
+
+    engine.test_insert_in_flight(node_a.clone());
+    engine.on_ai_complete(
+        &node_a,
+        Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+            raw_text: String::new(),
+            tool_calls: vec![],
+            assistant_message: Some("working".to_string()),
+            usage: None,
+        })),
+    );
+
+    for _ in 0..2 {
+        engine.test_insert_in_flight(node_a.clone());
+        engine.on_ai_complete(&node_a, Err(AgentError::Transient("blip".into())));
+        assert!(
+            !engine.failed_nodes.contains_key(&node_a),
+            "streak should have reset after successful turn"
+        );
+    }
+}
+
+#[test]
+fn model_attempt_does_not_decrease_after_streak_reset() {
+    let mut workflow = Workflow::new("wf");
+    workflow.settings.retry_policy.max_attempts = 2;
+    workflow.settings.retry_policy.backoff_ms = 10;
+    workflow.nodes = vec![node("a")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let node_a = NodeId("a".to_string());
+
+    for _ in 0..2 {
+        engine.test_insert_in_flight(node_a.clone());
+        engine.on_ai_complete(&node_a, Err(AgentError::Transient("blip".into())));
+    }
+
+    let before = engine.model_attempt_for_node(&node_a);
+    engine.test_insert_in_flight(node_a.clone());
+    engine.on_ai_complete(
+        &node_a,
+        Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+            raw_text: String::new(),
+            tool_calls: vec![],
+            assistant_message: Some("working".to_string()),
+            usage: None,
+        })),
+    );
+    engine.test_insert_in_flight(node_a.clone());
+    engine.on_ai_complete(&node_a, Err(AgentError::Transient("blip".into())));
+
+    let after = engine.model_attempt_for_node(&node_a);
+    assert!(after >= before);
+}
+
+#[test]
+fn transient_retry_backoff_blocks_only_the_failing_node() {
+    let mut workflow = Workflow::new("wf");
+    workflow.settings.retry_policy.max_attempts = 3;
+    workflow.settings.retry_policy.backoff_ms = 60_000;
+    workflow.nodes = vec![node("a"), node("b")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let node_a = NodeId("a".to_string());
+    let node_b = NodeId("b".to_string());
+
+    engine.test_insert_in_flight(node_a.clone());
+    engine.on_ai_complete(
+        &node_a,
+        Err(AgentError::Transient("proxy blip".to_string())),
+    );
+
+    assert!(engine.test_is_in_retry_backoff(&node_a));
+    assert!(!engine.test_is_in_retry_backoff(&node_b));
+    let dispatchable = engine.test_gather_ai_node_ids();
+    assert!(!dispatchable.contains(&node_a));
+    assert!(dispatchable.contains(&node_b));
 }
 
 #[test]
@@ -600,6 +712,220 @@ fn checkpoint_rejects_workflow_id_mismatch() {
     }
 }
 
+struct BarrierAi {
+    barrier: Arc<tokio::sync::Barrier>,
+}
+
+#[async_trait]
+impl AiPort for BarrierAi {
+    async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+        // Completes only when both nodes' invocations are in flight simultaneously.
+        self.barrier.wait().await;
+        Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+            output: json!({ "node": request.node_id.0 }),
+            raw_text: String::new(),
+            assistant_message: None,
+            usage: None,
+        }))
+    }
+}
+
+#[test]
+fn same_layer_nodes_invoke_ai_concurrently() {
+    block_on(async {
+        let mut workflow = Workflow::new("wf");
+        workflow.nodes.push(node("a"));
+        workflow.nodes.push(node("b"));
+        let mut engine = InteractiveEngine::new(workflow, Some("go".to_string()), None).unwrap();
+        let ai = BarrierAi {
+            barrier: Arc::new(tokio::sync::Barrier::new(2)),
+        };
+        let cancel = CancellationToken::new();
+        let result = tokio::time::timeout(
+            Duration::from_secs(5),
+            engine.run(&ai, &NoopToolPort, &cancel),
+        )
+        .await
+        .expect("serial engine would deadlock on the barrier");
+        assert!(matches!(result, EngineRunResult::Completed(_)));
+    });
+}
+
+struct ToolOverlapAi {
+    barrier: Arc<tokio::sync::Barrier>,
+}
+
+#[async_trait]
+impl AiPort for ToolOverlapAi {
+    async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+        if request.node_id.0 == "b" {
+            // Held open until node a's tool batch reaches the same barrier.
+            self.barrier.wait().await;
+            return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                output: json!({ "node": "b" }),
+                raw_text: String::new(),
+                assistant_message: None,
+                usage: None,
+            }));
+        }
+        let has_tool_result = request
+            .transcript
+            .iter()
+            .any(|item| matches!(item, AgentTranscriptItem::ToolResult { .. }));
+        if has_tool_result {
+            return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                output: json!({ "node": "a" }),
+                raw_text: String::new(),
+                assistant_message: None,
+                usage: None,
+            }));
+        }
+        Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+            raw_text: String::new(),
+            assistant_message: None,
+            usage: None,
+            tool_calls: vec![ToolCall {
+                id: "t1".to_string(),
+                name: "bash".to_string(),
+                arguments: json!({}),
+            }],
+        }))
+    }
+}
+
+struct BarrierToolPort {
+    barrier: Arc<tokio::sync::Barrier>,
+}
+
+#[async_trait]
+impl ToolPort for BarrierToolPort {
+    async fn execute_batch(
+        &self,
+        _node_id: &NodeId,
+        _label: &str,
+        calls: Vec<ToolCall>,
+    ) -> ToolBatchOutput {
+        self.barrier.wait().await;
+        ToolBatchOutput {
+            results: calls
+                .into_iter()
+                .map(|call| ToolResult {
+                    tool_call_id: call.id,
+                    tool_name: call.name,
+                    content: "ok".to_string(),
+                    is_error: false,
+                    artifact_ids: Vec::new(),
+                    output_meta: None,
+                })
+                .collect(),
+            effects: ToolBatchEffects::default(),
+        }
+    }
+
+    fn augment_request(&self, _node_id: &NodeId, _request: &mut AgentRequest) {}
+}
+
+#[test]
+fn tool_batch_runs_while_other_node_ai_is_in_flight() {
+    block_on(async {
+        let mut workflow = Workflow::new("wf");
+        let mut a = node("a");
+        a.agent.tools.approval_mode = Some(ApprovalMode::Yolo);
+        workflow.nodes.push(a);
+        workflow.nodes.push(node("b"));
+        let mut engine = InteractiveEngine::new(workflow, Some("go".to_string()), None).unwrap();
+        let barrier = Arc::new(tokio::sync::Barrier::new(2));
+        let ai = ToolOverlapAi {
+            barrier: Arc::clone(&barrier),
+        };
+        let tools = BarrierToolPort { barrier };
+        let cancel = CancellationToken::new();
+        let result = tokio::time::timeout(Duration::from_secs(5), engine.run(&ai, &tools, &cancel))
+            .await
+            .expect("tool batch and AI call must overlap");
+        assert!(matches!(result, EngineRunResult::Completed(_)));
+    });
+}
+
+struct EffectsToolPort;
+
+#[async_trait]
+impl ToolPort for EffectsToolPort {
+    async fn execute_batch(
+        &self,
+        _node_id: &NodeId,
+        _label: &str,
+        calls: Vec<ToolCall>,
+    ) -> ToolBatchOutput {
+        ToolBatchOutput {
+            results: calls
+                .into_iter()
+                .map(|call| ToolResult {
+                    tool_call_id: call.id,
+                    tool_name: call.name,
+                    content: "ok".to_string(),
+                    is_error: false,
+                    artifact_ids: Vec::new(),
+                    output_meta: None,
+                })
+                .collect(),
+            effects: ToolBatchEffects {
+                file_changes: vec![FileChangeRecord {
+                    path: "src/x.rs".to_string(),
+                    op: crate::tools::FileChangeOp::Update,
+                    rename_to: None,
+                    diff_summary: None,
+                    batch_id: None,
+                    timestamp_ms: 1,
+                }],
+                reads: Vec::new(),
+                read_call_paths: vec!["src/x.rs".to_string()],
+                interrupted: false,
+            },
+        }
+    }
+
+    fn augment_request(&self, _node_id: &NodeId, _request: &mut AgentRequest) {}
+}
+
+#[test]
+fn tool_batch_effects_are_recorded_on_engine() {
+    block_on(async {
+        let mut workflow = Workflow::new("wf");
+        let mut a = node("a");
+        a.agent.tools.approval_mode = Some(ApprovalMode::Yolo);
+        workflow.nodes.push(a);
+        let mut engine = InteractiveEngine::new(workflow, Some("go".to_string()), None).unwrap();
+        let ai = ScriptedAi::new(vec![
+            Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+                raw_text: String::new(),
+                assistant_message: None,
+                usage: None,
+                tool_calls: vec![ToolCall {
+                    id: "t1".to_string(),
+                    name: "write".to_string(),
+                    arguments: json!({}),
+                }],
+            })),
+            Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                output: json!({ "ok": true }),
+                raw_text: String::new(),
+                assistant_message: None,
+                usage: None,
+            })),
+        ]);
+        let cancel = CancellationToken::new();
+        let result = engine.run(&ai, &EffectsToolPort, &cancel).await;
+        assert!(matches!(result, EngineRunResult::Completed(_)));
+        let checkpoint = engine.prepare_stop_checkpoint();
+        let changes = checkpoint
+            .changed_files_by_node
+            .get(&NodeId("a".to_string()))
+            .expect("file change recorded");
+        assert_eq!(changes[0].path, "src/x.rs");
+    });
+}
+
 #[test]
 fn checkpoint_stop_mid_tool_execution_retains_approved_batch() {
     let mut workflow = Workflow::new("mid-tool");
@@ -620,4 +946,173 @@ fn checkpoint_stop_mid_tool_execution_retains_approved_batch() {
 
     let checkpoint = engine.prepare_stop_checkpoint();
     assert!(checkpoint.pending_tool_batches.contains_key("batch-1"));
+}
+
+fn autonomous_node(id: &str) -> Node {
+    let mut node = node(id);
+    node.agent.request_user_input = false;
+    node
+}
+
+fn needs_input(message: &str) -> AgentTurnOutcome {
+    AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
+        raw_text: message.to_string(),
+        assistant_message: message.to_string(),
+    })
+}
+
+#[test]
+fn autonomous_node_auto_continues_instead_of_awaiting_input() {
+    let mut workflow = Workflow::new("wf");
+    workflow.nodes = vec![autonomous_node("a")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let node_a = NodeId("a".to_string());
+
+    engine.test_insert_in_flight(node_a.clone());
+    engine.on_ai_complete(&node_a, Ok(needs_input("Now I'll write the tests.")));
+
+    assert!(!engine.awaiting_nodes.contains(&node_a), "must not pause");
+    assert!(!engine.failed_nodes.contains_key(&node_a));
+    let transcript = engine.transcript(&node_a);
+    assert!(matches!(
+        transcript.last(),
+        Some(AgentTranscriptItem::UserMessage { content })
+            if content.contains("call a tool")
+    ));
+    assert!(matches!(
+        &transcript[transcript.len() - 2],
+        AgentTranscriptItem::AssistantMessage { content }
+            if content == "Now I'll write the tests."
+    ));
+}
+
+#[test]
+fn autonomous_node_fails_after_consecutive_auto_continue_cap() {
+    let mut workflow = Workflow::new("wf");
+    workflow.nodes = vec![autonomous_node("a")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let node_a = NodeId("a".to_string());
+
+    for _ in 0..10 {
+        engine.test_insert_in_flight(node_a.clone());
+        engine.on_ai_complete(&node_a, Ok(needs_input("still narrating")));
+        assert!(!engine.failed_nodes.contains_key(&node_a));
+    }
+    engine.test_insert_in_flight(node_a.clone());
+    engine.on_ai_complete(&node_a, Ok(needs_input("still narrating")));
+    assert!(engine.failed_nodes.contains_key(&node_a));
+    assert!(!engine.awaiting_nodes.contains(&node_a));
+}
+
+#[test]
+fn autonomous_auto_continue_streak_resets_on_tool_calls() {
+    let mut workflow = Workflow::new("wf");
+    workflow.nodes = vec![autonomous_node("a")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let node_a = NodeId("a".to_string());
+
+    for _ in 0..9 {
+        engine.test_insert_in_flight(node_a.clone());
+        engine.on_ai_complete(&node_a, Ok(needs_input("narration")));
+    }
+    engine.test_insert_in_flight(node_a.clone());
+    engine.on_ai_complete(
+        &node_a,
+        Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+            raw_text: String::new(),
+            tool_calls: vec![ToolCall {
+                id: "c1".to_string(),
+                name: "read".to_string(),
+                arguments: json!({}),
+            }],
+            assistant_message: None,
+            usage: None,
+        })),
+    );
+    for _ in 0..10 {
+        engine.test_insert_in_flight(node_a.clone());
+        engine.on_ai_complete(&node_a, Ok(needs_input("narration")));
+        assert!(
+            !engine.failed_nodes.contains_key(&node_a),
+            "streak should have reset after tool-call progress"
+        );
+    }
+}
+
+#[test]
+fn interactive_node_still_pauses_for_real_questions() {
+    let mut workflow = Workflow::new("wf");
+    workflow.nodes = vec![node("a")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let node_a = NodeId("a".to_string());
+
+    engine.test_insert_in_flight(node_a.clone());
+    engine.on_ai_complete(
+        &node_a,
+        Ok(needs_input("Which environment should I target?")),
+    );
+    assert!(engine.awaiting_nodes.contains(&node_a));
+}
+
+#[test]
+fn malformed_request_input_retries_reset_on_tool_call_progress() {
+    let mut workflow = Workflow::new("wf");
+    workflow.nodes = vec![node("a")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let node_a = NodeId("a".to_string());
+
+    for _ in 0..3 {
+        engine.test_insert_in_flight(node_a.clone());
+        engine.on_ai_complete(&node_a, Ok(needs_input("Working on the next file.")));
+        assert!(!engine.awaiting_nodes.contains(&node_a));
+    }
+
+    engine.test_insert_in_flight(node_a.clone());
+    engine.on_ai_complete(
+        &node_a,
+        Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+            raw_text: String::new(),
+            tool_calls: vec![ToolCall {
+                id: "c1".to_string(),
+                name: "read".to_string(),
+                arguments: json!({}),
+            }],
+            assistant_message: None,
+            usage: None,
+        })),
+    );
+
+    engine.test_insert_in_flight(node_a.clone());
+    engine.on_ai_complete(&node_a, Ok(needs_input("Now updating the route.")));
+    assert!(
+        !engine.awaiting_nodes.contains(&node_a),
+        "narration after progress must self-nudge, not pause"
+    );
+}
+
+#[test]
+fn checkpoint_roundtrips_auto_continue_streaks() {
+    let mut workflow = Workflow::new("wf");
+    workflow.nodes = vec![autonomous_node("a")];
+    let mut engine = InteractiveEngine::new(workflow.clone(), None, None).unwrap();
+    let node_a = NodeId("a".to_string());
+
+    engine.test_insert_in_flight(node_a.clone());
+    engine.on_ai_complete(&node_a, Ok(needs_input("narration")));
+
+    let checkpoint = engine.prepare_stop_checkpoint();
+    let mut value = serde_json::to_value(&checkpoint).unwrap();
+    value
+        .as_object_mut()
+        .unwrap()
+        .remove("auto_continue_streaks_by_node");
+    let legacy: super::checkpoint::InteractiveEngineCheckpoint =
+        serde_json::from_value(value).unwrap();
+    assert!(legacy.auto_continue_streaks_by_node.is_empty());
+
+    let restored = InteractiveEngine::from_checkpoint(workflow, checkpoint, None).unwrap();
+    assert_eq!(
+        restored.auto_continue_streaks_by_node.get(&node_a),
+        Some(&1)
+    );
 }

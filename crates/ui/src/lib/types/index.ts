@@ -141,6 +141,8 @@ export interface AgentNodeConfig {
   reasoningEffort?: string | null;
   /** Wire alias from persisted workflow JSON. */
   reasoningBudgetTokens?: number | null;
+  /** When false, the node never pauses for human input (wire key: requestUserInput). */
+  requestUserInput?: boolean;
 }
 
 export interface ReasoningEffortOption {

@@ -23,8 +23,7 @@ pub fn build_node_context(request: &AgentRequest) -> String {
 }
 
 pub fn should_allow_user_input(request: &AgentRequest) -> bool {
-    // Workflow authoring must always return a structured draft, never pause for clarification.
-    if request.workflow_id == "workflow-authoring" {
+    if !request.allow_user_input {
         return false;
     }
     request.transcript.iter().any(|item| {
@@ -880,6 +879,7 @@ mod tests {
             model_attempt: 1,
             reasoning_effort: None,
             reasoning_budget_tokens: None,
+            allow_user_input: true,
         };
 
         let tool = submit_output_tool(&request);
@@ -909,6 +909,7 @@ mod tests {
             model_attempt: 1,
             reasoning_effort: None,
             reasoning_budget_tokens: None,
+            allow_user_input: false,
         };
 
         assert!(!should_allow_user_input(&request));
@@ -917,5 +918,34 @@ mod tests {
             .map(|tool| tool.name)
             .collect();
         assert_eq!(tool_names, vec![SUBMIT_OUTPUT_TOOL.to_string()]);
+    }
+
+    #[test]
+    fn should_allow_user_input_false_when_node_disallows() {
+        use engine::{NodeId, WorkflowId};
+
+        let mut request = AgentRequest {
+            workflow_id: WorkflowId::from("wf-1"),
+            node_id: NodeId::from("node-1"),
+            node_label: "Node".to_string(),
+            model: "gpt-5.5".to_string(),
+            system_messages: vec!["system".to_string()],
+            task_prompt: "task".to_string(),
+            input: json!({}),
+            output_schema: json!({ "type": "object" }),
+            tool_config: engine::NodeToolConfig::default(),
+            available_tools: Vec::new(),
+            transcript: vec![AgentTranscriptItem::UserMessage {
+                content: "hi".to_string(),
+            }],
+            model_attempt: 1,
+            reasoning_effort: None,
+            reasoning_budget_tokens: None,
+            allow_user_input: true,
+        };
+        assert!(should_allow_user_input(&request));
+
+        request.allow_user_input = false;
+        assert!(!should_allow_user_input(&request));
     }
 }

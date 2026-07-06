@@ -2,7 +2,9 @@
 
 use crate::conversation::{filter_tool_turn_assistant_message, AgentTranscriptItem};
 use crate::graph::{NodeId, WorkflowId};
-use crate::tools::{NodeToolConfig, ToolCall, ToolDefinition, ToolResult};
+use crate::tools::{
+    FileChangeRecord, NodeToolConfig, ReadRecord, ToolCall, ToolDefinition, ToolResult,
+};
 use async_trait::async_trait;
 use serde_json::Value;
 use thiserror::Error;
@@ -27,6 +29,10 @@ pub struct AgentRequest {
     pub reasoning_effort: Option<String>,
     /// Optional reasoning budget token count forwarded to the provider.
     pub reasoning_budget_tokens: Option<u32>,
+    /// Whether this node may pause for human input. When false, providers must
+    /// not offer the request-input tool nor convert plain-text turns into
+    /// input requests.
+    pub allow_user_input: bool,
 }
 
 impl AgentRequest {
@@ -177,17 +183,35 @@ where
     }
 }
 
+/// Side effects a tool batch produced; the engine applies these when the batch returns.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ToolBatchEffects {
+    pub file_changes: Vec<FileChangeRecord>,
+    pub reads: Vec<ReadRecord>,
+    /// Local paths passed to `read` calls, for redundant-read accounting.
+    pub read_call_paths: Vec<String>,
+    /// The node was interrupted mid-batch; remaining calls did not run.
+    pub interrupted: bool,
+}
+
+/// Result of executing one tool batch.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ToolBatchOutput {
+    /// One result per completed call, in order. May be shorter than the
+    /// input when the batch was interrupted or the run was cancelled.
+    pub results: Vec<ToolResult>,
+    pub effects: ToolBatchEffects,
+}
+
 #[async_trait]
 pub trait ToolPort: Send + Sync {
     /// Execute a batch of tool calls (including subagent calls) for a given node.
-    /// Returns one [`ToolResult`] per input call, in order.
     async fn execute_batch(
         &self,
-        engine: &mut crate::execution::InteractiveEngine,
         node_id: &NodeId,
         label: &str,
         calls: Vec<ToolCall>,
-    ) -> Vec<ToolResult>;
+    ) -> ToolBatchOutput;
 
     /// Augment an AI request's available tool descriptions before each AI invocation.
     fn augment_request(&self, node_id: &NodeId, request: &mut AgentRequest);
@@ -200,12 +224,11 @@ where
 {
     async fn execute_batch(
         &self,
-        engine: &mut crate::execution::InteractiveEngine,
         node_id: &NodeId,
         label: &str,
         calls: Vec<ToolCall>,
-    ) -> Vec<ToolResult> {
-        (**self).execute_batch(engine, node_id, label, calls).await
+    ) -> ToolBatchOutput {
+        (**self).execute_batch(node_id, label, calls).await
     }
 
     fn augment_request(&self, node_id: &NodeId, request: &mut AgentRequest) {

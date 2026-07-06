@@ -8,15 +8,21 @@ use engine::AgentError;
 #[must_use]
 pub fn classify_http_status(status: u16, body: &str, label: &str) -> AgentError {
     let message = format!("{label} returned HTTP {status}: {body}");
+    if status == 401 {
+        return AgentError::Permanent(message);
+    }
+    // Proxy gateways may surface upstream blips on any 4xx/5xx with a recognizable body.
+    if is_retryable_proxy_body(body) {
+        return AgentError::Transient(message);
+    }
     match status {
         408 | 409 | 429 | 500..=599 => AgentError::Transient(message),
-        400 if is_retryable_proxy_body(body) => AgentError::Transient(message),
         400 => AgentError::Failed(message),
         _ => AgentError::Permanent(message),
     }
 }
 
-fn is_retryable_proxy_body(body: &str) -> bool {
+pub fn is_retryable_proxy_body(body: &str) -> bool {
     let lower = body.to_lowercase();
     [
         "upstream request failed",
@@ -26,6 +32,7 @@ fn is_retryable_proxy_body(body: &str) -> bool {
         "overloaded",
         "bad gateway",
         "gateway timeout",
+        "error decoding response body",
     ]
     .iter()
     .any(|needle| lower.contains(needle))
@@ -54,6 +61,21 @@ mod tests {
             r#"{"error":{"message":"Error from provider (Console Go): Upstream request failed"}}"#;
         let err = classify_http_status(400, body, "OpenAI-compatible");
         assert!(err.is_retryable(), "expected transient, got {err}");
+    }
+
+    #[test]
+    fn opaque_proxy_upstream_403_is_transient() {
+        let body =
+            r#"{"error":{"message":"Error from provider (Console Go): Upstream request failed"}}"#;
+        let err = classify_http_status(403, body, "OpenAI-compatible");
+        assert!(err.is_retryable(), "expected transient, got {err}");
+        assert!(!matches!(err, AgentError::Permanent(_)));
+    }
+
+    #[test]
+    fn proxy_upstream_decode_failure_is_transient() {
+        let body = "Http client error: error decoding response body";
+        assert!(is_retryable_proxy_body(body));
     }
 
     #[test]

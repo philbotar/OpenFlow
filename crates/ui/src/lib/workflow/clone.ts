@@ -75,6 +75,7 @@ function cloneNode(node: Node): Node {
       reasoning_effort: agentReasoningEffort(node.agent),
       reasoning_budget_tokens:
         node.agent.reasoning_budget_tokens ?? node.agent.reasoningBudgetTokens ?? null,
+      requestUserInput: node.agent.requestUserInput ?? true,
     },
   };
 }

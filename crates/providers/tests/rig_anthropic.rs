@@ -33,6 +33,7 @@ fn test_request() -> engine::AgentRequest {
         model_attempt: 1,
         reasoning_effort: None,
         reasoning_budget_tokens: None,
+        allow_user_input: true,
     }
 }
 

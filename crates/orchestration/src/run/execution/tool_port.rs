@@ -5,8 +5,8 @@ use async_trait::async_trait;
 use engine::{
     augment_call_subagent_tool_description, build_predefined_subagent_summaries,
     handle_declare_subagents, merge_subagent_summaries as merge_subagent_summaries_into_map,
-    AiPort, CallableAgent, InteractiveEngine, NodeId, NodeToolConfig, RunTelemetry,
-    SubagentSummary, ToolCall, ToolConcurrency, ToolPort, ToolResult, Workflow, CALL_SUBAGENT_TOOL,
+    AiPort, CallableAgent, NodeId, NodeToolConfig, RunTelemetry, SubagentSummary, ToolBatchEffects,
+    ToolBatchOutput, ToolCall, ToolConcurrency, ToolPort, ToolResult, Workflow, CALL_SUBAGENT_TOOL,
     DECLARE_SUBAGENTS_TOOL,
 };
 use std::collections::{BTreeMap, HashSet};
@@ -122,11 +122,10 @@ where
 
     async fn execute_batch(
         &self,
-        engine: &mut InteractiveEngine,
         node_id: &NodeId,
         label: &str,
         calls: Vec<ToolCall>,
-    ) -> Vec<ToolResult> {
+    ) -> ToolBatchOutput {
         let node_config = self
             .workflow
             .nodes
@@ -134,6 +133,7 @@ where
             .find(|node| node.id == *node_id)
             .map(|node| node.agent.tools.clone())
             .unwrap_or_default();
+        let mut effects = ToolBatchEffects::default();
         let mut results = Vec::with_capacity(calls.len());
         let mut index = 0usize;
         while index < calls.len() {
@@ -141,7 +141,7 @@ where
                 break;
             }
             if self.node_interrupt_is_cancelled(node_id) {
-                engine.mark_node_interrupted(node_id);
+                effects.interrupted = true;
                 break;
             }
             if self.is_parallel_shared_tool(&calls[index]) {
@@ -150,7 +150,7 @@ where
                     index += 1;
                 }
                 match self
-                    .run_parallel_regular_tools(engine, node_id, label, &calls[start..index])
+                    .run_parallel_regular_tools(&mut effects, node_id, label, &calls[start..index])
                     .await
                 {
                     Some(batch_results) => results.extend(batch_results),
@@ -165,7 +165,7 @@ where
                 self.run_declare_subagents(node_id, label, &tool_call)
             } else if tool_call.name == CALL_SUBAGENT_TOOL {
                 match self
-                    .run_call_subagent(engine, node_id, label, &tool_call, &node_config)
+                    .run_call_subagent(&mut effects, node_id, label, &tool_call, &node_config)
                     .await
                 {
                     Some(result) => result,
@@ -173,7 +173,7 @@ where
                 }
             } else {
                 match self
-                    .run_regular_tool(engine, node_id, label, tool_call, &node_config)
+                    .run_regular_tool(&mut effects, node_id, label, tool_call, &node_config)
                     .await
                 {
                     Some(result) => result,
@@ -182,7 +182,7 @@ where
             };
             results.push(result);
         }
-        results
+        ToolBatchOutput { results, effects }
     }
 }
 
@@ -203,7 +203,7 @@ where
 
     async fn run_parallel_regular_tools(
         &self,
-        engine: &mut InteractiveEngine,
+        effects: &mut ToolBatchEffects,
         node_id: &NodeId,
         label: &str,
         tool_calls: &[ToolCall],
@@ -221,7 +221,7 @@ where
                 self.emit_tool_completed(node_id, tool_call, &record.result);
                 results[index] = Some(record.result);
             } else {
-                self.note_read_call(engine, node_id, tool_call);
+                self.note_read_call(effects, tool_call);
                 self.emit_tool_started(node_id, tool_call);
                 runnable_indices.push(index);
             }
@@ -239,7 +239,7 @@ where
             let lsp = lsp_settings.clone();
             let event_tx = self.event_tx.clone();
             let retry_policy = retry_policy.clone();
-            let exclusive_permit = self.exclusive_permit(&call.name).await;
+            let exclusive_permit = self.exclusive_permit(node_id, &call.name).await;
             join_handles.push(tokio::spawn(async move {
                 let _permit = exclusive_permit;
                 let conversation_id = node_id_for_task.0.clone();
@@ -281,8 +281,8 @@ where
                             size_bytes: artifact.size_bytes,
                         });
                     }
-                    self.record_tool_file_changes(engine, node_id, &record);
-                    self.record_tool_reads(engine, node_id, &record);
+                    self.record_tool_file_changes(effects, node_id, &record);
+                    self.record_tool_reads(effects, node_id, &record);
                     self.emit_tool_completed(node_id, tool_call, &record.result);
                     results[index] = Some(record.result);
                 }
@@ -303,7 +303,11 @@ where
         Some(collected)
     }
 
-    async fn exclusive_permit(&self, tool_name: &str) -> Option<tokio::sync::OwnedSemaphorePermit> {
+    async fn exclusive_permit(
+        &self,
+        node_id: &NodeId,
+        tool_name: &str,
+    ) -> Option<tokio::sync::OwnedSemaphorePermit> {
         let concurrency = self
             .tool_runner
             .registry()
@@ -311,13 +315,11 @@ where
             .ok()?
             .definition
             .concurrency;
-        if concurrency != ToolConcurrency::Exclusive {
-            return None;
-        }
+        let key = exclusive_scope_key(concurrency, node_id, tool_name)?;
         let semaphore = {
             let mut semaphores = self.exclusive_semaphores.lock();
             semaphores
-                .entry(tool_name.to_string())
+                .entry(key)
                 .or_insert_with(|| Arc::new(Semaphore::new(1)))
                 .clone()
         };
@@ -344,7 +346,7 @@ where
 
     async fn run_regular_tool(
         &self,
-        engine: &mut InteractiveEngine,
+        effects: &mut ToolBatchEffects,
         node_id: &NodeId,
         label: &str,
         tool_call: ToolCall,
@@ -360,7 +362,7 @@ where
         }
         self.emit_tool_started(node_id, &tool_call);
         match self
-            .execute_tool_or_cancel(engine, tool_call.clone(), node_id, &node_id.0)
+            .execute_tool_or_cancel(effects, tool_call.clone(), node_id, &node_id.0)
             .await
         {
             Some(Ok(record)) => {
@@ -373,8 +375,8 @@ where
                         size_bytes: artifact.size_bytes,
                     });
                 }
-                self.record_tool_file_changes(engine, node_id, &record);
-                self.record_tool_reads(engine, node_id, &record);
+                self.record_tool_file_changes(effects, node_id, &record);
+                self.record_tool_reads(effects, node_id, &record);
                 self.emit_tool_completed(node_id, &tool_call, &record.result);
                 Some(record.result)
             }
@@ -426,7 +428,7 @@ where
 
     fn record_tool_file_changes(
         &self,
-        engine: &mut InteractiveEngine,
+        effects: &mut ToolBatchEffects,
         node_id: &NodeId,
         record: &ToolExecutionRecord,
     ) {
@@ -439,7 +441,9 @@ where
         if record.file_changes.is_empty() {
             return;
         }
-        engine.record_file_changes(node_id, record.file_changes.clone());
+        effects
+            .file_changes
+            .extend(record.file_changes.iter().cloned());
         for change in &record.file_changes {
             let _ = self.event_tx.send(ExecutionEvent::FileChanged {
                 node_id: node_id.clone(),
@@ -450,22 +454,17 @@ where
 
     fn record_tool_reads(
         &self,
-        engine: &mut InteractiveEngine,
-        node_id: &NodeId,
+        effects: &mut ToolBatchEffects,
+        _node_id: &NodeId,
         record: &ToolExecutionRecord,
     ) {
         if record.reads.is_empty() {
             return;
         }
-        engine.record_reads(node_id, record.reads.clone());
+        effects.reads.extend(record.reads.iter().cloned());
     }
 
-    fn note_read_call(
-        &self,
-        engine: &mut InteractiveEngine,
-        node_id: &NodeId,
-        tool_call: &ToolCall,
-    ) {
+    fn note_read_call(&self, effects: &mut ToolBatchEffects, tool_call: &ToolCall) {
         if tool_call.name != "read" {
             return;
         }
@@ -483,7 +482,7 @@ where
         {
             return;
         }
-        engine.note_read_call(node_id, &path);
+        effects.read_call_paths.push(path.to_string());
     }
 
     fn node_interrupt_token(&self, node_id: &NodeId) -> Option<CancellationToken> {
@@ -500,26 +499,36 @@ where
 
     async fn execute_tool_or_cancel(
         &self,
-        engine: &mut InteractiveEngine,
+        effects: &mut ToolBatchEffects,
         tool_call: ToolCall,
         node_id: &NodeId,
         conversation_id: &str,
     ) -> Option<Result<ToolExecutionRecord, ToolRunnerError>> {
-        self.note_read_call(engine, node_id, &tool_call);
+        self.note_read_call(effects, &tool_call);
+
         let tool_runner = Arc::clone(&self.tool_runner);
+
         let tool_name = tool_call.name.clone();
+
         let (update_tx, mut update_rx) = tokio::sync::mpsc::unbounded_channel();
+
         let node_id_for_task = node_id.clone();
+
         let ctx = ToolExecutionContext {
             node_id: node_id_for_task,
             conversation_id: conversation_id.to_string(),
             lsp: self.lsp.clone(),
             update_tx: Some(update_tx),
         };
+
         let event_tx = self.event_tx.clone();
+
         let update_node_id = node_id.clone();
+
         let update_tool_call_id = tool_call.id.clone();
+
         let update_tool_name = tool_call.name.clone();
+
         tokio::spawn(async move {
             while let Some(update) = update_rx.recv().await {
                 let _ = event_tx.send(ExecutionEvent::ToolUpdated {
@@ -532,7 +541,7 @@ where
             }
         });
         let started = Instant::now();
-        let exclusive_permit = self.exclusive_permit(&tool_name).await;
+        let exclusive_permit = self.exclusive_permit(node_id, &tool_name).await;
         let node_token = self.node_interrupt_token(node_id);
         let policy = self.workflow.settings.retry_policy.clone();
         let cancel_for_retry = self.cancel_token.clone();
@@ -554,7 +563,7 @@ where
                         None
                     }
                     _ = node_token.cancelled() => {
-                        engine.mark_node_interrupted(node_id);
+                        effects.interrupted = true;
                         None
                     }
                     result = run_tool => Some(result),
@@ -651,5 +660,57 @@ async fn run_registered_tool_with_retry(
     .await
 }
 
+/// Semaphore key for a tool call, or `None` when the tool needs no permit.
+fn exclusive_scope_key(
+    concurrency: ToolConcurrency,
+    node_id: &NodeId,
+    tool_name: &str,
+) -> Option<String> {
+    match concurrency {
+        ToolConcurrency::Shared => None,
+        ToolConcurrency::Exclusive => Some(tool_name.to_string()),
+        ToolConcurrency::NodeExclusive => Some(format!("{}\u{1f}{}", node_id.0, tool_name)),
+    }
+}
+
 #[path = "subagent_session.rs"]
 mod subagent_session;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn node(id: &str) -> NodeId {
+        NodeId(id.to_string())
+    }
+
+    #[test]
+    fn shared_tools_have_no_exclusive_scope() {
+        assert_eq!(
+            exclusive_scope_key(ToolConcurrency::Shared, &node("a"), "read"),
+            None
+        );
+    }
+
+    #[test]
+    fn exclusive_tools_scope_per_run() {
+        let a = exclusive_scope_key(ToolConcurrency::Exclusive, &node("a"), "edit");
+        let b = exclusive_scope_key(ToolConcurrency::Exclusive, &node("b"), "edit");
+        assert_eq!(a, Some("edit".to_string()));
+        assert_eq!(
+            a, b,
+            "different nodes must share one permit for Exclusive tools"
+        );
+    }
+
+    #[test]
+    fn node_exclusive_tools_scope_per_node() {
+        let a = exclusive_scope_key(ToolConcurrency::NodeExclusive, &node("a"), "bash");
+        let b = exclusive_scope_key(ToolConcurrency::NodeExclusive, &node("b"), "bash");
+        assert_eq!(a, Some("a\u{1f}bash".to_string()));
+        assert_ne!(
+            a, b,
+            "different nodes must not share a permit for NodeExclusive tools"
+        );
+    }
+}

@@ -135,6 +135,7 @@ mod tests {
             reasoning_effort: None,
             reasoning_budget_tokens: None,
             provider_id: None,
+            request_user_input: true,
         };
         let template = Template::new("Test", "desc", config.clone(), HashSet::new());
         let node = template.instantiate(0.0, 0.0);
