@@ -342,7 +342,7 @@ fn bash_tool() -> RegisteredTool {
                 "required": ["command"]
             })),
             tier: ToolTier::Write,
-            concurrency: ToolConcurrency::Exclusive,
+            concurrency: ToolConcurrency::NodeExclusive,
         },
         kind: BuiltinToolKind::Bash,
     }
@@ -459,6 +459,19 @@ pub fn call_subagent_tool() -> RegisteredTool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bash_is_node_exclusive_and_file_mutators_stay_run_exclusive() {
+        let registry = ToolRegistry::new();
+        let concurrency = |name: &str| registry.get(name).expect(name).definition.concurrency;
+        assert_eq!(concurrency("bash"), engine::ToolConcurrency::NodeExclusive);
+        assert_eq!(concurrency("edit"), engine::ToolConcurrency::Exclusive);
+        assert_eq!(concurrency("write"), engine::ToolConcurrency::Exclusive);
+        assert_eq!(
+            concurrency("apply_patch"),
+            engine::ToolConcurrency::Exclusive
+        );
+    }
 
     #[test]
     fn registry_returns_all_builtins_plus_subagent_tools_by_default() {

@@ -17,6 +17,8 @@ pub enum ToolTier {
 pub enum ToolConcurrency {
     Shared,
     Exclusive,
+    /// Exclusive within one node; different nodes may run it concurrently.
+    NodeExclusive,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]

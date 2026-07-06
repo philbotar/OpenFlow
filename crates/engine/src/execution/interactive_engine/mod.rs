@@ -14,12 +14,15 @@ use crate::execution::tool_results::error_tool_result;
 use crate::execution::{NodeFailureKind, NodeRunOutput, RunError, RunReport};
 use crate::graph::validation::{execution_layers, WorkflowValidationError};
 use crate::graph::{Node, NodeId, Workflow};
-use crate::ports::{AgentRequest, AiPort, ToolPort};
+use crate::ports::{AgentRequest, AiPort, ToolBatchOutput, ToolPort};
 use crate::tools::{FileChangeRecord, ReadRecord, ToolCall};
+use futures::stream::{FuturesUnordered, StreamExt};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write;
-use std::time::Duration;
+use std::future::Future;
+use std::pin::Pin;
+use std::time::{Duration, Instant};
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
@@ -102,10 +105,19 @@ pub struct InteractiveEngine {
     awaiting_nodes: BTreeSet<NodeId>,
     in_flight_ai: BTreeSet<NodeId>,
     pending_tool_batches: BTreeMap<String, PendingToolBatch>,
+    /// Approval ids of tool batches currently executing (not persisted; a
+    /// restored engine re-dispatches any pending non-approval batch).
+    in_flight_tools: BTreeSet<String>,
     retries_by_node: BTreeMap<NodeId, u8>,
-    pending_retry_delay: Option<Duration>,
+    /// Consecutive transient failures since the node's last successful turn.
+    transient_streaks_by_node: BTreeMap<NodeId, u8>,
+    /// Per-node: do not dispatch AI again until this instant (transient retry backoff).
+    retry_after_by_node: BTreeMap<NodeId, Instant>,
     submit_output_retries_by_node: BTreeMap<NodeId, u8>,
     request_input_retries_by_node: BTreeMap<NodeId, u8>,
+    /// Consecutive auto-continued text-only turns for nodes that disallow
+    /// user input; reset whenever the node makes tool-call progress.
+    auto_continue_streaks_by_node: BTreeMap<NodeId, u8>,
     entrypoint_text: Option<String>,
     project_repository_root: Option<String>,
     terminal_error: Option<RunError>,
@@ -115,10 +127,29 @@ pub struct InteractiveEngine {
 
 pub(crate) const MAX_MALFORMED_SUBMIT_OUTPUT_RETRIES: u8 = 3;
 pub(crate) const MAX_MALFORMED_REQUEST_INPUT_RETRIES: u8 = 3;
+pub(crate) const MAX_AUTO_CONTINUE_STREAK: u8 = 10;
 pub(crate) const MALFORMED_REQUEST_INPUT_FEEDBACK: &str =
-    "Your openflow_request_user_input call must set \
-    assistant_message to one direct clarifying question for the human (typically ending with ?). \
-    Do not send preamble, narration, or plans — ask the question in assistant_message now.";
+    "Your last turn ended as a request for human input, but without a direct question. \
+    If you need human clarification, call openflow_request_user_input with \
+    assistant_message set to one direct question (usually ending with ?). If you do not \
+    need human input, continue working: call a tool or call openflow_submit_node_output. \
+    Do not end a turn with plain narration.";
+pub(crate) const AUTONOMOUS_CONTINUE_FEEDBACK: &str =
+    "No human input is available for this node. Continue working: call a tool to make \
+    progress, or call openflow_submit_node_output when the task is complete. Do not end \
+    a turn with plain text only.";
+
+enum WorkOutput {
+    Ai {
+        node_id: NodeId,
+        outcome: Result<crate::ports::AgentTurnOutcome, crate::ports::AgentError>,
+    },
+    Tools {
+        approval_id: String,
+        node_id: NodeId,
+        output: ToolBatchOutput,
+    },
+}
 
 impl InteractiveEngine {
     /// # Errors
@@ -152,10 +183,13 @@ impl InteractiveEngine {
             awaiting_nodes: BTreeSet::new(),
             in_flight_ai: BTreeSet::new(),
             pending_tool_batches: BTreeMap::new(),
+            in_flight_tools: BTreeSet::new(),
             retries_by_node: BTreeMap::new(),
-            pending_retry_delay: None,
+            transient_streaks_by_node: BTreeMap::new(),
+            retry_after_by_node: BTreeMap::new(),
             submit_output_retries_by_node: BTreeMap::new(),
             request_input_retries_by_node: BTreeMap::new(),
+            auto_continue_streaks_by_node: BTreeMap::new(),
             entrypoint_text,
             project_repository_root,
             terminal_error: None,
@@ -189,6 +223,28 @@ impl InteractiveEngine {
             || self.node_has_pending_tools(node_id)
             || self.interrupted_nodes.contains(node_id)
             || self.failed_nodes.contains_key(node_id)
+            || self.is_node_in_retry_backoff(node_id)
+    }
+
+    fn is_node_in_retry_backoff(&self, node_id: &NodeId) -> bool {
+        self.retry_after_by_node
+            .get(node_id)
+            .is_some_and(|deadline| Instant::now() < *deadline)
+    }
+
+    /// Shortest wait until any node leaves transient retry backoff.
+    fn earliest_retry_delay(&self) -> Option<Duration> {
+        let now = Instant::now();
+        self.retry_after_by_node
+            .values()
+            .filter_map(|deadline| deadline.checked_duration_since(now))
+            .min()
+    }
+
+    fn prune_elapsed_retries(&mut self) {
+        let now = Instant::now();
+        self.retry_after_by_node
+            .retain(|_, deadline| now < *deadline);
     }
 
     fn schedule_manual_nodes_in_layer(&mut self) {
@@ -260,107 +316,137 @@ impl InteractiveEngine {
     }
 
     /// Drive the engine until it needs host interaction or reaches a terminal state.
+    ///
+    /// All runnable work in the current layer (model calls and tool batches
+    /// across nodes) executes concurrently; completions are applied to engine
+    /// state one at a time as they arrive.
     pub async fn run<A: AiPort, T: ToolPort>(
         &mut self,
         ai: &A,
         tools: &T,
         cancel: &CancellationToken,
     ) -> EngineRunResult {
+        type WorkFuture<'a> = Pin<Box<dyn Future<Output = WorkOutput> + Send + 'a>>;
+        let mut in_flight: FuturesUnordered<WorkFuture<'_>> = FuturesUnordered::new();
+
         loop {
             if cancel.is_cancelled() {
                 return EngineRunResult::Cancelled;
             }
+            if let Some(error) = self.terminal_error.clone() {
+                return EngineRunResult::Failed(error);
+            }
+            if in_flight.is_empty() {
+                if let Some(report) = self.try_advance_layer() {
+                    return EngineRunResult::Completed(report);
+                }
+            }
 
+            for (approval_id, node_id, label, tool_calls) in self.take_ready_tool_batches() {
+                in_flight.push(Box::pin(async move {
+                    let output = tools.execute_batch(&node_id, &label, tool_calls).await;
+                    WorkOutput::Tools {
+                        approval_id,
+                        node_id,
+                        output,
+                    }
+                }));
+            }
+            for (node_id, mut request) in self.gather_call_ai_actions() {
+                tools.augment_request(&node_id, &mut request);
+                in_flight.push(Box::pin(async move {
+                    let outcome = ai.invoke(request).await;
+                    WorkOutput::Ai { node_id, outcome }
+                }));
+            }
             if let Some(error) = self.terminal_error.clone() {
                 return EngineRunResult::Failed(error);
             }
 
-            if let Some(report) = self.try_advance_layer() {
-                return EngineRunResult::Completed(report);
-            }
-
-            while let Some((node_id, label, tool_calls)) = self.next_run_tools_action() {
-                let results = tools
-                    .execute_batch(self, &node_id, &label, tool_calls)
-                    .await;
-                if cancel.is_cancelled() {
-                    return EngineRunResult::Cancelled;
-                }
-                if self.interrupted_nodes.contains(&node_id) {
-                    continue;
-                }
-                if let Err(error) = self.on_tool_results(&node_id, results) {
-                    return EngineRunResult::Failed(RunError::NodeFailed {
-                        node_id,
-                        kind: NodeFailureKind::EngineInput(error.to_string()),
-                    });
-                }
-            }
-
-            let ai_actions = self.gather_call_ai_actions();
-            if !ai_actions.is_empty() {
-                for (node_id, mut request) in ai_actions {
-                    if cancel.is_cancelled() {
-                        return EngineRunResult::Cancelled;
-                    }
-                    tools.augment_request(&node_id, &mut request);
-                    let outcome = ai.invoke(request).await;
-                    self.on_ai_complete(&node_id, outcome);
-                }
-                if let Some(error) = self.terminal_error.clone() {
-                    return EngineRunResult::Failed(error);
-                }
-                if let Some(delay) = self.pending_retry_delay.take() {
+            if in_flight.is_empty() {
+                if let Some(delay) = self.earliest_retry_delay() {
                     tokio::select! {
                         biased;
                         () = cancel.cancelled() => return EngineRunResult::Cancelled,
-                        () = tokio::time::sleep(delay) => {}
+                        () = tokio::time::sleep(delay) => {
+                            self.prune_elapsed_retries();
+                            continue;
+                        }
                     }
                 }
-                continue;
+                self.schedule_manual_nodes_in_layer();
+                self.recover_stale_in_flight_nodes();
+                let inputs = self.gather_await_inputs();
+                let approvals = self.gather_await_approvals();
+                let retryables = self.gather_retryable_nodes();
+                if !inputs.is_empty() || !approvals.is_empty() || !retryables.is_empty() {
+                    return EngineRunResult::NeedsInteraction {
+                        inputs,
+                        approvals,
+                        retryables,
+                    };
+                }
+                if let Some(report) = self.try_advance_layer() {
+                    return EngineRunResult::Completed(report);
+                }
+                return EngineRunResult::Failed(RunError::NodeFailed {
+                    node_id: self
+                        .current_layer_nodes()
+                        .first()
+                        .cloned()
+                        .unwrap_or_else(|| NodeId("engine".to_string())),
+                    kind: NodeFailureKind::NoRunnableNodesInLayer,
+                });
             }
 
-            self.schedule_manual_nodes_in_layer();
-            self.recover_stale_in_flight_nodes();
-            let inputs = self.gather_await_inputs();
-            let approvals = self.gather_await_approvals();
-            let retryables = self.gather_retryable_nodes();
-            if !inputs.is_empty() || !approvals.is_empty() || !retryables.is_empty() {
-                return EngineRunResult::NeedsInteraction {
-                    inputs,
-                    approvals,
-                    retryables,
-                };
+            let work = tokio::select! {
+                biased;
+                () = cancel.cancelled() => return EngineRunResult::Cancelled,
+                Some(work) = in_flight.next() => work,
+            };
+            match work {
+                WorkOutput::Ai { node_id, outcome } => {
+                    self.on_ai_complete(&node_id, outcome);
+                }
+                WorkOutput::Tools {
+                    approval_id,
+                    node_id,
+                    output,
+                } => {
+                    self.in_flight_tools.remove(&approval_id);
+                    if let Err(error) = self.apply_tool_batch_output(&node_id, output) {
+                        return EngineRunResult::Failed(RunError::NodeFailed {
+                            node_id,
+                            kind: NodeFailureKind::EngineInput(error.to_string()),
+                        });
+                    }
+                }
             }
-
-            if let Some(report) = self.try_advance_layer() {
-                return EngineRunResult::Completed(report);
-            }
-
-            return EngineRunResult::Failed(RunError::NodeFailed {
-                node_id: self
-                    .current_layer_nodes()
-                    .first()
-                    .cloned()
-                    .unwrap_or_else(|| NodeId("engine".to_string())),
-                kind: NodeFailureKind::NoRunnableNodesInLayer,
-            });
         }
     }
 
-    fn next_run_tools_action(&self) -> Option<(NodeId, String, Vec<ToolCall>)> {
-        let approval_id = self
+    /// All non-approval tool batches not yet dispatched; marks them in flight.
+    fn take_ready_tool_batches(&mut self) -> Vec<(String, NodeId, String, Vec<ToolCall>)> {
+        let ready: Vec<(String, NodeId, String, Vec<ToolCall>)> = self
             .pending_tool_batches
             .iter()
-            .find(|(_, batch)| !batch.requires_approval)
-            .map(|(approval_id, _)| approval_id.clone())?;
-        let batch = self.pending_tool_batches.get(&approval_id)?;
-        let node = self.find_node(&batch.node_id)?;
-        Some((
-            batch.node_id.clone(),
-            node.label.clone(),
-            batch.tool_calls.clone(),
-        ))
+            .filter(|(approval_id, batch)| {
+                !batch.requires_approval && !self.in_flight_tools.contains(*approval_id)
+            })
+            .filter_map(|(approval_id, batch)| {
+                let node = self.find_node(&batch.node_id)?;
+                Some((
+                    approval_id.clone(),
+                    batch.node_id.clone(),
+                    node.label.clone(),
+                    batch.tool_calls.clone(),
+                ))
+            })
+            .collect();
+        for (approval_id, ..) in &ready {
+            self.in_flight_tools.insert(approval_id.clone());
+        }
+        ready
     }
 
     fn gather_call_ai_actions(&mut self) -> Vec<(NodeId, AgentRequest)> {
@@ -485,6 +571,27 @@ impl InteractiveEngine {
         self.interrupted_nodes.insert(node_id.clone());
     }
 
+    /// Apply a completed tool batch: record effects, then feed results back.
+    fn apply_tool_batch_output(
+        &mut self,
+        node_id: &NodeId,
+        output: ToolBatchOutput,
+    ) -> Result<(), EngineInputError> {
+        for path in &output.effects.read_call_paths {
+            self.note_read_call(node_id, path);
+        }
+        self.record_file_changes(node_id, output.effects.file_changes.clone());
+        self.record_reads(node_id, output.effects.reads.clone());
+        if output.effects.interrupted {
+            self.mark_node_interrupted(node_id);
+            return Ok(());
+        }
+        if self.interrupted_nodes.contains(node_id) {
+            return Ok(());
+        }
+        self.on_tool_results(node_id, output.results)
+    }
+
     #[must_use]
     pub fn pending_tool_batch_node(&self, approval_id: &str) -> Option<NodeId> {
         self.pending_tool_batches
@@ -505,6 +612,7 @@ impl InteractiveEngine {
         }
         self.failed_nodes.remove(node_id);
         self.interrupted_nodes.remove(node_id);
+        self.retry_after_by_node.remove(node_id);
         let retry_count = self.retries_by_node.entry(node_id.clone()).or_default();
         *retry_count = retry_count.saturating_add(1);
         Ok(())
@@ -688,5 +796,16 @@ impl InteractiveEngine {
     pub(crate) fn test_insert_pending_batch(&mut self, batch: PendingToolBatch) {
         self.pending_tool_batches
             .insert(batch.approval_id.clone(), batch);
+    }
+
+    pub(crate) fn test_is_in_retry_backoff(&self, node_id: &NodeId) -> bool {
+        self.is_node_in_retry_backoff(node_id)
+    }
+
+    pub(crate) fn test_gather_ai_node_ids(&mut self) -> Vec<NodeId> {
+        self.gather_call_ai_actions()
+            .into_iter()
+            .map(|(node_id, _)| node_id)
+            .collect()
     }
 }

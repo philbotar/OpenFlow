@@ -161,6 +161,7 @@ impl WorkflowAuthoringService {
                 model_attempt,
                 reasoning_effort: None,
                 reasoning_budget_tokens: None,
+                allow_user_input: false,
             };
 
             match ai.invoke(request).await {

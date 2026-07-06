@@ -72,6 +72,7 @@ fn test_request() -> engine::AgentRequest {
         model_attempt: 1,
         reasoning_effort: None,
         reasoning_budget_tokens: None,
+        allow_user_input: true,
     }
 }
 
@@ -179,6 +180,90 @@ async fn chat_completions_external_tool_call_batch() {
 }
 
 #[tokio::test]
+async fn multi_tool_call_history_reaches_wire_as_single_assistant_message() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(chat_completion_response(&json!({
+                "role": "assistant",
+                "content": "ok"
+            }))),
+        )
+        .mount(&server)
+        .await;
+
+    let mut request = test_request();
+    request.transcript = vec![
+        engine::AgentTranscriptItem::ToolCall {
+            call: ToolCall {
+                id: "c1".into(),
+                name: "read".into(),
+                arguments: json!({}),
+            },
+        },
+        engine::AgentTranscriptItem::ToolCall {
+            call: ToolCall {
+                id: "c2".into(),
+                name: "read".into(),
+                arguments: json!({}),
+            },
+        },
+        engine::AgentTranscriptItem::ToolResult {
+            result: engine::ToolResult {
+                tool_call_id: "c2".into(),
+                tool_name: "read".into(),
+                content: "two".into(),
+                is_error: false,
+                artifact_ids: Vec::new(),
+                output_meta: None,
+            },
+        },
+        engine::AgentTranscriptItem::ToolResult {
+            result: engine::ToolResult {
+                tool_call_id: "c1".into(),
+                tool_name: "read".into(),
+                content: "one".into(),
+                is_error: false,
+                artifact_ids: Vec::new(),
+                output_meta: None,
+            },
+        },
+    ];
+
+    let client = create_provider(openai_test_config(&server.uri(), WireApi::ChatCompletions));
+    let _ = client.invoke(request).await;
+
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 1);
+    let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+    let messages = body["messages"].as_array().unwrap();
+    let assistant_idx = messages
+        .iter()
+        .position(|m| m["role"] == "assistant" && m["tool_calls"].is_array())
+        .unwrap();
+    let tool_calls = messages[assistant_idx]["tool_calls"].as_array().unwrap();
+    assert_eq!(
+        tool_calls.len(),
+        2,
+        "both calls must be in ONE assistant message"
+    );
+    assert_eq!(tool_calls[0]["id"], "c1");
+    assert_eq!(tool_calls[1]["id"], "c2");
+    // Results must immediately follow the assistant message, in call order.
+    assert_eq!(messages[assistant_idx + 1]["role"], "tool");
+    assert_eq!(messages[assistant_idx + 1]["tool_call_id"], "c1");
+    assert_eq!(messages[assistant_idx + 2]["role"], "tool");
+    assert_eq!(messages[assistant_idx + 2]["tool_call_id"], "c2");
+    // No stray assistant tool-call messages besides the coalesced one.
+    let assistant_tool_msgs = messages
+        .iter()
+        .filter(|m| m["role"] == "assistant" && m["tool_calls"].is_array())
+        .count();
+    assert_eq!(assistant_tool_msgs, 1);
+}
+
+#[tokio::test]
 async fn chat_completions_429_maps_to_transient() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -258,6 +343,88 @@ async fn custom_header_auth_reaches_wire() {
     let client = create_provider(config);
     let outcome = client.invoke(test_request()).await.unwrap();
     assert!(matches!(outcome, AgentTurnOutcome::Completed(_)));
+}
+
+#[tokio::test]
+async fn chat_completions_upstream_403_maps_to_transient() {
+    let body = r#"{"error":{"message":"Error from provider (Console Go): Upstream request failed","type":"invalid_request_error","param":null,"code":"invalid_request_error"}}"#;
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(403).set_body_string(body))
+        .mount(&server)
+        .await;
+
+    let config = AiClientConfig {
+        provider_id: ProviderId::from("custom_openai_compatible"),
+        provider_label: "OpenAI-compatible".into(),
+        auth: AuthConfig::Bearer {
+            api_key: Some("key".into()),
+            required: true,
+        },
+        adapter: ProviderAdapterConfig::OpenAiCompatible(OpenAiCompatibleConfig {
+            base_url: server.uri(),
+            wire_api: WireApi::ChatCompletions,
+            responses_path: "v1/responses".into(),
+            chat_completions_path: "v1/chat/completions".into(),
+        }),
+    };
+    let client = create_provider(config);
+    let err = client.invoke(test_request()).await.unwrap_err();
+    assert!(err.is_retryable(), "expected transient, got {err}");
+    assert!(!matches!(err, engine::AgentError::Permanent(_)));
+}
+
+#[tokio::test]
+async fn chat_completions_upstream_400_maps_to_transient_invoke_and_stream() {
+    let body = r#"{"error":{"message":"Error from provider (Console Go): Upstream request failed","type":"invalid_request_error","param":null,"code":"invalid_request_error"}}"#;
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(400).set_body_string(body))
+        .mount(&server)
+        .await;
+
+    let config = AiClientConfig {
+        provider_id: ProviderId::from("custom_openai_compatible"),
+        provider_label: "OpenAI-compatible".into(),
+        auth: AuthConfig::Bearer {
+            api_key: Some("key".into()),
+            required: true,
+        },
+        adapter: ProviderAdapterConfig::OpenAiCompatible(OpenAiCompatibleConfig {
+            base_url: server.uri(),
+            wire_api: WireApi::ChatCompletions,
+            responses_path: "v1/responses".into(),
+            chat_completions_path: "v1/chat/completions".into(),
+        }),
+    };
+    let client = create_provider(config);
+
+    let err = client.invoke(test_request()).await.unwrap_err();
+    assert!(
+        err.is_retryable(),
+        "invoke expected transient, got {err} (is_retryable={})",
+        err.is_retryable()
+    );
+    assert!(
+        !matches!(err, engine::AgentError::Permanent(_)),
+        "invoke must not be permanent: {err}"
+    );
+
+    let err = client
+        .invoke_stream(test_request(), &RecordingSink::default())
+        .await
+        .unwrap_err();
+    assert!(
+        err.is_retryable(),
+        "stream expected transient, got {err} (is_retryable={})",
+        err.is_retryable()
+    );
+    assert!(
+        !matches!(err, engine::AgentError::Permanent(_)),
+        "stream must not be permanent: {err}"
+    );
 }
 
 #[tokio::test]

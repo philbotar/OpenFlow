@@ -128,7 +128,7 @@ const fn default_true() -> bool {
     true
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct WorkflowSettings {
     #[serde(default)]
     pub shared_context: String,
@@ -151,6 +151,20 @@ pub struct WorkflowSettings {
     /// Forward upstream read outlines to downstream node input JSON.
     #[serde(default = "default_true", rename = "forwardUpstreamReads")]
     pub forward_upstream_reads: bool,
+}
+
+impl Default for WorkflowSettings {
+    fn default() -> Self {
+        Self {
+            shared_context: String::new(),
+            schedule: None,
+            retry_policy: RetryPolicy::default(),
+            provider_id: None,
+            reasoning_effort: None,
+            reasoning_budget_tokens: None,
+            forward_upstream_reads: default_true(),
+        }
+    }
 }
 
 /// A directed workflow graph with settings applied at run time.
@@ -241,9 +255,22 @@ pub struct AgentNodeConfig {
     /// Optional provider ID override at the node level.
     #[serde(default, rename = "providerId")]
     pub provider_id: Option<String>,
+    /// When false, this node never pauses for human input: the
+    /// `openflow_request_user_input` tool is not offered and text-only model
+    /// turns are auto-continued instead of surfacing an input request.
+    #[serde(
+        default = "default_request_user_input",
+        rename = "requestUserInput",
+        alias = "request_user_input"
+    )]
+    pub request_user_input: bool,
 }
 
 const fn default_auto_start() -> bool {
+    true
+}
+
+const fn default_request_user_input() -> bool {
     true
 }
 
@@ -288,6 +315,7 @@ impl Default for AgentNodeConfig {
             reasoning_effort: None,
             reasoning_budget_tokens: None,
             provider_id: None,
+            request_user_input: true,
         }
     }
 }
@@ -467,6 +495,32 @@ mod tests {
     }
 
     #[test]
+    fn agent_node_config_request_user_input_defaults_true() {
+        let config: AgentNodeConfig = serde_json::from_value(json!({
+            "system_prompt": "s",
+            "task_prompt": "t",
+            "output_schema": {"type": "object"}
+        }))
+        .unwrap();
+        assert!(config.request_user_input);
+        assert!(AgentNodeConfig::default().request_user_input);
+    }
+
+    #[test]
+    fn agent_node_config_request_user_input_roundtrips_false() {
+        let config: AgentNodeConfig = serde_json::from_value(json!({
+            "system_prompt": "s",
+            "task_prompt": "t",
+            "output_schema": {"type": "object"},
+            "requestUserInput": false
+        }))
+        .unwrap();
+        assert!(!config.request_user_input);
+        let value = serde_json::to_value(&config).unwrap();
+        assert_eq!(value.get("requestUserInput"), Some(&json!(false)));
+    }
+
+    #[test]
     fn retry_policy_default_matches_serde_defaults() {
         assert_eq!(
             RetryPolicy::default(),
@@ -477,6 +531,13 @@ mod tests {
         );
         let parsed: RetryPolicy = serde_json::from_value(json!({})).unwrap();
         assert_eq!(parsed, RetryPolicy::default());
+    }
+
+    #[test]
+    fn workflow_settings_ignores_stale_max_concurrent_ai_calls_key() {
+        let parsed: WorkflowSettings =
+            serde_json::from_value(json!({ "maxConcurrentAiCalls": 1 })).unwrap();
+        assert_eq!(parsed, WorkflowSettings::default());
     }
 
     #[test]

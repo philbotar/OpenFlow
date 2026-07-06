@@ -1,5 +1,6 @@
 use super::{
-    InteractiveEngine, PendingToolBatch, RunError, MALFORMED_REQUEST_INPUT_FEEDBACK,
+    InteractiveEngine, PendingToolBatch, RunError, AUTONOMOUS_CONTINUE_FEEDBACK,
+    MALFORMED_REQUEST_INPUT_FEEDBACK, MAX_AUTO_CONTINUE_STREAK,
     MAX_MALFORMED_REQUEST_INPUT_RETRIES, MAX_MALFORMED_SUBMIT_OUTPUT_RETRIES,
 };
 use crate::conversation::{
@@ -12,7 +13,7 @@ use crate::ports::{
     AgentError, AgentNeedUserInput, AgentToolCallBatch, AgentTurnOutcome, AgentTurnSuccess,
 };
 use crate::tools::{tool_decision_for_call, ToolDecision};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 impl InteractiveEngine {
@@ -38,6 +39,13 @@ impl InteractiveEngine {
                 self.apply_tool_calls(node_id, batch);
             }
             Ok(AgentTurnOutcome::NeedsUserInput(input)) => {
+                let allows_user_input = self
+                    .find_node(node_id)
+                    .is_none_or(|node| node.agent.request_user_input);
+                if !allows_user_input {
+                    self.handle_autonomous_needs_input(node_id, &input);
+                    return;
+                }
                 let retried = self.handle_malformed_request_input_retry(node_id, &input);
                 if retried {
                     return;
@@ -131,26 +139,71 @@ impl InteractiveEngine {
         true
     }
 
+    /// A node with user input disabled produced a text-only turn (or an
+    /// explicit input request). Nudge it forward instead of pausing; fail the
+    /// node after too many consecutive turns without tool-call progress.
+    fn handle_autonomous_needs_input(&mut self, node_id: &NodeId, input: &AgentNeedUserInput) {
+        self.transient_streaks_by_node.remove(node_id);
+        let narration = input.assistant_message.trim().to_string();
+        if !narration.is_empty() {
+            self.transcripts
+                .entry(node_id.clone())
+                .or_default()
+                .push(AgentTranscriptItem::AssistantMessage { content: narration });
+        }
+        let streak = self
+            .auto_continue_streaks_by_node
+            .entry(node_id.clone())
+            .or_default();
+        if *streak >= MAX_AUTO_CONTINUE_STREAK {
+            self.failed_nodes.insert(
+                node_id.clone(),
+                format!(
+                    "node produced {MAX_AUTO_CONTINUE_STREAK} consecutive turns without a \
+                     tool call while user input is disabled"
+                ),
+            );
+            return;
+        }
+        *streak += 1;
+        self.transcripts.entry(node_id.clone()).or_default().push(
+            AgentTranscriptItem::UserMessage {
+                content: AUTONOMOUS_CONTINUE_FEEDBACK.to_string(),
+            },
+        );
+    }
+
     fn handle_transient_retry(&mut self, node_id: &NodeId, error: &AgentError) -> bool {
         if !error.is_retryable() {
             return false;
         }
-        let retry_count = self.retries_by_node.entry(node_id.clone()).or_default();
-        let Some(delay) = next_retry(&self.workflow.settings.retry_policy, retry_count) else {
+        let streak = self
+            .transient_streaks_by_node
+            .entry(node_id.clone())
+            .or_default();
+        let Some(delay) = next_retry(&self.workflow.settings.retry_policy, streak) else {
             return false;
         };
-        self.pending_retry_delay = Some(
-            self.pending_retry_delay
-                .map_or(delay, |existing| existing.max(delay)),
+        // retries_by_node stays monotonic: model_attempt must only grow so the
+        // AI adapter mints a fresh cancellation token per attempt.
+        let attempts = self.retries_by_node.entry(node_id.clone()).or_default();
+        *attempts = attempts.saturating_add(1);
+        self.retry_after_by_node.insert(
+            node_id.clone(),
+            Instant::now() + delay + retry_jitter(node_id),
         );
         true
     }
 
     fn fail_node(&mut self, node_id: &NodeId, error: &AgentError) {
+        self.retry_after_by_node.remove(node_id);
         self.failed_nodes.insert(node_id.clone(), error.to_string());
     }
 
     fn apply_completion(&mut self, node_id: &NodeId, success: AgentTurnSuccess) {
+        self.retry_after_by_node.remove(node_id);
+        self.transient_streaks_by_node.remove(node_id);
+        self.auto_continue_streaks_by_node.remove(node_id);
         if let Some(usage) = &success.usage {
             self.note_usage(usage);
         }
@@ -166,6 +219,9 @@ impl InteractiveEngine {
     }
 
     fn apply_tool_calls(&mut self, node_id: &NodeId, batch: AgentToolCallBatch) {
+        self.transient_streaks_by_node.remove(node_id);
+        self.auto_continue_streaks_by_node.remove(node_id);
+        self.request_input_retries_by_node.remove(node_id);
         if let Some(usage) = &batch.usage {
             self.note_usage(usage);
         }
@@ -220,6 +276,7 @@ impl InteractiveEngine {
     }
 
     fn apply_user_input_request(&mut self, node_id: &NodeId, input: AgentNeedUserInput) {
+        self.transient_streaks_by_node.remove(node_id);
         self.transcripts.entry(node_id.clone()).or_default().push(
             AgentTranscriptItem::AssistantMessage {
                 content: input.assistant_message,
@@ -235,4 +292,12 @@ fn next_retry(policy: &RetryPolicy, retry_count: &mut u8) -> Option<Duration> {
     }
     *retry_count += 1;
     Some(policy.delay_for_attempt(*retry_count))
+}
+
+/// Spread sibling retry times so they do not hit the provider in the same tick.
+fn retry_jitter(node_id: &NodeId) -> Duration {
+    let hash = node_id.0.bytes().fold(0u64, |acc, byte| {
+        acc.wrapping_mul(31).wrapping_add(u64::from(byte))
+    });
+    Duration::from_millis(100 + (hash % 400))
 }

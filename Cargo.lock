@@ -1684,7 +1684,7 @@ dependencies = [
 
 [[package]]
 name = "desktop"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "env_logger",
  "keepawake",
@@ -1953,9 +1953,10 @@ checksum = "66b7e2430c6dff6a955451e2cfc438f09cea1965a9d6f87f7e3b90decc014099"
 
 [[package]]
 name = "engine"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "async-trait",
+ "futures",
  "serde",
  "serde_json",
  "tempfile",
@@ -4610,7 +4611,7 @@ dependencies = [
 
 [[package]]
 name = "providers"
-version = "0.1.14"
+version = "0.1.15"
 dependencies = [
  "async-trait",
  "aws-config",

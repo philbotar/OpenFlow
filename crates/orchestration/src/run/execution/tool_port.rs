@@ -5,8 +5,8 @@ use async_trait::async_trait;
 use engine::{
     augment_call_subagent_tool_description, build_predefined_subagent_summaries,
     handle_declare_subagents, merge_subagent_summaries as merge_subagent_summaries_into_map,
-    AiPort, CallableAgent, InteractiveEngine, NodeId, NodeToolConfig, RunTelemetry,
-    SubagentSummary, ToolCall, ToolConcurrency, ToolPort, ToolResult, Workflow, CALL_SUBAGENT_TOOL,
+    AiPort, CallableAgent, NodeId, NodeToolConfig, RunTelemetry, SubagentSummary, ToolBatchEffects,
+    ToolBatchOutput, ToolCall, ToolConcurrency, ToolPort, ToolResult, Workflow, CALL_SUBAGENT_TOOL,
     DECLARE_SUBAGENTS_TOOL,
 };
 use std::collections::{BTreeMap, HashSet};
@@ -122,11 +122,10 @@ where
 
     async fn execute_batch(
         &self,
-        engine: &mut InteractiveEngine,
         node_id: &NodeId,
         label: &str,
         calls: Vec<ToolCall>,
-    ) -> Vec<ToolResult> {
+    ) -> ToolBatchOutput {
         let node_config = self
             .workflow
             .nodes
@@ -134,6 +133,7 @@ where
             .find(|node| node.id == *node_id)
             .map(|node| node.agent.tools.clone())
             .unwrap_or_default();
+        let mut effects = ToolBatchEffects::default();
         let mut results = Vec::with_capacity(calls.len());
         let mut index = 0usize;
         while index < calls.len() {
@@ -141,7 +141,7 @@ where
                 break;
             }
             if self.node_interrupt_is_cancelled(node_id) {
-                engine.mark_node_interrupted(node_id);
+                effects.interrupted = true;
                 break;
             }
             if self.is_parallel_shared_tool(&calls[index]) {
@@ -150,7 +150,7 @@ where
                     index += 1;
                 }
                 match self
-                    .run_parallel_regular_tools(engine, node_id, label, &calls[start..index])
+                    .run_parallel_regular_tools(&mut effects, node_id, label, &calls[start..index])
                     .await
                 {
                     Some(batch_results) => results.extend(batch_results),
@@ -165,7 +165,7 @@ where
                 self.run_declare_subagents(node_id, label, &tool_call)
             } else if tool_call.name == CALL_SUBAGENT_TOOL {
                 match self
-                    .run_call_subagent(engine, node_id, label, &tool_call, &node_config)
+                    .run_call_subagent(&mut effects, node_id, label, &tool_call, &node_config)
                     .await
                 {
                     Some(result) => result,
@@ -173,7 +173,7 @@ where
                 }
             } else {
                 match self
-                    .run_regular_tool(engine, node_id, label, tool_call, &node_config)
+                    .run_regular_tool(&mut effects, node_id, label, tool_call, &node_config)
                     .await
                 {
                     Some(result) => result,
@@ -182,7 +182,7 @@ where
             };
             results.push(result);
         }
-        results
+        ToolBatchOutput { results, effects }
     }
 }
 
@@ -203,7 +203,7 @@ where
 
     async fn run_parallel_regular_tools(
         &self,
-        engine: &mut InteractiveEngine,
+        effects: &mut ToolBatchEffects,
         node_id: &NodeId,
         label: &str,
         tool_calls: &[ToolCall],
@@ -221,7 +221,7 @@ where
                 self.emit_tool_completed(node_id, tool_call, &record.result);
                 results[index] = Some(record.result);
             } else {
-                self.note_read_call(engine, node_id, tool_call);
+                self.note_read_call(effects, tool_call);
                 self.emit_tool_started(node_id, tool_call);
                 runnable_indices.push(index);
             }
@@ -240,7 +240,7 @@ where
             let event_tx = self.event_tx.clone();
             let retry_policy = retry_policy.clone();
             let exclusive_locks = Arc::clone(&self.exclusive_locks);
-            let exclusive_keys = self.exclusive_lock_keys_for(&call);
+            let exclusive_keys = self.exclusive_lock_keys_for(node_id, &call);
             join_handles.push(tokio::spawn(async move {
                 let _permits = exclusive_locks.acquire(exclusive_keys).await;
                 let conversation_id = node_id_for_task.0.clone();
@@ -282,8 +282,8 @@ where
                             size_bytes: artifact.size_bytes,
                         });
                     }
-                    self.record_tool_file_changes(engine, node_id, &record);
-                    self.record_tool_reads(engine, node_id, &record);
+                    self.record_tool_file_changes(effects, node_id, &record);
+                    self.record_tool_reads(effects, node_id, &record);
                     self.emit_tool_completed(node_id, tool_call, &record.result);
                     results[index] = Some(record.result);
                 }
@@ -304,15 +304,24 @@ where
         Some(collected)
     }
 
-    fn exclusive_lock_keys_for(&self, call: &ToolCall) -> Vec<String> {
+    fn exclusive_lock_keys_for(&self, node_id: &NodeId, call: &ToolCall) -> Vec<String> {
         let Ok(registered) = self.tool_runner.registry().get(&call.name) else {
             return Vec::new();
         };
-        exclusive_lock_keys(registered.kind, registered.definition.concurrency, call)
+        exclusive_lock_keys(
+            registered.kind,
+            registered.definition.concurrency,
+            node_id,
+            call,
+        )
     }
 
-    async fn exclusive_permits(&self, call: &ToolCall) -> Vec<tokio::sync::OwnedSemaphorePermit> {
-        let keys = self.exclusive_lock_keys_for(call);
+    async fn exclusive_permits(
+        &self,
+        node_id: &NodeId,
+        call: &ToolCall,
+    ) -> Vec<tokio::sync::OwnedSemaphorePermit> {
+        let keys = self.exclusive_lock_keys_for(node_id, call);
         self.exclusive_locks.acquire(keys).await
     }
 
@@ -336,7 +345,7 @@ where
 
     async fn run_regular_tool(
         &self,
-        engine: &mut InteractiveEngine,
+        effects: &mut ToolBatchEffects,
         node_id: &NodeId,
         label: &str,
         tool_call: ToolCall,
@@ -352,7 +361,7 @@ where
         }
         self.emit_tool_started(node_id, &tool_call);
         match self
-            .execute_tool_or_cancel(engine, tool_call.clone(), node_id, &node_id.0)
+            .execute_tool_or_cancel(effects, tool_call.clone(), node_id, &node_id.0)
             .await
         {
             Some(Ok(record)) => {
@@ -365,8 +374,8 @@ where
                         size_bytes: artifact.size_bytes,
                     });
                 }
-                self.record_tool_file_changes(engine, node_id, &record);
-                self.record_tool_reads(engine, node_id, &record);
+                self.record_tool_file_changes(effects, node_id, &record);
+                self.record_tool_reads(effects, node_id, &record);
                 self.emit_tool_completed(node_id, &tool_call, &record.result);
                 Some(record.result)
             }
@@ -418,7 +427,7 @@ where
 
     fn record_tool_file_changes(
         &self,
-        engine: &mut InteractiveEngine,
+        effects: &mut ToolBatchEffects,
         node_id: &NodeId,
         record: &ToolExecutionRecord,
     ) {
@@ -431,7 +440,9 @@ where
         if record.file_changes.is_empty() {
             return;
         }
-        engine.record_file_changes(node_id, record.file_changes.clone());
+        effects
+            .file_changes
+            .extend(record.file_changes.iter().cloned());
         for change in &record.file_changes {
             let _ = self.event_tx.send(ExecutionEvent::FileChanged {
                 node_id: node_id.clone(),
@@ -442,22 +453,17 @@ where
 
     fn record_tool_reads(
         &self,
-        engine: &mut InteractiveEngine,
-        node_id: &NodeId,
+        effects: &mut ToolBatchEffects,
+        _node_id: &NodeId,
         record: &ToolExecutionRecord,
     ) {
         if record.reads.is_empty() {
             return;
         }
-        engine.record_reads(node_id, record.reads.clone());
+        effects.reads.extend(record.reads.iter().cloned());
     }
 
-    fn note_read_call(
-        &self,
-        engine: &mut InteractiveEngine,
-        node_id: &NodeId,
-        tool_call: &ToolCall,
-    ) {
+    fn note_read_call(&self, effects: &mut ToolBatchEffects, tool_call: &ToolCall) {
         if tool_call.name != "read" {
             return;
         }
@@ -475,7 +481,7 @@ where
         {
             return;
         }
-        engine.note_read_call(node_id, &path);
+        effects.read_call_paths.push(path.to_string());
     }
 
     fn node_interrupt_token(&self, node_id: &NodeId) -> Option<CancellationToken> {
@@ -492,26 +498,36 @@ where
 
     async fn execute_tool_or_cancel(
         &self,
-        engine: &mut InteractiveEngine,
+        effects: &mut ToolBatchEffects,
         tool_call: ToolCall,
         node_id: &NodeId,
         conversation_id: &str,
     ) -> Option<Result<ToolExecutionRecord, ToolRunnerError>> {
-        self.note_read_call(engine, node_id, &tool_call);
+        self.note_read_call(effects, &tool_call);
+
         let tool_runner = Arc::clone(&self.tool_runner);
+
         let tool_name = tool_call.name.clone();
+
         let (update_tx, mut update_rx) = tokio::sync::mpsc::unbounded_channel();
+
         let node_id_for_task = node_id.clone();
+
         let ctx = ToolExecutionContext {
             node_id: node_id_for_task,
             conversation_id: conversation_id.to_string(),
             lsp: self.lsp.clone(),
             update_tx: Some(update_tx),
         };
+
         let event_tx = self.event_tx.clone();
+
         let update_node_id = node_id.clone();
+
         let update_tool_call_id = tool_call.id.clone();
+
         let update_tool_name = tool_call.name.clone();
+
         tokio::spawn(async move {
             while let Some(update) = update_rx.recv().await {
                 let _ = event_tx.send(ExecutionEvent::ToolUpdated {
@@ -524,7 +540,7 @@ where
             }
         });
         let wait_started = Instant::now();
-        let exclusive_permits = self.exclusive_permits(&tool_call).await;
+        let exclusive_permits = self.exclusive_permits(node_id, &tool_call).await;
         maybe_emit_exclusive_wait(&self.event_tx, node_id, &tool_name, wait_started.elapsed());
         let started = Instant::now();
         let node_token = self.node_interrupt_token(node_id);
@@ -548,7 +564,7 @@ where
                         None
                     }
                     _ = node_token.cancelled() => {
-                        engine.mark_node_interrupted(node_id);
+                        effects.interrupted = true;
                         None
                     }
                     result = run_tool => Some(result),
@@ -593,8 +609,9 @@ fn render_tool_error(error: ToolRunnerError) -> String {
 }
 
 /// Run-wide lock table for exclusive tool calls, keyed by lock key
-/// (`path:<p>` or `tool:<name>`). Keys must be pre-sorted (they are, by
-/// `exclusive_lock_keys`) so overlapping acquisitions cannot deadlock.
+/// (`path:<p>`, `tool:<name>`, or node-scoped tool keys). Keys must be
+/// pre-sorted (they are, by `exclusive_lock_keys`) so overlapping
+/// acquisitions cannot deadlock.
 #[derive(Default)]
 struct ExclusiveLocks {
     semaphores: parking_lot::Mutex<BTreeMap<String, Arc<Semaphore>>>,
@@ -665,19 +682,30 @@ fn apply_patch_paths(input: &str) -> Vec<String> {
         .collect()
 }
 
+fn tool_fallback_key(concurrency: ToolConcurrency, node_id: &NodeId, tool_name: &str) -> String {
+    match concurrency {
+        ToolConcurrency::NodeExclusive => format!("{}\u{1f}tool:{}", node_id.0, tool_name),
+        _ => format!("tool:{}", tool_name),
+    }
+}
+
 /// Lock keys a call must hold before executing. Empty = no cross-node lock.
 /// Keys are sorted; acquiring in order prevents deadlock between calls
 /// that lock overlapping path sets.
 fn exclusive_lock_keys(
     kind: crate::tool::registry::BuiltinToolKind,
     concurrency: ToolConcurrency,
+    node_id: &NodeId,
     call: &ToolCall,
 ) -> Vec<String> {
     use crate::tool::registry::BuiltinToolKind as Kind;
-    if concurrency != ToolConcurrency::Exclusive {
+    if concurrency == ToolConcurrency::Shared {
         return Vec::new();
     }
-    let fallback = vec![format!("tool:{}", call.name)];
+    let fallback = vec![tool_fallback_key(concurrency, node_id, &call.name)];
+    if concurrency == ToolConcurrency::NodeExclusive {
+        return fallback;
+    }
     match kind {
         Kind::Write => match call.arguments.get("path").and_then(|v| v.as_str()) {
             Some(path) => path_keys(vec![path.to_string()]),
@@ -787,11 +815,18 @@ async fn run_registered_tool_with_retry(
     .await
 }
 
+#[path = "subagent_session.rs"]
+mod subagent_session;
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::tool::registry::BuiltinToolKind;
     use std::time::Duration;
+
+    fn node(id: &str) -> NodeId {
+        NodeId(id.to_string())
+    }
 
     fn call(name: &str, args: serde_json::Value) -> ToolCall {
         ToolCall {
@@ -806,19 +841,38 @@ mod tests {
         let keys = exclusive_lock_keys(
             BuiltinToolKind::Read,
             ToolConcurrency::Shared,
+            &node("a"),
             &call("read", serde_json::json!({"path": "a.txt"})),
         );
         assert!(keys.is_empty());
     }
 
     #[test]
-    fn bash_falls_back_to_tool_key() {
+    fn bash_falls_back_to_node_scoped_tool_key() {
         let keys = exclusive_lock_keys(
             BuiltinToolKind::Bash,
-            ToolConcurrency::Exclusive,
+            ToolConcurrency::NodeExclusive,
+            &node("n1"),
             &call("bash", serde_json::json!({"command": "cargo test"})),
         );
-        assert_eq!(keys, vec!["tool:bash".to_string()]);
+        assert_eq!(keys, vec!["n1\u{1f}tool:bash".to_string()]);
+    }
+
+    #[test]
+    fn node_exclusive_bash_differs_per_node() {
+        let a = exclusive_lock_keys(
+            BuiltinToolKind::Bash,
+            ToolConcurrency::NodeExclusive,
+            &node("a"),
+            &call("bash", serde_json::json!({"command": "echo"})),
+        );
+        let b = exclusive_lock_keys(
+            BuiltinToolKind::Bash,
+            ToolConcurrency::NodeExclusive,
+            &node("b"),
+            &call("bash", serde_json::json!({"command": "echo"})),
+        );
+        assert_ne!(a, b);
     }
 
     #[test]
@@ -826,6 +880,7 @@ mod tests {
         let keys = exclusive_lock_keys(
             BuiltinToolKind::Write,
             ToolConcurrency::Exclusive,
+            &node("a"),
             &call(
                 "write",
                 serde_json::json!({"path": "./src/lib.rs", "content": "x"}),
@@ -839,6 +894,7 @@ mod tests {
         let keys = exclusive_lock_keys(
             BuiltinToolKind::Edit,
             ToolConcurrency::Exclusive,
+            &node("a"),
             &call(
                 "edit",
                 serde_json::json!({"path": "src/a.rs", "edits": [{"old_text": "x", "new_text": "y"}]}),
@@ -853,6 +909,7 @@ mod tests {
         let keys = exclusive_lock_keys(
             BuiltinToolKind::Edit,
             ToolConcurrency::Exclusive,
+            &node("a"),
             &call("edit", serde_json::json!({"input": input})),
         );
         assert_eq!(
@@ -866,6 +923,7 @@ mod tests {
         let keys = exclusive_lock_keys(
             BuiltinToolKind::Edit,
             ToolConcurrency::Exclusive,
+            &node("a"),
             &call("edit", serde_json::json!({})),
         );
         assert_eq!(keys, vec!["tool:edit".to_string()]);
@@ -877,6 +935,7 @@ mod tests {
         let keys = exclusive_lock_keys(
             BuiltinToolKind::ApplyPatch,
             ToolConcurrency::Exclusive,
+            &node("a"),
             &call("apply_patch", serde_json::json!({"input": input})),
         );
         assert_eq!(
@@ -890,6 +949,7 @@ mod tests {
         let keys = exclusive_lock_keys(
             BuiltinToolKind::ApplyPatch,
             ToolConcurrency::Exclusive,
+            &node("a"),
             &call("apply_patch", serde_json::json!({"input": "garbage"})),
         );
         assert_eq!(keys, vec!["tool:apply_patch".to_string()]);
@@ -900,9 +960,27 @@ mod tests {
         let keys = exclusive_lock_keys(
             BuiltinToolKind::Mcp,
             ToolConcurrency::Exclusive,
+            &node("a"),
             &call("some_mcp_tool", serde_json::json!({})),
         );
         assert_eq!(keys, vec!["tool:some_mcp_tool".to_string()]);
+    }
+
+    #[test]
+    fn exclusive_tools_on_different_nodes_share_path_locks() {
+        let a = exclusive_lock_keys(
+            BuiltinToolKind::Edit,
+            ToolConcurrency::Exclusive,
+            &node("a"),
+            &call("edit", serde_json::json!({"path": "src/a.rs"})),
+        );
+        let b = exclusive_lock_keys(
+            BuiltinToolKind::Edit,
+            ToolConcurrency::Exclusive,
+            &node("b"),
+            &call("edit", serde_json::json!({"path": "src/a.rs"})),
+        );
+        assert_eq!(a, b);
     }
 
     #[tokio::test]
@@ -949,7 +1027,7 @@ mod tests {
     #[test]
     fn exclusive_wait_below_threshold_is_silent() {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        maybe_emit_exclusive_wait(&tx, &NodeId("n1".into()), "bash", Duration::from_millis(5));
+        maybe_emit_exclusive_wait(&tx, &node("n1"), "bash", Duration::from_millis(5));
         assert!(rx.try_recv().is_err());
     }
 
@@ -958,7 +1036,7 @@ mod tests {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         maybe_emit_exclusive_wait(
             &tx,
-            &NodeId("n1".into()),
+            &node("n1"),
             "bash",
             Duration::from_millis(250),
         );
@@ -971,13 +1049,10 @@ mod tests {
             } => {
                 assert_eq!(phase, "tool-wait");
                 assert_eq!(label, "bash");
-                assert_eq!(node_id, Some(NodeId("n1".into())));
+                assert_eq!(node_id, Some(node("n1")));
                 assert_eq!(duration_ms, 250);
             }
             other => panic!("unexpected event: {other:?}"),
         }
     }
 }
-
-#[path = "subagent_session.rs"]
-mod subagent_session;

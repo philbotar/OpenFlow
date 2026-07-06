@@ -36,7 +36,12 @@ pub fn to_agent_error(error: CompletionError, label: &str) -> AgentError {
             AgentError::Failed(format!("{label} response error: {message}"))
         }
         CompletionError::ProviderError(message) => {
-            AgentError::Failed(format!("{label} provider error: {message}"))
+            let rendered = format!("{label} provider error: {message}");
+            if crate::http_errors::is_retryable_proxy_body(&message) {
+                AgentError::Transient(rendered)
+            } else {
+                AgentError::Failed(rendered)
+            }
         }
     }
 }
@@ -106,6 +111,28 @@ mod tests {
         let err = to_agent_error(
             CompletionError::JsonError(serde_json::from_str::<serde_json::Value>("x").unwrap_err()),
             "Anthropic",
+        );
+        assert!(matches!(err, AgentError::Failed(_)));
+    }
+
+    #[test]
+    fn provider_error_with_retryable_proxy_body_is_transient() {
+        let err = to_agent_error(
+            CompletionError::ProviderError(
+                "Invalid status code 400 Bad Request with message: \
+                 {\"error\":{\"message\":\"Error from provider (Console Go): Upstream request failed\"}}"
+                    .to_string(),
+            ),
+            "Custom OpenAI-compatible API",
+        );
+        assert!(err.is_retryable(), "expected transient, got {err}");
+    }
+
+    #[test]
+    fn provider_error_without_retryable_body_stays_failed() {
+        let err = to_agent_error(
+            CompletionError::ProviderError("invalid 'parameters' schema".to_string()),
+            "Custom OpenAI-compatible API",
         );
         assert!(matches!(err, AgentError::Failed(_)));
     }

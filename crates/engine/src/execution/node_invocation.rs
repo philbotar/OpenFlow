@@ -146,6 +146,15 @@ the task targets them. A follow-on system block may include the exact repository
 - Use bash for file reads, searches, or edits when read/search/find/edit/write are sufficient.\n\
 - Assume downstream nodes have started before submit succeeds.";
 
+/// Override appended after the runtime preamble for nodes with `requestUserInput: false`.
+pub(crate) const AUTONOMOUS_NODE_PREAMBLE: &str = "\
+--- Autonomous node ---\n\
+No human is available during this node, and openflow_request_user_input is not in your \
+tool catalog. This overrides the 'When to pause for a human' section above: never pause. \
+Every turn must either call a tool or call openflow_submit_node_output; plain-text turns \
+do not advance or pause the workflow. If information is missing, make the most reasonable \
+assumption, note it in your submitted output, and keep working to submit.";
+
 /// Assemble ordered system messages for a workflow agent node (engine-owned; providers do not edit).
 #[must_use]
 pub(crate) fn build_system_messages(
@@ -160,6 +169,9 @@ pub(crate) fn build_system_messages(
         .contains("--- OpenFlow runtime ---")
     {
         messages.push(NODE_RUNTIME_PREAMBLE.to_string());
+    }
+    if !node.agent.request_user_input {
+        messages.push(AUTONOMOUS_NODE_PREAMBLE.to_string());
     }
     if let Some(root) = project_repository_root
         .map(str::trim)
@@ -349,6 +361,7 @@ pub(crate) fn build_agent_request(
         model_attempt: 1,
         reasoning_effort: node.agent.reasoning_effort.clone(),
         reasoning_budget_tokens: node.agent.reasoning_budget_tokens,
+        allow_user_input: node.agent.request_user_input,
     })
 }
 
@@ -644,5 +657,48 @@ mod tests {
         let request = build_agent_request(&ctx, &node, true).unwrap();
         assert_eq!(request.reasoning_effort, Some("adaptive".to_string()));
         assert_eq!(request.reasoning_budget_tokens, Some(40960));
+    }
+
+    #[test]
+    fn build_agent_request_maps_request_user_input_flag() {
+        let mut workflow = Workflow::new("wf");
+        let mut node = crate::graph::Node::agent("a", 0.0, 0.0);
+        node.agent.model = "m".to_string();
+        workflow.nodes.push(node.clone());
+        let upstream_map = build_upstream_map(&workflow);
+        let ctx = NodeInvocationContext {
+            workflow: &workflow,
+            upstream_map: &upstream_map,
+            outputs: &BTreeMap::new(),
+            changed_files_by_node: &BTreeMap::new(),
+            reads_by_node: &BTreeMap::new(),
+            entrypoint_text: None,
+            transcript: &[],
+            available_tools: &[],
+            project_repository_root: None,
+        };
+        let request = build_agent_request(&ctx, &node, true).unwrap();
+        assert!(request.allow_user_input);
+
+        node.agent.request_user_input = false;
+        let request = build_agent_request(&ctx, &node, true).unwrap();
+        assert!(!request.allow_user_input);
+    }
+
+    #[test]
+    fn build_system_messages_appends_autonomous_block_when_input_disabled() {
+        let workflow = Workflow::new("wf");
+        let mut node = crate::graph::Node::agent("a", 0.0, 0.0);
+        node.agent.request_user_input = false;
+        let messages = build_system_messages(&workflow, &node, None);
+        assert!(messages
+            .iter()
+            .any(|m| m.contains("--- Autonomous node ---")));
+
+        node.agent.request_user_input = true;
+        let messages = build_system_messages(&workflow, &node, None);
+        assert!(!messages
+            .iter()
+            .any(|m| m.contains("--- Autonomous node ---")));
     }
 }
