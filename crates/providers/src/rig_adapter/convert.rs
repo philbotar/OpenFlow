@@ -14,6 +14,7 @@ use engine::{AgentRequest, AgentTranscriptItem};
 use rig_core::completion::CompletionRequest;
 use rig_core::message::{
     AssistantContent, Message, ToolCall as RigToolCall, ToolChoice, ToolFunction,
+    ToolResultContent, UserContent,
 };
 use rig_core::OneOrMany;
 use serde_json::json;
@@ -76,9 +77,12 @@ fn additional_params(request: &AgentRequest) -> Option<serde_json::Value> {
 }
 
 /// Consume one contiguous run of tool calls/results. Emits a single assistant
-/// message carrying every call, then one result message per call in call
-/// order. Strict OpenAI-compatible providers reject any other shape ("tool
-/// call result does not follow tool call").
+/// message carrying every call, then a single user message carrying every
+/// result in call order. Bedrock requires all `toolResults` for a `toolUse`
+/// batch in the one next user message ("Expected `toolResult` blocks at
+/// `messages.N.content`"); rig's `OpenAI` adapters re-split that message into one
+/// tool-role message per result, which is the shape strict OpenAI-compatible
+/// providers demand.
 fn push_tool_turn(history: &mut Vec<Message>, items: &[AgentTranscriptItem]) -> usize {
     let mut calls: Vec<engine::ToolCall> = Vec::new();
     let mut results_by_id: BTreeMap<String, engine::ToolResult> = BTreeMap::new();
@@ -108,17 +112,25 @@ fn push_tool_turn(history: &mut Vec<Message>, items: &[AgentTranscriptItem]) -> 
     if let Ok(content) = OneOrMany::many(contents) {
         history.push(Message::Assistant { id: None, content });
     }
-    for call in &calls {
-        let message = match results_by_id.remove(&call.id) {
-            Some(result) => Message::tool_result(result.tool_call_id, result.content),
+    let result_contents: Vec<UserContent> = calls
+        .iter()
+        .map(|call| match results_by_id.remove(&call.id) {
+            Some(result) => UserContent::tool_result(
+                result.tool_call_id,
+                OneOrMany::one(ToolResultContent::text(result.content)),
+            ),
             // A call with no recorded result (interrupted batch) must still be
             // answered or strict providers reject the whole transcript.
-            None => Message::tool_result(
+            None => UserContent::tool_result(
                 call.id.clone(),
-                "Tool execution was interrupted before a result was produced.".to_string(),
+                OneOrMany::one(ToolResultContent::text(
+                    "Tool execution was interrupted before a result was produced.",
+                )),
             ),
-        };
-        history.push(message);
+        })
+        .collect();
+    if let Ok(content) = OneOrMany::many(result_contents) {
+        history.push(Message::User { content });
     }
     // Orphan results with no matching call in this run (e.g. truncated
     // checkpoints): degrade to plain user text rather than sending an
@@ -261,8 +273,11 @@ mod tests {
         ];
         let req = to_completion_request(&request_with_transcript(transcript));
         let msgs: Vec<_> = req.chat_history.iter().collect();
-        // [node context, assistant(c1+c2), result c1, result c2]
-        assert_eq!(msgs.len(), 4);
+        // [node context, assistant(c1+c2), one user message with both results].
+        // Bedrock requires every toolResult for a toolUse batch in the single
+        // next user message; splitting them across messages is rejected with
+        // "Expected toolResult blocks at messages.N.content".
+        assert_eq!(msgs.len(), 3);
         let Message::Assistant { content, .. } = msgs[1] else {
             panic!("expected assistant tool-call message");
         };
@@ -278,16 +293,24 @@ mod tests {
             vec!["c1", "c2"],
             "all calls in one assistant message, call order"
         );
-        for (msg, (id, text)) in msgs[2..].iter().zip([("c1", "one"), ("c2", "two")]) {
-            let Message::User { content } = msg else {
-                panic!("expected user tool-result message");
-            };
-            let UserContent::ToolResult(result) = content.first() else {
-                panic!("expected tool result content");
-            };
-            assert_eq!(result.id, id);
-            assert_eq!(result.content.first(), ToolResultContent::text(text));
-        }
+        let Message::User { content } = msgs[2] else {
+            panic!("expected user tool-result message");
+        };
+        let results: Vec<_> = content
+            .iter()
+            .map(|c| match c {
+                UserContent::ToolResult(result) => (result.id.clone(), result.content.first()),
+                other => panic!("expected tool result content, got {other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            results,
+            vec![
+                ("c1".to_string(), ToolResultContent::text("one")),
+                ("c2".to_string(), ToolResultContent::text("two")),
+            ],
+            "all results in one user message, call order"
+        );
     }
 
     #[test]
@@ -295,14 +318,18 @@ mod tests {
         let transcript = vec![tc("c1", "bash"), tc("c2", "read"), tr("c2", "two")];
         let req = to_completion_request(&request_with_transcript(transcript));
         let msgs: Vec<_> = req.chat_history.iter().collect();
-        assert_eq!(msgs.len(), 4);
+        assert_eq!(msgs.len(), 3);
         let Message::User { content } = msgs[2] else {
-            panic!("expected synthesized result for c1");
+            panic!("expected tool-result message");
         };
-        let UserContent::ToolResult(result) = content.first() else {
-            panic!("expected tool result content");
-        };
-        assert_eq!(result.id, "c1");
+        let ids: Vec<_> = content
+            .iter()
+            .map(|c| match c {
+                UserContent::ToolResult(result) => result.id.clone(),
+                other => panic!("expected tool result content, got {other:?}"),
+            })
+            .collect();
+        assert_eq!(ids, vec!["c1", "c2"], "synthesized result for c1 included");
     }
 
     #[test]
