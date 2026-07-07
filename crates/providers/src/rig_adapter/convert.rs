@@ -78,9 +78,9 @@ fn additional_params(request: &AgentRequest) -> Option<serde_json::Value> {
 
 /// Consume one contiguous run of tool calls/results. Emits a single assistant
 /// message carrying every call, then a single user message carrying every
-/// result in call order. Bedrock requires all toolResults for a toolUse batch
-/// in the one next user message ("Expected toolResult blocks at
-/// messages.N.content"); rig's OpenAI adapters re-split that message into one
+/// result in call order. Bedrock requires all `toolResults` for a `toolUse`
+/// batch in the one next user message ("Expected `toolResult` blocks at
+/// `messages.N.content`"); rig's `OpenAI` adapters re-split that message into one
 /// tool-role message per result, which is the shape strict OpenAI-compatible
 /// providers demand.
 fn push_tool_turn(history: &mut Vec<Message>, items: &[AgentTranscriptItem]) -> usize {
@@ -299,9 +299,7 @@ mod tests {
         let results: Vec<_> = content
             .iter()
             .map(|c| match c {
-                UserContent::ToolResult(result) => {
-                    (result.id.clone(), result.content.first())
-                }
+                UserContent::ToolResult(result) => (result.id.clone(), result.content.first()),
                 other => panic!("expected tool result content, got {other:?}"),
             })
             .collect();
