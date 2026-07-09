@@ -100,6 +100,8 @@ the limit.\n\
 the pattern if you hit the limit.\n\
 - ast_grep — search code structurally with ast-grep patterns ($VAR metavariables). Prefer over \
 search when matching syntax trees rather than raw text.\n\
+- web_search — search the web via the local search-cli aggregator (when configured). Returns \
+rank-fused JSON results from configured providers. Distinct from search, which greps local files.\n\
 \n\
 ### Write and edit\n\
 - write — create or overwrite a file under the execution folder. Prefer edit for existing files.\n\

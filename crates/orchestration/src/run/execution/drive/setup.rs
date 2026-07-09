@@ -84,9 +84,11 @@ where
         node_interrupts,
         context_window_sizes,
         mcp,
+        search,
+        runtime_config_store,
     } = params;
 
-    let engine = build_engine(
+    let mut engine = build_engine(
         workflow.clone(),
         entrypoint,
         resume_checkpoint,
@@ -94,6 +96,8 @@ where
             .as_ref()
             .map(|path| path.display().to_string()),
     )?;
+
+    engine.set_runtime_config_store(runtime_config_store.clone());
 
     let mut tool_registry = ToolRegistry::new();
     let effective_servers = crate::adapters::mcp::effective_mcp_servers(&mcp, &execution_cwd);
@@ -122,6 +126,13 @@ where
         .extend_mcp(mcp_tools)
         .map_err(|error| error.to_string())?;
 
+    if search.enabled
+        && search.has_configured_keys()
+        && crate::tool::web_search::resolve_binary(&search).is_ok()
+    {
+        tool_registry.register_web_search();
+    }
+
     let artifacts = ArtifactStore::new(artifact_root).map_err(|error| error.to_string())?;
 
     let tool_runner = Arc::new(
@@ -132,7 +143,8 @@ where
             cancel_token.clone(),
             snapshot_store,
         )
-        .with_mcp_clients(mcp_clients),
+        .with_mcp_clients(mcp_clients)
+        .with_search_settings(search),
     );
     let workflow = Arc::new(workflow);
     let ai = Arc::new(ai);
@@ -155,6 +167,7 @@ where
         event_tx,
         node_interrupts_for_tools,
         Arc::clone(&aborted_emitted),
+        runtime_config_store,
     );
 
     Ok(RunWiring {

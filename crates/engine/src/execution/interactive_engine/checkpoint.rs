@@ -55,6 +55,8 @@ pub struct InteractiveEngineCheckpoint {
     pub submit_output_retries_by_node: BTreeMap<NodeId, u8>,
     pub request_input_retries_by_node: BTreeMap<NodeId, u8>,
     #[serde(default)]
+    pub empty_turn_retries_by_node: BTreeMap<NodeId, u8>,
+    #[serde(default)]
     pub auto_continue_streaks_by_node: BTreeMap<NodeId, u8>,
     pub entrypoint_text: Option<String>,
     pub interrupted_nodes: BTreeSet<NodeId>,
@@ -142,6 +144,7 @@ impl InteractiveEngine {
             transient_streaks_by_node: self.transient_streaks_by_node.clone(),
             submit_output_retries_by_node: self.submit_output_retries_by_node.clone(),
             request_input_retries_by_node: self.request_input_retries_by_node.clone(),
+            empty_turn_retries_by_node: self.empty_turn_retries_by_node.clone(),
             auto_continue_streaks_by_node: self.auto_continue_streaks_by_node.clone(),
             entrypoint_text: self.entrypoint_text.clone(),
             interrupted_nodes: self.interrupted_nodes.clone(),
@@ -195,12 +198,14 @@ impl InteractiveEngine {
             retry_after_by_node: BTreeMap::new(),
             submit_output_retries_by_node: checkpoint.submit_output_retries_by_node,
             request_input_retries_by_node: checkpoint.request_input_retries_by_node,
+            empty_turn_retries_by_node: checkpoint.empty_turn_retries_by_node,
             auto_continue_streaks_by_node: checkpoint.auto_continue_streaks_by_node,
             entrypoint_text: checkpoint.entrypoint_text,
             project_repository_root,
             terminal_error: None,
             interrupted_nodes: checkpoint.interrupted_nodes,
             failed_nodes: checkpoint.failed_nodes,
+            runtime_config_store: None,
         })
     }
 

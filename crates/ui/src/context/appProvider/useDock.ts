@@ -4,7 +4,6 @@ import type { BottomTab, TerminalEvent, TerminalStart } from "../../lib/types";
 import {
   clampDockHeight,
   COLLAPSED_DOCK_HEIGHT,
-  DEFAULT_DOCK_HEIGHT,
   normalizeError,
   restoredChatDockHeight,
   shouldCollapseDock,
@@ -17,9 +16,9 @@ interface UseDockParams {
 }
 
 export function useDock(params: UseDockParams) {
-  const [bottomTab, setBottomTab] = createSignal<BottomTab>("overview");
+  const [bottomTab, setBottomTab] = createSignal<BottomTab>("chat");
   const [dockOpen, setDockOpen] = createSignal(true);
-  const [dockHeight, setDockHeight] = createSignal(DEFAULT_DOCK_HEIGHT);
+  const [dockHeight, setDockHeight] = createSignal(restoredChatDockHeight());
   const [chatFocusMode, setChatFocusMode] = createSignal(false);
   const [terminalSessions, setTerminalSessions] = createSignal<TerminalStart[]>([]);
   const [activeTerminalSessionId, setActiveTerminalSessionId] = createSignal<string | null>(null);

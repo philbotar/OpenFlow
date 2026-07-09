@@ -9,6 +9,7 @@ import type {
   RunSummary,
   Workflow,
   WorkflowRunState,
+  NodeRuntimeConfigUpdate,
 } from "../../lib/types";
 import { canSendIdleRunKickoff, isGlobalRunEntryNodeId } from "../../lib/workflow";
 import { clampDockHeight, normalizeError } from "../../lib/utils";
@@ -40,6 +41,7 @@ interface UseRunSessionParams {
   setPendingKickoff: (text: string | null) => void;
   flushPendingKickoff: (state: WorkflowRunState) => Promise<void>;
   handleRefreshRunHistoryRef: () => Promise<void>;
+  updateActiveWorkflow: (mutator: (draft: Workflow) => void) => Workflow | null;
 }
 
 export function useRunSession(params: UseRunSessionParams) {
@@ -305,6 +307,41 @@ export function useRunSession(params: UseRunSessionParams) {
     }
   };
 
+  const handleUpdateNodeRuntimeConfig = async (
+    nodeId: NodeId,
+    update: NodeRuntimeConfigUpdate,
+  ) => {
+    params.updateActiveWorkflow((draft) => {
+      const node = draft.nodes.find((entry) => entry.id === nodeId);
+      if (!node) {
+        return;
+      }
+      if (update.approvalMode !== undefined) {
+        node.agent.tools.approvalMode = update.approvalMode;
+      }
+      if (update.reasoningEffort !== undefined) {
+        node.agent.reasoning_effort = update.reasoningEffort;
+        node.agent.reasoningEffort = update.reasoningEffort;
+        if (update.reasoningEffort === null) {
+          node.agent.reasoning_budget_tokens = null;
+          node.agent.reasoningBudgetTokens = null;
+        }
+      }
+      if (update.reasoningBudgetTokens !== undefined) {
+        node.agent.reasoning_budget_tokens = update.reasoningBudgetTokens;
+        node.agent.reasoningBudgetTokens = update.reasoningBudgetTokens;
+      }
+    });
+    if (!params.runState()?.active) {
+      return;
+    }
+    try {
+      await desktop.updateNodeRuntimeConfig(nodeId, update);
+    } catch (error) {
+      params.showErrorToast(normalizeError(error));
+    }
+  };
+
   return {
     selectedTraceIndex,
     setSelectedTraceIndex,
@@ -332,5 +369,6 @@ export function useRunSession(params: UseRunSessionParams) {
     handleResumeDurableRun,
     searchProjectFileReferences,
     handleToolApproval,
+    handleUpdateNodeRuntimeConfig,
   };
 }

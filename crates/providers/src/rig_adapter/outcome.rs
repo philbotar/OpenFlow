@@ -97,7 +97,7 @@ fn resolve_collected(
     })
 }
 
-fn partition_choice(choice: Vec<AssistantContent>) -> (Vec<String>, Vec<engine::ToolCall>) {
+pub(crate) fn partition_choice(choice: Vec<AssistantContent>) -> (Vec<String>, Vec<engine::ToolCall>) {
     let mut text_parts = Vec::new();
     let mut tool_calls = Vec::new();
     for item in choice {
@@ -108,10 +108,43 @@ fn partition_choice(choice: Vec<AssistantContent>) -> (Vec<String>, Vec<engine::
                 name: call.function.name,
                 arguments: call.function.arguments,
             }),
-            AssistantContent::Reasoning(_) | AssistantContent::Image(_) => {}
+            AssistantContent::Reasoning(reasoning) => {
+                let text = reasoning.display_text();
+                if !text.is_empty() {
+                    text_parts.push(text);
+                }
+            }
+            AssistantContent::Image(_) => {}
         }
     }
     (text_parts, tool_calls)
+}
+
+const EMPTY_TURN_ERROR: &str = "provider returned neither tool calls nor recoverable output";
+
+/// Replace the generic empty-turn message with provider + model context.
+#[must_use]
+pub fn enrich_empty_turn_error(error: AgentError, provider_label: &str, model: &str) -> AgentError {
+    if let AgentError::Failed(message) = &error {
+        if message.contains(EMPTY_TURN_ERROR) {
+            let model = model.trim();
+            let detail = if model.is_empty() {
+                format!(
+                    "{provider_label} returned no tool calls and no usable text. \
+                     Workflow nodes require a tool call (web_search, submit_output, etc.). \
+                     Try another model or provider."
+                )
+            } else {
+                format!(
+                    "{provider_label} model `{model}` returned no tool calls and no usable text. \
+                     Workflow nodes require a tool call (web_search, submit_output, etc.). \
+                     Try another model or provider."
+                )
+            };
+            return AgentError::Failed(detail);
+        }
+    }
+    error
 }
 
 #[cfg(test)]
@@ -241,5 +274,20 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(err, AgentError::Failed(_)));
+    }
+
+    #[test]
+    fn enrich_empty_turn_error_adds_provider_and_model() {
+        let err = enrich_empty_turn_error(
+            AgentError::Failed(EMPTY_TURN_ERROR.to_string()),
+            "Custom OpenAI-compatible API",
+            "mimo-v2.5",
+        );
+        let AgentError::Failed(message) = err else {
+            panic!("expected Failed");
+        };
+        assert!(message.contains("Custom OpenAI-compatible API"));
+        assert!(message.contains("mimo-v2.5"));
+        assert!(!message.contains(EMPTY_TURN_ERROR));
     }
 }

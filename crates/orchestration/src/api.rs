@@ -167,6 +167,31 @@ pub struct WorkflowAuthoringValidation {
     pub dag: Option<WorkflowValidationSummary>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowAuthoringThinkingEvent {
+    pub session_id: String,
+    pub delta: String,
+    pub finalize: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowAuthoringStartResult {
+    pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub draft: Option<Workflow>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowAuthoringDraftEvent {
+    pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub draft: Option<Workflow>,
+    pub validation: WorkflowAuthoringValidation,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkflowAuthoringTurnResult {
@@ -176,4 +201,25 @@ pub struct WorkflowAuthoringTurnResult {
     pub draft: Option<Workflow>,
     pub validation: WorkflowAuthoringValidation,
     pub messages: Vec<WorkflowAuthoringMessage>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeRuntimeConfigUpdate {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub approval_mode: Option<engine::ApprovalMode>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_effort: Option<Option<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_budget_tokens: Option<Option<u32>>,
+}
+
+impl NodeRuntimeConfigUpdate {
+    pub fn into_patch(self) -> engine::NodeRuntimeConfigPatch {
+        engine::NodeRuntimeConfigPatch {
+            approval_mode: self.approval_mode,
+            reasoning_effort: self.reasoning_effort,
+            reasoning_budget_tokens: self.reasoning_budget_tokens,
+        }
+    }
 }

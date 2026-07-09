@@ -162,6 +162,16 @@ impl AppBackend {
         self.runs.retry_node(node_id).await
     }
 
+    pub async fn update_node_runtime_config(
+        &self,
+        node_id: &str,
+        update: crate::api::NodeRuntimeConfigUpdate,
+    ) -> Result<WorkflowRunState, BackendError> {
+        self.runs
+            .update_node_runtime_config(node_id, update.into_patch())
+            .await
+    }
+
     #[must_use]
     pub async fn is_run_active(&self) -> bool {
         self.runs.is_run_active().await

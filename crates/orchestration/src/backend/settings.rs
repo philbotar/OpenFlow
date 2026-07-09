@@ -75,6 +75,18 @@ impl AppBackend {
         self.settings.delete_provider_api_key(provider_id)
     }
 
+    pub fn load_search_api_key(&self, provider: &str) -> Result<Option<String>, BackendError> {
+        self.settings.load_search_api_key(provider)
+    }
+
+    pub fn save_search_api_key(&self, provider: &str, api_key: &str) -> Result<(), BackendError> {
+        self.settings.save_search_api_key(provider, api_key)
+    }
+
+    pub fn delete_search_api_key(&self, provider: &str) -> Result<(), BackendError> {
+        self.settings.delete_search_api_key(provider)
+    }
+
     #[must_use]
     pub fn resolve_provider_readiness(
         &self,

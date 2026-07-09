@@ -35,6 +35,7 @@ blob-report/
 *.profraw
 *.profdata
 *.rs.bk
+crates/desktop/binaries/search-*
 
 # OS / editor junk
 Thumbs.db

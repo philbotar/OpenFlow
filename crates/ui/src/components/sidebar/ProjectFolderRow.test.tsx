@@ -54,6 +54,7 @@ function defaultProps(overrides: Partial<Parameters<typeof ProjectFolderRow>[0]>
     onSelectWorkflow: vi.fn(),
     onRenameWorkflow: vi.fn(),
     onCreateWorkflow: vi.fn(),
+    onCreateWorkflowWithAi: vi.fn(),
     onAddExistingWorkflow: vi.fn(),
     setWorkflowNameInputRef: vi.fn(),
     setWorkflowNameDraft: vi.fn(),
@@ -111,13 +112,18 @@ describe("ProjectFolderRow", () => {
     expect(onSelectWorkflow).toHaveBeenCalledWith("wf-1");
   });
 
-  test("add menu creates or assigns workflows", () => {
+  test("add menu creates, creates with AI, or assigns workflows", () => {
     const onCreateWorkflow = vi.fn();
+    const onCreateWorkflowWithAi = vi.fn();
     const onAddExistingWorkflow = vi.fn();
     dispose = render(
       () => (
         <ProjectFolderRow
-          {...defaultProps({ onCreateWorkflow, onAddExistingWorkflow })}
+          {...defaultProps({
+            onCreateWorkflow,
+            onCreateWorkflowWithAi,
+            onAddExistingWorkflow,
+          })}
         />
       ),
       container,
@@ -125,13 +131,17 @@ describe("ProjectFolderRow", () => {
 
     (container.querySelector(".project-folder-action") as HTMLButtonElement).click();
     const items = container.querySelectorAll(".project-folder-menu-item");
-    expect(items).toHaveLength(2);
+    expect(items).toHaveLength(3);
 
     (items[0] as HTMLButtonElement).click();
     expect(onCreateWorkflow).toHaveBeenCalledTimes(1);
 
     (container.querySelector(".project-folder-action") as HTMLButtonElement).click();
     (container.querySelectorAll(".project-folder-menu-item")[1] as HTMLButtonElement).click();
+    expect(onCreateWorkflowWithAi).toHaveBeenCalledTimes(1);
+
+    (container.querySelector(".project-folder-action") as HTMLButtonElement).click();
+    (container.querySelectorAll(".project-folder-menu-item")[2] as HTMLButtonElement).click();
     expect(onAddExistingWorkflow).toHaveBeenCalledTimes(1);
   });
 

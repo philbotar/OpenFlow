@@ -5,7 +5,8 @@ use async_trait::async_trait;
 use engine::{
     augment_call_subagent_tool_description, build_predefined_subagent_summaries,
     handle_declare_subagents, merge_subagent_summaries as merge_subagent_summaries_into_map,
-    AiPort, CallableAgent, NodeId, NodeToolConfig, RunTelemetry, SubagentSummary, ToolBatchEffects,
+    apply_runtime_patch_to_tool_config, runtime_patch_for, AiPort, CallableAgent, NodeId,
+    NodeRuntimeConfigStore, NodeToolConfig, RunTelemetry, SubagentSummary, ToolBatchEffects,
     ToolBatchOutput, ToolCall, ToolConcurrency, ToolPort, ToolResult, Workflow, CALL_SUBAGENT_TOOL,
     DECLARE_SUBAGENTS_TOOL,
 };
@@ -31,6 +32,7 @@ pub struct ToolPortImpl<A> {
     node_interrupts: NodeInterrupts,
     aborted_emitted: Arc<parking_lot::Mutex<bool>>,
     exclusive_locks: Arc<ExclusiveLocks>,
+    runtime_config_store: NodeRuntimeConfigStore,
 }
 
 impl<A> ToolPortImpl<A>
@@ -51,6 +53,7 @@ where
         event_tx: UnboundedSender<ExecutionEvent>,
         node_interrupts: NodeInterrupts,
         aborted_emitted: Arc<parking_lot::Mutex<bool>>,
+        runtime_config_store: NodeRuntimeConfigStore,
     ) -> Self {
         let mut declared_subagents = BTreeMap::new();
         for node in &workflow.nodes {
@@ -73,11 +76,26 @@ where
             node_interrupts,
             aborted_emitted,
             exclusive_locks: Arc::new(ExclusiveLocks::default()),
+            runtime_config_store,
         }
     }
 
     pub fn tool_runner(&self) -> &Arc<ToolRunner> {
         &self.tool_runner
+    }
+
+    fn effective_node_config(&self, node_id: &NodeId) -> NodeToolConfig {
+        let mut config = self
+            .workflow
+            .nodes
+            .iter()
+            .find(|node| node.id == *node_id)
+            .map(|node| node.agent.tools.clone())
+            .unwrap_or_default();
+        if let Some(patch) = runtime_patch_for(&self.runtime_config_store, node_id) {
+            apply_runtime_patch_to_tool_config(&mut config, &patch);
+        }
+        config
     }
 }
 
@@ -126,13 +144,7 @@ where
         label: &str,
         calls: Vec<ToolCall>,
     ) -> ToolBatchOutput {
-        let node_config = self
-            .workflow
-            .nodes
-            .iter()
-            .find(|node| node.id == *node_id)
-            .map(|node| node.agent.tools.clone())
-            .unwrap_or_default();
+        let node_config = self.effective_node_config(node_id);
         let mut effects = ToolBatchEffects::default();
         let mut results = Vec::with_capacity(calls.len());
         let mut index = 0usize;

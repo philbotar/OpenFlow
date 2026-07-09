@@ -1,10 +1,9 @@
 /* Flat dock + chat overrides — must load after index.css (see main.tsx) */
 
-/* ── Dock panel bodies (chat, terminal, trace, overview, runs) ── */
+/* ── Dock panel bodies (chat, terminal, trace, history) ── */
 .chat-layout,
 .trace-layout,
 .terminal-layout,
-.overview-layout,
 .run-history-panel {
   padding: 0;
   gap: 0;
@@ -16,7 +15,7 @@
 }
 
 .terminal-shell {
-  border-radius: 0;
+  border-radius: var(--radius-none);
   border: 0;
 }
 
@@ -26,18 +25,144 @@
 
 .terminal-shell > .panel-empty {
   margin: 0;
-  border-radius: 0;
-}
-
-.overview-entry,
-.run-history-row {
-  border-radius: 0;
+  border-radius: var(--radius-none);
 }
 
 .trace-detail {
-  border-radius: 0;
+  border-radius: var(--radius-none);
   border-top: 0;
   box-shadow: none;
+}
+
+/* ── Trace + history dock lists ── */
+.trace-list,
+.run-history-list {
+  gap: 0;
+}
+
+.trace-row,
+.run-history-row {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 10px;
+  row-gap: 4px;
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: var(--radius-none);
+  background: transparent;
+  box-shadow: none;
+  min-height: 44px;
+  flex-shrink: 0;
+}
+
+.run-history-row {
+  grid-template-columns: 84px minmax(0, 1fr) auto;
+}
+
+.trace-row:first-child,
+.run-history-row:first-child {
+  border-top: 1px solid var(--border);
+}
+
+.trace-row.active,
+.trace-row:hover,
+.run-history-row.active,
+.run-history-row:hover,
+[data-theme="dark"] .trace-row.active,
+[data-theme="dark"] .trace-row:hover,
+[data-theme="dark"] .run-history-row.active,
+[data-theme="dark"] .run-history-row:hover {
+  background: var(--surface-muted);
+  border-color: var(--border);
+  box-shadow: none;
+}
+
+.trace-row > div,
+.run-history-row > div:not(.run-history-actions) {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.trace-row > div > strong,
+.run-history-row > div:not(.run-history-actions) > strong {
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trace-row > div > div:last-child,
+.run-history-row > div:not(.run-history-actions) > div:last-child {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trace-pill {
+  justify-self: start;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.trace-pill.completed {
+  border-color: color-mix(in srgb, var(--status-success) 20%, transparent);
+  background: var(--status-success-soft);
+  color: var(--status-success);
+}
+
+.trace-pill.failed {
+  border-color: color-mix(in srgb, var(--status-danger) 20%, transparent);
+  background: var(--status-danger-soft);
+  color: var(--status-danger);
+}
+
+.trace-pill.paused {
+  border-color: color-mix(in srgb, var(--status-warning) 20%, transparent);
+  background: var(--status-warning-soft);
+  color: var(--status-warning);
+}
+
+.trace-pill.stopped {
+  border-color: var(--border-strong);
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+}
+
+.trace-pill.running,
+.trace-pill.queued {
+  border-color: color-mix(in srgb, var(--accent-primary) 20%, transparent);
+  background: var(--accent-soft);
+  color: var(--accent-primary-hover);
+}
+
+.run-history-actions {
+  display: inline-flex;
+  gap: 4px;
+  flex-shrink: 0;
+  align-self: center;
 }
 
 [data-theme="dark"] .trace-detail {
@@ -47,7 +172,7 @@
 /* Empty states — flat across all dock tabs */
 .dock-panel .panel-empty {
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-none);
   background: transparent;
   padding: 0;
   min-height: 0;
@@ -83,16 +208,117 @@
   padding: 6px 0;
 }
 
+.composer-runtime-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+  min-width: 0;
+  padding-top: 2px;
+}
+
+.composer-runtime-controls .composer-runtime-select.text-select-root {
+  width: auto;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.composer-runtime-controls .composer-runtime-select .text-select-trigger {
+  width: auto;
+  max-width: 14rem;
+  min-height: 0;
+  padding: 2px 18px 2px 2px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.2;
+  background-position: right 0 center;
+  background-size: 14px;
+}
+
+.composer-runtime-controls .composer-runtime-select .text-select-trigger:hover:not(:disabled) {
+  color: var(--text);
+  background-color: var(--surface-hover, rgba(0, 0, 0, 0.04));
+}
+
+.composer-runtime-controls .composer-runtime-select .text-select-value {
+  font-weight: 500;
+}
+
+.composer-runtime-controls .text-select-menu {
+  z-index: 200;
+}
+
+.composer-runtime-budget {
+  width: 4.25rem;
+  min-height: 0;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+}
+
+.composer-runtime-budget:hover:not(:disabled),
+.composer-runtime-budget:focus-visible {
+  color: var(--text);
+  background: var(--surface-hover, rgba(0, 0, 0, 0.04));
+  outline: none;
+}
+
 .chat-composer-pill {
-  border-radius: var(--radius-pill);
+  border-radius: var(--dock-tab-card-radius);
   box-shadow: none;
-  padding: 4px 7px 4px 10px;
+  padding: var(--composer-padding);
   border: 1px solid var(--border-subtle);
+  overflow: hidden;
+}
+
+.chat-composer-pill .composer-input.text-area {
+  min-height: var(--composer-input-min-height);
+  height: var(--composer-input-min-height);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  resize: none;
+}
+
+.chat-composer-pill .composer-send-button {
+  width: var(--composer-send-size);
+  height: var(--composer-send-size);
+  min-width: var(--composer-send-size);
+}
+
+.chat-composer-pill .composer-input::placeholder {
+  color: var(--text-muted);
+  opacity: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chat-composer-pill .composer-input-mirror {
   caret-color: var(--text);
   caret-shape: block;
+}
+
+.chat-composer-pill .composer-input:focus,
+.chat-composer-pill .composer-input:focus-visible {
+  outline: none;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+[data-theme="dark"] .composer-runtime-controls .composer-runtime-select .text-select-trigger:hover:not(:disabled) {
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+[data-theme="dark"] .composer-runtime-budget:hover:not(:disabled),
+[data-theme="dark"] .composer-runtime-budget:focus-visible {
+  background-color: rgba(255, 255, 255, 0.06);
 }
 
 [data-theme="dark"] .chat-composer-pill {
@@ -110,7 +336,7 @@
 
 .message-user .message-content {
   border: 1px solid var(--border-subtle);
-  border-radius: 13px;
+  border-radius: var(--radius-between-md-lg);
   background: var(--surface-emphasis);
   padding: 6px 12px;
   line-height: 1.35;
@@ -126,13 +352,21 @@
   padding: 0;
 }
 
+.chat-segment-body {
+  gap: 0;
+}
+
+.chat-segment-body > .tool-line {
+  padding-block: 0;
+}
+
 .chat-transcript-scroll {
   background: transparent;
 }
 
 .node-completed-bubble {
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-none);
   background: transparent;
   padding: 0;
 }
@@ -140,7 +374,7 @@
 /* ── Workflow authoring (match dock chat) ── */
 .chat-transcript-lane .panel-empty {
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-none);
   background: transparent;
   padding: 0;
   min-height: 0;

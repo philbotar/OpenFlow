@@ -6,7 +6,7 @@ export const STATUS_TOAST_ID = "app-status";
 export const BANNER_DISMISS_MS = 4000;
 export const DEFAULT_DOCK_HEIGHT = 188;
 export const COLLAPSED_DOCK_HEIGHT = 52;
-const RESTORED_CHAT_DOCK_HEIGHT_RATIO = 0.7;
+const RESTORED_CHAT_DOCK_HEIGHT_RATIO = 0.75;
 const DOCK_VIEWPORT_MARGIN = 160;
 const COMPACT_VIEWPORT_MAX = 980;
 const COMPACT_DOCK_VIEWPORT_MARGIN = 240;
@@ -125,6 +125,38 @@ export function isTextInputTarget(target: EventTarget | null): boolean {
 
 export function isMacOS(): boolean {
   return typeof navigator === "object" && /Mac/i.test(navigator.userAgent);
+}
+
+export const COMPOSER_INPUT_MAX_ROWS = 4;
+
+export function resizeComposerTextarea(textarea: HTMLTextAreaElement) {
+  const style = getComputedStyle(textarea);
+  const lineHeight = Number.parseFloat(style.lineHeight);
+  if (!Number.isFinite(lineHeight)) {
+    return;
+  }
+
+  const padding =
+    Number.parseFloat(style.paddingTop) + Number.parseFloat(style.paddingBottom);
+  const minHeight = Number.parseFloat(style.minHeight) || lineHeight;
+  const maxHeight = padding + lineHeight * COMPOSER_INPUT_MAX_ROWS;
+
+  // ponytail: empty scrollHeight includes wrapped placeholder — keep one row until typed
+  if (textarea.value.length === 0) {
+    textarea.style.height = "";
+    textarea.style.overflowY = "hidden";
+    return;
+  }
+
+  const placeholder = textarea.placeholder;
+  textarea.placeholder = "";
+  textarea.style.height = "0px";
+  const scrollHeight = textarea.scrollHeight;
+  textarea.placeholder = placeholder;
+
+  const nextHeight = Math.max(minHeight, Math.min(scrollHeight, maxHeight));
+  textarea.style.height = `${nextHeight}px`;
+  textarea.style.overflowY = scrollHeight > maxHeight ? "auto" : "hidden";
 }
 
 export function createDebounced<T>(source: Accessor<T>, delayMs: number): Accessor<T> {

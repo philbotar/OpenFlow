@@ -41,7 +41,6 @@ export function useAppShell(params: UseAppShellParams) {
   );
   const resolvedTheme = createMemo(() => resolveTheme(themePreference()));
   const [uiZoom, setUiZoom] = createSignal(readStoredUiZoom(globalThis.localStorage));
-  const [shortcutsModalOpen, setShortcutsModalOpen] = createSignal(false);
   const [firstRunOnboardingOpen, setFirstRunOnboardingOpen] = createSignal(
     !readStoredBoolean(globalThis.localStorage, FIRST_RUN_ONBOARDING_STORAGE_KEY),
   );
@@ -83,9 +82,6 @@ export function useAppShell(params: UseAppShellParams) {
     writeStoredTheme(globalThis.localStorage, preference);
     applyTheme(resolveTheme(preference));
   };
-
-  const openShortcutsModal = () => setShortcutsModalOpen(true);
-  const closeShortcutsModal = () => setShortcutsModalOpen(false);
 
   const dismissFirstRunOnboarding = () => {
     setFirstRunOnboardingOpen(false);
@@ -174,9 +170,6 @@ export function useAppShell(params: UseAppShellParams) {
     handleZoomIn,
     handleZoomOut,
     handleZoomReset,
-    shortcutsModalOpen,
-    openShortcutsModal,
-    closeShortcutsModal,
     firstRunOnboardingOpen,
     dismissFirstRunOnboarding,
     handleOnboardingBuildWorkflow,

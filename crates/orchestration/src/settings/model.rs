@@ -333,6 +333,64 @@ pub struct LocalDiagnosticsSettings {
     pub debug_output: bool,
 }
 
+/// search-cli providers that accept API keys, in settings-page display order.
+pub const SEARCH_KEY_PROVIDERS: &[&str] = &[
+    "brave",
+    "serper",
+    "exa",
+    "jina",
+    "linkup",
+    "firecrawl",
+    "tavily",
+    "perplexity",
+    "serpapi",
+    "browserless",
+    "xai",
+    "parallel",
+];
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchSettings {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Explicit path to the search-cli binary. Empty means resolve from PATH
+    /// plus common install locations (GUI launches get a minimal PATH).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub binary_path: String,
+    /// Provider id (e.g. "brave") -> API key. Injected as
+    /// SEARCH_KEYS_<PROVIDER> env vars when spawning the binary.
+    #[serde(default)]
+    pub keys: BTreeMap<String, String>,
+}
+
+impl Default for SearchSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            binary_path: String::new(),
+            keys: BTreeMap::new(),
+        }
+    }
+}
+
+impl SearchSettings {
+    /// True when at least one key is available to the spawned process,
+    /// either saved in settings or already present in the environment.
+    #[must_use]
+    pub fn has_configured_keys(&self) -> bool {
+        if self.keys.values().any(|key| !key.trim().is_empty()) {
+            return true;
+        }
+        SEARCH_KEY_PROVIDERS.iter().any(|provider| {
+            let upper = provider.to_uppercase();
+            std::env::var(format!("{upper}_API_KEY")).is_ok_and(|v| !v.trim().is_empty())
+                || std::env::var(format!("SEARCH_KEYS_{upper}"))
+                    .is_ok_and(|v| !v.trim().is_empty())
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppSettings {
     pub active_provider: ProviderId,
@@ -345,6 +403,8 @@ pub struct AppSettings {
     pub mcp: McpSettings,
     #[serde(default)]
     pub local_diagnostics: LocalDiagnosticsSettings,
+    #[serde(default)]
+    pub search: SearchSettings,
 }
 
 fn migrate_bedrock_legacy_profile(profile: &mut ProviderProfile) {
@@ -368,6 +428,9 @@ impl AppSettings {
         let mut copy = self.clone();
         for profile in copy.providers.values_mut() {
             profile.api_key.clear();
+        }
+        for key in copy.search.keys.values_mut() {
+            key.clear();
         }
         copy
     }
@@ -409,6 +472,7 @@ impl Default for AppSettings {
             lsp: LspSettings::default(),
             mcp: McpSettings::default(),
             local_diagnostics: LocalDiagnosticsSettings::default(),
+            search: SearchSettings::default(),
         }
     }
 }
@@ -429,6 +493,16 @@ pub fn merge_preserved_api_keys(incoming: &mut AppSettings, existing: &AppSettin
             if let Some(existing_profile) = existing.providers.get(id) {
                 profile.api_key = existing_profile.api_key.clone();
             }
+        }
+    }
+    for (provider, key) in &existing.search.keys {
+        let entry = incoming
+            .search
+            .keys
+            .entry(provider.clone())
+            .or_default();
+        if entry.trim().is_empty() {
+            *entry = key.clone();
         }
     }
 }
@@ -685,5 +759,81 @@ mod tests {
         let json = serde_json::to_string(&settings).unwrap();
         let parsed: AppSettings = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.mcp.servers[0].id, "github");
+    }
+
+    #[test]
+    fn search_settings_default_is_enabled_with_no_keys() {
+        let settings = SearchSettings::default();
+        assert!(settings.enabled);
+        assert!(settings.binary_path.is_empty());
+        assert!(settings.keys.is_empty());
+    }
+
+    #[test]
+    fn app_settings_missing_search_key_parses_to_default() {
+        let mut value = serde_json::to_value(AppSettings::default()).unwrap();
+        value.as_object_mut().unwrap().remove("search");
+        let parsed: AppSettings = serde_json::from_value(value).unwrap();
+        assert_eq!(parsed.search, SearchSettings::default());
+    }
+
+    #[test]
+    fn search_settings_round_trip_uses_camel_case() {
+        let mut settings = AppSettings::default();
+        settings.search.binary_path = "/opt/homebrew/bin/search".to_string();
+        settings
+            .search
+            .keys
+            .insert("brave".to_string(), "bk-123".to_string());
+        let value = serde_json::to_value(&settings).unwrap();
+        assert_eq!(value["search"]["binaryPath"], "/opt/homebrew/bin/search");
+        assert_eq!(value["search"]["keys"]["brave"], "bk-123");
+        let parsed: AppSettings = serde_json::from_value(value).unwrap();
+        assert_eq!(parsed.search, settings.search);
+    }
+
+    #[test]
+    fn redacted_clears_search_keys_but_keeps_entries() {
+        let mut settings = AppSettings::default();
+        settings
+            .search
+            .keys
+            .insert("brave".to_string(), "bk-123".to_string());
+        let redacted = settings.redacted();
+        assert_eq!(redacted.search.keys.get("brave").map(String::as_str), Some(""));
+    }
+
+    #[test]
+    fn merge_preserved_api_keys_restores_search_keys() {
+        let mut existing = AppSettings::default();
+        existing
+            .search
+            .keys
+            .insert("brave".to_string(), "bk-123".to_string());
+        existing
+            .search
+            .keys
+            .insert("exa".to_string(), "ek-456".to_string());
+
+        let mut incoming = AppSettings::default();
+        incoming.search.keys.insert("brave".to_string(), String::new());
+
+        merge_preserved_api_keys(&mut incoming, &existing);
+        assert_eq!(
+            incoming.search.keys.get("brave").map(String::as_str),
+            Some("bk-123")
+        );
+        assert_eq!(
+            incoming.search.keys.get("exa").map(String::as_str),
+            Some("ek-456")
+        );
+    }
+
+    #[test]
+    fn has_configured_keys_detects_settings_keys() {
+        let mut settings = SearchSettings::default();
+        assert!(!settings.keys.values().any(|key| !key.trim().is_empty()));
+        settings.keys.insert("brave".to_string(), " bk ".to_string());
+        assert!(settings.has_configured_keys());
     }
 }

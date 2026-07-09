@@ -1,7 +1,8 @@
 use super::{
     InteractiveEngine, PendingToolBatch, RunError, AUTONOMOUS_CONTINUE_FEEDBACK,
     MALFORMED_REQUEST_INPUT_FEEDBACK, MAX_AUTO_CONTINUE_STREAK,
-    MAX_MALFORMED_REQUEST_INPUT_RETRIES, MAX_MALFORMED_SUBMIT_OUTPUT_RETRIES,
+    MAX_EMPTY_PROVIDER_TURN_RETRIES, MAX_MALFORMED_REQUEST_INPUT_RETRIES,
+    MAX_MALFORMED_SUBMIT_OUTPUT_RETRIES,
 };
 use crate::conversation::{
     filter_tool_turn_assistant_message, is_clarifying_question, AgentTranscriptItem,
@@ -58,6 +59,9 @@ impl InteractiveEngine {
                     return;
                 }
                 if self.handle_malformed_submit_output_retry(node_id, &error) {
+                    return;
+                }
+                if self.handle_empty_provider_turn_retry(node_id, &error) {
                     return;
                 }
                 if self.handle_transient_retry(node_id, &error) {
@@ -139,6 +143,29 @@ impl InteractiveEngine {
         true
     }
 
+    fn handle_empty_provider_turn_retry(&mut self, node_id: &NodeId, error: &AgentError) -> bool {
+        if !error.is_empty_provider_turn() {
+            return false;
+        }
+
+        let retry_count = self
+            .empty_turn_retries_by_node
+            .entry(node_id.clone())
+            .or_default();
+
+        if *retry_count >= MAX_EMPTY_PROVIDER_TURN_RETRIES {
+            return false;
+        }
+
+        *retry_count += 1;
+        self.transcripts.entry(node_id.clone()).or_default().push(
+            AgentTranscriptItem::UserMessage {
+                content: AUTONOMOUS_CONTINUE_FEEDBACK.to_string(),
+            },
+        );
+        true
+    }
+
     /// A node with user input disabled produced a text-only turn (or an
     /// explicit input request). Nudge it forward instead of pausing; fail the
     /// node after too many consecutive turns without tool-call progress.
@@ -204,6 +231,7 @@ impl InteractiveEngine {
         self.retry_after_by_node.remove(node_id);
         self.transient_streaks_by_node.remove(node_id);
         self.auto_continue_streaks_by_node.remove(node_id);
+        self.empty_turn_retries_by_node.remove(node_id);
         if let Some(usage) = &success.usage {
             self.note_usage(usage);
         }
@@ -221,6 +249,7 @@ impl InteractiveEngine {
     fn apply_tool_calls(&mut self, node_id: &NodeId, batch: AgentToolCallBatch) {
         self.transient_streaks_by_node.remove(node_id);
         self.auto_continue_streaks_by_node.remove(node_id);
+        self.empty_turn_retries_by_node.remove(node_id);
         self.request_input_retries_by_node.remove(node_id);
         if let Some(usage) = &batch.usage {
             self.note_usage(usage);

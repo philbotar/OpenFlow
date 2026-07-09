@@ -1,6 +1,7 @@
 //! Workflow graph model and DAG validation.
 
 pub mod callable_agent;
+pub mod runtime_config;
 pub mod validation;
 pub mod workflow;
 
@@ -9,6 +10,11 @@ pub use callable_agent::{
 };
 pub use validation::{execution_layers, validate_workflow, WorkflowValidationError};
 pub(crate) use workflow::default_structured_output_schema;
+pub use runtime_config::{
+    apply_runtime_patch_to_agent, apply_runtime_patch_to_request,
+    apply_runtime_patch_to_tool_config, new_runtime_config_store, runtime_patch_for,
+    upsert_runtime_patch, NodeRuntimeConfigPatch, NodeRuntimeConfigStore,
+};
 pub use workflow::{
     effective_output_schema, AgentNodeConfig, Edge, EdgeId, Node, NodeId, NodeKind, NodePosition,
     RetryPolicy, Workflow, WorkflowId, WorkflowSchedule, WorkflowSettings,

@@ -5,7 +5,6 @@ import { useAppContext } from "./context/AppContext";
 import {
   AppHeader,
   FirstRunOnboarding,
-  ShortcutsModal,
   Sidebar,
   WorkflowPickerModal,
 } from "@/components";
@@ -97,10 +96,6 @@ function AppChrome() {
         }}
       >
         <WorkflowPickerModal />
-        <ShortcutsModal
-          open={ctx.shortcutsModalOpen()}
-          onClose={ctx.closeShortcutsModal}
-        />
         <FirstRunOnboarding
           open={ctx.firstRunOnboardingOpen()}
           onClose={ctx.dismissFirstRunOnboarding}

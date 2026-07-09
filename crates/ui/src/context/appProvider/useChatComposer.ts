@@ -20,12 +20,20 @@ import {
   isChatComposerBusy,
   isGlobalRunEntryNodeId,
   isLiveTranscriptSegment,
+  isChatNavigatedToNode,
   projectChatLayout,
   statusForNode,
 } from "../../lib/workflow";
 import { normalizeError } from "../../lib/utils";
 
 type ToastHandler = (message: string, context?: string) => void;
+
+export type ChatNavigateOptions = {
+  /** Default true: scroll when navigation target changed. */
+  scroll?: boolean;
+  /** Canvas/explicit picks — scroll even when already on this node. */
+  forceScroll?: boolean;
+};
 
 interface UseChatComposerParams {
   activeWorkflow: Accessor<Workflow | undefined>;
@@ -161,16 +169,29 @@ export function useChatComposer(params: UseChatComposerParams) {
     setChatFocusNode({ nodeId, tick: chatFocusTick });
   };
 
-  const navigateChatToNode = (nodeId: NodeId) => {
+  const isChatNavigatedToNodeFor = (nodeId: NodeId) =>
+    isChatNavigatedToNode(
+      chatLayout(),
+      nodeId,
+      chatFilterNodeId(),
+      pickedLiveNodeId(),
+    );
+
+  const navigateChatToNode = (nodeId: NodeId, options?: ChatNavigateOptions) => {
+    const alreadyThere = isChatNavigatedToNodeFor(nodeId);
     const nav = chatNavigationForNode(chatLayout(), nodeId);
     if (nav?.mode === "live") {
       setPickedLiveNodeId(nav.nodeId);
       setChatFilterNodeId(null);
     } else if (nav?.mode === "settled") {
-      setChatFilterNodeId(nav.nodeId);
+      setChatFilterNodeId(nodeId);
       setPickedLiveNodeId(null);
     }
-    focusChatNode(nodeId);
+    const shouldScroll = options?.scroll !== false;
+    const forceScroll = options?.forceScroll === true;
+    if (shouldScroll && (forceScroll || !alreadyThere)) {
+      focusChatNode(nodeId);
+    }
   };
 
   const resetWorkflowChatUi = () => {

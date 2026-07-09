@@ -1,5 +1,4 @@
 import { For, Show } from "solid-js";
-import LayoutList from "lucide-solid/icons/layout-list";
 import Maximize2 from "lucide-solid/icons/maximize-2";
 import Minimize2 from "lucide-solid/icons/minimize-2";
 import { ChatPanel, PanelEmptyState } from "@/components";
@@ -22,12 +21,6 @@ export function DockPanel() {
       <div class="dock-tabs">
         <div class="dock-tab-switcher">
           <button
-            classList={{ active: ctx.bottomTab() === "overview" }}
-            onClick={() => ctx.handleSelectBottomTab("overview")}
-          >
-            Overview
-          </button>
-          <button
             classList={{ active: ctx.bottomTab() === "chat" }}
             onClick={() => ctx.handleSelectBottomTab("chat")}
           >
@@ -46,10 +39,10 @@ export function DockPanel() {
             Run trace
           </button>
           <button
-            classList={{ active: ctx.bottomTab() === "runs" }}
-            onClick={() => ctx.handleSelectBottomTab("runs")}
+            classList={{ active: ctx.bottomTab() === "history" }}
+            onClick={() => ctx.handleSelectBottomTab("history")}
           >
-            Runs
+            History
           </button>
         </div>
         <Show when={ctx.dockOpen()}>
@@ -71,37 +64,7 @@ export function DockPanel() {
       </div>
 
       <Show when={ctx.dockOpen()}>
-        <Show when={ctx.bottomTab() === "overview"} fallback={<DockTabContent />}>
-          <div class="overview-layout">
-            <div class="overview-feed">
-              <Show
-                when={(ctx.runState()?.runTrace?.length ?? 0) > 0}
-                fallback={
-                  <PanelEmptyState
-                    icon={<LayoutList width={22} height={22} />}
-                    title="No activity yet"
-                    description="Run the workflow to see node progress here."
-                  />
-                }
-              >
-                <For each={ctx.runState()?.runTrace ?? []}>
-                  {(entry) => (
-                    <div class="overview-entry">
-                      <div class="overview-node-label">{entry.nodeLabel}</div>
-                      <div class="overview-status">
-                        {entry.status.replace("_", " ")}
-                      </div>
-                      <div class="overview-message">{entry.message}</div>
-                      <Show when={entry.output}>
-                        <pre class="overview-output">{JSON.stringify(entry.output, null, 2)}</pre>
-                      </Show>
-                    </div>
-                  )}
-                </For>
-              </Show>
-            </div>
-          </div>
-        </Show>
+        <DockTabContent />
       </Show>
     </section>
   );
@@ -121,17 +84,17 @@ function TerminalOrTrace() {
   const ctx = useAppContext();
 
   return (
-    <Show when={ctx.bottomTab() === "terminal"} fallback={<TraceOrRuns />}>
+    <Show when={ctx.bottomTab() === "terminal"} fallback={<TraceOrHistory />}>
       <TerminalPanel />
     </Show>
   );
 }
 
-function TraceOrRuns() {
+function TraceOrHistory() {
   const ctx = useAppContext();
 
   return (
-    <Show when={ctx.bottomTab() === "runs"} fallback={<TracePanel />}>
+    <Show when={ctx.bottomTab() === "history"} fallback={<TracePanel />}>
       <RunHistoryPanel />
     </Show>
   );

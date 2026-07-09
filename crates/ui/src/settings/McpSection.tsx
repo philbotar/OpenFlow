@@ -1,7 +1,31 @@
-import { createSignal, For, Show } from "solid-js";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import { probeMcpServer } from "../api";
 import { useAppContext } from "../context/AppContext";
 import type { McpDiscoveryRow, McpServerConfig } from "../lib/types";
+
+type McpConnection =
+  | {
+      kind: "configured";
+      id: string;
+      displayName: string;
+      command: string;
+      args: string[];
+      enabled: boolean;
+      sourceLabel: string;
+      server: McpServerConfig;
+      index: number;
+    }
+  | {
+      kind: "discovered";
+      id: string;
+      displayName: string;
+      command: string;
+      args: string[];
+      enabled: boolean;
+      sourceLabel: string;
+      sourcePath: string;
+      row: McpDiscoveryRow;
+    };
 
 function emptyServer(): McpServerConfig {
   return {
@@ -19,15 +43,59 @@ function shortenPath(path: string): string {
   return home.length > 48 ? `…${home.slice(-45)}` : home;
 }
 
+function sourceLabel(source: string): string {
+  if (!source.trim()) return "External config";
+  return `${source[0].toUpperCase()}${source.slice(1)} config`;
+}
+
 export function McpSection() {
   const ctx = useAppContext();
   const [draft, setDraft] = createSignal(emptyServer());
-  const [probeResult, setProbeResult] = createSignal<string | null>(null);
+  const [showAddForm, setShowAddForm] = createSignal(false);
+  const [probeResults, setProbeResults] = createSignal<Record<string, string>>({});
 
   const servers = () => ctx.settings().mcp?.servers ?? [];
   const discoverExternal = () => ctx.settings().mcp?.discoverExternal ?? true;
   const discoveredCount = () => ctx.discoveredMcp().length;
   const configuredCount = () => servers().length;
+  const disabledDiscoveredIds = () => ctx.settings().mcp?.disabledDiscoveredIds ?? [];
+  const isDiscoveredEnabled = (row: McpDiscoveryRow) =>
+    row.enabled && !disabledDiscoveredIds().includes(row.id);
+  const connections = createMemo<McpConnection[]>(() => {
+    const byId = new Map<string, McpConnection>();
+
+    for (const row of ctx.discoveredMcp()) {
+      byId.set(row.id, {
+        kind: "discovered",
+        id: row.id,
+        displayName: row.displayName,
+        command: row.command,
+        args: row.args,
+        enabled: isDiscoveredEnabled(row),
+        sourceLabel: sourceLabel(row.source),
+        sourcePath: row.sourcePath,
+        row,
+      });
+    }
+
+    servers().forEach((server, index) => {
+      byId.set(server.id, {
+        kind: "configured",
+        id: server.id,
+        displayName: server.displayName,
+        command: server.command,
+        args: server.args,
+        enabled: server.enabled,
+        sourceLabel: "OpenFlow settings",
+        server,
+        index,
+      });
+    });
+
+    return [...byId.values()];
+  });
+
+  const connectionCount = () => connections().length;
 
   const updateServer = (index: number, patch: Partial<McpServerConfig>) => {
     void ctx.updateSettings((settings) => {
@@ -35,6 +103,13 @@ export function McpSection() {
       const current = settings.mcp.servers[index];
       if (!current) return;
       settings.mcp.servers[index] = { ...current, ...patch };
+    });
+  };
+
+  const removeServer = (index: number) => {
+    void ctx.updateSettings((settings) => {
+      settings.mcp ??= { servers: [] };
+      settings.mcp.servers.splice(index, 1);
     });
   };
 
@@ -59,6 +134,21 @@ export function McpSection() {
     });
   };
 
+  const copyDiscoveredToSettings = (row: McpDiscoveryRow) => {
+    void ctx.updateSettings((settings) => {
+      settings.mcp ??= { servers: [] };
+      if (settings.mcp.servers.some((server) => server.id === row.id)) return;
+      settings.mcp.servers.push({
+        id: row.id,
+        displayName: row.displayName,
+        command: row.command,
+        args: row.args,
+        env: {},
+        enabled: isDiscoveredEnabled(row),
+      });
+    });
+  };
+
   const addServer = () => {
     const next = draft();
     if (!next.id.trim() || !next.command.trim()) return;
@@ -73,15 +163,34 @@ export function McpSection() {
       });
     });
     setDraft(emptyServer());
+    setShowAddForm(false);
   };
 
-  const probeServer = async (config: McpServerConfig) => {
-    setProbeResult("Probing…");
+  const configForProbe = (connection: McpConnection): McpServerConfig =>
+    connection.kind === "configured"
+      ? connection.server
+      : {
+          id: connection.id,
+          displayName: connection.displayName,
+          command: connection.command,
+          args: connection.args,
+          env: {},
+          enabled: connection.enabled,
+        };
+
+  const probeServer = async (connection: McpConnection) => {
+    setProbeResults((current) => ({ ...current, [connection.id]: "Testing…" }));
     try {
-      const tools = await probeMcpServer(config);
-      setProbeResult(tools.length ? tools.join(", ") : "No tools reported");
+      const tools = await probeMcpServer(configForProbe(connection));
+      setProbeResults((current) => ({
+        ...current,
+        [connection.id]: tools.length ? `${tools.length} tools: ${tools.join(", ")}` : "Connected",
+      }));
     } catch (error) {
-      setProbeResult(error instanceof Error ? error.message : String(error));
+      setProbeResults((current) => ({
+        ...current,
+        [connection.id]: error instanceof Error ? error.message : String(error),
+      }));
     }
   };
 
@@ -90,18 +199,147 @@ export function McpSection() {
       <header class="providers-section-header">
         <div class="providers-section-intro">
           <div class="eyebrow">MCP</div>
-          <h3>External tool servers</h3>
-          <p>Stdio MCP servers merge into the tool catalog at run start when enabled.</p>
+          <h3>MCP servers</h3>
+          <p>Choose which MCP servers are available to workflow runs.</p>
         </div>
       </header>
 
       <div class="mcp-cards">
-        <section class="mcp-card mcp-card--discovery" aria-labelledby="mcp-discovery-heading">
+        <section class="mcp-card mcp-card--management" aria-labelledby="mcp-connections-heading">
           <div class="mcp-card-header">
-            <h4 id="mcp-discovery-heading" class="mcp-card-title">
-              Discovery
+            <h4 id="mcp-connections-heading" class="mcp-card-title">
+              Connections
             </h4>
-            <p class="mcp-card-copy">Scan external config files for MCP servers on this machine.</p>
+            <p class="mcp-card-copy">
+              {connectionCount()} available ·{" "}
+              {connections().filter((connection) => connection.enabled).length} enabled
+            </p>
+          </div>
+          <Show
+            when={connectionCount() > 0}
+            fallback={<div class="mcp-empty-state">No MCP servers yet.</div>}
+          >
+            <div class="mcp-server-list">
+              <For each={connections()}>
+                {(connection) => (
+                  <div class="mcp-server-row mcp-connection-row">
+                    <div class="mcp-server-row-main">
+                      <strong class="mcp-server-name">{connection.displayName}</strong>
+                      <p class="mcp-server-meta">
+                        {connection.sourceLabel}
+                        <Show when={connection.kind === "discovered"}>
+                          {" "}
+                          ·{" "}
+                          {shortenPath(
+                            (connection as Extract<McpConnection, { kind: "discovered" }>)
+                              .sourcePath,
+                          )}
+                        </Show>
+                      </p>
+                      <Show when={connection.kind === "configured"}>
+                        <div class="mcp-configured-fields">
+                          <label>
+                            <span>Name</span>
+                            <input
+                              class="text-input"
+                              value={connection.displayName}
+                              onInput={(event) =>
+                                updateServer(
+                                  (connection as Extract<McpConnection, { kind: "configured" }>)
+                                    .index,
+                                  { displayName: event.currentTarget.value },
+                                )
+                              }
+                            />
+                          </label>
+                          <label>
+                            <span>Command</span>
+                            <input
+                              class="text-input"
+                              value={connection.command}
+                              onInput={(event) =>
+                                updateServer(
+                                  (connection as Extract<McpConnection, { kind: "configured" }>)
+                                    .index,
+                                  { command: event.currentTarget.value },
+                                )
+                              }
+                            />
+                          </label>
+                        </div>
+                      </Show>
+                      <Show when={probeResults()[connection.id]}>
+                        <div class="mcp-probe-status" role="status" aria-live="polite">
+                          {probeResults()[connection.id]}
+                        </div>
+                      </Show>
+                    </div>
+                    <div class="mcp-server-row-actions">
+                      <label class="checkbox-row">
+                        <input
+                          type="checkbox"
+                          checked={connection.enabled}
+                          onChange={(event) => {
+                            if (connection.kind === "configured") {
+                              updateServer(connection.index, {
+                                enabled: event.currentTarget.checked,
+                              });
+                            } else {
+                              toggleDiscoveredEnabled(connection.row, event.currentTarget.checked);
+                            }
+                          }}
+                        />
+                        <span>Enabled</span>
+                      </label>
+                      <button
+                        type="button"
+                        class="secondary-button"
+                        onClick={() => void probeServer(connection)}
+                      >
+                        Test
+                      </button>
+                      <Show when={connection.kind === "discovered"}>
+                        <button
+                          type="button"
+                          class="secondary-button"
+                          onClick={() =>
+                            copyDiscoveredToSettings(
+                              (connection as Extract<McpConnection, { kind: "discovered" }>).row,
+                            )
+                          }
+                        >
+                          Customize
+                        </button>
+                      </Show>
+                      <Show when={connection.kind === "configured"}>
+                        <button
+                          type="button"
+                          class="secondary-button ghost"
+                          onClick={() =>
+                            removeServer(
+                              (connection as Extract<McpConnection, { kind: "configured" }>).index,
+                            )
+                          }
+                        >
+                          Delete
+                        </button>
+                      </Show>
+                    </div>
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
+        </section>
+
+        <section class="mcp-card mcp-card--discovery" aria-labelledby="mcp-advanced-heading">
+          <div class="mcp-card-header">
+            <h4 id="mcp-advanced-heading" class="mcp-card-title">
+              Advanced
+            </h4>
+            <p class="mcp-card-copy">
+              {discoveredCount()} discovered · {configuredCount()} saved in OpenFlow
+            </p>
           </div>
           <label class="checkbox-row mcp-discovery-toggle">
             <input
@@ -109,186 +347,93 @@ export function McpSection() {
               checked={discoverExternal()}
               onChange={(event) => void toggleDiscoverExternal(event.currentTarget.checked)}
             />
-            <span>Discover external MCP configs</span>
+            <span>Use servers from external MCP configs</span>
           </label>
-          <p class="mcp-discovery-summary" aria-live="polite">
-            {discoveredCount()} discovered · {configuredCount()} configured
-          </p>
-        </section>
-
-        <section class="mcp-card mcp-card--management" aria-labelledby="mcp-discovered-heading">
-          <div class="mcp-card-header">
-            <h4 id="mcp-discovered-heading" class="mcp-card-title">
-              Discovered servers
-            </h4>
-            <p class="mcp-card-copy">Enable or disable servers found in external MCP configs.</p>
-          </div>
-          <Show
-            when={discoveredCount() > 0}
-            fallback={<div class="mcp-empty-state">No discovered MCP servers.</div>}
-          >
-            <div class="mcp-server-list">
-              <For each={ctx.discoveredMcp()}>
-                {(row) => (
-                  <div class="mcp-server-row">
-                    <div class="mcp-server-row-main">
-                      <strong class="mcp-server-name">{row.displayName}</strong>
-                      <p class="mcp-server-meta">
-                        {row.source} · {shortenPath(row.sourcePath)}
-                      </p>
-                    </div>
-                    <div class="mcp-server-row-actions">
-                      <label class="checkbox-row">
-                        <input
-                          type="checkbox"
-                          checked={
-                            row.enabled &&
-                            !(ctx.settings().mcp?.disabledDiscoveredIds ?? []).includes(row.id)
-                          }
-                          onChange={(event) =>
-                            toggleDiscoveredEnabled(row, event.currentTarget.checked)
-                          }
-                        />
-                        <span>Enabled</span>
-                      </label>
-                    </div>
-                  </div>
-                )}
-              </For>
-            </div>
-          </Show>
-        </section>
-
-        <section class="mcp-card mcp-card--management" aria-labelledby="mcp-servers-heading">
-          <div class="mcp-card-header">
-            <h4 id="mcp-servers-heading" class="mcp-card-title">
-              Configured servers
-            </h4>
-            <p class="mcp-card-copy">Edit saved MCP servers stored in OpenFlow settings.</p>
-          </div>
-          <Show
-            when={configuredCount() > 0}
-            fallback={<div class="mcp-empty-state">No MCP servers configured.</div>}
-          >
-            <div class="mcp-server-list">
-              <For each={servers()}>
-                {(server, index) => (
-                  <div class="mcp-server-row mcp-server-row--configured">
-                    <div class="mcp-server-row-main">
-                      <div class="mcp-configured-fields">
-                        <label>
-                          <span>Name</span>
-                          <input
-                            class="text-input"
-                            value={server.displayName}
-                            onInput={(event) =>
-                              updateServer(index(), { displayName: event.currentTarget.value })
-                            }
-                          />
-                        </label>
-                        <label>
-                          <span>Command</span>
-                          <input
-                            class="text-input"
-                            value={server.command}
-                            onInput={(event) =>
-                              updateServer(index(), { command: event.currentTarget.value })
-                            }
-                          />
-                        </label>
-                      </div>
-                    </div>
-                    <div class="mcp-server-row-actions">
-                      <label class="checkbox-row">
-                        <input
-                          type="checkbox"
-                          checked={server.enabled}
-                          onChange={(event) =>
-                            updateServer(index(), { enabled: event.currentTarget.checked })
-                          }
-                        />
-                        <span>Enabled</span>
-                      </label>
-                      <button
-                        type="button"
-                        class="secondary-button"
-                        onClick={() => void probeServer(server)}
-                      >
-                        Test
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </For>
-            </div>
-          </Show>
-          <Show when={probeResult()}>
-            <div class="mcp-probe-status" role="status" aria-live="polite">
-              {probeResult()}
-            </div>
-          </Show>
         </section>
 
         <section class="mcp-card mcp-card--composer" aria-labelledby="mcp-add-heading">
           <div class="mcp-card-header">
             <h4 id="mcp-add-heading" class="mcp-card-title">
-              Add custom server
+              Custom connection
             </h4>
-            <p class="mcp-card-copy">Register a stdio MCP server by id and launch command.</p>
+            <p class="mcp-card-copy">Saved in OpenFlow settings and used at run start.</p>
           </div>
-          <div class="mcp-composer-fields">
-            <label>
-              <span>Id</span>
-              <input
-                class="text-input"
-                value={draft().id}
-                onInput={(event) =>
-                  setDraft((current) => ({ ...current, id: event.currentTarget.value }))
-                }
-              />
-            </label>
-            <label>
-              <span>Display name</span>
-              <input
-                class="text-input"
-                value={draft().displayName}
-                onInput={(event) =>
-                  setDraft((current) => ({ ...current, displayName: event.currentTarget.value }))
-                }
-              />
-            </label>
-            <label>
-              <span>Command</span>
-              <input
-                class="text-input"
-                value={draft().command}
-                onInput={(event) =>
-                  setDraft((current) => ({ ...current, command: event.currentTarget.value }))
-                }
-              />
-            </label>
-            <label>
-              <span>Args (comma-separated)</span>
-              <input
-                class="text-input"
-                value={draft().args.join(", ")}
-                onInput={(event) =>
-                  setDraft((current) => ({
-                    ...current,
-                    args: event.currentTarget.value
-                      .split(",")
-                      .map((part) => part.trim())
-                      .filter(Boolean),
-                  }))
-                }
-              />
-            </label>
-          </div>
-          <div class="mcp-composer-actions">
-            <button type="button" class="primary-button" onClick={addServer}>
-              Add server
-            </button>
-          </div>
+          <Show
+            when={showAddForm()}
+            fallback={
+              <button
+                type="button"
+                class="primary-button mcp-add-trigger"
+                onClick={() => setShowAddForm(true)}
+              >
+                Add connection
+              </button>
+            }
+          >
+            <div class="mcp-composer-fields">
+              <label>
+                <span>Id</span>
+                <input
+                  class="text-input"
+                  value={draft().id}
+                  onInput={(event) =>
+                    setDraft((current) => ({ ...current, id: event.currentTarget.value }))
+                  }
+                />
+              </label>
+              <label>
+                <span>Display name</span>
+                <input
+                  class="text-input"
+                  value={draft().displayName}
+                  onInput={(event) =>
+                    setDraft((current) => ({ ...current, displayName: event.currentTarget.value }))
+                  }
+                />
+              </label>
+              <label>
+                <span>Command</span>
+                <input
+                  class="text-input"
+                  value={draft().command}
+                  onInput={(event) =>
+                    setDraft((current) => ({ ...current, command: event.currentTarget.value }))
+                  }
+                />
+              </label>
+              <label>
+                <span>Args</span>
+                <input
+                  class="text-input"
+                  value={draft().args.join(", ")}
+                  onInput={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      args: event.currentTarget.value
+                        .split(",")
+                        .map((part) => part.trim())
+                        .filter(Boolean),
+                    }))
+                  }
+                />
+              </label>
+            </div>
+            <div class="mcp-composer-actions">
+              <button type="button" class="primary-button" onClick={addServer}>
+                Save connection
+              </button>
+              <button
+                type="button"
+                class="secondary-button"
+                onClick={() => {
+                  setDraft(emptyServer());
+                  setShowAddForm(false);
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </Show>
         </section>
       </div>
     </div>

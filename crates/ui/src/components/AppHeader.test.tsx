@@ -47,7 +47,7 @@ function makeMockContext(overrides: Partial<AppContextValue> = {}): AppContextVa
     selectedNodeId: () => null,
     selectedEdgeId: () => null,
     settings: () => ({ active_provider: "openai", providers: {} }),
-    bottomTab: () => "overview",
+    bottomTab: () => "chat",
     dockOpen: () => true,
     dockHeight: () => 300,
     selectedTraceIndex: () => null,
@@ -70,7 +70,6 @@ function makeMockContext(overrides: Partial<AppContextValue> = {}): AppContextVa
     skillById: () => new Map(),
     themePreference: () => "system" as const,
     resolvedTheme: () => "light",
-    shortcutsModalOpen: () => false,
     chatFilterNodeId: () => null,
     chatFocusNode: () => null,
     pickedLiveNodeId: () => null,
@@ -150,12 +149,11 @@ function makeMockContext(overrides: Partial<AppContextValue> = {}): AppContextVa
     handleInterruptNode: async () => {},
     handleRetryNode: async () => {},
     handleSetThemePreference: () => {},
-    openShortcutsModal: () => {},
-    closeShortcutsModal: () => {},
     handleClearRunTrace: async () => {},
     handleSubmitChat: async () => {},
     handleRefreshSkills: async () => {},
     handleToolApproval: async () => {},
+    handleUpdateNodeRuntimeConfig: async () => {},
     handleStartNodeLabelEdit: () => {},
     handleCancelNodeLabelEdit: () => {},
     handleCommitNodeLabel: () => {},
@@ -267,6 +265,24 @@ describe("AppHeader", () => {
   it("hides compact nav trigger on desktop viewport", () => {
     const { container, dispose } = renderWithContext({
       isCompactViewport: () => false,
+    });
+    expect(container.querySelector("button[aria-label='Open navigation']")).toBeNull();
+    dispose();
+  });
+
+  it("hides sidebar toggles on settings screen", () => {
+    const { container, dispose } = renderWithContext({
+      screen: () => "settings",
+      isCompactViewport: () => false,
+    });
+    expect(container.querySelector("button[aria-label='Hide left sidebar']")).toBeNull();
+    dispose();
+  });
+
+  it("hides compact nav trigger on settings screen", () => {
+    const { container, dispose } = renderWithContext({
+      screen: () => "settings",
+      isCompactViewport: () => true,
     });
     expect(container.querySelector("button[aria-label='Open navigation']")).toBeNull();
     dispose();

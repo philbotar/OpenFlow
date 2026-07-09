@@ -143,6 +143,15 @@ pub async fn retry_node(
 }
 
 #[tauri::command]
+pub async fn update_node_runtime_config(
+    backend: tauri::State<'_, AppBackend>,
+    node_id: String,
+    update: orchestration::api::NodeRuntimeConfigUpdate,
+) -> Result<WorkflowRunState, CommandError> {
+    Ok(backend.update_node_runtime_config(&node_id, update).await?)
+}
+
+#[tauri::command]
 pub async fn submit_user_input(
     backend: tauri::State<'_, AppBackend>,
     node_id: String,

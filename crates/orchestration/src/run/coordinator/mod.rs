@@ -13,7 +13,7 @@ use crate::tools::edit::preview::preview_file_edit;
 use chrono::Utc;
 #[cfg(test)]
 use engine::Workflow;
-use engine::{execution_layers, validate_workflow, ChatMessage, ChatRole, NodeId};
+use engine::{apply_runtime_patch_to_agent, execution_layers, upsert_runtime_patch, validate_workflow, ChatMessage, ChatRole, NodeId};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -31,8 +31,9 @@ pub use session::{DurableResumeParams, RunStartParams};
 use checkpoint::{load_replay_projection, persist_pending_checkpoint};
 use session::{
     apply_user_stop_to_session, clear_artifact_root, finalize_run_launch, finish_run_session,
-    fresh_execution_resources, prepare_workflow_run, ExecutionResources, RunLaunchTail, RunSession,
-    SpawnRunInput, TerminationMode,
+    fresh_execution_resources, prepare_workflow_run, require_action_tx, require_active_run_state,
+    require_node_mut, require_run_state, require_run_state_mut, require_workflow_mut,
+    ExecutionResources, RunLaunchTail, RunSession, SpawnRunInput, TerminationMode,
 };
 
 pub struct RunCoordinator {
@@ -66,6 +67,7 @@ impl RunCoordinator {
                 handle: None,
                 cancel_token: None,
                 node_interrupts: None,
+                runtime_config_store: None,
             }),
         }
     }
@@ -257,6 +259,7 @@ impl RunCoordinator {
             pending_engine_reverts,
             node_interrupts: Arc::new(parking_lot::Mutex::new(std::collections::BTreeMap::new())),
             checkpoint_sink: Arc::new(parking_lot::Mutex::new(None)),
+            runtime_config_store: engine::new_runtime_config_store(),
         };
         finalize_run_launch(
             &self.runtime_handle,
@@ -305,10 +308,7 @@ impl RunCoordinator {
     /// Returns an error when there is no active run or the node is not interruptible.
     pub async fn interrupt_node(&self, node_id: &str) -> Result<WorkflowRunState, BackendError> {
         let session = self.session.lock().await;
-        let run_state = session
-            .run_state
-            .as_ref()
-            .ok_or(BackendError::NoActiveRun)?;
+        let run_state = require_run_state(&session)?;
         let node_id_key = NodeId(node_id.to_string());
         let status = run_state
             .status_by_node
@@ -332,10 +332,7 @@ impl RunCoordinator {
     /// Returns an error when there is no active run or the node is not retryable.
     pub async fn retry_node(&self, node_id: &str) -> Result<WorkflowRunState, BackendError> {
         let session = self.session.lock().await;
-        let run_state = session
-            .run_state
-            .as_ref()
-            .ok_or(BackendError::NoActiveRun)?;
+        let run_state = require_run_state(&session)?;
         let node_id_key = NodeId(node_id.to_string());
         let status = run_state
             .status_by_node
@@ -345,15 +342,34 @@ impl RunCoordinator {
         if !matches!(status, AgentStatus::Failed | AgentStatus::Interrupted) {
             return Err(BackendError::NodeNotRetryable(node_id.to_string()));
         }
-        session
-            .action_tx
-            .as_ref()
-            .ok_or(BackendError::NoActiveRun)?
+        require_action_tx(&session)?
             .send(ExecutionAction::RetryNode {
                 node_id: node_id_key,
             })
             .map_err(|_| BackendError::RunChannelClosed)?;
         Ok(run_state.clone())
+    }
+
+    /// Update per-node tool approval or reasoning settings for the active run.
+    ///
+    /// # Errors
+    /// Returns an error when there is no active run or the node is unknown.
+    pub async fn update_node_runtime_config(
+        &self,
+        node_id: &str,
+        patch: engine::NodeRuntimeConfigPatch,
+    ) -> Result<WorkflowRunState, BackendError> {
+        let mut session = self.session.lock().await;
+        let snapshot = require_active_run_state(&session)?.clone();
+        let node_id_key = NodeId(node_id.to_string());
+        {
+            let node = require_node_mut(require_workflow_mut(&mut session)?, node_id)?;
+            apply_runtime_patch_to_agent(&mut node.agent, &patch);
+        }
+        if let Some(store) = session.runtime_config_store.as_ref() {
+            upsert_runtime_patch(store, node_id_key, patch);
+        }
+        Ok(snapshot)
     }
 
     /// Stops the active workflow run cooperatively.
@@ -441,10 +457,7 @@ impl RunCoordinator {
         let (snapshot, pending_persist, finished) = {
             let mut session = self.session.lock().await;
             let workflow = session.workflow.clone().ok_or(BackendError::NoActiveRun)?;
-            let run_state = session
-                .run_state
-                .as_mut()
-                .ok_or(BackendError::NoActiveRun)?;
+            let run_state = require_run_state_mut(&mut session)?;
 
             if !run_state.active {
                 return Ok(run_state.clone());
@@ -576,10 +589,7 @@ impl RunCoordinator {
         text: String,
     ) -> Result<WorkflowRunState, BackendError> {
         let mut session = self.session.lock().await;
-        let run_state = session
-            .run_state
-            .as_ref()
-            .ok_or(BackendError::NoActiveRun)?;
+        let run_state = require_run_state(&session)?;
         let node_id_key = NodeId(node_id.to_string());
         if !run_state.awaiting_node_ids.contains(&node_id_key)
             && run_state.awaiting_node_id.as_ref() != Some(&node_id_key)
@@ -594,20 +604,14 @@ impl RunCoordinator {
                 received: node_id_key,
             });
         }
-        session
-            .action_tx
-            .as_ref()
-            .ok_or(BackendError::NoActiveRun)?
+        require_action_tx(&session)?
             .send(ExecutionAction::ProvideInput {
                 node_id: node_id_key.clone(),
                 text: text.clone(),
             })
             .map_err(|_| BackendError::RunChannelClosed)?;
         // ponytail: chat-only optimistic append; awaiting/status follow execution events
-        let run_state = session
-            .run_state
-            .as_mut()
-            .ok_or(BackendError::NoActiveRun)?;
+        let run_state = require_run_state_mut(&mut session)?;
         run_state
             .chat_logs
             .entry(node_id_key)
@@ -625,10 +629,7 @@ impl RunCoordinator {
         reason: Option<String>,
     ) -> Result<WorkflowRunState, BackendError> {
         let session = self.session.lock().await;
-        let run_state = session
-            .run_state
-            .as_ref()
-            .ok_or(BackendError::NoActiveRun)?;
+        let run_state = require_run_state(&session)?;
         if !run_state
             .pending_approvals
             .iter()
@@ -643,10 +644,7 @@ impl RunCoordinator {
                 }
             });
         }
-        session
-            .action_tx
-            .as_ref()
-            .ok_or(BackendError::NoActiveRun)?
+        require_action_tx(&session)?
             .send(ExecutionAction::ResolveApproval {
                 approval_id: approval_id.to_string(),
                 allow,
@@ -685,10 +683,7 @@ impl RunCoordinator {
             .snapshot_store
             .clone()
             .ok_or(BackendError::NoActiveRun)?;
-        let run_state = session
-            .run_state
-            .as_ref()
-            .ok_or(BackendError::NoActiveRun)?;
+        let run_state = require_run_state(&session)?;
         let pending = run_state
             .pending_approvals
             .iter()
@@ -747,10 +742,7 @@ impl RunCoordinator {
                 .execution_cwd
                 .clone()
                 .ok_or(BackendError::NoExecutionCwd)?;
-            let run_state = session
-                .run_state
-                .as_ref()
-                .ok_or(BackendError::NoActiveRun)?;
+            let run_state = require_run_state(&session)?;
             let batch = run_state
                 .edit_batches
                 .iter()
@@ -776,10 +768,7 @@ impl RunCoordinator {
         }
 
         let mut session = self.session.lock().await;
-        let run_state = session
-            .run_state
-            .as_mut()
-            .ok_or(BackendError::NoActiveRun)?;
+        let run_state = require_run_state_mut(&mut session)?;
         run_state
             .changed_files
             .retain(|record| record.batch_id.as_deref() != Some(batch_id.as_str()));
@@ -841,6 +830,7 @@ impl RunCoordinator {
         session.lsp_settings = seed.lsp_settings;
         session.pending_engine_reverts = seed.pending_engine_reverts;
         session.node_interrupts = seed.node_interrupts;
+        session.runtime_config_store = seed.runtime_config_store;
         session.cancel_token = seed.cancel_token;
         session.handle = seed.handle;
     }
@@ -869,6 +859,7 @@ impl RunCoordinator {
             lsp_settings: None,
             pending_engine_reverts: None,
             node_interrupts: None,
+            runtime_config_store: None,
             cancel_token: None,
             handle: None,
         })
@@ -894,6 +885,7 @@ pub(crate) struct TestSessionSeed {
     pub lsp_settings: Option<crate::lsp::LspSettings>,
     pub pending_engine_reverts: Option<Arc<parking_lot::Mutex<Vec<engine::EditBatch>>>>,
     pub node_interrupts: Option<NodeInterrupts>,
+    pub runtime_config_store: Option<engine::NodeRuntimeConfigStore>,
     pub cancel_token: Option<tokio_util::sync::CancellationToken>,
     pub handle: Option<tokio::task::JoinHandle<()>>,
 }

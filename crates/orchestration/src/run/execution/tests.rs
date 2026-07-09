@@ -1137,6 +1137,8 @@ where
         node_interrupts: Arc::new(parking_lot::Mutex::new(BTreeMap::new())),
         context_window_sizes: BTreeMap::new(),
         mcp: Default::default(),
+        search: Default::default(),
+        runtime_config_store: engine::new_runtime_config_store(),
     }
 }
 
@@ -1476,6 +1478,8 @@ where
         node_interrupts: Arc::new(parking_lot::Mutex::new(BTreeMap::new())),
         context_window_sizes: BTreeMap::new(),
         mcp: Default::default(),
+        search: Default::default(),
+        runtime_config_store: engine::new_runtime_config_store(),
     };
     (params, checkpoint_sink)
 }

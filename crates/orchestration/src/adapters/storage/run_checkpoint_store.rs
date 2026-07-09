@@ -216,6 +216,7 @@ mod tests {
                 transient_streaks_by_node: BTreeMap::new(),
                 submit_output_retries_by_node: BTreeMap::new(),
                 request_input_retries_by_node: BTreeMap::new(),
+                empty_turn_retries_by_node: BTreeMap::new(),
                 auto_continue_streaks_by_node: BTreeMap::new(),
                 entrypoint_text: None,
                 interrupted_nodes: BTreeSet::new(),

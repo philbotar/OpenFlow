@@ -170,6 +170,9 @@ export function Sidebar() {
                     }}
                     onRenameWorkflow={ctx.handleStartWorkflowNameEdit}
                     onCreateWorkflow={() => void ctx.handleCreateWorkflow(project.id)}
+                    onCreateWorkflowWithAi={() =>
+                      void ctx.handleOpenWorkflowAuthoring(undefined, project.id)
+                    }
                     onAddExistingWorkflow={() => ctx.handleOpenAssignWorkflowPicker(project.id)}
                     setWorkflowNameInputRef={ctx.setWorkflowNameInputRef}
                     setWorkflowNameDraft={ctx.setWorkflowNameDraft}
@@ -184,11 +187,6 @@ export function Sidebar() {
       </SidebarList>
       <div class="sidebar-footer">
         <div class="settings-nav-menu">
-          <SidebarNavButton
-            icon="help"
-            label="Shortcuts"
-            onClick={() => ctx.openShortcutsModal()}
-          />
           <SidebarNavButton
             icon="settings"
             label="Settings"

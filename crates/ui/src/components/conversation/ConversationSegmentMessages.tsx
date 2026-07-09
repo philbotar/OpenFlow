@@ -37,10 +37,7 @@ function PlainMessage(props: {
     displayChatContent(props.message.role, props.message.content),
   );
   const shouldRender = createMemo(
-    () =>
-      content().trim().length > 0 ||
-      props.message.streaming ||
-      props.message.role === "assistant",
+    () => content().trim().length > 0 || props.message.streaming,
   );
   return (
     <Show when={shouldRender()}>
@@ -96,16 +93,18 @@ export function ConversationSegmentMessages(props: {
         ) : null
       }
     >
-      <For each={props.messages}>
-        {(message) => (
-          <ConversationItemView
-            message={message}
-            nodeId={props.nodeId}
-            label={props.label}
-            segmentHeaderShowsNode={props.segmentHeaderShowsNode ?? false}
-          />
-        )}
-      </For>
+      <div class="chat-segment-body">
+        <For each={props.messages}>
+          {(message) => (
+            <ConversationItemView
+              message={message}
+              nodeId={props.nodeId}
+              label={props.label}
+              segmentHeaderShowsNode={props.segmentHeaderShowsNode ?? false}
+            />
+          )}
+        </For>
+      </div>
     </Show>
   );
 }

@@ -20,6 +20,7 @@ export type ProjectFolderRowProps = {
   onSelectWorkflow: (workflowId: string) => void;
   onRenameWorkflow: (workflowId: string, name: string) => void;
   onCreateWorkflow: () => void;
+  onCreateWorkflowWithAi: () => void;
   onAddExistingWorkflow: () => void;
   setWorkflowNameInputRef: (el: HTMLInputElement | undefined) => void;
   setWorkflowNameDraft: (value: string) => void;
@@ -117,6 +118,18 @@ export function ProjectFolderRow(props: ProjectFolderRowProps) {
                 }}
               >
                 New workflow
+              </button>
+              <button
+                type="button"
+                class="project-folder-menu-item"
+                role="menuitem"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  closeMenu();
+                  props.onCreateWorkflowWithAi();
+                }}
+              >
+                Create with AI
               </button>
               <button
                 type="button"

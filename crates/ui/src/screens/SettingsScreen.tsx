@@ -4,6 +4,7 @@ import { AboutSection } from "../settings/AboutSection";
 import { DiagnosticsSection } from "../settings/DiagnosticsSection";
 import { McpSection } from "../settings/McpSection";
 import { ProvidersSection } from "../settings/ProvidersSection";
+import { SearchSection } from "../settings/SearchSection";
 import { SettingsNav } from "../settings/SettingsNav";
 import { useAppContext } from "../context/AppContext";
 
@@ -22,6 +23,9 @@ export function SettingsScreen() {
         </Show>
         <Show when={ctx.settingsSection() === "providers"}>
           <ProvidersSection />
+        </Show>
+        <Show when={ctx.settingsSection() === "search"}>
+          <SearchSection />
         </Show>
         <Show when={ctx.settingsSection() === "mcp"}>
           <McpSection />

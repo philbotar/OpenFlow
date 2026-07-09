@@ -4,7 +4,9 @@ use std::time::Duration;
 
 use crate::auth::AuthConfig;
 use crate::client::OpenAiCompatibleConfig;
-use crate::client::{AiClientConfig, AnthropicConfig, BedrockConfig, ProviderAdapterConfig};
+use crate::client::{AiClientConfig, AnthropicConfig, ProviderAdapterConfig};
+#[cfg(feature = "bedrock")]
+use crate::client::BedrockConfig;
 use crate::prompt_cache::{cache_session_key, openai_compat_cache_key_enabled};
 use crate::rig_adapter::{convert, error, outcome, stream};
 use crate::spec::{ProviderId, WireApi};
@@ -13,7 +15,7 @@ use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest::Client as ReqwestClient;
 use rig_core::client::CompletionClient;
 use rig_core::completion::{CompletionModel, CompletionRequest};
-use rig_core::message::AssistantContent;
+use rig_core::message::{AssistantContent, ToolChoice};
 use rig_core::providers::anthropic::{
     self, completion::CompletionModel as AnthropicCompletionModel,
 };
@@ -29,6 +31,7 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const READ_TIMEOUT: Duration = Duration::from_mins(2);
 const ANTHROPIC_MAX_TOKENS: u64 = 4096;
 
+#[derive(Clone)]
 pub enum RigModel {
     Anthropic(AnthropicCompletionModel<ReqwestClient>),
     OpenAiChat(OpenAiChatModel<ReqwestClient>),
@@ -37,13 +40,32 @@ pub enum RigModel {
     Bedrock(BedrockCompletionModel),
 }
 
-pub async fn build_model(config: &AiClientConfig, model: &str) -> Result<RigModel, AgentError> {
+/// A built provider model plus the moment its credentials stop being valid
+/// (Bedrock session tokens only; `None` = usable for the process lifetime).
+pub(crate) struct BuiltModel {
+    pub(crate) model: RigModel,
+    pub(crate) expires_at: Option<std::time::SystemTime>,
+}
+
+impl BuiltModel {
+    fn without_expiry(model: RigModel) -> Self {
+        Self {
+            model,
+            expires_at: None,
+        }
+    }
+}
+
+pub(crate) async fn build_model(
+    config: &AiClientConfig,
+    model: &str,
+) -> Result<BuiltModel, AgentError> {
     match &config.adapter {
         ProviderAdapterConfig::Anthropic(anthropic_config) => {
-            build_anthropic(config, anthropic_config, model)
+            build_anthropic(config, anthropic_config, model).map(BuiltModel::without_expiry)
         }
         ProviderAdapterConfig::OpenAiCompatible(openai_config) => {
-            build_openai(config, openai_config, model)
+            build_openai(config, openai_config, model).map(BuiltModel::without_expiry)
         }
         #[cfg(feature = "bedrock")]
         ProviderAdapterConfig::Bedrock(bedrock_config) => {
@@ -116,16 +138,61 @@ async fn build_bedrock(
     _config: &AiClientConfig,
     bedrock_config: &BedrockConfig,
     model: &str,
-) -> Result<RigModel, AgentError> {
+) -> Result<BuiltModel, AgentError> {
     let sdk_config = crate::aws_runtime::load_aws_sdk_config(
         &bedrock_config.region,
         bedrock_config.aws_profile.as_deref(),
         bedrock_config.aws_credential_command.as_deref(),
     )
     .await;
+    let expires_at = bedrock_credentials_expiry(&sdk_config).await;
     let sdk_client = aws_sdk_bedrockruntime::Client::new(&sdk_config);
     let client: rig_bedrock::client::Client = sdk_client.into();
-    Ok(RigModel::Bedrock(client.completion_model(model)))
+    let mut completion_model = client.completion_model(model);
+    if bedrock_prompt_caching_supported(model) {
+        completion_model = completion_model.with_prompt_caching();
+    }
+    Ok(BuiltModel {
+        model: RigModel::Bedrock(completion_model),
+        expires_at,
+    })
+}
+
+/// Expiry of the resolved credentials, if they carry one. Providers from the
+/// default chain cache internally, so this probe is cheap after
+/// `load_aws_sdk_config` already resolved credentials once.
+#[cfg(feature = "bedrock")]
+async fn bedrock_credentials_expiry(
+    sdk_config: &aws_config::SdkConfig,
+) -> Option<std::time::SystemTime> {
+    use aws_sdk_bedrockruntime::config::ProvideCredentials;
+    let provider = sdk_config.credentials_provider()?;
+    provider.provide_credentials().await.ok()?.expiry()
+}
+
+/// Whether a Bedrock model id supports Converse prompt caching. Bedrock
+/// rejects `cachePoint` blocks on unsupported models with a
+/// `ValidationException`, so this must stay an explicit allowlist.
+/// Matches with or without inference-profile prefixes (`us.`, `apac.`, …).
+#[cfg(feature = "bedrock")]
+fn bedrock_prompt_caching_supported(model_id: &str) -> bool {
+    const SUPPORTED: [&str; 10] = [
+        "anthropic.claude-3-5-haiku-",
+        "anthropic.claude-3-5-sonnet-20241022-v2",
+        "anthropic.claude-3-7-sonnet-",
+        "anthropic.claude-sonnet-4-",
+        "anthropic.claude-opus-4-",
+        "anthropic.claude-haiku-4-",
+        "amazon.nova-micro-",
+        "amazon.nova-lite-",
+        "amazon.nova-pro-",
+        "amazon.nova-premier-",
+    ];
+    SUPPORTED.iter().any(|prefix| {
+        model_id
+            .find(prefix)
+            .is_some_and(|at| at == 0 || model_id.as_bytes().get(at - 1) == Some(&b'.'))
+    })
 }
 
 impl RigModel {
@@ -137,9 +204,10 @@ impl RigModel {
         openai_config: Option<&OpenAiCompatibleConfig>,
     ) -> Result<AgentTurnOutcome, AgentError> {
         let no_tool_calls = outcome::no_tool_calls_policy(request, openai_config);
+        let model_name = request.model.clone();
         let mut completion_request =
             completion_request_for(self, request, provider_id, openai_config);
-        match self {
+        let result = match self {
             Self::Anthropic(model) => {
                 completion_request.max_tokens = Some(ANTHROPIC_MAX_TOKENS);
                 let response = model
@@ -198,7 +266,8 @@ impl RigModel {
                     no_tool_calls,
                 )
             }
-        }
+        };
+        result.map_err(|error| outcome::enrich_empty_turn_error(error, provider_label, &model_name))
     }
 
     pub async fn invoke_stream(
@@ -210,9 +279,10 @@ impl RigModel {
         openai_config: Option<&OpenAiCompatibleConfig>,
     ) -> Result<AgentTurnOutcome, AgentError> {
         let no_tool_calls = outcome::no_tool_calls_policy(request, openai_config);
+        let model_name = request.model.clone();
         let mut completion_request =
             completion_request_for(self, request, provider_id, openai_config);
-        match self {
+        let result = match self {
             Self::Anthropic(model) => {
                 completion_request.max_tokens = Some(ANTHROPIC_MAX_TOKENS);
                 let rig_stream = model
@@ -271,7 +341,8 @@ impl RigModel {
                 )
                 .await
             }
-        }
+        };
+        result.map_err(|error| outcome::enrich_empty_turn_error(error, provider_label, &model_name))
     }
 }
 
@@ -297,7 +368,15 @@ fn completion_request_for(
         #[cfg(feature = "bedrock")]
         RigModel::Bedrock(_) => {}
     }
+    apply_tool_choice_policy(&mut completion_request, provider_id);
     completion_request
+}
+
+/// Some custom OpenAI-compatible gateways return empty 200s when `tool_choice` is `required`.
+fn apply_tool_choice_policy(request: &mut CompletionRequest, provider_id: &ProviderId) {
+    if provider_id.as_str() == "custom_openai_compatible" {
+        request.tool_choice = Some(ToolChoice::Auto);
+    }
 }
 
 fn apply_anthropic_cache_params(request: &mut CompletionRequest) {
@@ -446,6 +525,76 @@ fn openai_build_error(label: &str, error: impl std::fmt::Display) -> AgentError 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rig_adapter::convert;
+    use engine::{AgentRequest, NodeId, WorkflowId};
+    use rig_core::message::ToolChoice;
+
+    fn minimal_request() -> AgentRequest {
+        AgentRequest {
+            workflow_id: WorkflowId::from("wf"),
+            node_id: NodeId::from("n1"),
+            node_label: "Idea".into(),
+            model: "mimo-v2.5".into(),
+            system_messages: vec!["sys".into()],
+            task_prompt: "task".into(),
+            input: serde_json::json!({}),
+            output_schema: serde_json::json!({"type":"object"}),
+            tool_config: Default::default(),
+            available_tools: Vec::new(),
+            transcript: Vec::new(),
+            model_attempt: 1,
+            reasoning_effort: None,
+            reasoning_budget_tokens: None,
+            allow_user_input: false,
+        }
+    }
+
+    #[cfg(feature = "bedrock")]
+    #[test]
+    fn bedrock_prompt_caching_allowlist_matches_supported_models() {
+        let supported = [
+            "anthropic.claude-3-5-haiku-20241022-v1:0",
+            "anthropic.claude-3-5-sonnet-20241022-v2:0",
+            "anthropic.claude-3-7-sonnet-20250219-v1:0",
+            "anthropic.claude-sonnet-4-20250514-v1:0",
+            "us.anthropic.claude-opus-4-20250514-v1:0",
+            "apac.anthropic.claude-sonnet-4-20250514-v1:0",
+            "amazon.nova-pro-v1:0",
+            "us.amazon.nova-premier-v1:0",
+        ];
+        for model in supported {
+            assert!(bedrock_prompt_caching_supported(model), "{model}");
+        }
+    }
+
+    #[cfg(feature = "bedrock")]
+    #[test]
+    fn bedrock_prompt_caching_rejects_unsupported_models() {
+        // Bedrock throws ValidationException on cachePoint for these.
+        let unsupported = [
+            "anthropic.claude-3-5-sonnet-20240620-v1:0",
+            "anthropic.claude-3-haiku-20240307-v1:0",
+            "anthropic.claude-3-opus-20240229-v1:0",
+            "anthropic.claude-v2:0",
+            "deepseek.v3-v1:0",
+            "amazon.titan-text-express-v1",
+            "meta.llama3-70b-instruct-v1:0",
+            "notanthropic.claude-sonnet-4-20250514-v1:0",
+        ];
+        for model in unsupported {
+            assert!(!bedrock_prompt_caching_supported(model), "{model}");
+        }
+    }
+
+    #[test]
+    fn custom_openai_compatible_uses_auto_tool_choice() {
+        let mut request = convert::to_completion_request(&minimal_request());
+        apply_tool_choice_policy(
+            &mut request,
+            &ProviderId::from("custom_openai_compatible"),
+        );
+        assert_eq!(request.tool_choice, Some(ToolChoice::Auto));
+    }
 
     #[test]
     fn rig_openai_base_url_joins_relative_api_prefix() {

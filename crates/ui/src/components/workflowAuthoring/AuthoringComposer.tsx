@@ -1,5 +1,6 @@
-import { createSignal, Show } from "solid-js";
+import { createEffect, createSignal, Show } from "solid-js";
 import ArrowUp from "lucide-solid/icons/arrow-up";
+import { resizeComposerTextarea } from "../../lib/utils";
 import { Spinner } from "../Spinner";
 
 export function AuthoringComposer(props: {
@@ -10,6 +11,14 @@ export function AuthoringComposer(props: {
   onSend: (message: string) => void;
 }) {
   const [draft, setDraft] = createSignal("");
+  let textareaRef: HTMLTextAreaElement | undefined;
+
+  createEffect(() => {
+    draft();
+    if (textareaRef) {
+      resizeComposerTextarea(textareaRef);
+    }
+  });
 
   const canSend = () =>
     props.sessionReady &&
@@ -39,11 +48,15 @@ export function AuthoringComposer(props: {
       <div class="chat-composer-input-shell">
         <div class="chat-composer-pill" classList={{ "is-busy": props.busy }}>
           <textarea
+            ref={textareaRef}
             class="text-area composer-input"
-            rows={2}
+            rows={1}
             value={draft()}
             placeholder={placeholder()}
-            onInput={(event) => setDraft(event.currentTarget.value)}
+            onInput={(event) => {
+              setDraft(event.currentTarget.value);
+              resizeComposerTextarea(event.currentTarget);
+            }}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();

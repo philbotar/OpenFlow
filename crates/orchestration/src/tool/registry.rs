@@ -13,6 +13,7 @@ pub enum BuiltinToolKind {
     Edit,
     ApplyPatch,
     Bash,
+    WebSearch,
     DeclareSubagents,
     CallSubagent,
     Mcp,
@@ -70,6 +71,12 @@ impl ToolRegistry {
             register(&mut self.tools, tool);
         }
         Ok(())
+    }
+
+    /// Register the web_search builtin. Not part of `new()` — callers opt in
+    /// when search is enabled, keys are configured, and the binary resolves.
+    pub fn register_web_search(&mut self) {
+        register(&mut self.tools, web_search_tool());
     }
 
     #[must_use]
@@ -348,6 +355,37 @@ fn bash_tool() -> RegisteredTool {
     }
 }
 
+fn web_search_tool() -> RegisteredTool {
+    RegisteredTool {
+        definition: ToolDefinition {
+            name: "web_search".to_string(),
+            description: "Search the web via the local search-cli aggregator. Fans the query out to configured search providers in parallel and returns rank-fused results as JSON. Distinct from `search`, which greps local file contents.".to_string(),
+            input_schema: with_intent_field(serde_json::json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The web search query."
+                    },
+                    "mode": {
+                        "type": ["string", "null"],
+                        "description": "Search mode: general (default), news, academic, scholar, deep, people, social, patents, images, places, extract, similar."
+                    },
+                    "count": {
+                        "type": ["integer", "null"],
+                        "description": "Number of results to return (default 10)."
+                    }
+                },
+                "required": ["query"]
+            })),
+            tier: ToolTier::Read,
+            concurrency: ToolConcurrency::Shared,
+        },
+        kind: BuiltinToolKind::WebSearch,
+    }
+}
+
 fn apply_patch_tool() -> RegisteredTool {
     RegisteredTool {
         definition: ToolDefinition {
@@ -511,6 +549,32 @@ mod tests {
         assert!(definitions
             .iter()
             .any(|tool| tool.name == "openflow_call_subagent"));
+    }
+
+    #[test]
+    fn web_search_absent_by_default_and_present_after_registration() {
+        let mut registry = ToolRegistry::new();
+        assert!(registry.get("web_search").is_err());
+
+        registry.register_web_search();
+        let tool = registry.get("web_search").expect("web_search registered");
+        assert_eq!(tool.definition.tier, ToolTier::Read);
+
+        let config = NodeToolConfig {
+            approval_mode: Some(engine::ApprovalMode::ReadOnly),
+        };
+        assert!(registry
+            .definitions_for(&config)
+            .iter()
+            .any(|tool| tool.name == "web_search"));
+
+        let properties = tool
+            .definition
+            .input_schema
+            .get("properties")
+            .and_then(serde_json::Value::as_object)
+            .expect("schema properties");
+        assert!(properties.contains_key("_i"));
     }
 
     #[test]

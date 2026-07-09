@@ -354,7 +354,7 @@ function CanvasEdge(props: { small?: boolean }) {
 function DockTabs(props: { active: string }) {
   return (
     <div class="of-dock-tabs">
-      <For each={["Overview", "Chat", "Terminal", "Run trace"]}>
+      <For each={["Chat", "Terminal", "Run trace"]}>
         {(tab) => (
           <div class={`of-dock-tab ${tab === props.active ? "is-active" : ""}`}>{tab}</div>
         )}

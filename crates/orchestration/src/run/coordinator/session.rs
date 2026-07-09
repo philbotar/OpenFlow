@@ -15,7 +15,8 @@ use crate::settings::model::{merge_preserved_api_keys, AppSettings};
 use crate::settings::provider::{resolve_provider_config, ProviderEnv};
 use engine::ports::outbound::AiPort;
 use engine::{
-    resolve_callable_agent_snapshots, CallableAgent, InteractiveEngineCheckpoint, Workflow,
+    resolve_callable_agent_snapshots, CallableAgent, InteractiveEngineCheckpoint, Node,
+    NodeRuntimeConfigStore, NodeId, Workflow,
 };
 use parking_lot::Mutex as ParkingMutex;
 use providers::{create_provider, ProviderId};
@@ -41,6 +42,7 @@ pub(super) struct ExecutionResources {
     pub pending_engine_reverts: Arc<parking_lot::Mutex<Vec<engine::EditBatch>>>,
     pub node_interrupts: NodeInterrupts,
     pub checkpoint_sink: Arc<ParkingMutex<Option<PendingRunCheckpoint>>>,
+    pub runtime_config_store: NodeRuntimeConfigStore,
 }
 
 pub(super) struct SpawnRunInput {
@@ -105,6 +107,7 @@ pub(crate) fn fresh_execution_resources(persisted_settings: &AppSettings) -> Exe
         pending_engine_reverts: Arc::new(parking_lot::Mutex::new(Vec::new())),
         node_interrupts: Arc::new(parking_lot::Mutex::new(BTreeMap::new())),
         checkpoint_sink: Arc::new(ParkingMutex::new(None)),
+        runtime_config_store: engine::new_runtime_config_store(),
     }
 }
 
@@ -135,6 +138,8 @@ pub(super) fn spawn_prepared_run(
             node_interrupts: resources.node_interrupts.clone(),
             context_window_sizes: prepared.context_window_sizes,
             mcp: prepared.persisted_settings.mcp.clone(),
+            search: prepared.persisted_settings.search.clone(),
+            runtime_config_store: resources.runtime_config_store.clone(),
         },
     );
     SpawnedRun {
@@ -206,6 +211,7 @@ pub(super) fn attach_execution_handles(
         pending_engine_reverts,
         node_interrupts,
         checkpoint_sink,
+        runtime_config_store,
     } = resources;
     session.workflow = Some(workflow);
     session.entrypoint = entrypoint;
@@ -220,6 +226,7 @@ pub(super) fn attach_execution_handles(
     session.handle = Some(handle);
     session.cancel_token = Some(cancel_token);
     session.node_interrupts = Some(node_interrupts);
+    session.runtime_config_store = Some(runtime_config_store);
 }
 
 /// Clears session-scoped resources when a run becomes inactive.
@@ -232,6 +239,7 @@ pub(crate) fn finish_run_session(session: &mut RunSession) {
     session.cancel_token = None;
     session.node_interrupts = None;
     session.checkpoint_sink = None;
+    session.runtime_config_store = None;
     session.engine_checkpoint = None;
 }
 
@@ -264,6 +272,49 @@ pub(crate) fn apply_user_stop_to_session(session: &mut RunSession) -> Option<Wor
     Some(run_state.clone())
 }
 
+pub(super) fn require_run_state(session: &RunSession) -> Result<&WorkflowRunState, BackendError> {
+    session.run_state.as_ref().ok_or(BackendError::NoActiveRun)
+}
+
+pub(super) fn require_active_run_state(
+    session: &RunSession,
+) -> Result<&WorkflowRunState, BackendError> {
+    let run_state = require_run_state(session)?;
+    if run_state.active {
+        Ok(run_state)
+    } else {
+        Err(BackendError::NoActiveRun)
+    }
+}
+
+pub(super) fn require_run_state_mut(
+    session: &mut RunSession,
+) -> Result<&mut WorkflowRunState, BackendError> {
+    session.run_state.as_mut().ok_or(BackendError::NoActiveRun)
+}
+
+pub(super) fn require_workflow_mut(session: &mut RunSession) -> Result<&mut Workflow, BackendError> {
+    session.workflow.as_mut().ok_or(BackendError::NoActiveRun)
+}
+
+pub(super) fn require_action_tx(
+    session: &RunSession,
+) -> Result<&UnboundedSender<ExecutionAction>, BackendError> {
+    session.action_tx.as_ref().ok_or(BackendError::NoActiveRun)
+}
+
+pub(super) fn require_node_mut<'a>(
+    workflow: &'a mut Workflow,
+    node_id: &str,
+) -> Result<&'a mut Node, BackendError> {
+    let node_id_key = NodeId(node_id.to_string());
+    workflow
+        .nodes
+        .iter_mut()
+        .find(|node| node.id == node_id_key)
+        .ok_or_else(|| BackendError::NodeNotFoundInRun(node_id.to_string()))
+}
+
 #[derive(Debug)]
 pub(crate) struct RunSession {
     pub(crate) workflow: Option<Workflow>,
@@ -284,6 +335,7 @@ pub(crate) struct RunSession {
     pub(crate) handle: Option<tokio::task::JoinHandle<()>>,
     pub(crate) cancel_token: Option<CancellationToken>,
     pub(crate) node_interrupts: Option<NodeInterrupts>,
+    pub(crate) runtime_config_store: Option<NodeRuntimeConfigStore>,
 }
 
 pub(super) enum TerminationMode {

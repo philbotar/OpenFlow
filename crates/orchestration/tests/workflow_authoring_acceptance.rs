@@ -10,7 +10,7 @@ async fn live_authoring_turn_produces_valid_dag() {
     }
 
     let service = WorkflowAuthoringService::new();
-    let session_id = service.start_session(None);
+    let session_id = service.start_session(None).session_id;
     let settings = AppSettings::default();
     let provider_config = orchestration::settings::provider::resolve_provider_config(
         &settings,
@@ -25,6 +25,8 @@ async fn live_authoring_turn_produces_valid_dag() {
             "Create a workflow that clarifies an idea, runs plan and risk in parallel, then writes a brief.".to_string(),
             &settings,
             &ai,
+            |_| {},
+            |_| {},
         )
         .await
         .expect("authoring turn");

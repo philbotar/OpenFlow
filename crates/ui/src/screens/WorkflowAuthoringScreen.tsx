@@ -53,6 +53,7 @@ export function WorkflowAuthoringScreen() {
                         <AuthoringMessages
                           messages={ctx.workflowAuthoringMessages()}
                           busy={ctx.workflowAuthoringBusy()}
+                          thinkingContent={ctx.workflowAuthoringThinkingContent()}
                         />
                       </Show>
                     </div>

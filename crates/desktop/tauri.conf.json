@@ -36,6 +36,7 @@
   "bundle": {
     "active": true,
     "createUpdaterArtifacts": true,
+    "externalBin": ["binaries/search"],
     "targets": [
       "app",
       "dmg"

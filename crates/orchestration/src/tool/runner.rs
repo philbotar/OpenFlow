@@ -65,6 +65,7 @@ pub struct ToolRunner {
     pub(super) cancel_token: CancellationToken,
     pub(super) snapshot_store: Arc<crate::tools::edit::hashline::snapshots::InMemorySnapshotStore>,
     cache: ToolResultCache,
+    pub(super) search: crate::settings::model::SearchSettings,
 }
 
 #[derive(Debug, Error)]
@@ -109,7 +110,17 @@ impl ToolRunner {
             cancel_token,
             snapshot_store,
             cache: ToolResultCache::new(),
+            search: crate::settings::model::SearchSettings::default(),
         }
+    }
+
+    #[must_use]
+    pub fn with_search_settings(
+        mut self,
+        search: crate::settings::model::SearchSettings,
+    ) -> Self {
+        self.search = search;
+        self
     }
 
     #[must_use]

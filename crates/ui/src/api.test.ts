@@ -34,6 +34,7 @@ import {
   replayRun,
   refreshSchedules,
   resumeDurableRun,
+  startWorkflowAuthoring,
   startRun,
   submitToolApproval,
   workflowAuthoringTurn,
@@ -146,6 +147,17 @@ describe("api desktop seam", () => {
         message: "hello",
       }),
     );
+  });
+
+  test("startWorkflowAuthoring includes optional target project id", async () => {
+    invoke.mockResolvedValueOnce({
+      sessionId: "authoring-session-1",
+    });
+    await startWorkflowAuthoring(null, "project-1");
+    expect(invoke).toHaveBeenCalledWith("start_workflow_authoring", {
+      baseWorkflow: null,
+      targetProjectId: "project-1",
+    });
   });
 
   test("listScheduleStatuses invokes list_schedule_statuses", async () => {

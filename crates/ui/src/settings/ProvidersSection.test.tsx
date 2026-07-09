@@ -255,7 +255,6 @@ describe("ProvidersSection", () => {
   test("bedrock shows aws profile field instead of api key input", () => {
     renderSection("bedrock");
     expect(subheading("providers-auth-heading")?.textContent).toBe("AWS credentials");
-    expect(container.textContent).toContain("aws sso login");
     expect(container.querySelector('input[type="password"]')).toBeNull();
     const profileInput = container.querySelector(
       'input[placeholder="e.g. bedrock"]',

@@ -91,6 +91,43 @@ impl SettingsFacade {
         self.save_provider_api_key(provider_id, "")
     }
 
+    /// # Errors
+    /// Returns an error if the settings file cannot be read.
+    pub fn load_search_api_key(&self, provider: &str) -> Result<Option<String>, BackendError> {
+        let settings = self.store.load()?;
+        Ok(settings.search.keys.get(provider).and_then(|key| {
+            let key = key.trim();
+            if key.is_empty() {
+                None
+            } else {
+                Some(key.to_string())
+            }
+        }))
+    }
+
+    /// # Errors
+    /// Returns an error if the settings file cannot be written.
+    pub fn save_search_api_key(&self, provider: &str, api_key: &str) -> Result<(), BackendError> {
+        let mut settings = self.store.load()?;
+        let trimmed = api_key.trim();
+        if trimmed.is_empty() {
+            settings.search.keys.remove(provider);
+        } else {
+            settings
+                .search
+                .keys
+                .insert(provider.to_string(), trimmed.to_string());
+        }
+        self.store.save_raw(&settings)?;
+        Ok(())
+    }
+
+    /// # Errors
+    /// Returns an error if the settings file cannot be written.
+    pub fn delete_search_api_key(&self, provider: &str) -> Result<(), BackendError> {
+        self.save_search_api_key(provider, "")
+    }
+
     #[must_use]
     pub fn resolve_provider_readiness(
         &self,

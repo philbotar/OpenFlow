@@ -14,6 +14,7 @@ import { createDebounced } from "../../lib/utils";
 import type { NodeId, ProjectFileReference, SkillSummary } from "../../lib/types";
 import { pendingApprovalForNode } from "../../lib/workflow";
 import { ComposerInput } from "./ComposerInput";
+import { ComposerRuntimeControls } from "./ComposerRuntimeControls";
 import { FileReferenceCombobox } from "./FileReferenceCombobox";
 import { SkillCommandCombobox } from "./SkillCommandCombobox";
 import { SkillDescriptionPreview } from "./SkillDescriptionPreview";
@@ -260,60 +261,65 @@ export function ConversationComposer(props: {
           class="chat-composer-pill"
           classList={{ "is-busy": ctx.composerBusyFor(props.nodeId) }}
         >
-          <ComposerInput
-            ref={textareaRef}
-            class="text-area composer-input composer-input-mirror"
-            rows={1}
-            value={draft()}
-            knownSkillIds={knownSkillIds()}
-            role="combobox"
-            aria-autocomplete="list"
-            aria-expanded={comboboxOpen() || fileComboboxOpen()}
-            aria-controls={
-              comboboxOpen()
-                ? listboxId()
-                : fileComboboxOpen()
-                  ? fileListboxId()
-                  : undefined
-            }
-            aria-activedescendant={
-              comboboxOpen()
-                ? `${listboxId()}-option-${highlightedIndex()}`
-                : fileComboboxOpen()
-                  ? `${fileListboxId()}-option-${highlightedFileIndex()}`
-                  : undefined
-            }
-            onInput={handleInput}
-            onClick={(event) => syncCaret(event.currentTarget)}
-            onKeyUp={(event) => syncCaret(event.currentTarget)}
-            onKeyDown={handleKeyDown}
-            placeholder={
-              props.kickoff
-                ? "Message to start the workflow... Type / for skills or @ for files and folders."
-                : props.disabled
-                  ? "Start a run to chat with agents."
-                  : pendingApproval()
-                    ? "Resolve the pending tool approval above."
-                    : `Reply to ${props.label}... Type / for skills or @ for files and folders.`
-            }
-            disabled={!inputEnabled()}
-          />
-          <button
-            class="primary-button composer-send-button"
-            onClick={() => void ctx.handleSubmitChat(props.nodeId)}
-            disabled={!ctx.canSendChatFor(props.nodeId)}
-            title={props.kickoff ? "Start workflow" : "Send to paused node"}
-            aria-label={
-              props.kickoff ? "Start workflow with message" : "Send to paused node"
-            }
-          >
-            <ArrowUp
-              class="composer-send-icon"
-              aria-hidden="true"
-              absoluteStrokeWidth
-              strokeWidth={2.3}
+          <div class="chat-composer-main">
+            <ComposerInput
+              ref={textareaRef}
+              class="text-area composer-input composer-input-mirror"
+              rows={1}
+              value={draft()}
+              knownSkillIds={knownSkillIds()}
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded={comboboxOpen() || fileComboboxOpen()}
+              aria-controls={
+                comboboxOpen()
+                  ? listboxId()
+                  : fileComboboxOpen()
+                    ? fileListboxId()
+                    : undefined
+              }
+              aria-activedescendant={
+                comboboxOpen()
+                  ? `${listboxId()}-option-${highlightedIndex()}`
+                  : fileComboboxOpen()
+                    ? `${fileListboxId()}-option-${highlightedFileIndex()}`
+                    : undefined
+              }
+              onInput={handleInput}
+              onClick={(event) => syncCaret(event.currentTarget)}
+              onKeyUp={(event) => syncCaret(event.currentTarget)}
+              onKeyDown={handleKeyDown}
+              placeholder={
+                props.kickoff
+                  ? "Message to start the workflow... Type / for skills or @ for files and folders."
+                  : props.disabled
+                    ? "Start a run to chat with agents."
+                    : pendingApproval()
+                      ? "Resolve the pending tool approval above."
+                      : `Reply to ${props.label}... Type / for skills or @ for files and folders.`
+              }
+              disabled={!inputEnabled()}
             />
-          </button>
+            <button
+              class="primary-button composer-send-button"
+              onClick={() => void ctx.handleSubmitChat(props.nodeId)}
+              disabled={!ctx.canSendChatFor(props.nodeId)}
+              title={props.kickoff ? "Start workflow" : "Send to paused node"}
+              aria-label={
+                props.kickoff ? "Start workflow with message" : "Send to paused node"
+              }
+            >
+              <ArrowUp
+                class="composer-send-icon"
+                aria-hidden="true"
+                absoluteStrokeWidth
+                strokeWidth={2.3}
+              />
+            </button>
+          </div>
+          <Show when={!props.kickoff}>
+            <ComposerRuntimeControls nodeId={props.nodeId} disabled={props.disabled} />
+          </Show>
         </div>
       </div>
     </div>

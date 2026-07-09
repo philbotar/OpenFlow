@@ -962,6 +962,33 @@ fn needs_input(message: &str) -> AgentTurnOutcome {
 }
 
 #[test]
+fn empty_provider_turn_retries_with_tool_nudge_before_failing() {
+    let mut workflow = Workflow::new("wf");
+    workflow.nodes = vec![autonomous_node("a")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let node_a = NodeId("a".to_string());
+    let empty = || {
+        Err(AgentError::Failed(
+            "provider returned neither tool calls nor recoverable output".to_string(),
+        ))
+    };
+
+    for attempt in 1..=3 {
+        engine.test_insert_in_flight(node_a.clone());
+        engine.on_ai_complete(&node_a, empty());
+        assert!(
+            !engine.failed_nodes.contains_key(&node_a),
+            "attempt {attempt} should nudge, not fail"
+        );
+        assert_eq!(engine.transcript(&node_a).len(), attempt);
+    }
+
+    engine.test_insert_in_flight(node_a.clone());
+    engine.on_ai_complete(&node_a, empty());
+    assert!(engine.failed_nodes.contains_key(&node_a));
+}
+
+#[test]
 fn autonomous_node_auto_continues_instead_of_awaiting_input() {
     let mut workflow = Workflow::new("wf");
     workflow.nodes = vec![autonomous_node("a")];

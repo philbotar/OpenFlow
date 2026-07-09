@@ -14,6 +14,8 @@ const apiMocks = vi.hoisted(() => ({
   createAgentNode: vi.fn(),
   createWorkflow: vi.fn(),
   listenToRunState: vi.fn(),
+  listenToWorkflowAuthoringThinking: vi.fn(),
+  listenToWorkflowAuthoringDraft: vi.fn(),
   resolveProviderReadiness: vi.fn(),
   deleteProviderApiKey: vi.fn(),
   debugLogPath: vi.fn(),
@@ -71,6 +73,8 @@ vi.mock("../api", async (importOriginal) => {
     createAgentNode: apiMocks.createAgentNode,
     createWorkflow: apiMocks.createWorkflow,
     listenToRunState: apiMocks.listenToRunState,
+    listenToWorkflowAuthoringThinking: apiMocks.listenToWorkflowAuthoringThinking,
+    listenToWorkflowAuthoringDraft: apiMocks.listenToWorkflowAuthoringDraft,
     resolveProviderReadiness: apiMocks.resolveProviderReadiness,
     deleteProviderApiKey: apiMocks.deleteProviderApiKey,
     debugLogPath: apiMocks.debugLogPath,
@@ -423,6 +427,8 @@ function installDefaultApiMocks() {
     } as typeof ResizeObserver;
   }
   apiMocks.listenToRunState.mockResolvedValue(() => {});
+  apiMocks.listenToWorkflowAuthoringThinking.mockResolvedValue(() => {});
+  apiMocks.listenToWorkflowAuthoringDraft.mockResolvedValue(() => {});
   apiMocks.isRunContinuable.mockResolvedValue(false);
   apiMocks.resolveProviderReadiness.mockResolvedValue(READY);
   apiMocks.loadProviderApiKey.mockImplementation(async (providerId: string) => {
@@ -456,7 +462,10 @@ function installDefaultApiMocks() {
   apiMocks.resizeTerminal.mockResolvedValue(undefined);
   apiMocks.stopTerminal.mockResolvedValue(undefined);
   apiMocks.listenToTerminalEvent.mockResolvedValue(() => {});
-  apiMocks.startWorkflowAuthoring.mockResolvedValue("authoring-session-1");
+  apiMocks.startWorkflowAuthoring.mockResolvedValue({
+    sessionId: "authoring-session-1",
+    draft: undefined,
+  });
   apiMocks.workflowAuthoringTurn.mockResolvedValue({
     messages: [],
     validation: null,
@@ -807,7 +816,7 @@ describe("App first-run onboarding", () => {
 
       await clickOnboardingAction(container, "Build with AI");
 
-      expect(apiMocks.startWorkflowAuthoring).toHaveBeenCalledWith(null);
+      expect(apiMocks.startWorkflowAuthoring).toHaveBeenCalledWith(null, null);
       expect(topbarTitle(container)).toBe("Build workflow with AI");
       await waitForOnboardingClosed(container);
       expect(window.localStorage.getItem("openflow.firstRunOnboardingDismissed")).toBe("true");
@@ -912,6 +921,7 @@ describe("workflow authoring chat layout", () => {
         "authoring thinking bubble",
       );
       expect(thinking.querySelector(".tool-line-name-text")?.textContent).toBe("Thinking");
+      expect(thinking.querySelector(".tool-line-preview-text--thinking")).toBeNull();
 
       resolveTurn({
         messages: [
@@ -1032,6 +1042,89 @@ describe("App workflow rename", () => {
         "workflow-source",
       );
       expect(topbarTitle(container)).toBe("Source Flow copy");
+    } finally {
+      dispose();
+      window.localStorage.removeItem("openflow.expandedProjectIds");
+    }
+  });
+
+  test("adds a project workflow with AI and applies it to that project", async () => {
+    const independent = makeWorkflow("workflow-independent", "Independent Flow");
+    const project = makeProject("project-b", "Project B", []);
+    const generated = makeWorkflow("workflow-generated", "Generated Project Flow");
+
+    apiMocks.workflowAuthoringTurn.mockResolvedValue({
+      messages: [
+        { role: "user", content: "Build a repo triage workflow" },
+        { role: "assistant", content: "Built a project workflow." },
+      ],
+      validation: { valid: true, errors: [], warnings: [] },
+      draft: generated,
+    });
+    apiMocks.assignWorkflowToProject.mockResolvedValue([
+      {
+        ...project,
+        workflow_ids: ["workflow-generated"],
+      },
+    ]);
+    window.localStorage.setItem("openflow.expandedProjectIds", JSON.stringify(["project-b"]));
+
+    const { container, dispose } = await mountApp(
+      makeBootstrapPayload([independent], undefined, undefined, [project]),
+    );
+
+    try {
+      const addButton = container.querySelector(
+        '[aria-label="Add workflow to Project B"]',
+      ) as HTMLButtonElement;
+      addButton.click();
+      await flush();
+
+      const aiMenuItem = [...container.querySelectorAll(".project-folder-menu-item")].find(
+        (item) => item.textContent === "Create with AI",
+      ) as HTMLButtonElement;
+      aiMenuItem.click();
+      await flush();
+
+      expect(apiMocks.startWorkflowAuthoring).toHaveBeenCalledWith(null, "project-b");
+      expect(topbarTitle(container)).toBe("Build workflow with AI");
+
+      const textarea = await waitForElement(
+        () => container.querySelector(".chat-composer-pill textarea"),
+        "authoring textarea",
+      );
+      (textarea as HTMLTextAreaElement).value = "Build a repo triage workflow";
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      await flush();
+
+      container
+        .querySelector(".composer-send-button")
+        ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await flush();
+      await flush();
+
+      const applyButton = await waitForElement(
+        () =>
+          [...container.querySelectorAll("button")].find(
+            (button) => button.textContent?.trim() === "Create Workflow",
+          ) as HTMLButtonElement | null,
+        "create workflow button",
+      );
+      applyButton.click();
+      await flush();
+      await flush();
+
+      expect(apiMocks.saveWorkflow).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: "workflow-generated",
+          name: "Generated Project Flow",
+        }),
+      );
+      expect(apiMocks.assignWorkflowToProject).toHaveBeenCalledWith(
+        "project-b",
+        "workflow-generated",
+      );
+      expect(topbarTitle(container)).toBe("Generated Project Flow");
     } finally {
       dispose();
       window.localStorage.removeItem("openflow.expandedProjectIds");
@@ -1417,6 +1510,8 @@ describe("App settings persistence", () => {
 
       expect(container.querySelector(".sidebar")).toBeNull();
       expect(container.querySelector(".topbar")).not.toBeNull();
+      expect(container.querySelector('button[aria-label="Hide left sidebar"]')).toBeNull();
+      expect(container.querySelector('button[aria-label="Open navigation"]')).toBeNull();
       expect(topbarTitle(container)).toBe("Settings");
       expect(container.querySelector(".settings-shell")).not.toBeNull();
       expect(container.querySelector(".settings-nav")).not.toBeNull();
@@ -1457,7 +1552,14 @@ describe("App settings persistence", () => {
       const labels = [...container.querySelectorAll('.settings-nav-button')].map(
         (element) => element.textContent?.trim(),
       );
-      expect(labels).toEqual(["Appearance", "Providers", "MCP Servers", "Diagnostics", "About"]);
+      expect(labels).toEqual([
+        "Appearance",
+        "Providers",
+        "Search",
+        "MCP Servers",
+        "Diagnostics",
+        "About",
+      ]);
     } finally {
       dispose();
     }
@@ -1831,6 +1933,53 @@ describe("App chat slash commands", () => {
       dispose();
     }
   });
+
+  test("does not insert blank rows between consecutive tool lines", async () => {
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    workflow.nodes[0].label = "Idea";
+    const nodeId = workflow.nodes[0].id;
+    const runState = makeAwaitingRunState(workflow);
+    runState.toolCallsByNode[nodeId] = [
+      {
+        toolCallId: "call-read-1",
+        toolName: "read",
+        status: "completed",
+        arguments: { path: "a.txt" },
+        lastOutput: "ok",
+        isError: false,
+        streaming: false,
+      },
+      {
+        toolCallId: "call-read-2",
+        toolName: "read",
+        status: "completed",
+        arguments: { path: "b.txt" },
+        lastOutput: "ok",
+        isError: false,
+        streaming: false,
+      },
+    ];
+    runState.chatLogs[nodeId] = [
+      { role: "Thinking", content: "", toolCallId: "call-read-1" },
+      { role: "assistant", content: "" },
+      { role: "Thinking", content: "", toolCallId: "call-read-2" },
+    ];
+    const { container, dispose } = await mountApp({
+      workflows: [workflow],
+      agents: [makeAgent("agent-1", "Research Agent")],
+      skills: FIXTURE_SKILLS,
+      settings: SETTINGS,
+      runState,
+    });
+    await openChatTab(container);
+
+    try {
+      expect(container.querySelectorAll(".tool-line").length).toBe(2);
+      expect(container.querySelectorAll(".chat-message-row--assistant").length).toBe(0);
+    } finally {
+      dispose();
+    }
+  });
 });
 
 describe("Global chat layout", () => {
@@ -1989,6 +2138,8 @@ describe("Global chat layout", () => {
       await flush();
 
       expect(container.querySelector(".chat-parallel-hint")).toBeNull();
+      expect(container.querySelectorAll(".chat-segment").length).toBe(1);
+      expect(container.querySelector('.chat-segment[data-node-id="node-c"]')).not.toBeNull();
       const textarea = await waitForElement(
         () =>
           container.querySelector(
@@ -2495,15 +2646,15 @@ describe("App bottom dock", () => {
 
       expect(container.querySelector(".dock-visibility-action")).toBeNull();
       expect(container.querySelector(".dock-resize-handle")).toBeNull();
-      expect(container.querySelector(".overview-layout")).not.toBeNull();
+      expect(container.querySelector(".chat-layout")).not.toBeNull();
 
       resizeZone.dispatchEvent(new MouseEvent("pointerdown", { clientY: 600, button: 0, bubbles: true }));
-      window.dispatchEvent(new MouseEvent("pointermove", { clientY: 740, bubbles: true }));
+      window.dispatchEvent(new MouseEvent("pointermove", { clientY: 1300, bubbles: true }));
       await flush();
       window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
 
       expect(editorScreen.style.getPropertyValue("--dock-height")).toBe("52px");
-      expect(container.querySelector(".overview-layout")).toBeNull();
+      expect(container.querySelector(".chat-layout")).toBeNull();
 
       resizeZone.dispatchEvent(new MouseEvent("pointerdown", { clientY: 600, button: 0, bubbles: true }));
       window.dispatchEvent(new MouseEvent("pointermove", { clientY: 460, bubbles: true }));
@@ -2511,13 +2662,13 @@ describe("App bottom dock", () => {
       window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
 
       expect(editorScreen.style.getPropertyValue("--dock-height")).toBe("192px");
-      expect(container.querySelector(".overview-layout")).not.toBeNull();
+      expect(container.querySelector(".chat-layout")).not.toBeNull();
     } finally {
       dispose();
     }
   });
 
-  test("opens chat at seventy percent height after the dock was collapsed", async () => {
+  test("opens chat at seventy-five percent height after the dock was collapsed", async () => {
     Object.defineProperty(window, "innerHeight", { value: 1000, configurable: true });
     const workflow = makeWorkflow("workflow-1", "Workflow One");
     const runState = makeAwaitingRunState(workflow);
@@ -2547,7 +2698,7 @@ describe("App bottom dock", () => {
       );
 
       resizeZone.dispatchEvent(new MouseEvent("pointerdown", { clientY: 600, button: 0, bubbles: true }));
-      window.dispatchEvent(new MouseEvent("pointermove", { clientY: 740, bubbles: true }));
+      window.dispatchEvent(new MouseEvent("pointermove", { clientY: 1300, bubbles: true }));
       await flush();
       window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
 
@@ -2556,14 +2707,14 @@ describe("App bottom dock", () => {
       chatTab.click();
       await flush();
 
-      expect(editorScreen.style.getPropertyValue("--dock-height")).toBe("700px");
+      expect(editorScreen.style.getPropertyValue("--dock-height")).toBe("750px");
       expect(container.querySelector(".chat-layout")).not.toBeNull();
     } finally {
       dispose();
     }
   });
 
-  test("restores chat to seventy percent height after leaving focus mode", async () => {
+  test("restores chat to seventy-five percent height after leaving focus mode", async () => {
     Object.defineProperty(window, "innerHeight", { value: 1000, configurable: true });
     const workflow = makeWorkflow("workflow-1", "Workflow One");
     const runState = makeAwaitingRunState(workflow);
@@ -2592,7 +2743,7 @@ describe("App bottom dock", () => {
       (container.querySelector('[aria-label="Show canvas"]') as HTMLButtonElement).click();
       await flush();
 
-      expect(editorScreen.style.getPropertyValue("--dock-height")).toBe("700px");
+      expect(editorScreen.style.getPropertyValue("--dock-height")).toBe("750px");
     } finally {
       dispose();
     }
@@ -2620,13 +2771,13 @@ describe("App bottom dock", () => {
         "dock resize zone",
       );
 
-      expect(editorScreen.style.getPropertyValue("--dock-height")).toBe("188px");
+      expect(editorScreen.style.getPropertyValue("--dock-height")).toBe("750px");
       resizeZone.dispatchEvent(new MouseEvent("pointerdown", { clientY: 600, button: 0, bubbles: true }));
       window.dispatchEvent(new MouseEvent("pointermove", { clientY: 520, bubbles: true }));
       await flush();
       window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
 
-      expect(editorScreen.style.getPropertyValue("--dock-height")).toBe("268px");
+      expect(editorScreen.style.getPropertyValue("--dock-height")).toBe("830px");
     } finally {
       dispose();
     }
@@ -2660,7 +2811,7 @@ describe("Idle global chat kickoff", () => {
         ".chat-composer-pill textarea",
       ) as HTMLTextAreaElement;
       expect(textarea?.disabled).toBe(false);
-      expect(textarea?.placeholder).toContain("start the workflow");
+      expect(textarea?.getAttribute("aria-label")).toContain("start the workflow");
     } finally {
       dispose();
     }
@@ -2746,6 +2897,44 @@ describe("Idle global chat kickoff", () => {
     }
   });
 
+});
+
+describe("App sidebar visibility", () => {
+  afterEach(() => {
+    document.body.innerHTML = "";
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    Object.defineProperty(window, "innerWidth", { value: 1280, configurable: true });
+    window.dispatchEvent(new Event("resize"));
+  });
+
+  beforeEach(() => {
+    installDefaultApiMocks();
+  });
+
+  test("applies sidebar-hidden at medium desktop widths when toggled", async () => {
+    Object.defineProperty(window, "innerWidth", { value: 1200, configurable: true });
+    window.dispatchEvent(new Event("resize"));
+
+    const { container, dispose } = await mountApp(
+      makeBootstrapPayload([makeWorkflow("workflow-1", "Workflow One")]),
+    );
+
+    try {
+      const hideButton = container.querySelector(
+        'button[aria-label="Hide left sidebar"]',
+      ) as HTMLButtonElement;
+      expect(hideButton).not.toBeNull();
+      hideButton.click();
+      await flush();
+
+      const shell = container.querySelector(".app-shell");
+      expect(shell?.classList.contains("app-shell--sidebar-hidden")).toBe(true);
+      expect(window.localStorage.getItem("openflow.leftPanelHidden")).toBe("true");
+    } finally {
+      dispose();
+    }
+  });
 });
 
 describe("App compact shell", () => {
