@@ -16,7 +16,8 @@ pub struct ToolSpec {
 }
 
 pub fn build_node_context(request: &AgentRequest) -> String {
-    let input = serde_json::to_string_pretty(&request.input).unwrap_or_else(|_| request.input.to_string());
+    let input =
+        serde_json::to_string_pretty(&request.input).unwrap_or_else(|_| request.input.to_string());
     format!(
         "Node: {}\nTask:\n{}\n\nUpstream input JSON:\n{}",
         request.node_label, request.task_prompt, input

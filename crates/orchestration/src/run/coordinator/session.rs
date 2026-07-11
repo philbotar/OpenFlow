@@ -15,8 +15,8 @@ use crate::settings::model::{merge_preserved_api_keys, AppSettings};
 use crate::settings::provider::{resolve_provider_config, ProviderEnv};
 use engine::ports::outbound::AiPort;
 use engine::{
-    resolve_callable_agent_snapshots, CallableAgent, InteractiveEngineCheckpoint, Node,
-    NodeRuntimeConfigStore, NodeId, Workflow,
+    resolve_callable_agent_snapshots, CallableAgent, InteractiveEngineCheckpoint, Node, NodeId,
+    NodeRuntimeConfigStore, Workflow,
 };
 use parking_lot::Mutex as ParkingMutex;
 use providers::{create_provider, ProviderId};
@@ -293,7 +293,9 @@ pub(super) fn require_run_state_mut(
     session.run_state.as_mut().ok_or(BackendError::NoActiveRun)
 }
 
-pub(super) fn require_workflow_mut(session: &mut RunSession) -> Result<&mut Workflow, BackendError> {
+pub(super) fn require_workflow_mut(
+    session: &mut RunSession,
+) -> Result<&mut Workflow, BackendError> {
     session.workflow.as_mut().ok_or(BackendError::NoActiveRun)
 }
 

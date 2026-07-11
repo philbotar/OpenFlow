@@ -789,9 +789,7 @@ fn start_session_seeds_feature_plan_template_when_no_base() {
         started.draft.as_ref().expect("draft").name,
         "Untitled workflow"
     );
-    let session = service
-        .get_session(&started.session_id)
-        .expect("session");
+    let session = service.get_session(&started.session_id).expect("session");
     assert_eq!(
         session.current_draft.as_ref().expect("draft").nodes.len(),
         4

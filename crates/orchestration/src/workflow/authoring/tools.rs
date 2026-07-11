@@ -6,7 +6,9 @@ use super::error::AuthoringError;
 use super::layout::layout_workflow_by_layers;
 use super::validate::validate_authoring_workflow;
 use crate::api::WorkflowAuthoringValidation;
-use engine::{ToolCall, ToolConcurrency, ToolDefinition, ToolResult, ToolTier, Workflow, WorkflowId};
+use engine::{
+    ToolCall, ToolConcurrency, ToolDefinition, ToolResult, ToolTier, Workflow, WorkflowId,
+};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::collections::HashSet;
@@ -322,7 +324,12 @@ impl AuthoringToolState {
         if args.from == args.to {
             return Err("edge cannot connect a node to itself".to_string());
         }
-        let node_ids: HashSet<_> = self.draft.nodes.iter().map(|node| node.id.as_str()).collect();
+        let node_ids: HashSet<_> = self
+            .draft
+            .nodes
+            .iter()
+            .map(|node| node.id.as_str())
+            .collect();
         if !node_ids.contains(args.from.as_str()) {
             return Err(format!("from node '{}' does not exist", args.from));
         }
@@ -352,7 +359,9 @@ impl AuthoringToolState {
         if self.draft.nodes.len() == before {
             return Err(format!("node '{}' not found", args.id));
         }
-        self.draft.edges.retain(|edge| edge.from != args.id && edge.to != args.id);
+        self.draft
+            .edges
+            .retain(|edge| edge.from != args.id && edge.to != args.id);
         Ok(())
     }
 
@@ -458,15 +467,13 @@ mod tests {
     #[test]
     fn incremental_tools_build_valid_workflow() {
         let mut state = AuthoringToolState::new(None, "gpt-5.5");
-        assert!(
-            state
-                .execute(&call(
-                    SET_WORKFLOW_META_TOOL,
-                    json!({ "name": "Demo", "sharedContext": "Be concise." })
-                ))
-                .content
-                .contains("\"nodeCount\":0")
-        );
+        assert!(state
+            .execute(&call(
+                SET_WORKFLOW_META_TOOL,
+                json!({ "name": "Demo", "sharedContext": "Be concise." })
+            ))
+            .content
+            .contains("\"nodeCount\":0"));
         assert!(
             !state
                 .execute(&call(

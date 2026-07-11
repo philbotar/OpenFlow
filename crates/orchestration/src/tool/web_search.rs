@@ -242,7 +242,11 @@ mod tests {
             map_exit_failure(Some(3), "bad mode"),
             ToolError::InvalidArgs { .. }
         ));
-        assert!(map_exit_failure(Some(4), "429").to_string().contains("rate limited"));
-        assert!(map_exit_failure(Some(1), "timeout").to_string().contains("failed"));
+        assert!(map_exit_failure(Some(4), "429")
+            .to_string()
+            .contains("rate limited"));
+        assert!(map_exit_failure(Some(1), "timeout")
+            .to_string()
+            .contains("failed"));
     }
 }

@@ -23,7 +23,14 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 function cleanXmlLeak(text: string): string {
-  return text.replace(/<\/?[A-Za-z_][\w:.-]*\s*\/?>/g, "").trim();
+  const tagRe = /<\/?[A-Za-z_][\w:.-]*\s*\/?>/g;
+  let prev = "";
+  let current = text;
+  while (current !== prev) {
+    prev = current;
+    current = current.replace(tagRe, "");
+  }
+  return current.trim();
 }
 
 /** True when object is only `$text` / nested `item` (XML list mangled into a chain). */

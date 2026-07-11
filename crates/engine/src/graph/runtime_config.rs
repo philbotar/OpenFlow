@@ -47,14 +47,20 @@ pub fn upsert_runtime_patch(
     patch.merge_into(entry);
 }
 
-pub fn runtime_patch_for(store: &NodeRuntimeConfigStore, node_id: &NodeId) -> Option<NodeRuntimeConfigPatch> {
+pub fn runtime_patch_for(
+    store: &NodeRuntimeConfigStore,
+    node_id: &NodeId,
+) -> Option<NodeRuntimeConfigPatch> {
     store
         .read()
         .ok()
         .and_then(|guard| guard.get(node_id).cloned())
 }
 
-pub fn apply_runtime_patch_to_tool_config(config: &mut NodeToolConfig, patch: &NodeRuntimeConfigPatch) {
+pub fn apply_runtime_patch_to_tool_config(
+    config: &mut NodeToolConfig,
+    patch: &NodeRuntimeConfigPatch,
+) {
     if let Some(mode) = patch.approval_mode {
         config.approval_mode = Some(mode);
     }

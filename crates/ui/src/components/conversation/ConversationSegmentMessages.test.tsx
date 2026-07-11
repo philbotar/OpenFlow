@@ -29,6 +29,7 @@ function stubContext(toolCalls: ToolCallSummary[]): AppContextValue {
   } as unknown as WorkflowRunState;
   return {
     runState: () => runState,
+    executionCwdForActiveWorkflow: () => null,
   } as unknown as AppContextValue;
 }
 

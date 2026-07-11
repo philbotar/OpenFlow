@@ -9,6 +9,10 @@ describe("normalizeDisplayValue", () => {
     expect(normalizeDisplayValue([{ $text: "a" }, { $text: "b" }])).toEqual(["a", "b"]);
   });
 
+  it("strips nested tag fragments left after partial removal", () => {
+    expect(normalizeDisplayValue("<scr<script>ipt>alert(1)</script>")).toBe("alert(1)");
+  });
+
   it("flattens nested item chains into a list and strips leaked XML tags", () => {
     expect(
       normalizeDisplayValue({

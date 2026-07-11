@@ -18,7 +18,10 @@ pub fn relativize_tool_call_arguments(arguments: Value, root: Option<&str>) -> V
     };
     for key in ["path", "cwd"] {
         if let Some(Value::String(s)) = map.get(key).cloned() {
-            map.insert(key.to_string(), Value::String(relativize_path_string(&s, root)));
+            map.insert(
+                key.to_string(),
+                Value::String(relativize_path_string(&s, root)),
+            );
         }
     }
     if let Some(paths_val) = map.get("paths").cloned() {
@@ -74,9 +77,7 @@ fn relativize_path_string(raw: &str, root: &str) -> String {
 
 fn looks_like_url_or_artifact(s: &str) -> bool {
     let lower = s.to_ascii_lowercase();
-    lower.starts_with("http://")
-        || lower.starts_with("https://")
-        || lower.starts_with("artifact:")
+    lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("artifact:")
 }
 
 fn normalize_separators(s: &str) -> String {
@@ -144,10 +145,7 @@ mod tests {
             ]
         });
         let out = relativize_tool_call_arguments(args, Some(ROOT));
-        assert_eq!(
-            out["paths"],
-            json!(["a.rs", "rel.rs", "/tmp/x"])
-        );
+        assert_eq!(out["paths"], json!(["a.rs", "rel.rs", "/tmp/x"]));
 
         let args = json!({"paths": "/Users/philipbotar/Developer/DailyPlanner/src"});
         let out = relativize_tool_call_arguments(args, Some(ROOT));

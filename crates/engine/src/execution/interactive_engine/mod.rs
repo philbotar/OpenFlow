@@ -14,8 +14,8 @@ use crate::execution::tool_results::error_tool_result;
 use crate::execution::{NodeFailureKind, NodeRunOutput, RunError, RunReport};
 use crate::graph::validation::{execution_layers, WorkflowValidationError};
 use crate::graph::{
-    apply_runtime_patch_to_agent, apply_runtime_patch_to_request, runtime_patch_for, Node,
-    NodeId, NodeRuntimeConfigStore, Workflow,
+    apply_runtime_patch_to_agent, apply_runtime_patch_to_request, runtime_patch_for, Node, NodeId,
+    NodeRuntimeConfigStore, Workflow,
 };
 use crate::ports::{AgentRequest, AiPort, ToolBatchOutput, ToolPort};
 use crate::tools::{FileChangeRecord, ReadRecord, ToolCall};
@@ -772,8 +772,8 @@ impl InteractiveEngine {
         let mut context = String::new();
         for upstream_id in &upstream {
             if let Some(output) = self.outputs.get(upstream_id) {
-                let pretty = serde_json::to_string_pretty(output)
-                    .unwrap_or_else(|_| output.to_string());
+                let pretty =
+                    serde_json::to_string_pretty(output).unwrap_or_else(|_| output.to_string());
                 let _ = writeln!(context, "{upstream_id}:\n{pretty}");
             }
         }

@@ -1,4 +1,6 @@
-use crate::api::{WorkflowAuthoringDraftEvent, WorkflowAuthoringStartResult, WorkflowAuthoringThinkingEvent};
+use crate::api::{
+    WorkflowAuthoringDraftEvent, WorkflowAuthoringStartResult, WorkflowAuthoringThinkingEvent,
+};
 use crate::settings::model::{merge_preserved_api_keys, AppSettings};
 use crate::workflow::authoring::WorkflowAuthoringProjectContext;
 use engine::Workflow;

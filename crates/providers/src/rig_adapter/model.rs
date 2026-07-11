@@ -3,10 +3,10 @@
 use std::time::Duration;
 
 use crate::auth::AuthConfig;
-use crate::client::OpenAiCompatibleConfig;
-use crate::client::{AiClientConfig, AnthropicConfig, ProviderAdapterConfig};
 #[cfg(feature = "bedrock")]
 use crate::client::BedrockConfig;
+use crate::client::OpenAiCompatibleConfig;
+use crate::client::{AiClientConfig, AnthropicConfig, ProviderAdapterConfig};
 use crate::prompt_cache::{cache_session_key, openai_compat_cache_key_enabled};
 use crate::rig_adapter::{convert, error, outcome, stream};
 use crate::spec::{ProviderId, WireApi};
@@ -589,10 +589,7 @@ mod tests {
     #[test]
     fn custom_openai_compatible_uses_auto_tool_choice() {
         let mut request = convert::to_completion_request(&minimal_request());
-        apply_tool_choice_policy(
-            &mut request,
-            &ProviderId::from("custom_openai_compatible"),
-        );
+        apply_tool_choice_policy(&mut request, &ProviderId::from("custom_openai_compatible"));
         assert_eq!(request.tool_choice, Some(ToolChoice::Auto));
     }
 

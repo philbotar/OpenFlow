@@ -192,9 +192,7 @@ mod tests {
         }
     }
 
-    async fn built_model(
-        expires_at: Option<SystemTime>,
-    ) -> Result<model::BuiltModel, AgentError> {
+    async fn built_model(expires_at: Option<SystemTime>) -> Result<model::BuiltModel, AgentError> {
         let mut built = model::build_model(&openai_test_config(), "test-model").await?;
         built.expires_at = expires_at;
         Ok(built)

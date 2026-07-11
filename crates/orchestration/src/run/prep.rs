@@ -67,7 +67,10 @@ pub fn provider_reasoning_for_profile(profile: &ProviderProfile) -> (Option<Stri
         .find(|option| option.value == effort)
         .is_some_and(|option| option.uses_budget_tokens);
     let budget = if uses_budget {
-        profile.default_reasoning_budget_tokens.get(&effort).copied()
+        profile
+            .default_reasoning_budget_tokens
+            .get(&effort)
+            .copied()
     } else {
         None
     };

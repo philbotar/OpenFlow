@@ -385,8 +385,7 @@ impl SearchSettings {
         SEARCH_KEY_PROVIDERS.iter().any(|provider| {
             let upper = provider.to_uppercase();
             std::env::var(format!("{upper}_API_KEY")).is_ok_and(|v| !v.trim().is_empty())
-                || std::env::var(format!("SEARCH_KEYS_{upper}"))
-                    .is_ok_and(|v| !v.trim().is_empty())
+                || std::env::var(format!("SEARCH_KEYS_{upper}")).is_ok_and(|v| !v.trim().is_empty())
         })
     }
 }
@@ -496,11 +495,7 @@ pub fn merge_preserved_api_keys(incoming: &mut AppSettings, existing: &AppSettin
         }
     }
     for (provider, key) in &existing.search.keys {
-        let entry = incoming
-            .search
-            .keys
-            .entry(provider.clone())
-            .or_default();
+        let entry = incoming.search.keys.entry(provider.clone()).or_default();
         if entry.trim().is_empty() {
             *entry = key.clone();
         }
@@ -800,7 +795,10 @@ mod tests {
             .keys
             .insert("brave".to_string(), "bk-123".to_string());
         let redacted = settings.redacted();
-        assert_eq!(redacted.search.keys.get("brave").map(String::as_str), Some(""));
+        assert_eq!(
+            redacted.search.keys.get("brave").map(String::as_str),
+            Some("")
+        );
     }
 
     #[test]
@@ -816,7 +814,10 @@ mod tests {
             .insert("exa".to_string(), "ek-456".to_string());
 
         let mut incoming = AppSettings::default();
-        incoming.search.keys.insert("brave".to_string(), String::new());
+        incoming
+            .search
+            .keys
+            .insert("brave".to_string(), String::new());
 
         merge_preserved_api_keys(&mut incoming, &existing);
         assert_eq!(
@@ -833,7 +834,9 @@ mod tests {
     fn has_configured_keys_detects_settings_keys() {
         let mut settings = SearchSettings::default();
         assert!(!settings.keys.values().any(|key| !key.trim().is_empty()));
-        settings.keys.insert("brave".to_string(), " bk ".to_string());
+        settings
+            .keys
+            .insert("brave".to_string(), " bk ".to_string());
         assert!(settings.has_configured_keys());
     }
 }

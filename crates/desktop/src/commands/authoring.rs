@@ -1,5 +1,7 @@
 use crate::ipc_types::CommandError;
-use orchestration::api::{WorkflowAuthoringDraftEvent, WorkflowAuthoringStartResult, WorkflowAuthoringThinkingEvent};
+use orchestration::api::{
+    WorkflowAuthoringDraftEvent, WorkflowAuthoringStartResult, WorkflowAuthoringThinkingEvent,
+};
 use orchestration::backend::{AppBackend, WorkflowAuthoringTurnResult};
 use orchestration::{AppSettings, Workflow};
 use tauri::Emitter;

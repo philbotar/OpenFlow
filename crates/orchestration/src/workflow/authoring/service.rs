@@ -5,13 +5,13 @@ use crate::api::{
 };
 use crate::run::prep::provider_reasoning_for_profile;
 use crate::settings::model::AppSettings;
+use crate::workflow::authoring::tools::{
+    authoring_tool_definitions, is_authoring_tool, AuthoringToolState, MAX_AUTHORING_TOOL_ROUNDS,
+};
 use crate::workflow::authoring::{
     default_authoring_template_workflow, layout_workflow_by_layers, materialize_authoring_draft,
     validate_authoring_workflow, workflow_draft_value_from_model_output, AuthoringError,
     WorkflowAuthoringDraft,
-};
-use crate::workflow::authoring::tools::{
-    authoring_tool_definitions, is_authoring_tool, AuthoringToolState, MAX_AUTHORING_TOOL_ROUNDS,
 };
 use engine::{
     AgentError, AgentNeedUserInput, AgentRequest, AgentTranscriptItem, AgentTurnOutcome,
@@ -248,19 +248,12 @@ impl WorkflowAuthoringService {
                         transcript.push(AgentTranscriptItem::AssistantMessage { content });
                     }
                     for call in &batch.tool_calls {
-                        transcript.push(AgentTranscriptItem::ToolCall {
-                            call: call.clone(),
-                        });
+                        transcript.push(AgentTranscriptItem::ToolCall { call: call.clone() });
                         let result = tool_state.execute(call);
                         transcript.push(AgentTranscriptItem::ToolResult { result });
                     }
 
-                    publish_draft_progress(
-                        self,
-                        session_id,
-                        &tool_state,
-                        &on_draft_update,
-                    );
+                    publish_draft_progress(self, session_id, &tool_state, &on_draft_update);
 
                     let thinking_text = thinking_buffer
                         .lock()

@@ -27,7 +27,11 @@ fn copy_search_sidecar() {
     let dest_dir = manifest_dir.join("binaries");
     fs::create_dir_all(&dest_dir).expect("create binaries dir");
 
-    let ext = if target.contains("windows") { ".exe" } else { "" };
+    let ext = if target.contains("windows") {
+        ".exe"
+    } else {
+        ""
+    };
     let dest = dest_dir.join(format!("search-{target}{ext}"));
     if dest.is_file() {
         return;

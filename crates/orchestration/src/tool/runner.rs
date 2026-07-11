@@ -115,10 +115,7 @@ impl ToolRunner {
     }
 
     #[must_use]
-    pub fn with_search_settings(
-        mut self,
-        search: crate::settings::model::SearchSettings,
-    ) -> Self {
+    pub fn with_search_settings(mut self, search: crate::settings::model::SearchSettings) -> Self {
         self.search = search;
         self
     }
