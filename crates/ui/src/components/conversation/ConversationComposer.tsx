@@ -263,7 +263,9 @@ export function ConversationComposer(props: {
         >
           <div class="chat-composer-main">
             <ComposerInput
-              ref={textareaRef}
+              ref={(el) => {
+                textareaRef = el;
+              }}
               class="text-area composer-input composer-input-mirror"
               rows={1}
               value={draft()}

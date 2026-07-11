@@ -16,7 +16,8 @@ import { resizeComposerTextarea } from "../../lib/utils";
 type ComposerInputProps = {
   value: string;
   knownSkillIds?: ReadonlySet<string>;
-} & Omit<ComponentProps<"textarea">, "value" | "children">;
+  ref?: (el: HTMLTextAreaElement) => void;
+} & Omit<ComponentProps<"textarea">, "value" | "children" | "ref">;
 
 function ComposerFileChipContent(props: { path: string }) {
   return (
@@ -85,12 +86,7 @@ export function ComposerInput(props: ComposerInputProps) {
   const bindTextareaRef = (el: HTMLTextAreaElement) => {
     textareaEl = el;
     resizeComposerTextarea(el);
-    const ref = local.ref;
-    if (typeof ref === "function") {
-      ref(el);
-      return;
-    }
-    local.ref = el;
+    local.ref?.(el);
   };
 
   createEffect(() => {
