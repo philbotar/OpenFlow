@@ -1974,8 +1974,9 @@ describe("App chat slash commands", () => {
     await openChatTab(container);
 
     try {
-      expect(container.querySelectorAll(".tool-line").length).toBe(2);
+      expect(container.querySelectorAll(".tool-stack")).toHaveLength(1);
       expect(container.querySelectorAll(".chat-message-row--assistant").length).toBe(0);
+      expect(container.textContent).toContain("Read 2 files");
     } finally {
       dispose();
     }
