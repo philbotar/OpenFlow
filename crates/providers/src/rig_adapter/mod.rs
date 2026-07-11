@@ -63,9 +63,9 @@ impl ModelCache {
         if let Some(cached) = {
             let entries = self.entries.lock().await;
             entries.get(key).and_then(|entry| {
-                let usable = entry.expires_at.is_none_or(|at| {
-                    SystemTime::now() + CREDENTIAL_EXPIRY_MARGIN < at
-                });
+                let usable = entry
+                    .expires_at
+                    .is_none_or(|at| SystemTime::now() + CREDENTIAL_EXPIRY_MARGIN < at);
                 usable.then(|| entry.model.clone())
             })
         } {
@@ -77,9 +77,9 @@ impl ModelCache {
         {
             let mut entries = self.entries.lock().await;
             if let Some(entry) = entries.get(key) {
-                let usable = entry.expires_at.is_none_or(|at| {
-                    SystemTime::now() + CREDENTIAL_EXPIRY_MARGIN < at
-                });
+                let usable = entry
+                    .expires_at
+                    .is_none_or(|at| SystemTime::now() + CREDENTIAL_EXPIRY_MARGIN < at);
                 if usable {
                     return Ok(entry.model.clone());
                 }
