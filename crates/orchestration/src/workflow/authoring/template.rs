@@ -27,13 +27,7 @@ mod tests {
         assert_eq!(workflow.nodes.len(), 4);
         assert_eq!(workflow.edges.len(), 4);
         assert_eq!(workflow.name, "Untitled workflow");
-        assert!(workflow
-            .nodes
-            .iter()
-            .any(|node| node.id.to_string() == "idea"));
-        assert!(workflow
-            .nodes
-            .iter()
-            .any(|node| node.id.to_string() == "brief"));
+        assert!(workflow.nodes.iter().any(|node| node.id == "idea"));
+        assert!(workflow.nodes.iter().any(|node| node.id == "brief"));
     }
 }

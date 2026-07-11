@@ -359,7 +359,7 @@ pub struct SearchSettings {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub binary_path: String,
     /// Provider id (e.g. "brave") -> API key. Injected as
-    /// SEARCH_KEYS_<PROVIDER> env vars when spawning the binary.
+    /// `SEARCH_KEYS_<PROVIDER>` env vars when spawning the binary.
     #[serde(default)]
     pub keys: BTreeMap<String, String>,
 }

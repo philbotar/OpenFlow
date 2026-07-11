@@ -42,13 +42,13 @@ pub enum RigModel {
 
 /// A built provider model plus the moment its credentials stop being valid
 /// (Bedrock session tokens only; `None` = usable for the process lifetime).
-pub(crate) struct BuiltModel {
-    pub(crate) model: RigModel,
-    pub(crate) expires_at: Option<std::time::SystemTime>,
+pub(super) struct BuiltModel {
+    pub(super) model: RigModel,
+    pub(super) expires_at: Option<std::time::SystemTime>,
 }
 
 impl BuiltModel {
-    fn without_expiry(model: RigModel) -> Self {
+    const fn without_expiry(model: RigModel) -> Self {
         Self {
             model,
             expires_at: None,
@@ -56,7 +56,7 @@ impl BuiltModel {
     }
 }
 
-pub(crate) async fn build_model(
+pub(super) async fn build_model(
     config: &AiClientConfig,
     model: &str,
 ) -> Result<BuiltModel, AgentError> {
@@ -526,7 +526,7 @@ fn openai_build_error(label: &str, error: impl std::fmt::Display) -> AgentError 
 mod tests {
     use super::*;
     use crate::rig_adapter::convert;
-    use engine::{AgentRequest, NodeId, WorkflowId};
+    use engine::{AgentRequest, NodeId, NodeToolConfig, WorkflowId};
     use rig_core::message::ToolChoice;
 
     fn minimal_request() -> AgentRequest {
@@ -539,7 +539,7 @@ mod tests {
             task_prompt: "task".into(),
             input: serde_json::json!({}),
             output_schema: serde_json::json!({"type":"object"}),
-            tool_config: Default::default(),
+            tool_config: NodeToolConfig::default(),
             available_tools: Vec::new(),
             transcript: Vec::new(),
             model_attempt: 1,

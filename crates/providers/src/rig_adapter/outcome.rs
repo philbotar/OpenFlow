@@ -97,7 +97,7 @@ fn resolve_collected(
     })
 }
 
-pub(crate) fn partition_choice(
+pub(super) fn partition_choice(
     choice: Vec<AssistantContent>,
 ) -> (Vec<String>, Vec<engine::ToolCall>) {
     let mut text_parts = Vec::new();

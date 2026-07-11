@@ -14,7 +14,7 @@ use std::time::{Duration, SystemTime};
 
 /// Rebuild a cached model this long before its credentials actually expire so
 /// an in-flight request never straddles the expiry.
-const CREDENTIAL_EXPIRY_MARGIN: Duration = Duration::from_secs(120);
+const CREDENTIAL_EXPIRY_MARGIN: Duration = Duration::from_mins(2);
 
 /// Per-client cache of built provider models, keyed by model id.
 ///
@@ -48,8 +48,9 @@ impl ModelCache {
             .await
     }
 
-    /// Lock is held across the build so concurrent turns for the same model
-    /// trigger exactly one build; later callers get the cached clone.
+    /// Cache hit returns immediately; on miss the lock is released before
+    /// building so other models can proceed and we don't hold a mutex guard
+    /// across `.await`.
     async fn get_or_build_with<F, Fut>(
         &self,
         key: &str,
@@ -59,19 +60,33 @@ impl ModelCache {
         F: FnOnce() -> Fut,
         Fut: Future<Output = Result<model::BuiltModel, AgentError>>,
     {
-        let mut entries = self.entries.lock().await;
-        if let Some(entry) = entries.get(key) {
-            let usable = entry
-                .expires_at
-                .is_none_or(|at| SystemTime::now() + CREDENTIAL_EXPIRY_MARGIN < at);
-            if usable {
-                return Ok(entry.model.clone());
-            }
+        if let Some(cached) = {
+            let entries = self.entries.lock().await;
+            entries.get(key).and_then(|entry| {
+                let usable = entry.expires_at.is_none_or(|at| {
+                    SystemTime::now() + CREDENTIAL_EXPIRY_MARGIN < at
+                });
+                usable.then(|| entry.model.clone())
+            })
+        } {
+            return Ok(cached);
         }
-        let built = build().await?;
-        let fresh = built.model.clone();
-        entries.insert(key.to_string(), built);
-        Ok(fresh)
+
+        let assembled = build().await?;
+        let model = assembled.model.clone();
+        {
+            let mut entries = self.entries.lock().await;
+            if let Some(entry) = entries.get(key) {
+                let usable = entry.expires_at.is_none_or(|at| {
+                    SystemTime::now() + CREDENTIAL_EXPIRY_MARGIN < at
+                });
+                if usable {
+                    return Ok(entry.model.clone());
+                }
+            }
+            entries.insert(key.to_string(), assembled);
+        }
+        Ok(model)
     }
 }
 
@@ -252,7 +267,7 @@ mod tests {
     async fn cache_keeps_model_with_distant_expiry() {
         let cache = ModelCache::new();
         let builds = AtomicUsize::new(0);
-        let distant = SystemTime::now() + Duration::from_secs(3600);
+        let distant = SystemTime::now() + Duration::from_hours(1);
         for _ in 0..2 {
             let result = cache
                 .get_or_build_with("m1", || {

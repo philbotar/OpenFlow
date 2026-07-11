@@ -1,5 +1,5 @@
 //! Helpers for the `web_search` builtin, which shells out to the
-//! search-cli aggregator (https://github.com/paperfoot/search-cli).
+//! search-cli aggregator (<https://github.com/paperfoot/search-cli>).
 
 use crate::settings::model::SearchSettings;
 use crate::tool::errors::ToolError;

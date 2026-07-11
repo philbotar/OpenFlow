@@ -370,7 +370,7 @@ impl RunCoordinator {
             apply_runtime_patch_to_agent(&mut node.agent, &patch);
         }
         if let Some(store) = session.runtime_config_store.as_ref() {
-            upsert_runtime_patch(store, node_id_key, patch);
+            upsert_runtime_patch(store, node_id_key, &patch);
         }
         Ok(snapshot)
     }

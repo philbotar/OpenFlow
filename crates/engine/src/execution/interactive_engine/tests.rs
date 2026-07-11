@@ -635,15 +635,12 @@ fn runtime_approval_patch_applies_before_tool_decision() {
     let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
     let store = new_runtime_config_store();
     engine.set_runtime_config_store(store.clone());
-    upsert_runtime_patch(
-        &store,
-        NodeId("idea".to_string()),
-        NodeRuntimeConfigPatch {
-            approval_mode: Some(ApprovalMode::Yolo),
-            reasoning_effort: None,
-            reasoning_budget_tokens: None,
-        },
-    );
+    let runtime_patch = NodeRuntimeConfigPatch {
+        approval_mode: Some(ApprovalMode::Yolo),
+        reasoning_effort: None,
+        reasoning_budget_tokens: None,
+    };
+    upsert_runtime_patch(&store, NodeId("idea".to_string()), &runtime_patch);
 
     let node_id = NodeId("idea".to_string());
     engine.test_insert_in_flight(node_id.clone());

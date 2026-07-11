@@ -20,7 +20,7 @@ impl NodeRuntimeConfigPatch {
             target.approval_mode = self.approval_mode;
         }
         if self.reasoning_effort.is_some() {
-            target.reasoning_effort = self.reasoning_effort.clone();
+            target.reasoning_effort.clone_from(&self.reasoning_effort);
         }
         if self.reasoning_budget_tokens.is_some() {
             target.reasoning_budget_tokens = self.reasoning_budget_tokens;
@@ -38,13 +38,15 @@ pub fn new_runtime_config_store() -> NodeRuntimeConfigStore {
 pub fn upsert_runtime_patch(
     store: &NodeRuntimeConfigStore,
     node_id: NodeId,
-    patch: NodeRuntimeConfigPatch,
+    patch: &NodeRuntimeConfigPatch,
 ) {
-    let mut guard = store
-        .write()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let entry = guard.entry(node_id).or_default();
-    patch.merge_into(entry);
+    patch.merge_into(
+        store
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .entry(node_id)
+            .or_default(),
+    );
 }
 
 pub fn runtime_patch_for(
@@ -57,7 +59,7 @@ pub fn runtime_patch_for(
         .and_then(|guard| guard.get(node_id).cloned())
 }
 
-pub fn apply_runtime_patch_to_tool_config(
+pub const fn apply_runtime_patch_to_tool_config(
     config: &mut NodeToolConfig,
     patch: &NodeRuntimeConfigPatch,
 ) {
@@ -69,7 +71,7 @@ pub fn apply_runtime_patch_to_tool_config(
 pub fn apply_runtime_patch_to_agent(agent: &mut AgentNodeConfig, patch: &NodeRuntimeConfigPatch) {
     apply_runtime_patch_to_tool_config(&mut agent.tools, patch);
     if let Some(effort) = &patch.reasoning_effort {
-        agent.reasoning_effort = effort.clone();
+        agent.reasoning_effort.clone_from(effort);
         if effort.is_none() {
             agent.reasoning_budget_tokens = None;
         }
@@ -82,7 +84,7 @@ pub fn apply_runtime_patch_to_agent(agent: &mut AgentNodeConfig, patch: &NodeRun
 pub fn apply_runtime_patch_to_request(request: &mut AgentRequest, patch: &NodeRuntimeConfigPatch) {
     apply_runtime_patch_to_tool_config(&mut request.tool_config, patch);
     if let Some(effort) = &patch.reasoning_effort {
-        request.reasoning_effort = effort.clone();
+        request.reasoning_effort.clone_from(effort);
         if effort.is_none() {
             request.reasoning_budget_tokens = None;
         }
@@ -96,19 +98,22 @@ pub fn apply_runtime_patch_to_request(request: &mut AgentRequest, patch: &NodeRu
 mod tests {
     use super::*;
 
+    #[allow(clippy::unwrap_used)]
     #[test]
     fn patch_merges_and_applies_to_request() {
         let store = new_runtime_config_store();
-        upsert_runtime_patch(
-            &store,
-            NodeId("idea".to_string()),
-            NodeRuntimeConfigPatch {
-                approval_mode: Some(ApprovalMode::ReadOnly),
-                reasoning_effort: Some(Some("high".to_string())),
-                reasoning_budget_tokens: None,
-            },
+        let patch_value = NodeRuntimeConfigPatch {
+            approval_mode: Some(ApprovalMode::ReadOnly),
+            reasoning_effort: Some(Some("high".to_string())),
+            reasoning_budget_tokens: None,
+        };
+        upsert_runtime_patch(&store, NodeId("idea".to_string()), &patch_value);
+        let patch = runtime_patch_for(&store, &NodeId("idea".to_string()));
+        assert_eq!(
+            patch.as_ref().and_then(|value| value.approval_mode),
+            Some(ApprovalMode::ReadOnly)
         );
-        let patch = runtime_patch_for(&store, &NodeId("idea".to_string())).expect("patch");
+        let patch = patch.unwrap();
         let mut request = AgentRequest {
             workflow_id: "wf".into(),
             node_id: NodeId("idea".to_string()),
