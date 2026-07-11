@@ -27,6 +27,45 @@ pub struct WorkflowAuthoringNodeDraft {
     pub auto_start: bool,
 }
 
+#[must_use]
+pub fn default_node_output_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": { "summary": { "type": "string" } },
+        "required": ["summary"]
+    })
+}
+
+#[must_use]
+pub fn workflow_to_authoring_draft(workflow: &Workflow) -> WorkflowAuthoringDraft {
+    WorkflowAuthoringDraft {
+        name: workflow.name.clone(),
+        shared_context: workflow.settings.shared_context.clone(),
+        nodes: workflow
+            .nodes
+            .iter()
+            .map(|node| WorkflowAuthoringNodeDraft {
+                id: node.id.to_string(),
+                label: node.label.clone(),
+                system_prompt: node.agent.system_prompt.clone(),
+                task_prompt: node.agent.task_prompt.clone(),
+                output_schema: node.agent.output_schema.clone(),
+                auto_start: node.agent.auto_start,
+            })
+            .collect(),
+        edges: workflow
+            .edges
+            .iter()
+            .map(|edge| WorkflowAuthoringEdgeDraft {
+                id: edge.id.to_string(),
+                from: edge.from.to_string(),
+                to: edge.to.to_string(),
+            })
+            .collect(),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkflowAuthoringEdgeDraft {
@@ -49,6 +88,11 @@ pub enum DraftParseError {
 /// # Errors
 /// Returns an error when no draft object is present.
 pub fn workflow_draft_value_from_model_output(output: &Value) -> Result<Value, AuthoringError> {
+    let output = output
+        .get("output")
+        .filter(|value| value.is_object())
+        .unwrap_or(output);
+
     if let Some(draft) = output
         .get("workflowDraft")
         .or_else(|| output.get("workflow_draft"))
@@ -118,12 +162,7 @@ pub fn materialize_authoring_draft(
                 task_prompt: node_draft.task_prompt,
                 model: default_model.to_string(),
                 output_schema: if node_draft.output_schema.is_null() {
-                    json!({
-                        "type": "object",
-                        "additionalProperties": false,
-                        "properties": { "summary": { "type": "string" } },
-                        "required": ["summary"]
-                    })
+                    default_node_output_schema()
                 } else {
                     node_draft.output_schema
                 },
@@ -147,6 +186,22 @@ pub fn materialize_authoring_draft(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn workflow_draft_value_accepts_submit_output_wrapper() {
+        let output = json!({
+            "output": {
+                "assistantMessage": "Here is a draft.",
+                "workflowDraft": {
+                    "name": "Demo",
+                    "nodes": [{ "id": "root", "label": "Root", "systemPrompt": "s", "taskPrompt": "t" }],
+                    "edges": []
+                }
+            }
+        });
+        let draft = workflow_draft_value_from_model_output(&output).expect("draft");
+        assert_eq!(draft["name"], "Demo");
+    }
 
     #[test]
     fn parse_and_materialize_feature_plan_shape() {

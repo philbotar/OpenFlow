@@ -26,7 +26,10 @@ import type {
   WorkflowListItem,
   WorkflowRunState,
   WorkflowValidationSummary,
+  WorkflowAuthoringStartResult,
   WorkflowAuthoringTurnResult,
+  WorkflowAuthoringDraftEvent,
+  WorkflowAuthoringThinkingEvent,
   TerminalEvent,
   TerminalStart,
   ScheduleDraft,
@@ -37,6 +40,8 @@ import type {
 export const RUN_STATE_EVENT = "run-state";
 export const TERMINAL_EVENT = "terminal-event";
 export const SCHEDULE_EVENT = "schedule-event";
+export const WORKFLOW_AUTHORING_THINKING_EVENT = "workflow-authoring-thinking";
+export const WORKFLOW_AUTHORING_DRAFT_EVENT = "workflow-authoring-draft";
 
 export type AppUpdateResult =
   | { status: "current" }
@@ -213,6 +218,18 @@ export function deleteProviderApiKey(providerId: string) {
   return invoke<void>("delete_provider_api_key", { providerId });
 }
 
+export function loadSearchApiKey(provider: string) {
+  return invoke<string | null>("load_search_api_key", { provider });
+}
+
+export function saveSearchApiKey(provider: string, apiKey: string) {
+  return invoke<void>("save_search_api_key", { provider, apiKey });
+}
+
+export function deleteSearchApiKey(provider: string) {
+  return invoke<void>("delete_search_api_key", { provider });
+}
+
 
 export function resolveProviderReadiness(settings: AppSettings, transientApiKey: string | null = null) {
   return invoke<ProviderReadiness>("resolve_provider_readiness", {
@@ -233,8 +250,14 @@ export function validateWorkflow(workflow: Workflow) {
   return invoke<WorkflowValidationSummary>("validate_workflow", { workflow });
 }
 
-export function startWorkflowAuthoring(baseWorkflow: Workflow | null = null) {
-  return invoke<string>("start_workflow_authoring", { baseWorkflow });
+export function startWorkflowAuthoring(
+  baseWorkflow: Workflow | null = null,
+  targetProjectId: string | null = null,
+) {
+  return invoke<WorkflowAuthoringStartResult>("start_workflow_authoring", {
+    baseWorkflow,
+    targetProjectId,
+  });
 }
 
 export function endWorkflowAuthoring(sessionId: string) {
@@ -321,6 +344,13 @@ export function interruptNode(nodeId: string) {
 
 export function retryNode(nodeId: string) {
   return invoke<WorkflowRunState>("retry_node", { nodeId });
+}
+
+export function updateNodeRuntimeConfig(
+  nodeId: string,
+  update: import("./lib/types").NodeRuntimeConfigUpdate,
+) {
+  return invoke<WorkflowRunState>("update_node_runtime_config", { nodeId, update });
 }
 
 export function previewFileEdit(
@@ -429,6 +459,22 @@ export function describeWorkflowSchedule(schedule: WorkflowSchedule) {
 
 export function listenToScheduleStatuses(handler: (statuses: ScheduleStatus[]) => void) {
   return listen<ScheduleStatus[]>(SCHEDULE_EVENT, (event) => handler(event.payload));
+}
+
+export function listenToWorkflowAuthoringThinking(
+  handler: (event: WorkflowAuthoringThinkingEvent) => void,
+) {
+  return listen<WorkflowAuthoringThinkingEvent>(WORKFLOW_AUTHORING_THINKING_EVENT, (event) =>
+    handler(event.payload),
+  );
+}
+
+export function listenToWorkflowAuthoringDraft(
+  handler: (event: WorkflowAuthoringDraftEvent) => void,
+) {
+  return listen<WorkflowAuthoringDraftEvent>(WORKFLOW_AUTHORING_DRAFT_EVENT, (event) =>
+    handler(event.payload),
+  );
 }
 
 /** Native app window handle (Tauri seam — do not import @tauri-apps in components). */

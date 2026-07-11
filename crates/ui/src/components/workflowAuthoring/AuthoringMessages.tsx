@@ -8,6 +8,7 @@ function AuthoringMessageItem(props: { message: WorkflowAuthoringMessage }) {
     return (
       <ThinkingBubble
         message={{ role: "thinking", content: props.message.content } satisfies ChatMessage}
+        defaultExpanded
       />
     );
   }
@@ -23,17 +24,24 @@ function AuthoringMessageItem(props: { message: WorkflowAuthoringMessage }) {
 export function AuthoringMessages(props: {
   messages: WorkflowAuthoringMessage[];
   busy: boolean;
+  thinkingContent: string;
 }) {
   return (
-    <>
+    <div class="chat-segment-body">
       <For each={props.messages}>
         {(message) => <AuthoringMessageItem message={message} />}
       </For>
       <Show when={props.busy}>
         <ThinkingBubble
-          message={{ role: "thinking", content: "", streaming: true } satisfies ChatMessage}
+          message={
+            {
+              role: "thinking",
+              content: props.thinkingContent,
+              streaming: true,
+            } satisfies ChatMessage
+          }
         />
       </Show>
-    </>
+    </div>
   );
 }

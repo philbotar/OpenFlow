@@ -8,6 +8,8 @@ use rig_core::completion::GetTokenUsage;
 use rig_core::message::Reasoning;
 use rig_core::streaming::{StreamedAssistantContent, StreamingCompletionResponse};
 
+use rig_core::message::AssistantContent;
+
 pub async fn drain<R>(
     mut stream: StreamingCompletionResponse<R>,
     sink: &dyn AiStreamSink,
@@ -18,9 +20,11 @@ pub async fn drain<R>(
 where
     R: Clone + Unpin + GetTokenUsage + Send + 'static,
 {
+    let mut streamed_assistant_text = String::new();
     while let Some(item) = stream.next().await {
         match item.map_err(|e| error::to_agent_error(e, provider_label))? {
             StreamedAssistantContent::Text(text) if !text.text.is_empty() => {
+                streamed_assistant_text.push_str(&text.text);
                 sink.on_stream_event(AiStreamEvent::AssistantDelta { content: text.text });
             }
             StreamedAssistantContent::Reasoning(reasoning) => {
@@ -37,7 +41,13 @@ where
         }
     }
 
-    let choice: Vec<_> = stream.choice.into_iter().collect();
+    let mut choice: Vec<_> = stream.choice.into_iter().collect();
+    if !streamed_assistant_text.is_empty() {
+        let (text_parts, tool_calls) = outcome::partition_choice(choice.clone());
+        if tool_calls.is_empty() && text_parts.is_empty() {
+            choice.push(AssistantContent::text(streamed_assistant_text));
+        }
+    }
     let usage = stream
         .response
         .as_ref()

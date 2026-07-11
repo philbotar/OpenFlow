@@ -50,7 +50,7 @@ function makeMockContext(overrides: Partial<AppContextValue> = {}): AppContextVa
       providers: {},
     }),
     readiness: () => null,
-    bottomTab: () => "overview",
+    bottomTab: () => "chat",
     selectedTraceIndex: () => null,
     schemaText: () => "",
     newModelInputByProvider: () => ({} as Record<string, string>),
@@ -74,7 +74,6 @@ function makeMockContext(overrides: Partial<AppContextValue> = {}): AppContextVa
     startingRun: () => false,
     continuableRun: () => false,
     themePreference: () => "system" as const,
-    shortcutsModalOpen: () => false,
     chatFilterNodeId: () => null,
     chatFocusNode: () => null,
     pickedLiveNodeId: () => null,
@@ -162,12 +161,15 @@ function makeMockContext(overrides: Partial<AppContextValue> = {}): AppContextVa
     handleRetryNode: async () => {},
     stoppingRun: () => false,
     handleSetThemePreference: () => {},
-    openShortcutsModal: () => {},
-    closeShortcutsModal: () => {},
     handleClearRunTrace: async () => {},
+    handleRefreshRunHistory: async () => {},
+    handleReplayRun: async () => {},
+    handleExitReplay: async () => {},
+    handleResumeDurableRun: async () => {},
     handleSubmitChat: async () => {},
     handleRefreshSkills: async () => {},
     handleToolApproval: async () => {},
+    handleUpdateNodeRuntimeConfig: async () => {},
     handleStartNodeLabelEdit: () => {},
     handleCancelNodeLabelEdit: () => {},
     handleCommitNodeLabel: () => {},
@@ -316,6 +318,22 @@ describe("EditorScreen", () => {
 
     const screen = container.querySelector(".editor-screen");
     expect(screen?.classList.contains("editor-screen--chat-focus")).toBe(true);
+    dispose();
+  });
+
+  it("keeps inspector visible in chat focus when open", () => {
+    const { container, dispose } = renderWithContext({
+      chatFocusMode: () => true,
+      dockOpen: () => true,
+      rightPanelHidden: () => false,
+      selectedNodeId: () => "n1" as any,
+      inspectorOpen: () => true,
+    });
+
+    const screen = container.querySelector(".editor-screen");
+    expect(screen?.classList.contains("editor-screen--chat-focus")).toBe(true);
+    expect(screen?.classList.contains("editor-screen--no-right-panel")).toBe(false);
+    expect(container.querySelector('[data-testid="inspector-panel"]')).not.toBeNull();
     dispose();
   });
 

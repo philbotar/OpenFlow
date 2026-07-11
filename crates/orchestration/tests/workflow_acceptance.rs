@@ -467,6 +467,8 @@ fn checkpoint_interactive_params<A: AiPort + Send + Sync + 'static>(
             discover_external: false,
             ..McpSettings::default()
         },
+        search: orchestration::settings::model::SearchSettings::default(),
+        runtime_config_store: engine::new_runtime_config_store(),
     }
 }
 

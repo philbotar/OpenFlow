@@ -1,0 +1,275 @@
+/*
+ * OpenFlow design tokens — single source of truth for radius, spacing, color, motion.
+ * Imported by index.css; do not load directly from main.tsx.
+ */
+
+:root {
+  color-scheme: light;
+  --dur-fast: 150ms;
+  --dur-med: 250ms;
+  --dur-slow: 400ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --canvas-edge-stroke: #c3cbda;
+  --canvas-bg-dot: rgba(24, 24, 27, 0.14);
+  font-family:
+    -apple-system-body,
+    ui-sans-serif,
+    -apple-system,
+    system-ui,
+    "Segoe UI",
+    Helvetica,
+    "Apple Color Emoji",
+    Arial,
+    sans-serif,
+    "Segoe UI Emoji",
+    "Segoe UI Symbol";
+  background: #f5f2ea;
+  color: #18181b;
+  line-height: 1.5;
+  font-weight: 400;
+  --ui-zoom: 1;
+  --ui-zoom-inverse: 1;
+
+  /* ── Layer 1: base palette (light) ── */
+  --base-sand-50: #fcfbf8;
+  --base-sand-100: #f6f3ed;
+  --base-sand-200: #f5f2ea;
+  --base-sand-300: #ece7dd;
+  --base-sand-400: #f7f4ee;
+  --base-sand-500: #f1ede5;
+  --base-ink-900: #18181b;
+  --base-ink-700: #66645d;
+  --base-ink-500: #8a877f;
+  --base-indigo-500: #6f7cf7;
+  --base-indigo-600: #5360d9;
+  --base-indigo-soft: rgba(111, 124, 247, 0.18);
+  --base-green-600: #2f8b63;
+  --base-green-soft: #e7f6ee;
+  --base-amber-600: #b7821b;
+  --base-amber-soft: #fff5de;
+  --base-red-600: #b04d57;
+  --base-red-soft: #fff0f2;
+
+  /* ── Layer 2: semantic UI tokens ── */
+  --surface-ground: var(--base-sand-100);
+  --surface-panel: rgba(255, 255, 255, 0.8);
+  --surface-raised: rgba(255, 255, 255, 0.72);
+  --surface-muted: var(--base-sand-400);
+  --text-primary: var(--base-ink-900);
+  --text-secondary: var(--base-ink-700);
+  --text-tertiary: var(--base-ink-500);
+  --border-subtle: rgba(24, 24, 27, 0.08);
+  --border-strong: rgba(24, 24, 27, 0.12);
+  --accent-primary: var(--base-indigo-500);
+  --accent-primary-hover: var(--base-indigo-600);
+  --accent-soft: var(--base-sand-300);
+  --status-success: var(--base-green-600);
+  --status-success-soft: var(--base-green-soft);
+  --status-warning: var(--base-amber-600);
+  --status-warning-soft: var(--base-amber-soft);
+  --status-danger: var(--base-red-600);
+  --status-danger-soft: var(--base-red-soft);
+  --update-badge: #2563eb;
+  --update-badge-ring: var(--sidebar-bg);
+  --control-size-md: 36px;
+  --composer-input-max-rows: 4;
+  --composer-input-min-height: var(--control-size-md);
+  --composer-input-max-height: calc(var(--composer-input-max-rows) * 1.25em);
+  --composer-padding: var(--dock-tab-card-padding);
+  --composer-send-size: var(--control-size-md);
+  --control-size-compact: 40px;
+  --topbar-control-size: 24px;
+  --topbar-icon-size: 16px;
+  --topbar-height: 40px;
+  --topbar-traffic-light-inset: 78px;
+  /* Keep in sync with desktop/tauri.conf.json trafficLightPosition.y */
+  --topbar-traffic-light-y: 14px;
+  --topbar-traffic-light-size: 12px;
+
+  /* ── Typography ── */
+  --text-display-sm: 1.75rem;
+  --text-display-sm-weight: 650;
+  --text-title-md: 1.05rem;
+  --text-title-sm: 0.9375rem;
+  --text-body-md: 1rem;
+  --text-body-sm: 0.875rem;
+  --text-label-sm: 0.8125rem;
+  --text-meta-xs: 0.6875rem;
+
+  /* ── Radius ── */
+  --radius-none: 0;
+  --radius-3xs: 3px;
+  --radius-2xs: 4px;
+  --radius-xs: 6px;
+  --radius-between-xs-sm: 7px;
+  --radius-sm: 8px;
+  --radius-between-sm-base: 9px;
+  --radius-base: 10px;
+  --radius-md: 12px;
+  --radius-between-md-lg: 13px;
+  --radius-lg: 14px;
+  --radius-xl: 16px;
+  --radius-2xl: 18px;
+  --radius-3xl: 20px;
+  --radius-4xl: 22px;
+  --radius-5xl: 24px;
+  --radius-6xl: 27px;
+  --radius-pill: 999px;
+  --radius-full: 50%;
+
+  /* ── Layout / spacing ── */
+  --page-gutter: 24px;
+  --page-gutter-compact: 18px;
+  --page-stack-gap: 20px;
+  --card-padding-md: 16px;
+  --card-padding-lg: 24px;
+  --chat-segment-gap: 20px;
+  --chat-item-gap: 16px;
+  --chat-segment-header-pad: 8px;
+  --dock-surface: var(--dock-bg);
+  --dock-tab-inset: 12px 14px 14px;
+  --dock-tab-feed-gap: 10px;
+  --dock-tab-card-padding: 12px 14px;
+  --dock-tab-card-radius: var(--radius-md);
+
+  /* ── Scrollbars ── */
+  --scrollbar-size: 10px;
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: rgba(24, 24, 27, 0.2);
+  --scrollbar-thumb-hover: rgba(24, 24, 27, 0.36);
+
+  /* ── Legacy bridge (normalize in a follow-up pass) ── */
+  --app-bg: var(--surface-ground);
+  --app-bg-strong: var(--base-sand-50);
+  --sidebar-bg: rgba(245, 241, 234, 0.9);
+  --surface: var(--surface-panel);
+  --surface-strong: #ffffff;
+  --surface-emphasis: var(--base-sand-500);
+  --border: var(--border-subtle);
+  --text: var(--text-primary);
+  --text-muted: var(--text-secondary);
+  --text-subtle: var(--text-tertiary);
+  --accent: #111111;
+  --focus: var(--base-indigo-soft);
+  --focus-strong: var(--accent-primary);
+  --success: var(--status-success);
+  --success-soft: var(--status-success-soft);
+  --warning: var(--status-warning);
+  --warning-soft: var(--status-warning-soft);
+  --danger: var(--status-danger);
+  --danger-soft: var(--status-danger-soft);
+  --shadow-soft: 0 18px 50px rgba(15, 23, 42, 0.08);
+  --shadow-panel: 0 12px 30px rgba(15, 23, 42, 0.06);
+  --input-bg: rgba(255, 255, 255, 0.94);
+  --chrome-bg: rgba(255, 255, 255, 0.58);
+  --raised-surface: rgba(255, 255, 255, 0.72);
+  --bar-bg: rgba(252, 251, 248, 0.82);
+  --dock-bg: rgba(255, 255, 255, 0.66);
+  --composer-bg: rgba(255, 255, 255, 0.94);
+  --hover-overlay: rgba(255, 255, 255, 0.48);
+  --sidebar-hover: rgba(255, 255, 255, 0.42);
+  --sidebar-active: rgba(255, 255, 255, 0.72);
+  --sidebar-active-border: rgba(24, 24, 27, 0.06);
+  --panel-surface: rgba(255, 255, 255, 0.66);
+  --terminal-bg: var(--panel-surface);
+  --terminal-fg: var(--text);
+  --terminal-cursor: var(--text);
+  --terminal-selection-bg: var(--focus);
+
+  /*
+   * Phase 1 normalization inventory — defer to follow-up pass:
+   * --chrome-bg, --bar-bg, --dock-bg, --composer-bg, --raised-surface,
+   * --hover-overlay, --sidebar-hover/active, --input-bg, raw rgba literals
+   *
+   * Phase 2 normalization inventory — defer to Phase 3 / wider pass:
+   * conversation surfaces, dock/chat micro-components, inspector blocks,
+   * canvas/node chrome, topbar micro-typography, legacy hardcoded radii
+   * outside route shells and empty states touched in Phase 2
+   */
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* ── Layer 1: base palette (dark) ── */
+  --base-sand-50: #171a22;
+  --base-sand-100: #12141a;
+  --base-sand-200: #141820;
+  --base-sand-300: #2a3140;
+  --base-sand-400: #1a1e28;
+  --base-sand-500: #232836;
+  --base-ink-900: #f3f4f6;
+  --base-ink-700: #a6adbb;
+  --base-ink-500: #7d8596;
+  --base-indigo-500: #818cf8;
+  --base-indigo-600: #6366f1;
+  --base-indigo-soft: rgba(129, 140, 248, 0.22);
+  --base-green-600: #4ade80;
+  --base-green-soft: rgba(74, 222, 128, 0.12);
+  --base-amber-600: #fbbf24;
+  --base-amber-soft: rgba(251, 191, 36, 0.12);
+  --base-red-600: #f87171;
+  --base-red-soft: rgba(248, 113, 113, 0.12);
+
+  /* ── Layer 2: semantic UI tokens ── */
+  --surface-ground: var(--base-sand-100);
+  --surface-panel: rgba(28, 32, 42, 0.88);
+  --surface-raised: rgba(30, 34, 44, 0.9);
+  --surface-muted: var(--base-sand-400);
+  --text-primary: var(--base-ink-900);
+  --text-secondary: var(--base-ink-700);
+  --text-tertiary: var(--base-ink-500);
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
+  --accent-primary: var(--base-indigo-500);
+  --accent-primary-hover: var(--base-indigo-600);
+  --accent-soft: var(--base-sand-300);
+  --status-success: var(--base-green-600);
+  --status-success-soft: var(--base-green-soft);
+  --status-warning: var(--base-amber-600);
+  --status-warning-soft: var(--base-amber-soft);
+  --status-danger: var(--base-red-600);
+  --status-danger-soft: var(--base-red-soft);
+  --update-badge: #60a5fa;
+  --update-badge-ring: var(--sidebar-bg);
+
+  /* ── Legacy bridge ── */
+  --app-bg: var(--surface-ground);
+  --app-bg-strong: var(--base-sand-50);
+  --sidebar-bg: rgba(20, 23, 31, 0.92);
+  --surface: var(--surface-panel);
+  --surface-strong: #1f2430;
+  --surface-emphasis: var(--base-sand-500);
+  --border: var(--border-subtle);
+  --text: var(--text-primary);
+  --text-muted: var(--text-secondary);
+  --text-subtle: var(--text-tertiary);
+  --accent: #f8fafc;
+  --focus: var(--base-indigo-soft);
+  --focus-strong: var(--accent-primary);
+  --success: var(--status-success);
+  --success-soft: var(--status-success-soft);
+  --warning: var(--status-warning);
+  --warning-soft: var(--status-warning-soft);
+  --danger: var(--status-danger);
+  --danger-soft: var(--status-danger-soft);
+  --shadow-soft: 0 18px 50px rgba(0, 0, 0, 0.35);
+  --shadow-panel: 0 12px 30px rgba(0, 0, 0, 0.28);
+  --canvas-edge-stroke: #4b5568;
+  --canvas-bg-dot: rgba(255, 255, 255, 0.08);
+  --input-bg: rgba(26, 30, 40, 0.96);
+  --chrome-bg: rgba(24, 27, 36, 0.96);
+  --raised-surface: rgba(30, 34, 44, 0.9);
+  --bar-bg: rgba(24, 27, 36, 0.92);
+  --dock-bg: rgba(20, 22, 30, 0.98);
+  --composer-bg: rgba(34, 38, 50, 0.92);
+  --hover-overlay: rgba(255, 255, 255, 0.06);
+  --sidebar-hover: rgba(255, 255, 255, 0.04);
+  --sidebar-active: rgba(129, 140, 248, 0.1);
+  --sidebar-active-border: rgba(129, 140, 248, 0.14);
+  --panel-surface: rgba(28, 32, 42, 0.92);
+
+  --scrollbar-thumb: rgba(255, 255, 255, 0.18);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.32);
+}

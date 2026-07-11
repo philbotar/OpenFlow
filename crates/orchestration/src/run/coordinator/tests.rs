@@ -51,6 +51,7 @@ fn empty_engine_checkpoint(workflow: &Workflow) -> InteractiveEngineCheckpoint {
         transient_streaks_by_node: Default::default(),
         submit_output_retries_by_node: Default::default(),
         request_input_retries_by_node: Default::default(),
+        empty_turn_retries_by_node: Default::default(),
         auto_continue_streaks_by_node: Default::default(),
         entrypoint_text: None,
         interrupted_nodes: Default::default(),
@@ -77,6 +78,7 @@ fn seeded_session(artifact_root: PathBuf) -> RunSession {
         handle: None,
         cancel_token: None,
         node_interrupts: None,
+        runtime_config_store: None,
     }
 }
 
@@ -1006,6 +1008,7 @@ fn empty_seed_fields() -> TestSessionSeed {
         lsp_settings: None,
         pending_engine_reverts: None,
         node_interrupts: None,
+        runtime_config_store: None,
         cancel_token: None,
         handle: None,
     }

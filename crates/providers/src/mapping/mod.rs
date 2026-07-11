@@ -16,9 +16,11 @@ pub struct ToolSpec {
 }
 
 pub fn build_node_context(request: &AgentRequest) -> String {
+    let input =
+        serde_json::to_string_pretty(&request.input).unwrap_or_else(|_| request.input.to_string());
     format!(
         "Node: {}\nTask:\n{}\n\nUpstream input JSON:\n{}",
-        request.node_label, request.task_prompt, request.input
+        request.node_label, request.task_prompt, input
     )
 }
 
@@ -947,5 +949,33 @@ mod tests {
 
         request.allow_user_input = false;
         assert!(!should_allow_user_input(&request));
+    }
+
+    #[test]
+    fn build_node_context_pretty_prints_upstream_input_json() {
+        use engine::{NodeId, WorkflowId};
+
+        let request = AgentRequest {
+            workflow_id: WorkflowId::from("wf-1"),
+            node_id: NodeId::from("node-1"),
+            node_label: "Review".to_string(),
+            model: "gpt-5.5".to_string(),
+            system_messages: vec![],
+            task_prompt: "Review upstream".to_string(),
+            input: json!({"upstream": [{"nodeId": "a", "output": {"ok": true}}]}),
+            output_schema: Value::Null,
+            tool_config: engine::NodeToolConfig::default(),
+            available_tools: Vec::new(),
+            transcript: Vec::new(),
+            model_attempt: 1,
+            reasoning_effort: None,
+            reasoning_budget_tokens: None,
+            allow_user_input: true,
+        };
+
+        let context = build_node_context(&request);
+        assert!(context.contains("Upstream input JSON:\n{\n"));
+        assert!(context.contains("\"ok\": true"));
+        assert!(!context.contains("Upstream input JSON:\n{\"upstream\""));
     }
 }

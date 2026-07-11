@@ -100,4 +100,39 @@ describe("TextSelect", () => {
     expect(container.querySelector(".text-select-menu")).toBeNull();
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
   });
+
+  test("opens above trigger when menuPlacement is above", () => {
+    container = document.createElement("div");
+    document.body.append(container);
+    dispose = render(
+      () => (
+        <TextSelect
+          menuPlacement="above"
+          value="write"
+          options={[{ value: "write", label: "Write" }]}
+        />
+      ),
+      container,
+    );
+
+    const trigger = container.querySelector(".text-select-trigger") as HTMLButtonElement;
+    trigger.getBoundingClientRect = () =>
+      ({
+        top: 400,
+        bottom: 424,
+        left: 16,
+        width: 120,
+        right: 136,
+        height: 24,
+        x: 16,
+        y: 400,
+        toJSON: () => ({}),
+      }) as DOMRect;
+    trigger.click();
+
+    const menu = container.querySelector(".text-select-menu") as HTMLUListElement;
+    expect(menu.classList.contains("text-select-menu--above")).toBe(true);
+    expect(menu.style.transform).toBe("translateY(-100%)");
+    expect(menu.style.top).toBe("396px");
+  });
 });

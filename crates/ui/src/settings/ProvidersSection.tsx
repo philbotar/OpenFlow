@@ -1,8 +1,10 @@
 import { createMemo, createSignal, For, Show } from "solid-js";
+import RefreshCw from "lucide-solid/icons/refresh-cw";
+import ShieldCheck from "lucide-solid/icons/shield-check";
 import { refreshBedrockModels, verifyBedrockCredentials } from "../api";
-import { TextSelect } from "../components";
+import { SidebarIcon, TextSelect } from "../components";
 import { useAppContext } from "../context/AppContext";
-import { normalizeError } from "../lib/utils";
+import { ICON_STROKE_WIDTH, normalizeError } from "../lib/utils";
 import {
   activeProfile,
   defaultReasoningBudgetTokens,
@@ -36,6 +38,8 @@ export function ProvidersSection() {
   const bedrockRegion = createMemo(
     () => ctx.activeProfileMemo().aws_region ?? ctx.activeProfileMemo().base_url,
   );
+  const profileModeLabel = () => (profileEditable() ? "Custom endpoint" : "Managed provider");
+  const credentialLabel = () => (isBedrock() ? "AWS credentials" : "Local API key");
   const [refreshingModels, setRefreshingModels] = createSignal(false);
   const [verifyingCredentials, setVerifyingCredentials] = createSignal(false);
 
@@ -88,220 +92,274 @@ export function ProvidersSection() {
         </div>
       </header>
 
-      <section class="settings-subsection" aria-labelledby="providers-active-heading">
-        <h3 id="providers-active-heading" class="settings-subheading">
-          Active provider
-        </h3>
-        <label>
-          <span>Provider</span>
-          <TextSelect
-            value={ctx.settings().active_provider}
-            options={providerOptions()}
-            onChange={(event) =>
-              void ctx.updateSettings((draft) => {
-                draft.active_provider = event.currentTarget.value;
-              })
-            }
-          />
-        </label>
-      </section>
-
-      <section class="settings-subsection" aria-labelledby="providers-auth-heading">
-        <h3 id="providers-auth-heading" class="settings-subheading">
-          {isBedrock() ? "AWS credentials" : "API key"}
-        </h3>
-        <Show
-          when={!isBedrock()}
-          fallback={
-            <>
-              <p>
-                Uses the AWS credential chain (env vars, shared config, SSO, instance role). For
-                SSO, enter your AWS profile name below (required) and run{" "}
-                <code>aws sso login --profile &lt;name&gt;</code> in a terminal first. Access-key
-                users can leave the profile blank. To bypass the SDK credential chain entirely, set
-                a credential command below — OpenFlow runs it and uses the exported keys directly.
-              </p>
-              <label>
-                <span>AWS profile</span>
-                <input
-                  type="text"
-                  class="text-input"
-                  value={ctx.activeProfileMemo().aws_profile ?? ""}
-                  placeholder="e.g. bedrock"
-                  onInput={(event) =>
-                    void ctx.updateSettings((draft) => {
-                      activeProfile(draft).aws_profile = event.currentTarget.value;
-                    })
-                  }
-                />
-              </label>
-              <label>
-                <span>Credential command (optional)</span>
-                <input
-                  type="text"
-                  class="text-input"
-                  value={ctx.activeProfileMemo().aws_credential_command ?? ""}
-                  placeholder="e.g. aws configure export-credentials --profile bedrock"
-                  onInput={(event) =>
-                    void ctx.updateSettings((draft) => {
-                      activeProfile(draft).aws_credential_command = event.currentTarget.value;
-                    })
-                  }
-                />
-              </label>
-              <button
-                type="button"
-                class="secondary-button"
-                disabled={verifyingCredentials()}
-                onClick={() => void handleVerifyBedrockCredentials()}
-              >
-                {verifyingCredentials() ? "Testing…" : "Test AWS connection"}
-              </button>
-            </>
-          }
+      <div class="providers-summary-grid">
+        <section
+          class="providers-panel providers-panel--active"
+          aria-labelledby="providers-active-heading"
         >
-          <p>
-            Stored in plaintext in your local settings file for the selected provider. Protect this
-            machine and settings file accordingly. Environment variables still act as fallback.
-          </p>
-          <input
-            type="password"
-            value={ctx.activeProviderKeyInput()}
-            onInput={(event) => ctx.handleApiKeyInput(event.currentTarget.value)}
-            placeholder={ctx.readiness()?.envVar || "optional local provider key"}
-            class="text-input"
-          />
-        </Show>
-      </section>
-
-      <section class="settings-subsection" aria-labelledby="providers-connection-heading">
-        <h3 id="providers-connection-heading" class="settings-subheading">
-          Connection
-        </h3>
-        <Show when={!profileEditable()}>
-          <p>Managed provider — connection settings are fixed.</p>
-        </Show>
-        <div class="field-grid">
+          <div class="providers-panel-header">
+            <div>
+              <h3 id="providers-active-heading" class="settings-subheading">
+                Active provider
+              </h3>
+              <p class="providers-panel-copy">
+                {ctx.activeProfileMemo().display_name} is used for workflow runs and agent chat.
+              </p>
+            </div>
+            <span class="provider-mode-pill">{profileModeLabel()}</span>
+          </div>
           <label>
-            <span>{isBedrock() ? "AWS region" : "Base URL"}</span>
-            <input
-              class="text-input"
-              value={isBedrock() ? bedrockRegion() : ctx.activeProfileMemo().base_url}
-              disabled={!profileEditable() && !isBedrock()}
-              onInput={(event) =>
-                void ctx.updateSettings((draft) => {
-                  const profile = activeProfile(draft);
-                  if (isBedrock()) {
-                    profile.aws_region = event.currentTarget.value;
-                  } else {
-                    profile.base_url = event.currentTarget.value;
-                  }
-                })
-              }
-            />
-          </label>
-          <Show when={!isBedrock()}>
-            <label>
-              <span>Transport</span>
-              <TextSelect
-                value={ctx.activeProfileMemo().transport}
-                options={transportOptions}
-                disabled={!profileEditable()}
-                onChange={(event) =>
-                  void ctx.updateSettings((draft) => {
-                    activeProfile(draft).transport = event.currentTarget.value as
-                      | "responses"
-                      | "chat_completions";
-                  })
-                }
-              />
-            </label>
-            <label>
-              <span>Responses path</span>
-              <input
-                class="text-input"
-                value={ctx.activeProfileMemo().responses_path}
-                disabled={!profileEditable()}
-                onInput={(event) =>
-                  void ctx.updateSettings((draft) => {
-                    activeProfile(draft).responses_path = event.currentTarget.value;
-                  })
-                }
-              />
-            </label>
-            <label>
-              <span>Chat completions path</span>
-              <input
-                class="text-input"
-                value={ctx.activeProfileMemo().chat_completions_path}
-                disabled={!profileEditable()}
-                onInput={(event) =>
-                  void ctx.updateSettings((draft) => {
-                    activeProfile(draft).chat_completions_path = event.currentTarget.value;
-                  })
-                }
-              />
-            </label>
-          </Show>
-        </div>
-      </section>
-
-      <Show when={effortOptions().length > 0}>
-        <section class="settings-subsection" aria-labelledby="providers-reasoning-heading">
-          <h3 id="providers-reasoning-heading" class="settings-subheading">
-            Reasoning defaults
-          </h3>
-          <p>
-            Applied to agent nodes that do not set their own effort level. Saved per provider.
-          </p>
-          <label>
-            <span>Reasoning effort</span>
+            <span>Provider</span>
             <TextSelect
-              value={selectedEffort()}
-              options={effortSelectOptions()}
+              value={ctx.settings().active_provider}
+              options={providerOptions()}
               onChange={(event) =>
                 void ctx.updateSettings((draft) => {
-                  const profile = activeProfile(draft);
-                  const nextValue = event.currentTarget.value;
-                  profile.default_reasoning_effort = nextValue || null;
+                  draft.active_provider = event.currentTarget.value;
                 })
               }
             />
           </label>
-          <Show when={selectedEffortOption()?.uses_budget_tokens}>
+          <div class="provider-facts" aria-label="Selected provider details">
+            <span>{credentialLabel()}</span>
+            <span>{ctx.activeProfileMemo().default_model ?? "No default model"}</span>
+          </div>
+        </section>
+
+        <section
+          class="providers-panel providers-panel--auth"
+          aria-labelledby="providers-auth-heading"
+        >
+          <div class="providers-panel-header">
+            <div>
+              <h3 id="providers-auth-heading" class="settings-subheading">
+                {isBedrock() ? "AWS credentials" : "API key"}
+              </h3>
+              <p class="providers-panel-copy">
+                {isBedrock()
+                  ? "Use an AWS profile, region, or exported credentials command."
+                  : "Use a stored local key, with environment variables as fallback."}
+              </p>
+            </div>
+          </div>
+          <Show
+            when={!isBedrock()}
+            fallback={
+              <div class="providers-auth-stack">
+                <div class="field-grid providers-auth-fields">
+                  <label>
+                    <span>AWS profile</span>
+                    <input
+                      type="text"
+                      class="text-input"
+                      value={ctx.activeProfileMemo().aws_profile ?? ""}
+                      placeholder="e.g. bedrock"
+                      onInput={(event) =>
+                        void ctx.updateSettings((draft) => {
+                          activeProfile(draft).aws_profile = event.currentTarget.value;
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    <span>Credential command (optional)</span>
+                    <input
+                      type="text"
+                      class="text-input"
+                      value={ctx.activeProfileMemo().aws_credential_command ?? ""}
+                      placeholder="e.g. aws configure export-credentials --profile bedrock"
+                      onInput={(event) =>
+                        void ctx.updateSettings((draft) => {
+                          activeProfile(draft).aws_credential_command = event.currentTarget.value;
+                        })
+                      }
+                    />
+                  </label>
+                </div>
+                <button
+                  type="button"
+                  class="secondary-button providers-icon-button"
+                  disabled={verifyingCredentials()}
+                  onClick={() => void handleVerifyBedrockCredentials()}
+                >
+                  <ShieldCheck aria-hidden="true" absoluteStrokeWidth strokeWidth={ICON_STROKE_WIDTH} />
+                  {verifyingCredentials() ? "Testing…" : "Test AWS connection"}
+                </button>
+              </div>
+            }
+          >
+            <div class="providers-auth-stack">
+              <input
+                type="password"
+                value={ctx.activeProviderKeyInput()}
+                onInput={(event) => ctx.handleApiKeyInput(event.currentTarget.value)}
+                placeholder={ctx.readiness()?.envVar || "optional local provider key"}
+                class="text-input providers-secret-input"
+                aria-label="Provider API key"
+              />
+            </div>
+          </Show>
+        </section>
+      </div>
+
+      <div class="providers-detail-grid">
+        <section
+          class="providers-panel providers-panel--connection"
+          aria-labelledby="providers-connection-heading"
+        >
+          <div class="providers-panel-header">
+            <div>
+              <h3 id="providers-connection-heading" class="settings-subheading">
+                Connection
+              </h3>
+              <p class="providers-panel-copy">
+                {profileEditable()
+                  ? "Endpoint settings for this provider profile."
+                  : "Managed provider connection settings are fixed."}
+              </p>
+            </div>
+          </div>
+          <div class="field-grid">
             <label>
-              <span>Budget tokens for {selectedEffortOption()?.label}</span>
+              <span>{isBedrock() ? "AWS region" : "Base URL"}</span>
               <input
                 class="text-input"
-                type="number"
-                min={1}
-                step={1}
-                value={
-                  defaultReasoningBudgetTokens(ctx.activeProfileMemo())[selectedEffort()] ?? ""
-                }
+                value={isBedrock() ? bedrockRegion() : ctx.activeProfileMemo().base_url}
+                disabled={!profileEditable() && !isBedrock()}
                 onInput={(event) =>
                   void ctx.updateSettings((draft) => {
                     const profile = activeProfile(draft);
-                    const effort = selectedEffort();
-                    if (!effort) return;
-                    const parsed = Number.parseInt(event.currentTarget.value, 10);
-                    if (!Number.isFinite(parsed) || parsed <= 0) return;
-                    profile.default_reasoning_budget_tokens = {
-                      ...defaultReasoningBudgetTokens(profile),
-                      [effort]: parsed,
-                    };
+                    if (isBedrock()) {
+                      profile.aws_region = event.currentTarget.value;
+                    } else {
+                      profile.base_url = event.currentTarget.value;
+                    }
                   })
                 }
               />
             </label>
-          </Show>
+            <Show when={!isBedrock()}>
+              <label>
+                <span>Transport</span>
+                <TextSelect
+                  value={ctx.activeProfileMemo().transport}
+                  options={transportOptions}
+                  disabled={!profileEditable()}
+                  onChange={(event) =>
+                    void ctx.updateSettings((draft) => {
+                      activeProfile(draft).transport = event.currentTarget.value as
+                        | "responses"
+                        | "chat_completions";
+                    })
+                  }
+                />
+              </label>
+              <label>
+                <span>Responses path</span>
+                <input
+                  class="text-input"
+                  value={ctx.activeProfileMemo().responses_path}
+                  disabled={!profileEditable()}
+                  onInput={(event) =>
+                    void ctx.updateSettings((draft) => {
+                      activeProfile(draft).responses_path = event.currentTarget.value;
+                    })
+                  }
+                />
+              </label>
+              <label>
+                <span>Chat completions path</span>
+                <input
+                  class="text-input"
+                  value={ctx.activeProfileMemo().chat_completions_path}
+                  disabled={!profileEditable()}
+                  onInput={(event) =>
+                    void ctx.updateSettings((draft) => {
+                      activeProfile(draft).chat_completions_path = event.currentTarget.value;
+                    })
+                  }
+                />
+              </label>
+            </Show>
+          </div>
         </section>
-      </Show>
 
-      <section class="settings-subsection" aria-labelledby="providers-models-heading">
-        <h3 id="providers-models-heading" class="settings-subheading">
-          Models
-        </h3>
+        <Show when={effortOptions().length > 0}>
+          <section
+            class="providers-panel providers-panel--reasoning"
+            aria-labelledby="providers-reasoning-heading"
+          >
+            <div class="providers-panel-header">
+              <div>
+                <h3 id="providers-reasoning-heading" class="settings-subheading">
+                  Reasoning defaults
+                </h3>
+                <p class="providers-panel-copy">
+                  Applied to agent nodes that do not set their own effort level.
+                </p>
+              </div>
+            </div>
+            <div class="field-grid providers-reasoning-fields">
+              <label>
+                <span>Reasoning effort</span>
+                <TextSelect
+                  value={selectedEffort()}
+                  options={effortSelectOptions()}
+                  onChange={(event) =>
+                    void ctx.updateSettings((draft) => {
+                      const profile = activeProfile(draft);
+                      const nextValue = event.currentTarget.value;
+                      profile.default_reasoning_effort = nextValue || null;
+                    })
+                  }
+                />
+              </label>
+              <Show when={selectedEffortOption()?.uses_budget_tokens}>
+                <label>
+                  <span>Budget tokens for {selectedEffortOption()?.label}</span>
+                  <input
+                    class="text-input"
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={
+                      defaultReasoningBudgetTokens(ctx.activeProfileMemo())[selectedEffort()] ?? ""
+                    }
+                    onInput={(event) =>
+                      void ctx.updateSettings((draft) => {
+                        const profile = activeProfile(draft);
+                        const effort = selectedEffort();
+                        if (!effort) return;
+                        const parsed = Number.parseInt(event.currentTarget.value, 10);
+                        if (!Number.isFinite(parsed) || parsed <= 0) return;
+                        profile.default_reasoning_budget_tokens = {
+                          ...defaultReasoningBudgetTokens(profile),
+                          [effort]: parsed,
+                        };
+                      })
+                    }
+                  />
+                </label>
+              </Show>
+            </div>
+          </section>
+        </Show>
+      </div>
+
+      <section
+        class="providers-panel providers-panel--models"
+        aria-labelledby="providers-models-heading"
+      >
+        <div class="providers-panel-header">
+          <div>
+            <h3 id="providers-models-heading" class="settings-subheading">
+              Models
+            </h3>
+            <p class="providers-panel-copy">
+              Keep the model list short and set the default used by new workflow nodes.
+            </p>
+          </div>
+        </div>
         <div class="chip-list">
           <For each={ctx.activeProfileMemo().known_models}>
             {(model) => (
@@ -323,17 +381,19 @@ export function ProvidersSection() {
                 [ctx.settings().active_provider]: event.currentTarget.value,
               }))
             }
-          />
+            />
           <button type="button" class="secondary-button" onClick={ctx.handleAddKnownModel}>
+            <SidebarIcon name="plus" />
             Add model
           </button>
           <Show when={isBedrock()}>
             <button
               type="button"
-              class="secondary-button"
+              class="secondary-button providers-icon-button"
               disabled={refreshingModels()}
               onClick={() => void handleRefreshBedrockModels()}
             >
+              <RefreshCw aria-hidden="true" absoluteStrokeWidth strokeWidth={ICON_STROKE_WIDTH} />
               {refreshingModels() ? "Refreshing…" : "Refresh from AWS"}
             </button>
           </Show>
@@ -365,6 +425,7 @@ export function ProvidersSection() {
             : "Saves API key and provider profile to local settings."}
         </p>
         <button type="button" class="primary-button" onClick={() => void ctx.handleSaveSettings()}>
+          <SidebarIcon name="save" />
           Save settings
         </button>
       </footer>

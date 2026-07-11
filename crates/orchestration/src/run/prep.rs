@@ -43,6 +43,40 @@ pub fn apply_workflow_reasoning_defaults(workflow: &mut Workflow) {
     }
 }
 
+/// Provider reasoning settings for a one-off request (e.g. workflow authoring).
+#[must_use]
+pub fn provider_reasoning_for_profile(profile: &ProviderProfile) -> (Option<String>, Option<u32>) {
+    let Some(effort) = profile
+        .default_reasoning_effort
+        .as_ref()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+        .or_else(|| {
+            profile
+                .reasoning_effort_options
+                .first()
+                .map(|option| option.value.clone())
+        })
+    else {
+        return (None, None);
+    };
+    let uses_budget = profile
+        .reasoning_effort_options
+        .iter()
+        .find(|option| option.value == effort)
+        .is_some_and(|option| option.uses_budget_tokens);
+    let budget = if uses_budget {
+        profile
+            .default_reasoning_budget_tokens
+            .get(&effort)
+            .copied()
+    } else {
+        None
+    };
+    (Some(effort), budget)
+}
+
 /// Apply provider-level reasoning defaults to nodes that have no per-node override.
 pub fn apply_provider_reasoning_defaults(workflow: &mut Workflow, profile: &ProviderProfile) {
     let Some(default_effort) = profile

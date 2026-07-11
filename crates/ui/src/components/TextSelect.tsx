@@ -14,6 +14,8 @@ export type TextSelectOption = {
   label: string;
 };
 
+type MenuPlacement = "above" | "below";
+
 type TextSelectProps = {
   value: string;
   options: readonly TextSelectOption[];
@@ -21,7 +23,15 @@ type TextSelectProps = {
   disabled?: boolean;
   class?: string;
   classList?: JSX.HTMLAttributes<HTMLDivElement>["classList"];
+  menuPlacement?: MenuPlacement;
   "aria-label"?: string;
+};
+
+type MenuStyle = {
+  top: string;
+  left: string;
+  width: string;
+  transform?: string;
 };
 
 let nextListboxId = 0;
@@ -29,7 +39,7 @@ let nextListboxId = 0;
 export function TextSelect(props: TextSelectProps) {
   const [local] = splitProps(props, ["class", "classList"]);
   const [open, setOpen] = createSignal(false);
-  const [menuStyle, setMenuStyle] = createSignal<{ top: string; left: string; width: string }>({
+  const [menuStyle, setMenuStyle] = createSignal<MenuStyle>({
     top: "0px",
     left: "0px",
     width: "0px",
@@ -46,10 +56,21 @@ export function TextSelect(props: TextSelectProps) {
     const trigger = triggerRef;
     if (!trigger) return;
     const rect = trigger.getBoundingClientRect();
+    const width = `${Math.max(rect.width, 180)}px`;
+    if (props.menuPlacement === "above") {
+      setMenuStyle({
+        top: `${rect.top - 4}px`,
+        left: `${rect.left}px`,
+        width,
+        transform: "translateY(-100%)",
+      });
+      return;
+    }
     setMenuStyle({
       top: `${rect.bottom + 4}px`,
       left: `${rect.left}px`,
-      width: `${rect.width}px`,
+      width,
+      transform: "none",
     });
   };
 
@@ -128,6 +149,7 @@ export function TextSelect(props: TextSelectProps) {
         <ul
           id={listboxId}
           class="text-select-menu"
+          classList={{ "text-select-menu--above": props.menuPlacement === "above" }}
           role="listbox"
           aria-label={props["aria-label"]}
           style={menuStyle()}

@@ -8,7 +8,6 @@ export * from "./PanelEmptyState";
 export * from "./PickerModal";
 export * from "./ScheduleTimePickerModal";
 export * from "./ScheduleWorkflowPickerModal";
-export * from "./ShortcutsModal";
 export * from "./SidebarIcon";
 export * from "./Spinner";
 export * from "./TextSelect";

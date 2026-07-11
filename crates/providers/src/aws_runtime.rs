@@ -60,7 +60,8 @@ pub(crate) async fn load_aws_sdk_config(
     if chain_has_credentials {
         return shared;
     }
-    // ponytail: probe-then-CLI-fallback runs once per client build; cache if latency matters
+    // Probe-then-CLI-fallback is slow (subprocess); the rig ModelCache keeps
+    // the built client until the exported credentials near expiry.
     let credentials = match cli_export_credentials(profile_name).await {
         Some(credentials) => Some(credentials),
         None => sso_login_and_retry(profile_name).await,
@@ -75,16 +76,57 @@ pub(crate) async fn load_aws_sdk_config(
     shared
 }
 
+/// Install locations for the AWS CLI that launchd's minimal GUI PATH
+/// (`/usr/bin:/bin:/usr/sbin:/sbin`) does not include. Apps launched from
+/// Dock/Spotlight inherit that PATH, so a bare `aws` spawn fails there even
+/// though the same command works in a terminal.
+fn well_known_bin_dirs() -> Vec<PathBuf> {
+    #[cfg(windows)]
+    let mut dirs = vec![PathBuf::from(r"C:\Program Files\Amazon\AWSCLIV2")];
+    #[cfg(not(windows))]
+    let mut dirs = vec![
+        PathBuf::from("/opt/homebrew/bin"),
+        PathBuf::from("/usr/local/bin"),
+    ];
+    if let Some(home) = process_home_dir() {
+        dirs.push(home.join(".local").join("bin"));
+    }
+    dirs
+}
+
+fn augment_path_env(current: &std::ffi::OsStr) -> std::ffi::OsString {
+    let mut paths: Vec<PathBuf> = std::env::split_paths(current).collect();
+    for dir in well_known_bin_dirs() {
+        if !paths.contains(&dir) {
+            paths.push(dir);
+        }
+    }
+    std::env::join_paths(paths).map_or_else(|_| current.to_os_string(), Into::into)
+}
+
+fn augmented_path_env() -> std::ffi::OsString {
+    augment_path_env(&std::env::var_os("PATH").unwrap_or_default())
+}
+
 /// Parses `aws configure export-credentials --format process` JSON.
 fn parse_cli_export_credentials(json: &[u8]) -> Option<Credentials> {
     let value: serde_json::Value = serde_json::from_slice(json).ok()?;
+    // Expiry drives model-cache invalidation: cached Bedrock clients are
+    // rebuilt (re-running this export) before the session token lapses.
+    let expiry = value["Expiration"].as_str().and_then(parse_rfc3339);
     Some(Credentials::new(
         value["AccessKeyId"].as_str()?.to_string(),
         value["SecretAccessKey"].as_str()?.to_string(),
         value["SessionToken"].as_str().map(str::to_string),
-        None, // ponytail: no expiry — config is rebuilt per invoke, creds used immediately
+        expiry,
         "aws-cli-export-credentials",
     ))
+}
+
+fn parse_rfc3339(timestamp: &str) -> Option<std::time::SystemTime> {
+    use aws_sdk_bedrockruntime::primitives::{DateTime, DateTimeFormat};
+    let parsed = DateTime::from_str(timestamp, DateTimeFormat::DateTimeWithOffset).ok()?;
+    std::time::SystemTime::try_from(parsed).ok()
 }
 
 /// Fallback for profiles the Rust SDK credential chain cannot resolve
@@ -92,6 +134,9 @@ fn parse_cli_export_credentials(json: &[u8]) -> Option<Credentials> {
 async fn cli_export_credentials(profile: Option<&str>) -> Option<Credentials> {
     let mut command = tokio::process::Command::new("aws");
     command.kill_on_drop(true);
+    // Child PATH drives the exec-time binary lookup, so the augmented value
+    // also covers grandchildren (credential_process helpers in ~/.aws/config).
+    command.env("PATH", augmented_path_env());
     command.args(["configure", "export-credentials", "--format", "process"]);
     if let Some(name) = profile {
         command.args(["--profile", name]);
@@ -125,6 +170,9 @@ async fn custom_command_credentials(command_line: &str) -> Option<Credentials> {
         c
     };
     command.kill_on_drop(true);
+    // GUI-launched apps get launchd's minimal PATH; extend it so the user's
+    // command can find aws/asdf/mise binaries the way it does in a terminal.
+    command.env("PATH", augmented_path_env());
     // ponytail: 30s cap, same budget as cli_export_credentials
     let output = tokio::time::timeout(std::time::Duration::from_secs(30), command.output())
         .await
@@ -140,6 +188,7 @@ async fn custom_command_credentials(command_line: &str) -> Option<Credentials> {
 /// Mirrors Claude Code's awsAuthRefresh behavior for expired SSO sessions.
 async fn sso_login_and_retry(profile: Option<&str>) -> Option<Credentials> {
     let mut command = tokio::process::Command::new("aws");
+    command.env("PATH", augmented_path_env());
     command.args(["sso", "login"]);
     if let Some(name) = profile {
         command.args(["--profile", name]);
@@ -218,6 +267,17 @@ mod tests {
         restore_env_var("USERPROFILE", previous_userprofile);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn augment_path_env_appends_well_known_dirs_to_minimal_gui_path() {
+        // launchd gives GUI apps this PATH; Homebrew's aws lives outside it
+        let augmented = augment_path_env(std::ffi::OsStr::new("/usr/bin:/bin:/usr/sbin:/sbin"));
+        let dirs: Vec<PathBuf> = std::env::split_paths(&augmented).collect();
+        assert!(dirs.contains(&PathBuf::from("/opt/homebrew/bin")));
+        assert!(dirs.contains(&PathBuf::from("/usr/local/bin")));
+        assert_eq!(dirs[0], PathBuf::from("/usr/bin"));
+    }
+
     #[test]
     fn sanitize_profile_trims_and_rejects_blank() {
         assert_eq!(sanitize_profile(Some("  my-profile  ")), Some("my-profile"));
@@ -233,7 +293,18 @@ mod tests {
         let creds = parse_cli_export_credentials(json).expect("credentials");
         assert_eq!(creds.access_key_id(), "AKIA1");
         assert_eq!(creds.session_token(), Some("tok"));
+        let expiry = creds.expiry().expect("expiry parsed from Expiration");
+        assert!(expiry > std::time::SystemTime::now());
         assert!(parse_cli_export_credentials(b"{}").is_none());
+    }
+
+    #[test]
+    #[allow(clippy::expect_used)]
+    fn cli_export_credentials_without_expiration_have_no_expiry() {
+        let json = br#"{"Version":1,"AccessKeyId":"AKIA1","SecretAccessKey":"secret"}"#;
+        let creds = parse_cli_export_credentials(json).expect("credentials");
+        assert!(creds.expiry().is_none());
+        assert!(creds.session_token().is_none());
     }
 
     #[cfg(unix)]

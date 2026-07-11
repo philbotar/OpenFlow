@@ -5,8 +5,10 @@ use thiserror::Error;
 pub enum AuthoringError {
     #[error("authoring session not found")]
     SessionNotFound,
-    #[error("authoring model attempted tool calls")]
+    #[error("authoring model attempted unsupported tool calls")]
     ModelToolCalls,
+    #[error("authoring tool loop exceeded the maximum of {0} rounds")]
+    ToolRoundLimitExceeded(u8),
     #[error("{0}")]
     Agent(String),
     #[error("{0}")]

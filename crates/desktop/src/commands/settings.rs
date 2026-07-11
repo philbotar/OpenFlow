@@ -67,6 +67,31 @@ pub fn delete_provider_api_key(
 }
 
 #[tauri::command]
+pub fn load_search_api_key(
+    backend: tauri::State<AppBackend>,
+    provider: String,
+) -> Result<Option<String>, CommandError> {
+    Ok(backend.load_search_api_key(&provider)?)
+}
+
+#[tauri::command]
+pub fn save_search_api_key(
+    backend: tauri::State<AppBackend>,
+    provider: String,
+    api_key: String,
+) -> Result<(), CommandError> {
+    Ok(backend.save_search_api_key(&provider, &api_key)?)
+}
+
+#[tauri::command]
+pub fn delete_search_api_key(
+    backend: tauri::State<AppBackend>,
+    provider: String,
+) -> Result<(), CommandError> {
+    Ok(backend.delete_search_api_key(&provider)?)
+}
+
+#[tauri::command]
 pub fn resolve_provider_readiness(
     backend: tauri::State<AppBackend>,
     settings: AppSettings,

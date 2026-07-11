@@ -4,7 +4,6 @@ import type { BottomTab, TerminalEvent, TerminalStart } from "../../lib/types";
 import {
   clampDockHeight,
   COLLAPSED_DOCK_HEIGHT,
-  DEFAULT_DOCK_HEIGHT,
   normalizeError,
   restoredChatDockHeight,
   shouldCollapseDock,
@@ -14,12 +13,15 @@ import {
 interface UseDockParams {
   executionCwdForActiveWorkflow: Accessor<string | null>;
   isCompactViewport: Accessor<boolean>;
+  uiZoom: Accessor<number>;
 }
 
 export function useDock(params: UseDockParams) {
-  const [bottomTab, setBottomTab] = createSignal<BottomTab>("overview");
+  const [bottomTab, setBottomTab] = createSignal<BottomTab>("chat");
   const [dockOpen, setDockOpen] = createSignal(true);
-  const [dockHeight, setDockHeight] = createSignal(DEFAULT_DOCK_HEIGHT);
+  const [dockHeight, setDockHeight] = createSignal(
+    restoredChatDockHeight(viewportHeight(), params.isCompactViewport(), params.uiZoom()),
+  );
   const [chatFocusMode, setChatFocusMode] = createSignal(false);
   const [terminalSessions, setTerminalSessions] = createSignal<TerminalStart[]>([]);
   const [activeTerminalSessionId, setActiveTerminalSessionId] = createSignal<string | null>(null);
@@ -29,10 +31,13 @@ export function useDock(params: UseDockParams) {
 
   let dockResizeState: { startY: number; startHeight: number } | null = null;
 
+  const clampForTab = (height: number, tab: BottomTab) =>
+    clampDockHeight(height, tab, viewportHeight(), params.isCompactViewport(), params.uiZoom());
+
   const focusChatDock = () => {
     setDockOpen(true);
     setBottomTab("chat");
-    setDockHeight((current) => clampDockHeight(current, "chat"));
+    setDockHeight((current) => clampForTab(current, "chat"));
   };
 
   const handleSelectBottomTab = (tab: BottomTab) => {
@@ -43,16 +48,20 @@ export function useDock(params: UseDockParams) {
       return;
     }
     if (tab === "chat" && wasCollapsed) {
-      setDockHeight(restoredChatDockHeight(viewportHeight(), params.isCompactViewport()));
+      setDockHeight(
+        restoredChatDockHeight(viewportHeight(), params.isCompactViewport(), params.uiZoom()),
+      );
       return;
     }
-    setDockHeight((current) => clampDockHeight(current, tab));
+    setDockHeight((current) => clampForTab(current, tab));
   };
 
   const handleToggleChatFocusMode = () => {
     setDockOpen(true);
     if (chatFocusMode()) {
-      setDockHeight(restoredChatDockHeight(viewportHeight(), params.isCompactViewport()));
+      setDockHeight(
+        restoredChatDockHeight(viewportHeight(), params.isCompactViewport(), params.uiZoom()),
+      );
     }
     setChatFocusMode((current) => !current);
   };
@@ -69,13 +78,17 @@ export function useDock(params: UseDockParams) {
 
   const handleDockResizePointerMove = (event: PointerEvent) => {
     if (!dockResizeState) return;
-    const nextHeight = dockResizeState.startHeight + (dockResizeState.startY - event.clientY);
+    const zoom = params.uiZoom();
+    const visualDelta = dockResizeState.startY - event.clientY;
+    // clientY is visual; dock height is CSS px inside zoomed shell
+    const nextHeight =
+      dockResizeState.startHeight + visualDelta / (Number.isFinite(zoom) && zoom > 0 ? zoom : 1);
     if (shouldCollapseDock(nextHeight, bottomTab(), params.isCompactViewport())) {
       setDockOpen(false);
       return;
     }
     setDockOpen(true);
-    setDockHeight(clampDockHeight(nextHeight, bottomTab()));
+    setDockHeight(clampForTab(nextHeight, bottomTab()));
   };
 
   const clearDockResizeState = () => {

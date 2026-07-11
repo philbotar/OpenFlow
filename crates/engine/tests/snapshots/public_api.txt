@@ -623,6 +623,7 @@ pub fn engine::execution::interactive_engine::InteractiveEngine::record_reads(&m
 pub fn engine::execution::interactive_engine::InteractiveEngine::retry_node(&mut self, &engine::graph::workflow::NodeId) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::revert_file_changes_for_batch(&mut self, &str, &engine::graph::workflow::NodeId)
 pub async fn engine::execution::interactive_engine::InteractiveEngine::run<A: engine::ports::outbound::AiPort, T: engine::ports::outbound::ToolPort>(&mut self, &A, &T, &tokio_util::sync::cancellation_token::CancellationToken) -> engine::execution::interactive_engine::EngineRunResult
+pub fn engine::execution::interactive_engine::InteractiveEngine::set_runtime_config_store(&mut self, engine::graph::runtime_config::NodeRuntimeConfigStore)
 pub fn engine::execution::interactive_engine::InteractiveEngine::transcript(&self, &engine::graph::workflow::NodeId) -> &[engine::conversation::AgentTranscriptItem]
 impl engine::execution::interactive_engine::InteractiveEngine
 pub fn engine::execution::interactive_engine::InteractiveEngine::from_checkpoint(engine::graph::workflow::Workflow, engine::InteractiveEngineCheckpoint, core::option::Option<alloc::string::String>) -> core::result::Result<Self, engine::execution::interactive_engine::checkpoint::CheckpointError>
@@ -660,6 +661,7 @@ pub struct engine::execution::interactive_engine::InteractiveEngineCheckpoint
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::auto_continue_streaks_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::awaiting_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::changed_files_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>>
+pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::empty_turn_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::entrypoint_text: core::option::Option<alloc::string::String>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::failed_nodes: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::string::String>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::interrupted_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
@@ -1574,6 +1576,7 @@ pub fn engine::execution::interactive_engine::InteractiveEngine::record_reads(&m
 pub fn engine::execution::interactive_engine::InteractiveEngine::retry_node(&mut self, &engine::graph::workflow::NodeId) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::revert_file_changes_for_batch(&mut self, &str, &engine::graph::workflow::NodeId)
 pub async fn engine::execution::interactive_engine::InteractiveEngine::run<A: engine::ports::outbound::AiPort, T: engine::ports::outbound::ToolPort>(&mut self, &A, &T, &tokio_util::sync::cancellation_token::CancellationToken) -> engine::execution::interactive_engine::EngineRunResult
+pub fn engine::execution::interactive_engine::InteractiveEngine::set_runtime_config_store(&mut self, engine::graph::runtime_config::NodeRuntimeConfigStore)
 pub fn engine::execution::interactive_engine::InteractiveEngine::transcript(&self, &engine::graph::workflow::NodeId) -> &[engine::conversation::AgentTranscriptItem]
 impl engine::execution::interactive_engine::InteractiveEngine
 pub fn engine::execution::interactive_engine::InteractiveEngine::from_checkpoint(engine::graph::workflow::Workflow, engine::InteractiveEngineCheckpoint, core::option::Option<alloc::string::String>) -> core::result::Result<Self, engine::execution::interactive_engine::checkpoint::CheckpointError>
@@ -1611,6 +1614,7 @@ pub struct engine::execution::InteractiveEngineCheckpoint
 pub engine::execution::InteractiveEngineCheckpoint::auto_continue_streaks_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::execution::InteractiveEngineCheckpoint::awaiting_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
 pub engine::execution::InteractiveEngineCheckpoint::changed_files_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>>
+pub engine::execution::InteractiveEngineCheckpoint::empty_turn_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::execution::InteractiveEngineCheckpoint::entrypoint_text: core::option::Option<alloc::string::String>
 pub engine::execution::InteractiveEngineCheckpoint::failed_nodes: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::string::String>
 pub engine::execution::InteractiveEngineCheckpoint::interrupted_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
@@ -1866,6 +1870,59 @@ pub fn engine::graph::callable_agent::CallableAgent::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::graph::callable_agent::CallableAgent where T: for<'de> serde_core::de::Deserialize<'de>
 pub fn engine::graph::callable_agent::build_predefined_subagent_summaries(&engine::graph::workflow::Node, &alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::graph::callable_agent::CallableAgent>) -> alloc::vec::Vec<engine::SubagentSummary>
 pub fn engine::graph::callable_agent::resolve_callable_agent_snapshots(&engine::graph::workflow::Workflow, &[engine::graph::callable_agent::CallableAgent]) -> alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::graph::callable_agent::CallableAgent>
+pub mod engine::graph::runtime_config
+pub struct engine::graph::runtime_config::NodeRuntimeConfigPatch
+pub engine::graph::runtime_config::NodeRuntimeConfigPatch::approval_mode: core::option::Option<engine::ApprovalMode>
+pub engine::graph::runtime_config::NodeRuntimeConfigPatch::reasoning_budget_tokens: core::option::Option<core::option::Option<u32>>
+pub engine::graph::runtime_config::NodeRuntimeConfigPatch::reasoning_effort: core::option::Option<core::option::Option<alloc::string::String>>
+impl engine::graph::runtime_config::NodeRuntimeConfigPatch
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::merge_into(&self, &mut Self)
+impl core::clone::Clone for engine::graph::runtime_config::NodeRuntimeConfigPatch
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::clone(&self) -> engine::graph::runtime_config::NodeRuntimeConfigPatch
+impl core::cmp::Eq for engine::graph::runtime_config::NodeRuntimeConfigPatch
+impl core::cmp::PartialEq for engine::graph::runtime_config::NodeRuntimeConfigPatch
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::eq(&self, &engine::graph::runtime_config::NodeRuntimeConfigPatch) -> bool
+impl core::default::Default for engine::graph::runtime_config::NodeRuntimeConfigPatch
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::default() -> engine::graph::runtime_config::NodeRuntimeConfigPatch
+impl core::fmt::Debug for engine::graph::runtime_config::NodeRuntimeConfigPatch
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::graph::runtime_config::NodeRuntimeConfigPatch
+impl core::marker::Freeze for engine::graph::runtime_config::NodeRuntimeConfigPatch
+impl core::marker::Send for engine::graph::runtime_config::NodeRuntimeConfigPatch
+impl core::marker::Sync for engine::graph::runtime_config::NodeRuntimeConfigPatch
+impl core::marker::Unpin for engine::graph::runtime_config::NodeRuntimeConfigPatch
+impl core::marker::UnsafeUnpin for engine::graph::runtime_config::NodeRuntimeConfigPatch
+impl core::panic::unwind_safe::RefUnwindSafe for engine::graph::runtime_config::NodeRuntimeConfigPatch
+impl core::panic::unwind_safe::UnwindSafe for engine::graph::runtime_config::NodeRuntimeConfigPatch
+impl<T, U> core::convert::Into<U> for engine::graph::runtime_config::NodeRuntimeConfigPatch where U: core::convert::From<T>
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::graph::runtime_config::NodeRuntimeConfigPatch where U: core::convert::Into<T>
+pub type engine::graph::runtime_config::NodeRuntimeConfigPatch::Error = core::convert::Infallible
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::graph::runtime_config::NodeRuntimeConfigPatch where U: core::convert::TryFrom<T>
+pub type engine::graph::runtime_config::NodeRuntimeConfigPatch::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::graph::runtime_config::NodeRuntimeConfigPatch where T: core::clone::Clone
+pub type engine::graph::runtime_config::NodeRuntimeConfigPatch::Owned = T
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::clone_into(&self, &mut T)
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::to_owned(&self) -> T
+impl<T> core::any::Any for engine::graph::runtime_config::NodeRuntimeConfigPatch where T: 'static + ?core::marker::Sized
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::graph::runtime_config::NodeRuntimeConfigPatch where T: ?core::marker::Sized
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::graph::runtime_config::NodeRuntimeConfigPatch where T: ?core::marker::Sized
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::graph::runtime_config::NodeRuntimeConfigPatch where T: core::clone::Clone
+pub unsafe fn engine::graph::runtime_config::NodeRuntimeConfigPatch::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::graph::runtime_config::NodeRuntimeConfigPatch
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::from(T) -> T
+pub fn engine::graph::runtime_config::apply_runtime_patch_to_agent(&mut engine::graph::workflow::AgentNodeConfig, &engine::graph::runtime_config::NodeRuntimeConfigPatch)
+pub fn engine::graph::runtime_config::apply_runtime_patch_to_request(&mut engine::ports::outbound::AgentRequest, &engine::graph::runtime_config::NodeRuntimeConfigPatch)
+pub const fn engine::graph::runtime_config::apply_runtime_patch_to_tool_config(&mut engine::NodeToolConfig, &engine::graph::runtime_config::NodeRuntimeConfigPatch)
+pub fn engine::graph::runtime_config::new_runtime_config_store() -> engine::graph::runtime_config::NodeRuntimeConfigStore
+pub fn engine::graph::runtime_config::runtime_patch_for(&engine::graph::runtime_config::NodeRuntimeConfigStore, &engine::graph::workflow::NodeId) -> core::option::Option<engine::graph::runtime_config::NodeRuntimeConfigPatch>
+pub fn engine::graph::runtime_config::upsert_runtime_patch(&engine::graph::runtime_config::NodeRuntimeConfigStore, engine::graph::workflow::NodeId, &engine::graph::runtime_config::NodeRuntimeConfigPatch)
+pub type engine::graph::runtime_config::NodeRuntimeConfigStore = alloc::sync::Arc<std::sync::poison::rwlock::RwLock<alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, engine::graph::runtime_config::NodeRuntimeConfigPatch>>>
 pub mod engine::graph::validation
 pub enum engine::graph::validation::WorkflowValidationError
 pub engine::graph::validation::WorkflowValidationError::Cycle
@@ -3064,6 +3121,51 @@ pub unsafe fn engine::graph::workflow::NodePosition::clone_to_uninit(&self, *mut
 impl<T> core::convert::From<T> for engine::graph::workflow::NodePosition
 pub fn engine::graph::workflow::NodePosition::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::graph::workflow::NodePosition where T: for<'de> serde_core::de::Deserialize<'de>
+pub struct engine::graph::NodeRuntimeConfigPatch
+pub engine::graph::NodeRuntimeConfigPatch::approval_mode: core::option::Option<engine::ApprovalMode>
+pub engine::graph::NodeRuntimeConfigPatch::reasoning_budget_tokens: core::option::Option<core::option::Option<u32>>
+pub engine::graph::NodeRuntimeConfigPatch::reasoning_effort: core::option::Option<core::option::Option<alloc::string::String>>
+impl engine::graph::runtime_config::NodeRuntimeConfigPatch
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::merge_into(&self, &mut Self)
+impl core::clone::Clone for engine::graph::runtime_config::NodeRuntimeConfigPatch
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::clone(&self) -> engine::graph::runtime_config::NodeRuntimeConfigPatch
+impl core::cmp::Eq for engine::graph::runtime_config::NodeRuntimeConfigPatch
+impl core::cmp::PartialEq for engine::graph::runtime_config::NodeRuntimeConfigPatch
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::eq(&self, &engine::graph::runtime_config::NodeRuntimeConfigPatch) -> bool
+impl core::default::Default for engine::graph::runtime_config::NodeRuntimeConfigPatch
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::default() -> engine::graph::runtime_config::NodeRuntimeConfigPatch
+impl core::fmt::Debug for engine::graph::runtime_config::NodeRuntimeConfigPatch
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::graph::runtime_config::NodeRuntimeConfigPatch
+impl core::marker::Freeze for engine::graph::runtime_config::NodeRuntimeConfigPatch
+impl core::marker::Send for engine::graph::runtime_config::NodeRuntimeConfigPatch
+impl core::marker::Sync for engine::graph::runtime_config::NodeRuntimeConfigPatch
+impl core::marker::Unpin for engine::graph::runtime_config::NodeRuntimeConfigPatch
+impl core::marker::UnsafeUnpin for engine::graph::runtime_config::NodeRuntimeConfigPatch
+impl core::panic::unwind_safe::RefUnwindSafe for engine::graph::runtime_config::NodeRuntimeConfigPatch
+impl core::panic::unwind_safe::UnwindSafe for engine::graph::runtime_config::NodeRuntimeConfigPatch
+impl<T, U> core::convert::Into<U> for engine::graph::runtime_config::NodeRuntimeConfigPatch where U: core::convert::From<T>
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::graph::runtime_config::NodeRuntimeConfigPatch where U: core::convert::Into<T>
+pub type engine::graph::runtime_config::NodeRuntimeConfigPatch::Error = core::convert::Infallible
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::graph::runtime_config::NodeRuntimeConfigPatch where U: core::convert::TryFrom<T>
+pub type engine::graph::runtime_config::NodeRuntimeConfigPatch::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::graph::runtime_config::NodeRuntimeConfigPatch where T: core::clone::Clone
+pub type engine::graph::runtime_config::NodeRuntimeConfigPatch::Owned = T
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::clone_into(&self, &mut T)
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::to_owned(&self) -> T
+impl<T> core::any::Any for engine::graph::runtime_config::NodeRuntimeConfigPatch where T: 'static + ?core::marker::Sized
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::graph::runtime_config::NodeRuntimeConfigPatch where T: ?core::marker::Sized
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::graph::runtime_config::NodeRuntimeConfigPatch where T: ?core::marker::Sized
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::graph::runtime_config::NodeRuntimeConfigPatch where T: core::clone::Clone
+pub unsafe fn engine::graph::runtime_config::NodeRuntimeConfigPatch::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::graph::runtime_config::NodeRuntimeConfigPatch
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::from(T) -> T
 pub struct engine::graph::RetryPolicy
 pub engine::graph::RetryPolicy::backoff_ms: u64
 pub engine::graph::RetryPolicy::max_attempts: u8
@@ -3330,11 +3432,18 @@ pub unsafe fn engine::graph::workflow::WorkflowSettings::clone_to_uninit(&self, 
 impl<T> core::convert::From<T> for engine::graph::workflow::WorkflowSettings
 pub fn engine::graph::workflow::WorkflowSettings::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::graph::workflow::WorkflowSettings where T: for<'de> serde_core::de::Deserialize<'de>
+pub fn engine::graph::apply_runtime_patch_to_agent(&mut engine::graph::workflow::AgentNodeConfig, &engine::graph::runtime_config::NodeRuntimeConfigPatch)
+pub fn engine::graph::apply_runtime_patch_to_request(&mut engine::ports::outbound::AgentRequest, &engine::graph::runtime_config::NodeRuntimeConfigPatch)
+pub const fn engine::graph::apply_runtime_patch_to_tool_config(&mut engine::NodeToolConfig, &engine::graph::runtime_config::NodeRuntimeConfigPatch)
 pub fn engine::graph::build_predefined_subagent_summaries(&engine::graph::workflow::Node, &alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::graph::callable_agent::CallableAgent>) -> alloc::vec::Vec<engine::SubagentSummary>
 pub fn engine::graph::effective_output_schema(&serde_json::value::Value) -> serde_json::value::Value
 pub fn engine::graph::execution_layers(&engine::graph::workflow::Workflow) -> core::result::Result<alloc::vec::Vec<alloc::vec::Vec<engine::graph::workflow::NodeId>>, engine::graph::validation::WorkflowValidationError>
+pub fn engine::graph::new_runtime_config_store() -> engine::graph::runtime_config::NodeRuntimeConfigStore
 pub fn engine::graph::resolve_callable_agent_snapshots(&engine::graph::workflow::Workflow, &[engine::graph::callable_agent::CallableAgent]) -> alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::graph::callable_agent::CallableAgent>
+pub fn engine::graph::runtime_patch_for(&engine::graph::runtime_config::NodeRuntimeConfigStore, &engine::graph::workflow::NodeId) -> core::option::Option<engine::graph::runtime_config::NodeRuntimeConfigPatch>
+pub fn engine::graph::upsert_runtime_patch(&engine::graph::runtime_config::NodeRuntimeConfigStore, engine::graph::workflow::NodeId, &engine::graph::runtime_config::NodeRuntimeConfigPatch)
 pub fn engine::graph::validate_workflow(&engine::graph::workflow::Workflow) -> core::result::Result<(), engine::graph::validation::WorkflowValidationError>
+pub type engine::graph::NodeRuntimeConfigStore = alloc::sync::Arc<std::sync::poison::rwlock::RwLock<alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, engine::graph::runtime_config::NodeRuntimeConfigPatch>>>
 pub mod engine::ports
 pub mod engine::ports::outbound
 pub enum engine::ports::outbound::AgentError
@@ -3346,6 +3455,7 @@ pub engine::ports::outbound::AgentError::MalformedSubmitOutput::provider_label: 
 pub engine::ports::outbound::AgentError::Permanent(alloc::string::String)
 pub engine::ports::outbound::AgentError::Transient(alloc::string::String)
 impl engine::ports::outbound::AgentError
+pub fn engine::ports::outbound::AgentError::is_empty_provider_turn(&self) -> bool
 pub const fn engine::ports::outbound::AgentError::is_interrupted(&self) -> bool
 pub const fn engine::ports::outbound::AgentError::is_malformed_submit_output(&self) -> bool
 pub const fn engine::ports::outbound::AgentError::is_retryable(&self) -> bool
@@ -3793,6 +3903,7 @@ pub engine::ports::AgentError::MalformedSubmitOutput::provider_label: alloc::str
 pub engine::ports::AgentError::Permanent(alloc::string::String)
 pub engine::ports::AgentError::Transient(alloc::string::String)
 impl engine::ports::outbound::AgentError
+pub fn engine::ports::outbound::AgentError::is_empty_provider_turn(&self) -> bool
 pub const fn engine::ports::outbound::AgentError::is_interrupted(&self) -> bool
 pub const fn engine::ports::outbound::AgentError::is_malformed_submit_output(&self) -> bool
 pub const fn engine::ports::outbound::AgentError::is_retryable(&self) -> bool
@@ -4238,13 +4349,13 @@ pub mod engine::template::store
 pub enum engine::template::store::TemplateStoreError
 pub engine::template::store::TemplateStoreError::CannotCreateDir
 pub engine::template::store::TemplateStoreError::CannotCreateDir::path: alloc::string::String
-pub engine::template::store::TemplateStoreError::CannotCreateDir::source: std::io::error::Error
+pub engine::template::store::TemplateStoreError::CannotCreateDir::source: core::io::error::Error
 pub engine::template::store::TemplateStoreError::CannotRead
 pub engine::template::store::TemplateStoreError::CannotRead::path: alloc::string::String
-pub engine::template::store::TemplateStoreError::CannotRead::source: std::io::error::Error
+pub engine::template::store::TemplateStoreError::CannotRead::source: core::io::error::Error
 pub engine::template::store::TemplateStoreError::CannotWrite
 pub engine::template::store::TemplateStoreError::CannotWrite::path: alloc::string::String
-pub engine::template::store::TemplateStoreError::CannotWrite::source: std::io::error::Error
+pub engine::template::store::TemplateStoreError::CannotWrite::source: core::io::error::Error
 pub engine::template::store::TemplateStoreError::DataDirUnavailable
 pub engine::template::store::TemplateStoreError::NotFound
 pub engine::template::store::TemplateStoreError::NotFound::id: alloc::string::String
@@ -4290,13 +4401,13 @@ pub fn engine::template::store::TemplateStore::update(&self, engine::template::T
 pub enum engine::template::TemplateStoreError
 pub engine::template::TemplateStoreError::CannotCreateDir
 pub engine::template::TemplateStoreError::CannotCreateDir::path: alloc::string::String
-pub engine::template::TemplateStoreError::CannotCreateDir::source: std::io::error::Error
+pub engine::template::TemplateStoreError::CannotCreateDir::source: core::io::error::Error
 pub engine::template::TemplateStoreError::CannotRead
 pub engine::template::TemplateStoreError::CannotRead::path: alloc::string::String
-pub engine::template::TemplateStoreError::CannotRead::source: std::io::error::Error
+pub engine::template::TemplateStoreError::CannotRead::source: core::io::error::Error
 pub engine::template::TemplateStoreError::CannotWrite
 pub engine::template::TemplateStoreError::CannotWrite::path: alloc::string::String
-pub engine::template::TemplateStoreError::CannotWrite::source: std::io::error::Error
+pub engine::template::TemplateStoreError::CannotWrite::source: core::io::error::Error
 pub engine::template::TemplateStoreError::DataDirUnavailable
 pub engine::template::TemplateStoreError::NotFound
 pub engine::template::TemplateStoreError::NotFound::id: alloc::string::String
@@ -5300,6 +5411,7 @@ impl<T> serde_core::de::DeserializeOwned for engine::ToolTruncation where T: for
 pub fn engine::tools::effective_change_path(&engine::FileChangeRecord) -> &str
 pub fn engine::tools::merge_file_change_record(&mut alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::FileChangeRecord>, engine::FileChangeRecord)
 pub fn engine::tools::merge_read_record(&mut alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::ReadRecord>, engine::ReadRecord)
+pub fn engine::tools::relativize_tool_call_arguments(serde_json::value::Value, core::option::Option<&str>) -> serde_json::value::Value
 pub fn engine::tools::summarize_diff(&str, usize) -> alloc::string::String
 pub fn engine::tools::tool_intent_from_arguments(&serde_json::value::Value) -> core::option::Option<alloc::string::String>
 pub fn engine::tools::tool_tier_for_call(&engine::NodeToolConfig, &str) -> engine::ToolTier
@@ -5312,6 +5424,7 @@ pub engine::AgentError::MalformedSubmitOutput::provider_label: alloc::string::St
 pub engine::AgentError::Permanent(alloc::string::String)
 pub engine::AgentError::Transient(alloc::string::String)
 impl engine::ports::outbound::AgentError
+pub fn engine::ports::outbound::AgentError::is_empty_provider_turn(&self) -> bool
 pub const fn engine::ports::outbound::AgentError::is_interrupted(&self) -> bool
 pub const fn engine::ports::outbound::AgentError::is_malformed_submit_output(&self) -> bool
 pub const fn engine::ports::outbound::AgentError::is_retryable(&self) -> bool
@@ -6079,13 +6192,13 @@ impl<T> serde_core::de::DeserializeOwned for engine::SubagentStatus where T: for
 pub enum engine::TemplateStoreError
 pub engine::TemplateStoreError::CannotCreateDir
 pub engine::TemplateStoreError::CannotCreateDir::path: alloc::string::String
-pub engine::TemplateStoreError::CannotCreateDir::source: std::io::error::Error
+pub engine::TemplateStoreError::CannotCreateDir::source: core::io::error::Error
 pub engine::TemplateStoreError::CannotRead
 pub engine::TemplateStoreError::CannotRead::path: alloc::string::String
-pub engine::TemplateStoreError::CannotRead::source: std::io::error::Error
+pub engine::TemplateStoreError::CannotRead::source: core::io::error::Error
 pub engine::TemplateStoreError::CannotWrite
 pub engine::TemplateStoreError::CannotWrite::path: alloc::string::String
-pub engine::TemplateStoreError::CannotWrite::source: std::io::error::Error
+pub engine::TemplateStoreError::CannotWrite::source: core::io::error::Error
 pub engine::TemplateStoreError::DataDirUnavailable
 pub engine::TemplateStoreError::NotFound
 pub engine::TemplateStoreError::NotFound::id: alloc::string::String
@@ -7110,6 +7223,7 @@ pub fn engine::execution::interactive_engine::InteractiveEngine::record_reads(&m
 pub fn engine::execution::interactive_engine::InteractiveEngine::retry_node(&mut self, &engine::graph::workflow::NodeId) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::revert_file_changes_for_batch(&mut self, &str, &engine::graph::workflow::NodeId)
 pub async fn engine::execution::interactive_engine::InteractiveEngine::run<A: engine::ports::outbound::AiPort, T: engine::ports::outbound::ToolPort>(&mut self, &A, &T, &tokio_util::sync::cancellation_token::CancellationToken) -> engine::execution::interactive_engine::EngineRunResult
+pub fn engine::execution::interactive_engine::InteractiveEngine::set_runtime_config_store(&mut self, engine::graph::runtime_config::NodeRuntimeConfigStore)
 pub fn engine::execution::interactive_engine::InteractiveEngine::transcript(&self, &engine::graph::workflow::NodeId) -> &[engine::conversation::AgentTranscriptItem]
 impl engine::execution::interactive_engine::InteractiveEngine
 pub fn engine::execution::interactive_engine::InteractiveEngine::from_checkpoint(engine::graph::workflow::Workflow, engine::InteractiveEngineCheckpoint, core::option::Option<alloc::string::String>) -> core::result::Result<Self, engine::execution::interactive_engine::checkpoint::CheckpointError>
@@ -7147,6 +7261,7 @@ pub struct engine::InteractiveEngineCheckpoint
 pub engine::InteractiveEngineCheckpoint::auto_continue_streaks_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::InteractiveEngineCheckpoint::awaiting_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
 pub engine::InteractiveEngineCheckpoint::changed_files_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>>
+pub engine::InteractiveEngineCheckpoint::empty_turn_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::InteractiveEngineCheckpoint::entrypoint_text: core::option::Option<alloc::string::String>
 pub engine::InteractiveEngineCheckpoint::failed_nodes: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::string::String>
 pub engine::InteractiveEngineCheckpoint::interrupted_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
@@ -7410,6 +7525,51 @@ pub unsafe fn engine::execution::artifacts::NodeRunOutput::clone_to_uninit(&self
 impl<T> core::convert::From<T> for engine::execution::artifacts::NodeRunOutput
 pub fn engine::execution::artifacts::NodeRunOutput::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::execution::artifacts::NodeRunOutput where T: for<'de> serde_core::de::Deserialize<'de>
+pub struct engine::NodeRuntimeConfigPatch
+pub engine::NodeRuntimeConfigPatch::approval_mode: core::option::Option<engine::ApprovalMode>
+pub engine::NodeRuntimeConfigPatch::reasoning_budget_tokens: core::option::Option<core::option::Option<u32>>
+pub engine::NodeRuntimeConfigPatch::reasoning_effort: core::option::Option<core::option::Option<alloc::string::String>>
+impl engine::graph::runtime_config::NodeRuntimeConfigPatch
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::merge_into(&self, &mut Self)
+impl core::clone::Clone for engine::graph::runtime_config::NodeRuntimeConfigPatch
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::clone(&self) -> engine::graph::runtime_config::NodeRuntimeConfigPatch
+impl core::cmp::Eq for engine::graph::runtime_config::NodeRuntimeConfigPatch
+impl core::cmp::PartialEq for engine::graph::runtime_config::NodeRuntimeConfigPatch
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::eq(&self, &engine::graph::runtime_config::NodeRuntimeConfigPatch) -> bool
+impl core::default::Default for engine::graph::runtime_config::NodeRuntimeConfigPatch
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::default() -> engine::graph::runtime_config::NodeRuntimeConfigPatch
+impl core::fmt::Debug for engine::graph::runtime_config::NodeRuntimeConfigPatch
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::graph::runtime_config::NodeRuntimeConfigPatch
+impl core::marker::Freeze for engine::graph::runtime_config::NodeRuntimeConfigPatch
+impl core::marker::Send for engine::graph::runtime_config::NodeRuntimeConfigPatch
+impl core::marker::Sync for engine::graph::runtime_config::NodeRuntimeConfigPatch
+impl core::marker::Unpin for engine::graph::runtime_config::NodeRuntimeConfigPatch
+impl core::marker::UnsafeUnpin for engine::graph::runtime_config::NodeRuntimeConfigPatch
+impl core::panic::unwind_safe::RefUnwindSafe for engine::graph::runtime_config::NodeRuntimeConfigPatch
+impl core::panic::unwind_safe::UnwindSafe for engine::graph::runtime_config::NodeRuntimeConfigPatch
+impl<T, U> core::convert::Into<U> for engine::graph::runtime_config::NodeRuntimeConfigPatch where U: core::convert::From<T>
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::graph::runtime_config::NodeRuntimeConfigPatch where U: core::convert::Into<T>
+pub type engine::graph::runtime_config::NodeRuntimeConfigPatch::Error = core::convert::Infallible
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::graph::runtime_config::NodeRuntimeConfigPatch where U: core::convert::TryFrom<T>
+pub type engine::graph::runtime_config::NodeRuntimeConfigPatch::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::graph::runtime_config::NodeRuntimeConfigPatch where T: core::clone::Clone
+pub type engine::graph::runtime_config::NodeRuntimeConfigPatch::Owned = T
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::clone_into(&self, &mut T)
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::to_owned(&self) -> T
+impl<T> core::any::Any for engine::graph::runtime_config::NodeRuntimeConfigPatch where T: 'static + ?core::marker::Sized
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::graph::runtime_config::NodeRuntimeConfigPatch where T: ?core::marker::Sized
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::graph::runtime_config::NodeRuntimeConfigPatch where T: ?core::marker::Sized
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::graph::runtime_config::NodeRuntimeConfigPatch where T: core::clone::Clone
+pub unsafe fn engine::graph::runtime_config::NodeRuntimeConfigPatch::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::graph::runtime_config::NodeRuntimeConfigPatch
+pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::from(T) -> T
 pub struct engine::NodeToolConfig
 pub engine::NodeToolConfig::approval_mode: core::option::Option<engine::ApprovalMode>
 impl engine::NodeToolConfig
@@ -8387,6 +8547,9 @@ impl<T> engine::ports::outbound::ToolPort for alloc::boxed::Box<T> where T: engi
 pub fn alloc::boxed::Box<T>::augment_request(&self, &engine::graph::workflow::NodeId, &mut engine::ports::outbound::AgentRequest)
 pub fn alloc::boxed::Box<T>::execute_batch<'life0, 'life1, 'life2, 'async_trait>(&'life0 self, &'life1 engine::graph::workflow::NodeId, &'life2 str, alloc::vec::Vec<engine::ToolCall>) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = engine::ports::outbound::ToolBatchOutput> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait, 'life2: 'async_trait
 pub fn engine::advance_subagent_invoke(engine::execution::subagent_runtime::SubagentInvokeSession, core::result::Result<engine::ports::outbound::AgentTurnOutcome, engine::ports::outbound::AgentError>, alloc::vec::Vec<engine::ToolResult>) -> engine::execution::subagent_runtime::SubagentInvokeStep
+pub fn engine::apply_runtime_patch_to_agent(&mut engine::graph::workflow::AgentNodeConfig, &engine::graph::runtime_config::NodeRuntimeConfigPatch)
+pub fn engine::apply_runtime_patch_to_request(&mut engine::ports::outbound::AgentRequest, &engine::graph::runtime_config::NodeRuntimeConfigPatch)
+pub const fn engine::apply_runtime_patch_to_tool_config(&mut engine::NodeToolConfig, &engine::graph::runtime_config::NodeRuntimeConfigPatch)
 pub fn engine::augment_call_subagent_tool_description(&mut [engine::ToolDefinition], &engine::graph::workflow::Node, &alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::SubagentSummary>, &alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::graph::callable_agent::CallableAgent>)
 pub fn engine::build_predefined_subagent_summaries(&engine::graph::workflow::Node, &alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::graph::callable_agent::CallableAgent>) -> alloc::vec::Vec<engine::SubagentSummary>
 pub fn engine::default_templates() -> alloc::vec::Vec<engine::template::Template>
@@ -8397,7 +8560,9 @@ pub fn engine::filter_tool_turn_assistant_message(core::option::Option<alloc::st
 pub fn engine::handle_declare_subagents(&engine::graph::workflow::NodeId, &engine::ToolCall, &mut alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::SubagentSummary>) -> engine::execution::subagent_runtime::DeclareSubagentsOutcome
 pub fn engine::is_subagent_runtime_builtin(&str) -> bool
 pub fn engine::merge_subagent_summaries(&mut alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::SubagentSummary>, &[engine::SubagentSummary])
+pub fn engine::new_runtime_config_store() -> engine::graph::runtime_config::NodeRuntimeConfigStore
 pub fn engine::resolve_callable_agent_snapshots(&engine::graph::workflow::Workflow, &[engine::graph::callable_agent::CallableAgent]) -> alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::graph::callable_agent::CallableAgent>
+pub fn engine::runtime_patch_for(&engine::graph::runtime_config::NodeRuntimeConfigStore, &engine::graph::workflow::NodeId) -> core::option::Option<engine::graph::runtime_config::NodeRuntimeConfigPatch>
 pub fn engine::start_subagent_invoke(&engine::graph::workflow::Workflow, &engine::graph::workflow::NodeId, &engine::ToolCall, &mut alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::SubagentSummary>, &alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::graph::callable_agent::CallableAgent>, alloc::vec::Vec<engine::ToolDefinition>) -> engine::execution::subagent_runtime::SubagentStartOutcome
 pub fn engine::strip_tool_call_markup(&str) -> alloc::string::String
 pub fn engine::subagent_runtime_builtin_denied(&engine::ToolCall) -> engine::ToolResult
@@ -8405,5 +8570,7 @@ pub fn engine::summarize_diff(&str, usize) -> alloc::string::String
 pub fn engine::summary_from_node_output(&serde_json::value::Value) -> core::option::Option<alloc::string::String>
 pub fn engine::tool_intent_from_arguments(&serde_json::value::Value) -> core::option::Option<alloc::string::String>
 pub fn engine::tool_tier_for_call(&engine::NodeToolConfig, &str) -> engine::ToolTier
+pub fn engine::upsert_runtime_patch(&engine::graph::runtime_config::NodeRuntimeConfigStore, engine::graph::workflow::NodeId, &engine::graph::runtime_config::NodeRuntimeConfigPatch)
 pub fn engine::validate_checkpoint_against_workflow(&engine::graph::workflow::Workflow, &engine::InteractiveEngineCheckpoint) -> core::result::Result<(), engine::execution::interactive_engine::checkpoint::CheckpointError>
 pub fn engine::validate_workflow(&engine::graph::workflow::Workflow) -> core::result::Result<(), engine::graph::validation::WorkflowValidationError>
+pub type engine::NodeRuntimeConfigStore = alloc::sync::Arc<std::sync::poison::rwlock::RwLock<alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, engine::graph::runtime_config::NodeRuntimeConfigPatch>>>

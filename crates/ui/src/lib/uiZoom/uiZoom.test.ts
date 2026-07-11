@@ -5,6 +5,8 @@ import {
   MAX_UI_ZOOM,
   MIN_UI_ZOOM,
   readStoredUiZoom,
+  TERMINAL_BASE_FONT_SIZE,
+  terminalFontSizeForZoom,
   UI_ZOOM_STORAGE_KEY,
   writeStoredUiZoom,
   zoomInUi,
@@ -48,4 +50,16 @@ describe("uiZoom helpers", () => {
     expect(storage.get(UI_ZOOM_STORAGE_KEY)).toBe(String(MIN_UI_ZOOM));
   });
 
+  test("terminalFontSizeForZoom scales the base font size with zoom, rounded to whole px", () => {
+    expect(terminalFontSizeForZoom(1)).toBe(TERMINAL_BASE_FONT_SIZE);
+    expect(terminalFontSizeForZoom(1.1)).toBe(Math.round(TERMINAL_BASE_FONT_SIZE * 1.1));
+    expect(terminalFontSizeForZoom(MIN_UI_ZOOM)).toBe(Math.round(TERMINAL_BASE_FONT_SIZE * MIN_UI_ZOOM));
+    expect(terminalFontSizeForZoom(MAX_UI_ZOOM)).toBe(Math.round(TERMINAL_BASE_FONT_SIZE * MAX_UI_ZOOM));
+  });
+
+  test("terminalFontSizeForZoom clamps out-of-range or invalid zoom values", () => {
+    expect(terminalFontSizeForZoom(0)).toBe(Math.round(TERMINAL_BASE_FONT_SIZE * MIN_UI_ZOOM));
+    expect(terminalFontSizeForZoom(9)).toBe(Math.round(TERMINAL_BASE_FONT_SIZE * MAX_UI_ZOOM));
+    expect(terminalFontSizeForZoom(Number.NaN)).toBe(TERMINAL_BASE_FONT_SIZE);
+  });
 });

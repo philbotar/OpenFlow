@@ -1,5 +1,5 @@
-import ChevronRight from "lucide-solid/icons/chevron-right";
-import Folder from "lucide-solid/icons/folder";
+import FolderClosed from "lucide-solid/icons/folder-closed";
+import FolderOpen from "lucide-solid/icons/folder-open";
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import type { Project, Workflow } from "../../lib/types";
 import { ICON_STROKE_WIDTH } from "../../lib/utils";
@@ -20,6 +20,7 @@ export type ProjectFolderRowProps = {
   onSelectWorkflow: (workflowId: string) => void;
   onRenameWorkflow: (workflowId: string, name: string) => void;
   onCreateWorkflow: () => void;
+  onCreateWorkflowWithAi: () => void;
   onAddExistingWorkflow: () => void;
   setWorkflowNameInputRef: (el: HTMLInputElement | undefined) => void;
   setWorkflowNameDraft: (value: string) => void;
@@ -73,18 +74,24 @@ export function ProjectFolderRow(props: ProjectFolderRowProps) {
           }}
           aria-expanded={props.expanded}
         >
-          <ChevronRight
-            class="project-folder-chevron"
-            aria-hidden="true"
-            absoluteStrokeWidth
-            strokeWidth={ICON_STROKE_WIDTH}
-          />
-          <Folder
-            class="project-folder-icon"
-            aria-hidden="true"
-            absoluteStrokeWidth
-            strokeWidth={ICON_STROKE_WIDTH}
-          />
+          <Show
+            when={props.expanded}
+            fallback={
+              <FolderClosed
+                class="project-folder-icon"
+                aria-hidden="true"
+                absoluteStrokeWidth
+                strokeWidth={ICON_STROKE_WIDTH}
+              />
+            }
+          >
+            <FolderOpen
+              class="project-folder-icon"
+              aria-hidden="true"
+              absoluteStrokeWidth
+              strokeWidth={ICON_STROKE_WIDTH}
+            />
+          </Show>
           <span class="project-folder-title" title={props.project.path}>
             {props.project.name}
           </span>
@@ -117,6 +124,18 @@ export function ProjectFolderRow(props: ProjectFolderRowProps) {
                 }}
               >
                 New workflow
+              </button>
+              <button
+                type="button"
+                class="project-folder-menu-item"
+                role="menuitem"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  closeMenu();
+                  props.onCreateWorkflowWithAi();
+                }}
+              >
+                Create with AI
               </button>
               <button
                 type="button"

@@ -13,7 +13,10 @@ use crate::execution::node_invocation::{
 use crate::execution::tool_results::error_tool_result;
 use crate::execution::{NodeFailureKind, NodeRunOutput, RunError, RunReport};
 use crate::graph::validation::{execution_layers, WorkflowValidationError};
-use crate::graph::{Node, NodeId, Workflow};
+use crate::graph::{
+    apply_runtime_patch_to_agent, apply_runtime_patch_to_request, runtime_patch_for, Node, NodeId,
+    NodeRuntimeConfigStore, Workflow,
+};
 use crate::ports::{AgentRequest, AiPort, ToolBatchOutput, ToolPort};
 use crate::tools::{FileChangeRecord, ReadRecord, ToolCall};
 use futures::stream::{FuturesUnordered, StreamExt};
@@ -22,8 +25,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write;
 use std::future::Future;
 use std::pin::Pin;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use thiserror::Error;
+use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 /// Pause payload when a node needs human text input.
@@ -115,6 +119,7 @@ pub struct InteractiveEngine {
     retry_after_by_node: BTreeMap<NodeId, Instant>,
     submit_output_retries_by_node: BTreeMap<NodeId, u8>,
     request_input_retries_by_node: BTreeMap<NodeId, u8>,
+    empty_turn_retries_by_node: BTreeMap<NodeId, u8>,
     /// Consecutive auto-continued text-only turns for nodes that disallow
     /// user input; reset whenever the node makes tool-call progress.
     auto_continue_streaks_by_node: BTreeMap<NodeId, u8>,
@@ -123,10 +128,12 @@ pub struct InteractiveEngine {
     terminal_error: Option<RunError>,
     interrupted_nodes: BTreeSet<NodeId>,
     failed_nodes: BTreeMap<NodeId, String>,
+    runtime_config_store: Option<NodeRuntimeConfigStore>,
 }
 
 pub(crate) const MAX_MALFORMED_SUBMIT_OUTPUT_RETRIES: u8 = 3;
 pub(crate) const MAX_MALFORMED_REQUEST_INPUT_RETRIES: u8 = 3;
+pub(crate) const MAX_EMPTY_PROVIDER_TURN_RETRIES: u8 = 3;
 pub(crate) const MAX_AUTO_CONTINUE_STREAK: u8 = 10;
 pub(crate) const MALFORMED_REQUEST_INPUT_FEEDBACK: &str =
     "Your last turn ended as a request for human input, but without a direct question. \
@@ -189,13 +196,19 @@ impl InteractiveEngine {
             retry_after_by_node: BTreeMap::new(),
             submit_output_retries_by_node: BTreeMap::new(),
             request_input_retries_by_node: BTreeMap::new(),
+            empty_turn_retries_by_node: BTreeMap::new(),
             auto_continue_streaks_by_node: BTreeMap::new(),
             entrypoint_text,
             project_repository_root,
             terminal_error: None,
             interrupted_nodes: BTreeSet::new(),
             failed_nodes: BTreeMap::new(),
+            runtime_config_store: None,
         })
+    }
+
+    pub fn set_runtime_config_store(&mut self, store: NodeRuntimeConfigStore) {
+        self.runtime_config_store = Some(store);
     }
 
     fn current_layer_nodes(&self) -> &[NodeId] {
@@ -293,6 +306,12 @@ impl InteractiveEngine {
         self.node_index
             .get(node_id)
             .and_then(|index| self.workflow.nodes.get(*index))
+    }
+
+    fn find_node_mut(&mut self, node_id: &NodeId) -> Option<&mut Node> {
+        self.node_index
+            .get(node_id)
+            .and_then(|index| self.workflow.nodes.get_mut(*index))
     }
 
     fn try_advance_layer(&mut self) -> Option<RunReport> {
@@ -713,7 +732,7 @@ impl InteractiveEngine {
         self.transcripts.get(node_id).map_or(&[], Vec::as_slice)
     }
 
-    fn build_request(&self, node_id: &NodeId) -> Result<AgentRequest, RunError> {
+    fn build_request(&mut self, node_id: &NodeId) -> Result<AgentRequest, RunError> {
         let node = self
             .find_node(node_id)
             .ok_or_else(|| RunError::NodeFailed {
@@ -733,6 +752,14 @@ impl InteractiveEngine {
         };
         let mut request = build_agent_request(&ctx, node, true)?;
         request.model_attempt = self.model_attempt_for(&node.id);
+        if let Some(store) = &self.runtime_config_store {
+            if let Some(patch) = runtime_patch_for(store, node_id) {
+                apply_runtime_patch_to_request(&mut request, &patch);
+                if let Some(node_mut) = self.find_node_mut(node_id) {
+                    apply_runtime_patch_to_agent(&mut node_mut.agent, &patch);
+                }
+            }
+        }
         Ok(request)
     }
 
@@ -746,7 +773,9 @@ impl InteractiveEngine {
         let mut context = String::new();
         for upstream_id in &upstream {
             if let Some(output) = self.outputs.get(upstream_id) {
-                let _ = writeln!(context, "{upstream_id}: {output}");
+                let pretty =
+                    serde_json::to_string_pretty(output).unwrap_or_else(|_| output.to_string());
+                let _ = writeln!(context, "{upstream_id}:\n{pretty}");
             }
         }
         if context.is_empty() {

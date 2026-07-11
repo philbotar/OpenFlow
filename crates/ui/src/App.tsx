@@ -5,7 +5,6 @@ import { useAppContext } from "./context/AppContext";
 import {
   AppHeader,
   FirstRunOnboarding,
-  ShortcutsModal,
   Sidebar,
   WorkflowPickerModal,
 } from "@/components";
@@ -42,7 +41,8 @@ function ScreenRouter() {
 
 function AppToaster() {
   const ctx = useAppContext();
-  const topOffset = () => "calc(var(--topbar-height) + 16px)";
+  const topOffset = () =>
+    "calc((var(--topbar-height) + 16px) / var(--ui-zoom))";
   const toastWidth = () =>
     ctx.settings().local_diagnostics?.debug_output
       ? "min(720px, calc(100vw - 32px))"
@@ -97,10 +97,6 @@ function AppChrome() {
         }}
       >
         <WorkflowPickerModal />
-        <ShortcutsModal
-          open={ctx.shortcutsModalOpen()}
-          onClose={ctx.closeShortcutsModal}
-        />
         <FirstRunOnboarding
           open={ctx.firstRunOnboardingOpen()}
           onClose={ctx.dismissFirstRunOnboarding}
@@ -112,16 +108,20 @@ function AppChrome() {
           fallback={
             <>
               <AppHeader />
-              <Sidebar />
-              <main class="main-shell">
-                <ScreenRouter />
-              </main>
+              <div class="app-shell-body">
+                <Sidebar />
+                <main class="main-shell">
+                  <ScreenRouter />
+                </main>
+              </div>
             </>
           }
         >
           <AppHeader />
-          <div class="settings-screen-shell screen-view">
-            <SettingsScreen />
+          <div class="app-shell-body app-shell-body--settings">
+            <div class="settings-screen-shell screen-view">
+              <SettingsScreen />
+            </div>
           </div>
         </Show>
       </div>

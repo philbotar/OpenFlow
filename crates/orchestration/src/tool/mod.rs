@@ -13,6 +13,7 @@ pub(crate) mod read;
 pub mod registry;
 pub mod retry;
 pub mod runner;
+pub(crate) mod web_search;
 
 pub use cache::ToolResultCache;
 pub use output::{ArtifactStore, ToolArtifactRecord};
@@ -20,3 +21,4 @@ pub use registry::{ToolRegistry, ToolRegistryError};
 pub use runner::{
     ToolExecutionContext, ToolExecutionRecord, ToolExecutionUpdate, ToolRunner, ToolRunnerError,
 };
+pub use web_search::set_bundled_search_binary;

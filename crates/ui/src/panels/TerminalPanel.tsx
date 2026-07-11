@@ -8,6 +8,7 @@ import { createEffect, For, onCleanup, onMount, Show } from "solid-js";
 import { PanelEmptyState } from "@/components";
 import { useAppContext } from "../context/AppContext";
 import { readTerminalThemeColors } from "@/lib/theme";
+import { terminalFontSizeForZoom } from "@/lib/uiZoom";
 import { ICON_STROKE_WIDTH } from "@/lib/utils";
 
 const DEFAULT_COLS = 80;
@@ -57,7 +58,7 @@ function TerminalHost() {
       cursorBlink: true,
       convertEol: true,
       fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-      fontSize: 12,
+      fontSize: terminalFontSizeForZoom(ctx.uiZoom()),
       scrollback: 5000,
       theme: readTerminalThemeColors(),
     });
@@ -92,6 +93,16 @@ function TerminalHost() {
   createEffect(() => {
     ctx.resolvedTheme();
     applyTerminalTheme();
+  });
+
+  // The terminal host cancels UI zoom (xterm can't hit-test under CSS zoom),
+  // so the font size tracks the zoom level to keep the terminal scaling with
+  // the rest of the UI.
+  createEffect(() => {
+    const fontSize = terminalFontSizeForZoom(ctx.uiZoom());
+    if (!terminal || terminal.options.fontSize === fontSize) return;
+    terminal.options.fontSize = fontSize;
+    fitAndResize();
   });
 
   createEffect(() => {

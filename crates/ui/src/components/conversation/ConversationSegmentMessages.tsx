@@ -8,7 +8,9 @@ import { Message } from "./Message";
 import { NodeCompletedBubble } from "./NodeCompletedBubble";
 import { ThinkingBubble } from "./ThinkingBubble";
 import { ToolBubble } from "./ToolBubble";
-import { resolveToolSummary } from "./toolBubbleState";
+import { ToolStackBubble } from "./ToolStackBubble";
+import { groupToolMessages, type GroupedConversationItem } from "./groupToolMessages";
+import { resolveToolSummary, toolStackSummaryWithThinking } from "./toolBubbleState";
 
 function MarkerToolBubble(props: { message: ChatMessage; nodeId: string }) {
   const ctx = useAppContext();
@@ -24,7 +26,58 @@ function MarkerToolBubble(props: { message: ChatMessage; nodeId: string }) {
       intent={summary()?.intent}
       isError={summary()?.isError}
       streaming={summary()?.streaming ?? false}
+      cwd={ctx.executionCwdForActiveWorkflow()}
     />
+  );
+}
+
+function ToolStackView(props: {
+  messages: ChatMessage[];
+  nodeId: string;
+  label: string;
+  segmentHeaderShowsNode: boolean;
+}) {
+  const ctx = useAppContext();
+  const summaryText = () =>
+    toolStackSummaryWithThinking(
+      props.messages
+        .filter((message) => Boolean(message.toolCallId))
+        .map((message) => {
+          const summary = resolveToolSummary(
+            props.nodeId,
+            message.toolCallId!,
+            ctx.runState(),
+          );
+          return {
+            toolName: summary?.toolName ?? "Tool",
+            status: summary?.status ?? "proposed",
+          };
+        }),
+      props.messages,
+    );
+
+  const persistKey = () => {
+    const firstToolId = props.messages.find((message) => message.toolCallId)?.toolCallId;
+    return `${props.nodeId}:${firstToolId ?? "stack"}`;
+  };
+
+  return (
+    <ToolStackBubble summaryText={summaryText()} persistKey={persistKey()}>
+      <For each={props.messages}>
+        {(message) =>
+          message.toolCallId ? (
+            <MarkerToolBubble message={message} nodeId={props.nodeId} />
+          ) : (
+            <ConversationItemView
+              message={message}
+              nodeId={props.nodeId}
+              label={props.label}
+              segmentHeaderShowsNode={props.segmentHeaderShowsNode}
+            />
+          )
+        }
+      </For>
+    </ToolStackBubble>
   );
 }
 
@@ -37,10 +90,7 @@ function PlainMessage(props: {
     displayChatContent(props.message.role, props.message.content),
   );
   const shouldRender = createMemo(
-    () =>
-      content().trim().length > 0 ||
-      props.message.streaming ||
-      props.message.role === "assistant",
+    () => content().trim().length > 0 || props.message.streaming,
   );
   return (
     <Show when={shouldRender()}>
@@ -87,6 +137,10 @@ export function ConversationSegmentMessages(props: {
   emptyLabel?: string;
   segmentHeaderShowsNode?: boolean;
 }) {
+  const items = createMemo((prev: GroupedConversationItem[] | undefined) =>
+    groupToolMessages(props.messages, undefined, prev ?? null),
+  );
+
   return (
     <Show
       when={props.messages.length > 0}
@@ -96,16 +150,30 @@ export function ConversationSegmentMessages(props: {
         ) : null
       }
     >
-      <For each={props.messages}>
-        {(message) => (
-          <ConversationItemView
-            message={message}
-            nodeId={props.nodeId}
-            label={props.label}
-            segmentHeaderShowsNode={props.segmentHeaderShowsNode ?? false}
-          />
-        )}
-      </For>
+      <div class="chat-segment-body">
+        <For each={items()}>
+          {(item) => {
+            if (item.kind === "toolStack") {
+              return (
+                <ToolStackView
+                  messages={item.messages}
+                  nodeId={props.nodeId}
+                  label={props.label}
+                  segmentHeaderShowsNode={props.segmentHeaderShowsNode ?? false}
+                />
+              );
+            }
+            return (
+              <ConversationItemView
+                message={item.message}
+                nodeId={props.nodeId}
+                label={props.label}
+                segmentHeaderShowsNode={props.segmentHeaderShowsNode ?? false}
+              />
+            );
+          }}
+        </For>
+      </div>
     </Show>
   );
 }

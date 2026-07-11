@@ -95,7 +95,6 @@ export interface AppContextValue {
   openSidebarDrawer: () => void;
   closeSidebarDrawer: () => void;
   toggleSidebarDrawer: () => void;
-  shortcutsModalOpen: Accessor<boolean>;
   firstRunOnboardingOpen: Accessor<boolean>;
   chatFilterNodeId: Accessor<NodeId | null>;
   chatFocusNode: Accessor<{ nodeId: NodeId; tick: number } | null>;
@@ -212,11 +211,15 @@ export interface AppContextValue {
 
   // ── Run handlers ──────────────────────────────────────────────────────────
   workflowAuthoringBusy: Accessor<boolean>;
+  workflowAuthoringThinkingContent: Accessor<string>;
   workflowAuthoringSessionReady: Accessor<boolean>;
   workflowAuthoringMessages: Accessor<WorkflowAuthoringMessage[]>;
   workflowAuthoringValidation: Accessor<WorkflowAuthoringValidation | null>;
   workflowAuthoringDraft: Accessor<Workflow | null>;
-  handleOpenWorkflowAuthoring: (baseWorkflow?: Workflow) => Promise<void>;
+  handleOpenWorkflowAuthoring: (
+    baseWorkflow?: Workflow,
+    targetProjectId?: string | null,
+  ) => Promise<void>;
   handleCloseWorkflowAuthoring: () => void;
   handleWorkflowAuthoringSend: (message: string) => Promise<void>;
   handleApplyWorkflowAuthoringDraft: () => Promise<void>;
@@ -227,19 +230,22 @@ export interface AppContextValue {
   handleRetryNode: (nodeId: NodeId) => Promise<void>;
   stoppingRun: Accessor<boolean>;
   handleSetThemePreference: (preference: ThemePreference) => void;
-  openShortcutsModal: () => void;
-  closeShortcutsModal: () => void;
   dismissFirstRunOnboarding: () => void;
   handleOnboardingBuildWorkflow: () => Promise<void>;
   handleOnboardingSetupProvider: () => void;
   handleClearRunTrace: () => Promise<void>;
   handleRefreshRunHistory: () => Promise<void>;
   handleReplayRun: (runId: string) => Promise<void>;
+  handleExitReplay: () => Promise<void>;
   handleResumeDurableRun: (runId: string) => Promise<void>;
   handleSubmitChat: (nodeId: NodeId) => Promise<void>;
   handleRefreshSkills: () => Promise<void>;
   searchProjectFileReferences: (query: string) => Promise<ProjectFileReference[]>;
   handleToolApproval: (approvalId: string, allow: boolean) => Promise<void>;
+  handleUpdateNodeRuntimeConfig: (
+    nodeId: NodeId,
+    update: import("../lib/types").NodeRuntimeConfigUpdate,
+  ) => Promise<void>;
 
   // ── Node label edit handlers ──────────────────────────────────────────────
   handleStartNodeLabelEdit: (nodeId: NodeId, currentLabel: string) => void;

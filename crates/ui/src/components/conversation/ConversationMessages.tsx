@@ -25,7 +25,7 @@ export function ConversationMessages() {
   const [flashNodeId, setFlashNodeId] = createSignal<NodeId | null>(null);
 
   const visibleSettled = createMemo(() => {
-    const filter = ctx.chatFilterNodeId();
+    const filter = ctx.chatFilterNodeId() ?? ctx.pickedLiveNodeId();
     const segments = ctx.chatLayout().settled;
     if (!filter) {
       return segments;

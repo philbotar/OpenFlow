@@ -12,6 +12,7 @@ mod run_event_bridge;
 mod run_notifications;
 mod run_sleep_guard;
 mod schedule_events;
+mod search_sidecar;
 mod terminal_events;
 
 use crate::app_lifecycle::{handle_window_event, setup_app};
@@ -65,6 +66,9 @@ pub fn run() {
             commands::settings::load_provider_api_key,
             commands::settings::save_provider_api_key,
             commands::settings::delete_provider_api_key,
+            commands::settings::load_search_api_key,
+            commands::settings::save_search_api_key,
+            commands::settings::delete_search_api_key,
             commands::settings::resolve_provider_readiness,
             commands::settings::refresh_bedrock_models,
             commands::settings::verify_bedrock_credentials,
@@ -88,6 +92,7 @@ pub fn run() {
             commands::run::stop_run,
             commands::run::interrupt_node,
             commands::run::retry_node,
+            commands::run::update_node_runtime_config,
             commands::run::submit_user_input,
             commands::run::submit_tool_approval,
             commands::run::get_run_state,

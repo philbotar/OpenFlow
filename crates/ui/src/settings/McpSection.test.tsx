@@ -71,24 +71,25 @@ describe("McpSection", () => {
     );
   }
 
-  function cardHeading(id: string) {
-    return mountPoint.querySelector(`#${id}`);
-  }
-
-  test("renders section intro and four grouped cards", () => {
+  test("renders one connections surface with custom add collapsed", () => {
     renderSection();
 
-    expect(mountPoint.textContent).toContain("External tool servers");
-    expect(mountPoint.querySelectorAll(".mcp-card")).toHaveLength(4);
-    expect(cardHeading("mcp-discovery-heading")?.textContent).toBe("Discovery");
-    expect(cardHeading("mcp-discovered-heading")?.textContent).toBe("Discovered servers");
-    expect(cardHeading("mcp-servers-heading")?.textContent).toBe("Configured servers");
-    expect(cardHeading("mcp-add-heading")?.textContent).toBe("Add custom server");
+    expect(mountPoint.textContent).toContain("MCP servers");
+    expect(mountPoint.querySelectorAll(".mcp-connection-row")).toHaveLength(2);
+    expect(mountPoint.textContent).toContain("GitHub");
+    expect(mountPoint.textContent).toContain("linear");
+    expect(mountPoint.textContent).not.toContain("Discovered servers");
+    expect(mountPoint.textContent).not.toContain("Configured servers");
+    expect(mountPoint.querySelector(".mcp-composer-fields")).toBeNull();
+
+    mountPoint.querySelector<HTMLButtonElement>(".mcp-add-trigger")?.click();
+
+    expect(mountPoint.querySelector(".mcp-composer-fields")).not.toBeNull();
   });
 
   test("renders discovery summary counts", () => {
     renderSection();
-    expect(mountPoint.textContent).toContain("1 discovered · 1 configured");
+    expect(mountPoint.textContent).toContain("1 discovered · 1 saved in OpenFlow");
   });
 
   test("renders configured server row", () => {
@@ -97,7 +98,7 @@ describe("McpSection", () => {
       ".mcp-configured-fields input.text-input",
     ) as HTMLInputElement | null;
     expect(nameInput?.value).toBe("GitHub");
-    expect(mountPoint.textContent).toContain("Configured servers");
+    expect(mountPoint.textContent).toContain("OpenFlow settings");
   });
 
   test("renders discovered server row", () => {
@@ -106,7 +107,7 @@ describe("McpSection", () => {
     expect(mountPoint.textContent).toContain("cursor");
   });
 
-  test("shows compact empty states inside management cards", () => {
+  test("shows one empty state for connections", () => {
     renderSection({
       discoveredMcp: () => [],
       settings: () => ({
@@ -117,20 +118,14 @@ describe("McpSection", () => {
     });
 
     const emptyStates = mountPoint.querySelectorAll(".mcp-empty-state");
-    expect(emptyStates).toHaveLength(2);
-    expect(mountPoint.textContent).toContain("No discovered MCP servers.");
-    expect(mountPoint.textContent).toContain("No MCP servers configured.");
+    expect(emptyStates).toHaveLength(1);
+    expect(mountPoint.textContent).toContain("No MCP servers yet.");
   });
 
-  test("cards expose aria-labelledby groups", () => {
+  test("connection sections expose aria-labelledby groups", () => {
     renderSection();
 
-    for (const id of [
-      "mcp-discovery-heading",
-      "mcp-discovered-heading",
-      "mcp-servers-heading",
-      "mcp-add-heading",
-    ]) {
+    for (const id of ["mcp-connections-heading", "mcp-advanced-heading", "mcp-add-heading"]) {
       expect(mountPoint.querySelector(`section[aria-labelledby="${id}"]`)).not.toBeNull();
     }
   });

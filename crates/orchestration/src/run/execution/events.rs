@@ -289,7 +289,6 @@ pub fn apply_event_to_run_state(
             tool_name: _,
             content,
             is_error,
-            artifact_ids: _,
             ..
         } => {
             state.active_tool_call_id = None;

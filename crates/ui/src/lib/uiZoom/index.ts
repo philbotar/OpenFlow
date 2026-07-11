@@ -11,6 +11,17 @@ export function clampUiZoom(value: number) {
   return Math.min(MAX_UI_ZOOM, Math.max(MIN_UI_ZOOM, rounded));
 }
 
+export const TERMINAL_BASE_FONT_SIZE = 12;
+
+/**
+ * xterm.js hit-testing breaks under CSS `zoom`, so the terminal subtree is
+ * excluded from UI zoom and its font size is scaled instead.
+ */
+export function terminalFontSizeForZoom(zoom: number) {
+  const normalized = Number.isFinite(zoom) ? clampUiZoom(zoom) : DEFAULT_UI_ZOOM;
+  return Math.round(TERMINAL_BASE_FONT_SIZE * normalized);
+}
+
 export function zoomInUi(currentZoom: number) {
   return clampUiZoom(currentZoom + UI_ZOOM_STEP);
 }

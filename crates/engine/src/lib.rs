@@ -26,9 +26,12 @@ pub use execution::{
     DECLARE_SUBAGENTS_TOOL,
 };
 pub use graph::{
-    build_predefined_subagent_summaries, effective_output_schema, execution_layers,
-    resolve_callable_agent_snapshots, validate_workflow, AgentNodeConfig, CallableAgent, Edge,
-    EdgeId, Node, NodeId, NodeKind, NodePosition, RetryPolicy, Workflow, WorkflowId,
+    apply_runtime_patch_to_agent, apply_runtime_patch_to_request,
+    apply_runtime_patch_to_tool_config, build_predefined_subagent_summaries,
+    effective_output_schema, execution_layers, new_runtime_config_store,
+    resolve_callable_agent_snapshots, runtime_patch_for, upsert_runtime_patch, validate_workflow,
+    AgentNodeConfig, CallableAgent, Edge, EdgeId, Node, NodeId, NodeKind, NodePosition,
+    NodeRuntimeConfigPatch, NodeRuntimeConfigStore, RetryPolicy, Workflow, WorkflowId,
     WorkflowSchedule, WorkflowSettings, WorkflowValidationError,
 };
 pub use ports::{

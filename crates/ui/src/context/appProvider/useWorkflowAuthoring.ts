@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, type Accessor } from "solid-js";
+import { createEffect, createMemo, createSignal, onCleanup, onMount, type Accessor } from "solid-js";
 import * as desktop from "../../api";
 import type {
   AppSettings,
@@ -23,6 +23,10 @@ interface UseWorkflowAuthoringParams {
   workflows: Accessor<Workflow[]>;
   setWorkflows: (next: Workflow[]) => void;
   selectWorkflow: (workflow: Workflow) => void;
+  persistWorkflowAuthoringDraft: (
+    workflow: Workflow,
+    targetProjectId: string | null,
+  ) => Promise<Workflow>;
   showErrorToast: ToastHandler;
   showSuccessToast: ToastHandler;
 }
@@ -39,7 +43,11 @@ export function useWorkflowAuthoring(params: UseWorkflowAuthoringParams) {
   const [workflowAuthoringDraft, setWorkflowAuthoringDraft] = createSignal<Workflow | null>(
     null,
   );
+  const [workflowAuthoringTargetProjectId, setWorkflowAuthoringTargetProjectId] =
+    createSignal<string | null>(null);
   const [workflowAuthoringBusy, setWorkflowAuthoringBusy] = createSignal(false);
+  const [workflowAuthoringThinkingContent, setWorkflowAuthoringThinkingContent] =
+    createSignal("");
   const workflowAuthoringSessionReady = createMemo(
     () => workflowAuthoringSessionId() !== null,
   );
@@ -47,6 +55,8 @@ export function useWorkflowAuthoring(params: UseWorkflowAuthoringParams) {
   const resetWorkflowAuthoringSession = () => {
     setWorkflowAuthoringSessionId(null);
     setWorkflowAuthoringBusy(false);
+    setWorkflowAuthoringThinkingContent("");
+    setWorkflowAuthoringTargetProjectId(null);
   };
 
   const releaseWorkflowAuthoringSession = (sessionId: string | null) => {
@@ -62,7 +72,47 @@ export function useWorkflowAuthoring(params: UseWorkflowAuthoringParams) {
     }
   });
 
-  const handleOpenWorkflowAuthoring = async (baseWorkflow?: Workflow) => {
+  const activeSessionId = { current: null as string | null };
+  createEffect(() => {
+    activeSessionId.current = workflowAuthoringSessionId();
+  });
+
+  onMount(() => {
+    let unlistenThinking: (() => void) | undefined;
+    let unlistenDraft: (() => void) | undefined;
+    void desktop.listenToWorkflowAuthoringThinking((event) => {
+      const sessionId = activeSessionId.current;
+      if (!sessionId || event.sessionId !== sessionId) {
+        return;
+      }
+      if (event.delta) {
+        setWorkflowAuthoringThinkingContent((current) => current + event.delta);
+      }
+    }).then((stop) => {
+      unlistenThinking = stop;
+    });
+    void desktop.listenToWorkflowAuthoringDraft((event) => {
+      const sessionId = activeSessionId.current;
+      if (!sessionId || event.sessionId !== sessionId) {
+        return;
+      }
+      setWorkflowAuthoringValidation(event.validation);
+      if (event.draft) {
+        setWorkflowAuthoringDraft(normalizeWorkflowLayout(event.draft));
+      }
+    }).then((stop) => {
+      unlistenDraft = stop;
+    });
+    onCleanup(() => {
+      unlistenThinking?.();
+      unlistenDraft?.();
+    });
+  });
+
+  const handleOpenWorkflowAuthoring = async (
+    baseWorkflow?: Workflow,
+    targetProjectId: string | null = null,
+  ) => {
     if (
       params.screen() === "workflow-authoring" &&
       workflowAuthoringSessionId() !== null &&
@@ -78,11 +128,18 @@ export function useWorkflowAuthoring(params: UseWorkflowAuthoringParams) {
     setWorkflowAuthoringMessages([]);
     setWorkflowAuthoringValidation(null);
     setWorkflowAuthoringDraft(baseWorkflow ?? null);
+    setWorkflowAuthoringTargetProjectId(targetProjectId);
     params.navigateToScreen("workflow-authoring");
     void params.refreshReadiness();
     try {
-      const sessionId = await desktop.startWorkflowAuthoring(baseWorkflow ?? null);
-      setWorkflowAuthoringSessionId(sessionId);
+      const started = await desktop.startWorkflowAuthoring(
+        baseWorkflow ?? null,
+        targetProjectId,
+      );
+      setWorkflowAuthoringSessionId(started.sessionId);
+      if (started.draft) {
+        setWorkflowAuthoringDraft(normalizeWorkflowLayout(started.draft));
+      }
     } catch (error) {
       params.showErrorToast(normalizeError(error));
       params.navigateToScreen("editor");
@@ -112,6 +169,7 @@ export function useWorkflowAuthoring(params: UseWorkflowAuthoringParams) {
       ...current,
       { role: "user", content: trimmed },
     ]);
+    setWorkflowAuthoringThinkingContent("");
     setWorkflowAuthoringBusy(true);
     try {
       const result = await desktop.workflowAuthoringTurn(
@@ -137,6 +195,7 @@ export function useWorkflowAuthoring(params: UseWorkflowAuthoringParams) {
       params.showErrorToast(normalizeError(error));
     } finally {
       setWorkflowAuthoringBusy(false);
+      setWorkflowAuthoringThinkingContent("");
     }
   };
 
@@ -145,6 +204,7 @@ export function useWorkflowAuthoring(params: UseWorkflowAuthoringParams) {
     const validation = workflowAuthoringValidation();
     if (!draft || !validation?.valid) return;
     const normalizedDraft = normalizeWorkflowLayout(draft);
+    const targetProjectId = workflowAuthoringTargetProjectId();
     if (params.workflows().some((workflow) => workflow.id === draft.id)) {
       params.setWorkflows(replaceWorkflow(params.workflows(), normalizedDraft));
     } else {
@@ -152,10 +212,16 @@ export function useWorkflowAuthoring(params: UseWorkflowAuthoringParams) {
     }
     params.selectWorkflow(normalizedDraft);
     try {
-      await desktop.saveWorkflow(normalizedDraft);
+      const saved = await params.persistWorkflowAuthoringDraft(
+        normalizedDraft,
+        targetProjectId,
+      );
+      params.setWorkflows(replaceWorkflow(params.workflows(), saved));
+      params.selectWorkflow(saved);
       resetWorkflowAuthoringSession();
+      setWorkflowAuthoringTargetProjectId(null);
       params.navigateToScreen("editor");
-      params.showSuccessToast(`Applied workflow "${normalizedDraft.name}"`);
+      params.showSuccessToast(`Applied workflow "${saved.name}"`);
     } catch (error) {
       params.showErrorToast(normalizeError(error));
     }
@@ -163,6 +229,7 @@ export function useWorkflowAuthoring(params: UseWorkflowAuthoringParams) {
 
   return {
     workflowAuthoringBusy,
+    workflowAuthoringThinkingContent,
     workflowAuthoringSessionReady,
     workflowAuthoringMessages,
     workflowAuthoringValidation,

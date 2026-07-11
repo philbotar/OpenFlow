@@ -41,6 +41,23 @@ export function chatNavigationForNode(
   return null;
 }
 
+/** True when chat filter/pick already shows this node's transcript. */
+export function isChatNavigatedToNode(
+  layout: ChatLayoutProjection,
+  nodeId: NodeId,
+  chatFilterNodeId: NodeId | null,
+  pickedLiveNodeId: NodeId | null,
+): boolean {
+  const nav = chatNavigationForNode(layout, nodeId);
+  if (nav?.mode === "live") {
+    return pickedLiveNodeId === nodeId && chatFilterNodeId === null;
+  }
+  if (nav?.mode === "settled") {
+    return chatFilterNodeId === nodeId && pickedLiveNodeId === null;
+  }
+  return chatFilterNodeId === null && pickedLiveNodeId === null;
+}
+
 function isLiveAgentStatus(runState: WorkflowRunState, status: AgentStatus): boolean {
   return runState.active === true && LIVE_AGENT_STATUSES.has(status);
 }

@@ -1,13 +1,23 @@
 import FileText from "lucide-solid/icons/file-text";
 import Folder from "lucide-solid/icons/folder";
 import Sparkles from "lucide-solid/icons/sparkles";
-import { createMemo, For, splitProps, type ComponentProps, type JSX } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  For,
+  Show,
+  splitProps,
+  type ComponentProps,
+  type JSX,
+} from "solid-js";
 import { parseComposerDisplaySegments } from "../../lib/fileReferences";
+import { resizeComposerTextarea } from "../../lib/utils";
 
 type ComposerInputProps = {
   value: string;
   knownSkillIds?: ReadonlySet<string>;
-} & Omit<ComponentProps<"textarea">, "value" | "children">;
+  ref?: (el: HTMLTextAreaElement) => void;
+} & Omit<ComponentProps<"textarea">, "value" | "children" | "ref">;
 
 function ComposerFileChipContent(props: { path: string }) {
   return (
@@ -56,8 +66,11 @@ export function ComposerInput(props: ComposerInputProps) {
     "ref",
     "knownSkillIds",
     "onScroll",
+    "onInput",
+    "placeholder",
   ]);
   let highlightRef: HTMLDivElement | undefined;
+  let textareaEl: HTMLTextAreaElement | undefined;
   const segments = createMemo(() =>
     parseComposerDisplaySegments(local.value, local.knownSkillIds),
   );
@@ -70,31 +83,61 @@ export function ComposerInput(props: ComposerInputProps) {
     highlightRef.scrollLeft = scrollLeft;
   };
 
+  const bindTextareaRef = (el: HTMLTextAreaElement) => {
+    textareaEl = el;
+    resizeComposerTextarea(el);
+    local.ref?.(el);
+  };
+
+  createEffect(() => {
+    local.value;
+    if (textareaEl) {
+      resizeComposerTextarea(textareaEl);
+    }
+  });
+
   return (
     <div class="composer-input-stack">
       <div ref={highlightRef} class="composer-input-highlight" aria-hidden="true">
-        <For each={segments()}>
-          {(segment) =>
-            segment.kind === "text" ? (
-              <span class="composer-input-text">{segment.value}</span>
-            ) : segment.kind === "skillRef" ? (
-              <ComposerReferenceChip token={segment.token} title={segment.token}>
-                <ComposerSkillChipContent skillId={segment.skillId} />
-              </ComposerReferenceChip>
-            ) : (
-              <ComposerReferenceChip token={segment.token} title={segment.path}>
-                <ComposerFileChipContent path={segment.path} />
-              </ComposerReferenceChip>
-            )
+        <Show
+          when={local.value.length === 0 && local.placeholder}
+          fallback={
+            <For each={segments()}>
+              {(segment) =>
+                segment.kind === "text" ? (
+                  <span class="composer-input-text">{segment.value}</span>
+                ) : segment.kind === "skillRef" ? (
+                  <ComposerReferenceChip token={segment.token} title={segment.token}>
+                    <ComposerSkillChipContent skillId={segment.skillId} />
+                  </ComposerReferenceChip>
+                ) : (
+                  <ComposerReferenceChip token={segment.token} title={segment.path}>
+                    <ComposerFileChipContent path={segment.path} />
+                  </ComposerReferenceChip>
+                )
+              }
+            </For>
           }
-        </For>
+        >
+          <span class="composer-input-placeholder">{local.placeholder}</span>
+        </Show>
       </div>
       <textarea
         {...rest}
-        ref={local.ref}
+        ref={bindTextareaRef}
         class={local.class}
         classList={local.classList}
         value={local.value}
+        placeholder=""
+        aria-label={
+          typeof local.placeholder === "string" ? local.placeholder : undefined
+        }
+        onInput={(event) => {
+          resizeComposerTextarea(event.currentTarget);
+          if (typeof local.onInput === "function") {
+            local.onInput(event);
+          }
+        }}
         onScroll={(event) => {
           syncHighlightScroll(event.currentTarget.scrollTop, event.currentTarget.scrollLeft);
           if (typeof local.onScroll === "function") {

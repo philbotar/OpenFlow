@@ -47,16 +47,25 @@ export function ChatPanel() {
             Viewing saved run
             {replayRunSummary() ? ` (${replayRunSummary()!.status})` : ""} — read-only.
           </span>
-          <Show when={replayRunSummary() && replayRunSummary()!.status !== "completed"}>
+          <div class="chat-replay-banner-actions">
+            <Show when={replayRunSummary() && replayRunSummary()!.status !== "completed"}>
+              <button
+                type="button"
+                class="secondary-button small"
+                onClick={() => void ctx.handleResumeDurableRun(ctx.replayRunId()!)}
+              >
+                <RotateCcw width={14} height={14} />
+                Resume run
+              </button>
+            </Show>
             <button
               type="button"
               class="secondary-button small"
-              onClick={() => void ctx.handleResumeDurableRun(ctx.replayRunId()!)}
+              onClick={() => void ctx.handleExitReplay()}
             >
-              <RotateCcw width={14} height={14} />
-              Resume run
+              Exit replay
             </button>
-          </Show>
+          </div>
         </div>
       </Show>
       <ConversationMessages />

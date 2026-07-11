@@ -3,6 +3,7 @@
 mod config;
 mod file_change;
 mod read_record;
+mod relativize_paths;
 
 pub(crate) use config::{tool_decision_for_call, SubagentDeclaration, ToolDecision};
 pub use config::{
@@ -16,3 +17,4 @@ pub use file_change::{
     FileChangeRecord, FileSnapshot,
 };
 pub use read_record::{merge_read_record, ReadRecord};
+pub use relativize_paths::relativize_tool_call_arguments;

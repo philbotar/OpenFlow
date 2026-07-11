@@ -90,7 +90,49 @@ function shouldStripToolCallMarkup(role: ChatRole): boolean {
   );
 }
 
-/** Chat display text: strip tool-call echo markup for assistant/thinking only. */
+const THINK_BLOCK = /<think\b[^>]*>([\s\S]*?)<\/think>/gi;
+const THINK_OPEN = /<think\b[^>]*>/i;
+
+/** Pull `<think>` bodies out of assistant text; remainder is visible prose. */
+export function extractThinkContent(content: string): {
+  thoughts: string;
+  remainder: string;
+} {
+  const parts: string[] = [];
+  let remainder = content.replace(THINK_BLOCK, (_match, body: string) => {
+    const trimmed = String(body).trim();
+    if (trimmed) parts.push(trimmed);
+    return "";
+  });
+  const open = remainder.search(THINK_OPEN);
+  if (open >= 0) {
+    const afterOpen = remainder.slice(open).replace(THINK_OPEN, "");
+    if (afterOpen.trim()) parts.push(afterOpen.trim());
+    remainder = remainder.slice(0, open);
+  }
+  return {
+    thoughts: parts.join("\n\n"),
+    remainder: remainder.trim(),
+  };
+}
+
+/** Remove provider `<think>…</think>` blocks (and an unclosed trailing open tag). */
+export function stripThinkMarkup(content: string): string {
+  return extractThinkContent(content).remainder;
+}
+
+function shouldStripThinkMarkup(role: ChatRole): boolean {
+  return shouldStripToolCallMarkup(role);
+}
+
+/** Chat display text: strip tool-call echo + think blocks for assistant/thinking. */
 export function displayChatContent(role: ChatRole, content: string): string {
-  return shouldStripToolCallMarkup(role) ? stripToolCallMarkup(content) : content;
+  let text = content;
+  if (shouldStripToolCallMarkup(role)) {
+    text = stripToolCallMarkup(text);
+  }
+  if (shouldStripThinkMarkup(role)) {
+    text = stripThinkMarkup(text);
+  }
+  return text.trim();
 }

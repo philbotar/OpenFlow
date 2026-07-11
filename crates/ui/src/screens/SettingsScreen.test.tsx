@@ -71,11 +71,12 @@ describe("SettingsScreen", () => {
     return [...container.querySelectorAll<HTMLButtonElement>(".settings-nav-button")];
   }
 
-  test("nav lists Appearance, Providers, MCP Servers, Diagnostics, and About", () => {
+  test("nav lists Appearance, Providers, Search, MCP Servers, Diagnostics, and About", () => {
     renderScreen();
     expect(navButtons().map((button) => button.textContent?.trim())).toEqual([
       "Appearance",
       "Providers",
+      "Search",
       "MCP Servers",
       "Diagnostics",
       "About",
@@ -84,7 +85,7 @@ describe("SettingsScreen", () => {
 
   test("defaults to Appearance section", () => {
     renderScreen();
-    expect(container.querySelector(".theme-segment")).not.toBeNull();
+    expect(container.querySelector(".appearance-section .segmented-control")).not.toBeNull();
     expect(container.querySelector(".providers-section")).toBeNull();
   });
 
@@ -92,12 +93,12 @@ describe("SettingsScreen", () => {
     renderScreen();
     navButtons()[1]?.click();
     expect(container.querySelector(".providers-section")).not.toBeNull();
-    expect(container.querySelector(".theme-segment")).toBeNull();
+    expect(container.querySelector(".appearance-section")).toBeNull();
   });
 
   test("selecting About shows about section", () => {
     renderScreen();
-    navButtons()[4]?.click();
+    navButtons()[5]?.click();
     expect(container.querySelector(".about-section")).not.toBeNull();
   });
 

@@ -1,6 +1,6 @@
 use super::{
     InteractiveEngine, PendingToolBatch, RunError, AUTONOMOUS_CONTINUE_FEEDBACK,
-    MALFORMED_REQUEST_INPUT_FEEDBACK, MAX_AUTO_CONTINUE_STREAK,
+    MALFORMED_REQUEST_INPUT_FEEDBACK, MAX_AUTO_CONTINUE_STREAK, MAX_EMPTY_PROVIDER_TURN_RETRIES,
     MAX_MALFORMED_REQUEST_INPUT_RETRIES, MAX_MALFORMED_SUBMIT_OUTPUT_RETRIES,
 };
 use crate::conversation::{
@@ -8,12 +8,13 @@ use crate::conversation::{
 };
 use crate::execution::tool_results::denied_tool_result;
 use crate::execution::NodeFailureKind;
-use crate::graph::{NodeId, RetryPolicy};
+use crate::graph::{apply_runtime_patch_to_tool_config, runtime_patch_for, NodeId, RetryPolicy};
 use crate::ports::{
     AgentError, AgentNeedUserInput, AgentToolCallBatch, AgentTurnOutcome, AgentTurnSuccess,
 };
-use crate::tools::{tool_decision_for_call, ToolDecision};
-use std::time::{Duration, Instant};
+use crate::tools::{relativize_tool_call_arguments, tool_decision_for_call, ToolDecision};
+use std::time::Duration;
+use tokio::time::Instant;
 use uuid::Uuid;
 
 impl InteractiveEngine {
@@ -60,6 +61,9 @@ impl InteractiveEngine {
                 if self.handle_malformed_submit_output_retry(node_id, &error) {
                     return;
                 }
+                if self.handle_empty_provider_turn_retry(node_id, &error) {
+                    return;
+                }
                 if self.handle_transient_retry(node_id, &error) {
                     return;
                 }
@@ -83,7 +87,10 @@ impl InteractiveEngine {
 
         let schema_hint = self.find_node(node_id).map_or_else(
             || "see the node output schema".to_string(),
-            |node| node.agent.output_schema.to_string(),
+            |node| {
+                serde_json::to_string_pretty(&node.agent.output_schema)
+                    .unwrap_or_else(|_| node.agent.output_schema.to_string())
+            },
         );
 
         let retry_count = self
@@ -134,6 +141,29 @@ impl InteractiveEngine {
         self.transcripts.entry(node_id.clone()).or_default().push(
             AgentTranscriptItem::UserMessage {
                 content: MALFORMED_REQUEST_INPUT_FEEDBACK.to_string(),
+            },
+        );
+        true
+    }
+
+    fn handle_empty_provider_turn_retry(&mut self, node_id: &NodeId, error: &AgentError) -> bool {
+        if !error.is_empty_provider_turn() {
+            return false;
+        }
+
+        let retry_count = self
+            .empty_turn_retries_by_node
+            .entry(node_id.clone())
+            .or_default();
+
+        if *retry_count >= MAX_EMPTY_PROVIDER_TURN_RETRIES {
+            return false;
+        }
+
+        *retry_count += 1;
+        self.transcripts.entry(node_id.clone()).or_default().push(
+            AgentTranscriptItem::UserMessage {
+                content: AUTONOMOUS_CONTINUE_FEEDBACK.to_string(),
             },
         );
         true
@@ -204,6 +234,7 @@ impl InteractiveEngine {
         self.retry_after_by_node.remove(node_id);
         self.transient_streaks_by_node.remove(node_id);
         self.auto_continue_streaks_by_node.remove(node_id);
+        self.empty_turn_retries_by_node.remove(node_id);
         if let Some(usage) = &success.usage {
             self.note_usage(usage);
         }
@@ -221,6 +252,7 @@ impl InteractiveEngine {
     fn apply_tool_calls(&mut self, node_id: &NodeId, batch: AgentToolCallBatch) {
         self.transient_streaks_by_node.remove(node_id);
         self.auto_continue_streaks_by_node.remove(node_id);
+        self.empty_turn_retries_by_node.remove(node_id);
         self.request_input_retries_by_node.remove(node_id);
         if let Some(usage) = &batch.usage {
             self.note_usage(usage);
@@ -233,10 +265,15 @@ impl InteractiveEngine {
             return;
         }
 
-        let config = self
+        let mut config = self
             .find_node(node_id)
             .map(|node| node.agent.tools.clone())
             .unwrap_or_default();
+        if let Some(store) = &self.runtime_config_store {
+            if let Some(patch) = runtime_patch_for(store, node_id) {
+                apply_runtime_patch_to_tool_config(&mut config, &patch);
+            }
+        }
         let transcript = self.transcripts.entry(node_id.clone()).or_default();
         if let Some(message) = filter_tool_turn_assistant_message(batch.assistant_message)
             .filter(|message| !message.trim().is_empty())
@@ -245,7 +282,9 @@ impl InteractiveEngine {
         }
         let mut pending_calls = Vec::new();
         let mut requires_approval_for_batch = false;
-        for call in batch.tool_calls {
+        let root = self.project_repository_root.as_deref();
+        for mut call in batch.tool_calls {
+            call.arguments = relativize_tool_call_arguments(call.arguments, root);
             transcript.push(AgentTranscriptItem::ToolCall { call: call.clone() });
             match tool_decision_for_call(&config, &call) {
                 ToolDecision::AutoAllow => pending_calls.push(call),

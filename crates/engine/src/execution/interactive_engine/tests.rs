@@ -11,7 +11,9 @@ use super::{
 };
 use crate::conversation::AgentTranscriptItem;
 use crate::execution::NodeFailureKind;
-use crate::graph::{Node, NodeId, Workflow};
+use crate::graph::{
+    new_runtime_config_store, upsert_runtime_patch, Node, NodeId, NodeRuntimeConfigPatch, Workflow,
+};
 use crate::ports::{
     AgentError, AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTurnOutcome,
     AgentTurnSuccess, AiPort, ToolBatchEffects, ToolBatchOutput, ToolPort,
@@ -559,6 +561,37 @@ fn tool_calls_pause_for_approval_and_resume_after_results() {
 }
 
 #[test]
+fn apply_tool_calls_relativizes_absolute_paths_under_project_root() {
+    let mut workflow = Workflow::new("tooling");
+    workflow.nodes = vec![node("idea")];
+    let root = "/Users/philipbotar/Developer/DailyPlanner".to_string();
+    let mut engine = InteractiveEngine::new(workflow, None, Some(root.clone())).unwrap();
+    let node_id = NodeId("idea".to_string());
+    engine.test_insert_in_flight(node_id.clone());
+    engine.on_ai_complete(
+        &node_id,
+        Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+            raw_text: "...".to_string(),
+            assistant_message: None,
+            tool_calls: vec![ToolCall {
+                id: "call-1".to_string(),
+                name: "edit".to_string(),
+                arguments: json!({
+                    "path": format!("{root}/package.json"),
+                }),
+            }],
+            usage: None,
+        })),
+    );
+
+    let transcript = engine.transcript(&node_id);
+    let AgentTranscriptItem::ToolCall { call } = &transcript[0] else {
+        panic!("expected tool call in transcript");
+    };
+    assert_eq!(call.arguments["path"], "package.json");
+}
+
+#[test]
 fn yolo_mode_skips_tool_approval() {
     let mut workflow = Workflow::new("tooling");
     let mut idea = node("idea");
@@ -589,6 +622,56 @@ fn yolo_mode_skips_tool_approval() {
             run_once(&mut engine, &ai, &NoopToolPort).await,
             EngineRunResult::Completed(_)
         ));
+    });
+}
+
+#[test]
+fn runtime_approval_patch_applies_before_tool_decision() {
+    // Mid-flight: node still AlwaysAsk; store flipped to Yolo after request build.
+    let mut workflow = Workflow::new("tooling");
+    let mut idea = node("idea");
+    idea.agent.tools.approval_mode = Some(ApprovalMode::AlwaysAsk);
+    workflow.nodes = vec![idea];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let store = new_runtime_config_store();
+    engine.set_runtime_config_store(store.clone());
+    let runtime_patch = NodeRuntimeConfigPatch {
+        approval_mode: Some(ApprovalMode::Yolo),
+        reasoning_effort: None,
+        reasoning_budget_tokens: None,
+    };
+    upsert_runtime_patch(&store, NodeId("idea".to_string()), &runtime_patch);
+
+    let node_id = NodeId("idea".to_string());
+    engine.test_insert_in_flight(node_id.clone());
+    engine.on_ai_complete(
+        &node_id,
+        Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+            raw_text: "...".to_string(),
+            assistant_message: None,
+            tool_calls: vec![ToolCall {
+                id: "call-1".to_string(),
+                name: "bash".to_string(),
+                arguments: json!({"command": "echo hi"}),
+            }],
+            usage: None,
+        })),
+    );
+
+    let ai = ScriptedAi::new(vec![Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+        output: json!({"summary": "ok"}),
+        raw_text: "{}".to_string(),
+        assistant_message: None,
+        usage: None,
+    }))]);
+    block_on(async {
+        assert!(
+            matches!(
+                run_once(&mut engine, &ai, &NoopToolPort).await,
+                EngineRunResult::Completed(_)
+            ),
+            "live runtime approval patch must skip approval for next tool batch"
+        );
     });
 }
 
@@ -959,6 +1042,33 @@ fn needs_input(message: &str) -> AgentTurnOutcome {
         raw_text: message.to_string(),
         assistant_message: message.to_string(),
     })
+}
+
+#[test]
+fn empty_provider_turn_retries_with_tool_nudge_before_failing() {
+    let mut workflow = Workflow::new("wf");
+    workflow.nodes = vec![autonomous_node("a")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let node_a = NodeId("a".to_string());
+    let empty = || {
+        Err(AgentError::Failed(
+            "provider returned neither tool calls nor recoverable output".to_string(),
+        ))
+    };
+
+    for attempt in 1..=3 {
+        engine.test_insert_in_flight(node_a.clone());
+        engine.on_ai_complete(&node_a, empty());
+        assert!(
+            !engine.failed_nodes.contains_key(&node_a),
+            "attempt {attempt} should nudge, not fail"
+        );
+        assert_eq!(engine.transcript(&node_a).len(), attempt);
+    }
+
+    engine.test_insert_in_flight(node_a.clone());
+    engine.on_ai_complete(&node_a, empty());
+    assert!(engine.failed_nodes.contains_key(&node_a));
 }
 
 #[test]

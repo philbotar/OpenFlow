@@ -2,7 +2,7 @@ export type NodeId = string;
 export type WorkflowId = string;
 export type EdgeId = string;
 
-export type BottomTab = "overview" | "chat" | "trace" | "terminal" | "runs";
+export type BottomTab = "chat" | "trace" | "terminal" | "history";
 
 export type DurableRunStatus = "running" | "paused" | "stopped" | "completed" | "failed";
 
@@ -116,6 +116,12 @@ export type ApprovalMode = "read_only" | "always_ask" | "write" | "yolo";
 
 export interface NodeToolConfig {
   approvalMode: ApprovalMode | null;
+}
+
+export interface NodeRuntimeConfigUpdate {
+  approvalMode?: ApprovalMode | null;
+  reasoningEffort?: string | null;
+  reasoningBudgetTokens?: number | null;
 }
 
 export interface AgentNodeConfig {
@@ -395,6 +401,12 @@ export interface LocalDiagnosticsSettings {
   debug_output: boolean;
 }
 
+export interface SearchSettings {
+  enabled?: boolean;
+  binaryPath?: string;
+  keys?: Record<string, string>;
+}
+
 export interface SettingsLoadPayload {
   settings: AppSettings;
   discoveredMcp: McpDiscoveryRow[];
@@ -418,6 +430,7 @@ export interface AppSettings {
   lsp?: LspSettings;
   mcp?: McpSettings;
   local_diagnostics?: LocalDiagnosticsSettings;
+  search?: SearchSettings;
 }
 
 export interface SkillSummary {
@@ -460,6 +473,23 @@ export interface WorkflowAuthoringValidation {
   errors: string[];
   warnings: string[];
   dag?: WorkflowValidationSummary;
+}
+
+export interface WorkflowAuthoringStartResult {
+  sessionId: string;
+  draft?: Workflow;
+}
+
+export interface WorkflowAuthoringThinkingEvent {
+  sessionId: string;
+  delta: string;
+  finalize: boolean;
+}
+
+export interface WorkflowAuthoringDraftEvent {
+  sessionId: string;
+  draft?: Workflow;
+  validation: WorkflowAuthoringValidation;
 }
 
 export interface WorkflowAuthoringTurnResult {

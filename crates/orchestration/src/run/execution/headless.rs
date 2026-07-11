@@ -87,6 +87,8 @@ where
                 discover_external: false,
                 ..McpSettings::default()
             },
+            search: crate::settings::model::SearchSettings::default(),
+            runtime_config_store: engine::new_runtime_config_store(),
         },
         event_tx,
         action_rx,

@@ -40,6 +40,7 @@ export function useAppProviderState(): AppContextValue {
   let navigateToScreenRef: (screen: Screen) => void = () => undefined;
   let setScreenRef: Setter<Screen> = (() => "editor") as Setter<Screen>;
   let isCompactViewportAccessor: Accessor<boolean> = () => false;
+  let uiZoomAccessor: Accessor<number> = () => 1;
   let applySchemaEditorRef = () => true;
   let closeAddNodePickerRef: () => void = () => undefined;
   let revealProjectsSectionRef: () => void = () => undefined;
@@ -102,6 +103,7 @@ export function useAppProviderState(): AppContextValue {
   const dock = useDock({
     executionCwdForActiveWorkflow: workspace.executionCwdForActiveWorkflow,
     isCompactViewport: () => isCompactViewportAccessor(),
+    uiZoom: () => uiZoomAccessor(),
   });
 
   let refreshRunHistoryRef: () => Promise<void> = async () => undefined;
@@ -122,6 +124,8 @@ export function useAppProviderState(): AppContextValue {
     setDockOpen: dock.setDockOpen,
     setBottomTab: dock.setBottomTab,
     setDockHeight: dock.setDockHeight,
+    uiZoom: () => uiZoomAccessor(),
+    isCompactViewport: () => isCompactViewportAccessor(),
     cacheRunStateForWorkflow: runKernel.cacheRunStateForWorkflow,
     applyRunStateSnapshot: runKernel.applyRunStateSnapshot,
     chatSubmissionFor: chatComposer.chatSubmissionFor,
@@ -130,13 +134,15 @@ export function useAppProviderState(): AppContextValue {
     setPendingKickoff: chatComposer.setPendingKickoff,
     flushPendingKickoff: chatComposer.flushPendingKickoff,
     handleRefreshRunHistoryRef: () => refreshRunHistoryRef(),
+    updateActiveWorkflow: workflowEditor.updateActiveWorkflow,
   });
   refreshRunHistoryRef = runSession.handleRefreshRunHistory;
   startingRunAccessor = runSession.startingRun;
   replayRunIdAccessor = runSession.replayRunId;
   chatComposer.bindStartRunFromChat(runSession.handleStartRunFromChat);
 
-  selectWorkflowRef = (workflow: Workflow) =>
+  selectWorkflowRef = (workflow: Workflow) => {
+    runSession.setReplayRunId(null);
     selectWorkflow({
       workflow,
       activeWorkflowId: workspace.activeWorkflowId,
@@ -153,6 +159,7 @@ export function useAppProviderState(): AppContextValue {
       setSelectedTraceIndex: runSession.setSelectedTraceIndex,
       resetWorkflowChatUi: chatComposer.resetWorkflowChatUi,
     });
+  };
 
   let keyDownActions: (event: KeyboardEvent) => void = () => undefined;
   const handleGlobalKeyDown = (event: KeyboardEvent) => keyDownActions(event);
@@ -161,6 +168,8 @@ export function useAppProviderState(): AppContextValue {
   let unlistenTerminal: (() => void) | undefined;
   let unlistenSchedule: (() => void) | undefined;
   let setAppUpdateAvailableRef: Setter<boolean> = (() => false) as Setter<boolean>;
+  let lastNotifiedPendingApprovalId: string | null = null;
+  let lastNotifiedAwaitingKey: string | null = null;
 
   const handleShellCleanup = () => {
     if (unlistenRunState) void unlistenRunState();
@@ -183,20 +192,31 @@ export function useAppProviderState(): AppContextValue {
           return;
         }
         void chatComposer.flushPendingKickoff(nextRunState);
+        if (!nextRunState.active) {
+          lastNotifiedPendingApprovalId = null;
+          lastNotifiedAwaitingKey = null;
+        }
         if (nextRunState.pendingApprovals.length > 0) {
           const approval = nextRunState.pendingApprovals[0];
-          chatComposer.navigateChatToNode(approval.nodeId);
-          dock.focusChatDock();
-          toastApi.showInfoToast(`${approval.nodeLabel} needs tool approval`, "run-state");
+          if (approval.approvalId !== lastNotifiedPendingApprovalId) {
+            lastNotifiedPendingApprovalId = approval.approvalId;
+            lastNotifiedAwaitingKey = null;
+            chatComposer.navigateChatToNode(approval.nodeId);
+            dock.focusChatDock();
+            toastApi.showInfoToast(`${approval.nodeLabel} needs tool approval`, "run-state");
+          }
         } else {
+          lastNotifiedPendingApprovalId = null;
           const awaitingIds =
             nextRunState.awaitingNodeIds && nextRunState.awaitingNodeIds.length > 0
               ? nextRunState.awaitingNodeIds
               : nextRunState.awaitingNodeId
                 ? [nextRunState.awaitingNodeId]
                 : [];
+          const awaitingKey = awaitingIds.join("\0");
           const focusId = awaitingIds[0];
-          if (focusId) {
+          if (focusId && awaitingKey !== lastNotifiedAwaitingKey) {
+            lastNotifiedAwaitingKey = awaitingKey;
             const label =
               workspace.activeWorkflow()?.nodes.find((node) => node.id === focusId)?.label ??
               "Node";
@@ -204,6 +224,8 @@ export function useAppProviderState(): AppContextValue {
             dock.focusChatDock();
             const suffix = awaitingIds.length > 1 ? ` (+${awaitingIds.length - 1} more)` : "";
             toastApi.showInfoToast(`${label} is waiting for input${suffix}`, "run-state");
+          } else if (awaitingIds.length === 0) {
+            lastNotifiedAwaitingKey = null;
           }
         }
         if (nextRunState.lastError) {
@@ -253,6 +275,7 @@ export function useAppProviderState(): AppContextValue {
   navigateToScreenRef = appShell.navigateToScreen;
   setScreenRef = appShell.setScreen;
   isCompactViewportAccessor = appShell.isCompactViewport;
+  uiZoomAccessor = appShell.uiZoom;
   setAppUpdateAvailableRef = appShell.setAppUpdateAvailable;
 
   const workflowAuthoring = useWorkflowAuthoring({
@@ -265,6 +288,7 @@ export function useAppProviderState(): AppContextValue {
     workflows: workspace.workflows,
     setWorkflows: (next) => workspace.setWorkflows(next),
     selectWorkflow: (workflow) => selectWorkflowRef(workflow),
+    persistWorkflowAuthoringDraft: workspace.handlePersistWorkflowAuthoringDraft,
     showErrorToast: toastApi.showErrorToast,
     showSuccessToast: toastApi.showSuccessToast,
   });
@@ -316,11 +340,6 @@ export function useAppProviderState(): AppContextValue {
       void runSession.handleStopRun();
       return;
     }
-    if (event.key === "?" && !isTextInputTarget(event.target)) {
-      event.preventDefault();
-      appShell.openShortcutsModal();
-      return;
-    }
     if (
       command &&
       event.key.toLowerCase() === "j" &&
@@ -363,8 +382,9 @@ export function useAppProviderState(): AppContextValue {
 
   createEffect(() => {
     const tab = dock.bottomTab();
+    const zoom = appShell.uiZoom();
     dock.setDockHeight((current) =>
-      clampDockHeight(current, tab, viewportHeight(), appShell.isCompactViewport()),
+      clampDockHeight(current, tab, viewportHeight(), appShell.isCompactViewport(), zoom),
     );
   });
 
@@ -394,7 +414,7 @@ export function useAppProviderState(): AppContextValue {
     workflowEditor.handleSelectNodeBase(nodeId);
     if (nodeId) {
       dock.focusChatDock();
-      chatComposer.navigateChatToNode(nodeId);
+      chatComposer.navigateChatToNode(nodeId, { forceScroll: true });
     }
   };
 
@@ -460,7 +480,6 @@ export function useAppProviderState(): AppContextValue {
     replayRunId: runSession.replayRunId,
     themePreference: appShell.themePreference,
     resolvedTheme: appShell.resolvedTheme,
-    shortcutsModalOpen: appShell.shortcutsModalOpen,
     firstRunOnboardingOpen: appShell.firstRunOnboardingOpen,
     isCompactViewport: appShell.isCompactViewport,
     sidebarDrawerOpen: appShell.sidebarDrawerOpen,
@@ -557,6 +576,7 @@ export function useAppProviderState(): AppContextValue {
     handleAddNode: workflowEditor.handleAddNode,
     closeAddNodePicker: workflowEditor.closeAddNodePicker,
     workflowAuthoringBusy: workflowAuthoring.workflowAuthoringBusy,
+    workflowAuthoringThinkingContent: workflowAuthoring.workflowAuthoringThinkingContent,
     workflowAuthoringSessionReady: workflowAuthoring.workflowAuthoringSessionReady,
     workflowAuthoringMessages: workflowAuthoring.workflowAuthoringMessages,
     workflowAuthoringValidation: workflowAuthoring.workflowAuthoringValidation,
@@ -572,19 +592,19 @@ export function useAppProviderState(): AppContextValue {
     handleRetryNode: runSession.handleRetryNode,
     stoppingRun: runSession.stoppingRun,
     handleSetThemePreference: appShell.handleSetThemePreference,
-    openShortcutsModal: appShell.openShortcutsModal,
-    closeShortcutsModal: appShell.closeShortcutsModal,
     dismissFirstRunOnboarding: appShell.dismissFirstRunOnboarding,
     handleOnboardingBuildWorkflow: appShell.handleOnboardingBuildWorkflow,
     handleOnboardingSetupProvider: appShell.handleOnboardingSetupProvider,
     handleClearRunTrace: runSession.handleClearRunTrace,
     handleRefreshRunHistory: runSession.handleRefreshRunHistory,
     handleReplayRun: runSession.handleReplayRun,
+    handleExitReplay: runSession.handleExitReplay,
     handleResumeDurableRun: runSession.handleResumeDurableRun,
     handleSubmitChat: chatComposer.handleSubmitChat,
     handleRefreshSkills: workspace.handleRefreshSkills,
     searchProjectFileReferences: runSession.searchProjectFileReferences,
     handleToolApproval: runSession.handleToolApproval,
+    handleUpdateNodeRuntimeConfig: runSession.handleUpdateNodeRuntimeConfig,
     handleStartNodeLabelEdit: workflowEditor.handleStartNodeLabelEdit,
     handleCancelNodeLabelEdit: workflowEditor.handleCancelNodeLabelEdit,
     handleCommitNodeLabel: workflowEditor.handleCommitNodeLabel,

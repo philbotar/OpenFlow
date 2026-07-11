@@ -179,6 +179,8 @@ pub struct InteractiveWorkflowRunParams<A> {
     pub node_interrupts: NodeInterrupts,
     pub context_window_sizes: BTreeMap<String, u32>,
     pub mcp: crate::settings::model::McpSettings,
+    pub search: crate::settings::model::SearchSettings,
+    pub runtime_config_store: engine::NodeRuntimeConfigStore,
 }
 
 pub fn spawn_interactive_workflow_run<A>(

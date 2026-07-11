@@ -200,7 +200,7 @@ fn reducer_aborted_deactivates_run_and_marks_in_progress_tools() {
 }
 
 #[test]
-fn reducer_node_completed_pushes_summary_completion_message() {
+fn reducer_node_completed_pushes_json_completion_message() {
     let workflow = workflow();
     let mut state = WorkflowRunState::running_for_workflow(&workflow);
     apply_event_to_run_state(
@@ -215,7 +215,10 @@ fn reducer_node_completed_pushes_summary_completion_message() {
 
     let chat = &state.chat_logs[&NodeId("first".to_string())];
     assert_eq!(chat.len(), 1);
-    assert_eq!(chat[0].content, "Captured the welcome message.");
+    assert_eq!(
+        chat[0].content,
+        r#"{"summary":"Captured the welcome message."}"#
+    );
     assert_eq!(
         chat[0].message_kind,
         Some(engine::ChatMessageKind::NodeCompleted)
@@ -242,7 +245,7 @@ fn reducer_node_completed_pushes_json_when_summary_missing() {
         chat[0].message_kind,
         Some(engine::ChatMessageKind::NodeCompleted)
     );
-    assert!(chat[0].content.contains("\"ok\": true"));
+    assert_eq!(chat[0].content, r#"{"ok":true}"#);
 }
 
 #[test]
@@ -1137,6 +1140,8 @@ where
         node_interrupts: Arc::new(parking_lot::Mutex::new(BTreeMap::new())),
         context_window_sizes: BTreeMap::new(),
         mcp: Default::default(),
+        search: Default::default(),
+        runtime_config_store: engine::new_runtime_config_store(),
     }
 }
 
@@ -1476,6 +1481,8 @@ where
         node_interrupts: Arc::new(parking_lot::Mutex::new(BTreeMap::new())),
         context_window_sizes: BTreeMap::new(),
         mcp: Default::default(),
+        search: Default::default(),
+        runtime_config_store: engine::new_runtime_config_store(),
     };
     (params, checkpoint_sink)
 }

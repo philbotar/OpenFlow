@@ -41,7 +41,6 @@ export function useAppShell(params: UseAppShellParams) {
   );
   const resolvedTheme = createMemo(() => resolveTheme(themePreference()));
   const [uiZoom, setUiZoom] = createSignal(readStoredUiZoom(globalThis.localStorage));
-  const [shortcutsModalOpen, setShortcutsModalOpen] = createSignal(false);
   const [firstRunOnboardingOpen, setFirstRunOnboardingOpen] = createSignal(
     !readStoredBoolean(globalThis.localStorage, FIRST_RUN_ONBOARDING_STORAGE_KEY),
   );
@@ -73,6 +72,10 @@ export function useAppShell(params: UseAppShellParams) {
     setUiZoom(normalized);
     writeStoredUiZoom(globalThis.localStorage, normalized);
     document.documentElement.style.setProperty("--ui-zoom", String(normalized));
+    document.documentElement.style.setProperty("--ui-zoom-inverse", String(1 / normalized));
+    // WebKit freezes grid-template-rows transitions inside a zoomed subtree;
+    // this class lets the stylesheet drop those transitions while zoomed.
+    document.documentElement.classList.toggle("ui-zoomed", normalized !== DEFAULT_UI_ZOOM);
   };
   const handleZoomIn = () => applyUiZoom(zoomInUi(uiZoom()));
   const handleZoomOut = () => applyUiZoom(zoomOutUi(uiZoom()));
@@ -83,9 +86,6 @@ export function useAppShell(params: UseAppShellParams) {
     writeStoredTheme(globalThis.localStorage, preference);
     applyTheme(resolveTheme(preference));
   };
-
-  const openShortcutsModal = () => setShortcutsModalOpen(true);
-  const closeShortcutsModal = () => setShortcutsModalOpen(false);
 
   const dismissFirstRunOnboarding = () => {
     setFirstRunOnboardingOpen(false);
@@ -174,9 +174,6 @@ export function useAppShell(params: UseAppShellParams) {
     handleZoomIn,
     handleZoomOut,
     handleZoomReset,
-    shortcutsModalOpen,
-    openShortcutsModal,
-    closeShortcutsModal,
     firstRunOnboardingOpen,
     dismissFirstRunOnboarding,
     handleOnboardingBuildWorkflow,

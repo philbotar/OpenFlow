@@ -123,6 +123,18 @@ impl AgentError {
     pub const fn is_malformed_submit_output(&self) -> bool {
         matches!(self, Self::MalformedSubmitOutput { .. })
     }
+
+    /// Provider turn had no tool calls and no recoverable assistant text.
+    #[must_use]
+    pub fn is_empty_provider_turn(&self) -> bool {
+        match self {
+            Self::Failed(message) => {
+                message.contains("neither tool calls nor recoverable output")
+                    || message.contains("no tool calls and no usable text")
+            }
+            _ => false,
+        }
+    }
 }
 
 /// Streaming event emitted during [`AiPort::invoke_stream`].
@@ -246,6 +258,15 @@ mod tests {
         assert!(!AgentError::Permanent("auth".to_string()).is_retryable());
         assert!(!AgentError::Failed("unknown".to_string()).is_retryable());
         assert!(!AgentError::Interrupted.is_retryable());
+        assert!(AgentError::Failed(
+            "provider returned neither tool calls nor recoverable output".to_string()
+        )
+        .is_empty_provider_turn());
+        assert!(AgentError::Failed(
+            "Custom OpenAI-compatible API model `mimo` returned no tool calls and no usable text."
+                .to_string()
+        )
+        .is_empty_provider_turn());
         assert!(AgentError::Interrupted.is_interrupted());
         assert!(
             AgentError::malformed_submit_output("AI provider", "missing field `output`")

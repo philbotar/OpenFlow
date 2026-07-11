@@ -10,6 +10,7 @@ import { COLLAPSED_DOCK_HEIGHT } from "@/lib/utils";
 
 export function EditorScreen() {
   const ctx = useAppContext();
+  const chatFocusActive = () => ctx.chatFocusMode() && ctx.dockOpen();
   const showInspectorPanel = () =>
     ctx.inspectorOpen() &&
     !ctx.workflowSettingsOpen() &&
@@ -18,7 +19,6 @@ export function EditorScreen() {
   const showRightPanel = () =>
     !ctx.rightPanelHidden() &&
     (ctx.workflowSettingsOpen() || ctx.gitPanelOpen() || showInspectorPanel());
-  const chatFocusActive = () => ctx.chatFocusMode() && ctx.dockOpen();
 
   return (
     <div

@@ -74,7 +74,7 @@ UI never calls `engine` or `orchestration` — always `invoke` through the port.
 3. **Sidebar primitives** — use `SidebarNavButton`, `SidebarList`, `SidebarListRow` for consistent lists.
 4. **Inspector visibility** — hide when no node selected; toggle `WorkflowSettingsPanel` vs `InspectorPanel` by editor mode.
 5. **Naming** — match backend DTO field names in `types.ts`; camelCase in IPC via serde on desktop side.
-6. **Styles** — global tokens and layout in `styles/index.css`; component-scoped classes over inline styles.
+6. **Styles** — design tokens in `styles/tokens.css`; component rules in `styles/index.css` and `styles/chat.css`; component-scoped classes over inline styles.
 
 ## Patterns
 

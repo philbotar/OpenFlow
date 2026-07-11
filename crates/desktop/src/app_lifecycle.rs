@@ -4,6 +4,7 @@ use tauri::Manager;
 use crate::{run_sleep_guard, schedule_events};
 
 pub(crate) fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    crate::search_sidecar::publish_bundled_search_path();
     let runtime_handle = tauri::async_runtime::handle().inner().clone();
     app.manage(AppBackend::with_runtime_handle(runtime_handle));
     app.manage(run_sleep_guard::RunSleepGuard::new());

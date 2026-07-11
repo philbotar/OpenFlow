@@ -84,6 +84,10 @@ impl ToolRunner {
                 .await?;
                 self.finalize_bash_record(call, outcome).await
             }
+            BuiltinToolKind::WebSearch => {
+                let raw = self.web_search(call.arguments.clone()).await?;
+                self.finalize_record(call, raw, Vec::new(), None).await
+            }
             BuiltinToolKind::Search
             | BuiltinToolKind::Find
             | BuiltinToolKind::Write
@@ -297,6 +301,73 @@ impl ToolRunner {
             } => result,
         }
     }
+
+    async fn web_search(&self, args: Value) -> Result<String, ToolRunnerError> {
+        let args = crate::tool::web_search::parse_args(args).map_err(ToolRunnerError::Tool)?;
+        let binary =
+            crate::tool::web_search::resolve_binary(&self.search).map_err(ToolRunnerError::Tool)?;
+        let mut command = tokio::process::Command::new(&binary);
+        command
+            .args(crate::tool::web_search::cli_args(&args))
+            .envs(crate::tool::web_search::key_env_vars(&self.search))
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        let mut child = command.spawn().map_err(|error| {
+            ToolRunnerError::Tool(ToolError::failed(format!("web_search failed: {error}")))
+        })?;
+        let mut stdout_pipe = child.stdout.take().ok_or_else(|| {
+            ToolRunnerError::Tool(ToolError::failed(
+                "web_search stdout unavailable".to_string(),
+            ))
+        })?;
+        let mut stderr_pipe = child.stderr.take().ok_or_else(|| {
+            ToolRunnerError::Tool(ToolError::failed(
+                "web_search stderr unavailable".to_string(),
+            ))
+        })?;
+        tokio::select! {
+            biased;
+            _ = self.cancel_token.cancelled() => {
+                let _ = child.kill().await;
+                Err(ToolRunnerError::Tool(ToolError::Cancelled {
+                    tool: "web_search".to_string(),
+                }))
+            }
+            result = async {
+                let mut stdout_bytes = Vec::new();
+                let mut stderr_bytes = Vec::new();
+                let (stdout_res, stderr_res, status) = tokio::join!(
+                    tokio::io::AsyncReadExt::read_to_end(&mut stdout_pipe, &mut stdout_bytes),
+                    tokio::io::AsyncReadExt::read_to_end(&mut stderr_pipe, &mut stderr_bytes),
+                    child.wait(),
+                );
+                stdout_res.map_err(|error| {
+                    ToolRunnerError::Tool(ToolError::failed(format!(
+                        "web_search read failed: {error}"
+                    )))
+                })?;
+                stderr_res.map_err(|error| {
+                    ToolRunnerError::Tool(ToolError::failed(format!(
+                        "web_search stderr read failed: {error}"
+                    )))
+                })?;
+                let status = status.map_err(|error| {
+                    ToolRunnerError::Tool(ToolError::failed(format!(
+                        "web_search failed: {error}"
+                    )))
+                })?;
+                if !status.success() {
+                    return Err(ToolRunnerError::Tool(
+                        crate::tool::web_search::map_exit_failure(
+                            status.code(),
+                            &String::from_utf8_lossy(&stderr_bytes),
+                        ),
+                    ));
+                }
+                Ok(String::from_utf8_lossy(&stdout_bytes).to_string())
+            } => result,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -331,5 +402,47 @@ mod tests {
             StatusCode::INTERNAL_SERVER_ERROR,
         );
         assert!(matches!(server_error, ToolError::ExecutionFailed { .. }));
+    }
+
+    #[tokio::test]
+    async fn web_search_runs_fake_binary_with_injected_env() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let fake = dir.path().join("fake-search");
+        std::fs::write(
+            &fake,
+            "#!/bin/sh\nprintf '{\"args\":\"%s\",\"brave\":\"%s\"}' \"$*\" \"$SEARCH_KEYS_BRAVE\"\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let settings = crate::settings::model::SearchSettings {
+            binary_path: fake.display().to_string(),
+            keys: [("brave".to_string(), "bk-123".to_string())]
+                .into_iter()
+                .collect(),
+            ..crate::settings::model::SearchSettings::default()
+        };
+
+        let mut registry = crate::tool::registry::ToolRegistry::new();
+        registry.register_web_search();
+        let runner = ToolRunner::new(
+            registry,
+            dir.path().to_path_buf(),
+            crate::tool::output::ArtifactStore::new(dir.path().join("artifacts")).unwrap(),
+            tokio_util::sync::CancellationToken::new(),
+            std::sync::Arc::new(
+                crate::tools::edit::hashline::snapshots::InMemorySnapshotStore::new(),
+            ),
+        )
+        .with_search_settings(settings);
+
+        let raw = runner
+            .web_search(serde_json::json!({"query": "rust rfc", "count": 3}))
+            .await
+            .unwrap();
+        assert!(raw.contains("rust rfc --json -c 3"));
+        assert!(raw.contains("\"brave\":\"bk-123\""));
     }
 }

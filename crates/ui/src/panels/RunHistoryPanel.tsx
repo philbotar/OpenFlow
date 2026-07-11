@@ -18,7 +18,7 @@ export function RunHistoryPanel() {
   const ctx = useAppContext();
 
   createEffect(() => {
-    if (ctx.bottomTab() === "runs") {
+    if (ctx.bottomTab() === "history") {
       void ctx.handleRefreshRunHistory();
     }
   });
@@ -43,10 +43,10 @@ export function RunHistoryPanel() {
             <For each={ctx.runHistory()}>
               {(run) => (
                 <div class="run-history-row" classList={{ active: ctx.replayRunId() === run.runId }}>
-                  <div class="run-history-main">
-                    <span class={`run-history-status run-history-status--${run.status}`}>{run.status}</span>
+                  <span class={`trace-pill ${run.status}`}>{run.status}</span>
+                  <div>
                     <strong>{run.workflowName}</strong>
-                    <span>{formatRunTime(run.updatedAtMs)}</span>
+                    <div>{formatRunTime(run.updatedAtMs)}</div>
                   </div>
                   <div class="run-history-actions">
                     <button

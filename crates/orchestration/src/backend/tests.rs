@@ -39,8 +39,11 @@ fn backend() -> (AppBackend, tempfile::TempDir) {
 #[test]
 fn start_workflow_authoring_returns_session_id() {
     let (backend, _dir) = backend();
-    let session_id = backend.start_workflow_authoring(None);
-    assert!(!session_id.is_empty());
+    let started = backend
+        .start_workflow_authoring(None, None)
+        .expect("start authoring");
+    assert!(!started.session_id.is_empty());
+    assert_eq!(started.draft.as_ref().expect("draft").nodes.len(), 4);
 }
 
 #[cfg_attr(miri, ignore)]
@@ -832,6 +835,29 @@ fn due_schedule_candidate_uses_workflow_id() {
         .expect("candidate");
 
     assert_eq!(candidate.workflow_id, workflow_id);
+}
+
+#[test]
+fn search_api_key_round_trip() {
+    let (backend, _dir) = backend();
+    assert_eq!(backend.load_search_api_key("brave").unwrap(), None);
+
+    backend.save_search_api_key("brave", " bk-123 ").unwrap();
+    assert_eq!(
+        backend.load_search_api_key("brave").unwrap(),
+        Some("bk-123".to_string())
+    );
+
+    let loaded = backend.load_settings(None).unwrap();
+    assert!(loaded
+        .settings
+        .search
+        .keys
+        .values()
+        .all(|key| key.is_empty()));
+
+    backend.delete_search_api_key("brave").unwrap();
+    assert_eq!(backend.load_search_api_key("brave").unwrap(), None);
 }
 
 #[test]

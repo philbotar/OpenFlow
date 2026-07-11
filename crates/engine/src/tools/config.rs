@@ -84,7 +84,7 @@ pub fn tool_tier_for_call(_config: &NodeToolConfig, tool_name: &str) -> ToolTier
 
 fn default_tier_for_tool_name(tool_name: &str) -> ToolTier {
     match tool_name {
-        "read" | "search" | "find" | "ast_grep" => ToolTier::Read,
+        "read" | "search" | "find" | "ast_grep" | "web_search" => ToolTier::Read,
         name if name.starts_with("mcp/") => ToolTier::Write,
         _ => ToolTier::Write,
     }
@@ -298,6 +298,18 @@ mod tests {
     fn tool_tier_uses_builtin_classification() {
         let config = NodeToolConfig::default();
         assert_eq!(tool_tier_for_call(&config, "read"), ToolTier::Read);
+        assert_eq!(tool_tier_for_call(&config, "web_search"), ToolTier::Read);
+        assert_eq!(
+            tool_decision_for_call(
+                &config,
+                &ToolCall {
+                    id: "call-web".to_string(),
+                    name: "web_search".to_string(),
+                    arguments: json!({"query": "rust"}),
+                }
+            ),
+            ToolDecision::AutoAllow
+        );
         assert_eq!(tool_tier_for_call(&config, "bash"), ToolTier::Write);
         assert_eq!(tool_tier_for_call(&config, "custom_write"), ToolTier::Write);
         assert_eq!(

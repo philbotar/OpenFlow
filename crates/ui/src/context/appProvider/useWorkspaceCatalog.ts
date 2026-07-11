@@ -234,6 +234,24 @@ export function useWorkspaceCatalog(params: UseWorkspaceCatalogParams) {
     }
   };
 
+  const handlePersistWorkflowAuthoringDraft = async (
+    workflow: Workflow,
+    targetProjectId: string | null,
+  ) => {
+    let saved = await desktop.saveWorkflow(workflow);
+    if (!targetProjectId) {
+      return saved;
+    }
+
+    const nextProjects = await desktop.assignWorkflowToProject(targetProjectId, saved.id);
+    setProjects(nextProjects);
+    saved = await desktop.saveWorkflow(saved);
+    params.revealProjectsSection();
+    expandProject(targetProjectId);
+    setSelectedProjectId(targetProjectId);
+    return saved;
+  };
+
   const handleDeleteActiveWorkflow = async () => {
     const workflow = activeWorkflow();
     if (!workflow) return;
@@ -518,6 +536,7 @@ export function useWorkspaceCatalog(params: UseWorkspaceCatalogParams) {
     closeAssignWorkflowPicker,
     workflowsAddableToProject: workflowsAddableToProjectMemo,
     handleCopyWorkflowToProject,
+    handlePersistWorkflowAuthoringDraft,
     handleDeleteActiveWorkflow,
     handleAddProject,
     handleSelectProject,

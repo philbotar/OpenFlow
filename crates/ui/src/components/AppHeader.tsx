@@ -40,31 +40,35 @@ export function AppHeader() {
             data-tauri-drag-region
           />
         </Show>
-        <Show when={ctx.isCompactViewport()}>
+        <Show when={ctx.isCompactViewport() && ctx.screen() !== "settings"}>
           <button
             type="button"
             class="topbar-nav-button topbar-sidebar-toggle"
+            classList={{
+              "topbar-sidebar-toggle--panel-hidden": !ctx.sidebarDrawerOpen(),
+            }}
             onClick={() => ctx.toggleSidebarDrawer()}
             title="Open navigation"
             aria-label="Open navigation"
             aria-expanded={ctx.sidebarDrawerOpen()}
             data-tauri-drag-region="false"
           >
-            <SidebarIcon name="panel-left-open" />
+            <SidebarIcon name="panel-left-close" />
           </button>
         </Show>
-        <Show when={!ctx.isCompactViewport()}>
+        <Show when={!ctx.isCompactViewport() && ctx.screen() !== "settings"}>
           <button
             type="button"
             class="topbar-icon-button topbar-sidebar-toggle"
+            classList={{
+              "topbar-sidebar-toggle--panel-hidden": ctx.leftPanelHidden(),
+            }}
             onClick={() => ctx.handleToggleLeftPanel()}
             title={ctx.leftPanelHidden() ? `Show sidebar (${mod()}+B)` : `Hide sidebar (${mod()}+B)`}
             aria-label={ctx.leftPanelHidden() ? "Show left sidebar" : "Hide left sidebar"}
             data-tauri-drag-region="false"
           >
-            <SidebarIcon
-              name={ctx.leftPanelHidden() ? "panel-left-open" : "panel-left-close"}
-            />
+            <SidebarIcon name="panel-left-close" />
           </button>
         </Show>
       </div>
