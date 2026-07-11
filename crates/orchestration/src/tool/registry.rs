@@ -160,7 +160,7 @@ fn read_tool() -> RegisteredTool {
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "Local path, URL, or artifact:{id}. Append :start-end for a line range or :raw for full content (e.g. note.txt:1-50, artifact:abc-123:1000-1200)."
+                        "description": "Repository-relative local path, URL, or artifact:{id}. Prefer relative paths (e.g. src/lib.rs). Append :start-end for a line range or :raw for full content (e.g. note.txt:1-50, artifact:abc-123:1000-1200)."
                     }
                 },
                 "required": ["path"]
@@ -186,7 +186,7 @@ fn search_tool() -> RegisteredTool {
                         "description": "Ripgrep/Rust regex pattern to match in file contents."
                     },
                     "paths": {
-                        "description": "File, directory, or glob to search (string or array of strings).",
+                        "description": "Repository-relative file, directory, or glob to search (string or array). Prefer relative paths.",
                         "oneOf": [
                             { "type": "string" },
                             {

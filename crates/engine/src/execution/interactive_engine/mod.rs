@@ -772,7 +772,9 @@ impl InteractiveEngine {
         let mut context = String::new();
         for upstream_id in &upstream {
             if let Some(output) = self.outputs.get(upstream_id) {
-                let _ = writeln!(context, "{upstream_id}: {output}");
+                let pretty = serde_json::to_string_pretty(output)
+                    .unwrap_or_else(|_| output.to_string());
+                let _ = writeln!(context, "{upstream_id}:\n{pretty}");
             }
         }
         if context.is_empty() {

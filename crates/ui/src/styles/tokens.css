@@ -29,6 +29,7 @@
   line-height: 1.5;
   font-weight: 400;
   --ui-zoom: 1;
+  --ui-zoom-inverse: 1;
 
   /* ── Layer 1: base palette (light) ── */
   --base-sand-50: #fcfbf8;

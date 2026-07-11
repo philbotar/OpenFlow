@@ -11,8 +11,12 @@ import type {
   WorkflowRunState,
   NodeRuntimeConfigUpdate,
 } from "../../lib/types";
-import { canSendIdleRunKickoff, isGlobalRunEntryNodeId } from "../../lib/workflow";
-import { clampDockHeight, normalizeError } from "../../lib/utils";
+import {
+  canSendIdleRunKickoff,
+  createIdleRunState,
+  isGlobalRunEntryNodeId,
+} from "../../lib/workflow";
+import { clampDockHeight, normalizeError, viewportHeight } from "../../lib/utils";
 
 type ToastHandler = (message: string, context?: string) => void;
 
@@ -33,6 +37,8 @@ interface UseRunSessionParams {
   setDockOpen: Setter<boolean>;
   setBottomTab: Setter<BottomTab>;
   setDockHeight: Setter<number>;
+  uiZoom: Accessor<number>;
+  isCompactViewport: Accessor<boolean>;
   cacheRunStateForWorkflow: (workflowId: string, state: WorkflowRunState) => void;
   applyRunStateSnapshot: (next: WorkflowRunState | null) => void;
   chatSubmissionFor: (nodeId: NodeId) => { submittedText: string };
@@ -66,7 +72,15 @@ export function useRunSession(params: UseRunSessionParams) {
   const focusChatTab = () => {
     params.setDockOpen(true);
     params.setBottomTab("chat");
-    params.setDockHeight((current) => clampDockHeight(current, "chat"));
+    params.setDockHeight((current) =>
+      clampDockHeight(
+        current,
+        "chat",
+        viewportHeight(),
+        params.isCompactViewport(),
+        params.uiZoom(),
+      ),
+    );
   };
 
   const beginRunSession = (nextRunState: WorkflowRunState) => {
@@ -257,13 +271,42 @@ export function useRunSession(params: UseRunSessionParams) {
       const replay = await desktop.replayRun(runId);
       const replayState: WorkflowRunState = { ...replay, active: false };
       setReplayRunId(runId);
-      params.cacheRunStateForWorkflow(workflow.id, replayState);
+      // Display-only: keep workflow cache so exit can restore live/idle.
       params.applyRunStateSnapshot(replayState);
       setContinuableRunBackend(false);
       focusChatTab();
     } catch (error) {
       params.showErrorToast(normalizeError(error));
     }
+  };
+
+  const handleExitReplay = async () => {
+    if (!replayRunId()) {
+      return;
+    }
+    const workflow = params.activeWorkflow();
+    setReplayRunId(null);
+    if (!workflow) {
+      return;
+    }
+    const workflowId = workflow.id;
+    if (params.backendRunWorkflowId() === workflowId) {
+      try {
+        const live = await desktop.getRunState();
+        if (live && params.activeWorkflowId() === workflowId && !replayRunId()) {
+          params.cacheRunStateForWorkflow(workflowId, live);
+          params.applyRunStateSnapshot(live);
+          await refreshContinuableRun();
+          return;
+        }
+      } catch {
+        // Fall through to idle.
+      }
+    }
+    const idle = createIdleRunState(workflow);
+    params.cacheRunStateForWorkflow(workflowId, idle);
+    params.applyRunStateSnapshot(idle);
+    setContinuableRunBackend(false);
   };
 
   const handleResumeDurableRun = async (runId: string) => {
@@ -366,6 +409,7 @@ export function useRunSession(params: UseRunSessionParams) {
     handleClearRunTrace,
     handleRefreshRunHistory,
     handleReplayRun,
+    handleExitReplay,
     handleResumeDurableRun,
     searchProjectFileReferences,
     handleToolApproval,

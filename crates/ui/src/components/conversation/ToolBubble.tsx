@@ -1,6 +1,7 @@
 import { createSignal, Show } from "solid-js";
 import ChevronRight from "lucide-solid/icons/chevron-right";
 import type { ToolCallStatus } from "../../lib/types";
+import { prettyJsonText } from "../../lib/utils";
 import { toolBubbleLineText } from "./toolBubbleState";
 
 export interface ToolBubbleProps {
@@ -11,14 +12,24 @@ export interface ToolBubbleProps {
   intent?: string | null;
   isError?: boolean;
   streaming?: boolean;
+  /** Execution cwd — strips absolute path prefixes in the label. */
+  cwd?: string | null;
 }
 
 export function ToolBubble(props: ToolBubbleProps) {
   const [expanded, setExpanded] = createSignal(false);
   const lineText = () =>
-    toolBubbleLineText(props.toolName, props.status, props.arguments, props.intent);
+    toolBubbleLineText(
+      props.toolName,
+      props.status,
+      props.arguments,
+      props.intent,
+      props.cwd,
+    );
   const hasOutput = () => Boolean(props.output?.trim());
   const expandable = () => hasOutput() || props.streaming;
+  const displayOutput = () =>
+    props.output ? prettyJsonText(props.output) : props.output;
   const previewText = () => {
     if (!props.streaming || !props.output) return "";
     const text = props.output.trimEnd();
@@ -71,7 +82,7 @@ export function ToolBubble(props: ToolBubbleProps) {
             class="tool-line-output"
             classList={{ "tool-line-output--error": props.isError }}
           >
-            {props.output}
+            {displayOutput()}
           </pre>
         </div>
       </Show>

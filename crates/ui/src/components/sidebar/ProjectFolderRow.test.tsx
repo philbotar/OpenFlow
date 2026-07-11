@@ -90,10 +90,30 @@ describe("ProjectFolderRow", () => {
       container,
     );
 
+    expect(container.querySelector(".project-folder-chevron")).toBeNull();
+    expect(container.querySelector(".project-folder-icon")).not.toBeNull();
+
     (container.querySelector(".project-folder-row") as HTMLButtonElement).click();
 
     expect(onSelectProject).toHaveBeenCalledTimes(1);
     expect(onToggleExpand).toHaveBeenCalledTimes(1);
+  });
+
+  test("shows open folder icon when expanded and closed when collapsed", () => {
+    dispose = render(
+      () => <ProjectFolderRow {...defaultProps({ expanded: false })} />,
+      container,
+    );
+    const closedIcon = container.querySelector(".project-folder-icon") as SVGElement;
+    expect(closedIcon.getAttribute("class")).toContain("lucide-folder-closed");
+
+    dispose?.();
+    dispose = render(
+      () => <ProjectFolderRow {...defaultProps({ expanded: true })} />,
+      container,
+    );
+    const openIcon = container.querySelector(".project-folder-icon") as SVGElement;
+    expect(openIcon.getAttribute("class")).toContain("lucide-folder-open");
   });
 
   test("shows workflow rows when expanded and selects workflow", () => {

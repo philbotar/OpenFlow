@@ -108,31 +108,13 @@ impl ChatMessage {
     }
 }
 
-/// Human-facing summary from structured node output.
+/// JSON string of node output for the chat "Node completed" bubble (UI renders a tree).
 #[must_use]
 pub fn summary_from_node_output(output: &Value) -> Option<String> {
-    if let Some(summary) = output
-        .get("summary")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|summary| !summary.is_empty())
-    {
-        return Some(summary.to_string());
-    }
     if output.is_null() {
         return None;
     }
-    if let Some(obj) = output.as_object() {
-        if obj.len() == 1 {
-            if let Some(value) = obj.values().next().and_then(Value::as_str) {
-                let trimmed = value.trim();
-                if !trimmed.is_empty() {
-                    return Some(trimmed.to_string());
-                }
-            }
-        }
-    }
-    serde_json::to_string_pretty(output).ok()
+    serde_json::to_string(output).ok()
 }
 
 fn consume_tool_call_fence_block(content: &str) -> usize {
@@ -327,19 +309,12 @@ mod tests {
     }
 
     #[test]
-    fn summary_from_node_output_reads_summary_field() {
+    fn summary_from_node_output_serializes_json() {
         assert_eq!(
             summary_from_node_output(&json!({"summary": "Done."})),
-            Some("Done.".to_string())
+            Some(r#"{"summary":"Done."}"#.to_string())
         );
-        assert_eq!(
-            summary_from_node_output(&json!({"message": "yo"})),
-            Some("yo".to_string())
-        );
-        assert_eq!(
-            summary_from_node_output(&json!({"summary": "  "})),
-            Some("{\n  \"summary\": \"  \"\n}".to_string())
-        );
+        assert_eq!(summary_from_node_output(&Value::Null), None);
     }
 
     #[test]

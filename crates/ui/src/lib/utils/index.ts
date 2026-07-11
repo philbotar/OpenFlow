@@ -29,6 +29,83 @@ export function normalizeError(error: unknown): string {
   return JSON.stringify(error);
 }
 
+/** Pretty-print JSON text when parseable; otherwise return input unchanged. */
+export function prettyJsonText(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed || (trimmed[0] !== "{" && trimmed[0] !== "[")) {
+    return text;
+  }
+  try {
+    return JSON.stringify(JSON.parse(trimmed), null, 2);
+  } catch {
+    return text;
+  }
+}
+
+/** Indent-only object dump (no `{}` / `[]`); parses JSON when present. */
+export function formatIndentedValue(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return text;
+  }
+  if (trimmed[0] === "{" || trimmed[0] === "[") {
+    try {
+      return formatIndentedJson(JSON.parse(trimmed));
+    } catch {
+      return text;
+    }
+  }
+  return text;
+}
+
+function formatIndentedJson(value: unknown, depth = 0): string {
+  const indent = "  ".repeat(depth);
+  if (value === null) return "null";
+  if (typeof value === "boolean" || typeof value === "number") return String(value);
+  if (typeof value === "string") return appendIndentedString(value, depth);
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "";
+    return value
+      .map((item) => {
+        if (isNonEmptyContainer(item)) {
+          return `${indent}- \n${formatIndentedJson(item, depth + 1)}`;
+        }
+        if (typeof item === "string" && item.includes("\n")) {
+          return `${indent}- \n${appendIndentedString(item, depth + 1)}`;
+        }
+        return `${indent}- ${formatIndentedJson(item, 0)}`;
+      })
+      .join("\n");
+  }
+  if (typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>);
+    if (entries.length === 0) return "";
+    return entries
+      .map(([key, child]) => {
+        if (isNonEmptyContainer(child)) {
+          return `${indent}${key}:\n${formatIndentedJson(child, depth + 1)}`;
+        }
+        if (typeof child === "string" && child.includes("\n")) {
+          return `${indent}${key}:\n${appendIndentedString(child, depth + 1)}`;
+        }
+        return `${indent}${key}: ${formatIndentedJson(child, 0)}`;
+      })
+      .join("\n");
+  }
+  return String(value);
+}
+
+function isNonEmptyContainer(value: unknown): boolean {
+  if (Array.isArray(value)) return value.length > 0;
+  return typeof value === "object" && value !== null && Object.keys(value).length > 0;
+}
+
+function appendIndentedString(text: string, depth: number): string {
+  const indent = "  ".repeat(depth);
+  const lines = text.split("\n");
+  return lines.map((line, index) => (index === 0 ? line : `${indent}${line}`)).join("\n");
+}
+
 export function toastMessageForDebugMode(message: string, debugOutput: boolean): string {
   if (debugOutput) {
     return message;
@@ -51,6 +128,15 @@ export function viewportHeight(): number {
   return typeof globalThis.innerHeight === "number" ? globalThis.innerHeight : 900;
 }
 
+/** CSS-px viewport height inside a `zoom`-scaled shell (`clientY` / `innerHeight` are visual). */
+export function layoutViewportHeight(
+  nextViewportHeight = viewportHeight(),
+  uiZoom = 1,
+): number {
+  const zoom = Number.isFinite(uiZoom) && uiZoom > 0 ? uiZoom : 1;
+  return nextViewportHeight / zoom;
+}
+
 export function minimumDockHeight(tab: BottomTab, compact = isCompactViewportWidth()): number {
   if (compact) {
     return tab === "chat" ? 104 : 132;
@@ -63,21 +149,27 @@ export function clampDockHeight(
   tab: BottomTab,
   nextViewportHeight = viewportHeight(),
   compact = isCompactViewportWidth(),
+  uiZoom = 1,
 ): number {
   const min = minimumDockHeight(tab, compact);
-  const max = Math.max(min, nextViewportHeight - dockViewportMargin(compact));
+  const max = Math.max(
+    min,
+    Math.round(layoutViewportHeight(nextViewportHeight, uiZoom) - dockViewportMargin(compact)),
+  );
   return Math.min(Math.max(Math.round(height), min), max);
 }
 
 export function restoredChatDockHeight(
   nextViewportHeight = viewportHeight(),
   compact = isCompactViewportWidth(),
+  uiZoom = 1,
 ): number {
   return clampDockHeight(
-    Math.round(nextViewportHeight * RESTORED_CHAT_DOCK_HEIGHT_RATIO),
+    Math.round(layoutViewportHeight(nextViewportHeight, uiZoom) * RESTORED_CHAT_DOCK_HEIGHT_RATIO),
     "chat",
     nextViewportHeight,
     compact,
+    uiZoom,
   );
 }
 

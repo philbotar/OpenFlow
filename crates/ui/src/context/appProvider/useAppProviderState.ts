@@ -40,6 +40,7 @@ export function useAppProviderState(): AppContextValue {
   let navigateToScreenRef: (screen: Screen) => void = () => undefined;
   let setScreenRef: Setter<Screen> = (() => "editor") as Setter<Screen>;
   let isCompactViewportAccessor: Accessor<boolean> = () => false;
+  let uiZoomAccessor: Accessor<number> = () => 1;
   let applySchemaEditorRef = () => true;
   let closeAddNodePickerRef: () => void = () => undefined;
   let revealProjectsSectionRef: () => void = () => undefined;
@@ -102,6 +103,7 @@ export function useAppProviderState(): AppContextValue {
   const dock = useDock({
     executionCwdForActiveWorkflow: workspace.executionCwdForActiveWorkflow,
     isCompactViewport: () => isCompactViewportAccessor(),
+    uiZoom: () => uiZoomAccessor(),
   });
 
   let refreshRunHistoryRef: () => Promise<void> = async () => undefined;
@@ -122,6 +124,8 @@ export function useAppProviderState(): AppContextValue {
     setDockOpen: dock.setDockOpen,
     setBottomTab: dock.setBottomTab,
     setDockHeight: dock.setDockHeight,
+    uiZoom: () => uiZoomAccessor(),
+    isCompactViewport: () => isCompactViewportAccessor(),
     cacheRunStateForWorkflow: runKernel.cacheRunStateForWorkflow,
     applyRunStateSnapshot: runKernel.applyRunStateSnapshot,
     chatSubmissionFor: chatComposer.chatSubmissionFor,
@@ -137,7 +141,8 @@ export function useAppProviderState(): AppContextValue {
   replayRunIdAccessor = runSession.replayRunId;
   chatComposer.bindStartRunFromChat(runSession.handleStartRunFromChat);
 
-  selectWorkflowRef = (workflow: Workflow) =>
+  selectWorkflowRef = (workflow: Workflow) => {
+    runSession.setReplayRunId(null);
     selectWorkflow({
       workflow,
       activeWorkflowId: workspace.activeWorkflowId,
@@ -154,6 +159,7 @@ export function useAppProviderState(): AppContextValue {
       setSelectedTraceIndex: runSession.setSelectedTraceIndex,
       resetWorkflowChatUi: chatComposer.resetWorkflowChatUi,
     });
+  };
 
   let keyDownActions: (event: KeyboardEvent) => void = () => undefined;
   const handleGlobalKeyDown = (event: KeyboardEvent) => keyDownActions(event);
@@ -269,6 +275,7 @@ export function useAppProviderState(): AppContextValue {
   navigateToScreenRef = appShell.navigateToScreen;
   setScreenRef = appShell.setScreen;
   isCompactViewportAccessor = appShell.isCompactViewport;
+  uiZoomAccessor = appShell.uiZoom;
   setAppUpdateAvailableRef = appShell.setAppUpdateAvailable;
 
   const workflowAuthoring = useWorkflowAuthoring({
@@ -375,8 +382,9 @@ export function useAppProviderState(): AppContextValue {
 
   createEffect(() => {
     const tab = dock.bottomTab();
+    const zoom = appShell.uiZoom();
     dock.setDockHeight((current) =>
-      clampDockHeight(current, tab, viewportHeight(), appShell.isCompactViewport()),
+      clampDockHeight(current, tab, viewportHeight(), appShell.isCompactViewport(), zoom),
     );
   });
 
@@ -590,6 +598,7 @@ export function useAppProviderState(): AppContextValue {
     handleClearRunTrace: runSession.handleClearRunTrace,
     handleRefreshRunHistory: runSession.handleRefreshRunHistory,
     handleReplayRun: runSession.handleReplayRun,
+    handleExitReplay: runSession.handleExitReplay,
     handleResumeDurableRun: runSession.handleResumeDurableRun,
     handleSubmitChat: chatComposer.handleSubmitChat,
     handleRefreshSkills: workspace.handleRefreshSkills,

@@ -137,7 +137,8 @@ and keep working toward submit unless the task is impossible.\n\
 When this workflow is assigned to a project, the execution folder is that project's \
 repository checkout on disk. You are working inside a real codebase — not an isolated \
 sandbox. Use read/search/find (and bash for git or other CLI tasks) with \
-repository-relative paths. Workflow definitions for this project live under \
+repository-relative paths only (e.g. package.json, src/App.tsx) — absolute paths under \
+the checkout work but waste tokens. Workflow definitions for this project live under \
 `.flow/workflows/` in that repo; do not confuse them with application source unless \
 the task targets them. A follow-on system block may include the exact repository path.\n\
 \n\
@@ -183,8 +184,8 @@ pub(crate) fn build_system_messages(
             "--- Project repository ---\n\
 This workflow is assigned to a project. You are working in the repository at:\n\
 {root}\n\
-All read/write/bash tools resolve paths relative to this checkout unless an absolute \
-path is given."
+Pass repository-relative paths to read/write/edit/search/find/bash (cwd). Absolute paths \
+under this checkout are accepted but waste tokens — prefer relative."
         ));
     }
     let node_prompt = node.agent.system_prompt.trim();

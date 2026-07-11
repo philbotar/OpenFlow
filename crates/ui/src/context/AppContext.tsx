@@ -236,6 +236,7 @@ export interface AppContextValue {
   handleClearRunTrace: () => Promise<void>;
   handleRefreshRunHistory: () => Promise<void>;
   handleReplayRun: (runId: string) => Promise<void>;
+  handleExitReplay: () => Promise<void>;
   handleResumeDurableRun: (runId: string) => Promise<void>;
   handleSubmitChat: (nodeId: NodeId) => Promise<void>;
   handleRefreshSkills: () => Promise<void>;

@@ -128,21 +128,51 @@ select:focus-visible {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 248px minmax(0, 1fr);
+  grid-template-columns: 1fr;
   grid-template-rows: auto minmax(0, 1fr);
   min-height: 100vh;
   min-height: 100dvh;
   height: 100vh;
   height: 100dvh;
   overflow: hidden;
+}
+
+/* Zoom content only — topbar stays native size (traffic lights / chrome). */
+.app-shell-body {
+  grid-row: 2;
+  grid-column: 1;
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  /* No width/height compensation: modern engines (WebKit + Chromium) resolve
+     percentages and stretch sizes inside a zoomed element in zoom-adjusted
+     units, so the grid cell already fills exactly. Adding calc(100%/zoom)
+     double-compensates and shrinks the app when zoomed in. */
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
   zoom: var(--ui-zoom);
 }
 
-.app-shell--settings {
+/* WebKit freezes layout when a grid-template-rows transition runs inside a
+   zoomed subtree: the track sticks at its old size, stranding the dock and
+   collapsible sections at stale heights (e.g. chat composer pushed off-screen
+   after zooming). Drop those transitions whenever UI zoom is active. */
+html.ui-zoomed .editor-screen,
+html.ui-zoomed .editor-main,
+html.ui-zoomed .tool-line-output-wrapper,
+html.ui-zoomed .collapsible-section {
+  transition-property: none;
+}
+
+.app-shell-body--settings,
+.app-shell--settings .app-shell-body {
   grid-template-columns: 1fr;
 }
 
-.app-shell--sidebar-hidden {
+.app-shell--sidebar-hidden .app-shell-body {
   grid-template-columns: 0 minmax(0, 1fr);
 }
 
@@ -156,7 +186,7 @@ select:focus-visible {
 }
 
 .sidebar {
-  grid-row: 2;
+  grid-row: 1;
   grid-column: 1;
   display: flex;
   flex-direction: column;
@@ -359,7 +389,8 @@ select:focus-visible {
   border-radius: var(--radius-md);
   background: transparent;
   color: var(--text);
-  font-size: 0.9rem;
+  font-size: 13px;
+  font-weight: 400;
   white-space: nowrap;
   transition: background 150ms ease, color 150ms ease;
 }
@@ -377,6 +408,11 @@ select:focus-visible {
   position: relative;
   display: inline-flex;
   flex-shrink: 0;
+}
+
+/* Match project-folder-icon visual stroke (1.9 user units @ 14px). */
+.sidebar-nav-button .sidebar-icon {
+  stroke-width: 1.11px;
 }
 
 .sidebar-nav-update-badge {
@@ -407,7 +443,7 @@ select:focus-visible {
 }
 
 .main-shell {
-  grid-row: 2;
+  grid-row: 1;
   grid-column: 2;
   display: flex;
   flex-direction: column;
@@ -422,7 +458,7 @@ select:focus-visible {
 }
 
 .settings-screen-shell {
-  grid-row: 2;
+  grid-row: 1;
   grid-column: 1;
   display: flex;
   flex-direction: column;
@@ -459,7 +495,7 @@ select:focus-visible {
 }
 
 .topbar {
-  grid-column: 1 / -1;
+  grid-column: 1;
   grid-row: 1;
   position: sticky;
   top: 0;
@@ -907,16 +943,9 @@ select:focus-visible {
   text-align: left;
 }
 
-.project-folder-header.expanded .project-folder-chevron {
-  transform: rotate(90deg);
-}
-
+/* Hide legacy expand chevron if a stale HMR bundle still mounts it. */
 .project-folder-chevron {
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
-  color: var(--text-muted);
-  transition: transform 150ms ease;
+  display: none;
 }
 
 .project-folder-icon {
@@ -932,6 +961,7 @@ select:focus-visible {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
+  font-weight: 400;
 }
 
 .project-workflow-list {
@@ -2218,6 +2248,7 @@ label {
   display: flex;
   flex-direction: column;
   gap: var(--chat-item-gap);
+  margin: 8px 8px 16px;
   padding-bottom: 0;
 }
 
@@ -2344,10 +2375,8 @@ label {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin: 0 16px 8px;
   padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-bottom: 1px solid var(--border);
   background: var(--surface-muted);
   font-size: 13px;
   color: var(--text-muted);
@@ -2369,6 +2398,13 @@ label {
 .chat-parallel-hint strong {
   color: var(--text);
   font-weight: 600;
+}
+
+.chat-replay-banner-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .chat-replay-banner button {
@@ -2852,6 +2888,12 @@ label {
 }
 
 .terminal-host {
+  /* xterm hit-testing breaks under CSS zoom: mouse coords arrive in zoomed
+     (visual) pixels while cell metrics are unzoomed, so selection lands on the
+     wrong cells. Cancel the shell zoom here (effective zoom 1); the font size
+     scales with zoom in JS instead. Percentages resolve in zoom-adjusted
+     units, so plain 100% already fills the box — no size compensation. */
+  zoom: var(--ui-zoom-inverse);
   width: 100%;
   height: 100%;
   min-height: 0;
@@ -3542,7 +3584,7 @@ label {
 
 .message-content .markdown-body ul,
 .message-content .markdown-body ol {
-  padding-left: 1.4em;
+  padding-left: 2em;
 }
 
 .message-content .markdown-body li + li {
@@ -3642,6 +3684,18 @@ label {
   cursor: default;
 }
 
+.tool-stack-children {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding-left: 0.75rem;
+  gap: 6px;
+}
+
+.tool-stack-children > .tool-line {
+  width: 100%;
+}
+
 .tool-line-name {
   display: inline-flex;
   align-items: center;
@@ -3676,6 +3730,12 @@ label {
 .tool-line--thinking .tool-line-output {
   padding-left: 0;
   color: var(--text-muted);
+  white-space: normal;
+}
+
+.tool-line--thinking .markdown-body ul,
+.tool-line--thinking .markdown-body ol {
+  padding-left: 2em;
 }
 
 .tool-line--thinking .tool-line-output-wrapper--expanded {
@@ -3757,8 +3817,8 @@ label {
 
 .tool-line[data-streaming="true"]:not(.tool-line--thinking) {
   border-color: var(--accent, #6366f1);
-  box-shadow: 0 0 6px rgba(99, 102, 241, 0.15);
-  animation: thinking-pulse 2s ease-in-out infinite;
+  /* Opacity-only pulse — box-shadow pulse was janky during live tool appends. */
+  animation: tool-line-pulse 2s ease-in-out infinite;
 }
 
 .tool-line--thinking[data-streaming="true"] .tool-line-name-text {
@@ -3769,17 +3829,10 @@ label {
 }
 
 .tool-line[data-streaming="true"]:not(.tool-line--thinking) .tool-line-name-text {
-  background: linear-gradient(
-    90deg,
-    var(--text-secondary, #94a3b8) 0%,
-    var(--text-primary, #e2e8f0) 40%,
-    var(--text-secondary, #94a3b8) 80%
-  );
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+  color: var(--text-primary, #e2e8f0);
+  background: none;
+  -webkit-text-fill-color: currentColor;
+  animation: tool-line-pulse 2s ease-in-out infinite;
 }
 
 .tool-line-preview {
@@ -3840,11 +3893,117 @@ label {
 }
 
 .node-completed-summary {
+  margin: 0;
+  font: inherit;
   font-size: 0.9rem;
   line-height: 1.55;
   color: var(--text);
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.node-completed-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.node-completed-attr-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  padding: 1px 2px;
+}
+
+.node-completed-attr-row:hover {
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+}
+
+.node-completed-chevron {
+  flex-shrink: 0;
+  margin-top: 2px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 150ms ease;
+}
+
+.node-completed-chevron--expanded {
+  transform: rotate(90deg);
+}
+
+.node-completed-attr-key {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.node-completed-attr-sep {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.node-completed-attr-value {
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.node-completed-attr-value--hidden {
+  color: var(--text-subtle);
+}
+
+.node-completed-attr-children {
+  margin-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.node-completed-attr-block {
+  margin: 0;
+  font: inherit;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.node-completed-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.node-completed-list-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.node-completed-list-bullet {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+
+.node-completed-list-item-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.node-completed-list-item .node-completed-attr-value {
+  flex: 1;
 }
 
 .trace-row {
@@ -3956,7 +4115,8 @@ label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.9rem;
+  font-size: 13px;
+  font-weight: 400;
 }
 
 .settings-section p {
@@ -4991,11 +5151,11 @@ label {
   .providers-panel {
     box-shadow: none;
   }
-  .app-shell {
+  .app-shell-body {
     grid-template-columns: 224px minmax(0, 1fr);
   }
 
-  .app-shell--sidebar-hidden {
+  .app-shell--sidebar-hidden .app-shell-body {
     grid-template-columns: 0 minmax(0, 1fr);
   }
 
@@ -5005,7 +5165,7 @@ label {
 }
 
 @media (max-width: 980px) {
-  .app-shell {
+  .app-shell-body {
     grid-template-columns: 1fr;
   }
 
@@ -5013,14 +5173,18 @@ label {
     grid-column: 1;
   }
 
+  .app-shell--compact .app-shell-body {
+    position: relative;
+  }
+
   .app-shell--compact .sidebar {
-    position: fixed;
-    top: var(--topbar-height);
+    position: absolute;
+    top: 0;
     left: 0;
     bottom: 0;
     z-index: 40;
     width: min(280px, 86vw);
-    height: calc(100dvh - var(--topbar-height));
+    height: auto;
     transform: translateX(-105%);
     transition: transform var(--dur-med) var(--ease-out);
     border-right: 1px solid var(--border-subtle);
@@ -5252,6 +5416,14 @@ label {
   animation: message-enter var(--dur-med) var(--ease-out);
 }
 
+/* Live tool stacks remount/update often — skip enter motion inside them. */
+.tool-stack,
+.tool-stack .conversation-item-enter,
+.tool-stack-children .conversation-item-enter,
+.tool-line--thinking {
+  animation: none;
+}
+
 @keyframes message-enter {
   from {
     opacity: 0;
@@ -5260,6 +5432,14 @@ label {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .conversation-item-enter,
+  .tool-approval-card,
+  .node-completed-row {
+    animation: none;
   }
 }
 

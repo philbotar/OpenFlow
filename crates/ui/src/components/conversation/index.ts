@@ -19,3 +19,5 @@ export { ThinkingBubble } from "./ThinkingBubble";
 export { ToolApprovalCardBody } from "./ToolApprovalCard";
 export { ToolBubble } from "./ToolBubble";
 export type { ToolBubbleProps } from "./ToolBubble";
+export { ToolStackBubble } from "./ToolStackBubble";
+export type { ToolStackBubbleProps } from "./ToolStackBubble";

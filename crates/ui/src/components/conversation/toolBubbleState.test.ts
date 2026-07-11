@@ -7,6 +7,9 @@ import {
   toolBubbleLineText,
   toolBubbleRowStatusText,
   toolBubbleTargetText,
+  toolStackSummaryText,
+  toolStackSummaryWithThinking,
+  toolStackThinkingLabel,
 } from "./toolBubbleState";
 
 describe("formatToolDisplayName", () => {
@@ -34,8 +37,8 @@ describe("formatToolDisplayName", () => {
     expect(formatToolDisplayName("search")).toBe("Search Files");
   });
 
-  it("maps find to 'Find Files'", () => {
-    expect(formatToolDisplayName("find")).toBe("Find Files");
+  it("maps find to 'Search Folders'", () => {
+    expect(formatToolDisplayName("find")).toBe("Search Folders");
   });
 
   it("maps ast_grep to 'AST Search'", () => {
@@ -126,6 +129,13 @@ describe("toolBubbleTargetText", () => {
     expect(toolBubbleTargetText("read", { path: "crates/ui/src/App.tsx" })).toBe(
       "crates/ui/src/App.tsx",
     );
+  });
+
+  it("strips execution cwd from absolute path", () => {
+    const cwd = "/Users/philipbotar/Developer/DailyPlanner";
+    expect(
+      toolBubbleTargetText("edit", { path: `${cwd}/package.json` }, cwd),
+    ).toBe("package.json");
   });
 
   it("extracts search pattern and paths", () => {
@@ -244,5 +254,99 @@ describe("resolveToolSummary", () => {
 
   it("returns undefined when runState is null", () => {
     expect(resolveToolSummary("node-1" as NodeId, "tc-1", null)).toBeUndefined();
+  });
+});
+
+describe("toolStackSummaryText", () => {
+  it("aggregates by family in first-appearance order with plurals", () => {
+    const text = toolStackSummaryText([
+      { toolName: "read", status: "completed" },
+      { toolName: "read", status: "completed" },
+      { toolName: "search", status: "completed" },
+      { toolName: "search", status: "completed" },
+      { toolName: "search", status: "completed" },
+    ]);
+    expect(text).toBe("Read 2 files · Grepped 3 patterns");
+  });
+
+  it("labels find stacks as searched folders", () => {
+    const text = toolStackSummaryText([
+      { toolName: "find", status: "completed" },
+      { toolName: "find", status: "completed" },
+    ]);
+    expect(text).toBe("Searched 2 folders");
+  });
+
+  it("uses singular noun for count 1", () => {
+    const text = toolStackSummaryText([
+      { toolName: "read", status: "completed" },
+      { toolName: "bash", status: "completed" },
+      { toolName: "bash", status: "completed" },
+    ]);
+    expect(text).toBe("Read 1 file · Ran 2 commands");
+  });
+
+  it("uses active verb when any call in the family is still active", () => {
+    const text = toolStackSummaryText([
+      { toolName: "read", status: "completed" },
+      { toolName: "read", status: "running" },
+      { toolName: "read", status: "completed" },
+    ]);
+    expect(text).toBe("Reading 3 files");
+  });
+
+  it("treats proposed and awaiting_approval as active", () => {
+    const statuses: ToolCallStatus[] = ["proposed", "awaiting_approval"];
+    for (const status of statuses) {
+      expect(
+        toolStackSummaryText([
+          { toolName: "search", status },
+          { toolName: "search", status: "completed" },
+          { toolName: "search", status: "completed" },
+        ]),
+      ).toBe("Grepping 3 patterns");
+    }
+  });
+
+  it("falls back for unknown tools with noun calls", () => {
+    const text = toolStackSummaryText([
+      { toolName: "my_tool", status: "completed" },
+      { toolName: "my_tool", status: "completed" },
+      { toolName: "my_tool", status: "completed" },
+    ]);
+    expect(text).toBe("Ran my_tool 3 calls");
+  });
+});
+
+describe("toolStackSummaryWithThinking", () => {
+  it("appends Thought for a while when stack has settled thinking", () => {
+    expect(
+      toolStackSummaryWithThinking(
+        [
+          { toolName: "bash", status: "completed" },
+          { toolName: "bash", status: "completed" },
+          { toolName: "read", status: "completed" },
+        ],
+        [
+          { role: "Thinking", content: "plan" },
+          { role: "Thinking", content: "", toolCallId: "a" },
+        ],
+      ),
+    ).toBe("Ran 2 commands · Read 1 file · Thought for a while");
+  });
+
+  it("uses Thinking while a thinking message is streaming", () => {
+    expect(
+      toolStackThinkingLabel([{ role: "Thinking", content: "", streaming: true }]),
+    ).toBe("Thinking");
+  });
+
+  it("omits thinking substring when stack has no thinking", () => {
+    expect(
+      toolStackSummaryWithThinking(
+        [{ toolName: "read", status: "completed" }],
+        [{ role: "Thinking", content: "", toolCallId: "a" }],
+      ),
+    ).toBe("Read 1 file");
   });
 });

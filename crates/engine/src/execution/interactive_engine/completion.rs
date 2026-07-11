@@ -9,11 +9,13 @@ use crate::conversation::{
 };
 use crate::execution::tool_results::denied_tool_result;
 use crate::execution::NodeFailureKind;
-use crate::graph::{NodeId, RetryPolicy};
+use crate::graph::{
+    apply_runtime_patch_to_tool_config, runtime_patch_for, NodeId, RetryPolicy,
+};
 use crate::ports::{
     AgentError, AgentNeedUserInput, AgentToolCallBatch, AgentTurnOutcome, AgentTurnSuccess,
 };
-use crate::tools::{tool_decision_for_call, ToolDecision};
+use crate::tools::{relativize_tool_call_arguments, tool_decision_for_call, ToolDecision};
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 
@@ -87,7 +89,10 @@ impl InteractiveEngine {
 
         let schema_hint = self.find_node(node_id).map_or_else(
             || "see the node output schema".to_string(),
-            |node| node.agent.output_schema.to_string(),
+            |node| {
+                serde_json::to_string_pretty(&node.agent.output_schema)
+                    .unwrap_or_else(|_| node.agent.output_schema.to_string())
+            },
         );
 
         let retry_count = self
@@ -262,10 +267,15 @@ impl InteractiveEngine {
             return;
         }
 
-        let config = self
+        let mut config = self
             .find_node(node_id)
             .map(|node| node.agent.tools.clone())
             .unwrap_or_default();
+        if let Some(store) = &self.runtime_config_store {
+            if let Some(patch) = runtime_patch_for(store, node_id) {
+                apply_runtime_patch_to_tool_config(&mut config, &patch);
+            }
+        }
         let transcript = self.transcripts.entry(node_id.clone()).or_default();
         if let Some(message) = filter_tool_turn_assistant_message(batch.assistant_message)
             .filter(|message| !message.trim().is_empty())
@@ -274,7 +284,9 @@ impl InteractiveEngine {
         }
         let mut pending_calls = Vec::new();
         let mut requires_approval_for_batch = false;
-        for call in batch.tool_calls {
+        let root = self.project_repository_root.as_deref();
+        for mut call in batch.tool_calls {
+            call.arguments = relativize_tool_call_arguments(call.arguments, root);
             transcript.push(AgentTranscriptItem::ToolCall { call: call.clone() });
             match tool_decision_for_call(&config, &call) {
                 ToolDecision::AutoAllow => pending_calls.push(call),

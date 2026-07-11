@@ -29,7 +29,7 @@ export function ThinkingBubble(allProps: ThinkingBubbleProps) {
   return (
     <Show when={hasContent() || local.message.streaming}>
       <div
-        class={`tool-line tool-line--thinking tool-line--expandable conversation-item-enter ${local.class ?? ""}`}
+        class={`tool-line tool-line--thinking tool-line--expandable ${local.class ?? ""}`}
         data-streaming={local.message.streaming ? "true" : "false"}
         data-tool-name="thinking"
         {...rest}
