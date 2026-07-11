@@ -25,8 +25,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write;
 use std::future::Future;
 use std::pin::Pin;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use thiserror::Error;
+use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 /// Pause payload when a node needs human text input.

@@ -13,7 +13,8 @@ use crate::ports::{
     AgentError, AgentNeedUserInput, AgentToolCallBatch, AgentTurnOutcome, AgentTurnSuccess,
 };
 use crate::tools::{relativize_tool_call_arguments, tool_decision_for_call, ToolDecision};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use tokio::time::Instant;
 use uuid::Uuid;
 
 impl InteractiveEngine {
