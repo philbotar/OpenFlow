@@ -144,7 +144,13 @@ pub(super) fn partition_choice(
     (text_parts, reasoning, tool_calls)
 }
 
-const EMPTY_TURN_ERROR: &str = "provider returned neither tool calls nor recoverable output";
+/// Canonical empty-turn marker. Engine [`AgentError::is_empty_provider_turn`] matches this
+/// (and the enriched "no tool calls and no usable text" form).
+pub(crate) const EMPTY_TURN_ERROR: &str = "provider returned neither tool calls nor recoverable output";
+
+fn is_empty_turn_message(message: &str) -> bool {
+    message.contains(EMPTY_TURN_ERROR) || message.contains("no message or tool call")
+}
 
 /// Replace the generic empty-turn message with provider + model context.
 #[must_use]
@@ -160,7 +166,7 @@ pub fn enrich_empty_turn_error_with_response(
     diagnostics: Option<&ResponseDiagnostics>,
 ) -> AgentError {
     if let AgentError::Failed(message) = &error {
-        if message.contains(EMPTY_TURN_ERROR) {
+        if is_empty_turn_message(message) {
             let model = model.trim();
             let mut detail = if model.is_empty() {
                 format!(
@@ -423,6 +429,25 @@ mod tests {
         assert!(message.contains("Custom OpenAI-compatible API"));
         assert!(message.contains("mimo-v2.5"));
         assert!(!message.contains(EMPTY_TURN_ERROR));
+    }
+
+    #[test]
+    fn enrich_rewrites_rig_empty_response_phrase() {
+        let err = enrich_empty_turn_error(
+            AgentError::Failed(
+                "Custom OpenAI-compatible API response error: \
+                 Response contained no message or tool call (empty)"
+                    .to_string(),
+            ),
+            "Custom OpenAI-compatible API",
+            "mimo",
+        );
+        let AgentError::Failed(message) = err else {
+            panic!("expected Failed");
+        };
+        assert!(message.contains("no tool calls and no usable text"));
+        assert!(message.contains("mimo"));
+        assert!(!message.contains("no message or tool call"));
     }
 
     #[test]

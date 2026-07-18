@@ -42,6 +42,9 @@ export function ProvidersSection() {
   const credentialLabel = () => (isBedrock() ? "AWS credentials" : "Local API key");
   const [refreshingModels, setRefreshingModels] = createSignal(false);
   const [verifyingCredentials, setVerifyingCredentials] = createSignal(false);
+  const [newEffortValue, setNewEffortValue] = createSignal("");
+  const [newEffortLabel, setNewEffortLabel] = createSignal("");
+  const [newEffortUsesBudget, setNewEffortUsesBudget] = createSignal(false);
 
   async function handleVerifyBedrockCredentials() {
     setVerifyingCredentials(true);
@@ -302,24 +305,84 @@ export function ProvidersSection() {
           </div>
         </section>
 
-        <Show when={effortOptions().length > 0}>
-          <section
-            class="providers-panel providers-panel--reasoning"
-            aria-labelledby="providers-reasoning-heading"
-          >
-            <div class="providers-panel-header">
-              <div>
-                <h3 id="providers-reasoning-heading" class="settings-subheading">
-                  Reasoning defaults
-                </h3>
-                <p class="providers-panel-copy">
-                  Applied to agent nodes that do not set their own effort level.
-                </p>
-              </div>
+        <section
+          class="providers-panel providers-panel--reasoning"
+          aria-labelledby="providers-reasoning-heading"
+        >
+          <div class="providers-panel-header">
+            <div>
+              <h3 id="providers-reasoning-heading" class="settings-subheading">
+                Reasoning defaults
+              </h3>
+              <p class="providers-panel-copy">
+                Effort options are sent as <code>reasoning_effort</code> (e.g. Fast →{" "}
+                <code>none</code> for Grok). Applied to agent nodes that do not set their own
+                level.
+              </p>
             </div>
+          </div>
+          <div class="chip-list">
+            <For each={effortOptions()}>
+              {(option) => (
+                <button
+                  type="button"
+                  class="model-chip"
+                  data-effort-value={option.value}
+                  onClick={() => ctx.handleRemoveReasoningEffortOption(option.value)}
+                >
+                  {option.label === option.value
+                    ? option.label
+                    : `${option.label} (${option.value})`}
+                  <span>×</span>
+                </button>
+              )}
+            </For>
+          </div>
+          <div class="inline-form providers-effort-add">
+            <input
+              class="text-input"
+              placeholder="Value (e.g. none)"
+              value={newEffortValue()}
+              onInput={(event) => setNewEffortValue(event.currentTarget.value)}
+            />
+            <input
+              class="text-input"
+              placeholder="Label (optional)"
+              value={newEffortLabel()}
+              onInput={(event) => setNewEffortLabel(event.currentTarget.value)}
+            />
+            <label class="providers-effort-budget-toggle">
+              <input
+                type="checkbox"
+                checked={newEffortUsesBudget()}
+                onChange={(event) => setNewEffortUsesBudget(event.currentTarget.checked)}
+              />
+              <span>Budget tokens</span>
+            </label>
+            <button
+              type="button"
+              class="secondary-button"
+              onClick={() => {
+                const value = newEffortValue().trim();
+                if (!value) return;
+                ctx.handleAddReasoningEffortOption({
+                  value,
+                  label: newEffortLabel().trim() || value,
+                  uses_budget_tokens: newEffortUsesBudget(),
+                });
+                setNewEffortValue("");
+                setNewEffortLabel("");
+                setNewEffortUsesBudget(false);
+              }}
+            >
+              <SidebarIcon name="plus" />
+              Add effort
+            </button>
+          </div>
+          <Show when={effortOptions().length > 0}>
             <div class="field-grid providers-reasoning-fields">
               <label>
-                <span>Reasoning effort</span>
+                <span>Default reasoning effort</span>
                 <TextSelect
                   value={selectedEffort()}
                   options={effortSelectOptions()}
@@ -360,8 +423,8 @@ export function ProvidersSection() {
                 </label>
               </Show>
             </div>
-          </section>
-        </Show>
+          </Show>
+        </section>
       </div>
 
       <section

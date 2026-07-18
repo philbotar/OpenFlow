@@ -311,6 +311,54 @@ async fn custom_chat_empty_turn_preserves_safe_response_diagnostics() {
 }
 
 #[tokio::test]
+async fn custom_chat_fully_empty_choice_is_empty_provider_turn() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "chatcmpl-blank",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "test-model",
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": null
+                },
+                "finish_reason": "stop"
+            }],
+            "usage": {
+                "prompt_tokens": 10,
+                "completion_tokens": 0,
+                "total_tokens": 10
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let client = create_provider(custom_openai_test_config(&server.uri()));
+    let error = client
+        .invoke_stream(test_request(), &RecordingSink::default())
+        .await
+        .unwrap_err();
+
+    assert!(
+        error.is_empty_provider_turn(),
+        "Rig empty choice must classify as empty-turn for engine retries: {error}"
+    );
+    let message = error.to_string();
+    assert!(
+        message.contains("no tool calls and no usable text"),
+        "expected enriched empty-turn message, got {message}"
+    );
+    assert!(
+        !message.contains("no message or tool call"),
+        "raw Rig phrase must not leak: {message}"
+    );
+}
+
+#[tokio::test]
 async fn chat_completions_external_tool_call_batch() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

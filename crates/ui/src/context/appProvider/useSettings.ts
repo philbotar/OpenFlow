@@ -13,7 +13,9 @@ import type {
   AppSettings,
   McpDiscoveryRow,
   ProviderReadiness,
+  ReasoningEffortOption,
 } from "../../lib/types";
+import { defaultReasoningBudgetTokens, reasoningEffortOptions } from "../../lib/workflow";
 
 type ToastHandler = (message: string, context?: string) => void;
 
@@ -116,6 +118,44 @@ export function useSettings(params: UseSettingsParams) {
     });
   };
 
+  const handleAddReasoningEffortOption = (option: ReasoningEffortOption) => {
+    const value = option.value.trim();
+    if (value === "") return;
+    const label = option.label.trim() || value;
+    void updateSettings((draft) => {
+      const profile = activeProfile(draft);
+      const current = reasoningEffortOptions(profile);
+      if (current.some((entry) => entry.value === value)) return;
+      profile.reasoning_effort_options = [
+        ...current,
+        {
+          value,
+          label,
+          uses_budget_tokens: option.uses_budget_tokens,
+        },
+      ];
+    });
+  };
+
+  const handleRemoveReasoningEffortOption = (value: string) => {
+    void updateSettings((draft) => {
+      const profile = activeProfile(draft);
+      const current = reasoningEffortOptions(profile);
+      profile.reasoning_effort_options = current.filter((entry) => entry.value !== value);
+      if (
+        profile.default_reasoning_effort === value ||
+        profile.defaultReasoningEffort === value
+      ) {
+        profile.default_reasoning_effort = null;
+        profile.defaultReasoningEffort = null;
+      }
+      const budgets = { ...defaultReasoningBudgetTokens(profile) };
+      delete budgets[value];
+      profile.default_reasoning_budget_tokens = budgets;
+      profile.defaultReasoningBudgetTokens = budgets;
+    });
+  };
+
   createEffect(() => {
     const providerId = settings().active_provider;
     void desktop
@@ -153,5 +193,7 @@ export function useSettings(params: UseSettingsParams) {
     handleSaveSettings,
     handleAddKnownModel,
     handleRemoveKnownModel,
+    handleAddReasoningEffortOption,
+    handleRemoveReasoningEffortOption,
   };
 }

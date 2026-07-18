@@ -99,6 +99,8 @@ describe("ProvidersSection", () => {
     const handleApiKeyInput = vi.fn();
     const handleAddKnownModel = vi.fn();
     const handleRemoveKnownModel = vi.fn();
+    const handleAddReasoningEffortOption = vi.fn();
+    const handleRemoveReasoningEffortOption = vi.fn();
     const handleSaveSettings = vi.fn();
 
     const ctx = {
@@ -116,6 +118,8 @@ describe("ProvidersSection", () => {
       handleApiKeyInput,
       handleAddKnownModel,
       handleRemoveKnownModel,
+      handleAddReasoningEffortOption,
+      handleRemoveReasoningEffortOption,
       handleSaveSettings,
       updateSettings: async (mutator: (draft: AppSettings) => void) => {
         setSettings((current) => {
@@ -142,6 +146,8 @@ describe("ProvidersSection", () => {
       handleApiKeyInput,
       handleAddKnownModel,
       handleRemoveKnownModel,
+      handleAddReasoningEffortOption,
+      handleRemoveReasoningEffortOption,
       handleSaveSettings,
     };
   }
@@ -183,9 +189,14 @@ describe("ProvidersSection", () => {
     expect(container.querySelector(".readiness-chip.ready")).not.toBeNull();
   });
 
-  test("hides reasoning subsection when profile has no effort options", () => {
+  test("shows reasoning subsection even when profile has no effort options", () => {
     renderSection("openai");
-    expect(subheading("providers-reasoning-heading")).toBeNull();
+    expect(subheading("providers-reasoning-heading")?.textContent).toBe("Reasoning defaults");
+    expect(
+      Array.from(container.querySelectorAll("button")).some(
+        (button) => button.textContent?.trim() === "Add effort",
+      ),
+    ).toBe(true);
   });
 
   test("shows reasoning subsection when profile has effort options", () => {
@@ -193,12 +204,111 @@ describe("ProvidersSection", () => {
     expect(subheading("providers-reasoning-heading")?.textContent).toBe("Reasoning defaults");
   });
 
+  test("calls handleAddReasoningEffortOption when add effort is clicked", () => {
+    const { handleAddReasoningEffortOption } = renderSection("openai");
+    const valueInput = container.querySelector(
+      'input[placeholder="Value (e.g. none)"]',
+    ) as HTMLInputElement;
+    const labelInput = container.querySelector(
+      'input[placeholder="Label (optional)"]',
+    ) as HTMLInputElement;
+    valueInput.value = "none";
+    valueInput.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    labelInput.value = "Fast";
+    labelInput.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    const addButton = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "Add effort",
+    ) as HTMLButtonElement;
+    addButton.click();
+    expect(handleAddReasoningEffortOption).toHaveBeenCalledWith({
+      value: "none",
+      label: "Fast",
+      uses_budget_tokens: false,
+    });
+  });
+
+  test("removes a reasoning effort option and clears matching default", async () => {
+    dispose?.();
+    container.remove();
+    container = document.createElement("div");
+    document.body.appendChild(container);
+
+    const [liveSettings, setLiveSettings] = createSignal(makeSettings("anthropic"));
+    dispose = render(
+      () => (
+        <AppContext.Provider
+          value={
+            {
+              settings: liveSettings,
+              activeProfileMemo: () => activeProfile(liveSettings()),
+              providerIdsMemo: () => ["openai", "anthropic", "custom_openai_compatible", "bedrock"],
+              activeProviderKeyInput: () => "stored-key",
+              newModelInputByProvider: () => ({}),
+              readiness: () => ({
+                ready: true,
+                provider: "Anthropic",
+                message: "Ready",
+                envVar: "ANTHROPIC_API_KEY",
+              }),
+              handleApiKeyInput: vi.fn(),
+              handleAddKnownModel: vi.fn(),
+              handleRemoveKnownModel: vi.fn(),
+              handleAddReasoningEffortOption: vi.fn(),
+              handleRemoveReasoningEffortOption: (value: string) => {
+                setLiveSettings((current) => {
+                  const next = structuredClone(current);
+                  const profile = activeProfile(next);
+                  const options = profile.reasoning_effort_options ?? [];
+                  profile.reasoning_effort_options = options.filter((entry) => entry.value !== value);
+                  if (profile.default_reasoning_effort === value) {
+                    profile.default_reasoning_effort = null;
+                  }
+                  const budgets = { ...(profile.default_reasoning_budget_tokens ?? {}) };
+                  delete budgets[value];
+                  profile.default_reasoning_budget_tokens = budgets;
+                  return next;
+                });
+              },
+              handleSaveSettings: vi.fn(),
+              updateSettings: async (mutator: (draft: AppSettings) => void) => {
+                setLiveSettings((current) => {
+                  const next = structuredClone(current);
+                  mutator(next);
+                  return next;
+                });
+              },
+              setNewModelInputByProvider: vi.fn(),
+            } as unknown as AppContextValue
+          }
+        >
+          <ProvidersSection />
+        </AppContext.Provider>
+      ),
+      container,
+    );
+
+    const chip = container.querySelector(
+      '.model-chip[data-effort-value="low"]',
+    ) as HTMLButtonElement;
+    expect(chip).not.toBeNull();
+    chip.click();
+    await Promise.resolve();
+
+    expect(liveSettings().providers.anthropic.reasoning_effort_options?.map((o) => o.value)).toEqual(
+      ["medium"],
+    );
+    expect(liveSettings().providers.anthropic.default_reasoning_effort).toBeNull();
+    expect(liveSettings().providers.anthropic.default_reasoning_budget_tokens?.low).toBeUndefined();
+  });
+
   test("shows budget token input when selected effort uses budget", () => {
     renderSection("anthropic");
     const budgetLabel = Array.from(container.querySelectorAll("label")).find((candidate) =>
-      candidate.querySelector("span")?.textContent?.startsWith("Budget tokens"),
+      candidate.querySelector("span")?.textContent?.startsWith("Budget tokens for"),
     );
-    const budgetInput = budgetLabel?.querySelector("input") as HTMLInputElement | null;
+    const budgetInput = budgetLabel?.querySelector(
+      'input[type="number"]',
+    ) as HTMLInputElement | null;
     expect(budgetInput).not.toBeNull();
     expect(budgetInput?.value).toBe("10240");
   });
@@ -244,7 +354,9 @@ describe("ProvidersSection", () => {
 
   test("calls handleRemoveKnownModel when model chip is clicked", () => {
     const { handleRemoveKnownModel } = renderSection("custom_openai_compatible");
-    const chip = container.querySelector(".model-chip") as HTMLButtonElement;
+    const chip = [...container.querySelectorAll(".model-chip")].find((candidate) =>
+      candidate.textContent?.includes("compatible-model"),
+    ) as HTMLButtonElement;
     chip.click();
     expect(handleRemoveKnownModel).toHaveBeenCalledWith("compatible-model");
   });

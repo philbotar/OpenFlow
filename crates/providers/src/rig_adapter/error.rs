@@ -9,6 +9,7 @@
 )]
 
 use crate::http_errors::classify_http_status;
+use crate::rig_adapter::outcome::EMPTY_TURN_ERROR;
 use engine::AgentError;
 use rig_core::completion::CompletionError;
 use rig_core::http_client::Error as HttpClientError;
@@ -17,6 +18,11 @@ use rig_core::http_client::Error as HttpClientError;
 #[must_use]
 pub fn classify_status(status: u16, body: &str, label: &str) -> AgentError {
     classify_http_status(status, body, label)
+}
+
+/// Rig rejects empty assistant choices with this phrase before OpenFlow outcome mapping runs.
+fn is_rig_empty_response(message: &str) -> bool {
+    message.contains("no message or tool call")
 }
 
 #[must_use]
@@ -33,9 +39,17 @@ pub fn to_agent_error(error: CompletionError, label: &str) -> AgentError {
             AgentError::Failed(format!("{label} request error: {error}"))
         }
         CompletionError::ResponseError(message) => {
-            AgentError::Failed(format!("{label} response error: {message}"))
+            // Normalize so enrich_empty_turn_error + engine empty-turn retries both fire.
+            if is_rig_empty_response(&message) {
+                AgentError::Failed(EMPTY_TURN_ERROR.to_string())
+            } else {
+                AgentError::Failed(format!("{label} response error: {message}"))
+            }
         }
         CompletionError::ProviderError(message) => {
+            if is_rig_empty_response(&message) {
+                return AgentError::Failed(EMPTY_TURN_ERROR.to_string());
+            }
             let rendered = format!("{label} provider error: {message}");
             if crate::http_errors::is_retryable_proxy_body(&message) {
                 AgentError::Transient(rendered)
@@ -155,6 +169,36 @@ mod tests {
             "Custom OpenAI-compatible API",
         );
         assert!(matches!(err, AgentError::Failed(_)));
+    }
+
+    #[test]
+    fn rig_empty_response_error_maps_to_empty_provider_turn() {
+        let err = to_agent_error(
+            CompletionError::ResponseError(
+                "Response contained no message or tool call (empty)".to_string(),
+            ),
+            "Custom OpenAI-compatible API",
+        );
+        assert!(
+            err.is_empty_provider_turn(),
+            "expected empty-turn classification, got {err}"
+        );
+        // Raw Rig phrase must not leak; enrich path expects the canonical marker.
+        assert!(!err.to_string().contains("no message or tool call"));
+        assert!(err
+            .to_string()
+            .contains("neither tool calls nor recoverable output"));
+    }
+
+    #[test]
+    fn rig_empty_provider_error_maps_to_empty_provider_turn() {
+        let err = to_agent_error(
+            CompletionError::ProviderError(
+                "Response contained no message or tool call (empty)".to_string(),
+            ),
+            "Custom OpenAI-compatible API",
+        );
+        assert!(err.is_empty_provider_turn(), "got {err}");
     }
 
     #[tokio::test]

@@ -265,81 +265,79 @@ impl RigModel {
                 if completion_request.max_tokens.is_none() {
                     completion_request.max_tokens = Some(ANTHROPIC_MAX_TOKENS);
                 }
-                let response = model
-                    .completion(completion_request)
-                    .await
-                    .map_err(|e| error::to_agent_error(e, provider_label))?;
-                let choice: Vec<AssistantContent> = response.choice.into_iter().collect();
-                outcome::resolve_outcome(
-                    choice,
-                    response.usage,
-                    provider_label,
-                    Some(&request.output_schema),
-                    request.turn_phase,
-                    no_tool_calls,
-                )
+                match model.completion(completion_request).await {
+                    Err(e) => Err(error::to_agent_error(e, provider_label)),
+                    Ok(response) => {
+                        let choice: Vec<AssistantContent> = response.choice.into_iter().collect();
+                        outcome::resolve_outcome(
+                            choice,
+                            response.usage,
+                            provider_label,
+                            Some(&request.output_schema),
+                            request.turn_phase,
+                            no_tool_calls,
+                        )
+                    }
+                }
             }
-            Self::OpenAiChat(model) => {
-                let response = model
-                    .completion(completion_request)
-                    .await
-                    .map_err(|e| error::to_agent_error(e, provider_label))?;
-                let finish_reason = response
-                    .raw_response
-                    .choices
-                    .first()
-                    .map(|choice| choice.finish_reason.clone());
-                let choice: Vec<AssistantContent> = response.choice.into_iter().collect();
-                let diagnostics =
-                    outcome::response_diagnostics(&choice, &response.usage, finish_reason);
-                outcome::resolve_outcome(
-                    choice,
-                    response.usage,
-                    provider_label,
-                    Some(&request.output_schema),
-                    request.turn_phase,
-                    no_tool_calls,
-                )
-                .map_err(|error| {
-                    outcome::enrich_empty_turn_error_with_response(
-                        error,
+            Self::OpenAiChat(model) => match model.completion(completion_request).await {
+                Err(e) => Err(error::to_agent_error(e, provider_label)),
+                Ok(response) => {
+                    let finish_reason = response
+                        .raw_response
+                        .choices
+                        .first()
+                        .map(|choice| choice.finish_reason.clone());
+                    let choice: Vec<AssistantContent> = response.choice.into_iter().collect();
+                    let diagnostics =
+                        outcome::response_diagnostics(&choice, &response.usage, finish_reason);
+                    outcome::resolve_outcome(
+                        choice,
+                        response.usage,
                         provider_label,
-                        &model_name,
-                        Some(&diagnostics),
+                        Some(&request.output_schema),
+                        request.turn_phase,
+                        no_tool_calls,
                     )
-                })
-            }
-            Self::OpenAiResponses(model) => {
-                let response = model
-                    .completion(completion_request)
-                    .await
-                    .map_err(|e| error::to_agent_error(e, provider_label))?;
-                let choice: Vec<AssistantContent> = response.choice.into_iter().collect();
-                outcome::resolve_outcome(
-                    choice,
-                    response.usage,
-                    provider_label,
-                    Some(&request.output_schema),
-                    request.turn_phase,
-                    no_tool_calls,
-                )
-            }
+                    .map_err(|error| {
+                        outcome::enrich_empty_turn_error_with_response(
+                            error,
+                            provider_label,
+                            &model_name,
+                            Some(&diagnostics),
+                        )
+                    })
+                }
+            },
+            Self::OpenAiResponses(model) => match model.completion(completion_request).await {
+                Err(e) => Err(error::to_agent_error(e, provider_label)),
+                Ok(response) => {
+                    let choice: Vec<AssistantContent> = response.choice.into_iter().collect();
+                    outcome::resolve_outcome(
+                        choice,
+                        response.usage,
+                        provider_label,
+                        Some(&request.output_schema),
+                        request.turn_phase,
+                        no_tool_calls,
+                    )
+                }
+            },
             #[cfg(feature = "bedrock")]
-            Self::Bedrock(model) => {
-                let response = model
-                    .completion(completion_request)
-                    .await
-                    .map_err(|e| error::to_agent_error(e, provider_label))?;
-                let choice: Vec<AssistantContent> = response.choice.into_iter().collect();
-                outcome::resolve_outcome(
-                    choice,
-                    response.usage,
-                    provider_label,
-                    Some(&request.output_schema),
-                    request.turn_phase,
-                    no_tool_calls,
-                )
-            }
+            Self::Bedrock(model) => match model.completion(completion_request).await {
+                Err(e) => Err(error::to_agent_error(e, provider_label)),
+                Ok(response) => {
+                    let choice: Vec<AssistantContent> = response.choice.into_iter().collect();
+                    outcome::resolve_outcome(
+                        choice,
+                        response.usage,
+                        provider_label,
+                        Some(&request.output_schema),
+                        request.turn_phase,
+                        no_tool_calls,
+                    )
+                }
+            },
         };
         result.map_err(|error| outcome::enrich_empty_turn_error(error, provider_label, &model_name))
     }
@@ -373,66 +371,64 @@ impl RigModel {
                 if completion_request.max_tokens.is_none() {
                     completion_request.max_tokens = Some(ANTHROPIC_MAX_TOKENS);
                 }
-                let rig_stream = model
-                    .stream(completion_request)
-                    .await
-                    .map_err(|e| error::to_agent_error(e, provider_label))?;
-                stream::drain(
-                    rig_stream,
-                    sink,
-                    provider_label,
-                    Some(&request.output_schema),
-                    request.turn_phase,
-                    no_tool_calls,
-                )
-                .await
+                match model.stream(completion_request).await {
+                    Err(e) => Err(error::to_agent_error(e, provider_label)),
+                    Ok(rig_stream) => {
+                        stream::drain(
+                            rig_stream,
+                            sink,
+                            provider_label,
+                            Some(&request.output_schema),
+                            request.turn_phase,
+                            no_tool_calls,
+                        )
+                        .await
+                    }
+                }
             }
-            Self::OpenAiChat(model) => {
-                let rig_stream = model
-                    .stream(completion_request)
+            Self::OpenAiChat(model) => match model.stream(completion_request).await {
+                Err(e) => Err(error::to_agent_error(e, provider_label)),
+                Ok(rig_stream) => {
+                    stream::drain(
+                        rig_stream,
+                        sink,
+                        provider_label,
+                        Some(&request.output_schema),
+                        request.turn_phase,
+                        no_tool_calls,
+                    )
                     .await
-                    .map_err(|e| error::to_agent_error(e, provider_label))?;
-                stream::drain(
-                    rig_stream,
-                    sink,
-                    provider_label,
-                    Some(&request.output_schema),
-                    request.turn_phase,
-                    no_tool_calls,
-                )
-                .await
-            }
-            Self::OpenAiResponses(model) => {
-                let rig_stream = model
-                    .stream(completion_request)
+                }
+            },
+            Self::OpenAiResponses(model) => match model.stream(completion_request).await {
+                Err(e) => Err(error::to_agent_error(e, provider_label)),
+                Ok(rig_stream) => {
+                    stream::drain(
+                        rig_stream,
+                        sink,
+                        provider_label,
+                        Some(&request.output_schema),
+                        request.turn_phase,
+                        no_tool_calls,
+                    )
                     .await
-                    .map_err(|e| error::to_agent_error(e, provider_label))?;
-                stream::drain(
-                    rig_stream,
-                    sink,
-                    provider_label,
-                    Some(&request.output_schema),
-                    request.turn_phase,
-                    no_tool_calls,
-                )
-                .await
-            }
+                }
+            },
             #[cfg(feature = "bedrock")]
-            Self::Bedrock(model) => {
-                let rig_stream = model
-                    .stream(completion_request)
+            Self::Bedrock(model) => match model.stream(completion_request).await {
+                Err(e) => Err(error::to_agent_error(e, provider_label)),
+                Ok(rig_stream) => {
+                    stream::drain(
+                        rig_stream,
+                        sink,
+                        provider_label,
+                        Some(&request.output_schema),
+                        request.turn_phase,
+                        no_tool_calls,
+                    )
                     .await
-                    .map_err(|e| error::to_agent_error(e, provider_label))?;
-                stream::drain(
-                    rig_stream,
-                    sink,
-                    provider_label,
-                    Some(&request.output_schema),
-                    request.turn_phase,
-                    no_tool_calls,
-                )
-                .await
-            }
+                }
+            },
         };
         result.map_err(|error| outcome::enrich_empty_turn_error(error, provider_label, &model_name))
     }
@@ -610,15 +606,23 @@ fn join_base_url(base_url: &str, path: &str) -> String {
     if path.starts_with("http://") || path.starts_with("https://") {
         return path.to_string();
     }
-    format!(
-        "{}{}",
-        base_url.trim_end_matches('/'),
-        if path.starts_with('/') {
-            path.to_string()
-        } else {
-            format!("/{path}")
+
+    let base = base_url.trim_end_matches('/');
+    let mut path = path.trim_start_matches('/');
+    // Specs often set both base `.../v1` and path `v1/chat/completions`. After
+    // stripping the endpoint suffix that becomes `.../v1` + `v1` → double v1.
+    if base.ends_with("/v1") {
+        if path == "v1" {
+            return base.to_string();
         }
-    )
+        if let Some(rest) = path.strip_prefix("v1/") {
+            path = rest;
+        }
+    }
+    if path.is_empty() {
+        return base.to_string();
+    }
+    format!("{base}/{path}")
 }
 
 fn openai_build_error(label: &str, error: impl std::fmt::Display) -> AgentError {
@@ -764,5 +768,46 @@ mod tests {
             rig_openai_base_url(&config),
             "https://other.example.test/v1"
         );
+    }
+
+    #[test]
+    fn rig_openai_base_url_dedupes_v1_when_base_already_has_it() {
+        let config = OpenAiCompatibleConfig {
+            base_url: "https://api.x.ai/v1".into(),
+            wire_api: WireApi::ChatCompletions,
+            responses_path: "v1/responses".into(),
+            chat_completions_path: "v1/chat/completions".into(),
+            request_timeout: Duration::from_mins(5),
+        };
+        assert_eq!(rig_openai_base_url(&config), "https://api.x.ai/v1");
+    }
+
+    #[test]
+    fn builtin_openai_compat_specs_never_double_v1() {
+        use crate::spec::{builtin_provider_specs, ProviderKind};
+
+        for spec in builtin_provider_specs() {
+            let ProviderKind::OpenAiCompatible(oa) = spec.kind else {
+                continue;
+            };
+            if spec.default_base_url.is_empty() {
+                continue;
+            }
+            let config = OpenAiCompatibleConfig {
+                base_url: spec.default_base_url.into(),
+                wire_api: oa.default_wire_api,
+                responses_path: oa.responses_path.into(),
+                chat_completions_path: oa.chat_completions_path.into(),
+                request_timeout: Duration::from_mins(5),
+            };
+            let url = rig_openai_base_url(&config);
+            assert!(
+                !url.contains("/v1/v1"),
+                "{}: {url} (base={}, wire={:?})",
+                spec.id,
+                spec.default_base_url,
+                oa.default_wire_api
+            );
+        }
     }
 }

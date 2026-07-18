@@ -172,6 +172,11 @@ impl ProviderSpec {
             ],
             ProviderKind::OpenAiCompatible(_) => vec![
                 ReasoningEffortOption {
+                    value: "none".to_string(),
+                    label: "Fast".to_string(),
+                    uses_budget_tokens: false,
+                },
+                ReasoningEffortOption {
                     value: "low".to_string(),
                     label: "Low".to_string(),
                     uses_budget_tokens: false,
@@ -537,12 +542,15 @@ mod reasoning_effort_tests {
             return;
         };
         let options = spec.default_reasoning_effort_options();
-        assert_eq!(options.len(), 3);
-        assert_eq!(options[0].value, "low");
+        assert_eq!(options.len(), 4);
+        assert_eq!(options[0].value, "none");
+        assert_eq!(options[0].label, "Fast");
         assert!(!options[0].uses_budget_tokens);
-        assert_eq!(options[1].value, "medium");
+        assert_eq!(options[1].value, "low");
         assert!(!options[1].uses_budget_tokens);
-        assert_eq!(options[2].value, "high");
+        assert_eq!(options[2].value, "medium");
         assert!(!options[2].uses_budget_tokens);
+        assert_eq!(options[3].value, "high");
+        assert!(!options[3].uses_budget_tokens);
     }
 }

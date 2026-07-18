@@ -299,6 +299,8 @@ impl AgentError {
             Self::Failed(message) => {
                 message.contains("neither tool calls nor recoverable output")
                     || message.contains("no tool calls and no usable text")
+                    // Rig rejects empty choices before OpenFlow outcome mapping.
+                    || message.contains("no message or tool call")
             }
             _ => false,
         }
@@ -455,6 +457,11 @@ mod tests {
         .is_empty_provider_turn());
         assert!(AgentError::Failed(
             "Custom OpenAI-compatible API model `mimo` returned no tool calls and no usable text."
+                .to_string()
+        )
+        .is_empty_provider_turn());
+        assert!(AgentError::Failed(
+            "Custom OpenAI-compatible API response error: Response contained no message or tool call (empty)"
                 .to_string()
         )
         .is_empty_provider_turn());

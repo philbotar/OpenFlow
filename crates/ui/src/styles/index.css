@@ -4771,7 +4771,16 @@ label {
 }
 
 .providers-reasoning-fields {
+  margin-top: var(--space-3);
   grid-template-columns: minmax(0, 1fr);
+}
+
+.providers-effort-budget-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+  font-size: var(--font-size-sm);
 }
 
 .providers-icon-button,

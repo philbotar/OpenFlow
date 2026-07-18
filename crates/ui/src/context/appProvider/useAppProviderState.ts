@@ -563,6 +563,8 @@ export function useAppProviderState(): AppContextValue {
     handleSaveSettings: settingsState.handleSaveSettings,
     handleAddKnownModel: settingsState.handleAddKnownModel,
     handleRemoveKnownModel: settingsState.handleRemoveKnownModel,
+    handleAddReasoningEffortOption: settingsState.handleAddReasoningEffortOption,
+    handleRemoveReasoningEffortOption: settingsState.handleRemoveReasoningEffortOption,
     handleApiKeyInput: settingsState.handleApiKeyInput,
     updateSettings: settingsState.updateSettings,
     showErrorToast: toastApi.showErrorToast,
