@@ -13,6 +13,7 @@ const OPENAI: ProviderProfile = {
   transport: "responses",
   responses_path: "responses",
   chat_completions_path: "chat/completions",
+  request_timeout_secs: 300,
   known_models: ["gpt-4.1-mini"],
   default_model: "gpt-4.1-mini",
   editable: false,
@@ -24,6 +25,7 @@ const ANTHROPIC: ProviderProfile = {
   transport: "chat_completions",
   responses_path: "v1/responses",
   chat_completions_path: "v1/messages",
+  request_timeout_secs: 300,
   known_models: ["claude-sonnet-4-20250514"],
   default_model: "claude-sonnet-4-20250514",
   editable: false,
@@ -41,6 +43,7 @@ const CUSTOM: ProviderProfile = {
   transport: "chat_completions",
   responses_path: "responses",
   chat_completions_path: "chat/completions",
+  request_timeout_secs: 300,
   known_models: ["compatible-model"],
   default_model: "compatible-model",
   editable: true,
@@ -52,6 +55,7 @@ const BEDROCK: ProviderProfile = {
   transport: "chat_completions",
   responses_path: "v1/responses",
   chat_completions_path: "v1/chat/completions",
+  request_timeout_secs: 300,
   known_models: ["anthropic.claude-sonnet-4-20250514-v1:0"],
   default_model: "anthropic.claude-sonnet-4-20250514-v1:0",
   editable: false,
@@ -159,6 +163,21 @@ describe("ProvidersSection", () => {
     expect(subheading("providers-models-heading")?.textContent).toBe("Models");
   });
 
+  test("updates the model request timeout independently of endpoint editing", async () => {
+    const { settings } = renderSection("custom_openai_compatible");
+    const label = Array.from(container.querySelectorAll("label")).find(
+      (candidate) => candidate.querySelector("span")?.textContent === "Model timeout (seconds)",
+    );
+    const input = label?.querySelector("input");
+
+    expect(input).not.toBeNull();
+    input!.value = "180";
+    input!.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    await Promise.resolve();
+
+    expect(settings().providers.custom_openai_compatible.request_timeout_secs).toBe(180);
+  });
+
   test("readiness chip gets ready class when provider is ready", () => {
     renderSection();
     expect(container.querySelector(".readiness-chip.ready")).not.toBeNull();
@@ -176,9 +195,10 @@ describe("ProvidersSection", () => {
 
   test("shows budget token input when selected effort uses budget", () => {
     renderSection("anthropic");
-    const budgetInput = container.querySelector(
-      'input[type="number"]',
-    ) as HTMLInputElement | null;
+    const budgetLabel = Array.from(container.querySelectorAll("label")).find((candidate) =>
+      candidate.querySelector("span")?.textContent?.startsWith("Budget tokens"),
+    );
+    const budgetInput = budgetLabel?.querySelector("input") as HTMLInputElement | null;
     expect(budgetInput).not.toBeNull();
     expect(budgetInput?.value).toBe("10240");
   });

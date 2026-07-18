@@ -31,6 +31,7 @@ pub fn apply_event_to_run_state(
 
         ExecutionEvent::NodeStarted { node_id, label } => {
             clear_node_awaiting_and_approvals(state, &node_id);
+            state.last_error = None;
             state
                 .status_by_node
                 .insert(node_id.clone(), AgentStatus::Started);
@@ -340,6 +341,11 @@ pub fn apply_event_to_run_state(
             label,
             output,
         } => {
+            if let Some(plan_mode) = state.plan_mode.as_mut() {
+                if plan_mode.evidence_source_node_id == node_id {
+                    plan_mode.phase = crate::run::state::PlanModeRunPhase::Execution;
+                }
+            }
             clear_node_session_focus(state, &node_id);
             state
                 .status_by_node
@@ -556,6 +562,33 @@ pub fn apply_event_to_run_state(
             label: _,
             error: _,
         } => {}
+        ExecutionEvent::OutputRepairStarted { node_id, model } => {
+            state.run_trace.push(RunTraceEntry {
+                node_id: node_id.clone(),
+                node_label: "output repair".to_string(),
+                status: TraceStatus::Running,
+                message: format!("repairing malformed output · {model}"),
+                output: Some(json!({ "model": model })),
+            });
+        }
+        ExecutionEvent::OutputRepairSucceeded { node_id, model } => {
+            state.run_trace.push(RunTraceEntry {
+                node_id: node_id.clone(),
+                node_label: "output repair".to_string(),
+                status: TraceStatus::Completed,
+                message: format!("output repaired · {model}"),
+                output: Some(json!({ "model": model })),
+            });
+        }
+        ExecutionEvent::OutputRepairFailed { node_id, reason } => {
+            state.run_trace.push(RunTraceEntry {
+                node_id: node_id.clone(),
+                node_label: "output repair".to_string(),
+                status: TraceStatus::Completed,
+                message: format!("output repair failed · {reason}"),
+                output: Some(json!({ "reason": reason })),
+            });
+        }
     }
 }
 
@@ -782,7 +815,7 @@ fn restore_active_node_status(state: &mut WorkflowRunState, node_id: &NodeId) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use engine::Node;
+    use engine::{Node, PlanModeConfig};
 
     #[test]
     fn manual_root_skips_entrypoint_chat_record() {
@@ -799,6 +832,34 @@ mod tests {
         let node = Node::agent("Root", 0.0, 0.0);
         workflow.nodes = vec![node.clone()];
         assert!(should_record_entrypoint_in_chat(&workflow, &node.id));
+    }
+
+    #[test]
+    fn freeze_source_completion_unlocks_the_plan_mode_projection() {
+        let mut workflow = Workflow::new("w");
+        let mut freeze = Node::agent("Freeze", 0.0, 0.0);
+        freeze.id = NodeId::from("freeze");
+        freeze.agent.request_user_input = true;
+        workflow.nodes = vec![freeze];
+        workflow.settings.plan_mode = Some(PlanModeConfig {
+            evidence_source_node_id: NodeId::from("freeze"),
+        });
+        let mut state = WorkflowRunState::running_for_workflow(&workflow);
+
+        apply_event_to_run_state(
+            &workflow,
+            &mut state,
+            ExecutionEvent::NodeCompleted {
+                node_id: NodeId::from("freeze"),
+                label: "Freeze".to_string(),
+                output: json!({ "scope": "approved" }),
+            },
+        );
+
+        assert_eq!(
+            state.plan_mode.expect("plan mode").phase,
+            crate::run::state::PlanModeRunPhase::Execution
+        );
     }
 
     #[test]

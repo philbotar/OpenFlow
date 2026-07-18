@@ -6,11 +6,11 @@ Related: [`contract.md`](contract.md)
 
 ## Executive summary
 
-This app is **not heavily threaded**. In the desktop app, orchestration uses the Tauri Tokio runtime handle. Tests can still construct `AppBackend` with an owned Tokio runtime through `AppBackend::new(...)`. Each workflow run has one execution task, with sequential node execution and parallel batches only for shared tools. The main risks are:
+This app is **not heavily threaded**. In the desktop app, orchestration uses the Tauri Tokio runtime handle. Tests can still construct `AppBackend` with an owned Tokio runtime through `AppBackend::new(...)`. Each workflow run has one execution task. Within a DAG layer, ready AI calls and tool batches run concurrently via `FuturesUnordered`; completions apply to engine state one at a time. Shared tools may also batch in parallel under `ToolPortImpl`. The main risks are:
 
 1. **Runtime split outside Tauri** when tests or helper entry points construct `AppBackend` with a separate owned runtime.
 2. **Blocking I/O coverage** that depends on dispatching filesystem and subprocess work through `spawn_blocking`.
-3. **Sequential node execution** even though DAG layers identify nodes that could run independently.
+3. **Layer-bounded concurrency** — independent nodes only overlap while they share a ready layer; later layers still wait.
 4. **A single active-run mutex** around live run state.
 5. **Many sync Tauri commands** doing filesystem or settings I/O on the command thread pool.
 
@@ -78,9 +78,9 @@ In the desktop path, the same Tauri runtime handle is used for command tasks and
 
 ---
 
-## Workflow execution model (one task, one loop)
+## Workflow execution model (one task, concurrent layer work)
 
-Each run is a **single async task**. Node execution is sequential inside the engine. Within one tool batch, `ToolPortImpl` can run adjacent `ToolConcurrency::Shared` tools in parallel and serializes `ToolConcurrency::Exclusive` tools with per-tool semaphores.
+Each run is a **single async task**. Inside that task, `InteractiveEngine::run()` drives a `FuturesUnordered` of ready work: model invocations and tool batches for all nodes currently runnable in the layer. Completions are applied serially as they arrive. Within one tool batch, `ToolPortImpl` can run adjacent `ToolConcurrency::Shared` tools in parallel and serializes `ToolConcurrency::Exclusive` tools with per-tool semaphores.
 
 ```mermaid
 stateDiagram-v2
@@ -101,11 +101,9 @@ stateDiagram-v2
 
 The host loop lives in `drive_interactive_workflow()` (`crates/orchestration/src/run/execution/drive.rs`). It calls `InteractiveEngine::run()`, which invokes `AiPort` and `ToolPort` internally until it completes, fails, or returns `NeedsInteraction`.
 
-### Issue: DAG layers are not parallelized
+### Layer parallelism (implemented)
 
-`execution_layers()` computes which nodes **could** run in parallel. `InteractiveEngine` still advances node execution sequentially (`crates/engine/src/execution/interactive_engine/`).
-
-Two independent nodes in the same layer still run serially. That is a throughput issue, not a correctness bug.
+`execution_layers()` groups nodes by dependency depth. When a layer is active, `InteractiveEngine` schedules every ready AI call and tool batch into one `FuturesUnordered` pool (`crates/engine/src/execution/interactive_engine/mod.rs`). Independent nodes in the same layer therefore overlap in wall time; state updates remain single-threaded on completion.
 
 ### Issue: subagents block the whole run
 
@@ -270,7 +268,6 @@ This is not a full bulkhead model. It does not cap all provider calls, all read 
 | --- | --- | --- |
 | **P0** | Long blocking filesystem or subprocess tasks | UI commands can wait behind search/find/ast-grep on large repos |
 | **P1** | Non-Tauri owned runtime path | Extra runtime split if production code accidentally constructs `AppBackend` around its own runtime |
-| **P1** | Sequential node execution despite DAG layers | Slow multi-branch workflows |
 | **P1** | Sync Tauri commands for persistence | Invoke hangs on save/load during heavy I/O |
 | **P2** | Subagents in nested loop, same task | Parent node frozen while subagent runs |
 | **P2** | Unbounded event channel | Memory growth on chatty runs |
@@ -297,10 +294,10 @@ tokio::task::spawn_blocking(move || {
 .await?
 ```
 
-### C. Parallelize independent nodes
+### C. Tune layer concurrency (already parallel)
 
-- Within a layer, `join!` / `FuturesUnordered` for nodes with satisfied upstream deps
-- Requires per-node state isolation and careful event ordering
+- Ready nodes in a layer already share one `FuturesUnordered` pool.
+- Follow-ups: caps on concurrent provider calls, fairer event ordering under load, or isolating per-node cancellation without draining siblings.
 
 ### D. Async persistence commands
 
@@ -315,7 +312,7 @@ tokio::task::spawn_blocking(move || {
 ### F. Broaden tool concurrency limits
 
 - Add global caps for expensive read tools if large repositories starve the blocking pool.
-- Cap concurrent provider calls if workflow-level node parallelism is added later.
+- Cap concurrent provider calls if multi-node layers saturate upstream rate limits.
 
 ---
 
@@ -329,7 +326,7 @@ flowchart TB
         W2["injected Tauri runtime handle"]
         W3["1 run at a time"]
         W4["1 execution task per run"]
-        W5["1 node at a time"]
+        W5["ready layer work concurrent"]
         W6["shared tools can run in parallel"]
         W7["blocking I/O in spawn_blocking"]
         W8["sync file commands"]
@@ -338,7 +335,7 @@ flowchart TB
     subgraph WhatYouDontHave["What you don't have"]
         direction TB
         N1["thread pools per subsystem"]
-        N2["parallel DAG layer execution"]
+        N2["cross-layer node overlap"]
         N3["async persistence commands"]
         N4["global bulkheads"]
         N5["concurrent workflow runs"]

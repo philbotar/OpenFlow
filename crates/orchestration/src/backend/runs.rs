@@ -73,12 +73,10 @@ impl AppBackend {
             .run_store
             .load_latest_checkpoint(&root, run_id)?
             .ok_or_else(|| BackendError::RunHasNoCheckpoints(run_id.to_string()))?;
-        let workflow = self.load_workflow(&record.workflow_id)?;
         let (state, event_rx) = self
             .runs
             .resume_durable_run(DurableResumeParams {
                 run_id,
-                workflow,
                 root,
                 record,
                 checkpoint,

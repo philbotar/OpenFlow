@@ -33,6 +33,8 @@ fn test_request() -> engine::AgentRequest {
         model_attempt: 1,
         reasoning_effort: None,
         reasoning_budget_tokens: None,
+        turn_phase: engine::AgentTurnPhase::Control,
+        tool_access_policy: engine::ToolAccessPolicy::Execution,
         allow_user_input: true,
     }
 }
@@ -50,6 +52,7 @@ fn anthropic_test_config(base_url: &str) -> AiClientConfig {
             base_url: base_url.into(),
             messages_path: "v1/messages".into(),
             anthropic_version: "2023-06-01".into(),
+            request_timeout: std::time::Duration::from_mins(5),
         }),
     }
 }
@@ -89,6 +92,77 @@ async fn anthropic_submit_output_completes_node() {
         panic!("expected completed outcome");
     };
     assert_eq!(success.output, serde_json::json!({"summary": "done"}));
+}
+
+#[tokio::test]
+async fn anthropic_nullable_citations_do_not_break_tool_call() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .and(header("x-api-key", "test-key"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "msg_nullable_citations",
+            "type": "message",
+            "role": "assistant",
+            "model": "minimax-m3",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Done.",
+                    "citations": null
+                },
+                {
+                    "type": "tool_use",
+                    "id": "toolu_1",
+                    "name": "openflow_submit_node_output",
+                    "input": {
+                        "output": {"summary": "done"},
+                        "assistant_message": null
+                    }
+                }
+            ],
+            "stop_reason": "tool_use",
+            "usage": {
+                "input_tokens": 101,
+                "output_tokens": 19
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let client = create_provider(anthropic_test_config(&server.uri()));
+    let outcome = client.invoke(test_request()).await.unwrap();
+    let engine::AgentTurnOutcome::Completed(success) = outcome else {
+        panic!("expected completed outcome");
+    };
+    assert_eq!(success.output, serde_json::json!({"summary": "done"}));
+}
+
+#[tokio::test]
+async fn anthropic_null_content_uses_empty_turn_recovery() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "msg_null_content",
+            "type": "message",
+            "role": "assistant",
+            "model": "minimax-m3",
+            "content": null,
+            "stop_reason": "end_turn",
+            "usage": {
+                "input_tokens": 101,
+                "output_tokens": 0
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let client = create_provider(anthropic_test_config(&server.uri()));
+    let error = client.invoke(test_request()).await.unwrap_err();
+
+    assert!(error.is_empty_provider_turn(), "unexpected error: {error}");
+    assert!(!error.to_string().contains("response JSON error"));
 }
 
 #[tokio::test]
@@ -158,4 +232,43 @@ async fn anthropic_stream_emits_deltas_and_completes() {
         panic!("expected completed outcome");
     };
     assert_eq!(success.output, serde_json::json!({"summary": "done"}));
+}
+
+#[tokio::test]
+async fn anthropic_structurally_invalid_submit_input_is_typed_repair_candidate() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .and(header("x-api-key", "test-key"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "msg_bad_envelope",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-3-5-sonnet-latest",
+            "content": [{
+                "type": "tool_use",
+                "id": "toolu_bad",
+                "name": "openflow_submit_node_output",
+                "input": {
+                    "path": ".flow/README.md",
+                    "assistant_message": null
+                }
+            }],
+            "stop_reason": "tool_use",
+            "usage": {
+                "input_tokens": 10,
+                "output_tokens": 5
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let client = create_provider(anthropic_test_config(&server.uri()));
+    let err = client.invoke(test_request()).await.unwrap_err();
+    assert!(err.is_malformed_submit_output());
+    assert!(err.is_repairable_submit_output());
+    let candidate = err.output_repair_candidate().unwrap();
+    assert!(candidate.raw_arguments().contains(".flow/README.md"));
+    assert!(!format!("{candidate:?}").contains(".flow/README.md"));
+    assert!(!err.to_string().contains(".flow/README.md"));
 }

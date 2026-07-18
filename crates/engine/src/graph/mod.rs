@@ -17,5 +17,5 @@ pub use validation::{execution_layers, validate_workflow, WorkflowValidationErro
 pub(crate) use workflow::default_structured_output_schema;
 pub use workflow::{
     effective_output_schema, AgentNodeConfig, Edge, EdgeId, Node, NodeId, NodeKind, NodePosition,
-    RetryPolicy, Workflow, WorkflowId, WorkflowSchedule, WorkflowSettings,
+    PlanModeConfig, RetryPolicy, Workflow, WorkflowId, WorkflowSchedule, WorkflowSettings,
 };

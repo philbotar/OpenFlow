@@ -147,6 +147,7 @@ async fn project_authoring_uses_project_specific_preamble() {
     assert!(prompt.contains("Project path: /work/openflow"));
     assert!(prompt.contains("Default execution cwd: /work/openflow/crates/ui"));
     assert!(prompt.contains("Never call request_user_input. Never ask clarifying questions."));
+    assert!(prompt.contains("requestUserInput: false for autonomous planning, coding"));
     assert!(prompt.contains("openflow_add_node"));
 }
 
@@ -180,6 +181,7 @@ impl AiPort for IncrementalAuthoringAi {
                         }),
                     },
                 ],
+                reasoning: vec![],
                 usage: None,
             })),
             1 => Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
@@ -203,6 +205,7 @@ impl AiPort for IncrementalAuthoringAi {
                         arguments: json!({ "id": "root-plan", "from": "root", "to": "plan" }),
                     },
                 ],
+                reasoning: vec![],
                 usage: None,
             })),
             2 => {
@@ -410,6 +413,7 @@ impl AiPort for ClarificationThenDraftAi {
             Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
                 raw_text: "What kind of workflow?".to_string(),
                 assistant_message: "What kind of workflow do you want?".to_string(),
+                reasoning: vec![],
             }))
         } else {
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
@@ -494,6 +498,7 @@ impl AiPort for AlwaysClarifyAi {
         Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
             raw_text: "What kind of workflow?".to_string(),
             assistant_message: "What kind of workflow do you want?".to_string(),
+            reasoning: vec![],
         }))
     }
 }

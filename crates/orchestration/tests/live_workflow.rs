@@ -74,6 +74,7 @@ fn live_client(config: &LiveWorkflowConfig) -> AiClient {
             wire_api: config.wire_api,
             responses_path: config.responses_path.clone(),
             chat_completions_path: config.chat_completions_path.clone(),
+            request_timeout: std::time::Duration::from_mins(5),
         }),
     })
 }

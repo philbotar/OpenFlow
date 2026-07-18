@@ -25,13 +25,15 @@ pub enum RunCheckpointReason {
     Failed,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RunRecord {
     pub run_id: String,
     pub workflow_id: String,
     pub workflow_name: String,
     pub workflow_hash: String,
+    /// Exact prepared workflow used to start the run.
+    pub workflow_snapshot: Workflow,
     pub project_id: Option<String>,
     pub execution_cwd: String,
     pub artifact_root: String,
@@ -109,6 +111,7 @@ mod tests {
             workflow_id: "wf-1".to_string(),
             workflow_name: "Demo".to_string(),
             workflow_hash: "abc".to_string(),
+            workflow_snapshot: Workflow::new("Demo"),
             project_id: Some("project-1".to_string()),
             execution_cwd: "/tmp/demo".to_string(),
             artifact_root: "/tmp/demo/.flow/runs/run-1/artifacts".to_string(),
@@ -121,6 +124,7 @@ mod tests {
 
         assert!(json.contains("runId"));
         assert!(json.contains("workflowId"));
+        assert!(json.contains("workflowSnapshot"));
         assert!(json.contains("artifactRoot"));
         assert!(json.contains("\"paused\""));
     }

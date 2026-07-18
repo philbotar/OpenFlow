@@ -16,6 +16,8 @@ pub struct ProviderProfile {
     pub responses_path: String,
     #[serde(default = "default_chat_completions_path")]
     pub chat_completions_path: String,
+    #[serde(default = "default_request_timeout_secs")]
+    pub request_timeout_secs: u64,
     pub known_models: Vec<String>,
     #[serde(default)]
     pub default_model: Option<String>,
@@ -66,6 +68,10 @@ fn default_chat_completions_path() -> String {
     "v1/chat/completions".to_string()
 }
 
+const fn default_request_timeout_secs() -> u64 {
+    300
+}
+
 impl ProviderProfile {
     #[must_use]
     pub fn from_spec(spec: &ProviderSpec) -> Self {
@@ -99,6 +105,7 @@ impl ProviderProfile {
             transport,
             responses_path,
             chat_completions_path,
+            request_timeout_secs: default_request_timeout_secs(),
             known_models: spec
                 .default_models
                 .iter()
@@ -134,6 +141,7 @@ impl ProviderProfile {
             transport: ProviderTransport::Responses,
             responses_path: default_responses_path(),
             chat_completions_path: default_chat_completions_path(),
+            request_timeout_secs: default_request_timeout_secs(),
             known_models: vec!["gpt-4o-mini".to_string()],
             default_model: Some("gpt-4o-mini".to_string()),
             api_key: String::new(),
@@ -198,11 +206,11 @@ impl ProviderProfile {
     #[must_use]
     fn default_budget_tokens_for_spec(spec: &ProviderSpec) -> BTreeMap<String, u32> {
         match spec.kind {
-            ProviderKind::Anthropic(_) => {
+            ProviderKind::Anthropic(_) | ProviderKind::Bedrock(_) => {
                 let mut map = BTreeMap::new();
                 map.insert("low".to_string(), 10_240);
                 map.insert("medium".to_string(), 40_960);
-                map.insert("high".to_string(), 128_000);
+                map.insert("high".to_string(), 59_000);
                 map
             }
             _ => BTreeMap::new(),
@@ -660,6 +668,7 @@ mod tests {
             "editable": false
         });
         let mut profile: ProviderProfile = serde_json::from_value(value).unwrap();
+        assert_eq!(profile.request_timeout_secs, 300);
         assert!(profile.reasoning_effort_options.is_empty());
         assert!(profile.default_reasoning_budget_tokens.is_empty());
 
@@ -669,7 +678,7 @@ mod tests {
         assert_eq!(profile.reasoning_effort_options.len(), 5);
         assert_eq!(
             profile.default_reasoning_budget_tokens.get("high"),
-            Some(&128_000)
+            Some(&59_000)
         );
     }
 

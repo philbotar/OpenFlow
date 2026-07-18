@@ -1,6 +1,9 @@
 use crate::run::persistence::PendingRunCheckpoint;
 use crate::tools::{ArtifactStore, ToolRegistry, ToolRunner};
-use engine::{AiPort, EditBatch, InteractiveEngine, InteractiveEngineCheckpoint, Workflow};
+use engine::{
+    AiPort, EditBatch, InteractiveEngine, InteractiveEngineCheckpoint, OutputRepairPolicy,
+    RepairingAiPort, Workflow,
+};
 use parking_lot::Mutex;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -11,14 +14,17 @@ use super::super::ai_adapter::AiInvocationAdapter;
 use super::super::tool_port::ToolPortImpl;
 use super::super::InteractiveWorkflowRunParams;
 
+/// Run-scoped AI stack: provider → overseer repair → invocation adapter.
+type RunAiAdapter<A> = AiInvocationAdapter<RepairingAiPort<A>>;
+
 /// Wired ports and engine state for one interactive run.
 pub(super) struct RunWiring<A>
 where
     A: AiPort + Send + Sync + 'static,
 {
     pub engine: InteractiveEngine,
-    pub ai_adapter: Arc<AiInvocationAdapter<A>>,
-    pub tool_port: ToolPortImpl<AiInvocationAdapter<A>>,
+    pub ai_adapter: Arc<RunAiAdapter<A>>,
+    pub tool_port: ToolPortImpl<RunAiAdapter<A>>,
     pub workflow: Arc<Workflow>,
     pub pending_engine_reverts: Arc<Mutex<Vec<EditBatch>>>,
     pub checkpoint_sink: Arc<Mutex<Option<PendingRunCheckpoint>>>,
@@ -147,10 +153,11 @@ where
         .with_search_settings(search),
     );
     let workflow = Arc::new(workflow);
-    let ai = Arc::new(ai);
+    let repair_policy = OutputRepairPolicy::from_workflow_settings(&workflow.settings);
+    let repairing = Arc::new(RepairingAiPort::new(ai, repair_policy));
     let node_interrupts_for_tools = node_interrupts.clone();
     let ai_adapter = Arc::new(AiInvocationAdapter::new(
-        Arc::clone(&ai),
+        Arc::clone(&repairing),
         event_tx.clone(),
         node_interrupts,
         cancel_token.clone(),

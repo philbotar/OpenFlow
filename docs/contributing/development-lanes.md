@@ -10,35 +10,35 @@ Architecture facts live in [`../architecture/contract.md`](../architecture/contr
 2. Read the matching crate `AGENTS.md`.
 3. Check whether the change crosses a seam (`AiPort`, `ToolPort`, `AppBackend`, UI `api.ts`, provider factory, storage port).
 4. Pick the narrowest verification lane that proves the behavior.
-5. Run `./scripts/verify.sh` before handoff, commit, or PR.
+5. Run `./scripts/verify.sh` before handoff, commit, or PR (or load `openflow-finish-change`).
 
 ## Lanes
 
 | Lane | Use when | Read first | Normal verification |
 | --- | --- | --- | --- |
-| Engine semantics | Workflow model, validation, prompts, execution state machine, ports, tool policy, telemetry | `crates/engine/AGENTS.md`, `docs/architecture/contract.md`, `docs/glossary.md` | `cargo test -p engine` |
-| Run orchestration | Active run lifecycle, execution host, approval/input loop, event projection, checkpoint/replay, execution cwd | `crates/orchestration/AGENTS.md`, `docs/contributing/testing-workflows.md`, `docs/architecture/threading-concurrency.md` | `cargo test -p orchestration --lib` and workflow acceptance when execution behavior changes |
+| Engine semantics | Workflow model, validation, prompts, execution state machine, ports, tool policy, telemetry | `crates/engine/AGENTS.md`, `docs/architecture/contract.md`, `docs/glossary.md`, `docs/architecture/end-to-end-runtime.md` when touching execution | `cargo test -p engine` |
+| Run orchestration | Active run lifecycle, execution host, approval/input loop, event projection, checkpoint/replay, execution cwd | `crates/orchestration/AGENTS.md`, `docs/architecture/end-to-end-runtime.md`, `docs/contributing/testing-workflows.md`, `docs/architecture/threading-concurrency.md` | `cargo test -p orchestration --lib` and workflow acceptance when execution behavior changes |
 | Application service | Workflow catalog, agent library, project registry, settings facade, tool registry/runner | `crates/orchestration/AGENTS.md`, `docs/contributing/coding-patterns.md` | Focused `cargo test -p orchestration --lib` filters |
 | Adapter/I/O | Storage files, tool implementations, git/LSP, filesystem or subprocess behavior | `crates/orchestration/AGENTS.md`, `docs/architecture/contract.md` | Focused adapter tests plus `./scripts/check-architecture.sh` |
-| Provider adapter | OpenAI-compatible, Anthropic, request/response mapping, auth, SSE, tool argument repair | `crates/providers/AGENTS.md` | `cargo test -p providers` |
+| Provider adapter | Rig transport, request/response mapping, auth, streaming, tool argument repair | `crates/providers/AGENTS.md`, `docs/architecture/provider-adapters.md` | `cargo test -p providers` |
 | Desktop IPC | Tauri command handlers, event bridge, app bootstrap, macOS integration | `crates/desktop/AGENTS.md` | `cargo test -p desktop` |
-| UI/Desktop seam | `api.ts`, frontend DTOs, AppProvider, screens, panels, canvas | `crates/ui/AGENTS.md` | `npm --prefix crates/ui run typecheck` and focused Vitest |
-| Cross-crate workflow | A user-visible workflow that crosses engine, orchestration, desktop, and UI | Root `AGENTS.md`, `docs/contributing/testing-workflows.md` | `./scripts/test-fast.sh --execution`; full `./scripts/verify.sh` before handoff |
+| UI/Desktop seam | `api.ts`, frontend DTOs, AppProvider, screens, panels, canvas | `crates/ui/AGENTS.md`, `docs/architecture/end-to-end-runtime.md` for event path | `npm --prefix crates/ui run typecheck` and focused Vitest |
+| Cross-crate workflow | A user-visible workflow that crosses engine, orchestration, desktop, and UI | Root `AGENTS.md`, `docs/architecture/end-to-end-runtime.md`, `docs/contributing/testing-workflows.md` | `./scripts/test-fast.sh --execution`; full `./scripts/verify.sh` before handoff |
 
 ## Skill recommendations
 
-Project-local skills should stay procedural. They tell an agent how to classify a change and which docs to read. They must not become a second source of architecture facts.
+Project-local skills stay procedural. They tell an agent how to classify a change and which docs to read. They must not become a second source of architecture facts.
 
 | Skill | Path | Use when |
 | --- | --- | --- |
-| `openflow-orchestration-change` | `.cursor/skills/openflow-orchestration-change/SKILL.md` | Any edit under `crates/orchestration/**` - run lifecycle, persistence, tools, AppBackend, adapters |
+| `openflow-engine-change` | `.cursor/skills/openflow-engine-change/SKILL.md` | Any edit under `crates/engine/**` |
+| `openflow-orchestration-change` | `.cursor/skills/openflow-orchestration-change/SKILL.md` | Any edit under `crates/orchestration/**` |
+| `openflow-provider-change` | `.cursor/skills/openflow-provider-change/SKILL.md` | Any edit under `crates/providers/**` |
+| `openflow-ui-change` | `.cursor/skills/openflow-ui-change/SKILL.md` | Any edit under `crates/ui/**` |
 | `rust-hexarc-organizer` | `.cursor/skills/rust-hexarc-organizer/SKILL.md` | Cross-crate placement, layer violations, which crate owns a change |
-| `openflow-engine-change` | `.cursor/skills/openflow-engine-change/SKILL.md` | Any edit under `crates/engine/**` - graph, execution, ports, tools, telemetry |
-| `openflow-ui-change` | *(not yet created)* | UI/Desktop seam lane |
-| `openflow-provider-change` | *(not yet created)* | Provider adapter lane |
-| `openflow-finish-change` | *(not yet created)* | Final verification before handoff |
+| `openflow-finish-change` | `.cursor/skills/openflow-finish-change/SKILL.md` | Final verification before handoff |
 
-For orchestration work, load `openflow-orchestration-change` first. For engine work, load `openflow-engine-change` first. Both route to doc paths in the lanes table; architecture rules stay in those docs.
+Load the matching lane skill first. Load `rust-hexarc-organizer` when ownership is unclear. Load `openflow-finish-change` before claiming done.
 
 If a skill conflicts with `docs/architecture/contract.md`, fix the skill.
 

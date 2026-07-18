@@ -35,9 +35,34 @@ export function ChatPanel() {
 
   const parallelLiveCount = createMemo(() => ctx.chatLayout().live.length);
 
+  const waitingToRetry = createMemo(() =>
+    Object.values(ctx.runState()?.statusByNode ?? {}).some(
+      (status) => status === "failed" || status === "interrupted",
+    ),
+  );
+
   // Surface approval outside the parallel-live picker — otherwise the card only
   // appears after the user picks (or the sibling finishes and folds inline).
   const pendingApproval = createMemo(() => ctx.runState()?.pendingApprovals[0] ?? null);
+
+  const planModeStatus = createMemo(() => {
+    const workflow = ctx.activeWorkflow();
+    const runState = ctx.runState();
+    const sourceNodeId =
+      runState?.planMode?.evidenceSourceNodeId ??
+      workflow?.settings?.planMode?.evidenceSourceNodeId;
+    if (!sourceNodeId || !runState) {
+      return null;
+    }
+    const source = workflow?.nodes.find((node) => node.id === sourceNodeId);
+    const frozen =
+      runState.planMode?.phase === "execution" ||
+      runState.statusByNode[sourceNodeId] === "completed";
+    return {
+      sourceLabel: source?.label ?? sourceNodeId,
+      frozen,
+    };
+  });
 
   return (
     <div class="chat-layout">
@@ -67,6 +92,17 @@ export function ChatPanel() {
             </button>
           </div>
         </div>
+      </Show>
+      <Show when={planModeStatus()}>
+        {(status) => (
+          <div class="chat-replay-banner" role="status">
+            <span>
+              <strong>Plan Mode</strong> — {status().frozen
+                ? `${status().sourceLabel} froze the change evidence packet. Execution is unlocked.`
+                : `planning lock active. Repository writes stay blocked until ${status().sourceLabel} freezes the change evidence packet.`}
+            </span>
+          </div>
+        )}
       </Show>
       <ConversationMessages />
       <Show when={showParallelLiveHint()}>
@@ -105,7 +141,9 @@ export function ChatPanel() {
             }
           >
             <div class="chat-live-strip chat-live-strip--pending" aria-live="polite">
-              <p class="chat-live-starting">Starting workflow…</p>
+              <p class="chat-live-starting">
+                {waitingToRetry() ? "Waiting to retry…" : "Starting workflow…"}
+              </p>
             </div>
           </Show>
         </Show>

@@ -113,4 +113,87 @@ describe("ChatPanel replay mode", () => {
       container.remove();
     }
   });
+
+  it("shows a retry prompt instead of claiming a failed run is starting", () => {
+    const { container, dispose } = renderChatPanel({
+      replayRunId: () => null,
+      runState: () =>
+        ({
+          active: true,
+          pendingApprovals: [],
+          statusByNode: { "node-1": "failed" },
+          chatLogs: {},
+          toolCallsByNode: {},
+          awaitingNodeIds: [],
+        }) as unknown as ReturnType<AppContextValue["runState"]>,
+    });
+    try {
+      expect(container.textContent).toContain("Waiting to retry…");
+      expect(container.textContent).not.toContain("Starting workflow…");
+    } finally {
+      dispose();
+      container.remove();
+    }
+  });
+
+  it("shows the Plan Mode lock until the configured review node completes", () => {
+    const { container, dispose } = renderChatPanel({
+      replayRunId: () => null,
+      activeWorkflow: () => ({
+        id: "w1",
+        name: "Workflow",
+        nodes: [{ id: "freeze", label: "Review & freeze" }],
+        edges: [],
+        settings: { planMode: { evidenceSourceNodeId: "freeze" } },
+      }) as unknown as ReturnType<AppContextValue["activeWorkflow"]>,
+      runState: () =>
+        ({
+          active: true,
+          pendingApprovals: [],
+          statusByNode: { freeze: "awaiting_input" },
+          chatLogs: {},
+          toolCallsByNode: {},
+          awaitingNodeIds: [],
+        }) as unknown as ReturnType<AppContextValue["runState"]>,
+    });
+    try {
+      expect(container.textContent).toContain("Plan Mode");
+      expect(container.textContent).toContain("planning lock active");
+      expect(container.textContent).toContain("Review & freeze");
+    } finally {
+      dispose();
+      container.remove();
+    }
+  });
+
+  it("uses the run-pinned Plan Mode phase in replay after workflow settings change", () => {
+    const { container, dispose } = renderChatPanel({
+      replayRunId: () => null,
+      activeWorkflow: () => ({
+        id: "w1",
+        name: "Workflow",
+        nodes: [{ id: "freeze", label: "Review & freeze" }],
+        edges: [],
+        settings: {},
+      }) as unknown as ReturnType<AppContextValue["activeWorkflow"]>,
+      runState: () =>
+        ({
+          active: false,
+          pendingApprovals: [],
+          statusByNode: { freeze: "awaiting_input" },
+          chatLogs: {},
+          toolCallsByNode: {},
+          awaitingNodeIds: [],
+          planMode: { evidenceSourceNodeId: "freeze", phase: "execution" },
+        }) as unknown as ReturnType<AppContextValue["runState"]>,
+    });
+    try {
+      expect(container.textContent).toContain("Plan Mode");
+      expect(container.textContent).toContain("Execution is unlocked");
+      expect(container.textContent).toContain("Review & freeze");
+    } finally {
+      dispose();
+      container.remove();
+    }
+  });
 });

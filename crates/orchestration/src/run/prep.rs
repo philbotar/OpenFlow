@@ -154,10 +154,7 @@ mod tests {
             workflow.nodes[0].agent.reasoning_effort,
             Some("low".to_string())
         );
-        assert_eq!(
-            workflow.nodes[0].agent.reasoning_budget_tokens,
-            Some(10_240)
-        );
+        assert!(workflow.nodes[0].agent.reasoning_budget_tokens.is_none());
     }
 
     #[test]

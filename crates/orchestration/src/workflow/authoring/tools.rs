@@ -41,13 +41,17 @@ pub fn authoring_tool_definitions() -> Vec<ToolDefinition> {
     vec![
         ToolDefinition {
             name: SET_WORKFLOW_META_TOOL.to_string(),
-            description: "Set workflow name and optional shared context.".to_string(),
+            description: "Set workflow name, optional shared context, and optional Plan → Execute review/freeze node. The Plan Mode source must be an existing node with requestUserInput true.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
                     "name": { "type": "string" },
-                    "sharedContext": { "type": "string" }
+                    "sharedContext": { "type": "string" },
+                    "planModeSourceNodeId": {
+                        "type": ["string", "null"],
+                        "description": "Node id that conversationally reviews and freezes the approved change evidence packet. Null disables Plan → Execute mode."
+                    }
                 }
             }),
             tier: ToolTier::Write,
@@ -65,6 +69,10 @@ pub fn authoring_tool_definitions() -> Vec<ToolDefinition> {
                     "systemPrompt": { "type": "string" },
                     "taskPrompt": { "type": "string" },
                     "autoStart": { "type": "boolean" },
+                    "requestUserInput": {
+                        "type": "boolean",
+                        "description": "True only when this node genuinely needs an ongoing human conversation. Use false for autonomous planning, coding, searching, reviewing, and verification nodes."
+                    },
                     "outputSchema": { "type": "object" }
                 },
                 "required": ["id", "label", "systemPrompt", "taskPrompt", "autoStart"]
@@ -84,6 +92,7 @@ pub fn authoring_tool_definitions() -> Vec<ToolDefinition> {
                     "systemPrompt": { "type": "string" },
                     "taskPrompt": { "type": "string" },
                     "autoStart": { "type": "boolean" },
+                    "requestUserInput": { "type": "boolean" },
                     "outputSchema": { "type": "object" }
                 },
                 "required": ["id"]
@@ -157,6 +166,7 @@ impl AuthoringToolState {
                 draft: WorkflowAuthoringDraft {
                     name: String::new(),
                     shared_context: String::new(),
+                    plan_mode_source_node_id: None,
                     nodes: Vec::new(),
                     edges: Vec::new(),
                 },
@@ -208,6 +218,7 @@ impl AuthoringToolState {
         struct Args {
             name: Option<String>,
             shared_context: Option<String>,
+            plan_mode_source_node_id: Option<Option<String>>,
         }
         let args: Args = serde_json::from_value(args.clone())
             .map_err(|error| format!("invalid arguments: {error}"))?;
@@ -219,6 +230,9 @@ impl AuthoringToolState {
         }
         if let Some(shared_context) = args.shared_context {
             self.draft.shared_context = shared_context;
+        }
+        if let Some(plan_mode_source_node_id) = args.plan_mode_source_node_id {
+            self.draft.plan_mode_source_node_id = plan_mode_source_node_id;
         }
         Ok(())
     }
@@ -232,6 +246,8 @@ impl AuthoringToolState {
             system_prompt: String,
             task_prompt: String,
             auto_start: bool,
+            #[serde(default)]
+            request_user_input: bool,
             output_schema: Option<Value>,
         }
         let args: Args = serde_json::from_value(args.clone())
@@ -256,6 +272,7 @@ impl AuthoringToolState {
                 .filter(|schema| schema.is_object())
                 .unwrap_or_else(default_node_output_schema),
             auto_start: args.auto_start,
+            request_user_input: args.request_user_input,
         });
         Ok(())
     }
@@ -269,6 +286,7 @@ impl AuthoringToolState {
             system_prompt: Option<String>,
             task_prompt: Option<String>,
             auto_start: Option<bool>,
+            request_user_input: Option<bool>,
             output_schema: Option<Value>,
         }
         let args: Args = serde_json::from_value(args.clone())
@@ -299,6 +317,9 @@ impl AuthoringToolState {
         }
         if let Some(auto_start) = args.auto_start {
             node.auto_start = auto_start;
+        }
+        if let Some(request_user_input) = args.request_user_input {
+            node.request_user_input = request_user_input;
         }
         if let Some(output_schema) = args.output_schema {
             if !output_schema.is_object() {
@@ -514,5 +535,48 @@ mod tests {
         assert!(validation.valid, "{:?}", validation.errors);
         assert_eq!(workflow.nodes.len(), 2);
         assert_eq!(workflow.edges.len(), 1);
+        assert!(workflow
+            .nodes
+            .iter()
+            .all(|node| !node.agent.request_user_input));
+    }
+
+    #[test]
+    fn meta_tool_round_trips_plan_mode_source() {
+        let mut state = AuthoringToolState::new(None, "gpt-5.5");
+        assert!(
+            !state
+                .execute(&call(
+                    SET_WORKFLOW_META_TOOL,
+                    json!({ "name": "Plan then execute", "planModeSourceNodeId": "freeze" })
+                ))
+                .is_error
+        );
+        assert!(
+            !state
+                .execute(&call(
+                    ADD_NODE_TOOL,
+                    json!({
+                        "id": "freeze",
+                        "label": "Review",
+                        "systemPrompt": "Review the change.",
+                        "taskPrompt": "Ask for approval, then emit the packet.",
+                        "autoStart": true,
+                        "requestUserInput": true
+                    })
+                ))
+                .is_error
+        );
+
+        let (workflow, validation) = state.materialize_workflow().expect("materialize");
+        assert!(validation.valid, "{:?}", validation.errors);
+        assert_eq!(
+            workflow
+                .settings
+                .plan_mode
+                .expect("plan mode")
+                .evidence_source_node_id,
+            engine::NodeId::from("freeze")
+        );
     }
 }

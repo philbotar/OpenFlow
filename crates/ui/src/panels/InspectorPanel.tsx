@@ -96,6 +96,12 @@ export function InspectorPanel() {
                     nextNode.agent.auto_start = value;
                   })
                 }
+                requestUserInput={node().agent.requestUserInput ?? false}
+                onRequestUserInputChange={(value) =>
+                  ctx.updateCurrentNode((nextNode) => {
+                    nextNode.agent.requestUserInput = value;
+                  })
+                }
                 systemPrompt={node().agent.system_prompt}
                 onSystemPromptChange={(value) =>
                   ctx.updateCurrentNode((nextNode) => {

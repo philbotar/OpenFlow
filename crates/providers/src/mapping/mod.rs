@@ -1,13 +1,16 @@
 use engine::{
-    effective_output_schema, filter_tool_turn_assistant_message, AgentError, AgentNeedUserInput,
-    AgentRequest, AgentToolCallBatch, AgentTranscriptItem, AgentTurnOutcome, AgentTurnSuccess,
-    ToolCall, ToolDefinition,
+    complete_submit_output, effective_output_schema, filter_tool_turn_assistant_message,
+    malformed_submit_invalid_json, AgentContinueWork, AgentError, AgentMessageTurn,
+    AgentNeedUserInput, AgentReasoning, AgentRequest, AgentToolCallBatch, AgentTurnOutcome,
+    AgentTurnPhase, AgentTurnSuccess, CompleteSubmitOutputParams, ToolCall, ToolDefinition,
+    OUTPUT_REPAIR_RAW_ARGUMENTS_MAX_BYTES, SUBMIT_NODE_OUTPUT_TOOL,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-pub const SUBMIT_OUTPUT_TOOL: &str = "openflow_submit_node_output";
+pub const SUBMIT_OUTPUT_TOOL: &str = SUBMIT_NODE_OUTPUT_TOOL;
 pub const REQUEST_INPUT_TOOL: &str = "openflow_request_user_input";
+pub const CONTINUE_WORK_TOOL: &str = "openflow_continue_work";
 #[derive(Debug, Clone)]
 pub struct ToolSpec {
     pub name: String,
@@ -24,28 +27,22 @@ pub fn build_node_context(request: &AgentRequest) -> String {
     )
 }
 
-pub fn should_allow_user_input(request: &AgentRequest) -> bool {
-    if !request.allow_user_input {
-        return false;
-    }
-    request.transcript.iter().any(|item| {
-        matches!(
-            item,
-            AgentTranscriptItem::UserMessage { .. } | AgentTranscriptItem::AssistantMessage { .. }
-        )
-    })
+pub const fn should_allow_user_input(request: &AgentRequest) -> bool {
+    request.allow_user_input
 }
 
 pub fn submit_output_tool(request: &AgentRequest) -> ToolSpec {
+    let mut output_schema = effective_output_schema(&request.output_schema);
+    annotate_large_string_file_references(&mut output_schema);
     ToolSpec {
         name: SUBMIT_OUTPUT_TOOL.to_string(),
-        description: "Submit the final structured node output when the task is complete. Required shape: {\"output\": {...schema fields...}, \"assistant_message\": null|string}. Schema fields must be nested under \"output\", not at the top level."
+        description: "Submit the final structured node output when the task is complete. Required shape: {\"output\": {...schema fields...}, \"assistant_message\": null|string}. Schema fields must be nested under \"output\", not at the top level. If a large string value was already written to a repository-relative file, submit its path instead of copying the file contents."
             .to_string(),
         parameters: json!({
             "type": "object",
             "additionalProperties": false,
             "properties": {
-                "output": effective_output_schema(&request.output_schema),
+                "output": output_schema,
                 "assistant_message": {
                     "type": "string",
                     "description": "Optional human-facing note to show alongside the final result. Use an empty string when none."
@@ -53,6 +50,39 @@ pub fn submit_output_tool(request: &AgentRequest) -> ToolSpec {
             },
             "required": ["output", "assistant_message"]
         }),
+    }
+}
+
+fn annotate_large_string_file_references(schema: &mut Value) {
+    let Some(object) = schema.as_object_mut() else {
+        return;
+    };
+    if object.get("type").and_then(Value::as_str) == Some("string") {
+        let note = "For large content already written to a file, use the repository-relative file path instead of duplicating the contents.";
+        let description = object
+            .get("description")
+            .and_then(Value::as_str)
+            .map_or_else(|| note.to_string(), |existing| format!("{existing} {note}"));
+        object.insert("description".to_string(), Value::String(description));
+    }
+    for key in ["properties", "$defs", "definitions"] {
+        if let Some(children) = object.get_mut(key).and_then(Value::as_object_mut) {
+            for child in children.values_mut() {
+                annotate_large_string_file_references(child);
+            }
+        }
+    }
+    for key in ["items", "additionalProperties"] {
+        if let Some(child) = object.get_mut(key) {
+            annotate_large_string_file_references(child);
+        }
+    }
+    for key in ["allOf", "anyOf", "oneOf"] {
+        if let Some(children) = object.get_mut(key).and_then(Value::as_array_mut) {
+            for child in children {
+                annotate_large_string_file_references(child);
+            }
+        }
     }
 }
 
@@ -76,6 +106,19 @@ pub fn request_input_tool() -> ToolSpec {
     }
 }
 
+pub fn continue_work_tool() -> ToolSpec {
+    ToolSpec {
+        name: CONTINUE_WORK_TOOL.to_string(),
+        description: "Switch to a work turn that exposes executable tools. Call this only when more tool-backed work is required; after the tool batch finishes, OpenFlow returns to a control turn."
+            .to_string(),
+        parameters: json!({
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {}
+        }),
+    }
+}
+
 pub fn external_tool_spec(tool: &ToolDefinition) -> ToolSpec {
     ToolSpec {
         name: tool.name.clone(),
@@ -85,155 +128,23 @@ pub fn external_tool_spec(tool: &ToolDefinition) -> ToolSpec {
 }
 
 pub fn all_tool_specs(request: &AgentRequest) -> Vec<ToolSpec> {
-    let mut tools = request
-        .available_tools
-        .iter()
-        .map(external_tool_spec)
-        .collect::<Vec<_>>();
-    tools.push(submit_output_tool(request));
-    if should_allow_user_input(request) {
-        tools.push(request_input_tool());
-    }
-    tools
-}
-
-/// When models flatten nested object schema fields, group them under the parent property.
-fn nest_flat_fields_into_object_properties(
-    map: &mut serde_json::Map<String, Value>,
-    output_schema: Option<&Value>,
-) {
-    let Some(properties) = output_schema
-        .and_then(|schema| schema.get("properties"))
-        .and_then(Value::as_object)
-    else {
-        return;
-    };
-
-    for (prop_name, prop_schema) in properties {
-        if map.contains_key(prop_name) {
-            continue;
-        }
-        let Some(nested_props) = prop_schema.get("properties").and_then(Value::as_object) else {
-            continue;
-        };
-        let nested_keys: std::collections::HashSet<_> = nested_props.keys().cloned().collect();
-        if nested_keys.is_empty() {
-            continue;
-        }
-        let present: Vec<String> = map
-            .keys()
-            .filter(|key| nested_keys.contains(*key))
-            .cloned()
-            .collect();
-        if present.is_empty() {
-            continue;
-        }
-        let required_ok = prop_schema
-            .get("required")
-            .and_then(Value::as_array)
-            .is_none_or(|required| {
-                required
-                    .iter()
-                    .filter_map(Value::as_str)
-                    .all(|field| map.contains_key(field))
-            });
-        if !required_ok {
-            continue;
-        }
-        let mut nested = serde_json::Map::new();
-        for key in present {
-            if let Some(value) = map.remove(&key) {
-                nested.insert(key, value);
+    match request.turn_phase {
+        AgentTurnPhase::Control => {
+            let mut tools = vec![submit_output_tool(request)];
+            if should_allow_user_input(request) {
+                tools.push(request_input_tool());
             }
-        }
-        map.insert(prop_name.clone(), Value::Object(nested));
-    }
-}
-
-/// When the model puts prose in `assistant_message` instead of under `output`, map it to a schema field.
-fn salvage_assistant_message_into_output(
-    assistant_message: &str,
-    output_schema: Option<&Value>,
-) -> Value {
-    let trimmed = assistant_message.trim();
-    if let Some(required) = output_schema
-        .and_then(|schema| schema.get("required"))
-        .and_then(Value::as_array)
-        .and_then(|fields| fields.first())
-        .and_then(Value::as_str)
-    {
-        return json!({ required: trimmed });
-    }
-    if let Some(properties) = output_schema
-        .and_then(|schema| schema.get("properties"))
-        .and_then(Value::as_object)
-    {
-        if properties.contains_key("summary") {
-            return json!({ "summary": trimmed });
-        }
-        if let Some(first_key) = properties.keys().next() {
-            return json!({ first_key.clone(): trimmed });
-        }
-    }
-    json!({ "content": trimmed })
-}
-
-/// When models omit the `output` wrapper, lift top-level schema fields under `output`.
-#[must_use]
-pub fn normalize_submit_output_arguments(value: Value, output_schema: Option<&Value>) -> Value {
-    if let Value::Object(mut outer) = value {
-        if let Some(Value::Object(inner)) = outer.get("output").cloned() {
-            let mut inner = inner;
-            nest_flat_fields_into_object_properties(&mut inner, output_schema);
-            outer.insert("output".to_string(), Value::Object(inner));
-            return Value::Object(outer);
-        }
-
-        let assistant_message = outer.remove("assistant_message");
-        if outer.is_empty() {
-            if let Some(text) = assistant_message
-                .as_ref()
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|text| !text.is_empty())
-            {
-                return json!({
-                    "output": salvage_assistant_message_into_output(text, output_schema),
-                    "assistant_message": Value::Null,
-                });
+            if !request.available_tools.is_empty() {
+                tools.push(continue_work_tool());
             }
-            return json!({ "assistant_message": assistant_message });
+            tools
         }
-
-        nest_flat_fields_into_object_properties(&mut outer, output_schema);
-
-        let schema_keys = output_schema
-            .and_then(|schema| schema.get("properties"))
-            .and_then(Value::as_object)
-            .map(|properties| {
-                properties
-                    .keys()
-                    .cloned()
-                    .collect::<std::collections::HashSet<_>>()
-            });
-
-        let should_wrap = schema_keys
-            .as_ref()
-            .is_none_or(|keys| !outer.is_empty() && outer.keys().all(|key| keys.contains(key)));
-        if !should_wrap {
-            if let Some(assistant_message) = assistant_message {
-                outer.insert("assistant_message".to_string(), assistant_message);
-            }
-            return Value::Object(outer);
-        }
-
-        return json!({
-            "output": Value::Object(outer),
-            "assistant_message": assistant_message
-        });
+        AgentTurnPhase::Work => request
+            .available_tools
+            .iter()
+            .map(external_tool_spec)
+            .collect(),
     }
-
-    value
 }
 
 /// Attach token usage to an outcome, if usage data is available.
@@ -253,6 +164,14 @@ pub fn attach_usage(
                 AgentTurnOutcome::ToolCalls(b)
             }
             AgentTurnOutcome::NeedsUserInput(input) => AgentTurnOutcome::NeedsUserInput(input),
+            AgentTurnOutcome::ContinueWork(mut continuation) => {
+                continuation.usage = Some(u);
+                AgentTurnOutcome::ContinueWork(continuation)
+            }
+            AgentTurnOutcome::Message(mut message) => {
+                message.usage = Some(u);
+                AgentTurnOutcome::Message(message)
+            }
         },
     }
 }
@@ -263,28 +182,31 @@ pub fn parse_internal_tool_outcome(
     assistant_message: Option<String>,
     label: &str,
     output_schema: Option<&Value>,
+    reasoning: Vec<AgentReasoning>,
 ) -> Result<AgentTurnOutcome, AgentError> {
     match tool_name {
         SUBMIT_OUTPUT_TOOL => {
-            #[derive(Deserialize)]
-            struct SubmitOutputArgs {
-                output: Value,
-                assistant_message: Option<String>,
-            }
-
-            let raw = try_parse_or_recover_json(arguments)
-                .map_err(|error| AgentError::malformed_submit_output(label, error.to_string()))?;
-            let normalized = normalize_submit_output_arguments(raw, output_schema);
-            let args: SubmitOutputArgs = serde_json::from_value(normalized)
-                .map_err(|error| AgentError::malformed_submit_output(label, error.to_string()))?;
-            Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                output: args.output,
-                raw_text: arguments.to_string(),
-                assistant_message: filter_tool_turn_assistant_message(
-                    args.assistant_message.or(assistant_message),
-                ),
+            let raw = try_parse_or_recover_json(arguments).map_err(|error| {
+                malformed_submit_invalid_json(
+                    label,
+                    arguments,
+                    error.to_string(),
+                    output_schema,
+                    None,
+                    None,
+                    None,
+                )
+            })?;
+            complete_submit_output(CompleteSubmitOutputParams {
+                decoded: raw,
+                raw_arguments: arguments,
+                output_schema,
+                assistant_message,
+                provider_label: label,
+                tool_call_id: None,
+                finish_reason: None,
                 usage: None,
-            }))
+            })
         }
         REQUEST_INPUT_TOOL => {
             #[derive(Deserialize)]
@@ -301,6 +223,21 @@ pub fn parse_internal_tool_outcome(
             Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
                 raw_text: arguments.to_string(),
                 assistant_message: args.assistant_message,
+                reasoning,
+            }))
+        }
+        CONTINUE_WORK_TOOL => {
+            let _: serde_json::Map<String, Value> = try_deserialize_or_recover_json(arguments)
+                .map_err(|error| {
+                    AgentError::Failed(format!(
+                        "{label} continue-work tool arguments were not valid JSON: {error}"
+                    ))
+                })?;
+            Ok(AgentTurnOutcome::ContinueWork(AgentContinueWork {
+                raw_text: arguments.to_string(),
+                assistant_message: filter_tool_turn_assistant_message(assistant_message),
+                reasoning,
+                usage: None,
             }))
         }
         _ => Err(AgentError::Failed(format!(
@@ -313,16 +250,15 @@ pub fn parse_internal_tool_outcome(
 pub enum NoToolCallsPolicy {
     /// Fail immediately (e.g. `OpenAI Responses` API).
     Error(&'static str),
-    /// Try plain JSON completion, optional follow-up prompt, then fail.
-    Recover {
-        allow_plain_text_follow_up: bool,
-        error: &'static str,
-    },
+    /// Try plain JSON completion, then fail.
+    Recover { error: &'static str },
 }
 
 pub struct ResolveToolTurnParams<'a> {
     pub tool_calls: Vec<ToolCall>,
     pub assistant_message: Option<String>,
+    pub reasoning: Vec<AgentReasoning>,
+    pub turn_phase: AgentTurnPhase,
     pub no_tool_calls: NoToolCallsPolicy,
     pub output_schema: Option<&'a Value>,
     pub provider_label: &'a str,
@@ -332,12 +268,15 @@ pub struct ResolveToolTurnParams<'a> {
 }
 
 /// Shared tail for provider parsers: empty-turn recovery, internal-tool routing, external batch.
+#[allow(clippy::too_many_lines)] // shared tool-turn tail; split would scatter one control-flow path
 pub fn resolve_tool_turn_outcome(
     params: ResolveToolTurnParams<'_>,
 ) -> Result<AgentTurnOutcome, AgentError> {
     let ResolveToolTurnParams {
         tool_calls,
         assistant_message,
+        reasoning,
+        turn_phase,
         no_tool_calls,
         output_schema,
         provider_label,
@@ -346,46 +285,98 @@ pub fn resolve_tool_turn_outcome(
     } = params;
 
     if tool_calls.is_empty() {
-        return match no_tool_calls {
-            NoToolCallsPolicy::Error(message) => Err(AgentError::Failed(message.to_string())),
-            NoToolCallsPolicy::Recover {
-                allow_plain_text_follow_up,
-                error,
-            } => {
-                if let Some(outcome) = parse_plain_json_completion(assistant_message.as_deref()) {
-                    return Ok(attach_usage(outcome, usage));
-                }
-                if allow_plain_text_follow_up {
-                    if let Some(assistant_message) = assistant_message {
-                        return Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
-                            raw_text: assistant_message.clone(),
-                            assistant_message,
-                        }));
+        let error = match no_tool_calls {
+            NoToolCallsPolicy::Error(message) => message,
+            NoToolCallsPolicy::Recover { error } => {
+                if turn_phase == AgentTurnPhase::Control {
+                    if let Some(outcome) = parse_plain_json_completion(assistant_message.as_deref())
+                    {
+                        return Ok(attach_usage(outcome, usage));
                     }
                 }
-                Err(AgentError::Failed(error.to_string()))
+                error
             }
         };
+        if let Some(message) = assistant_message.filter(|message| !message.trim().is_empty()) {
+            return Ok(attach_usage(
+                AgentTurnOutcome::Message(AgentMessageTurn {
+                    raw_text: message.clone(),
+                    assistant_message: message,
+                    reasoning,
+                    usage: None,
+                }),
+                usage,
+            ));
+        }
+        return Err(AgentError::Failed(error.to_string()));
     }
 
-    if let Some(index) = tool_calls
-        .iter()
-        .position(|call| call.name == SUBMIT_OUTPUT_TOOL || call.name == REQUEST_INPUT_TOOL)
-    {
-        if tool_calls.len() != 1 {
-            return Err(AgentError::Failed(format!(
-                "{provider_label} response mixed internal and external tool calls"
-            )));
-        }
-        let call = &tool_calls[index];
-        return parse_internal_tool_outcome(
-            &call.name,
-            &call.arguments.to_string(),
-            assistant_message,
-            provider_label,
-            output_schema,
+    let is_control_tool = |name: &str| {
+        matches!(
+            name,
+            SUBMIT_OUTPUT_TOOL | REQUEST_INPUT_TOOL | CONTINUE_WORK_TOOL
         )
-        .map(|outcome| attach_usage(outcome, usage.clone()));
+    };
+    let control_count = tool_calls
+        .iter()
+        .filter(|call| is_control_tool(&call.name))
+        .count();
+    let call_names = || {
+        tool_calls
+            .iter()
+            .map(|call| call.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+
+    match turn_phase {
+        AgentTurnPhase::Control => {
+            if control_count != tool_calls.len() {
+                return Err(AgentError::mixed_tool_turn(provider_label, call_names()));
+            }
+            if tool_calls.len() != 1 {
+                // ponytail: same MixedToolTurn retry as wrong-phase / mixed batches
+                return Err(AgentError::mixed_tool_turn(provider_label, call_names()));
+            }
+            let call = &tool_calls[0];
+            if let Some(marker) = extract_malformed_tool_args_marker(&call.arguments) {
+                return Err(error_from_malformed_tool_args_marker(
+                    provider_label,
+                    &call.name,
+                    &call.id,
+                    marker,
+                    output_schema,
+                    usage,
+                ));
+            }
+            return parse_internal_tool_outcome(
+                &call.name,
+                &call.arguments.to_string(),
+                assistant_message,
+                provider_label,
+                output_schema,
+                reasoning,
+            )
+            .map(|outcome| attach_usage(outcome, usage));
+        }
+        AgentTurnPhase::Work if control_count != 0 => {
+            // ponytail: reuse MixedToolTurn retry path; engine picks phase-aware feedback
+            return Err(AgentError::mixed_tool_turn(provider_label, call_names()));
+        }
+        AgentTurnPhase::Work => {}
+    }
+
+    for call in &tool_calls {
+        if let Some(marker) = extract_malformed_tool_args_marker(&call.arguments) {
+            return Err(error_from_malformed_tool_args_marker(
+                provider_label,
+                &call.name,
+                &call.id,
+                marker,
+                output_schema,
+                usage,
+            ));
+        }
     }
 
     let assistant_message = if filter_assistant_on_external_batch {
@@ -398,6 +389,7 @@ pub fn resolve_tool_turn_outcome(
             raw_text: assistant_message.clone().unwrap_or_default(),
             assistant_message,
             tool_calls,
+            reasoning,
             usage: None,
         }),
         usage,
@@ -455,6 +447,77 @@ fn try_deserialize_or_recover_json<T: for<'de> Deserialize<'de>>(
     serde_json::from_value(value)
 }
 
+/// Private wire marker so Rig can deserialize while mapping retains the raw candidate.
+#[allow(clippy::redundant_pub_crate)] // crate-private module; keep pub(crate) for intentional crate API
+pub(crate) const MALFORMED_TOOL_ARGS_MARKER_KEY: &str = "__openflow_malformed_tool_args_v1";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(clippy::redundant_pub_crate)] // crate-private module; keep pub(crate) for intentional crate API
+pub(crate) struct MalformedToolArgsMarker {
+    pub raw: String,
+    pub detail: String,
+}
+
+/// Parse or deterministically repair tool-argument JSON. Used by the `OpenAI` HTTP normalizer.
+#[allow(clippy::redundant_pub_crate)] // crate-private module; keep pub(crate) for intentional crate API
+pub(crate) fn parse_or_recover_tool_arguments(input: &str) -> Result<Value, String> {
+    try_parse_or_recover_json(input).map_err(|error| error.to_string())
+}
+
+/// Encode an unrecoverable argument string as a marker object (valid JSON for Rig).
+#[must_use]
+#[allow(clippy::redundant_pub_crate)] // crate-private module; keep pub(crate) for intentional crate API
+pub(crate) fn malformed_tool_args_marker_value(raw: &str, detail: &str) -> Value {
+    let capped = if raw.len() <= OUTPUT_REPAIR_RAW_ARGUMENTS_MAX_BYTES {
+        raw.to_string()
+    } else {
+        raw.chars()
+            .take(OUTPUT_REPAIR_RAW_ARGUMENTS_MAX_BYTES)
+            .collect()
+    };
+    json!({
+        MALFORMED_TOOL_ARGS_MARKER_KEY: {
+            "raw": capped,
+            "detail": detail,
+        }
+    })
+}
+
+/// Pull a private malformed-args marker out of a Rig-parsed tool arguments value.
+#[must_use]
+#[allow(clippy::redundant_pub_crate)] // crate-private module; keep pub(crate) for intentional crate API
+pub(crate) fn extract_malformed_tool_args_marker(value: &Value) -> Option<MalformedToolArgsMarker> {
+    let marker = value.get(MALFORMED_TOOL_ARGS_MARKER_KEY)?.as_object()?;
+    let raw = marker.get("raw")?.as_str()?.to_string();
+    let detail = marker.get("detail")?.as_str()?.to_string();
+    Some(MalformedToolArgsMarker { raw, detail })
+}
+
+fn error_from_malformed_tool_args_marker(
+    provider_label: &str,
+    tool_name: &str,
+    tool_call_id: &str,
+    marker: MalformedToolArgsMarker,
+    output_schema: Option<&Value>,
+    usage: Option<engine::UsageReport>,
+) -> AgentError {
+    if tool_name == SUBMIT_OUTPUT_TOOL {
+        return malformed_submit_invalid_json(
+            provider_label,
+            &marker.raw,
+            marker.detail,
+            output_schema,
+            Some(tool_call_id.to_string()),
+            None,
+            usage,
+        );
+    }
+    AgentError::Failed(format!(
+        "{provider_label} tool `{tool_name}` arguments were not valid JSON: {}",
+        marker.detail
+    ))
+}
+
 #[cfg(test)]
 #[allow(
     clippy::expect_used,
@@ -465,6 +528,7 @@ fn try_deserialize_or_recover_json<T: for<'de> Deserialize<'de>>(
 )]
 mod tests {
     use super::*;
+    use engine::AgentTranscriptItem;
     fn make_tool_call_value(name: &str, arguments: &str) -> Value {
         json!({
             "id": "call-7",
@@ -601,9 +665,15 @@ mod tests {
             "properties": { "summary": { "type": "string" } },
             "required": ["summary"]
         });
-        let outcome =
-            parse_internal_tool_outcome(SUBMIT_OUTPUT_TOOL, arguments, None, "test", Some(&schema))
-                .expect("expected outcome");
+        let outcome = parse_internal_tool_outcome(
+            SUBMIT_OUTPUT_TOOL,
+            arguments,
+            None,
+            "test",
+            Some(&schema),
+            Vec::new(),
+        )
+        .expect("expected outcome");
         let AgentTurnOutcome::Completed(success) = outcome else {
             panic!("expected completed outcome");
         };
@@ -624,6 +694,7 @@ mod tests {
             None,
             "test",
             Some(&schema),
+            Vec::new(),
         )
         .expect("expected outcome");
         let AgentTurnOutcome::Completed(success) = outcome else {
@@ -656,6 +727,7 @@ mod tests {
             None,
             "test",
             Some(&schema),
+            Vec::new(),
         )
         .expect("expected outcome");
         let AgentTurnOutcome::Completed(success) = outcome else {
@@ -698,6 +770,7 @@ mod tests {
             None,
             "test",
             Some(&schema),
+            Vec::new(),
         )
         .expect("expected outcome");
         let AgentTurnOutcome::Completed(success) = outcome else {
@@ -719,6 +792,7 @@ mod tests {
             None,
             "test",
             Some(&schema),
+            Vec::new(),
         )
         .expect("expected outcome");
         let AgentTurnOutcome::Completed(success) = outcome else {
@@ -740,6 +814,7 @@ mod tests {
             None,
             "test",
             Some(&schema),
+            Vec::new(),
         )
         .expect("expected outcome");
         let AgentTurnOutcome::Completed(success) = outcome else {
@@ -764,6 +839,7 @@ mod tests {
             None,
             "test",
             Some(&schema),
+            Vec::new(),
         )
         .unwrap_err();
         assert!(err.is_malformed_submit_output());
@@ -788,10 +864,9 @@ mod tests {
         let outcome = resolve_tool_turn_outcome(ResolveToolTurnParams {
             tool_calls: vec![tool_call],
             assistant_message: Some(echoed),
-            no_tool_calls: NoToolCallsPolicy::Recover {
-                allow_plain_text_follow_up: false,
-                error: "unused",
-            },
+            reasoning: vec![],
+            turn_phase: AgentTurnPhase::Control,
+            no_tool_calls: NoToolCallsPolicy::Recover { error: "unused" },
             output_schema: Some(&schema),
             provider_label: "test",
             usage: None,
@@ -814,10 +889,9 @@ mod tests {
         let outcome = resolve_tool_turn_outcome(ResolveToolTurnParams {
             tool_calls: vec![tool_call],
             assistant_message: Some("<tool_call>\n<function=search>\n<parameter=pattern>TODO</parameter>\n</function>\n</tool_call>".into()),
-            no_tool_calls: NoToolCallsPolicy::Recover {
-                allow_plain_text_follow_up: false,
-                error: "unused",
-            },
+            reasoning: vec![],
+            turn_phase: AgentTurnPhase::Work,
+            no_tool_calls: NoToolCallsPolicy::Recover { error: "unused" },
             output_schema: None,
             provider_label: "test",
             usage: None,
@@ -833,7 +907,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_tool_turn_rejects_mixed_internal_and_external_calls() {
+    fn control_turn_rejects_hallucinated_executable_tool_calls() {
         let err = resolve_tool_turn_outcome(ResolveToolTurnParams {
             tool_calls: vec![
                 ToolCall {
@@ -848,18 +922,81 @@ mod tests {
                 },
             ],
             assistant_message: None,
-            no_tool_calls: NoToolCallsPolicy::Recover {
-                allow_plain_text_follow_up: false,
-                error: "unused",
-            },
+            reasoning: vec![],
+            turn_phase: AgentTurnPhase::Control,
+            no_tool_calls: NoToolCallsPolicy::Recover { error: "unused" },
             output_schema: None,
             provider_label: "test",
             usage: None,
             filter_assistant_on_external_batch: false,
         })
-        .expect_err("mixed calls should fail");
+        .expect_err("executable calls are invalid during a control turn");
 
-        assert!(err.to_string().contains("mixed internal and external"));
+        assert!(err
+            .to_string()
+            .contains("tools from the wrong turn phase"));
+        assert!(err.is_mixed_tool_turn());
+        assert_eq!(
+            err.mixed_tool_names(),
+            Some("openflow_submit_node_output, search")
+        );
+    }
+
+    #[test]
+    fn control_turn_rejects_multiple_control_tool_calls_as_mixed() {
+        let err = resolve_tool_turn_outcome(ResolveToolTurnParams {
+            tool_calls: vec![
+                ToolCall {
+                    id: "1".to_string(),
+                    name: CONTINUE_WORK_TOOL.to_string(),
+                    arguments: json!({}),
+                },
+                ToolCall {
+                    id: "2".to_string(),
+                    name: SUBMIT_OUTPUT_TOOL.to_string(),
+                    arguments: json!({"output": {"x": 1}}),
+                },
+            ],
+            assistant_message: None,
+            reasoning: vec![],
+            turn_phase: AgentTurnPhase::Control,
+            no_tool_calls: NoToolCallsPolicy::Recover { error: "unused" },
+            output_schema: None,
+            provider_label: "test",
+            usage: None,
+            filter_assistant_on_external_batch: false,
+        })
+        .expect_err("multiple control calls are invalid");
+
+        assert!(err.is_mixed_tool_turn());
+        assert_eq!(
+            err.mixed_tool_names(),
+            Some("openflow_continue_work, openflow_submit_node_output")
+        );
+    }
+
+    #[test]
+    fn work_turn_rejects_hallucinated_control_tool_calls() {
+        let err = resolve_tool_turn_outcome(ResolveToolTurnParams {
+            tool_calls: vec![ToolCall {
+                id: "1".to_string(),
+                name: CONTINUE_WORK_TOOL.to_string(),
+                arguments: json!({}),
+            }],
+            assistant_message: None,
+            reasoning: vec![],
+            turn_phase: AgentTurnPhase::Work,
+            no_tool_calls: NoToolCallsPolicy::Recover { error: "unused" },
+            output_schema: None,
+            provider_label: "test",
+            usage: None,
+            filter_assistant_on_external_batch: false,
+        })
+        .expect_err("control calls are invalid during a work turn");
+
+        assert!(err.is_mixed_tool_turn());
+        assert!(err.to_string().contains("tools from the wrong turn phase"));
+        assert_eq!(err.mixed_tool_names(), Some("openflow_continue_work"));
     }
 
     #[test]
@@ -881,6 +1018,8 @@ mod tests {
             model_attempt: 1,
             reasoning_effort: None,
             reasoning_budget_tokens: None,
+            turn_phase: AgentTurnPhase::Control,
+            tool_access_policy: engine::ToolAccessPolicy::Execution,
             allow_user_input: true,
         };
 
@@ -888,6 +1027,45 @@ mod tests {
         let output = &tool.parameters["properties"]["output"];
         assert_eq!(output["type"], "object");
         assert_eq!(output["required"], json!(["summary"]));
+    }
+
+    #[test]
+    fn submit_output_tool_allows_large_strings_to_stay_file_backed() {
+        use engine::{NodeId, WorkflowId};
+
+        let request = AgentRequest {
+            workflow_id: WorkflowId::from("wf-1"),
+            node_id: NodeId::from("node-1"),
+            node_label: "Node".to_string(),
+            model: "minimax-m3".to_string(),
+            system_messages: vec!["system".to_string()],
+            task_prompt: "write a specification".to_string(),
+            input: json!({}),
+            output_schema: json!({
+                "type": "object",
+                "properties": {
+                    "implementation_spec_markdown": { "type": "string" }
+                },
+                "required": ["implementation_spec_markdown"]
+            }),
+            tool_config: engine::NodeToolConfig::default(),
+            available_tools: Vec::new(),
+            transcript: Vec::new(),
+            model_attempt: 1,
+            reasoning_effort: None,
+            reasoning_budget_tokens: None,
+            turn_phase: AgentTurnPhase::Control,
+            tool_access_policy: engine::ToolAccessPolicy::Execution,
+            allow_user_input: false,
+        };
+
+        let tool = submit_output_tool(&request);
+        let field =
+            &tool.parameters["properties"]["output"]["properties"]["implementation_spec_markdown"];
+        assert_eq!(field["type"], "string");
+        assert!(field["description"]
+            .as_str()
+            .is_some_and(|description| description.contains("repository-relative file path")));
     }
 
     #[test]
@@ -911,6 +1089,8 @@ mod tests {
             model_attempt: 1,
             reasoning_effort: None,
             reasoning_budget_tokens: None,
+            turn_phase: AgentTurnPhase::Control,
+            tool_access_policy: engine::ToolAccessPolicy::Execution,
             allow_user_input: false,
         };
 
@@ -920,6 +1100,85 @@ mod tests {
             .map(|tool| tool.name)
             .collect();
         assert_eq!(tool_names, vec![SUBMIT_OUTPUT_TOOL.to_string()]);
+    }
+
+    #[test]
+    fn control_and_work_turn_catalogs_are_disjoint() {
+        use engine::{NodeId, ToolConcurrency, ToolTier, WorkflowId};
+
+        let mut request = AgentRequest {
+            workflow_id: WorkflowId::from("wf-1"),
+            node_id: NodeId::from("node-1"),
+            node_label: "Node".to_string(),
+            model: "model".to_string(),
+            system_messages: vec!["system".to_string()],
+            task_prompt: "task".to_string(),
+            input: json!({}),
+            output_schema: json!({ "type": "object" }),
+            tool_config: engine::NodeToolConfig::default(),
+            available_tools: vec![ToolDefinition {
+                name: "search".to_string(),
+                description: "Search".to_string(),
+                input_schema: json!({ "type": "object" }),
+                tier: ToolTier::Read,
+                concurrency: ToolConcurrency::Shared,
+            }],
+            transcript: Vec::new(),
+            model_attempt: 1,
+            reasoning_effort: None,
+            reasoning_budget_tokens: None,
+            turn_phase: AgentTurnPhase::Control,
+            tool_access_policy: engine::ToolAccessPolicy::Execution,
+            allow_user_input: true,
+        };
+
+        let control_names = all_tool_specs(&request)
+            .into_iter()
+            .map(|tool| tool.name)
+            .collect::<Vec<_>>();
+        assert!(control_names.iter().any(|name| name == SUBMIT_OUTPUT_TOOL));
+        assert!(control_names.iter().any(|name| name == REQUEST_INPUT_TOOL));
+        assert!(control_names.iter().any(|name| name == CONTINUE_WORK_TOOL));
+        assert!(!control_names.iter().any(|name| name == "search"));
+
+        request.turn_phase = AgentTurnPhase::Work;
+        let work_names = all_tool_specs(&request)
+            .into_iter()
+            .map(|tool| tool.name)
+            .collect::<Vec<_>>();
+        assert_eq!(work_names, vec!["search".to_string()]);
+    }
+
+    #[test]
+    fn request_user_input_tool_is_available_on_first_turn() {
+        use engine::{NodeId, WorkflowId};
+
+        let request = AgentRequest {
+            workflow_id: WorkflowId::from("wf-1"),
+            node_id: NodeId::from("grill"),
+            node_label: "Grill".to_string(),
+            model: "gpt-5.5".to_string(),
+            system_messages: vec!["Ask before assuming.".to_string()],
+            task_prompt: "Create a feature brief.".to_string(),
+            input: json!({"request": "Create a Supabase backend"}),
+            output_schema: json!({ "type": "object" }),
+            tool_config: engine::NodeToolConfig::default(),
+            available_tools: Vec::new(),
+            transcript: Vec::new(),
+            model_attempt: 1,
+            reasoning_effort: None,
+            reasoning_budget_tokens: None,
+            turn_phase: AgentTurnPhase::Control,
+            tool_access_policy: engine::ToolAccessPolicy::Execution,
+            allow_user_input: true,
+        };
+
+        let tool_names: Vec<_> = all_tool_specs(&request)
+            .into_iter()
+            .map(|tool| tool.name)
+            .collect();
+
+        assert!(tool_names.iter().any(|name| name == REQUEST_INPUT_TOOL));
     }
 
     #[test]
@@ -943,6 +1202,8 @@ mod tests {
             model_attempt: 1,
             reasoning_effort: None,
             reasoning_budget_tokens: None,
+            turn_phase: AgentTurnPhase::Control,
+            tool_access_policy: engine::ToolAccessPolicy::Execution,
             allow_user_input: true,
         };
         assert!(should_allow_user_input(&request));
@@ -970,6 +1231,8 @@ mod tests {
             model_attempt: 1,
             reasoning_effort: None,
             reasoning_budget_tokens: None,
+            turn_phase: AgentTurnPhase::Control,
+            tool_access_policy: engine::ToolAccessPolicy::Execution,
             allow_user_input: true,
         };
 

@@ -280,6 +280,24 @@ export function ProvidersSection() {
                   }
                 />
               </label>
+              <label>
+                <span>Model timeout (seconds)</span>
+                <input
+                  class="text-input"
+                  type="number"
+                  min="1"
+                  max="3600"
+                  value={ctx.activeProfileMemo().request_timeout_secs ?? 300}
+                  onInput={(event) =>
+                    void ctx.updateSettings((draft) => {
+                      const parsed = Number.parseInt(event.currentTarget.value, 10);
+                      activeProfile(draft).request_timeout_secs = Number.isFinite(parsed)
+                        ? Math.min(3600, Math.max(1, parsed))
+                        : 300;
+                    })
+                  }
+                />
+              </label>
             </Show>
           </div>
         </section>

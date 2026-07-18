@@ -1,6 +1,11 @@
 //! Subagent builtin tool handling and nested AI turn state machine.
 
-use crate::conversation::{filter_tool_turn_assistant_message, AgentTranscriptItem};
+use crate::conversation::{
+    filter_tool_turn_assistant_message, AgentReasoning, AgentTranscriptItem,
+};
+use crate::execution::interactive_engine::{
+    AUTONOMOUS_CONTINUE_FEEDBACK, MAX_AUTO_CONTINUE_STREAK,
+};
 use crate::execution::node_invocation::merge_shared_context;
 use crate::execution::subagents::CALL_SUBAGENT_TOOL;
 use crate::execution::subagents::{
@@ -12,7 +17,10 @@ use crate::graph::callable_agent::CallableAgent;
 use crate::graph::{
     default_structured_output_schema, effective_output_schema, Node, NodeId, Workflow,
 };
-use crate::ports::{AgentError, AgentRequest, AgentTurnOutcome, AgentTurnSuccess};
+use crate::ports::{
+    AgentContinueWork, AgentError, AgentNeedUserInput, AgentRequest, AgentTurnOutcome,
+    AgentTurnPhase, AgentTurnSuccess,
+};
 use crate::tools::{SubagentDeclaration, SubagentStatus, SubagentSummary, ToolCall, ToolResult};
 use serde::Deserialize;
 use serde_json::Value;
@@ -98,6 +106,8 @@ pub struct SubagentInvokeSession {
     pub request: AgentRequest,
     pub tool_call_id: String,
     pub parent_node_id: NodeId,
+    /// Consecutive text-only turns without tool-call progress.
+    text_turn_streak: u8,
 }
 
 #[derive(Debug, Clone)]
@@ -206,6 +216,7 @@ pub fn start_subagent_invoke(
             request: sub_request,
             tool_call_id: tool_call.id.clone(),
             parent_node_id: parent_node_id.clone(),
+            text_turn_streak: 0,
         }),
         telemetry,
     )
@@ -241,6 +252,8 @@ fn build_saved_agent_request(
         model_attempt: 1,
         reasoning_effort: None,
         reasoning_budget_tokens: None,
+        turn_phase: crate::ports::AgentTurnPhase::Control,
+        tool_access_policy: crate::ports::ToolAccessPolicy::Execution,
         allow_user_input: false,
     }
 }
@@ -278,6 +291,8 @@ fn build_adhoc_agent_request(
         model_attempt: 1,
         reasoning_effort: None,
         reasoning_budget_tokens: None,
+        turn_phase: crate::ports::AgentTurnPhase::Control,
+        tool_access_policy: crate::ports::ToolAccessPolicy::Execution,
         allow_user_input: false,
     }
 }
@@ -292,7 +307,14 @@ pub fn advance_subagent_invoke(
     match outcome {
         Ok(AgentTurnOutcome::Completed(success)) => complete_subagent(session, success),
         Ok(AgentTurnOutcome::ToolCalls(batch)) => {
+            session.request.turn_phase = AgentTurnPhase::Control;
+            session.text_turn_streak = 0;
             let mut transcript = session.request.transcript.clone();
+            for reasoning in &batch.reasoning {
+                transcript.push(AgentTranscriptItem::Reasoning {
+                    reasoning: reasoning.clone(),
+                });
+            }
             if let Some(message) = filter_tool_turn_assistant_message(batch.assistant_message)
                 .filter(|message| !message.trim().is_empty())
             {
@@ -307,20 +329,88 @@ pub fn advance_subagent_invoke(
             session.request.transcript = transcript;
             SubagentInvokeStep::NeedAi(session)
         }
-        Ok(AgentTurnOutcome::NeedsUserInput(_)) => {
-            let name = session.subagent.name.clone();
-            complete_subagent_failed(
-                session,
-                format!(
-                    "Subagent '{name}' requires user input, which is not supported in subagent context."
-                ),
-            )
+        Ok(AgentTurnOutcome::ContinueWork(continuation)) => {
+            continue_subagent_work(session, continuation)
         }
+        Ok(AgentTurnOutcome::Message(message)) => {
+            session.request.turn_phase = AgentTurnPhase::Control;
+            continue_autonomous_subagent(session, &message.assistant_message, message.reasoning)
+        }
+        Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
+            assistant_message,
+            reasoning,
+            ..
+        })) => continue_autonomous_subagent(session, &assistant_message, reasoning),
         Err(err) => {
             let name = session.subagent.name.clone();
             complete_subagent_failed(session, format!("Subagent '{name}' failed: {err}"))
         }
     }
+}
+
+fn continue_subagent_work(
+    mut session: SubagentInvokeSession,
+    continuation: AgentContinueWork,
+) -> SubagentInvokeStep {
+    for reasoning in continuation.reasoning {
+        session
+            .request
+            .transcript
+            .push(AgentTranscriptItem::Reasoning { reasoning });
+    }
+    if let Some(content) = continuation
+        .assistant_message
+        .filter(|content| !content.trim().is_empty())
+    {
+        session
+            .request
+            .transcript
+            .push(AgentTranscriptItem::AssistantMessage { content });
+    }
+    session.request.turn_phase = AgentTurnPhase::Work;
+    session.request.model_attempt = session.request.model_attempt.saturating_add(1);
+    SubagentInvokeStep::NeedAi(session)
+}
+
+fn continue_autonomous_subagent(
+    mut session: SubagentInvokeSession,
+    assistant_message: &str,
+    reasoning: Vec<AgentReasoning>,
+) -> SubagentInvokeStep {
+    if session.text_turn_streak >= MAX_AUTO_CONTINUE_STREAK {
+        let name = session.subagent.name.clone();
+        return complete_subagent_failed(
+            session,
+            format!(
+                "Subagent '{name}' produced {MAX_AUTO_CONTINUE_STREAK} consecutive turns without a tool call"
+            ),
+        );
+    }
+
+    for reasoning in reasoning {
+        session
+            .request
+            .transcript
+            .push(AgentTranscriptItem::Reasoning { reasoning });
+    }
+    let assistant_message = assistant_message.trim();
+    if !assistant_message.is_empty() {
+        session
+            .request
+            .transcript
+            .push(AgentTranscriptItem::AssistantMessage {
+                content: assistant_message.to_string(),
+            });
+    }
+    session
+        .request
+        .transcript
+        .push(AgentTranscriptItem::UserMessage {
+            content: AUTONOMOUS_CONTINUE_FEEDBACK.to_string(),
+        });
+    session.text_turn_streak += 1;
+    session.request.model_attempt = session.request.model_attempt.saturating_add(1);
+    SubagentInvokeStep::NeedAi(session)
 }
 
 fn complete_subagent(
@@ -396,6 +486,7 @@ mod tests {
     use super::*;
     use crate::execution::subagents::CALL_SUBAGENT_TOOL;
     use crate::graph::{NodeId, WorkflowId};
+    use crate::ports::AgentMessageTurn;
     use crate::ports::{AgentRequest, AgentToolCallBatch, AgentTurnOutcome};
     use crate::tools::{NodeToolConfig, SubagentStatus, ToolCall};
     use serde_json::json;
@@ -425,10 +516,13 @@ mod tests {
                 model_attempt: 1,
                 reasoning_effort: None,
                 reasoning_budget_tokens: None,
+                turn_phase: crate::ports::AgentTurnPhase::Control,
+                tool_access_policy: crate::ports::ToolAccessPolicy::Execution,
                 allow_user_input: false,
             },
             tool_call_id: "parent-call".to_string(),
             parent_node_id: NodeId("node-1".to_string()),
+            text_turn_streak: 0,
         }
     }
 
@@ -581,6 +675,7 @@ mod tests {
             raw_text: String::new(),
             assistant_message: Some("Reading notes".to_string()),
             tool_calls: vec![tool_call.clone()],
+            reasoning: vec![],
             usage: None,
         }));
 
@@ -600,6 +695,30 @@ mod tests {
                     },
                 ]
             ),
+            SubagentInvokeStep::Done { .. } => unreachable!("unexpected Done step"),
+        }
+    }
+
+    #[test]
+    fn text_only_subagent_turn_is_repaired_with_a_bounded_nudge() {
+        let session = sample_session();
+        let outcome = Ok(AgentTurnOutcome::Message(AgentMessageTurn {
+            raw_text: "I will inspect the files.".to_string(),
+            assistant_message: "I will inspect the files.".to_string(),
+            reasoning: Vec::new(),
+            usage: None,
+        }));
+
+        match advance_subagent_invoke(session, outcome, Vec::new()) {
+            SubagentInvokeStep::NeedAi(next) => {
+                assert_eq!(next.text_turn_streak, 1);
+                assert_eq!(next.request.model_attempt, 2);
+                assert!(matches!(
+                    next.request.transcript.last(),
+                    Some(AgentTranscriptItem::UserMessage { content })
+                        if content.contains("No human input is available")
+                ));
+            }
             SubagentInvokeStep::Done { .. } => unreachable!("unexpected Done step"),
         }
     }

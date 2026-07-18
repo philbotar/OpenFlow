@@ -4,6 +4,7 @@ use providers::{
     OpenAiCompatibleConfig, ProviderAdapterConfig, ProviderKind,
 };
 use std::collections::BTreeMap;
+use std::time::Duration;
 use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -109,12 +110,14 @@ pub fn resolve_provider_config(
                 wire_api: profile.transport,
                 responses_path: profile.responses_path.trim().to_string(),
                 chat_completions_path: profile.chat_completions_path.trim().to_string(),
+                request_timeout: Duration::from_secs(profile.request_timeout_secs.max(1)),
             })
         }
         ProviderKind::Anthropic(anthropic) => ProviderAdapterConfig::Anthropic(AnthropicConfig {
             base_url: profile.base_url.trim().to_string(),
             messages_path: anthropic.messages_path.to_string(),
             anthropic_version: anthropic.anthropic_version.to_string(),
+            request_timeout: Duration::from_secs(profile.request_timeout_secs.max(1)),
         }),
         ProviderKind::Bedrock(_) => {
             let region = region.ok_or_else(|| ProviderConfigError::MissingApiKey {
@@ -343,6 +346,7 @@ mod tests {
                 transport: ProviderTransport::ChatCompletions,
                 responses_path: " custom/responses ".to_string(),
                 chat_completions_path: " chat/completions ".to_string(),
+                request_timeout_secs: 45,
                 ..ProviderProfile::compatible_default()
             },
         );
@@ -375,6 +379,7 @@ mod tests {
         assert_eq!(config.wire_api, WireApi::ChatCompletions);
         assert_eq!(config.responses_path, "custom/responses");
         assert_eq!(config.chat_completions_path, "chat/completions");
+        assert_eq!(config.request_timeout, std::time::Duration::from_secs(45));
     }
 
     #[test]

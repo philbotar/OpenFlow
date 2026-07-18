@@ -10,6 +10,9 @@ pub struct WorkflowAuthoringDraft {
     pub name: String,
     #[serde(default)]
     pub shared_context: String,
+    /// Optional conversational node that freezes the Plan → Execute contract.
+    #[serde(default)]
+    pub plan_mode_source_node_id: Option<String>,
     pub nodes: Vec<WorkflowAuthoringNodeDraft>,
     pub edges: Vec<WorkflowAuthoringEdgeDraft>,
 }
@@ -25,6 +28,10 @@ pub struct WorkflowAuthoringNodeDraft {
     pub output_schema: Value,
     #[serde(default)]
     pub auto_start: bool,
+    /// Whether the runtime may pause this node for a direct human question.
+    /// Autonomous authored nodes default to false.
+    #[serde(default)]
+    pub request_user_input: bool,
 }
 
 #[must_use]
@@ -42,6 +49,11 @@ pub fn workflow_to_authoring_draft(workflow: &Workflow) -> WorkflowAuthoringDraf
     WorkflowAuthoringDraft {
         name: workflow.name.clone(),
         shared_context: workflow.settings.shared_context.clone(),
+        plan_mode_source_node_id: workflow
+            .settings
+            .plan_mode
+            .as_ref()
+            .map(|plan_mode| plan_mode.evidence_source_node_id.to_string()),
         nodes: workflow
             .nodes
             .iter()
@@ -52,6 +64,7 @@ pub fn workflow_to_authoring_draft(workflow: &Workflow) -> WorkflowAuthoringDraf
                 task_prompt: node.agent.task_prompt.clone(),
                 output_schema: node.agent.output_schema.clone(),
                 auto_start: node.agent.auto_start,
+                request_user_input: node.agent.request_user_input,
             })
             .collect(),
         edges: workflow
@@ -146,6 +159,12 @@ pub fn materialize_authoring_draft(
         edges: Vec::new(),
         settings: engine::WorkflowSettings {
             shared_context: draft.shared_context,
+            plan_mode: draft
+                .plan_mode_source_node_id
+                .filter(|node_id| !node_id.trim().is_empty())
+                .map(|evidence_source_node_id| engine::PlanModeConfig {
+                    evidence_source_node_id: NodeId(evidence_source_node_id),
+                }),
             ..Default::default()
         },
     };
@@ -167,6 +186,7 @@ pub fn materialize_authoring_draft(
                     node_draft.output_schema
                 },
                 auto_start: node_draft.auto_start,
+                request_user_input: node_draft.request_user_input,
                 ..Default::default()
             },
         });
@@ -204,12 +224,65 @@ mod tests {
     }
 
     #[test]
+    fn authored_nodes_default_to_no_runtime_questions() {
+        let draft = parse_authoring_draft(
+            r#"{
+                "name": "Autonomous",
+                "nodes": [{
+                    "id": "code",
+                    "label": "Code",
+                    "systemPrompt": "Implement the change.",
+                    "taskPrompt": "Write and verify the code.",
+                    "autoStart": true
+                }],
+                "edges": []
+            }"#,
+        )
+        .expect("parse draft");
+
+        let workflow = materialize_authoring_draft(draft, None, "gpt-5.5");
+
+        assert!(!workflow.nodes[0].agent.request_user_input);
+    }
+
+    #[test]
+    fn materializes_optional_plan_mode_source() {
+        let draft = parse_authoring_draft(
+            r#"{
+                "name": "Plan then execute",
+                "planModeSourceNodeId": "freeze",
+                "nodes": [{
+                    "id": "freeze",
+                    "label": "Review",
+                    "systemPrompt": "Review the proposed change.",
+                    "taskPrompt": "Ask for confirmation and emit the packet.",
+                    "requestUserInput": true
+                }],
+                "edges": []
+            }"#,
+        )
+        .expect("parse draft");
+
+        let workflow = materialize_authoring_draft(draft, None, "gpt-5.5");
+
+        assert_eq!(
+            workflow
+                .settings
+                .plan_mode
+                .expect("plan mode")
+                .evidence_source_node_id,
+            NodeId("freeze".to_string())
+        );
+    }
+
+    #[test]
     fn parse_and_materialize_feature_plan_shape() {
         let raw = include_str!("../../../../../examples/feature_plan.workflow.json");
         let example: Workflow = serde_json::from_str(raw).expect("example workflow json");
         let draft = WorkflowAuthoringDraft {
             name: example.name.clone(),
             shared_context: String::new(),
+            plan_mode_source_node_id: None,
             nodes: example
                 .nodes
                 .iter()
@@ -220,6 +293,7 @@ mod tests {
                     task_prompt: node.agent.task_prompt.clone(),
                     output_schema: node.agent.output_schema.clone(),
                     auto_start: node.agent.auto_start,
+                    request_user_input: node.agent.request_user_input,
                 })
                 .collect(),
             edges: example
@@ -238,5 +312,9 @@ mod tests {
         assert_eq!(workflow.nodes.len(), 4);
         assert_eq!(workflow.edges.len(), 4);
         assert_eq!(workflow.nodes[0].agent.model, "gpt-5.5");
+        assert!(workflow
+            .nodes
+            .iter()
+            .all(|node| !node.agent.request_user_input));
     }
 }

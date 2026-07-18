@@ -17,6 +17,10 @@ pub enum WorkflowValidationError {
     SelfEdge(EdgeId),
     #[error("workflow contains a cycle")]
     Cycle,
+    #[error("plan mode source node {0} does not exist")]
+    PlanModeSourceMissing(NodeId),
+    #[error("plan mode source node {0} must allow user input")]
+    PlanModeSourceNotInteractive(NodeId),
     #[error("internal consistency: {0}")]
     InternalConsistency(String),
 }
@@ -59,6 +63,27 @@ fn check_duplicate_edges_and_endpoints(
     Ok(())
 }
 
+fn check_plan_mode_source(workflow: &Workflow) -> Result<(), WorkflowValidationError> {
+    let Some(plan_mode) = &workflow.settings.plan_mode else {
+        return Ok(());
+    };
+    let Some(source) = workflow
+        .nodes
+        .iter()
+        .find(|node| node.id == plan_mode.evidence_source_node_id)
+    else {
+        return Err(WorkflowValidationError::PlanModeSourceMissing(
+            plan_mode.evidence_source_node_id.clone(),
+        ));
+    };
+    if !source.agent.request_user_input {
+        return Err(WorkflowValidationError::PlanModeSourceNotInteractive(
+            source.id.clone(),
+        ));
+    }
+    Ok(())
+}
+
 /// # Errors
 /// Returns an error if the workflow is invalid.
 pub fn validate_workflow(workflow: &Workflow) -> Result<(), WorkflowValidationError> {
@@ -75,6 +100,7 @@ pub fn execution_layers(workflow: &Workflow) -> Result<Vec<Vec<NodeId>>, Workflo
 
     let node_ids = check_duplicate_nodes(workflow)?;
     check_duplicate_edges_and_endpoints(workflow, &node_ids)?;
+    check_plan_mode_source(workflow)?;
 
     let mut incoming: HashMap<NodeId, usize> = workflow
         .nodes
@@ -146,7 +172,7 @@ pub fn execution_layers(workflow: &Workflow) -> Result<Vec<Vec<NodeId>>, Workflo
 )]
 mod tests {
     use super::*;
-    use crate::graph::workflow::{Edge, Node, Workflow};
+    use crate::graph::workflow::{Edge, Node, PlanModeConfig, Workflow};
 
     #[allow(
         clippy::cast_precision_loss,
@@ -269,5 +295,38 @@ mod tests {
             error,
             WorkflowValidationError::SelfEdge(EdgeId("self-edge".to_string()))
         );
+    }
+
+    #[test]
+    fn rejects_missing_plan_mode_source() {
+        let mut workflow = workflow_with_nodes(&["plan"]);
+        workflow.settings.plan_mode = Some(PlanModeConfig {
+            evidence_source_node_id: NodeId::from("freeze"),
+        });
+
+        assert_eq!(
+            validate_workflow(&workflow),
+            Err(WorkflowValidationError::PlanModeSourceMissing(
+                NodeId::from("freeze")
+            ))
+        );
+    }
+
+    #[test]
+    fn rejects_non_conversational_plan_mode_source() {
+        let mut workflow = workflow_with_nodes(&["freeze"]);
+        workflow.settings.plan_mode = Some(PlanModeConfig {
+            evidence_source_node_id: NodeId::from("freeze"),
+        });
+
+        assert_eq!(
+            validate_workflow(&workflow),
+            Err(WorkflowValidationError::PlanModeSourceNotInteractive(
+                NodeId::from("freeze")
+            ))
+        );
+
+        workflow.nodes[0].agent.request_user_input = true;
+        assert!(validate_workflow(&workflow).is_ok());
     }
 }

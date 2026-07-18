@@ -3,8 +3,9 @@ use crate::conversation::AgentTranscriptItem;
 use crate::execution::tool_results::{denied_tool_result, error_tool_result};
 use crate::execution::EngineInputError;
 use crate::graph::NodeId;
-use crate::tools::ToolResult;
-use std::collections::HashMap;
+use crate::tools::{ToolResult, WRITE_PLAN_ARTIFACT_TOOL};
+use serde_json::json;
+use std::collections::{BTreeMap, HashMap};
 
 impl InteractiveEngine {
     /// # Errors
@@ -26,7 +27,8 @@ impl InteractiveEngine {
             .into_iter()
             .map(|result| (result.tool_call_id.clone(), result))
             .collect();
-        let transcript = self.transcripts.entry(node_id.clone()).or_default();
+        let mut committed_plan_artifacts = BTreeMap::new();
+        let mut delivered = Vec::with_capacity(pending_calls.len());
         for call in &pending_calls {
             let result = by_id.remove(&call.id).unwrap_or_else(|| {
                 error_tool_result(
@@ -34,7 +36,28 @@ impl InteractiveEngine {
                     "tool execution did not complete (interrupted or cancelled)",
                 )
             });
+            if call.name == WRITE_PLAN_ARTIFACT_TOOL && !result.is_error {
+                if let Some(artifact_id) = result.artifact_ids.first() {
+                    committed_plan_artifacts.insert(call.id.clone(), artifact_id.clone());
+                }
+            }
+            delivered.push(result);
+        }
+        let transcript = self.transcripts.entry(node_id.clone()).or_default();
+        for result in delivered {
             transcript.push(AgentTranscriptItem::ToolResult { result });
+        }
+        for item in transcript.iter_mut() {
+            let AgentTranscriptItem::ToolCall { call } = item else {
+                continue;
+            };
+            let Some(artifact_id) = committed_plan_artifacts.get(&call.id) else {
+                continue;
+            };
+            call.arguments = json!({
+                "artifact_id": artifact_id,
+                "markdown_redacted": true
+            });
         }
         self.pending_tool_batches.remove(&approval_id);
         Ok(())

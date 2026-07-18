@@ -1,9 +1,9 @@
 use super::{emit_phase_timed, send_or_log, ExecutionEvent, NodeInterrupts};
 use async_trait::async_trait;
 use engine::{
-    filter_tool_turn_assistant_message, AgentError, AgentNeedUserInput, AgentRequest,
-    AgentToolCallBatch, AgentTurnOutcome, AgentTurnSuccess, AiPort, AiStreamEvent, AiStreamSink,
-    ChatRole, NodeId,
+    filter_tool_turn_assistant_message, AgentError, AgentMessageTurn, AgentNeedUserInput,
+    AgentRequest, AgentToolCallBatch, AgentTurnOutcome, AgentTurnSuccess, AiPort, AiStreamEvent,
+    AiStreamSink, ChatRole, NodeId,
 };
 use parking_lot::Mutex;
 use std::collections::BTreeMap;
@@ -110,6 +110,24 @@ impl AiStreamSink for StreamSink {
                     },
                 );
             }
+            AiStreamEvent::OutputRepairStarted { node_id, model } => {
+                send_or_log(
+                    &self.event_tx,
+                    ExecutionEvent::OutputRepairStarted { node_id, model },
+                );
+            }
+            AiStreamEvent::OutputRepairSucceeded { node_id, model } => {
+                send_or_log(
+                    &self.event_tx,
+                    ExecutionEvent::OutputRepairSucceeded { node_id, model },
+                );
+            }
+            AiStreamEvent::OutputRepairFailed { node_id, reason } => {
+                send_or_log(
+                    &self.event_tx,
+                    ExecutionEvent::OutputRepairFailed { node_id, reason },
+                );
+            }
         }
     }
 }
@@ -189,6 +207,8 @@ where
                 AgentTurnOutcome::Completed(s) => s.usage.clone(),
                 AgentTurnOutcome::ToolCalls(b) => b.usage.clone(),
                 AgentTurnOutcome::NeedsUserInput(_) => None,
+                AgentTurnOutcome::ContinueWork(continuation) => continuation.usage.clone(),
+                AgentTurnOutcome::Message(message) => message.usage.clone(),
             };
             if let Some(usage) = usage {
                 let max_context_tokens =
@@ -265,6 +285,10 @@ fn assistant_message_for_outcome(outcome: &AgentTurnOutcome) -> Option<String> {
             assistant_message, ..
         }) => assistant_message.clone(),
         AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
+            assistant_message, ..
+        }) => Some(assistant_message.clone()),
+        AgentTurnOutcome::ContinueWork(continuation) => continuation.assistant_message.clone(),
+        AgentTurnOutcome::Message(AgentMessageTurn {
             assistant_message, ..
         }) => Some(assistant_message.clone()),
     }

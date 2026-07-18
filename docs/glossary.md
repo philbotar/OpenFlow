@@ -14,7 +14,8 @@ For where terms live in code, see [Engine modules](#engine-modules), [Orchestrat
 | **NodeId** | A unique identifier for a node within a workflow | |
 | **EdgeId** | A unique identifier for an edge within a workflow | |
 | **WorkflowId** | A unique identifier for a workflow | |
-| **WorkflowSettings** | Portable per-workflow configuration: shared context, retry, schedule, provider override | Workflow config |
+| **WorkflowSettings** | Portable per-workflow configuration: shared context, retry, schedule, provider override, and optional Plan → Execute gate | Workflow config |
+| **PlanMode** | Optional workflow gate that holds a run in Planning until its configured conversational review node freezes a change evidence packet | Plan-only workflow |
 | **SharedContext** | Text appended to every node's system prompt for the duration of a run (`WorkflowSettings.shared_context`) | Shared node context |
 | **ExecutionCwd** | Folder used as the working directory for filesystem tools during a run; chosen at run time, not stored on the workflow | Working directory, run folder |
 
@@ -25,7 +26,8 @@ For where terms live in code, see [Engine modules](#engine-modules), [Orchestrat
 | **NodeKind** | The variant of a node (e.g. Agent) determining its runtime behavior | Node type, node variant |
 | **AgentNodeConfig** | Configuration for an agent node: model, prompts, tools, auto-start, callable agents | Node config, agent config |
 | **NodePosition** | Coordinates for rendering a node on the canvas | Position, coordinates |
-| **AutoStart** | Whether a node begins when its execution layer is reached (`auto_start: true`), or pauses for human input (`false`) | Auto-execute |
+| **AutoStart** | Whether a node invokes its model when its execution layer is reached (`auto_start: true`), or first waits for a human kickoff message (`false`) | Auto-execute |
+| **RequestUserInput** | Whether a running node may call `openflow_request_user_input` to ask a direct follow-up question; defaults to false | AutoStart, manual start |
 | **CallableAgent** | A saved agent definition a node may invoke as a subagent during a run (`engine::CallableAgent`) | Saved subagent, AgentDefinition |
 | **CallableAgentSelection** | Agent IDs on `AgentNodeConfig.callable_agents`; snapshotted at run start | Allowed agents, callable agents |
 | **AllowAllCallableAgents** | When true, every saved agent is snapshotted at run start instead of `callable_agents` | Allow all agents |
@@ -46,6 +48,7 @@ For where terms live in code, see [Engine modules](#engine-modules), [Orchestrat
 | **ApprovalMode** | Node-level tool approval strategy: `read_only` (read-class tools only, auto-approved), `write` (all tools; read-class auto, write-class prompt - default), `always_ask` (prompt every call), `yolo` (never prompt) | Approval policy |
 | **Tool capability class** | Static read/write grouping for builtins. Read: retrieval/search tools. Write: mutation, shell, subagent tools. Drives approval and `read_only` availability. | Tool tier |
 | **ToolTier** | Serialized capability class on tool definitions: `read` or `write` | Tool level, access tier |
+| **ToolAccessPolicy** | Run-phase capability rule. Planning permits read-tier tools plus the host-owned plan-artifact writer; Execution restores the node's normal catalog. | Approval mode |
 | **ToolConcurrency** | Whether tool calls share or exclude concurrent access: `shared` or `exclusive` | Parallelism, execution mode |
 | **ToolCallStatus** | Lifecycle of a tool call: proposed, awaiting_approval, running, completed, blocked, failed, aborted | Call status |
 | **ToolTruncation** | Limits and strategy for truncating tool output | Output limit, size cap |
@@ -72,6 +75,8 @@ For where terms live in code, see [Engine modules](#engine-modules), [Orchestrat
 | **RetryPolicy** | Workflow-level retry: max attempts and backoff (`WorkflowSettings.retry_policy`) | Retry config |
 | **WorkflowSchedule** | Optional cron schedule on a workflow | Cron schedule |
 | **NodeInvocation** | Shared assembly of upstream inputs and `AgentRequest` for `InteractiveEngine` | Request builder |
+| **FrozenChangeEvidencePacket** | Immutable, hash-verified structured review output injected into later Plan Mode requests as `input.change_evidence_packet` | Plan file, system prompt |
+| **Plan artifact** | Run-owned immutable Markdown evidence written by `openflow_write_plan_artifact` and referenced as `artifact:<uuid>` | Repository plan file |
 
 ## AI boundary
 
@@ -79,14 +84,18 @@ For where terms live in code, see [Engine modules](#engine-modules), [Orchestrat
 | --- | --- | --- |
 | **AiPort** | Trait between the workflow engine and an AI backend | AI adapter, backend trait |
 | **AgentRequest** | Payload for one AI turn on one node | AI request, turn request |
-| **AgentTurnOutcome** | Result of one turn: Completed, ToolCalls, or NeedsUserInput | Turn result, AI response |
+| **AgentTurnPhase** | Tool-catalog phase for one model turn: Control exposes workflow control tools; Work exposes executable tools | Tool mode, request mode |
+| **AgentTurnOutcome** | Result of one turn: Completed, ContinueWork, ToolCalls, NeedsUserInput, or Message | Turn result, AI response |
 | **AgentTurnSuccess** | Completed outcome: structured output plus raw text | Success result |
+| **AgentContinueWork** | Control outcome that advances the node to a Work turn | Continue signal, work request |
 | **AgentToolCallBatch** | ToolCalls outcome: batch of tool invocations from the model | Tool call batch |
 | **ToolCall** | Single tool invocation from the model | Tool request, tool use |
 | **ToolResult** | Result returned after a tool executes | Tool response |
 | **ToolDefinition** | Schema for a tool exposed to the model | Tool schema, tool spec |
 | **AgentNeedUserInput** | Signal that the model needs human input to continue | User input requested |
 | **AgentError** | Error from the AI backend for the current turn | Backend error, AI failure |
+| **OutputRepairCandidate** | Redacted in-memory payload for a malformed `openflow_submit_node_output` call (raw args size-capped; omitted from `Display`/`Debug`) | Repair payload, raw tool args |
+| **Overseer output repair** | One bounded same-provider AI pass (`RepairingAiPort`) that may fix a repairable candidate before engine retries | Repair node, overseer agent, CallableAgent |
 
 ## Validation outcomes
 
@@ -158,7 +167,8 @@ See [orchestration crate layout](architecture/orchestration-layout.md) for the c
 - An **AgentNodeConfig** belongs to one **Node** and may include **NodeToolConfig**.
 - A **ChatMessage** or **AgentTranscriptItem** belongs to one **Node**'s transcript.
 - An **AgentRequest** goes to **AiPort** for one **Node** per turn.
-- **AgentTurnOutcome** is **AgentTurnSuccess**, **AgentToolCallBatch**, or **AgentNeedUserInput**.
+- An **AgentRequest** has one **AgentTurnPhase**; control and executable tools are never advertised together.
+- **AgentTurnOutcome** selects completion, phase transition, executable tool work, human input, or a plain message.
 - A **Template** instantiates a **Node** with default config and **LockedField** constraints.
 - **InteractiveEngine::run** returns **EngineRunResult** until **Completed**, **Failed**, **Cancelled**, or **NeedsInteraction**.
 - Headless acceptance runs use the same **InteractiveEngine** via `run_workflow_headless` in orchestration.

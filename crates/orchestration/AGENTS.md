@@ -144,6 +144,7 @@ Use inline `impl AiPort` stubs. Live AI: `STEP_WORKFLOW_LIVE_AI=1` (see `docs/co
 
 - [`docs/architecture/orchestration-layout.md`](../../docs/architecture/orchestration-layout.md)
 - [`docs/architecture/callable-agents.md`](../../docs/architecture/callable-agents.md) - CallableAgent snapshot and subagent model
+- [`docs/architecture/end-to-end-runtime.md`](../../docs/architecture/end-to-end-runtime.md) — run host, events, pause/resume
 - [`docs/architecture/contract.md`](../../docs/architecture/contract.md)
-- [`docs/architecture/threading-concurrency.md`](../../docs/architecture/threading-concurrency.md) — dual runtime, run mutex
+- [`docs/architecture/threading-concurrency.md`](../../docs/architecture/threading-concurrency.md) — dual runtime, run mutex, layer concurrency
 - [`../../AGENTS.md`](../../AGENTS.md) — workspace map

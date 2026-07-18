@@ -46,16 +46,20 @@ fn empty_engine_checkpoint(workflow: &Workflow) -> InteractiveEngineCheckpoint {
         reads_by_node: Default::default(),
         transcripts: Default::default(),
         awaiting_nodes: Default::default(),
+        work_phase_nodes: Default::default(),
         pending_tool_batches: Default::default(),
         retries_by_node: Default::default(),
         transient_streaks_by_node: Default::default(),
         submit_output_retries_by_node: Default::default(),
         request_input_retries_by_node: Default::default(),
         empty_turn_retries_by_node: Default::default(),
+        mixed_tool_turn_retries_by_node: Default::default(),
         auto_continue_streaks_by_node: Default::default(),
         entrypoint_text: None,
         interrupted_nodes: Default::default(),
         failed_nodes: Default::default(),
+        plan_mode_source_node_id: None,
+        frozen_change_evidence_packet: None,
     }
 }
 
@@ -450,7 +454,8 @@ async fn list_runs_delegates_to_store() {
 async fn start_run_spawns_active_session_and_persists_record() {
     let stores = local_stores();
     let coordinator = coordinator(stores.dir.path());
-    let workflow = default_workflow("Start");
+    let mut workflow = default_workflow("Start");
+    workflow.settings.reasoning_effort = Some("medium".to_string());
 
     let (state, event_rx) = coordinator
         .start_run(run_start_params(&stores, workflow.clone()))
@@ -458,7 +463,18 @@ async fn start_run_spawns_active_session_and_persists_record() {
         .expect("start run");
 
     assert!(state.active);
-    assert!(state.run_id.is_some());
+    let run_id = state.run_id.as_deref().expect("durable run id");
+    let (_, record) = stores
+        .run_store
+        .load_record(std::slice::from_ref(&stores.run_root), run_id)
+        .expect("load run record")
+        .expect("persisted run record");
+    let snapshot = &record.workflow_snapshot;
+    assert_eq!(workflow_hash(snapshot), record.workflow_hash);
+    assert!(snapshot
+        .nodes
+        .iter()
+        .all(|node| node.agent.reasoning_effort.as_deref() == Some("medium")));
     assert!(coordinator.is_run_active().await);
     drop(event_rx);
     let stopped = coordinator.stop_run().await.expect("stop");
@@ -559,35 +575,37 @@ async fn continue_run_rejects_active_or_missing_checkpoint() {
 
 #[cfg_attr(miri, ignore)]
 #[tokio::test]
-async fn resume_durable_run_rejects_changed_workflow() {
+async fn resume_durable_run_uses_recorded_workflow_snapshot() {
     let stores = local_stores();
     let coordinator = coordinator(stores.dir.path());
-    let workflow = default_workflow("Durable");
-    let mut changed = workflow.clone();
-    changed.name = "Changed".to_string();
-
-    let record = run_record(stores.dir.path(), &workflow, "run-d");
+    let workflow = default_workflow("Durable snapshot");
+    let record = run_record(stores.dir.path(), &workflow, "run-snapshot");
     let checkpoint =
         durable_checkpoint(&workflow, WorkflowRunState::running_for_workflow(&workflow));
+    stores
+        .run_store
+        .create_run(&stores.run_root, &record)
+        .expect("create run");
 
-    assert!(matches!(
-        coordinator
-            .resume_durable_run(DurableResumeParams {
-                run_id: "run-d",
-                workflow: changed,
-                root: stores.run_root.clone(),
-                record: record.clone(),
-                checkpoint: checkpoint.clone(),
-                settings: &stores.settings,
-                transient_api_key: None,
-                agent_store: &stores.agent_store,
-                settings_store: &stores.settings_store,
-                run_store: &stores.run_store,
-                env: &stores.env,
-            })
-            .await,
-        Err(BackendError::RunWorkflowChanged(_, _))
-    ));
+    let (resumed, event_rx) = coordinator
+        .resume_durable_run(DurableResumeParams {
+            run_id: "run-snapshot",
+            root: stores.run_root.clone(),
+            record,
+            checkpoint,
+            settings: &stores.settings,
+            transient_api_key: None,
+            agent_store: &stores.agent_store,
+            settings_store: &stores.settings_store,
+            run_store: &stores.run_store,
+            env: &stores.env,
+        })
+        .await
+        .expect("resume from recorded workflow snapshot");
+
+    assert!(resumed.active);
+    drop(event_rx);
+    let _ = coordinator.stop_run().await;
 }
 
 #[cfg_attr(miri, ignore)]
@@ -615,7 +633,6 @@ async fn resume_durable_run_restores_active_session() {
     let (resumed, event_rx) = coordinator
         .resume_durable_run(DurableResumeParams {
             run_id: "run-dr",
-            workflow,
             root: stores.run_root.clone(),
             record,
             checkpoint,
@@ -1020,6 +1037,7 @@ fn run_record(dir: &Path, workflow: &Workflow, run_id: &str) -> RunRecord {
         workflow_id: workflow.id.to_string(),
         workflow_name: workflow.name.clone(),
         workflow_hash: workflow_hash(workflow),
+        workflow_snapshot: workflow.clone(),
         project_id: None,
         execution_cwd: dir.display().to_string(),
         artifact_root: dir

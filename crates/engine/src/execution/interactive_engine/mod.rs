@@ -17,10 +17,13 @@ use crate::graph::{
     apply_runtime_patch_to_agent, apply_runtime_patch_to_request, runtime_patch_for, Node, NodeId,
     NodeRuntimeConfigStore, Workflow,
 };
-use crate::ports::{AgentRequest, AiPort, ToolBatchOutput, ToolPort};
+use crate::ports::{
+    AgentRequest, AgentTurnPhase, AiPort, ToolAccessPolicy, ToolBatchOutput, ToolPort,
+};
 use crate::tools::{FileChangeRecord, ReadRecord, ToolCall};
 use futures::stream::{FuturesUnordered, StreamExt};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Write;
 use std::future::Future;
@@ -91,6 +94,83 @@ pub(crate) struct PendingToolBatch {
     node_id: NodeId,
     tool_calls: Vec<ToolCall>,
     requires_approval: bool,
+    tool_access_policy: ToolAccessPolicy,
+}
+
+/// Immutable change contract frozen when a Plan Mode source node completes.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FrozenChangeEvidencePacket {
+    pub schema_version: u8,
+    pub source_node_id: NodeId,
+    pub sha256: String,
+    pub content: Value,
+}
+
+/// Effective run phase for a workflow that opted into Plan Mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PlanModePhase {
+    Planning,
+    Execution,
+}
+
+impl FrozenChangeEvidencePacket {
+    const SCHEMA_VERSION: u8 = 1;
+
+    fn new(source_node_id: NodeId, content: Value) -> Self {
+        let sha256 = Self::hash_content(&content);
+        Self {
+            schema_version: Self::SCHEMA_VERSION,
+            source_node_id,
+            sha256,
+            content,
+        }
+    }
+
+    pub(crate) fn is_valid(&self) -> bool {
+        self.schema_version == Self::SCHEMA_VERSION
+            && self.sha256 == Self::hash_content(&self.content)
+    }
+
+    fn hash_content(content: &Value) -> String {
+        let mut digest = Sha256::new();
+        digest.update(canonical_json(content).as_bytes());
+        format!("{:x}", digest.finalize())
+    }
+}
+
+/// Serialize JSON with object keys sorted recursively so a packet hash is stable
+/// across equivalent serde map orderings.
+fn canonical_json(value: &Value) -> String {
+    match value {
+        Value::Object(entries) => {
+            let mut entries = entries.iter().collect::<Vec<_>>();
+            entries.sort_unstable_by_key(|(left, _)| *left);
+            let mut canonical = String::from("{");
+            for (index, (key, value)) in entries.into_iter().enumerate() {
+                if index > 0 {
+                    canonical.push(',');
+                }
+                canonical.push_str(&Value::String((*key).clone()).to_string());
+                canonical.push(':');
+                canonical.push_str(&canonical_json(value));
+            }
+            canonical.push('}');
+            canonical
+        }
+        Value::Array(items) => {
+            let mut canonical = String::from("[");
+            for (index, item) in items.iter().enumerate() {
+                if index > 0 {
+                    canonical.push(',');
+                }
+                canonical.push_str(&canonical_json(item));
+            }
+            canonical.push(']');
+            canonical
+        }
+        _ => value.to_string(),
+    }
 }
 
 pub struct InteractiveEngine {
@@ -108,6 +188,11 @@ pub struct InteractiveEngine {
     transcripts: BTreeMap<NodeId, Vec<AgentTranscriptItem>>,
     awaiting_nodes: BTreeSet<NodeId>,
     in_flight_ai: BTreeSet<NodeId>,
+    /// Nodes whose next invocation exposes executable tools instead of control tools.
+    work_phase_nodes: BTreeSet<NodeId>,
+    /// Source selected at run start, preserved across workflow edits on resume.
+    plan_mode_source_node_id: Option<NodeId>,
+    frozen_change_evidence_packet: Option<FrozenChangeEvidencePacket>,
     pending_tool_batches: BTreeMap<String, PendingToolBatch>,
     /// Approval ids of tool batches currently executing (not persisted; a
     /// restored engine re-dispatches any pending non-approval batch).
@@ -120,6 +205,7 @@ pub struct InteractiveEngine {
     submit_output_retries_by_node: BTreeMap<NodeId, u8>,
     request_input_retries_by_node: BTreeMap<NodeId, u8>,
     empty_turn_retries_by_node: BTreeMap<NodeId, u8>,
+    mixed_tool_turn_retries_by_node: BTreeMap<NodeId, u8>,
     /// Consecutive auto-continued text-only turns for nodes that disallow
     /// user input; reset whenever the node makes tool-call progress.
     auto_continue_streaks_by_node: BTreeMap<NodeId, u8>,
@@ -134,17 +220,23 @@ pub struct InteractiveEngine {
 pub(crate) const MAX_MALFORMED_SUBMIT_OUTPUT_RETRIES: u8 = 3;
 pub(crate) const MAX_MALFORMED_REQUEST_INPUT_RETRIES: u8 = 3;
 pub(crate) const MAX_EMPTY_PROVIDER_TURN_RETRIES: u8 = 3;
+pub(crate) const MAX_MIXED_TOOL_TURN_RETRIES: u8 = 3;
 pub(crate) const MAX_AUTO_CONTINUE_STREAK: u8 = 10;
 pub(crate) const MALFORMED_REQUEST_INPUT_FEEDBACK: &str =
     "Your last turn ended as a request for human input, but without a direct question. \
     If you need human clarification, call openflow_request_user_input with \
     assistant_message set to one direct question (usually ending with ?). If you do not \
-    need human input, continue working: call a tool or call openflow_submit_node_output. \
+    need human input, call openflow_continue_work for executable tools or call \
+    openflow_submit_node_output when complete. \
     Do not end a turn with plain narration.";
+pub(crate) const INTERACTIVE_CONTINUE_FEEDBACK: &str =
+    "Use the current control turn: call openflow_continue_work if executable tools are needed, \
+    call openflow_request_user_input with one direct question if human clarification is needed, \
+    or call openflow_submit_node_output when the task is complete. Do not end with plain text only.";
 pub(crate) const AUTONOMOUS_CONTINUE_FEEDBACK: &str =
-    "No human input is available for this node. Continue working: call a tool to make \
-    progress, or call openflow_submit_node_output when the task is complete. Do not end \
-    a turn with plain text only.";
+    "No human input is available for this node. Use the current control turn: call \
+    openflow_continue_work if executable tools are needed, or call openflow_submit_node_output \
+    when the task is complete. Do not end with plain text only.";
 
 enum WorkOutput {
     Ai {
@@ -174,6 +266,11 @@ impl InteractiveEngine {
             .enumerate()
             .map(|(index, node)| (node.id.clone(), index))
             .collect();
+        let plan_mode_source_node_id = workflow
+            .settings
+            .plan_mode
+            .as_ref()
+            .map(|plan_mode| plan_mode.evidence_source_node_id.clone());
         Ok(Self {
             workflow,
             upstream_map,
@@ -189,6 +286,9 @@ impl InteractiveEngine {
             transcripts: BTreeMap::new(),
             awaiting_nodes: BTreeSet::new(),
             in_flight_ai: BTreeSet::new(),
+            work_phase_nodes: BTreeSet::new(),
+            plan_mode_source_node_id,
+            frozen_change_evidence_packet: None,
             pending_tool_batches: BTreeMap::new(),
             in_flight_tools: BTreeSet::new(),
             retries_by_node: BTreeMap::new(),
@@ -197,6 +297,7 @@ impl InteractiveEngine {
             submit_output_retries_by_node: BTreeMap::new(),
             request_input_retries_by_node: BTreeMap::new(),
             empty_turn_retries_by_node: BTreeMap::new(),
+            mixed_tool_turn_retries_by_node: BTreeMap::new(),
             auto_continue_streaks_by_node: BTreeMap::new(),
             entrypoint_text,
             project_repository_root,
@@ -361,9 +462,12 @@ impl InteractiveEngine {
                 }
             }
 
-            for (approval_id, node_id, label, tool_calls) in self.take_ready_tool_batches() {
+            for (approval_id, node_id, label, tool_calls, policy) in self.take_ready_tool_batches()
+            {
                 in_flight.push(Box::pin(async move {
-                    let output = tools.execute_batch(&node_id, &label, tool_calls).await;
+                    let output = tools
+                        .execute_batch(&node_id, &label, tool_calls, policy)
+                        .await;
                     WorkOutput::Tools {
                         approval_id,
                         node_id,
@@ -445,8 +549,10 @@ impl InteractiveEngine {
     }
 
     /// All non-approval tool batches not yet dispatched; marks them in flight.
-    fn take_ready_tool_batches(&mut self) -> Vec<(String, NodeId, String, Vec<ToolCall>)> {
-        let ready: Vec<(String, NodeId, String, Vec<ToolCall>)> = self
+    fn take_ready_tool_batches(
+        &mut self,
+    ) -> Vec<(String, NodeId, String, Vec<ToolCall>, ToolAccessPolicy)> {
+        let ready: Vec<(String, NodeId, String, Vec<ToolCall>, ToolAccessPolicy)> = self
             .pending_tool_batches
             .iter()
             .filter(|(approval_id, batch)| {
@@ -459,6 +565,7 @@ impl InteractiveEngine {
                     batch.node_id.clone(),
                     node.label.clone(),
                     batch.tool_calls.clone(),
+                    batch.tool_access_policy,
                 ))
             })
             .collect();
@@ -618,7 +725,11 @@ impl InteractiveEngine {
             .map(|batch| batch.node_id.clone())
     }
 
-    /// Retry a failed or interrupted node without clearing its transcript.
+    /// Retry a failed or interrupted node.
+    ///
+    /// A manual retry preserves the model conversation and resets node-local
+    /// recovery budgets. This lets failed and interrupted nodes resume from their
+    /// last durable turn instead of repeating completed repository work.
     ///
     /// # Errors
     /// Returns [`EngineInputError::NodeNotRetryable`] when the node is not paused for retry.
@@ -632,6 +743,12 @@ impl InteractiveEngine {
         self.failed_nodes.remove(node_id);
         self.interrupted_nodes.remove(node_id);
         self.retry_after_by_node.remove(node_id);
+        self.transient_streaks_by_node.remove(node_id);
+        self.submit_output_retries_by_node.remove(node_id);
+        self.request_input_retries_by_node.remove(node_id);
+        self.empty_turn_retries_by_node.remove(node_id);
+        self.mixed_tool_turn_retries_by_node.remove(node_id);
+        self.auto_continue_streaks_by_node.remove(node_id);
         let retry_count = self.retries_by_node.entry(node_id.clone()).or_default();
         *retry_count = retry_count.saturating_add(1);
         Ok(())
@@ -720,9 +837,9 @@ impl InteractiveEngine {
                 AgentTranscriptItem::UserMessage { content } => {
                     Some(ChatMessage::text(ChatRole::User, content.clone()))
                 }
-                AgentTranscriptItem::ToolCall { .. } | AgentTranscriptItem::ToolResult { .. } => {
-                    None
-                }
+                AgentTranscriptItem::ToolCall { .. }
+                | AgentTranscriptItem::ToolResult { .. }
+                | AgentTranscriptItem::Reasoning { .. } => None,
             })
             .collect()
     }
@@ -749,9 +866,23 @@ impl InteractiveEngine {
             transcript: self.transcript(&node.id),
             available_tools: &[],
             project_repository_root: self.project_repository_root.as_deref(),
+            frozen_change_evidence_packet: self.frozen_change_evidence_packet.as_ref(),
         };
         let mut request = build_agent_request(&ctx, node, true)?;
         request.model_attempt = self.model_attempt_for(&node.id);
+        request.turn_phase = if self.work_phase_nodes.contains(node_id) {
+            AgentTurnPhase::Work
+        } else {
+            AgentTurnPhase::Control
+        };
+        request.tool_access_policy = if self.is_plan_mode_active() {
+            ToolAccessPolicy::Planning
+        } else {
+            ToolAccessPolicy::Execution
+        };
+        if self.is_plan_mode_source_during_planning(node_id) {
+            request.allow_user_input = true;
+        }
         if let Some(store) = &self.runtime_config_store {
             if let Some(patch) = runtime_patch_for(store, node_id) {
                 apply_runtime_patch_to_request(&mut request, &patch);
@@ -761,6 +892,24 @@ impl InteractiveEngine {
             }
         }
         Ok(request)
+    }
+
+    fn is_plan_mode_active(&self) -> bool {
+        matches!(self.plan_mode_phase(), Some(PlanModePhase::Planning))
+    }
+
+    fn is_plan_mode_source_during_planning(&self, node_id: &NodeId) -> bool {
+        self.is_plan_mode_active() && self.plan_mode_source_node_id.as_ref() == Some(node_id)
+    }
+
+    fn plan_mode_phase(&self) -> Option<PlanModePhase> {
+        self.plan_mode_source_node_id.as_ref().map(|_| {
+            if self.frozen_change_evidence_packet.is_some() {
+                PlanModePhase::Execution
+            } else {
+                PlanModePhase::Planning
+            }
+        })
     }
 
     fn model_attempt_for(&self, node_id: &NodeId) -> u8 {

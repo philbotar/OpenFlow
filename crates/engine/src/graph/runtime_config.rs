@@ -129,6 +129,8 @@ mod tests {
             model_attempt: 1,
             reasoning_effort: None,
             reasoning_budget_tokens: None,
+            turn_phase: crate::ports::AgentTurnPhase::Control,
+            tool_access_policy: crate::ports::ToolAccessPolicy::Execution,
             allow_user_input: true,
         };
         apply_runtime_patch_to_request(&mut request, &patch);

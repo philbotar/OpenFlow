@@ -52,9 +52,13 @@ fn http_client_error(error: HttpClientError, label: &str) -> AgentError {
             classify_status(status.as_u16(), &body, label)
         }
         HttpClientError::InvalidStatusCode(status) => classify_status(status.as_u16(), "", label),
-        HttpClientError::StreamEnded
-        | HttpClientError::Protocol(_)
-        | HttpClientError::Instance(_) => {
+        HttpClientError::Instance(source) => {
+            let cause = source
+                .downcast_ref::<reqwest::Error>()
+                .map_or("failed", reqwest_transport_cause);
+            AgentError::Transient(format!("{label} HTTP transport {cause}: {source}"))
+        }
+        HttpClientError::StreamEnded | HttpClientError::Protocol(_) => {
             AgentError::Transient(format!("{label} HTTP transport error: {error}"))
         }
         HttpClientError::NoHeaders
@@ -65,6 +69,20 @@ fn http_client_error(error: HttpClientError, label: &str) -> AgentError {
     }
 }
 
+fn reqwest_transport_cause(error: &reqwest::Error) -> &'static str {
+    if error.is_timeout() {
+        "timed out"
+    } else if error.is_connect() {
+        "connection failed"
+    } else if error.is_body() {
+        "response body failed"
+    } else if error.is_request() {
+        "request failed"
+    } else {
+        "failed"
+    }
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -72,6 +90,8 @@ fn http_client_error(error: HttpClientError, label: &str) -> AgentError {
 )]
 mod tests {
     use super::*;
+    use std::time::Duration;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[test]
     fn rate_limit_is_transient() {
@@ -135,5 +155,27 @@ mod tests {
             "Custom OpenAI-compatible API",
         );
         assert!(matches!(err, AgentError::Failed(_)));
+    }
+
+    #[tokio::test]
+    async fn reqwest_timeout_names_the_transport_cause() {
+        let server = MockServer::start().await;
+        Mock::given(wiremock::matchers::method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_delay(Duration::from_millis(100)))
+            .mount(&server)
+            .await;
+        let error = reqwest::Client::builder()
+            .timeout(Duration::from_millis(10))
+            .build()
+            .unwrap()
+            .get(server.uri())
+            .send()
+            .await
+            .unwrap_err();
+
+        let mapped = http_client_error(HttpClientError::Instance(Box::new(error)), "Test");
+
+        assert!(mapped.is_retryable());
+        assert!(mapped.to_string().contains("HTTP transport timed out"));
     }
 }

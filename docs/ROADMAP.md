@@ -543,12 +543,12 @@ Keyboard QoL exists for run, save, delete, and zoom (`AppProvider` global handle
 
 ### Thinking & chat presentation
 
-Per-node and workflow-level `reasoning_effort` / `reasoning_budget_tokens` are in the schema. Settings, gear panel, and inspector expose controls. OpenAI-compatible providers forward reasoning params and stream `ThinkingDelta` into `ThinkingBubble` rows. Anthropic adapter does not yet send reasoning params or parse thinking blocks. Legacy `ChatRole::Thinking` tool prose still appears alongside structured bubbles until cleanup lands.
+Per-node and workflow-level `reasoning_effort` / `reasoning_budget_tokens` are in the schema. Settings, gear panel, and inspector expose controls. OpenAI-compatible providers forward reasoning params and stream `ThinkingDelta` into `ThinkingBubble` rows. Anthropic thinking lives in `rig_adapter/` (`claude_thinking.rs`, `reasoning_convert.rs`) — keep that path current when extending Anthropic reasoning. Legacy `ChatRole::Thinking` tool prose still appears alongside structured bubbles until cleanup lands.
 
 | Layer | Gap |
 | --- | --- |
-| `crates/providers/src/anthropic.rs` | No `reasoning_effort` / budget on request body; no thinking-block parsing on responses |
-| `crates/providers/src/openai_compat.rs` | Forwards `reasoning_effort` and budget; streams `reasoning_content` as `ThinkingDelta` — **Done** |
+| `crates/providers/src/rig_adapter/` (Anthropic) | Confirm thinking/budget mapping and block parsing stay complete for all Anthropic models |
+| `crates/providers/src/rig_adapter/` (OpenAI-compat) | Forwards reasoning params; streams reasoning as `ThinkingDelta` — **Done** |
 | `crates/ui/src/lib/parseLegacyToolMessages.ts` | Legacy tool I/O lines still reuse `ChatRole::Thinking`; provider reasoning is distinguished via `isProviderThinkingMessage` |
 | `crates/orchestration/src/run/execution/events.rs` | Run trace tool rows still use raw tool ids (pretty-names chat-only today) |
 | `crates/ui/src/components/conversation/` | No per-run thinking override in chat chrome |

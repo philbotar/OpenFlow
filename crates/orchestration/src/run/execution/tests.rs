@@ -33,6 +33,8 @@ fn sample_agent_request() -> AgentRequest {
         model_attempt: 1,
         reasoning_effort: None,
         reasoning_budget_tokens: None,
+        turn_phase: engine::AgentTurnPhase::Control,
+        tool_access_policy: engine::ToolAccessPolicy::Execution,
         allow_user_input: true,
     }
 }
@@ -62,6 +64,7 @@ async fn adapter_emits_clarifying_question_after_streamed_preamble() {
             Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
                 raw_text: "{}".to_string(),
                 assistant_message: "Should tool rows animate like Cursor's shimmer?".to_string(),
+                reasoning: vec![],
             }))
         }
     }
@@ -589,7 +592,11 @@ async fn headless_run_auto_approves_read_tool_and_reenters_model_loop() {
             let mut calls = self.calls.lock();
             *calls += 1;
             if *calls == 1 {
-                assert_eq!(request.available_tools.len(), 10);
+                assert!(
+                    request.available_tools.len() >= 10,
+                    "expected builtin tools, got {}",
+                    request.available_tools.len()
+                );
                 return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                     raw_text: String::new(),
                     assistant_message: Some("Inspecting docs".to_string()),
@@ -598,6 +605,7 @@ async fn headless_run_auto_approves_read_tool_and_reenters_model_loop() {
                         name: "read".to_string(),
                         arguments: json!({"path": "README.md"}),
                     }],
+                    reasoning: vec![],
                     usage: None,
                 }));
             }
@@ -655,6 +663,7 @@ async fn headless_run_survives_permanent_tool_failure_and_completes() {
                         name: "read".to_string(),
                         arguments: json!({"path": "definitely-missing-file-orch-test.txt"}),
                     }],
+                    reasoning: vec![],
                     usage: None,
                 }));
             }
@@ -723,6 +732,7 @@ async fn headless_run_requires_scripted_approval_for_prompted_tool() {
                     name: "read".to_string(),
                     arguments: json!({"path": "README.md"}),
                 }],
+                reasoning: vec![],
                 usage: None,
             }))
         }
@@ -789,6 +799,24 @@ fn reducer_node_errored_keeps_run_active() {
     );
     assert_eq!(state.last_error.as_deref(), Some("boom"));
     assert_eq!(state.run_trace[0].status, TraceStatus::Failed);
+}
+
+#[test]
+fn reducer_node_started_clears_retained_failure() {
+    let workflow = workflow();
+    let mut state = WorkflowRunState::running_for_workflow(&workflow);
+    state.last_error = Some("boom".to_string());
+
+    apply_event_to_run_state(
+        &workflow,
+        &mut state,
+        ExecutionEvent::NodeStarted {
+            node_id: NodeId("first".to_string()),
+            label: "First".to_string(),
+        },
+    );
+
+    assert!(state.last_error.is_none());
 }
 
 #[test]
@@ -1170,6 +1198,7 @@ async fn interrupt_during_slow_tool_emits_node_interrupted() {
                     name: "bash".to_string(),
                     arguments: json!({"command": "sleep 30", "timeout": 30}),
                 }],
+                reasoning: vec![],
                 usage: None,
             }))
         }
@@ -1778,6 +1807,7 @@ async fn resolve_approval_uses_engine_node_id_after_stop_and_continue() {
                         name: "write".to_string(),
                         arguments: json!({"path": "out.txt", "content": "deny-me\n"}),
                     }],
+                    reasoning: vec![],
                     usage: None,
                 }));
             }
@@ -1865,5 +1895,323 @@ fn pending_checkpoint_records_pause_reason() {
     assert_eq!(
         checkpoint.reason,
         crate::run::persistence::RunCheckpointReason::AwaitingInput
+    );
+}
+
+#[test]
+fn output_repair_policy_from_workflow_trims_blank_and_keeps_model() {
+    let blank = engine::WorkflowSettings {
+        output_repair_model: Some("  \t".into()),
+        ..engine::WorkflowSettings::default()
+    };
+    assert!(engine::OutputRepairPolicy::from_workflow_settings(&blank)
+        .model
+        .is_none());
+
+    let set = engine::WorkflowSettings {
+        output_repair_model: Some("overseer-model".into()),
+        ..engine::WorkflowSettings::default()
+    };
+    assert_eq!(
+        engine::OutputRepairPolicy::from_workflow_settings(&set)
+            .model
+            .as_deref(),
+        Some("overseer-model")
+    );
+
+    let unset = engine::WorkflowSettings::default();
+    assert!(engine::OutputRepairPolicy::from_workflow_settings(&unset)
+        .model
+        .is_none());
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+async fn adapter_maps_repair_stream_events_to_telemetry_not_chat() {
+    struct RepairStreamAi;
+
+    #[async_trait]
+    impl AiPort for RepairStreamAi {
+        async fn invoke(&self, _request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            panic!("adapter should call invoke_stream");
+        }
+
+        async fn invoke_stream(
+            &self,
+            request: AgentRequest,
+            sink: &dyn AiStreamSink,
+        ) -> Result<AgentTurnOutcome, AgentError> {
+            sink.on_stream_event(AiStreamEvent::OutputRepairStarted {
+                node_id: request.node_id.clone(),
+                model: "repair-m".into(),
+            });
+            sink.on_stream_event(AiStreamEvent::OutputRepairSucceeded {
+                node_id: request.node_id.clone(),
+                model: "repair-m".into(),
+            });
+            Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                output: json!({"summary": "ok"}),
+                raw_text: "{}".into(),
+                assistant_message: None,
+                usage: None,
+            }))
+        }
+    }
+
+    let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
+    let adapter = AiInvocationAdapter::new(
+        Arc::new(RepairStreamAi),
+        event_tx,
+        Arc::new(parking_lot::Mutex::new(BTreeMap::new())),
+        CancellationToken::new(),
+        BTreeMap::new(),
+    );
+    adapter
+        .invoke(sample_agent_request())
+        .await
+        .expect("invoke");
+
+    let mut started = false;
+    let mut succeeded = false;
+    let mut chat_deltas = 0usize;
+    while let Ok(event) = event_rx.try_recv() {
+        match event {
+            ExecutionEvent::OutputRepairStarted { model, .. } => {
+                started = true;
+                assert_eq!(model, "repair-m");
+            }
+            ExecutionEvent::OutputRepairSucceeded { model, .. } => {
+                succeeded = true;
+                assert_eq!(model, "repair-m");
+            }
+            ExecutionEvent::ChatMessageDelta { .. } => chat_deltas += 1,
+            _ => {}
+        }
+    }
+    assert!(started && succeeded);
+    assert_eq!(chat_deltas, 0, "repair must not enter chat stream");
+}
+
+#[test]
+fn reducer_output_repair_events_do_not_set_last_error() {
+    let workflow = workflow();
+    let mut state = WorkflowRunState::running_for_workflow(&workflow);
+    let secret = "SECRET_SENTINEL_raw_args";
+
+    apply_event_to_run_state(
+        &workflow,
+        &mut state,
+        ExecutionEvent::OutputRepairStarted {
+            node_id: NodeId("first".into()),
+            model: "m1".into(),
+        },
+    );
+    apply_event_to_run_state(
+        &workflow,
+        &mut state,
+        ExecutionEvent::OutputRepairFailed {
+            node_id: NodeId("first".into()),
+            reason: format!("candidate rejected ({secret} must not appear if sanitized)"),
+        },
+    );
+
+    // Failed repair records a sanitized reason in the event; tests that wire the
+    // decorator assert the secret never reaches this path. Here we only prove
+    // last_error stays clear so toasts do not fire on intermediate repair failure.
+    assert!(state.last_error.is_none());
+    assert!(state.active);
+    assert_eq!(state.run_trace.len(), 2);
+    assert_eq!(state.run_trace[0].status, TraceStatus::Running);
+    assert_eq!(state.run_trace[1].status, TraceStatus::Completed);
+    assert!(state.run_trace[0].message.contains("repairing"));
+    assert!(state.run_trace[1].message.contains("repair failed"));
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+async fn headless_repairs_malformed_submit_emits_trace_without_ai_invoke_failed() {
+    use std::sync::Mutex as StdMutex;
+
+    struct ScriptedRepairAi {
+        steps: StdMutex<Vec<Result<AgentTurnOutcome, AgentError>>>,
+        captured: Arc<StdMutex<Vec<AgentRequest>>>,
+    }
+
+    #[async_trait]
+    impl AiPort for ScriptedRepairAi {
+        async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            self.captured.lock().expect("lock").push(request);
+            let mut steps = self.steps.lock().expect("lock");
+            if steps.is_empty() {
+                return Err(AgentError::Failed("exhausted".into()));
+            }
+            steps.remove(0)
+        }
+    }
+
+    let schema = json!({
+        "type": "object",
+        "properties": { "summary": { "type": "string" } },
+        "required": ["summary"]
+    });
+    let secret = "SECRET_SENTINEL_must_not_leak";
+    let raw = format!(r#"{{"output":{{"bad":true}},"leak":"{secret}"}}"#);
+    let primary_err = engine::malformed_submit_invalid_json(
+        "test",
+        &raw,
+        "schema violation",
+        Some(&schema),
+        Some("call_1".into()),
+        None,
+        None,
+    );
+
+    let ai = ScriptedRepairAi {
+        steps: StdMutex::new(vec![
+            Err(primary_err),
+            Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                output: json!({
+                    "repaired_arguments": {
+                        "output": { "summary": "repaired" }
+                    }
+                }),
+                raw_text: "{}".into(),
+                assistant_message: Some("clear me".into()),
+                usage: None,
+            })),
+        ]),
+        captured: Arc::new(StdMutex::new(Vec::new())),
+    };
+    let captured = ai.captured.clone();
+
+    let mut workflow = workflow();
+    workflow.nodes[0].agent.output_schema = schema;
+    workflow.settings.output_repair_model = Some("overseer-m".into());
+
+    let temp = TempDir::new().expect("temp");
+    let snapshot = run_workflow_headless(
+        workflow,
+        None,
+        ai,
+        Vec::new(),
+        Vec::new(),
+        BTreeMap::new(),
+        Some(temp.path().to_path_buf()),
+        None,
+    )
+    .await
+    .expect("run completes");
+
+    assert!(
+        snapshot.outputs.contains_key(&NodeId("first".into())),
+        "expected repaired node output"
+    );
+    assert_eq!(
+        snapshot.outputs[&NodeId("first".into())],
+        json!({"summary": "repaired"})
+    );
+    let repair_trace: Vec<_> = snapshot
+        .run_trace
+        .iter()
+        .filter(|entry| entry.node_label == "output repair")
+        .collect();
+    assert!(
+        repair_trace.iter().any(|e| e.message.contains("repairing")),
+        "expected repair started: {repair_trace:?}"
+    );
+    assert!(
+        repair_trace.iter().any(|e| e.message.contains("repaired")),
+        "expected repair succeeded: {repair_trace:?}"
+    );
+    for entry in &snapshot.run_trace {
+        assert!(
+            !entry.message.contains(secret),
+            "secret leaked in trace: {}",
+            entry.message
+        );
+    }
+
+    let requests = captured.lock().expect("lock");
+    assert_eq!(requests.len(), 2);
+    assert!(requests[1].node_id.ends_with("__output_repair"));
+    assert!(requests[1].transcript.is_empty());
+    assert!(requests[1].available_tools.is_empty());
+    assert_eq!(requests[1].model, "overseer-m");
+    assert!(!format!("{:?}", requests[1].input).contains("prior transcript"));
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+async fn headless_failed_repair_preserves_retryable_error_path() {
+    use std::sync::Mutex as StdMutex;
+
+    struct FailRepairAi {
+        steps: StdMutex<Vec<Result<AgentTurnOutcome, AgentError>>>,
+    }
+
+    #[async_trait]
+    impl AiPort for FailRepairAi {
+        async fn invoke(&self, _request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            let mut steps = self.steps.lock().expect("lock");
+            if steps.is_empty() {
+                return Err(AgentError::Failed("exhausted".into()));
+            }
+            steps.remove(0)
+        }
+    }
+
+    let schema = json!({
+        "type": "object",
+        "properties": { "summary": { "type": "string" } },
+        "required": ["summary"]
+    });
+    let raw = r#"{"output":{"bad":true}}"#;
+    // Enough malformed + failed repair pairs to exhaust node retries.
+    let mut steps = Vec::new();
+    for _ in 0..8 {
+        steps.push(Err(engine::malformed_submit_invalid_json(
+            "test",
+            raw,
+            "schema violation",
+            Some(&schema),
+            None,
+            None,
+            None,
+        )));
+        steps.push(Err(AgentError::Permanent("overseer down".into())));
+    }
+
+    let ai = FailRepairAi {
+        steps: StdMutex::new(steps),
+    };
+
+    let mut workflow = workflow();
+    workflow.nodes[0].agent.output_schema = schema;
+    workflow.settings.retry_policy.max_attempts = 0;
+
+    let temp = TempDir::new().expect("temp");
+    let error = run_workflow_headless(
+        workflow,
+        None,
+        ai,
+        Vec::new(),
+        Vec::new(),
+        BTreeMap::new(),
+        Some(temp.path().to_path_buf()),
+        None,
+    )
+    .await
+    .expect_err("run should fail after retries");
+
+    assert!(
+        matches!(
+            &error,
+            WorkflowExecutionError::MissingRetry(node_id) if node_id.0 == "first"
+        ),
+        "failed repair must keep retryable node path, got: {error}"
+    );
+    assert!(
+        !error.to_string().contains("overseer down"),
+        "overseer error must not replace primary: {error}"
     );
 }

@@ -34,6 +34,7 @@ import {
   inferRunStateWorkflowId,
   normalizeWorkflowLayout,
   withDefaultReasoningFromWorkflow,
+  workflowProviderProfile,
   workflowReasoningEffort,
 } from "../workflow";
 
@@ -89,6 +90,7 @@ const settings: AppSettings = {
       transport: "responses",
       responses_path: "v1/responses",
       chat_completions_path: "v1/chat/completions",
+      request_timeout_secs: 300,
       known_models: ["gpt-4o-mini"],
       default_model: "gpt-4o-mini",
       editable: false,
@@ -99,6 +101,7 @@ const settings: AppSettings = {
       transport: "chat_completions",
       responses_path: "v1/responses",
       chat_completions_path: "v1/chat/completions",
+      request_timeout_secs: 300,
       known_models: ["llama3.1"],
       default_model: "llama3.1",
       editable: true,
@@ -253,6 +256,43 @@ describe("workflow helpers", () => {
     const cloned = cloneWorkflow(source);
     expect(workflowReasoningEffort(cloned.settings)).toBe("low");
     expect(cloned.settings.reasoning_budget_tokens).toBe(2_048);
+  });
+
+  test("cloneWorkflow preserves Plan → Execute configuration", () => {
+    const source = cloneWorkflow(workflow);
+    source.settings.planMode = { evidenceSourceNodeId: "node-1" };
+
+    const cloned = cloneWorkflow(source);
+
+    expect(cloned.settings.planMode).toEqual({ evidenceSourceNodeId: "node-1" });
+    expect(cloned.settings.planMode).not.toBe(source.settings.planMode);
+  });
+
+  test("cloneWorkflow preserves overseer model choice", () => {
+    const source = cloneWorkflow(workflow);
+    source.settings.outputRepairModel = "custom-overseer";
+    const cloned = cloneWorkflow(source);
+    expect(cloned.settings.outputRepairModel).toBe("custom-overseer");
+  });
+
+  test("workflowProviderProfile prefers workflow provider override", () => {
+    const multi: AppSettings = {
+      ...settings,
+      active_provider: "openai",
+      providers: {
+        ...settings.providers,
+        anthropic: {
+          ...settings.providers.openai,
+          display_name: "Anthropic",
+          known_models: ["claude-sonnet"],
+          default_model: "claude-sonnet",
+        },
+      },
+    };
+    const profile = workflowProviderProfile(multi, { shared_context: "", provider_id: "anthropic" });
+    expect(profile.known_models).toEqual(["claude-sonnet"]);
+    const fallback = workflowProviderProfile(multi, { shared_context: "", provider_id: "missing" });
+    expect(fallback.known_models).toEqual(settings.providers.openai.known_models);
   });
 
   test("cloneSettings detaches provider fields", () => {

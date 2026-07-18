@@ -2,6 +2,7 @@ use crate::auth::AuthConfig;
 use crate::spec::{ProviderId, WireApi};
 use async_trait::async_trait;
 use engine::{AgentError, AgentRequest, AgentTurnOutcome, AiPort, AiStreamSink};
+use std::time::Duration;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpenAiCompatibleConfig {
@@ -9,6 +10,7 @@ pub struct OpenAiCompatibleConfig {
     pub wire_api: WireApi,
     pub responses_path: String,
     pub chat_completions_path: String,
+    pub request_timeout: Duration,
 }
 
 impl OpenAiCompatibleConfig {
@@ -19,6 +21,7 @@ impl OpenAiCompatibleConfig {
             wire_api: WireApi::Responses,
             responses_path: "v1/responses".to_string(),
             chat_completions_path: "v1/chat/completions".to_string(),
+            request_timeout: Duration::from_mins(5),
         }
     }
 }
@@ -28,6 +31,7 @@ pub struct AnthropicConfig {
     pub base_url: String,
     pub messages_path: String,
     pub anthropic_version: String,
+    pub request_timeout: Duration,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

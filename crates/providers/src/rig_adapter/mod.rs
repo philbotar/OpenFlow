@@ -1,9 +1,13 @@
 //! rig adapter: request/response/error translation and provider dispatch.
 
+mod anthropic_http;
+mod claude_thinking;
 mod convert;
 mod error;
 mod model;
+mod openai_http;
 mod outcome;
+mod reasoning_convert;
 mod stream;
 
 use crate::client::{AiClientConfig, ProviderAdapterConfig};

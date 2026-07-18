@@ -108,18 +108,30 @@ The deterministic acceptance tests should prove:
 6. Tool approval pauses block progress until an approval decision is supplied, and denied tools surface a structured error without corrupting the run.
 7. Run trace entries expose queued, running, paused, completed, or failed state transitions.
 8. Chat logs capture system, thinking, user, and assistant messages where relevant, including paused-node follow-up turns and approval prompts.
+9. Malformed final-output repair: a typed repairable candidate triggers one isolated overseer request (no worker transcript/tools); a valid repair becomes the node output handed downstream; an invalid overseer response preserves the original retryable path; secret sentinels never appear in trace, chat, or formatted errors; `outputRepairModel` overrides the repair model when set and otherwise inherits the worker model.
 
 Unit tests in `crates/orchestration/src/run/execution/` should additionally prove:
 
-9. `WorkflowSettings.shared_context` is appended to node and subagent system prompts.
-10. `engine::resolve_callable_agent_snapshots` honors `callable_agents` and `allow_all_callable_agents`.
-11. `resolve_execution_cwd` falls back to process cwd when unset and rejects invalid directories.
+10. `WorkflowSettings.shared_context` is appended to node and subagent system prompts.
+11. `engine::resolve_callable_agent_snapshots` honors `callable_agents` and `allow_all_callable_agents`.
+12. `resolve_execution_cwd` falls back to process cwd when unset and rejects invalid directories.
 
 Store and backend tests should prove:
 
-12. `AppBackend::load_all_workflows` merges app-store and project-discovered workflows.
-13. Project assign/unassign updates `projects.json` and routes saves to the correct store.
-14. App persistence uses `{data_local}/openflow/` only (no legacy data-dir fallback).
+13. `AppBackend::load_all_workflows` merges app-store and project-discovered workflows.
+14. Project assign/unassign updates `projects.json` and routes saves to the correct store.
+15. App persistence uses `{data_local}/openflow/` only (no legacy data-dir fallback).
+
+### Plan → Execute coverage
+
+For a workflow that enables `WorkflowSettings.planMode`, add focused coverage for:
+
+1. Validation rejects a missing review node or one without `requestUserInput`.
+2. Planning denies hidden repository-write, MCP, and subagent calls at both engine and host tool boundaries.
+3. Read tools and one `openflow_write_plan_artifact` call work; the artifact has a host UUID path, 256 KiB cap, SHA-256, replayable `artifact:<uuid>` lookup, and redacted Markdown transcript arguments.
+4. A schema-valid review completion freezes one hash-verified packet; checkpoint/resume preserves it even if saved workflow settings later change.
+5. Implementation, verification, and review requests receive the same packet hash and reference; no Plan Mode workflow writes to the repository before the packet is frozen.
+6. A workflow without Plan Mode has its existing request and tool behavior.
 
 ## Live AI rules
 
@@ -132,12 +144,14 @@ Live AI smoke tests must avoid exact prose assertions. Model output changes natu
 5. Required fields are non-empty.
 6. A sentinel value such as `ORCHID-91` is preserved exactly across nodes.
 
+Optional live smoke for overseer repair (when intentionally exercising a real provider): assert the run completes with schema-valid node outputs after a forced malformed submit path is not practical without a controllable mock; prefer the deterministic `output_repair_*` acceptance tests for release gating.
+
 ## Seam test placement
 
 Guidelines:
 
 1. Test `AiPort` contract behavior with inline `impl AiPort` stubs in the owning test module (see `workflow_acceptance.rs`, `runner.rs` tests).
-2. Test provider wire mapping in `providers/src/mapping.rs`, `openai_compat.rs`, and `anthropic.rs`.
+2. Test provider wire mapping in `providers/src/mapping/` and `rig_adapter/` (plus `crates/providers/tests/rig_*.rs`).
 3. Test UI desktop seam by mocking `api.ts` wrappers when adding AppProvider behavior tests.
 4. End-to-end behavior remains in existing acceptance/live workflows.
 

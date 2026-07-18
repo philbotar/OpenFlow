@@ -128,6 +128,7 @@ impl RunCoordinator {
             workflow_id: workflow.id.to_string(),
             workflow_name: workflow.name.clone(),
             workflow_hash: workflow_hash(&workflow),
+            workflow_snapshot: workflow.clone(),
             project_id: run_root.project_id.clone(),
             execution_cwd: resolved_cwd.display().to_string(),
             artifact_root: artifact_root.display().to_string(),
@@ -518,17 +519,18 @@ impl RunCoordinator {
         &self,
         params: DurableResumeParams<'_>,
     ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
-        if workflow_hash(&params.workflow) != params.record.workflow_hash {
+        let workflow = params.record.workflow_snapshot.clone();
+        if workflow_hash(&workflow) != params.record.workflow_hash {
             return Err(BackendError::RunWorkflowChanged(
                 params.run_id.to_string(),
-                params.workflow.id.to_string(),
+                workflow.id.to_string(),
             ));
         }
-        engine::validate_checkpoint_against_workflow(&params.workflow, &params.checkpoint.engine)
+        engine::validate_checkpoint_against_workflow(&workflow, &params.checkpoint.engine)
             .map_err(|error| BackendError::CheckpointIncompatible(error.to_string()))?;
 
         let prepared = prepare_workflow_run(
-            params.workflow,
+            workflow,
             params.settings,
             params.transient_api_key,
             params.agent_store,

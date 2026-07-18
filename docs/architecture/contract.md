@@ -131,7 +131,7 @@ Checks run in CI via `./scripts/check-architecture.sh`. Machine-readable rules l
 
 1. **Workspace dependency graph** — path deps in each crate `Cargo.toml` match the allowed inward graph.
 2. **Forbidden cross-crate `use`** — per-crate ban tables (e.g. `desktop` must not `use engine::`).
-3. **Engine forbidden deps** — `engine` must not depend on transport/GUI crates (`reqwest`, `tauri`, …).
+3. **Engine forbidden deps** — `engine` must not depend on transport/GUI crates (`reqwest`, `tauri`, …). Pure validation crates such as `jsonschema` (with default features disabled so `$ref` resolution cannot perform I/O) are allowed.
 4. **Legacy crate aliases** — `domain` and `workflow_core` banned in all workspace `use` paths.
 
 ### Tier 3 (Phase B) — seams and layout

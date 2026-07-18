@@ -7,9 +7,10 @@ use engine::{
     build_predefined_subagent_summaries, handle_declare_subagents,
     merge_subagent_summaries as merge_subagent_summaries_into_map, runtime_patch_for, AiPort,
     CallableAgent, NodeId, NodeRuntimeConfigStore, NodeToolConfig, RunTelemetry, SubagentSummary,
-    ToolBatchEffects, ToolBatchOutput, ToolCall, ToolConcurrency, ToolPort, ToolResult, Workflow,
-    CALL_SUBAGENT_TOOL, DECLARE_SUBAGENTS_TOOL,
+    ToolAccessPolicy, ToolBatchEffects, ToolBatchOutput, ToolCall, ToolConcurrency, ToolPort,
+    ToolResult, Workflow, CALL_SUBAGENT_TOOL, DECLARE_SUBAGENTS_TOOL,
 };
+use serde_json::json;
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
@@ -125,16 +126,18 @@ where
         request.available_tools = self
             .tool_runner
             .registry()
-            .definitions_for(&request.tool_config);
-        if let Some(node) = self.workflow.nodes.iter().find(|node| node.id == *node_id) {
-            let declared = self.declared_subagents.lock();
+            .definitions_for_policy(&request.tool_config, request.tool_access_policy);
+        if matches!(request.tool_access_policy, ToolAccessPolicy::Execution) {
+            if let Some(node) = self.workflow.nodes.iter().find(|node| node.id == *node_id) {
+                let declared = self.declared_subagents.lock();
 
-            augment_call_subagent_tool_description(
-                &mut request.available_tools,
-                node,
-                &declared,
-                &self.agent_snapshots,
-            );
+                augment_call_subagent_tool_description(
+                    &mut request.available_tools,
+                    node,
+                    &declared,
+                    &self.agent_snapshots,
+                );
+            }
         }
     }
 
@@ -143,6 +146,7 @@ where
         node_id: &NodeId,
         label: &str,
         calls: Vec<ToolCall>,
+        policy: ToolAccessPolicy,
     ) -> ToolBatchOutput {
         let node_config = self.effective_node_config(node_id);
         let mut effects = ToolBatchEffects::default();
@@ -155,6 +159,17 @@ where
             if self.node_interrupt_is_cancelled(node_id) {
                 effects.interrupted = true;
                 break;
+            }
+            if !engine::tool_access_policy_allows_call(policy, &node_config, &calls[index]) {
+                let tool_call = calls[index].clone();
+                index += 1;
+                self.propose_tool_call(node_id, label, &tool_call);
+                let record = self
+                    .tool_runner
+                    .denied(tool_call.clone(), "blocked by Plan Mode");
+                self.emit_tool_completed(node_id, &tool_call, &record.result);
+                results.push(record.result);
+                continue;
             }
             if self.is_parallel_shared_tool(&calls[index]) {
                 let start = index;
@@ -408,7 +423,7 @@ where
             let _ = self.event_tx.send(ExecutionEvent::ToolCallProposed {
                 node_id: node_id.clone(),
                 label: label.to_string(),
-                tool_call: tool_call.clone(),
+                tool_call: self.redacted_tool_call_for_event(tool_call),
             });
         }
     }
@@ -418,8 +433,27 @@ where
             node_id: node_id.clone(),
             tool_call_id: tool_call.id.clone(),
             tool_name: tool_call.name.clone(),
-            arguments: tool_call.arguments.clone(),
+            arguments: self.redacted_tool_call_for_event(tool_call).arguments,
         });
+    }
+
+    fn redacted_tool_call_for_event(&self, tool_call: &ToolCall) -> ToolCall {
+        if tool_call.name != engine::WRITE_PLAN_ARTIFACT_TOOL {
+            return tool_call.clone();
+        }
+        let markdown_bytes = tool_call
+            .arguments
+            .get("markdown")
+            .and_then(serde_json::Value::as_str)
+            .map_or(0, str::len);
+        ToolCall {
+            id: tool_call.id.clone(),
+            name: tool_call.name.clone(),
+            arguments: json!({
+                "markdown_bytes": markdown_bytes,
+                "markdown_redacted": true
+            }),
+        }
     }
 
     fn emit_tool_completed(&self, node_id: &NodeId, _tool_call: &ToolCall, result: &ToolResult) {
@@ -834,6 +868,10 @@ mod subagent_session;
 mod tests {
     use super::*;
     use crate::tool::registry::BuiltinToolKind;
+    use crate::tool::{ArtifactStore, ToolRegistry};
+    use async_trait::async_trait;
+    use engine::{AgentError, AgentTurnOutcome, AiPort, Node, Workflow};
+    use std::collections::BTreeMap;
     use std::time::Duration;
 
     fn node(id: &str) -> NodeId {
@@ -846,6 +884,82 @@ mod tests {
             name: name.to_string(),
             arguments: args,
         }
+    }
+
+    struct NoopAi;
+
+    #[async_trait]
+    impl AiPort for NoopAi {
+        async fn invoke(
+            &self,
+            _request: engine::AgentRequest,
+        ) -> Result<AgentTurnOutcome, AgentError> {
+            Err(AgentError::Failed(
+                "unexpected subagent invocation".to_string(),
+            ))
+        }
+    }
+
+    #[tokio::test]
+    async fn planning_policy_denies_hidden_write_mcp_and_subagent_calls_at_host_boundary() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let artifacts = ArtifactStore::new(dir.path().join("artifacts")).expect("artifacts");
+        let runner = Arc::new(ToolRunner::new(
+            ToolRegistry::new(),
+            dir.path().to_path_buf(),
+            artifacts,
+            CancellationToken::new(),
+            Arc::new(crate::tools::edit::hashline::snapshots::InMemorySnapshotStore::new()),
+        ));
+        let mut workflow = Workflow::new("planning");
+        let mut planner = Node::agent("Planner", 0.0, 0.0);
+        planner.id = NodeId::from("planner");
+        workflow.nodes.push(planner);
+        let (event_tx, _event_rx) = tokio::sync::mpsc::unbounded_channel();
+        let port = ToolPortImpl::new(
+            runner,
+            crate::settings::model::LspSettings::default(),
+            Arc::new(workflow),
+            Arc::new(BTreeMap::new()),
+            Arc::new(NoopAi),
+            CancellationToken::new(),
+            event_tx,
+            Arc::new(parking_lot::Mutex::new(BTreeMap::new())),
+            Arc::new(parking_lot::Mutex::new(false)),
+            engine::new_runtime_config_store(),
+        );
+        let calls = vec![
+            ToolCall {
+                id: "write".to_string(),
+                name: "write".to_string(),
+                arguments: serde_json::json!({ "path": "blocked.txt", "content": "no" }),
+            },
+            ToolCall {
+                id: "mcp".to_string(),
+                name: "mcp/example".to_string(),
+                arguments: serde_json::json!({}),
+            },
+            ToolCall {
+                id: "subagent".to_string(),
+                name: CALL_SUBAGENT_TOOL.to_string(),
+                arguments: serde_json::json!({}),
+            },
+        ];
+
+        let output = port
+            .execute_batch(
+                &NodeId::from("planner"),
+                "Planner",
+                calls,
+                ToolAccessPolicy::Planning,
+            )
+            .await;
+
+        assert!(output
+            .results
+            .iter()
+            .all(|result| { result.is_error && result.content.contains("blocked by Plan Mode") }));
+        assert!(!dir.path().join("blocked.txt").exists());
     }
 
     #[test]

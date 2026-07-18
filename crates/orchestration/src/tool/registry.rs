@@ -1,4 +1,7 @@
-use engine::{NodeToolConfig, ToolConcurrency, ToolDefinition, ToolTier};
+use engine::{
+    NodeToolConfig, ToolAccessPolicy, ToolConcurrency, ToolDefinition, ToolTier,
+    WRITE_PLAN_ARTIFACT_TOOL,
+};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use thiserror::Error;
@@ -14,6 +17,7 @@ pub enum BuiltinToolKind {
     ApplyPatch,
     Bash,
     WebSearch,
+    WritePlanArtifact,
     DeclareSubagents,
     CallSubagent,
     Mcp,
@@ -50,6 +54,7 @@ impl ToolRegistry {
         register(&mut tools, edit_tool());
         register(&mut tools, apply_patch_tool());
         register(&mut tools, bash_tool());
+        register(&mut tools, write_plan_artifact_tool());
         register(&mut tools, declare_subagents_tool());
         register(&mut tools, call_subagent_tool());
         Self { tools }
@@ -81,8 +86,17 @@ impl ToolRegistry {
 
     #[must_use]
     pub fn definitions_for(&self, config: &NodeToolConfig) -> Vec<ToolDefinition> {
-        let mut defs = self.filtered_builtins(config);
-        if !Self::is_read_only(config) {
+        self.definitions_for_policy(config, ToolAccessPolicy::Execution)
+    }
+
+    #[must_use]
+    pub fn definitions_for_policy(
+        &self,
+        config: &NodeToolConfig,
+        policy: ToolAccessPolicy,
+    ) -> Vec<ToolDefinition> {
+        let mut defs = self.filtered_builtins(config, policy);
+        if matches!(policy, ToolAccessPolicy::Execution) && !Self::is_read_only(config) {
             defs.push(declare_subagents_tool().definition);
             defs.push(call_subagent_tool().definition);
         }
@@ -93,7 +107,7 @@ impl ToolRegistry {
     /// to prevent recursive invocation.
     #[must_use]
     pub fn definitions_for_subagent(&self, config: &NodeToolConfig) -> Vec<ToolDefinition> {
-        let mut defs = self.filtered_builtins(config);
+        let mut defs = self.filtered_builtins(config, ToolAccessPolicy::Execution);
         if !Self::is_read_only(config) {
             defs.push(declare_subagents_tool().definition);
         }
@@ -107,7 +121,11 @@ impl ToolRegistry {
         )
     }
 
-    fn filtered_builtins(&self, config: &NodeToolConfig) -> Vec<ToolDefinition> {
+    fn filtered_builtins(
+        &self,
+        config: &NodeToolConfig,
+        policy: ToolAccessPolicy,
+    ) -> Vec<ToolDefinition> {
         let read_only = Self::is_read_only(config);
         let mut defs: Vec<ToolDefinition> = self
             .tools
@@ -120,7 +138,26 @@ impl ToolRegistry {
                 ) {
                     return false;
                 }
-                !read_only || tool.definition.tier == ToolTier::Read
+                if tool.definition.name == WRITE_PLAN_ARTIFACT_TOOL
+                    && !matches!(policy, ToolAccessPolicy::Planning)
+                {
+                    return false;
+                }
+                if read_only
+                    && tool.definition.tier != ToolTier::Read
+                    && !(matches!(policy, ToolAccessPolicy::Planning)
+                        && tool.definition.name == WRITE_PLAN_ARTIFACT_TOOL)
+                {
+                    return false;
+                }
+                match policy {
+                    ToolAccessPolicy::Execution => true,
+                    ToolAccessPolicy::Planning => {
+                        tool.kind != BuiltinToolKind::Mcp
+                            && (tool.definition.tier == ToolTier::Read
+                                || tool.definition.name == WRITE_PLAN_ARTIFACT_TOOL)
+                    }
+                }
             })
             .map(|tool| tool.definition.clone())
             .collect();
@@ -266,6 +303,29 @@ fn write_tool() -> RegisteredTool {
             concurrency: ToolConcurrency::Exclusive,
         },
         kind: BuiltinToolKind::Write,
+    }
+}
+
+fn write_plan_artifact_tool() -> RegisteredTool {
+    RegisteredTool {
+        definition: ToolDefinition {
+            name: WRITE_PLAN_ARTIFACT_TOOL.to_string(),
+            description: "Write one immutable Markdown plan artifact in this run. The host chooses an opaque UUID path; use the returned artifact id and hash in your compact output instead of duplicating the plan text.".to_string(),
+            input_schema: with_intent_field(serde_json::json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "markdown": {
+                        "type": "string",
+                        "description": "The complete Markdown plan to seal as a run artifact."
+                    }
+                },
+                "required": ["markdown"]
+            })),
+            tier: ToolTier::Write,
+            concurrency: ToolConcurrency::Exclusive,
+        },
+        kind: BuiltinToolKind::WritePlanArtifact,
     }
 }
 
@@ -523,6 +583,9 @@ mod tests {
         assert!(definitions
             .iter()
             .any(|tool| tool.name == "openflow_call_subagent"));
+        assert!(!definitions
+            .iter()
+            .any(|tool| tool.name == WRITE_PLAN_ARTIFACT_TOOL));
     }
 
     #[test]
@@ -536,6 +599,23 @@ mod tests {
         assert!(definitions
             .iter()
             .all(|tool| tool.tier == engine::ToolTier::Read));
+    }
+
+    #[test]
+    fn planning_policy_exposes_only_read_tools_and_the_plan_artifact_writer() {
+        let registry = ToolRegistry::new();
+        let definitions =
+            registry.definitions_for_policy(&NodeToolConfig::default(), ToolAccessPolicy::Planning);
+        assert!(definitions
+            .iter()
+            .any(|tool| tool.name == WRITE_PLAN_ARTIFACT_TOOL));
+        assert!(definitions
+            .iter()
+            .all(|tool| { tool.tier == ToolTier::Read || tool.name == WRITE_PLAN_ARTIFACT_TOOL }));
+        assert!(!definitions
+            .iter()
+            .any(|tool| tool.name == "openflow_call_subagent"));
+        assert!(!definitions.iter().any(|tool| tool.name.starts_with("mcp/")));
     }
 
     #[test]
@@ -589,6 +669,7 @@ mod tests {
             "edit",
             "apply_patch",
             "bash",
+            WRITE_PLAN_ARTIFACT_TOOL,
         ];
         for name in builtins {
             let tool = registry.get(name).expect("builtin tool");
@@ -624,6 +705,7 @@ mod tests {
             "edit",
             "apply_patch",
             "bash",
+            WRITE_PLAN_ARTIFACT_TOOL,
         ];
         for name in builtins {
             let tool = registry.get(name).expect("builtin tool");

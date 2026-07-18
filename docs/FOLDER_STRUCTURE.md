@@ -62,8 +62,8 @@ adapters/
 │   ├── git/
 │   └── http/
 ├── ai_provider/  # (providers crate only) AI service implementations
-│   ├── anthropic.rs
-│   ├── openai.rs
+│   ├── rig_adapter/
+│   ├── mapping/
 │   └── ...
 ├── tool_impl/  # tool-specific implementations
 │   ├── edit/
@@ -203,21 +203,20 @@ orchestration/src/
 **Structure:**
 ```
 providers/src/
-├── anthropic.rs  # Anthropic transport
-├── openai_compat.rs  # OpenAI-compatible transport
+├── rig_adapter/  # Rig transport (OpenAI-compat, Anthropic, Bedrock)
+├── mapping/  # transcript/tool-arg mapping
 ├── client.rs  # AiClient implementing AiPort
-├── mapping.rs  # transcript/tool-arg mapping
-├── sse.rs  # SSE stream parsing
+├── auth.rs / spec.rs / prompt_cache.rs
 ├── lib.rs  # create_provider() factory
 └── ...
 ```
 
 **Rules:**
 - Single public entry point: `create_provider()` factory function in `lib.rs`
-- New provider -> add `providers/src/{name}.rs` and wire in `create_provider()`
+- New provider family -> extend `ProviderAdapterConfig` + `rig_adapter/model.rs`
 - Never expose concrete provider types to consumers
 - Implement `engine::ports::AiPort` trait
-
+- Do not recreate deleted `openai_compat.rs` / `anthropic.rs` / `sse.rs`
 ### `crates/ui` - Frontend (EXEMPT)
 
 **What:** React/TypeScript frontend for the desktop app.

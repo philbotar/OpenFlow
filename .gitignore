@@ -13,7 +13,9 @@
 node_modules/
 dist/
 .planning/
-.cursor/
+.cursor/*
+!.cursor/skills/
+!.cursor/skills/**
 .flow/
 .openflow/
 .worktrees/

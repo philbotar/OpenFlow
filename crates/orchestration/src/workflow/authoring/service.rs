@@ -14,8 +14,9 @@ use crate::workflow::authoring::{
     WorkflowAuthoringDraft,
 };
 use engine::{
-    AgentError, AgentNeedUserInput, AgentRequest, AgentTranscriptItem, AgentTurnOutcome,
-    AgentTurnSuccess, AiPort, AiStreamEvent, AiStreamSink, NodeId, Workflow, WorkflowId,
+    AgentError, AgentMessageTurn, AgentNeedUserInput, AgentRequest, AgentTranscriptItem,
+    AgentTurnOutcome, AgentTurnSuccess, AiPort, AiStreamEvent, AiStreamSink, NodeId, Workflow,
+    WorkflowId,
 };
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -200,6 +201,7 @@ impl WorkflowAuthoringService {
         let mut missing_submit_retries = 0u8;
         let mut invalid_draft_retries = 0u8;
         let mut authoring_tool_rounds = 0u8;
+        let mut turn_phase = engine::AgentTurnPhase::Control;
         let mut messages = messages;
         let (assistant_message, workflow, validation) = loop {
             let request = AgentRequest {
@@ -217,7 +219,9 @@ impl WorkflowAuthoringService {
                 model_attempt,
                 reasoning_effort: reasoning_effort.clone(),
                 reasoning_budget_tokens,
+                turn_phase,
                 allow_user_input: false,
+                tool_access_policy: engine::ToolAccessPolicy::Execution,
             };
 
             let thinking_buffer = Arc::new(Mutex::new(String::new()));
@@ -229,6 +233,7 @@ impl WorkflowAuthoringService {
 
             match ai.invoke_stream(request, &sink).await {
                 Ok(AgentTurnOutcome::ToolCalls(batch)) => {
+                    turn_phase = engine::AgentTurnPhase::Control;
                     if batch
                         .tool_calls
                         .iter()
@@ -242,7 +247,14 @@ impl WorkflowAuthoringService {
                         ));
                     }
                     authoring_tool_rounds += 1;
+                    malformed_submit_retries = 0;
+                    missing_submit_retries = 0;
 
+                    for reasoning in &batch.reasoning {
+                        transcript.push(AgentTranscriptItem::Reasoning {
+                            reasoning: reasoning.clone(),
+                        });
+                    }
                     if let Some(content) = batch.assistant_message.filter(|value| !value.is_empty())
                     {
                         transcript.push(AgentTranscriptItem::AssistantMessage { content });
@@ -272,6 +284,19 @@ impl WorkflowAuthoringService {
                         });
                     }
                     continue;
+                }
+                Ok(AgentTurnOutcome::ContinueWork(continuation)) => {
+                    turn_phase = engine::AgentTurnPhase::Work;
+                    model_attempt = model_attempt.saturating_add(1);
+                    for reasoning in continuation.reasoning {
+                        transcript.push(AgentTranscriptItem::Reasoning { reasoning });
+                    }
+                    if let Some(content) = continuation
+                        .assistant_message
+                        .filter(|content| !content.trim().is_empty())
+                    {
+                        transcript.push(AgentTranscriptItem::AssistantMessage { content });
+                    }
                 }
                 Ok(AgentTurnOutcome::Completed(AgentTurnSuccess { output, .. })) => {
                     let assistant_message = extract_assistant_message(&output);
@@ -344,6 +369,24 @@ impl WorkflowAuthoringService {
                             Err(error) => return Err(error),
                         }
                     }
+                }
+                Ok(AgentTurnOutcome::Message(AgentMessageTurn {
+                    assistant_message, ..
+                })) if missing_submit_retries < MAX_MISSING_SUBMIT_TURN_RETRIES => {
+                    missing_submit_retries += 1;
+                    model_attempt += 1;
+                    transcript.push(AgentTranscriptItem::AssistantMessage {
+                        content: assistant_message,
+                    });
+                    transcript.push(AgentTranscriptItem::UserMessage {
+                        content: AUTHORING_FINISH_REQUIRED_FEEDBACK.to_string(),
+                    });
+                }
+                Ok(AgentTurnOutcome::Message(_)) => {
+                    return Err(AgentError::Failed(format!(
+                        "workflow authoring model produced more than {MAX_MISSING_SUBMIT_TURN_RETRIES} consecutive text-only turns"
+                    ))
+                    .into());
                 }
                 Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
                     assistant_message,
@@ -490,6 +533,9 @@ where
                 content.clone()
             }
             AiStreamEvent::AssistantDelta { content } => content.clone(),
+            AiStreamEvent::OutputRepairStarted { .. }
+            | AiStreamEvent::OutputRepairSucceeded { .. }
+            | AiStreamEvent::OutputRepairFailed { .. } => String::new(),
         };
         if content.is_empty() {
             return;

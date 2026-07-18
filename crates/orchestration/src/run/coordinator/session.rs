@@ -360,7 +360,6 @@ pub struct RunStartParams<'a> {
 
 pub struct DurableResumeParams<'a> {
     pub run_id: &'a str,
-    pub workflow: Workflow,
     pub root: RunStoreRoot,
     pub record: RunRecord,
     pub checkpoint: RunCheckpointPayload,

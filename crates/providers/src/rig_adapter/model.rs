@@ -8,9 +8,14 @@ use crate::client::BedrockConfig;
 use crate::client::OpenAiCompatibleConfig;
 use crate::client::{AiClientConfig, AnthropicConfig, ProviderAdapterConfig};
 use crate::prompt_cache::{cache_session_key, openai_compat_cache_key_enabled};
-use crate::rig_adapter::{convert, error, outcome, stream};
+use crate::rig_adapter::{
+    anthropic_http::AnthropicHttpClient, claude_thinking, convert, error,
+    openai_http::OpenAiHttpClient, outcome, stream,
+};
 use crate::spec::{ProviderId, WireApi};
-use engine::{AgentError, AgentRequest, AgentTurnOutcome, AiStreamSink};
+use engine::{
+    emit_assistant_deltas_from_outcome, AgentError, AgentRequest, AgentTurnOutcome, AiStreamSink,
+};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest::Client as ReqwestClient;
 use rig_core::client::CompletionClient;
@@ -28,14 +33,13 @@ use serde_json::{json, Value};
 use rig_bedrock::completion::CompletionModel as BedrockCompletionModel;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
-const READ_TIMEOUT: Duration = Duration::from_mins(2);
 const ANTHROPIC_MAX_TOKENS: u64 = 4096;
 
 #[derive(Clone)]
 pub enum RigModel {
-    Anthropic(AnthropicCompletionModel<ReqwestClient>),
-    OpenAiChat(OpenAiChatModel<ReqwestClient>),
-    OpenAiResponses(ResponsesCompletionModel<ReqwestClient>),
+    Anthropic(AnthropicCompletionModel<AnthropicHttpClient>),
+    OpenAiChat(OpenAiChatModel<OpenAiHttpClient>),
+    OpenAiResponses(ResponsesCompletionModel<OpenAiHttpClient>),
     #[cfg(feature = "bedrock")]
     Bedrock(BedrockCompletionModel),
 }
@@ -65,7 +69,12 @@ pub(super) async fn build_model(
             build_anthropic(config, anthropic_config, model).map(BuiltModel::without_expiry)
         }
         ProviderAdapterConfig::OpenAiCompatible(openai_config) => {
-            build_openai(config, openai_config, model).map(BuiltModel::without_expiry)
+            if open_code_go_uses_anthropic_messages(openai_config, model) {
+                build_open_code_go_anthropic(config, openai_config, model)
+                    .map(BuiltModel::without_expiry)
+            } else {
+                build_openai(config, openai_config, model).map(BuiltModel::without_expiry)
+            }
         }
         #[cfg(feature = "bedrock")]
         ProviderAdapterConfig::Bedrock(bedrock_config) => {
@@ -78,13 +87,57 @@ pub(super) async fn build_model(
     }
 }
 
+fn build_open_code_go_anthropic(
+    config: &AiClientConfig,
+    openai_config: &OpenAiCompatibleConfig,
+    model: &str,
+) -> Result<RigModel, AgentError> {
+    let anthropic_config = AnthropicConfig {
+        base_url: open_code_go_base_url(&openai_config.base_url),
+        messages_path: "v1/messages".to_string(),
+        anthropic_version: "2023-06-01".to_string(),
+        request_timeout: openai_config.request_timeout,
+    };
+    build_anthropic(config, &anthropic_config, model)
+}
+
+fn open_code_go_uses_anthropic_messages(config: &OpenAiCompatibleConfig, model: &str) -> bool {
+    let Ok(url) = reqwest::Url::parse(&config.base_url) else {
+        return false;
+    };
+    if url.host_str() != Some("opencode.ai") {
+        return false;
+    }
+    let path = url.path().trim_end_matches('/');
+    if path != "/zen/go" && path != "/zen/go/v1" {
+        return false;
+    }
+    matches!(
+        model.trim().to_ascii_lowercase().as_str(),
+        "minimax-m3"
+            | "minimax-m2.7"
+            | "minimax-m2.5"
+            | "qwen3.7-max"
+            | "qwen3.7-plus"
+            | "qwen3.6-plus"
+    )
+}
+
+fn open_code_go_base_url(base_url: &str) -> String {
+    base_url
+        .trim_end_matches('/')
+        .strip_suffix("/v1")
+        .unwrap_or_else(|| base_url.trim_end_matches('/'))
+        .to_string()
+}
+
 fn build_anthropic(
     config: &AiClientConfig,
     anthropic_config: &AnthropicConfig,
     model: &str,
 ) -> Result<RigModel, AgentError> {
     let (api_key, headers) = rig_auth(config)?;
-    let http = rig_http_client();
+    let http = AnthropicHttpClient::new(rig_http_client(anthropic_config.request_timeout));
     let client = anthropic::Client::builder()
         .api_key(api_key.as_str())
         .base_url(&anthropic_config.base_url)
@@ -107,7 +160,7 @@ fn build_openai(
     model: &str,
 ) -> Result<RigModel, AgentError> {
     let (api_key, headers) = rig_auth(config)?;
-    let http = rig_http_client();
+    let http = OpenAiHttpClient::new(rig_http_client(openai_config.request_timeout));
     let base_url = rig_openai_base_url(openai_config);
     match openai_config.wire_api {
         WireApi::ChatCompletions => {
@@ -206,10 +259,12 @@ impl RigModel {
         let no_tool_calls = outcome::no_tool_calls_policy(request, openai_config);
         let model_name = request.model.clone();
         let mut completion_request =
-            completion_request_for(self, request, provider_id, openai_config);
+            completion_request_for(self, request, provider_id, openai_config)?;
         let result = match self {
             Self::Anthropic(model) => {
-                completion_request.max_tokens = Some(ANTHROPIC_MAX_TOKENS);
+                if completion_request.max_tokens.is_none() {
+                    completion_request.max_tokens = Some(ANTHROPIC_MAX_TOKENS);
+                }
                 let response = model
                     .completion(completion_request)
                     .await
@@ -220,6 +275,7 @@ impl RigModel {
                     response.usage,
                     provider_label,
                     Some(&request.output_schema),
+                    request.turn_phase,
                     no_tool_calls,
                 )
             }
@@ -228,14 +284,30 @@ impl RigModel {
                     .completion(completion_request)
                     .await
                     .map_err(|e| error::to_agent_error(e, provider_label))?;
+                let finish_reason = response
+                    .raw_response
+                    .choices
+                    .first()
+                    .map(|choice| choice.finish_reason.clone());
                 let choice: Vec<AssistantContent> = response.choice.into_iter().collect();
+                let diagnostics =
+                    outcome::response_diagnostics(&choice, &response.usage, finish_reason);
                 outcome::resolve_outcome(
                     choice,
                     response.usage,
                     provider_label,
                     Some(&request.output_schema),
+                    request.turn_phase,
                     no_tool_calls,
                 )
+                .map_err(|error| {
+                    outcome::enrich_empty_turn_error_with_response(
+                        error,
+                        provider_label,
+                        &model_name,
+                        Some(&diagnostics),
+                    )
+                })
             }
             Self::OpenAiResponses(model) => {
                 let response = model
@@ -248,6 +320,7 @@ impl RigModel {
                     response.usage,
                     provider_label,
                     Some(&request.output_schema),
+                    request.turn_phase,
                     no_tool_calls,
                 )
             }
@@ -263,6 +336,7 @@ impl RigModel {
                     response.usage,
                     provider_label,
                     Some(&request.output_schema),
+                    request.turn_phase,
                     no_tool_calls,
                 )
             }
@@ -278,13 +352,27 @@ impl RigModel {
         provider_id: &ProviderId,
         openai_config: Option<&OpenAiCompatibleConfig>,
     ) -> Result<AgentTurnOutcome, AgentError> {
+        // Rig's chat-completions stream summary drops the provider finish reason.
+        // Keep custom-compatible turns non-streaming so a failed structured-output
+        // turn retains the metadata needed to distinguish truncation from an empty
+        // or reasoning-only response. The fallback emitter still publishes any
+        // final assistant text through the normal sink.
+        if provider_id.as_str() == "custom_openai_compatible" {
+            let outcome = self
+                .invoke(request, provider_label, provider_id, openai_config)
+                .await?;
+            emit_assistant_deltas_from_outcome(sink, &outcome);
+            return Ok(outcome);
+        }
         let no_tool_calls = outcome::no_tool_calls_policy(request, openai_config);
         let model_name = request.model.clone();
         let mut completion_request =
-            completion_request_for(self, request, provider_id, openai_config);
+            completion_request_for(self, request, provider_id, openai_config)?;
         let result = match self {
             Self::Anthropic(model) => {
-                completion_request.max_tokens = Some(ANTHROPIC_MAX_TOKENS);
+                if completion_request.max_tokens.is_none() {
+                    completion_request.max_tokens = Some(ANTHROPIC_MAX_TOKENS);
+                }
                 let rig_stream = model
                     .stream(completion_request)
                     .await
@@ -294,6 +382,7 @@ impl RigModel {
                     sink,
                     provider_label,
                     Some(&request.output_schema),
+                    request.turn_phase,
                     no_tool_calls,
                 )
                 .await
@@ -308,6 +397,7 @@ impl RigModel {
                     sink,
                     provider_label,
                     Some(&request.output_schema),
+                    request.turn_phase,
                     no_tool_calls,
                 )
                 .await
@@ -322,6 +412,7 @@ impl RigModel {
                     sink,
                     provider_label,
                     Some(&request.output_schema),
+                    request.turn_phase,
                     no_tool_calls,
                 )
                 .await
@@ -337,6 +428,7 @@ impl RigModel {
                     sink,
                     provider_label,
                     Some(&request.output_schema),
+                    request.turn_phase,
                     no_tool_calls,
                 )
                 .await
@@ -351,10 +443,17 @@ fn completion_request_for(
     request: &AgentRequest,
     provider_id: &ProviderId,
     openai_config: Option<&OpenAiCompatibleConfig>,
-) -> CompletionRequest {
+) -> Result<CompletionRequest, AgentError> {
     let mut completion_request = convert::to_completion_request(request);
     match model {
-        RigModel::Anthropic(_) => apply_anthropic_cache_params(&mut completion_request),
+        RigModel::Anthropic(_) => {
+            claude_thinking::apply(
+                claude_thinking::ClaudePlatform::Anthropic,
+                &mut completion_request,
+                request,
+            )?;
+            apply_anthropic_cache_params(&mut completion_request);
+        }
         RigModel::OpenAiChat(_) | RigModel::OpenAiResponses(_) => {
             if let Some(config) = openai_config {
                 merge_openai_params(
@@ -366,17 +465,21 @@ fn completion_request_for(
             }
         }
         #[cfg(feature = "bedrock")]
-        RigModel::Bedrock(_) => {}
+        RigModel::Bedrock(_) => {
+            claude_thinking::apply(
+                claude_thinking::ClaudePlatform::Bedrock,
+                &mut completion_request,
+                request,
+            )?;
+        }
     }
     apply_tool_choice_policy(&mut completion_request, provider_id);
-    completion_request
+    Ok(completion_request)
 }
 
-/// Some custom OpenAI-compatible gateways return empty 200s when `tool_choice` is `required`.
 fn apply_tool_choice_policy(request: &mut CompletionRequest, provider_id: &ProviderId) {
-    if provider_id.as_str() == "custom_openai_compatible" {
-        request.tool_choice = Some(ToolChoice::Auto);
-    }
+    let _ = provider_id;
+    request.tool_choice = Some(ToolChoice::Required);
 }
 
 fn apply_anthropic_cache_params(request: &mut CompletionRequest) {
@@ -474,10 +577,10 @@ fn extract_api_key(
     Ok(key)
 }
 
-fn rig_http_client() -> ReqwestClient {
+fn rig_http_client(request_timeout: Duration) -> ReqwestClient {
     ReqwestClient::builder()
         .connect_timeout(CONNECT_TIMEOUT)
-        .read_timeout(READ_TIMEOUT)
+        .read_timeout(request_timeout)
         .build()
         .unwrap_or_else(|_| ReqwestClient::new())
 }
@@ -525,6 +628,7 @@ fn openai_build_error(label: &str, error: impl std::fmt::Display) -> AgentError 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::auth::AuthConfig;
     use crate::rig_adapter::convert;
     use engine::{AgentRequest, NodeId, NodeToolConfig, WorkflowId};
     use rig_core::message::ToolChoice;
@@ -545,8 +649,50 @@ mod tests {
             model_attempt: 1,
             reasoning_effort: None,
             reasoning_budget_tokens: None,
+            turn_phase: engine::AgentTurnPhase::Control,
+            tool_access_policy: engine::ToolAccessPolicy::Execution,
             allow_user_input: false,
         }
+    }
+
+    fn open_code_go_config() -> AiClientConfig {
+        AiClientConfig {
+            provider_id: ProviderId::from("custom_openai_compatible"),
+            provider_label: "Custom OpenAI-compatible API".into(),
+            auth: AuthConfig::Bearer {
+                api_key: Some("test-key".into()),
+                required: true,
+            },
+            adapter: ProviderAdapterConfig::OpenAiCompatible(OpenAiCompatibleConfig {
+                base_url: "https://opencode.ai/zen/go/".into(),
+                wire_api: WireApi::ChatCompletions,
+                responses_path: "v1/responses".into(),
+                chat_completions_path: "v1/chat/completions".into(),
+                request_timeout: Duration::from_mins(5),
+            }),
+        }
+    }
+
+    #[tokio::test]
+    async fn open_code_go_minimax_uses_anthropic_messages() {
+        assert!(matches!(
+            build_model(&open_code_go_config(), "minimax-m3").await,
+            Ok(BuiltModel {
+                model: RigModel::Anthropic(_),
+                ..
+            })
+        ));
+    }
+
+    #[tokio::test]
+    async fn open_code_go_mimo_keeps_chat_completions() {
+        assert!(matches!(
+            build_model(&open_code_go_config(), "mimo-v2.5").await,
+            Ok(BuiltModel {
+                model: RigModel::OpenAiChat(_),
+                ..
+            })
+        ));
     }
 
     #[cfg(feature = "bedrock")]
@@ -587,10 +733,10 @@ mod tests {
     }
 
     #[test]
-    fn custom_openai_compatible_uses_auto_tool_choice() {
+    fn custom_openai_compatible_requires_a_tool_call() {
         let mut request = convert::to_completion_request(&minimal_request());
         apply_tool_choice_policy(&mut request, &ProviderId::from("custom_openai_compatible"));
-        assert_eq!(request.tool_choice, Some(ToolChoice::Auto));
+        assert_eq!(request.tool_choice, Some(ToolChoice::Required));
     }
 
     #[test]
@@ -600,6 +746,7 @@ mod tests {
             wire_api: WireApi::ChatCompletions,
             responses_path: "v1/responses".into(),
             chat_completions_path: "v1/chat/completions".into(),
+            request_timeout: Duration::from_mins(5),
         };
         assert_eq!(rig_openai_base_url(&config), "https://api.example.test/v1");
     }
@@ -611,6 +758,7 @@ mod tests {
             wire_api: WireApi::ChatCompletions,
             responses_path: "v1/responses".into(),
             chat_completions_path: "https://other.example.test/v1/chat/completions".into(),
+            request_timeout: Duration::from_mins(5),
         };
         assert_eq!(
             rig_openai_base_url(&config),

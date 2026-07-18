@@ -10,14 +10,14 @@
 use std::collections::BTreeMap;
 
 use crate::mapping::{all_tool_specs, build_node_context, ToolSpec};
-use engine::{AgentRequest, AgentTranscriptItem};
+use crate::rig_adapter::reasoning_convert;
+use engine::{AgentReasoning, AgentRequest, AgentTranscriptItem};
 use rig_core::completion::CompletionRequest;
 use rig_core::message::{
     AssistantContent, Message, ToolCall as RigToolCall, ToolChoice, ToolFunction,
     ToolResultContent, UserContent,
 };
 use rig_core::OneOrMany;
-use serde_json::json;
 
 pub fn to_completion_request(request: &AgentRequest) -> CompletionRequest {
     let mut history: Vec<Message> = vec![Message::user(build_node_context(request))];
@@ -32,8 +32,36 @@ pub fn to_completion_request(request: &AgentRequest) -> CompletionRequest {
                 history.push(Message::assistant(content.clone()));
                 index += 1;
             }
+            AgentTranscriptItem::Reasoning { reasoning } => {
+                let mut reasoning_blocks = vec![reasoning.clone()];
+                index += 1;
+                while let Some(AgentTranscriptItem::Reasoning { reasoning }) =
+                    request.transcript.get(index)
+                {
+                    reasoning_blocks.push(reasoning.clone());
+                    index += 1;
+                }
+                if matches!(
+                    request.transcript.get(index),
+                    Some(AgentTranscriptItem::ToolCall { .. })
+                ) {
+                    let consumed = push_tool_turn(
+                        &mut history,
+                        &request.transcript[index..],
+                        &reasoning_blocks,
+                    );
+                    index += consumed;
+                } else {
+                    for block in reasoning_blocks {
+                        let content = OneOrMany::one(AssistantContent::Reasoning(
+                            reasoning_convert::agent_to_rig(&block),
+                        ));
+                        history.push(Message::Assistant { id: None, content });
+                    }
+                }
+            }
             AgentTranscriptItem::ToolCall { .. } | AgentTranscriptItem::ToolResult { .. } => {
-                let consumed = push_tool_turn(&mut history, &request.transcript[index..]);
+                let consumed = push_tool_turn(&mut history, &request.transcript[index..], &[]);
                 index += consumed;
             }
         }
@@ -48,7 +76,7 @@ pub fn to_completion_request(request: &AgentRequest) -> CompletionRequest {
         temperature: None,
         max_tokens: None,
         tool_choice: Some(ToolChoice::Required),
-        additional_params: additional_params(request),
+        additional_params: None,
         output_schema: None,
     }
 }
@@ -61,21 +89,6 @@ fn rig_tool(spec: ToolSpec) -> rig_core::completion::ToolDefinition {
     }
 }
 
-fn additional_params(request: &AgentRequest) -> Option<serde_json::Value> {
-    let mut params = serde_json::Map::new();
-    if let Some(effort) = &request.reasoning_effort {
-        params.insert("reasoning_effort".into(), json!(effort));
-    }
-    if let Some(budget) = request.reasoning_budget_tokens {
-        params.insert("reasoning_budget_tokens".into(), json!(budget));
-    }
-    if params.is_empty() {
-        None
-    } else {
-        Some(serde_json::Value::Object(params))
-    }
-}
-
 /// Consume one contiguous run of tool calls/results. Emits a single assistant
 /// message carrying every call, then a single user message carrying every
 /// result in call order. Bedrock requires all `toolResults` for a `toolUse`
@@ -83,7 +96,11 @@ fn additional_params(request: &AgentRequest) -> Option<serde_json::Value> {
 /// `messages.N.content`"); rig's `OpenAI` adapters re-split that message into one
 /// tool-role message per result, which is the shape strict OpenAI-compatible
 /// providers demand.
-fn push_tool_turn(history: &mut Vec<Message>, items: &[AgentTranscriptItem]) -> usize {
+fn push_tool_turn(
+    history: &mut Vec<Message>,
+    items: &[AgentTranscriptItem],
+    leading_reasoning: &[AgentReasoning],
+) -> usize {
     let mut calls: Vec<engine::ToolCall> = Vec::new();
     let mut results_by_id: BTreeMap<String, engine::ToolResult> = BTreeMap::new();
     let mut consumed = 0;
@@ -97,18 +114,19 @@ fn push_tool_turn(history: &mut Vec<Message>, items: &[AgentTranscriptItem]) -> 
         }
         consumed += 1;
     }
-    let contents: Vec<AssistantContent> = calls
+    let mut contents: Vec<AssistantContent> = leading_reasoning
         .iter()
-        .map(|call| {
-            AssistantContent::ToolCall(RigToolCall::new(
-                call.id.clone(),
-                ToolFunction {
-                    name: call.name.clone(),
-                    arguments: call.arguments.clone(),
-                },
-            ))
-        })
+        .map(|block| AssistantContent::Reasoning(reasoning_convert::agent_to_rig(block)))
         .collect();
+    contents.extend(calls.iter().map(|call| {
+        AssistantContent::ToolCall(RigToolCall::new(
+            call.id.clone(),
+            ToolFunction {
+                name: call.name.clone(),
+                arguments: call.arguments.clone(),
+            },
+        ))
+    }));
     if let Ok(content) = OneOrMany::many(contents) {
         history.push(Message::Assistant { id: None, content });
     }
@@ -170,6 +188,8 @@ mod tests {
             model_attempt: 1,
             reasoning_effort: None,
             reasoning_budget_tokens: None,
+            turn_phase: engine::AgentTurnPhase::Control,
+            tool_access_policy: engine::ToolAccessPolicy::Execution,
             allow_user_input: true,
         }
     }
@@ -333,13 +353,28 @@ mod tests {
     }
 
     #[test]
-    fn reasoning_params_flow_into_additional_params() {
-        let mut request = request_with_transcript(Vec::new());
-        request.reasoning_effort = Some("high".into());
-        request.reasoning_budget_tokens = Some(2048);
-        let req = to_completion_request(&request);
-        let params = req.additional_params.expect("params");
-        assert_eq!(params["reasoning_effort"], "high");
-        assert_eq!(params["reasoning_budget_tokens"], 2048);
+    fn reasoning_precedes_tool_calls_in_one_assistant_message() {
+        let reasoning = engine::AgentReasoning {
+            id: None,
+            content: vec![engine::AgentReasoningContent::Text {
+                text: "think".into(),
+                signature: Some("sig".into()),
+            }],
+        };
+        let transcript = vec![
+            AgentTranscriptItem::Reasoning { reasoning },
+            tc("c1", "search"),
+            tr("c1", "found"),
+        ];
+        let req = to_completion_request(&request_with_transcript(transcript));
+        let msgs: Vec<_> = req.chat_history.iter().collect();
+        let Message::Assistant { content, .. } = msgs[1] else {
+            panic!("expected assistant message");
+        };
+        assert!(matches!(content.first(), AssistantContent::Reasoning(_)));
+        assert!(matches!(
+            content.last(),
+            AssistantContent::ToolCall(call) if call.id == "c1"
+        ));
     }
 }

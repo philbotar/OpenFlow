@@ -170,6 +170,7 @@ export function useAppProviderState(): AppContextValue {
   let setAppUpdateAvailableRef: Setter<boolean> = (() => false) as Setter<boolean>;
   let lastNotifiedPendingApprovalId: string | null = null;
   let lastNotifiedAwaitingKey: string | null = null;
+  let lastNotifiedRunError: string | null = null;
 
   const handleShellCleanup = () => {
     if (unlistenRunState) void unlistenRunState();
@@ -228,8 +229,11 @@ export function useAppProviderState(): AppContextValue {
             lastNotifiedAwaitingKey = null;
           }
         }
-        if (nextRunState.lastError) {
+        if (nextRunState.lastError && nextRunState.lastError !== lastNotifiedRunError) {
+          lastNotifiedRunError = nextRunState.lastError;
           toastApi.showErrorToast(nextRunState.lastError);
+        } else if (!nextRunState.lastError) {
+          lastNotifiedRunError = null;
         }
       });
       unlistenTerminal = await desktop.listenToTerminalEvent(dock.handleTerminalEvent);

@@ -28,6 +28,10 @@ export interface WorkflowSchedule {
   timezone: string;
 }
 
+export interface PlanModeConfig {
+  evidenceSourceNodeId: NodeId;
+}
+
 export interface ScheduleStatus {
   workflowId: string;
   workflowName: string;
@@ -62,6 +66,9 @@ export interface WorkflowSettings {
   reasoningEffort?: string | null;
   reasoning_budget_tokens?: number | null;
   reasoningBudgetTokens?: number | null;
+  planMode?: PlanModeConfig | null;
+  /** Overseer model for repairing malformed final output; null = use worker model. */
+  outputRepairModel?: string | null;
 }
 
 export interface ProjectMetadata {
@@ -265,6 +272,13 @@ export interface ToolArtifactSummary {
   sizeBytes: number;
 }
 
+export type PlanModeRunPhase = "planning" | "execution";
+
+export interface PlanModeRunState {
+  evidenceSourceNodeId: NodeId;
+  phase: PlanModeRunPhase;
+}
+
 export interface NodeRunOutput {
   node_id: NodeId;
   output: unknown;
@@ -326,6 +340,7 @@ export interface WorkflowRunState {
   pendingApprovals: PendingToolApproval[];
   toolCallsByNode: Record<NodeId, ToolCallSummary[]>;
   toolArtifacts: Record<string, ToolArtifactSummary>;
+  planMode?: PlanModeRunState | null;
   execApprovalGranted: boolean;
   statusByNode: Record<NodeId, AgentStatus>;
   subagentsByNode: Record<NodeId, SubagentSummary[]>;
@@ -349,6 +364,7 @@ export interface ProviderProfile {
   transport: ProviderTransport;
   responses_path: string;
   chat_completions_path: string;
+  request_timeout_secs: number;
   known_models: string[];
   default_model: string | null;
   editable: boolean;

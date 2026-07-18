@@ -22,9 +22,11 @@ contributing/
 
 Also read before larger changes:
 
+- [`../architecture/end-to-end-runtime.md`](../architecture/end-to-end-runtime.md) - code-grounded run path.
 - [`../architecture/contract.md`](../architecture/contract.md) - layer dependency rules.
 - [`../../AGENTS.md`](../../AGENTS.md) - repo map and file-level ownership.
 - [`../glossary.md`](../glossary.md) - engine and app vocabulary.
+- Project skills under [`.cursor/skills/`](../../.cursor/skills/) — routed from [`development-lanes.md`](development-lanes.md).
 
 ## Boundary seams
 
