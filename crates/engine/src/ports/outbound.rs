@@ -147,9 +147,7 @@ pub enum AgentError {
         /// Redacted repair payload for overseer recovery; omitted from [`std::fmt::Display`].
         candidate: Option<Box<OutputRepairCandidate>>,
     },
-    #[error(
-        "{provider_label} response returned tools from the wrong turn phase: {tool_names}"
-    )]
+    #[error("{provider_label} response returned tools from the wrong turn phase: {tool_names}")]
     MixedToolTurn {
         provider_label: String,
         tool_names: String,

@@ -2,6 +2,18 @@
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+
+const apiMocks = vi.hoisted(() => ({
+  cancelCodexLogin: vi.fn(),
+  codexLoginStatus: vi.fn(),
+  disconnectCodex: vi.fn(),
+  refreshBedrockModels: vi.fn(),
+  startCodexLogin: vi.fn(),
+  verifyBedrockCredentials: vi.fn(),
+}));
+
+vi.mock("../api", () => apiMocks);
+
 import { AppContext, type AppContextValue } from "../context/AppContext";
 import type { AppSettings, ProviderProfile } from "../lib/types";
 import { activeProfile } from "../lib/workflow";
@@ -63,6 +75,18 @@ const BEDROCK: ProviderProfile = {
   aws_region: "us-east-1",
 };
 
+const CODEX: ProviderProfile = {
+  display_name: "OpenAI Codex",
+  base_url: "https://chatgpt.com/backend-api/codex",
+  transport: "responses",
+  responses_path: "responses",
+  chat_completions_path: "",
+  request_timeout_secs: 300,
+  known_models: ["gpt-5.4"],
+  default_model: "gpt-5.4",
+  editable: false,
+};
+
 function makeSettings(activeProvider: keyof typeof baseProviders): AppSettings {
   return {
     active_provider: activeProvider,
@@ -75,6 +99,7 @@ const baseProviders = {
   anthropic: ANTHROPIC,
   custom_openai_compatible: CUSTOM,
   bedrock: BEDROCK,
+  "openai-codex": CODEX,
 };
 
 describe("ProvidersSection", () => {
@@ -82,6 +107,12 @@ describe("ProvidersSection", () => {
   let dispose: (() => void) | undefined;
 
   beforeEach(() => {
+    apiMocks.cancelCodexLogin.mockReset().mockResolvedValue({ state: "cancelled" });
+    apiMocks.codexLoginStatus.mockReset().mockResolvedValue({ state: "disconnected" });
+    apiMocks.disconnectCodex.mockReset().mockResolvedValue({ state: "disconnected" });
+    apiMocks.refreshBedrockModels.mockReset().mockResolvedValue([]);
+    apiMocks.startCodexLogin.mockReset().mockResolvedValue({ state: "awaitingBrowser" });
+    apiMocks.verifyBedrockCredentials.mockReset().mockResolvedValue("AWS credentials verified");
     container = document.createElement("div");
     document.body.appendChild(container);
   });
@@ -106,7 +137,13 @@ describe("ProvidersSection", () => {
     const ctx = {
       settings,
       activeProfileMemo: () => activeProfile(settings()),
-      providerIdsMemo: () => ["openai", "anthropic", "custom_openai_compatible", "bedrock"],
+      providerIdsMemo: () => [
+        "openai",
+        "openai-codex",
+        "anthropic",
+        "custom_openai_compatible",
+        "bedrock",
+      ],
       activeProviderKeyInput: () => "stored-key",
       newModelInputByProvider: () => ({ custom_openai_compatible: "new-model" }),
       readiness: () => ({
@@ -121,6 +158,9 @@ describe("ProvidersSection", () => {
       handleAddReasoningEffortOption,
       handleRemoveReasoningEffortOption,
       handleSaveSettings,
+      refreshReadiness: vi.fn().mockResolvedValue(undefined),
+      showErrorToast: vi.fn(),
+      showSuccessToast: vi.fn(),
       updateSettings: async (mutator: (draft: AppSettings) => void) => {
         setSettings((current) => {
           const next = structuredClone(current);
@@ -438,5 +478,58 @@ describe("ProvidersSection", () => {
 
     expect(settings().providers.bedrock?.aws_region).toBe("ap-southeast-2");
     expect(settings().providers.bedrock?.base_url).toBe("");
+  });
+
+  test("Codex shows ChatGPT sign-in instead of an API key", async () => {
+    renderSection("openai-codex");
+
+    await vi.waitFor(() => {
+      expect(apiMocks.codexLoginStatus).toHaveBeenCalledTimes(1);
+    });
+    expect(subheading("providers-auth-heading")?.textContent).toBe("ChatGPT account");
+    expect(container.querySelector('input[type="password"]')).toBeNull();
+    expect(container.textContent).toContain("Sign in with ChatGPT");
+  });
+
+  test("Codex device fallback shows the one-time code and supports cancellation", async () => {
+    apiMocks.startCodexLogin.mockResolvedValueOnce({
+      state: "awaitingDevice",
+      verificationUrl: "https://auth.example/device",
+      userCode: "ABCD-EFGH",
+      expiresAt: 1_900_000_000,
+    });
+    renderSection("openai-codex");
+    await vi.waitFor(() => expect(apiMocks.codexLoginStatus).toHaveBeenCalled());
+
+    const signIn = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Sign in with ChatGPT"),
+    ) as HTMLButtonElement;
+    signIn.click();
+
+    await vi.waitFor(() => expect(container.textContent).toContain("ABCD-EFGH"));
+    expect(container.querySelector('a[href="https://auth.example/device"]')).not.toBeNull();
+    const cancel = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Cancel sign-in"),
+    ) as HTMLButtonElement;
+    cancel.click();
+    await vi.waitFor(() => expect(apiMocks.cancelCodexLogin).toHaveBeenCalledTimes(1));
+  });
+
+  test("Codex connected state exposes only email and disconnect", async () => {
+    apiMocks.codexLoginStatus.mockResolvedValueOnce({
+      state: "connected",
+      email: "person@example.com",
+    });
+    renderSection("openai-codex");
+
+    await vi.waitFor(() => expect(container.textContent).toContain("Connected to ChatGPT"));
+    expect(container.textContent).toContain("person@example.com");
+    expect(container.textContent).not.toContain("access_token");
+    expect(container.textContent).not.toContain("refresh_token");
+    const disconnect = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "Disconnect",
+    ) as HTMLButtonElement;
+    disconnect.click();
+    await vi.waitFor(() => expect(apiMocks.disconnectCodex).toHaveBeenCalledTimes(1));
   });
 });

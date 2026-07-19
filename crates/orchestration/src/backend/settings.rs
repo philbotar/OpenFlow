@@ -5,6 +5,30 @@ use crate::settings::model::AppSettings;
 use super::{AppBackend, BackendError, ProviderReadiness};
 
 impl AppBackend {
+    pub async fn start_codex_login<F>(
+        &self,
+        open_browser: F,
+    ) -> Result<crate::CodexLoginStatus, BackendError>
+    where
+        F: Fn(&str) -> Result<(), String> + Send + Sync,
+    {
+        self.settings.start_codex_login(open_browser).await
+    }
+
+    #[must_use]
+    pub fn codex_login_status(&self) -> crate::CodexLoginStatus {
+        self.settings.codex_login_status()
+    }
+
+    #[must_use]
+    pub fn cancel_codex_login(&self) -> crate::CodexLoginStatus {
+        self.settings.cancel_codex_login()
+    }
+
+    pub fn disconnect_codex(&self) -> Result<crate::CodexLoginStatus, BackendError> {
+        self.settings.disconnect_codex()
+    }
+
     pub fn list_skills(&self) -> Result<Vec<crate::settings::ports::SkillSummary>, BackendError> {
         self.settings.list_skills()
     }

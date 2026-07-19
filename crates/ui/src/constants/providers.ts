@@ -2,6 +2,7 @@ import type { AppSettings } from "../lib/types";
 
 export const PROVIDER_ORDER = [
   "openai",
+  "openai-codex",
   "openrouter",
   "groq",
   "together",
@@ -29,6 +30,17 @@ export const EMPTY_SETTINGS: AppSettings = {
       request_timeout_secs: 300,
       known_models: ["gpt-4o", "gpt-4o-mini", "gpt-4.5", "o3"],
       default_model: "gpt-4o-mini",
+      editable: false,
+    },
+    "openai-codex": {
+      display_name: "OpenAI Codex",
+      base_url: "https://chatgpt.com/backend-api/codex",
+      transport: "responses",
+      responses_path: "responses",
+      chat_completions_path: "",
+      request_timeout_secs: 300,
+      known_models: ["gpt-5.4", "gpt-5.4-pro", "gpt-5.3-codex", "gpt-5.3-codex-spark"],
+      default_model: "gpt-5.4",
       editable: false,
     },
     custom_openai_compatible: {

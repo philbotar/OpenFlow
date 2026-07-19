@@ -30,6 +30,7 @@ function makeMockContext(overrides: Partial<AppContextValue> = {}): AppContextVa
     startingRun: () => false,
     continuableRun: () => false,
     stoppingRun: () => false,
+    replayRunId: () => null,
     workflowSettingsOpen: () => false,
     inspectorOpen: () => false,
     gitPanelOpen: () => false,
@@ -243,11 +244,33 @@ describe("AppHeader", () => {
     dispose();
   });
 
-  it("does not render a topbar run action", () => {
+  it("renders a topbar run action when idle", () => {
     const { container, dispose } = renderWithContext({
       screen: () => "editor",
     });
-    expect(container.querySelector("button[aria-label='Run workflow']")).toBeNull();
+    expect(container.querySelector("button[aria-label='Run workflow']")).not.toBeNull();
+    dispose();
+  });
+
+  it("calls handleRun when topbar run is clicked", () => {
+    const handleRun = vi.fn().mockResolvedValue(undefined);
+    const { container, dispose } = renderWithContext({
+      screen: () => "editor",
+      handleRun,
+    });
+    const run = container.querySelector("button[aria-label='Run workflow']") as HTMLButtonElement;
+    run.click();
+    expect(handleRun).toHaveBeenCalledTimes(1);
+    dispose();
+  });
+
+  it("disables topbar run when provider is not ready", () => {
+    const { container, dispose } = renderWithContext({
+      screen: () => "editor",
+      readiness: () => ({ ready: false, provider: "OpenAI", message: "Add an API key in Settings", envVar: "" }),
+    });
+    const run = container.querySelector("button[aria-label='Run workflow']") as HTMLButtonElement;
+    expect(run.disabled).toBe(true);
     dispose();
   });
 
@@ -415,11 +438,25 @@ describe("AppHeader", () => {
     dispose();
   });
 
-  it("does not render continue or fresh run actions in the topbar", () => {
+  it("shows continue action when a run can be resumed", () => {
+    const handleContinueRun = vi.fn().mockResolvedValue(undefined);
+    const { container, dispose } = renderWithContext({
+      continuableRun: () => true,
+      handleContinueRun,
+    });
+    const btn = container.querySelector("button[aria-label='Continue workflow']") as HTMLButtonElement;
+    expect(btn).not.toBeNull();
+    btn.click();
+    expect(handleContinueRun).toHaveBeenCalledTimes(1);
+    expect(container.querySelector("button[aria-label='Run workflow']")).toBeNull();
+    dispose();
+  });
+
+  it("does not render start fresh run in the topbar", () => {
     const { container, dispose } = renderWithContext({
       continuableRun: () => true,
     });
-    expect(container.querySelector("button[aria-label='Continue workflow']")).toBeNull();
+    expect(container.querySelector("button[aria-label='Continue workflow']")).not.toBeNull();
     expect(container.querySelector("button[aria-label='Start fresh workflow run']")).toBeNull();
     dispose();
   });

@@ -1,5 +1,6 @@
 import { createMemo, Show } from "solid-js";
 import RotateCcw from "lucide-solid/icons/rotate-ccw";
+import { Button } from "@/components";
 import { GLOBAL_RUN_ENTRY_NODE_ID, isLiveTranscriptSegment } from "../../lib/workflow";
 import { useAppContext } from "../../context/AppContext";
 import { ConversationComposer } from "./ConversationComposer";
@@ -74,22 +75,14 @@ export function ChatPanel() {
           </span>
           <div class="chat-replay-banner-actions">
             <Show when={replayRunSummary() && replayRunSummary()!.status !== "completed"}>
-              <button
-                type="button"
-                class="secondary-button small"
-                onClick={() => void ctx.handleResumeDurableRun(ctx.replayRunId()!)}
-              >
+              <Button variant="secondary" size="small" onClick={() => void ctx.handleResumeDurableRun(ctx.replayRunId()!)}>
                 <RotateCcw width={14} height={14} />
                 Resume run
-              </button>
+              </Button>
             </Show>
-            <button
-              type="button"
-              class="secondary-button small"
-              onClick={() => void ctx.handleExitReplay()}
-            >
+            <Button variant="secondary" size="small" onClick={() => void ctx.handleExitReplay()}>
               Exit replay
-            </button>
+            </Button>
           </div>
         </div>
       </Show>
@@ -97,9 +90,9 @@ export function ChatPanel() {
         {(status) => (
           <div class="chat-replay-banner" role="status">
             <span>
-              <strong>Plan Mode</strong> — {status().frozen
-                ? `${status().sourceLabel} froze the change evidence packet. Execution is unlocked.`
-                : `planning lock active. Repository writes stay blocked until ${status().sourceLabel} freezes the change evidence packet.`}
+              <strong>Plan mode</strong> — {status().frozen
+                ? `${status().sourceLabel} approved the plan. File edits are allowed.`
+                : `Planning in progress. File edits stay blocked until ${status().sourceLabel} approves the plan.`}
             </span>
           </div>
         )}

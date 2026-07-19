@@ -103,7 +103,7 @@ fn sample_pending_approval(node_id: &str, approval_id: &str) -> PendingToolAppro
 struct LocalStores {
     dir: tempfile::TempDir,
     agent_store: FileAgentStore,
-    settings_store: FileSettingsStore,
+    settings_store: Arc<FileSettingsStore>,
     run_store: FileRunCheckpointStore,
     settings: AppSettings,
     env: ProviderEnv,
@@ -118,7 +118,7 @@ fn local_stores() -> LocalStores {
     };
     LocalStores {
         agent_store: FileAgentStore::new(dir.path().join("agents.json")),
-        settings_store: FileSettingsStore::new(dir.path().join("settings.json")),
+        settings_store: Arc::new(FileSettingsStore::new(dir.path().join("settings.json"))),
         run_store: FileRunCheckpointStore,
         settings: AppSettings::default(),
         env: test_env(),
@@ -136,7 +136,7 @@ fn run_start_params<'a>(stores: &'a LocalStores, workflow: Workflow) -> RunStart
         settings: &stores.settings,
         transient_api_key: None,
         agent_store: &stores.agent_store,
-        settings_store: &stores.settings_store,
+        settings_store: stores.settings_store.clone(),
         run_store: &stores.run_store,
         env: &stores.env,
     }
@@ -596,7 +596,7 @@ async fn resume_durable_run_uses_recorded_workflow_snapshot() {
             settings: &stores.settings,
             transient_api_key: None,
             agent_store: &stores.agent_store,
-            settings_store: &stores.settings_store,
+            settings_store: stores.settings_store.clone(),
             run_store: &stores.run_store,
             env: &stores.env,
         })
@@ -639,7 +639,7 @@ async fn resume_durable_run_restores_active_session() {
             settings: &stores.settings,
             transient_api_key: None,
             agent_store: &stores.agent_store,
-            settings_store: &stores.settings_store,
+            settings_store: stores.settings_store.clone(),
             run_store: &stores.run_store,
             env: &stores.env,
         })

@@ -27,6 +27,7 @@ Use this page for commands, storage paths, and operational facts that should be 
 | Saved agents | `{data_local}/openflow/agents.json` |
 | Project workflows | `{project}/.flow/workflows/{workflowId}.workflow.json` |
 | Provider API keys | Plaintext in `settings.json` as `ProviderProfile.api_key` |
+| ChatGPT Codex OAuth | Plaintext in `settings.json` as `ProviderProfile.codex_oauth`; redacted from normal settings IPC |
 
 `AppBackend::load_all_workflows` merges app-store and project-discovered workflows. Project files win on ID collision.
 
@@ -39,6 +40,8 @@ OpenFlow resolves provider keys in this order:
 3. Provider environment variable fallback, such as `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`.
 
 Provider-specific request mapping belongs in `crates/providers`. Settings, readiness, and app-level resolution live in orchestration.
+
+The `openai-codex` provider does not consult `OPENAI_API_KEY`. It is ready when a refreshable ChatGPT OAuth session is stored. **Disconnect** explicitly clears that session; ordinary redacted settings saves preserve it.
 
 ## Architecture Check Config
 

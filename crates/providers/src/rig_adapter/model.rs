@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use crate::auth::AuthConfig;
+use crate::auth::{AuthConfig, CodexOAuthCredentials};
 #[cfg(feature = "bedrock")]
 use crate::client::BedrockConfig;
 use crate::client::OpenAiCompatibleConfig;
@@ -14,20 +14,22 @@ use crate::rig_adapter::{
 };
 use crate::spec::{ProviderId, WireApi};
 use engine::{
-    emit_assistant_deltas_from_outcome, AgentError, AgentRequest, AgentTurnOutcome, AiStreamSink,
+    AgentError, AgentRequest, AgentTurnOutcome, AiStreamSink, emit_assistant_deltas_from_outcome,
 };
-use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest::Client as ReqwestClient;
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use rig_core::client::CompletionClient;
 use rig_core::completion::{CompletionModel, CompletionRequest};
 use rig_core::message::{AssistantContent, ToolChoice};
 use rig_core::providers::anthropic::{
     self, completion::CompletionModel as AnthropicCompletionModel,
 };
+use rig_core::providers::chatgpt::ResponsesCompletionModel as ChatGPTResponsesCompletionModel;
+use rig_core::providers::chatgpt::{self, ChatGPTAuth};
 use rig_core::providers::openai;
 use rig_core::providers::openai::completion::CompletionModel as OpenAiChatModel;
 use rig_core::providers::openai::responses_api::ResponsesCompletionModel;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 #[cfg(feature = "bedrock")]
 use rig_bedrock::completion::CompletionModel as BedrockCompletionModel;
@@ -40,6 +42,7 @@ pub enum RigModel {
     Anthropic(AnthropicCompletionModel<AnthropicHttpClient>),
     OpenAiChat(OpenAiChatModel<OpenAiHttpClient>),
     OpenAiResponses(ResponsesCompletionModel<OpenAiHttpClient>),
+    ChatGPT(ChatGPTResponsesCompletionModel),
     #[cfg(feature = "bedrock")]
     Bedrock(BedrockCompletionModel),
 }
@@ -76,6 +79,9 @@ pub(super) async fn build_model(
                 build_openai(config, openai_config, model).map(BuiltModel::without_expiry)
             }
         }
+        ProviderAdapterConfig::OpenAiCodex(_) => Err(AgentError::Failed(
+            "OpenAI Codex inference is not wired yet".into(),
+        )),
         #[cfg(feature = "bedrock")]
         ProviderAdapterConfig::Bedrock(bedrock_config) => {
             build_bedrock(config, bedrock_config, model).await
@@ -184,6 +190,31 @@ fn build_openai(
             Ok(RigModel::OpenAiResponses(client.completion_model(model)))
         }
     }
+}
+
+pub(super) fn build_codex(
+    provider_label: &str,
+    base_url: &str,
+    model: &str,
+    credentials: &CodexOAuthCredentials,
+    http: ReqwestClient,
+) -> Result<RigModel, AgentError> {
+    let client = chatgpt::Client::builder()
+        .api_key(ChatGPTAuth::AccessToken {
+            access_token: credentials.access_token.clone(),
+            account_id: Some(credentials.account_id.clone()),
+        })
+        .base_url(base_url)
+        .default_instructions("")
+        .originator("openflow")
+        .http_client(http)
+        .build()
+        .map_err(|error| {
+            AgentError::Failed(format!(
+                "failed to build {provider_label} ChatGPT client: {error}"
+            ))
+        })?;
+    Ok(RigModel::ChatGPT(client.completion_model(model)))
 }
 
 #[cfg(feature = "bedrock")]
@@ -323,6 +354,20 @@ impl RigModel {
                     )
                 }
             },
+            Self::ChatGPT(model) => match model.completion(completion_request).await {
+                Err(e) => Err(error::to_agent_error(e, provider_label)),
+                Ok(response) => {
+                    let choice: Vec<AssistantContent> = response.choice.into_iter().collect();
+                    outcome::resolve_outcome(
+                        choice,
+                        response.usage,
+                        provider_label,
+                        Some(&request.output_schema),
+                        request.turn_phase,
+                        no_tool_calls,
+                    )
+                }
+            },
             #[cfg(feature = "bedrock")]
             Self::Bedrock(model) => match model.completion(completion_request).await {
                 Err(e) => Err(error::to_agent_error(e, provider_label)),
@@ -414,6 +459,20 @@ impl RigModel {
                     .await
                 }
             },
+            Self::ChatGPT(model) => match model.stream(completion_request).await {
+                Err(e) => Err(error::to_agent_error(e, provider_label)),
+                Ok(rig_stream) => {
+                    stream::drain(
+                        rig_stream,
+                        sink,
+                        provider_label,
+                        Some(&request.output_schema),
+                        request.turn_phase,
+                        no_tool_calls,
+                    )
+                    .await
+                }
+            },
             #[cfg(feature = "bedrock")]
             Self::Bedrock(model) => match model.stream(completion_request).await {
                 Err(e) => Err(error::to_agent_error(e, provider_label)),
@@ -460,6 +519,7 @@ fn completion_request_for(
                 );
             }
         }
+        RigModel::ChatGPT(_) => merge_codex_params(&mut completion_request, request),
         #[cfg(feature = "bedrock")]
         RigModel::Bedrock(_) => {
             claude_thinking::apply(
@@ -471,6 +531,21 @@ fn completion_request_for(
     }
     apply_tool_choice_policy(&mut completion_request, provider_id);
     Ok(completion_request)
+}
+
+fn merge_codex_params(request: &mut CompletionRequest, agent_request: &AgentRequest) {
+    let Some(effort) = agent_request.reasoning_effort.as_deref() else {
+        return;
+    };
+    let reasoning = json!({"effort": effort, "summary": "auto"});
+    request.additional_params = Some(match request.additional_params.take() {
+        Some(Value::Object(mut existing)) => {
+            existing.insert("reasoning".into(), reasoning);
+            Value::Object(existing)
+        }
+        Some(other) => json!({"reasoning": reasoning, "_rig_merge": other}),
+        None => json!({"reasoning": reasoning}),
+    });
 }
 
 fn apply_tool_choice_policy(request: &mut CompletionRequest, provider_id: &ProviderId) {
@@ -784,7 +859,7 @@ mod tests {
 
     #[test]
     fn builtin_openai_compat_specs_never_double_v1() {
-        use crate::spec::{builtin_provider_specs, ProviderKind};
+        use crate::spec::{ProviderKind, builtin_provider_specs};
 
         for spec in builtin_provider_specs() {
             let ProviderKind::OpenAiCompatible(oa) = spec.kind else {

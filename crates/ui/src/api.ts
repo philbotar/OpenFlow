@@ -11,6 +11,7 @@ import type {
   AgentDefinitionSummary,
   AppSettings,
   BootstrapPayload,
+  CodexLoginStatus,
   DebugLogEntry,
   DebugLogWrite,
   Node,
@@ -216,6 +217,22 @@ export function saveProviderApiKey(providerId: string, apiKey: string) {
 
 export function deleteProviderApiKey(providerId: string) {
   return invoke<void>("delete_provider_api_key", { providerId });
+}
+
+export function startCodexLogin() {
+  return invoke<CodexLoginStatus>("start_codex_login");
+}
+
+export function codexLoginStatus() {
+  return invoke<CodexLoginStatus>("codex_login_status");
+}
+
+export function cancelCodexLogin() {
+  return invoke<CodexLoginStatus>("cancel_codex_login");
+}
+
+export function disconnectCodex() {
+  return invoke<CodexLoginStatus>("disconnect_codex");
 }
 
 export function loadSearchApiKey(provider: string) {

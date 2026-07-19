@@ -53,6 +53,7 @@ export interface AppContextValue {
   runState: Accessor<WorkflowRunState | null>;
   backendRunWorkflowId: Accessor<string | null>;
   readiness: Accessor<ProviderReadiness | null>;
+  refreshReadiness: (nextSettings?: AppSettings) => Promise<void>;
   bottomTab: Accessor<BottomTab>;
   dockOpen: Accessor<boolean>;
   dockHeight: Accessor<number>;

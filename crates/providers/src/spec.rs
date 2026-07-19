@@ -70,6 +70,7 @@ pub enum AuthSpec {
         profile_env_var: &'static str,
         region_env_var: &'static str,
     },
+    ChatGptOAuth,
 }
 
 impl AuthSpec {
@@ -81,6 +82,7 @@ impl AuthSpec {
             Self::AwsCredentials {
                 profile_env_var, ..
             } => Some(profile_env_var),
+            Self::ChatGptOAuth => None,
         }
     }
 
@@ -88,7 +90,7 @@ impl AuthSpec {
     pub const fn requires_key(self) -> bool {
         match self {
             Self::Bearer { required, .. } | Self::Header { required, .. } => required,
-            Self::NoneAllowed { .. } | Self::AwsCredentials { .. } => false,
+            Self::NoneAllowed { .. } | Self::AwsCredentials { .. } | Self::ChatGptOAuth => false,
         }
     }
 }
@@ -114,6 +116,7 @@ pub struct BedrockSpec {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProviderKind {
     OpenAiCompatible(OpenAiCompatibleSpec),
+    OpenAiCodex,
     Anthropic(AnthropicSpec),
     Bedrock(BedrockSpec),
 }
@@ -170,7 +173,7 @@ impl ProviderSpec {
                     uses_budget_tokens: false,
                 },
             ],
-            ProviderKind::OpenAiCompatible(_) => vec![
+            ProviderKind::OpenAiCompatible(_) | ProviderKind::OpenAiCodex => vec![
                 ReasoningEffortOption {
                     value: "none".to_string(),
                     label: "Fast".to_string(),
@@ -202,6 +205,12 @@ const ANTHROPIC_MESSAGES_PATH: &str = "v1/messages";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 
 const OPENAI_MODELS: &[&str] = &["gpt-4o", "gpt-4o-mini", "gpt-4.5", "o3"];
+const OPENAI_CODEX_MODELS: &[&str] = &[
+    "gpt-5.4",
+    "gpt-5.4-pro",
+    "gpt-5.3-codex",
+    "gpt-5.3-codex-spark",
+];
 const OPENROUTER_MODELS: &[&str] = &[
     "openai/gpt-4o-mini",
     "anthropic/claude-3.5-sonnet",
@@ -272,6 +281,16 @@ const BUILTIN_PROVIDER_SPECS: &[ProviderSpec] = &[
         },
         default_models: OPENAI_MODELS,
         default_model: "gpt-4o-mini",
+        editable: false,
+    },
+    ProviderSpec {
+        id: "openai-codex",
+        display_name: "OpenAI Codex",
+        default_base_url: "https://chatgpt.com/backend-api/codex",
+        kind: ProviderKind::OpenAiCodex,
+        auth: AuthSpec::ChatGptOAuth,
+        default_models: OPENAI_CODEX_MODELS,
+        default_model: "gpt-5.4",
         editable: false,
     },
     ProviderSpec {
@@ -474,10 +493,39 @@ mod tests {
     use super::*;
 
     #[test]
+    fn builtin_specs_include_openai_codex_with_interactive_auth() {
+        let codex = provider_spec(&ProviderId::from("openai-codex"))
+            .expect("OpenAI Codex should be a built-in provider");
+
+        assert_eq!(codex.display_name, "OpenAI Codex");
+        assert_eq!(
+            codex.default_base_url,
+            "https://chatgpt.com/backend-api/codex"
+        );
+        assert_eq!(codex.kind, ProviderKind::OpenAiCodex);
+        assert_eq!(codex.auth, AuthSpec::ChatGptOAuth);
+        assert!(!codex.auth.requires_key());
+        assert_eq!(codex.auth.env_var(), None);
+        assert_eq!(codex.default_model, "gpt-5.4");
+        assert_eq!(
+            codex.default_models,
+            [
+                "gpt-5.4",
+                "gpt-5.4-pro",
+                "gpt-5.3-codex",
+                "gpt-5.3-codex-spark",
+            ]
+        );
+        assert!(!codex.editable);
+    }
+
+    #[test]
     fn builtin_specs_include_bedrock() {
-        assert!(builtin_provider_specs()
-            .iter()
-            .any(|spec| spec.id == "bedrock"));
+        assert!(
+            builtin_provider_specs()
+                .iter()
+                .any(|spec| spec.id == "bedrock")
+        );
     }
 
     #[test]
@@ -552,5 +600,26 @@ mod reasoning_effort_tests {
         assert!(!options[2].uses_budget_tokens);
         assert_eq!(options[3].value, "high");
         assert!(!options[3].uses_budget_tokens);
+    }
+
+    #[test]
+    fn default_reasoning_effort_options_openai_codex() {
+        let spec = provider_spec(&ProviderId::from("openai-codex"));
+        assert!(spec.is_some());
+        let Some(spec) = spec else {
+            return;
+        };
+
+        let options = spec.default_reasoning_effort_options();
+
+        assert_eq!(
+            options
+                .iter()
+                .map(|option| option.value.as_str())
+                .collect::<Vec<_>>(),
+            ["none", "low", "medium", "high"]
+        );
+        assert_eq!(options[0].label, "Fast");
+        assert!(options.iter().all(|option| !option.uses_budget_tokens));
     }
 }

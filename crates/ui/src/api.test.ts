@@ -25,8 +25,11 @@ import {
   appendDebugLog,
   bootstrapApp,
   confirmNativeDialog,
+  cancelCodexLogin,
+  codexLoginStatus,
   debugLogPath,
   deleteWorkflow,
+  disconnectCodex,
   getRunState,
   listenToRunState,
   listScheduleStatuses,
@@ -35,6 +38,7 @@ import {
   refreshSchedules,
   resumeDurableRun,
   startWorkflowAuthoring,
+  startCodexLogin,
   startRun,
   submitToolApproval,
   workflowAuthoringTurn,
@@ -71,6 +75,18 @@ describe("api desktop seam", () => {
   test("debugLogPath invokes debug_log_path", async () => {
     await debugLogPath();
     expect(invoke).toHaveBeenCalledWith("debug_log_path");
+  });
+
+  test("Codex login wrappers use the secret-free settings commands", async () => {
+    await startCodexLogin();
+    await codexLoginStatus();
+    await cancelCodexLogin();
+    await disconnectCodex();
+
+    expect(invoke).toHaveBeenNthCalledWith(1, "start_codex_login");
+    expect(invoke).toHaveBeenNthCalledWith(2, "codex_login_status");
+    expect(invoke).toHaveBeenNthCalledWith(3, "cancel_codex_login");
+    expect(invoke).toHaveBeenNthCalledWith(4, "disconnect_codex");
   });
 
   test("appendDebugLog forwards settings and entry", async () => {

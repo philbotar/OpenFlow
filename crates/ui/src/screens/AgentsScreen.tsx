@@ -1,5 +1,5 @@
 import { For, Show } from "solid-js";
-import { PanelEmptyState, SidebarList, SidebarListRow, SidebarNavButton } from "@/components";
+import { Button, ButtonRow, PanelEmptyState, SettingsSection, SidebarList, SidebarListRow, SidebarNavButton } from "@/components";
 import { useAppContext } from "../context/AppContext";
 import { AgentConfigForm } from "../forms/AgentConfigForm";
 import { ToolConfigEditor } from "../forms/ToolConfigEditor";
@@ -71,7 +71,7 @@ export function AgentsScreen() {
             }
           >
             {(agent) => (
-              <div class="settings-section">
+              <SettingsSection>
                 <label>
                   <span>Name</span>
                   <input
@@ -123,16 +123,16 @@ export function AgentsScreen() {
                     })
                   }
                 />
-                <div class="button-row end">
-                  <button
-                    type="button"
-                    class="primary-button compact"
+                <ButtonRow align="end">
+                  <Button
+                    variant="primary"
+                    size="compact"
                     onClick={() => void ctx.handleSaveAgents()}
                   >
                     Save
-                  </button>
-                </div>
-              </div>
+                  </Button>
+                </ButtonRow>
+              </SettingsSection>
             )}
           </Show>
         </section>

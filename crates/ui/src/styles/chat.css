@@ -240,7 +240,7 @@
 
 .composer-runtime-controls .composer-runtime-select .text-select-trigger:hover:not(:disabled) {
   color: var(--text);
-  background-color: var(--surface-hover, rgba(0, 0, 0, 0.04));
+  background-color: var(--surface-hover);
 }
 
 .composer-runtime-controls .composer-runtime-select .text-select-value {
@@ -265,7 +265,7 @@
 .composer-runtime-budget:hover:not(:disabled),
 .composer-runtime-budget:focus-visible {
   color: var(--text);
-  background: var(--surface-hover, rgba(0, 0, 0, 0.04));
+  background: var(--surface-hover);
   outline: none;
 }
 
@@ -313,12 +313,12 @@
 }
 
 [data-theme="dark"] .composer-runtime-controls .composer-runtime-select .text-select-trigger:hover:not(:disabled) {
-  background-color: rgba(255, 255, 255, 0.06);
+  background-color: var(--surface-hover);
 }
 
 [data-theme="dark"] .composer-runtime-budget:hover:not(:disabled),
 [data-theme="dark"] .composer-runtime-budget:focus-visible {
-  background-color: rgba(255, 255, 255, 0.06);
+  background-color: var(--surface-hover);
 }
 
 [data-theme="dark"] .chat-composer-pill {

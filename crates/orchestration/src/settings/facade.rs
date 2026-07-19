@@ -1,6 +1,7 @@
 use crate::api::{ProviderReadiness, WorkflowValidationSummary};
 use crate::error::BackendError;
-use crate::settings::model::{merge_preserved_api_keys, AppSettings};
+use crate::settings::codex_login::{CodexLoginCoordinator, CodexLoginStatus};
+use crate::settings::model::{merge_preserved_secrets, AppSettings};
 use crate::settings::ports::{SettingsStore, SkillCatalog, SkillSummary};
 use crate::settings::provider::{
     active_provider_env_var, active_provider_label, resolve_provider_config, ProviderConfigError,
@@ -12,21 +13,29 @@ use engine::{execution_layers, validate_workflow, Workflow};
 #[cfg(feature = "bedrock")]
 use providers::{list_bedrock_foundation_models, verify_bedrock_credentials};
 use providers::{ProviderAdapterConfig, ProviderId};
+use std::sync::Arc;
 
 pub struct SettingsFacade {
-    store: Box<dyn SettingsStore>,
+    store: Arc<dyn SettingsStore>,
     skills: Box<dyn SkillCatalog>,
     env: ProviderEnv,
+    codex_login: CodexLoginCoordinator,
 }
 
 impl SettingsFacade {
     #[must_use]
     pub fn new(
-        store: Box<dyn SettingsStore>,
+        store: Arc<dyn SettingsStore>,
         skills: Box<dyn SkillCatalog>,
         env: ProviderEnv,
     ) -> Self {
-        Self { store, skills, env }
+        let codex_login = CodexLoginCoordinator::new(Arc::clone(&store));
+        Self {
+            store,
+            skills,
+            env,
+            codex_login,
+        }
     }
 
     /// # Errors
@@ -145,7 +154,7 @@ impl SettingsFacade {
             };
         };
         let mut merged = settings.clone();
-        merge_preserved_api_keys(&mut merged, &persisted);
+        merge_preserved_secrets(&mut merged, &persisted);
 
         match resolve_provider_config(&merged, transient_api_key, &self.env) {
             Ok(config) if matches!(config.adapter, ProviderAdapterConfig::Bedrock(_)) => {
@@ -172,6 +181,12 @@ impl SettingsFacade {
                 provider,
                 message: "API key missing".to_string(),
                 env_var,
+            },
+            Err(ProviderConfigError::MissingOAuth { provider }) => ProviderReadiness {
+                ready: false,
+                provider,
+                message: "Sign in with ChatGPT to use OpenAI Codex".to_string(),
+                env_var: String::new(),
             },
             Err(error) => ProviderReadiness {
                 ready: false,
@@ -208,7 +223,7 @@ impl SettingsFacade {
         settings: &AppSettings,
     ) -> Result<Vec<String>, BackendError> {
         let mut merged = settings.clone();
-        merge_preserved_api_keys(&mut merged, &self.store.load()?);
+        merge_preserved_secrets(&mut merged, &self.store.load()?);
         #[cfg(feature = "bedrock")]
         {
             let config = resolve_provider_config(&merged, None, &self.env).map_err(|error| {
@@ -248,7 +263,7 @@ impl SettingsFacade {
         settings: &AppSettings,
     ) -> Result<String, BackendError> {
         let mut merged = settings.clone();
-        merge_preserved_api_keys(&mut merged, &self.store.load()?);
+        merge_preserved_secrets(&mut merged, &self.store.load()?);
         #[cfg(feature = "bedrock")]
         {
             let config = resolve_provider_config(&merged, None, &self.env).map_err(|error| {
@@ -285,8 +300,36 @@ impl SettingsFacade {
         &*self.store
     }
 
+    pub(crate) fn store_arc(&self) -> Arc<dyn SettingsStore> {
+        Arc::clone(&self.store)
+    }
+
     pub(crate) fn env(&self) -> &ProviderEnv {
         &self.env
+    }
+
+    pub async fn start_codex_login<F>(
+        &self,
+        open_browser: F,
+    ) -> Result<CodexLoginStatus, BackendError>
+    where
+        F: Fn(&str) -> Result<(), String> + Send + Sync,
+    {
+        self.codex_login.start(open_browser).await
+    }
+
+    #[must_use]
+    pub fn codex_login_status(&self) -> CodexLoginStatus {
+        self.codex_login.status()
+    }
+
+    #[must_use]
+    pub fn cancel_codex_login(&self) -> CodexLoginStatus {
+        self.codex_login.cancel()
+    }
+
+    pub fn disconnect_codex(&self) -> Result<CodexLoginStatus, BackendError> {
+        self.codex_login.disconnect()
     }
 }
 

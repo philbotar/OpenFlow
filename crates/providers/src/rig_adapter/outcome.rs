@@ -10,8 +10,8 @@
 
 use crate::client::OpenAiCompatibleConfig;
 use crate::mapping::{
-    attach_usage, parse_internal_tool_outcome, resolve_tool_turn_outcome, NoToolCallsPolicy,
-    ResolveToolTurnParams,
+    NoToolCallsPolicy, ResolveToolTurnParams, attach_usage, parse_internal_tool_outcome,
+    resolve_tool_turn_outcome,
 };
 use crate::rig_adapter::reasoning_convert;
 use crate::spec::WireApi;
@@ -146,7 +146,8 @@ pub(super) fn partition_choice(
 
 /// Canonical empty-turn marker. Engine [`AgentError::is_empty_provider_turn`] matches this
 /// (and the enriched "no tool calls and no usable text" form).
-pub(crate) const EMPTY_TURN_ERROR: &str = "provider returned neither tool calls nor recoverable output";
+pub(crate) const EMPTY_TURN_ERROR: &str =
+    "provider returned neither tool calls nor recoverable output";
 
 fn is_empty_turn_message(message: &str) -> bool {
     message.contains(EMPTY_TURN_ERROR) || message.contains("no message or tool call")

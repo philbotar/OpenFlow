@@ -1,6 +1,6 @@
 use providers::{
-    builtin_provider_specs, provider_spec, ProviderId, ProviderKind, ProviderSpec,
-    ReasoningEffortOption, WireApi,
+    builtin_provider_specs, provider_spec, CodexOAuthCredentials, ProviderId, ProviderKind,
+    ProviderSpec, ReasoningEffortOption, WireApi,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -23,6 +23,8 @@ pub struct ProviderProfile {
     pub default_model: Option<String>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub api_key: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub codex_oauth: Option<CodexOAuthCredentials>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub aws_profile: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -91,6 +93,13 @@ impl ProviderProfile {
                     spec.default_base_url.to_string(),
                     String::new(),
                 ),
+                ProviderKind::OpenAiCodex => (
+                    ProviderTransport::Responses,
+                    default_responses_path(),
+                    default_chat_completions_path(),
+                    spec.default_base_url.to_string(),
+                    String::new(),
+                ),
                 ProviderKind::Bedrock(bedrock) => (
                     ProviderTransport::ChatCompletions,
                     default_responses_path(),
@@ -113,6 +122,7 @@ impl ProviderProfile {
                 .collect(),
             default_model: Some(spec.default_model.to_string()),
             api_key: String::new(),
+            codex_oauth: None,
             aws_profile: String::new(),
             aws_region,
             aws_credential_command: String::new(),
@@ -145,6 +155,7 @@ impl ProviderProfile {
             known_models: vec!["gpt-4o-mini".to_string()],
             default_model: Some("gpt-4o-mini".to_string()),
             api_key: String::new(),
+            codex_oauth: None,
             aws_profile: String::new(),
             aws_region: String::new(),
             aws_credential_command: String::new(),
@@ -173,7 +184,9 @@ impl ProviderProfile {
                     }
                     self.base_url.clear();
                 }
-                ProviderKind::OpenAiCompatible(_) | ProviderKind::Anthropic(_) => {
+                ProviderKind::OpenAiCompatible(_)
+                | ProviderKind::OpenAiCodex
+                | ProviderKind::Anthropic(_) => {
                     if self.base_url.trim().is_empty() {
                         self.base_url = spec.default_base_url.to_string();
                     }
@@ -435,6 +448,7 @@ impl AppSettings {
         let mut copy = self.clone();
         for profile in copy.providers.values_mut() {
             profile.api_key.clear();
+            profile.codex_oauth = None;
         }
         for key in copy.search.keys.values_mut() {
             key.clear();
@@ -494,11 +508,16 @@ pub struct SkillSummary {
     pub path: Option<String>,
 }
 
-pub fn merge_preserved_api_keys(incoming: &mut AppSettings, existing: &AppSettings) {
+pub fn merge_preserved_secrets(incoming: &mut AppSettings, existing: &AppSettings) {
     for (id, profile) in &mut incoming.providers {
-        if profile.api_key.trim().is_empty() {
-            if let Some(existing_profile) = existing.providers.get(id) {
+        if let Some(existing_profile) = existing.providers.get(id) {
+            if profile.api_key.trim().is_empty() {
                 profile.api_key = existing_profile.api_key.clone();
+            }
+            if profile.codex_oauth.is_none() {
+                profile
+                    .codex_oauth
+                    .clone_from(&existing_profile.codex_oauth);
             }
         }
     }
@@ -513,6 +532,78 @@ pub fn merge_preserved_api_keys(incoming: &mut AppSettings, existing: &AppSettin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn codex_credentials() -> CodexOAuthCredentials {
+        CodexOAuthCredentials {
+            access_token: "access-sentinel".to_string(),
+            refresh_token: "refresh-sentinel".to_string(),
+            id_token: Some("id-sentinel".to_string()),
+            expires_at: 1_800_000_000,
+            account_id: "account-sentinel".to_string(),
+            email: Some("person@example.com".to_string()),
+        }
+    }
+
+    #[test]
+    fn codex_oauth_roundtrips_but_redacted_settings_omit_it() {
+        let mut settings = AppSettings::default();
+        settings
+            .providers
+            .get_mut(&ProviderId::from("openai-codex"))
+            .expect("codex profile")
+            .codex_oauth = Some(codex_credentials());
+
+        let encoded = serde_json::to_string(&settings).expect("serialize settings");
+        let decoded: AppSettings = serde_json::from_str(&encoded).expect("deserialize settings");
+        assert_eq!(
+            decoded
+                .providers
+                .get(&ProviderId::from("openai-codex"))
+                .and_then(|profile| profile.codex_oauth.as_ref()),
+            Some(&codex_credentials())
+        );
+
+        let redacted = serde_json::to_string(&settings.redacted()).expect("serialize redacted");
+        for secret in [
+            "access-sentinel",
+            "refresh-sentinel",
+            "id-sentinel",
+            "account-sentinel",
+        ] {
+            assert!(
+                !redacted.contains(secret),
+                "redacted settings leaked {secret}"
+            );
+        }
+        assert!(settings
+            .redacted()
+            .providers
+            .get(&ProviderId::from("openai-codex"))
+            .expect("codex profile")
+            .codex_oauth
+            .is_none());
+    }
+
+    #[test]
+    fn merge_preserved_secrets_restores_codex_oauth() {
+        let mut existing = AppSettings::default();
+        existing
+            .providers
+            .get_mut(&ProviderId::from("openai-codex"))
+            .expect("codex profile")
+            .codex_oauth = Some(codex_credentials());
+        let mut incoming = existing.redacted();
+
+        merge_preserved_secrets(&mut incoming, &existing);
+
+        assert_eq!(
+            incoming
+                .providers
+                .get(&ProviderId::from("openai-codex"))
+                .and_then(|profile| profile.codex_oauth.as_ref()),
+            Some(&codex_credentials())
+        );
+    }
 
     #[test]
     fn provider_profile_roundtrips_aws_credential_command() {
@@ -811,7 +902,7 @@ mod tests {
     }
 
     #[test]
-    fn merge_preserved_api_keys_restores_search_keys() {
+    fn merge_preserved_secrets_restores_search_keys() {
         let mut existing = AppSettings::default();
         existing
             .search
@@ -828,7 +919,7 @@ mod tests {
             .keys
             .insert("brave".to_string(), String::new());
 
-        merge_preserved_api_keys(&mut incoming, &existing);
+        merge_preserved_secrets(&mut incoming, &existing);
         assert_eq!(
             incoming.search.keys.get("brave").map(String::as_str),
             Some("bk-123")

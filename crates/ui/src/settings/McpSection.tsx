@@ -1,4 +1,5 @@
 import { createMemo, createSignal, For, Show } from "solid-js";
+import { Button, SectionHeader, SettingsSection } from "@/components";
 import { probeMcpServer } from "../api";
 import { useAppContext } from "../context/AppContext";
 import type { McpDiscoveryRow, McpServerConfig } from "../lib/types";
@@ -195,14 +196,12 @@ export function McpSection() {
   };
 
   return (
-    <div class="settings-section mcp-section">
-      <header class="providers-section-header">
-        <div class="providers-section-intro">
-          <div class="eyebrow">MCP</div>
-          <h3>MCP servers</h3>
-          <p>Choose which MCP servers are available to workflow runs.</p>
-        </div>
-      </header>
+    <SettingsSection sectionClass="mcp-section">
+      <SectionHeader
+        eyebrow="MCP"
+        title="MCP servers"
+        description="Choose which MCP servers are available to workflow runs."
+      />
 
       <div class="mcp-cards">
         <section class="mcp-card mcp-card--management" aria-labelledby="mcp-connections-heading">
@@ -291,17 +290,12 @@ export function McpSection() {
                         />
                         <span>Enabled</span>
                       </label>
-                      <button
-                        type="button"
-                        class="secondary-button"
-                        onClick={() => void probeServer(connection)}
-                      >
+                      <Button variant="secondary" onClick={() => void probeServer(connection)}>
                         Test
-                      </button>
+                      </Button>
                       <Show when={connection.kind === "discovered"}>
-                        <button
-                          type="button"
-                          class="secondary-button"
+                        <Button
+                          variant="secondary"
                           onClick={() =>
                             copyDiscoveredToSettings(
                               (connection as Extract<McpConnection, { kind: "discovered" }>).row,
@@ -309,12 +303,12 @@ export function McpSection() {
                           }
                         >
                           Customize
-                        </button>
+                        </Button>
                       </Show>
                       <Show when={connection.kind === "configured"}>
-                        <button
-                          type="button"
-                          class="secondary-button ghost"
+                        <Button
+                          variant="secondary"
+                          ghost
                           onClick={() =>
                             removeServer(
                               (connection as Extract<McpConnection, { kind: "configured" }>).index,
@@ -322,7 +316,7 @@ export function McpSection() {
                           }
                         >
                           Delete
-                        </button>
+                        </Button>
                       </Show>
                     </div>
                   </div>
@@ -361,13 +355,9 @@ export function McpSection() {
           <Show
             when={showAddForm()}
             fallback={
-              <button
-                type="button"
-                class="primary-button mcp-add-trigger"
-                onClick={() => setShowAddForm(true)}
-              >
+              <Button variant="primary" class="mcp-add-trigger" onClick={() => setShowAddForm(true)}>
                 Add connection
-              </button>
+              </Button>
             }
           >
             <div class="mcp-composer-fields">
@@ -419,23 +409,22 @@ export function McpSection() {
               </label>
             </div>
             <div class="mcp-composer-actions">
-              <button type="button" class="primary-button" onClick={addServer}>
+              <Button variant="primary" onClick={addServer}>
                 Save connection
-              </button>
-              <button
-                type="button"
-                class="secondary-button"
+              </Button>
+              <Button
+                variant="secondary"
                 onClick={() => {
                   setDraft(emptyServer());
                   setShowAddForm(false);
                 }}
               >
                 Cancel
-              </button>
+              </Button>
             </div>
           </Show>
         </section>
       </div>
-    </div>
+    </SettingsSection>
   );
 }

@@ -20,6 +20,17 @@ pub fn classify_status(status: u16, body: &str, label: &str) -> AgentError {
     classify_http_status(status, body, label)
 }
 
+/// True only for the structured 401 shape produced by this adapter's HTTP
+/// status mapper. Matching the prefix avoids treating arbitrary response text
+/// that happens to mention 401 as an authentication failure.
+#[must_use]
+pub(crate) fn is_unauthorized(error: &AgentError, label: &str) -> bool {
+    let AgentError::Permanent(message) = error else {
+        return false;
+    };
+    message.starts_with(&format!("{label} returned HTTP 401:"))
+}
+
 /// Rig rejects empty assistant choices with this phrase before OpenFlow outcome mapping runs.
 fn is_rig_empty_response(message: &str) -> bool {
     message.contains("no message or tool call")
@@ -124,6 +135,14 @@ mod tests {
         let err = classify_status(401, "bad key", "Anthropic");
         assert!(!err.is_retryable());
         assert!(matches!(err, AgentError::Permanent(_)));
+        assert!(is_unauthorized(&err, "Anthropic"));
+        assert!(!is_unauthorized(&err, "OpenAI Codex"));
+    }
+
+    #[test]
+    fn unauthorized_detection_does_not_match_body_text() {
+        let error = AgentError::Failed("OpenAI Codex response mentioned HTTP 401".into());
+        assert!(!is_unauthorized(&error, "OpenAI Codex"));
     }
 
     #[test]
@@ -185,9 +204,10 @@ mod tests {
         );
         // Raw Rig phrase must not leak; enrich path expects the canonical marker.
         assert!(!err.to_string().contains("no message or tool call"));
-        assert!(err
-            .to_string()
-            .contains("neither tool calls nor recoverable output"));
+        assert!(
+            err.to_string()
+                .contains("neither tool calls nor recoverable output")
+        );
     }
 
     #[test]

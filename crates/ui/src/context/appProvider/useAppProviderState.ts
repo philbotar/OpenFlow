@@ -444,6 +444,7 @@ export function useAppProviderState(): AppContextValue {
     runState: runKernel.runState,
     backendRunWorkflowId: runKernel.backendRunWorkflowId,
     readiness: settingsState.readiness,
+    refreshReadiness: settingsState.refreshReadiness,
     bottomTab: dock.bottomTab,
     dockOpen: dock.dockOpen,
     dockHeight: dock.dockHeight,

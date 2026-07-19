@@ -474,6 +474,20 @@ export interface ProviderReadiness {
   envVar: string;
 }
 
+export type CodexLoginStatus =
+  | { state: "disconnected" }
+  | { state: "starting" }
+  | { state: "awaitingBrowser" }
+  | {
+      state: "awaitingDevice";
+      verificationUrl: string;
+      userCode: string;
+      expiresAt: number;
+    }
+  | { state: "connected"; email: string | null }
+  | { state: "failed"; message: string }
+  | { state: "cancelled" };
+
 export interface WorkflowValidationSummary {
   layerCount: number;
   layers: string[][];

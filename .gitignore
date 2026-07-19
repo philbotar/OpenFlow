@@ -46,3 +46,6 @@ Desktop.ini
 *.swp
 *.swo
 .git.bak/
+.impeccable/
+.pnpm-store/
+*impeccable/

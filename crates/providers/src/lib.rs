@@ -11,28 +11,42 @@ pub(crate) mod bedrock_errors;
 #[cfg(feature = "bedrock")]
 pub(crate) mod bedrock_models;
 mod client;
+mod codex;
+pub mod codex_oauth;
 pub(crate) mod http_errors;
 pub(crate) mod mapping;
 pub(crate) mod prompt_cache;
 pub(crate) mod rig_adapter;
 mod spec;
 
-pub use auth::AuthConfig;
+pub use auth::{AuthConfig, CodexOAuthCredentials};
 #[cfg(feature = "bedrock")]
 pub use aws_runtime::ensure_process_home_env;
 #[cfg(feature = "bedrock")]
 pub use bedrock_models::{list_bedrock_foundation_models, verify_bedrock_credentials};
 pub use client::{
-    AiClient, AiClientConfig, AnthropicConfig, BedrockConfig, OpenAiCompatibleConfig,
-    ProviderAdapterConfig,
+    AiClient, AiClientConfig, AnthropicConfig, BedrockConfig, CodexCredentialSink,
+    OpenAiCodexConfig, OpenAiCompatibleConfig, ProviderAdapterConfig,
 };
 pub use engine::AiPort;
 pub use spec::{
-    builtin_provider_specs, provider_spec, AnthropicSpec, AuthSpec, BedrockSpec,
-    OpenAiCompatibleSpec, ProviderId, ProviderKind, ProviderSpec, ReasoningEffortOption, WireApi,
+    AnthropicSpec, AuthSpec, BedrockSpec, OpenAiCompatibleSpec, ProviderId, ProviderKind,
+    ProviderSpec, ReasoningEffortOption, WireApi, builtin_provider_specs, provider_spec,
 };
 
 #[must_use]
 pub fn create_provider(config: AiClientConfig) -> Box<dyn AiPort> {
-    Box::new(AiClient::with_config(config))
+    match config {
+        AiClientConfig {
+            provider_id,
+            provider_label,
+            adapter: ProviderAdapterConfig::OpenAiCodex(codex_config),
+            ..
+        } => Box::new(codex::CodexClient::new(
+            provider_id,
+            provider_label,
+            codex_config,
+        )),
+        config => Box::new(AiClient::with_config(config)),
+    }
 }

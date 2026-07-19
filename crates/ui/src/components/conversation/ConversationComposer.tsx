@@ -18,6 +18,7 @@ import { ComposerRuntimeControls } from "./ComposerRuntimeControls";
 import { FileReferenceCombobox } from "./FileReferenceCombobox";
 import { SkillCommandCombobox } from "./SkillCommandCombobox";
 import { SkillDescriptionPreview } from "./SkillDescriptionPreview";
+import { Button } from "../Button";
 
 export function ConversationComposer(props: {
   nodeId: NodeId;
@@ -293,17 +294,18 @@ export function ConversationComposer(props: {
               onKeyDown={handleKeyDown}
               placeholder={
                 props.kickoff
-                  ? "Message to start the workflow... Type / for skills or @ for files and folders."
+                  ? "Optional message, or use Run in the top bar. / skills · @ files"
                   : props.disabled
-                    ? "Start a run to chat with agents."
+                    ? "Run the workflow to chat with agents."
                     : pendingApproval()
-                      ? "Resolve the pending tool approval above."
-                      : `Reply to ${props.label}... Type / for skills or @ for files and folders.`
+                      ? "Approve or deny the tool request above."
+                      : `Reply to ${props.label}… / skills · @ files`
               }
               disabled={!inputEnabled()}
             />
-            <button
-              class="primary-button composer-send-button"
+            <Button
+              variant="primary"
+              class="composer-send-button"
               onClick={() => void ctx.handleSubmitChat(props.nodeId)}
               disabled={!ctx.canSendChatFor(props.nodeId)}
               title={props.kickoff ? "Start workflow" : "Send to paused node"}
@@ -317,7 +319,7 @@ export function ConversationComposer(props: {
                 absoluteStrokeWidth
                 strokeWidth={2.3}
               />
-            </button>
+            </Button>
           </div>
           <Show when={!props.kickoff}>
             <ComposerRuntimeControls nodeId={props.nodeId} disabled={props.disabled} />

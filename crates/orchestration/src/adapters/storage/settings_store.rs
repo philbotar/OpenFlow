@@ -1,5 +1,5 @@
 use crate::adapters::storage::json_file_store::{write_json_file, OPENFLOW_DATA_DIR_SLUG};
-use crate::settings::model::{merge_preserved_api_keys, AppSettings};
+use crate::settings::model::{merge_preserved_secrets, AppSettings};
 use crate::settings::ports::SettingsStore;
 use std::fs;
 use std::io;
@@ -66,7 +66,7 @@ impl FileSettingsStore {
         if self.path.exists() {
             let text = fs::read_to_string(&self.path)?;
             if let Ok(existing) = parse_settings_json(&text) {
-                merge_preserved_api_keys(&mut to_save, &existing);
+                merge_preserved_secrets(&mut to_save, &existing);
             }
         }
         self.save_raw(&to_save)

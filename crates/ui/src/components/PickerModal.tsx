@@ -1,5 +1,7 @@
 import type { JSX, ParentProps } from "solid-js";
 import { AnimatedModal } from "./AnimatedModal";
+import { Button } from "./Button";
+import { ButtonRow } from "./ButtonRow";
 
 interface PickerModalProps extends ParentProps {
   open: boolean;
@@ -29,11 +31,11 @@ export function PickerModal(props: PickerModalProps) {
       </div>
       {props.toolbar}
       {props.children}
-      <div class="button-row end">
-        <button class="secondary-button" type="button" onClick={props.onClose}>
+      <ButtonRow align="end">
+        <Button variant="secondary" onClick={props.onClose}>
           Cancel
-        </button>
-      </div>
+        </Button>
+      </ButtonRow>
     </AnimatedModal>
   );
 }

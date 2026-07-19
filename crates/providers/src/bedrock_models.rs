@@ -1,10 +1,10 @@
 use crate::aws_runtime::load_aws_sdk_config;
+use aws_sdk_bedrock::Client as BedrockControlClient;
 use aws_sdk_bedrock::config::ProvideCredentials;
 use aws_sdk_bedrock::types::{
     FoundationModelLifecycle, FoundationModelLifecycleStatus, FoundationModelSummary,
     InferenceType, ModelModality,
 };
-use aws_sdk_bedrock::Client as BedrockControlClient;
 use engine::AgentError;
 
 /// Lists active on-demand Bedrock foundation models that support Converse text output.

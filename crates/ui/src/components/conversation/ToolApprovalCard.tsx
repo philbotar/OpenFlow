@@ -2,6 +2,7 @@ import { createResource, For, Show } from "solid-js";
 import * as desktop from "../../api";
 import type { PendingToolApproval } from "../../lib/types";
 import { Spinner } from "../Spinner";
+import { Button } from "../Button";
 import { isFileEditTool } from "./FileChangesPanel";
 import { formatToolDisplayName } from "./toolBubbleState";
 
@@ -130,19 +131,16 @@ export function ToolApprovalCardBody(props: {
       </Show>
 
       <div class="tool-approval-actions">
-        <button
-          class="secondary-button"
-          onClick={() => props.onApprove(false)}
-        >
+        <Button variant="secondary" onClick={() => props.onApprove(false)}>
           Deny
-        </button>
-        <button
-          class="primary-button"
+        </Button>
+        <Button
+          variant="primary"
           disabled={!canApproveFileEdit()}
           onClick={() => props.onApprove(true)}
         >
           Approve
-        </button>
+        </Button>
       </div>
     </div>
   );

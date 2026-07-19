@@ -83,7 +83,7 @@ impl AppBackend {
                 settings,
                 transient_api_key,
                 agent_store: self.agents.store(),
-                settings_store: self.settings.store(),
+                settings_store: self.settings.store_arc(),
                 run_store: self.run_store.as_ref(),
                 env: self.settings.env(),
             })
@@ -110,7 +110,7 @@ impl AppBackend {
                 settings,
                 transient_api_key,
                 agent_store: self.agents.store(),
-                settings_store: self.settings.store(),
+                settings_store: self.settings.store_arc(),
                 run_store: self.run_store.as_ref(),
                 env: self.settings.env(),
             })
@@ -139,7 +139,7 @@ impl AppBackend {
                 settings,
                 transient_api_key,
                 agent_store: self.agents.store(),
-                settings_store: self.settings.store(),
+                settings_store: self.settings.store_arc(),
                 run_store: self.run_store.as_ref(),
                 env: self.settings.env(),
             })
@@ -280,7 +280,7 @@ impl AppBackend {
                 settings: &settings,
                 transient_api_key: None,
                 agent_store: self.agents.store(),
-                settings_store: self.settings.store(),
+                settings_store: self.settings.store_arc(),
                 run_store: self.run_store.as_ref(),
                 env: self.settings.env(),
             })

@@ -18,6 +18,7 @@ use crate::terminal::TerminalManager;
 use crate::workflow::authoring::WorkflowAuthoringService;
 use crate::workflow::catalog::WorkflowCatalog;
 use crate::workflow::ports::{ProjectWorkflowStore, WorkflowStore};
+use std::sync::Arc;
 
 mod agents;
 mod authoring;
@@ -35,13 +36,14 @@ pub use crate::api::{
     WorkflowListItem, WorkflowValidationSummary,
 };
 pub use crate::error::BackendError;
+pub use crate::CodexLoginStatus;
 
 pub struct AppBackendDeps {
     pub workflow_store: Box<dyn WorkflowStore>,
     pub project_workflow_store: Box<dyn ProjectWorkflowStore>,
     pub agent_store: Box<dyn AgentStore>,
     pub project_store: Box<dyn ProjectStore>,
-    pub settings_store: Box<dyn SettingsStore>,
+    pub settings_store: Arc<dyn SettingsStore>,
     pub skill_catalog: Box<dyn SkillCatalog>,
     pub env: ProviderEnv,
     pub runtime_handle: tokio::runtime::Handle,
@@ -85,7 +87,7 @@ impl AppBackend {
             project_workflow_store: Box::new(FileProjectWorkflowStore),
             agent_store: Box::new(FileAgentStore::new(FileAgentStore::default_path())),
             project_store: Box::new(FileProjectStore::new(FileProjectStore::default_path())),
-            settings_store: Box::new(FileSettingsStore::new(FileSettingsStore::default_path())),
+            settings_store: Arc::new(FileSettingsStore::new(FileSettingsStore::default_path())),
             skill_catalog: Box::new(FileSkillCatalog),
             env: ProviderEnv::from_system(),
             runtime_handle,

@@ -83,7 +83,7 @@ export function useSettings(params: UseSettingsParams) {
     const providerId = settings().active_provider;
     const apiKey = activeProviderKeyInput().trim();
     try {
-      if (providerId !== "bedrock") {
+      if (providerId !== "bedrock" && providerId !== "openai-codex") {
         if (apiKey) {
           await desktop.saveProviderApiKey(providerId, apiKey);
         } else {
@@ -158,6 +158,11 @@ export function useSettings(params: UseSettingsParams) {
 
   createEffect(() => {
     const providerId = settings().active_provider;
+    if (providerId === "openai-codex") {
+      setProviderKeyInputByProvider((current) => ({ ...current, [providerId]: "" }));
+      void refreshReadiness();
+      return;
+    }
     void desktop
       .loadProviderApiKey(providerId)
       .then((apiKey) => {

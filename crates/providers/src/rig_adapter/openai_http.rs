@@ -153,7 +153,7 @@ fn normalize_arguments_field(field: &mut Value) -> bool {
 )]
 mod tests {
     use super::*;
-    use crate::mapping::{extract_malformed_tool_args_marker, MALFORMED_TOOL_ARGS_MARKER_KEY};
+    use crate::mapping::{MALFORMED_TOOL_ARGS_MARKER_KEY, extract_malformed_tool_args_marker};
     use serde_json::json;
 
     #[test]

@@ -3,6 +3,7 @@ import { createSignal, For, Show } from "solid-js";
 import * as desktop from "../../api";
 import { useAppContext } from "../../context/AppContext";
 import { Spinner } from "../Spinner";
+import { Button } from "../Button";
 import type { EditBatch, FileChangeRecord } from "../../lib/types";
 import { effectiveChangePath, latestChangesByPath, nodeChangedFiles, nodeEditBatches } from "../../lib/workflow";
 import { formatToolDisplayName } from "./toolBubbleState";
@@ -127,14 +128,14 @@ function EditBatchRow(props: { batch: EditBatch }) {
           {props.batch.snapshots.length === 1 ? "" : "s"}
         </span>
       </div>
-      <button
-        type="button"
-        class="secondary-button edit-batch-revert"
+      <Button
+        variant="secondary"
+        class="edit-batch-revert"
         disabled={busy()}
         onClick={() => void revert()}
       >
         {busy() ? "Reverting…" : "Revert batch"}
-      </button>
+      </Button>
       <Show when={error()}>
         <p class="file-change-error">{error()}</p>
       </Show>

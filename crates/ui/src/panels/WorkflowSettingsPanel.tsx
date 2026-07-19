@@ -1,5 +1,5 @@
 import { createMemo, For, Show } from "solid-js";
-import { TextSelect } from "@/components";
+import { Button, TextSelect } from "@/components";
 import { useAppContext } from "../context/AppContext";
 import {
   defaultReasoningBudgetTokens,
@@ -88,8 +88,8 @@ export function WorkflowSettingsPanel() {
       <section class="workflow-settings-section">
         <span>Plan → Execute</span>
         <p class="field-help">
-          Lock repository changes while planning. Execution begins only after the selected node
-          confirms and freezes the change evidence packet.
+          Block file edits while agents plan. Execution unlocks after the review node approves
+          the plan.
         </p>
         <label class="checkbox-row">
           <input
@@ -112,8 +112,7 @@ export function WorkflowSettingsPanel() {
         </label>
         <Show when={interactiveNodes().length === 0}>
           <p class="field-help">
-            Enable <strong>Allow follow-up questions</strong> on a review node before enabling
-            Plan Mode.
+            Turn on <strong>Allow follow-up questions</strong> on a review node first.
           </p>
         </Show>
         <Show when={planModeEnabled()}>
@@ -286,13 +285,9 @@ export function WorkflowSettingsPanel() {
             )
           }
         >
-          <button
-            type="button"
-            class="danger-button"
-            onClick={() => void ctx.handleDeleteActiveWorkflow()}
-          >
+          <Button variant="danger" onClick={() => void ctx.handleDeleteActiveWorkflow()}>
             Delete workflow
-          </button>
+          </Button>
         </Show>
         <Show
           when={

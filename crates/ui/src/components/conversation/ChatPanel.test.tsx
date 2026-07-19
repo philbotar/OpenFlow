@@ -157,8 +157,8 @@ describe("ChatPanel replay mode", () => {
         }) as unknown as ReturnType<AppContextValue["runState"]>,
     });
     try {
-      expect(container.textContent).toContain("Plan Mode");
-      expect(container.textContent).toContain("planning lock active");
+      expect(container.textContent).toContain("Plan mode");
+      expect(container.textContent).toContain("Planning in progress");
       expect(container.textContent).toContain("Review & freeze");
     } finally {
       dispose();
@@ -188,8 +188,8 @@ describe("ChatPanel replay mode", () => {
         }) as unknown as ReturnType<AppContextValue["runState"]>,
     });
     try {
-      expect(container.textContent).toContain("Plan Mode");
-      expect(container.textContent).toContain("Execution is unlocked");
+      expect(container.textContent).toContain("Plan mode");
+      expect(container.textContent).toContain("approved the plan");
       expect(container.textContent).toContain("Review & freeze");
     } finally {
       dispose();

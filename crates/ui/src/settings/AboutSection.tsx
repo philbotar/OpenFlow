@@ -1,5 +1,6 @@
 import { createSignal, onMount, Show } from "solid-js";
 import * as desktop from "../api";
+import { Button, SettingsSection } from "@/components";
 import { useAppContext } from "../context/AppContext";
 
 type UpdateUiState =
@@ -65,7 +66,7 @@ export function AboutSection() {
   };
 
   return (
-    <div class="settings-section about-section">
+    <SettingsSection sectionClass="about-section">
       <div>
         <div class="eyebrow">About</div>
         <h3>OpenFlow</h3>
@@ -76,14 +77,9 @@ export function AboutSection() {
         </p>
       </div>
       <div class="about-actions">
-        <button
-          type="button"
-          class="primary-button"
-          disabled={isUpdating()}
-          onClick={() => void handleUpdate()}
-        >
+        <Button variant="primary" disabled={isUpdating()} onClick={() => void handleUpdate()}>
           {isUpdating() ? "Updating…" : "Update now"}
-        </button>
+        </Button>
         <Show when={statusLabel()}>
           {(label) => (
             <p
@@ -96,6 +92,6 @@ export function AboutSection() {
           )}
         </Show>
       </div>
-    </div>
+    </SettingsSection>
   );
 }
