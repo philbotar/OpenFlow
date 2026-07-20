@@ -16,6 +16,7 @@ use crate::spec::ProviderId;
 const REFRESH_MARGIN: Duration = Duration::from_mins(5);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
+#[allow(clippy::redundant_pub_crate)] // crate-private module; keep pub(crate) for intentional crate API
 pub(crate) struct CodexClient {
     provider_id: ProviderId,
     provider_label: String,
@@ -50,6 +51,10 @@ impl CodexClient {
         }
     }
 
+    #[allow(
+        clippy::significant_drop_tightening,
+        reason = "mutex held across refresh for single-flight token rotation"
+    )]
     async fn credentials_for_request(
         &self,
         rejected_access_token: Option<&str>,
@@ -91,7 +96,7 @@ impl CodexClient {
         #[cfg(not(test))]
         let result = codex_oauth::refresh_codex_credentials(&self.http, credentials).await;
 
-        result.map_err(|error| map_refresh_error(error, &self.provider_label))
+        result.map_err(|error| map_refresh_error(&error, &self.provider_label))
     }
 
     async fn invoke_once(
@@ -183,7 +188,7 @@ fn now_unix_seconds() -> i64 {
         .map_or(0, seconds_i64)
 }
 
-fn map_refresh_error(error: CodexOAuthError, provider_label: &str) -> AgentError {
+fn map_refresh_error(error: &CodexOAuthError, provider_label: &str) -> AgentError {
     match error {
         CodexOAuthError::Transport { .. } => {
             AgentError::Transient(format!("{provider_label} token refresh failed: {error}"))
@@ -367,9 +372,8 @@ mod tests {
 
         assert_eq!(first.unwrap().access_token, "access-new");
         assert_eq!(second.unwrap().access_token, "access-new");
-        let saved = sink.saved.lock().unwrap();
-        assert_eq!(saved.len(), 1);
-        assert_eq!(saved[0].refresh_token, "refresh-new");
+        assert_eq!(sink.saved.lock().unwrap().len(), 1);
+        assert_eq!(sink.saved.lock().unwrap()[0].refresh_token, "refresh-new");
     }
 
     #[tokio::test]
@@ -415,22 +419,18 @@ mod tests {
 
     #[test]
     fn refresh_statuses_have_bounded_retry_classification() {
-        let transient = map_refresh_error(
-            CodexOAuthError::Http {
-                operation: "token refresh",
-                status: 503,
-                code: None,
-            },
-            "OpenAI Codex",
-        );
-        let permanent = map_refresh_error(
-            CodexOAuthError::Http {
-                operation: "token refresh",
-                status: 401,
-                code: Some("invalid_grant".into()),
-            },
-            "OpenAI Codex",
-        );
+        let transient_error = CodexOAuthError::Http {
+            operation: "token refresh",
+            status: 503,
+            code: None,
+        };
+        let permanent_error = CodexOAuthError::Http {
+            operation: "token refresh",
+            status: 401,
+            code: Some("invalid_grant".into()),
+        };
+        let transient = map_refresh_error(&transient_error, "OpenAI Codex");
+        let permanent = map_refresh_error(&permanent_error, "OpenAI Codex");
 
         assert!(transient.is_retryable());
         assert!(matches!(permanent, AgentError::Permanent(_)));

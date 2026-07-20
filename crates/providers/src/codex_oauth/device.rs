@@ -118,7 +118,7 @@ async fn poll_for_authorization(
                 operation: "device authorization polling",
             })?;
         match response.status() {
-            StatusCode::FORBIDDEN | StatusCode::NOT_FOUND => continue,
+            StatusCode::FORBIDDEN | StatusCode::NOT_FOUND => {}
             status if status.is_success() => {
                 return response
                     .json()

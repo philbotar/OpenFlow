@@ -146,6 +146,7 @@ pub(super) fn partition_choice(
 
 /// Canonical empty-turn marker. Engine [`AgentError::is_empty_provider_turn`] matches this
 /// (and the enriched "no tool calls and no usable text" form).
+#[allow(clippy::redundant_pub_crate)] // crate-private module; keep pub(crate) for intentional crate API
 pub(crate) const EMPTY_TURN_ERROR: &str =
     "provider returned neither tool calls nor recoverable output";
 

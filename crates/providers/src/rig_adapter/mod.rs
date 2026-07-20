@@ -17,6 +17,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::time::{Duration, SystemTime};
 
+#[allow(clippy::redundant_pub_crate)] // crate-private module; keep pub(crate) for intentional crate API
 pub(crate) fn build_codex_model(
     provider_label: &str,
     base_url: &str,
@@ -27,6 +28,7 @@ pub(crate) fn build_codex_model(
     model::build_codex(provider_label, base_url, model_name, credentials, http)
 }
 
+#[allow(clippy::redundant_pub_crate)] // crate-private module; keep pub(crate) for intentional crate API
 pub(crate) async fn invoke_codex_model(
     model: &model::RigModel,
     request: &AgentRequest,
@@ -38,6 +40,7 @@ pub(crate) async fn invoke_codex_model(
         .await
 }
 
+#[allow(clippy::redundant_pub_crate)] // crate-private module; keep pub(crate) for intentional crate API
 pub(crate) async fn invoke_codex_model_stream(
     model: &model::RigModel,
     request: &AgentRequest,
@@ -50,6 +53,7 @@ pub(crate) async fn invoke_codex_model_stream(
         .await
 }
 
+#[allow(clippy::redundant_pub_crate)] // crate-private module; keep pub(crate) for intentional crate API
 pub(crate) fn is_codex_unauthorized(error: &AgentError, provider_label: &str) -> bool {
     error::is_unauthorized(error, provider_label)
 }

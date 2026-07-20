@@ -19,7 +19,7 @@ pub enum AuthConfig {
     },
 }
 
-/// Refreshable credentials issued by the ChatGPT OAuth flow.
+/// Refreshable credentials issued by the `ChatGPT OAuth` flow.
 ///
 /// The values are persisted as one unit because a refresh may rotate more than
 /// just the access token. Debug output intentionally exposes presence and

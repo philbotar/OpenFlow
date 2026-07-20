@@ -11,6 +11,7 @@ use std::future::Future;
 /// Wrap `reqwest` so non-streaming `OpenAI` Chat/Responses bodies are normalized
 /// before Rig deserializes stringified tool arguments into `serde_json::Value`.
 #[derive(Clone, Debug, Default)]
+#[allow(clippy::redundant_pub_crate)] // crate-private module; keep pub(crate) for intentional crate API
 pub(crate) struct OpenAiHttpClient {
     inner: reqwest::Client,
 }

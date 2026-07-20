@@ -45,6 +45,8 @@ pub struct BedrockConfig {
 
 /// Persistence boundary used after an in-run OAuth token rotation.
 pub trait CodexCredentialSink: Send + Sync {
+    /// # Errors
+    /// Returns an error when the refreshed credentials cannot be persisted.
     fn save(&self, credentials: &CodexOAuthCredentials) -> Result<(), String>;
 }
 
@@ -246,12 +248,10 @@ mod codex_contract_tests {
             return;
         };
         assert!(config_sink.save(&credentials).is_ok());
-        let saved = sink.saved.lock();
-        assert!(saved.is_ok());
-        let Ok(saved) = saved else {
-            return;
-        };
-        assert_eq!(saved.as_slice(), [credentials]);
+        assert!(matches!(
+            sink.saved.lock().as_deref(),
+            Ok(saved) if saved.as_slice() == [credentials]
+        ));
 
         let debug = format!("{adapter:?}");
         for secret in [

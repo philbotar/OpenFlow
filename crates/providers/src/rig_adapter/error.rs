@@ -24,6 +24,7 @@ pub fn classify_status(status: u16, body: &str, label: &str) -> AgentError {
 /// status mapper. Matching the prefix avoids treating arbitrary response text
 /// that happens to mention 401 as an authentication failure.
 #[must_use]
+#[allow(clippy::redundant_pub_crate)] // crate-private module; keep pub(crate) for intentional crate API
 pub(crate) fn is_unauthorized(error: &AgentError, label: &str) -> bool {
     let AgentError::Permanent(message) = error else {
         return false;
@@ -31,7 +32,7 @@ pub(crate) fn is_unauthorized(error: &AgentError, label: &str) -> bool {
     message.starts_with(&format!("{label} returned HTTP 401:"))
 }
 
-/// Rig rejects empty assistant choices with this phrase before OpenFlow outcome mapping runs.
+/// Rig rejects empty assistant choices with this phrase before `OpenFlow` outcome mapping runs.
 fn is_rig_empty_response(message: &str) -> bool {
     message.contains("no message or tool call")
 }

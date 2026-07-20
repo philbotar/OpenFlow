@@ -123,13 +123,13 @@ async fn wait_for_callback(
         let parameters = url
             .query_pairs()
             .collect::<std::collections::HashMap<_, _>>();
-        if parameters.get("state").map(|value| value.as_ref()) != Some(expected_state) {
+        if parameters.get("state").map(AsRef::as_ref) != Some(expected_state) {
             let _ = write_response(&mut stream, "400 Bad Request", "State mismatch.").await;
             return Err(CodexOAuthError::StateMismatch);
         }
         let Some(code) = parameters
             .get("code")
-            .map(|value| value.to_string())
+            .map(ToString::to_string)
             .filter(|value| !value.is_empty())
         else {
             let _ = write_response(
@@ -242,6 +242,11 @@ pub(super) async fn wait_until_cancelled(cancellation: &CodexLoginCancellation) 
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "oauth unit tests use unwrap/panic for brevity"
+)]
 mod tests {
     use super::*;
 
@@ -268,29 +273,29 @@ mod tests {
             .collect::<std::collections::HashMap<_, _>>();
 
         assert_eq!(
-            query.get("scope").map(|value| value.as_ref()),
+            query.get("scope").map(AsRef::as_ref),
             Some(OAUTH_SCOPE)
         );
         assert_eq!(
             query
                 .get("code_challenge_method")
-                .map(|value| value.as_ref()),
+                .map(AsRef::as_ref),
             Some("S256")
         );
         assert_eq!(
             query
                 .get("id_token_add_organizations")
-                .map(|value| value.as_ref()),
+                .map(AsRef::as_ref),
             Some("true")
         );
         assert_eq!(
             query
                 .get("codex_cli_simplified_flow")
-                .map(|value| value.as_ref()),
+                .map(AsRef::as_ref),
             Some("true")
         );
         assert_eq!(
-            query.get("originator").map(|value| value.as_ref()),
+            query.get("originator").map(AsRef::as_ref),
             Some("openflow")
         );
     }

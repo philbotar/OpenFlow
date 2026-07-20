@@ -10,6 +10,7 @@ use std::future::Future;
 /// compatible gateways serialize absent collections as `null`. Normalize the
 /// two response fields we consume before Rig deserializes the message.
 #[derive(Clone, Default)]
+#[allow(clippy::redundant_pub_crate)] // crate-private module; keep pub(crate) for intentional crate API
 pub(crate) struct AnthropicHttpClient {
     inner: reqwest::Client,
 }

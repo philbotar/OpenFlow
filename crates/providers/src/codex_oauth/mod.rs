@@ -1,6 +1,6 @@
-//! ChatGPT Codex OAuth protocol support.
+//! `ChatGPT Codex` OAuth protocol support.
 //!
-//! The protocol is compatible with OpenAI Codex's browser and device login
+//! The protocol is compatible with `OpenAI Codex`'s browser and device login
 //! flows. The implementation is original Rust code; the device fallback policy
 //! is OpenFlow-specific.
 //!
@@ -29,8 +29,8 @@ pub const CODEX_OAUTH_CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
 pub const CODEX_OAUTH_ISSUER: &str = "https://auth.openai.com";
 pub const CODEX_CALLBACK_PORT: u16 = 1455;
 
-const BROWSER_TIMEOUT: Duration = Duration::from_secs(10 * 60);
-const DEVICE_TIMEOUT: Duration = Duration::from_secs(15 * 60);
+const BROWSER_TIMEOUT: Duration = Duration::from_mins(10);
+const DEVICE_TIMEOUT: Duration = Duration::from_mins(15);
 
 #[derive(Clone)]
 pub struct CodexOAuthClient {
@@ -64,6 +64,9 @@ impl CodexOAuthClient {
 
     /// Starts browser login, falling back to device authorization only when
     /// the fixed loopback callback port is already occupied.
+    ///
+    /// # Errors
+    /// Returns an error when browser or device login fails or is cancelled.
     pub async fn login<F>(
         &self,
         cancellation: &CodexLoginCancellation,
@@ -82,7 +85,7 @@ impl CodexOAuthClient {
     }
 
     #[cfg(test)]
-    fn for_test(
+    const fn for_test(
         http: Client,
         endpoints: CodexOAuthEndpoints,
         callback_port: u16,
@@ -99,8 +102,11 @@ impl CodexOAuthClient {
     }
 }
 
-/// Starts the built-in ChatGPT OAuth flow without exposing a concrete client
+/// Starts the built-in `ChatGPT OAuth` flow without exposing a concrete client
 /// outside this provider adapter crate.
+///
+/// # Errors
+/// Returns an error when browser or device login fails or is cancelled.
 pub async fn login_codex<F>(
     cancellation: &CodexLoginCancellation,
     publish: F,
@@ -278,11 +284,11 @@ mod tests {
             .mount(&server)
             .await;
 
-        let id_token = test_jwt(serde_json::json!({
+        let id_token = test_jwt(&serde_json::json!({
             "email": "person@example.com",
             "https://api.openai.com/auth": { "chatgpt_account_id": "account-id" }
         }));
-        let access_token = test_jwt(serde_json::json!({ "exp": 4_000_000_000_i64 }));
+        let access_token = test_jwt(&serde_json::json!({ "exp": 4_000_000_000_i64 }));
         Mock::given(method("POST"))
             .and(path("/oauth/token"))
             .and(body_string_contains("grant_type=authorization_code"))
@@ -339,18 +345,13 @@ mod tests {
         };
         assert_eq!(credentials.account_id, "account-id");
         assert_eq!(credentials.email.as_deref(), Some("person@example.com"));
-        let prompts = prompts.lock();
-        assert!(prompts.is_ok());
-        let Ok(prompts) = prompts else {
-            return;
-        };
         assert!(matches!(
-            prompts.as_slice(),
-            [CodexLoginPrompt::Device { .. }]
+            prompts.lock().as_deref(),
+            Ok(recorded) if matches!(recorded.as_slice(), [CodexLoginPrompt::Device { .. }])
         ));
     }
 
-    fn test_jwt(claims: serde_json::Value) -> String {
+    fn test_jwt(claims: &serde_json::Value) -> String {
         let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"none"}"#);
         let payload = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&claims).unwrap_or_default());
         format!("{header}.{payload}.signature")

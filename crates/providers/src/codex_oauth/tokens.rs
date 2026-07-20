@@ -18,6 +18,8 @@ struct TokenResponse {
     expires_in: Option<i64>,
 }
 
+/// # Errors
+/// Returns an error when the refresh request fails or the response is invalid.
 pub async fn refresh_codex_credentials(
     http: &Client,
     credentials: &CodexOAuthCredentials,
@@ -25,6 +27,7 @@ pub async fn refresh_codex_credentials(
     refresh_with_endpoint(http, &CodexOAuthEndpoints::default().token, credentials).await
 }
 
+#[allow(clippy::redundant_pub_crate)] // crate-private module; keep pub(crate) for intentional crate API
 pub(crate) async fn refresh_with_endpoint(
     http: &Client,
     token_endpoint: &str,
@@ -64,7 +67,7 @@ pub(crate) async fn refresh_with_endpoint(
             .map_err(|_| CodexOAuthError::InvalidResponse {
                 operation: "token refresh",
             })?;
-    merge_refresh_response(credentials, response)
+    Ok(merge_refresh_response(credentials, response))
 }
 
 pub(super) async fn exchange_authorization_code(
@@ -157,7 +160,7 @@ fn credentials_from_exchange(
 fn merge_refresh_response(
     previous: &CodexOAuthCredentials,
     response: TokenResponse,
-) -> Result<CodexOAuthCredentials, CodexOAuthError> {
+) -> CodexOAuthCredentials {
     let access_token = response
         .access_token
         .unwrap_or_else(|| previous.access_token.clone());
@@ -184,14 +187,14 @@ fn merge_refresh_response(
         .or_else(|| id_claims.as_ref().and_then(expiry_from_claims))
         .unwrap_or(previous.expires_at);
 
-    Ok(CodexOAuthCredentials {
+    CodexOAuthCredentials {
         access_token,
         refresh_token,
         id_token,
         expires_at,
         account_id,
         email,
-    })
+    }
 }
 
 fn oauth_error_code(body: &Value) -> Option<String> {
@@ -254,12 +257,17 @@ fn now_unix_seconds() -> i64 {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::panic,
+    clippy::unwrap_used,
+    reason = "oauth unit tests use unwrap/panic for brevity"
+)]
 mod tests {
     use super::*;
     use wiremock::matchers::{body_string_contains, header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    fn jwt(claims: Value) -> String {
+    fn jwt(claims: &serde_json::Value) -> String {
         let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"none"}"#);
         let payload = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&claims).unwrap_or_default());
         format!("{header}.{payload}.signature")
@@ -267,11 +275,11 @@ mod tests {
 
     #[test]
     fn exchange_extracts_account_email_and_expiry_from_jwt_claims() {
-        let id_token = jwt(serde_json::json!({
+        let id_token = jwt(&serde_json::json!({
             "email": "person@example.com",
             "https://api.openai.com/auth": { "chatgpt_account_id": "acct-secret" }
         }));
-        let access_token = jwt(serde_json::json!({ "exp": 4_000_000_000_i64 }));
+        let access_token = jwt(&serde_json::json!({ "exp": 4_000_000_000_i64 }));
 
         let credentials = credentials_from_exchange(TokenResponse {
             access_token: Some(access_token),
@@ -305,8 +313,7 @@ mod tests {
                 id_token: None,
                 expires_in: None,
             },
-        )
-        .unwrap_or_else(|error| panic!("unexpected error: {error}"));
+        );
 
         assert_eq!(merged.access_token, "access-old");
         assert_eq!(merged.refresh_token, "refresh-old");
