@@ -1109,6 +1109,8 @@ mod tests {
         assert_eq!(a, b);
     }
 
+    // #[tokio::test] needs the OS I/O driver (kqueue/epoll); Miri cannot emulate it.
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn permits_for_disjoint_paths_do_not_contend() {
         let locks = ExclusiveLocks::default();
@@ -1123,6 +1125,7 @@ mod tests {
         drop(b);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn permits_for_same_path_serialize() {
         let locks = ExclusiveLocks::default();
@@ -1143,6 +1146,7 @@ mod tests {
         drop(b);
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn empty_key_list_acquires_nothing() {
         let locks = ExclusiveLocks::default();
