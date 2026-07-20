@@ -900,6 +900,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(miri, ignore)]
     #[tokio::test]
     async fn planning_policy_denies_hidden_write_mcp_and_subagent_calls_at_host_boundary() {
         let dir = tempfile::tempdir().expect("tempdir");
