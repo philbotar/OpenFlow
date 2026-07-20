@@ -272,31 +272,19 @@ mod tests {
             .query_pairs()
             .collect::<std::collections::HashMap<_, _>>();
 
+        assert_eq!(query.get("scope").map(AsRef::as_ref), Some(OAUTH_SCOPE));
         assert_eq!(
-            query.get("scope").map(AsRef::as_ref),
-            Some(OAUTH_SCOPE)
-        );
-        assert_eq!(
-            query
-                .get("code_challenge_method")
-                .map(AsRef::as_ref),
+            query.get("code_challenge_method").map(AsRef::as_ref),
             Some("S256")
         );
         assert_eq!(
-            query
-                .get("id_token_add_organizations")
-                .map(AsRef::as_ref),
+            query.get("id_token_add_organizations").map(AsRef::as_ref),
             Some("true")
         );
         assert_eq!(
-            query
-                .get("codex_cli_simplified_flow")
-                .map(AsRef::as_ref),
+            query.get("codex_cli_simplified_flow").map(AsRef::as_ref),
             Some("true")
         );
-        assert_eq!(
-            query.get("originator").map(AsRef::as_ref),
-            Some("openflow")
-        );
+        assert_eq!(query.get("originator").map(AsRef::as_ref), Some("openflow"));
     }
 }
