@@ -1,14 +1,14 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::Engine as _;
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::Value;
 
 use crate::auth::CodexOAuthCredentials;
 
-use super::{CODEX_OAUTH_CLIENT_ID, CodexOAuthEndpoints, CodexOAuthError};
+use super::{CodexOAuthEndpoints, CodexOAuthError, CODEX_OAUTH_CLIENT_ID};
 
 #[derive(Deserialize)]
 struct TokenResponse {
@@ -32,11 +32,11 @@ pub(crate) async fn refresh_with_endpoint(
 ) -> Result<CodexOAuthCredentials, CodexOAuthError> {
     let response = http
         .post(token_endpoint)
-        .json(&serde_json::json!({
-            "client_id": CODEX_OAUTH_CLIENT_ID,
-            "grant_type": "refresh_token",
-            "refresh_token": credentials.refresh_token,
-        }))
+        .form(&[
+            ("grant_type", "refresh_token"),
+            ("refresh_token", credentials.refresh_token.as_str()),
+            ("client_id", CODEX_OAUTH_CLIENT_ID),
+        ])
         .send()
         .await
         .map_err(|_| CodexOAuthError::Transport {
@@ -256,6 +256,8 @@ fn now_unix_seconds() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wiremock::matchers::{body_string_contains, header, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn jwt(claims: Value) -> String {
         let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"none"}"#);
@@ -324,5 +326,45 @@ mod tests {
         let rendered = format!("{error:?} {error}");
         assert!(rendered.contains("refresh_token_invalidated"));
         assert!(!rendered.contains("access-old"));
+    }
+
+    #[tokio::test]
+    async fn refresh_uses_the_form_encoded_codex_contract() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/oauth/token"))
+            .and(header("content-type", "application/x-www-form-urlencoded"))
+            .and(body_string_contains("grant_type=refresh_token"))
+            .and(body_string_contains("refresh_token=refresh-old"))
+            .and(body_string_contains(
+                "client_id=app_EMoamEEZ73f0CkXaXp7hrann",
+            ))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "access-new",
+                "expires_in": 3600
+            })))
+            .mount(&server)
+            .await;
+
+        let refreshed = refresh_with_endpoint(
+            &Client::new(),
+            &format!("{}/oauth/token", server.uri()),
+            &CodexOAuthCredentials {
+                access_token: "access-old".to_string(),
+                refresh_token: "refresh-old".to_string(),
+                id_token: None,
+                expires_at: 0,
+                account_id: "account-old".to_string(),
+                email: None,
+            },
+        )
+        .await;
+
+        assert!(refreshed.is_ok());
+        let Ok(refreshed) = refreshed else {
+            return;
+        };
+        assert_eq!(refreshed.access_token, "access-new");
+        assert_eq!(refreshed.refresh_token, "refresh-old");
     }
 }

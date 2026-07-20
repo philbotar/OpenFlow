@@ -1,10 +1,9 @@
 use crate::error::BackendError;
 use crate::settings::ports::SettingsStore;
 use parking_lot::Mutex;
-use providers::codex_oauth::{
-    CodexLoginCancellation, CodexLoginPrompt, CodexOAuthClient, CodexOAuthError,
+use providers::{
+    login_codex, CodexLoginCancellation, CodexLoginPrompt, CodexOAuthCredentials, ProviderId,
 };
-use providers::{CodexOAuthCredentials, ProviderId};
 use serde::{Deserialize, Serialize};
 use std::io;
 use std::sync::Arc;
@@ -46,11 +45,11 @@ impl CodexLoginStatus {
 struct CodexLoginSession {
     status: CodexLoginStatus,
     cancellation: Option<CodexLoginCancellation>,
+    generation: u64,
 }
 
 pub struct CodexLoginCoordinator {
     store: Arc<dyn SettingsStore>,
-    client: CodexOAuthClient,
     session: Arc<Mutex<CodexLoginSession>>,
 }
 
@@ -60,10 +59,10 @@ impl CodexLoginCoordinator {
         let status = connected_status(&*store).unwrap_or(CodexLoginStatus::Disconnected);
         Self {
             store,
-            client: CodexOAuthClient::default(),
             session: Arc::new(Mutex::new(CodexLoginSession {
                 status,
                 cancellation: None,
+                generation: 0,
             })),
         }
     }
@@ -73,13 +72,13 @@ impl CodexLoginCoordinator {
         self.session.lock().status.clone()
     }
 
-    /// Starts one browser-first login and publishes progress for polling IPC clients.
-    pub async fn start<F>(&self, open_browser: F) -> Result<CodexLoginStatus, BackendError>
+    /// Starts one browser-first login and immediately returns a pollable status.
+    pub fn start<F>(&self, open_browser: F) -> Result<CodexLoginStatus, BackendError>
     where
-        F: Fn(&str) -> Result<(), String> + Send + Sync,
+        F: Fn(&str) -> Result<(), String> + Send + Sync + 'static,
     {
         let cancellation = CodexLoginCancellation::default();
-        {
+        let generation = {
             let mut session = self.session.lock();
             if session.status.is_in_progress() || session.cancellation.is_some() {
                 return Err(io::Error::new(
@@ -90,15 +89,22 @@ impl CodexLoginCoordinator {
             }
             session.status = CodexLoginStatus::Starting;
             session.cancellation = Some(cancellation.clone());
-        }
+            session.generation = session.generation.wrapping_add(1);
+            session.generation
+        };
 
         let session = Arc::clone(&self.session);
-        let result = self
-            .client
-            .login(&cancellation, |prompt| {
+        let store = Arc::clone(&self.store);
+        tokio::spawn(async move {
+            let result = login_codex(&cancellation, |prompt| {
                 let status = match prompt {
                     CodexLoginPrompt::Browser { authorization_url } => {
-                        session.lock().status = CodexLoginStatus::AwaitingBrowser;
+                        let mut current = session.lock();
+                        if current.generation != generation || cancellation.is_cancelled() {
+                            return Err("ChatGPT sign-in is no longer active".to_string());
+                        }
+                        current.status = CodexLoginStatus::AwaitingBrowser;
+                        drop(current);
                         open_browser(&authorization_url)?;
                         return Ok(());
                     }
@@ -112,28 +118,34 @@ impl CodexLoginCoordinator {
                         expires_at,
                     },
                 };
-                session.lock().status = status;
+                let mut current = session.lock();
+                if current.generation != generation || cancellation.is_cancelled() {
+                    return Err("ChatGPT sign-in is no longer active".to_string());
+                }
+                current.status = status;
                 Ok(())
             })
             .await;
 
-        let status = match result {
-            Ok(credentials) if cancellation.is_cancelled() => CodexLoginStatus::Cancelled,
-            Ok(credentials) => {
-                persist_credentials(&*self.store, Some(credentials.clone()))?;
-                CodexLoginStatus::Connected {
-                    email: credentials.email,
-                }
-            }
-            Err(CodexOAuthError::Cancelled) => CodexLoginStatus::Cancelled,
-            Err(error) => CodexLoginStatus::Failed {
-                message: error.to_string(),
-            },
-        };
-        let mut session = self.session.lock();
-        session.cancellation = None;
-        session.status = status.clone();
-        Ok(status)
+            let status = match result {
+                Ok(_) if cancellation.is_cancelled() => CodexLoginStatus::Cancelled,
+                Ok(credentials) => match persist_credentials(&*store, Some(credentials.clone())) {
+                    Ok(()) => CodexLoginStatus::Connected {
+                        email: credentials.email,
+                    },
+                    Err(error) => CodexLoginStatus::Failed {
+                        message: format!("could not save ChatGPT credentials: {error}"),
+                    },
+                },
+                Err(_) if cancellation.is_cancelled() => CodexLoginStatus::Cancelled,
+                Err(error) => CodexLoginStatus::Failed {
+                    message: error.to_string(),
+                },
+            };
+            finish_login(&session, generation, status);
+        });
+
+        Ok(CodexLoginStatus::Starting)
     }
 
     #[must_use]
@@ -152,11 +164,20 @@ impl CodexLoginCoordinator {
             if let Some(cancellation) = session.cancellation.take() {
                 cancellation.cancel();
             }
+            session.generation = session.generation.wrapping_add(1);
         }
         persist_credentials(&*self.store, None)?;
         let status = CodexLoginStatus::Disconnected;
         self.session.lock().status = status.clone();
         Ok(status)
+    }
+}
+
+fn finish_login(session: &Mutex<CodexLoginSession>, generation: u64, status: CodexLoginStatus) {
+    let mut session = session.lock();
+    if session.generation == generation {
+        session.cancellation = None;
+        session.status = status;
     }
 }
 
@@ -217,5 +238,24 @@ mod tests {
             serde_json::to_string(&CodexLoginStatus::AwaitingBrowser).unwrap(),
             r#"{"state":"awaitingBrowser"}"#
         );
+    }
+
+    #[test]
+    fn stale_login_completion_cannot_overwrite_a_disconnect() {
+        let session = Mutex::new(CodexLoginSession {
+            status: CodexLoginStatus::Disconnected,
+            cancellation: None,
+            generation: 2,
+        });
+
+        finish_login(
+            &session,
+            1,
+            CodexLoginStatus::Connected {
+                email: Some("person@example.com".to_string()),
+            },
+        );
+
+        assert_eq!(session.lock().status, CodexLoginStatus::Disconnected);
     }
 }

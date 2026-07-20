@@ -2880,7 +2880,7 @@ describe("Idle global chat kickoff", () => {
         ".chat-composer-pill textarea",
       ) as HTMLTextAreaElement;
       expect(textarea?.disabled).toBe(false);
-      expect(textarea?.getAttribute("aria-label")).toContain("start the workflow");
+      expect(textarea?.getAttribute("aria-label")).toContain("Run in the top bar");
     } finally {
       dispose();
     }

@@ -28,10 +28,11 @@ pub use client::{
     AiClient, AiClientConfig, AnthropicConfig, BedrockConfig, CodexCredentialSink,
     OpenAiCodexConfig, OpenAiCompatibleConfig, ProviderAdapterConfig,
 };
+pub use codex_oauth::{login_codex, CodexLoginCancellation, CodexLoginPrompt};
 pub use engine::AiPort;
 pub use spec::{
-    AnthropicSpec, AuthSpec, BedrockSpec, OpenAiCompatibleSpec, ProviderId, ProviderKind,
-    ProviderSpec, ReasoningEffortOption, WireApi, builtin_provider_specs, provider_spec,
+    builtin_provider_specs, provider_spec, AnthropicSpec, AuthSpec, BedrockSpec,
+    OpenAiCompatibleSpec, ProviderId, ProviderKind, ProviderSpec, ReasoningEffortOption, WireApi,
 };
 
 #[must_use]

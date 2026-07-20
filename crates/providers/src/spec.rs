@@ -285,7 +285,7 @@ const BUILTIN_PROVIDER_SPECS: &[ProviderSpec] = &[
     },
     ProviderSpec {
         id: "openai-codex",
-        display_name: "OpenAI Codex",
+        display_name: "ChatGPT (Codex)",
         default_base_url: "https://chatgpt.com/backend-api/codex",
         kind: ProviderKind::OpenAiCodex,
         auth: AuthSpec::ChatGptOAuth,
@@ -497,7 +497,7 @@ mod tests {
         let codex = provider_spec(&ProviderId::from("openai-codex"))
             .expect("OpenAI Codex should be a built-in provider");
 
-        assert_eq!(codex.display_name, "OpenAI Codex");
+        assert_eq!(codex.display_name, "ChatGPT (Codex)");
         assert_eq!(
             codex.default_base_url,
             "https://chatgpt.com/backend-api/codex"
@@ -521,11 +521,9 @@ mod tests {
 
     #[test]
     fn builtin_specs_include_bedrock() {
-        assert!(
-            builtin_provider_specs()
-                .iter()
-                .any(|spec| spec.id == "bedrock")
-        );
+        assert!(builtin_provider_specs()
+            .iter()
+            .any(|spec| spec.id == "bedrock"));
     }
 
     #[test]

@@ -76,7 +76,7 @@ const BEDROCK: ProviderProfile = {
 };
 
 const CODEX: ProviderProfile = {
-  display_name: "OpenAI Codex",
+  display_name: "ChatGPT (Codex)",
   base_url: "https://chatgpt.com/backend-api/codex",
   transport: "responses",
   responses_path: "responses",

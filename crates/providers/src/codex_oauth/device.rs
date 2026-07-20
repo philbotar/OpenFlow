@@ -9,8 +9,8 @@ use crate::auth::CodexOAuthCredentials;
 use super::browser::wait_until_cancelled;
 use super::tokens::exchange_authorization_code;
 use super::{
-    CODEX_OAUTH_CLIENT_ID, CodexLoginCancellation, CodexLoginPrompt, CodexOAuthClient,
-    CodexOAuthError,
+    CodexLoginCancellation, CodexLoginPrompt, CodexOAuthClient, CodexOAuthError,
+    CODEX_OAUTH_CLIENT_ID,
 };
 
 const DEVICE_REDIRECT_URI: &str = "https://auth.openai.com/deviceauth/callback";

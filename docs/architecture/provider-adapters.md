@@ -9,7 +9,7 @@ Transport goes through **Rig 0.39** (`rig_adapter/`). Pre-Rig modules `openai_co
 | Adapter family | Implementation | Role |
 | --- | --- | --- |
 | OpenAI-compatible (via Rig) | `rig_adapter/model.rs` + `convert.rs` | Chat completions / Responses wire shape, tools, streaming |
-| ChatGPT Codex (OAuth + Rig) | `codex_oauth/`, `codex.rs`, and `rig_adapter/model.rs` | Browser/device login, refreshable credentials, ChatGPT Codex Responses streaming |
+| ChatGPT (Codex) OAuth + Rig | `codex_oauth/`, `codex.rs`, and `rig_adapter/model.rs` | Browser/device login, refreshable credentials, ChatGPT Codex Responses streaming |
 | Anthropic Messages (via Rig) | `rig_adapter/` (+ `anthropic_http.rs`, `claude_thinking.rs`) | Anthropic-native mapping, thinking blocks, prompt cache |
 | Amazon Bedrock Converse (via Rig) | `rig_adapter/model.rs` + `aws_runtime.rs` | AWS Bedrock transport and credential resolution |
 | Shared mapping | `crates/providers/src/mapping/` | Transcript conversion, tool argument parsing, `jsonrepair-rs` recovery |
@@ -30,20 +30,20 @@ When deterministic recovery cannot satisfy the node output schema, providers att
 
 See [`output-repair.md`](output-repair.md) for sequence, guards, and deferred scope.
 
-## ChatGPT Codex OAuth
+## ChatGPT (Codex) OAuth
 
-The **OpenAI Codex** provider authenticates with a ChatGPT account instead of an OpenAI API key. OpenFlow owns login, token refresh, persistence, and one-shot unauthorized recovery; Rig's ChatGPT provider supplies the Codex Responses request and SSE mapping.
+The **ChatGPT (Codex)** provider authenticates with a ChatGPT account instead of an OpenAI API key. OpenFlow owns login, token refresh, persistence, and one-shot unauthorized recovery; Rig's ChatGPT provider supplies the Codex Responses request and SSE mapping.
 
 | Concern | Behavior |
 | --- | --- |
 | Browser login | PKCE S256 on `http://localhost:1455/auth/callback`, loopback-only listener, exact state validation |
 | Port conflict | Falls back to ChatGPT's device-code flow only when port 1455 cannot be bound |
 | Refresh | Refreshes within five minutes of expiry, serializes concurrent refreshes, persists rotated credentials, then retries one unauthorized request |
-| Inference | SSE `POST /backend-api/codex/responses` through Rig with `originator: openflow`; no WebSocket or SSE experimental beta header |
+| Inference | SSE `POST /backend-api/codex/responses` through Rig with `originator: openflow` and `OpenAI-Beta: responses=experimental`; no WebSocket |
 | Storage | Access, refresh, ID token, expiry, and account metadata are plaintext in `ProviderProfile.codex_oauth` inside `settings.json` |
 | UI boundary | Settings IPC returns only tagged login state, safe email, and device instructions—never tokens or account ID |
 
-The OAuth details track the current [OpenAI Codex browser flow](https://github.com/openai/codex/blob/main/codex-rs/login/src/server.rs), [device flow](https://github.com/openai/codex/blob/main/codex-rs/login/src/device_code_auth.rs), and [refresh manager](https://github.com/openai/codex/blob/main/codex-rs/login/src/auth/manager.rs). OpenFlow intentionally differs from the Codex CLI by choosing device authorization, rather than a second callback port, when port 1455 is occupied.
+OpenFlow rewrites the OAuth protocol in Rust. Endpoint, PKCE, token-body, and request-shape details derive from [oh-my-pi's MIT-licensed implementation](https://github.com/badlogic/pi-mono/tree/main/packages/ai/src/auth/oauth), then are pinned by fixture tests. OpenFlow intentionally differs from the Codex CLI by choosing device authorization, rather than a second callback port, when port 1455 is occupied.
 
 ### Compatibility boundary
 

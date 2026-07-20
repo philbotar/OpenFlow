@@ -3,7 +3,7 @@
 use engine::{AgentError, AgentRequest};
 use rig_core::completion::CompletionRequest;
 use rig_core::message::ToolChoice;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 const MIN_MANUAL_BUDGET: u32 = 1_024;
 const MAX_MANUAL_BUDGET: u32 = 59_000;
@@ -280,8 +280,8 @@ fn contains_any(haystack: &str, needles: &[&str]) -> bool {
 mod tests {
     use super::*;
     use engine::{AgentRequest, NodeId, WorkflowId};
-    use rig_core::OneOrMany;
     use rig_core::message::Message;
+    use rig_core::OneOrMany;
     use serde_json::json;
 
     fn empty_request() -> CompletionRequest {

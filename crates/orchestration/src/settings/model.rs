@@ -170,7 +170,9 @@ impl ProviderProfile {
 
     fn normalize(&mut self, spec: Option<&ProviderSpec>) {
         if let Some(spec) = spec {
-            if self.display_name.trim().is_empty() {
+            let has_legacy_codex_label =
+                spec.id == "openai-codex" && self.display_name == "OpenAI Codex";
+            if self.display_name.trim().is_empty() || has_legacy_codex_label {
                 self.display_name = spec.display_name.to_string();
             }
             match spec.kind {
@@ -791,6 +793,17 @@ mod tests {
         let spec = provider_spec(&ProviderId::from("anthropic")).unwrap();
         profile.normalize(Some(spec));
         assert_eq!(profile.reasoning_effort_options.len(), original_len);
+    }
+
+    #[test]
+    fn provider_profile_migrates_legacy_codex_display_name() {
+        let spec = provider_spec(&ProviderId::from("openai-codex")).unwrap();
+        let mut profile = ProviderProfile::from_spec(spec);
+        profile.display_name = "OpenAI Codex".to_string();
+
+        profile.normalize(Some(spec));
+
+        assert_eq!(profile.display_name, "ChatGPT (Codex)");
     }
 
     #[test]

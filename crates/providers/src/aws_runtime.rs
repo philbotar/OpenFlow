@@ -324,11 +324,9 @@ mod tests {
     #[tokio::test]
     async fn custom_command_credentials_none_on_failure() {
         assert!(custom_command_credentials("exit 1").await.is_none());
-        assert!(
-            custom_command_credentials("printf 'not json'")
-                .await
-                .is_none()
-        );
+        assert!(custom_command_credentials("printf 'not json'")
+            .await
+            .is_none());
     }
 
     fn restore_env_var(name: &str, value: Option<std::ffi::OsString>) {

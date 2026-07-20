@@ -204,10 +204,9 @@ mod tests {
         );
         // Raw Rig phrase must not leak; enrich path expects the canonical marker.
         assert!(!err.to_string().contains("no message or tool call"));
-        assert!(
-            err.to_string()
-                .contains("neither tool calls nor recoverable output")
-        );
+        assert!(err
+            .to_string()
+            .contains("neither tool calls nor recoverable output"));
     }
 
     #[test]

@@ -6,8 +6,8 @@
 
 use engine::AgentTurnOutcome;
 use providers::{
-    AiClientConfig, AuthConfig, CodexOAuthCredentials, OpenAiCodexConfig, ProviderAdapterConfig,
-    ProviderId, create_provider,
+    create_provider, AiClientConfig, AuthConfig, CodexOAuthCredentials, OpenAiCodexConfig,
+    ProviderAdapterConfig, ProviderId,
 };
 use serde_json::json;
 use wiremock::matchers::{header, method, path};
@@ -102,6 +102,7 @@ async fn codex_uses_subscription_responses_wire_contract() {
         .and(path("/responses"))
         .and(header("authorization", "Bearer access-token"))
         .and(header("chatgpt-account-id", "account-123"))
+        .and(header("openai-beta", "responses=experimental"))
         .and(header("originator", "openflow"))
         .respond_with(
             ResponseTemplate::new(200)
@@ -128,10 +129,18 @@ async fn codex_uses_subscription_responses_wire_contract() {
     assert_eq!(body["model"], "gpt-5.3-codex");
     assert_eq!(body["stream"], true);
     assert_eq!(body["store"], false);
+    assert!(body.get("max_output_tokens").is_none());
+    assert!(body.get("max_completion_tokens").is_none());
     assert_eq!(
         body["reasoning"],
         json!({"effort": "high", "summary": "auto"})
     );
     assert_eq!(body["include"], json!(["reasoning.encrypted_content"]));
-    assert!(request.headers.get("openai-beta").is_none());
+    assert_eq!(
+        request
+            .headers
+            .get("openai-beta")
+            .and_then(|value| value.to_str().ok()),
+        Some("responses=experimental")
+    );
 }

@@ -2,8 +2,8 @@ use std::io::ErrorKind;
 use std::net::Ipv4Addr;
 use std::time::Duration;
 
-use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::Engine as _;
 use reqwest::Url;
 use sha2::{Digest, Sha256};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -13,12 +13,11 @@ use crate::auth::CodexOAuthCredentials;
 
 use super::tokens::exchange_authorization_code;
 use super::{
-    CODEX_OAUTH_CLIENT_ID, CodexLoginCancellation, CodexLoginPrompt, CodexOAuthClient,
-    CodexOAuthError,
+    CodexLoginCancellation, CodexLoginPrompt, CodexOAuthClient, CodexOAuthError,
+    CODEX_OAUTH_CLIENT_ID,
 };
 
-const OAUTH_SCOPE: &str =
-    "openid profile email offline_access api.connectors.read api.connectors.invoke";
+const OAUTH_SCOPE: &str = "openid profile email offline_access";
 const MAX_CALLBACK_BYTES: usize = 16 * 1024;
 
 pub(super) async fn login<F>(

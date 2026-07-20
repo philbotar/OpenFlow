@@ -14,10 +14,10 @@ use crate::rig_adapter::{
 };
 use crate::spec::{ProviderId, WireApi};
 use engine::{
-    AgentError, AgentRequest, AgentTurnOutcome, AiStreamSink, emit_assistant_deltas_from_outcome,
+    emit_assistant_deltas_from_outcome, AgentError, AgentRequest, AgentTurnOutcome, AiStreamSink,
 };
-use reqwest::Client as ReqwestClient;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
+use reqwest::Client as ReqwestClient;
 use rig_core::client::CompletionClient;
 use rig_core::completion::{CompletionModel, CompletionRequest};
 use rig_core::message::{AssistantContent, ToolChoice};
@@ -29,7 +29,7 @@ use rig_core::providers::chatgpt::{self, ChatGPTAuth};
 use rig_core::providers::openai;
 use rig_core::providers::openai::completion::CompletionModel as OpenAiChatModel;
 use rig_core::providers::openai::responses_api::ResponsesCompletionModel;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 #[cfg(feature = "bedrock")]
 use rig_bedrock::completion::CompletionModel as BedrockCompletionModel;
@@ -199,6 +199,11 @@ pub(super) fn build_codex(
     credentials: &CodexOAuthCredentials,
     http: ReqwestClient,
 ) -> Result<RigModel, AgentError> {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        HeaderName::from_static("openai-beta"),
+        HeaderValue::from_static("responses=experimental"),
+    );
     let client = chatgpt::Client::builder()
         .api_key(ChatGPTAuth::AccessToken {
             access_token: credentials.access_token.clone(),
@@ -207,6 +212,7 @@ pub(super) fn build_codex(
         .base_url(base_url)
         .default_instructions("")
         .originator("openflow")
+        .http_headers(headers)
         .http_client(http)
         .build()
         .map_err(|error| {
@@ -859,7 +865,7 @@ mod tests {
 
     #[test]
     fn builtin_openai_compat_specs_never_double_v1() {
-        use crate::spec::{ProviderKind, builtin_provider_specs};
+        use crate::spec::{builtin_provider_specs, ProviderKind};
 
         for spec in builtin_provider_specs() {
             let ProviderKind::OpenAiCompatible(oa) = spec.kind else {

@@ -5,14 +5,14 @@ use crate::settings::model::AppSettings;
 use super::{AppBackend, BackendError, ProviderReadiness};
 
 impl AppBackend {
-    pub async fn start_codex_login<F>(
+    pub fn start_codex_login<F>(
         &self,
         open_browser: F,
     ) -> Result<crate::CodexLoginStatus, BackendError>
     where
-        F: Fn(&str) -> Result<(), String> + Send + Sync,
+        F: Fn(&str) -> Result<(), String> + Send + Sync + 'static,
     {
-        self.settings.start_codex_login(open_browser).await
+        self.settings.start_codex_login(open_browser)
     }
 
     #[must_use]

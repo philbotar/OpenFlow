@@ -10,8 +10,8 @@
 
 use crate::client::OpenAiCompatibleConfig;
 use crate::mapping::{
-    NoToolCallsPolicy, ResolveToolTurnParams, attach_usage, parse_internal_tool_outcome,
-    resolve_tool_turn_outcome,
+    attach_usage, parse_internal_tool_outcome, resolve_tool_turn_outcome, NoToolCallsPolicy,
+    ResolveToolTurnParams,
 };
 use crate::rig_adapter::reasoning_convert;
 use crate::spec::WireApi;

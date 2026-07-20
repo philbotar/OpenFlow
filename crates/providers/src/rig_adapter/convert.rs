@@ -9,15 +9,15 @@
 
 use std::collections::BTreeMap;
 
-use crate::mapping::{ToolSpec, all_tool_specs, build_node_context};
+use crate::mapping::{all_tool_specs, build_node_context, ToolSpec};
 use crate::rig_adapter::reasoning_convert;
 use engine::{AgentReasoning, AgentRequest, AgentTranscriptItem};
-use rig_core::OneOrMany;
 use rig_core::completion::CompletionRequest;
 use rig_core::message::{
     AssistantContent, Message, ToolCall as RigToolCall, ToolChoice, ToolFunction,
     ToolResultContent, UserContent,
 };
+use rig_core::OneOrMany;
 
 pub fn to_completion_request(request: &AgentRequest) -> CompletionRequest {
     let mut history: Vec<Message> = vec![Message::user(build_node_context(request))];

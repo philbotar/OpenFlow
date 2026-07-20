@@ -10,8 +10,8 @@ mod outcome;
 mod reasoning_convert;
 mod stream;
 
-use crate::CodexOAuthCredentials;
 use crate::client::{AiClientConfig, ProviderAdapterConfig};
+use crate::CodexOAuthCredentials;
 use engine::{AgentError, AgentRequest, AgentTurnOutcome, AiStreamSink};
 use std::collections::HashMap;
 use std::future::Future;

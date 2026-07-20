@@ -108,6 +108,7 @@ impl CodexClient {
         )?;
         rig_adapter::invoke_codex_model(&model, request, &self.provider_label, &self.provider_id)
             .await
+            .map_err(|error| map_codex_quota_error(error, &self.provider_label))
     }
 
     async fn invoke_stream_once(
@@ -131,6 +132,7 @@ impl CodexClient {
             &self.provider_id,
         )
         .await
+        .map_err(|error| map_codex_quota_error(error, &self.provider_label))
     }
 }
 
@@ -178,7 +180,7 @@ fn seconds_i64(duration: Duration) -> i64 {
 fn now_unix_seconds() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| seconds_i64(duration))
+        .map_or(0, seconds_i64)
 }
 
 fn map_refresh_error(error: CodexOAuthError, provider_label: &str) -> AgentError {
@@ -186,13 +188,37 @@ fn map_refresh_error(error: CodexOAuthError, provider_label: &str) -> AgentError
         CodexOAuthError::Transport { .. } => {
             AgentError::Transient(format!("{provider_label} token refresh failed: {error}"))
         }
-        CodexOAuthError::Http { status, .. } if matches!(status, 408 | 409 | 429 | 500..=599) => {
-            AgentError::Transient(format!("{provider_label} token refresh failed: {error}"))
-        }
+        CodexOAuthError::Http {
+            status: 408 | 409 | 429 | 500..=599,
+            ..
+        } => AgentError::Transient(format!("{provider_label} token refresh failed: {error}")),
         CodexOAuthError::Http { .. } | CodexOAuthError::MissingCredential(_) => {
             AgentError::Permanent(format!("{provider_label} token refresh failed: {error}"))
         }
         _ => AgentError::Failed(format!("{provider_label} token refresh failed: {error}")),
+    }
+}
+
+fn map_codex_quota_error(error: AgentError, provider_label: &str) -> AgentError {
+    let message = error.to_string().to_ascii_lowercase();
+    let quota_limited = [
+        "usage_limit_reached",
+        "go_usagelimiterror",
+        "freeusagelimiterror",
+        "insufficient_quota",
+        "monthly usage limit reached",
+        "quota exceeded",
+        "out of budget",
+    ]
+    .iter()
+    .any(|needle| message.contains(needle));
+
+    if quota_limited {
+        AgentError::Permanent(format!(
+            "{provider_label} ChatGPT subscription limit reached. Wait for the limit to reset or choose another provider."
+        ))
+    } else {
+        error
     }
 }
 
@@ -369,7 +395,11 @@ mod tests {
             .mount(&server)
             .await;
         let sink = Arc::new(RecordingSink::default());
-        let client = client(&server, credentials("access-old", 4_000_000_000), sink.clone());
+        let client = client(
+            &server,
+            credentials("access-old", 4_000_000_000),
+            sink.clone(),
+        );
 
         let outcome = client.invoke(test_request()).await.unwrap();
 
@@ -404,5 +434,18 @@ mod tests {
 
         assert!(transient.is_retryable());
         assert!(matches!(permanent, AgentError::Permanent(_)));
+    }
+
+    #[test]
+    fn usage_limit_errors_are_permanent_and_actionable() {
+        let error = map_codex_quota_error(
+            AgentError::Transient(
+                "OpenAI Codex returned HTTP 429: {\"code\":\"usage_limit_reached\"}".into(),
+            ),
+            "OpenAI Codex",
+        );
+
+        assert!(!error.is_retryable());
+        assert!(error.to_string().contains("subscription limit reached"));
     }
 }

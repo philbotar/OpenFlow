@@ -10,12 +10,12 @@ use std::future::Future;
 /// compatible gateways serialize absent collections as `null`. Normalize the
 /// two response fields we consume before Rig deserializes the message.
 #[derive(Clone, Default)]
-pub(super) struct AnthropicHttpClient {
+pub(crate) struct AnthropicHttpClient {
     inner: reqwest::Client,
 }
 
 impl AnthropicHttpClient {
-    pub(super) const fn new(inner: reqwest::Client) -> Self {
+    pub(crate) const fn new(inner: reqwest::Client) -> Self {
         Self { inner }
     }
 }

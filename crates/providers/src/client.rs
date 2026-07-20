@@ -200,8 +200,8 @@ async fn bedrock_invoke_stream(
 #[cfg(test)]
 mod codex_contract_tests {
     use super::{OpenAiCodexConfig, ProviderAdapterConfig};
-    use crate::CodexCredentialSink;
     use crate::auth::CodexOAuthCredentials;
+    use crate::CodexCredentialSink;
     use std::sync::{Arc, Mutex};
 
     #[derive(Default)]

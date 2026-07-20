@@ -1,4 +1,5 @@
 import { createResource, For, Show } from "solid-js";
+import TriangleAlert from "lucide-solid/icons/triangle-alert";
 import * as desktop from "../../api";
 import type { PendingToolApproval } from "../../lib/types";
 import { Spinner } from "../Spinner";
@@ -81,7 +82,10 @@ export function ToolApprovalCardBody(props: {
 
   return (
     <div class="tool-approval-card">
-      <div class="eyebrow">Approval required</div>
+      <div class="tool-approval-card-header">
+        <TriangleAlert class="tool-approval-warning-icon" aria-hidden="true" width={14} height={14} />
+        <div class="eyebrow">Approval required</div>
+      </div>
       <h3>{formatToolDisplayName(props.approval.toolCall.name)}</h3>
       <p class="tool-approval-node">{props.approval.nodeLabel}</p>
 

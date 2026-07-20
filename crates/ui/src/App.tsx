@@ -58,7 +58,6 @@ function AppToaster() {
       duration={BANNER_DISMISS_MS}
       style={{
         "--width": toastWidth(),
-        "z-index": "9999",
         zoom: "var(--ui-zoom)",
       }}
       toastOptions={{

@@ -3,14 +3,17 @@
 //! The protocol is compatible with OpenAI Codex's browser and device login
 //! flows. The implementation is original Rust code; the device fallback policy
 //! is OpenFlow-specific.
+//!
+//! OAuth endpoint, PKCE, and token-body details are derived from oh-my-pi
+//! (`packages/ai/src/auth/oauth/openai-codex.ts`, MIT).
 
 mod browser;
 mod device;
 mod tokens;
 
 use std::fmt;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use reqwest::Client;
@@ -19,6 +22,7 @@ use thiserror::Error;
 use crate::auth::CodexOAuthCredentials;
 
 pub use tokens::refresh_codex_credentials;
+#[cfg(test)]
 pub(crate) use tokens::refresh_with_endpoint;
 
 pub const CODEX_OAUTH_CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
@@ -93,6 +97,20 @@ impl CodexOAuthClient {
             device_timeout,
         }
     }
+}
+
+/// Starts the built-in ChatGPT OAuth flow without exposing a concrete client
+/// outside this provider adapter crate.
+pub async fn login_codex<F>(
+    cancellation: &CodexLoginCancellation,
+    publish: F,
+) -> Result<CodexOAuthCredentials, CodexOAuthError>
+where
+    F: Fn(CodexLoginPrompt) -> Result<(), String> + Send + Sync,
+{
+    CodexOAuthClient::default()
+        .login(cancellation, publish)
+        .await
 }
 
 #[derive(Clone, Default)]
@@ -198,8 +216,8 @@ impl Default for CodexOAuthEndpoints {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base64::Engine as _;
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use base64::Engine as _;
     use std::sync::Mutex;
     use wiremock::matchers::{body_json, body_string_contains, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -326,7 +344,10 @@ mod tests {
         let Ok(prompts) = prompts else {
             return;
         };
-        assert!(matches!(prompts.as_slice(), [CodexLoginPrompt::Device { .. }]));
+        assert!(matches!(
+            prompts.as_slice(),
+            [CodexLoginPrompt::Device { .. }]
+        ));
     }
 
     fn test_jwt(claims: serde_json::Value) -> String {

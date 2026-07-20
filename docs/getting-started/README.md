@@ -6,7 +6,7 @@ Use this page to run OpenFlow locally, configure a model provider, and start the
 
 - Rust toolchain for the workspace crates.
 - Node.js and npm for the Tauri desktop and Solid UI packages.
-- Provider credentials: an API key, AWS credentials for Bedrock, or a ChatGPT account for the OpenAI Codex provider.
+- Provider credentials: an API key, AWS credentials for Bedrock, or a ChatGPT account for the ChatGPT (Codex) provider.
 
 OpenFlow currently documents local development entry points. Use the reference page for command and storage details: [`../reference/README.md`](../reference/README.md).
 
@@ -33,7 +33,7 @@ This builds a `.dmg` installer and opens it. Drag **OpenFlow** to **Applications
 3. Choose the active provider profile.
 4. Authenticate for that provider:
    - API-key providers: add a key or rely on the provider environment variable.
-   - OpenAI Codex: choose **Sign in with ChatGPT** and finish the browser or device-code flow.
+   - ChatGPT (Codex): choose **Sign in with ChatGPT** and finish the browser or device-code flow.
    - Bedrock: configure the AWS profile/region and test the credential chain.
 5. Save settings.
 

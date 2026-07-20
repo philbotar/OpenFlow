@@ -308,14 +308,11 @@ impl SettingsFacade {
         &self.env
     }
 
-    pub async fn start_codex_login<F>(
-        &self,
-        open_browser: F,
-    ) -> Result<CodexLoginStatus, BackendError>
+    pub fn start_codex_login<F>(&self, open_browser: F) -> Result<CodexLoginStatus, BackendError>
     where
-        F: Fn(&str) -> Result<(), String> + Send + Sync,
+        F: Fn(&str) -> Result<(), String> + Send + Sync + 'static,
     {
-        self.codex_login.start(open_browser).await
+        self.codex_login.start(open_browser)
     }
 
     #[must_use]

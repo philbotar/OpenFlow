@@ -1,12 +1,12 @@
 use engine::{
-    AgentContinueWork, AgentError, AgentMessageTurn, AgentNeedUserInput, AgentReasoning,
-    AgentRequest, AgentToolCallBatch, AgentTurnOutcome, AgentTurnPhase, AgentTurnSuccess,
-    CompleteSubmitOutputParams, OUTPUT_REPAIR_RAW_ARGUMENTS_MAX_BYTES, SUBMIT_NODE_OUTPUT_TOOL,
-    ToolCall, ToolDefinition, complete_submit_output, effective_output_schema,
-    filter_tool_turn_assistant_message, malformed_submit_invalid_json,
+    complete_submit_output, effective_output_schema, filter_tool_turn_assistant_message,
+    malformed_submit_invalid_json, AgentContinueWork, AgentError, AgentMessageTurn,
+    AgentNeedUserInput, AgentReasoning, AgentRequest, AgentToolCallBatch, AgentTurnOutcome,
+    AgentTurnPhase, AgentTurnSuccess, CompleteSubmitOutputParams, ToolCall, ToolDefinition,
+    OUTPUT_REPAIR_RAW_ARGUMENTS_MAX_BYTES, SUBMIT_NODE_OUTPUT_TOOL,
 };
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 pub const SUBMIT_OUTPUT_TOOL: &str = SUBMIT_NODE_OUTPUT_TOOL;
 pub const REQUEST_INPUT_TOOL: &str = "openflow_request_user_input";
@@ -1061,11 +1061,9 @@ mod tests {
         let field =
             &tool.parameters["properties"]["output"]["properties"]["implementation_spec_markdown"];
         assert_eq!(field["type"], "string");
-        assert!(
-            field["description"]
-                .as_str()
-                .is_some_and(|description| description.contains("repository-relative file path"))
-        );
+        assert!(field["description"]
+            .as_str()
+            .is_some_and(|description| description.contains("repository-relative file path")));
     }
 
     #[test]

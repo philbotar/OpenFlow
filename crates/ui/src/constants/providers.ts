@@ -33,7 +33,7 @@ export const EMPTY_SETTINGS: AppSettings = {
       editable: false,
     },
     "openai-codex": {
-      display_name: "OpenAI Codex",
+      display_name: "ChatGPT (Codex)",
       base_url: "https://chatgpt.com/backend-api/codex",
       transport: "responses",
       responses_path: "responses",

@@ -2,20 +2,18 @@ use crate::ipc_types::CommandError;
 use orchestration::api::{DebugLogEntry, DebugLogWrite, SettingsLoadPayload};
 use orchestration::backend::{AppBackend, ProviderReadiness};
 use orchestration::{AppSettings, McpServerConfig};
-use tauri_plugin_shell::ShellExt;
+use tauri_plugin_opener::OpenerExt;
 
 #[tauri::command]
 pub async fn start_codex_login(
     backend: tauri::State<'_, AppBackend>,
     app: tauri::AppHandle,
 ) -> Result<orchestration::CodexLoginStatus, CommandError> {
-    Ok(backend
-        .start_codex_login(move |url| {
-            app.shell()
-                .open(url, None)
-                .map_err(|error| error.to_string())
-        })
-        .await?)
+    Ok(backend.start_codex_login(move |url| {
+        app.opener()
+            .open_url(url, None::<&str>)
+            .map_err(|error| error.to_string())
+    })?)
 }
 
 #[tauri::command]

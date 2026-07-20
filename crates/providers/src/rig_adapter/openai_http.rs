@@ -11,12 +11,12 @@ use std::future::Future;
 /// Wrap `reqwest` so non-streaming `OpenAI` Chat/Responses bodies are normalized
 /// before Rig deserializes stringified tool arguments into `serde_json::Value`.
 #[derive(Clone, Debug, Default)]
-pub(super) struct OpenAiHttpClient {
+pub(crate) struct OpenAiHttpClient {
     inner: reqwest::Client,
 }
 
 impl OpenAiHttpClient {
-    pub(super) const fn new(inner: reqwest::Client) -> Self {
+    pub(crate) const fn new(inner: reqwest::Client) -> Self {
         Self { inner }
     }
 }
@@ -153,7 +153,7 @@ fn normalize_arguments_field(field: &mut Value) -> bool {
 )]
 mod tests {
     use super::*;
-    use crate::mapping::{MALFORMED_TOOL_ARGS_MARKER_KEY, extract_malformed_tool_args_marker};
+    use crate::mapping::{extract_malformed_tool_args_marker, MALFORMED_TOOL_ARGS_MARKER_KEY};
     use serde_json::json;
 
     #[test]
