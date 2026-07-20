@@ -10,6 +10,7 @@ import type {
   NodeId,
   ProviderProfile,
   ProviderReadiness,
+  ReasoningEffortOption,
   RunTraceEntry,
   RunSummary,
   Screen,
@@ -52,6 +53,7 @@ export interface AppContextValue {
   runState: Accessor<WorkflowRunState | null>;
   backendRunWorkflowId: Accessor<string | null>;
   readiness: Accessor<ProviderReadiness | null>;
+  refreshReadiness: (nextSettings?: AppSettings) => Promise<void>;
   bottomTab: Accessor<BottomTab>;
   dockOpen: Accessor<boolean>;
   dockHeight: Accessor<number>;
@@ -190,6 +192,8 @@ export interface AppContextValue {
   handleSaveSettings: () => Promise<void>;
   handleAddKnownModel: () => void;
   handleRemoveKnownModel: (model: string) => void;
+  handleAddReasoningEffortOption: (option: ReasoningEffortOption) => void;
+  handleRemoveReasoningEffortOption: (value: string) => void;
   handleApiKeyInput: (key: string) => void;
   updateSettings: (mutator: (draft: AppSettings) => void) => Promise<void>;
   showErrorToast: (message: string, context?: string) => void;

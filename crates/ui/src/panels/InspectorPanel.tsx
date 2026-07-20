@@ -11,7 +11,7 @@ import {
 } from "@/lib/workflow";
 import { CallableAgentsEditor } from "../forms/CallableAgentsEditor";
 import { ToolConfigEditor } from "../forms/ToolConfigEditor";
-import { InspectorSection, SidebarIcon } from "@/components";
+import { InspectorSection, SidebarIcon, Button, ButtonRow } from "@/components";
 
 export function InspectorPanel() {
   const ctx = useAppContext();
@@ -96,6 +96,12 @@ export function InspectorPanel() {
                     nextNode.agent.auto_start = value;
                   })
                 }
+                requestUserInput={node().agent.requestUserInput ?? false}
+                onRequestUserInputChange={(value) =>
+                  ctx.updateCurrentNode((nextNode) => {
+                    nextNode.agent.requestUserInput = value;
+                  })
+                }
                 systemPrompt={node().agent.system_prompt}
                 onSystemPromptChange={(value) =>
                   ctx.updateCurrentNode((nextNode) => {
@@ -152,11 +158,11 @@ export function InspectorPanel() {
                   onInput={(event) => ctx.setSchemaText(event.currentTarget.value)}
                 />
               </label>
-              <div class="button-row">
-                <button class="secondary-button" onClick={ctx.applySchemaEditor}>
+              <ButtonRow>
+                <Button variant="secondary" onClick={ctx.applySchemaEditor}>
                   Apply schema
-                </button>
-              </div>
+                </Button>
+              </ButtonRow>
             </InspectorSection>
 
             <InspectorSection title="Tools">
@@ -170,7 +176,7 @@ export function InspectorPanel() {
               />
             </InspectorSection>
 
-            <InspectorSection title="Callable agents">
+            <InspectorSection title="Subagents">
               <CallableAgentsEditor
                 allowAll={node().agent.allow_all_callable_agents ?? false}
                 selectedIds={node().agent.callable_agents ?? []}

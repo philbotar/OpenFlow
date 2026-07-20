@@ -73,19 +73,17 @@ impl AppBackend {
             .run_store
             .load_latest_checkpoint(&root, run_id)?
             .ok_or_else(|| BackendError::RunHasNoCheckpoints(run_id.to_string()))?;
-        let workflow = self.load_workflow(&record.workflow_id)?;
         let (state, event_rx) = self
             .runs
             .resume_durable_run(DurableResumeParams {
                 run_id,
-                workflow,
                 root,
                 record,
                 checkpoint,
                 settings,
                 transient_api_key,
                 agent_store: self.agents.store(),
-                settings_store: self.settings.store(),
+                settings_store: self.settings.store_arc(),
                 run_store: self.run_store.as_ref(),
                 env: self.settings.env(),
             })
@@ -112,7 +110,7 @@ impl AppBackend {
                 settings,
                 transient_api_key,
                 agent_store: self.agents.store(),
-                settings_store: self.settings.store(),
+                settings_store: self.settings.store_arc(),
                 run_store: self.run_store.as_ref(),
                 env: self.settings.env(),
             })
@@ -141,7 +139,7 @@ impl AppBackend {
                 settings,
                 transient_api_key,
                 agent_store: self.agents.store(),
-                settings_store: self.settings.store(),
+                settings_store: self.settings.store_arc(),
                 run_store: self.run_store.as_ref(),
                 env: self.settings.env(),
             })
@@ -282,7 +280,7 @@ impl AppBackend {
                 settings: &settings,
                 transient_api_key: None,
                 agent_store: self.agents.store(),
-                settings_store: self.settings.store(),
+                settings_store: self.settings.store_arc(),
                 run_store: self.run_store.as_ref(),
                 env: self.settings.env(),
             })

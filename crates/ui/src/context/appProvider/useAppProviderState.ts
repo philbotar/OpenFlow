@@ -170,6 +170,7 @@ export function useAppProviderState(): AppContextValue {
   let setAppUpdateAvailableRef: Setter<boolean> = (() => false) as Setter<boolean>;
   let lastNotifiedPendingApprovalId: string | null = null;
   let lastNotifiedAwaitingKey: string | null = null;
+  let lastNotifiedRunError: string | null = null;
 
   const handleShellCleanup = () => {
     if (unlistenRunState) void unlistenRunState();
@@ -228,8 +229,11 @@ export function useAppProviderState(): AppContextValue {
             lastNotifiedAwaitingKey = null;
           }
         }
-        if (nextRunState.lastError) {
+        if (nextRunState.lastError && nextRunState.lastError !== lastNotifiedRunError) {
+          lastNotifiedRunError = nextRunState.lastError;
           toastApi.showErrorToast(nextRunState.lastError);
+        } else if (!nextRunState.lastError) {
+          lastNotifiedRunError = null;
         }
       });
       unlistenTerminal = await desktop.listenToTerminalEvent(dock.handleTerminalEvent);
@@ -440,6 +444,7 @@ export function useAppProviderState(): AppContextValue {
     runState: runKernel.runState,
     backendRunWorkflowId: runKernel.backendRunWorkflowId,
     readiness: settingsState.readiness,
+    refreshReadiness: settingsState.refreshReadiness,
     bottomTab: dock.bottomTab,
     dockOpen: dock.dockOpen,
     dockHeight: dock.dockHeight,
@@ -559,6 +564,8 @@ export function useAppProviderState(): AppContextValue {
     handleSaveSettings: settingsState.handleSaveSettings,
     handleAddKnownModel: settingsState.handleAddKnownModel,
     handleRemoveKnownModel: settingsState.handleRemoveKnownModel,
+    handleAddReasoningEffortOption: settingsState.handleAddReasoningEffortOption,
+    handleRemoveReasoningEffortOption: settingsState.handleRemoveReasoningEffortOption,
     handleApiKeyInput: settingsState.handleApiKeyInput,
     updateSettings: settingsState.updateSettings,
     showErrorToast: toastApi.showErrorToast,

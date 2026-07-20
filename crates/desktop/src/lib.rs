@@ -26,7 +26,7 @@ pub fn run() {
     };
 
     builder
-        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_process::init())
@@ -60,6 +60,10 @@ pub fn run() {
             commands::agent::save_agents,
             commands::settings::load_settings,
             commands::settings::save_settings,
+            commands::settings::start_codex_login,
+            commands::settings::codex_login_status,
+            commands::settings::cancel_codex_login,
+            commands::settings::disconnect_codex,
             commands::settings::debug_log_path,
             commands::settings::append_debug_log,
             commands::settings::probe_mcp_server,

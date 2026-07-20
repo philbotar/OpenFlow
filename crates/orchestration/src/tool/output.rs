@@ -1,12 +1,17 @@
 use crate::tool::errors::ToolError;
 use engine::{ToolOutputMeta, ToolTruncation, ToolTruncationStrategy};
+use sha2::{Digest, Sha256};
 use std::fs;
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
 const INLINE_OUTPUT_BYTE_LIMIT: usize = 50_000;
 const DEFAULT_HEAD_BYTES: usize = 20_000;
 const DEFAULT_TAIL_BYTES: usize = 20_000;
+pub const MAX_PLAN_ARTIFACT_BYTES: usize = 256 * 1024;
 
 /// Per-run artifact storage. Artifacts live under the run's artifact root for the
 /// duration of the run; there is no garbage collection until the run ends.
@@ -19,9 +24,17 @@ pub struct ToolArtifactRecord {
     pub size_bytes: usize,
 }
 
+/// Immutable Markdown artifact written by the Plan Mode capability.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlanArtifact {
+    pub record: ToolArtifactRecord,
+    pub sha256: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct ArtifactStore {
     root: PathBuf,
+    plan_artifact_id: Arc<Mutex<Option<String>>>,
 }
 
 impl ArtifactStore {
@@ -29,20 +42,83 @@ impl ArtifactStore {
         fs::create_dir_all(&root).map_err(|error| {
             ToolError::failed(format!("failed to create artifact dir: {error}"))
         })?;
-        Ok(Self { root })
+        let plan_artifact_id = fs::read_dir(&root).ok().and_then(|entries| {
+            entries.filter_map(Result::ok).find_map(|entry| {
+                let name = entry.file_name().into_string().ok()?;
+                let artifact_id = name.strip_suffix("-plan.md")?;
+                (Uuid::parse_str(artifact_id).ok()?.to_string() == artifact_id)
+                    .then(|| artifact_id.to_string())
+            })
+        });
+        Ok(Self {
+            root,
+            plan_artifact_id: Arc::new(Mutex::new(plan_artifact_id)),
+        })
     }
 
     pub fn root(&self) -> &Path {
         &self.root
     }
 
-    /// Resolve a spilled artifact by id (`{id}-*.txt` under the artifact root).
+    /// Resolve a host-created artifact by id under the artifact root.
     pub fn path_for(&self, artifact_id: &str) -> Option<PathBuf> {
-        let pattern = self.root.join(format!("{artifact_id}-*.txt"));
-        glob::glob(pattern.to_str()?)
-            .ok()?
-            .filter_map(Result::ok)
-            .next()
+        let uuid = Uuid::parse_str(artifact_id).ok()?;
+        if uuid.to_string() != artifact_id {
+            return None;
+        }
+        ["txt", "md"].into_iter().find_map(|extension| {
+            let pattern = self.root.join(format!("{artifact_id}-*.{extension}"));
+            glob::glob(pattern.to_str()?)
+                .ok()?
+                .filter_map(Result::ok)
+                .next()
+        })
+    }
+
+    /// Write a plan exactly once to a host-selected Markdown artifact path.
+    pub fn store_plan_markdown(&self, markdown: String) -> Result<PlanArtifact, ToolError> {
+        if markdown.len() > MAX_PLAN_ARTIFACT_BYTES {
+            return Err(ToolError::failed(format!(
+                "plan artifact exceeds the {} byte limit",
+                MAX_PLAN_ARTIFACT_BYTES
+            )));
+        }
+        let mut plan_artifact_id = self
+            .plan_artifact_id
+            .lock()
+            .map_err(|_| ToolError::failed("plan artifact lock is unavailable".to_string()))?;
+        if plan_artifact_id.is_some() {
+            return Err(ToolError::failed(
+                "a plan artifact has already been sealed for this run".to_string(),
+            ));
+        }
+        let artifact_id = Uuid::new_v4().to_string();
+        let path = self.root.join(format!("{artifact_id}-plan.md"));
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .map_err(|error| {
+                ToolError::failed(format!("failed to create plan artifact: {error}"))
+            })?;
+        file.write_all(markdown.as_bytes())
+            .and_then(|()| file.sync_all())
+            .map_err(|error| {
+                ToolError::failed(format!("failed to write plan artifact: {error}"))
+            })?;
+        *plan_artifact_id = Some(artifact_id.clone());
+
+        let mut digest = Sha256::new();
+        digest.update(markdown.as_bytes());
+        Ok(PlanArtifact {
+            record: ToolArtifactRecord {
+                artifact_id,
+                tool_name: "openflow_write_plan_artifact".to_string(),
+                path: path.display().to_string(),
+                size_bytes: markdown.len(),
+            },
+            sha256: format!("{:x}", digest.finalize()),
+        })
     }
 
     pub fn store_text(
@@ -143,5 +219,56 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = ArtifactStore::new(dir.path().join("artifacts")).unwrap();
         assert!(store.path_for("nonexistent-id").is_none());
+    }
+
+    #[test]
+    fn plan_markdown_is_host_named_immutable_and_readable_as_an_artifact() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = ArtifactStore::new(dir.path().join("artifacts")).unwrap();
+        let markdown = "# Approved plan\n\nImplement the narrow slice.".to_string();
+        let artifact = store.store_plan_markdown(markdown.clone()).unwrap();
+
+        assert_eq!(artifact.record.tool_name, "openflow_write_plan_artifact");
+        assert_eq!(artifact.record.size_bytes, markdown.len());
+        assert_eq!(artifact.sha256.len(), 64);
+        assert!(artifact.record.path.ends_with("-plan.md"));
+        assert!(Uuid::parse_str(&artifact.record.artifact_id).is_ok());
+        let resolved = store
+            .path_for(&artifact.record.artifact_id)
+            .expect("artifact path");
+        assert_eq!(fs::read_to_string(resolved).unwrap(), markdown);
+    }
+
+    #[test]
+    fn plan_markdown_rejects_content_over_the_fixed_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = ArtifactStore::new(dir.path().join("artifacts")).unwrap();
+        let error = store
+            .store_plan_markdown("x".repeat(MAX_PLAN_ARTIFACT_BYTES + 1))
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            ToolError::ExecutionFailed { detail, .. }
+                if detail.contains("byte limit") && detail.contains(&MAX_PLAN_ARTIFACT_BYTES.to_string())
+        ));
+        assert!(fs::read_dir(store.root()).unwrap().next().is_none());
+    }
+
+    #[test]
+    fn plan_markdown_is_sealed_once_per_run_artifact_store() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = ArtifactStore::new(dir.path().join("artifacts")).unwrap();
+        let first = store.store_plan_markdown("# First".to_string()).unwrap();
+        let error = store
+            .store_plan_markdown("# Second".to_string())
+            .unwrap_err();
+
+        assert!(error.to_string().contains("already been sealed"));
+        assert_eq!(
+            fs::read_to_string(store.path_for(&first.record.artifact_id).unwrap()).unwrap(),
+            "# First"
+        );
+        assert_eq!(fs::read_dir(store.root()).unwrap().count(), 1);
     }
 }

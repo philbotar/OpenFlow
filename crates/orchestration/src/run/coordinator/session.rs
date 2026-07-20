@@ -11,8 +11,10 @@ use crate::run::persistence::{
 use crate::run::ports::RunCheckpointStore;
 use crate::run::prep::prepare_workflow_for_execution;
 use crate::run::state::WorkflowRunState;
-use crate::settings::model::{merge_preserved_api_keys, AppSettings};
-use crate::settings::provider::{resolve_provider_config, ProviderEnv};
+use crate::settings::model::{merge_preserved_secrets, AppSettings};
+use crate::settings::provider::{
+    attach_codex_credential_sink, resolve_provider_config, ProviderEnv,
+};
 use engine::ports::outbound::AiPort;
 use engine::{
     resolve_callable_agent_snapshots, CallableAgent, InteractiveEngineCheckpoint, Node, NodeId,
@@ -66,12 +68,12 @@ pub(super) fn prepare_workflow_run(
     settings: &AppSettings,
     transient_api_key: Option<&str>,
     agent_store: &dyn crate::agent::AgentStore,
-    settings_store: &dyn crate::settings::ports::SettingsStore,
+    settings_store: Arc<dyn crate::settings::ports::SettingsStore>,
     env: &ProviderEnv,
 ) -> Result<PreparedWorkflowRun, BackendError> {
     let persisted_settings = settings_store.load()?;
     let mut provider_settings = settings.clone();
-    merge_preserved_api_keys(&mut provider_settings, &persisted_settings);
+    merge_preserved_secrets(&mut provider_settings, &persisted_settings);
     if let Some(provider_id) = workflow
         .settings
         .provider_id
@@ -80,7 +82,8 @@ pub(super) fn prepare_workflow_run(
     {
         provider_settings.active_provider = ProviderId::from(provider_id.as_str());
     }
-    let provider_config = resolve_provider_config(&provider_settings, transient_api_key, env)?;
+    let mut provider_config = resolve_provider_config(&provider_settings, transient_api_key, env)?;
+    attach_codex_credential_sink(&mut provider_config, settings_store);
     let ai = create_provider(provider_config);
     let mut workflow = workflow;
     prepare_workflow_for_execution(&mut workflow, Some(provider_settings.active_profile()));
@@ -353,21 +356,20 @@ pub struct RunStartParams<'a> {
     pub settings: &'a AppSettings,
     pub transient_api_key: Option<&'a str>,
     pub agent_store: &'a dyn crate::agent::AgentStore,
-    pub settings_store: &'a dyn crate::settings::ports::SettingsStore,
+    pub settings_store: Arc<dyn crate::settings::ports::SettingsStore>,
     pub run_store: &'a dyn RunCheckpointStore,
     pub env: &'a ProviderEnv,
 }
 
 pub struct DurableResumeParams<'a> {
     pub run_id: &'a str,
-    pub workflow: Workflow,
     pub root: RunStoreRoot,
     pub record: RunRecord,
     pub checkpoint: RunCheckpointPayload,
     pub settings: &'a AppSettings,
     pub transient_api_key: Option<&'a str>,
     pub agent_store: &'a dyn crate::agent::AgentStore,
-    pub settings_store: &'a dyn crate::settings::ports::SettingsStore,
+    pub settings_store: Arc<dyn crate::settings::ports::SettingsStore>,
     pub run_store: &'a dyn RunCheckpointStore,
     pub env: &'a ProviderEnv,
 }

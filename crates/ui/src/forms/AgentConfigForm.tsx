@@ -7,6 +7,8 @@ export function AgentConfigForm(props: {
   onModelChange: (value: string) => void;
   autoStart: boolean;
   onAutoStartChange: (value: boolean) => void;
+  requestUserInput?: boolean;
+  onRequestUserInputChange?: (value: boolean) => void;
   systemPrompt: string;
   onSystemPromptChange: (value: string) => void;
   taskPrompt: string;
@@ -132,11 +134,21 @@ export function AgentConfigForm(props: {
       <label class="checkbox-row">
         <input
           type="checkbox"
-          checked={!props.autoStart}
-          onChange={(event) => props.onAutoStartChange(!event.currentTarget.checked)}
+          checked={props.autoStart}
+          onChange={(event) => props.onAutoStartChange(event.currentTarget.checked)}
         />
-        <span>Request user input</span>
+        <span>Start automatically</span>
       </label>
+      <Show when={props.onRequestUserInputChange}>
+        <label class="checkbox-row">
+          <input
+            type="checkbox"
+            checked={props.requestUserInput ?? false}
+            onChange={(event) => props.onRequestUserInputChange?.(event.currentTarget.checked)}
+          />
+          <span>Allow follow-up questions</span>
+        </label>
+      </Show>
       <label>
         <span>System prompt</span>
         <textarea

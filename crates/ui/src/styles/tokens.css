@@ -56,6 +56,7 @@
   --surface-panel: rgba(255, 255, 255, 0.8);
   --surface-raised: rgba(255, 255, 255, 0.72);
   --surface-muted: var(--base-sand-400);
+  --surface-hover: rgba(24, 24, 27, 0.04);
   --text-primary: var(--base-ink-900);
   --text-secondary: var(--base-ink-700);
   --text-tertiary: var(--base-ink-500);
@@ -139,6 +140,14 @@
   --scrollbar-thumb: rgba(24, 24, 27, 0.2);
   --scrollbar-thumb-hover: rgba(24, 24, 27, 0.36);
 
+  /* ── Z-index (dropdown → sticky → modal → toast → tooltip) ── */
+  --z-sticky: 30;
+  --z-dropdown: 120;
+  --z-modal-backdrop: 200;
+  --z-modal: 210;
+  --z-toast: 300;
+  --z-tooltip: 310;
+
   /* ── Legacy bridge (normalize in a follow-up pass) ── */
   --app-bg: var(--surface-ground);
   --app-bg-strong: var(--base-sand-50);
@@ -217,6 +226,7 @@
   --surface-panel: rgba(28, 32, 42, 0.88);
   --surface-raised: rgba(30, 34, 44, 0.9);
   --surface-muted: var(--base-sand-400);
+  --surface-hover: rgba(255, 255, 255, 0.06);
   --text-primary: var(--base-ink-900);
   --text-secondary: var(--base-ink-700);
   --text-tertiary: var(--base-ink-500);

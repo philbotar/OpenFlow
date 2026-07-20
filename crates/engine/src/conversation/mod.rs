@@ -273,11 +273,36 @@ pub(crate) fn is_clarifying_question(message: &str) -> bool {
     .any(|prefix| lower.starts_with(prefix))
 }
 
+/// Provider reasoning block preserved for multi-turn Claude thinking continuity.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentReasoning {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    pub content: Vec<AgentReasoningContent>,
+}
+
+/// Opaque reasoning payload from provider APIs (text, signature, encrypted, etc.).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum AgentReasoningContent {
+    Text {
+        text: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        signature: Option<String>,
+    },
+    Encrypted(String),
+    Redacted {
+        data: String,
+    },
+    Summary(String),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentTranscriptItem {
     AssistantMessage { content: String },
     UserMessage { content: String },
+    Reasoning { reasoning: AgentReasoning },
     ToolCall { call: ToolCall },
     ToolResult { result: ToolResult },
 }

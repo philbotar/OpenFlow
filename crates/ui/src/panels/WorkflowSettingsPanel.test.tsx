@@ -16,6 +16,7 @@ const settings: AppSettings = {
       transport: "chat_completions",
       responses_path: "v1/responses",
       chat_completions_path: "v1/messages",
+      request_timeout_secs: 300,
       known_models: ["claude-sonnet-4-20250514"],
       default_model: "claude-sonnet-4-20250514",
       editable: false,
@@ -95,6 +96,7 @@ describe("WorkflowSettingsPanel", () => {
 
     const ctx = {
       activeWorkflow: workflow,
+      settings: () => settings,
       activeProfileMemo: () => settings.providers.anthropic,
       updateActiveWorkflowSettings,
       handleDeleteActiveWorkflow,
@@ -135,6 +137,20 @@ describe("WorkflowSettingsPanel", () => {
     expect(workflow().settings.shared_context).toBe("Updated shared context");
   });
 
+  test("enables Plan → Execute with a conversational freeze node", () => {
+    const initial = makeWorkflow();
+    initial.nodes[0].agent.requestUserInput = true;
+    const { workflow } = renderPanel(initial);
+    const checkbox = container.querySelector('input[type="checkbox"]') as HTMLInputElement;
+
+    checkbox.checked = true;
+    checkbox.dispatchEvent(new Event("change", { bubbles: true }));
+
+    expect(workflow().settings.planMode).toEqual({ evidenceSourceNodeId: "node-1" });
+    const source = container.querySelector("select") as HTMLSelectElement;
+    expect(source.value).toBe("node-1");
+  });
+
   test("clamps max retry attempts between 0 and 10", () => {
     const { workflow } = renderPanel(makeWorkflow());
     const maxAttemptsInput = container.querySelectorAll('input[type="number"]')[0] as HTMLInputElement;
@@ -171,6 +187,43 @@ describe("WorkflowSettingsPanel", () => {
     mediumOption.click();
 
     expect(workflow().settings.reasoning_effort).toBe("medium");
+  });
+
+  test("selects overseer model and blank inherits worker model", () => {
+    const { workflow } = renderPanel(makeWorkflow());
+    const triggers = [...container.querySelectorAll(".text-select-trigger")] as HTMLButtonElement[];
+    const overseerTrigger = triggers.find((button) =>
+      button.closest("label")?.textContent?.includes("Overseer model"),
+    );
+    expect(overseerTrigger).toBeTruthy();
+    overseerTrigger!.click();
+
+    const modelOption = [...container.querySelectorAll(".text-select-option")].find(
+      (element) => element.textContent === "claude-sonnet-4-20250514",
+    ) as HTMLButtonElement;
+    modelOption.click();
+    expect(workflow().settings.outputRepairModel).toBe("claude-sonnet-4-20250514");
+
+    overseerTrigger!.click();
+    const inheritOption = [...container.querySelectorAll(".text-select-option")].find(
+      (element) => element.textContent === "Use worker model",
+    ) as HTMLButtonElement;
+    inheritOption.click();
+    expect(workflow().settings.outputRepairModel).toBeNull();
+  });
+
+  test("preserves custom overseer model absent from known_models", () => {
+    renderPanel(makeWorkflow({ outputRepairModel: "custom-overseer" }));
+    const triggers = [...container.querySelectorAll(".text-select-trigger")] as HTMLButtonElement[];
+    const overseerTrigger = triggers.find((button) =>
+      button.closest("label")?.textContent?.includes("Overseer model"),
+    );
+    overseerTrigger!.click();
+    const labels = [...container.querySelectorAll(".text-select-option")].map(
+      (element) => element.textContent,
+    );
+    expect(labels).toContain("custom-overseer");
+    expect(labels[0]).toBe("Use worker model");
   });
 
   test("clears workflow reasoning budget when effort does not use budget tokens", () => {

@@ -859,6 +859,38 @@ mod tests {
 
     #[cfg_attr(miri, ignore)]
     #[tokio::test]
+    async fn plan_artifact_writer_returns_compact_reference_and_read_supports_markdown() {
+        let dir = tempfile::tempdir().unwrap();
+        let runner = runner(dir.path());
+        let markdown = "# Plan\n\nImplement the smallest safe change.";
+        let written = runner
+            .execute(
+                ToolCall {
+                    id: "plan-write".to_string(),
+                    name: engine::WRITE_PLAN_ARTIFACT_TOOL.to_string(),
+                    arguments: serde_json::json!({ "markdown": markdown }),
+                },
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert!(written.result.content.starts_with("artifact:"));
+        assert!(written.result.content.contains("\nsha256:"));
+        assert!(written.result.content.contains("\nbytes:"));
+        let artifact_id = written.result.artifact_ids.first().expect("artifact id");
+        let read = runner
+            .execute(
+                read_call("plan-read", &format!("artifact:{artifact_id}:raw")),
+                None,
+            )
+            .await
+            .unwrap();
+        assert_eq!(read.result.content, markdown);
+    }
+
+    #[cfg_attr(miri, ignore)]
+    #[tokio::test]
     async fn execute_without_context_bypasses_cache() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("note.txt"), "alpha\n").unwrap();

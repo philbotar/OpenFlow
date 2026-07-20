@@ -2,23 +2,28 @@
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
+    clippy::type_complexity,
     reason = "engine tests use unwrap/expect and panic for concise failure messages"
 )]
 
 use super::{
     checkpoint::CheckpointError, EngineInputError, EngineRunResult, InteractiveEngine,
-    PendingToolBatch, RunError,
+    PendingToolBatch, RunError, MAX_MALFORMED_REQUEST_INPUT_RETRIES, MAX_MIXED_TOOL_TURN_RETRIES,
 };
 use crate::conversation::AgentTranscriptItem;
 use crate::execution::NodeFailureKind;
 use crate::graph::{
-    new_runtime_config_store, upsert_runtime_patch, Node, NodeId, NodeRuntimeConfigPatch, Workflow,
+    new_runtime_config_store, upsert_runtime_patch, Node, NodeId, NodeRuntimeConfigPatch,
+    PlanModeConfig, Workflow,
 };
 use crate::ports::{
-    AgentError, AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTurnOutcome,
-    AgentTurnSuccess, AiPort, ToolBatchEffects, ToolBatchOutput, ToolPort,
+    AgentContinueWork, AgentError, AgentMessageTurn, AgentNeedUserInput, AgentRequest,
+    AgentToolCallBatch, AgentTurnOutcome, AgentTurnPhase, AgentTurnSuccess, AiPort,
+    ToolAccessPolicy, ToolBatchEffects, ToolBatchOutput, ToolPort,
 };
-use crate::tools::{ApprovalMode, FileChangeRecord, ToolCall, ToolResult};
+use crate::tools::{
+    ApprovalMode, FileChangeRecord, ToolCall, ToolConcurrency, ToolDefinition, ToolResult, ToolTier,
+};
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -42,6 +47,7 @@ impl ToolPort for NoopToolPort {
         _node_id: &NodeId,
         _label: &str,
         calls: Vec<ToolCall>,
+        _policy: ToolAccessPolicy,
     ) -> ToolBatchOutput {
         ToolBatchOutput {
             results: calls
@@ -50,6 +56,42 @@ impl ToolPort for NoopToolPort {
                     tool_call_id: call.id,
                     tool_name: call.name,
                     content: "noop".to_string(),
+                    is_error: false,
+                    artifact_ids: Vec::new(),
+                    output_meta: None,
+                })
+                .collect(),
+            effects: ToolBatchEffects::default(),
+        }
+    }
+
+    fn augment_request(&self, _node_id: &NodeId, _request: &mut AgentRequest) {}
+}
+
+struct PlanningRecordingToolPort {
+    batches: Arc<Mutex<Vec<(Vec<String>, ToolAccessPolicy)>>>,
+}
+
+#[async_trait]
+impl ToolPort for PlanningRecordingToolPort {
+    async fn execute_batch(
+        &self,
+        _node_id: &NodeId,
+        _label: &str,
+        calls: Vec<ToolCall>,
+        policy: ToolAccessPolicy,
+    ) -> ToolBatchOutput {
+        self.batches
+            .lock()
+            .expect("batches lock")
+            .push((calls.iter().map(|call| call.name.clone()).collect(), policy));
+        ToolBatchOutput {
+            results: calls
+                .into_iter()
+                .map(|call| ToolResult {
+                    tool_call_id: call.id,
+                    tool_name: call.name,
+                    content: "ok".to_string(),
                     is_error: false,
                     artifact_ids: Vec::new(),
                     output_meta: None,
@@ -90,6 +132,7 @@ fn mark_node_interrupted_closes_dangling_tool_calls() {
         node_id: NodeId("a".to_string()),
         tool_calls: vec![call],
         requires_approval: false,
+        tool_access_policy: crate::ports::ToolAccessPolicy::Execution,
     });
 
     engine.mark_node_interrupted(&NodeId("a".to_string()));
@@ -122,12 +165,290 @@ fn retry_node_saturates_retry_counter() {
     );
 }
 
+#[test]
+fn retry_failed_node_preserves_conversation_and_resets_recovery_budgets() {
+    let mut workflow = Workflow::new("wf");
+    workflow.nodes.push(node("a"));
+    let node_id = NodeId("a".to_string());
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    engine
+        .failed_nodes
+        .insert(node_id.clone(), "boom".to_string());
+    engine.transcripts.insert(
+        node_id.clone(),
+        vec![AgentTranscriptItem::UserMessage {
+            content: "keep retry context".to_string(),
+        }],
+    );
+    engine.transient_streaks_by_node.insert(node_id.clone(), 2);
+    engine
+        .submit_output_retries_by_node
+        .insert(node_id.clone(), 2);
+    engine
+        .request_input_retries_by_node
+        .insert(node_id.clone(), 2);
+    engine.empty_turn_retries_by_node.insert(node_id.clone(), 2);
+    engine
+        .mixed_tool_turn_retries_by_node
+        .insert(node_id.clone(), 2);
+    engine
+        .auto_continue_streaks_by_node
+        .insert(node_id.clone(), 2);
+
+    engine.retry_node(&node_id).unwrap();
+
+    assert_eq!(engine.transcript(&node_id).len(), 1);
+    assert!(!engine.transient_streaks_by_node.contains_key(&node_id));
+    assert!(!engine.submit_output_retries_by_node.contains_key(&node_id));
+    assert!(!engine.request_input_retries_by_node.contains_key(&node_id));
+    assert!(!engine.empty_turn_retries_by_node.contains_key(&node_id));
+    assert!(!engine
+        .mixed_tool_turn_retries_by_node
+        .contains_key(&node_id));
+    assert!(!engine.auto_continue_streaks_by_node.contains_key(&node_id));
+    assert_eq!(engine.model_attempt_for_node(&node_id), 2);
+}
+
+#[test]
+fn retry_interrupted_node_preserves_conversation() {
+    let mut workflow = Workflow::new("wf");
+    workflow.nodes.push(node("a"));
+    let node_id = NodeId("a".to_string());
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    engine.interrupted_nodes.insert(node_id.clone());
+    engine.transient_streaks_by_node.insert(node_id.clone(), 2);
+    engine.transcripts.insert(
+        node_id.clone(),
+        vec![AgentTranscriptItem::AssistantMessage {
+            content: "keep me".to_string(),
+        }],
+    );
+
+    engine.retry_node(&node_id).unwrap();
+
+    assert_eq!(engine.transcript(&node_id).len(), 1);
+    assert!(!engine.transient_streaks_by_node.contains_key(&node_id));
+}
+
 async fn run_once<A: AiPort, T: ToolPort>(
     engine: &mut InteractiveEngine,
     ai: &A,
     tools: &T,
 ) -> EngineRunResult {
     engine.run(ai, tools, &CancellationToken::new()).await
+}
+
+struct PhaseToolPort;
+
+#[async_trait]
+impl ToolPort for PhaseToolPort {
+    async fn execute_batch(
+        &self,
+        _node_id: &NodeId,
+        _label: &str,
+        calls: Vec<ToolCall>,
+        _policy: ToolAccessPolicy,
+    ) -> ToolBatchOutput {
+        ToolBatchOutput {
+            results: calls
+                .into_iter()
+                .map(|call| ToolResult {
+                    tool_call_id: call.id,
+                    tool_name: call.name,
+                    content: "found context".to_string(),
+                    is_error: false,
+                    artifact_ids: Vec::new(),
+                    output_meta: None,
+                })
+                .collect(),
+            effects: ToolBatchEffects::default(),
+        }
+    }
+
+    fn augment_request(&self, _node_id: &NodeId, request: &mut AgentRequest) {
+        request.available_tools.push(ToolDefinition {
+            name: "read".to_string(),
+            description: "Read a file".to_string(),
+            input_schema: json!({ "type": "object" }),
+            tier: ToolTier::Read,
+            concurrency: ToolConcurrency::Shared,
+        });
+    }
+}
+
+#[tokio::test]
+async fn run_alternates_control_work_control_before_completion() {
+    struct PhaseAwareAi {
+        phases: Arc<Mutex<Vec<AgentTurnPhase>>>,
+    }
+
+    #[async_trait]
+    impl AiPort for PhaseAwareAi {
+        async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            let mut phases = self.phases.lock().expect("phases lock");
+            phases.push(request.turn_phase);
+            match phases.len() {
+                1 => Ok(AgentTurnOutcome::ContinueWork(AgentContinueWork {
+                    raw_text: "{}".to_string(),
+                    assistant_message: None,
+                    reasoning: Vec::new(),
+                    usage: None,
+                })),
+                2 => Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+                    raw_text: String::new(),
+                    assistant_message: None,
+                    tool_calls: vec![ToolCall {
+                        id: "read-1".to_string(),
+                        name: "read".to_string(),
+                        arguments: json!({ "path": "README.md" }),
+                    }],
+                    reasoning: Vec::new(),
+                    usage: None,
+                })),
+                3 => Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    output: json!({ "summary": "done" }),
+                    raw_text: "{}".to_string(),
+                    assistant_message: None,
+                    usage: None,
+                })),
+                _ => Err(AgentError::Failed("unexpected extra turn".to_string())),
+            }
+        }
+    }
+
+    let mut workflow = Workflow::new("phases");
+    workflow.nodes = vec![node("idea")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let phases = Arc::new(Mutex::new(Vec::new()));
+    let ai = PhaseAwareAi {
+        phases: Arc::clone(&phases),
+    };
+
+    let result = run_once(&mut engine, &ai, &PhaseToolPort).await;
+
+    assert!(matches!(result, EngineRunResult::Completed(_)));
+    assert_eq!(
+        *phases.lock().expect("phases lock"),
+        vec![
+            AgentTurnPhase::Control,
+            AgentTurnPhase::Work,
+            AgentTurnPhase::Control,
+        ]
+    );
+}
+
+#[tokio::test]
+async fn mixed_tool_turn_is_corrected_and_retried_without_executing_calls() {
+    struct MixedThenCompleteAi {
+        requests: Arc<Mutex<Vec<AgentRequest>>>,
+    }
+
+    #[async_trait]
+    impl AiPort for MixedThenCompleteAi {
+        async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            let attempt = {
+                let mut requests = self.requests.lock().expect("requests lock");
+                let attempt = requests.len();
+                requests.push(request);
+                attempt
+            };
+            if attempt == 0 {
+                return Err(AgentError::mixed_tool_turn(
+                    "test provider",
+                    "openflow_submit_node_output, write",
+                ));
+            }
+            assert!(self
+                .requests
+                .lock()
+                .expect("requests lock")
+                .last()
+                .expect("retry request")
+                .transcript
+                .iter()
+                .any(|item| {
+                    matches!(
+                        item,
+                        AgentTranscriptItem::UserMessage { content }
+                            if content.contains("one tool call")
+                                && content.contains("write")
+                    )
+                }));
+            Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                output: json!({"status": "complete"}),
+                raw_text: "{}".to_string(),
+                assistant_message: None,
+                usage: None,
+            }))
+        }
+    }
+
+    let mut workflow = Workflow::new("mixed-tool-turn");
+    workflow.nodes = vec![node("idea")];
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let ai = MixedThenCompleteAi {
+        requests: Arc::clone(&requests),
+    };
+
+    let result = run_once(
+        &mut InteractiveEngine::new(workflow, None, None).unwrap(),
+        &ai,
+        &NoopToolPort,
+    )
+    .await;
+
+    assert!(matches!(result, EngineRunResult::Completed(_)));
+    assert_eq!(requests.lock().expect("requests lock").len(), 2);
+}
+
+#[test]
+fn mixed_tool_turn_fails_after_retry_cap() {
+    let mut workflow = Workflow::new("mixed-tool-turn-cap");
+    workflow.nodes = vec![node("idea")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let node_id = NodeId::from("idea");
+    let mixed =
+        || AgentError::mixed_tool_turn("test provider", "openflow_submit_node_output, write");
+
+    for _ in 0..MAX_MIXED_TOOL_TURN_RETRIES {
+        engine.test_insert_in_flight(node_id.clone());
+        engine.on_ai_complete(&node_id, Err(mixed()));
+    }
+    assert!(!engine.failed_nodes.contains_key(&node_id));
+
+    engine.test_insert_in_flight(node_id.clone());
+    engine.on_ai_complete(&node_id, Err(mixed()));
+    assert!(engine
+        .failed_nodes
+        .get(&node_id)
+        .is_some_and(|error| error.contains("tools from the wrong turn phase")));
+}
+
+#[test]
+fn work_turn_control_tool_gets_work_phase_correction() {
+    let mut workflow = Workflow::new("work-turn-control");
+    workflow.nodes = vec![node("idea")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let node_id = NodeId::from("idea");
+    engine.work_phase_nodes.insert(node_id.clone());
+    engine.test_insert_in_flight(node_id.clone());
+    engine.on_ai_complete(
+        &node_id,
+        Err(AgentError::mixed_tool_turn(
+            "Custom OpenAI-compatible API",
+            "openflow_continue_work",
+        )),
+    );
+    assert!(engine.transcript(&node_id).iter().any(|item| {
+        matches!(
+            item,
+            AgentTranscriptItem::UserMessage { content }
+                if content.contains("during a work turn")
+                    && content.contains("only executable tools")
+                    && content.contains("openflow_continue_work")
+        )
+    }));
+    assert!(!engine.failed_nodes.contains_key(&node_id));
 }
 
 struct CompleteAi {
@@ -272,6 +593,371 @@ fn checkpoint_preserves_transient_streaks_by_node() {
 }
 
 #[test]
+fn checkpoint_preserves_work_turn_phase() {
+    let mut workflow = Workflow::new("wf");
+    workflow.nodes = vec![node("a")];
+    let node_a = NodeId("a".to_string());
+    let mut engine = InteractiveEngine::new(workflow.clone(), None, None).unwrap();
+    engine.work_phase_nodes.insert(node_a.clone());
+
+    let checkpoint = engine.prepare_stop_checkpoint();
+    assert!(checkpoint.work_phase_nodes.contains(&node_a));
+
+    let mut restored =
+        InteractiveEngine::from_checkpoint(workflow, checkpoint, None).expect("restore");
+    let request = restored.build_request(&node_a).expect("request");
+    assert_eq!(request.turn_phase, AgentTurnPhase::Work);
+}
+
+#[test]
+fn workflows_without_plan_mode_keep_execution_tools_and_no_packet_input() {
+    let mut workflow = Workflow::new("normal-workflow");
+    workflow.nodes = vec![node("implement")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).expect("engine");
+
+    let request = engine
+        .build_request(&NodeId::from("implement"))
+        .expect("request");
+
+    assert_eq!(request.tool_access_policy, ToolAccessPolicy::Execution);
+    assert!(request.input.get("change_evidence_packet").is_none());
+    assert!(engine.plan_mode_phase().is_none());
+}
+
+#[test]
+fn plan_mode_checkpoint_pins_source_and_packet_when_workflow_settings_change() {
+    let mut workflow = Workflow::new("plan-mode");
+    let mut freeze = node("freeze");
+    freeze.agent.request_user_input = true;
+    let implement = node("implement");
+    let verify = node("verify");
+    let review = node("review");
+    workflow.nodes = vec![freeze, implement, verify, review];
+    workflow.edges = ["implement", "verify", "review"]
+        .into_iter()
+        .map(|target| crate::graph::Edge {
+            id: crate::graph::EdgeId::from(format!("freeze-{target}")),
+            from: NodeId::from("freeze"),
+            to: NodeId::from(target),
+        })
+        .collect();
+    workflow.settings.plan_mode = Some(PlanModeConfig {
+        evidence_source_node_id: NodeId::from("freeze"),
+    });
+
+    let freeze_id = NodeId::from("freeze");
+    let downstream_ids = ["implement", "verify", "review"];
+    let mut engine = InteractiveEngine::new(workflow.clone(), None, None).expect("engine");
+    assert_eq!(
+        engine.plan_mode_phase(),
+        Some(super::PlanModePhase::Planning)
+    );
+    engine.test_insert_in_flight(freeze_id.clone());
+    engine.on_ai_complete(
+        &freeze_id,
+        Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+            output: json!({
+                "scope": "only this change",
+                "planArtifact": "artifact:sealed-plan",
+                "planArtifactSha256": "deadbeef"
+            }),
+            raw_text: "{}".to_string(),
+            assistant_message: None,
+            usage: None,
+        })),
+    );
+    let checkpoint = engine.prepare_stop_checkpoint();
+    assert_eq!(
+        engine.plan_mode_phase(),
+        Some(super::PlanModePhase::Execution)
+    );
+    let expected_hash = checkpoint
+        .frozen_change_evidence_packet
+        .as_ref()
+        .expect("packet")
+        .sha256
+        .clone();
+
+    let mut changed_workflow = workflow;
+    changed_workflow.settings.plan_mode = None;
+    let mut restored = InteractiveEngine::from_checkpoint(changed_workflow, checkpoint, None)
+        .expect("restore pinned plan mode");
+    assert_eq!(
+        restored.plan_mode_phase(),
+        Some(super::PlanModePhase::Execution)
+    );
+    let packets: Vec<Value> = downstream_ids
+        .iter()
+        .map(|node_id| {
+            let request = restored
+                .build_request(&NodeId::from(*node_id))
+                .expect("downstream request");
+            assert_eq!(request.tool_access_policy, ToolAccessPolicy::Execution);
+            request.input["change_evidence_packet"].clone()
+        })
+        .collect();
+
+    assert!(packets.windows(2).all(|pair| pair[0] == pair[1]));
+    assert_eq!(packets[0]["sha256"], json!(expected_hash));
+    assert_eq!(packets[0]["sourceNodeId"], json!("freeze"));
+}
+
+#[test]
+fn plan_mode_checkpoint_keeps_the_pinned_source_conversational_before_freeze() {
+    let mut workflow = Workflow::new("plan-mode");
+    let mut freeze = node("freeze");
+    freeze.agent.request_user_input = true;
+    workflow.nodes = vec![freeze];
+    workflow.settings.plan_mode = Some(PlanModeConfig {
+        evidence_source_node_id: NodeId::from("freeze"),
+    });
+
+    let mut engine = InteractiveEngine::new(workflow.clone(), None, None).expect("engine");
+    let checkpoint = engine.prepare_stop_checkpoint();
+    let mut changed_workflow = workflow;
+    changed_workflow.settings.plan_mode = None;
+    changed_workflow.nodes[0].agent.request_user_input = false;
+
+    let mut restored = InteractiveEngine::from_checkpoint(changed_workflow, checkpoint, None)
+        .expect("restore pinned plan mode");
+    let request = restored
+        .build_request(&NodeId::from("freeze"))
+        .expect("source request");
+
+    assert_eq!(request.tool_access_policy, ToolAccessPolicy::Planning);
+    assert!(request.allow_user_input);
+}
+
+#[test]
+fn checkpoint_rejects_tampered_frozen_change_evidence_packet() {
+    let mut workflow = Workflow::new("plan-mode");
+    let mut freeze = node("freeze");
+    freeze.agent.request_user_input = true;
+    workflow.nodes = vec![freeze];
+    workflow.settings.plan_mode = Some(PlanModeConfig {
+        evidence_source_node_id: NodeId::from("freeze"),
+    });
+    let freeze_id = NodeId::from("freeze");
+    let mut engine = InteractiveEngine::new(workflow.clone(), None, None).expect("engine");
+    engine.test_insert_in_flight(freeze_id.clone());
+    engine.on_ai_complete(
+        &freeze_id,
+        Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+            output: json!({ "scope": "approved" }),
+            raw_text: "{}".to_string(),
+            assistant_message: None,
+            usage: None,
+        })),
+    );
+    let mut checkpoint = engine.prepare_stop_checkpoint();
+    checkpoint
+        .frozen_change_evidence_packet
+        .as_mut()
+        .expect("packet")
+        .content = json!({ "scope": "tampered" });
+
+    assert!(matches!(
+        InteractiveEngine::from_checkpoint(workflow, checkpoint, None),
+        Err(CheckpointError::InvalidFrozenChangeEvidencePacket)
+    ));
+}
+
+#[test]
+fn checkpoint_rejects_packet_from_a_node_other_than_the_pinned_source() {
+    let mut workflow = Workflow::new("plan-mode");
+    let mut freeze = node("freeze");
+    freeze.agent.request_user_input = true;
+    workflow.nodes = vec![freeze, node("other")];
+    workflow.settings.plan_mode = Some(PlanModeConfig {
+        evidence_source_node_id: NodeId::from("freeze"),
+    });
+    let freeze_id = NodeId::from("freeze");
+    let mut engine = InteractiveEngine::new(workflow.clone(), None, None).expect("engine");
+    engine.test_insert_in_flight(freeze_id.clone());
+    engine.on_ai_complete(
+        &freeze_id,
+        Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+            output: json!({ "scope": "approved" }),
+            raw_text: "{}".to_string(),
+            assistant_message: None,
+            usage: None,
+        })),
+    );
+    let mut checkpoint = engine.prepare_stop_checkpoint();
+    checkpoint
+        .frozen_change_evidence_packet
+        .as_mut()
+        .expect("packet")
+        .source_node_id = NodeId::from("other");
+
+    assert!(matches!(
+        InteractiveEngine::from_checkpoint(workflow, checkpoint, None),
+        Err(CheckpointError::InvalidFrozenChangeEvidencePacket)
+    ));
+}
+
+#[tokio::test]
+async fn plan_mode_denies_hidden_write_mcp_and_subagent_calls_before_tool_port() {
+    let mut workflow = Workflow::new("plan-mode-policy");
+    let mut planner = node("planner");
+    planner.agent.request_user_input = true;
+    workflow.nodes = vec![planner];
+    workflow.settings.plan_mode = Some(PlanModeConfig {
+        evidence_source_node_id: NodeId::from("planner"),
+    });
+    let ai = ScriptedAi::new(vec![
+        Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+            raw_text: String::new(),
+            assistant_message: None,
+            tool_calls: vec![
+                ToolCall {
+                    id: "write".to_string(),
+                    name: "write".to_string(),
+                    arguments: json!({ "path": "src/lib.rs", "content": "bad" }),
+                },
+                ToolCall {
+                    id: "mcp".to_string(),
+                    name: "mcp/example".to_string(),
+                    arguments: json!({}),
+                },
+                ToolCall {
+                    id: "subagent".to_string(),
+                    name: "openflow_call_subagent".to_string(),
+                    arguments: json!({}),
+                },
+                ToolCall {
+                    id: "read".to_string(),
+                    name: "read".to_string(),
+                    arguments: json!({ "path": "README.md" }),
+                },
+                ToolCall {
+                    id: "plan".to_string(),
+                    name: crate::tools::WRITE_PLAN_ARTIFACT_TOOL.to_string(),
+                    arguments: json!({ "markdown": "# Plan" }),
+                },
+            ],
+            reasoning: Vec::new(),
+            usage: None,
+        })),
+        Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+            output: json!({ "scope": "approved" }),
+            raw_text: "{}".to_string(),
+            assistant_message: None,
+            usage: None,
+        })),
+    ]);
+    let batches = Arc::new(Mutex::new(Vec::new()));
+    let tools = PlanningRecordingToolPort {
+        batches: Arc::clone(&batches),
+    };
+    let mut engine = InteractiveEngine::new(workflow, None, None).expect("engine");
+
+    assert!(matches!(
+        run_once(&mut engine, &ai, &tools).await,
+        EngineRunResult::Completed(_)
+    ));
+    assert_eq!(
+        *batches.lock().expect("batches lock"),
+        vec![(
+            vec![
+                "read".to_string(),
+                crate::tools::WRITE_PLAN_ARTIFACT_TOOL.to_string(),
+            ],
+            ToolAccessPolicy::Planning,
+        )]
+    );
+    let transcript = engine.transcript(&NodeId::from("planner"));
+    let denied = transcript
+        .iter()
+        .filter(|item| {
+            matches!(
+                item,
+                AgentTranscriptItem::ToolResult { result }
+                    if result.is_error && result.content.contains("blocked by Plan Mode")
+            )
+        })
+        .count();
+    assert_eq!(denied, 3);
+}
+
+#[test]
+fn committed_plan_artifact_redacts_markdown_from_transcript() {
+    let mut workflow = Workflow::new("plan-mode-redaction");
+    let mut planner = node("planner");
+    planner.agent.request_user_input = true;
+    workflow.nodes = vec![planner];
+    workflow.settings.plan_mode = Some(PlanModeConfig {
+        evidence_source_node_id: NodeId::from("planner"),
+    });
+    let planner_id = NodeId::from("planner");
+    let call = ToolCall {
+        id: "plan-call".to_string(),
+        name: crate::tools::WRITE_PLAN_ARTIFACT_TOOL.to_string(),
+        arguments: json!({ "markdown": "# Very detailed plan" }),
+    };
+    let mut engine = InteractiveEngine::new(workflow, None, None).expect("engine");
+    engine
+        .transcripts
+        .entry(planner_id.clone())
+        .or_default()
+        .push(AgentTranscriptItem::ToolCall { call: call.clone() });
+    engine.test_insert_pending_batch(PendingToolBatch {
+        approval_id: "plan-batch".to_string(),
+        node_id: planner_id.clone(),
+        tool_calls: vec![call],
+        requires_approval: false,
+        tool_access_policy: ToolAccessPolicy::Planning,
+    });
+
+    engine
+        .on_tool_results(
+            &planner_id,
+            vec![ToolResult {
+                tool_call_id: "plan-call".to_string(),
+                tool_name: crate::tools::WRITE_PLAN_ARTIFACT_TOOL.to_string(),
+                content: "Plan artifact stored".to_string(),
+                is_error: false,
+                artifact_ids: vec!["5b6bbf2b-a428-4ca2-8579-207b89d2463a".to_string()],
+                output_meta: None,
+            }],
+        )
+        .expect("tool results");
+
+    let AgentTranscriptItem::ToolCall { call } = &engine.transcript(&planner_id)[0] else {
+        panic!("expected plan tool call")
+    };
+    assert_eq!(call.arguments["markdown_redacted"], json!(true));
+    assert_eq!(
+        call.arguments["artifact_id"],
+        json!("5b6bbf2b-a428-4ca2-8579-207b89d2463a")
+    );
+    assert!(call.arguments.get("markdown").is_none());
+}
+
+#[test]
+fn checkpoint_preserves_mixed_tool_turn_retry_budget() {
+    let mut workflow = Workflow::new("wf");
+    workflow.nodes = vec![node("a")];
+    let node_a = NodeId::from("a");
+    let mut engine = InteractiveEngine::new(workflow.clone(), None, None).unwrap();
+    engine
+        .mixed_tool_turn_retries_by_node
+        .insert(node_a.clone(), 2);
+
+    let checkpoint = engine.prepare_stop_checkpoint();
+    assert_eq!(
+        checkpoint.mixed_tool_turn_retries_by_node.get(&node_a),
+        Some(&2)
+    );
+
+    let restored = InteractiveEngine::from_checkpoint(workflow, checkpoint, None).unwrap();
+    assert_eq!(
+        restored.mixed_tool_turn_retries_by_node.get(&node_a),
+        Some(&2)
+    );
+}
+
+#[test]
 fn transient_streak_resets_after_successful_turn() {
     let mut workflow = Workflow::new("wf");
     workflow.settings.retry_policy.max_attempts = 2;
@@ -293,6 +979,7 @@ fn transient_streak_resets_after_successful_turn() {
             raw_text: String::new(),
             tool_calls: vec![],
             assistant_message: Some("working".to_string()),
+            reasoning: vec![],
             usage: None,
         })),
     );
@@ -329,6 +1016,7 @@ fn model_attempt_does_not_decrease_after_streak_reset() {
             raw_text: String::new(),
             tool_calls: vec![],
             assistant_message: Some("working".to_string()),
+            reasoning: vec![],
             usage: None,
         })),
     );
@@ -535,6 +1223,7 @@ fn tool_calls_pause_for_approval_and_resume_after_results() {
                 name: "read".to_string(),
                 arguments: json!({"path": "README.md"}),
             }],
+            reasoning: vec![],
             usage: None,
         })),
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
@@ -580,6 +1269,7 @@ fn apply_tool_calls_relativizes_absolute_paths_under_project_root() {
                     "path": format!("{root}/package.json"),
                 }),
             }],
+            reasoning: vec![],
             usage: None,
         })),
     );
@@ -607,6 +1297,7 @@ fn yolo_mode_skips_tool_approval() {
                 name: "read".to_string(),
                 arguments: json!({"path": "README.md"}),
             }],
+            reasoning: vec![],
             usage: None,
         })),
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
@@ -654,6 +1345,7 @@ fn runtime_approval_patch_applies_before_tool_decision() {
                 name: "bash".to_string(),
                 arguments: json!({"command": "echo hi"}),
             }],
+            reasoning: vec![],
             usage: None,
         })),
     );
@@ -866,6 +1558,7 @@ impl AiPort for ToolOverlapAi {
         Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
             raw_text: String::new(),
             assistant_message: None,
+            reasoning: vec![],
             usage: None,
             tool_calls: vec![ToolCall {
                 id: "t1".to_string(),
@@ -887,6 +1580,7 @@ impl ToolPort for BarrierToolPort {
         _node_id: &NodeId,
         _label: &str,
         calls: Vec<ToolCall>,
+        _policy: ToolAccessPolicy,
     ) -> ToolBatchOutput {
         self.barrier.wait().await;
         ToolBatchOutput {
@@ -939,6 +1633,7 @@ impl ToolPort for EffectsToolPort {
         _node_id: &NodeId,
         _label: &str,
         calls: Vec<ToolCall>,
+        _policy: ToolAccessPolicy,
     ) -> ToolBatchOutput {
         ToolBatchOutput {
             results: calls
@@ -983,6 +1678,7 @@ fn tool_batch_effects_are_recorded_on_engine() {
             Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                 raw_text: String::new(),
                 assistant_message: None,
+                reasoning: vec![],
                 usage: None,
                 tool_calls: vec![ToolCall {
                     id: "t1".to_string(),
@@ -1024,6 +1720,7 @@ fn checkpoint_stop_mid_tool_execution_retains_approved_batch() {
             arguments: json!({"path": "foo.txt"}),
         }],
         requires_approval: false,
+        tool_access_policy: crate::ports::ToolAccessPolicy::Execution,
     });
     engine.test_insert_in_flight(NodeId::from("idea"));
 
@@ -1037,10 +1734,26 @@ fn autonomous_node(id: &str) -> Node {
     node
 }
 
+fn interactive_node(id: &str) -> Node {
+    let mut node = node(id);
+    node.agent.request_user_input = true;
+    node
+}
+
 fn needs_input(message: &str) -> AgentTurnOutcome {
     AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
         raw_text: message.to_string(),
         assistant_message: message.to_string(),
+        reasoning: Vec::new(),
+    })
+}
+
+fn message(message: &str) -> AgentTurnOutcome {
+    AgentTurnOutcome::Message(AgentMessageTurn {
+        raw_text: message.to_string(),
+        assistant_message: message.to_string(),
+        reasoning: Vec::new(),
+        usage: None,
     })
 }
 
@@ -1065,10 +1778,39 @@ fn empty_provider_turn_retries_with_tool_nudge_before_failing() {
         );
         assert_eq!(engine.transcript(&node_a).len(), attempt);
     }
+    assert!(matches!(
+        engine.transcript(&node_a).last(),
+        Some(AgentTranscriptItem::UserMessage { content })
+            if content.contains("No human input is available")
+    ));
 
     engine.test_insert_in_flight(node_a.clone());
     engine.on_ai_complete(&node_a, empty());
     assert!(engine.failed_nodes.contains_key(&node_a));
+}
+
+#[test]
+fn interactive_empty_provider_turn_keeps_human_input_available() {
+    let mut workflow = Workflow::new("wf");
+    workflow.nodes = vec![interactive_node("grill")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let grill = NodeId("grill".to_string());
+
+    engine.test_insert_in_flight(grill.clone());
+    engine.on_ai_complete(
+        &grill,
+        Err(AgentError::Failed(
+            "provider returned neither tool calls nor recoverable output".to_string(),
+        )),
+    );
+
+    let transcript = engine.transcript(&grill);
+    assert!(matches!(
+        transcript.last(),
+        Some(AgentTranscriptItem::UserMessage { content })
+            if content.contains("openflow_request_user_input")
+                && !content.contains("No human input is available")
+    ));
 }
 
 #[test]
@@ -1087,12 +1829,31 @@ fn autonomous_node_auto_continues_instead_of_awaiting_input() {
     assert!(matches!(
         transcript.last(),
         Some(AgentTranscriptItem::UserMessage { content })
-            if content.contains("call a tool")
+            if content.contains("openflow_continue_work")
     ));
     assert!(matches!(
         &transcript[transcript.len() - 2],
         AgentTranscriptItem::AssistantMessage { content }
             if content == "Now I'll write the tests."
+    ));
+}
+
+#[test]
+fn autonomous_node_repairs_plain_message_instead_of_awaiting_input() {
+    let mut workflow = Workflow::new("wf");
+    workflow.nodes = vec![autonomous_node("a")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let node_a = NodeId("a".to_string());
+
+    engine.test_insert_in_flight(node_a.clone());
+    engine.on_ai_complete(&node_a, Ok(message("I will inspect the repository next.")));
+
+    assert!(!engine.awaiting_nodes.contains(&node_a));
+    assert!(!engine.failed_nodes.contains_key(&node_a));
+    assert!(matches!(
+        engine.transcript(&node_a).last(),
+        Some(AgentTranscriptItem::UserMessage { content })
+            if content.contains("No human input is available")
     ));
 }
 
@@ -1136,6 +1897,7 @@ fn autonomous_auto_continue_streak_resets_on_tool_calls() {
                 arguments: json!({}),
             }],
             assistant_message: None,
+            reasoning: vec![],
             usage: None,
         })),
     );
@@ -1152,7 +1914,7 @@ fn autonomous_auto_continue_streak_resets_on_tool_calls() {
 #[test]
 fn interactive_node_still_pauses_for_real_questions() {
     let mut workflow = Workflow::new("wf");
-    workflow.nodes = vec![node("a")];
+    workflow.nodes = vec![interactive_node("a")];
     let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
     let node_a = NodeId("a".to_string());
 
@@ -1165,9 +1927,94 @@ fn interactive_node_still_pauses_for_real_questions() {
 }
 
 #[test]
+fn conversational_node_pauses_on_plain_message_without_guessing_intent() {
+    let mut workflow = Workflow::new("wf");
+    workflow.nodes = vec![interactive_node("brief")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let brief = NodeId("brief".to_string());
+
+    engine.test_insert_in_flight(brief.clone());
+    engine.on_ai_complete(
+        &brief,
+        Ok(message("Auth and Postgres are in scope. Storage can wait.")),
+    );
+
+    assert!(engine.awaiting_nodes.contains(&brief));
+    assert!(!engine.failed_nodes.contains_key(&brief));
+    assert!(matches!(
+        engine.transcript(&brief).last(),
+        Some(AgentTranscriptItem::AssistantMessage { content })
+            if content == "Auth and Postgres are in scope. Storage can wait."
+    ));
+}
+
+#[test]
+fn valid_conversational_pause_resets_protocol_recovery_budgets() {
+    let mut workflow = Workflow::new("wf");
+    workflow.nodes = vec![interactive_node("brief")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let brief = NodeId("brief".to_string());
+
+    engine.empty_turn_retries_by_node.insert(brief.clone(), 2);
+    engine
+        .request_input_retries_by_node
+        .insert(brief.clone(), 2);
+    engine
+        .submit_output_retries_by_node
+        .insert(brief.clone(), 2);
+    engine
+        .auto_continue_streaks_by_node
+        .insert(brief.clone(), 2);
+
+    engine.test_insert_in_flight(brief.clone());
+    engine.on_ai_complete(
+        &brief,
+        Ok(needs_input("Which Supabase products should be included?")),
+    );
+
+    assert!(engine.awaiting_nodes.contains(&brief));
+    assert!(!engine.empty_turn_retries_by_node.contains_key(&brief));
+    assert!(!engine.request_input_retries_by_node.contains_key(&brief));
+    assert!(!engine.submit_output_retries_by_node.contains_key(&brief));
+    assert!(!engine.auto_continue_streaks_by_node.contains_key(&brief));
+
+    engine
+        .on_human_input(&brief, "Auth and Postgres. What else do you think?")
+        .unwrap();
+    engine.test_insert_in_flight(brief.clone());
+    engine.on_ai_complete(
+        &brief,
+        Ok(message("Storage is the most useful third surface.")),
+    );
+
+    assert!(engine.awaiting_nodes.contains(&brief));
+    assert!(!engine.failed_nodes.contains_key(&brief));
+}
+
+#[test]
+fn malformed_request_input_fails_after_retry_cap_without_pausing() {
+    let mut workflow = Workflow::new("wf");
+    workflow.nodes = vec![interactive_node("a")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let node_a = NodeId("a".to_string());
+
+    for _ in 0..=MAX_MALFORMED_REQUEST_INPUT_RETRIES {
+        engine.test_insert_in_flight(node_a.clone());
+        engine.on_ai_complete(&node_a, Ok(needs_input("Working on the next file.")));
+    }
+
+    assert!(!engine.awaiting_nodes.contains(&node_a));
+    let error = engine
+        .failed_nodes
+        .get(&node_a)
+        .expect("malformed request input should fail the node");
+    assert!(error.contains("invalid human-input requests"), "{error}");
+}
+
+#[test]
 fn malformed_request_input_retries_reset_on_tool_call_progress() {
     let mut workflow = Workflow::new("wf");
-    workflow.nodes = vec![node("a")];
+    workflow.nodes = vec![interactive_node("a")];
     let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
     let node_a = NodeId("a".to_string());
 
@@ -1188,6 +2035,7 @@ fn malformed_request_input_retries_reset_on_tool_call_progress() {
                 arguments: json!({}),
             }],
             assistant_message: None,
+            reasoning: vec![],
             usage: None,
         })),
     );

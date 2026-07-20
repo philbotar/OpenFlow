@@ -151,6 +151,22 @@ pub struct WorkflowSettings {
     /// Forward upstream read outlines to downstream node input JSON.
     #[serde(default = "default_true", rename = "forwardUpstreamReads")]
     pub forward_upstream_reads: bool,
+    /// Optional workflow-wide planning gate. While active, only read tools and
+    /// the host-owned plan-artifact tool are available until the selected node
+    /// submits an approved change evidence packet.
+    #[serde(default, rename = "planMode", alias = "plan_mode")]
+    pub plan_mode: Option<PlanModeConfig>,
+    /// Optional overseer model for repairing malformed final-output submits.
+    /// Blank or absent means use the originating worker request model.
+    #[serde(default, rename = "outputRepairModel", alias = "output_repair_model")]
+    pub output_repair_model: Option<String>,
+}
+
+/// Opt-in configuration for the `Planning -> Freeze -> Execute` run policy.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanModeConfig {
+    pub evidence_source_node_id: NodeId,
 }
 
 impl Default for WorkflowSettings {
@@ -163,6 +179,8 @@ impl Default for WorkflowSettings {
             reasoning_effort: None,
             reasoning_budget_tokens: None,
             forward_upstream_reads: default_true(),
+            plan_mode: None,
+            output_repair_model: None,
         }
     }
 }
@@ -271,7 +289,7 @@ const fn default_auto_start() -> bool {
 }
 
 const fn default_request_user_input() -> bool {
-    true
+    false
 }
 
 /// Default JSON Schema for structured node or subagent output.
@@ -315,7 +333,7 @@ impl Default for AgentNodeConfig {
             reasoning_effort: None,
             reasoning_budget_tokens: None,
             provider_id: None,
-            request_user_input: true,
+            request_user_input: false,
         }
     }
 }
@@ -455,6 +473,30 @@ mod tests {
     }
 
     #[test]
+    fn workflow_settings_plan_mode_roundtrips_and_defaults_for_legacy_data() {
+        let settings: WorkflowSettings = serde_json::from_value(json!({
+            "shared_context": "ctx",
+            "planMode": { "evidenceSourceNodeId": "freeze" }
+        }))
+        .unwrap();
+        assert_eq!(
+            settings
+                .plan_mode
+                .as_ref()
+                .expect("plan mode")
+                .evidence_source_node_id,
+            NodeId::from("freeze")
+        );
+        assert_eq!(
+            serde_json::to_value(&settings).unwrap()["planMode"]["evidenceSourceNodeId"],
+            json!("freeze")
+        );
+
+        let legacy: WorkflowSettings = serde_json::from_value(json!({})).unwrap();
+        assert!(legacy.plan_mode.is_none());
+    }
+
+    #[test]
     fn agent_node_config_serde_roundtrip_with_reasoning_effort() {
         let config = AgentNodeConfig {
             reasoning_effort: Some("adaptive".to_string()),
@@ -495,15 +537,15 @@ mod tests {
     }
 
     #[test]
-    fn agent_node_config_request_user_input_defaults_true() {
+    fn agent_node_config_request_user_input_defaults_false() {
         let config: AgentNodeConfig = serde_json::from_value(json!({
             "system_prompt": "s",
             "task_prompt": "t",
             "output_schema": {"type": "object"}
         }))
         .unwrap();
-        assert!(config.request_user_input);
-        assert!(AgentNodeConfig::default().request_user_input);
+        assert!(!config.request_user_input);
+        assert!(!AgentNodeConfig::default().request_user_input);
     }
 
     #[test]

@@ -28,10 +28,21 @@ Each file covers architecture, dependency rules, code standards, patterns, and c
    - **providers** — LLM transport
    - **ui** / **desktop** — user interaction
 3. Start docs at `docs/README.md` — see [Documentation](#documentation) for the full tree.
-4. Development lanes: `docs/contributing/development-lanes.md`.
+4. Development lanes: `docs/contributing/development-lanes.md` (skills under `.cursor/skills/`).
 5. Coding patterns: `docs/contributing/coding-patterns.md`.
 6. Workflow verification: `docs/contributing/testing-workflows.md`.
 7. Engine vocabulary: `docs/glossary.md`.
+8. Run / pause / IPC path: [`docs/architecture/end-to-end-runtime.md`](docs/architecture/end-to-end-runtime.md).
+
+## Known doc drift (trust code)
+
+When these disagree with the tree, **code wins**. Fix the doc in the same change when you notice it.
+
+| Claim that was wrong | Reality |
+| --- | --- |
+| Providers live in `openai_compat.rs` / `anthropic.rs` / `sse.rs` | Rig transport under `crates/providers/src/rig_adapter/`; shared mapping in `mapping/` |
+| Engine runs one node at a time | Ready work in a layer runs concurrently via `FuturesUnordered` (`InteractiveEngine::run`) |
+| Historical plans under `docs/superpowers/plans/` naming deleted provider files | Archive only — do not follow those paths for new edits |
 
 ## Boundary Seams
 
@@ -69,6 +80,7 @@ docs/
 │   └── testing-workflows.md
 └── architecture/
     ├── README.md
+    ├── end-to-end-runtime.md
     ├── contract.md
     ├── threading-concurrency.md
     └── diagrams/
@@ -85,6 +97,7 @@ docs/
 | `docs/contributing/development-lanes.md` | Classifying a change, selecting playbook/skill, choosing verification |
 | `docs/contributing/coding-patterns.md` | Ownership, runtime semantics, conventions |
 | `docs/contributing/testing-workflows.md` | Acceptance tests, live-AI smoke |
+| `docs/architecture/end-to-end-runtime.md` | UI → desktop → orchestration → engine → providers run path |
 | `docs/architecture/contract.md` | Layer boundaries and dependency rules |
 | `docs/architecture/threading-concurrency.md` | Runtimes, async I/O, parallelism |
 | `docs/glossary.md` | Engine terms and naming |
@@ -123,10 +136,9 @@ Before editing, classify the change with [`docs/contributing/development-lanes.m
 
 | Path | Purpose | Change Here When... |
 | --- | --- | --- |
-| `crates/providers/src/client.rs` | `AiClient` implementing `AiPort` | Changing provider client wiring |
-| `crates/providers/src/mapping.rs` | Transcript/tool-arg mapping, `jsonrepair-rs` | Changing wire payload shape |
-| `crates/providers/src/openai_compat.rs` | OpenAI-compatible transport | Adding/changing OpenAI-compat APIs |
-| `crates/providers/src/anthropic.rs` | Anthropic transport | Adding/changing Anthropic APIs |
+| `crates/providers/src/client.rs` | `AiClient` implementing `AiPort`, config types | Changing provider client wiring |
+| `crates/providers/src/mapping/` | Transcript/tool-arg mapping, `jsonrepair-rs` | Changing wire payload shape |
+| `crates/providers/src/rig_adapter/` | Rig transport (OpenAI-compat, Anthropic, Bedrock) | Adding/changing provider HTTP/stream behavior |
 | `crates/providers/src/lib.rs` | `create_provider` factory | Adding a new provider adapter |
 
 ### Orchestration

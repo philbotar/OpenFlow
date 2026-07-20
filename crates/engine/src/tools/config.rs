@@ -1,6 +1,7 @@
 //! Tool catalog, approval policy, and transcript types for agent nodes.
 
 use crate::graph::NodeId;
+use crate::ports::ToolAccessPolicy;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -60,6 +61,9 @@ pub enum ToolDecision {
     Deny,
 }
 
+/// The only write-shaped capability permitted during a planning run phase.
+pub const WRITE_PLAN_ARTIFACT_TOOL: &str = "openflow_write_plan_artifact";
+
 #[must_use]
 #[cfg_attr(not(test), allow(dead_code, reason = "exercised by config unit tests"))]
 pub const fn requires_approval(mode: ApprovalMode, tier: ToolTier) -> ToolDecision {
@@ -108,6 +112,22 @@ pub fn tool_intent_from_arguments(arguments: &Value) -> Option<String> {
 pub fn tool_decision_for_call(config: &NodeToolConfig, call: &ToolCall) -> ToolDecision {
     let tier = tool_tier_for_call(config, &call.name);
     decision_from_mode(config.effective_approval_mode(), tier)
+}
+
+/// Whether the run-wide policy permits a call before node approval is considered.
+#[must_use]
+pub fn tool_access_policy_allows_call(
+    policy: ToolAccessPolicy,
+    config: &NodeToolConfig,
+    call: &ToolCall,
+) -> bool {
+    match policy {
+        ToolAccessPolicy::Execution => call.name != WRITE_PLAN_ARTIFACT_TOOL,
+        ToolAccessPolicy::Planning => {
+            call.name == WRITE_PLAN_ARTIFACT_TOOL
+                || tool_tier_for_call(config, &call.name) == ToolTier::Read
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -316,6 +336,47 @@ mod tests {
             tool_tier_for_call(&config, "mcp/gh/search"),
             ToolTier::Write
         );
+    }
+
+    #[test]
+    fn plan_artifact_writer_is_planning_only() {
+        let config = NodeToolConfig::default();
+        let writer = ToolCall {
+            id: "plan".to_string(),
+            name: WRITE_PLAN_ARTIFACT_TOOL.to_string(),
+            arguments: json!({ "markdown": "# Plan" }),
+        };
+        let read = ToolCall {
+            id: "read".to_string(),
+            name: "read".to_string(),
+            arguments: json!({ "path": "README.md" }),
+        };
+        let write = ToolCall {
+            id: "write".to_string(),
+            name: "write".to_string(),
+            arguments: json!({ "path": "blocked", "content": "no" }),
+        };
+
+        assert!(tool_access_policy_allows_call(
+            ToolAccessPolicy::Planning,
+            &config,
+            &writer
+        ));
+        assert!(!tool_access_policy_allows_call(
+            ToolAccessPolicy::Execution,
+            &config,
+            &writer
+        ));
+        assert!(tool_access_policy_allows_call(
+            ToolAccessPolicy::Planning,
+            &config,
+            &read
+        ));
+        assert!(!tool_access_policy_allows_call(
+            ToolAccessPolicy::Planning,
+            &config,
+            &write
+        ));
     }
 
     #[test]

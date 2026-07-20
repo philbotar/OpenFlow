@@ -72,6 +72,8 @@ fn test_request() -> engine::AgentRequest {
         model_attempt: 1,
         reasoning_effort: None,
         reasoning_budget_tokens: None,
+        turn_phase: engine::AgentTurnPhase::Control,
+        tool_access_policy: engine::ToolAccessPolicy::Execution,
         allow_user_input: true,
     }
 }
@@ -89,8 +91,16 @@ fn openai_test_config(base_url: &str, wire_api: WireApi) -> AiClientConfig {
             wire_api,
             responses_path: "v1/responses".into(),
             chat_completions_path: "v1/chat/completions".into(),
+            request_timeout: std::time::Duration::from_mins(5),
         }),
     }
+}
+
+fn custom_openai_test_config(base_url: &str) -> AiClientConfig {
+    let mut config = openai_test_config(base_url, WireApi::ChatCompletions);
+    config.provider_id = ProviderId::from("custom_openai_compatible");
+    config.provider_label = "Custom OpenAI-compatible API".into();
+    config
 }
 
 #[derive(Clone, Default)]
@@ -127,6 +137,228 @@ async fn responses_submit_output_completes_node() {
 }
 
 #[tokio::test]
+async fn custom_chat_submits_large_file_backed_output_without_document_duplication() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(chat_completion_response(&json!({
+                "role": "assistant",
+                "tool_calls": [{
+                    "id": "call-submit",
+                    "type": "function",
+                    "function": {
+                        "name": "openflow_submit_node_output",
+                        "arguments": "{\"output\":{\"implementation_spec_markdown\":\"artifacts/0005-implementation-spec.md\",\"status\":\"complete\"},\"assistant_message\":null}"
+                    }
+                }]
+            }))),
+        )
+        .mount(&server)
+        .await;
+
+    let mut request = test_request();
+    request.output_schema = json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "implementation_spec_markdown": { "type": "string" },
+            "status": { "type": "string" }
+        },
+        "required": ["implementation_spec_markdown", "status"]
+    });
+    request.available_tools = vec![ToolDefinition {
+        name: "write".into(),
+        description: "Write a file".into(),
+        input_schema: json!({ "type": "object" }),
+        tier: engine::ToolTier::Write,
+        concurrency: engine::ToolConcurrency::Exclusive,
+    }];
+    request.transcript = vec![
+        engine::AgentTranscriptItem::ToolCall {
+            call: ToolCall {
+                id: "write-large-spec".into(),
+                name: "write".into(),
+                arguments: json!({
+                    "path": "artifacts/0005-implementation-spec.md",
+                    "content": "<large document omitted from this fixture>"
+                }),
+            },
+        },
+        engine::AgentTranscriptItem::ToolResult {
+            result: engine::ToolResult {
+                tool_call_id: "write-large-spec".into(),
+                tool_name: "write".into(),
+                content: "wrote artifacts/0005-implementation-spec.md".into(),
+                is_error: false,
+                artifact_ids: Vec::new(),
+                output_meta: None,
+            },
+        },
+    ];
+
+    let client = create_provider(custom_openai_test_config(&server.uri()));
+    let outcome = client
+        .invoke_stream(request, &RecordingSink::default())
+        .await
+        .unwrap();
+    let AgentTurnOutcome::Completed(success) = outcome else {
+        panic!("expected completed outcome");
+    };
+    assert_eq!(
+        success.output["implementation_spec_markdown"],
+        "artifacts/0005-implementation-spec.md"
+    );
+
+    let requests = server.received_requests().await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+    assert_eq!(body["tool_choice"], "required");
+    let control_tool_names = body["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|tool| tool["function"]["name"].as_str())
+        .collect::<Vec<_>>();
+    assert!(control_tool_names.contains(&"openflow_submit_node_output"));
+    assert!(control_tool_names.contains(&"openflow_continue_work"));
+    assert!(!control_tool_names.contains(&"write"));
+    let submit_tool = body["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|tool| tool["function"]["name"] == "openflow_submit_node_output")
+        .unwrap();
+    assert!(
+        submit_tool["function"]["parameters"]["properties"]["output"]["properties"]
+            ["implementation_spec_markdown"]["description"]
+            .as_str()
+            .is_some_and(|description| description.contains("repository-relative file path"))
+    );
+}
+
+#[tokio::test]
+async fn custom_chat_honors_configured_request_timeout() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_delay(std::time::Duration::from_millis(100))
+                .set_body_json(chat_completion_response(&json!({
+                    "role": "assistant",
+                    "content": "late"
+                }))),
+        )
+        .mount(&server)
+        .await;
+    let mut config = custom_openai_test_config(&server.uri());
+    let ProviderAdapterConfig::OpenAiCompatible(openai) = &mut config.adapter else {
+        panic!("expected OpenAI-compatible config");
+    };
+    openai.request_timeout = std::time::Duration::from_millis(10);
+
+    let error = create_provider(config)
+        .invoke(test_request())
+        .await
+        .unwrap_err();
+
+    assert!(error.is_retryable());
+    assert!(error.to_string().contains("HTTP transport timed out"));
+}
+
+#[tokio::test]
+async fn custom_chat_empty_turn_preserves_safe_response_diagnostics() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "chatcmpl-empty",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "test-model",
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": null,
+                    "reasoning_content": "sensitive private reasoning"
+                },
+                "finish_reason": "length"
+            }],
+            "usage": {
+                "prompt_tokens": 7000,
+                "completion_tokens": 4096,
+                "total_tokens": 11096
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let client = create_provider(custom_openai_test_config(&server.uri()));
+    let error = client
+        .invoke_stream(test_request(), &RecordingSink::default())
+        .await
+        .unwrap_err()
+        .to_string();
+
+    assert!(error.contains("finish_reason=length"), "{error}");
+    assert!(error.contains("content=reasoning"), "{error}");
+    assert!(
+        error.contains("prompt=7000, completion=4096, total=11096"),
+        "{error}"
+    );
+    assert!(!error.contains("sensitive private reasoning"), "{error}");
+}
+
+#[tokio::test]
+async fn custom_chat_fully_empty_choice_is_empty_provider_turn() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "chatcmpl-blank",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "test-model",
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": null
+                },
+                "finish_reason": "stop"
+            }],
+            "usage": {
+                "prompt_tokens": 10,
+                "completion_tokens": 0,
+                "total_tokens": 10
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let client = create_provider(custom_openai_test_config(&server.uri()));
+    let error = client
+        .invoke_stream(test_request(), &RecordingSink::default())
+        .await
+        .unwrap_err();
+
+    assert!(
+        error.is_empty_provider_turn(),
+        "Rig empty choice must classify as empty-turn for engine retries: {error}"
+    );
+    let message = error.to_string();
+    assert!(
+        message.contains("no tool calls and no usable text"),
+        "expected enriched empty-turn message, got {message}"
+    );
+    assert!(
+        !message.contains("no message or tool call"),
+        "raw Rig phrase must not leak: {message}"
+    );
+}
+
+#[tokio::test]
 async fn chat_completions_external_tool_call_batch() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -149,6 +381,7 @@ async fn chat_completions_external_tool_call_batch() {
         .await;
 
     let mut request = test_request();
+    request.turn_phase = engine::AgentTurnPhase::Work;
     request.available_tools = vec![ToolDefinition {
         name: "read".into(),
         description: "Read a file or URL.".into(),
@@ -174,9 +407,20 @@ async fn chat_completions_external_tool_call_batch() {
                 name: "read".into(),
                 arguments: json!({"path": "README.md"}),
             }],
+            reasoning: vec![],
             usage: None,
         })
     );
+
+    let requests = server.received_requests().await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+    let work_tool_names = body["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|tool| tool["function"]["name"].as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(work_tool_names, vec!["read"]);
 }
 
 #[tokio::test]
@@ -338,6 +582,7 @@ async fn custom_header_auth_reaches_wire() {
             wire_api: WireApi::ChatCompletions,
             responses_path: "v1/responses".into(),
             chat_completions_path: "v1/chat/completions".into(),
+            request_timeout: std::time::Duration::from_mins(5),
         }),
     };
     let client = create_provider(config);
@@ -367,6 +612,7 @@ async fn chat_completions_upstream_403_maps_to_transient() {
             wire_api: WireApi::ChatCompletions,
             responses_path: "v1/responses".into(),
             chat_completions_path: "v1/chat/completions".into(),
+            request_timeout: std::time::Duration::from_mins(5),
         }),
     };
     let client = create_provider(config);
@@ -397,6 +643,7 @@ async fn chat_completions_upstream_400_maps_to_transient_invoke_and_stream() {
             wire_api: WireApi::ChatCompletions,
             responses_path: "v1/responses".into(),
             chat_completions_path: "v1/chat/completions".into(),
+            request_timeout: std::time::Duration::from_mins(5),
         }),
     };
     let client = create_provider(config);
@@ -456,8 +703,116 @@ async fn ollama_skips_prompt_cache_key() {
             wire_api: WireApi::ChatCompletions,
             responses_path: "v1/responses".into(),
             chat_completions_path: "v1/chat/completions".into(),
+            request_timeout: std::time::Duration::from_mins(5),
         }),
     };
     let client = create_provider(config);
     client.invoke(test_request()).await.unwrap();
+}
+
+#[tokio::test]
+async fn chat_trailing_comma_arguments_repair_without_overseer_candidate() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(chat_completion_response(
+            &json!({
+                "role": "assistant",
+                "tool_calls": [{
+                    "id": "call-1",
+                    "type": "function",
+                    "function": {
+                        "name": "openflow_submit_node_output",
+                        "arguments": "{\"output\":{\"summary\":\"done\"},\"assistant_message\":null,}"
+                    }
+                }]
+            }),
+        )))
+        .mount(&server)
+        .await;
+
+    let client = create_provider(openai_test_config(&server.uri(), WireApi::ChatCompletions));
+    let outcome = client.invoke(test_request()).await.unwrap();
+    let AgentTurnOutcome::Completed(success) = outcome else {
+        panic!("expected completed outcome, got {outcome:?}");
+    };
+    assert_eq!(success.output, json!({"summary": "done"}));
+}
+
+#[tokio::test]
+async fn chat_unrecoverable_submit_arguments_become_typed_repair_candidate() {
+    let server = MockServer::start().await;
+    let secret = "SECRET_CHAT_HTTP_RAW";
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(chat_completion_response(&json!({
+                "role": "assistant",
+                "tool_calls": [{
+                    "id": "call-bad",
+                    "type": "function",
+                    "function": {
+                        "name": "openflow_submit_node_output",
+                        "arguments": format!("not-json-{secret}")
+                    }
+                }]
+            }))),
+        )
+        .mount(&server)
+        .await;
+
+    let client = create_provider(openai_test_config(&server.uri(), WireApi::ChatCompletions));
+    let err = client.invoke(test_request()).await.unwrap_err();
+    assert!(err.is_malformed_submit_output());
+    let candidate = err.output_repair_candidate().unwrap();
+    assert!(candidate.raw_arguments().contains(secret));
+    assert!(!err.to_string().contains(secret));
+    assert!(!format!("{candidate:?}").contains(secret));
+}
+
+#[tokio::test]
+async fn responses_unrecoverable_submit_arguments_become_typed_repair_candidate() {
+    let server = MockServer::start().await;
+    let secret = "SECRET_RESPONSES_HTTP_RAW";
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "resp_bad",
+            "object": "response",
+            "created_at": 0,
+            "status": "completed",
+            "model": "test-model",
+            "output": [{
+                "type": "function_call",
+                "id": "fc_bad",
+                "call_id": "call-bad",
+                "name": "openflow_submit_node_output",
+                "arguments": format!("not-json-{secret}"),
+                "status": "completed"
+            }]
+        })))
+        .mount(&server)
+        .await;
+
+    let client = create_provider(openai_test_config(&server.uri(), WireApi::Responses));
+    let err = client.invoke(test_request()).await.unwrap_err();
+    assert!(err.is_malformed_submit_output());
+    let candidate = err.output_repair_candidate().unwrap();
+    assert!(candidate.raw_arguments().contains(secret));
+    assert!(!err.to_string().contains(secret));
+}
+
+#[tokio::test]
+async fn chat_malformed_outer_response_stays_generic_provider_failure() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("{not-a-completion"))
+        .mount(&server)
+        .await;
+
+    let client = create_provider(openai_test_config(&server.uri(), WireApi::ChatCompletions));
+    let err = client.invoke(test_request()).await.unwrap_err();
+    assert!(!err.is_malformed_submit_output());
+    assert!(err.output_repair_candidate().is_none());
 }

@@ -1,6 +1,7 @@
 import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
 import type { Workflow } from "@/lib/types";
 import {
+  Button,
   PanelEmptyState,
   ScheduleTimePickerModal,
   ScheduleWorkflowPickerModal,
@@ -232,15 +233,15 @@ export function ScheduleScreen() {
         <p class="schedule-toolbar-description">
           Run workflows automatically on a repeating schedule.
         </p>
-        <button
-          type="button"
-          class="primary-button compact"
+        <Button
+          variant="primary"
+          size="compact"
           onClick={() => setPickerOpen(true)}
           disabled={addableWorkflows().length === 0}
         >
           <SidebarIcon name="plus" />
           Add workflow
-        </button>
+        </Button>
       </div>
 
       <ScheduleWorkflowPickerModal

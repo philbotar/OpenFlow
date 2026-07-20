@@ -21,6 +21,10 @@ export function cloneWorkflow(workflow: Workflow): Workflow {
         workflow.settings?.reasoning_budget_tokens ??
         workflow.settings?.reasoningBudgetTokens ??
         null,
+      planMode: workflow.settings?.planMode
+        ? { evidenceSourceNodeId: workflow.settings.planMode.evidenceSourceNodeId }
+        : null,
+      outputRepairModel: workflow.settings?.outputRepairModel ?? null,
     },
   };
 }
@@ -75,7 +79,7 @@ function cloneNode(node: Node): Node {
       reasoning_effort: agentReasoningEffort(node.agent),
       reasoning_budget_tokens:
         node.agent.reasoning_budget_tokens ?? node.agent.reasoningBudgetTokens ?? null,
-      requestUserInput: node.agent.requestUserInput ?? true,
+      requestUserInput: node.agent.requestUserInput ?? false,
     },
   };
 }

@@ -28,11 +28,12 @@ docs/
 │   └── testing-workflows.md           # Acceptance and live-AI verification
 └── architecture/
     ├── README.md                      # Maintainer architecture index
+    ├── end-to-end-runtime.md          # Code-grounded UI → engine → providers run path
     ├── technical-overview.md          # End-to-end runtime overview
     ├── contract.md                    # Layer responsibilities and dependency rules
     ├── orchestration-layout.md        # Orchestration module map and change paths
     ├── callable-agents.md             # Saved-agent snapshot and subagent model
-    ├── provider-adapters.md           # Provider adapter families and Bedrock notes
+    ├── provider-adapters.md           # Rig provider adapters and Bedrock notes
     ├── run-persistence.md             # Durable run records, checkpoints, replay, resume
     ├── threading-concurrency.md       # Async runtimes, threading, and I/O
     └── diagrams/
@@ -51,8 +52,9 @@ Architecture check rules are machine configuration, not documentation. They live
 4. [`concepts/workflows-and-runs.md`](concepts/workflows-and-runs.md) - learn workflow and run vocabulary.
 5. [`reference/README.md`](reference/README.md) - commands, persistence paths, provider key rules.
 6. [`troubleshooting/README.md`](troubleshooting/README.md) - fix common local setup and run failures.
-7. [`architecture/contract.md`](architecture/contract.md) - read before changing layer boundaries.
-8. [`contributing/development-lanes.md`](contributing/development-lanes.md) - classify code changes and choose verification.
+7. [`architecture/end-to-end-runtime.md`](architecture/end-to-end-runtime.md) - code-grounded run path before changing execution or IPC.
+8. [`architecture/contract.md`](architecture/contract.md) - read before changing layer boundaries.
+9. [`contributing/development-lanes.md`](contributing/development-lanes.md) - classify code changes and choose verification.
 
 ## Doc Map
 
@@ -60,7 +62,7 @@ Architecture check rules are machine configuration, not documentation. They live
 | --- | --- |
 | Run the app | [`getting-started/README.md`](getting-started/README.md) |
 | Build your first workflow | [`guides/first-workflow.md`](guides/first-workflow.md) |
-| Understand the runtime | [`concepts/how-openflow-works.md`](concepts/how-openflow-works.md) |
+| Understand the runtime | [`concepts/how-openflow-works.md`](concepts/how-openflow-works.md), [`architecture/end-to-end-runtime.md`](architecture/end-to-end-runtime.md) |
 | Learn workflow terms | [`concepts/workflows-and-runs.md`](concepts/workflows-and-runs.md), [`glossary.md`](glossary.md) |
 | Find commands and paths | [`reference/README.md`](reference/README.md) |
 | Debug setup or run failures | [`troubleshooting/README.md`](troubleshooting/README.md) |

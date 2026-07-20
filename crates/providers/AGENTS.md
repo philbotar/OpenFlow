@@ -19,12 +19,10 @@ engine::AiPort (trait)
 ┌──────┴──────┐
 │  AiClient   │  client.rs — unified entry
 ├─────────────┤
-│  mapping.rs │  transcript + tool-arg wire shape
-│  openai_compat.rs
-│  anthropic.rs
-│  bedrock.rs / bedrock_models.rs
-│  sse.rs     │  stream parsing
+│  mapping/   │  transcript + tool-arg wire shape
+│  rig_adapter/  Rig 0.39 transport (OpenAI-compat, Anthropic, Bedrock)
 │  auth.rs    │  key/header wiring
+│  spec.rs    │  provider catalog metadata
 └─────────────┘
        ▲
        │ create_provider()
@@ -36,18 +34,19 @@ engine::AiPort (trait)
 | Path | Owns |
 | --- | --- |
 | `lib.rs` | `create_provider()` factory — **only public wiring entry** |
-| `client.rs` | `AiClient: AiPort`, config types |
-| `mapping.rs` | `AgentRequest` ↔ provider payloads; `jsonrepair-rs` for tool args |
-| `openai_compat.rs` | OpenAI-compatible HTTP transport |
-| `anthropic.rs` | Anthropic Messages API transport |
-| `sse.rs` | Server-sent event parsing |
+| `client.rs` | `AiClient: AiPort`, config types (`OpenAiCompatibleConfig`, `AnthropicConfig`, `BedrockConfig`) |
+| `mapping/` | `AgentRequest` ↔ provider payloads; `jsonrepair-rs` for tool args |
+| `rig_adapter/` | Rig model build, convert, stream, outcome, Anthropic HTTP extras |
 | `auth.rs` | `AuthConfig`, header construction |
 | `spec.rs` | Provider metadata, builtin specs, `ProviderId` |
-| `prompt_cache.rs` | Prompt caching hints (Anthropic) |
+| `prompt_cache.rs` | Prompt caching hints (Anthropic / OpenAI-compat keys) |
+| `aws_runtime.rs` / `bedrock_*.rs` | Bedrock credentials, model list, errors (feature `bedrock`) |
+
+Pre-Rig modules `openai_compat.rs`, `anthropic.rs`, and `sse.rs` are **gone**. Do not recreate them — extend `rig_adapter/` and `mapping/`.
 
 ## Dependency rules
 
-**Allowed:** `engine`, HTTP client (`reqwest`), `serde`, `async-trait`
+**Allowed:** `engine`, HTTP client (`reqwest`), `serde`, `async-trait`, Rig
 
 **Forbidden:**
 - `orchestration`, `desktop`, `ui`
@@ -58,7 +57,7 @@ Orchestration may import only allowlisted symbols from `providers` (factory + co
 ## Code standards
 
 1. **Adapter-only** — map engine types to wire format; no workflow or run lifecycle logic.
-2. **Factory boundary** — new provider → add `providers/src/{name}.rs`, wire in `create_provider()`.
+2. **Factory boundary** — new provider family → extend `ProviderAdapterConfig` + `rig_adapter/model.rs`, wire via `create_provider()`.
 3. **No upward leaks** — orchestration never branches on `Anthropic` vs `OpenAI`; that logic stays here.
 4. **Errors** — map HTTP/auth/parsing failures to `AgentError` (engine port vocabulary).
 5. **Streaming** — emit `AiStreamEvent` through `AiStreamSink`; keep delta assembly testable.
@@ -69,18 +68,19 @@ Orchestration may import only allowlisted symbols from `providers` (factory + co
 
 | Change | Location |
 | --- | --- |
-| New provider adapter | `providers/src/{name}.rs` + `lib.rs` factory |
-| Wire payload shape | `mapping.rs` + provider module |
-| Auth/header quirks | `auth.rs` or provider module |
+| New provider family / model build | `rig_adapter/model.rs` + `client.rs` config enum |
+| Wire payload / tool-arg shape | `mapping/` + `rig_adapter/convert.rs` |
+| Auth/header quirks | `auth.rs` or `rig_adapter/` |
 | Provider catalog metadata | `spec.rs` |
 | `AiPort` contract change | `engine/src/ports/outbound.rs` first, then `client.rs` |
+| Reasoning / thinking blocks | `rig_adapter/claude_thinking.rs`, `reasoning_convert.rs` |
 
 ### Adding a provider
 
-1. Implement transport in new module (HTTP + SSE if streaming).
-2. Add `ProviderSpec` entry in `spec.rs`.
-3. Branch in `AiClient` / `create_provider()` config dispatch.
-4. Add mapping tests for request/response round-trips.
+1. Add config variant / fields in `client.rs`.
+2. Build Rig model in `rig_adapter/model.rs`.
+3. Add `ProviderSpec` entry in `spec.rs`.
+4. Cover with Wiremock tests under `crates/providers/tests/` (`rig_anthropic.rs`, `rig_openai_compat.rs`, …).
 5. Live smoke: `STEP_WORKFLOW_LIVE_AI=1` tests in orchestration (not required in providers crate).
 
 ### Testing
@@ -88,7 +88,7 @@ Orchestration may import only allowlisted symbols from `providers` (factory + co
 | Pattern | When |
 | --- | --- |
 | Inline `#[cfg(test)] mod tests` | Default |
-| Sibling `anthropic_tests.rs` | Large provider-specific suites |
+| `crates/providers/tests/rig_*.rs` | HTTP-level Wiremock suites |
 
 ```bash
 cargo test -p providers
@@ -100,11 +100,12 @@ Test wire mapping and `jsonrepair` recovery. Avoid live network in unit tests.
 
 1. Does orchestration still depend only on `create_provider()` + config types?
 2. Is provider-specific logic contained in this crate?
-3. Do mapping tests cover new fields and tool-call shapes?
+3. Do mapping / `rig_adapter` tests cover new fields and tool-call shapes?
 4. Run `./scripts/verify.sh test clippy arch`.
 
 ## Related docs
 
 - [`docs/architecture/provider-adapters.md`](../../docs/architecture/provider-adapters.md)
+- [`docs/architecture/end-to-end-runtime.md`](../../docs/architecture/end-to-end-runtime.md) — when LLM calls sit in a run
 - [`docs/architecture/contract.md`](../../docs/architecture/contract.md)
 - [`../../AGENTS.md`](../../AGENTS.md) — workspace map

@@ -2,6 +2,18 @@
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+
+const apiMocks = vi.hoisted(() => ({
+  cancelCodexLogin: vi.fn(),
+  codexLoginStatus: vi.fn(),
+  disconnectCodex: vi.fn(),
+  refreshBedrockModels: vi.fn(),
+  startCodexLogin: vi.fn(),
+  verifyBedrockCredentials: vi.fn(),
+}));
+
+vi.mock("../api", () => apiMocks);
+
 import { AppContext, type AppContextValue } from "../context/AppContext";
 import type { AppSettings, ProviderProfile } from "../lib/types";
 import { activeProfile } from "../lib/workflow";
@@ -13,6 +25,7 @@ const OPENAI: ProviderProfile = {
   transport: "responses",
   responses_path: "responses",
   chat_completions_path: "chat/completions",
+  request_timeout_secs: 300,
   known_models: ["gpt-4.1-mini"],
   default_model: "gpt-4.1-mini",
   editable: false,
@@ -24,6 +37,7 @@ const ANTHROPIC: ProviderProfile = {
   transport: "chat_completions",
   responses_path: "v1/responses",
   chat_completions_path: "v1/messages",
+  request_timeout_secs: 300,
   known_models: ["claude-sonnet-4-20250514"],
   default_model: "claude-sonnet-4-20250514",
   editable: false,
@@ -41,6 +55,7 @@ const CUSTOM: ProviderProfile = {
   transport: "chat_completions",
   responses_path: "responses",
   chat_completions_path: "chat/completions",
+  request_timeout_secs: 300,
   known_models: ["compatible-model"],
   default_model: "compatible-model",
   editable: true,
@@ -52,11 +67,24 @@ const BEDROCK: ProviderProfile = {
   transport: "chat_completions",
   responses_path: "v1/responses",
   chat_completions_path: "v1/chat/completions",
+  request_timeout_secs: 300,
   known_models: ["anthropic.claude-sonnet-4-20250514-v1:0"],
   default_model: "anthropic.claude-sonnet-4-20250514-v1:0",
   editable: false,
   aws_profile: "bedrock",
   aws_region: "us-east-1",
+};
+
+const CODEX: ProviderProfile = {
+  display_name: "ChatGPT (Codex)",
+  base_url: "https://chatgpt.com/backend-api/codex",
+  transport: "responses",
+  responses_path: "responses",
+  chat_completions_path: "",
+  request_timeout_secs: 300,
+  known_models: ["gpt-5.4"],
+  default_model: "gpt-5.4",
+  editable: false,
 };
 
 function makeSettings(activeProvider: keyof typeof baseProviders): AppSettings {
@@ -71,6 +99,7 @@ const baseProviders = {
   anthropic: ANTHROPIC,
   custom_openai_compatible: CUSTOM,
   bedrock: BEDROCK,
+  "openai-codex": CODEX,
 };
 
 describe("ProvidersSection", () => {
@@ -78,6 +107,12 @@ describe("ProvidersSection", () => {
   let dispose: (() => void) | undefined;
 
   beforeEach(() => {
+    apiMocks.cancelCodexLogin.mockReset().mockResolvedValue({ state: "cancelled" });
+    apiMocks.codexLoginStatus.mockReset().mockResolvedValue({ state: "disconnected" });
+    apiMocks.disconnectCodex.mockReset().mockResolvedValue({ state: "disconnected" });
+    apiMocks.refreshBedrockModels.mockReset().mockResolvedValue([]);
+    apiMocks.startCodexLogin.mockReset().mockResolvedValue({ state: "awaitingBrowser" });
+    apiMocks.verifyBedrockCredentials.mockReset().mockResolvedValue("AWS credentials verified");
     container = document.createElement("div");
     document.body.appendChild(container);
   });
@@ -95,12 +130,20 @@ describe("ProvidersSection", () => {
     const handleApiKeyInput = vi.fn();
     const handleAddKnownModel = vi.fn();
     const handleRemoveKnownModel = vi.fn();
+    const handleAddReasoningEffortOption = vi.fn();
+    const handleRemoveReasoningEffortOption = vi.fn();
     const handleSaveSettings = vi.fn();
 
     const ctx = {
       settings,
       activeProfileMemo: () => activeProfile(settings()),
-      providerIdsMemo: () => ["openai", "anthropic", "custom_openai_compatible", "bedrock"],
+      providerIdsMemo: () => [
+        "openai",
+        "openai-codex",
+        "anthropic",
+        "custom_openai_compatible",
+        "bedrock",
+      ],
       activeProviderKeyInput: () => "stored-key",
       newModelInputByProvider: () => ({ custom_openai_compatible: "new-model" }),
       readiness: () => ({
@@ -112,7 +155,12 @@ describe("ProvidersSection", () => {
       handleApiKeyInput,
       handleAddKnownModel,
       handleRemoveKnownModel,
+      handleAddReasoningEffortOption,
+      handleRemoveReasoningEffortOption,
       handleSaveSettings,
+      refreshReadiness: vi.fn().mockResolvedValue(undefined),
+      showErrorToast: vi.fn(),
+      showSuccessToast: vi.fn(),
       updateSettings: async (mutator: (draft: AppSettings) => void) => {
         setSettings((current) => {
           const next = structuredClone(current);
@@ -138,6 +186,8 @@ describe("ProvidersSection", () => {
       handleApiKeyInput,
       handleAddKnownModel,
       handleRemoveKnownModel,
+      handleAddReasoningEffortOption,
+      handleRemoveReasoningEffortOption,
       handleSaveSettings,
     };
   }
@@ -159,14 +209,34 @@ describe("ProvidersSection", () => {
     expect(subheading("providers-models-heading")?.textContent).toBe("Models");
   });
 
+  test("updates the model request timeout independently of endpoint editing", async () => {
+    const { settings } = renderSection("custom_openai_compatible");
+    const label = Array.from(container.querySelectorAll("label")).find(
+      (candidate) => candidate.querySelector("span")?.textContent === "Model timeout (seconds)",
+    );
+    const input = label?.querySelector("input");
+
+    expect(input).not.toBeNull();
+    input!.value = "180";
+    input!.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    await Promise.resolve();
+
+    expect(settings().providers.custom_openai_compatible.request_timeout_secs).toBe(180);
+  });
+
   test("readiness chip gets ready class when provider is ready", () => {
     renderSection();
     expect(container.querySelector(".readiness-chip.ready")).not.toBeNull();
   });
 
-  test("hides reasoning subsection when profile has no effort options", () => {
+  test("shows reasoning subsection even when profile has no effort options", () => {
     renderSection("openai");
-    expect(subheading("providers-reasoning-heading")).toBeNull();
+    expect(subheading("providers-reasoning-heading")?.textContent).toBe("Reasoning defaults");
+    expect(
+      Array.from(container.querySelectorAll("button")).some(
+        (button) => button.textContent?.trim() === "Add effort",
+      ),
+    ).toBe(true);
   });
 
   test("shows reasoning subsection when profile has effort options", () => {
@@ -174,9 +244,109 @@ describe("ProvidersSection", () => {
     expect(subheading("providers-reasoning-heading")?.textContent).toBe("Reasoning defaults");
   });
 
+  test("calls handleAddReasoningEffortOption when add effort is clicked", () => {
+    const { handleAddReasoningEffortOption } = renderSection("openai");
+    const valueInput = container.querySelector(
+      'input[placeholder="Value (e.g. none)"]',
+    ) as HTMLInputElement;
+    const labelInput = container.querySelector(
+      'input[placeholder="Label (optional)"]',
+    ) as HTMLInputElement;
+    valueInput.value = "none";
+    valueInput.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    labelInput.value = "Fast";
+    labelInput.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    const addButton = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "Add effort",
+    ) as HTMLButtonElement;
+    addButton.click();
+    expect(handleAddReasoningEffortOption).toHaveBeenCalledWith({
+      value: "none",
+      label: "Fast",
+      uses_budget_tokens: false,
+    });
+  });
+
+  test("removes a reasoning effort option and clears matching default", async () => {
+    dispose?.();
+    container.remove();
+    container = document.createElement("div");
+    document.body.appendChild(container);
+
+    const [liveSettings, setLiveSettings] = createSignal(makeSettings("anthropic"));
+    dispose = render(
+      () => (
+        <AppContext.Provider
+          value={
+            {
+              settings: liveSettings,
+              activeProfileMemo: () => activeProfile(liveSettings()),
+              providerIdsMemo: () => ["openai", "anthropic", "custom_openai_compatible", "bedrock"],
+              activeProviderKeyInput: () => "stored-key",
+              newModelInputByProvider: () => ({}),
+              readiness: () => ({
+                ready: true,
+                provider: "Anthropic",
+                message: "Ready",
+                envVar: "ANTHROPIC_API_KEY",
+              }),
+              handleApiKeyInput: vi.fn(),
+              handleAddKnownModel: vi.fn(),
+              handleRemoveKnownModel: vi.fn(),
+              handleAddReasoningEffortOption: vi.fn(),
+              handleRemoveReasoningEffortOption: (value: string) => {
+                setLiveSettings((current) => {
+                  const next = structuredClone(current);
+                  const profile = activeProfile(next);
+                  const options = profile.reasoning_effort_options ?? [];
+                  profile.reasoning_effort_options = options.filter((entry) => entry.value !== value);
+                  if (profile.default_reasoning_effort === value) {
+                    profile.default_reasoning_effort = null;
+                  }
+                  const budgets = { ...(profile.default_reasoning_budget_tokens ?? {}) };
+                  delete budgets[value];
+                  profile.default_reasoning_budget_tokens = budgets;
+                  return next;
+                });
+              },
+              handleSaveSettings: vi.fn(),
+              updateSettings: async (mutator: (draft: AppSettings) => void) => {
+                setLiveSettings((current) => {
+                  const next = structuredClone(current);
+                  mutator(next);
+                  return next;
+                });
+              },
+              setNewModelInputByProvider: vi.fn(),
+            } as unknown as AppContextValue
+          }
+        >
+          <ProvidersSection />
+        </AppContext.Provider>
+      ),
+      container,
+    );
+
+    const chip = container.querySelector(
+      '.model-chip[data-effort-value="low"]',
+    ) as HTMLButtonElement;
+    expect(chip).not.toBeNull();
+    chip.click();
+    await Promise.resolve();
+
+    expect(liveSettings().providers.anthropic.reasoning_effort_options?.map((o) => o.value)).toEqual(
+      ["medium"],
+    );
+    expect(liveSettings().providers.anthropic.default_reasoning_effort).toBeNull();
+    expect(liveSettings().providers.anthropic.default_reasoning_budget_tokens?.low).toBeUndefined();
+  });
+
   test("shows budget token input when selected effort uses budget", () => {
     renderSection("anthropic");
-    const budgetInput = container.querySelector(
+    const budgetLabel = Array.from(container.querySelectorAll("label")).find((candidate) =>
+      candidate.querySelector("span")?.textContent?.startsWith("Budget tokens for"),
+    );
+    const budgetInput = budgetLabel?.querySelector(
       'input[type="number"]',
     ) as HTMLInputElement | null;
     expect(budgetInput).not.toBeNull();
@@ -224,7 +394,9 @@ describe("ProvidersSection", () => {
 
   test("calls handleRemoveKnownModel when model chip is clicked", () => {
     const { handleRemoveKnownModel } = renderSection("custom_openai_compatible");
-    const chip = container.querySelector(".model-chip") as HTMLButtonElement;
+    const chip = [...container.querySelectorAll(".model-chip")].find((candidate) =>
+      candidate.textContent?.includes("compatible-model"),
+    ) as HTMLButtonElement;
     chip.click();
     expect(handleRemoveKnownModel).toHaveBeenCalledWith("compatible-model");
   });
@@ -306,5 +478,58 @@ describe("ProvidersSection", () => {
 
     expect(settings().providers.bedrock?.aws_region).toBe("ap-southeast-2");
     expect(settings().providers.bedrock?.base_url).toBe("");
+  });
+
+  test("Codex shows ChatGPT sign-in instead of an API key", async () => {
+    renderSection("openai-codex");
+
+    await vi.waitFor(() => {
+      expect(apiMocks.codexLoginStatus).toHaveBeenCalledTimes(1);
+    });
+    expect(subheading("providers-auth-heading")?.textContent).toBe("ChatGPT account");
+    expect(container.querySelector('input[type="password"]')).toBeNull();
+    expect(container.textContent).toContain("Sign in with ChatGPT");
+  });
+
+  test("Codex device fallback shows the one-time code and supports cancellation", async () => {
+    apiMocks.startCodexLogin.mockResolvedValueOnce({
+      state: "awaitingDevice",
+      verificationUrl: "https://auth.example/device",
+      userCode: "ABCD-EFGH",
+      expiresAt: 1_900_000_000,
+    });
+    renderSection("openai-codex");
+    await vi.waitFor(() => expect(apiMocks.codexLoginStatus).toHaveBeenCalled());
+
+    const signIn = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Sign in with ChatGPT"),
+    ) as HTMLButtonElement;
+    signIn.click();
+
+    await vi.waitFor(() => expect(container.textContent).toContain("ABCD-EFGH"));
+    expect(container.querySelector('a[href="https://auth.example/device"]')).not.toBeNull();
+    const cancel = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Cancel sign-in"),
+    ) as HTMLButtonElement;
+    cancel.click();
+    await vi.waitFor(() => expect(apiMocks.cancelCodexLogin).toHaveBeenCalledTimes(1));
+  });
+
+  test("Codex connected state exposes only email and disconnect", async () => {
+    apiMocks.codexLoginStatus.mockResolvedValueOnce({
+      state: "connected",
+      email: "person@example.com",
+    });
+    renderSection("openai-codex");
+
+    await vi.waitFor(() => expect(container.textContent).toContain("Connected to ChatGPT"));
+    expect(container.textContent).toContain("person@example.com");
+    expect(container.textContent).not.toContain("access_token");
+    expect(container.textContent).not.toContain("refresh_token");
+    const disconnect = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "Disconnect",
+    ) as HTMLButtonElement;
+    disconnect.click();
+    await vi.waitFor(() => expect(apiMocks.disconnectCodex).toHaveBeenCalledTimes(1));
   });
 });

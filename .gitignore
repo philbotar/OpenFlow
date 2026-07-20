@@ -13,7 +13,9 @@
 node_modules/
 dist/
 .planning/
-.cursor/
+.cursor/*
+!.cursor/skills/
+!.cursor/skills/**
 .flow/
 .openflow/
 .worktrees/
@@ -44,3 +46,6 @@ Desktop.ini
 *.swp
 *.swo
 .git.bak/
+.impeccable/
+.pnpm-store/
+*impeccable/

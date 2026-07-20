@@ -1,5 +1,6 @@
 import { createMemo, Show } from "solid-js";
 import RotateCcw from "lucide-solid/icons/rotate-ccw";
+import { Button } from "@/components";
 import { GLOBAL_RUN_ENTRY_NODE_ID, isLiveTranscriptSegment } from "../../lib/workflow";
 import { useAppContext } from "../../context/AppContext";
 import { ConversationComposer } from "./ConversationComposer";
@@ -35,9 +36,34 @@ export function ChatPanel() {
 
   const parallelLiveCount = createMemo(() => ctx.chatLayout().live.length);
 
+  const waitingToRetry = createMemo(() =>
+    Object.values(ctx.runState()?.statusByNode ?? {}).some(
+      (status) => status === "failed" || status === "interrupted",
+    ),
+  );
+
   // Surface approval outside the parallel-live picker — otherwise the card only
   // appears after the user picks (or the sibling finishes and folds inline).
   const pendingApproval = createMemo(() => ctx.runState()?.pendingApprovals[0] ?? null);
+
+  const planModeStatus = createMemo(() => {
+    const workflow = ctx.activeWorkflow();
+    const runState = ctx.runState();
+    const sourceNodeId =
+      runState?.planMode?.evidenceSourceNodeId ??
+      workflow?.settings?.planMode?.evidenceSourceNodeId;
+    if (!sourceNodeId || !runState) {
+      return null;
+    }
+    const source = workflow?.nodes.find((node) => node.id === sourceNodeId);
+    const frozen =
+      runState.planMode?.phase === "execution" ||
+      runState.statusByNode[sourceNodeId] === "completed";
+    return {
+      sourceLabel: source?.label ?? sourceNodeId,
+      frozen,
+    };
+  });
 
   return (
     <div class="chat-layout">
@@ -49,24 +75,27 @@ export function ChatPanel() {
           </span>
           <div class="chat-replay-banner-actions">
             <Show when={replayRunSummary() && replayRunSummary()!.status !== "completed"}>
-              <button
-                type="button"
-                class="secondary-button small"
-                onClick={() => void ctx.handleResumeDurableRun(ctx.replayRunId()!)}
-              >
+              <Button variant="secondary" size="small" onClick={() => void ctx.handleResumeDurableRun(ctx.replayRunId()!)}>
                 <RotateCcw width={14} height={14} />
                 Resume run
-              </button>
+              </Button>
             </Show>
-            <button
-              type="button"
-              class="secondary-button small"
-              onClick={() => void ctx.handleExitReplay()}
-            >
+            <Button variant="secondary" size="small" onClick={() => void ctx.handleExitReplay()}>
               Exit replay
-            </button>
+            </Button>
           </div>
         </div>
+      </Show>
+      <Show when={planModeStatus()}>
+        {(status) => (
+          <div class="chat-replay-banner" role="status">
+            <span>
+              <strong>Plan mode</strong> — {status().frozen
+                ? `${status().sourceLabel} approved the plan. File edits are allowed.`
+                : `Planning in progress. File edits stay blocked until ${status().sourceLabel} approves the plan.`}
+            </span>
+          </div>
+        )}
       </Show>
       <ConversationMessages />
       <Show when={showParallelLiveHint()}>
@@ -105,7 +134,9 @@ export function ChatPanel() {
             }
           >
             <div class="chat-live-strip chat-live-strip--pending" aria-live="polite">
-              <p class="chat-live-starting">Starting workflow…</p>
+              <p class="chat-live-starting">
+                {waitingToRetry() ? "Waiting to retry…" : "Starting workflow…"}
+              </p>
             </div>
           </Show>
         </Show>

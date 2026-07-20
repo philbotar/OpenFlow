@@ -16,7 +16,7 @@ pub mod runner;
 pub(crate) mod web_search;
 
 pub use cache::ToolResultCache;
-pub use output::{ArtifactStore, ToolArtifactRecord};
+pub use output::{ArtifactStore, PlanArtifact, ToolArtifactRecord, MAX_PLAN_ARTIFACT_BYTES};
 pub use registry::{ToolRegistry, ToolRegistryError};
 pub use runner::{
     ToolExecutionContext, ToolExecutionRecord, ToolExecutionUpdate, ToolRunner, ToolRunnerError,

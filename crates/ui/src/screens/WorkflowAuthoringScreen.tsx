@@ -5,6 +5,7 @@ import {
   AuthoringComposer,
   AuthoringDraftPreview,
   AuthoringMessages,
+  Button,
   Conversation,
   ConversationContent,
   ConversationScrollButton,
@@ -89,16 +90,16 @@ export function WorkflowAuthoringScreen() {
                   providerMessage={ctx.readiness()?.message ?? "Checking provider..."}
                   onSend={(message) => void ctx.handleWorkflowAuthoringSend(message)}
                 />
-                <button
-                  type="button"
-                  class="primary-button workflow-authoring-apply"
+                <Button
+                  variant="primary"
+                  class="workflow-authoring-apply"
                   disabled={
                     ctx.workflowAuthoringValidation()?.valid !== true || ctx.workflowAuthoringBusy()
                   }
                   onClick={() => void ctx.handleApplyWorkflowAuthoringDraft()}
                 >
                   Create Workflow
-                </button>
+                </Button>
               </div>
             </Show>
           </div>

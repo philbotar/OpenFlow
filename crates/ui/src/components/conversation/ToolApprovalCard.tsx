@@ -1,7 +1,9 @@
 import { createResource, For, Show } from "solid-js";
+import TriangleAlert from "lucide-solid/icons/triangle-alert";
 import * as desktop from "../../api";
 import type { PendingToolApproval } from "../../lib/types";
 import { Spinner } from "../Spinner";
+import { Button } from "../Button";
 import { isFileEditTool } from "./FileChangesPanel";
 import { formatToolDisplayName } from "./toolBubbleState";
 
@@ -80,7 +82,10 @@ export function ToolApprovalCardBody(props: {
 
   return (
     <div class="tool-approval-card">
-      <div class="eyebrow">Approval required</div>
+      <div class="tool-approval-card-header">
+        <TriangleAlert class="tool-approval-warning-icon" aria-hidden="true" width={14} height={14} />
+        <div class="eyebrow">Approval required</div>
+      </div>
       <h3>{formatToolDisplayName(props.approval.toolCall.name)}</h3>
       <p class="tool-approval-node">{props.approval.nodeLabel}</p>
 
@@ -130,19 +135,16 @@ export function ToolApprovalCardBody(props: {
       </Show>
 
       <div class="tool-approval-actions">
-        <button
-          class="secondary-button"
-          onClick={() => props.onApprove(false)}
-        >
+        <Button variant="secondary" onClick={() => props.onApprove(false)}>
           Deny
-        </button>
-        <button
-          class="primary-button"
+        </Button>
+        <Button
+          variant="primary"
           disabled={!canApproveFileEdit()}
           onClick={() => props.onApprove(true)}
         >
           Approve
-        </button>
+        </Button>
       </div>
     </div>
   );

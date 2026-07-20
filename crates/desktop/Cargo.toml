@@ -1,6 +1,6 @@
 [package]
 name = "desktop"
-version = "0.1.14"
+version = "0.1.15"
 edition.workspace = true
 description.workspace = true
 license.workspace = true
@@ -24,7 +24,7 @@ tauri-build.workspace = true
 keepawake = "0.6.0"
 env_logger = "0.11"
 log = "0.4"
-orchestration = { path = "../orchestration", version = "0.1.19" }
+orchestration = { path = "../orchestration", version = "0.1.20" }
 serde.workspace = true
 serde_json.workspace = true
 tauri.workspace = true
@@ -32,7 +32,7 @@ tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2.3.3"
 tauri-plugin-playwright = { version = "0.4", optional = true }
 tauri-plugin-process = "2"
-tauri-plugin-shell = "2"
+tauri-plugin-opener = "2"
 tauri-plugin-updater = "2"
 thiserror.workspace = true
 tokio.workspace = true

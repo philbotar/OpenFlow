@@ -63,6 +63,21 @@ pub struct ToolArtifactSummary {
     pub size_bytes: usize,
 }
 
+/// Run-pinned Plan Mode state used by live and replay UI projections.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanModeRunState {
+    pub evidence_source_node_id: NodeId,
+    pub phase: PlanModeRunPhase,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlanModeRunPhase {
+    Planning,
+    Execution,
+}
+
 /// Per-node context window usage snapshot.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -88,6 +103,8 @@ pub struct WorkflowRunState {
     pub pending_approvals: Vec<engine::PendingToolApproval>,
     pub tool_calls_by_node: BTreeMap<NodeId, Vec<ToolCallSummary>>,
     pub tool_artifacts: BTreeMap<String, ToolArtifactSummary>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan_mode: Option<PlanModeRunState>,
     pub exec_approval_granted: bool,
     pub status_by_node: BTreeMap<NodeId, AgentStatus>,
     pub subagents_by_node: BTreeMap<NodeId, Vec<SubagentSummary>>,
@@ -114,6 +131,14 @@ impl WorkflowRunState {
             .iter()
             .map(|node| (node.id.clone(), AgentStatus::Idle))
             .collect();
+        let plan_mode = workflow
+            .settings
+            .plan_mode
+            .as_ref()
+            .map(|config| PlanModeRunState {
+                evidence_source_node_id: config.evidence_source_node_id.clone(),
+                phase: PlanModeRunPhase::Planning,
+            });
         Self {
             active: true,
             run_id: None,
@@ -124,6 +149,7 @@ impl WorkflowRunState {
             pending_approvals: Vec::new(),
             tool_calls_by_node: BTreeMap::new(),
             tool_artifacts: BTreeMap::new(),
+            plan_mode,
             exec_approval_granted: false,
             status_by_node,
             subagents_by_node: BTreeMap::new(),
@@ -162,8 +188,8 @@ impl WorkflowRunState {
 
 #[cfg(test)]
 mod tests {
-    use super::{AgentStatus, WorkflowRunState};
-    use engine::{NodeId, Workflow};
+    use super::{AgentStatus, PlanModeRunPhase, WorkflowRunState};
+    use engine::{NodeId, PlanModeConfig, Workflow};
 
     #[test]
     fn agent_status_serializes_snake_case_for_frontend() {
@@ -205,5 +231,23 @@ mod tests {
         assert!(replay.active_manual_node_id.is_none());
         assert!(replay.active_tool_call_id.is_none());
         assert!(replay.pending_approvals.is_empty());
+    }
+
+    #[test]
+    fn running_state_pins_plan_mode_in_the_planning_phase() {
+        let mut workflow = Workflow::new("Plan Mode");
+        workflow.settings.plan_mode = Some(PlanModeConfig {
+            evidence_source_node_id: NodeId::from("freeze"),
+        });
+
+        let state = WorkflowRunState::running_for_workflow(&workflow);
+
+        assert_eq!(
+            state.plan_mode,
+            Some(super::PlanModeRunState {
+                evidence_source_node_id: NodeId::from("freeze"),
+                phase: PlanModeRunPhase::Planning,
+            })
+        );
     }
 }

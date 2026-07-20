@@ -19,25 +19,28 @@ categories = ["development-tools", "gui"]
 
 [workspace.dependencies]
 async-trait = "0.1.89"
+base64 = "0.22.1"
 chrono = { version = "0.4", features = ["clock", "serde"] }
 chrono-tz = "0.10"
 cron = "0.16"
 bytes = "1"
 dirs = "6.0.0"
 futures = "0.3.32"
+getrandom = "0.3.4"
 parking_lot = "0.12.5"
 portable-pty = "0.9.0"
-reqwest = { version = "0.13.3", features = ["json", "rustls", "stream"] }
+reqwest = { version = "0.13.3", features = ["form", "json", "rustls", "stream"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 sha2 = "0.10.9"
 jsonrepair-rs = "0.2.1"
+jsonschema = { version = "0.48.0", default-features = false }
 serde_yaml = "0.9.34"
 tempfile = "3.27.0"
 thiserror = "2.0.18"
 tauri = "2.11.3"
 tauri-build = { version = "2.6.3", features = [] }
-tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread", "sync", "time", "process"] }
+tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread", "sync", "time", "process", "net", "io-util"] }
 tokio-util = { version = "0.7.18", features = ["rt"] }
 uuid = { version = "1.23.1", features = ["v4", "serde"] }
 wiremock = "0.6.5"

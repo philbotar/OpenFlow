@@ -1,16 +1,62 @@
 //! rig adapter: request/response/error translation and provider dispatch.
 
+mod anthropic_http;
+mod claude_thinking;
 mod convert;
 mod error;
 mod model;
+mod openai_http;
 mod outcome;
+mod reasoning_convert;
 mod stream;
 
 use crate::client::{AiClientConfig, ProviderAdapterConfig};
+use crate::CodexOAuthCredentials;
 use engine::{AgentError, AgentRequest, AgentTurnOutcome, AiStreamSink};
 use std::collections::HashMap;
 use std::future::Future;
 use std::time::{Duration, SystemTime};
+
+#[allow(clippy::redundant_pub_crate)] // crate-private module; keep pub(crate) for intentional crate API
+pub(crate) fn build_codex_model(
+    provider_label: &str,
+    base_url: &str,
+    model_name: &str,
+    credentials: &CodexOAuthCredentials,
+    http: reqwest::Client,
+) -> Result<model::RigModel, AgentError> {
+    model::build_codex(provider_label, base_url, model_name, credentials, http)
+}
+
+#[allow(clippy::redundant_pub_crate)] // crate-private module; keep pub(crate) for intentional crate API
+pub(crate) async fn invoke_codex_model(
+    model: &model::RigModel,
+    request: &AgentRequest,
+    provider_label: &str,
+    provider_id: &crate::ProviderId,
+) -> Result<AgentTurnOutcome, AgentError> {
+    model
+        .invoke(request, provider_label, provider_id, None)
+        .await
+}
+
+#[allow(clippy::redundant_pub_crate)] // crate-private module; keep pub(crate) for intentional crate API
+pub(crate) async fn invoke_codex_model_stream(
+    model: &model::RigModel,
+    request: &AgentRequest,
+    sink: &dyn AiStreamSink,
+    provider_label: &str,
+    provider_id: &crate::ProviderId,
+) -> Result<AgentTurnOutcome, AgentError> {
+    model
+        .invoke_stream(request, sink, provider_label, provider_id, None)
+        .await
+}
+
+#[allow(clippy::redundant_pub_crate)] // crate-private module; keep pub(crate) for intentional crate API
+pub(crate) fn is_codex_unauthorized(error: &AgentError, provider_label: &str) -> bool {
+    error::is_unauthorized(error, provider_label)
+}
 
 /// Rebuild a cached model this long before its credentials actually expire so
 /// an in-flight request never straddles the expiry.

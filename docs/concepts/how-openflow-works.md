@@ -37,6 +37,25 @@ The architecture contract is maintained in [`../architecture/contract.md`](../ar
 8. Orchestration projects engine events into run state, trace entries, chat logs, and desktop events.
 9. Durable run data is written so paused or completed runs can be listed and resumed when supported.
 
+## Plan → Execute Mode
+
+Plan → Execute is an optional `WorkflowSettings.planMode` gate. Its configured review node must
+allow follow-up questions. Before that node produces a schema-valid change evidence packet, the
+run is in **Planning**: agents can use read-tier tools and can seal one run-owned Markdown plan
+with `openflow_write_plan_artifact`. Repository writes, shell execution, MCP tools, and subagent
+calls are denied even if a model attempts an unadvertised call.
+
+The host gives the Markdown artifact an opaque UUID path under the run artifact root. The tool
+returns `artifact:<uuid>`, SHA-256, and size; it never accepts a repository path. Once the review
+node completes, the engine freezes its exact structured output with a canonical SHA-256 and moves
+to **Execution**. The frozen packet is checkpointed and added as
+`input.change_evidence_packet` to every later agent request. It is data, not a system instruction.
+
+The packet should stay compact: scope, exclusions, criteria, decisions, implementation slices,
+plan artifact reference and hash, assumptions, open questions, approval summary, and optional
+standards or ADR references. Downstream agents treat it as authoritative and read the artifact
+only when they need plan detail. Workflows without Plan → Execute retain normal tool behavior.
+
 ## Why Ports Exist
 
 Ports are added only when a consumer is typed against the interface. OpenFlow currently uses explicit seams for:

@@ -163,6 +163,21 @@ pub enum RunTelemetry {
         label: String,
         error: String,
     },
+    /// Overseer repair started for a malformed final-output submit (sanitized; no raw content).
+    OutputRepairStarted {
+        node_id: NodeId,
+        model: String,
+    },
+    /// Overseer repair produced a completion-protocol-accepted candidate.
+    OutputRepairSucceeded {
+        node_id: NodeId,
+        model: String,
+    },
+    /// Overseer repair failed; sanitized reason only. Does not set run `last_error`.
+    OutputRepairFailed {
+        node_id: NodeId,
+        reason: String,
+    },
 }
 
 #[cfg(test)]

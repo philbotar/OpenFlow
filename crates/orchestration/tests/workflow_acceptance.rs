@@ -2,8 +2,9 @@ mod support;
 
 use async_trait::async_trait;
 use engine::{
-    AgentError, AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTurnOutcome,
-    AgentTurnSuccess, AiPort, ApprovalMode, Edge, NodeId, ToolCall, Workflow,
+    AgentContinueWork, AgentError, AgentMessageTurn, AgentNeedUserInput, AgentRequest,
+    AgentToolCallBatch, AgentTurnOutcome, AgentTurnPhase, AgentTurnSuccess, AiPort, ApprovalMode,
+    Edge, NodeId, ToolCall, Workflow,
 };
 use orchestration::run::execution::{
     new_artifact_root, new_in_memory_snapshot_store, run_workflow_headless,
@@ -138,6 +139,7 @@ async fn manual_node_pauses_accepts_input_and_feeds_downstream_node() {
                         return Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
                             raw_text: "{}".to_string(),
                             assistant_message: "Which approval is mandatory?".to_string(),
+                            reasoning: vec![],
                         }));
                     }
                     let answer = request
@@ -177,6 +179,7 @@ async fn manual_node_pauses_accepts_input_and_feeds_downstream_node() {
     let mut workflow = Workflow::new("manual acceptance");
     let mut review = agent("human-review", "Human review");
     review.agent.auto_start = false;
+    review.agent.request_user_input = true;
     let final_node = agent("final", "Final");
     workflow.nodes = vec![review, final_node];
     workflow.edges = vec![Edge::new("human-review", "final")];
@@ -215,6 +218,97 @@ async fn manual_node_pauses_accepts_input_and_feeds_downstream_node() {
 
 #[cfg_attr(miri, ignore)]
 #[tokio::test]
+async fn conversational_node_can_pause_on_consecutive_plain_text_turns() {
+    #[derive(Clone, Default)]
+    struct ConversationalAi;
+
+    #[async_trait]
+    impl AiPort for ConversationalAi {
+        async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            let assistant_turns = request
+                .transcript
+                .iter()
+                .filter(|item| matches!(item, engine::AgentTranscriptItem::AssistantMessage { .. }))
+                .count();
+            match assistant_turns {
+                0 => Ok(AgentTurnOutcome::Message(AgentMessageTurn {
+                    raw_text: "Which Supabase products should this include?".to_string(),
+                    assistant_message: "Which Supabase products should this include?".to_string(),
+                    reasoning: Vec::new(),
+                    usage: None,
+                })),
+                1 => Ok(AgentTurnOutcome::Message(AgentMessageTurn {
+                    raw_text: "Storage is the most useful third surface.".to_string(),
+                    assistant_message: "Storage is the most useful third surface.".to_string(),
+                    reasoning: Vec::new(),
+                    usage: None,
+                })),
+                _ => {
+                    let answer = request
+                        .transcript
+                        .iter()
+                        .rev()
+                        .find_map(|item| match item {
+                            engine::AgentTranscriptItem::UserMessage { content } => {
+                                Some(content.clone())
+                            }
+                            _ => None,
+                        })
+                        .expect("second answer");
+                    Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                        output: json!({"summary": answer}),
+                        raw_text: "{}".to_string(),
+                        assistant_message: None,
+                        usage: None,
+                    }))
+                }
+            }
+        }
+    }
+
+    let mut workflow = Workflow::new("conversational acceptance");
+    let mut brief = agent("brief", "Feature brief");
+    brief.agent.request_user_input = true;
+    workflow.nodes = vec![brief];
+
+    let snapshot = run_workflow_headless(
+        workflow,
+        None,
+        ConversationalAi,
+        vec![
+            ManualInput {
+                node_id: NodeId("brief".into()),
+                text: "Auth and Postgres. What else?".to_string(),
+            },
+            ManualInput {
+                node_id: NodeId("brief".into()),
+                text: "Add Storage too.".to_string(),
+            },
+        ],
+        Vec::new(),
+        BTreeMap::new(),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        snapshot.outputs[&NodeId("brief".into())],
+        json!({"summary": "Add Storage too."})
+    );
+    assert_eq!(
+        snapshot
+            .run_trace
+            .iter()
+            .filter(|entry| entry.node_id == "brief" && entry.status == TraceStatus::Paused)
+            .count(),
+        2
+    );
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
 async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
     #[derive(Clone, Default)]
     struct ToolAi {
@@ -230,6 +324,16 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
                 *calls
             };
             if call_number == 1 {
+                assert_eq!(request.turn_phase, AgentTurnPhase::Control);
+                return Ok(AgentTurnOutcome::ContinueWork(AgentContinueWork {
+                    raw_text: "{}".to_string(),
+                    assistant_message: Some("Need repo context".to_string()),
+                    reasoning: vec![],
+                    usage: None,
+                }));
+            }
+            if call_number == 2 {
+                assert_eq!(request.turn_phase, AgentTurnPhase::Work);
                 assert_eq!(request.available_tools.len(), 10);
                 return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                     raw_text: String::new(),
@@ -239,9 +343,11 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
                         name: "read".to_string(),
                         arguments: json!({"path": "README.md"}),
                     }],
+                    reasoning: vec![],
                     usage: None,
                 }));
             }
+            assert_eq!(request.turn_phase, AgentTurnPhase::Control);
             let saw_tool_result = request
                 .transcript
                 .iter()
@@ -325,6 +431,7 @@ async fn write_tool_requires_approval_and_mutates_file_after_allow() {
                         name: "write".to_string(),
                         arguments: json!({"path": "draft.txt", "content": "saved ORCHID-91\n"}),
                     }],
+                    reasoning: vec![],
                     usage: None,
                 }));
             }
@@ -414,6 +521,7 @@ impl AiPort for CheckpointWriteToolAi {
                     name: "write".to_string(),
                     arguments: json!({"path": "draft.txt", "content": "checkpoint ORCHID-91\n"}),
                 }],
+                reasoning: vec![],
                 usage: None,
             }));
         }
@@ -585,6 +693,7 @@ async fn failed_read_tool_feeds_error_and_node_completes() {
                         name: "read".to_string(),
                         arguments: json!({"path": "missing-acceptance-file.txt"}),
                     }],
+                    reasoning: vec![],
                     usage: None,
                 }));
             }
@@ -657,6 +766,7 @@ async fn search_missing_path_surfaces_not_found_not_empty_success() {
                             "paths": "missing-acceptance-target.txt"
                         }),
                     }],
+                    reasoning: vec![],
                     usage: None,
                 }));
             }
@@ -713,5 +823,264 @@ async fn search_missing_path_surfaces_not_found_not_empty_success() {
     assert_eq!(
         snapshot.outputs[&NodeId("worker".into())],
         json!({"summary": "ok after search path error"})
+    );
+}
+
+fn summary_schema() -> serde_json::Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": { "summary": { "type": "string" } },
+        "required": ["summary"]
+    })
+}
+
+/// Node-aware AI for output-repair acceptance: distinguishes worker, repair, and downstream.
+#[derive(Clone)]
+struct OutputRepairAcceptanceAi {
+    requests: Arc<Mutex<Vec<AgentRequest>>>,
+    /// When true, overseer returns an invalid completed envelope instead of `repaired_arguments`.
+    invalid_repair: bool,
+    root_malformed_remaining: Arc<Mutex<u32>>,
+}
+
+impl OutputRepairAcceptanceAi {
+    fn success() -> Self {
+        Self {
+            requests: Arc::new(Mutex::new(Vec::new())),
+            invalid_repair: false,
+            root_malformed_remaining: Arc::new(Mutex::new(1)),
+        }
+    }
+
+    fn invalid_repair() -> Self {
+        Self {
+            requests: Arc::new(Mutex::new(Vec::new())),
+            invalid_repair: true,
+            root_malformed_remaining: Arc::new(Mutex::new(8)),
+        }
+    }
+}
+
+#[async_trait]
+impl AiPort for OutputRepairAcceptanceAi {
+    async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+        self.requests.lock().push(request.clone());
+        let node_id: &str = &request.node_id;
+
+        if node_id.ends_with("__output_repair") {
+            if self.invalid_repair {
+                return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    output: json!({"not_repaired": true}),
+                    raw_text: "{}".into(),
+                    assistant_message: Some("overseer prose".into()),
+                    usage: None,
+                }));
+            }
+            return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                output: json!({
+                    "repaired_arguments": {
+                        "output": { "summary": "FIXED-REPAIR" }
+                    }
+                }),
+                raw_text: "{}".into(),
+                assistant_message: Some("clear me".into()),
+                usage: None,
+            }));
+        }
+
+        match node_id {
+            "root" => {
+                let should_fail = {
+                    let mut remaining = self.root_malformed_remaining.lock();
+                    if *remaining > 0 {
+                        *remaining -= 1;
+                        true
+                    } else {
+                        false
+                    }
+                };
+                if should_fail {
+                    let secret = "SECRET_SENTINEL_must_not_leak";
+                    let raw = format!(r#"{{"output":{{"bad":true}},"leak":"{secret}"}}"#);
+                    return Err(engine::malformed_submit_invalid_json(
+                        "acceptance",
+                        &raw,
+                        "schema violation",
+                        Some(&summary_schema()),
+                        Some("call_root".into()),
+                        None,
+                        None,
+                    ));
+                }
+                Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    output: json!({"summary": "should-not-reach-without-repair"}),
+                    raw_text: "{}".into(),
+                    assistant_message: None,
+                    usage: None,
+                }))
+            }
+            "down" => {
+                let upstream = &request.input["upstream"][0]["output"];
+                assert_eq!(
+                    upstream,
+                    &json!({"summary": "FIXED-REPAIR"}),
+                    "downstream must receive repaired root output"
+                );
+                Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    output: json!({
+                        "summary": format!(
+                            "down saw {}",
+                            upstream["summary"].as_str().unwrap_or_default()
+                        )
+                    }),
+                    raw_text: "{}".into(),
+                    assistant_message: None,
+                    usage: None,
+                }))
+            }
+            other => Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                output: json!({"summary": format!("unexpected {other}")}),
+                raw_text: "{}".into(),
+                assistant_message: None,
+                usage: None,
+            })),
+        }
+    }
+}
+
+fn root_down_workflow(overseer_model: Option<&str>) -> Workflow {
+    let mut workflow = Workflow::new("output repair acceptance");
+    let mut root = agent("root", "Root");
+    root.agent.model = "worker-m".into();
+    root.agent.output_schema = summary_schema();
+    let mut down = agent("down", "Down");
+    down.agent.model = "down-m".into();
+    down.agent.output_schema = summary_schema();
+    workflow.nodes = vec![root, down];
+    workflow.edges = vec![Edge::new("root", "down")];
+    workflow.settings.output_repair_model = overseer_model.map(str::to_string);
+    workflow.settings.retry_policy.max_attempts = 0;
+    workflow
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+async fn output_repair_propagates_repaired_output_downstream() {
+    let ai = OutputRepairAcceptanceAi::success();
+    let requests = ai.requests.clone();
+    let snapshot = run_headless_script(
+        root_down_workflow(Some("overseer-m")),
+        ai,
+        HeadlessRunOpts::default(),
+    )
+    .await
+    .expect("repaired run completes");
+
+    assert_eq!(
+        snapshot.outputs[&NodeId("root".into())],
+        json!({"summary": "FIXED-REPAIR"})
+    );
+    assert_eq!(
+        snapshot.outputs[&NodeId("down".into())],
+        json!({"summary": "down saw FIXED-REPAIR"})
+    );
+
+    let repair_trace: Vec<_> = snapshot
+        .run_trace
+        .iter()
+        .filter(|entry| entry.node_label == "output repair")
+        .collect();
+    assert!(
+        repair_trace.iter().any(|e| e.message.contains("repairing")),
+        "expected repair started: {repair_trace:?}"
+    );
+    assert!(
+        repair_trace.iter().any(|e| e.message.contains("repaired")),
+        "expected repair succeeded: {repair_trace:?}"
+    );
+
+    let secret = "SECRET_SENTINEL_must_not_leak";
+    for entry in &snapshot.run_trace {
+        assert!(
+            !entry.message.contains(secret),
+            "secret in trace: {}",
+            entry.message
+        );
+    }
+    for messages in snapshot.chat_logs.values() {
+        for message in messages {
+            assert!(
+                !message.content.contains(secret),
+                "secret in chat: {}",
+                message.content
+            );
+        }
+    }
+
+    let recorded = requests.lock().clone();
+    let repair = recorded
+        .iter()
+        .find(|r| r.node_id.ends_with("__output_repair"))
+        .expect("repair request");
+    assert_eq!(repair.model, "overseer-m");
+    assert!(repair.transcript.is_empty());
+    assert!(repair.available_tools.is_empty());
+    assert!(!repair.allow_user_input);
+
+    let root = recorded
+        .iter()
+        .find(|r| &*r.node_id == "root")
+        .expect("root request");
+    assert_eq!(root.model, "worker-m");
+    let down = recorded
+        .iter()
+        .find(|r| &*r.node_id == "down")
+        .expect("down request");
+    assert_eq!(down.model, "down-m");
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+async fn output_repair_inherits_worker_model_when_unset() {
+    let ai = OutputRepairAcceptanceAi::success();
+    let requests = ai.requests.clone();
+    run_headless_script(root_down_workflow(None), ai, HeadlessRunOpts::default())
+        .await
+        .expect("repaired run completes");
+
+    let repair = requests
+        .lock()
+        .iter()
+        .find(|r| r.node_id.ends_with("__output_repair"))
+        .expect("repair request")
+        .clone();
+    assert_eq!(repair.model, "worker-m");
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+async fn output_repair_invalid_overseer_keeps_retryable_path_and_redacts_secret() {
+    let ai = OutputRepairAcceptanceAi::invalid_repair();
+    let error = run_headless_script(
+        root_down_workflow(Some("overseer-m")),
+        ai,
+        HeadlessRunOpts::default(),
+    )
+    .await
+    .expect_err("invalid repair should exhaust retries");
+
+    assert!(
+        matches!(
+            &error,
+            orchestration::run::execution::WorkflowExecutionError::MissingRetry(node_id)
+                if node_id.0 == "root"
+        ),
+        "expected MissingRetry on root, got: {error}"
+    );
+    let message = error.to_string();
+    assert!(
+        !message.contains("SECRET_SENTINEL_must_not_leak"),
+        "secret leaked in error: {message}"
     );
 }

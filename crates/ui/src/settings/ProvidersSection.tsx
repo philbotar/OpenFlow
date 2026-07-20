@@ -1,10 +1,18 @@
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import RefreshCw from "lucide-solid/icons/refresh-cw";
 import ShieldCheck from "lucide-solid/icons/shield-check";
-import { refreshBedrockModels, verifyBedrockCredentials } from "../api";
-import { SidebarIcon, TextSelect } from "../components";
+import {
+  cancelCodexLogin,
+  codexLoginStatus,
+  disconnectCodex,
+  refreshBedrockModels,
+  startCodexLogin,
+  verifyBedrockCredentials,
+} from "../api";
+import { Button, SectionHeader, SettingsSection, SidebarIcon, TextSelect } from "../components";
 import { useAppContext } from "../context/AppContext";
 import { ICON_STROKE_WIDTH, normalizeError } from "../lib/utils";
+import type { CodexLoginStatus } from "../lib/types";
 import {
   activeProfile,
   defaultReasoningBudgetTokens,
@@ -35,13 +43,99 @@ export function ProvidersSection() {
   ] as const;
   const profileEditable = () => ctx.activeProfileMemo().editable;
   const isBedrock = () => ctx.settings().active_provider === "bedrock";
+  const isCodex = () => ctx.settings().active_provider === "openai-codex";
   const bedrockRegion = createMemo(
     () => ctx.activeProfileMemo().aws_region ?? ctx.activeProfileMemo().base_url,
   );
   const profileModeLabel = () => (profileEditable() ? "Custom endpoint" : "Managed provider");
-  const credentialLabel = () => (isBedrock() ? "AWS credentials" : "Local API key");
+  const credentialLabel = () =>
+    isBedrock() ? "AWS credentials" : isCodex() ? "ChatGPT account" : "Local API key";
   const [refreshingModels, setRefreshingModels] = createSignal(false);
   const [verifyingCredentials, setVerifyingCredentials] = createSignal(false);
+  const [newEffortValue, setNewEffortValue] = createSignal("");
+  const [newEffortLabel, setNewEffortLabel] = createSignal("");
+  const [newEffortUsesBudget, setNewEffortUsesBudget] = createSignal(false);
+  const [codexStatus, setCodexStatus] = createSignal<CodexLoginStatus>({
+    state: "disconnected",
+  });
+  const [codexActionPending, setCodexActionPending] = createSignal(false);
+  const codexDeviceStatus = createMemo(() => {
+    const status = codexStatus();
+    return status.state === "awaitingDevice" ? status : null;
+  });
+  const codexConnectedStatus = createMemo(() => {
+    const status = codexStatus();
+    return status.state === "connected" ? status : null;
+  });
+  const codexFailedStatus = createMemo(() => {
+    const status = codexStatus();
+    return status.state === "failed" ? status : null;
+  });
+  const codexLoginPending = createMemo(() =>
+    ["starting", "awaitingBrowser", "awaitingDevice"].includes(codexStatus().state),
+  );
+
+  async function refreshCodexStatus() {
+    try {
+      const nextStatus = await codexLoginStatus();
+      setCodexStatus(nextStatus);
+      if (nextStatus.state === "connected" || nextStatus.state === "disconnected") {
+        await ctx.refreshReadiness();
+      }
+    } catch (error) {
+      ctx.showErrorToast(normalizeError(error), "ChatGPT sign-in status");
+    }
+  }
+
+  async function handleStartCodexLogin() {
+    setCodexActionPending(true);
+    try {
+      setCodexStatus(await startCodexLogin());
+    } catch (error) {
+      ctx.showErrorToast(normalizeError(error), "Sign in with ChatGPT");
+    } finally {
+      setCodexActionPending(false);
+    }
+  }
+
+  async function handleCancelCodexLogin() {
+    setCodexActionPending(true);
+    try {
+      setCodexStatus(await cancelCodexLogin());
+      await ctx.refreshReadiness();
+    } catch (error) {
+      ctx.showErrorToast(normalizeError(error), "Cancel ChatGPT sign-in");
+    } finally {
+      setCodexActionPending(false);
+    }
+  }
+
+  async function handleDisconnectCodex() {
+    setCodexActionPending(true);
+    try {
+      setCodexStatus(await disconnectCodex());
+      await ctx.refreshReadiness();
+      ctx.showSuccessToast("ChatGPT account disconnected.");
+    } catch (error) {
+      ctx.showErrorToast(normalizeError(error), "Disconnect ChatGPT");
+    } finally {
+      setCodexActionPending(false);
+    }
+  }
+
+  createEffect(() => {
+    if (!isCodex()) {
+      setCodexStatus({ state: "disconnected" });
+      return;
+    }
+    void refreshCodexStatus();
+  });
+
+  createEffect(() => {
+    if (!isCodex() || !codexLoginPending()) return;
+    const timer = window.setInterval(() => void refreshCodexStatus(), 1_000);
+    onCleanup(() => window.clearInterval(timer));
+  });
 
   async function handleVerifyBedrockCredentials() {
     setVerifyingCredentials(true);
@@ -79,18 +173,18 @@ export function ProvidersSection() {
   }
 
   return (
-    <div class="settings-section providers-section">
-      <header class="providers-section-header">
-        <div class="providers-section-intro">
-          <div class="eyebrow">Providers</div>
-          <h3>AI provider configuration</h3>
-          <p>Choose a provider, authenticate, and manage models for workflow runs.</p>
-        </div>
-        <div class="readiness-chip" classList={{ ready: ctx.readiness()?.ready }}>
-          <span class="status-dot" aria-hidden="true" />
-          <span>{ctx.readiness()?.message ?? "Checking provider"}</span>
-        </div>
-      </header>
+    <SettingsSection sectionClass="providers-section">
+      <SectionHeader
+        eyebrow="Providers"
+        title="AI provider configuration"
+        description="Choose a provider, authenticate, and manage models for workflow runs."
+        actions={
+          <div class="readiness-chip" classList={{ ready: ctx.readiness()?.ready }}>
+            <span class="status-dot" aria-hidden="true" />
+            <span>{ctx.readiness()?.message ?? "Checking provider"}</span>
+          </div>
+        }
+      />
 
       <div class="providers-summary-grid">
         <section
@@ -133,70 +227,160 @@ export function ProvidersSection() {
           <div class="providers-panel-header">
             <div>
               <h3 id="providers-auth-heading" class="settings-subheading">
-                {isBedrock() ? "AWS credentials" : "API key"}
+                {isBedrock() ? "AWS credentials" : isCodex() ? "ChatGPT account" : "API key"}
               </h3>
               <p class="providers-panel-copy">
                 {isBedrock()
                   ? "Use an AWS profile, region, or exported credentials command."
-                  : "Use a stored local key, with environment variables as fallback."}
+                  : isCodex()
+                    ? "Use your ChatGPT subscription to run supported Codex models."
+                    : "Use a stored local key, with environment variables as fallback."}
               </p>
             </div>
           </div>
           <Show
-            when={!isBedrock()}
+            when={isCodex()}
             fallback={
-              <div class="providers-auth-stack">
-                <div class="field-grid providers-auth-fields">
-                  <label>
-                    <span>AWS profile</span>
-                    <input
-                      type="text"
-                      class="text-input"
-                      value={ctx.activeProfileMemo().aws_profile ?? ""}
-                      placeholder="e.g. bedrock"
-                      onInput={(event) =>
-                        void ctx.updateSettings((draft) => {
-                          activeProfile(draft).aws_profile = event.currentTarget.value;
-                        })
-                      }
-                    />
-                  </label>
-                  <label>
-                    <span>Credential command (optional)</span>
-                    <input
-                      type="text"
-                      class="text-input"
-                      value={ctx.activeProfileMemo().aws_credential_command ?? ""}
-                      placeholder="e.g. aws configure export-credentials --profile bedrock"
-                      onInput={(event) =>
-                        void ctx.updateSettings((draft) => {
-                          activeProfile(draft).aws_credential_command = event.currentTarget.value;
-                        })
-                      }
-                    />
-                  </label>
+              <Show
+                when={!isBedrock()}
+                fallback={
+                  <div class="providers-auth-stack">
+                    <div class="field-grid providers-auth-fields">
+                      <label>
+                        <span>AWS profile</span>
+                        <input
+                          type="text"
+                          class="text-input"
+                          value={ctx.activeProfileMemo().aws_profile ?? ""}
+                          placeholder="e.g. bedrock"
+                          onInput={(event) =>
+                            void ctx.updateSettings((draft) => {
+                              activeProfile(draft).aws_profile = event.currentTarget.value;
+                            })
+                          }
+                        />
+                      </label>
+                      <label>
+                        <span>Credential command (optional)</span>
+                        <input
+                          type="text"
+                          class="text-input"
+                          value={ctx.activeProfileMemo().aws_credential_command ?? ""}
+                          placeholder="e.g. aws configure export-credentials --profile bedrock"
+                          onInput={(event) =>
+                            void ctx.updateSettings((draft) => {
+                              activeProfile(draft).aws_credential_command =
+                                event.currentTarget.value;
+                            })
+                          }
+                        />
+                      </label>
+                    </div>
+                    <Button
+                      variant="secondary"
+                      class="providers-icon-button"
+                      disabled={verifyingCredentials()}
+                      onClick={() => void handleVerifyBedrockCredentials()}
+                    >
+                      <ShieldCheck
+                        aria-hidden="true"
+                        absoluteStrokeWidth
+                        strokeWidth={ICON_STROKE_WIDTH}
+                      />
+                      {verifyingCredentials() ? "Testing…" : "Test AWS connection"}
+                    </Button>
+                  </div>
+                }
+              >
+                <div class="providers-auth-stack">
+                  <input
+                    type="password"
+                    value={ctx.activeProviderKeyInput()}
+                    onInput={(event) => ctx.handleApiKeyInput(event.currentTarget.value)}
+                    placeholder={ctx.readiness()?.envVar || "optional local provider key"}
+                    class="text-input providers-secret-input"
+                    aria-label="Provider API key"
+                  />
                 </div>
-                <button
-                  type="button"
-                  class="secondary-button providers-icon-button"
-                  disabled={verifyingCredentials()}
-                  onClick={() => void handleVerifyBedrockCredentials()}
-                >
-                  <ShieldCheck aria-hidden="true" absoluteStrokeWidth strokeWidth={ICON_STROKE_WIDTH} />
-                  {verifyingCredentials() ? "Testing…" : "Test AWS connection"}
-                </button>
-              </div>
+              </Show>
             }
           >
-            <div class="providers-auth-stack">
-              <input
-                type="password"
-                value={ctx.activeProviderKeyInput()}
-                onInput={(event) => ctx.handleApiKeyInput(event.currentTarget.value)}
-                placeholder={ctx.readiness()?.envVar || "optional local provider key"}
-                class="text-input providers-secret-input"
-                aria-label="Provider API key"
-              />
+            <div class="providers-auth-stack providers-codex-auth" data-state={codexStatus().state}>
+              <Show when={codexConnectedStatus()}>
+                {(connected) => (
+                  <div class="providers-codex-status providers-codex-status--connected">
+                    <span class="status-dot" aria-hidden="true" />
+                    <div>
+                      <strong>Connected to ChatGPT</strong>
+                      <Show when={connected().email}>
+                        {(email) => <span>{email()}</span>}
+                      </Show>
+                    </div>
+                  </div>
+                )}
+              </Show>
+              <Show when={codexStatus().state === "awaitingBrowser"}>
+                <p class="providers-codex-message">
+                  Finish signing in in your browser. OpenFlow is waiting for the secure callback.
+                </p>
+              </Show>
+              <Show when={codexStatus().state === "starting"}>
+                <p class="providers-codex-message">Starting secure ChatGPT sign-in…</p>
+              </Show>
+              <Show when={codexDeviceStatus()}>
+                {(device) => (
+                  <div class="providers-codex-device">
+                    <p>Enter this one-time code on the ChatGPT verification page:</p>
+                    <code>{device().userCode}</code>
+                    <a href={device().verificationUrl} target="_blank" rel="noreferrer">
+                      Open verification page
+                    </a>
+                  </div>
+                )}
+              </Show>
+              <Show when={codexFailedStatus()}>
+                {(failed) => <p class="providers-codex-error">{failed().message}</p>}
+              </Show>
+              <Show when={codexStatus().state === "cancelled"}>
+                <p class="providers-codex-message">Sign-in cancelled.</p>
+              </Show>
+              <div class="providers-codex-actions">
+                <Show
+                  when={codexConnectedStatus()}
+                  fallback={
+                    <Show
+                      when={codexLoginPending()}
+                      fallback={
+                        <Button
+                          variant="primary"
+                          disabled={codexActionPending()}
+                          onClick={() => void handleStartCodexLogin()}
+                        >
+                          {codexStatus().state === "failed" || codexStatus().state === "cancelled"
+                            ? "Retry ChatGPT sign-in"
+                            : "Sign in with ChatGPT"}
+                        </Button>
+                      }
+                    >
+                      <Button
+                        variant="secondary"
+                        disabled={codexActionPending()}
+                        onClick={() => void handleCancelCodexLogin()}
+                      >
+                        Cancel sign-in
+                      </Button>
+                    </Show>
+                  }
+                >
+                  <Button
+                    variant="secondary"
+                    disabled={codexActionPending()}
+                    onClick={() => void handleDisconnectCodex()}
+                  >
+                    Disconnect
+                  </Button>
+                </Show>
+              </div>
             </div>
           </Show>
         </section>
@@ -280,28 +464,105 @@ export function ProvidersSection() {
                   }
                 />
               </label>
+              <label>
+                <span>Model timeout (seconds)</span>
+                <input
+                  class="text-input"
+                  type="number"
+                  min="1"
+                  max="3600"
+                  value={ctx.activeProfileMemo().request_timeout_secs ?? 300}
+                  onInput={(event) =>
+                    void ctx.updateSettings((draft) => {
+                      const parsed = Number.parseInt(event.currentTarget.value, 10);
+                      activeProfile(draft).request_timeout_secs = Number.isFinite(parsed)
+                        ? Math.min(3600, Math.max(1, parsed))
+                        : 300;
+                    })
+                  }
+                />
+              </label>
             </Show>
           </div>
         </section>
 
-        <Show when={effortOptions().length > 0}>
-          <section
-            class="providers-panel providers-panel--reasoning"
-            aria-labelledby="providers-reasoning-heading"
-          >
-            <div class="providers-panel-header">
-              <div>
-                <h3 id="providers-reasoning-heading" class="settings-subheading">
-                  Reasoning defaults
-                </h3>
-                <p class="providers-panel-copy">
-                  Applied to agent nodes that do not set their own effort level.
-                </p>
-              </div>
+        <section
+          class="providers-panel providers-panel--reasoning"
+          aria-labelledby="providers-reasoning-heading"
+        >
+          <div class="providers-panel-header">
+            <div>
+              <h3 id="providers-reasoning-heading" class="settings-subheading">
+                Reasoning defaults
+              </h3>
+              <p class="providers-panel-copy">
+                Effort options are sent as <code>reasoning_effort</code> (e.g. Fast →{" "}
+                <code>none</code> for Grok). Applied to agent nodes that do not set their own
+                level.
+              </p>
             </div>
+          </div>
+          <div class="chip-list">
+            <For each={effortOptions()}>
+              {(option) => (
+                <button
+                  type="button"
+                  class="model-chip"
+                  data-effort-value={option.value}
+                  onClick={() => ctx.handleRemoveReasoningEffortOption(option.value)}
+                >
+                  {option.label === option.value
+                    ? option.label
+                    : `${option.label} (${option.value})`}
+                  <span>×</span>
+                </button>
+              )}
+            </For>
+          </div>
+          <div class="inline-form providers-effort-add">
+            <input
+              class="text-input"
+              placeholder="Value (e.g. none)"
+              value={newEffortValue()}
+              onInput={(event) => setNewEffortValue(event.currentTarget.value)}
+            />
+            <input
+              class="text-input"
+              placeholder="Label (optional)"
+              value={newEffortLabel()}
+              onInput={(event) => setNewEffortLabel(event.currentTarget.value)}
+            />
+            <label class="providers-effort-budget-toggle">
+              <input
+                type="checkbox"
+                checked={newEffortUsesBudget()}
+                onChange={(event) => setNewEffortUsesBudget(event.currentTarget.checked)}
+              />
+              <span>Budget tokens</span>
+            </label>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                const value = newEffortValue().trim();
+                if (!value) return;
+                ctx.handleAddReasoningEffortOption({
+                  value,
+                  label: newEffortLabel().trim() || value,
+                  uses_budget_tokens: newEffortUsesBudget(),
+                });
+                setNewEffortValue("");
+                setNewEffortLabel("");
+                setNewEffortUsesBudget(false);
+              }}
+            >
+              <SidebarIcon name="plus" />
+              Add effort
+            </Button>
+          </div>
+          <Show when={effortOptions().length > 0}>
             <div class="field-grid providers-reasoning-fields">
               <label>
-                <span>Reasoning effort</span>
+                <span>Default reasoning effort</span>
                 <TextSelect
                   value={selectedEffort()}
                   options={effortSelectOptions()}
@@ -342,8 +603,8 @@ export function ProvidersSection() {
                 </label>
               </Show>
             </div>
-          </section>
-        </Show>
+          </Show>
+        </section>
       </div>
 
       <section
@@ -382,20 +643,20 @@ export function ProvidersSection() {
               }))
             }
             />
-          <button type="button" class="secondary-button" onClick={ctx.handleAddKnownModel}>
+          <Button variant="secondary" onClick={ctx.handleAddKnownModel}>
             <SidebarIcon name="plus" />
             Add model
-          </button>
+          </Button>
           <Show when={isBedrock()}>
-            <button
-              type="button"
-              class="secondary-button providers-icon-button"
+            <Button
+              variant="secondary"
+              class="providers-icon-button"
               disabled={refreshingModels()}
               onClick={() => void handleRefreshBedrockModels()}
             >
               <RefreshCw aria-hidden="true" absoluteStrokeWidth strokeWidth={ICON_STROKE_WIDTH} />
               {refreshingModels() ? "Refreshing…" : "Refresh from AWS"}
-            </button>
+            </Button>
           </Show>
         </div>
         <label>
@@ -422,13 +683,15 @@ export function ProvidersSection() {
         <p class="settings-save-hint">
           {isBedrock()
             ? "Saves AWS profile, region, and provider profile to local settings."
-            : "Saves API key and provider profile to local settings."}
+            : isCodex()
+              ? "ChatGPT credentials are managed by Sign in and Disconnect; profile changes save locally."
+              : "Saves API key and provider profile to local settings."}
         </p>
-        <button type="button" class="primary-button" onClick={() => void ctx.handleSaveSettings()}>
+        <Button variant="primary" onClick={() => void ctx.handleSaveSettings()}>
           <SidebarIcon name="save" />
           Save settings
-        </button>
+        </Button>
       </footer>
-    </div>
+    </SettingsSection>
   );
 }

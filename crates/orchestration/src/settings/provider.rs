@@ -1,9 +1,13 @@
 use crate::settings::model::{AppSettings, ProviderProfile};
+use crate::settings::ports::SettingsStore;
 use providers::{
     provider_spec, AiClientConfig, AnthropicConfig, AuthConfig, AuthSpec, BedrockConfig,
-    OpenAiCompatibleConfig, ProviderAdapterConfig, ProviderKind,
+    CodexCredentialSink, CodexOAuthCredentials, OpenAiCodexConfig, OpenAiCompatibleConfig,
+    ProviderAdapterConfig, ProviderId, ProviderKind,
 };
 use std::collections::BTreeMap;
+use std::sync::Arc;
+use std::time::Duration;
 use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -66,6 +70,8 @@ pub enum ProviderConfigError {
     UnsupportedProvider { provider: String },
     #[error("{provider} API key missing")]
     MissingApiKey { provider: String, env_var: String },
+    #[error("{provider} is not signed in")]
+    MissingOAuth { provider: String },
 }
 
 /// # Errors
@@ -81,13 +87,17 @@ pub fn resolve_provider_config(
             provider: provider_id.to_string(),
         })?;
     let profile = settings.active_profile();
-    let api_key = resolve_api_key(
-        transient_api_key,
-        profile.api_key.as_str(),
-        spec.display_name,
-        spec.auth,
-        env,
-    )?;
+    let api_key = if matches!(spec.auth, AuthSpec::ChatGptOAuth) {
+        None
+    } else {
+        resolve_api_key(
+            transient_api_key,
+            profile.api_key.as_str(),
+            spec.display_name,
+            spec.auth,
+            env,
+        )?
+    };
     let region = resolve_bedrock_region(profile, spec.auth, env);
     let bedrock_aws_profile = if matches!(spec.kind, ProviderKind::Bedrock(_)) {
         resolve_bedrock_profile(profile, spec.auth, env)
@@ -109,12 +119,29 @@ pub fn resolve_provider_config(
                 wire_api: profile.transport,
                 responses_path: profile.responses_path.trim().to_string(),
                 chat_completions_path: profile.chat_completions_path.trim().to_string(),
+                request_timeout: Duration::from_secs(profile.request_timeout_secs.max(1)),
+            })
+        }
+        ProviderKind::OpenAiCodex => {
+            let credentials =
+                profile
+                    .codex_oauth
+                    .clone()
+                    .ok_or_else(|| ProviderConfigError::MissingOAuth {
+                        provider: spec.display_name.to_string(),
+                    })?;
+            ProviderAdapterConfig::OpenAiCodex(OpenAiCodexConfig {
+                base_url: profile.base_url.trim().to_string(),
+                request_timeout: Duration::from_secs(profile.request_timeout_secs.max(1)),
+                credentials,
+                credential_sink: None,
             })
         }
         ProviderKind::Anthropic(anthropic) => ProviderAdapterConfig::Anthropic(AnthropicConfig {
             base_url: profile.base_url.trim().to_string(),
             messages_path: anthropic.messages_path.to_string(),
             anthropic_version: anthropic.anthropic_version.to_string(),
+            request_timeout: Duration::from_secs(profile.request_timeout_secs.max(1)),
         }),
         ProviderKind::Bedrock(_) => {
             let region = region.ok_or_else(|| ProviderConfigError::MissingApiKey {
@@ -199,6 +226,7 @@ fn auth_config(auth: AuthSpec, api_key: Option<String>, region: Option<String>) 
             required,
         },
         AuthSpec::NoneAllowed { .. } => AuthConfig::NoneAllowed,
+        AuthSpec::ChatGptOAuth => AuthConfig::NoneAllowed,
         AuthSpec::AwsCredentials {
             profile_env_var, ..
         } => AuthConfig::AwsCredentials {
@@ -209,6 +237,32 @@ fn auth_config(auth: AuthSpec, api_key: Option<String>, region: Option<String>) 
             }),
             region: region.unwrap_or_default(),
         },
+    }
+}
+
+#[derive(Clone)]
+struct SettingsCodexCredentialSink {
+    store: Arc<dyn SettingsStore>,
+}
+
+impl CodexCredentialSink for SettingsCodexCredentialSink {
+    fn save(&self, credentials: &CodexOAuthCredentials) -> Result<(), String> {
+        let mut settings = self.store.load().map_err(|error| error.to_string())?;
+        let profile = settings
+            .providers
+            .get_mut(&ProviderId::from("openai-codex"))
+            .ok_or_else(|| "OpenAI Codex provider profile is missing".to_string())?;
+        profile.codex_oauth = Some(credentials.clone());
+        self.store
+            .save_raw(&settings)
+            .map_err(|error| error.to_string())
+    }
+}
+
+/// Attaches durable token-rotation persistence to a resolved Codex config.
+pub fn attach_codex_credential_sink(config: &mut AiClientConfig, store: Arc<dyn SettingsStore>) {
+    if let ProviderAdapterConfig::OpenAiCodex(codex) = &mut config.adapter {
+        codex.credential_sink = Some(Arc::new(SettingsCodexCredentialSink { store }));
     }
 }
 
@@ -343,6 +397,7 @@ mod tests {
                 transport: ProviderTransport::ChatCompletions,
                 responses_path: " custom/responses ".to_string(),
                 chat_completions_path: " chat/completions ".to_string(),
+                request_timeout_secs: 45,
                 ..ProviderProfile::compatible_default()
             },
         );
@@ -375,6 +430,7 @@ mod tests {
         assert_eq!(config.wire_api, WireApi::ChatCompletions);
         assert_eq!(config.responses_path, "custom/responses");
         assert_eq!(config.chat_completions_path, "chat/completions");
+        assert_eq!(config.request_timeout, std::time::Duration::from_secs(45));
     }
 
     #[test]

@@ -22,7 +22,9 @@ fn backend() -> (AppBackend, tempfile::TempDir) {
             project_workflow_store: Box::new(FileProjectWorkflowStore),
             agent_store: Box::new(FileAgentStore::new(dir.path().join("agents.json"))),
             project_store: Box::new(FileProjectStore::new(dir.path().join("projects.json"))),
-            settings_store: Box::new(FileSettingsStore::new(dir.path().join("settings.json"))),
+            settings_store: std::sync::Arc::new(FileSettingsStore::new(
+                dir.path().join("settings.json"),
+            )),
             skill_catalog: Box::new(FileSkillCatalog),
             env: ProviderEnv::from_pairs([
                 ("OPENAI_API_KEY", "openai-key"),
@@ -204,7 +206,9 @@ fn provider_readiness_reports_missing_key() {
             project_workflow_store: Box::new(FileProjectWorkflowStore),
             agent_store: Box::new(FileAgentStore::new("/tmp/unused-agents.json")),
             project_store: Box::new(FileProjectStore::new("/tmp/unused-projects.json")),
-            settings_store: Box::new(FileSettingsStore::new("/tmp/unused-settings.json")),
+            settings_store: std::sync::Arc::new(FileSettingsStore::new(
+                "/tmp/unused-settings.json",
+            )),
             skill_catalog: Box::new(FileSkillCatalog),
             env: ProviderEnv::default(),
             runtime_handle: runtime.handle().clone(),

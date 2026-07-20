@@ -194,6 +194,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "depends on developer ~/.cursor/mcp.json listing playwright"]
     fn scan_finds_playwright_from_cursor_home_config() {
         let home = dirs::home_dir().expect("home dir");
         let cursor_mcp = home.join(".cursor/mcp.json");

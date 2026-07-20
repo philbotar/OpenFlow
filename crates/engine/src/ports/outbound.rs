@@ -1,6 +1,8 @@
 //! Outbound ports owned by the engine.
 
-use crate::conversation::{filter_tool_turn_assistant_message, AgentTranscriptItem};
+use crate::conversation::{
+    filter_tool_turn_assistant_message, AgentReasoning, AgentTranscriptItem,
+};
 use crate::graph::{NodeId, WorkflowId};
 use crate::tools::{
     FileChangeRecord, NodeToolConfig, ReadRecord, ToolCall, ToolDefinition, ToolResult,
@@ -8,6 +10,30 @@ use crate::tools::{
 use async_trait::async_trait;
 use serde_json::Value;
 use thiserror::Error;
+
+/// Which model-facing tool catalog is active for this invocation.
+///
+/// Control turns expose only workflow control tools. Work turns expose only
+/// executable tools. Keeping the catalogs disjoint makes a mixed
+/// control/executable response unrepresentable for conforming providers.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum AgentTurnPhase {
+    #[default]
+    Control,
+    Work,
+}
+
+/// Run-scoped capability policy selected by the engine.
+///
+/// This is distinct from node approval configuration. Planning is a hard
+/// capability boundary, not a request to ask before a write.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolAccessPolicy {
+    #[default]
+    Execution,
+    Planning,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentRequest {
@@ -29,6 +55,10 @@ pub struct AgentRequest {
     pub reasoning_effort: Option<String>,
     /// Optional reasoning budget token count forwarded to the provider.
     pub reasoning_budget_tokens: Option<u32>,
+    /// Active model-facing tool catalog for this invocation.
+    pub turn_phase: AgentTurnPhase,
+    /// Hard capability policy for this run phase.
+    pub tool_access_policy: ToolAccessPolicy,
     /// Whether this node may pause for human input. When false, providers must
     /// not offer the request-input tool nor convert plain-text turns into
     /// input requests.
@@ -64,6 +94,7 @@ pub struct AgentToolCallBatch {
     pub raw_text: String,
     pub assistant_message: Option<String>,
     pub tool_calls: Vec<ToolCall>,
+    pub reasoning: Vec<AgentReasoning>,
     pub usage: Option<UsageReport>,
 }
 
@@ -71,6 +102,25 @@ pub struct AgentToolCallBatch {
 pub struct AgentNeedUserInput {
     pub raw_text: String,
     pub assistant_message: String,
+    pub reasoning: Vec<AgentReasoning>,
+}
+
+/// A provider turn containing human-readable assistant text but no structured action.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentMessageTurn {
+    pub raw_text: String,
+    pub assistant_message: String,
+    pub reasoning: Vec<AgentReasoning>,
+    pub usage: Option<UsageReport>,
+}
+
+/// The control turn selected executable work for the node's next invocation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentContinueWork {
+    pub raw_text: String,
+    pub assistant_message: Option<String>,
+    pub reasoning: Vec<AgentReasoning>,
+    pub usage: Option<UsageReport>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -78,6 +128,8 @@ pub enum AgentTurnOutcome {
     Completed(AgentTurnSuccess),
     ToolCalls(AgentToolCallBatch),
     NeedsUserInput(AgentNeedUserInput),
+    ContinueWork(AgentContinueWork),
+    Message(AgentMessageTurn),
 }
 
 #[derive(Debug, Error)]
@@ -92,9 +144,71 @@ pub enum AgentError {
     MalformedSubmitOutput {
         provider_label: String,
         detail: String,
+        /// Redacted repair payload for overseer recovery; omitted from [`std::fmt::Display`].
+        candidate: Option<Box<OutputRepairCandidate>>,
+    },
+    #[error("{provider_label} response returned tools from the wrong turn phase: {tool_names}")]
+    MixedToolTurn {
+        provider_label: String,
+        tool_names: String,
     },
     #[error("interrupted")]
     Interrupted,
+}
+
+/// Why a final-output submit call failed deterministic recovery.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputRepairFailureKind {
+    InvalidJson,
+    WrongEnvelope,
+    SchemaViolation,
+    TruncatedResponse,
+}
+
+/// In-memory repair candidate for a malformed `openflow_submit_node_output` call.
+///
+/// [`Debug`] redacts raw arguments to a byte count. Never log [`Self::raw_arguments`].
+#[derive(Clone, PartialEq, Eq)]
+pub struct OutputRepairCandidate {
+    pub tool_call_id: Option<String>,
+    pub tool_name: String,
+    pub(crate) raw_arguments: String,
+    pub detail: String,
+    pub output_schema: Value,
+    pub failure_kind: OutputRepairFailureKind,
+    pub usage: Option<UsageReport>,
+    pub finish_reason: Option<String>,
+}
+
+impl OutputRepairCandidate {
+    #[must_use]
+    pub fn raw_arguments(&self) -> &str {
+        &self.raw_arguments
+    }
+
+    /// Eligible for a bounded overseer repair pass (slice 3).
+    #[must_use]
+    pub const fn is_repairable(&self) -> bool {
+        !matches!(
+            self.failure_kind,
+            OutputRepairFailureKind::TruncatedResponse
+        ) && self.raw_arguments.len() <= 64 * 1024
+    }
+}
+
+impl std::fmt::Debug for OutputRepairCandidate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OutputRepairCandidate")
+            .field("tool_call_id", &self.tool_call_id)
+            .field("tool_name", &self.tool_name)
+            .field("raw_arguments_len", &self.raw_arguments.len())
+            .field("detail", &self.detail)
+            .field("output_schema", &self.output_schema)
+            .field("failure_kind", &self.failure_kind)
+            .field("usage", &self.usage)
+            .field("finish_reason", &self.finish_reason)
+            .finish()
+    }
 }
 
 impl AgentError {
@@ -106,6 +220,31 @@ impl AgentError {
         Self::MalformedSubmitOutput {
             provider_label: provider_label.into(),
             detail: detail.into(),
+            candidate: None,
+        }
+    }
+
+    #[must_use]
+    pub fn malformed_submit_with_candidate(
+        provider_label: impl Into<String>,
+        detail: impl Into<String>,
+        candidate: OutputRepairCandidate,
+    ) -> Self {
+        Self::MalformedSubmitOutput {
+            provider_label: provider_label.into(),
+            detail: detail.into(),
+            candidate: Some(Box::new(candidate)),
+        }
+    }
+
+    #[must_use]
+    pub fn mixed_tool_turn(
+        provider_label: impl Into<String>,
+        tool_names: impl Into<String>,
+    ) -> Self {
+        Self::MixedToolTurn {
+            provider_label: provider_label.into(),
+            tool_names: tool_names.into(),
         }
     }
 
@@ -124,6 +263,33 @@ impl AgentError {
         matches!(self, Self::MalformedSubmitOutput { .. })
     }
 
+    #[must_use]
+    pub fn output_repair_candidate(&self) -> Option<&OutputRepairCandidate> {
+        match self {
+            Self::MalformedSubmitOutput { candidate, .. } => candidate.as_deref(),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn is_repairable_submit_output(&self) -> bool {
+        self.output_repair_candidate()
+            .is_some_and(OutputRepairCandidate::is_repairable)
+    }
+
+    #[must_use]
+    pub const fn is_mixed_tool_turn(&self) -> bool {
+        matches!(self, Self::MixedToolTurn { .. })
+    }
+
+    #[must_use]
+    pub fn mixed_tool_names(&self) -> Option<&str> {
+        match self {
+            Self::MixedToolTurn { tool_names, .. } => Some(tool_names),
+            _ => None,
+        }
+    }
+
     /// Provider turn had no tool calls and no recoverable assistant text.
     #[must_use]
     pub fn is_empty_provider_turn(&self) -> bool {
@@ -131,6 +297,8 @@ impl AgentError {
             Self::Failed(message) => {
                 message.contains("neither tool calls nor recoverable output")
                     || message.contains("no tool calls and no usable text")
+                    // Rig rejects empty choices before OpenFlow outcome mapping.
+                    || message.contains("no message or tool call")
             }
             _ => false,
         }
@@ -140,8 +308,27 @@ impl AgentError {
 /// Streaming event emitted during [`AiPort::invoke_stream`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AiStreamEvent {
-    AssistantDelta { content: String },
-    ThinkingDelta { content: String },
+    AssistantDelta {
+        content: String,
+    },
+    ThinkingDelta {
+        content: String,
+    },
+    /// Overseer repair started for a malformed final-output submit (no raw content).
+    OutputRepairStarted {
+        node_id: NodeId,
+        model: String,
+    },
+    /// Overseer repair produced a completion-protocol-accepted candidate.
+    OutputRepairSucceeded {
+        node_id: NodeId,
+        model: String,
+    },
+    /// Overseer repair failed; sanitized reason only.
+    OutputRepairFailed {
+        node_id: NodeId,
+        reason: String,
+    },
 }
 
 /// Receives streaming events from provider adapters during an AI invocation.
@@ -170,6 +357,8 @@ pub fn emit_assistant_deltas_from_outcome(sink: &dyn AiStreamSink, outcome: &Age
         AgentTurnOutcome::Completed(success) => success.assistant_message.clone(),
         AgentTurnOutcome::ToolCalls(batch) => batch.assistant_message.clone(),
         AgentTurnOutcome::NeedsUserInput(need) => Some(need.assistant_message.clone()),
+        AgentTurnOutcome::ContinueWork(continuation) => continuation.assistant_message.clone(),
+        AgentTurnOutcome::Message(message) => Some(message.assistant_message.clone()),
     };
     let message = filter_tool_turn_assistant_message(message);
     if let Some(content) = message.filter(|value| !value.trim().is_empty()) {
@@ -223,6 +412,7 @@ pub trait ToolPort: Send + Sync {
         node_id: &NodeId,
         label: &str,
         calls: Vec<ToolCall>,
+        policy: ToolAccessPolicy,
     ) -> ToolBatchOutput;
 
     /// Augment an AI request's available tool descriptions before each AI invocation.
@@ -239,8 +429,9 @@ where
         node_id: &NodeId,
         label: &str,
         calls: Vec<ToolCall>,
+        policy: ToolAccessPolicy,
     ) -> ToolBatchOutput {
-        (**self).execute_batch(node_id, label, calls).await
+        (**self).execute_batch(node_id, label, calls, policy).await
     }
 
     fn augment_request(&self, node_id: &NodeId, request: &mut AgentRequest) {
@@ -267,10 +458,24 @@ mod tests {
                 .to_string()
         )
         .is_empty_provider_turn());
+        assert!(AgentError::Failed(
+            "Custom OpenAI-compatible API response error: Response contained no message or tool call (empty)"
+                .to_string()
+        )
+        .is_empty_provider_turn());
         assert!(AgentError::Interrupted.is_interrupted());
         assert!(
             AgentError::malformed_submit_output("AI provider", "missing field `output`")
                 .is_malformed_submit_output()
+        );
+        let mixed = AgentError::mixed_tool_turn(
+            "Custom OpenAI-compatible API",
+            "openflow_submit_node_output, write",
+        );
+        assert!(mixed.is_mixed_tool_turn());
+        assert_eq!(
+            mixed.mixed_tool_names(),
+            Some("openflow_submit_node_output, write")
         );
         assert!(!AgentError::Failed("unrelated".to_string()).is_malformed_submit_output());
     }

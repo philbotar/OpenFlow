@@ -12,6 +12,7 @@ const TOOL_VERBS: Record<string, { active: string; done: string }> = {
   find: { active: "Searching", done: "Searched" },
   ast_grep: { active: "Searching", done: "Searched" },
   web_search: { active: "Searching web", done: "Searched web" },
+  openflow_write_plan_artifact: { active: "Sealing plan", done: "Sealed plan" },
   openflow_call_subagent: { active: "Calling subagent", done: "Called subagent" },
   openflow_declare_subagents: { active: "Declaring subagents", done: "Declared subagents" },
   openflow_submit_node_output: { active: "Submitting output", done: "Submitted output" },
@@ -31,6 +32,7 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   openflow_declare_subagents: "Declare Subagents",
   openflow_submit_node_output: "Submit Output",
   openflow_request_user_input: "Request Input",
+  openflow_write_plan_artifact: "Freeze Plan Artifact",
 };
 
 const TOOL_STACK_NOUNS: Record<string, { one: string; many: string }> = {
@@ -47,6 +49,7 @@ const TOOL_STACK_NOUNS: Record<string, { one: string; many: string }> = {
   openflow_declare_subagents: { one: "declaration", many: "declarations" },
   openflow_submit_node_output: { one: "output", many: "outputs" },
   openflow_request_user_input: { one: "request", many: "requests" },
+  openflow_write_plan_artifact: { one: "plan", many: "plans" },
 };
 
 const ACTIVE_TOOL_STATUSES: ReadonlySet<ToolCallStatus> = new Set([
@@ -320,4 +323,3 @@ export function toolBubbleRowStatusText(status: ToolCallStatus): string {
       return "";
   }
 }
-

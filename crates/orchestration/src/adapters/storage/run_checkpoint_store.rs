@@ -130,7 +130,11 @@ impl RunCheckpointStore for FileRunCheckpointStore {
                 if !path.exists() {
                     continue;
                 }
-                let record = read_run_record(&path)?;
+                let record = match read_run_record(&path) {
+                    Ok(record) => record,
+                    Err(error) if error.kind() == io::ErrorKind::InvalidData => continue,
+                    Err(error) => return Err(error),
+                };
                 if workflow_id.is_some_and(|expected| expected != record.workflow_id) {
                     continue;
                 }
@@ -181,6 +185,7 @@ mod tests {
             workflow_id: "wf-1".to_string(),
             workflow_name: "Demo".to_string(),
             workflow_hash: "hash".to_string(),
+            workflow_snapshot: Workflow::new("Demo"),
             project_id: Some("project-1".to_string()),
             execution_cwd: base.display().to_string(),
             artifact_root: base
@@ -211,16 +216,20 @@ mod tests {
                 reads_by_node: BTreeMap::new(),
                 transcripts: BTreeMap::new(),
                 awaiting_nodes: BTreeSet::new(),
+                work_phase_nodes: BTreeSet::new(),
                 pending_tool_batches: BTreeMap::new(),
                 retries_by_node: BTreeMap::new(),
                 transient_streaks_by_node: BTreeMap::new(),
                 submit_output_retries_by_node: BTreeMap::new(),
                 request_input_retries_by_node: BTreeMap::new(),
                 empty_turn_retries_by_node: BTreeMap::new(),
+                mixed_tool_turn_retries_by_node: BTreeMap::new(),
                 auto_continue_streaks_by_node: BTreeMap::new(),
                 entrypoint_text: None,
                 interrupted_nodes: BTreeSet::new(),
                 failed_nodes: BTreeMap::new(),
+                plan_mode_source_node_id: None,
+                frozen_change_evidence_packet: None,
             },
         }
     }
@@ -267,6 +276,39 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["run-new", "run-old"]
         );
+    }
+
+    #[test]
+    fn list_runs_skips_legacy_records_missing_workflow_snapshot() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = FileRunCheckpointStore;
+        let root = root(dir.path());
+        let valid = record(dir.path(), "run-valid");
+
+        store.create_run(&root, &valid).expect("valid run");
+        let legacy_dir = run_dir(&root, "run-legacy");
+        fs::create_dir_all(&legacy_dir).expect("legacy run dir");
+        fs::write(
+            legacy_dir.join(RUN_FILE_NAME),
+            r#"{
+                "runId": "run-legacy",
+                "workflowId": "wf-1",
+                "workflowName": "Legacy",
+                "workflowHash": "hash",
+                "projectId": null,
+                "executionCwd": "/tmp",
+                "artifactRoot": "/tmp/artifacts",
+                "startedAtMs": 1,
+                "updatedAtMs": 1,
+                "status": "running"
+            }"#,
+        )
+        .expect("legacy run record");
+
+        let runs = store.list_runs(&[root], None).expect("list runs");
+
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].run_id, "run-valid");
     }
 
     #[test]

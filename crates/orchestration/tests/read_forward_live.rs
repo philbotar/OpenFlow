@@ -97,6 +97,7 @@ fn live_client(config: &LiveProviderConfig) -> AiClient {
             responses_path: config.responses_path.clone(),
             chat_completions_path: env::var("STEP_WORKFLOW_LIVE_CHAT_COMPLETIONS_PATH")
                 .unwrap_or_else(|_| "v1/chat/completions".to_string()),
+            request_timeout: std::time::Duration::from_mins(5),
         }),
     })
 }

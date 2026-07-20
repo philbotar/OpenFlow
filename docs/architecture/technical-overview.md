@@ -239,21 +239,29 @@ Two adjacent mechanisms complete the context-economy story:
 
 There is no "parse the model's final answer" step. A node is **incomplete until it calls `openflow_submit_node_output`** with `{output: <schema-conforming object>, assistant_message}`. The runtime preamble states this contract explicitly ("Plain assistant text does not finish the node and does not advance the workflow"). Likewise, pausing for a human is a tool call: `openflow_request_user_input` with one direct question.
 
-This makes the **control plane itself tool-driven**:
+This makes the **control plane itself tool-driven**. Control and work use disjoint
+tool catalogs: a control turn exposes only `openflow_submit_node_output`, optional
+`openflow_request_user_input`, and `openflow_continue_work`; a work turn exposes only
+executable catalog tools. Calling `openflow_continue_work` advances to one work turn,
+and an executable tool batch returns the node to a control turn. A compatible provider
+therefore never asks a model to choose between completion and side effects in the same
+response.
 
 ```mermaid
 flowchart LR
-    Model["Model turn"] --> Out{Outcome}
-    Out -->|"openflow_submit_node_output"| Submit["Validated against schema →<br/>node output stored →<br/>downstream layer may start"]
-    Out -->|"openflow_request_user_input"| Ask["Engine pauses node →<br/>chat input bar opens →<br/>reply appended to transcript"]
-    Out -->|"catalog tool calls"| ToolsB["Tool batch (approval policy applies)"]
-    Out -->|"plain text only"| Nope["Does NOT advance —<br/>engine keeps the node open"]
+    Control["Control turn<br/>control tools only"] -->|"openflow_submit_node_output"| Submit["Validated output stored →<br/>downstream layer may start"]
+    Control -->|"openflow_request_user_input"| Ask["Engine pauses node →<br/>reply appended to transcript"]
+    Control -->|"openflow_continue_work"| Work["Work turn<br/>executable tools only"]
+    Work -->|"catalog tool calls"| ToolsB["Tool batch<br/>(approval policy applies)"]
+    ToolsB --> Control
+    Control -->|"plain text only"| Nope["Does NOT advance —<br/>engine keeps the node open"]
 
     Submit -.->|"malformed args"| Retry["Structured retry with corrective<br/>feedback injected, max 3 attempts<br/>(separate counters per failure class)"]
     Ask -.->|"narration instead of a question"| Retry
 ```
 
 Malformed control-tool calls get **class-specific retry budgets** with targeted corrective feedback (e.g. `MALFORMED_REQUEST_INPUT_FEEDBACK` tells the model to put the actual question in `assistant_message`), distinct from transient-network retry counters.
+After the request-input retry budget is exhausted, the node fails instead of surfacing narration as a human question. Plain provider text never becomes `NeedsUserInput`; only an explicit, valid `openflow_request_user_input` call may pause a running node.
 
 ### 5.2 Humans are nodes, not interrupts
 

@@ -61,6 +61,29 @@ impl MockTurn {
         Self::Error(AgentError::Failed(message.to_string()))
     }
 
+    /// Malformed final-output submit with a repairable candidate.
+    #[must_use]
+    pub fn malformed_submit_repairable(raw_arguments: &str, schema: &Value) -> Self {
+        Self::Error(engine::malformed_submit_invalid_json(
+            "mock",
+            raw_arguments,
+            "schema violation",
+            Some(schema),
+            Some("call_orig".into()),
+            None,
+            None,
+        ))
+    }
+
+    /// Overseer completed turn with `repaired_arguments` accepted by the completion protocol.
+    #[must_use]
+    pub fn repaired_arguments(output: &Value) -> Self {
+        Self::Completed {
+            output: serde_json::json!({ "repaired_arguments": { "output": output } }),
+            assistant: Some("overseer prose must clear".into()),
+        }
+    }
+
     #[must_use]
     pub fn tool_read(path: &str) -> Self {
         Self::ToolCalls {
@@ -128,6 +151,15 @@ impl MockAiStack {
         self.requests.lock().clone()
     }
 
+    /// Requests whose node id ends with the engine repair suffix.
+    #[must_use]
+    pub fn recorded_repair_requests(&self) -> Vec<AgentRequest> {
+        self.recorded_requests()
+            .into_iter()
+            .filter(|request| request.node_id.ends_with("__output_repair"))
+            .collect()
+    }
+
     fn pop_turn(&self) -> Option<MockTurn> {
         self.stack.lock().pop()
     }
@@ -147,6 +179,7 @@ impl MockAiStack {
                     raw_text: String::new(),
                     assistant_message: assistant,
                     tool_calls: calls,
+                    reasoning: vec![],
                     usage: None,
                 }))
             }
@@ -154,6 +187,7 @@ impl MockAiStack {
                 Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
                     raw_text: "{}".to_string(),
                     assistant_message: message,
+                    reasoning: vec![],
                 }))
             }
             MockTurn::Error(error) => Err(error),

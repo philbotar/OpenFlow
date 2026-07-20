@@ -99,6 +99,6 @@ Test command wiring and payload shapes. Mock `AppBackend` where needed.
 ## Related docs
 
 - [`docs/architecture/contract.md`](../../docs/architecture/contract.md)
-- [`docs/architecture/contract.md`](../../docs/architecture/contract.md)
+- [`docs/architecture/end-to-end-runtime.md`](../../docs/architecture/end-to-end-runtime.md) — invoke / event bridge path
 - [`docs/architecture/threading-concurrency.md`](../../docs/architecture/threading-concurrency.md) — dual runtime, event bridge
 - [`../../AGENTS.md`](../../AGENTS.md) — workspace map

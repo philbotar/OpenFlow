@@ -27,7 +27,7 @@ Patterns we follow in this repo.
 | LLM invocation contract (`AiPort`, `AgentRequest`) | `crates/engine/src/ports/outbound.rs` |
 | Tool execution contract (`ToolPort`) | `crates/engine/src/ports/outbound.rs`, `crates/orchestration/src/run/execution/tool_port.rs` |
 | Human input and tool approval resume behavior | `crates/engine/src/execution/interactive_engine/` |
-| LLM transport mapping and tool-arg repair | `crates/providers/src/mapping.rs`, `openai_compat.rs`, `anthropic.rs` |
+| LLM transport mapping and tool-arg repair | `crates/providers/src/mapping/`, `rig_adapter/` |
 | Provider client (`AiClient`, `create_provider`) | `crates/providers/src/client.rs`, `lib.rs` |
 | UI desktop seam | `crates/ui/src/api.ts` |
 | App backend composition and IPC surface | `crates/orchestration/src/backend/mod.rs` |

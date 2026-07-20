@@ -1,7 +1,7 @@
 use crate::api::{
     WorkflowAuthoringDraftEvent, WorkflowAuthoringStartResult, WorkflowAuthoringThinkingEvent,
 };
-use crate::settings::model::{merge_preserved_api_keys, AppSettings};
+use crate::settings::model::{merge_preserved_secrets, AppSettings};
 use crate::workflow::authoring::WorkflowAuthoringProjectContext;
 use engine::Workflow;
 
@@ -51,12 +51,16 @@ impl AppBackend {
         G: Fn(WorkflowAuthoringDraftEvent) + Send + Sync,
     {
         let mut merged = settings.clone();
-        merge_preserved_api_keys(&mut merged, &self.settings.store().load()?);
-        let provider_config = crate::settings::provider::resolve_provider_config(
+        merge_preserved_secrets(&mut merged, &self.settings.store().load()?);
+        let mut provider_config = crate::settings::provider::resolve_provider_config(
             &merged,
             transient_api_key,
             self.settings.env(),
         )?;
+        crate::settings::provider::attach_codex_credential_sink(
+            &mut provider_config,
+            self.settings.store_arc(),
+        );
         let ai = providers::create_provider(provider_config);
         self.workflow_authoring
             .send_turn(

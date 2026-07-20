@@ -1,6 +1,6 @@
 [package]
 name = "providers"
-version = "0.1.17"
+version = "0.1.18"
 edition.workspace = true
 description.workspace = true
 license.workspace = true
@@ -26,13 +26,18 @@ bedrock = [
 rig-core = { workspace = true }
 rig-bedrock = { workspace = true, optional = true }
 async-trait.workspace = true
+base64.workspace = true
+bytes.workspace = true
+getrandom.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 jsonrepair-rs.workspace = true
-engine = { path = "../engine", version = "0.1.7" }
+engine = { path = "../engine", version = "0.1.8" }
 futures.workspace = true
-tokio = { workspace = true, features = ["time", "process"] }
+tokio = { workspace = true, features = ["time", "process", "net", "io-util"] }
+thiserror.workspace = true
 aws-config = { workspace = true, optional = true }
 aws-sdk-bedrock = { workspace = true, optional = true }
 aws-sdk-bedrockruntime = { workspace = true, optional = true }

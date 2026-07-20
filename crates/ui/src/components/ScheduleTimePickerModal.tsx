@@ -8,6 +8,8 @@ import {
 } from "../lib/schedule";
 import type { ScheduleDraft } from "../lib/schedule";
 import { AnimatedModal } from "./AnimatedModal";
+import { Button } from "./Button";
+import { ButtonRow } from "./ButtonRow";
 
 interface ScheduleTimePickerModalProps {
   open: boolean;
@@ -86,11 +88,11 @@ export function ScheduleTimePickerModal(props: ScheduleTimePickerModalProps) {
         </div>
       </div>
 
-      <div class="button-row end">
-        <button class="primary-button" type="button" onClick={props.onClose}>
+      <ButtonRow align="end">
+        <Button variant="primary" onClick={props.onClose}>
           Done
-        </button>
-      </div>
+        </Button>
+      </ButtonRow>
     </AnimatedModal>
   );
 }

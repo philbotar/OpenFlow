@@ -11,6 +11,7 @@
         "system_prompt": "You clarify product ideas into concrete user value.",
         "task_prompt": "Read the initial idea and return the target user, user pain, and desired outcome.",
         "model": "gpt-5.5",
+        "requestUserInput": false,
         "output_schema": {
           "type": "object",
           "additionalProperties": false,
@@ -32,6 +33,7 @@
         "system_prompt": "You create compact implementation plans for Rust apps.",
         "task_prompt": "Use upstream clarified idea output to return ordered implementation slices.",
         "model": "gpt-5.5",
+        "requestUserInput": false,
         "output_schema": {
           "type": "object",
           "additionalProperties": false,
@@ -54,6 +56,7 @@
         "system_prompt": "You find delivery risks in software designs.",
         "task_prompt": "Use upstream clarified idea output to return the highest-impact risks.",
         "model": "gpt-5.5",
+        "requestUserInput": false,
         "output_schema": {
           "type": "object",
           "additionalProperties": false,
@@ -76,6 +79,7 @@
         "system_prompt": "You synthesize planning and risk outputs into a concise product brief.",
         "task_prompt": "Combine all upstream outputs into one brief.",
         "model": "gpt-5.5",
+        "requestUserInput": false,
         "output_schema": {
           "type": "object",
           "additionalProperties": false,

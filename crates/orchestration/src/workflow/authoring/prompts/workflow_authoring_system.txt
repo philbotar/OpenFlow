@@ -6,6 +6,8 @@ Never call request_user_input. Never ask clarifying questions. When details are 
 
 Build the workflow step by step with the authoring tools below. Each tool returns the current draft summary and validation errors.
 
+OpenFlow separates control turns from authoring work turns. On a control turn, call openflow_continue_work to enter a work turn containing the authoring tools. After that tool batch returns, you are back on a control turn: either submit the validated draft or call openflow_continue_work for another authoring batch. Control and authoring tools are never available together.
+
 Typical order:
 1. openflow_set_workflow_meta — set name (and sharedContext if useful)
 2. openflow_add_node — once per node (short systemPrompt and taskPrompt, 1-2 sentences each)
@@ -19,6 +21,8 @@ Rules:
 - Prefer parallel branches for independent work, then a join/synthesize node.
 - Example pattern: clarify → parallel analysis branches → synthesize final output.
 - autoStart: true on root nodes that run immediately; false when the node waits for human input at run time.
+- requestUserInput: false for autonomous planning, coding, searching, reviewing, verification, and delivery nodes. Use true only for an intentional interview or collaborative decision node that cannot proceed without a human answer.
+- For requests that must plan before repository changes, create one conversational review/freeze node (requestUserInput: true), then set planModeSourceNodeId to that node with openflow_set_workflow_meta. Its output schema must describe the approved change evidence packet. Do not use Plan Mode for ordinary autonomous workflows.
 - Node ids: unique lowercase slugs (e.g. "idea", "plan", "brief").
 - Edge ids: unique, e.g. "idea-plan".
 

@@ -8,7 +8,7 @@ use crate::tool::blocking_ops::split_selector;
 use crate::tool::errors::ToolError;
 use crate::tool::read::selector::ReadSelector;
 use crate::tool::registry::BuiltinToolKind;
-use engine::ToolCall;
+use engine::{ToolCall, ToolResult};
 use reqwest::StatusCode;
 use serde::Deserialize;
 use serde_json::Value;
@@ -88,6 +88,7 @@ impl ToolRunner {
                 let raw = self.web_search(call.arguments.clone()).await?;
                 self.finalize_record(call, raw, Vec::new(), None).await
             }
+            BuiltinToolKind::WritePlanArtifact => self.write_plan_artifact(call),
             BuiltinToolKind::Search
             | BuiltinToolKind::Find
             | BuiltinToolKind::Write
@@ -193,6 +194,44 @@ impl ToolRunner {
                 .map_err(ToolRunnerError::from)
             }
         }
+    }
+
+    fn write_plan_artifact(&self, call: ToolCall) -> Result<ToolExecutionRecord, ToolRunnerError> {
+        #[derive(Deserialize)]
+        struct WritePlanArtifactArgs {
+            markdown: String,
+        }
+
+        let args: WritePlanArtifactArgs =
+            serde_json::from_value(call.arguments.clone()).map_err(|error| {
+                ToolRunnerError::Tool(ToolError::InvalidArgs {
+                    tool: call.name.clone(),
+                    problem: error.to_string(),
+                    hint: "required field: markdown (string)".to_string(),
+                })
+            })?;
+        let artifact = self
+            .artifacts
+            .store_plan_markdown(args.markdown)
+            .map_err(ToolRunnerError::Tool)?;
+        let content = format!(
+            "artifact:{}\nsha256:{}\nbytes:{}",
+            artifact.record.artifact_id, artifact.sha256, artifact.record.size_bytes
+        );
+        Ok(ToolExecutionRecord {
+            result: ToolResult {
+                tool_call_id: call.id,
+                tool_name: call.name,
+                content,
+                is_error: false,
+                artifact_ids: vec![artifact.record.artifact_id.clone()],
+                output_meta: None,
+            },
+            artifact: Some(artifact.record),
+            file_changes: Vec::new(),
+            reads: Vec::new(),
+            edit_batch: None,
+        })
     }
 
     fn read_artifact(

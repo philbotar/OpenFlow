@@ -23,6 +23,18 @@ export function activeProfile(settings: AppSettings): ProviderProfile {
   return settings.providers[settings.active_provider] ?? Object.values(settings.providers)[0];
 }
 
+/** Resolve the provider profile for workflow settings (override → active). */
+export function workflowProviderProfile(
+  settings: AppSettings,
+  workflowSettings: WorkflowSettings | null | undefined,
+): ProviderProfile {
+  const overrideId = workflowSettings?.provider_id;
+  if (overrideId && settings.providers[overrideId]) {
+    return settings.providers[overrideId];
+  }
+  return activeProfile(settings);
+}
+
 export function reasoningEffortOptions(profile: ProviderProfile): ReasoningEffortOption[] {
   return profile.reasoning_effort_options ?? profile.reasoningEffortOptions ?? [];
 }
@@ -109,6 +121,7 @@ export function cloneProviderProfile(profile: ProviderProfile): ProviderProfile 
     transport: profile.transport,
     responses_path: profile.responses_path,
     chat_completions_path: profile.chat_completions_path,
+    request_timeout_secs: profile.request_timeout_secs,
     known_models: [...profile.known_models],
     default_model: profile.default_model,
     editable: profile.editable,

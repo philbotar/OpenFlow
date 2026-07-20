@@ -1,5 +1,5 @@
 import { createSignal, For, onMount, Show } from "solid-js";
-import { SidebarIcon } from "../components";
+import { Button, SectionHeader, SettingsSection, SidebarIcon } from "@/components";
 import { deleteSearchApiKey, loadSearchApiKey, saveSearchApiKey } from "../api";
 import { useAppContext } from "../context/AppContext";
 import { normalizeError } from "../lib/utils";
@@ -65,19 +65,12 @@ export function SearchSection() {
   }
 
   return (
-    <div class="settings-section search-section">
-      <header class="providers-section-header">
-        <div class="providers-section-intro">
-          <div class="eyebrow">Search</div>
-          <h3>Web search configuration</h3>
-          <p>
-            Web search uses search-cli, bundled with OpenFlow. Keys are stored
-            locally and passed to the binary as environment variables when a
-            workflow runs; keys already exported in your shell environment also
-            work.
-          </p>
-        </div>
-      </header>
+    <SettingsSection sectionClass="search-section">
+      <SectionHeader
+        eyebrow="Search"
+        title="Web search configuration"
+        description="Web search uses search-cli, bundled with OpenFlow. Keys are stored locally and passed to the binary as environment variables when a workflow runs; keys already exported in your shell environment also work."
+      />
 
       <section
         class="providers-panel providers-panel--connection"
@@ -159,23 +152,22 @@ export function SearchSection() {
                         setDrafts((prev) => ({ ...prev, [provider.id]: value }));
                       }}
                     />
-                    <button
-                      type="button"
-                      class="secondary-button"
+                    <Button
+                      variant="secondary"
                       data-save-provider={provider.id}
                       onClick={() => void handleSave(provider.id)}
                     >
                       Save
-                    </button>
+                    </Button>
                     <Show when={saved()[provider.id]}>
-                      <button
-                        type="button"
-                        class="secondary-button ghost"
+                      <Button
+                        variant="secondary"
+                        ghost
                         data-remove-provider={provider.id}
                         onClick={() => void handleDelete(provider.id)}
                       >
                         Remove
-                      </button>
+                      </Button>
                     </Show>
                   </div>
                 </label>
@@ -189,11 +181,11 @@ export function SearchSection() {
         <p class="settings-save-hint">
           Saves enable flag and binary path to local settings. Provider keys save per row.
         </p>
-        <button type="button" class="primary-button" onClick={() => void ctx.handleSaveSettings()}>
+        <Button variant="primary" onClick={() => void ctx.handleSaveSettings()}>
           <SidebarIcon name="save" />
           Save settings
-        </button>
+        </Button>
       </footer>
-    </div>
+    </SettingsSection>
   );
 }

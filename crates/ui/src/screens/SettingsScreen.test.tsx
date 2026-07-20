@@ -49,6 +49,8 @@ describe("SettingsScreen", () => {
       handleApiKeyInput: vi.fn(),
       handleAddKnownModel: vi.fn(),
       handleRemoveKnownModel: vi.fn(),
+      handleAddReasoningEffortOption: vi.fn(),
+      handleRemoveReasoningEffortOption: vi.fn(),
       handleSaveSettings: vi.fn(),
       updateSettings: vi.fn(),
       setNewModelInputByProvider: vi.fn(),

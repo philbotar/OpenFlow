@@ -1,7 +1,10 @@
-use crate::auth::AuthConfig;
+use crate::auth::{AuthConfig, CodexOAuthCredentials};
 use crate::spec::{ProviderId, WireApi};
 use async_trait::async_trait;
 use engine::{AgentError, AgentRequest, AgentTurnOutcome, AiPort, AiStreamSink};
+use std::fmt;
+use std::sync::Arc;
+use std::time::Duration;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpenAiCompatibleConfig {
@@ -9,6 +12,7 @@ pub struct OpenAiCompatibleConfig {
     pub wire_api: WireApi,
     pub responses_path: String,
     pub chat_completions_path: String,
+    pub request_timeout: Duration,
 }
 
 impl OpenAiCompatibleConfig {
@@ -19,6 +23,7 @@ impl OpenAiCompatibleConfig {
             wire_api: WireApi::Responses,
             responses_path: "v1/responses".to_string(),
             chat_completions_path: "v1/chat/completions".to_string(),
+            request_timeout: Duration::from_mins(5),
         }
     }
 }
@@ -28,6 +33,7 @@ pub struct AnthropicConfig {
     pub base_url: String,
     pub messages_path: String,
     pub anthropic_version: String,
+    pub request_timeout: Duration,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,14 +43,41 @@ pub struct BedrockConfig {
     pub aws_credential_command: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Persistence boundary used after an in-run OAuth token rotation.
+pub trait CodexCredentialSink: Send + Sync {
+    /// # Errors
+    /// Returns an error when the refreshed credentials cannot be persisted.
+    fn save(&self, credentials: &CodexOAuthCredentials) -> Result<(), String>;
+}
+
+#[derive(Clone)]
+pub struct OpenAiCodexConfig {
+    pub base_url: String,
+    pub request_timeout: Duration,
+    pub credentials: CodexOAuthCredentials,
+    pub credential_sink: Option<Arc<dyn CodexCredentialSink>>,
+}
+
+impl fmt::Debug for OpenAiCodexConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("OpenAiCodexConfig")
+            .field("base_url", &self.base_url)
+            .field("request_timeout", &self.request_timeout)
+            .field("credentials", &self.credentials)
+            .field("credential_sink_present", &self.credential_sink.is_some())
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum ProviderAdapterConfig {
     OpenAiCompatible(OpenAiCompatibleConfig),
+    OpenAiCodex(OpenAiCodexConfig),
     Anthropic(AnthropicConfig),
     Bedrock(BedrockConfig),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct AiClientConfig {
     pub provider_id: ProviderId,
     pub provider_label: String,
@@ -78,6 +111,7 @@ impl AiPort for AiClient {
                 crate::rig_adapter::invoke_openai_compatible(&self.config, &self.models, request)
                     .await
             }
+            ProviderAdapterConfig::OpenAiCodex(_) => Err(codex_not_wired_error()),
             ProviderAdapterConfig::Anthropic(_) => {
                 crate::rig_adapter::invoke_anthropic(&self.config, &self.models, request).await
             }
@@ -102,6 +136,7 @@ impl AiPort for AiClient {
                 )
                 .await
             }
+            ProviderAdapterConfig::OpenAiCodex(_) => Err(codex_not_wired_error()),
             ProviderAdapterConfig::Anthropic(_) => {
                 crate::rig_adapter::invoke_anthropic_stream(
                     &self.config,
@@ -116,6 +151,10 @@ impl AiPort for AiClient {
             }
         }
     }
+}
+
+fn codex_not_wired_error() -> AgentError {
+    AgentError::Failed("OpenAI Codex inference is not wired yet".into())
 }
 
 #[cfg(feature = "bedrock")]
@@ -158,4 +197,72 @@ async fn bedrock_invoke_stream(
     Err(AgentError::Failed(
         "Bedrock support is disabled (enable the `bedrock` feature)".into(),
     ))
+}
+
+#[cfg(test)]
+mod codex_contract_tests {
+    use super::{OpenAiCodexConfig, ProviderAdapterConfig};
+    use crate::auth::CodexOAuthCredentials;
+    use crate::CodexCredentialSink;
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Default)]
+    struct RecordingSink {
+        saved: Mutex<Vec<CodexOAuthCredentials>>,
+    }
+
+    impl CodexCredentialSink for RecordingSink {
+        fn save(&self, credentials: &CodexOAuthCredentials) -> Result<(), String> {
+            self.saved
+                .lock()
+                .map_err(|_| "credential sink lock poisoned".to_string())?
+                .push(credentials.clone());
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn codex_adapter_config_carries_a_redacted_shared_sink() {
+        let credentials = CodexOAuthCredentials {
+            access_token: "access-sentinel".to_string(),
+            refresh_token: "refresh-sentinel".to_string(),
+            id_token: Some("id-sentinel".to_string()),
+            expires_at: 1_800_000_000,
+            account_id: "account-sentinel".to_string(),
+            email: Some("person@example.com".to_string()),
+        };
+        let sink = Arc::new(RecordingSink::default());
+        let adapter = ProviderAdapterConfig::OpenAiCodex(OpenAiCodexConfig {
+            base_url: "https://chatgpt.com/backend-api/codex".to_string(),
+            request_timeout: std::time::Duration::from_mins(5),
+            credentials: credentials.clone(),
+            credential_sink: Some(sink.clone()),
+        });
+
+        assert!(matches!(adapter, ProviderAdapterConfig::OpenAiCodex(_)));
+        let ProviderAdapterConfig::OpenAiCodex(config) = &adapter else {
+            return;
+        };
+        assert!(config.credential_sink.is_some());
+        let Some(config_sink) = config.credential_sink.as_ref() else {
+            return;
+        };
+        assert!(config_sink.save(&credentials).is_ok());
+        assert!(matches!(
+            sink.saved.lock().as_deref(),
+            Ok(saved) if saved.as_slice() == [credentials]
+        ));
+
+        let debug = format!("{adapter:?}");
+        for secret in [
+            "access-sentinel",
+            "refresh-sentinel",
+            "id-sentinel",
+            "account-sentinel",
+            "person@example.com",
+        ] {
+            assert!(!debug.contains(secret), "debug output leaked {secret}");
+        }
+        assert!(debug.contains("credential_sink_present"));
+    }
 }

@@ -83,23 +83,82 @@ export function AppHeader() {
       <div class="topbar-actions" data-tauri-drag-region>
         <Show when={ctx.screen() === "editor"}>
           <div class="toolbar-group topbar-button-group ">
-            <Show when={ctx.runState()?.active}>
-              <button
-                type="button"
-                class="topbar-danger-button"
-                classList={{ "topbar-icon-button--loading": ctx.stoppingRun() }}
-                onClick={() => void ctx.handleStopRun()}
-                disabled={ctx.stoppingRun()}
-                title={`Stop (${mod()}+.)`}
-                aria-label="Stop workflow"
-                data-tauri-drag-region="false"
+            <div class="topbar-primary-actions">
+              <Show
+                when={ctx.runState()?.active}
+                fallback={
+                  <Show
+                    when={ctx.continuableRun()}
+                    fallback={
+                      <button
+                        type="button"
+                        class="topbar-primary-button"
+                        classList={{ "topbar-icon-button--loading": ctx.startingRun() }}
+                        onClick={() => void ctx.handleRun()}
+                        disabled={
+                          !ctx.readiness()?.ready ||
+                          ctx.startingRun() ||
+                          ctx.replayRunId() !== null ||
+                          !ctx.activeWorkflow()
+                        }
+                        title={
+                          ctx.readiness()?.ready
+                            ? "Run workflow without a starter message"
+                            : (ctx.readiness()?.message ?? "Add an API key in Settings to run workflows")
+                        }
+                        aria-label="Run workflow"
+                        data-tauri-drag-region="false"
+                      >
+                        <Show when={ctx.startingRun()} fallback={<SidebarIcon name="run" />}>
+                          <Spinner size="sm" />
+                        </Show>
+                        <span>{ctx.startingRun() ? "Starting…" : "Run"}</span>
+                      </button>
+                    }
+                  >
+                    <button
+                      type="button"
+                      class="topbar-primary-button"
+                      classList={{ "topbar-icon-button--loading": ctx.startingRun() }}
+                      onClick={() => void ctx.handleContinueRun()}
+                      disabled={
+                        !ctx.readiness()?.ready ||
+                        ctx.startingRun() ||
+                        ctx.replayRunId() !== null
+                      }
+                      title={
+                        ctx.readiness()?.ready
+                          ? "Continue the paused workflow run"
+                          : (ctx.readiness()?.message ?? "Add an API key in Settings to run workflows")
+                      }
+                      aria-label="Continue workflow"
+                      data-tauri-drag-region="false"
+                    >
+                      <Show when={ctx.startingRun()} fallback={<SidebarIcon name="run" />}>
+                        <Spinner size="sm" />
+                      </Show>
+                      <span>{ctx.startingRun() ? "Starting…" : "Continue"}</span>
+                    </button>
+                  </Show>
+                }
               >
-                <Show when={ctx.stoppingRun()} fallback={<SidebarIcon name="stop" />}>
-                  <Spinner size="sm" />
-                </Show>
-                <span>{ctx.stoppingRun() ? "Stopping…" : "Stop"}</span>
-              </button>
-            </Show>
+                <button
+                  type="button"
+                  class="topbar-danger-button"
+                  classList={{ "topbar-icon-button--loading": ctx.stoppingRun() }}
+                  onClick={() => void ctx.handleStopRun()}
+                  disabled={ctx.stoppingRun()}
+                  title={`Stop (${mod()}+.)`}
+                  aria-label="Stop workflow"
+                  data-tauri-drag-region="false"
+                >
+                  <Show when={ctx.stoppingRun()} fallback={<SidebarIcon name="stop" />}>
+                    <Spinner size="sm" />
+                  </Show>
+                  <span>{ctx.stoppingRun() ? "Stopping…" : "Stop"}</span>
+                </button>
+              </Show>
+            </div>
             <div class="topbar-utility-group">
               <Show when={ctx.activeProject() && ctx.gitRepoAvailable()}>
                 <button
@@ -155,9 +214,11 @@ export function AppHeader() {
         <div
           class="readiness-chip"
           classList={{ ready: ctx.readiness()?.ready }}
+          title={ctx.readiness()?.message ?? "Checking API key and provider settings"}
+          role="status"
         >
-          <span class="status-dot" />
-          <span>{ctx.readiness()?.message ?? "Checking provider"}</span>
+          <span class="status-dot" aria-hidden="true" />
+          <span>{ctx.readiness()?.message ?? "Checking API key…"}</span>
         </div>
       </div>
     </header>

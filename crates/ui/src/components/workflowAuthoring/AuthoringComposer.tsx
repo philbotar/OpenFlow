@@ -1,6 +1,7 @@
 import { createEffect, createSignal, Show } from "solid-js";
 import ArrowUp from "lucide-solid/icons/arrow-up";
 import { resizeComposerTextarea } from "../../lib/utils";
+import { Button } from "../Button";
 import { Spinner } from "../Spinner";
 
 export function AuthoringComposer(props: {
@@ -64,9 +65,9 @@ export function AuthoringComposer(props: {
               }
             }}
           />
-          <button
-            type="button"
-            class="primary-button composer-send-button"
+          <Button
+            variant="primary"
+            class="composer-send-button"
             aria-label="Send message"
             disabled={!canSend()}
             onClick={handleSend}
@@ -74,7 +75,7 @@ export function AuthoringComposer(props: {
             <Show when={props.busy} fallback={<ArrowUp class="composer-send-icon" />}>
               <Spinner size="sm" />
             </Show>
-          </button>
+          </Button>
         </div>
       </div>
     </div>

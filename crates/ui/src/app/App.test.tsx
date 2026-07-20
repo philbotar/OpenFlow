@@ -176,6 +176,7 @@ const SETTINGS: AppSettings = {
       transport: "responses",
       responses_path: "responses",
       chat_completions_path: "chat/completions",
+      request_timeout_secs: 300,
       known_models: ["gpt-4.1-mini"],
       default_model: "gpt-4.1-mini",
       editable: false,
@@ -186,6 +187,7 @@ const SETTINGS: AppSettings = {
       transport: "chat_completions",
       responses_path: "responses",
       chat_completions_path: "chat/completions",
+      request_timeout_secs: 300,
       known_models: ["compatible-model"],
       default_model: "compatible-model",
       editable: true,
@@ -1265,9 +1267,9 @@ describe("App agent dashboard", () => {
       expect(modelSelect?.querySelector(".text-select-value")?.textContent).toBe("gpt-4.1-mini");
 
       const autoStartInput = Array.from(container.querySelectorAll("label.checkbox-row input")).find(
-        (element) => (element.parentElement?.textContent ?? "").includes("Request user input"),
+        (element) => (element.parentElement?.textContent ?? "").includes("Start automatically"),
       ) as HTMLInputElement | undefined;
-      expect(autoStartInput?.checked).toBe(false);
+      expect(autoStartInput?.checked).toBe(true);
 
       const systemPromptInput = Array.from(container.querySelectorAll("label span")).find(
         (element) => element.textContent === "System prompt",
@@ -1345,6 +1347,10 @@ describe("App agent dashboard", () => {
       expect(apiMocks.createAgentNode).toHaveBeenCalledWith(1, 128, 116, "agent-2");
       await openInspector(container);
       expect(container.querySelector(".panel-header-title-row h3")?.textContent).toBe("Writer Agent");
+      const requestUserInput = Array.from(container.querySelectorAll("label.checkbox-row input")).find(
+        (element) => (element.parentElement?.textContent ?? "").includes("Allow follow-up questions"),
+      ) as HTMLInputElement | undefined;
+      expect(requestUserInput?.checked).toBe(false);
     } finally {
       dispose();
     }
@@ -2037,6 +2043,68 @@ describe("Global chat layout", () => {
       expect(container.querySelector(".chat-live-strip--pending")).not.toBeNull();
       expect(container.querySelector(".chat-live-starting")?.textContent).toBe(
         "Starting workflow…",
+      );
+    } finally {
+      dispose();
+    }
+  });
+
+  test("logs an unchanged run failure once across streamed state deltas", async () => {
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    const runState: WorkflowRunState = {
+      active: true,
+      awaitingNodeId: null,
+      awaitingNodeIds: [],
+      activeManualNodeId: null,
+      activeToolCallId: null,
+      pendingApprovals: [],
+      toolCallsByNode: {},
+      toolArtifacts: {},
+      execApprovalGranted: false,
+      statusByNode: Object.fromEntries(workflow.nodes.map((node) => [node.id, "failed"])),
+      subagentsByNode: {},
+      lastReport: null,
+      lastError: "provider returned no usable output",
+      chatLogs: {},
+      runTrace: [],
+      outputs: {},
+      changedFiles: [],
+      changedFilesByNode: {},
+      editBatches: [],
+    };
+    const settings: AppSettings = {
+      ...SETTINGS,
+      local_diagnostics: { debug_output: true },
+    };
+    const { dispose } = await mountApp({
+      workflows: [workflow],
+      agents: [makeAgent("agent-1", "Research Agent")],
+      skills: FIXTURE_SKILLS,
+      settings,
+      runState,
+    });
+
+    try {
+      expect(runStateListener).toBeDefined();
+      runStateListener?.(runState);
+      runStateListener?.({
+        ...runState,
+        chatLogs: {
+          [workflow.nodes[0].id]: [{ role: "assistant", content: "partial", streaming: true }],
+        },
+      });
+      runStateListener?.({
+        ...runState,
+        chatLogs: {
+          [workflow.nodes[0].id]: [{ role: "assistant", content: "partial text", streaming: true }],
+        },
+      });
+      await flush();
+
+      expect(apiMocks.appendDebugLog).toHaveBeenCalledTimes(1);
+      expect(apiMocks.appendDebugLog).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ level: "error", message: runState.lastError }),
       );
     } finally {
       dispose();
@@ -2812,7 +2880,7 @@ describe("Idle global chat kickoff", () => {
         ".chat-composer-pill textarea",
       ) as HTMLTextAreaElement;
       expect(textarea?.disabled).toBe(false);
-      expect(textarea?.getAttribute("aria-label")).toContain("start the workflow");
+      expect(textarea?.getAttribute("aria-label")).toContain("Run in the top bar");
     } finally {
       dispose();
     }

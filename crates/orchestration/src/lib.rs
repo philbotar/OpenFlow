@@ -34,4 +34,5 @@ pub use engine::{
     Workflow, WorkflowId, WorkflowSchedule,
 };
 pub use project::ports::Project;
+pub use settings::codex_login::CodexLoginStatus;
 pub use settings::model::{AppSettings, McpServerConfig, McpSettings, SkillSummary};
