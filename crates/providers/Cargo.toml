@@ -1,6 +1,6 @@
 [package]
 name = "providers"
-version = "0.1.17"
+version = "0.1.18"
 edition.workspace = true
 description.workspace = true
 license.workspace = true
@@ -34,7 +34,7 @@ serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 jsonrepair-rs.workspace = true
-engine = { path = "../engine", version = "0.1.7" }
+engine = { path = "../engine", version = "0.1.8" }
 futures.workspace = true
 tokio = { workspace = true, features = ["time", "process", "net", "io-util"] }
 thiserror.workspace = true
