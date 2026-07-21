@@ -72,7 +72,6 @@ fn test_request() -> engine::AgentRequest {
         model_attempt: 1,
         reasoning_effort: None,
         reasoning_budget_tokens: None,
-        turn_phase: engine::AgentTurnPhase::Control,
         tool_access_policy: engine::ToolAccessPolicy::Execution,
         allow_user_input: true,
     }
@@ -220,8 +219,10 @@ async fn custom_chat_submits_large_file_backed_output_without_document_duplicati
         .filter_map(|tool| tool["function"]["name"].as_str())
         .collect::<Vec<_>>();
     assert!(control_tool_names.contains(&"openflow_submit_node_output"));
-    assert!(control_tool_names.contains(&"openflow_continue_work"));
-    assert!(!control_tool_names.contains(&"write"));
+    assert!(
+        control_tool_names.contains(&"write"),
+        "unified catalog advertises executable tools alongside harness tools"
+    );
     let submit_tool = body["tools"]
         .as_array()
         .unwrap()
@@ -381,7 +382,6 @@ async fn chat_completions_external_tool_call_batch() {
         .await;
 
     let mut request = test_request();
-    request.turn_phase = engine::AgentTurnPhase::Work;
     request.available_tools = vec![ToolDefinition {
         name: "read".into(),
         description: "Read a file or URL.".into(),
@@ -414,13 +414,14 @@ async fn chat_completions_external_tool_call_batch() {
 
     let requests = server.received_requests().await.unwrap();
     let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
-    let work_tool_names = body["tools"]
+    let tool_names = body["tools"]
         .as_array()
         .unwrap()
         .iter()
         .filter_map(|tool| tool["function"]["name"].as_str())
         .collect::<Vec<_>>();
-    assert_eq!(work_tool_names, vec!["read"]);
+    assert!(tool_names.contains(&"openflow_submit_node_output"));
+    assert!(tool_names.contains(&"read"));
 }
 
 #[tokio::test]

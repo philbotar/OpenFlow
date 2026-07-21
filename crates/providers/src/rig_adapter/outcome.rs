@@ -15,7 +15,7 @@ use crate::mapping::{
 };
 use crate::rig_adapter::reasoning_convert;
 use crate::spec::WireApi;
-use engine::{AgentError, AgentReasoning, AgentTurnOutcome, AgentTurnPhase, UsageReport};
+use engine::{AgentError, AgentReasoning, AgentTurnOutcome, UsageReport};
 use rig_core::completion::Usage;
 use rig_core::message::{AssistantContent, Text};
 
@@ -80,7 +80,6 @@ pub fn resolve_outcome(
     usage: Usage,
     provider_label: &str,
     output_schema: Option<&serde_json::Value>,
-    turn_phase: AgentTurnPhase,
     no_tool_calls: NoToolCallsPolicy,
 ) -> Result<AgentTurnOutcome, AgentError> {
     let (text_parts, reasoning, tool_calls) = partition_choice(choice);
@@ -93,7 +92,6 @@ pub fn resolve_outcome(
         tool_calls,
         assistant_message,
         reasoning,
-        turn_phase,
         no_tool_calls,
         output_schema,
         provider_label,
@@ -222,7 +220,7 @@ pub fn enrich_empty_turn_error_with_response(
 )]
 mod tests {
     use super::*;
-    use crate::mapping::{CONTINUE_WORK_TOOL, REQUEST_INPUT_TOOL, SUBMIT_OUTPUT_TOOL};
+    use crate::mapping::{REQUEST_INPUT_TOOL, SUBMIT_OUTPUT_TOOL};
     use rig_core::message::{AssistantContent, Reasoning};
     use serde_json::json;
 
@@ -253,7 +251,6 @@ mod tests {
             usage(),
             "Test provider",
             Some(&json!({"type": "object"})),
-            AgentTurnPhase::Control,
             recover(),
         )
         .unwrap();
@@ -278,7 +275,6 @@ mod tests {
             usage(),
             "Test provider",
             None,
-            AgentTurnPhase::Control,
             recover(),
         )
         .unwrap();
@@ -286,25 +282,6 @@ mod tests {
             outcome,
             engine::AgentTurnOutcome::NeedsUserInput(n) if n.assistant_message == "Which env?"
         ));
-    }
-
-    #[test]
-    fn continue_work_tool_selects_the_work_phase() {
-        let choice = vec![AssistantContent::tool_call(
-            "c1",
-            CONTINUE_WORK_TOOL,
-            json!({}),
-        )];
-        let outcome = resolve_outcome(
-            choice,
-            usage(),
-            "Test provider",
-            None,
-            AgentTurnPhase::Control,
-            recover(),
-        )
-        .unwrap();
-        assert!(matches!(outcome, engine::AgentTurnOutcome::ContinueWork(_)));
     }
 
     #[test]
@@ -318,7 +295,6 @@ mod tests {
             usage(),
             "Test provider",
             None,
-            AgentTurnPhase::Work,
             recover(),
         )
         .unwrap();
@@ -343,7 +319,6 @@ mod tests {
             usage(),
             "Test provider",
             None,
-            AgentTurnPhase::Work,
             recover(),
         )
         .unwrap();
@@ -378,7 +353,6 @@ mod tests {
             usage(),
             "Test provider",
             None,
-            AgentTurnPhase::Control,
             recover(),
         )
         .unwrap();
@@ -393,7 +367,6 @@ mod tests {
             usage(),
             "Test provider",
             None,
-            AgentTurnPhase::Control,
             recover(),
         )
         .unwrap();
@@ -411,7 +384,6 @@ mod tests {
             usage(),
             "Test provider",
             None,
-            AgentTurnPhase::Control,
             NoToolCallsPolicy::Error("OpenAI response did not contain a function call"),
         )
         .unwrap();

@@ -2,7 +2,7 @@
 
 use crate::mapping::NoToolCallsPolicy;
 use crate::rig_adapter::{error, outcome};
-use engine::{AgentError, AgentTurnOutcome, AgentTurnPhase, AiStreamEvent, AiStreamSink};
+use engine::{AgentError, AgentTurnOutcome, AiStreamEvent, AiStreamSink};
 use futures::StreamExt;
 use rig_core::completion::GetTokenUsage;
 use rig_core::message::Reasoning;
@@ -15,7 +15,6 @@ pub async fn drain<R>(
     sink: &dyn AiStreamSink,
     provider_label: &str,
     output_schema: Option<&serde_json::Value>,
-    turn_phase: AgentTurnPhase,
     no_tool_calls: NoToolCallsPolicy,
 ) -> Result<AgentTurnOutcome, AgentError>
 where
@@ -55,14 +54,7 @@ where
         .map(GetTokenUsage::token_usage)
         .unwrap_or_default();
 
-    outcome::resolve_outcome(
-        choice,
-        usage,
-        provider_label,
-        output_schema,
-        turn_phase,
-        no_tool_calls,
-    )
+    outcome::resolve_outcome(choice, usage, provider_label, output_schema, no_tool_calls)
 }
 
 fn emit_reasoning(sink: &dyn AiStreamSink, reasoning: &Reasoning) {

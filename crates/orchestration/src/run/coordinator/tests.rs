@@ -46,7 +46,6 @@ fn empty_engine_checkpoint(workflow: &Workflow) -> InteractiveEngineCheckpoint {
         reads_by_node: Default::default(),
         transcripts: Default::default(),
         awaiting_nodes: Default::default(),
-        work_phase_nodes: Default::default(),
         pending_tool_batches: Default::default(),
         retries_by_node: Default::default(),
         transient_streaks_by_node: Default::default(),

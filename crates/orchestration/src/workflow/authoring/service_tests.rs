@@ -256,6 +256,95 @@ async fn send_turn_builds_draft_via_incremental_authoring_tools() {
     assert_eq!(ai.calls.load(Ordering::SeqCst), 3);
 }
 
+struct MixedToolTurnRetryAi {
+    calls: AtomicUsize,
+}
+
+#[async_trait]
+impl AiPort for MixedToolTurnRetryAi {
+    async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+        let call = self.calls.fetch_add(1, Ordering::SeqCst);
+        match call {
+            0 => Err(AgentError::mixed_tool_turn(
+                "Custom OpenAI-compatible API",
+                "openflow_submit_node_output, openflow_add_node",
+            )),
+            1 => {
+                assert!(
+                    request.transcript.iter().any(|item| {
+                        matches!(
+                            item,
+                            AgentTranscriptItem::UserMessage { content }
+                                if content.contains("mixed finish/submit tools and authoring tools")
+                                    && content.contains("openflow_submit_node_output, openflow_add_node")
+                        )
+                    }),
+                    "expected mixed-tool-turn feedback in transcript"
+                );
+                Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+                    raw_text: String::new(),
+                    assistant_message: None,
+                    tool_calls: vec![
+                        ToolCall {
+                            id: "call-meta".to_string(),
+                            name: "openflow_set_workflow_meta".to_string(),
+                            arguments: json!({ "name": "Demo" }),
+                        },
+                        ToolCall {
+                            id: "call-root".to_string(),
+                            name: "openflow_add_node".to_string(),
+                            arguments: json!({
+                                "id": "root",
+                                "label": "Root",
+                                "systemPrompt": "You are root.",
+                                "taskPrompt": "Summarize the idea.",
+                                "autoStart": true
+                            }),
+                        },
+                    ],
+                    reasoning: vec![],
+                    usage: None,
+                }))
+            }
+            2 => Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                output: json!({ "assistantMessage": "Built a one-step workflow." }),
+                raw_text: String::new(),
+                assistant_message: Some("Built a one-step workflow.".to_string()),
+                usage: None,
+            })),
+            _ => panic!("unexpected authoring invoke count {call}"),
+        }
+    }
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+async fn send_turn_retries_mixed_tool_turn_and_materializes_draft() {
+    let ai = MixedToolTurnRetryAi {
+        calls: AtomicUsize::new(0),
+    };
+    let service = WorkflowAuthoringService::new();
+    let session_id = service
+        .start_session(Some(empty_authoring_base()))
+        .session_id;
+    let settings = AppSettings::default();
+    let result = service
+        .send_turn(
+            &session_id,
+            "Build a simple planner".to_string(),
+            &settings,
+            &ai,
+            |_| {},
+            |_| {},
+        )
+        .await
+        .expect("turn");
+
+    assert!(result.validation.valid, "{:?}", result.validation.errors);
+    assert_eq!(result.draft.as_ref().expect("draft").nodes.len(), 1);
+    assert_eq!(ai.calls.load(Ordering::SeqCst), 3);
+}
+
 fn empty_authoring_base() -> Workflow {
     Workflow {
         id: WorkflowId::from("authoring-test-base"),

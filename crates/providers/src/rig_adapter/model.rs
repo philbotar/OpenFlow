@@ -311,7 +311,6 @@ impl RigModel {
                             response.usage,
                             provider_label,
                             Some(&request.output_schema),
-                            request.turn_phase,
                             no_tool_calls,
                         )
                     }
@@ -333,7 +332,6 @@ impl RigModel {
                         response.usage,
                         provider_label,
                         Some(&request.output_schema),
-                        request.turn_phase,
                         no_tool_calls,
                     )
                     .map_err(|error| {
@@ -355,7 +353,6 @@ impl RigModel {
                         response.usage,
                         provider_label,
                         Some(&request.output_schema),
-                        request.turn_phase,
                         no_tool_calls,
                     )
                 }
@@ -369,7 +366,6 @@ impl RigModel {
                         response.usage,
                         provider_label,
                         Some(&request.output_schema),
-                        request.turn_phase,
                         no_tool_calls,
                     )
                 }
@@ -384,7 +380,6 @@ impl RigModel {
                         response.usage,
                         provider_label,
                         Some(&request.output_schema),
-                        request.turn_phase,
                         no_tool_calls,
                     )
                 }
@@ -430,7 +425,6 @@ impl RigModel {
                             sink,
                             provider_label,
                             Some(&request.output_schema),
-                            request.turn_phase,
                             no_tool_calls,
                         )
                         .await
@@ -445,7 +439,6 @@ impl RigModel {
                         sink,
                         provider_label,
                         Some(&request.output_schema),
-                        request.turn_phase,
                         no_tool_calls,
                     )
                     .await
@@ -459,7 +452,6 @@ impl RigModel {
                         sink,
                         provider_label,
                         Some(&request.output_schema),
-                        request.turn_phase,
                         no_tool_calls,
                     )
                     .await
@@ -473,7 +465,6 @@ impl RigModel {
                         sink,
                         provider_label,
                         Some(&request.output_schema),
-                        request.turn_phase,
                         no_tool_calls,
                     )
                     .await
@@ -488,7 +479,6 @@ impl RigModel {
                         sink,
                         provider_label,
                         Some(&request.output_schema),
-                        request.turn_phase,
                         no_tool_calls,
                     )
                     .await
@@ -734,7 +724,6 @@ mod tests {
             model_attempt: 1,
             reasoning_effort: None,
             reasoning_budget_tokens: None,
-            turn_phase: engine::AgentTurnPhase::Control,
             tool_access_policy: engine::ToolAccessPolicy::Execution,
             allow_user_input: false,
         }

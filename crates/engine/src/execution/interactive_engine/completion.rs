@@ -11,8 +11,8 @@ use crate::execution::tool_results::denied_tool_result;
 use crate::execution::NodeFailureKind;
 use crate::graph::{apply_runtime_patch_to_tool_config, runtime_patch_for, NodeId, RetryPolicy};
 use crate::ports::{
-    AgentContinueWork, AgentError, AgentMessageTurn, AgentNeedUserInput, AgentToolCallBatch,
-    AgentTurnOutcome, AgentTurnSuccess, ToolAccessPolicy, UsageReport,
+    AgentError, AgentMessageTurn, AgentNeedUserInput, AgentToolCallBatch, AgentTurnOutcome,
+    AgentTurnSuccess, ToolAccessPolicy, UsageReport,
 };
 use crate::tools::{
     relativize_tool_call_arguments, tool_access_policy_allows_call, tool_decision_for_call,
@@ -50,11 +50,7 @@ impl InteractiveEngine {
             Ok(AgentTurnOutcome::ToolCalls(batch)) => {
                 self.apply_tool_calls(node_id, batch);
             }
-            Ok(AgentTurnOutcome::ContinueWork(continuation)) => {
-                self.apply_continue_work(node_id, continuation);
-            }
             Ok(AgentTurnOutcome::Message(message)) => {
-                self.work_phase_nodes.remove(node_id);
                 if self.interaction_mode(node_id) == InteractionMode::Conversational {
                     self.apply_conversational_message(node_id, message);
                 } else {
@@ -67,7 +63,6 @@ impl InteractiveEngine {
                 }
             }
             Ok(AgentTurnOutcome::NeedsUserInput(input)) => {
-                self.work_phase_nodes.remove(node_id);
                 if self.interaction_mode(node_id) == InteractionMode::Autonomous {
                     self.handle_autonomous_text_turn(
                         node_id,
@@ -212,15 +207,9 @@ impl InteractiveEngine {
         }
         *retry_count += 1;
 
-        let content = if self.work_phase_nodes.contains(node_id) {
-            format!(
-                "Your last response used control tools during a work turn ({tool_names}) and was rejected; no calls from that response were executed. Stay on this work turn and call only executable tools. After the tool batch finishes, OpenFlow returns to a control turn for openflow_continue_work or openflow_submit_node_output."
-            )
-        } else {
-            format!(
-                "Your last response mixed control and executable tools ({tool_names}) and was rejected; no calls from that response were executed. Emit exactly one tool call in this control turn. If more work is required, call openflow_continue_work alone. If the task is complete, call openflow_submit_node_output alone. For large artifacts, submit a repository-relative path and compact metadata instead of the full document."
-            )
-        };
+        let content = format!(
+            "Your last response mixed harness and executable tools ({tool_names}) and was rejected; no calls from that response were executed. Call either exactly one harness tool by itself (openflow_submit_node_output when complete, or openflow_request_user_input with one direct question), or one or more executable tools with no harness tools in the same batch."
+        );
         self.transcripts
             .entry(node_id.clone())
             .or_default()
@@ -337,7 +326,6 @@ impl InteractiveEngine {
     }
 
     fn apply_completion(&mut self, node_id: &NodeId, success: AgentTurnSuccess) {
-        self.work_phase_nodes.remove(node_id);
         self.retry_after_by_node.remove(node_id);
         self.transient_streaks_by_node.remove(node_id);
         self.reset_protocol_recovery(node_id);
@@ -364,7 +352,6 @@ impl InteractiveEngine {
     }
 
     fn apply_tool_calls(&mut self, node_id: &NodeId, batch: AgentToolCallBatch) {
-        self.work_phase_nodes.remove(node_id);
         self.transient_streaks_by_node.remove(node_id);
         self.reset_protocol_recovery(node_id);
         if let Some(usage) = &batch.usage {
@@ -451,25 +438,6 @@ impl InteractiveEngine {
 
     fn apply_user_input_request(&mut self, node_id: &NodeId, input: AgentNeedUserInput) {
         self.apply_conversational_turn(node_id, input.assistant_message, input.reasoning, None);
-    }
-
-    fn apply_continue_work(&mut self, node_id: &NodeId, continuation: AgentContinueWork) {
-        self.transient_streaks_by_node.remove(node_id);
-        self.reset_protocol_recovery(node_id);
-        if let Some(usage) = &continuation.usage {
-            self.note_usage(usage);
-        }
-        let transcript = self.transcripts.entry(node_id.clone()).or_default();
-        for reasoning in continuation.reasoning {
-            transcript.push(AgentTranscriptItem::Reasoning { reasoning });
-        }
-        if let Some(content) = continuation
-            .assistant_message
-            .filter(|content| !content.trim().is_empty())
-        {
-            transcript.push(AgentTranscriptItem::AssistantMessage { content });
-        }
-        self.work_phase_nodes.insert(node_id.clone());
     }
 
     fn apply_conversational_message(&mut self, node_id: &NodeId, message: AgentMessageTurn) {

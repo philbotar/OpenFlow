@@ -11,18 +11,6 @@ use async_trait::async_trait;
 use serde_json::Value;
 use thiserror::Error;
 
-/// Which model-facing tool catalog is active for this invocation.
-///
-/// Control turns expose only workflow control tools. Work turns expose only
-/// executable tools. Keeping the catalogs disjoint makes a mixed
-/// control/executable response unrepresentable for conforming providers.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum AgentTurnPhase {
-    #[default]
-    Control,
-    Work,
-}
-
 /// Run-scoped capability policy selected by the engine.
 ///
 /// This is distinct from node approval configuration. Planning is a hard
@@ -55,8 +43,6 @@ pub struct AgentRequest {
     pub reasoning_effort: Option<String>,
     /// Optional reasoning budget token count forwarded to the provider.
     pub reasoning_budget_tokens: Option<u32>,
-    /// Active model-facing tool catalog for this invocation.
-    pub turn_phase: AgentTurnPhase,
     /// Hard capability policy for this run phase.
     pub tool_access_policy: ToolAccessPolicy,
     /// Whether this node may pause for human input. When false, providers must
@@ -114,21 +100,11 @@ pub struct AgentMessageTurn {
     pub usage: Option<UsageReport>,
 }
 
-/// The control turn selected executable work for the node's next invocation.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentContinueWork {
-    pub raw_text: String,
-    pub assistant_message: Option<String>,
-    pub reasoning: Vec<AgentReasoning>,
-    pub usage: Option<UsageReport>,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentTurnOutcome {
     Completed(AgentTurnSuccess),
     ToolCalls(AgentToolCallBatch),
     NeedsUserInput(AgentNeedUserInput),
-    ContinueWork(AgentContinueWork),
     Message(AgentMessageTurn),
 }
 
@@ -147,7 +123,7 @@ pub enum AgentError {
         /// Redacted repair payload for overseer recovery; omitted from [`std::fmt::Display`].
         candidate: Option<Box<OutputRepairCandidate>>,
     },
-    #[error("{provider_label} response returned tools from the wrong turn phase: {tool_names}")]
+    #[error("{provider_label} response mixed incompatible tools in one batch: {tool_names}")]
     MixedToolTurn {
         provider_label: String,
         tool_names: String,
@@ -357,7 +333,6 @@ pub fn emit_assistant_deltas_from_outcome(sink: &dyn AiStreamSink, outcome: &Age
         AgentTurnOutcome::Completed(success) => success.assistant_message.clone(),
         AgentTurnOutcome::ToolCalls(batch) => batch.assistant_message.clone(),
         AgentTurnOutcome::NeedsUserInput(need) => Some(need.assistant_message.clone()),
-        AgentTurnOutcome::ContinueWork(continuation) => continuation.assistant_message.clone(),
         AgentTurnOutcome::Message(message) => Some(message.assistant_message.clone()),
     };
     let message = filter_tool_turn_assistant_message(message);

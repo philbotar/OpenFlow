@@ -153,44 +153,40 @@ stateDiagram-v2
 | `EngineAwaitApproval` | `approval_id`, `node_id`, `label`, `tool_calls` | Batch has `requires_approval == true` |
 | `EngineRetryableNode` | `node_id`, `label`, `error`, `interrupted` | Transient exhaustion, user interrupt, or recoverable node error |
 
-### 3.2 Per-node turn (Control ↔ Work ↔ tools ↔ complete)
+### 3.2 Per-node turn (harness vs executable batching)
 
-**Sources:** `ports/outbound.rs` → `AgentTurnPhase`, `AgentTurnOutcome`; `interactive_engine/completion.rs`
+**Sources:** `ports/outbound.rs` → `AgentTurnOutcome`; `providers/src/mapping/mod.rs` → `all_tool_specs` / `resolve_tool_turn_outcome`; `interactive_engine/completion.rs`
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Control: build_request (default)
-    Control --> Work: AgentTurnOutcome::ContinueWork
-    Work --> Control: tool batch completes
-    Control --> AwaitingInput: NeedsUserInput / Message (conversational)
-    Control --> PendingTools: ToolCalls
-    Work --> PendingTools: ToolCalls
+    [*] --> Ready: build_request (unified catalog)
+    Ready --> AwaitingInput: NeedsUserInput / Message (conversational)
+    Ready --> PendingTools: ToolCalls (executable only)
     PendingTools --> RunningTools: auto-allow OR approved
-    RunningTools --> Control: on_tool_results
-    Control --> Completed: AgentTurnOutcome::Completed
-    Work --> Completed: AgentTurnOutcome::Completed
-    Control --> Failed: non-retryable AgentError
-    Work --> Failed: non-retryable AgentError
-    Control --> Backoff: AgentError::Transient
-    Work --> Backoff: AgentError::Transient
-    Backoff --> Control: retry_after elapsed
+    RunningTools --> Ready: on_tool_results
+    Ready --> Completed: AgentTurnOutcome::Completed
+    Ready --> Failed: non-retryable AgentError
+    Ready --> Backoff: AgentError::Transient
+    Ready --> Ready: MixedToolTurn retry feedback
+    Backoff --> Ready: retry_after elapsed
     Completed --> [*]
     Failed --> [*]
 ```
 
-**`AgentTurnPhase` tool catalogs (disjoint):**
+**Unified tool catalog (every turn):**
 
-| Phase | Model-facing tools | Set in |
-| --- | --- | --- |
-| **Control** | `openflow_submit_node_output`, optional `openflow_request_user_input`, `openflow_continue_work` | `build_request` when node ∉ `work_phase_nodes` |
-| **Work** | Executable tools from registry (+ `ToolPort::augment_request`) | node ∈ `work_phase_nodes` |
+| Kind | Model-facing tools |
+| --- | --- |
+| **Harness** | `openflow_submit_node_output`, optional `openflow_request_user_input` |
+| **Executable** | Catalog tools from registry (+ `ToolPort::augment_request`) |
+
+Batch rule: exactly one harness tool alone, **or** one or more executable tools — never mix. Mixed batches become `AgentError::MixedToolTurn`.
 
 **`AgentTurnOutcome` routing (`completion.rs`):**
 
 | Outcome | Effect |
 | --- | --- |
 | `Completed` | Store `NodeRunOutput`, clear recovery state, advance layer when all siblings done |
-| `ContinueWork` | Insert into `work_phase_nodes`; next invoke is Work |
 | `ToolCalls` | `apply_tool_calls` → approval policy → `pending_tool_batches` |
 | `NeedsUserInput` | Conversational: pause; Autonomous: malformed-input recovery |
 | `Message` | Conversational: pause; Autonomous: auto-continue nudge (max streak) |
@@ -399,9 +395,9 @@ Orchestration wraps raw `AiPort` with `AiInvocationAdapter` to emit streaming de
 
 ### G. Subagent call
 
-1. Parent Work turn calls `openflow_declare_subagents` → `SubagentsDeclared`.
+1. Parent turn calls `openflow_declare_subagents` → `SubagentsDeclared`.
 2. `openflow_call_subagent` → `SubagentStarted`; nested state machine in `subagent_runtime.rs`.
-3. Subagent uses Control-only (`allow_user_input: false`); `ContinueWork` ↔ Work ↔ tools until Done.
+3. Subagent uses the unified catalog (`allow_user_input: false`) and tool batches until Done.
 4. `SubagentCompleted` / `SubagentFailed` → parent receives `ToolResult`.
 
 ### H. Headless acceptance path
@@ -475,9 +471,8 @@ Orchestration wraps raw `AiPort` with `AiInvocationAdapter` to emit streaming de
 | Enum | Variants | File |
 | --- | --- | --- |
 | `EngineRunResult` | `NeedsInteraction`, `Completed`, `Failed`, `Cancelled` | `interactive_engine/mod.rs` |
-| `AgentTurnPhase` | `Control`, `Work` | `ports/outbound.rs` |
-| `AgentTurnOutcome` | `Completed`, `ToolCalls`, `NeedsUserInput`, `ContinueWork`, `Message` | `ports/outbound.rs` |
-| `AgentError` | `Transient`, `Permanent`, `Failed`, `MalformedSubmitOutput`, `Interrupted` | `ports/outbound.rs` |
+| `AgentTurnOutcome` | `Completed`, `ToolCalls`, `NeedsUserInput`, `Message` | `ports/outbound.rs` |
+| `AgentError` | `Transient`, `Permanent`, `Failed`, `MalformedSubmitOutput`, `MixedToolTurn`, `Interrupted` | `ports/outbound.rs` |
 | `ApprovalMode` | `ReadOnly`, `AlwaysAsk`, `Write`, `Yolo` | `tools/config.rs` |
 | `ToolDecision` | `AutoAllow`, `Prompt`, `Deny` (reserved) | `tools/config.rs` |
 | `ToolCallStatus` | `Proposed`, `AwaitingApproval`, `Running`, `Completed`, `Blocked`, `Failed`, `Aborted` | `tools/config.rs` |

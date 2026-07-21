@@ -17,9 +17,7 @@ use crate::graph::{
     apply_runtime_patch_to_agent, apply_runtime_patch_to_request, runtime_patch_for, Node, NodeId,
     NodeRuntimeConfigStore, Workflow,
 };
-use crate::ports::{
-    AgentRequest, AgentTurnPhase, AiPort, ToolAccessPolicy, ToolBatchOutput, ToolPort,
-};
+use crate::ports::{AgentRequest, AiPort, ToolAccessPolicy, ToolBatchOutput, ToolPort};
 use crate::tools::{FileChangeRecord, ReadRecord, ToolCall};
 use futures::stream::{FuturesUnordered, StreamExt};
 use serde_json::Value;
@@ -188,8 +186,6 @@ pub struct InteractiveEngine {
     transcripts: BTreeMap<NodeId, Vec<AgentTranscriptItem>>,
     awaiting_nodes: BTreeSet<NodeId>,
     in_flight_ai: BTreeSet<NodeId>,
-    /// Nodes whose next invocation exposes executable tools instead of control tools.
-    work_phase_nodes: BTreeSet<NodeId>,
     /// Source selected at run start, preserved across workflow edits on resume.
     plan_mode_source_node_id: Option<NodeId>,
     frozen_change_evidence_packet: Option<FrozenChangeEvidencePacket>,
@@ -226,17 +222,15 @@ pub(crate) const MALFORMED_REQUEST_INPUT_FEEDBACK: &str =
     "Your last turn ended as a request for human input, but without a direct question. \
     If you need human clarification, call openflow_request_user_input with \
     assistant_message set to one direct question (usually ending with ?). If you do not \
-    need human input, call openflow_continue_work for executable tools or call \
-    openflow_submit_node_output when complete. \
+    need human input, call executable tools or call openflow_submit_node_output when complete. \
     Do not end a turn with plain narration.";
 pub(crate) const INTERACTIVE_CONTINUE_FEEDBACK: &str =
-    "Use the current control turn: call openflow_continue_work if executable tools are needed, \
-    call openflow_request_user_input with one direct question if human clarification is needed, \
-    or call openflow_submit_node_output when the task is complete. Do not end with plain text only.";
+    "Call openflow_request_user_input with one direct question if human clarification is needed, \
+    call executable tools if more work is required, or call openflow_submit_node_output when the \
+    task is complete. Do not end with plain text only.";
 pub(crate) const AUTONOMOUS_CONTINUE_FEEDBACK: &str =
-    "No human input is available for this node. Use the current control turn: call \
-    openflow_continue_work if executable tools are needed, or call openflow_submit_node_output \
-    when the task is complete. Do not end with plain text only.";
+    "No human input is available for this node. Call executable tools if more work is required, \
+    or call openflow_submit_node_output when the task is complete. Do not end with plain text only.";
 
 enum WorkOutput {
     Ai {
@@ -286,7 +280,6 @@ impl InteractiveEngine {
             transcripts: BTreeMap::new(),
             awaiting_nodes: BTreeSet::new(),
             in_flight_ai: BTreeSet::new(),
-            work_phase_nodes: BTreeSet::new(),
             plan_mode_source_node_id,
             frozen_change_evidence_packet: None,
             pending_tool_batches: BTreeMap::new(),
@@ -870,11 +863,6 @@ impl InteractiveEngine {
         };
         let mut request = build_agent_request(&ctx, node, true)?;
         request.model_attempt = self.model_attempt_for(&node.id);
-        request.turn_phase = if self.work_phase_nodes.contains(node_id) {
-            AgentTurnPhase::Work
-        } else {
-            AgentTurnPhase::Control
-        };
         request.tool_access_policy = if self.is_plan_mode_active() {
             ToolAccessPolicy::Planning
         } else {

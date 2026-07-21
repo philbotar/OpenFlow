@@ -17,13 +17,11 @@ use crate::graph::{
     PlanModeConfig, Workflow,
 };
 use crate::ports::{
-    AgentContinueWork, AgentError, AgentMessageTurn, AgentNeedUserInput, AgentRequest,
-    AgentToolCallBatch, AgentTurnOutcome, AgentTurnPhase, AgentTurnSuccess, AiPort,
-    ToolAccessPolicy, ToolBatchEffects, ToolBatchOutput, ToolPort,
+    AgentError, AgentMessageTurn, AgentNeedUserInput, AgentRequest, AgentToolCallBatch,
+    AgentTurnOutcome, AgentTurnSuccess, AiPort, ToolAccessPolicy, ToolBatchEffects,
+    ToolBatchOutput, ToolPort,
 };
-use crate::tools::{
-    ApprovalMode, FileChangeRecord, ToolCall, ToolConcurrency, ToolDefinition, ToolResult, ToolTier,
-};
+use crate::tools::{ApprovalMode, FileChangeRecord, ToolCall, ToolResult};
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -238,105 +236,6 @@ async fn run_once<A: AiPort, T: ToolPort>(
     engine.run(ai, tools, &CancellationToken::new()).await
 }
 
-struct PhaseToolPort;
-
-#[async_trait]
-impl ToolPort for PhaseToolPort {
-    async fn execute_batch(
-        &self,
-        _node_id: &NodeId,
-        _label: &str,
-        calls: Vec<ToolCall>,
-        _policy: ToolAccessPolicy,
-    ) -> ToolBatchOutput {
-        ToolBatchOutput {
-            results: calls
-                .into_iter()
-                .map(|call| ToolResult {
-                    tool_call_id: call.id,
-                    tool_name: call.name,
-                    content: "found context".to_string(),
-                    is_error: false,
-                    artifact_ids: Vec::new(),
-                    output_meta: None,
-                })
-                .collect(),
-            effects: ToolBatchEffects::default(),
-        }
-    }
-
-    fn augment_request(&self, _node_id: &NodeId, request: &mut AgentRequest) {
-        request.available_tools.push(ToolDefinition {
-            name: "read".to_string(),
-            description: "Read a file".to_string(),
-            input_schema: json!({ "type": "object" }),
-            tier: ToolTier::Read,
-            concurrency: ToolConcurrency::Shared,
-        });
-    }
-}
-
-#[tokio::test]
-async fn run_alternates_control_work_control_before_completion() {
-    struct PhaseAwareAi {
-        phases: Arc<Mutex<Vec<AgentTurnPhase>>>,
-    }
-
-    #[async_trait]
-    impl AiPort for PhaseAwareAi {
-        async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
-            let mut phases = self.phases.lock().expect("phases lock");
-            phases.push(request.turn_phase);
-            match phases.len() {
-                1 => Ok(AgentTurnOutcome::ContinueWork(AgentContinueWork {
-                    raw_text: "{}".to_string(),
-                    assistant_message: None,
-                    reasoning: Vec::new(),
-                    usage: None,
-                })),
-                2 => Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
-                    raw_text: String::new(),
-                    assistant_message: None,
-                    tool_calls: vec![ToolCall {
-                        id: "read-1".to_string(),
-                        name: "read".to_string(),
-                        arguments: json!({ "path": "README.md" }),
-                    }],
-                    reasoning: Vec::new(),
-                    usage: None,
-                })),
-                3 => Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                    output: json!({ "summary": "done" }),
-                    raw_text: "{}".to_string(),
-                    assistant_message: None,
-                    usage: None,
-                })),
-                _ => Err(AgentError::Failed("unexpected extra turn".to_string())),
-            }
-        }
-    }
-
-    let mut workflow = Workflow::new("phases");
-    workflow.nodes = vec![node("idea")];
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
-    let phases = Arc::new(Mutex::new(Vec::new()));
-    let ai = PhaseAwareAi {
-        phases: Arc::clone(&phases),
-    };
-
-    let result = run_once(&mut engine, &ai, &PhaseToolPort).await;
-
-    assert!(matches!(result, EngineRunResult::Completed(_)));
-    assert_eq!(
-        *phases.lock().expect("phases lock"),
-        vec![
-            AgentTurnPhase::Control,
-            AgentTurnPhase::Work,
-            AgentTurnPhase::Control,
-        ]
-    );
-}
-
 #[tokio::test]
 async fn mixed_tool_turn_is_corrected_and_retried_without_executing_calls() {
     struct MixedThenCompleteAi {
@@ -370,7 +269,7 @@ async fn mixed_tool_turn_is_corrected_and_retried_without_executing_calls() {
                     matches!(
                         item,
                         AgentTranscriptItem::UserMessage { content }
-                            if content.contains("one tool call")
+                            if content.contains("mixed harness and executable tools")
                                 && content.contains("write")
                     )
                 }));
@@ -421,34 +320,7 @@ fn mixed_tool_turn_fails_after_retry_cap() {
     assert!(engine
         .failed_nodes
         .get(&node_id)
-        .is_some_and(|error| error.contains("tools from the wrong turn phase")));
-}
-
-#[test]
-fn work_turn_control_tool_gets_work_phase_correction() {
-    let mut workflow = Workflow::new("work-turn-control");
-    workflow.nodes = vec![node("idea")];
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
-    let node_id = NodeId::from("idea");
-    engine.work_phase_nodes.insert(node_id.clone());
-    engine.test_insert_in_flight(node_id.clone());
-    engine.on_ai_complete(
-        &node_id,
-        Err(AgentError::mixed_tool_turn(
-            "Custom OpenAI-compatible API",
-            "openflow_continue_work",
-        )),
-    );
-    assert!(engine.transcript(&node_id).iter().any(|item| {
-        matches!(
-            item,
-            AgentTranscriptItem::UserMessage { content }
-                if content.contains("during a work turn")
-                    && content.contains("only executable tools")
-                    && content.contains("openflow_continue_work")
-        )
-    }));
-    assert!(!engine.failed_nodes.contains_key(&node_id));
+        .is_some_and(|error| error.contains("mixed incompatible tools")));
 }
 
 struct CompleteAi {
@@ -590,23 +462,6 @@ fn checkpoint_preserves_transient_streaks_by_node() {
         InteractiveEngine::from_checkpoint(workflow, checkpoint, None).expect("restore");
     let again = restored.prepare_stop_checkpoint();
     assert_eq!(again.transient_streaks_by_node.get(&node_a), Some(&1));
-}
-
-#[test]
-fn checkpoint_preserves_work_turn_phase() {
-    let mut workflow = Workflow::new("wf");
-    workflow.nodes = vec![node("a")];
-    let node_a = NodeId("a".to_string());
-    let mut engine = InteractiveEngine::new(workflow.clone(), None, None).unwrap();
-    engine.work_phase_nodes.insert(node_a.clone());
-
-    let checkpoint = engine.prepare_stop_checkpoint();
-    assert!(checkpoint.work_phase_nodes.contains(&node_a));
-
-    let mut restored =
-        InteractiveEngine::from_checkpoint(workflow, checkpoint, None).expect("restore");
-    let request = restored.build_request(&node_a).expect("request");
-    assert_eq!(request.turn_phase, AgentTurnPhase::Work);
 }
 
 #[test]
@@ -1829,7 +1684,7 @@ fn autonomous_node_auto_continues_instead_of_awaiting_input() {
     assert!(matches!(
         transcript.last(),
         Some(AgentTranscriptItem::UserMessage { content })
-            if content.contains("openflow_continue_work")
+            if content.contains("No human input is available")
     ));
     assert!(matches!(
         &transcript[transcript.len() - 2],

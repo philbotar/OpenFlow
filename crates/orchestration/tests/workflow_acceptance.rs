@@ -2,9 +2,8 @@ mod support;
 
 use async_trait::async_trait;
 use engine::{
-    AgentContinueWork, AgentError, AgentMessageTurn, AgentNeedUserInput, AgentRequest,
-    AgentToolCallBatch, AgentTurnOutcome, AgentTurnPhase, AgentTurnSuccess, AiPort, ApprovalMode,
-    Edge, NodeId, ToolCall, Workflow,
+    AgentError, AgentMessageTurn, AgentNeedUserInput, AgentRequest, AgentToolCallBatch,
+    AgentTurnOutcome, AgentTurnSuccess, AiPort, ApprovalMode, Edge, NodeId, ToolCall, Workflow,
 };
 use orchestration::run::execution::{
     new_artifact_root, new_in_memory_snapshot_store, run_workflow_headless,
@@ -324,16 +323,6 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
                 *calls
             };
             if call_number == 1 {
-                assert_eq!(request.turn_phase, AgentTurnPhase::Control);
-                return Ok(AgentTurnOutcome::ContinueWork(AgentContinueWork {
-                    raw_text: "{}".to_string(),
-                    assistant_message: Some("Need repo context".to_string()),
-                    reasoning: vec![],
-                    usage: None,
-                }));
-            }
-            if call_number == 2 {
-                assert_eq!(request.turn_phase, AgentTurnPhase::Work);
                 assert_eq!(request.available_tools.len(), 10);
                 return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                     raw_text: String::new(),
@@ -347,7 +336,6 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
                     usage: None,
                 }));
             }
-            assert_eq!(request.turn_phase, AgentTurnPhase::Control);
             let saw_tool_result = request
                 .transcript
                 .iter()

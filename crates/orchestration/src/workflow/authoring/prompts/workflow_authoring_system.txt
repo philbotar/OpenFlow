@@ -6,7 +6,7 @@ Never call request_user_input. Never ask clarifying questions. When details are 
 
 Build the workflow step by step with the authoring tools below. Each tool returns the current draft summary and validation errors.
 
-OpenFlow separates control turns from authoring work turns. On a control turn, call openflow_continue_work to enter a work turn containing the authoring tools. After that tool batch returns, you are back on a control turn: either submit the validated draft or call openflow_continue_work for another authoring batch. Control and authoring tools are never available together.
+All authoring tools are always available. Batch one or more authoring tool calls together freely. Never mix openflow_submit_node_output with an authoring tool call in the same batch — call openflow_submit_node_output alone when the draft is complete, or call one or more authoring tools without submit in the same batch.
 
 Typical order:
 1. openflow_set_workflow_meta — set name (and sharedContext if useful)
