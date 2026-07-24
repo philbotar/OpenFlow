@@ -7,6 +7,7 @@ use regex::Regex;
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
@@ -281,6 +282,31 @@ async fn run_shell_command(
     cancel_token: &CancellationToken,
     update_tx: &Option<tokio::sync::mpsc::UnboundedSender<ToolExecutionUpdate>>,
 ) -> Result<RawShellOutcome, ToolError> {
+    run_shell_command_until(
+        command,
+        cwd,
+        extra_env,
+        async move {
+            tokio::time::sleep(Duration::from_secs(timeout_secs)).await;
+            timeout_secs
+        },
+        cancel_token,
+        update_tx,
+    )
+    .await
+}
+
+async fn run_shell_command_until<F>(
+    command: &str,
+    cwd: &Path,
+    extra_env: Option<&HashMap<String, String>>,
+    timeout: F,
+    cancel_token: &CancellationToken,
+    update_tx: &Option<tokio::sync::mpsc::UnboundedSender<ToolExecutionUpdate>>,
+) -> Result<RawShellOutcome, ToolError>
+where
+    F: Future<Output = u64>,
+{
     if cancel_token.is_cancelled() {
         return Ok(RawShellOutcome {
             combined_output: "Command cancelled".to_string(),
@@ -339,7 +365,7 @@ async fn run_shell_command(
         })
     };
 
-    let timeout = Duration::from_secs(timeout_secs);
+    tokio::pin!(timeout);
     tokio::select! {
         biased;
         _ = cancel_token.cancelled() => {
@@ -369,7 +395,7 @@ async fn run_shell_command(
                 cancelled: false,
             })
         }
-        _ = tokio::time::sleep(timeout) => {
+        after_secs = &mut timeout => {
             kill_process_group(&mut child).await;
             let _ = tokio::time::timeout(Duration::from_secs(2), child.wait()).await;
             let readers_finished = tokio::time::timeout(Duration::from_secs(2), async {
@@ -387,7 +413,7 @@ async fn run_shell_command(
             let combined_output = combined_output_from_bytes(&stdout, &stderr);
             Err(ToolError::Timeout {
                 tool: "bash".to_string(),
-                after_secs: timeout_secs,
+                after_secs,
                 hint: "increase timeout or split the command into smaller steps".to_string(),
                 partial_output: Some(combined_output),
             })
@@ -536,19 +562,43 @@ mod tests {
 
     #[cfg_attr(miri, ignore)]
     #[tokio::test]
-    async fn bash_timeout_returns_partial_output() {
+    async fn bash_timeout_preserves_output_emitted_before_timeout() {
         let temp = TempDir::new().expect("tempdir");
         let cwd = temp.path().canonicalize().expect("canonicalize");
-        let err = run_shell_command(
-            "echo BEFORE_TIMEOUT; sleep 30",
-            &cwd,
-            None,
-            1,
-            &CancellationToken::new(),
-            &None,
-        )
+        let cancellation = CancellationToken::new();
+        let (update_tx, mut update_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (timeout_tx, timeout_rx) = tokio::sync::oneshot::channel();
+        let command = tokio::spawn(async move {
+            run_shell_command_until(
+                "printf 'BEFORE_TIMEOUT\n'; sleep 30",
+                &cwd,
+                None,
+                async {
+                    let _ = timeout_rx.await;
+                    1
+                },
+                &cancellation,
+                &Some(update_tx),
+            )
+            .await
+        });
+
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                let update = update_rx.recv().await.expect("bash update");
+                if update.content.contains("BEFORE_TIMEOUT") {
+                    break;
+                }
+            }
+        })
         .await
-        .expect_err("should timeout");
+        .expect("bash should emit output");
+        timeout_tx.send(()).expect("trigger timeout");
+
+        let err = command
+            .await
+            .expect("bash task")
+            .expect_err("should timeout");
         match err {
             ToolError::Timeout { partial_output, .. } => {
                 let partial = partial_output.expect("partial output");
