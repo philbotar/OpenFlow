@@ -32,7 +32,8 @@ runs:
         components: ${{ inputs.components }}
 
     # .cargo/config.toml sets linker = "rust-lld"; rustup keeps it under
-    # lib/rustlib/<host>/bin, not on PATH by default.
+    # lib/rustlib/<host>/bin, not on PATH by default. GITHUB_PATH applies to
+    # later steps, so export the path here too for the current-step check.
     - name: Put rust-lld on PATH
       shell: bash
       run: |
