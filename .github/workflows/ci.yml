@@ -101,8 +101,10 @@ jobs:
           shared-key: ${{ env.RUST_CACHE_SHARED_KEY }}
           cache-on-failure: true
 
-      - name: Warm workspace build
-        run: cargo build --workspace --all-targets --quiet
+      # Warm reusable core deps only. Desktop/all-target test variants are validated in
+      # downstream jobs; building them together exhausts GitHub runner disk during linking.
+      - name: Warm core build
+        run: cargo build -p engine -p providers -p orchestration --quiet
 
   fmt:
     name: fmt
