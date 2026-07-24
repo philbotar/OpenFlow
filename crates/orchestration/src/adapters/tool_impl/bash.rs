@@ -308,7 +308,7 @@ async fn run_shell_command(
     let stderr_bytes = Arc::new(Mutex::new(Vec::new()));
     let live_update_tx = update_tx.clone();
 
-    let stdout_reader = {
+    let mut stdout_reader = {
         let stdout_bytes = Arc::clone(&stdout_bytes);
         let stderr_bytes = Arc::clone(&stderr_bytes);
         let update_tx = live_update_tx.clone();
@@ -323,7 +323,7 @@ async fn run_shell_command(
             .await
         })
     };
-    let stderr_reader = {
+    let mut stderr_reader = {
         let stderr_bytes = Arc::clone(&stderr_bytes);
         let stdout_bytes = Arc::clone(&stdout_bytes);
         let update_tx = live_update_tx;
@@ -371,9 +371,17 @@ async fn run_shell_command(
         }
         _ = tokio::time::sleep(timeout) => {
             kill_process_group(&mut child).await;
-            stdout_reader.abort();
-            stderr_reader.abort();
             let _ = tokio::time::timeout(Duration::from_secs(2), child.wait()).await;
+            let readers_finished = tokio::time::timeout(Duration::from_secs(2), async {
+                let _ = (&mut stdout_reader).await;
+                let _ = (&mut stderr_reader).await;
+            })
+            .await
+            .is_ok();
+            if !readers_finished {
+                stdout_reader.abort();
+                stderr_reader.abort();
+            }
             let stdout = stdout_bytes.lock().expect("stdout lock").clone();
             let stderr = stderr_bytes.lock().expect("stderr lock").clone();
             let combined_output = combined_output_from_bytes(&stdout, &stderr);
