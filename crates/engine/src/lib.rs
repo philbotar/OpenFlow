@@ -49,5 +49,5 @@ pub use tools::{
     ApprovalMode, EditBatch, FileChangeOp, FileChangeRecord, FileSnapshot, NodeToolConfig,
     PendingToolApproval, ReadRecord, SubagentStatus, SubagentSummary, ToolCall, ToolCallStatus,
     ToolConcurrency, ToolDefinition, ToolOutputMeta, ToolResult, ToolTier, ToolTruncation,
-    ToolTruncationStrategy, WRITE_PLAN_ARTIFACT_TOOL,
+    ToolTruncationStrategy, PLAN_DRAFT_PATH, WRITE_PLAN_ARTIFACT_TOOL,
 };

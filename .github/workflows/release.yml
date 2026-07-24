@@ -64,7 +64,7 @@ jobs:
         run: ./scripts/test-fast.sh --execution --desktop --skip-ui-typecheck
 
       - name: Orchestration E2E
-        run: cargo test -p orchestration --test workflow_e2e -- --nocapture
+        run: cargo nextest run -p orchestration --test workflow_e2e --no-capture
 
   release:
     needs: release-verify

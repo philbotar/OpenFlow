@@ -140,7 +140,7 @@ Do not mix patterns within one file - pick sibling file or inline block, not bot
 cargo fmt --all --check
 cargo clippy --workspace --all-targets
 cargo clippy-max
-cargo test --workspace
+cargo nextest run --workspace
 ```
 
 4. If behavior contracts changed, update this doc, [`AGENTS.md`](../../AGENTS.md), and [`glossary.md`](../glossary.md) when needed.

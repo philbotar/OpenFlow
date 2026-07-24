@@ -115,7 +115,7 @@ These rules live here; orchestration wires them — do not duplicate in UI:
 | `tests.rs` in module dir | Integration tests for a subtree |
 
 ```bash
-cargo test -p engine
+cargo nextest run -p engine
 cargo clippy -p engine -- -D warnings
 ./scripts/miri.sh   # undefined-behavior interpreter (nightly miri)
 ```
@@ -128,7 +128,7 @@ Mock ports with inline `impl AiPort` / `impl ToolPort` stubs. Test behavior, not
 2. Is vocabulary aligned with `glossary.md`?
 3. Did provider/orchestration-specific logic stay out of engine?
 4. Are tests colocated and behavior-focused?
-5. Run `./scripts/verify.sh test clippy arch` after changes.
+5. Run `./scripts/verify.sh test-fast clippy arch` after changes.
 
 ## Related docs
 

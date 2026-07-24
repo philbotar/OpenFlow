@@ -35,6 +35,18 @@ const editApproval: PendingToolApproval = {
   tier: "write",
 };
 
+const planSealApproval: PendingToolApproval = {
+  approvalId: "approval-plan-seal",
+  nodeId: "node-plan",
+  nodeLabel: "Package & Approval",
+  toolCall: {
+    id: "call-plan-seal",
+    name: "openflow_write_plan_artifact",
+    arguments: { _i: "Approve implementation plan" },
+  },
+  tier: "write",
+};
+
 describe("ToolApprovalCardBody", () => {
   let container: HTMLDivElement;
   let dispose: (() => void) | undefined;
@@ -108,6 +120,14 @@ describe("ToolApprovalCardBody", () => {
 
     (container.querySelector(".primary-button") as HTMLButtonElement).click();
     expect(onApprove).toHaveBeenCalledWith(true);
+  });
+
+  test("labels plan seal approval as the plan commit action", () => {
+    renderCard(planSealApproval);
+
+    expect(container.textContent).toContain("Seal Plan");
+    expect(container.textContent).toContain("Approve & Seal");
+    expect(previewFileEdit).not.toHaveBeenCalled();
   });
 
   test("shows preview warning when preview returns no entries", async () => {

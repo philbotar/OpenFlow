@@ -24,11 +24,30 @@ OAuth credentials are plaintext in the local OpenFlow `settings.json`, matching 
 ## Focused verification
 
 ```bash
-cargo test -p providers
-cargo test -p orchestration --lib
-cargo test -p desktop
+cargo nextest run -p providers
+cargo nextest run -p orchestration --lib
+cargo nextest run -p desktop
 npm --prefix crates/ui run typecheck
 ./scripts/check-architecture.sh
 ```
 
 Run `./scripts/verify.sh` for the canonical full gate. Provider fixture tests cannot prove a real account's Codex entitlement; record the interactive live smoke separately.
+
+## Rust build disk usage
+
+This repo disables Cargo incremental compilation because workspace feature/test variants previously
+grew `target/debug/incremental` without a bound. Compiled dependencies and sccache remain reusable.
+
+Scripted Cargo entrypoints refuse to start when `target/debug` exceeds 64 GiB or free space falls
+below 24 GiB locally (8 GiB on GitHub Actions). Override the limits with
+`OPENFLOW_MAX_DEBUG_CACHE_GIB` and `OPENFLOW_MIN_BUILD_SPACE_GIB`; use `0` only to disable the
+corresponding guard intentionally.
+
+Delete only the rebuildable debug cache when the guard trips:
+
+```bash
+./scripts/clean-rust-cache.sh --yes
+```
+
+The command preserves source files, Git state, release artifacts, `target/miri`, and cross-compiled
+targets. The next Rust build is cold.

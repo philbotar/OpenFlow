@@ -1,23 +1,27 @@
 use super::{
-    InteractiveEngine, PendingToolBatch, RunError, AUTONOMOUS_CONTINUE_FEEDBACK,
-    INTERACTIVE_CONTINUE_FEEDBACK, MALFORMED_REQUEST_INPUT_FEEDBACK, MAX_AUTO_CONTINUE_STREAK,
-    MAX_EMPTY_PROVIDER_TURN_RETRIES, MAX_MALFORMED_REQUEST_INPUT_RETRIES,
-    MAX_MALFORMED_SUBMIT_OUTPUT_RETRIES, MAX_MIXED_TOOL_TURN_RETRIES,
+    looks_like_narrated_file_mutation, InteractiveEngine, PendingToolBatch, RunError,
+    AUTONOMOUS_CONTINUE_FEEDBACK, EMPTY_AFTER_NARRATED_WRITE_FEEDBACK,
+    EMPTY_AFTER_WRITE_EXPAND_FEEDBACK, EMPTY_TURN_HUMAN_HANDOFF, EXPAND_VIA_EDIT_FEEDBACK,
+    INCOMPLETE_WRITE_FEEDBACK, INTERACTIVE_CONTINUE_FEEDBACK, MALFORMED_REQUEST_INPUT_FEEDBACK,
+    MAX_AUTO_CONTINUE_STREAK, MAX_EMPTY_PROVIDER_TURN_RETRIES, MAX_MALFORMED_REQUEST_INPUT_RETRIES,
+    MAX_MALFORMED_SUBMIT_OUTPUT_RETRIES, MAX_MIXED_TOOL_TURN_RETRIES, NARRATED_WRITE_FEEDBACK,
+    PLAN_EXPAND_VIA_EDIT_FEEDBACK, PLAN_NARRATED_WRITE_FEEDBACK, TEXT_STREAK_HUMAN_HANDOFF,
 };
 use crate::conversation::{
     filter_tool_turn_assistant_message, is_clarifying_question, AgentReasoning, AgentTranscriptItem,
 };
-use crate::execution::tool_results::denied_tool_result;
+use crate::execution::tool_results::{denied_tool_result, error_tool_result};
 use crate::execution::NodeFailureKind;
 use crate::graph::{apply_runtime_patch_to_tool_config, runtime_patch_for, NodeId, RetryPolicy};
 use crate::ports::{
-    AgentError, AgentMessageTurn, AgentNeedUserInput, AgentToolCallBatch, AgentTurnOutcome,
-    AgentTurnSuccess, ToolAccessPolicy, UsageReport,
+    AgentError, AgentNeedUserInput, AgentToolCallBatch, AgentTurnOutcome, AgentTurnSuccess,
+    ToolAccessPolicy, UsageReport,
 };
 use crate::tools::{
-    relativize_tool_call_arguments, tool_access_policy_allows_call, tool_decision_for_call,
-    ToolDecision, WRITE_PLAN_ARTIFACT_TOOL,
+    is_plan_draft_mutation_call, relativize_tool_call_arguments, tool_access_policy_allows_call,
+    tool_decision_for_call, ToolCall, ToolDecision, WRITE_PLAN_ARTIFACT_TOOL,
 };
+use serde_json::Value;
 use std::time::Duration;
 use tokio::time::Instant;
 use uuid::Uuid;
@@ -45,26 +49,39 @@ impl InteractiveEngine {
 
         match result {
             Ok(AgentTurnOutcome::Completed(success)) => {
+                if self.is_plan_mode_source_during_planning(node_id)
+                    && !self.has_committed_plan_artifact(node_id)
+                {
+                    self.transcripts.entry(node_id.clone()).or_default().push(
+                        AgentTranscriptItem::UserMessage {
+                            content: "Plan Mode cannot freeze this node yet. Build or revise \
+                                      run://PLAN.md, then call openflow_write_plan_artifact. The \
+                                      seal request must receive explicit human approval before \
+                                      openflow_submit_node_output."
+                                .to_string(),
+                        },
+                    );
+                    return;
+                }
                 self.apply_completion(node_id, success);
             }
             Ok(AgentTurnOutcome::ToolCalls(batch)) => {
                 self.apply_tool_calls(node_id, batch);
             }
             Ok(AgentTurnOutcome::Message(message)) => {
-                if self.interaction_mode(node_id) == InteractionMode::Conversational {
-                    self.apply_conversational_message(node_id, message);
-                } else {
-                    self.handle_autonomous_text_turn(
-                        node_id,
-                        &message.assistant_message,
-                        &message.reasoning,
-                        message.usage.as_ref(),
-                    );
-                }
+                // Plain text never pauses — only openflow_request_user_input does.
+                // Conversational nodes get the interactive nudge; autonomous get the
+                // no-human-available nudge.
+                self.handle_text_only_turn(
+                    node_id,
+                    &message.assistant_message,
+                    &message.reasoning,
+                    message.usage.as_ref(),
+                );
             }
             Ok(AgentTurnOutcome::NeedsUserInput(input)) => {
                 if self.interaction_mode(node_id) == InteractionMode::Autonomous {
-                    self.handle_autonomous_text_turn(
+                    self.handle_text_only_turn(
                         node_id,
                         &input.assistant_message,
                         &input.reasoning,
@@ -222,10 +239,18 @@ impl InteractiveEngine {
             return false;
         }
 
-        let continue_feedback = if self
-            .find_node(node_id)
-            .is_none_or(|node| node.agent.request_user_input)
-        {
+        let conversational = self.interaction_mode(node_id) == InteractionMode::Conversational;
+        let planning = self.is_plan_mode_source_during_planning(node_id);
+        let write_nudge = self.should_nudge_write(node_id);
+        let continue_feedback = if planning && self.recent_successful_write(node_id) {
+            PLAN_EXPAND_VIA_EDIT_FEEDBACK
+        } else if planning && write_nudge {
+            PLAN_NARRATED_WRITE_FEEDBACK
+        } else if self.recent_successful_write(node_id) {
+            EMPTY_AFTER_WRITE_EXPAND_FEEDBACK
+        } else if write_nudge {
+            EMPTY_AFTER_NARRATED_WRITE_FEEDBACK
+        } else if conversational {
             INTERACTIVE_CONTINUE_FEEDBACK
         } else {
             AUTONOMOUS_CONTINUE_FEEDBACK
@@ -237,6 +262,16 @@ impl InteractiveEngine {
             .or_default();
 
         if *retry_count >= MAX_EMPTY_PROVIDER_TURN_RETRIES {
+            // Conversational nodes: hand off to the human instead of hard-failing a flaky model.
+            if conversational {
+                self.apply_conversational_turn(
+                    node_id,
+                    EMPTY_TURN_HUMAN_HANDOFF.to_string(),
+                    Vec::new(),
+                    None,
+                );
+                return true;
+            }
             return false;
         }
 
@@ -249,10 +284,65 @@ impl InteractiveEngine {
         true
     }
 
-    /// A node with user input disabled produced a text-only turn (or an
-    /// explicit input request). Nudge it forward instead of pausing; fail the
-    /// node after too many consecutive turns without tool-call progress.
-    fn handle_autonomous_text_turn(
+    /// True when recent transcript shows the model intended to write a file.
+    fn should_nudge_write(&self, node_id: &NodeId) -> bool {
+        let Some(transcript) = self.transcripts.get(node_id) else {
+            return false;
+        };
+        for item in transcript.iter().rev().take(8) {
+            match item {
+                AgentTranscriptItem::AssistantMessage { content }
+                    if looks_like_narrated_file_mutation(content) =>
+                {
+                    return true;
+                }
+                AgentTranscriptItem::UserMessage { content }
+                    if content.contains("narrated creating or updating a file")
+                        || content.contains("already intended to write a file")
+                        || content.contains("A write already succeeded") =>
+                {
+                    return true;
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
+    /// True when a successful `write` tool result appears in the recent transcript.
+    fn recent_successful_write(&self, node_id: &NodeId) -> bool {
+        let Some(transcript) = self.transcripts.get(node_id) else {
+            return false;
+        };
+        for item in transcript.iter().rev().take(40) {
+            if let AgentTranscriptItem::ToolResult { result } = item {
+                if result.tool_name == "write" && !result.is_error {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    fn has_committed_plan_artifact(&self, node_id: &NodeId) -> bool {
+        self.transcripts.get(node_id).is_some_and(|transcript| {
+            transcript.iter().any(|item| {
+                matches!(
+                    item,
+                    AgentTranscriptItem::ToolResult { result }
+                        if result.tool_name == WRITE_PLAN_ARTIFACT_TOOL
+                            && !result.is_error
+                            && !result.artifact_ids.is_empty()
+                )
+            })
+        })
+    }
+
+    /// Text-only turn (or an autonomous explicit input request). Nudge forward
+    /// instead of pausing; fail the node after too many consecutive turns
+    /// without tool-call progress. Human pauses require
+    /// `openflow_request_user_input` on conversational nodes.
+    fn handle_text_only_turn(
         &mut self,
         node_id: &NodeId,
         assistant_message: &str,
@@ -266,6 +356,9 @@ impl InteractiveEngine {
         if let Some(usage) = usage {
             self.note_usage(usage);
         }
+        let conversational = self.interaction_mode(node_id) == InteractionMode::Conversational;
+        let planning = self.is_plan_mode_source_during_planning(node_id);
+        let expand_via_edit = self.recent_successful_write(node_id);
         let transcript = self.transcripts.entry(node_id.clone()).or_default();
         for item in reasoning {
             transcript.push(AgentTranscriptItem::Reasoning {
@@ -278,9 +371,19 @@ impl InteractiveEngine {
         }
         let streak = self
             .auto_continue_streaks_by_node
-            .entry(node_id.clone())
-            .or_default();
-        if *streak >= MAX_AUTO_CONTINUE_STREAK {
+            .get(node_id)
+            .copied()
+            .unwrap_or(0);
+        if streak >= MAX_AUTO_CONTINUE_STREAK {
+            if conversational {
+                self.apply_conversational_turn(
+                    node_id,
+                    TEXT_STREAK_HUMAN_HANDOFF.to_string(),
+                    Vec::new(),
+                    None,
+                );
+                return;
+            }
             self.failed_nodes.insert(
                 node_id.clone(),
                 format!(
@@ -290,10 +393,28 @@ impl InteractiveEngine {
             );
             return;
         }
-        *streak += 1;
+        *self
+            .auto_continue_streaks_by_node
+            .entry(node_id.clone())
+            .or_default() += 1;
+        let feedback = if looks_like_narrated_file_mutation(assistant_message) {
+            if planning && expand_via_edit {
+                PLAN_EXPAND_VIA_EDIT_FEEDBACK
+            } else if planning {
+                PLAN_NARRATED_WRITE_FEEDBACK
+            } else if expand_via_edit {
+                EXPAND_VIA_EDIT_FEEDBACK
+            } else {
+                NARRATED_WRITE_FEEDBACK
+            }
+        } else if conversational {
+            INTERACTIVE_CONTINUE_FEEDBACK
+        } else {
+            AUTONOMOUS_CONTINUE_FEEDBACK
+        };
         self.transcripts.entry(node_id.clone()).or_default().push(
             AgentTranscriptItem::UserMessage {
-                content: AUTONOMOUS_CONTINUE_FEEDBACK.to_string(),
+                content: feedback.to_string(),
             },
         );
     }
@@ -379,31 +500,60 @@ impl InteractiveEngine {
         } else {
             ToolAccessPolicy::Execution
         };
+        let can_manage_plan = self.is_plan_mode_source_during_planning(node_id);
         let root = self.project_repository_root.as_deref();
         let transcript = self.transcripts.entry(node_id.clone()).or_default();
-        for reasoning in &batch.reasoning {
-            transcript.push(AgentTranscriptItem::Reasoning {
-                reasoning: reasoning.clone(),
-            });
-        }
-        if let Some(message) = filter_tool_turn_assistant_message(batch.assistant_message)
-            .filter(|message| !message.trim().is_empty())
-        {
-            transcript.push(AgentTranscriptItem::AssistantMessage { content: message });
-        }
+        record_tool_turn_context(transcript, &batch.reasoning, batch.assistant_message);
         let mut pending_calls = Vec::new();
         let mut requires_approval_for_batch = false;
+        let mut incomplete_write = false;
         for mut call in batch.tool_calls {
             call.arguments = relativize_tool_call_arguments(call.arguments, root);
             transcript.push(AgentTranscriptItem::ToolCall { call: call.clone() });
-            if !tool_access_policy_allows_call(policy, &config, &call) {
+            if write_call_missing_content(&call) {
+                incomplete_write = true;
                 transcript.push(AgentTranscriptItem::ToolResult {
-                    result: denied_tool_result(&call, Some("blocked by Plan Mode")),
+                    result: error_tool_result(
+                        &call,
+                        "[invalid_args] write: missing field `content` — required fields: path (string), content (string). For large docs, write a small stub then edit in chunks.",
+                    ),
                 });
+                continue;
+            }
+            let is_plan_draft_mutation = is_plan_draft_mutation_call(&call);
+            if matches!(policy, ToolAccessPolicy::Planning)
+                && (call.name == WRITE_PLAN_ARTIFACT_TOOL || is_plan_draft_mutation)
+                && !can_manage_plan
+            {
+                transcript.push(AgentTranscriptItem::ToolResult {
+                    result: denied_tool_result(
+                        &call,
+                        Some(
+                            "only the selected Plan Mode evidence source node may mutate or seal \
+                             run://PLAN.md",
+                        ),
+                    ),
+                });
+                continue;
+            }
+            if !tool_access_policy_allows_call(policy, &config, &call) {
+                let deny_reason = if matches!(policy, ToolAccessPolicy::Planning) {
+                    planning_unavailable_tool_reason(&call)
+                } else {
+                    "blocked by Plan Mode"
+                };
+                transcript.push(AgentTranscriptItem::ToolResult {
+                    result: denied_tool_result(&call, Some(deny_reason)),
+                });
+                continue;
+            }
+            if matches!(policy, ToolAccessPolicy::Planning) && is_plan_draft_mutation {
+                pending_calls.push(call);
                 continue;
             }
             if matches!(policy, ToolAccessPolicy::Planning) && call.name == WRITE_PLAN_ARTIFACT_TOOL
             {
+                requires_approval_for_batch = true;
                 pending_calls.push(call);
                 continue;
             }
@@ -419,6 +569,13 @@ impl InteractiveEngine {
                     });
                 }
             }
+        }
+        if incomplete_write {
+            self.transcripts.entry(node_id.clone()).or_default().push(
+                AgentTranscriptItem::UserMessage {
+                    content: INCOMPLETE_WRITE_FEEDBACK.to_string(),
+                },
+            );
         }
         if pending_calls.is_empty() {
             return;
@@ -438,15 +595,6 @@ impl InteractiveEngine {
 
     fn apply_user_input_request(&mut self, node_id: &NodeId, input: AgentNeedUserInput) {
         self.apply_conversational_turn(node_id, input.assistant_message, input.reasoning, None);
-    }
-
-    fn apply_conversational_message(&mut self, node_id: &NodeId, message: AgentMessageTurn) {
-        self.apply_conversational_turn(
-            node_id,
-            message.assistant_message,
-            message.reasoning,
-            message.usage.as_ref(),
-        );
     }
 
     fn apply_conversational_turn(
@@ -486,6 +634,43 @@ fn next_retry(policy: &RetryPolicy, retry_count: &mut u8) -> Option<Duration> {
     }
     *retry_count += 1;
     Some(policy.delay_for_attempt(*retry_count))
+}
+
+/// `write` requires a non-null `content` field (empty string is allowed).
+fn write_call_missing_content(call: &ToolCall) -> bool {
+    call.name == "write" && call.arguments.get("content").is_none_or(Value::is_null)
+}
+
+fn record_tool_turn_context(
+    transcript: &mut Vec<AgentTranscriptItem>,
+    reasoning: &[AgentReasoning],
+    assistant_message: Option<String>,
+) {
+    transcript.extend(
+        reasoning
+            .iter()
+            .cloned()
+            .map(|reasoning| AgentTranscriptItem::Reasoning { reasoning }),
+    );
+    if let Some(message) = filter_tool_turn_assistant_message(assistant_message)
+        .filter(|message| !message.trim().is_empty())
+    {
+        transcript.push(AgentTranscriptItem::AssistantMessage { content: message });
+    }
+}
+
+/// Planning deny copy: bash is not offered, but models still invent it from the preamble.
+fn planning_unavailable_tool_reason(call: &ToolCall) -> &'static str {
+    if call.name == "bash" {
+        "bash is not available during Plan Mode planning. Do not retry bash. Call write with both \
+         path and content at run://PLAN.md for the run-local plan draft."
+    } else if matches!(call.name.as_str(), "write" | "edit") {
+        "blocked by Plan Mode — use write/edit on run://PLAN.md for the run-local plan draft; \
+         repository docs/**/*.md writes require a write-enabled node"
+    } else {
+        "blocked by Plan Mode — use run://PLAN.md for the run-local plan draft; bash, MCP, \
+         subagents, and non-docs repository writes are denied"
+    }
 }
 
 /// Spread sibling retry times so they do not hit the provider in the same tick.

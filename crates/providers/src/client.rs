@@ -1,7 +1,8 @@
 use crate::auth::{AuthConfig, CodexOAuthCredentials};
-use crate::spec::{ProviderId, WireApi};
+use crate::spec::{ModelTransport, ProviderId, WireApi};
 use async_trait::async_trait;
 use engine::{AgentError, AgentRequest, AgentTurnOutcome, AiPort, AiStreamSink};
+use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
@@ -12,10 +13,19 @@ pub struct OpenAiCompatibleConfig {
     pub wire_api: WireApi,
     pub responses_path: String,
     pub chat_completions_path: String,
+    pub model_transports: BTreeMap<String, ModelTransport>,
     pub request_timeout: Duration,
 }
 
 impl OpenAiCompatibleConfig {
+    #[must_use]
+    pub fn transport_for_model(&self, model: &str) -> ModelTransport {
+        self.model_transports
+            .get(model.trim())
+            .copied()
+            .unwrap_or_else(|| self.wire_api.into())
+    }
+
     #[must_use]
     pub fn openai_default() -> Self {
         Self {
@@ -23,6 +33,7 @@ impl OpenAiCompatibleConfig {
             wire_api: WireApi::Responses,
             responses_path: "v1/responses".to_string(),
             chat_completions_path: "v1/chat/completions".to_string(),
+            model_transports: BTreeMap::new(),
             request_timeout: Duration::from_mins(5),
         }
     }
@@ -83,6 +94,8 @@ pub struct AiClientConfig {
     pub provider_label: String,
     pub auth: AuthConfig,
     pub adapter: ProviderAdapterConfig,
+    /// When true, non-stream HTTP response bodies are appended to the local debug JSONL.
+    pub debug_output: bool,
 }
 
 #[derive(Debug, Clone)]

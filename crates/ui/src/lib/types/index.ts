@@ -357,6 +357,7 @@ export interface WorkflowRunState {
 export type ProviderId = string;
 export type AiProviderKind = ProviderId;
 export type ProviderTransport = "responses" | "chat_completions";
+export type ModelTransport = ProviderTransport | "anthropic_messages";
 
 export interface ProviderProfile {
   display_name: string;
@@ -366,6 +367,7 @@ export interface ProviderProfile {
   chat_completions_path: string;
   request_timeout_secs: number;
   known_models: string[];
+  model_transports?: Record<string, ModelTransport>;
   default_model: string | null;
   editable: boolean;
   aws_profile?: string;

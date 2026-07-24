@@ -19,10 +19,11 @@ cleanup_on_exit() {
 }
 trap cleanup_on_exit EXIT
 
-# ponytail: parallel verify runs each get their own target dir so they don't block
-# on target/.cargo-lock. Set VERIFY_SHARE_TARGET=1 to reuse ./target (faster solo,
-# but only one cargo-using verify at a time). CARGO_TARGET_DIR always wins if set.
-if [[ -z "${CARGO_TARGET_DIR:-}" && "${VERIFY_SHARE_TARGET:-0}" != "1" ]]; then
+# ponytail: default reuses ./target (solo-fast). Parallel agents: set
+# VERIFY_ISOLATE_TARGET=1 for target/verify-<pid> (no cargo-lock contention).
+# VERIFY_SHARE_TARGET=1 kept as no-op alias for older docs/scripts.
+# CARGO_TARGET_DIR always wins if set.
+if [[ -z "${CARGO_TARGET_DIR:-}" && "${VERIFY_ISOLATE_TARGET:-0}" == "1" ]]; then
 	VERIFY_TARGET_DIR="$ROOT/target/verify-$$"
 	export CARGO_TARGET_DIR="$VERIFY_TARGET_DIR"
 fi
@@ -52,7 +53,7 @@ ALL_STEPS=(
 	fmt
 	clippy
 	doc
-	test
+	test-fast
 	public-api
 	machete
 	typos
@@ -81,7 +82,7 @@ step_script() {
 
 step_repro() {
 	case "$1" in
-	test-fast) printf '%s' './scripts/test-fast.sh --execution' ;;
+	test-fast) printf '%s' './scripts/test-fast.sh --execution --skip-ui-typecheck' ;;
 	public-api) printf '%s' './scripts/check-engine-public-api.sh' ;;
 	arch) printf '%s' './scripts/check-architecture.sh' ;;
 	miri) printf '%s' './scripts/miri.sh' ;;
@@ -174,7 +175,8 @@ run_named_step() {
 			return 1
 		}
 		script="$(step_script test-fast)"
-		args=(--execution)
+		# Match CI: execution coverage; typecheck is the separate ui-typecheck step.
+		args=(--execution --skip-ui-typecheck)
 		;;
 	mutants)
 		if [[ "$DEEP" -ne 1 ]]; then
@@ -247,10 +249,10 @@ while [[ $# -gt 0 ]]; do
 		echo
 		echo "Runs verification steps; default runs all. Set VERIFY_FAIL_FAST=1 to stop on first failure."
 		echo "Set VERIFY_MAX_LINES to control truncated failure output (default: 150)."
-		echo "Parallel agents: default uses target/verify-<pid> (no cargo lock contention);"
-		echo "removed on exit and stale dirs pruned at startup."
-		echo "Set VERIFY_SHARE_TARGET=1 to reuse ./target for faster solo runs."
+		echo "Default reuses ./target. Parallel agents: VERIFY_ISOLATE_TARGET=1 uses"
+		echo "target/verify-<pid> (removed on exit; stale dirs pruned at startup)."
 		echo "Run scripts/verify/<step>.sh directly for full untruncated output."
+		echo "Opt-in full workspace tests (incl. desktop): ./scripts/verify.sh test"
 		usage_steps
 		exit 0
 		;;

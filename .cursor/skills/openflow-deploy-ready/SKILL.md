@@ -122,7 +122,7 @@ Mirror CI + what `release.yml` `release-verify` runs:
 ./scripts/verify.sh
 ./scripts/miri.sh
 ./scripts/test-fast.sh --execution --desktop --skip-ui-typecheck
-cargo test -p orchestration --test workflow_e2e -- --nocapture
+cargo nextest run -p orchestration --test workflow_e2e --no-capture
 ```
 
 Run in parallel where safe (`verify` vs miri/e2e may share target — prefer sequential if contention). Fix failures; re-run until green or unblockable NO-GO.

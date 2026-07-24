@@ -84,7 +84,7 @@ sequenceDiagram
 ### Testing
 
 ```bash
-cargo test -p desktop
+cargo nextest run -p desktop
 ```
 
 Test command wiring and payload shapes. Mock `AppBackend` where needed.
@@ -94,7 +94,7 @@ Test command wiring and payload shapes. Mock `AppBackend` where needed.
 1. Handler delegates to `AppBackend` — no orchestration logic inlined?
 2. No `engine` or `providers` imports?
 3. Frontend seam updated (`api.ts`, `types.ts`) if contract changed?
-4. Run `./scripts/verify.sh test arch`.
+4. Run `./scripts/test-fast.sh --desktop` (or `./scripts/verify.sh test` for full workspace).
 
 ## Related docs
 

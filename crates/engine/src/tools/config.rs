@@ -61,8 +61,15 @@ pub enum ToolDecision {
     Deny,
 }
 
-/// The only write-shaped capability permitted during a planning run phase.
+/// Host-owned plan artifact writer; Planning-only (not available in Execution).
 pub const WRITE_PLAN_ARTIFACT_TOOL: &str = "openflow_write_plan_artifact";
+
+/// Run-local mutable plan draft. Planning may write/edit only this virtual path
+/// when the node's normal approval mode is read-only.
+pub const PLAN_DRAFT_PATH: &str = "run://PLAN.md";
+
+/// Repository writes allowed during Planning, in addition to [`WRITE_PLAN_ARTIFACT_TOOL`].
+const PLANNING_DOCS_WRITE_TOOLS: &[&str] = &["write", "edit"];
 
 #[must_use]
 #[cfg_attr(not(test), allow(dead_code, reason = "exercised by config unit tests"))]
@@ -122,12 +129,95 @@ pub fn tool_access_policy_allows_call(
     call: &ToolCall,
 ) -> bool {
     match policy {
-        ToolAccessPolicy::Execution => call.name != WRITE_PLAN_ARTIFACT_TOOL,
+        ToolAccessPolicy::Execution => {
+            call.name != WRITE_PLAN_ARTIFACT_TOOL && !is_plan_draft_mutation_call(call)
+        }
         ToolAccessPolicy::Planning => {
             call.name == WRITE_PLAN_ARTIFACT_TOOL
                 || tool_tier_for_call(config, &call.name) == ToolTier::Read
+                || is_plan_draft_mutation_call(call)
+                || (!matches!(config.effective_approval_mode(), ApprovalMode::ReadOnly)
+                    && planning_docs_markdown_write_allowed(call))
         }
     }
+}
+
+/// Planning may mutate the run-local draft only through replace-mode
+/// `write`/`edit` calls with the exact virtual path.
+#[must_use]
+pub(crate) fn is_plan_draft_mutation_call(call: &ToolCall) -> bool {
+    PLANNING_DOCS_WRITE_TOOLS.contains(&call.name.as_str())
+        && call
+            .arguments
+            .get("path")
+            .and_then(Value::as_str)
+            .is_some_and(|path| path == PLAN_DRAFT_PATH)
+}
+
+/// Planning may mutate only repository-relative `docs/**/*.md` via `write` / `edit`.
+fn planning_docs_markdown_write_allowed(call: &ToolCall) -> bool {
+    if !PLANNING_DOCS_WRITE_TOOLS.contains(&call.name.as_str()) {
+        return false;
+    }
+    let Some(paths) = paths_from_planning_write_call(call) else {
+        return false;
+    };
+    !paths.is_empty() && paths.iter().all(|path| is_planning_allowed_docs_md(path))
+}
+
+fn paths_from_planning_write_call(call: &ToolCall) -> Option<Vec<String>> {
+    if let Some(path) = call.arguments.get("path").and_then(Value::as_str) {
+        return Some(vec![path.to_string()]);
+    }
+    if call.name == "edit" {
+        let input = call.arguments.get("input").and_then(Value::as_str)?;
+        let paths = hashline_section_paths(input);
+        if paths.is_empty() {
+            return None;
+        }
+        return Some(paths);
+    }
+    None
+}
+
+/// Hashline edit sections look like `¶path#tag` (see orchestration edit tool).
+fn hashline_section_paths(input: &str) -> Vec<String> {
+    input
+        .lines()
+        .filter_map(|line| {
+            let rest = line.trim().strip_prefix('¶')?;
+            let path = rest.split('#').next().unwrap_or(rest).trim();
+            if path.is_empty() {
+                None
+            } else {
+                Some(path.to_string())
+            }
+        })
+        .collect()
+}
+
+/// `docs/**/*.md` only: relative, no `..`, must end in lowercase `.md`.
+fn is_planning_allowed_docs_md(path: &str) -> bool {
+    let normalized = path.trim().replace('\\', "/");
+    let normalized = normalized.strip_prefix("./").unwrap_or(&normalized);
+    if normalized.is_empty()
+        || normalized.starts_with('/')
+        || normalized.contains(':')
+        || std::path::Path::new(normalized)
+            .extension()
+            .is_none_or(|extension| extension != "md")
+    {
+        return false;
+    }
+    let Some(rest) = normalized.strip_prefix("docs/") else {
+        return false;
+    };
+    if rest.is_empty() || rest.ends_with('/') {
+        return false;
+    }
+    !normalized
+        .split('/')
+        .any(|component| component.is_empty() || component == "..")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -344,7 +434,7 @@ mod tests {
         let writer = ToolCall {
             id: "plan".to_string(),
             name: WRITE_PLAN_ARTIFACT_TOOL.to_string(),
-            arguments: json!({ "markdown": "# Plan" }),
+            arguments: json!({}),
         };
         let read = ToolCall {
             id: "read".to_string(),
@@ -377,6 +467,154 @@ mod tests {
             &config,
             &write
         ));
+    }
+
+    #[test]
+    fn read_only_planning_allows_only_run_plan_draft_mutation() {
+        let config = NodeToolConfig {
+            approval_mode: Some(ApprovalMode::ReadOnly),
+        };
+        let plan_write = ToolCall {
+            id: "plan-write".to_string(),
+            name: "write".to_string(),
+            arguments: json!({
+                "path": "run://PLAN.md",
+                "content": "# Plan\n"
+            }),
+        };
+        let plan_edit = ToolCall {
+            id: "plan-edit".to_string(),
+            name: "edit".to_string(),
+            arguments: json!({
+                "path": "run://PLAN.md",
+                "edits": [{ "old_text": "# Plan", "new_text": "# Approved plan" }]
+            }),
+        };
+        let docs_write = ToolCall {
+            id: "docs-write".to_string(),
+            name: "write".to_string(),
+            arguments: json!({
+                "path": "docs/plan.md",
+                "content": "# Repo plan\n"
+            }),
+        };
+
+        assert!(tool_access_policy_allows_call(
+            ToolAccessPolicy::Planning,
+            &config,
+            &plan_write
+        ));
+        assert!(tool_access_policy_allows_call(
+            ToolAccessPolicy::Planning,
+            &config,
+            &plan_edit
+        ));
+        assert!(!tool_access_policy_allows_call(
+            ToolAccessPolicy::Execution,
+            &config,
+            &plan_write
+        ));
+        assert!(!tool_access_policy_allows_call(
+            ToolAccessPolicy::Planning,
+            &config,
+            &docs_write
+        ));
+    }
+
+    #[test]
+    fn planning_allows_docs_markdown_write_and_edit_only() {
+        let config = NodeToolConfig::default();
+        let docs_write = ToolCall {
+            id: "w".to_string(),
+            name: "write".to_string(),
+            arguments: json!({
+                "path": "docs/feature-briefs/002-ai.md",
+                "content": "# brief"
+            }),
+        };
+        let docs_edit = ToolCall {
+            id: "e".to_string(),
+            name: "edit".to_string(),
+            arguments: json!({
+                "path": "docs/AGENTS.md",
+                "edits": [{ "old_text": "a", "new_text": "b" }]
+            }),
+        };
+        let hashline_edit = ToolCall {
+            id: "h".to_string(),
+            name: "edit".to_string(),
+            arguments: json!({
+                "input": "¶docs/product-specs/001-x.md#abc\n- keep"
+            }),
+        };
+        let code_write = ToolCall {
+            id: "c".to_string(),
+            name: "write".to_string(),
+            arguments: json!({ "path": "src/lib.rs", "content": "fn main() {}" }),
+        };
+        let escape = ToolCall {
+            id: "esc".to_string(),
+            name: "write".to_string(),
+            arguments: json!({ "path": "docs/../src/lib.rs", "content": "no" }),
+        };
+        let md_outside = ToolCall {
+            id: "out".to_string(),
+            name: "write".to_string(),
+            arguments: json!({ "path": "README.md", "content": "no" }),
+        };
+        let bash = ToolCall {
+            id: "b".to_string(),
+            name: "bash".to_string(),
+            arguments: json!({ "command": "echo hi > docs/x.md" }),
+        };
+
+        assert!(tool_access_policy_allows_call(
+            ToolAccessPolicy::Planning,
+            &config,
+            &docs_write
+        ));
+        assert!(tool_access_policy_allows_call(
+            ToolAccessPolicy::Planning,
+            &config,
+            &docs_edit
+        ));
+        assert!(tool_access_policy_allows_call(
+            ToolAccessPolicy::Planning,
+            &config,
+            &hashline_edit
+        ));
+        assert!(!tool_access_policy_allows_call(
+            ToolAccessPolicy::Planning,
+            &config,
+            &code_write
+        ));
+        assert!(!tool_access_policy_allows_call(
+            ToolAccessPolicy::Planning,
+            &config,
+            &escape
+        ));
+        assert!(!tool_access_policy_allows_call(
+            ToolAccessPolicy::Planning,
+            &config,
+            &md_outside
+        ));
+        assert!(!tool_access_policy_allows_call(
+            ToolAccessPolicy::Planning,
+            &config,
+            &bash
+        ));
+    }
+
+    #[test]
+    fn planning_docs_md_path_rejects_traversal_and_non_md() {
+        assert!(is_planning_allowed_docs_md("docs/a.md"));
+        assert!(is_planning_allowed_docs_md("./docs/nested/b.md"));
+        assert!(!is_planning_allowed_docs_md("docs/a.MD"));
+        assert!(!is_planning_allowed_docs_md("docs/a.mdx"));
+        assert!(!is_planning_allowed_docs_md("docs"));
+        assert!(!is_planning_allowed_docs_md("docs/"));
+        assert!(!is_planning_allowed_docs_md("docs/../x.md"));
+        assert!(!is_planning_allowed_docs_md("/docs/a.md"));
     }
 
     #[test]

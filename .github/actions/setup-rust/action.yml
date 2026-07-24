@@ -30,3 +30,13 @@ runs:
       with:
         toolchain: ${{ inputs.toolchain }}
         components: ${{ inputs.components }}
+
+    # .cargo/config.toml sets linker = "rust-lld"; rustup keeps it under
+    # lib/rustlib/<host>/bin, not on PATH by default.
+    - name: Put rust-lld on PATH
+      shell: bash
+      run: |
+        host="$(rustc -vV | awk '/^host:/{print $2}')"
+        bin_dir="$(rustc --print sysroot)/lib/rustlib/${host}/bin"
+        echo "${bin_dir}" >> "${GITHUB_PATH}"
+        command -v rust-lld

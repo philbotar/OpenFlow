@@ -6819,6 +6819,7 @@ pub fn engine::ToolTruncation::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::ToolTruncation where T: for<'de> serde_core::de::Deserialize<'de>
 impl<T> typenum::type_operators::Same for engine::ToolTruncation
 pub type engine::ToolTruncation::Output = T
+pub const engine::tools::PLAN_DRAFT_PATH: &str
 pub const engine::tools::WRITE_PLAN_ARTIFACT_TOOL: &str
 pub fn engine::tools::effective_change_path(&engine::FileChangeRecord) -> &str
 pub fn engine::tools::merge_file_change_record(&mut alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::FileChangeRecord>, engine::FileChangeRecord)
@@ -10736,6 +10737,7 @@ pub type engine::graph::workflow::WorkflowSettings::Output = T
 pub const engine::CALL_SUBAGENT_TOOL: &str
 pub const engine::DECLARE_SUBAGENTS_TOOL: &str
 pub const engine::OUTPUT_REPAIR_RAW_ARGUMENTS_MAX_BYTES: usize
+pub const engine::PLAN_DRAFT_PATH: &str
 pub const engine::SUBMIT_NODE_OUTPUT_TOOL: &str
 pub const engine::WRITE_PLAN_ARTIFACT_TOOL: &str
 pub trait engine::AiPort: core::marker::Send + core::marker::Sync

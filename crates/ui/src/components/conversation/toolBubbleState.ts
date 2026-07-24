@@ -32,7 +32,7 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   openflow_declare_subagents: "Declare Subagents",
   openflow_submit_node_output: "Submit Output",
   openflow_request_user_input: "Request Input",
-  openflow_write_plan_artifact: "Freeze Plan Artifact",
+  openflow_write_plan_artifact: "Seal Plan",
 };
 
 const TOOL_STACK_NOUNS: Record<string, { one: string; many: string }> = {

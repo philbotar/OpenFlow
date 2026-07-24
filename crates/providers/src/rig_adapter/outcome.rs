@@ -8,7 +8,6 @@
     )
 )]
 
-use crate::client::OpenAiCompatibleConfig;
 use crate::mapping::{
     attach_usage, parse_internal_tool_outcome, resolve_tool_turn_outcome, NoToolCallsPolicy,
     ResolveToolTurnParams,
@@ -62,11 +61,11 @@ pub fn to_usage_report(usage: &Usage) -> Option<UsageReport> {
     })
 }
 
-pub fn no_tool_calls_policy(
+pub const fn no_tool_calls_policy(
     _request: &engine::AgentRequest,
-    openai_config: Option<&OpenAiCompatibleConfig>,
+    wire_api: Option<WireApi>,
 ) -> NoToolCallsPolicy {
-    if matches!(openai_config.map(|c| c.wire_api), Some(WireApi::Responses)) {
+    if matches!(wire_api, Some(WireApi::Responses)) {
         NoToolCallsPolicy::Error("OpenAI response did not contain a function call")
     } else {
         NoToolCallsPolicy::Recover {
@@ -270,14 +269,7 @@ mod tests {
             REQUEST_INPUT_TOOL,
             json!({"assistant_message": "Which env?"}),
         )];
-        let outcome = resolve_outcome(
-            choice,
-            usage(),
-            "Test provider",
-            None,
-            recover(),
-        )
-        .unwrap();
+        let outcome = resolve_outcome(choice, usage(), "Test provider", None, recover()).unwrap();
         assert!(matches!(
             outcome,
             engine::AgentTurnOutcome::NeedsUserInput(n) if n.assistant_message == "Which env?"
@@ -290,14 +282,7 @@ mod tests {
             AssistantContent::text("Let me search."),
             AssistantContent::tool_call("c1", "search", json!({"q": "x"})),
         ];
-        let outcome = resolve_outcome(
-            choice,
-            usage(),
-            "Test provider",
-            None,
-            recover(),
-        )
-        .unwrap();
+        let outcome = resolve_outcome(choice, usage(), "Test provider", None, recover()).unwrap();
         match outcome {
             engine::AgentTurnOutcome::ToolCalls(batch) => {
                 assert_eq!(batch.tool_calls.len(), 1);
@@ -314,14 +299,7 @@ mod tests {
             AssistantContent::text("Let me search."),
             AssistantContent::tool_call("c1", "search", json!({"q": "x"})),
         ];
-        let outcome = resolve_outcome(
-            choice,
-            usage(),
-            "Test provider",
-            None,
-            recover(),
-        )
-        .unwrap();
+        let outcome = resolve_outcome(choice, usage(), "Test provider", None, recover()).unwrap();
         match outcome {
             engine::AgentTurnOutcome::ToolCalls(batch) => {
                 assert_eq!(batch.reasoning.len(), 1);
@@ -348,28 +326,14 @@ mod tests {
         let choice = vec![AssistantContent::text(
             r#"{"output": {"r": "v"}, "assistant_message": null}"#,
         )];
-        let outcome = resolve_outcome(
-            choice,
-            usage(),
-            "Test provider",
-            None,
-            recover(),
-        )
-        .unwrap();
+        let outcome = resolve_outcome(choice, usage(), "Test provider", None, recover()).unwrap();
         assert!(matches!(outcome, engine::AgentTurnOutcome::Completed(_)));
     }
 
     #[test]
     fn plain_text_becomes_a_neutral_message_turn() {
         let choice = vec![AssistantContent::text("Hello without tools")];
-        let outcome = resolve_outcome(
-            choice,
-            usage(),
-            "Test provider",
-            None,
-            recover(),
-        )
-        .unwrap();
+        let outcome = resolve_outcome(choice, usage(), "Test provider", None, recover()).unwrap();
         let engine::AgentTurnOutcome::Message(message) = outcome else {
             panic!("expected neutral message turn");
         };

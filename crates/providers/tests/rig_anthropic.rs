@@ -5,9 +5,11 @@
 )]
 
 use providers::{
-    create_provider, AiClientConfig, AnthropicConfig, AuthConfig, ProviderAdapterConfig, ProviderId,
+    create_provider, AiClientConfig, AnthropicConfig, AuthConfig, ModelTransport,
+    OpenAiCompatibleConfig, ProviderAdapterConfig, ProviderId, WireApi,
 };
-use wiremock::matchers::{header, method, path};
+use std::collections::BTreeMap;
+use wiremock::matchers::{body_partial_json, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn test_request() -> engine::AgentRequest {
@@ -53,6 +55,7 @@ fn anthropic_test_config(base_url: &str) -> AiClientConfig {
             anthropic_version: "2023-06-01".into(),
             request_timeout: std::time::Duration::from_mins(5),
         }),
+        debug_output: false,
     }
 }
 
@@ -87,6 +90,69 @@ async fn anthropic_submit_output_completes_node() {
 
     let client = create_provider(anthropic_test_config(&server.uri()));
     let outcome = client.invoke(test_request()).await.unwrap();
+    let engine::AgentTurnOutcome::Completed(success) = outcome else {
+        panic!("expected completed outcome");
+    };
+    assert_eq!(success.output, serde_json::json!({"summary": "done"}));
+}
+
+#[tokio::test]
+async fn compatible_model_override_uses_anthropic_messages_wire_protocol() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .and(header("x-api-key", "test-key"))
+        .and(header("anthropic-version", "2023-06-01"))
+        .and(body_partial_json(serde_json::json!({
+            "model": "vendor-model"
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "msg_compatible",
+            "type": "message",
+            "role": "assistant",
+            "model": "vendor-model",
+            "content": [{
+                "type": "tool_use",
+                "id": "toolu_compatible",
+                "name": "openflow_submit_node_output",
+                "input": {
+                    "output": {"summary": "done"},
+                    "assistant_message": null
+                }
+            }],
+            "stop_reason": "tool_use",
+            "usage": {
+                "input_tokens": 101,
+                "output_tokens": 19
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let config = AiClientConfig {
+        provider_id: ProviderId::from("custom_openai_compatible"),
+        provider_label: "Custom compatible".into(),
+        auth: AuthConfig::Bearer {
+            api_key: Some("test-key".into()),
+            required: true,
+        },
+        adapter: ProviderAdapterConfig::OpenAiCompatible(OpenAiCompatibleConfig {
+            base_url: format!("{}/v1", server.uri()),
+            wire_api: WireApi::ChatCompletions,
+            responses_path: "v1/responses".into(),
+            chat_completions_path: "v1/chat/completions".into(),
+            model_transports: BTreeMap::from([(
+                "vendor-model".to_string(),
+                ModelTransport::AnthropicMessages,
+            )]),
+            request_timeout: std::time::Duration::from_mins(5),
+        }),
+        debug_output: false,
+    };
+    let mut request = test_request();
+    request.model = "vendor-model".into();
+
+    let outcome = create_provider(config).invoke(request).await.unwrap();
     let engine::AgentTurnOutcome::Completed(success) = outcome else {
         panic!("expected completed outcome");
     };

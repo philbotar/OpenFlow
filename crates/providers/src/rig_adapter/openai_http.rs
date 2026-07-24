@@ -1,6 +1,7 @@
 //! Compatibility HTTP client that preserves malformed `OpenAI` tool arguments for repair.
 
 use crate::mapping::{malformed_tool_args_marker_value, parse_or_recover_tool_arguments};
+use crate::model_debug;
 use bytes::Bytes;
 use rig_core::http_client::{
     HttpClientExt, LazyBody, MultipartForm, Request, Response, Result, StreamingResponse,
@@ -10,15 +11,35 @@ use std::future::Future;
 
 /// Wrap `reqwest` so non-streaming `OpenAI` Chat/Responses bodies are normalized
 /// before Rig deserializes stringified tool arguments into `serde_json::Value`.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 #[allow(clippy::redundant_pub_crate)] // crate-private module; keep pub(crate) for intentional crate API
 pub(crate) struct OpenAiHttpClient {
     inner: reqwest::Client,
+    debug_output: bool,
+    provider_label: String,
+}
+
+impl Default for OpenAiHttpClient {
+    fn default() -> Self {
+        Self {
+            inner: reqwest::Client::new(),
+            debug_output: false,
+            provider_label: String::new(),
+        }
+    }
 }
 
 impl OpenAiHttpClient {
-    pub(crate) const fn new(inner: reqwest::Client) -> Self {
-        Self { inner }
+    pub(crate) fn new(
+        inner: reqwest::Client,
+        debug_output: bool,
+        provider_label: impl Into<String>,
+    ) -> Self {
+        Self {
+            inner,
+            debug_output,
+            provider_label: provider_label.into(),
+        }
     }
 }
 
@@ -32,11 +53,15 @@ impl HttpClientExt for OpenAiHttpClient {
         U: From<Bytes> + Send + 'static,
     {
         let response = self.inner.send::<T, Bytes>(request);
+        let debug_output = self.debug_output;
+        let provider_label = self.provider_label.clone();
         async move {
             let response = response.await?;
             let (parts, body) = response.into_parts();
+            let status = parts.status.as_u16();
             let normalized: LazyBody<U> = Box::pin(async move {
                 let body = body.await?;
+                model_debug::log_model_response(debug_output, &provider_label, status, &body);
                 Ok(U::from(normalize_openai_response(body)))
             });
             Ok(Response::from_parts(parts, normalized))

@@ -15,6 +15,7 @@ mod codex;
 pub mod codex_oauth;
 pub(crate) mod http_errors;
 pub(crate) mod mapping;
+mod model_debug;
 pub(crate) mod prompt_cache;
 pub(crate) mod rig_adapter;
 mod spec;
@@ -31,7 +32,7 @@ pub use client::{
 pub use codex_oauth::{login_codex, CodexLoginCancellation, CodexLoginPrompt};
 pub use engine::AiPort;
 pub use spec::{
-    builtin_provider_specs, provider_spec, AnthropicSpec, AuthSpec, BedrockSpec,
+    builtin_provider_specs, provider_spec, AnthropicSpec, AuthSpec, BedrockSpec, ModelTransport,
     OpenAiCompatibleSpec, ProviderId, ProviderKind, ProviderSpec, ReasoningEffortOption, WireApi,
 };
 

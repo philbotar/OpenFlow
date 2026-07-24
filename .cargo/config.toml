@@ -1,3 +1,29 @@
+# Faster local/CI links when `rust-lld` is on PATH (see scripts/verify/_lib.sh
+# `ensure_rust_host_bin_path`). Override locally if needed.
+[build]
+# This workspace produces many feature/test variants. Cargo's incremental state reached
+# 85 GiB locally and does not self-prune. Keep reusable deps + sccache, drop incremental state.
+incremental = false
+
+[target.aarch64-apple-darwin]
+linker = "rust-lld"
+
+[target.x86_64-apple-darwin]
+linker = "rust-lld"
+
+[target.x86_64-unknown-linux-gnu]
+linker = "rust-lld"
+
+[target.aarch64-unknown-linux-gnu]
+linker = "rust-lld"
+
 [alias]
 # Maximum strictness lint pass for manual/CI audits.
 clippy-max = "clippy --workspace --all-targets -- -D warnings -D clippy::pedantic -D clippy::nursery -D clippy::cargo"
+# Crate-scoped loop helpers (prefer these over workspace clippy while iterating).
+check-engine = "check -p engine"
+check-providers = "check -p providers"
+check-orchestration = "check -p orchestration"
+clippy-engine = "clippy -p engine --all-targets -- -D warnings"
+clippy-providers = "clippy -p providers --all-targets -- -D warnings"
+clippy-orchestration = "clippy -p orchestration --all-targets -- -D warnings"

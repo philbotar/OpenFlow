@@ -38,8 +38,11 @@ Procedural only. Architecture facts live in the docs below — do not invent a s
 ## Verify
 
 ```bash
-cargo test -p providers
-./scripts/verify.sh test clippy arch
+./scripts/check-fast.sh providers
+./scripts/verify/test-providers.sh
+# If touching Bedrock / AWS:
+./scripts/verify/test-providers-bedrock.sh
+./scripts/verify.sh test-fast clippy arch
 ```
 
-Wiremock suites: `crates/providers/tests/rig_*.rs`. Live AI only when intentional (`STEP_WORKFLOW_LIVE_AI=1`).
+Wiremock suites: `crates/providers/tests/rig_*.rs`. Live AI only when intentional (`STEP_WORKFLOW_LIVE_AI=1`). `bedrock` feature is off by default.

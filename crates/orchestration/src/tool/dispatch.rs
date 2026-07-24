@@ -18,6 +18,9 @@ enum ReadTarget {
         artifact_id: String,
         selector: ReadSelector,
     },
+    PlanDraft {
+        selector: ReadSelector,
+    },
     Url {
         url: String,
         selector: ReadSelector,
@@ -29,6 +32,9 @@ enum ReadTarget {
 
 fn parse_read_target(path: &str) -> ReadTarget {
     let (base, selector) = split_selector(path);
+    if base == engine::PLAN_DRAFT_PATH {
+        return ReadTarget::PlanDraft { selector };
+    }
     if let Some(artifact_id) = base.strip_prefix("artifact:") {
         return ReadTarget::Artifact {
             artifact_id: artifact_id.to_string(),
@@ -64,6 +70,15 @@ impl ToolRunner {
         call: ToolCall,
         ctx: Option<ToolExecutionContext>,
     ) -> Result<ToolExecutionRecord, ToolRunnerError> {
+        if matches!(kind, BuiltinToolKind::Write | BuiltinToolKind::Edit)
+            && call
+                .arguments
+                .get("path")
+                .and_then(Value::as_str)
+                .is_some_and(|path| path == engine::PLAN_DRAFT_PATH)
+        {
+            return self.run_plan_draft_mutation(kind, call).await;
+        }
         match kind {
             BuiltinToolKind::Read => {
                 let raw = self.read(call.arguments.clone()).await?;
@@ -179,6 +194,7 @@ impl ToolRunner {
                 artifact_id,
                 selector,
             } => self.read_artifact(&artifact_id, selector, &args.path),
+            ReadTarget::PlanDraft { selector } => self.read_plan_draft(selector),
             ReadTarget::Url { url, selector } => self
                 .read_url(&url, selector)
                 .await
@@ -197,22 +213,9 @@ impl ToolRunner {
     }
 
     fn write_plan_artifact(&self, call: ToolCall) -> Result<ToolExecutionRecord, ToolRunnerError> {
-        #[derive(Deserialize)]
-        struct WritePlanArtifactArgs {
-            markdown: String,
-        }
-
-        let args: WritePlanArtifactArgs =
-            serde_json::from_value(call.arguments.clone()).map_err(|error| {
-                ToolRunnerError::Tool(ToolError::InvalidArgs {
-                    tool: call.name.clone(),
-                    problem: error.to_string(),
-                    hint: "required field: markdown (string)".to_string(),
-                })
-            })?;
         let artifact = self
             .artifacts
-            .store_plan_markdown(args.markdown)
+            .seal_plan_draft()
             .map_err(ToolRunnerError::Tool)?;
         let content = format!(
             "artifact:{}\nsha256:{}\nbytes:{}",
@@ -232,6 +235,74 @@ impl ToolRunner {
             reads: Vec::new(),
             edit_batch: None,
         })
+    }
+
+    async fn run_plan_draft_mutation(
+        &self,
+        kind: BuiltinToolKind,
+        call: ToolCall,
+    ) -> Result<ToolExecutionRecord, ToolRunnerError> {
+        let draft_path = self
+            .artifacts
+            .plan_draft_path()
+            .map_err(ToolRunnerError::Tool)?;
+        let internal_name = draft_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| {
+                ToolRunnerError::Tool(ToolError::failed(
+                    "plan draft path is not valid UTF-8".to_string(),
+                ))
+            })?;
+        let mut arguments = call.arguments.clone();
+        arguments["path"] = Value::String(internal_name.to_string());
+        let cwd = self.artifacts.root().to_path_buf();
+        let snapshots = self.snapshot_store.clone();
+        let outcome = tokio::task::spawn_blocking(move || {
+            BlockingToolOps::run_blocking(
+                cwd,
+                snapshots,
+                LspSettings::default(),
+                kind,
+                arguments,
+                None,
+            )
+        })
+        .await
+        .map_err(|error| ToolRunnerError::BlockingTask(error.to_string()))?;
+        let raw = outcome.output.map_err(ToolRunnerError::Tool)?;
+        self.finalize_record(
+            call,
+            raw.replacen(internal_name, engine::PLAN_DRAFT_PATH, 1),
+            Vec::new(),
+            None,
+        )
+        .await
+    }
+
+    fn read_plan_draft(&self, selector: ReadSelector) -> Result<String, ToolRunnerError> {
+        let path = self
+            .artifacts
+            .plan_draft_path()
+            .map_err(ToolRunnerError::Tool)?;
+        let markdown = std::fs::read_to_string(&path).map_err(|error| {
+            ToolRunnerError::Tool(if error.kind() == std::io::ErrorKind::NotFound {
+                ToolError::NotFound {
+                    what: format!("plan draft not found at {}", engine::PLAN_DRAFT_PATH),
+                    hint: format!(
+                        "create {} with write before reading it",
+                        engine::PLAN_DRAFT_PATH
+                    ),
+                }
+            } else {
+                ToolError::failed(format!("failed to read plan draft: {error}"))
+            })
+        })?;
+        Ok(apply_read_selector(
+            engine::PLAN_DRAFT_PATH,
+            &markdown,
+            selector,
+        ))
     }
 
     fn read_artifact(

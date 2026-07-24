@@ -8,7 +8,7 @@ use engine::{
     merge_subagent_summaries as merge_subagent_summaries_into_map, runtime_patch_for, AiPort,
     CallableAgent, NodeId, NodeRuntimeConfigStore, NodeToolConfig, RunTelemetry, SubagentSummary,
     ToolAccessPolicy, ToolBatchEffects, ToolBatchOutput, ToolCall, ToolConcurrency, ToolPort,
-    ToolResult, Workflow, CALL_SUBAGENT_TOOL, DECLARE_SUBAGENTS_TOOL,
+    ToolResult, Workflow, CALL_SUBAGENT_TOOL, DECLARE_SUBAGENTS_TOOL, WRITE_PLAN_ARTIFACT_TOOL,
 };
 use serde_json::json;
 use std::collections::{BTreeMap, HashSet};
@@ -98,6 +98,14 @@ where
         }
         config
     }
+
+    fn is_plan_mode_source(&self, node_id: &NodeId) -> bool {
+        self.workflow
+            .settings
+            .plan_mode
+            .as_ref()
+            .is_some_and(|config| config.evidence_source_node_id == *node_id)
+    }
 }
 
 #[async_trait]
@@ -126,7 +134,11 @@ where
         request.available_tools = self
             .tool_runner
             .registry()
-            .definitions_for_policy(&request.tool_config, request.tool_access_policy);
+            .definitions_for_policy_and_plan_scope(
+                &request.tool_config,
+                request.tool_access_policy,
+                self.is_plan_mode_source(node_id),
+            );
         if matches!(request.tool_access_policy, ToolAccessPolicy::Execution) {
             if let Some(node) = self.workflow.nodes.iter().find(|node| node.id == *node_id) {
                 let declared = self.declared_subagents.lock();
@@ -160,13 +172,30 @@ where
                 effects.interrupted = true;
                 break;
             }
-            if !engine::tool_access_policy_allows_call(policy, &node_config, &calls[index]) {
+            let plan_management_denied = matches!(policy, ToolAccessPolicy::Planning)
+                && !self.is_plan_mode_source(node_id)
+                && (calls[index].name == WRITE_PLAN_ARTIFACT_TOOL
+                    || is_plan_draft_mutation_call(&calls[index]));
+            if plan_management_denied
+                || !engine::tool_access_policy_allows_call(policy, &node_config, &calls[index])
+            {
                 let tool_call = calls[index].clone();
                 index += 1;
                 self.propose_tool_call(node_id, label, &tool_call);
-                let record = self
-                    .tool_runner
-                    .denied(tool_call.clone(), "blocked by Plan Mode");
+                let reason = if plan_management_denied {
+                    "only the selected Plan Mode evidence source node may mutate or seal \
+                     run://PLAN.md"
+                } else if tool_call.name == "bash" {
+                    "bash is not available during Plan Mode planning. Do not retry bash. \
+                         Use write/edit on run://PLAN.md for the run-local plan draft."
+                } else if matches!(tool_call.name.as_str(), "write" | "edit") {
+                    "blocked by Plan Mode — use write/edit on run://PLAN.md for the run-local \
+                         plan draft; repository docs/**/*.md writes require a write-enabled node"
+                } else {
+                    "blocked by Plan Mode — use run://PLAN.md for the run-local plan draft; \
+                         bash, MCP, subagents, and non-docs repository writes are denied"
+                };
+                let record = self.tool_runner.denied(tool_call.clone(), reason);
                 self.emit_tool_completed(node_id, &tool_call, &record.result);
                 results.push(record.result);
                 continue;
@@ -441,17 +470,11 @@ where
         if tool_call.name != engine::WRITE_PLAN_ARTIFACT_TOOL {
             return tool_call.clone();
         }
-        let markdown_bytes = tool_call
-            .arguments
-            .get("markdown")
-            .and_then(serde_json::Value::as_str)
-            .map_or(0, str::len);
         ToolCall {
             id: tool_call.id.clone(),
             name: tool_call.name.clone(),
             arguments: json!({
-                "markdown_bytes": markdown_bytes,
-                "markdown_redacted": true
+                "sealed_from": engine::PLAN_DRAFT_PATH
             }),
         }
     }
@@ -728,6 +751,15 @@ fn apply_patch_paths(input: &str) -> Vec<String> {
         .collect()
 }
 
+fn is_plan_draft_mutation_call(call: &ToolCall) -> bool {
+    matches!(call.name.as_str(), "write" | "edit")
+        && call
+            .arguments
+            .get("path")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|path| path == engine::PLAN_DRAFT_PATH)
+}
+
 fn tool_fallback_key(concurrency: ToolConcurrency, node_id: &NodeId, tool_name: &str) -> String {
     match concurrency {
         ToolConcurrency::NodeExclusive => format!("{}\u{1f}tool:{}", node_id.0, tool_name),
@@ -782,6 +814,7 @@ fn exclusive_lock_keys(
                 path_keys(paths)
             }
         }
+        Kind::WritePlanArtifact => path_keys(vec![engine::PLAN_DRAFT_PATH.to_string()]),
         _ => fallback,
     }
 }
@@ -870,7 +903,7 @@ mod tests {
     use crate::tool::registry::BuiltinToolKind;
     use crate::tool::{ArtifactStore, ToolRegistry};
     use async_trait::async_trait;
-    use engine::{AgentError, AgentTurnOutcome, AiPort, Node, Workflow};
+    use engine::{AgentError, AgentTurnOutcome, AiPort, Node, PlanModeConfig, Workflow};
     use std::collections::BTreeMap;
     use std::time::Duration;
 
@@ -902,7 +935,7 @@ mod tests {
 
     #[cfg_attr(miri, ignore)]
     #[tokio::test]
-    async fn planning_policy_denies_hidden_write_mcp_and_subagent_calls_at_host_boundary() {
+    async fn read_only_planning_host_allows_only_run_plan_draft_mutation() {
         let dir = tempfile::tempdir().expect("tempdir");
         let artifacts = ArtifactStore::new(dir.path().join("artifacts")).expect("artifacts");
         let runner = Arc::new(ToolRunner::new(
@@ -915,7 +948,11 @@ mod tests {
         let mut workflow = Workflow::new("planning");
         let mut planner = Node::agent("Planner", 0.0, 0.0);
         planner.id = NodeId::from("planner");
+        planner.agent.tools.approval_mode = Some(engine::ApprovalMode::ReadOnly);
         workflow.nodes.push(planner);
+        workflow.settings.plan_mode = Some(PlanModeConfig {
+            evidence_source_node_id: NodeId::from("planner"),
+        });
         let (event_tx, _event_rx) = tokio::sync::mpsc::unbounded_channel();
         let port = ToolPortImpl::new(
             runner,
@@ -931,9 +968,20 @@ mod tests {
         );
         let calls = vec![
             ToolCall {
+                id: "plan-draft".to_string(),
+                name: "write".to_string(),
+                arguments: serde_json::json!({
+                    "path": engine::PLAN_DRAFT_PATH,
+                    "content": "# Plan\n"
+                }),
+            },
+            ToolCall {
                 id: "write".to_string(),
                 name: "write".to_string(),
-                arguments: serde_json::json!({ "path": "blocked.txt", "content": "no" }),
+                arguments: serde_json::json!({
+                    "path": "docs/blocked.md",
+                    "content": "no"
+                }),
             },
             ToolCall {
                 id: "mcp".to_string(),
@@ -956,11 +1004,96 @@ mod tests {
             )
             .await;
 
+        let plan_result = output
+            .results
+            .iter()
+            .find(|result| result.tool_call_id == "plan-draft")
+            .expect("plan draft result");
+        assert!(!plan_result.is_error, "{}", plan_result.content);
         assert!(output
             .results
             .iter()
+            .filter(|result| result.tool_call_id != "plan-draft")
             .all(|result| { result.is_error && result.content.contains("blocked by Plan Mode") }));
-        assert!(!dir.path().join("blocked.txt").exists());
+        let denied_repo_write = output
+            .results
+            .iter()
+            .find(|result| result.tool_call_id == "write")
+            .expect("denied repo write");
+        assert!(denied_repo_write.content.contains(engine::PLAN_DRAFT_PATH));
+        assert!(!dir.path().join("docs/blocked.md").exists());
+        assert!(dir.path().join("artifacts/PLAN.md").exists());
+    }
+
+    #[cfg_attr(miri, ignore)]
+    #[tokio::test]
+    async fn planning_host_rejects_plan_mutation_and_seal_from_non_source_node() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let artifacts = ArtifactStore::new(dir.path().join("artifacts")).expect("artifacts");
+        let runner = Arc::new(ToolRunner::new(
+            ToolRegistry::new(),
+            dir.path().to_path_buf(),
+            artifacts,
+            CancellationToken::new(),
+            Arc::new(crate::tools::edit::hashline::snapshots::InMemorySnapshotStore::new()),
+        ));
+        let mut workflow = Workflow::new("planning-owner");
+        let mut planner = Node::agent("Planner", 0.0, 0.0);
+        planner.id = NodeId::from("planner");
+        let mut research = Node::agent("Research", 0.0, 0.0);
+        research.id = NodeId::from("research");
+        workflow.nodes = vec![planner, research];
+        workflow.settings.plan_mode = Some(PlanModeConfig {
+            evidence_source_node_id: NodeId::from("planner"),
+        });
+        let (event_tx, _event_rx) = tokio::sync::mpsc::unbounded_channel();
+        let port = ToolPortImpl::new(
+            runner,
+            crate::settings::model::LspSettings::default(),
+            Arc::new(workflow),
+            Arc::new(BTreeMap::new()),
+            Arc::new(NoopAi),
+            CancellationToken::new(),
+            event_tx,
+            Arc::new(parking_lot::Mutex::new(BTreeMap::new())),
+            Arc::new(parking_lot::Mutex::new(false)),
+            engine::new_runtime_config_store(),
+        );
+
+        let output = port
+            .execute_batch(
+                &NodeId::from("research"),
+                "Research",
+                vec![
+                    call(
+                        "write",
+                        serde_json::json!({
+                            "path": engine::PLAN_DRAFT_PATH,
+                            "content": "# Unauthorized plan\n"
+                        }),
+                    ),
+                    ToolCall {
+                        id: "seal".to_string(),
+                        name: engine::WRITE_PLAN_ARTIFACT_TOOL.to_string(),
+                        arguments: serde_json::json!({}),
+                    },
+                ],
+                ToolAccessPolicy::Planning,
+            )
+            .await;
+
+        assert_eq!(output.results.len(), 2);
+        assert!(output.results.iter().all(|result| {
+            result.is_error
+                && result
+                    .content
+                    .contains("selected Plan Mode evidence source")
+        }));
+        assert!(!dir.path().join("artifacts/PLAN.md").exists());
+        assert!(std::fs::read_dir(dir.path().join("artifacts"))
+            .expect("artifacts dir")
+            .next()
+            .is_none());
     }
 
     #[test]
@@ -983,6 +1116,30 @@ mod tests {
             &call("bash", serde_json::json!({"command": "cargo test"})),
         );
         assert_eq!(keys, vec!["n1\u{1f}tool:bash".to_string()]);
+    }
+
+    #[test]
+    fn plan_seal_uses_the_same_lock_as_plan_draft_mutation() {
+        let write_keys = exclusive_lock_keys(
+            BuiltinToolKind::Write,
+            ToolConcurrency::Exclusive,
+            &node("planner"),
+            &call(
+                "write",
+                serde_json::json!({
+                    "path": engine::PLAN_DRAFT_PATH,
+                    "content": "# Plan\n"
+                }),
+            ),
+        );
+        let seal_keys = exclusive_lock_keys(
+            BuiltinToolKind::WritePlanArtifact,
+            ToolConcurrency::Exclusive,
+            &node("planner"),
+            &call(engine::WRITE_PLAN_ARTIFACT_TOOL, serde_json::json!({})),
+        );
+
+        assert_eq!(seal_keys, write_keys);
     }
 
     #[test]

@@ -188,9 +188,11 @@ impl ToolRunner {
     fn is_cacheable(&self, kind: BuiltinToolKind, call: &ToolCall) -> bool {
         match kind {
             BuiltinToolKind::Search | BuiltinToolKind::Find | BuiltinToolKind::AstGrep => true,
-            BuiltinToolKind::Read => self
-                .read_call_path(call)
-                .is_some_and(|path| !path.starts_with("http://") && !path.starts_with("https://")),
+            BuiltinToolKind::Read => self.read_call_path(call).is_some_and(|path| {
+                !path.starts_with("http://")
+                    && !path.starts_with("https://")
+                    && !path.starts_with("run://")
+            }),
             _ => false,
         }
     }
@@ -859,16 +861,57 @@ mod tests {
 
     #[cfg_attr(miri, ignore)]
     #[tokio::test]
-    async fn plan_artifact_writer_returns_compact_reference_and_read_supports_markdown() {
+    async fn plan_draft_write_edit_and_seal_stay_out_of_the_repository() {
         let dir = tempfile::tempdir().unwrap();
         let runner = runner(dir.path());
-        let markdown = "# Plan\n\nImplement the smallest safe change.";
+        let markdown = "# Plan\n\nImplement the smallest safe change.\n";
+        let drafted = runner
+            .execute(
+                ToolCall {
+                    id: "plan-draft".to_string(),
+                    name: "write".to_string(),
+                    arguments: serde_json::json!({
+                        "path": engine::PLAN_DRAFT_PATH,
+                        "content": "# Plan\n\nStub."
+                    }),
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert!(drafted.file_changes.is_empty());
+        assert!(!dir.path().join("PLAN.md").exists());
+
+        let edited = runner
+            .execute(
+                ToolCall {
+                    id: "plan-edit".to_string(),
+                    name: "edit".to_string(),
+                    arguments: serde_json::json!({
+                        "path": engine::PLAN_DRAFT_PATH,
+                        "edits": [{
+                            "old_text": "Stub.",
+                            "new_text": "Implement the smallest safe change."
+                        }]
+                    }),
+                },
+                None,
+            )
+            .await
+            .unwrap();
+        assert!(edited.file_changes.is_empty());
+        let draft_read = runner
+            .execute(read_call("plan-draft-read", "run://PLAN.md:raw"), None)
+            .await
+            .unwrap();
+        assert_eq!(draft_read.result.content, markdown);
+
         let written = runner
             .execute(
                 ToolCall {
                     id: "plan-write".to_string(),
                     name: engine::WRITE_PLAN_ARTIFACT_TOOL.to_string(),
-                    arguments: serde_json::json!({ "markdown": markdown }),
+                    arguments: serde_json::json!({}),
                 },
                 None,
             )

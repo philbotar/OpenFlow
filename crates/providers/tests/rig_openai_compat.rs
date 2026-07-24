@@ -90,8 +90,10 @@ fn openai_test_config(base_url: &str, wire_api: WireApi) -> AiClientConfig {
             wire_api,
             responses_path: "v1/responses".into(),
             chat_completions_path: "v1/chat/completions".into(),
+            model_transports: std::collections::BTreeMap::default(),
             request_timeout: std::time::Duration::from_mins(5),
         }),
+        debug_output: false,
     }
 }
 
@@ -360,6 +362,100 @@ async fn custom_chat_fully_empty_choice_is_empty_provider_turn() {
 }
 
 #[tokio::test]
+async fn debug_output_logs_raw_chat_completion_body() {
+    let marker = format!("openflow-debug-marker-{}", uuid_ish());
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "chatcmpl-debug",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "test-model",
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": null,
+                    "debug_marker": marker
+                },
+                "finish_reason": "stop"
+            }],
+            "usage": {
+                "prompt_tokens": 1,
+                "completion_tokens": 0,
+                "total_tokens": 1
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let mut config = custom_openai_test_config(&server.uri());
+    config.debug_output = true;
+    let path = std::env::temp_dir().join(format!("openflow-debug-{}.jsonl", std::process::id()));
+    let before = std::fs::read_to_string(&path).unwrap_or_default();
+
+    let _ = create_provider(config)
+        .invoke_stream(test_request(), &RecordingSink::default())
+        .await;
+
+    let after = std::fs::read_to_string(&path).unwrap_or_default();
+    let new_text = after.strip_prefix(&before).unwrap_or(after.as_str());
+    assert!(
+        new_text.contains("model-response") && new_text.contains(&marker),
+        "expected model-response line with marker; got:\n{new_text}"
+    );
+}
+
+fn uuid_ish() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or_else(|_| "0".into(), |duration| duration.as_nanos().to_string())
+}
+
+#[tokio::test]
+async fn debug_output_disabled_skips_model_response_log() {
+    let marker = format!("openflow-debug-absent-{}", uuid_ish());
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "chatcmpl-debug-off",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "test-model",
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": null,
+                    "debug_marker": marker
+                },
+                "finish_reason": "stop"
+            }]
+        })))
+        .mount(&server)
+        .await;
+
+    let config = custom_openai_test_config(&server.uri());
+    assert!(!config.debug_output);
+    let path = std::env::temp_dir().join(format!("openflow-debug-{}.jsonl", std::process::id()));
+    let before = std::fs::read_to_string(&path).unwrap_or_default();
+
+    let _ = create_provider(config)
+        .invoke_stream(test_request(), &RecordingSink::default())
+        .await;
+
+    let after = std::fs::read_to_string(&path).unwrap_or_default();
+    let new_text = after.strip_prefix(&before).unwrap_or(after.as_str());
+    assert!(
+        !new_text.contains(&marker),
+        "disabled debug_output must not log body; got:\n{new_text}"
+    );
+}
+
+#[tokio::test]
 async fn chat_completions_external_tool_call_batch() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -583,8 +679,10 @@ async fn custom_header_auth_reaches_wire() {
             wire_api: WireApi::ChatCompletions,
             responses_path: "v1/responses".into(),
             chat_completions_path: "v1/chat/completions".into(),
+            model_transports: std::collections::BTreeMap::default(),
             request_timeout: std::time::Duration::from_mins(5),
         }),
+        debug_output: false,
     };
     let client = create_provider(config);
     let outcome = client.invoke(test_request()).await.unwrap();
@@ -613,8 +711,10 @@ async fn chat_completions_upstream_403_maps_to_transient() {
             wire_api: WireApi::ChatCompletions,
             responses_path: "v1/responses".into(),
             chat_completions_path: "v1/chat/completions".into(),
+            model_transports: std::collections::BTreeMap::default(),
             request_timeout: std::time::Duration::from_mins(5),
         }),
+        debug_output: false,
     };
     let client = create_provider(config);
     let err = client.invoke(test_request()).await.unwrap_err();
@@ -644,8 +744,10 @@ async fn chat_completions_upstream_400_maps_to_transient_invoke_and_stream() {
             wire_api: WireApi::ChatCompletions,
             responses_path: "v1/responses".into(),
             chat_completions_path: "v1/chat/completions".into(),
+            model_transports: std::collections::BTreeMap::default(),
             request_timeout: std::time::Duration::from_mins(5),
         }),
+        debug_output: false,
     };
     let client = create_provider(config);
 
@@ -704,8 +806,10 @@ async fn ollama_skips_prompt_cache_key() {
             wire_api: WireApi::ChatCompletions,
             responses_path: "v1/responses".into(),
             chat_completions_path: "v1/chat/completions".into(),
+            model_transports: std::collections::BTreeMap::default(),
             request_timeout: std::time::Duration::from_mins(5),
         }),
+        debug_output: false,
     };
     let client = create_provider(config);
     client.invoke(test_request()).await.unwrap();

@@ -15,16 +15,17 @@ Procedural gate only. Do not claim done until the matching checks pass.
 ./scripts/verify.sh
 ```
 
-Narrow while iterating; full gate before handoff. Fail-fast: `VERIFY_FAIL_FAST=1 ./scripts/verify.sh`.
+Narrow while iterating (`./scripts/check-fast.sh`, then `./scripts/test-fast.sh` or crate legs); full gate before handoff. Fail-fast: `VERIFY_FAIL_FAST=1 ./scripts/verify.sh`. Parallel agents: `VERIFY_ISOLATE_TARGET=1 ./scripts/verify.sh`. Default verify Rust tests = CI `test-fast` lane (no desktop); full workspace: `./scripts/verify.sh test`.
 
 ## By risk
 
 | If you touched… | Also run |
 | --- | --- |
-| `crates/engine/**` execution / ports | `cargo test -p engine`; architecture check |
-| Run host / tools / checkpoints | `cargo test -p orchestration --test workflow_acceptance -- --nocapture` |
-| `crates/providers/**` | `cargo test -p providers` |
+| `crates/engine/**` execution / ports | `./scripts/verify/test-engine.sh`; architecture check |
+| Run host / tools / checkpoints | `./scripts/verify/test-execution.sh` (or `test-fast --execution`) |
+| `crates/providers/**` | `./scripts/verify/test-providers.sh` |
 | `crates/ui/**` | `npm --prefix crates/ui run typecheck` and focused Vitest |
+| `crates/desktop/**` | `./scripts/test-fast.sh --desktop` or `./scripts/verify.sh test` |
 | Layer / import boundaries | `./scripts/check-architecture.sh` |
 | UB-sensitive Rust | `./scripts/verify.sh --deep` or `./scripts/miri.sh` |
 

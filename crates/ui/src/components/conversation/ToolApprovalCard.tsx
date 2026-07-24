@@ -62,6 +62,8 @@ export function ToolApprovalCardBody(props: {
     }
     return !preview.loading;
   };
+  const isPlanSeal = () =>
+    props.approval.toolCall.name === "openflow_write_plan_artifact";
 
   const previewWarning = () => {
     if (!isFileEditTool(props.approval.toolCall.name) || preview.loading) {
@@ -143,7 +145,7 @@ export function ToolApprovalCardBody(props: {
           disabled={!canApproveFileEdit()}
           onClick={() => props.onApprove(true)}
         >
-          Approve
+          {isPlanSeal() ? "Approve & Seal" : "Approve"}
         </Button>
       </div>
     </div>

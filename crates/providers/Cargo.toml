@@ -13,7 +13,9 @@ categories.workspace = true
 name = "providers"
 
 [features]
-default = ["bedrock"]
+# Off by default so local engine/providers/orchestration loops skip the AWS SDK.
+# Desktop enables `bedrock` for the shipped app; CI runs a Bedrock-featured providers pass.
+default = []
 bedrock = [
     "dep:rig-bedrock",
     "dep:aws-config",
@@ -44,6 +46,7 @@ aws-sdk-bedrockruntime = { workspace = true, optional = true }
 dirs = { workspace = true, optional = true }
 
 [dev-dependencies]
+tempfile.workspace = true
 tokio.workspace = true
 wiremock.workspace = true
 

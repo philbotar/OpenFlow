@@ -52,6 +52,34 @@ impl WireApi {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelTransport {
+    Responses,
+    ChatCompletions,
+    AnthropicMessages,
+}
+
+impl ModelTransport {
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Responses => "Responses API",
+            Self::ChatCompletions => "Chat Completions API",
+            Self::AnthropicMessages => "Anthropic Messages API",
+        }
+    }
+}
+
+impl From<WireApi> for ModelTransport {
+    fn from(value: WireApi) -> Self {
+        match value {
+            WireApi::Responses => Self::Responses,
+            WireApi::ChatCompletions => Self::ChatCompletions,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuthSpec {
     Bearer {

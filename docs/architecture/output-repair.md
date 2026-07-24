@@ -53,4 +53,4 @@ Composition point: `wire_run` wraps once so nodes and subagents share the decora
 - [`provider-adapters.md`](provider-adapters.md) — Rig transport and deterministic recovery boundary
 - [`end-to-end-runtime.md`](end-to-end-runtime.md) — run host and event path
 - [`../glossary.md`](../glossary.md) — `OutputRepairCandidate`, overseer output repair
-- Acceptance: `cargo test -p orchestration --test workflow_acceptance output_repair -- --nocapture`
+- Acceptance: `cargo nextest run -p orchestration --test workflow_acceptance --no-capture output_repair`

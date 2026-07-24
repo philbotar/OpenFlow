@@ -17,7 +17,9 @@ use crate::graph::callable_agent::CallableAgent;
 use crate::graph::{
     default_structured_output_schema, effective_output_schema, Node, NodeId, Workflow,
 };
-use crate::ports::{AgentError, AgentNeedUserInput, AgentRequest, AgentTurnOutcome, AgentTurnSuccess};
+use crate::ports::{
+    AgentError, AgentNeedUserInput, AgentRequest, AgentTurnOutcome, AgentTurnSuccess,
+};
 use crate::tools::{SubagentDeclaration, SubagentStatus, SubagentSummary, ToolCall, ToolResult};
 use serde::Deserialize;
 use serde_json::Value;

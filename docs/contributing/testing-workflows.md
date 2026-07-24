@@ -51,15 +51,32 @@ Browser-only E2E with mocked IPC in `crates/desktop/e2e/`. Snapshots assert mult
 
 Visual tests use a fixed 1280×900 viewport, `deviceScaleFactor: 1`, and a static three-node settled-run fixture (`fixtures/multiSegmentChat.ts`). Not included in `./scripts/verify.sh` by default (Chromium install + ~30s).
 
+## Runner
+
+All Rust tests use [cargo-nextest](https://nexte.st/) (`cargo nextest run`). Verify scripts, CI, and docs assume nextest — install via `./scripts/setup.sh` or `cargo install cargo-nextest --locked`. Do not use plain `cargo test` for workspace checks.
+
+## Fast local compile loop
+
+| Goal | Command |
+| --- | --- |
+| Check touched crates (default: engine + providers + orchestration) | `./scripts/check-fast.sh` |
+| One crate | `./scripts/check-fast.sh engine` |
+| Clippy one/few crates (not workspace) | `./scripts/check-fast.sh --clippy orchestration` |
+| Tests without desktop/Tauri | `./scripts/test-fast.sh` |
+
+**Bedrock / AWS SDK:** `providers` and `orchestration` leave the `bedrock` feature **off** by default so day-to-day checks skip the AWS crate graph. The `desktop` crate enables `bedrock` for the shipped app. Bedrock-only tests: `cargo nextest run -p providers --features bedrock` (CI runs `./scripts/verify/test-providers-bedrock.sh`).
+
+**Linker / cache:** `.cargo/config.toml` sets `linker = "rust-lld"`. Scripts prepend the rustup host `bin` dir to `PATH`. For an interactive shell: `source ./scripts/dev-env.sh`. If `sccache` is installed, scripts set `RUSTC_WRAPPER=sccache`.
+
 ## Orchestration headless E2E (`MockAiStack`)
 
 Integration tests under `crates/orchestration/tests/` drive real orchestration execution (no desktop UI, no HTTP providers) via `run_workflow_headless` or `spawn_interactive_workflow_run`.
 
 | Goal | Command |
 | --- | --- |
-| Stack-mock E2E suite | `cargo test -p orchestration --test workflow_e2e -- --nocapture` |
-| Contract acceptance (tools, manual nodes, checkpoints) | `cargo test -p orchestration --test workflow_acceptance -- --nocapture` |
-| Both integration suites | `cargo test -p orchestration --test workflow_e2e --test workflow_acceptance -- --nocapture` |
+| Stack-mock E2E suite | `cargo nextest run -p orchestration --test workflow_e2e --no-capture` |
+| Contract acceptance (tools, manual nodes, checkpoints) | `cargo nextest run -p orchestration --test workflow_acceptance --no-capture` |
+| Both integration suites | `cargo nextest run -p orchestration --test workflow_e2e --test workflow_acceptance --no-capture` |
 
 Shared helpers live in `crates/orchestration/tests/support/`:
 
@@ -73,11 +90,11 @@ Use inline `impl AiPort` stubs (e.g. node-id-aware `ScriptedAi` in `workflow_acc
 
 | Layer | Command | What It Proves |
 | --- | --- | --- |
-| Unit tests | `cargo test --workspace` | Engine rules, tool approval resolution, app/project/agent stores, provider config, shared-context and callable-agent helpers, OpenAI-compatible and Anthropic wire mapping, `jsonrepair-rs` tool-argument recovery |
-| Desktop command tests | `cargo test -p desktop` | Tauri command wiring for bootstrap, projects, agents, workflows |
-| Deterministic workflow acceptance | `cargo test -p orchestration --test workflow_acceptance -- --nocapture` | A whole workflow can run headlessly with scripted AI outputs, tool calls, and approval pauses |
-| Orchestration headless E2E (stack mock) | `cargo test -p orchestration --test workflow_e2e -- --nocapture` | Full orchestration + engine runs with `MockAiStack` (`tests/support/`) - happy path, retries, missing input/approval, interrupt; no real providers |
-| Live AI smoke | `STEP_WORKFLOW_LIVE_AI=1 STEP_WORKFLOW_LIVE_API_KEY=... STEP_WORKFLOW_LIVE_MODEL=... cargo test -p orchestration --test live_workflow -- --ignored --nocapture` | A real BYOK provider can complete a small workflow and satisfy schema-level rules |
+| Unit tests | `cargo nextest run --workspace` | Engine rules, tool approval resolution, app/project/agent stores, provider config, shared-context and callable-agent helpers, OpenAI-compatible and Anthropic wire mapping, `jsonrepair-rs` tool-argument recovery |
+| Desktop command tests | `cargo nextest run -p desktop` | Tauri command wiring for bootstrap, projects, agents, workflows |
+| Deterministic workflow acceptance | `cargo nextest run -p orchestration --test workflow_acceptance --no-capture` | A whole workflow can run headlessly with scripted AI outputs, tool calls, and approval pauses |
+| Orchestration headless E2E (stack mock) | `cargo nextest run -p orchestration --test workflow_e2e --no-capture` | Full orchestration + engine runs with `MockAiStack` (`tests/support/`) - happy path, retries, missing input/approval, interrupt; no real providers |
+| Live AI smoke | `STEP_WORKFLOW_LIVE_AI=1 STEP_WORKFLOW_LIVE_API_KEY=... STEP_WORKFLOW_LIVE_MODEL=... cargo nextest run -p orchestration --test live_workflow --run-ignored ignored-only --no-capture` | A real BYOK provider can complete a small workflow and satisfy schema-level rules |
 | Miri (engine + orchestration UB) | `./scripts/miri.sh` or `./scripts/verify.sh --deep miri` | UB interpreter over `engine` + `orchestration` **lib** tests; runs in `release.yml` `release-verify` on tag push (Ubuntu); not on PR CI. |
 
 ## Miri
@@ -127,10 +144,10 @@ Store and backend tests should prove:
 For a workflow that enables `WorkflowSettings.planMode`, add focused coverage for:
 
 1. Validation rejects a missing review node or one without `requestUserInput`.
-2. Planning denies hidden repository-write, MCP, and subagent calls at both engine and host tool boundaries.
-3. Read tools and one `openflow_write_plan_artifact` call work; the artifact has a host UUID path, 256 KiB cap, SHA-256, replayable `artifact:<uuid>` lookup, and redacted Markdown transcript arguments.
+2. Planning denies non-`docs/**/*.md` repository writes, MCP, and subagent calls at both engine and host tool boundaries. Only the configured evidence-source node may mutate `run://PLAN.md` or see/call the seal tool; a read-only evidence source may still mutate the virtual draft.
+3. `write` plus replace-mode `edit` build `run://PLAN.md`; an argument-free `openflow_write_plan_artifact` call always pauses for explicit human approval. Denial leaves the draft mutable. Approval atomically seals it. A repeated successful seal returns the same artifact. The artifact has a host UUID path, 256 KiB cap, SHA-256, replayable `artifact:<uuid>` lookup, and no Markdown transcript payload.
 4. A schema-valid review completion freezes one hash-verified packet; checkpoint/resume preserves it even if saved workflow settings later change.
-5. Implementation, verification, and review requests receive the same packet hash and reference; no Plan Mode workflow writes to the repository before the packet is frozen.
+5. Implementation, verification, and review requests receive the same packet hash and reference; non-docs repository writes stay blocked until the packet is frozen.
 6. A workflow without Plan Mode has its existing request and tool behavior.
 
 ## Live AI rules
@@ -172,7 +189,9 @@ Primary gate for agents and local handoff - run after every change:
 ./scripts/verify.sh
 ```
 
-**CI** runs parallel jobs in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml): a `build` job warms a shared Rust cache, then `fmt`, `clippy`, `test` (`test-fast.sh --execution`), `ui`, and `lint-extras` (machete, typos, deny, arch, doc, public-api) run in parallel. Skips full workspace `test` (desktop/Tauri) and `--deep` steps (`mutants`, `miri`). Miri runs at release (tag push) in `release.yml` `release-verify`, not on PR CI. Run full `./scripts/verify.sh` before handoff or PR.
+Default Rust test step is **`test-fast`** (same lane as CI: engine + providers + orchestration lib + workspace-checks + workflow acceptance). It does **not** build `desktop`/Tauri. Full workspace coverage (including desktop): `./scripts/verify.sh test`.
+
+**CI** runs parallel jobs in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml): a `build` job warms a shared Rust cache, then `fmt`, `clippy`, `test` (`test-fast.sh --execution`), `ui`, and `lint-extras` (machete, typos, deny, arch, doc, public-api) run in parallel. Skips full workspace `test` (desktop/Tauri) and `--deep` steps (`mutants`, `miri`). Miri runs at release (tag push) in `release.yml` `release-verify`, not on PR CI. Run `./scripts/verify.sh` before handoff or PR.
 
 Run a granular script directly for full untruncated output; run `verify.sh` for the truncated summary gate.
 
@@ -181,8 +200,8 @@ Run a granular script directly for full untruncated output; run `verify.sh` for 
 | `fmt` | `./scripts/verify/fmt.sh` |
 | `clippy` | `./scripts/verify/clippy.sh` |
 | `doc` | `./scripts/verify/doc.sh` |
-| `test` | `./scripts/verify/test.sh` |
-| `test-fast` | `./scripts/test-fast.sh` (delegates to `scripts/verify/test-*.sh`) |
+| `test-fast` (default) | `./scripts/test-fast.sh --execution --skip-ui-typecheck` |
+| `test` (opt-in) | `./scripts/verify/test.sh` (`cargo nextest run --workspace`, includes desktop) |
 | `public-api` | `./scripts/check-engine-public-api.sh` |
 | `machete` | `./scripts/verify/machete.sh` |
 | `typos` | `./scripts/verify/typos.sh` |
@@ -209,9 +228,9 @@ Run a granular script directly for full untruncated output; run `verify.sh` for 
 | Noise | No ANSI/progress escapes (`CARGO_TERM_COLOR=never`, `NO_COLOR=1`, `--quiet` on cargo/npm where supported) |
 | Filter | `./scripts/verify.sh fmt clippy ui-test` - unknown step name lists valid steps and exits 1 |
 | Deep | `./scripts/verify.sh --deep` adds `cargo mutants --no-shuffle` and `./scripts/miri.sh` (Miri UB on `engine` + `orchestration`; minutes-long) |
-| Env | `VERIFY_FAIL_FAST=1` stop on first failure; `VERIFY_MAX_LINES` (default 150) tail on fail |
+| Env | `VERIFY_FAIL_FAST=1` stop on first failure; `VERIFY_MAX_LINES` (default 150) tail on fail; default reuses `./target`; `VERIFY_ISOLATE_TARGET=1` for parallel agents (`target/verify-<pid>`); `OPENFLOW_MAX_DEBUG_CACHE_GIB` caps `target/debug` (default 64 GiB); `OPENFLOW_MIN_BUILD_SPACE_GIB` sets the local pre-build free-space floor (default 24 GiB, 8 GiB on GitHub); `0` disables the corresponding disk guard |
 
-**Steps:** `fmt`, `clippy` (pedantic/nursery/cargo), `doc`, `test`, `test-fast`, `public-api`, `machete`, `typos`, `ui-typecheck`, `ui-test`, `deny`, `arch`. **`--deep` only:** `mutants`, `miri`.
+**Steps (default):** `fmt`, `clippy` (pedantic/nursery/cargo), `doc`, `test-fast`, `public-api`, `machete`, `typos`, `ui-typecheck`, `ui-test`, `deny`, `arch`. **Opt-in:** `test` (full workspace incl. desktop). **`--deep` only:** `mutants`, `miri`.
 
 **CI:** parallel jobs (`build` warm cache → `fmt`, `clippy`, `test`, `ui`, `lint-extras`); PR CI no longer runs Miri. Miri runs in the release workflow's `release-verify` job (tag push or `workflow_dispatch`) on Ubuntu: `./scripts/miri.sh` (both crates), pinning `nightly-2026-06-20` (`MIRI_TOOLCHAIN`) and caching `~/.cache/miri` (sysroot) + `target/miri` (via `rust-cache`).
 
@@ -229,9 +248,9 @@ Each leg is also runnable directly under `scripts/verify/test-*.sh` (e.g. `./scr
 
 Why this exists:
 
-- `cargo test --workspace` rebuilds `desktop`, which pulls the Tauri/native stack.
-- `cargo test -p desktop` stays opt-in unless you are changing the desktop seam.
-- `orchestration` acceptance stays opt-in unless you are changing execution behavior.
+- `cargo nextest run --workspace` rebuilds `desktop`, which pulls the Tauri/native stack.
+- `cargo nextest run -p desktop` stays opt-in unless you are changing the desktop seam.
+- Default `./scripts/verify.sh` already includes acceptance via `test-fast --execution`; standalone `./scripts/test-fast.sh` leaves acceptance opt-in via `--execution`.
 
 Options:
 
@@ -241,25 +260,56 @@ Options:
 ./scripts/test-fast.sh --execution --desktop
 ```
 
+### Leg timing
+
+Wall-clock per leg (warm `./target`):
+
+```bash
+./scripts/bench-test-legs.sh
+# optional: also time desktop + full workspace
+./scripts/bench-test-legs.sh --with-opt-in
+```
+
+Baseline on an Apple Silicon laptop after a warm incremental build (2026-07-22). Re-run the script on your machine if numbers drift a lot. First run after a feature/dep flip can be 10× these (cold compile).
+
+| Leg | Script | Rough warm budget |
+| --- | --- | --- |
+| engine | `test-engine.sh` | ~1–5s |
+| providers | `test-providers.sh` | ~4 min (~255s; Wiremock; several intentional ~60s timeout tests) |
+| orchestration lib | `test-orchestration-lib.sh` | ~5 min (~315s) |
+| workspace-checks | `test-workspace-checks.sh` | ~1–3 min |
+| workflow acceptance | `test-execution.sh` | ~1–4 min |
+| desktop | `test-desktop.sh` | opt-in; Tauri compile dominates |
+| workspace | `test.sh` | opt-in; includes desktop |
+
+**Not pursued after this baseline:** `[profile.test] opt-level` (engine already ~1s warm). **Already applied:** `bedrock` off by default on `providers`/`orchestration` (desktop enables it); ~2× fewer compile units in the fast lane. Next runtime cliff if needed: shorten intentional Wiremock timeout tests in `crates/providers/tests/rig_openai_compat.rs`.
+
 ## When to run each layer
 
-`./scripts/verify.sh` replaces separate `cargo fmt`, `clippy`, and `cargo test --workspace` before commits.
+| Goal | Command |
+| --- | --- |
+| Iterate on one crate | `./scripts/verify/test-engine.sh` (or providers / orchestration-lib) |
+| Normal local loop | `./scripts/test-fast.sh` (+ `--execution` if touching runs) |
+| Handoff / PR | `./scripts/verify.sh` |
+| Desktop / full workspace Rust | `./scripts/verify.sh test` or `./scripts/test-fast.sh --desktop` |
+
+`./scripts/verify.sh` replaces separate `cargo fmt`, `clippy`, and the CI-aligned Rust test lane before commits.
 
 For local iteration, prefer `./scripts/test-fast.sh`. Use `./scripts/verify.sh` before handing work off or committing.
 
 Run this when changing durable run persistence, replay, or resume behavior:
 
 ```bash
-cargo test -p orchestration run::persistence adapters::storage::run_checkpoint_store run::coordinator_tests -- --nocapture
-cargo test -p orchestration --test workflow_acceptance -- --nocapture
+cargo nextest run -p orchestration --no-capture run::persistence adapters::storage::run_checkpoint_store run::coordinator_tests
+cargo nextest run -p orchestration --test workflow_acceptance --no-capture
 npm --prefix crates/ui run typecheck
 ```
 
 Run this when changing execution behavior, node input shaping, shared context, callable agents, execution cwd, manual pauses, tool approvals, tool result routing, run trace, or chat logs:
 
 ```bash
-cargo test -p orchestration --test workflow_acceptance -- --nocapture
-cargo test -p orchestration execution::
+cargo nextest run -p orchestration --test workflow_acceptance --no-capture
+cargo nextest run -p orchestration execution::
 ```
 
 ### Schedule
@@ -267,28 +317,28 @@ cargo test -p orchestration execution::
 Schedules live on `WorkflowSettings.schedule` and are evaluated only while the desktop app is open. For scheduler changes, run:
 
 ```bash
-cargo test -p orchestration schedule -- --nocapture
-cargo test -p desktop
+cargo nextest run -p orchestration --no-capture schedule
+cargo nextest run -p desktop
 npm --prefix crates/ui run test -- src/lib/schedule.test.ts src/api.test.ts
 ```
 
 For end-to-end run behavior, also run:
 
 ```bash
-cargo test -p orchestration --test workflow_acceptance -- --nocapture
+cargo nextest run -p orchestration --test workflow_acceptance --no-capture
 ```
 
 Run this when changing project/workflow persistence or bootstrap:
 
 ```bash
-cargo test -p orchestration project_store flow_store backend agent_store
-cargo test -p desktop
+cargo nextest run -p orchestration project_store flow_store backend agent_store
+cargo nextest run -p desktop
 ```
 
 Run this when changing provider wire mapping or tool-argument parsing:
 
 ```bash
-cargo test -p providers
+cargo nextest run -p providers
 ```
 
 Run this only when intentionally checking a real provider/model:
@@ -297,7 +347,7 @@ Run this only when intentionally checking a real provider/model:
 STEP_WORKFLOW_LIVE_AI=1 \
 STEP_WORKFLOW_LIVE_API_KEY="$OPENAI_API_KEY" \
 STEP_WORKFLOW_LIVE_MODEL="gpt-4o-mini" \
-cargo test -p orchestration --test live_workflow -- --ignored --nocapture
+cargo nextest run -p orchestration --test live_workflow --run-ignored ignored-only --no-capture
 ```
 
 DeepInfra-compatible chat completions example:
@@ -308,5 +358,5 @@ STEP_WORKFLOW_LIVE_API_KEY="$OPENAI_COMPATIBLE_API_KEY" \
 STEP_WORKFLOW_LIVE_BASE_URL="https://api.deepinfra.com/v1/openai" \
 STEP_WORKFLOW_LIVE_CHAT_COMPLETIONS_PATH="chat/completions" \
 STEP_WORKFLOW_LIVE_MODEL="deepseek-ai/DeepSeek-V4-Flash" \
-cargo test -p orchestration --test live_workflow -- --ignored --nocapture
+cargo nextest run -p orchestration --test live_workflow --run-ignored ignored-only --no-capture
 ```

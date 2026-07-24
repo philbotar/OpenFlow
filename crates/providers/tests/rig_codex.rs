@@ -57,6 +57,7 @@ fn codex_config(base_url: &str) -> AiClientConfig {
             },
             credential_sink: None,
         }),
+        debug_output: false,
     }
 }
 

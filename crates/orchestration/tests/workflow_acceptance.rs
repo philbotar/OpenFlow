@@ -2,8 +2,8 @@ mod support;
 
 use async_trait::async_trait;
 use engine::{
-    AgentError, AgentMessageTurn, AgentNeedUserInput, AgentRequest, AgentToolCallBatch,
-    AgentTurnOutcome, AgentTurnSuccess, AiPort, ApprovalMode, Edge, NodeId, ToolCall, Workflow,
+    AgentError, AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTurnOutcome,
+    AgentTurnSuccess, AiPort, ApprovalMode, Edge, NodeId, ToolCall, Workflow,
 };
 use orchestration::run::execution::{
     new_artifact_root, new_in_memory_snapshot_store, run_workflow_headless,
@@ -217,7 +217,7 @@ async fn manual_node_pauses_accepts_input_and_feeds_downstream_node() {
 
 #[cfg_attr(miri, ignore)]
 #[tokio::test]
-async fn conversational_node_can_pause_on_consecutive_plain_text_turns() {
+async fn conversational_node_can_pause_on_consecutive_explicit_input_requests() {
     #[derive(Clone, Default)]
     struct ConversationalAi;
 
@@ -230,17 +230,15 @@ async fn conversational_node_can_pause_on_consecutive_plain_text_turns() {
                 .filter(|item| matches!(item, engine::AgentTranscriptItem::AssistantMessage { .. }))
                 .count();
             match assistant_turns {
-                0 => Ok(AgentTurnOutcome::Message(AgentMessageTurn {
+                0 => Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
                     raw_text: "Which Supabase products should this include?".to_string(),
                     assistant_message: "Which Supabase products should this include?".to_string(),
                     reasoning: Vec::new(),
-                    usage: None,
                 })),
-                1 => Ok(AgentTurnOutcome::Message(AgentMessageTurn {
-                    raw_text: "Storage is the most useful third surface.".to_string(),
-                    assistant_message: "Storage is the most useful third surface.".to_string(),
+                1 => Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
+                    raw_text: "Should I add Storage too?".to_string(),
+                    assistant_message: "Should I add Storage too?".to_string(),
                     reasoning: Vec::new(),
-                    usage: None,
                 })),
                 _ => {
                     let answer = request

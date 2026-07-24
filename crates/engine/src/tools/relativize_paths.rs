@@ -133,6 +133,11 @@ mod tests {
             relativize_tool_call_arguments(args, Some(ROOT))["path"],
             "artifact:abc-123"
         );
+        let args = json!({"path": "run://PLAN.md"});
+        assert_eq!(
+            relativize_tool_call_arguments(args, Some(ROOT))["path"],
+            "run://PLAN.md"
+        );
     }
 
     #[test]

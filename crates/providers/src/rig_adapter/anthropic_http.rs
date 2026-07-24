@@ -1,5 +1,6 @@
 //! Compatibility HTTP client for Anthropic-shaped provider responses.
 
+use crate::model_debug;
 use bytes::Bytes;
 use rig_core::http_client::{
     HttpClientExt, LazyBody, MultipartForm, Request, Response, Result, StreamingResponse,
@@ -9,15 +10,35 @@ use std::future::Future;
 /// Rig models Anthropic response collections as non-null arrays, while some
 /// compatible gateways serialize absent collections as `null`. Normalize the
 /// two response fields we consume before Rig deserializes the message.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 #[allow(clippy::redundant_pub_crate)] // crate-private module; keep pub(crate) for intentional crate API
 pub(crate) struct AnthropicHttpClient {
     inner: reqwest::Client,
+    debug_output: bool,
+    provider_label: String,
+}
+
+impl Default for AnthropicHttpClient {
+    fn default() -> Self {
+        Self {
+            inner: reqwest::Client::new(),
+            debug_output: false,
+            provider_label: String::new(),
+        }
+    }
 }
 
 impl AnthropicHttpClient {
-    pub(crate) const fn new(inner: reqwest::Client) -> Self {
-        Self { inner }
+    pub(crate) fn new(
+        inner: reqwest::Client,
+        debug_output: bool,
+        provider_label: impl Into<String>,
+    ) -> Self {
+        Self {
+            inner,
+            debug_output,
+            provider_label: provider_label.into(),
+        }
     }
 }
 
@@ -31,11 +52,15 @@ impl HttpClientExt for AnthropicHttpClient {
         U: From<Bytes> + Send + 'static,
     {
         let response = self.inner.send::<T, Bytes>(request);
+        let debug_output = self.debug_output;
+        let provider_label = self.provider_label.clone();
         async move {
             let response = response.await?;
             let (parts, body) = response.into_parts();
+            let status = parts.status.as_u16();
             let normalized: LazyBody<U> = Box::pin(async move {
                 let body = body.await?;
+                model_debug::log_model_response(debug_output, &provider_label, status, &body);
                 Ok(U::from(normalize_response(body)))
             });
             Ok(Response::from_parts(parts, normalized))

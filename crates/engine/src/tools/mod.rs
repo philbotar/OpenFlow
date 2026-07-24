@@ -5,13 +5,15 @@ mod file_change;
 mod read_record;
 mod relativize_paths;
 
+pub(crate) use config::{
+    is_plan_draft_mutation_call, tool_decision_for_call, SubagentDeclaration, ToolDecision,
+};
 pub use config::{
     tool_access_policy_allows_call, tool_intent_from_arguments, tool_tier_for_call, ApprovalMode,
     NodeToolConfig, PendingToolApproval, SubagentStatus, SubagentSummary, ToolCall, ToolCallStatus,
     ToolConcurrency, ToolDefinition, ToolOutputMeta, ToolResult, ToolTier, ToolTruncation,
-    ToolTruncationStrategy, WRITE_PLAN_ARTIFACT_TOOL,
+    ToolTruncationStrategy, PLAN_DRAFT_PATH, WRITE_PLAN_ARTIFACT_TOOL,
 };
-pub(crate) use config::{tool_decision_for_call, SubagentDeclaration, ToolDecision};
 pub use file_change::{
     effective_change_path, merge_file_change_record, summarize_diff, EditBatch, FileChangeOp,
     FileChangeRecord, FileSnapshot,

@@ -123,6 +123,7 @@ export function cloneProviderProfile(profile: ProviderProfile): ProviderProfile 
     chat_completions_path: profile.chat_completions_path,
     request_timeout_secs: profile.request_timeout_secs,
     known_models: [...profile.known_models],
+    model_transports: { ...(profile.model_transports ?? {}) },
     default_model: profile.default_model,
     editable: profile.editable,
     aws_profile: profile.aws_profile,

@@ -48,7 +48,7 @@ For where terms live in code, see [Engine modules](#engine-modules), [Orchestrat
 | **ApprovalMode** | Node-level tool approval strategy: `read_only` (read-class tools only, auto-approved), `write` (all tools; read-class auto, write-class prompt - default), `always_ask` (prompt every call), `yolo` (never prompt) | Approval policy |
 | **Tool capability class** | Static read/write grouping for builtins. Read: retrieval/search tools. Write: mutation, shell, subagent tools. Drives approval and `read_only` availability. | Tool tier |
 | **ToolTier** | Serialized capability class on tool definitions: `read` or `write` | Tool level, access tier |
-| **ToolAccessPolicy** | Run-phase capability rule. Planning permits read-tier tools, `write`/`edit` under `docs/**/*.md`, plus the host-owned plan-artifact writer; Execution restores the node's normal catalog. | Approval mode |
+| **ToolAccessPolicy** | Run-phase capability rule. Planning permits read-tier tools and write-enabled `docs/**/*.md` mutations; only the selected evidence-source node receives `write`/`edit` access to `run://PLAN.md` plus the approval-gated plan sealer. Execution restores the node's normal catalog. | Approval mode |
 | **ToolConcurrency** | Whether tool calls share or exclude concurrent access: `shared` or `exclusive` | Parallelism, execution mode |
 | **ToolCallStatus** | Lifecycle of a tool call: proposed, awaiting_approval, running, completed, blocked, failed, aborted | Call status |
 | **ToolTruncation** | Limits and strategy for truncating tool output | Output limit, size cap |
@@ -76,7 +76,7 @@ For where terms live in code, see [Engine modules](#engine-modules), [Orchestrat
 | **WorkflowSchedule** | Optional cron schedule on a workflow | Cron schedule |
 | **NodeInvocation** | Shared assembly of upstream inputs and `AgentRequest` for `InteractiveEngine` | Request builder |
 | **FrozenChangeEvidencePacket** | Immutable, hash-verified structured review output injected into later Plan Mode requests as `input.change_evidence_packet` | Plan file, system prompt |
-| **Plan artifact** | Run-owned immutable Markdown evidence written by `openflow_write_plan_artifact` and referenced as `artifact:<uuid>` | Repository plan file |
+| **Plan artifact** | Run-owned immutable Markdown evidence built by the selected evidence-source node at `run://PLAN.md`, then sealed through explicit approval of `openflow_write_plan_artifact` and referenced as `artifact:<uuid>` | Repository plan file |
 
 ## AI boundary
 

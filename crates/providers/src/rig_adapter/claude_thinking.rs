@@ -13,6 +13,8 @@ const MANUAL_ANSWER_HEADROOM: u64 = 4_096;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClaudePlatform {
     Anthropic,
+    // Constructed by Bedrock model paths when `feature = "bedrock"` is on.
+    #[cfg_attr(not(feature = "bedrock"), allow(dead_code))]
     Bedrock,
 }
 

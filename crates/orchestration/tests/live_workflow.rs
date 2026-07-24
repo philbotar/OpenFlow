@@ -74,8 +74,10 @@ fn live_client(config: &LiveWorkflowConfig) -> AiClient {
             wire_api: config.wire_api,
             responses_path: config.responses_path.clone(),
             chat_completions_path: config.chat_completions_path.clone(),
+            model_transports: BTreeMap::default(),
             request_timeout: std::time::Duration::from_mins(5),
         }),
+        debug_output: false,
     })
 }
 

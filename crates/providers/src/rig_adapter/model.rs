@@ -12,7 +12,7 @@ use crate::rig_adapter::{
     anthropic_http::AnthropicHttpClient, claude_thinking, convert, error,
     openai_http::OpenAiHttpClient, outcome, stream,
 };
-use crate::spec::{ProviderId, WireApi};
+use crate::spec::{ModelTransport, ProviderId, WireApi};
 use engine::{
     emit_assistant_deltas_from_outcome, AgentError, AgentRequest, AgentTurnOutcome, AiStreamSink,
 };
@@ -72,12 +72,18 @@ pub(super) async fn build_model(
             build_anthropic(config, anthropic_config, model).map(BuiltModel::without_expiry)
         }
         ProviderAdapterConfig::OpenAiCompatible(openai_config) => {
-            if open_code_go_uses_anthropic_messages(openai_config, model) {
-                build_open_code_go_anthropic(config, openai_config, model)
-                    .map(BuiltModel::without_expiry)
-            } else {
-                build_openai(config, openai_config, model).map(BuiltModel::without_expiry)
+            match openai_config.transport_for_model(model) {
+                ModelTransport::Responses => {
+                    build_openai(config, openai_config, model, WireApi::Responses)
+                }
+                ModelTransport::ChatCompletions => {
+                    build_openai(config, openai_config, model, WireApi::ChatCompletions)
+                }
+                ModelTransport::AnthropicMessages => {
+                    build_compatible_anthropic(config, openai_config, model)
+                }
             }
+            .map(BuiltModel::without_expiry)
         }
         ProviderAdapterConfig::OpenAiCodex(_) => Err(AgentError::Failed(
             "OpenAI Codex inference is not wired yet".into(),
@@ -93,48 +99,18 @@ pub(super) async fn build_model(
     }
 }
 
-fn build_open_code_go_anthropic(
+fn build_compatible_anthropic(
     config: &AiClientConfig,
     openai_config: &OpenAiCompatibleConfig,
     model: &str,
 ) -> Result<RigModel, AgentError> {
     let anthropic_config = AnthropicConfig {
-        base_url: open_code_go_base_url(&openai_config.base_url),
+        base_url: openai_config.base_url.clone(),
         messages_path: "v1/messages".to_string(),
         anthropic_version: "2023-06-01".to_string(),
         request_timeout: openai_config.request_timeout,
     };
     build_anthropic(config, &anthropic_config, model)
-}
-
-fn open_code_go_uses_anthropic_messages(config: &OpenAiCompatibleConfig, model: &str) -> bool {
-    let Ok(url) = reqwest::Url::parse(&config.base_url) else {
-        return false;
-    };
-    if url.host_str() != Some("opencode.ai") {
-        return false;
-    }
-    let path = url.path().trim_end_matches('/');
-    if path != "/zen/go" && path != "/zen/go/v1" {
-        return false;
-    }
-    matches!(
-        model.trim().to_ascii_lowercase().as_str(),
-        "minimax-m3"
-            | "minimax-m2.7"
-            | "minimax-m2.5"
-            | "qwen3.7-max"
-            | "qwen3.7-plus"
-            | "qwen3.6-plus"
-    )
-}
-
-fn open_code_go_base_url(base_url: &str) -> String {
-    base_url
-        .trim_end_matches('/')
-        .strip_suffix("/v1")
-        .unwrap_or_else(|| base_url.trim_end_matches('/'))
-        .to_string()
 }
 
 fn build_anthropic(
@@ -143,7 +119,11 @@ fn build_anthropic(
     model: &str,
 ) -> Result<RigModel, AgentError> {
     let (api_key, headers) = rig_auth(config)?;
-    let http = AnthropicHttpClient::new(rig_http_client(anthropic_config.request_timeout));
+    let http = AnthropicHttpClient::new(
+        rig_http_client(anthropic_config.request_timeout),
+        config.debug_output,
+        config.provider_label.clone(),
+    );
     let client = anthropic::Client::builder()
         .api_key(api_key.as_str())
         .base_url(&anthropic_config.base_url)
@@ -164,11 +144,16 @@ fn build_openai(
     config: &AiClientConfig,
     openai_config: &OpenAiCompatibleConfig,
     model: &str,
+    wire_api: WireApi,
 ) -> Result<RigModel, AgentError> {
     let (api_key, headers) = rig_auth(config)?;
-    let http = OpenAiHttpClient::new(rig_http_client(openai_config.request_timeout));
-    let base_url = rig_openai_base_url(openai_config);
-    match openai_config.wire_api {
+    let http = OpenAiHttpClient::new(
+        rig_http_client(openai_config.request_timeout),
+        config.debug_output,
+        config.provider_label.clone(),
+    );
+    let base_url = rig_openai_base_url(openai_config, wire_api);
+    match wire_api {
         WireApi::ChatCompletions => {
             let client = openai::CompletionsClient::builder()
                 .api_key(api_key)
@@ -286,6 +271,16 @@ fn bedrock_prompt_caching_supported(model_id: &str) -> bool {
 }
 
 impl RigModel {
+    const fn openai_wire_api(&self) -> Option<WireApi> {
+        match self {
+            Self::OpenAiChat(_) => Some(WireApi::ChatCompletions),
+            Self::OpenAiResponses(_) => Some(WireApi::Responses),
+            Self::Anthropic(_) | Self::ChatGPT(_) => None,
+            #[cfg(feature = "bedrock")]
+            Self::Bedrock(_) => None,
+        }
+    }
+
     pub async fn invoke(
         &self,
         request: &AgentRequest,
@@ -293,7 +288,7 @@ impl RigModel {
         provider_id: &ProviderId,
         openai_config: Option<&OpenAiCompatibleConfig>,
     ) -> Result<AgentTurnOutcome, AgentError> {
-        let no_tool_calls = outcome::no_tool_calls_policy(request, openai_config);
+        let no_tool_calls = outcome::no_tool_calls_policy(request, self.openai_wire_api());
         let model_name = request.model.clone();
         let mut completion_request =
             completion_request_for(self, request, provider_id, openai_config)?;
@@ -408,7 +403,7 @@ impl RigModel {
             emit_assistant_deltas_from_outcome(sink, &outcome);
             return Ok(outcome);
         }
-        let no_tool_calls = outcome::no_tool_calls_policy(request, openai_config);
+        let no_tool_calls = outcome::no_tool_calls_policy(request, self.openai_wire_api());
         let model_name = request.model.clone();
         let mut completion_request =
             completion_request_for(self, request, provider_id, openai_config)?;
@@ -511,7 +506,7 @@ fn completion_request_for(
                     &mut completion_request,
                     request,
                     provider_id,
-                    config.wire_api,
+                    model.openai_wire_api().unwrap_or(config.wire_api),
                 );
             }
         }
@@ -652,8 +647,8 @@ fn rig_http_client(request_timeout: Duration) -> ReqwestClient {
         .unwrap_or_else(|_| ReqwestClient::new())
 }
 
-fn rig_openai_base_url(config: &OpenAiCompatibleConfig) -> String {
-    let path = match config.wire_api {
+fn rig_openai_base_url(config: &OpenAiCompatibleConfig, wire_api: WireApi) -> String {
+    let path = match wire_api {
         WireApi::ChatCompletions => config.chat_completions_path.as_str(),
         WireApi::Responses => config.responses_path.as_str(),
     };
@@ -707,6 +702,7 @@ mod tests {
     use crate::rig_adapter::convert;
     use engine::{AgentRequest, NodeId, NodeToolConfig, WorkflowId};
     use rig_core::message::ToolChoice;
+    use std::collections::BTreeMap;
 
     fn minimal_request() -> AgentRequest {
         AgentRequest {
@@ -729,7 +725,13 @@ mod tests {
         }
     }
 
-    fn open_code_go_config() -> AiClientConfig {
+    fn custom_compatible_config() -> AiClientConfig {
+        custom_compatible_config_with_transports(BTreeMap::new())
+    }
+
+    fn custom_compatible_config_with_transports(
+        model_transports: BTreeMap<String, ModelTransport>,
+    ) -> AiClientConfig {
         AiClientConfig {
             provider_id: ProviderId::from("custom_openai_compatible"),
             provider_label: "Custom OpenAI-compatible API".into(),
@@ -738,19 +740,25 @@ mod tests {
                 required: true,
             },
             adapter: ProviderAdapterConfig::OpenAiCompatible(OpenAiCompatibleConfig {
-                base_url: "https://opencode.ai/zen/go/".into(),
+                base_url: "https://api.example.test/v1".into(),
                 wire_api: WireApi::ChatCompletions,
                 responses_path: "v1/responses".into(),
                 chat_completions_path: "v1/chat/completions".into(),
+                model_transports,
                 request_timeout: Duration::from_mins(5),
             }),
+            debug_output: false,
         }
     }
 
     #[tokio::test]
-    async fn open_code_go_minimax_uses_anthropic_messages() {
+    async fn model_transport_override_uses_anthropic_messages() {
+        let config = custom_compatible_config_with_transports(BTreeMap::from([(
+            "vendor-model".to_string(),
+            ModelTransport::AnthropicMessages,
+        )]));
         assert!(matches!(
-            build_model(&open_code_go_config(), "minimax-m3").await,
+            build_model(&config, "vendor-model").await,
             Ok(BuiltModel {
                 model: RigModel::Anthropic(_),
                 ..
@@ -759,9 +767,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn open_code_go_mimo_keeps_chat_completions() {
+    async fn model_without_override_uses_provider_default() {
         assert!(matches!(
-            build_model(&open_code_go_config(), "mimo-v2.5").await,
+            build_model(&custom_compatible_config(), "vendor-model").await,
             Ok(BuiltModel {
                 model: RigModel::OpenAiChat(_),
                 ..
@@ -820,9 +828,13 @@ mod tests {
             wire_api: WireApi::ChatCompletions,
             responses_path: "v1/responses".into(),
             chat_completions_path: "v1/chat/completions".into(),
+            model_transports: BTreeMap::new(),
             request_timeout: Duration::from_mins(5),
         };
-        assert_eq!(rig_openai_base_url(&config), "https://api.example.test/v1");
+        assert_eq!(
+            rig_openai_base_url(&config, WireApi::ChatCompletions),
+            "https://api.example.test/v1"
+        );
     }
 
     #[test]
@@ -832,10 +844,11 @@ mod tests {
             wire_api: WireApi::ChatCompletions,
             responses_path: "v1/responses".into(),
             chat_completions_path: "https://other.example.test/v1/chat/completions".into(),
+            model_transports: BTreeMap::new(),
             request_timeout: Duration::from_mins(5),
         };
         assert_eq!(
-            rig_openai_base_url(&config),
+            rig_openai_base_url(&config, WireApi::ChatCompletions),
             "https://other.example.test/v1"
         );
     }
@@ -847,9 +860,13 @@ mod tests {
             wire_api: WireApi::ChatCompletions,
             responses_path: "v1/responses".into(),
             chat_completions_path: "v1/chat/completions".into(),
+            model_transports: BTreeMap::new(),
             request_timeout: Duration::from_mins(5),
         };
-        assert_eq!(rig_openai_base_url(&config), "https://api.x.ai/v1");
+        assert_eq!(
+            rig_openai_base_url(&config, WireApi::ChatCompletions),
+            "https://api.x.ai/v1"
+        );
     }
 
     #[test]
@@ -868,9 +885,10 @@ mod tests {
                 wire_api: oa.default_wire_api,
                 responses_path: oa.responses_path.into(),
                 chat_completions_path: oa.chat_completions_path.into(),
+                model_transports: BTreeMap::new(),
                 request_timeout: Duration::from_mins(5),
             };
-            let url = rig_openai_base_url(&config);
+            let url = rig_openai_base_url(&config, oa.default_wire_api);
             assert!(
                 !url.contains("/v1/v1"),
                 "{}: {url} (base={}, wire={:?})",

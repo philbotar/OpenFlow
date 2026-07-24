@@ -188,8 +188,8 @@ Batch rule: exactly one harness tool alone, **or** one or more executable tools 
 | --- | --- |
 | `Completed` | Store `NodeRunOutput`, clear recovery state, advance layer when all siblings done |
 | `ToolCalls` | `apply_tool_calls` → approval policy → `pending_tool_batches` |
-| `NeedsUserInput` | Conversational: pause; Autonomous: malformed-input recovery |
-| `Message` | Conversational: pause; Autonomous: auto-continue nudge (max streak) |
+| `NeedsUserInput` | Conversational: pause (valid question); Autonomous: auto-continue nudge |
+| `Message` | Auto-continue nudge (max streak) — never pauses; human pauses require `openflow_request_user_input` |
 
 ### 3.3 ToolCallStatus lifecycle
 
@@ -261,7 +261,7 @@ Subagent turns run **inside** a parent `CALL_SUBAGENT` tool execution (`subagent
 | Workflow validation | Empty graph, duplicate ids, dangling edge, cycle | **engine** | Yes (start) | Fix workflow | `WorkflowValidationError` | `graph/validation.rs` → `validate_workflow` |
 | Provider / key readiness | No resolvable API key (non-local provider) | **orchestration** | Yes (start) | Settings / transient key | Backend error to UI | `settings/provider.rs` → `resolve_provider_config` |
 | `auto_start` vs kickoff | `auto_start: false` + empty transcript | **engine** | Yes (pause) | `submit_user_input` → `on_human_input` | Stalls layer until input | `mod.rs` → `schedule_manual_nodes_in_layer` |
-| `request_user_input` | Model calls control tool / conversational turn | **engine** | Yes (pause) | `submit_user_input` | — | `completion.rs`, `allow_user_input` on `AgentRequest` |
+| `request_user_input` | Model calls `openflow_request_user_input` with a valid question | **engine** | Yes (pause) | `submit_user_input` | Invalid/non-question → nudge then fail | `completion.rs`, `allow_user_input` on `AgentRequest` |
 | Tool approval (`ApprovalMode`) | Write-tier tool under `write` / `always_ask` | **engine** policy; **orch** catalog | Yes (pause) | `submit_tool_approval` → `on_tool_decision` | Deny → synthetic denied `ToolResult` | `tools/config.rs`, `completion.rs` |
 | `read_only` tool exposure | Write-tier tool not in catalog | **orchestration** | Yes (model can't call) | Switch `ApprovalMode` | Tool unavailable to model | `tool/registry.rs` → `is_read_only` |
 | Retryable node / `RetryPolicy` | `AgentError::Transient`, interrupt, recoverable fail | **engine** | Yes (pause) | `retry_node` | Exhaust → `failed_nodes` / run fail | `completion.rs`, `RetryPolicy` in `WorkflowSettings` |

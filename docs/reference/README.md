@@ -12,10 +12,11 @@ Use this page for commands, storage paths, and operational facts that should be 
 | Frontend typecheck | `npm --prefix crates/ui run typecheck` |
 | Fast Rust lane | `./scripts/test-fast.sh` |
 | Fast lane with execution tests | `./scripts/test-fast.sh --execution` |
-| Full verification gate | `./scripts/verify.sh` |
+| Full verification gate | `./scripts/verify.sh` (default Rust tests = `test-fast`; desktop via `./scripts/verify.sh test`) |
+| Leg timing | `./scripts/bench-test-legs.sh` |
 | Architecture checks only | `./scripts/check-architecture.sh` |
-| Workflow acceptance | `cargo test -p orchestration --test workflow_acceptance -- --nocapture` |
-| Live AI smoke | `STEP_WORKFLOW_LIVE_AI=1 STEP_WORKFLOW_LIVE_API_KEY=... STEP_WORKFLOW_LIVE_MODEL=... cargo test -p orchestration --test live_workflow -- --ignored --nocapture` |
+| Workflow acceptance | `cargo nextest run -p orchestration --test workflow_acceptance --no-capture` |
+| Live AI smoke | `STEP_WORKFLOW_LIVE_AI=1 STEP_WORKFLOW_LIVE_API_KEY=... STEP_WORKFLOW_LIVE_MODEL=... cargo nextest run -p orchestration --test live_workflow --run-ignored ignored-only --no-capture` |
 
 ## Runtime and Persistence Paths
 

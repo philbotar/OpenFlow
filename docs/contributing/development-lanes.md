@@ -16,12 +16,12 @@ Architecture facts live in [`../architecture/contract.md`](../architecture/contr
 
 | Lane | Use when | Read first | Normal verification |
 | --- | --- | --- | --- |
-| Engine semantics | Workflow model, validation, prompts, execution state machine, ports, tool policy, telemetry | `crates/engine/AGENTS.md`, `docs/architecture/contract.md`, `docs/glossary.md`, `docs/architecture/end-to-end-runtime.md` when touching execution | `cargo test -p engine` |
-| Run orchestration | Active run lifecycle, execution host, approval/input loop, event projection, checkpoint/replay, execution cwd | `crates/orchestration/AGENTS.md`, `docs/architecture/end-to-end-runtime.md`, `docs/contributing/testing-workflows.md`, `docs/architecture/threading-concurrency.md` | `cargo test -p orchestration --lib` and workflow acceptance when execution behavior changes |
-| Application service | Workflow catalog, agent library, project registry, settings facade, tool registry/runner | `crates/orchestration/AGENTS.md`, `docs/contributing/coding-patterns.md` | Focused `cargo test -p orchestration --lib` filters |
+| Engine semantics | Workflow model, validation, prompts, execution state machine, ports, tool policy, telemetry | `crates/engine/AGENTS.md`, `docs/architecture/contract.md`, `docs/glossary.md`, `docs/architecture/end-to-end-runtime.md` when touching execution | `cargo nextest run -p engine` |
+| Run orchestration | Active run lifecycle, execution host, approval/input loop, event projection, checkpoint/replay, execution cwd | `crates/orchestration/AGENTS.md`, `docs/architecture/end-to-end-runtime.md`, `docs/contributing/testing-workflows.md`, `docs/architecture/threading-concurrency.md` | `cargo nextest run -p orchestration --lib` and workflow acceptance when execution behavior changes |
+| Application service | Workflow catalog, agent library, project registry, settings facade, tool registry/runner | `crates/orchestration/AGENTS.md`, `docs/contributing/coding-patterns.md` | Focused `cargo nextest run -p orchestration --lib` filters |
 | Adapter/I/O | Storage files, tool implementations, git/LSP, filesystem or subprocess behavior | `crates/orchestration/AGENTS.md`, `docs/architecture/contract.md` | Focused adapter tests plus `./scripts/check-architecture.sh` |
-| Provider adapter | Rig transport, request/response mapping, auth, streaming, tool argument repair | `crates/providers/AGENTS.md`, `docs/architecture/provider-adapters.md` | `cargo test -p providers` |
-| Desktop IPC | Tauri command handlers, event bridge, app bootstrap, macOS integration | `crates/desktop/AGENTS.md` | `cargo test -p desktop` |
+| Provider adapter | Rig transport, request/response mapping, auth, streaming, tool argument repair | `crates/providers/AGENTS.md`, `docs/architecture/provider-adapters.md` | `cargo nextest run -p providers` |
+| Desktop IPC | Tauri command handlers, event bridge, app bootstrap, macOS integration | `crates/desktop/AGENTS.md` | `cargo nextest run -p desktop` |
 | UI/Desktop seam | `api.ts`, frontend DTOs, AppProvider, screens, panels, canvas | `crates/ui/AGENTS.md`, `docs/architecture/end-to-end-runtime.md` for event path | `npm --prefix crates/ui run typecheck` and focused Vitest |
 | Cross-crate workflow | A user-visible workflow that crosses engine, orchestration, desktop, and UI | Root `AGENTS.md`, `docs/architecture/end-to-end-runtime.md`, `docs/contributing/testing-workflows.md` | `./scripts/test-fast.sh --execution`; full `./scripts/verify.sh` before handoff |
 
@@ -44,7 +44,17 @@ If a skill conflicts with `docs/architecture/contract.md`, fix the skill.
 
 ## Verification rules
 
-Use `./scripts/test-fast.sh` for normal iteration. Add flags by risk:
+| Goal | Command |
+| --- | --- |
+| Compile loop | `./scripts/check-fast.sh` / `./scripts/check-fast.sh --clippy <crate>` |
+| Iterate | `./scripts/test-fast.sh` |
+| Execution risk | `./scripts/test-fast.sh --execution` |
+| Desktop risk | `./scripts/test-fast.sh --desktop` |
+| Bedrock / AWS | `./scripts/verify/test-providers-bedrock.sh` |
+| Handoff | `./scripts/verify.sh` |
+| Full workspace Rust | `./scripts/verify.sh test` |
+
+While editing, prefer `./scripts/check-fast.sh` before tests. Use `./scripts/test-fast.sh` for normal iteration. Add flags by risk:
 
 ```bash
 ./scripts/test-fast.sh --execution
@@ -52,12 +62,12 @@ Use `./scripts/test-fast.sh` for normal iteration. Add flags by risk:
 ./scripts/test-fast.sh --execution --desktop
 ```
 
-Use `./scripts/verify.sh` before handing work off. It is the canonical full gate. Use `./scripts/verify.sh --deep` (or `./scripts/miri.sh`) when you want [Miri](https://github.com/rust-lang/miri) undefined-behavior coverage on `engine` and `orchestration` - CI runs a parallel per-crate Miri matrix for changed crates only.
+Use `./scripts/verify.sh` before handing work off. Default Rust tests match CI (`test-fast --execution`, no desktop). Parallel agents: `VERIFY_ISOLATE_TARGET=1`. Use `./scripts/verify.sh --deep` (or `./scripts/miri.sh`) when you want [Miri](https://github.com/rust-lang/miri) undefined-behavior coverage on `engine` and `orchestration`.
 
 For execution behavior, always add:
 
 ```bash
-cargo test -p orchestration --test workflow_acceptance -- --nocapture
+cargo nextest run -p orchestration --test workflow_acceptance --no-capture
 ```
 
 For architecture-sensitive work, always add:

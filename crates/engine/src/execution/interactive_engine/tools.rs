@@ -3,7 +3,7 @@ use crate::conversation::AgentTranscriptItem;
 use crate::execution::tool_results::{denied_tool_result, error_tool_result};
 use crate::execution::EngineInputError;
 use crate::graph::NodeId;
-use crate::tools::{ToolResult, WRITE_PLAN_ARTIFACT_TOOL};
+use crate::tools::{ToolResult, PLAN_DRAFT_PATH, WRITE_PLAN_ARTIFACT_TOOL};
 use serde_json::json;
 use std::collections::{BTreeMap, HashMap};
 
@@ -29,6 +29,7 @@ impl InteractiveEngine {
             .collect();
         let mut committed_plan_artifacts = BTreeMap::new();
         let mut delivered = Vec::with_capacity(pending_calls.len());
+        let mut incomplete_write = false;
         for call in &pending_calls {
             let result = by_id.remove(&call.id).unwrap_or_else(|| {
                 error_tool_result(
@@ -40,6 +41,12 @@ impl InteractiveEngine {
                 if let Some(artifact_id) = result.artifact_ids.first() {
                     committed_plan_artifacts.insert(call.id.clone(), artifact_id.clone());
                 }
+            }
+            if result.is_error
+                && result.tool_name == "write"
+                && result.content.contains("missing field `content`")
+            {
+                incomplete_write = true;
             }
             delivered.push(result);
         }
@@ -56,7 +63,12 @@ impl InteractiveEngine {
             };
             call.arguments = json!({
                 "artifact_id": artifact_id,
-                "markdown_redacted": true
+                "sealed_from": PLAN_DRAFT_PATH
+            });
+        }
+        if incomplete_write {
+            transcript.push(AgentTranscriptItem::UserMessage {
+                content: super::INCOMPLETE_WRITE_FEEDBACK.to_string(),
             });
         }
         self.pending_tool_batches.remove(&approval_id);

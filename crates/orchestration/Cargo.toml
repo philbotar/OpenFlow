@@ -13,7 +13,8 @@ categories.workspace = true
 name = "orchestration"
 
 [features]
-default = ["bedrock"]
+# Off by default — see providers `bedrock` feature. Desktop turns this on.
+default = []
 bedrock = ["providers/bedrock"]
 
 [dependencies]

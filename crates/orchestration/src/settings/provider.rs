@@ -119,6 +119,7 @@ pub fn resolve_provider_config(
                 wire_api: profile.transport,
                 responses_path: profile.responses_path.trim().to_string(),
                 chat_completions_path: profile.chat_completions_path.trim().to_string(),
+                model_transports: profile.model_transports.clone(),
                 request_timeout: Duration::from_secs(profile.request_timeout_secs.max(1)),
             })
         }
@@ -165,6 +166,7 @@ pub fn resolve_provider_config(
         provider_label: spec.display_name.to_string(),
         auth,
         adapter,
+        debug_output: settings.local_diagnostics.debug_output,
     })
 }
 
@@ -390,17 +392,21 @@ mod tests {
             active_provider: ProviderId::from("custom_openai_compatible"),
             ..Default::default()
         };
-        settings.providers.insert(
-            ProviderId::from("custom_openai_compatible"),
-            ProviderProfile {
-                base_url: " https://vendor.example.test/v1-root ".to_string(),
-                transport: ProviderTransport::ChatCompletions,
-                responses_path: " custom/responses ".to_string(),
-                chat_completions_path: " chat/completions ".to_string(),
-                request_timeout_secs: 45,
-                ..ProviderProfile::compatible_default()
-            },
+        let mut profile = ProviderProfile {
+            base_url: " https://vendor.example.test/v1-root ".to_string(),
+            transport: ProviderTransport::ChatCompletions,
+            responses_path: " custom/responses ".to_string(),
+            chat_completions_path: " chat/completions ".to_string(),
+            request_timeout_secs: 45,
+            ..ProviderProfile::compatible_default()
+        };
+        profile.model_transports.insert(
+            "anthropic-wire-model".to_string(),
+            providers::ModelTransport::AnthropicMessages,
         );
+        settings
+            .providers
+            .insert(ProviderId::from("custom_openai_compatible"), profile);
 
         let resolved = resolve_provider_config(
             &settings,
@@ -430,6 +436,10 @@ mod tests {
         assert_eq!(config.wire_api, WireApi::ChatCompletions);
         assert_eq!(config.responses_path, "custom/responses");
         assert_eq!(config.chat_completions_path, "chat/completions");
+        assert_eq!(
+            config.model_transports.get("anthropic-wire-model"),
+            Some(&providers::ModelTransport::AnthropicMessages)
+        );
         assert_eq!(config.request_timeout, std::time::Duration::from_secs(45));
     }
 

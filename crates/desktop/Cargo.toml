@@ -14,7 +14,9 @@ name = "desktop"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [features]
-default = []
+# Shipped app keeps Bedrock; library crates leave it off for fast local loops.
+default = ["bedrock"]
+bedrock = ["orchestration/bedrock"]
 e2e-testing = ["dep:tauri-plugin-playwright"]
 
 [build-dependencies]
@@ -24,7 +26,7 @@ tauri-build.workspace = true
 keepawake = "0.6.0"
 env_logger = "0.11"
 log = "0.4"
-orchestration = { path = "../orchestration", version = "0.1.20" }
+orchestration = { path = "../orchestration", version = "0.1.20", default-features = false }
 serde.workspace = true
 serde_json.workspace = true
 tauri.workspace = true
