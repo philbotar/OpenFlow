@@ -62,8 +62,10 @@ jobs:
 
       - name: Free Miri build artifacts before deep tests
         run: |
-          cargo clean --target-dir target/miri
-          df -h .
+          test "$PWD" = "$GITHUB_WORKSPACE"
+          test -f "$GITHUB_WORKSPACE/Cargo.toml"
+          find "$GITHUB_WORKSPACE/target/miri" -depth -delete
+          df -h "$GITHUB_WORKSPACE"
 
       - name: Deep tests (execution + desktop)
         run: ./scripts/test-fast.sh --execution --desktop --skip-ui-typecheck
