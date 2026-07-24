@@ -38,6 +38,9 @@ runs:
       shell: bash
       run: |
         host="$(rustc -vV | awk '/^host:/{print $2}')"
+        if [[ "${host}" != *-apple-darwin ]]; then
+          exit 0
+        fi
         bin_dir="$(rustc --print sysroot)/lib/rustlib/${host}/bin"
         echo "${bin_dir}" >> "${GITHUB_PATH}"
         export PATH="${bin_dir}:${PATH}"

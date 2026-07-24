@@ -11,12 +11,6 @@ linker = "rust-lld"
 [target.x86_64-apple-darwin]
 linker = "rust-lld"
 
-[target.x86_64-unknown-linux-gnu]
-linker = "rust-lld"
-
-[target.aarch64-unknown-linux-gnu]
-linker = "rust-lld"
-
 [alias]
 # Maximum strictness lint pass for manual/CI audits.
 clippy-max = "clippy --workspace --all-targets -- -D warnings -D clippy::pedantic -D clippy::nursery -D clippy::cargo"
