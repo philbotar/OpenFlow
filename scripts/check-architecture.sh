@@ -6,6 +6,8 @@ WORKSPACE_DIR="$(dirname "$SCRIPT_DIR")"
 
 cd "$WORKSPACE_DIR"
 
+"$SCRIPT_DIR/test-build-space-guard.sh"
+
 exec python3 - "$WORKSPACE_DIR" <<'PY'
 import fnmatch
 import re

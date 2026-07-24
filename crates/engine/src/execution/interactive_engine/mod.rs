@@ -17,9 +17,7 @@ use crate::graph::{
     apply_runtime_patch_to_agent, apply_runtime_patch_to_request, runtime_patch_for, Node, NodeId,
     NodeRuntimeConfigStore, Workflow,
 };
-use crate::ports::{
-    AgentRequest, AgentTurnPhase, AiPort, ToolAccessPolicy, ToolBatchOutput, ToolPort,
-};
+use crate::ports::{AgentRequest, AiPort, ToolAccessPolicy, ToolBatchOutput, ToolPort};
 use crate::tools::{FileChangeRecord, ReadRecord, ToolCall};
 use futures::stream::{FuturesUnordered, StreamExt};
 use serde_json::Value;
@@ -188,8 +186,6 @@ pub struct InteractiveEngine {
     transcripts: BTreeMap<NodeId, Vec<AgentTranscriptItem>>,
     awaiting_nodes: BTreeSet<NodeId>,
     in_flight_ai: BTreeSet<NodeId>,
-    /// Nodes whose next invocation exposes executable tools instead of control tools.
-    work_phase_nodes: BTreeSet<NodeId>,
     /// Source selected at run start, preserved across workflow edits on resume.
     plan_mode_source_node_id: Option<NodeId>,
     frozen_change_evidence_packet: Option<FrozenChangeEvidencePacket>,
@@ -226,17 +222,82 @@ pub(crate) const MALFORMED_REQUEST_INPUT_FEEDBACK: &str =
     "Your last turn ended as a request for human input, but without a direct question. \
     If you need human clarification, call openflow_request_user_input with \
     assistant_message set to one direct question (usually ending with ?). If you do not \
-    need human input, call openflow_continue_work for executable tools or call \
-    openflow_submit_node_output when complete. \
+    need human input, call executable tools or call openflow_submit_node_output when complete. \
     Do not end a turn with plain narration.";
 pub(crate) const INTERACTIVE_CONTINUE_FEEDBACK: &str =
-    "Use the current control turn: call openflow_continue_work if executable tools are needed, \
-    call openflow_request_user_input with one direct question if human clarification is needed, \
-    or call openflow_submit_node_output when the task is complete. Do not end with plain text only.";
+    "Call openflow_request_user_input with one direct question if human clarification is needed, \
+    call executable tools if more work is required, or call openflow_submit_node_output when the \
+    task is complete. Do not end with plain text only.";
 pub(crate) const AUTONOMOUS_CONTINUE_FEEDBACK: &str =
-    "No human input is available for this node. Use the current control turn: call \
-    openflow_continue_work if executable tools are needed, or call openflow_submit_node_output \
-    when the task is complete. Do not end with plain text only.";
+    "No human input is available for this node. Call executable tools if more work is required, \
+    or call openflow_submit_node_output when the task is complete. Do not end with plain text only.";
+/// Plain-text turn claimed file create/update without calling write/edit.
+pub(crate) const NARRATED_WRITE_FEEDBACK: &str =
+    "You narrated creating or updating a file but did not call a tool. Plain text does not write \
+    anything. Call write immediately with both path and content (a short stub is fine for large \
+    docs), then edit in ~40-line chunks if needed. Or call openflow_request_user_input if you need \
+    the human. Do not narrate writing again.";
+/// After a successful write, narration must become edit chunks — not another one-shot rewrite.
+pub(crate) const EXPAND_VIA_EDIT_FEEDBACK: &str =
+    "A write already succeeded. Plain text does not update the file. Call edit to append or replace \
+    the next section in ~40 lines or fewer. Do not narrate. Do not attempt a one-shot full-file \
+    rewrite in a single write.";
+pub(crate) const PLAN_NARRATED_WRITE_FEEDBACK: &str =
+    "You narrated creating the plan but did not call a tool. During Plan Mode, call write now with \
+    path=\"run://PLAN.md\" and a short Markdown stub. Update that run-local draft incrementally with \
+    replace-mode edit. When complete, call openflow_write_plan_artifact with no plan text in its \
+    arguments. Do not write the draft into the repository. Do not narrate writing again.";
+pub(crate) const PLAN_EXPAND_VIA_EDIT_FEEDBACK: &str =
+    "The run-local plan draft already exists. Call replace-mode edit on run://PLAN.md now to add or \
+    refine the next section. When the complete plan is ready, call openflow_write_plan_artifact \
+    with no plan text in its arguments. Do not narrate.";
+/// Empty provider turn after the model already intended to write a file.
+pub(crate) const EMPTY_AFTER_NARRATED_WRITE_FEEDBACK: &str =
+    "Previous turn was empty — no tools and no text. You already intended to write a file. Your \
+    next action must be a write tool call with both path and content, for example \
+    path=\"docs/feature-briefs/002-slug.md\" content=\"# Title\\n\\nStub.\\n\". Do not use bash. \
+    Do not reply with plain text.";
+/// Empty turn after a successful write — expand via edit, not another giant write.
+pub(crate) const EMPTY_AFTER_WRITE_EXPAND_FEEDBACK: &str =
+    "Previous turn was empty. A write already succeeded. Call edit now to append or replace the next \
+    ~40-line section. Do not narrate. Do not one-shot the whole file in one write.";
+/// Conversational handoff when empty-turn retries are exhausted.
+pub(crate) const EMPTY_TURN_HUMAN_HANDOFF: &str =
+    "The model returned empty turns and could not continue. What should I do next?";
+/// Conversational handoff when text-only auto-continue streak is exhausted.
+pub(crate) const TEXT_STREAK_HUMAN_HANDOFF: &str =
+    "The model kept narrating without calling tools. What should I do next?";
+pub(crate) const INCOMPLETE_WRITE_FEEDBACK: &str =
+    "Your write call was missing required `content`. Call write again with both path and content \
+    (use a small stub for large documents), then use edit to append or refine in chunks of about \
+    40 lines or fewer. Never call write with path only.";
+
+/// True when assistant text claims file mutation work without a tool call.
+pub(crate) fn looks_like_narrated_file_mutation(message: &str) -> bool {
+    const HINTS: &[&str] = &[
+        "writing the",
+        "writing a",
+        "writing to",
+        "i'll write",
+        "i will write",
+        "now writing",
+        "now write",
+        "creating the",
+        "creating a",
+        "updating the file",
+        "updating `",
+        "saving the",
+        "save the",
+        "write the feature",
+        "write the brief",
+        "write the file",
+        "drop the file",
+        "dropping the",
+        "let me write",
+    ];
+    let lower = message.to_lowercase();
+    HINTS.iter().any(|hint| lower.contains(hint))
+}
 
 enum WorkOutput {
     Ai {
@@ -286,7 +347,6 @@ impl InteractiveEngine {
             transcripts: BTreeMap::new(),
             awaiting_nodes: BTreeSet::new(),
             in_flight_ai: BTreeSet::new(),
-            work_phase_nodes: BTreeSet::new(),
             plan_mode_source_node_id,
             frozen_change_evidence_packet: None,
             pending_tool_batches: BTreeMap::new(),
@@ -870,11 +930,6 @@ impl InteractiveEngine {
         };
         let mut request = build_agent_request(&ctx, node, true)?;
         request.model_attempt = self.model_attempt_for(&node.id);
-        request.turn_phase = if self.work_phase_nodes.contains(node_id) {
-            AgentTurnPhase::Work
-        } else {
-            AgentTurnPhase::Control
-        };
         request.tool_access_policy = if self.is_plan_mode_active() {
             ToolAccessPolicy::Planning
         } else {

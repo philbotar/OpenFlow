@@ -919,7 +919,6 @@ pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::retries_
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::submit_output_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::transcripts: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::conversation::AgentTranscriptItem>>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::transient_streaks_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
-pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::work_phase_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::workflow_id: engine::graph::workflow::WorkflowId
 impl core::clone::Clone for engine::InteractiveEngineCheckpoint
 pub fn engine::InteractiveEngineCheckpoint::clone(&self) -> engine::InteractiveEngineCheckpoint
@@ -2101,7 +2100,6 @@ pub engine::execution::InteractiveEngineCheckpoint::retries_by_node: alloc::coll
 pub engine::execution::InteractiveEngineCheckpoint::submit_output_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::execution::InteractiveEngineCheckpoint::transcripts: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::conversation::AgentTranscriptItem>>
 pub engine::execution::InteractiveEngineCheckpoint::transient_streaks_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
-pub engine::execution::InteractiveEngineCheckpoint::work_phase_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
 pub engine::execution::InteractiveEngineCheckpoint::workflow_id: engine::graph::workflow::WorkflowId
 impl core::clone::Clone for engine::InteractiveEngineCheckpoint
 pub fn engine::InteractiveEngineCheckpoint::clone(&self) -> engine::InteractiveEngineCheckpoint
@@ -4291,7 +4289,6 @@ impl<T> typenum::type_operators::Same for engine::ports::outbound::AgentError
 pub type engine::ports::outbound::AgentError::Output = T
 pub enum engine::ports::outbound::AgentTurnOutcome
 pub engine::ports::outbound::AgentTurnOutcome::Completed(engine::ports::outbound::AgentTurnSuccess)
-pub engine::ports::outbound::AgentTurnOutcome::ContinueWork(engine::ports::outbound::AgentContinueWork)
 pub engine::ports::outbound::AgentTurnOutcome::Message(engine::ports::outbound::AgentMessageTurn)
 pub engine::ports::outbound::AgentTurnOutcome::NeedsUserInput(engine::ports::outbound::AgentNeedUserInput)
 pub engine::ports::outbound::AgentTurnOutcome::ToolCalls(engine::ports::outbound::AgentToolCallBatch)
@@ -4336,55 +4333,6 @@ impl<T> core::convert::From<T> for engine::ports::outbound::AgentTurnOutcome
 pub fn engine::ports::outbound::AgentTurnOutcome::from(T) -> T
 impl<T> typenum::type_operators::Same for engine::ports::outbound::AgentTurnOutcome
 pub type engine::ports::outbound::AgentTurnOutcome::Output = T
-pub enum engine::ports::outbound::AgentTurnPhase
-pub engine::ports::outbound::AgentTurnPhase::Control
-pub engine::ports::outbound::AgentTurnPhase::Work
-impl core::clone::Clone for engine::ports::outbound::AgentTurnPhase
-pub fn engine::ports::outbound::AgentTurnPhase::clone(&self) -> engine::ports::outbound::AgentTurnPhase
-impl core::cmp::Eq for engine::ports::outbound::AgentTurnPhase
-impl core::cmp::PartialEq for engine::ports::outbound::AgentTurnPhase
-pub fn engine::ports::outbound::AgentTurnPhase::eq(&self, &engine::ports::outbound::AgentTurnPhase) -> bool
-impl core::default::Default for engine::ports::outbound::AgentTurnPhase
-pub fn engine::ports::outbound::AgentTurnPhase::default() -> engine::ports::outbound::AgentTurnPhase
-impl core::fmt::Debug for engine::ports::outbound::AgentTurnPhase
-pub fn engine::ports::outbound::AgentTurnPhase::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for engine::ports::outbound::AgentTurnPhase
-impl core::marker::StructuralPartialEq for engine::ports::outbound::AgentTurnPhase
-impl core::marker::Freeze for engine::ports::outbound::AgentTurnPhase
-impl core::marker::Send for engine::ports::outbound::AgentTurnPhase
-impl core::marker::Sync for engine::ports::outbound::AgentTurnPhase
-impl core::marker::Unpin for engine::ports::outbound::AgentTurnPhase
-impl core::marker::UnsafeUnpin for engine::ports::outbound::AgentTurnPhase
-impl core::panic::unwind_safe::RefUnwindSafe for engine::ports::outbound::AgentTurnPhase
-impl core::panic::unwind_safe::UnwindSafe for engine::ports::outbound::AgentTurnPhase
-impl<Q, K> equivalent::Equivalent<K> for engine::ports::outbound::AgentTurnPhase where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
-pub fn engine::ports::outbound::AgentTurnPhase::equivalent(&self, &K) -> bool
-impl<T, U> core::convert::Into<U> for engine::ports::outbound::AgentTurnPhase where U: core::convert::From<T>
-pub fn engine::ports::outbound::AgentTurnPhase::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for engine::ports::outbound::AgentTurnPhase where U: core::convert::Into<T>
-pub type engine::ports::outbound::AgentTurnPhase::Error = core::convert::Infallible
-pub fn engine::ports::outbound::AgentTurnPhase::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for engine::ports::outbound::AgentTurnPhase where U: core::convert::TryFrom<T>
-pub type engine::ports::outbound::AgentTurnPhase::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn engine::ports::outbound::AgentTurnPhase::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for engine::ports::outbound::AgentTurnPhase where T: core::clone::Clone
-pub type engine::ports::outbound::AgentTurnPhase::Owned = T
-pub fn engine::ports::outbound::AgentTurnPhase::clone_into(&self, &mut T)
-pub fn engine::ports::outbound::AgentTurnPhase::to_owned(&self) -> T
-impl<T> core::any::Any for engine::ports::outbound::AgentTurnPhase where T: 'static + ?core::marker::Sized
-pub fn engine::ports::outbound::AgentTurnPhase::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for engine::ports::outbound::AgentTurnPhase where T: ?core::marker::Sized
-pub fn engine::ports::outbound::AgentTurnPhase::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for engine::ports::outbound::AgentTurnPhase where T: ?core::marker::Sized
-pub fn engine::ports::outbound::AgentTurnPhase::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for engine::ports::outbound::AgentTurnPhase where T: core::clone::Clone
-pub unsafe fn engine::ports::outbound::AgentTurnPhase::clone_to_uninit(&self, *mut u8)
-impl<T> core::convert::From<T> for engine::ports::outbound::AgentTurnPhase
-pub fn engine::ports::outbound::AgentTurnPhase::from(T) -> T
-impl<T> outref::AsOut<T> for engine::ports::outbound::AgentTurnPhase where T: core::marker::Copy
-pub fn engine::ports::outbound::AgentTurnPhase::as_out(&mut self) -> outref::Out<'_, T>
-impl<T> typenum::type_operators::Same for engine::ports::outbound::AgentTurnPhase
-pub type engine::ports::outbound::AgentTurnPhase::Output = T
 pub enum engine::ports::outbound::AiStreamEvent
 pub engine::ports::outbound::AiStreamEvent::AssistantDelta
 pub engine::ports::outbound::AiStreamEvent::AssistantDelta::content: alloc::string::String
@@ -4543,52 +4491,6 @@ pub fn engine::ports::outbound::ToolAccessPolicy::as_out(&mut self) -> outref::O
 impl<T> serde_core::de::DeserializeOwned for engine::ports::outbound::ToolAccessPolicy where T: for<'de> serde_core::de::Deserialize<'de>
 impl<T> typenum::type_operators::Same for engine::ports::outbound::ToolAccessPolicy
 pub type engine::ports::outbound::ToolAccessPolicy::Output = T
-pub struct engine::ports::outbound::AgentContinueWork
-pub engine::ports::outbound::AgentContinueWork::assistant_message: core::option::Option<alloc::string::String>
-pub engine::ports::outbound::AgentContinueWork::raw_text: alloc::string::String
-pub engine::ports::outbound::AgentContinueWork::reasoning: alloc::vec::Vec<engine::conversation::AgentReasoning>
-pub engine::ports::outbound::AgentContinueWork::usage: core::option::Option<engine::ports::outbound::UsageReport>
-impl core::clone::Clone for engine::ports::outbound::AgentContinueWork
-pub fn engine::ports::outbound::AgentContinueWork::clone(&self) -> engine::ports::outbound::AgentContinueWork
-impl core::cmp::Eq for engine::ports::outbound::AgentContinueWork
-impl core::cmp::PartialEq for engine::ports::outbound::AgentContinueWork
-pub fn engine::ports::outbound::AgentContinueWork::eq(&self, &engine::ports::outbound::AgentContinueWork) -> bool
-impl core::fmt::Debug for engine::ports::outbound::AgentContinueWork
-pub fn engine::ports::outbound::AgentContinueWork::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for engine::ports::outbound::AgentContinueWork
-impl core::marker::Freeze for engine::ports::outbound::AgentContinueWork
-impl core::marker::Send for engine::ports::outbound::AgentContinueWork
-impl core::marker::Sync for engine::ports::outbound::AgentContinueWork
-impl core::marker::Unpin for engine::ports::outbound::AgentContinueWork
-impl core::marker::UnsafeUnpin for engine::ports::outbound::AgentContinueWork
-impl core::panic::unwind_safe::RefUnwindSafe for engine::ports::outbound::AgentContinueWork
-impl core::panic::unwind_safe::UnwindSafe for engine::ports::outbound::AgentContinueWork
-impl<Q, K> equivalent::Equivalent<K> for engine::ports::outbound::AgentContinueWork where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
-pub fn engine::ports::outbound::AgentContinueWork::equivalent(&self, &K) -> bool
-impl<T, U> core::convert::Into<U> for engine::ports::outbound::AgentContinueWork where U: core::convert::From<T>
-pub fn engine::ports::outbound::AgentContinueWork::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for engine::ports::outbound::AgentContinueWork where U: core::convert::Into<T>
-pub type engine::ports::outbound::AgentContinueWork::Error = core::convert::Infallible
-pub fn engine::ports::outbound::AgentContinueWork::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for engine::ports::outbound::AgentContinueWork where U: core::convert::TryFrom<T>
-pub type engine::ports::outbound::AgentContinueWork::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn engine::ports::outbound::AgentContinueWork::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for engine::ports::outbound::AgentContinueWork where T: core::clone::Clone
-pub type engine::ports::outbound::AgentContinueWork::Owned = T
-pub fn engine::ports::outbound::AgentContinueWork::clone_into(&self, &mut T)
-pub fn engine::ports::outbound::AgentContinueWork::to_owned(&self) -> T
-impl<T> core::any::Any for engine::ports::outbound::AgentContinueWork where T: 'static + ?core::marker::Sized
-pub fn engine::ports::outbound::AgentContinueWork::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for engine::ports::outbound::AgentContinueWork where T: ?core::marker::Sized
-pub fn engine::ports::outbound::AgentContinueWork::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for engine::ports::outbound::AgentContinueWork where T: ?core::marker::Sized
-pub fn engine::ports::outbound::AgentContinueWork::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for engine::ports::outbound::AgentContinueWork where T: core::clone::Clone
-pub unsafe fn engine::ports::outbound::AgentContinueWork::clone_to_uninit(&self, *mut u8)
-impl<T> core::convert::From<T> for engine::ports::outbound::AgentContinueWork
-pub fn engine::ports::outbound::AgentContinueWork::from(T) -> T
-impl<T> typenum::type_operators::Same for engine::ports::outbound::AgentContinueWork
-pub type engine::ports::outbound::AgentContinueWork::Output = T
 pub struct engine::ports::outbound::AgentMessageTurn
 pub engine::ports::outbound::AgentMessageTurn::assistant_message: alloc::string::String
 pub engine::ports::outbound::AgentMessageTurn::raw_text: alloc::string::String
@@ -4696,7 +4598,6 @@ pub engine::ports::outbound::AgentRequest::task_prompt: alloc::string::String
 pub engine::ports::outbound::AgentRequest::tool_access_policy: engine::ports::outbound::ToolAccessPolicy
 pub engine::ports::outbound::AgentRequest::tool_config: engine::NodeToolConfig
 pub engine::ports::outbound::AgentRequest::transcript: alloc::vec::Vec<engine::conversation::AgentTranscriptItem>
-pub engine::ports::outbound::AgentRequest::turn_phase: engine::ports::outbound::AgentTurnPhase
 pub engine::ports::outbound::AgentRequest::workflow_id: engine::graph::workflow::WorkflowId
 impl engine::ports::outbound::AgentRequest
 pub fn engine::ports::outbound::AgentRequest::system_content(&self) -> alloc::string::String
@@ -4792,6 +4693,7 @@ pub struct engine::ports::outbound::AgentTurnSuccess
 pub engine::ports::outbound::AgentTurnSuccess::assistant_message: core::option::Option<alloc::string::String>
 pub engine::ports::outbound::AgentTurnSuccess::output: serde_json::value::Value
 pub engine::ports::outbound::AgentTurnSuccess::raw_text: alloc::string::String
+pub engine::ports::outbound::AgentTurnSuccess::reasoning: alloc::vec::Vec<engine::conversation::AgentReasoning>
 pub engine::ports::outbound::AgentTurnSuccess::usage: core::option::Option<engine::ports::outbound::UsageReport>
 impl core::clone::Clone for engine::ports::outbound::AgentTurnSuccess
 pub fn engine::ports::outbound::AgentTurnSuccess::clone(&self) -> engine::ports::outbound::AgentTurnSuccess
@@ -5101,7 +5003,6 @@ impl<T> typenum::type_operators::Same for engine::ports::outbound::AgentError
 pub type engine::ports::outbound::AgentError::Output = T
 pub enum engine::ports::AgentTurnOutcome
 pub engine::ports::AgentTurnOutcome::Completed(engine::ports::outbound::AgentTurnSuccess)
-pub engine::ports::AgentTurnOutcome::ContinueWork(engine::ports::outbound::AgentContinueWork)
 pub engine::ports::AgentTurnOutcome::Message(engine::ports::outbound::AgentMessageTurn)
 pub engine::ports::AgentTurnOutcome::NeedsUserInput(engine::ports::outbound::AgentNeedUserInput)
 pub engine::ports::AgentTurnOutcome::ToolCalls(engine::ports::outbound::AgentToolCallBatch)
@@ -5146,55 +5047,6 @@ impl<T> core::convert::From<T> for engine::ports::outbound::AgentTurnOutcome
 pub fn engine::ports::outbound::AgentTurnOutcome::from(T) -> T
 impl<T> typenum::type_operators::Same for engine::ports::outbound::AgentTurnOutcome
 pub type engine::ports::outbound::AgentTurnOutcome::Output = T
-pub enum engine::ports::AgentTurnPhase
-pub engine::ports::AgentTurnPhase::Control
-pub engine::ports::AgentTurnPhase::Work
-impl core::clone::Clone for engine::ports::outbound::AgentTurnPhase
-pub fn engine::ports::outbound::AgentTurnPhase::clone(&self) -> engine::ports::outbound::AgentTurnPhase
-impl core::cmp::Eq for engine::ports::outbound::AgentTurnPhase
-impl core::cmp::PartialEq for engine::ports::outbound::AgentTurnPhase
-pub fn engine::ports::outbound::AgentTurnPhase::eq(&self, &engine::ports::outbound::AgentTurnPhase) -> bool
-impl core::default::Default for engine::ports::outbound::AgentTurnPhase
-pub fn engine::ports::outbound::AgentTurnPhase::default() -> engine::ports::outbound::AgentTurnPhase
-impl core::fmt::Debug for engine::ports::outbound::AgentTurnPhase
-pub fn engine::ports::outbound::AgentTurnPhase::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for engine::ports::outbound::AgentTurnPhase
-impl core::marker::StructuralPartialEq for engine::ports::outbound::AgentTurnPhase
-impl core::marker::Freeze for engine::ports::outbound::AgentTurnPhase
-impl core::marker::Send for engine::ports::outbound::AgentTurnPhase
-impl core::marker::Sync for engine::ports::outbound::AgentTurnPhase
-impl core::marker::Unpin for engine::ports::outbound::AgentTurnPhase
-impl core::marker::UnsafeUnpin for engine::ports::outbound::AgentTurnPhase
-impl core::panic::unwind_safe::RefUnwindSafe for engine::ports::outbound::AgentTurnPhase
-impl core::panic::unwind_safe::UnwindSafe for engine::ports::outbound::AgentTurnPhase
-impl<Q, K> equivalent::Equivalent<K> for engine::ports::outbound::AgentTurnPhase where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
-pub fn engine::ports::outbound::AgentTurnPhase::equivalent(&self, &K) -> bool
-impl<T, U> core::convert::Into<U> for engine::ports::outbound::AgentTurnPhase where U: core::convert::From<T>
-pub fn engine::ports::outbound::AgentTurnPhase::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for engine::ports::outbound::AgentTurnPhase where U: core::convert::Into<T>
-pub type engine::ports::outbound::AgentTurnPhase::Error = core::convert::Infallible
-pub fn engine::ports::outbound::AgentTurnPhase::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for engine::ports::outbound::AgentTurnPhase where U: core::convert::TryFrom<T>
-pub type engine::ports::outbound::AgentTurnPhase::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn engine::ports::outbound::AgentTurnPhase::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for engine::ports::outbound::AgentTurnPhase where T: core::clone::Clone
-pub type engine::ports::outbound::AgentTurnPhase::Owned = T
-pub fn engine::ports::outbound::AgentTurnPhase::clone_into(&self, &mut T)
-pub fn engine::ports::outbound::AgentTurnPhase::to_owned(&self) -> T
-impl<T> core::any::Any for engine::ports::outbound::AgentTurnPhase where T: 'static + ?core::marker::Sized
-pub fn engine::ports::outbound::AgentTurnPhase::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for engine::ports::outbound::AgentTurnPhase where T: ?core::marker::Sized
-pub fn engine::ports::outbound::AgentTurnPhase::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for engine::ports::outbound::AgentTurnPhase where T: ?core::marker::Sized
-pub fn engine::ports::outbound::AgentTurnPhase::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for engine::ports::outbound::AgentTurnPhase where T: core::clone::Clone
-pub unsafe fn engine::ports::outbound::AgentTurnPhase::clone_to_uninit(&self, *mut u8)
-impl<T> core::convert::From<T> for engine::ports::outbound::AgentTurnPhase
-pub fn engine::ports::outbound::AgentTurnPhase::from(T) -> T
-impl<T> outref::AsOut<T> for engine::ports::outbound::AgentTurnPhase where T: core::marker::Copy
-pub fn engine::ports::outbound::AgentTurnPhase::as_out(&mut self) -> outref::Out<'_, T>
-impl<T> typenum::type_operators::Same for engine::ports::outbound::AgentTurnPhase
-pub type engine::ports::outbound::AgentTurnPhase::Output = T
 pub enum engine::ports::AiStreamEvent
 pub engine::ports::AiStreamEvent::AssistantDelta
 pub engine::ports::AiStreamEvent::AssistantDelta::content: alloc::string::String
@@ -5353,52 +5205,6 @@ pub fn engine::ports::outbound::ToolAccessPolicy::as_out(&mut self) -> outref::O
 impl<T> serde_core::de::DeserializeOwned for engine::ports::outbound::ToolAccessPolicy where T: for<'de> serde_core::de::Deserialize<'de>
 impl<T> typenum::type_operators::Same for engine::ports::outbound::ToolAccessPolicy
 pub type engine::ports::outbound::ToolAccessPolicy::Output = T
-pub struct engine::ports::AgentContinueWork
-pub engine::ports::AgentContinueWork::assistant_message: core::option::Option<alloc::string::String>
-pub engine::ports::AgentContinueWork::raw_text: alloc::string::String
-pub engine::ports::AgentContinueWork::reasoning: alloc::vec::Vec<engine::conversation::AgentReasoning>
-pub engine::ports::AgentContinueWork::usage: core::option::Option<engine::ports::outbound::UsageReport>
-impl core::clone::Clone for engine::ports::outbound::AgentContinueWork
-pub fn engine::ports::outbound::AgentContinueWork::clone(&self) -> engine::ports::outbound::AgentContinueWork
-impl core::cmp::Eq for engine::ports::outbound::AgentContinueWork
-impl core::cmp::PartialEq for engine::ports::outbound::AgentContinueWork
-pub fn engine::ports::outbound::AgentContinueWork::eq(&self, &engine::ports::outbound::AgentContinueWork) -> bool
-impl core::fmt::Debug for engine::ports::outbound::AgentContinueWork
-pub fn engine::ports::outbound::AgentContinueWork::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for engine::ports::outbound::AgentContinueWork
-impl core::marker::Freeze for engine::ports::outbound::AgentContinueWork
-impl core::marker::Send for engine::ports::outbound::AgentContinueWork
-impl core::marker::Sync for engine::ports::outbound::AgentContinueWork
-impl core::marker::Unpin for engine::ports::outbound::AgentContinueWork
-impl core::marker::UnsafeUnpin for engine::ports::outbound::AgentContinueWork
-impl core::panic::unwind_safe::RefUnwindSafe for engine::ports::outbound::AgentContinueWork
-impl core::panic::unwind_safe::UnwindSafe for engine::ports::outbound::AgentContinueWork
-impl<Q, K> equivalent::Equivalent<K> for engine::ports::outbound::AgentContinueWork where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
-pub fn engine::ports::outbound::AgentContinueWork::equivalent(&self, &K) -> bool
-impl<T, U> core::convert::Into<U> for engine::ports::outbound::AgentContinueWork where U: core::convert::From<T>
-pub fn engine::ports::outbound::AgentContinueWork::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for engine::ports::outbound::AgentContinueWork where U: core::convert::Into<T>
-pub type engine::ports::outbound::AgentContinueWork::Error = core::convert::Infallible
-pub fn engine::ports::outbound::AgentContinueWork::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for engine::ports::outbound::AgentContinueWork where U: core::convert::TryFrom<T>
-pub type engine::ports::outbound::AgentContinueWork::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn engine::ports::outbound::AgentContinueWork::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for engine::ports::outbound::AgentContinueWork where T: core::clone::Clone
-pub type engine::ports::outbound::AgentContinueWork::Owned = T
-pub fn engine::ports::outbound::AgentContinueWork::clone_into(&self, &mut T)
-pub fn engine::ports::outbound::AgentContinueWork::to_owned(&self) -> T
-impl<T> core::any::Any for engine::ports::outbound::AgentContinueWork where T: 'static + ?core::marker::Sized
-pub fn engine::ports::outbound::AgentContinueWork::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for engine::ports::outbound::AgentContinueWork where T: ?core::marker::Sized
-pub fn engine::ports::outbound::AgentContinueWork::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for engine::ports::outbound::AgentContinueWork where T: ?core::marker::Sized
-pub fn engine::ports::outbound::AgentContinueWork::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for engine::ports::outbound::AgentContinueWork where T: core::clone::Clone
-pub unsafe fn engine::ports::outbound::AgentContinueWork::clone_to_uninit(&self, *mut u8)
-impl<T> core::convert::From<T> for engine::ports::outbound::AgentContinueWork
-pub fn engine::ports::outbound::AgentContinueWork::from(T) -> T
-impl<T> typenum::type_operators::Same for engine::ports::outbound::AgentContinueWork
-pub type engine::ports::outbound::AgentContinueWork::Output = T
 pub struct engine::ports::AgentMessageTurn
 pub engine::ports::AgentMessageTurn::assistant_message: alloc::string::String
 pub engine::ports::AgentMessageTurn::raw_text: alloc::string::String
@@ -5506,7 +5312,6 @@ pub engine::ports::AgentRequest::task_prompt: alloc::string::String
 pub engine::ports::AgentRequest::tool_access_policy: engine::ports::outbound::ToolAccessPolicy
 pub engine::ports::AgentRequest::tool_config: engine::NodeToolConfig
 pub engine::ports::AgentRequest::transcript: alloc::vec::Vec<engine::conversation::AgentTranscriptItem>
-pub engine::ports::AgentRequest::turn_phase: engine::ports::outbound::AgentTurnPhase
 pub engine::ports::AgentRequest::workflow_id: engine::graph::workflow::WorkflowId
 impl engine::ports::outbound::AgentRequest
 pub fn engine::ports::outbound::AgentRequest::system_content(&self) -> alloc::string::String
@@ -5602,6 +5407,7 @@ pub struct engine::ports::AgentTurnSuccess
 pub engine::ports::AgentTurnSuccess::assistant_message: core::option::Option<alloc::string::String>
 pub engine::ports::AgentTurnSuccess::output: serde_json::value::Value
 pub engine::ports::AgentTurnSuccess::raw_text: alloc::string::String
+pub engine::ports::AgentTurnSuccess::reasoning: alloc::vec::Vec<engine::conversation::AgentReasoning>
 pub engine::ports::AgentTurnSuccess::usage: core::option::Option<engine::ports::outbound::UsageReport>
 impl core::clone::Clone for engine::ports::outbound::AgentTurnSuccess
 pub fn engine::ports::outbound::AgentTurnSuccess::clone(&self) -> engine::ports::outbound::AgentTurnSuccess
@@ -7015,6 +6821,7 @@ pub fn engine::ToolTruncation::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::ToolTruncation where T: for<'de> serde_core::de::Deserialize<'de>
 impl<T> typenum::type_operators::Same for engine::ToolTruncation
 pub type engine::ToolTruncation::Output = T
+pub const engine::tools::PLAN_DRAFT_PATH: &str
 pub const engine::tools::WRITE_PLAN_ARTIFACT_TOOL: &str
 pub fn engine::tools::effective_change_path(&engine::FileChangeRecord) -> &str
 pub fn engine::tools::merge_file_change_record(&mut alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::FileChangeRecord>, engine::FileChangeRecord)
@@ -7193,7 +7000,6 @@ impl<T> typenum::type_operators::Same for engine::conversation::AgentTranscriptI
 pub type engine::conversation::AgentTranscriptItem::Output = T
 pub enum engine::AgentTurnOutcome
 pub engine::AgentTurnOutcome::Completed(engine::ports::outbound::AgentTurnSuccess)
-pub engine::AgentTurnOutcome::ContinueWork(engine::ports::outbound::AgentContinueWork)
 pub engine::AgentTurnOutcome::Message(engine::ports::outbound::AgentMessageTurn)
 pub engine::AgentTurnOutcome::NeedsUserInput(engine::ports::outbound::AgentNeedUserInput)
 pub engine::AgentTurnOutcome::ToolCalls(engine::ports::outbound::AgentToolCallBatch)
@@ -7238,55 +7044,6 @@ impl<T> core::convert::From<T> for engine::ports::outbound::AgentTurnOutcome
 pub fn engine::ports::outbound::AgentTurnOutcome::from(T) -> T
 impl<T> typenum::type_operators::Same for engine::ports::outbound::AgentTurnOutcome
 pub type engine::ports::outbound::AgentTurnOutcome::Output = T
-pub enum engine::AgentTurnPhase
-pub engine::AgentTurnPhase::Control
-pub engine::AgentTurnPhase::Work
-impl core::clone::Clone for engine::ports::outbound::AgentTurnPhase
-pub fn engine::ports::outbound::AgentTurnPhase::clone(&self) -> engine::ports::outbound::AgentTurnPhase
-impl core::cmp::Eq for engine::ports::outbound::AgentTurnPhase
-impl core::cmp::PartialEq for engine::ports::outbound::AgentTurnPhase
-pub fn engine::ports::outbound::AgentTurnPhase::eq(&self, &engine::ports::outbound::AgentTurnPhase) -> bool
-impl core::default::Default for engine::ports::outbound::AgentTurnPhase
-pub fn engine::ports::outbound::AgentTurnPhase::default() -> engine::ports::outbound::AgentTurnPhase
-impl core::fmt::Debug for engine::ports::outbound::AgentTurnPhase
-pub fn engine::ports::outbound::AgentTurnPhase::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for engine::ports::outbound::AgentTurnPhase
-impl core::marker::StructuralPartialEq for engine::ports::outbound::AgentTurnPhase
-impl core::marker::Freeze for engine::ports::outbound::AgentTurnPhase
-impl core::marker::Send for engine::ports::outbound::AgentTurnPhase
-impl core::marker::Sync for engine::ports::outbound::AgentTurnPhase
-impl core::marker::Unpin for engine::ports::outbound::AgentTurnPhase
-impl core::marker::UnsafeUnpin for engine::ports::outbound::AgentTurnPhase
-impl core::panic::unwind_safe::RefUnwindSafe for engine::ports::outbound::AgentTurnPhase
-impl core::panic::unwind_safe::UnwindSafe for engine::ports::outbound::AgentTurnPhase
-impl<Q, K> equivalent::Equivalent<K> for engine::ports::outbound::AgentTurnPhase where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
-pub fn engine::ports::outbound::AgentTurnPhase::equivalent(&self, &K) -> bool
-impl<T, U> core::convert::Into<U> for engine::ports::outbound::AgentTurnPhase where U: core::convert::From<T>
-pub fn engine::ports::outbound::AgentTurnPhase::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for engine::ports::outbound::AgentTurnPhase where U: core::convert::Into<T>
-pub type engine::ports::outbound::AgentTurnPhase::Error = core::convert::Infallible
-pub fn engine::ports::outbound::AgentTurnPhase::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for engine::ports::outbound::AgentTurnPhase where U: core::convert::TryFrom<T>
-pub type engine::ports::outbound::AgentTurnPhase::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn engine::ports::outbound::AgentTurnPhase::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for engine::ports::outbound::AgentTurnPhase where T: core::clone::Clone
-pub type engine::ports::outbound::AgentTurnPhase::Owned = T
-pub fn engine::ports::outbound::AgentTurnPhase::clone_into(&self, &mut T)
-pub fn engine::ports::outbound::AgentTurnPhase::to_owned(&self) -> T
-impl<T> core::any::Any for engine::ports::outbound::AgentTurnPhase where T: 'static + ?core::marker::Sized
-pub fn engine::ports::outbound::AgentTurnPhase::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for engine::ports::outbound::AgentTurnPhase where T: ?core::marker::Sized
-pub fn engine::ports::outbound::AgentTurnPhase::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for engine::ports::outbound::AgentTurnPhase where T: ?core::marker::Sized
-pub fn engine::ports::outbound::AgentTurnPhase::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for engine::ports::outbound::AgentTurnPhase where T: core::clone::Clone
-pub unsafe fn engine::ports::outbound::AgentTurnPhase::clone_to_uninit(&self, *mut u8)
-impl<T> core::convert::From<T> for engine::ports::outbound::AgentTurnPhase
-pub fn engine::ports::outbound::AgentTurnPhase::from(T) -> T
-impl<T> outref::AsOut<T> for engine::ports::outbound::AgentTurnPhase where T: core::marker::Copy
-pub fn engine::ports::outbound::AgentTurnPhase::as_out(&mut self) -> outref::Out<'_, T>
-impl<T> typenum::type_operators::Same for engine::ports::outbound::AgentTurnPhase
-pub type engine::ports::outbound::AgentTurnPhase::Output = T
 pub enum engine::AiStreamEvent
 pub engine::AiStreamEvent::AssistantDelta
 pub engine::AiStreamEvent::AssistantDelta::content: alloc::string::String
@@ -8412,52 +8169,6 @@ impl<T> core::convert::From<T> for engine::graph::validation::WorkflowValidation
 pub fn engine::graph::validation::WorkflowValidationError::from(T) -> T
 impl<T> typenum::type_operators::Same for engine::graph::validation::WorkflowValidationError
 pub type engine::graph::validation::WorkflowValidationError::Output = T
-pub struct engine::AgentContinueWork
-pub engine::AgentContinueWork::assistant_message: core::option::Option<alloc::string::String>
-pub engine::AgentContinueWork::raw_text: alloc::string::String
-pub engine::AgentContinueWork::reasoning: alloc::vec::Vec<engine::conversation::AgentReasoning>
-pub engine::AgentContinueWork::usage: core::option::Option<engine::ports::outbound::UsageReport>
-impl core::clone::Clone for engine::ports::outbound::AgentContinueWork
-pub fn engine::ports::outbound::AgentContinueWork::clone(&self) -> engine::ports::outbound::AgentContinueWork
-impl core::cmp::Eq for engine::ports::outbound::AgentContinueWork
-impl core::cmp::PartialEq for engine::ports::outbound::AgentContinueWork
-pub fn engine::ports::outbound::AgentContinueWork::eq(&self, &engine::ports::outbound::AgentContinueWork) -> bool
-impl core::fmt::Debug for engine::ports::outbound::AgentContinueWork
-pub fn engine::ports::outbound::AgentContinueWork::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for engine::ports::outbound::AgentContinueWork
-impl core::marker::Freeze for engine::ports::outbound::AgentContinueWork
-impl core::marker::Send for engine::ports::outbound::AgentContinueWork
-impl core::marker::Sync for engine::ports::outbound::AgentContinueWork
-impl core::marker::Unpin for engine::ports::outbound::AgentContinueWork
-impl core::marker::UnsafeUnpin for engine::ports::outbound::AgentContinueWork
-impl core::panic::unwind_safe::RefUnwindSafe for engine::ports::outbound::AgentContinueWork
-impl core::panic::unwind_safe::UnwindSafe for engine::ports::outbound::AgentContinueWork
-impl<Q, K> equivalent::Equivalent<K> for engine::ports::outbound::AgentContinueWork where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
-pub fn engine::ports::outbound::AgentContinueWork::equivalent(&self, &K) -> bool
-impl<T, U> core::convert::Into<U> for engine::ports::outbound::AgentContinueWork where U: core::convert::From<T>
-pub fn engine::ports::outbound::AgentContinueWork::into(self) -> U
-impl<T, U> core::convert::TryFrom<U> for engine::ports::outbound::AgentContinueWork where U: core::convert::Into<T>
-pub type engine::ports::outbound::AgentContinueWork::Error = core::convert::Infallible
-pub fn engine::ports::outbound::AgentContinueWork::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
-impl<T, U> core::convert::TryInto<U> for engine::ports::outbound::AgentContinueWork where U: core::convert::TryFrom<T>
-pub type engine::ports::outbound::AgentContinueWork::Error = <U as core::convert::TryFrom<T>>::Error
-pub fn engine::ports::outbound::AgentContinueWork::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
-impl<T> alloc::borrow::ToOwned for engine::ports::outbound::AgentContinueWork where T: core::clone::Clone
-pub type engine::ports::outbound::AgentContinueWork::Owned = T
-pub fn engine::ports::outbound::AgentContinueWork::clone_into(&self, &mut T)
-pub fn engine::ports::outbound::AgentContinueWork::to_owned(&self) -> T
-impl<T> core::any::Any for engine::ports::outbound::AgentContinueWork where T: 'static + ?core::marker::Sized
-pub fn engine::ports::outbound::AgentContinueWork::type_id(&self) -> core::any::TypeId
-impl<T> core::borrow::Borrow<T> for engine::ports::outbound::AgentContinueWork where T: ?core::marker::Sized
-pub fn engine::ports::outbound::AgentContinueWork::borrow(&self) -> &T
-impl<T> core::borrow::BorrowMut<T> for engine::ports::outbound::AgentContinueWork where T: ?core::marker::Sized
-pub fn engine::ports::outbound::AgentContinueWork::borrow_mut(&mut self) -> &mut T
-impl<T> core::clone::CloneToUninit for engine::ports::outbound::AgentContinueWork where T: core::clone::Clone
-pub unsafe fn engine::ports::outbound::AgentContinueWork::clone_to_uninit(&self, *mut u8)
-impl<T> core::convert::From<T> for engine::ports::outbound::AgentContinueWork
-pub fn engine::ports::outbound::AgentContinueWork::from(T) -> T
-impl<T> typenum::type_operators::Same for engine::ports::outbound::AgentContinueWork
-pub type engine::ports::outbound::AgentContinueWork::Output = T
 pub struct engine::AgentMessageTurn
 pub engine::AgentMessageTurn::assistant_message: alloc::string::String
 pub engine::AgentMessageTurn::raw_text: alloc::string::String
@@ -8675,7 +8386,6 @@ pub engine::AgentRequest::task_prompt: alloc::string::String
 pub engine::AgentRequest::tool_access_policy: engine::ports::outbound::ToolAccessPolicy
 pub engine::AgentRequest::tool_config: engine::NodeToolConfig
 pub engine::AgentRequest::transcript: alloc::vec::Vec<engine::conversation::AgentTranscriptItem>
-pub engine::AgentRequest::turn_phase: engine::ports::outbound::AgentTurnPhase
 pub engine::AgentRequest::workflow_id: engine::graph::workflow::WorkflowId
 impl engine::ports::outbound::AgentRequest
 pub fn engine::ports::outbound::AgentRequest::system_content(&self) -> alloc::string::String
@@ -8771,6 +8481,7 @@ pub struct engine::AgentTurnSuccess
 pub engine::AgentTurnSuccess::assistant_message: core::option::Option<alloc::string::String>
 pub engine::AgentTurnSuccess::output: serde_json::value::Value
 pub engine::AgentTurnSuccess::raw_text: alloc::string::String
+pub engine::AgentTurnSuccess::reasoning: alloc::vec::Vec<engine::conversation::AgentReasoning>
 pub engine::AgentTurnSuccess::usage: core::option::Option<engine::ports::outbound::UsageReport>
 impl core::clone::Clone for engine::ports::outbound::AgentTurnSuccess
 pub fn engine::ports::outbound::AgentTurnSuccess::clone(&self) -> engine::ports::outbound::AgentTurnSuccess
@@ -9498,7 +9209,6 @@ pub engine::InteractiveEngineCheckpoint::retries_by_node: alloc::collections::bt
 pub engine::InteractiveEngineCheckpoint::submit_output_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::InteractiveEngineCheckpoint::transcripts: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::conversation::AgentTranscriptItem>>
 pub engine::InteractiveEngineCheckpoint::transient_streaks_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
-pub engine::InteractiveEngineCheckpoint::work_phase_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
 pub engine::InteractiveEngineCheckpoint::workflow_id: engine::graph::workflow::WorkflowId
 impl core::clone::Clone for engine::InteractiveEngineCheckpoint
 pub fn engine::InteractiveEngineCheckpoint::clone(&self) -> engine::InteractiveEngineCheckpoint
@@ -11030,6 +10740,7 @@ pub type engine::graph::workflow::WorkflowSettings::Output = T
 pub const engine::CALL_SUBAGENT_TOOL: &str
 pub const engine::DECLARE_SUBAGENTS_TOOL: &str
 pub const engine::OUTPUT_REPAIR_RAW_ARGUMENTS_MAX_BYTES: usize
+pub const engine::PLAN_DRAFT_PATH: &str
 pub const engine::SUBMIT_NODE_OUTPUT_TOOL: &str
 pub const engine::WRITE_PLAN_ARTIFACT_TOOL: &str
 pub trait engine::AiPort: core::marker::Send + core::marker::Sync

@@ -216,7 +216,6 @@ mod tests {
                 reads_by_node: BTreeMap::new(),
                 transcripts: BTreeMap::new(),
                 awaiting_nodes: BTreeSet::new(),
-                work_phase_nodes: BTreeSet::new(),
                 pending_tool_batches: BTreeMap::new(),
                 retries_by_node: BTreeMap::new(),
                 transient_streaks_by_node: BTreeMap::new(),

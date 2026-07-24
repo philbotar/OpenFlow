@@ -11,10 +11,25 @@ Transport goes through **Rig 0.39** (`rig_adapter/`). Pre-Rig modules `openai_co
 | OpenAI-compatible (via Rig) | `rig_adapter/model.rs` + `convert.rs` | Chat completions / Responses wire shape, tools, streaming |
 | ChatGPT (Codex) OAuth + Rig | `codex_oauth/`, `codex.rs`, and `rig_adapter/model.rs` | Browser/device login, refreshable credentials, ChatGPT Codex Responses streaming |
 | Anthropic Messages (via Rig) | `rig_adapter/` (+ `anthropic_http.rs`, `claude_thinking.rs`) | Anthropic-native mapping, thinking blocks, prompt cache |
-| Amazon Bedrock Converse (via Rig) | `rig_adapter/model.rs` + `aws_runtime.rs` | AWS Bedrock transport and credential resolution |
+| Amazon Bedrock Converse (via Rig) | `rig_adapter/model.rs` + `aws_runtime.rs` | AWS Bedrock transport and credential resolution (`bedrock` Cargo feature; off by default on `providers`/`orchestration`, on via `desktop`) |
 | Shared mapping | `crates/providers/src/mapping/` | Transcript conversion, tool argument parsing, `jsonrepair-rs` recovery |
 | Factory | `crates/providers/src/lib.rs` | `create_provider()` returns `Box<dyn AiPort>` |
 | Client entry | `crates/providers/src/client.rs` | `AiClient: AiPort`, config enums, model cache |
+
+## Per-model transport routing
+
+Custom OpenAI-compatible profiles keep a default Responses or Chat Completions transport. A model
+can override that default through `ProviderProfile.model_transports` with `responses`,
+`chat_completions`, or `anthropic_messages`. Settings stores model IDs as data; provider code does
+not infer transport from vendor names or model allowlists.
+
+An `anthropic_messages` override uses the Rig Anthropic client against the profile base URL. It
+sends the standard `/v1/messages` request, Anthropic auth/version headers, tool schema, and
+Anthropic response mapping. Removing the override restores the profile default.
+
+When an adapter must invoke without streaming, it keeps typed reasoning on the turn outcome.
+The fallback stream emits displayable text and summary blocks before assistant text. It never
+emits encrypted or redacted reasoning payloads.
 
 ## Deterministic recovery and overseer repair
 
@@ -84,7 +99,7 @@ Run the live workflow smoke only when intentionally checking a real provider:
 export AWS_REGION=us-east-1
 export STEP_WORKFLOW_LIVE_AI=1
 export STEP_WORKFLOW_LIVE_MODEL=anthropic.claude-sonnet-4-20250514-v1:0
-cargo test -p orchestration --test live_workflow -- --ignored --nocapture
+cargo nextest run -p orchestration --test live_workflow --run-ignored ignored-only --no-capture
 ```
 
 See [testing workflows](../contributing/testing-workflows.md) for the full live-AI rules.

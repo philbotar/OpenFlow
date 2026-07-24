@@ -91,17 +91,20 @@ Orchestration may import only allowlisted symbols from `providers` (factory + co
 | `crates/providers/tests/rig_*.rs` | HTTP-level Wiremock suites |
 
 ```bash
-cargo test -p providers
+cargo nextest run -p providers
+# Bedrock / AWS SDK (off by default):
+cargo nextest run -p providers --features bedrock
+# or: ./scripts/verify/test-providers-bedrock.sh
 ```
 
-Test wire mapping and `jsonrepair` recovery. Avoid live network in unit tests.
+Test wire mapping and `jsonrepair` recovery. Avoid live network in unit tests. Default builds skip the `bedrock` feature (no AWS SDK); desktop enables it for the app.
 
 ## Change checklist
 
 1. Does orchestration still depend only on `create_provider()` + config types?
 2. Is provider-specific logic contained in this crate?
 3. Do mapping / `rig_adapter` tests cover new fields and tool-call shapes?
-4. Run `./scripts/verify.sh test clippy arch`.
+4. Run `./scripts/verify.sh test-fast clippy arch`.
 
 ## Related docs
 

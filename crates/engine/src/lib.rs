@@ -38,11 +38,10 @@ pub use graph::{
     WorkflowId, WorkflowSchedule, WorkflowSettings, WorkflowValidationError,
 };
 pub use ports::{
-    emit_assistant_deltas_from_outcome, AgentContinueWork, AgentError, AgentMessageTurn,
-    AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTurnOutcome, AgentTurnPhase,
-    AgentTurnSuccess, AiPort, AiStreamEvent, AiStreamSink, OutputRepairCandidate,
-    OutputRepairFailureKind, ToolAccessPolicy, ToolBatchEffects, ToolBatchOutput, ToolPort,
-    UsageReport,
+    emit_assistant_deltas_from_outcome, AgentError, AgentMessageTurn, AgentNeedUserInput,
+    AgentRequest, AgentToolCallBatch, AgentTurnOutcome, AgentTurnSuccess, AiPort, AiStreamEvent,
+    AiStreamSink, OutputRepairCandidate, OutputRepairFailureKind, ToolAccessPolicy,
+    ToolBatchEffects, ToolBatchOutput, ToolPort, UsageReport,
 };
 pub use template::{default_templates, Template, TemplateStore, TemplateStoreError};
 pub use tools::{
@@ -50,5 +49,5 @@ pub use tools::{
     ApprovalMode, EditBatch, FileChangeOp, FileChangeRecord, FileSnapshot, NodeToolConfig,
     PendingToolApproval, ReadRecord, SubagentStatus, SubagentSummary, ToolCall, ToolCallStatus,
     ToolConcurrency, ToolDefinition, ToolOutputMeta, ToolResult, ToolTier, ToolTruncation,
-    ToolTruncationStrategy, WRITE_PLAN_ARTIFACT_TOOL,
+    ToolTruncationStrategy, PLAN_DRAFT_PATH, WRITE_PLAN_ARTIFACT_TOOL,
 };

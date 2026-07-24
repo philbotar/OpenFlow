@@ -95,7 +95,17 @@ impl ToolRegistry {
         config: &NodeToolConfig,
         policy: ToolAccessPolicy,
     ) -> Vec<ToolDefinition> {
-        let mut defs = self.filtered_builtins(config, policy);
+        self.definitions_for_policy_and_plan_scope(config, policy, true)
+    }
+
+    #[must_use]
+    pub fn definitions_for_policy_and_plan_scope(
+        &self,
+        config: &NodeToolConfig,
+        policy: ToolAccessPolicy,
+        can_manage_plan: bool,
+    ) -> Vec<ToolDefinition> {
+        let mut defs = self.filtered_builtins(config, policy, can_manage_plan);
         if matches!(policy, ToolAccessPolicy::Execution) && !Self::is_read_only(config) {
             defs.push(declare_subagents_tool().definition);
             defs.push(call_subagent_tool().definition);
@@ -107,7 +117,7 @@ impl ToolRegistry {
     /// to prevent recursive invocation.
     #[must_use]
     pub fn definitions_for_subagent(&self, config: &NodeToolConfig) -> Vec<ToolDefinition> {
-        let mut defs = self.filtered_builtins(config, ToolAccessPolicy::Execution);
+        let mut defs = self.filtered_builtins(config, ToolAccessPolicy::Execution, false);
         if !Self::is_read_only(config) {
             defs.push(declare_subagents_tool().definition);
         }
@@ -125,6 +135,7 @@ impl ToolRegistry {
         &self,
         config: &NodeToolConfig,
         policy: ToolAccessPolicy,
+        can_manage_plan: bool,
     ) -> Vec<ToolDefinition> {
         let read_only = Self::is_read_only(config);
         let mut defs: Vec<ToolDefinition> = self
@@ -139,14 +150,16 @@ impl ToolRegistry {
                     return false;
                 }
                 if tool.definition.name == WRITE_PLAN_ARTIFACT_TOOL
-                    && !matches!(policy, ToolAccessPolicy::Planning)
+                    && (!matches!(policy, ToolAccessPolicy::Planning) || !can_manage_plan)
                 {
                     return false;
                 }
                 if read_only
                     && tool.definition.tier != ToolTier::Read
                     && !(matches!(policy, ToolAccessPolicy::Planning)
-                        && tool.definition.name == WRITE_PLAN_ARTIFACT_TOOL)
+                        && can_manage_plan
+                        && (tool.definition.name == WRITE_PLAN_ARTIFACT_TOOL
+                            || matches!(tool.definition.name.as_str(), "write" | "edit")))
                 {
                     return false;
                 }
@@ -155,11 +168,41 @@ impl ToolRegistry {
                     ToolAccessPolicy::Planning => {
                         tool.kind != BuiltinToolKind::Mcp
                             && (tool.definition.tier == ToolTier::Read
-                                || tool.definition.name == WRITE_PLAN_ARTIFACT_TOOL)
+                                || (can_manage_plan
+                                    && tool.definition.name == WRITE_PLAN_ARTIFACT_TOOL)
+                                || (!read_only
+                                    && matches!(tool.definition.name.as_str(), "write" | "edit"))
+                                || (can_manage_plan
+                                    && matches!(tool.definition.name.as_str(), "write" | "edit")))
                     }
                 }
             })
-            .map(|tool| tool.definition.clone())
+            .map(|tool| {
+                let mut definition = tool.definition.clone();
+                if matches!(policy, ToolAccessPolicy::Planning)
+                    && matches!(definition.name.as_str(), "write" | "edit")
+                {
+                    if can_manage_plan && read_only {
+                        definition.description.push_str(&format!(
+                            " During Plan Mode planning, use replace mode only on the run-local \
+                             plan draft at {}; repository files remain read-only.",
+                            engine::PLAN_DRAFT_PATH
+                        ));
+                    } else if can_manage_plan {
+                        definition.description.push_str(&format!(
+                            " During Plan Mode planning, use {} for the run-local plan draft; \
+                             repository writes remain limited to docs/**/*.md.",
+                            engine::PLAN_DRAFT_PATH
+                        ));
+                    } else {
+                        definition.description.push_str(
+                            " During Plan Mode planning, this node does not own the run-local plan \
+                             draft; repository writes remain limited to docs/**/*.md.",
+                        );
+                    }
+                }
+                definition
+            })
             .collect();
         defs.sort_by(|left, right| left.name.cmp(&right.name));
         defs
@@ -283,7 +326,7 @@ fn write_tool() -> RegisteredTool {
     RegisteredTool {
         definition: ToolDefinition {
             name: "write".to_string(),
-            description: "Create or overwrite a file under the execution folder. Prefer edit for existing files; write replaces the whole file.".to_string(),
+            description: "Create or overwrite a file under the execution folder. Requires both path and content — never path only. Prefer edit for existing files; write replaces the whole file. For large docs, write a small stub first, then edit in ~40-line chunks.".to_string(),
             input_schema: with_intent_field(serde_json::json!({
                 "type": "object",
                 "additionalProperties": false,
@@ -310,17 +353,19 @@ fn write_plan_artifact_tool() -> RegisteredTool {
     RegisteredTool {
         definition: ToolDefinition {
             name: WRITE_PLAN_ARTIFACT_TOOL.to_string(),
-            description: "Write one immutable Markdown plan artifact in this run. The host chooses an opaque UUID path; use the returned artifact id and hash in your compact output instead of duplicating the plan text.".to_string(),
+            description: format!(
+                "Seal the completed run-local plan draft at {} as this run's one immutable \
+                 Markdown plan artifact. Create the draft with write, update it incrementally \
+                 with replace-mode edit, then call this tool without copying plan text into the \
+                 arguments. This call always pauses for explicit human approval; denial leaves \
+                 the draft mutable. The host returns the artifact id and hash after approval.",
+                engine::PLAN_DRAFT_PATH
+            ),
             input_schema: with_intent_field(serde_json::json!({
                 "type": "object",
                 "additionalProperties": false,
-                "properties": {
-                    "markdown": {
-                        "type": "string",
-                        "description": "The complete Markdown plan to seal as a run artifact."
-                    }
-                },
-                "required": ["markdown"]
+                "properties": {},
+                "required": []
             })),
             tier: ToolTier::Write,
             concurrency: ToolConcurrency::Exclusive,
@@ -602,20 +647,89 @@ mod tests {
     }
 
     #[test]
-    fn planning_policy_exposes_only_read_tools_and_the_plan_artifact_writer() {
+    fn planning_policy_gives_read_only_nodes_only_run_plan_draft_writers() {
+        let registry = ToolRegistry::new();
+        let config = NodeToolConfig {
+            approval_mode: Some(engine::ApprovalMode::ReadOnly),
+        };
+        let definitions = registry.definitions_for_policy(&config, ToolAccessPolicy::Planning);
+        assert!(definitions
+            .iter()
+            .any(|tool| tool.name == WRITE_PLAN_ARTIFACT_TOOL));
+        let write = definitions
+            .iter()
+            .find(|tool| tool.name == "write")
+            .expect("plan draft write");
+        let edit = definitions
+            .iter()
+            .find(|tool| tool.name == "edit")
+            .expect("plan draft edit");
+        assert!(write.description.contains(engine::PLAN_DRAFT_PATH));
+        assert!(edit.description.contains(engine::PLAN_DRAFT_PATH));
+        assert!(!write.description.contains("docs/**/*.md"));
+        assert!(definitions.iter().any(|tool| tool.name == "read"));
+
+        let seal = definitions
+            .iter()
+            .find(|tool| tool.name == WRITE_PLAN_ARTIFACT_TOOL)
+            .expect("plan seal");
+        assert!(seal.description.contains(engine::PLAN_DRAFT_PATH));
+        assert!(seal.input_schema["properties"].get("markdown").is_none());
+    }
+
+    #[test]
+    fn planning_policy_exposes_read_tools_plan_artifact_and_docs_writers() {
         let registry = ToolRegistry::new();
         let definitions =
             registry.definitions_for_policy(&NodeToolConfig::default(), ToolAccessPolicy::Planning);
         assert!(definitions
             .iter()
             .any(|tool| tool.name == WRITE_PLAN_ARTIFACT_TOOL));
-        assert!(definitions
-            .iter()
-            .all(|tool| { tool.tier == ToolTier::Read || tool.name == WRITE_PLAN_ARTIFACT_TOOL }));
+        assert!(definitions.iter().any(|tool| tool.name == "write"));
+        assert!(definitions.iter().any(|tool| tool.name == "edit"));
+        assert!(!definitions.iter().any(|tool| tool.name == "bash"));
         assert!(!definitions
             .iter()
             .any(|tool| tool.name == "openflow_call_subagent"));
         assert!(!definitions.iter().any(|tool| tool.name.starts_with("mcp/")));
+        let write = definitions
+            .iter()
+            .find(|tool| tool.name == "write")
+            .expect("write");
+        assert!(write.description.contains("docs/**/*.md"));
+        assert!(write.description.contains("small stub first"));
+    }
+
+    #[test]
+    fn planning_policy_hides_plan_capabilities_from_non_source_nodes() {
+        let registry = ToolRegistry::new();
+        let definitions = registry.definitions_for_policy_and_plan_scope(
+            &NodeToolConfig::default(),
+            ToolAccessPolicy::Planning,
+            false,
+        );
+
+        assert!(!definitions
+            .iter()
+            .any(|tool| tool.name == WRITE_PLAN_ARTIFACT_TOOL));
+        let write = definitions
+            .iter()
+            .find(|tool| tool.name == "write")
+            .expect("docs writer");
+        assert!(write.description.contains("does not own"));
+        assert!(!write.description.contains(engine::PLAN_DRAFT_PATH));
+
+        let read_only = NodeToolConfig {
+            approval_mode: Some(engine::ApprovalMode::ReadOnly),
+        };
+        let read_only_definitions = registry.definitions_for_policy_and_plan_scope(
+            &read_only,
+            ToolAccessPolicy::Planning,
+            false,
+        );
+        assert!(!read_only_definitions
+            .iter()
+            .any(|tool| matches!(tool.name.as_str(), "write" | "edit")));
     }
 
     #[test]

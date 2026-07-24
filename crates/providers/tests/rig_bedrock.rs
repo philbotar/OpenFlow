@@ -21,6 +21,7 @@ fn bedrock_test_config() -> AiClientConfig {
             aws_profile: Some("dev".into()),
             aws_credential_command: None,
         }),
+        debug_output: false,
     }
 }
 

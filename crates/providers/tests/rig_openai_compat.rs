@@ -72,7 +72,6 @@ fn test_request() -> engine::AgentRequest {
         model_attempt: 1,
         reasoning_effort: None,
         reasoning_budget_tokens: None,
-        turn_phase: engine::AgentTurnPhase::Control,
         tool_access_policy: engine::ToolAccessPolicy::Execution,
         allow_user_input: true,
     }
@@ -91,8 +90,10 @@ fn openai_test_config(base_url: &str, wire_api: WireApi) -> AiClientConfig {
             wire_api,
             responses_path: "v1/responses".into(),
             chat_completions_path: "v1/chat/completions".into(),
+            model_transports: std::collections::BTreeMap::default(),
             request_timeout: std::time::Duration::from_mins(5),
         }),
+        debug_output: false,
     }
 }
 
@@ -220,8 +221,10 @@ async fn custom_chat_submits_large_file_backed_output_without_document_duplicati
         .filter_map(|tool| tool["function"]["name"].as_str())
         .collect::<Vec<_>>();
     assert!(control_tool_names.contains(&"openflow_submit_node_output"));
-    assert!(control_tool_names.contains(&"openflow_continue_work"));
-    assert!(!control_tool_names.contains(&"write"));
+    assert!(
+        control_tool_names.contains(&"write"),
+        "unified catalog advertises executable tools alongside harness tools"
+    );
     let submit_tool = body["tools"]
         .as_array()
         .unwrap()
@@ -311,6 +314,41 @@ async fn custom_chat_empty_turn_preserves_safe_response_diagnostics() {
 }
 
 #[tokio::test]
+async fn custom_chat_non_streaming_fallback_emits_reasoning() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(chat_completion_response(&json!({
+            "role": "assistant",
+            "content": null,
+            "reasoning_content": "Inspecting the requested output.",
+            "tool_calls": [{
+                "id": "call-1",
+                "type": "function",
+                "function": {
+                    "name": "openflow_submit_node_output",
+                    "arguments": "{\"output\":{\"summary\":\"done\"},\"assistant_message\":null}"
+                }
+            }]
+        }))))
+        .mount(&server)
+        .await;
+
+    let sink = RecordingSink::default();
+    let outcome = create_provider(custom_openai_test_config(&server.uri()))
+        .invoke_stream(test_request(), &sink)
+        .await
+        .unwrap();
+
+    assert!(matches!(outcome, AgentTurnOutcome::Completed(_)));
+    assert!(sink.events().iter().any(|event| matches!(
+        event,
+        AiStreamEvent::ThinkingDelta { content }
+            if content == "Inspecting the requested output."
+    )));
+}
+
+#[tokio::test]
 async fn custom_chat_fully_empty_choice_is_empty_provider_turn() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -359,6 +397,100 @@ async fn custom_chat_fully_empty_choice_is_empty_provider_turn() {
 }
 
 #[tokio::test]
+async fn debug_output_logs_raw_chat_completion_body() {
+    let marker = format!("openflow-debug-marker-{}", uuid_ish());
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "chatcmpl-debug",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "test-model",
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": null,
+                    "debug_marker": marker
+                },
+                "finish_reason": "stop"
+            }],
+            "usage": {
+                "prompt_tokens": 1,
+                "completion_tokens": 0,
+                "total_tokens": 1
+            }
+        })))
+        .mount(&server)
+        .await;
+
+    let mut config = custom_openai_test_config(&server.uri());
+    config.debug_output = true;
+    let path = std::env::temp_dir().join(format!("openflow-debug-{}.jsonl", std::process::id()));
+    let before = std::fs::read_to_string(&path).unwrap_or_default();
+
+    let _ = create_provider(config)
+        .invoke_stream(test_request(), &RecordingSink::default())
+        .await;
+
+    let after = std::fs::read_to_string(&path).unwrap_or_default();
+    let new_text = after.strip_prefix(&before).unwrap_or(after.as_str());
+    assert!(
+        new_text.contains("model-response") && new_text.contains(&marker),
+        "expected model-response line with marker; got:\n{new_text}"
+    );
+}
+
+fn uuid_ish() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or_else(|_| "0".into(), |duration| duration.as_nanos().to_string())
+}
+
+#[tokio::test]
+async fn debug_output_disabled_skips_model_response_log() {
+    let marker = format!("openflow-debug-absent-{}", uuid_ish());
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "chatcmpl-debug-off",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "test-model",
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": null,
+                    "debug_marker": marker
+                },
+                "finish_reason": "stop"
+            }]
+        })))
+        .mount(&server)
+        .await;
+
+    let config = custom_openai_test_config(&server.uri());
+    assert!(!config.debug_output);
+    let path = std::env::temp_dir().join(format!("openflow-debug-{}.jsonl", std::process::id()));
+    let before = std::fs::read_to_string(&path).unwrap_or_default();
+
+    let _ = create_provider(config)
+        .invoke_stream(test_request(), &RecordingSink::default())
+        .await;
+
+    let after = std::fs::read_to_string(&path).unwrap_or_default();
+    let new_text = after.strip_prefix(&before).unwrap_or(after.as_str());
+    assert!(
+        !new_text.contains(&marker),
+        "disabled debug_output must not log body; got:\n{new_text}"
+    );
+}
+
+#[tokio::test]
 async fn chat_completions_external_tool_call_batch() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -381,7 +513,6 @@ async fn chat_completions_external_tool_call_batch() {
         .await;
 
     let mut request = test_request();
-    request.turn_phase = engine::AgentTurnPhase::Work;
     request.available_tools = vec![ToolDefinition {
         name: "read".into(),
         description: "Read a file or URL.".into(),
@@ -414,13 +545,14 @@ async fn chat_completions_external_tool_call_batch() {
 
     let requests = server.received_requests().await.unwrap();
     let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
-    let work_tool_names = body["tools"]
+    let tool_names = body["tools"]
         .as_array()
         .unwrap()
         .iter()
         .filter_map(|tool| tool["function"]["name"].as_str())
         .collect::<Vec<_>>();
-    assert_eq!(work_tool_names, vec!["read"]);
+    assert!(tool_names.contains(&"openflow_submit_node_output"));
+    assert!(tool_names.contains(&"read"));
 }
 
 #[tokio::test]
@@ -582,8 +714,10 @@ async fn custom_header_auth_reaches_wire() {
             wire_api: WireApi::ChatCompletions,
             responses_path: "v1/responses".into(),
             chat_completions_path: "v1/chat/completions".into(),
+            model_transports: std::collections::BTreeMap::default(),
             request_timeout: std::time::Duration::from_mins(5),
         }),
+        debug_output: false,
     };
     let client = create_provider(config);
     let outcome = client.invoke(test_request()).await.unwrap();
@@ -612,8 +746,10 @@ async fn chat_completions_upstream_403_maps_to_transient() {
             wire_api: WireApi::ChatCompletions,
             responses_path: "v1/responses".into(),
             chat_completions_path: "v1/chat/completions".into(),
+            model_transports: std::collections::BTreeMap::default(),
             request_timeout: std::time::Duration::from_mins(5),
         }),
+        debug_output: false,
     };
     let client = create_provider(config);
     let err = client.invoke(test_request()).await.unwrap_err();
@@ -643,8 +779,10 @@ async fn chat_completions_upstream_400_maps_to_transient_invoke_and_stream() {
             wire_api: WireApi::ChatCompletions,
             responses_path: "v1/responses".into(),
             chat_completions_path: "v1/chat/completions".into(),
+            model_transports: std::collections::BTreeMap::default(),
             request_timeout: std::time::Duration::from_mins(5),
         }),
+        debug_output: false,
     };
     let client = create_provider(config);
 
@@ -703,8 +841,10 @@ async fn ollama_skips_prompt_cache_key() {
             wire_api: WireApi::ChatCompletions,
             responses_path: "v1/responses".into(),
             chat_completions_path: "v1/chat/completions".into(),
+            model_transports: std::collections::BTreeMap::default(),
             request_timeout: std::time::Duration::from_mins(5),
         }),
+        debug_output: false,
     };
     let client = create_provider(config);
     client.invoke(test_request()).await.unwrap();

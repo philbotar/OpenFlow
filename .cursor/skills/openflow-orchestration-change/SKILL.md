@@ -38,14 +38,14 @@ Procedural only. Architecture facts live in the docs below — do not invent a s
 ## Verify
 
 ```bash
-cargo test -p orchestration --lib
+cargo nextest run -p orchestration --lib
 ./scripts/check-architecture.sh
 ```
 
 When execution behavior changes:
 
 ```bash
-cargo test -p orchestration --test workflow_acceptance -- --nocapture
+cargo nextest run -p orchestration --test workflow_acceptance --no-capture
 ```
 
 Before handoff: load `openflow-finish-change`.

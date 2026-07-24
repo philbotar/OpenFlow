@@ -1,6 +1,6 @@
 use providers::{
-    builtin_provider_specs, provider_spec, CodexOAuthCredentials, ProviderId, ProviderKind,
-    ProviderSpec, ReasoningEffortOption, WireApi,
+    builtin_provider_specs, provider_spec, CodexOAuthCredentials, ModelTransport, ProviderId,
+    ProviderKind, ProviderSpec, ReasoningEffortOption, WireApi,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -19,6 +19,8 @@ pub struct ProviderProfile {
     #[serde(default = "default_request_timeout_secs")]
     pub request_timeout_secs: u64,
     pub known_models: Vec<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub model_transports: BTreeMap<String, ModelTransport>,
     #[serde(default)]
     pub default_model: Option<String>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -120,6 +122,7 @@ impl ProviderProfile {
                 .iter()
                 .map(|model| (*model).to_string())
                 .collect(),
+            model_transports: BTreeMap::new(),
             default_model: Some(spec.default_model.to_string()),
             api_key: String::new(),
             codex_oauth: None,
@@ -153,6 +156,7 @@ impl ProviderProfile {
             chat_completions_path: default_chat_completions_path(),
             request_timeout_secs: default_request_timeout_secs(),
             known_models: vec!["gpt-4o-mini".to_string()],
+            model_transports: BTreeMap::new(),
             default_model: Some("gpt-4o-mini".to_string()),
             api_key: String::new(),
             codex_oauth: None,
@@ -762,6 +766,7 @@ mod tests {
         });
         let mut profile: ProviderProfile = serde_json::from_value(value).unwrap();
         assert_eq!(profile.request_timeout_secs, 300);
+        assert!(profile.model_transports.is_empty());
         assert!(profile.reasoning_effort_options.is_empty());
         assert!(profile.default_reasoning_budget_tokens.is_empty());
 
@@ -772,6 +777,27 @@ mod tests {
         assert_eq!(
             profile.default_reasoning_budget_tokens.get("high"),
             Some(&59_000)
+        );
+    }
+
+    #[test]
+    fn provider_profile_roundtrips_model_transport_overrides() {
+        let mut profile = ProviderProfile::compatible_default();
+        profile.model_transports.insert(
+            "vendor-model".to_string(),
+            ModelTransport::AnthropicMessages,
+        );
+
+        let value = serde_json::to_value(&profile).unwrap();
+        assert_eq!(
+            value["model_transports"]["vendor-model"],
+            "anthropic_messages"
+        );
+
+        let restored: ProviderProfile = serde_json::from_value(value).unwrap();
+        assert_eq!(
+            restored.model_transports.get("vendor-model"),
+            Some(&ModelTransport::AnthropicMessages)
         );
     }
 

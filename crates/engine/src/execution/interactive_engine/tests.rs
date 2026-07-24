@@ -17,13 +17,11 @@ use crate::graph::{
     PlanModeConfig, Workflow,
 };
 use crate::ports::{
-    AgentContinueWork, AgentError, AgentMessageTurn, AgentNeedUserInput, AgentRequest,
-    AgentToolCallBatch, AgentTurnOutcome, AgentTurnPhase, AgentTurnSuccess, AiPort,
-    ToolAccessPolicy, ToolBatchEffects, ToolBatchOutput, ToolPort,
+    AgentError, AgentMessageTurn, AgentNeedUserInput, AgentRequest, AgentToolCallBatch,
+    AgentTurnOutcome, AgentTurnSuccess, AiPort, ToolAccessPolicy, ToolBatchEffects,
+    ToolBatchOutput, ToolPort,
 };
-use crate::tools::{
-    ApprovalMode, FileChangeRecord, ToolCall, ToolConcurrency, ToolDefinition, ToolResult, ToolTier,
-};
+use crate::tools::{ApprovalMode, FileChangeRecord, ToolCall, ToolResult};
 use async_trait::async_trait;
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -36,6 +34,23 @@ fn node(id: &str) -> Node {
     node.id = NodeId(id.to_string());
     node.agent.model = "test-model".to_string();
     node
+}
+
+fn mark_plan_sealed(engine: &mut InteractiveEngine, node_id: &NodeId) {
+    engine
+        .transcripts
+        .entry(node_id.clone())
+        .or_default()
+        .push(AgentTranscriptItem::ToolResult {
+            result: ToolResult {
+                tool_call_id: "seal".to_string(),
+                tool_name: crate::tools::WRITE_PLAN_ARTIFACT_TOOL.to_string(),
+                content: "sealed".to_string(),
+                is_error: false,
+                artifact_ids: vec!["sealed-plan".to_string()],
+                output_meta: None,
+            },
+        });
 }
 
 struct NoopToolPort;
@@ -238,105 +253,6 @@ async fn run_once<A: AiPort, T: ToolPort>(
     engine.run(ai, tools, &CancellationToken::new()).await
 }
 
-struct PhaseToolPort;
-
-#[async_trait]
-impl ToolPort for PhaseToolPort {
-    async fn execute_batch(
-        &self,
-        _node_id: &NodeId,
-        _label: &str,
-        calls: Vec<ToolCall>,
-        _policy: ToolAccessPolicy,
-    ) -> ToolBatchOutput {
-        ToolBatchOutput {
-            results: calls
-                .into_iter()
-                .map(|call| ToolResult {
-                    tool_call_id: call.id,
-                    tool_name: call.name,
-                    content: "found context".to_string(),
-                    is_error: false,
-                    artifact_ids: Vec::new(),
-                    output_meta: None,
-                })
-                .collect(),
-            effects: ToolBatchEffects::default(),
-        }
-    }
-
-    fn augment_request(&self, _node_id: &NodeId, request: &mut AgentRequest) {
-        request.available_tools.push(ToolDefinition {
-            name: "read".to_string(),
-            description: "Read a file".to_string(),
-            input_schema: json!({ "type": "object" }),
-            tier: ToolTier::Read,
-            concurrency: ToolConcurrency::Shared,
-        });
-    }
-}
-
-#[tokio::test]
-async fn run_alternates_control_work_control_before_completion() {
-    struct PhaseAwareAi {
-        phases: Arc<Mutex<Vec<AgentTurnPhase>>>,
-    }
-
-    #[async_trait]
-    impl AiPort for PhaseAwareAi {
-        async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
-            let mut phases = self.phases.lock().expect("phases lock");
-            phases.push(request.turn_phase);
-            match phases.len() {
-                1 => Ok(AgentTurnOutcome::ContinueWork(AgentContinueWork {
-                    raw_text: "{}".to_string(),
-                    assistant_message: None,
-                    reasoning: Vec::new(),
-                    usage: None,
-                })),
-                2 => Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
-                    raw_text: String::new(),
-                    assistant_message: None,
-                    tool_calls: vec![ToolCall {
-                        id: "read-1".to_string(),
-                        name: "read".to_string(),
-                        arguments: json!({ "path": "README.md" }),
-                    }],
-                    reasoning: Vec::new(),
-                    usage: None,
-                })),
-                3 => Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                    output: json!({ "summary": "done" }),
-                    raw_text: "{}".to_string(),
-                    assistant_message: None,
-                    usage: None,
-                })),
-                _ => Err(AgentError::Failed("unexpected extra turn".to_string())),
-            }
-        }
-    }
-
-    let mut workflow = Workflow::new("phases");
-    workflow.nodes = vec![node("idea")];
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
-    let phases = Arc::new(Mutex::new(Vec::new()));
-    let ai = PhaseAwareAi {
-        phases: Arc::clone(&phases),
-    };
-
-    let result = run_once(&mut engine, &ai, &PhaseToolPort).await;
-
-    assert!(matches!(result, EngineRunResult::Completed(_)));
-    assert_eq!(
-        *phases.lock().expect("phases lock"),
-        vec![
-            AgentTurnPhase::Control,
-            AgentTurnPhase::Work,
-            AgentTurnPhase::Control,
-        ]
-    );
-}
-
 #[tokio::test]
 async fn mixed_tool_turn_is_corrected_and_retried_without_executing_calls() {
     struct MixedThenCompleteAi {
@@ -370,7 +286,7 @@ async fn mixed_tool_turn_is_corrected_and_retried_without_executing_calls() {
                     matches!(
                         item,
                         AgentTranscriptItem::UserMessage { content }
-                            if content.contains("one tool call")
+                            if content.contains("mixed harness and executable tools")
                                 && content.contains("write")
                     )
                 }));
@@ -378,6 +294,7 @@ async fn mixed_tool_turn_is_corrected_and_retried_without_executing_calls() {
                 output: json!({"status": "complete"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
+                reasoning: Vec::new(),
                 usage: None,
             }))
         }
@@ -421,34 +338,7 @@ fn mixed_tool_turn_fails_after_retry_cap() {
     assert!(engine
         .failed_nodes
         .get(&node_id)
-        .is_some_and(|error| error.contains("tools from the wrong turn phase")));
-}
-
-#[test]
-fn work_turn_control_tool_gets_work_phase_correction() {
-    let mut workflow = Workflow::new("work-turn-control");
-    workflow.nodes = vec![node("idea")];
-    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
-    let node_id = NodeId::from("idea");
-    engine.work_phase_nodes.insert(node_id.clone());
-    engine.test_insert_in_flight(node_id.clone());
-    engine.on_ai_complete(
-        &node_id,
-        Err(AgentError::mixed_tool_turn(
-            "Custom OpenAI-compatible API",
-            "openflow_continue_work",
-        )),
-    );
-    assert!(engine.transcript(&node_id).iter().any(|item| {
-        matches!(
-            item,
-            AgentTranscriptItem::UserMessage { content }
-                if content.contains("during a work turn")
-                    && content.contains("only executable tools")
-                    && content.contains("openflow_continue_work")
-        )
-    }));
-    assert!(!engine.failed_nodes.contains_key(&node_id));
+        .is_some_and(|error| error.contains("mixed incompatible tools")));
 }
 
 struct CompleteAi {
@@ -473,6 +363,7 @@ impl AiPort for CompleteAi {
             output: self.output.clone(),
             raw_text: "{}".to_string(),
             assistant_message: None,
+            reasoning: Vec::new(),
             usage: None,
         }))
     }
@@ -520,6 +411,7 @@ async fn run_sleeps_backoff_before_transient_retry() {
                 output: json!({"summary": "ok"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
+                reasoning: Vec::new(),
                 usage: None,
             }))
         }
@@ -593,23 +485,6 @@ fn checkpoint_preserves_transient_streaks_by_node() {
 }
 
 #[test]
-fn checkpoint_preserves_work_turn_phase() {
-    let mut workflow = Workflow::new("wf");
-    workflow.nodes = vec![node("a")];
-    let node_a = NodeId("a".to_string());
-    let mut engine = InteractiveEngine::new(workflow.clone(), None, None).unwrap();
-    engine.work_phase_nodes.insert(node_a.clone());
-
-    let checkpoint = engine.prepare_stop_checkpoint();
-    assert!(checkpoint.work_phase_nodes.contains(&node_a));
-
-    let mut restored =
-        InteractiveEngine::from_checkpoint(workflow, checkpoint, None).expect("restore");
-    let request = restored.build_request(&node_a).expect("request");
-    assert_eq!(request.turn_phase, AgentTurnPhase::Work);
-}
-
-#[test]
 fn workflows_without_plan_mode_keep_execution_tools_and_no_packet_input() {
     let mut workflow = Workflow::new("normal-workflow");
     workflow.nodes = vec![node("implement")];
@@ -653,6 +528,7 @@ fn plan_mode_checkpoint_pins_source_and_packet_when_workflow_settings_change() {
         Some(super::PlanModePhase::Planning)
     );
     engine.test_insert_in_flight(freeze_id.clone());
+    mark_plan_sealed(&mut engine, &freeze_id);
     engine.on_ai_complete(
         &freeze_id,
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
@@ -663,6 +539,7 @@ fn plan_mode_checkpoint_pins_source_and_packet_when_workflow_settings_change() {
             }),
             raw_text: "{}".to_string(),
             assistant_message: None,
+            reasoning: Vec::new(),
             usage: None,
         })),
     );
@@ -740,12 +617,14 @@ fn checkpoint_rejects_tampered_frozen_change_evidence_packet() {
     let freeze_id = NodeId::from("freeze");
     let mut engine = InteractiveEngine::new(workflow.clone(), None, None).expect("engine");
     engine.test_insert_in_flight(freeze_id.clone());
+    mark_plan_sealed(&mut engine, &freeze_id);
     engine.on_ai_complete(
         &freeze_id,
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
             output: json!({ "scope": "approved" }),
             raw_text: "{}".to_string(),
             assistant_message: None,
+            reasoning: Vec::new(),
             usage: None,
         })),
     );
@@ -774,12 +653,14 @@ fn checkpoint_rejects_packet_from_a_node_other_than_the_pinned_source() {
     let freeze_id = NodeId::from("freeze");
     let mut engine = InteractiveEngine::new(workflow.clone(), None, None).expect("engine");
     engine.test_insert_in_flight(freeze_id.clone());
+    mark_plan_sealed(&mut engine, &freeze_id);
     engine.on_ai_complete(
         &freeze_id,
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
             output: json!({ "scope": "approved" }),
             raw_text: "{}".to_string(),
             assistant_message: None,
+            reasoning: Vec::new(),
             usage: None,
         })),
     );
@@ -830,21 +711,11 @@ async fn plan_mode_denies_hidden_write_mcp_and_subagent_calls_before_tool_port()
                     name: "read".to_string(),
                     arguments: json!({ "path": "README.md" }),
                 },
-                ToolCall {
-                    id: "plan".to_string(),
-                    name: crate::tools::WRITE_PLAN_ARTIFACT_TOOL.to_string(),
-                    arguments: json!({ "markdown": "# Plan" }),
-                },
             ],
             reasoning: Vec::new(),
             usage: None,
         })),
-        Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-            output: json!({ "scope": "approved" }),
-            raw_text: "{}".to_string(),
-            assistant_message: None,
-            usage: None,
-        })),
+        Ok(needs_input("Should I include the optional migration?")),
     ]);
     let batches = Arc::new(Mutex::new(Vec::new()));
     let tools = PlanningRecordingToolPort {
@@ -854,17 +725,11 @@ async fn plan_mode_denies_hidden_write_mcp_and_subagent_calls_before_tool_port()
 
     assert!(matches!(
         run_once(&mut engine, &ai, &tools).await,
-        EngineRunResult::Completed(_)
+        EngineRunResult::NeedsInteraction { .. }
     ));
     assert_eq!(
         *batches.lock().expect("batches lock"),
-        vec![(
-            vec![
-                "read".to_string(),
-                crate::tools::WRITE_PLAN_ARTIFACT_TOOL.to_string(),
-            ],
-            ToolAccessPolicy::Planning,
-        )]
+        vec![(vec!["read".to_string()], ToolAccessPolicy::Planning,)]
     );
     let transcript = engine.transcript(&NodeId::from("planner"));
     let denied = transcript
@@ -881,7 +746,137 @@ async fn plan_mode_denies_hidden_write_mcp_and_subagent_calls_before_tool_port()
 }
 
 #[test]
-fn committed_plan_artifact_redacts_markdown_from_transcript() {
+fn plan_source_seal_always_requires_explicit_human_approval() {
+    let mut workflow = Workflow::new("plan-mode-approval");
+    let mut planner = node("planner");
+    planner.agent.request_user_input = true;
+    planner.agent.tools.approval_mode = Some(ApprovalMode::ReadOnly);
+    workflow.nodes = vec![planner];
+    workflow.settings.plan_mode = Some(PlanModeConfig {
+        evidence_source_node_id: NodeId::from("planner"),
+    });
+    let planner_id = NodeId::from("planner");
+    let mut engine = InteractiveEngine::new(workflow, None, None).expect("engine");
+
+    engine.test_insert_in_flight(planner_id.clone());
+    engine.on_ai_complete(
+        &planner_id,
+        Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+            raw_text: String::new(),
+            assistant_message: None,
+            tool_calls: vec![ToolCall {
+                id: "seal".to_string(),
+                name: crate::tools::WRITE_PLAN_ARTIFACT_TOOL.to_string(),
+                arguments: json!({ "_i": "Approve and seal the implementation plan" }),
+            }],
+            reasoning: Vec::new(),
+            usage: None,
+        })),
+    );
+
+    let pending = engine
+        .pending_tool_batches
+        .values()
+        .next()
+        .expect("pending plan seal");
+    assert!(pending.requires_approval);
+    assert_eq!(pending.node_id, planner_id);
+    assert_eq!(
+        pending.tool_calls[0].name,
+        crate::tools::WRITE_PLAN_ARTIFACT_TOOL
+    );
+}
+
+#[test]
+fn plan_source_cannot_complete_before_an_approved_seal_succeeds() {
+    let mut workflow = Workflow::new("plan-mode-freeze-gate");
+    let mut planner = node("planner");
+    planner.agent.request_user_input = true;
+    workflow.nodes = vec![planner];
+    workflow.settings.plan_mode = Some(PlanModeConfig {
+        evidence_source_node_id: NodeId::from("planner"),
+    });
+    let planner_id = NodeId::from("planner");
+    let mut engine = InteractiveEngine::new(workflow, None, None).expect("engine");
+
+    engine.test_insert_in_flight(planner_id.clone());
+    engine.on_ai_complete(
+        &planner_id,
+        Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+            output: json!({ "scope": "not approved" }),
+            raw_text: "{}".to_string(),
+            assistant_message: None,
+            reasoning: Vec::new(),
+            usage: None,
+        })),
+    );
+
+    assert!(engine.frozen_change_evidence_packet.is_none());
+    assert!(!engine.outputs.contains_key(&planner_id));
+    assert!(matches!(
+        engine.transcript(&planner_id).last(),
+        Some(AgentTranscriptItem::UserMessage { content })
+            if content.contains(crate::tools::WRITE_PLAN_ARTIFACT_TOOL)
+                && content.contains("explicit human approval")
+    ));
+}
+
+#[test]
+fn non_source_node_cannot_mutate_or_seal_the_run_plan() {
+    let mut workflow = Workflow::new("plan-mode-owner");
+    let mut planner = node("planner");
+    planner.agent.request_user_input = true;
+    workflow.nodes = vec![planner, node("research")];
+    workflow.settings.plan_mode = Some(PlanModeConfig {
+        evidence_source_node_id: NodeId::from("planner"),
+    });
+    let research_id = NodeId::from("research");
+    let mut engine = InteractiveEngine::new(workflow, None, None).expect("engine");
+
+    engine.test_insert_in_flight(research_id.clone());
+    engine.on_ai_complete(
+        &research_id,
+        Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+            raw_text: String::new(),
+            assistant_message: None,
+            tool_calls: vec![
+                ToolCall {
+                    id: "draft".to_string(),
+                    name: "write".to_string(),
+                    arguments: json!({
+                        "path": crate::tools::PLAN_DRAFT_PATH,
+                        "content": "# Plan\n"
+                    }),
+                },
+                ToolCall {
+                    id: "seal".to_string(),
+                    name: crate::tools::WRITE_PLAN_ARTIFACT_TOOL.to_string(),
+                    arguments: json!({}),
+                },
+            ],
+            reasoning: Vec::new(),
+            usage: None,
+        })),
+    );
+
+    assert!(engine.pending_tool_batches.is_empty());
+    let denied = engine
+        .transcript(&research_id)
+        .iter()
+        .filter(|item| {
+            matches!(
+                item,
+                AgentTranscriptItem::ToolResult { result }
+                    if result.is_error
+                        && result.content.contains("selected Plan Mode evidence source")
+            )
+        })
+        .count();
+    assert_eq!(denied, 2);
+}
+
+#[test]
+fn committed_plan_artifact_records_reference_without_plan_payload() {
     let mut workflow = Workflow::new("plan-mode-redaction");
     let mut planner = node("planner");
     planner.agent.request_user_input = true;
@@ -893,7 +888,7 @@ fn committed_plan_artifact_redacts_markdown_from_transcript() {
     let call = ToolCall {
         id: "plan-call".to_string(),
         name: crate::tools::WRITE_PLAN_ARTIFACT_TOOL.to_string(),
-        arguments: json!({ "markdown": "# Very detailed plan" }),
+        arguments: json!({}),
     };
     let mut engine = InteractiveEngine::new(workflow, None, None).expect("engine");
     engine
@@ -926,7 +921,10 @@ fn committed_plan_artifact_redacts_markdown_from_transcript() {
     let AgentTranscriptItem::ToolCall { call } = &engine.transcript(&planner_id)[0] else {
         panic!("expected plan tool call")
     };
-    assert_eq!(call.arguments["markdown_redacted"], json!(true));
+    assert_eq!(
+        call.arguments["sealed_from"],
+        json!(crate::tools::PLAN_DRAFT_PATH)
+    );
     assert_eq!(
         call.arguments["artifact_id"],
         json!("5b6bbf2b-a428-4ca2-8579-207b89d2463a")
@@ -1230,6 +1228,7 @@ fn tool_calls_pause_for_approval_and_resume_after_results() {
             output: json!({"summary": "ok"}),
             raw_text: "{}".to_string(),
             assistant_message: None,
+            reasoning: Vec::new(),
             usage: None,
         })),
     ]);
@@ -1304,6 +1303,7 @@ fn yolo_mode_skips_tool_approval() {
             output: json!({"summary": "ok"}),
             raw_text: "{}".to_string(),
             assistant_message: None,
+            reasoning: Vec::new(),
             usage: None,
         })),
     ]);
@@ -1354,6 +1354,7 @@ fn runtime_approval_patch_applies_before_tool_decision() {
         output: json!({"summary": "ok"}),
         raw_text: "{}".to_string(),
         assistant_message: None,
+        reasoning: Vec::new(),
         usage: None,
     }))]);
     block_on(async {
@@ -1380,6 +1381,7 @@ fn misrouted_completion_is_rejected() {
             output: json!({"summary": "wrong"}),
             raw_text: "{}".to_string(),
             assistant_message: None,
+            reasoning: Vec::new(),
             usage: None,
         })),
     );
@@ -1500,6 +1502,7 @@ impl AiPort for BarrierAi {
             output: json!({ "node": request.node_id.0 }),
             raw_text: String::new(),
             assistant_message: None,
+            reasoning: Vec::new(),
             usage: None,
         }))
     }
@@ -1540,6 +1543,7 @@ impl AiPort for ToolOverlapAi {
                 output: json!({ "node": "b" }),
                 raw_text: String::new(),
                 assistant_message: None,
+                reasoning: Vec::new(),
                 usage: None,
             }));
         }
@@ -1552,6 +1556,7 @@ impl AiPort for ToolOverlapAi {
                 output: json!({ "node": "a" }),
                 raw_text: String::new(),
                 assistant_message: None,
+                reasoning: Vec::new(),
                 usage: None,
             }));
         }
@@ -1683,13 +1688,17 @@ fn tool_batch_effects_are_recorded_on_engine() {
                 tool_calls: vec![ToolCall {
                     id: "t1".to_string(),
                     name: "write".to_string(),
-                    arguments: json!({}),
+                    arguments: json!({
+                        "path": "src/x.rs",
+                        "content": "fn x() {}\n"
+                    }),
                 }],
             })),
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
                 output: json!({ "ok": true }),
                 raw_text: String::new(),
                 assistant_message: None,
+                reasoning: Vec::new(),
                 usage: None,
             })),
         ]);
@@ -1814,6 +1823,153 @@ fn interactive_empty_provider_turn_keeps_human_input_available() {
 }
 
 #[test]
+fn interactive_empty_provider_turn_pauses_for_human_after_retry_cap() {
+    let mut workflow = Workflow::new("wf");
+    workflow.nodes = vec![interactive_node("grill")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let grill = NodeId("grill".to_string());
+    let empty = || {
+        Err(AgentError::Failed(
+            "Custom OpenAI-compatible API model `minimax-m3` returned no tool calls and no usable text."
+                .to_string(),
+        ))
+    };
+
+    for _ in 0..3 {
+        engine.test_insert_in_flight(grill.clone());
+        engine.on_ai_complete(&grill, empty());
+        assert!(!engine.failed_nodes.contains_key(&grill));
+        assert!(!engine.awaiting_nodes.contains(&grill));
+    }
+
+    engine.test_insert_in_flight(grill.clone());
+    engine.on_ai_complete(&grill, empty());
+    assert!(
+        !engine.failed_nodes.contains_key(&grill),
+        "conversational nodes must pause, not fail, after empty-turn retries"
+    );
+    assert!(engine.awaiting_nodes.contains(&grill));
+    assert!(matches!(
+        engine.transcript(&grill).last(),
+        Some(AgentTranscriptItem::AssistantMessage { content })
+            if content.contains("empty turns")
+    ));
+}
+
+#[test]
+fn empty_after_narrated_write_uses_write_specific_nudge() {
+    let mut workflow = Workflow::new("wf");
+    workflow.nodes = vec![interactive_node("brief")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let brief = NodeId("brief".to_string());
+
+    engine.test_insert_in_flight(brief.clone());
+    engine.on_ai_complete(
+        &brief,
+        Ok(message(
+            "Writing the brief to `docs/feature-briefs/002.md` now.",
+        )),
+    );
+    assert!(matches!(
+        engine.transcript(&brief).last(),
+        Some(AgentTranscriptItem::UserMessage { content })
+            if content.contains("narrated creating or updating a file")
+    ));
+
+    engine.test_insert_in_flight(brief.clone());
+    engine.on_ai_complete(
+        &brief,
+        Err(AgentError::Failed(
+            "provider returned neither tool calls nor recoverable output".to_string(),
+        )),
+    );
+    assert!(!engine.failed_nodes.contains_key(&brief));
+    assert!(matches!(
+        engine.transcript(&brief).last(),
+        Some(AgentTranscriptItem::UserMessage { content })
+            if content.contains("already intended to write a file")
+                && content.contains("write tool call")
+    ));
+}
+
+#[test]
+fn incomplete_write_is_rejected_with_chunked_write_nudge() {
+    let mut workflow = Workflow::new("wf");
+    workflow.nodes = vec![autonomous_node("a")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let node_a = NodeId("a".to_string());
+
+    engine
+        .auto_continue_streaks_by_node
+        .insert(node_a.clone(), 5);
+    engine.test_insert_in_flight(node_a.clone());
+    engine.on_ai_complete(
+        &node_a,
+        Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+            raw_text: String::new(),
+            tool_calls: vec![ToolCall {
+                id: "w1".to_string(),
+                name: "write".to_string(),
+                arguments: json!({ "path": "docs/feature-briefs/002.md" }),
+            }],
+            assistant_message: None,
+            reasoning: vec![],
+            usage: None,
+        })),
+    );
+
+    assert!(engine.pending_tool_batches.is_empty());
+    assert!(!engine.auto_continue_streaks_by_node.contains_key(&node_a));
+    let transcript = engine.transcript(&node_a);
+    assert!(transcript.iter().any(|item| {
+        matches!(
+            item,
+            AgentTranscriptItem::ToolResult { result }
+                if result.is_error && result.content.contains("missing field `content`")
+        )
+    }));
+    assert!(matches!(
+        transcript.last(),
+        Some(AgentTranscriptItem::UserMessage { content })
+            if content.contains("missing required `content`")
+                && content.contains("small stub")
+    ));
+}
+
+#[test]
+fn write_with_empty_content_is_allowed_through_to_pending() {
+    let mut workflow = Workflow::new("wf");
+    workflow.nodes = vec![autonomous_node("a")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let node_a = NodeId("a".to_string());
+
+    engine.test_insert_in_flight(node_a.clone());
+    engine.on_ai_complete(
+        &node_a,
+        Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+            raw_text: String::new(),
+            tool_calls: vec![ToolCall {
+                id: "w1".to_string(),
+                name: "write".to_string(),
+                arguments: json!({ "path": "docs/stub.md", "content": "" }),
+            }],
+            assistant_message: None,
+            reasoning: vec![],
+            usage: None,
+        })),
+    );
+
+    assert_eq!(engine.pending_tool_batches.len(), 1);
+    assert!(!engine.transcript(&node_a).iter().any(|item| {
+        matches!(
+            item,
+            AgentTranscriptItem::UserMessage { content }
+                if content.contains("missing required `content`")
+        )
+    }));
+}
+
+#[test]
 fn autonomous_node_auto_continues_instead_of_awaiting_input() {
     let mut workflow = Workflow::new("wf");
     workflow.nodes = vec![autonomous_node("a")];
@@ -1829,7 +1985,7 @@ fn autonomous_node_auto_continues_instead_of_awaiting_input() {
     assert!(matches!(
         transcript.last(),
         Some(AgentTranscriptItem::UserMessage { content })
-            if content.contains("openflow_continue_work")
+            if content.contains("Call write immediately")
     ));
     assert!(matches!(
         &transcript[transcript.len() - 2],
@@ -1927,7 +2083,7 @@ fn interactive_node_still_pauses_for_real_questions() {
 }
 
 #[test]
-fn conversational_node_pauses_on_plain_message_without_guessing_intent() {
+fn conversational_node_auto_continues_plain_message_without_pausing() {
     let mut workflow = Workflow::new("wf");
     workflow.nodes = vec![interactive_node("brief")];
     let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
@@ -1939,12 +2095,151 @@ fn conversational_node_pauses_on_plain_message_without_guessing_intent() {
         Ok(message("Auth and Postgres are in scope. Storage can wait.")),
     );
 
-    assert!(engine.awaiting_nodes.contains(&brief));
+    assert!(
+        !engine.awaiting_nodes.contains(&brief),
+        "plain text must not pause; only openflow_request_user_input pauses"
+    );
+    assert!(!engine.failed_nodes.contains_key(&brief));
+    let transcript = engine.transcript(&brief);
+    assert!(matches!(
+        transcript.last(),
+        Some(AgentTranscriptItem::UserMessage { content })
+            if content.contains("openflow_request_user_input")
+                && !content.contains("No human input is available")
+                && !content.contains("narrated creating or updating")
+    ));
+    assert!(matches!(
+        &transcript[transcript.len() - 2],
+        AgentTranscriptItem::AssistantMessage { content }
+            if content == "Auth and Postgres are in scope. Storage can wait."
+    ));
+}
+
+#[test]
+fn narrated_write_without_tool_gets_write_specific_nudge() {
+    let mut workflow = Workflow::new("wf");
+    workflow.nodes = vec![interactive_node("brief")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let brief = NodeId("brief".to_string());
+
+    engine.test_insert_in_flight(brief.clone());
+    engine.on_ai_complete(
+        &brief,
+        Ok(message(
+            "Writing the brief to `docs/feature-briefs/002.md` now.",
+        )),
+    );
+
+    assert!(!engine.awaiting_nodes.contains(&brief));
+    assert!(!engine.failed_nodes.contains_key(&brief));
+    assert_eq!(engine.auto_continue_streaks_by_node.get(&brief), Some(&1));
+    assert!(matches!(
+        engine.transcript(&brief).last(),
+        Some(AgentTranscriptItem::UserMessage { content })
+            if content.contains("narrated creating or updating a file")
+                && content.contains("Call write immediately")
+    ));
+}
+
+#[test]
+fn plan_mode_narrated_write_nudge_uses_run_local_draft_and_seal_tool() {
+    let mut workflow = Workflow::new("plan-mode");
+    workflow.nodes = vec![interactive_node("planner")];
+    workflow.settings.plan_mode = Some(PlanModeConfig {
+        evidence_source_node_id: NodeId::from("planner"),
+    });
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let planner = NodeId::from("planner");
+
+    engine.test_insert_in_flight(planner.clone());
+    engine.on_ai_complete(
+        &planner,
+        Ok(message("Writing the complete consolidated plan now.")),
+    );
+
+    assert!(matches!(
+        engine.transcript(&planner).last(),
+        Some(AgentTranscriptItem::UserMessage { content })
+            if content.contains(crate::tools::PLAN_DRAFT_PATH)
+                && content.contains(crate::tools::WRITE_PLAN_ARTIFACT_TOOL)
+                && content.contains("call write")
+    ));
+}
+
+#[test]
+fn narrated_write_after_successful_write_nudges_edit_chunks() {
+    let mut workflow = Workflow::new("wf");
+    workflow.nodes = vec![interactive_node("brief")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let brief = NodeId("brief".to_string());
+
+    engine.transcripts.insert(
+        brief.clone(),
+        vec![
+            AgentTranscriptItem::ToolCall {
+                call: ToolCall {
+                    id: "w1".to_string(),
+                    name: "write".to_string(),
+                    arguments: json!({
+                        "path": "docs/feature-briefs/002.md",
+                        "content": "# Stub\n"
+                    }),
+                },
+            },
+            AgentTranscriptItem::ToolResult {
+                result: ToolResult {
+                    tool_call_id: "w1".to_string(),
+                    tool_name: "write".to_string(),
+                    content: "Updated docs/feature-briefs/002.md".to_string(),
+                    is_error: false,
+                    artifact_ids: vec![],
+                    output_meta: None,
+                },
+            },
+        ],
+    );
+
+    engine.test_insert_in_flight(brief.clone());
+    engine.on_ai_complete(
+        &brief,
+        Ok(message(
+            "Writing the full canonical feature brief in one write.",
+        )),
+    );
+
     assert!(!engine.failed_nodes.contains_key(&brief));
     assert!(matches!(
         engine.transcript(&brief).last(),
+        Some(AgentTranscriptItem::UserMessage { content })
+            if content.contains("A write already succeeded")
+                && content.contains("Call edit")
+    ));
+}
+
+#[test]
+fn conversational_node_pauses_after_text_only_auto_continue_cap() {
+    let mut workflow = Workflow::new("wf");
+    workflow.nodes = vec![interactive_node("brief")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let brief = NodeId("brief".to_string());
+
+    for _ in 0..10 {
+        engine.test_insert_in_flight(brief.clone());
+        engine.on_ai_complete(&brief, Ok(message("still narrating")));
+        assert!(!engine.failed_nodes.contains_key(&brief));
+        assert!(!engine.awaiting_nodes.contains(&brief));
+    }
+    engine.test_insert_in_flight(brief.clone());
+    engine.on_ai_complete(&brief, Ok(message("still narrating")));
+    assert!(
+        !engine.failed_nodes.contains_key(&brief),
+        "conversational nodes must pause, not fail, after text-only streak"
+    );
+    assert!(engine.awaiting_nodes.contains(&brief));
+    assert!(matches!(
+        engine.transcript(&brief).last(),
         Some(AgentTranscriptItem::AssistantMessage { content })
-            if content == "Auth and Postgres are in scope. Storage can wait."
+            if content.contains("kept narrating")
     ));
 }
 
@@ -1987,8 +2282,16 @@ fn valid_conversational_pause_resets_protocol_recovery_budgets() {
         Ok(message("Storage is the most useful third surface.")),
     );
 
-    assert!(engine.awaiting_nodes.contains(&brief));
+    assert!(
+        !engine.awaiting_nodes.contains(&brief),
+        "plain follow-up narration must auto-continue, not pause"
+    );
     assert!(!engine.failed_nodes.contains_key(&brief));
+    assert!(matches!(
+        engine.transcript(&brief).last(),
+        Some(AgentTranscriptItem::UserMessage { content })
+            if content.contains("openflow_request_user_input")
+    ));
 }
 
 #[test]

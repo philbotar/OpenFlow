@@ -151,9 +151,9 @@ pub struct WorkflowSettings {
     /// Forward upstream read outlines to downstream node input JSON.
     #[serde(default = "default_true", rename = "forwardUpstreamReads")]
     pub forward_upstream_reads: bool,
-    /// Optional workflow-wide planning gate. While active, only read tools and
-    /// the host-owned plan-artifact tool are available until the selected node
-    /// submits an approved change evidence packet.
+    /// Optional workflow-wide planning gate. While active, only read tools,
+    /// `docs/**/*.md` write/edit, and the host-owned plan-artifact tool are
+    /// available until the selected node submits an approved change evidence packet.
     #[serde(default, rename = "planMode", alias = "plan_mode")]
     pub plan_mode: Option<PlanModeConfig>,
     /// Optional overseer model for repairing malformed final-output submits.
@@ -275,7 +275,8 @@ pub struct AgentNodeConfig {
     pub provider_id: Option<String>,
     /// When false, this node never pauses for human input: the
     /// `openflow_request_user_input` tool is not offered and text-only model
-    /// turns are auto-continued instead of surfacing an input request.
+    /// turns are auto-continued. When true, the request-input tool is offered
+    /// and only a valid call pauses; plain text still auto-continues.
     #[serde(
         default = "default_request_user_input",
         rename = "requestUserInput",

@@ -61,6 +61,10 @@ describe("formatToolDisplayName", () => {
     expect(formatToolDisplayName("openflow_request_user_input")).toBe("Request Input");
   });
 
+  it("maps openflow_write_plan_artifact to 'Seal Plan'", () => {
+    expect(formatToolDisplayName("openflow_write_plan_artifact")).toBe("Seal Plan");
+  });
+
   it("returns raw name for unknown tools (passthrough)", () => {
     expect(formatToolDisplayName("unknown_tool_xyz")).toBe("unknown_tool_xyz");
   });

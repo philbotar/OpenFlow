@@ -169,6 +169,11 @@ jobs:
       - name: Install npm dependencies
         run: npm ci --prefix crates/ui
 
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+
       - name: Cache Rust build artifacts
         uses: swatinem/rust-cache@v2
         with:
@@ -177,6 +182,9 @@ jobs:
 
       - name: Run test-fast
         run: ./scripts/test-fast.sh --execution --skip-ui-typecheck
+
+      - name: Providers Bedrock (feature-gated AWS)
+        run: ./scripts/verify/test-providers-bedrock.sh
 
   ui:
     name: ui

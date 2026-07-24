@@ -199,9 +199,9 @@ impl WorkflowAuthoringService {
         let mut model_attempt = 1u8;
         let mut malformed_submit_retries = 0u8;
         let mut missing_submit_retries = 0u8;
+        let mut mixed_tool_turn_retries = 0u8;
         let mut invalid_draft_retries = 0u8;
         let mut authoring_tool_rounds = 0u8;
-        let mut turn_phase = engine::AgentTurnPhase::Control;
         let mut messages = messages;
         let (assistant_message, workflow, validation) = loop {
             let request = AgentRequest {
@@ -219,7 +219,6 @@ impl WorkflowAuthoringService {
                 model_attempt,
                 reasoning_effort: reasoning_effort.clone(),
                 reasoning_budget_tokens,
-                turn_phase,
                 allow_user_input: false,
                 tool_access_policy: engine::ToolAccessPolicy::Execution,
             };
@@ -233,7 +232,6 @@ impl WorkflowAuthoringService {
 
             match ai.invoke_stream(request, &sink).await {
                 Ok(AgentTurnOutcome::ToolCalls(batch)) => {
-                    turn_phase = engine::AgentTurnPhase::Control;
                     if batch
                         .tool_calls
                         .iter()
@@ -284,19 +282,6 @@ impl WorkflowAuthoringService {
                         });
                     }
                     continue;
-                }
-                Ok(AgentTurnOutcome::ContinueWork(continuation)) => {
-                    turn_phase = engine::AgentTurnPhase::Work;
-                    model_attempt = model_attempt.saturating_add(1);
-                    for reasoning in continuation.reasoning {
-                        transcript.push(AgentTranscriptItem::Reasoning { reasoning });
-                    }
-                    if let Some(content) = continuation
-                        .assistant_message
-                        .filter(|content| !content.trim().is_empty())
-                    {
-                        transcript.push(AgentTranscriptItem::AssistantMessage { content });
-                    }
                 }
                 Ok(AgentTurnOutcome::Completed(AgentTurnSuccess { output, .. })) => {
                     let assistant_message = extract_assistant_message(&output);
@@ -457,6 +442,16 @@ impl WorkflowAuthoringService {
                         content: malformed_submit_output_feedback(&error),
                     });
                 }
+                Err(error)
+                    if error.is_mixed_tool_turn()
+                        && mixed_tool_turn_retries < MAX_MIXED_TOOL_TURN_RETRIES =>
+                {
+                    mixed_tool_turn_retries += 1;
+                    model_attempt = model_attempt.saturating_add(1);
+                    transcript.push(AgentTranscriptItem::UserMessage {
+                        content: mixed_tool_turn_feedback(&error),
+                    });
+                }
                 Err(error) => return Err(error.into()),
             };
 
@@ -551,7 +546,15 @@ where
 const MAX_AUTHORING_CLARIFICATION_RETRIES: u8 = 1;
 const MAX_MALFORMED_SUBMIT_OUTPUT_RETRIES: u8 = 3;
 const MAX_MISSING_SUBMIT_TURN_RETRIES: u8 = 3;
+const MAX_MIXED_TOOL_TURN_RETRIES: u8 = 3;
 const MAX_INVALID_DRAFT_RETRIES: u8 = 5;
+
+fn mixed_tool_turn_feedback(error: &AgentError) -> String {
+    let tool_names = error.mixed_tool_names().unwrap_or("unknown tools");
+    format!(
+        "Your last response mixed finish/submit tools and authoring tools ({tool_names}) and was rejected; no calls from that response were executed. Call openflow_submit_node_output alone when the draft is complete, or call one or more authoring tools (openflow_set_workflow_meta, openflow_add_node, openflow_update_node, openflow_add_edge, openflow_remove_node, openflow_remove_edge) without submit in the same batch."
+    )
+}
 
 fn publish_draft_progress<G>(
     service: &WorkflowAuthoringService,

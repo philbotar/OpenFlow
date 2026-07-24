@@ -12,6 +12,7 @@ const INLINE_OUTPUT_BYTE_LIMIT: usize = 50_000;
 const DEFAULT_HEAD_BYTES: usize = 20_000;
 const DEFAULT_TAIL_BYTES: usize = 20_000;
 pub const MAX_PLAN_ARTIFACT_BYTES: usize = 256 * 1024;
+const PLAN_DRAFT_FILE_NAME: &str = "PLAN.md";
 
 /// Per-run artifact storage. Artifacts live under the run's artifact root for the
 /// duration of the run; there is no garbage collection until the run ends.
@@ -58,6 +59,99 @@ impl ArtifactStore {
 
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    /// Return the host path backing the mutable run-local plan draft.
+    ///
+    /// The path stops being writable as soon as a plan artifact is sealed.
+    pub fn plan_draft_path(&self) -> Result<PathBuf, ToolError> {
+        let plan_artifact_id = self
+            .plan_artifact_id
+            .lock()
+            .map_err(|_| ToolError::failed("plan artifact lock is unavailable".to_string()))?;
+        if plan_artifact_id.is_some() {
+            return Err(ToolError::failed(
+                "a plan artifact has already been sealed for this run".to_string(),
+            ));
+        }
+        Ok(self.root.join(PLAN_DRAFT_FILE_NAME))
+    }
+
+    /// Atomically move the completed run-local draft to its immutable,
+    /// host-selected artifact path.
+    pub fn seal_plan_draft(&self) -> Result<PlanArtifact, ToolError> {
+        let mut plan_artifact_id = self
+            .plan_artifact_id
+            .lock()
+            .map_err(|_| ToolError::failed("plan artifact lock is unavailable".to_string()))?;
+        if let Some(artifact_id) = plan_artifact_id.as_deref() {
+            return self.read_sealed_plan_artifact(artifact_id);
+        }
+
+        let draft_path = self.root.join(PLAN_DRAFT_FILE_NAME);
+        let markdown = fs::read_to_string(&draft_path).map_err(|error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                ToolError::NotFound {
+                    what: format!("plan draft not found at {}", engine::PLAN_DRAFT_PATH),
+                    hint: format!(
+                        "create {} with write, then update it with edit before sealing",
+                        engine::PLAN_DRAFT_PATH
+                    ),
+                }
+            } else {
+                ToolError::failed(format!("failed to read plan draft: {error}"))
+            }
+        })?;
+        if markdown.trim().is_empty() {
+            return Err(ToolError::failed(format!(
+                "plan draft at {} is empty",
+                engine::PLAN_DRAFT_PATH
+            )));
+        }
+        if markdown.len() > MAX_PLAN_ARTIFACT_BYTES {
+            return Err(ToolError::failed(format!(
+                "plan artifact exceeds the {} byte limit",
+                MAX_PLAN_ARTIFACT_BYTES
+            )));
+        }
+
+        let artifact_id = Uuid::new_v4().to_string();
+        let path = self.root.join(format!("{artifact_id}-plan.md"));
+        fs::rename(&draft_path, &path)
+            .map_err(|error| ToolError::failed(format!("failed to seal plan artifact: {error}")))?;
+        *plan_artifact_id = Some(artifact_id.clone());
+
+        let mut digest = Sha256::new();
+        digest.update(markdown.as_bytes());
+        Ok(PlanArtifact {
+            record: ToolArtifactRecord {
+                artifact_id,
+                tool_name: "openflow_write_plan_artifact".to_string(),
+                path: path.display().to_string(),
+                size_bytes: markdown.len(),
+            },
+            sha256: format!("{:x}", digest.finalize()),
+        })
+    }
+
+    fn read_sealed_plan_artifact(&self, artifact_id: &str) -> Result<PlanArtifact, ToolError> {
+        let path = self.root.join(format!("{artifact_id}-plan.md"));
+        let markdown = fs::read_to_string(&path).map_err(|error| {
+            ToolError::failed(format!(
+                "sealed plan artifact {artifact_id} is unavailable: {error}"
+            ))
+        })?;
+        let mut digest = Sha256::new();
+        digest.update(markdown.as_bytes());
+        Ok(PlanArtifact {
+            record: ToolArtifactRecord {
+                artifact_id: artifact_id.to_string(),
+                tool_name: "openflow_write_plan_artifact".to_string(),
+                path: path.display().to_string(),
+                size_bytes: markdown.len(),
+            },
+            sha256: format!("{:x}", digest.finalize()),
+        })
     }
 
     /// Resolve a host-created artifact by id under the artifact root.
@@ -270,5 +364,29 @@ mod tests {
             "# First"
         );
         assert_eq!(fs::read_dir(store.root()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn repeated_plan_draft_seal_returns_the_existing_artifact() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = ArtifactStore::new(dir.path().join("artifacts")).unwrap();
+        let markdown = "# Approved plan\n\nImplement the narrow slice.\n";
+        let draft_path = store.plan_draft_path().unwrap();
+        fs::write(&draft_path, markdown).unwrap();
+
+        let artifact = store.seal_plan_draft().unwrap();
+
+        assert!(!draft_path.exists());
+        assert_eq!(
+            fs::read_to_string(store.path_for(&artifact.record.artifact_id).unwrap()).unwrap(),
+            markdown
+        );
+        assert_eq!(artifact.sha256.len(), 64);
+        assert!(store
+            .plan_draft_path()
+            .unwrap_err()
+            .to_string()
+            .contains("already been sealed"));
+        assert_eq!(store.seal_plan_draft().unwrap(), artifact);
     }
 }

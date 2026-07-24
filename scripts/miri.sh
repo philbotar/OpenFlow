@@ -9,6 +9,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=verify/_lib.sh
+. "$ROOT/scripts/verify/_lib.sh"
 MIRI_TOOLCHAIN="${MIRI_TOOLCHAIN:-nightly}"
 
 if [[ -z "${CARGO_TARGET_DIR:-}" ]]; then
@@ -17,12 +19,6 @@ fi
 
 # UB-relevant orchestration modules only; pure edit/patch/store logic stays on test-fast/clippy.
 ORCH_MIRI_FILTER='test(/run::execution::/) | test(/coordinator/) | test(/tool::runner/) | test(/tool::blocking_ops/) | test(/tool::retry/) | test(/schedule::/) | test(/adapters::infrastructure::/)'
-
-preflight_nextest() {
-	if ! cargo nextest --version >/dev/null 2>&1; then
-		cargo install cargo-nextest --locked
-	fi
-}
 
 preflight_miri() {
 	if ! command -v rustup >/dev/null 2>&1; then

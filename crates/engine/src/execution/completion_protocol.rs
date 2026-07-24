@@ -114,6 +114,7 @@ pub fn complete_submit_output(
         assistant_message: filter_tool_turn_assistant_message(
             args.assistant_message.or(assistant_message),
         ),
+        reasoning: Vec::new(),
         usage,
     }))
 }

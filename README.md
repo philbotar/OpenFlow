@@ -132,7 +132,7 @@ npm --prefix crates/ui run dev
 npm --prefix crates/ui run typecheck
 
 # Workflow acceptance tests
-cargo test -p orchestration --test workflow_acceptance -- --nocapture
+cargo nextest run -p orchestration --test workflow_acceptance --no-capture
 ```
 
 | Resource | Path |

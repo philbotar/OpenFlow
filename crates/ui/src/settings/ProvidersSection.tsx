@@ -12,7 +12,7 @@ import {
 import { Button, SectionHeader, SettingsSection, SidebarIcon, TextSelect } from "../components";
 import { useAppContext } from "../context/AppContext";
 import { ICON_STROKE_WIDTH, normalizeError } from "../lib/utils";
-import type { CodexLoginStatus } from "../lib/types";
+import type { CodexLoginStatus, ModelTransport } from "../lib/types";
 import {
   activeProfile,
   defaultReasoningBudgetTokens,
@@ -40,6 +40,11 @@ export function ProvidersSection() {
   const transportOptions = [
     { value: "responses", label: "Responses API" },
     { value: "chat_completions", label: "Chat Completions API" },
+  ] as const;
+  const modelTransportOptions = [
+    { value: "", label: "Provider default" },
+    ...transportOptions,
+    { value: "anthropic_messages", label: "Anthropic Messages API" },
   ] as const;
   const profileEditable = () => ctx.activeProfileMemo().editable;
   const isBedrock = () => ctx.settings().active_provider === "bedrock";
@@ -170,6 +175,19 @@ export function ProvidersSection() {
     } finally {
       setRefreshingModels(false);
     }
+  }
+
+  function updateModelTransport(model: string, transport: string) {
+    void ctx.updateSettings((draft) => {
+      const profile = activeProfile(draft);
+      const modelTransports = { ...(profile.model_transports ?? {}) };
+      if (transport === "") {
+        delete modelTransports[model];
+      } else {
+        modelTransports[model] = transport as ModelTransport;
+      }
+      profile.model_transports = modelTransports;
+    });
   }
 
   return (
@@ -617,17 +635,33 @@ export function ProvidersSection() {
               Models
             </h3>
             <p class="providers-panel-copy">
-              Keep the model list short and set the default used by new workflow nodes.
+              Set the default model. Custom endpoints can route each model through its required API.
             </p>
           </div>
         </div>
-        <div class="chip-list">
+        <div class="provider-model-list">
           <For each={ctx.activeProfileMemo().known_models}>
             {(model) => (
-              <button type="button" class="model-chip" onClick={() => ctx.handleRemoveKnownModel(model)}>
-                {model}
-                <span>×</span>
-              </button>
+              <div class="provider-model-row">
+                <button
+                  type="button"
+                  class="model-chip"
+                  aria-label={`Remove ${model}`}
+                  onClick={() => ctx.handleRemoveKnownModel(model)}
+                >
+                  {model}
+                  <span>×</span>
+                </button>
+                <Show when={profileEditable()}>
+                  <TextSelect
+                    class="provider-model-transport"
+                    aria-label={`Transport for ${model}`}
+                    value={ctx.activeProfileMemo().model_transports?.[model] ?? ""}
+                    options={modelTransportOptions}
+                    onChange={(event) => updateModelTransport(model, event.currentTarget.value)}
+                  />
+                </Show>
+              </div>
             )}
           </For>
         </div>

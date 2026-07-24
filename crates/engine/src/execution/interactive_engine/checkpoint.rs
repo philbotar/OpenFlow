@@ -54,8 +54,6 @@ pub struct InteractiveEngineCheckpoint {
     pub transcripts: BTreeMap<NodeId, Vec<AgentTranscriptItem>>,
     pub awaiting_nodes: BTreeSet<NodeId>,
     #[serde(default)]
-    pub work_phase_nodes: BTreeSet<NodeId>,
-    #[serde(default)]
     pub plan_mode_source_node_id: Option<NodeId>,
     #[serde(default)]
     pub frozen_change_evidence_packet: Option<FrozenChangeEvidencePacket>,
@@ -99,7 +97,6 @@ fn collect_checkpoint_node_ids(checkpoint: &InteractiveEngineCheckpoint) -> BTre
     ids.extend(checkpoint.changed_files_by_node.keys().cloned());
     ids.extend(checkpoint.reads_by_node.keys().cloned());
     ids.extend(checkpoint.awaiting_nodes.iter().cloned());
-    ids.extend(checkpoint.work_phase_nodes.iter().cloned());
     ids.extend(checkpoint.plan_mode_source_node_id.iter().cloned());
     ids.extend(
         checkpoint
@@ -173,7 +170,6 @@ impl InteractiveEngine {
             reads_by_node: self.reads_by_node.clone(),
             transcripts: self.transcripts.clone(),
             awaiting_nodes: self.awaiting_nodes.clone(),
-            work_phase_nodes: self.work_phase_nodes.clone(),
             plan_mode_source_node_id: self.plan_mode_source_node_id.clone(),
             frozen_change_evidence_packet: self.frozen_change_evidence_packet.clone(),
             pending_tool_batches: self
@@ -237,7 +233,6 @@ impl InteractiveEngine {
             transcripts: checkpoint.transcripts,
             awaiting_nodes: checkpoint.awaiting_nodes,
             in_flight_ai: BTreeSet::new(),
-            work_phase_nodes: checkpoint.work_phase_nodes,
             plan_mode_source_node_id,
             frozen_change_evidence_packet: checkpoint.frozen_change_evidence_packet,
             in_flight_tools: BTreeSet::new(),

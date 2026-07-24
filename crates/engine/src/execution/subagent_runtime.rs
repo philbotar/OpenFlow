@@ -18,8 +18,7 @@ use crate::graph::{
     default_structured_output_schema, effective_output_schema, Node, NodeId, Workflow,
 };
 use crate::ports::{
-    AgentContinueWork, AgentError, AgentNeedUserInput, AgentRequest, AgentTurnOutcome,
-    AgentTurnPhase, AgentTurnSuccess,
+    AgentError, AgentNeedUserInput, AgentRequest, AgentTurnOutcome, AgentTurnSuccess,
 };
 use crate::tools::{SubagentDeclaration, SubagentStatus, SubagentSummary, ToolCall, ToolResult};
 use serde::Deserialize;
@@ -252,7 +251,6 @@ fn build_saved_agent_request(
         model_attempt: 1,
         reasoning_effort: None,
         reasoning_budget_tokens: None,
-        turn_phase: crate::ports::AgentTurnPhase::Control,
         tool_access_policy: crate::ports::ToolAccessPolicy::Execution,
         allow_user_input: false,
     }
@@ -291,7 +289,6 @@ fn build_adhoc_agent_request(
         model_attempt: 1,
         reasoning_effort: None,
         reasoning_budget_tokens: None,
-        turn_phase: crate::ports::AgentTurnPhase::Control,
         tool_access_policy: crate::ports::ToolAccessPolicy::Execution,
         allow_user_input: false,
     }
@@ -307,7 +304,6 @@ pub fn advance_subagent_invoke(
     match outcome {
         Ok(AgentTurnOutcome::Completed(success)) => complete_subagent(session, success),
         Ok(AgentTurnOutcome::ToolCalls(batch)) => {
-            session.request.turn_phase = AgentTurnPhase::Control;
             session.text_turn_streak = 0;
             let mut transcript = session.request.transcript.clone();
             for reasoning in &batch.reasoning {
@@ -329,11 +325,7 @@ pub fn advance_subagent_invoke(
             session.request.transcript = transcript;
             SubagentInvokeStep::NeedAi(session)
         }
-        Ok(AgentTurnOutcome::ContinueWork(continuation)) => {
-            continue_subagent_work(session, continuation)
-        }
         Ok(AgentTurnOutcome::Message(message)) => {
-            session.request.turn_phase = AgentTurnPhase::Control;
             continue_autonomous_subagent(session, &message.assistant_message, message.reasoning)
         }
         Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
@@ -346,30 +338,6 @@ pub fn advance_subagent_invoke(
             complete_subagent_failed(session, format!("Subagent '{name}' failed: {err}"))
         }
     }
-}
-
-fn continue_subagent_work(
-    mut session: SubagentInvokeSession,
-    continuation: AgentContinueWork,
-) -> SubagentInvokeStep {
-    for reasoning in continuation.reasoning {
-        session
-            .request
-            .transcript
-            .push(AgentTranscriptItem::Reasoning { reasoning });
-    }
-    if let Some(content) = continuation
-        .assistant_message
-        .filter(|content| !content.trim().is_empty())
-    {
-        session
-            .request
-            .transcript
-            .push(AgentTranscriptItem::AssistantMessage { content });
-    }
-    session.request.turn_phase = AgentTurnPhase::Work;
-    session.request.model_attempt = session.request.model_attempt.saturating_add(1);
-    SubagentInvokeStep::NeedAi(session)
 }
 
 fn continue_autonomous_subagent(
@@ -516,7 +484,6 @@ mod tests {
                 model_attempt: 1,
                 reasoning_effort: None,
                 reasoning_budget_tokens: None,
-                turn_phase: crate::ports::AgentTurnPhase::Control,
                 tool_access_policy: crate::ports::ToolAccessPolicy::Execution,
                 allow_user_input: false,
             },

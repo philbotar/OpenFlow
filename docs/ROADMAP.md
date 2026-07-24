@@ -473,7 +473,7 @@ Interactive shell in the bottom dock — a fourth tab beside Overview, Chat, and
 | New terminal / split — additional PTY tabs (v2 polish) | Low | Done |
 | Inject command from chat — "Run in terminal" on bash tool rows (optional; depends on live bash output) | Low | Planned |
 
-**Target:** Open the bottom dock → Terminal → get a project-scoped shell immediately. Run `cargo test`, `git status`, or `./scripts/verify.sh` while a workflow run is paused or in progress. Cwd matches where agents execute when a run is active.
+**Target:** Open the bottom dock → Terminal → get a project-scoped shell immediately. Run `cargo nextest run`, `git status`, or `./scripts/verify.sh` while a workflow run is paused or in progress. Cwd matches where agents execute when a run is active.
 
 **Not in v1:** Remote SSH shells, root/sudo elevation UI, or replaying agent bash invocations as read-only panes (chat tool rows remain the audit trail).
 

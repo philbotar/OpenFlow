@@ -67,16 +67,21 @@ Add a port/trait only when a consumer is typed on that interface. Current seams:
 
 ## Verification quick path
 
+| Goal | Command |
+| --- | --- |
+| Compile loop | `./scripts/check-fast.sh` |
+| Iterate | `./scripts/test-fast.sh` (+ `--execution` if touching runs) |
+| Handoff / PR | `./scripts/verify.sh` |
+| Full workspace Rust (incl. desktop) | `./scripts/verify.sh test` |
+| Parallel agents on one machine | `VERIFY_ISOLATE_TARGET=1 ./scripts/verify.sh` |
+
 ```bash
+./scripts/check-fast.sh
 ./scripts/test-fast.sh
-cargo fmt --all --check
-cargo clippy --workspace --all-targets
-cargo clippy-max
-cargo test --workspace
-./scripts/check-engine-public-api.sh
+./scripts/verify.sh
 ```
 
-Use `./scripts/test-fast.sh` for the normal local loop. Keep `cargo test --workspace` as the full Rust workspace pass.
+Default verify reuses `./target` and runs the CI-aligned `test-fast` lane (no desktop; Bedrock/AWS off unless desktop/featured). Opt-in full workspace: `./scripts/verify.sh test`.
 
 Intentional changes to engine's public surface require updating `crates/engine/tests/snapshots/public_api.txt` (`cargo +nightly public-api` from `crates/engine/`).
 

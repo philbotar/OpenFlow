@@ -2,9 +2,8 @@ mod support;
 
 use async_trait::async_trait;
 use engine::{
-    AgentContinueWork, AgentError, AgentMessageTurn, AgentNeedUserInput, AgentRequest,
-    AgentToolCallBatch, AgentTurnOutcome, AgentTurnPhase, AgentTurnSuccess, AiPort, ApprovalMode,
-    Edge, NodeId, ToolCall, Workflow,
+    AgentError, AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTurnOutcome,
+    AgentTurnSuccess, AiPort, ApprovalMode, Edge, NodeId, ToolCall, Workflow,
 };
 use orchestration::run::execution::{
     new_artifact_root, new_in_memory_snapshot_store, run_workflow_headless,
@@ -62,6 +61,7 @@ impl AiPort for ScriptedAi {
             output,
             raw_text: "{}".to_string(),
             assistant_message: None,
+            reasoning: Vec::new(),
             usage: None,
         }))
     }
@@ -157,6 +157,7 @@ async fn manual_node_pauses_accepts_input_and_feeds_downstream_node() {
                         output: json!({"summary": answer}),
                         raw_text: "{}".to_string(),
                         assistant_message: Some("Locked. Advancing.".to_string()),
+                        reasoning: Vec::new(),
                         usage: None,
                     }))
                 }
@@ -168,6 +169,7 @@ async fn manual_node_pauses_accepts_input_and_feeds_downstream_node() {
                         }),
                         raw_text: "{}".to_string(),
                         assistant_message: None,
+                        reasoning: Vec::new(),
                         usage: None,
                     }))
                 }
@@ -218,7 +220,7 @@ async fn manual_node_pauses_accepts_input_and_feeds_downstream_node() {
 
 #[cfg_attr(miri, ignore)]
 #[tokio::test]
-async fn conversational_node_can_pause_on_consecutive_plain_text_turns() {
+async fn conversational_node_can_pause_on_consecutive_explicit_input_requests() {
     #[derive(Clone, Default)]
     struct ConversationalAi;
 
@@ -231,17 +233,15 @@ async fn conversational_node_can_pause_on_consecutive_plain_text_turns() {
                 .filter(|item| matches!(item, engine::AgentTranscriptItem::AssistantMessage { .. }))
                 .count();
             match assistant_turns {
-                0 => Ok(AgentTurnOutcome::Message(AgentMessageTurn {
+                0 => Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
                     raw_text: "Which Supabase products should this include?".to_string(),
                     assistant_message: "Which Supabase products should this include?".to_string(),
                     reasoning: Vec::new(),
-                    usage: None,
                 })),
-                1 => Ok(AgentTurnOutcome::Message(AgentMessageTurn {
-                    raw_text: "Storage is the most useful third surface.".to_string(),
-                    assistant_message: "Storage is the most useful third surface.".to_string(),
+                1 => Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
+                    raw_text: "Should I add Storage too?".to_string(),
+                    assistant_message: "Should I add Storage too?".to_string(),
                     reasoning: Vec::new(),
-                    usage: None,
                 })),
                 _ => {
                     let answer = request
@@ -259,6 +259,7 @@ async fn conversational_node_can_pause_on_consecutive_plain_text_turns() {
                         output: json!({"summary": answer}),
                         raw_text: "{}".to_string(),
                         assistant_message: None,
+                        reasoning: Vec::new(),
                         usage: None,
                     }))
                 }
@@ -324,16 +325,6 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
                 *calls
             };
             if call_number == 1 {
-                assert_eq!(request.turn_phase, AgentTurnPhase::Control);
-                return Ok(AgentTurnOutcome::ContinueWork(AgentContinueWork {
-                    raw_text: "{}".to_string(),
-                    assistant_message: Some("Need repo context".to_string()),
-                    reasoning: vec![],
-                    usage: None,
-                }));
-            }
-            if call_number == 2 {
-                assert_eq!(request.turn_phase, AgentTurnPhase::Work);
                 assert_eq!(request.available_tools.len(), 10);
                 return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                     raw_text: String::new(),
@@ -347,7 +338,6 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
                     usage: None,
                 }));
             }
-            assert_eq!(request.turn_phase, AgentTurnPhase::Control);
             let saw_tool_result = request
                 .transcript
                 .iter()
@@ -357,6 +347,7 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
                 output: json!({"summary": "tool verified ORCHID-91"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
+                reasoning: Vec::new(),
                 usage: None,
             }))
         }
@@ -444,6 +435,7 @@ async fn write_tool_requires_approval_and_mutates_file_after_allow() {
                 output: json!({"summary": "draft saved ORCHID-91"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
+                reasoning: Vec::new(),
                 usage: None,
             }))
         }
@@ -534,6 +526,7 @@ impl AiPort for CheckpointWriteToolAi {
             output: json!({"summary": "draft saved ORCHID-91"}),
             raw_text: "{}".to_string(),
             assistant_message: None,
+            reasoning: Vec::new(),
             usage: None,
         }))
     }
@@ -705,6 +698,7 @@ async fn failed_read_tool_feeds_error_and_node_completes() {
                 output: json!({"summary": "ok after tool error"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
+                reasoning: Vec::new(),
                 usage: None,
             }))
         }
@@ -796,6 +790,7 @@ async fn search_missing_path_surfaces_not_found_not_empty_success() {
                 output: json!({"summary": "ok after search path error"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
+                reasoning: Vec::new(),
                 usage: None,
             }))
         }
@@ -874,6 +869,7 @@ impl AiPort for OutputRepairAcceptanceAi {
                     output: json!({"not_repaired": true}),
                     raw_text: "{}".into(),
                     assistant_message: Some("overseer prose".into()),
+                    reasoning: Vec::new(),
                     usage: None,
                 }));
             }
@@ -885,6 +881,7 @@ impl AiPort for OutputRepairAcceptanceAi {
                 }),
                 raw_text: "{}".into(),
                 assistant_message: Some("clear me".into()),
+                reasoning: Vec::new(),
                 usage: None,
             }));
         }
@@ -917,6 +914,7 @@ impl AiPort for OutputRepairAcceptanceAi {
                     output: json!({"summary": "should-not-reach-without-repair"}),
                     raw_text: "{}".into(),
                     assistant_message: None,
+                    reasoning: Vec::new(),
                     usage: None,
                 }))
             }
@@ -936,6 +934,7 @@ impl AiPort for OutputRepairAcceptanceAi {
                     }),
                     raw_text: "{}".into(),
                     assistant_message: None,
+                    reasoning: Vec::new(),
                     usage: None,
                 }))
             }
@@ -943,6 +942,7 @@ impl AiPort for OutputRepairAcceptanceAi {
                 output: json!({"summary": format!("unexpected {other}")}),
                 raw_text: "{}".into(),
                 assistant_message: None,
+                reasoning: Vec::new(),
                 usage: None,
             })),
         }

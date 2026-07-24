@@ -30,3 +30,18 @@ runs:
       with:
         toolchain: ${{ inputs.toolchain }}
         components: ${{ inputs.components }}
+
+    # .cargo/config.toml sets linker = "rust-lld"; rustup keeps it under
+    # lib/rustlib/<host>/bin, not on PATH by default. GITHUB_PATH applies to
+    # later steps, so export the path here too for the current-step check.
+    - name: Put rust-lld on PATH
+      shell: bash
+      run: |
+        host="$(rustc -vV | awk '/^host:/{print $2}')"
+        if [[ "${host}" != *-apple-darwin ]]; then
+          exit 0
+        fi
+        bin_dir="$(rustc --print sysroot)/lib/rustlib/${host}/bin"
+        echo "${bin_dir}" >> "${GITHUB_PATH}"
+        export PATH="${bin_dir}:${PATH}"
+        command -v rust-lld

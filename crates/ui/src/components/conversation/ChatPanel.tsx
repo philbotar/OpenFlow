@@ -92,7 +92,7 @@ export function ChatPanel() {
             <span>
               <strong>Plan mode</strong> — {status().frozen
                 ? `${status().sourceLabel} approved the plan. File edits are allowed.`
-                : `Planning in progress. File edits stay blocked until ${status().sourceLabel} approves the plan.`}
+                : `Planning in progress. Only docs/**/*.md writes are allowed until ${status().sourceLabel} approves the plan.`}
             </span>
           </div>
         )}

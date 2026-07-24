@@ -115,6 +115,9 @@ export function useSettings(params: UseSettingsParams) {
     void updateSettings((draft) => {
       const profile = activeProfile(draft);
       profile.known_models = profile.known_models.filter((item) => item !== model);
+      const modelTransports = { ...(profile.model_transports ?? {}) };
+      delete modelTransports[model];
+      profile.model_transports = modelTransports;
     });
   };
 

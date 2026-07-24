@@ -1,6 +1,6 @@
 [package]
 name = "providers"
-version = "0.1.18"
+version = "0.1.19"
 edition.workspace = true
 description.workspace = true
 license.workspace = true
@@ -13,7 +13,9 @@ categories.workspace = true
 name = "providers"
 
 [features]
-default = ["bedrock"]
+# Off by default so local engine/providers/orchestration loops skip the AWS SDK.
+# Desktop enables `bedrock` for the shipped app; CI runs a Bedrock-featured providers pass.
+default = []
 bedrock = [
     "dep:rig-bedrock",
     "dep:aws-config",
@@ -34,7 +36,7 @@ serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 jsonrepair-rs.workspace = true
-engine = { path = "../engine", version = "0.1.8" }
+engine = { path = "../engine", version = "0.1.9" }
 futures.workspace = true
 tokio = { workspace = true, features = ["time", "process", "net", "io-util"] }
 thiserror.workspace = true
@@ -44,6 +46,7 @@ aws-sdk-bedrockruntime = { workspace = true, optional = true }
 dirs = { workspace = true, optional = true }
 
 [dev-dependencies]
+tempfile.workspace = true
 tokio.workspace = true
 wiremock.workspace = true
 

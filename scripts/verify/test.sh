@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=verify/_lib.sh
 . "$ROOT/scripts/verify/_lib.sh"
 preflight_toolchain
+preflight_nextest
 preflight_tauri_deps
 cd "$ROOT"
-exec cargo test --workspace --quiet
+exec cargo nextest run --workspace --cargo-quiet

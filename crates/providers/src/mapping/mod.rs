@@ -1,16 +1,15 @@
 use engine::{
     complete_submit_output, effective_output_schema, filter_tool_turn_assistant_message,
-    malformed_submit_invalid_json, AgentContinueWork, AgentError, AgentMessageTurn,
-    AgentNeedUserInput, AgentReasoning, AgentRequest, AgentToolCallBatch, AgentTurnOutcome,
-    AgentTurnPhase, AgentTurnSuccess, CompleteSubmitOutputParams, ToolCall, ToolDefinition,
-    OUTPUT_REPAIR_RAW_ARGUMENTS_MAX_BYTES, SUBMIT_NODE_OUTPUT_TOOL,
+    malformed_submit_invalid_json, AgentError, AgentMessageTurn, AgentNeedUserInput,
+    AgentReasoning, AgentRequest, AgentToolCallBatch, AgentTurnOutcome, AgentTurnSuccess,
+    CompleteSubmitOutputParams, ToolCall, ToolDefinition, OUTPUT_REPAIR_RAW_ARGUMENTS_MAX_BYTES,
+    SUBMIT_NODE_OUTPUT_TOOL,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
 
 pub const SUBMIT_OUTPUT_TOOL: &str = SUBMIT_NODE_OUTPUT_TOOL;
 pub const REQUEST_INPUT_TOOL: &str = "openflow_request_user_input";
-pub const CONTINUE_WORK_TOOL: &str = "openflow_continue_work";
 #[derive(Debug, Clone)]
 pub struct ToolSpec {
     pub name: String,
@@ -106,19 +105,6 @@ pub fn request_input_tool() -> ToolSpec {
     }
 }
 
-pub fn continue_work_tool() -> ToolSpec {
-    ToolSpec {
-        name: CONTINUE_WORK_TOOL.to_string(),
-        description: "Switch to a work turn that exposes executable tools. Call this only when more tool-backed work is required; after the tool batch finishes, OpenFlow returns to a control turn."
-            .to_string(),
-        parameters: json!({
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {}
-        }),
-    }
-}
-
 pub fn external_tool_spec(tool: &ToolDefinition) -> ToolSpec {
     ToolSpec {
         name: tool.name.clone(),
@@ -128,23 +114,12 @@ pub fn external_tool_spec(tool: &ToolDefinition) -> ToolSpec {
 }
 
 pub fn all_tool_specs(request: &AgentRequest) -> Vec<ToolSpec> {
-    match request.turn_phase {
-        AgentTurnPhase::Control => {
-            let mut tools = vec![submit_output_tool(request)];
-            if should_allow_user_input(request) {
-                tools.push(request_input_tool());
-            }
-            if !request.available_tools.is_empty() {
-                tools.push(continue_work_tool());
-            }
-            tools
-        }
-        AgentTurnPhase::Work => request
-            .available_tools
-            .iter()
-            .map(external_tool_spec)
-            .collect(),
+    let mut tools = vec![submit_output_tool(request)];
+    if should_allow_user_input(request) {
+        tools.push(request_input_tool());
     }
+    tools.extend(request.available_tools.iter().map(external_tool_spec));
+    tools
 }
 
 /// Attach token usage to an outcome, if usage data is available.
@@ -164,10 +139,6 @@ pub fn attach_usage(
                 AgentTurnOutcome::ToolCalls(b)
             }
             AgentTurnOutcome::NeedsUserInput(input) => AgentTurnOutcome::NeedsUserInput(input),
-            AgentTurnOutcome::ContinueWork(mut continuation) => {
-                continuation.usage = Some(u);
-                AgentTurnOutcome::ContinueWork(continuation)
-            }
             AgentTurnOutcome::Message(mut message) => {
                 message.usage = Some(u);
                 AgentTurnOutcome::Message(message)
@@ -207,6 +178,13 @@ pub fn parse_internal_tool_outcome(
                 finish_reason: None,
                 usage: None,
             })
+            .map(|outcome| match outcome {
+                AgentTurnOutcome::Completed(mut success) => {
+                    success.reasoning = reasoning;
+                    AgentTurnOutcome::Completed(success)
+                }
+                other => other,
+            })
         }
         REQUEST_INPUT_TOOL => {
             #[derive(Deserialize)]
@@ -224,20 +202,6 @@ pub fn parse_internal_tool_outcome(
                 raw_text: arguments.to_string(),
                 assistant_message: args.assistant_message,
                 reasoning,
-            }))
-        }
-        CONTINUE_WORK_TOOL => {
-            let _: serde_json::Map<String, Value> = try_deserialize_or_recover_json(arguments)
-                .map_err(|error| {
-                    AgentError::Failed(format!(
-                        "{label} continue-work tool arguments were not valid JSON: {error}"
-                    ))
-                })?;
-            Ok(AgentTurnOutcome::ContinueWork(AgentContinueWork {
-                raw_text: arguments.to_string(),
-                assistant_message: filter_tool_turn_assistant_message(assistant_message),
-                reasoning,
-                usage: None,
             }))
         }
         _ => Err(AgentError::Failed(format!(
@@ -258,7 +222,6 @@ pub struct ResolveToolTurnParams<'a> {
     pub tool_calls: Vec<ToolCall>,
     pub assistant_message: Option<String>,
     pub reasoning: Vec<AgentReasoning>,
-    pub turn_phase: AgentTurnPhase,
     pub no_tool_calls: NoToolCallsPolicy,
     pub output_schema: Option<&'a Value>,
     pub provider_label: &'a str,
@@ -276,7 +239,6 @@ pub fn resolve_tool_turn_outcome(
         tool_calls,
         assistant_message,
         reasoning,
-        turn_phase,
         no_tool_calls,
         output_schema,
         provider_label,
@@ -288,11 +250,10 @@ pub fn resolve_tool_turn_outcome(
         let error = match no_tool_calls {
             NoToolCallsPolicy::Error(message) => message,
             NoToolCallsPolicy::Recover { error } => {
-                if turn_phase == AgentTurnPhase::Control {
-                    if let Some(outcome) = parse_plain_json_completion(assistant_message.as_deref())
-                    {
-                        return Ok(attach_usage(outcome, usage));
-                    }
+                if let Some(outcome) =
+                    parse_plain_json_completion(assistant_message.as_deref(), reasoning.clone())
+                {
+                    return Ok(attach_usage(outcome, usage));
                 }
                 error
             }
@@ -311,12 +272,7 @@ pub fn resolve_tool_turn_outcome(
         return Err(AgentError::Failed(error.to_string()));
     }
 
-    let is_control_tool = |name: &str| {
-        matches!(
-            name,
-            SUBMIT_OUTPUT_TOOL | REQUEST_INPUT_TOOL | CONTINUE_WORK_TOOL
-        )
-    };
+    let is_control_tool = |name: &str| matches!(name, SUBMIT_OUTPUT_TOOL | REQUEST_INPUT_TOOL);
     let control_count = tool_calls
         .iter()
         .filter(|call| is_control_tool(&call.name))
@@ -329,41 +285,31 @@ pub fn resolve_tool_turn_outcome(
             .join(", ")
     };
 
-    match turn_phase {
-        AgentTurnPhase::Control => {
-            if control_count != tool_calls.len() {
-                return Err(AgentError::mixed_tool_turn(provider_label, call_names()));
-            }
-            if tool_calls.len() != 1 {
-                // ponytail: same MixedToolTurn retry as wrong-phase / mixed batches
-                return Err(AgentError::mixed_tool_turn(provider_label, call_names()));
-            }
-            let call = &tool_calls[0];
-            if let Some(marker) = extract_malformed_tool_args_marker(&call.arguments) {
-                return Err(error_from_malformed_tool_args_marker(
-                    provider_label,
-                    &call.name,
-                    &call.id,
-                    marker,
-                    output_schema,
-                    usage,
-                ));
-            }
-            return parse_internal_tool_outcome(
-                &call.name,
-                &call.arguments.to_string(),
-                assistant_message,
-                provider_label,
-                output_schema,
-                reasoning,
-            )
-            .map(|outcome| attach_usage(outcome, usage));
-        }
-        AgentTurnPhase::Work if control_count != 0 => {
-            // ponytail: reuse MixedToolTurn retry path; engine picks phase-aware feedback
+    if control_count != 0 {
+        if control_count != tool_calls.len() || tool_calls.len() != 1 {
+            // ponytail: MixedToolTurn covers both mixed harness+exec and multi-harness batches
             return Err(AgentError::mixed_tool_turn(provider_label, call_names()));
         }
-        AgentTurnPhase::Work => {}
+        let call = &tool_calls[0];
+        if let Some(marker) = extract_malformed_tool_args_marker(&call.arguments) {
+            return Err(error_from_malformed_tool_args_marker(
+                provider_label,
+                &call.name,
+                &call.id,
+                marker,
+                output_schema,
+                usage,
+            ));
+        }
+        return parse_internal_tool_outcome(
+            &call.name,
+            &call.arguments.to_string(),
+            assistant_message,
+            provider_label,
+            output_schema,
+            reasoning,
+        )
+        .map(|outcome| attach_usage(outcome, usage));
     }
 
     for call in &tool_calls {
@@ -396,7 +342,10 @@ pub fn resolve_tool_turn_outcome(
     ))
 }
 
-pub fn parse_plain_json_completion(content: Option<&str>) -> Option<AgentTurnOutcome> {
+pub fn parse_plain_json_completion(
+    content: Option<&str>,
+    reasoning: Vec<AgentReasoning>,
+) -> Option<AgentTurnOutcome> {
     let content = content
         .map(str::trim)
         .filter(|content| !content.is_empty())?;
@@ -418,6 +367,7 @@ pub fn parse_plain_json_completion(content: Option<&str>) -> Option<AgentTurnOut
         output,
         raw_text: content.to_string(),
         assistant_message: None,
+        reasoning,
         usage: None,
     }))
 }
@@ -637,7 +587,8 @@ mod tests {
     #[test]
     fn plain_json_completion_recovers_truncated_object() {
         let content = r#"{"summary": "done without closing brace"#;
-        let outcome = parse_plain_json_completion(Some(content)).expect("expected outcome");
+        let outcome =
+            parse_plain_json_completion(Some(content), Vec::new()).expect("expected outcome");
         let AgentTurnOutcome::Completed(success) = outcome else {
             panic!("expected completed outcome");
         };
@@ -650,7 +601,8 @@ mod tests {
     #[test]
     fn plain_json_completion_recovers_fenced_truncated_object() {
         let content = "```json\n{\"summary\": \"done\"\n```";
-        let outcome = parse_plain_json_completion(Some(content)).expect("expected outcome");
+        let outcome =
+            parse_plain_json_completion(Some(content), Vec::new()).expect("expected outcome");
         let AgentTurnOutcome::Completed(success) = outcome else {
             panic!("expected completed outcome");
         };
@@ -865,7 +817,6 @@ mod tests {
             tool_calls: vec![tool_call],
             assistant_message: Some(echoed),
             reasoning: vec![],
-            turn_phase: AgentTurnPhase::Control,
             no_tool_calls: NoToolCallsPolicy::Recover { error: "unused" },
             output_schema: Some(&schema),
             provider_label: "test",
@@ -890,7 +841,6 @@ mod tests {
             tool_calls: vec![tool_call],
             assistant_message: Some("<tool_call>\n<function=search>\n<parameter=pattern>TODO</parameter>\n</function>\n</tool_call>".into()),
             reasoning: vec![],
-            turn_phase: AgentTurnPhase::Work,
             no_tool_calls: NoToolCallsPolicy::Recover { error: "unused" },
             output_schema: None,
             provider_label: "test",
@@ -923,7 +873,6 @@ mod tests {
             ],
             assistant_message: None,
             reasoning: vec![],
-            turn_phase: AgentTurnPhase::Control,
             no_tool_calls: NoToolCallsPolicy::Recover { error: "unused" },
             output_schema: None,
             provider_label: "test",
@@ -932,7 +881,7 @@ mod tests {
         })
         .expect_err("executable calls are invalid during a control turn");
 
-        assert!(err.to_string().contains("tools from the wrong turn phase"));
+        assert!(err.to_string().contains("mixed incompatible tools"));
         assert!(err.is_mixed_tool_turn());
         assert_eq!(
             err.mixed_tool_names(),
@@ -946,8 +895,8 @@ mod tests {
             tool_calls: vec![
                 ToolCall {
                     id: "1".to_string(),
-                    name: CONTINUE_WORK_TOOL.to_string(),
-                    arguments: json!({}),
+                    name: REQUEST_INPUT_TOOL.to_string(),
+                    arguments: json!({"assistant_message": "Which env?"}),
                 },
                 ToolCall {
                     id: "2".to_string(),
@@ -957,7 +906,6 @@ mod tests {
             ],
             assistant_message: None,
             reasoning: vec![],
-            turn_phase: AgentTurnPhase::Control,
             no_tool_calls: NoToolCallsPolicy::Recover { error: "unused" },
             output_schema: None,
             provider_label: "test",
@@ -969,32 +917,8 @@ mod tests {
         assert!(err.is_mixed_tool_turn());
         assert_eq!(
             err.mixed_tool_names(),
-            Some("openflow_continue_work, openflow_submit_node_output")
+            Some("openflow_request_user_input, openflow_submit_node_output")
         );
-    }
-
-    #[test]
-    fn work_turn_rejects_hallucinated_control_tool_calls() {
-        let err = resolve_tool_turn_outcome(ResolveToolTurnParams {
-            tool_calls: vec![ToolCall {
-                id: "1".to_string(),
-                name: CONTINUE_WORK_TOOL.to_string(),
-                arguments: json!({}),
-            }],
-            assistant_message: None,
-            reasoning: vec![],
-            turn_phase: AgentTurnPhase::Work,
-            no_tool_calls: NoToolCallsPolicy::Recover { error: "unused" },
-            output_schema: None,
-            provider_label: "test",
-            usage: None,
-            filter_assistant_on_external_batch: false,
-        })
-        .expect_err("control calls are invalid during a work turn");
-
-        assert!(err.is_mixed_tool_turn());
-        assert!(err.to_string().contains("tools from the wrong turn phase"));
-        assert_eq!(err.mixed_tool_names(), Some("openflow_continue_work"));
     }
 
     #[test]
@@ -1016,7 +940,6 @@ mod tests {
             model_attempt: 1,
             reasoning_effort: None,
             reasoning_budget_tokens: None,
-            turn_phase: AgentTurnPhase::Control,
             tool_access_policy: engine::ToolAccessPolicy::Execution,
             allow_user_input: true,
         };
@@ -1052,7 +975,6 @@ mod tests {
             model_attempt: 1,
             reasoning_effort: None,
             reasoning_budget_tokens: None,
-            turn_phase: AgentTurnPhase::Control,
             tool_access_policy: engine::ToolAccessPolicy::Execution,
             allow_user_input: false,
         };
@@ -1087,7 +1009,6 @@ mod tests {
             model_attempt: 1,
             reasoning_effort: None,
             reasoning_budget_tokens: None,
-            turn_phase: AgentTurnPhase::Control,
             tool_access_policy: engine::ToolAccessPolicy::Execution,
             allow_user_input: false,
         };
@@ -1101,10 +1022,10 @@ mod tests {
     }
 
     #[test]
-    fn control_and_work_turn_catalogs_are_disjoint() {
+    fn unified_catalog_includes_submit_and_executable_tools() {
         use engine::{NodeId, ToolConcurrency, ToolTier, WorkflowId};
 
-        let mut request = AgentRequest {
+        let request = AgentRequest {
             workflow_id: WorkflowId::from("wf-1"),
             node_id: NodeId::from("node-1"),
             node_label: "Node".to_string(),
@@ -1125,26 +1046,17 @@ mod tests {
             model_attempt: 1,
             reasoning_effort: None,
             reasoning_budget_tokens: None,
-            turn_phase: AgentTurnPhase::Control,
             tool_access_policy: engine::ToolAccessPolicy::Execution,
             allow_user_input: true,
         };
 
-        let control_names = all_tool_specs(&request)
+        let names = all_tool_specs(&request)
             .into_iter()
             .map(|tool| tool.name)
             .collect::<Vec<_>>();
-        assert!(control_names.iter().any(|name| name == SUBMIT_OUTPUT_TOOL));
-        assert!(control_names.iter().any(|name| name == REQUEST_INPUT_TOOL));
-        assert!(control_names.iter().any(|name| name == CONTINUE_WORK_TOOL));
-        assert!(!control_names.iter().any(|name| name == "search"));
-
-        request.turn_phase = AgentTurnPhase::Work;
-        let work_names = all_tool_specs(&request)
-            .into_iter()
-            .map(|tool| tool.name)
-            .collect::<Vec<_>>();
-        assert_eq!(work_names, vec!["search".to_string()]);
+        assert!(names.iter().any(|name| name == SUBMIT_OUTPUT_TOOL));
+        assert!(names.iter().any(|name| name == REQUEST_INPUT_TOOL));
+        assert!(names.iter().any(|name| name == "search"));
     }
 
     #[test]
@@ -1166,7 +1078,6 @@ mod tests {
             model_attempt: 1,
             reasoning_effort: None,
             reasoning_budget_tokens: None,
-            turn_phase: AgentTurnPhase::Control,
             tool_access_policy: engine::ToolAccessPolicy::Execution,
             allow_user_input: true,
         };
@@ -1200,7 +1111,6 @@ mod tests {
             model_attempt: 1,
             reasoning_effort: None,
             reasoning_budget_tokens: None,
-            turn_phase: AgentTurnPhase::Control,
             tool_access_policy: engine::ToolAccessPolicy::Execution,
             allow_user_input: true,
         };
@@ -1229,7 +1139,6 @@ mod tests {
             model_attempt: 1,
             reasoning_effort: None,
             reasoning_budget_tokens: None,
-            turn_phase: AgentTurnPhase::Control,
             tool_access_policy: engine::ToolAccessPolicy::Execution,
             allow_user_input: true,
         };

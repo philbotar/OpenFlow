@@ -171,6 +171,7 @@ impl MockAiStack {
                     output,
                     raw_text: "{}".to_string(),
                     assistant_message: assistant,
+                    reasoning: Vec::new(),
                     usage: None,
                 }))
             }

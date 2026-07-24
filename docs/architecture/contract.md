@@ -188,12 +188,12 @@ Classify non-trivial changes before editing. The lane decides which source docs,
 
 | Touched area | Lane | Primary source docs | Required local verification |
 | --- | --- | --- | --- |
-| `crates/engine/**` | Engine semantics | `crates/engine/AGENTS.md`, this contract, `docs/glossary.md` | `cargo test -p engine`; add workflow acceptance when run behavior, prompts, ports, tools, or telemetry change |
-| `crates/orchestration/src/run/**` | Run orchestration | `crates/orchestration/AGENTS.md`, `docs/architecture/threading-concurrency.md`, `docs/contributing/testing-workflows.md` | `cargo test -p orchestration --lib`; `cargo test -p orchestration --test workflow_acceptance -- --nocapture` for execution behavior |
-| `crates/orchestration/src/{agent,workflow,project,settings,tool}/**` | Application/domain service | `crates/orchestration/AGENTS.md`, `docs/contributing/coding-patterns.md` | `cargo test -p orchestration --lib`; add focused store/backend tests when persistence or IPC-visible behavior changes |
+| `crates/engine/**` | Engine semantics | `crates/engine/AGENTS.md`, this contract, `docs/glossary.md` | `cargo nextest run -p engine`; add workflow acceptance when run behavior, prompts, ports, tools, or telemetry change |
+| `crates/orchestration/src/run/**` | Run orchestration | `crates/orchestration/AGENTS.md`, `docs/architecture/threading-concurrency.md`, `docs/contributing/testing-workflows.md` | `cargo nextest run -p orchestration --lib`; `cargo nextest run -p orchestration --test workflow_acceptance --no-capture` for execution behavior |
+| `crates/orchestration/src/{agent,workflow,project,settings,tool}/**` | Application/domain service | `crates/orchestration/AGENTS.md`, `docs/contributing/coding-patterns.md` | `cargo nextest run -p orchestration --lib`; add focused store/backend tests when persistence or IPC-visible behavior changes |
 | `crates/orchestration/src/adapters/**` | Concrete adapter/I/O | `crates/orchestration/AGENTS.md`, this contract | Focused adapter tests plus `./scripts/check-architecture.sh` |
-| `crates/providers/**` | Provider adapter | `crates/providers/AGENTS.md` | `cargo test -p providers`; live smoke only when intentionally checking a real provider |
-| `crates/desktop/**` | Desktop IPC adapter | `crates/desktop/AGENTS.md` | `cargo test -p desktop`; update UI seam tests when payloads change |
+| `crates/providers/**` | Provider adapter | `crates/providers/AGENTS.md` | `cargo nextest run -p providers`; live smoke only when intentionally checking a real provider |
+| `crates/desktop/**` | Desktop IPC adapter | `crates/desktop/AGENTS.md` | `cargo nextest run -p desktop`; update UI seam tests when payloads change |
 | `crates/ui/**` | UI/Desktop seam and presentation | `crates/ui/AGENTS.md` | `npm --prefix crates/ui run typecheck`; focused Vitest for changed helpers/components |
 | Cross-crate behavior | Full workflow slice | Root `AGENTS.md`, this contract, `docs/contributing/testing-workflows.md` | `./scripts/test-fast.sh --execution`; run `./scripts/verify.sh` before handoff |
 

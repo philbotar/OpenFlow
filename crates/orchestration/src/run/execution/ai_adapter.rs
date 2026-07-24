@@ -207,7 +207,6 @@ where
                 AgentTurnOutcome::Completed(s) => s.usage.clone(),
                 AgentTurnOutcome::ToolCalls(b) => b.usage.clone(),
                 AgentTurnOutcome::NeedsUserInput(_) => None,
-                AgentTurnOutcome::ContinueWork(continuation) => continuation.usage.clone(),
                 AgentTurnOutcome::Message(message) => message.usage.clone(),
             };
             if let Some(usage) = usage {
@@ -287,7 +286,6 @@ fn assistant_message_for_outcome(outcome: &AgentTurnOutcome) -> Option<String> {
         AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
             assistant_message, ..
         }) => Some(assistant_message.clone()),
-        AgentTurnOutcome::ContinueWork(continuation) => continuation.assistant_message.clone(),
         AgentTurnOutcome::Message(AgentMessageTurn {
             assistant_message, ..
         }) => Some(assistant_message.clone()),

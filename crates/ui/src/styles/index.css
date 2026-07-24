@@ -4894,6 +4894,29 @@ label {
   box-shadow: none;
 }
 
+.provider-model-list {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.provider-model-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.provider-model-row .model-chip {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.provider-model-transport {
+  width: min(220px, 100%);
+  margin-left: auto;
+}
+
 .providers-section .inline-form {
   gap: 8px;
   align-items: center;

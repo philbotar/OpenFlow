@@ -64,7 +64,7 @@ After the plain workflow works, enable tools only on nodes that need local I/O o
 When changing or debugging this behavior, use the workflow acceptance tests:
 
 ```bash
-cargo test -p orchestration --test workflow_acceptance -- --nocapture
+cargo nextest run -p orchestration --test workflow_acceptance --no-capture
 ```
 
 ## 7. Make It Reusable

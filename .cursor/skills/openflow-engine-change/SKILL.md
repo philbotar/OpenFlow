@@ -40,8 +40,8 @@ Procedural only. Architecture facts live in the docs below — do not invent a s
 ## Verify
 
 ```bash
-cargo test -p engine
-./scripts/verify.sh test clippy arch
+./scripts/verify/test-engine.sh
+./scripts/verify.sh test-fast clippy arch
 ```
 
 Execution behavior that crosses the host: also run orchestration acceptance (see `openflow-finish-change`).

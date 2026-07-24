@@ -34,7 +34,6 @@ fn test_request() -> engine::AgentRequest {
         model_attempt: 1,
         reasoning_effort: Some("high".into()),
         reasoning_budget_tokens: None,
-        turn_phase: engine::AgentTurnPhase::Control,
         tool_access_policy: engine::ToolAccessPolicy::Execution,
         allow_user_input: false,
     }
@@ -58,6 +57,7 @@ fn codex_config(base_url: &str) -> AiClientConfig {
             },
             credential_sink: None,
         }),
+        debug_output: false,
     }
 }
 

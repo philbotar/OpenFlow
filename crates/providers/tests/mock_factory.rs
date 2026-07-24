@@ -25,6 +25,7 @@ impl AiPort for MockAiPort {
             output: serde_json::json!({"result": self.response}),
             raw_text: self.response.clone(),
             assistant_message: Some(self.response.clone()),
+            reasoning: Vec::new(),
             usage: None,
         }))
     }
@@ -62,7 +63,6 @@ fn sample_request() -> AgentRequest {
         model_attempt: 1,
         reasoning_effort: None,
         reasoning_budget_tokens: None,
-        turn_phase: engine::AgentTurnPhase::Control,
         tool_access_policy: engine::ToolAccessPolicy::Execution,
         allow_user_input: true,
     }

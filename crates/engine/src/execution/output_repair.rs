@@ -6,8 +6,8 @@
 use crate::execution::completion_protocol::{complete_submit_output, CompleteSubmitOutputParams};
 use crate::graph::{NodeId, WorkflowSettings};
 use crate::ports::{
-    AgentError, AgentRequest, AgentTurnOutcome, AgentTurnPhase, AiPort, AiStreamEvent,
-    AiStreamSink, OutputRepairCandidate, ToolAccessPolicy,
+    AgentError, AgentRequest, AgentTurnOutcome, AiPort, AiStreamEvent, AiStreamSink,
+    OutputRepairCandidate, ToolAccessPolicy,
 };
 use crate::tools::NodeToolConfig;
 use async_trait::async_trait;
@@ -276,7 +276,6 @@ fn build_repair_request(
         model_attempt: 1,
         reasoning_effort: None,
         reasoning_budget_tokens: None,
-        turn_phase: AgentTurnPhase::Control,
         tool_access_policy: ToolAccessPolicy::Execution,
         allow_user_input: false,
     }
@@ -358,7 +357,6 @@ mod tests {
             model_attempt: 1,
             reasoning_effort: None,
             reasoning_budget_tokens: None,
-            turn_phase: AgentTurnPhase::Control,
             tool_access_policy: ToolAccessPolicy::Execution,
             allow_user_input: true,
         }
@@ -408,6 +406,7 @@ mod tests {
             }),
             raw_text: "{}".into(),
             assistant_message: Some("overseer prose".into()),
+            reasoning: Vec::new(),
             usage: None,
         })
     }
@@ -516,6 +515,7 @@ mod tests {
                 output: json!({"not_repaired": true}),
                 raw_text: "{}".into(),
                 assistant_message: None,
+                reasoning: Vec::new(),
                 usage: None,
             })),
         ]);

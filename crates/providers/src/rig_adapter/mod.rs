@@ -250,6 +250,7 @@ mod tests {
             adapter: ProviderAdapterConfig::OpenAiCompatible(
                 OpenAiCompatibleConfig::openai_default(),
             ),
+            debug_output: false,
         }
     }
 

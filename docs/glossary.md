@@ -48,7 +48,7 @@ For where terms live in code, see [Engine modules](#engine-modules), [Orchestrat
 | **ApprovalMode** | Node-level tool approval strategy: `read_only` (read-class tools only, auto-approved), `write` (all tools; read-class auto, write-class prompt - default), `always_ask` (prompt every call), `yolo` (never prompt) | Approval policy |
 | **Tool capability class** | Static read/write grouping for builtins. Read: retrieval/search tools. Write: mutation, shell, subagent tools. Drives approval and `read_only` availability. | Tool tier |
 | **ToolTier** | Serialized capability class on tool definitions: `read` or `write` | Tool level, access tier |
-| **ToolAccessPolicy** | Run-phase capability rule. Planning permits read-tier tools plus the host-owned plan-artifact writer; Execution restores the node's normal catalog. | Approval mode |
+| **ToolAccessPolicy** | Run-phase capability rule. Planning permits read-tier tools and write-enabled `docs/**/*.md` mutations; only the selected evidence-source node receives `write`/`edit` access to `run://PLAN.md` plus the approval-gated plan sealer. Execution restores the node's normal catalog. | Approval mode |
 | **ToolConcurrency** | Whether tool calls share or exclude concurrent access: `shared` or `exclusive` | Parallelism, execution mode |
 | **ToolCallStatus** | Lifecycle of a tool call: proposed, awaiting_approval, running, completed, blocked, failed, aborted | Call status |
 | **ToolTruncation** | Limits and strategy for truncating tool output | Output limit, size cap |
@@ -76,7 +76,7 @@ For where terms live in code, see [Engine modules](#engine-modules), [Orchestrat
 | **WorkflowSchedule** | Optional cron schedule on a workflow | Cron schedule |
 | **NodeInvocation** | Shared assembly of upstream inputs and `AgentRequest` for `InteractiveEngine` | Request builder |
 | **FrozenChangeEvidencePacket** | Immutable, hash-verified structured review output injected into later Plan Mode requests as `input.change_evidence_packet` | Plan file, system prompt |
-| **Plan artifact** | Run-owned immutable Markdown evidence written by `openflow_write_plan_artifact` and referenced as `artifact:<uuid>` | Repository plan file |
+| **Plan artifact** | Run-owned immutable Markdown evidence built by the selected evidence-source node at `run://PLAN.md`, then sealed through explicit approval of `openflow_write_plan_artifact` and referenced as `artifact:<uuid>` | Repository plan file |
 
 ## AI boundary
 
@@ -84,10 +84,8 @@ For where terms live in code, see [Engine modules](#engine-modules), [Orchestrat
 | --- | --- | --- |
 | **AiPort** | Trait between the workflow engine and an AI backend | AI adapter, backend trait |
 | **AgentRequest** | Payload for one AI turn on one node | AI request, turn request |
-| **AgentTurnPhase** | Tool-catalog phase for one model turn: Control exposes workflow control tools; Work exposes executable tools | Tool mode, request mode |
-| **AgentTurnOutcome** | Result of one turn: Completed, ContinueWork, ToolCalls, NeedsUserInput, or Message | Turn result, AI response |
-| **AgentTurnSuccess** | Completed outcome: structured output plus raw text | Success result |
-| **AgentContinueWork** | Control outcome that advances the node to a Work turn | Continue signal, work request |
+| **AgentTurnOutcome** | Result of one turn: Completed, ToolCalls, NeedsUserInput, or Message | Turn result, AI response |
+| **AgentTurnSuccess** | Completed outcome: structured output, raw text, and typed reasoning blocks | Success result |
 | **AgentToolCallBatch** | ToolCalls outcome: batch of tool invocations from the model | Tool call batch |
 | **ToolCall** | Single tool invocation from the model | Tool request, tool use |
 | **ToolResult** | Result returned after a tool executes | Tool response |
@@ -167,8 +165,8 @@ See [orchestration crate layout](architecture/orchestration-layout.md) for the c
 - An **AgentNodeConfig** belongs to one **Node** and may include **NodeToolConfig**.
 - A **ChatMessage** or **AgentTranscriptItem** belongs to one **Node**'s transcript.
 - An **AgentRequest** goes to **AiPort** for one **Node** per turn.
-- An **AgentRequest** has one **AgentTurnPhase**; control and executable tools are never advertised together.
-- **AgentTurnOutcome** selects completion, phase transition, executable tool work, human input, or a plain message.
+- Every **AgentRequest** advertises harness tools (`openflow_submit_node_output`, optional `openflow_request_user_input`) together with executable tools; a turn may use either exactly one harness tool alone, or one or more executable tools — never both in the same batch.
+- **AgentTurnOutcome** selects completion, executable tool work, human input, or a plain message.
 - A **Template** instantiates a **Node** with default config and **LockedField** constraints.
 - **InteractiveEngine::run** returns **EngineRunResult** until **Completed**, **Failed**, **Cancelled**, or **NeedsInteraction**.
 - Headless acceptance runs use the same **InteractiveEngine** via `run_workflow_headless` in orchestration.

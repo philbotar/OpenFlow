@@ -57,6 +57,7 @@ const CUSTOM: ProviderProfile = {
   chat_completions_path: "chat/completions",
   request_timeout_secs: 300,
   known_models: ["compatible-model"],
+  model_transports: {},
   default_model: "compatible-model",
   editable: true,
 };
@@ -399,6 +400,24 @@ describe("ProvidersSection", () => {
     ) as HTMLButtonElement;
     chip.click();
     expect(handleRemoveKnownModel).toHaveBeenCalledWith("compatible-model");
+  });
+
+  test("sets an Anthropic Messages transport override for a custom model", async () => {
+    const { settings } = renderSection("custom_openai_compatible");
+    const trigger = container.querySelector(
+      'button[aria-label="Transport for compatible-model"]',
+    ) as HTMLButtonElement;
+
+    trigger.click();
+    const option = [...container.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
+      (candidate) => candidate.textContent?.trim() === "Anthropic Messages API",
+    );
+    option?.click();
+    await Promise.resolve();
+
+    expect(
+      settings().providers.custom_openai_compatible.model_transports?.["compatible-model"],
+    ).toBe("anthropic_messages");
   });
 
   test("calls handleSaveSettings when save is clicked", () => {

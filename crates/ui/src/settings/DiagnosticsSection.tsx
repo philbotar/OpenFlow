@@ -25,7 +25,7 @@ export function DiagnosticsSection() {
       <SectionHeader
         eyebrow="Diagnostics"
         title="Local debug output"
-        description="Show detailed errors in toasts and append toast diagnostics to a local temp file."
+        description="Show detailed errors in toasts and append toast diagnostics plus full model HTTP responses (may include reasoning, tool arguments, and file content) to a local temp file."
       />
 
       <label class="checkbox-row diagnostics-toggle">
@@ -39,7 +39,8 @@ export function DiagnosticsSection() {
       </label>
 
       <p class="diagnostics-note">
-        Local only. OpenFlow does not upload, sync, or send this file anywhere.
+        Local only. OpenFlow does not upload, sync, or send this file anywhere. Treat the log as
+        sensitive — it can contain model reasoning and tool payloads.
       </p>
 
       <Show when={debugOutput()}>
