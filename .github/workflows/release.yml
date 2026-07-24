@@ -60,6 +60,11 @@ jobs:
       - name: Miri (engine + orchestration)
         run: ./scripts/miri.sh
 
+      - name: Free Miri build artifacts before deep tests
+        run: |
+          cargo clean --target-dir target/miri
+          df -h .
+
       - name: Deep tests (execution + desktop)
         run: ./scripts/test-fast.sh --execution --desktop --skip-ui-typecheck
 
