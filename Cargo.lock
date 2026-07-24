@@ -1994,7 +1994,7 @@ checksum = "66b7e2430c6dff6a955451e2cfc438f09cea1965a9d6f87f7e3b90decc014099"
 
 [[package]]
 name = "engine"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "async-trait",
  "futures",
@@ -4228,7 +4228,7 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
 name = "orchestration"
-version = "0.1.20"
+version = "0.1.21"
 dependencies = [
  "async-trait",
  "chrono",
@@ -4783,7 +4783,7 @@ dependencies = [
 
 [[package]]
 name = "providers"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "async-trait",
  "aws-config",

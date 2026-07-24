@@ -39,4 +39,5 @@ runs:
         host="$(rustc -vV | awk '/^host:/{print $2}')"
         bin_dir="$(rustc --print sysroot)/lib/rustlib/${host}/bin"
         echo "${bin_dir}" >> "${GITHUB_PATH}"
+        export PATH="${bin_dir}:${PATH}"
         command -v rust-lld
