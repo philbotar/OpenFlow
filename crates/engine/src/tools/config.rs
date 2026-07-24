@@ -145,7 +145,7 @@ pub fn tool_access_policy_allows_call(
 /// Planning may mutate the run-local draft only through replace-mode
 /// `write`/`edit` calls with the exact virtual path.
 #[must_use]
-pub(crate) fn is_plan_draft_mutation_call(call: &ToolCall) -> bool {
+pub(super) fn is_plan_draft_mutation_call(call: &ToolCall) -> bool {
     PLANNING_DOCS_WRITE_TOOLS.contains(&call.name.as_str())
         && call
             .arguments

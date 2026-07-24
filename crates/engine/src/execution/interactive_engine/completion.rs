@@ -19,7 +19,7 @@ use crate::ports::{
 };
 use crate::tools::{
     is_plan_draft_mutation_call, relativize_tool_call_arguments, tool_access_policy_allows_call,
-    tool_decision_for_call, ToolCall, ToolDecision, WRITE_PLAN_ARTIFACT_TOOL,
+    tool_decision_for_call, NodeToolConfig, ToolCall, ToolDecision, WRITE_PLAN_ARTIFACT_TOOL,
 };
 use serde_json::Value;
 use std::time::Duration;
@@ -486,15 +486,7 @@ impl InteractiveEngine {
             return;
         }
 
-        let mut config = self
-            .find_node(node_id)
-            .map(|node| node.agent.tools.clone())
-            .unwrap_or_default();
-        if let Some(store) = &self.runtime_config_store {
-            if let Some(patch) = runtime_patch_for(store, node_id) {
-                apply_runtime_patch_to_tool_config(&mut config, &patch);
-            }
-        }
+        let config = self.effective_tool_config(node_id);
         let policy = if self.is_plan_mode_active() {
             ToolAccessPolicy::Planning
         } else {
@@ -570,6 +562,38 @@ impl InteractiveEngine {
                 }
             }
         }
+        self.finish_tool_call_batch(
+            node_id,
+            pending_calls,
+            requires_approval_for_batch,
+            incomplete_write,
+            policy,
+        );
+    }
+
+    fn effective_tool_config(&self, node_id: &NodeId) -> NodeToolConfig {
+        let mut config = self
+            .find_node(node_id)
+            .map(|node| node.agent.tools.clone())
+            .unwrap_or_default();
+        if let Some(patch) = self
+            .runtime_config_store
+            .as_ref()
+            .and_then(|store| runtime_patch_for(store, node_id))
+        {
+            apply_runtime_patch_to_tool_config(&mut config, &patch);
+        }
+        config
+    }
+
+    fn finish_tool_call_batch(
+        &mut self,
+        node_id: &NodeId,
+        tool_calls: Vec<ToolCall>,
+        requires_approval: bool,
+        incomplete_write: bool,
+        tool_access_policy: ToolAccessPolicy,
+    ) {
         if incomplete_write {
             self.transcripts.entry(node_id.clone()).or_default().push(
                 AgentTranscriptItem::UserMessage {
@@ -577,7 +601,7 @@ impl InteractiveEngine {
                 },
             );
         }
-        if pending_calls.is_empty() {
+        if tool_calls.is_empty() {
             return;
         }
         let approval_id = Uuid::new_v4().to_string();
@@ -586,9 +610,9 @@ impl InteractiveEngine {
             PendingToolBatch {
                 approval_id,
                 node_id: node_id.clone(),
-                tool_calls: pending_calls,
-                requires_approval: requires_approval_for_batch,
-                tool_access_policy: policy,
+                tool_calls,
+                requires_approval,
+                tool_access_policy,
             },
         );
     }

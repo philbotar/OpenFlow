@@ -612,6 +612,7 @@ async fn headless_run_auto_approves_read_tool_and_reenters_model_loop() {
                 output: json!({"summary": "done"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
+                reasoning: Vec::new(),
                 usage: None,
             }))
         }
@@ -678,6 +679,7 @@ async fn headless_run_survives_permanent_tool_failure_and_completes() {
                 output: json!({"summary": "recovered"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
+                reasoning: Vec::new(),
                 usage: None,
             }))
         }
@@ -1348,6 +1350,7 @@ async fn headless_retries_transient_node_error() {
                 output: json!({"summary": "ok"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
+                reasoning: Vec::new(),
                 usage: None,
             }))
         }
@@ -1536,6 +1539,7 @@ async fn stop_then_continue_restores_awaiting_input() {
                 output: json!({"summary": "done"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
+                reasoning: Vec::new(),
                 usage: None,
             }))
         }
@@ -1636,6 +1640,7 @@ async fn stale_input_is_ignored_and_run_continues() {
                 output: json!({"summary": "done"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
+                reasoning: Vec::new(),
                 usage: None,
             }))
         }
@@ -1705,6 +1710,7 @@ async fn stop_mid_run_then_continue_completes_node() {
                 output: json!({"summary": "resumed"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
+                reasoning: Vec::new(),
                 usage: None,
             }))
         }
@@ -1814,6 +1820,7 @@ async fn resolve_approval_uses_engine_node_id_after_stop_and_continue() {
                 output: json!({"summary": "done"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
+                reasoning: Vec::new(),
                 usage: None,
             }))
         }
@@ -1952,6 +1959,7 @@ async fn adapter_maps_repair_stream_events_to_telemetry_not_chat() {
                 output: json!({"summary": "ok"}),
                 raw_text: "{}".into(),
                 assistant_message: None,
+                reasoning: Vec::new(),
                 usage: None,
             }))
         }
@@ -2076,6 +2084,7 @@ async fn headless_repairs_malformed_submit_emits_trace_without_ai_invoke_failed(
                 }),
                 raw_text: "{}".into(),
                 assistant_message: Some("clear me".into()),
+                reasoning: Vec::new(),
                 usage: None,
             })),
         ]),

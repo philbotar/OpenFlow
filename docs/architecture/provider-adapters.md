@@ -27,6 +27,10 @@ An `anthropic_messages` override uses the Rig Anthropic client against the profi
 sends the standard `/v1/messages` request, Anthropic auth/version headers, tool schema, and
 Anthropic response mapping. Removing the override restores the profile default.
 
+When an adapter must invoke without streaming, it keeps typed reasoning on the turn outcome.
+The fallback stream emits displayable text and summary blocks before assistant text. It never
+emits encrypted or redacted reasoning payloads.
+
 ## Deterministic recovery and overseer repair
 
 Providers own wire decoding and local `jsonrepair-rs` recovery. Semantic acceptance of `openflow_submit_node_output` lives in the engine completion protocol (`execution/completion_protocol.rs`).

@@ -178,6 +178,13 @@ pub fn parse_internal_tool_outcome(
                 finish_reason: None,
                 usage: None,
             })
+            .map(|outcome| match outcome {
+                AgentTurnOutcome::Completed(mut success) => {
+                    success.reasoning = reasoning;
+                    AgentTurnOutcome::Completed(success)
+                }
+                other => other,
+            })
         }
         REQUEST_INPUT_TOOL => {
             #[derive(Deserialize)]
@@ -243,7 +250,9 @@ pub fn resolve_tool_turn_outcome(
         let error = match no_tool_calls {
             NoToolCallsPolicy::Error(message) => message,
             NoToolCallsPolicy::Recover { error } => {
-                if let Some(outcome) = parse_plain_json_completion(assistant_message.as_deref()) {
+                if let Some(outcome) =
+                    parse_plain_json_completion(assistant_message.as_deref(), reasoning.clone())
+                {
                     return Ok(attach_usage(outcome, usage));
                 }
                 error
@@ -333,7 +342,10 @@ pub fn resolve_tool_turn_outcome(
     ))
 }
 
-pub fn parse_plain_json_completion(content: Option<&str>) -> Option<AgentTurnOutcome> {
+pub fn parse_plain_json_completion(
+    content: Option<&str>,
+    reasoning: Vec<AgentReasoning>,
+) -> Option<AgentTurnOutcome> {
     let content = content
         .map(str::trim)
         .filter(|content| !content.is_empty())?;
@@ -355,6 +367,7 @@ pub fn parse_plain_json_completion(content: Option<&str>) -> Option<AgentTurnOut
         output,
         raw_text: content.to_string(),
         assistant_message: None,
+        reasoning,
         usage: None,
     }))
 }
@@ -574,7 +587,8 @@ mod tests {
     #[test]
     fn plain_json_completion_recovers_truncated_object() {
         let content = r#"{"summary": "done without closing brace"#;
-        let outcome = parse_plain_json_completion(Some(content)).expect("expected outcome");
+        let outcome =
+            parse_plain_json_completion(Some(content), Vec::new()).expect("expected outcome");
         let AgentTurnOutcome::Completed(success) = outcome else {
             panic!("expected completed outcome");
         };
@@ -587,7 +601,8 @@ mod tests {
     #[test]
     fn plain_json_completion_recovers_fenced_truncated_object() {
         let content = "```json\n{\"summary\": \"done\"\n```";
-        let outcome = parse_plain_json_completion(Some(content)).expect("expected outcome");
+        let outcome =
+            parse_plain_json_completion(Some(content), Vec::new()).expect("expected outcome");
         let AgentTurnOutcome::Completed(success) = outcome else {
             panic!("expected completed outcome");
         };

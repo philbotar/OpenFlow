@@ -20,6 +20,7 @@ impl AiPort for MockAuthoringAi {
             output: self.response.clone(),
             raw_text: self.response.to_string(),
             assistant_message: Some("Built draft".to_string()),
+            reasoning: Vec::new(),
             usage: None,
         }))
     }
@@ -38,6 +39,7 @@ impl AiPort for CapturingPromptAi {
             output: self.response.clone(),
             raw_text: self.response.to_string(),
             assistant_message: Some("Built draft".to_string()),
+            reasoning: Vec::new(),
             usage: None,
         }))
     }
@@ -220,6 +222,7 @@ impl AiPort for IncrementalAuthoringAi {
                     output: json!({ "assistantMessage": "Built a two-step workflow." }),
                     raw_text: String::new(),
                     assistant_message: Some("Built a two-step workflow.".to_string()),
+                    reasoning: Vec::new(),
                     usage: None,
                 }))
             }
@@ -310,6 +313,7 @@ impl AiPort for MixedToolTurnRetryAi {
                 output: json!({ "assistantMessage": "Built a one-step workflow." }),
                 raw_text: String::new(),
                 assistant_message: Some("Built a one-step workflow.".to_string()),
+                reasoning: Vec::new(),
                 usage: None,
             })),
             _ => panic!("unexpected authoring invoke count {call}"),
@@ -399,6 +403,7 @@ impl AiPort for MultiTurnMockAi {
             output: output.clone(),
             raw_text: output.to_string(),
             assistant_message: Some("Updated draft".to_string()),
+            reasoning: Vec::new(),
             usage: None,
         }))
     }
@@ -509,6 +514,7 @@ impl AiPort for ClarificationThenDraftAi {
                 output: self.draft_response.clone(),
                 raw_text: self.draft_response.to_string(),
                 assistant_message: Some("Built draft".to_string()),
+                reasoning: Vec::new(),
                 usage: None,
             }))
         }
@@ -652,6 +658,7 @@ impl AiPort for MalformedSubmitThenDraftAi {
             output: self.draft_response.clone(),
             raw_text: self.draft_response.to_string(),
             assistant_message: Some("Built draft".to_string()),
+            reasoning: Vec::new(),
             usage: None,
         }))
     }
@@ -678,6 +685,7 @@ async fn send_turn_retries_missing_submit_output_and_materializes_draft() {
                 output: self.draft_response.clone(),
                 raw_text: self.draft_response.to_string(),
                 assistant_message: Some("Built draft".to_string()),
+                reasoning: Vec::new(),
                 usage: None,
             }))
         }
@@ -837,6 +845,7 @@ impl AiPort for InvalidDraftThenValidAi {
             output: output.clone(),
             raw_text: output.to_string(),
             assistant_message: Some("Built draft".to_string()),
+            reasoning: Vec::new(),
             usage: None,
         }))
     }

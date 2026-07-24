@@ -314,6 +314,41 @@ async fn custom_chat_empty_turn_preserves_safe_response_diagnostics() {
 }
 
 #[tokio::test]
+async fn custom_chat_non_streaming_fallback_emits_reasoning() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(chat_completion_response(&json!({
+            "role": "assistant",
+            "content": null,
+            "reasoning_content": "Inspecting the requested output.",
+            "tool_calls": [{
+                "id": "call-1",
+                "type": "function",
+                "function": {
+                    "name": "openflow_submit_node_output",
+                    "arguments": "{\"output\":{\"summary\":\"done\"},\"assistant_message\":null}"
+                }
+            }]
+        }))))
+        .mount(&server)
+        .await;
+
+    let sink = RecordingSink::default();
+    let outcome = create_provider(custom_openai_test_config(&server.uri()))
+        .invoke_stream(test_request(), &sink)
+        .await
+        .unwrap();
+
+    assert!(matches!(outcome, AgentTurnOutcome::Completed(_)));
+    assert!(sink.events().iter().any(|event| matches!(
+        event,
+        AiStreamEvent::ThinkingDelta { content }
+            if content == "Inspecting the requested output."
+    )));
+}
+
+#[tokio::test]
 async fn custom_chat_fully_empty_choice_is_empty_provider_turn() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

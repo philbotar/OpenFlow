@@ -85,7 +85,7 @@ For where terms live in code, see [Engine modules](#engine-modules), [Orchestrat
 | **AiPort** | Trait between the workflow engine and an AI backend | AI adapter, backend trait |
 | **AgentRequest** | Payload for one AI turn on one node | AI request, turn request |
 | **AgentTurnOutcome** | Result of one turn: Completed, ToolCalls, NeedsUserInput, or Message | Turn result, AI response |
-| **AgentTurnSuccess** | Completed outcome: structured output plus raw text | Success result |
+| **AgentTurnSuccess** | Completed outcome: structured output, raw text, and typed reasoning blocks | Success result |
 | **AgentToolCallBatch** | ToolCalls outcome: batch of tool invocations from the model | Tool call batch |
 | **ToolCall** | Single tool invocation from the model | Tool request, tool use |
 | **ToolResult** | Result returned after a tool executes | Tool response |

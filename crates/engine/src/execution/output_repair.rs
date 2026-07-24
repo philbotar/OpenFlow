@@ -406,6 +406,7 @@ mod tests {
             }),
             raw_text: "{}".into(),
             assistant_message: Some("overseer prose".into()),
+            reasoning: Vec::new(),
             usage: None,
         })
     }
@@ -514,6 +515,7 @@ mod tests {
                 output: json!({"not_repaired": true}),
                 raw_text: "{}".into(),
                 assistant_message: None,
+                reasoning: Vec::new(),
                 usage: None,
             })),
         ]);

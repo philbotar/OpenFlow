@@ -72,6 +72,7 @@ pub struct AgentTurnSuccess {
     pub output: Value,
     pub raw_text: String,
     pub assistant_message: Option<String>,
+    pub reasoning: Vec<AgentReasoning>,
     pub usage: Option<UsageReport>,
 }
 
@@ -327,8 +328,30 @@ pub trait AiPort: Send + Sync {
     }
 }
 
-/// Emit a single assistant delta from a completed turn (fallback when streaming is unavailable).
+/// Emit displayable reasoning followed by assistant text when streaming is unavailable.
 pub fn emit_assistant_deltas_from_outcome(sink: &dyn AiStreamSink, outcome: &AgentTurnOutcome) {
+    let reasoning = match outcome {
+        AgentTurnOutcome::Completed(success) => &success.reasoning,
+        AgentTurnOutcome::ToolCalls(batch) => &batch.reasoning,
+        AgentTurnOutcome::NeedsUserInput(need) => &need.reasoning,
+        AgentTurnOutcome::Message(message) => &message.reasoning,
+    };
+    for block in reasoning {
+        for content in &block.content {
+            let display = match content {
+                crate::conversation::AgentReasoningContent::Text { text, .. }
+                | crate::conversation::AgentReasoningContent::Summary(text) => Some(text),
+                crate::conversation::AgentReasoningContent::Encrypted(_)
+                | crate::conversation::AgentReasoningContent::Redacted { .. } => None,
+            };
+            if let Some(content) = display.filter(|value| !value.is_empty()) {
+                sink.on_stream_event(AiStreamEvent::ThinkingDelta {
+                    content: content.clone(),
+                });
+            }
+        }
+    }
+
     let message = match outcome {
         AgentTurnOutcome::Completed(success) => success.assistant_message.clone(),
         AgentTurnOutcome::ToolCalls(batch) => batch.assistant_message.clone(),
@@ -417,6 +440,62 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::conversation::AgentReasoningContent;
+    use std::sync::Mutex;
+
+    #[derive(Default)]
+    struct RecordingSink(Mutex<Vec<AiStreamEvent>>);
+
+    impl AiStreamSink for RecordingSink {
+        fn on_stream_event(&self, event: AiStreamEvent) {
+            self.0
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push(event);
+        }
+    }
+
+    #[test]
+    fn fallback_stream_emits_reasoning_before_assistant_text() {
+        let outcome = AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+            raw_text: "Done.".to_string(),
+            assistant_message: Some("Done.".to_string()),
+            tool_calls: Vec::new(),
+            reasoning: vec![AgentReasoning {
+                id: None,
+                content: vec![
+                    AgentReasoningContent::Text {
+                        text: "Inspecting inputs. ".to_string(),
+                        signature: None,
+                    },
+                    AgentReasoningContent::Summary("Choosing the next action.".to_string()),
+                    AgentReasoningContent::Encrypted("opaque".to_string()),
+                ],
+            }],
+            usage: None,
+        });
+        let sink = RecordingSink::default();
+
+        emit_assistant_deltas_from_outcome(&sink, &outcome);
+
+        assert_eq!(
+            *sink
+                .0
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+            vec![
+                AiStreamEvent::ThinkingDelta {
+                    content: "Inspecting inputs. ".to_string(),
+                },
+                AiStreamEvent::ThinkingDelta {
+                    content: "Choosing the next action.".to_string(),
+                },
+                AiStreamEvent::AssistantDelta {
+                    content: "Done.".to_string(),
+                },
+            ]
+        );
+    }
 
     #[test]
     fn agent_error_retryable_classification() {

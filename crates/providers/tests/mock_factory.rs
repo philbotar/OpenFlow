@@ -25,6 +25,7 @@ impl AiPort for MockAiPort {
             output: serde_json::json!({"result": self.response}),
             raw_text: self.response.clone(),
             assistant_message: Some(self.response.clone()),
+            reasoning: Vec::new(),
             usage: None,
         }))
     }

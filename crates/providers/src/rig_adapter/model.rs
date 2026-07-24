@@ -394,8 +394,8 @@ impl RigModel {
         // Rig's chat-completions stream summary drops the provider finish reason.
         // Keep custom-compatible turns non-streaming so a failed structured-output
         // turn retains the metadata needed to distinguish truncation from an empty
-        // or reasoning-only response. The fallback emitter still publishes any
-        // final assistant text through the normal sink.
+        // or reasoning-only response. The fallback emitter publishes displayable
+        // reasoning followed by final assistant text through the normal sink.
         if provider_id.as_str() == "custom_openai_compatible" {
             let outcome = self
                 .invoke(request, provider_label, provider_id, openai_config)

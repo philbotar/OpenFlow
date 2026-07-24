@@ -4693,6 +4693,7 @@ pub struct engine::ports::outbound::AgentTurnSuccess
 pub engine::ports::outbound::AgentTurnSuccess::assistant_message: core::option::Option<alloc::string::String>
 pub engine::ports::outbound::AgentTurnSuccess::output: serde_json::value::Value
 pub engine::ports::outbound::AgentTurnSuccess::raw_text: alloc::string::String
+pub engine::ports::outbound::AgentTurnSuccess::reasoning: alloc::vec::Vec<engine::conversation::AgentReasoning>
 pub engine::ports::outbound::AgentTurnSuccess::usage: core::option::Option<engine::ports::outbound::UsageReport>
 impl core::clone::Clone for engine::ports::outbound::AgentTurnSuccess
 pub fn engine::ports::outbound::AgentTurnSuccess::clone(&self) -> engine::ports::outbound::AgentTurnSuccess
@@ -5406,6 +5407,7 @@ pub struct engine::ports::AgentTurnSuccess
 pub engine::ports::AgentTurnSuccess::assistant_message: core::option::Option<alloc::string::String>
 pub engine::ports::AgentTurnSuccess::output: serde_json::value::Value
 pub engine::ports::AgentTurnSuccess::raw_text: alloc::string::String
+pub engine::ports::AgentTurnSuccess::reasoning: alloc::vec::Vec<engine::conversation::AgentReasoning>
 pub engine::ports::AgentTurnSuccess::usage: core::option::Option<engine::ports::outbound::UsageReport>
 impl core::clone::Clone for engine::ports::outbound::AgentTurnSuccess
 pub fn engine::ports::outbound::AgentTurnSuccess::clone(&self) -> engine::ports::outbound::AgentTurnSuccess
@@ -8479,6 +8481,7 @@ pub struct engine::AgentTurnSuccess
 pub engine::AgentTurnSuccess::assistant_message: core::option::Option<alloc::string::String>
 pub engine::AgentTurnSuccess::output: serde_json::value::Value
 pub engine::AgentTurnSuccess::raw_text: alloc::string::String
+pub engine::AgentTurnSuccess::reasoning: alloc::vec::Vec<engine::conversation::AgentReasoning>
 pub engine::AgentTurnSuccess::usage: core::option::Option<engine::ports::outbound::UsageReport>
 impl core::clone::Clone for engine::ports::outbound::AgentTurnSuccess
 pub fn engine::ports::outbound::AgentTurnSuccess::clone(&self) -> engine::ports::outbound::AgentTurnSuccess

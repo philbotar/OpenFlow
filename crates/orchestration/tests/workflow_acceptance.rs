@@ -61,6 +61,7 @@ impl AiPort for ScriptedAi {
             output,
             raw_text: "{}".to_string(),
             assistant_message: None,
+            reasoning: Vec::new(),
             usage: None,
         }))
     }
@@ -156,6 +157,7 @@ async fn manual_node_pauses_accepts_input_and_feeds_downstream_node() {
                         output: json!({"summary": answer}),
                         raw_text: "{}".to_string(),
                         assistant_message: Some("Locked. Advancing.".to_string()),
+                        reasoning: Vec::new(),
                         usage: None,
                     }))
                 }
@@ -167,6 +169,7 @@ async fn manual_node_pauses_accepts_input_and_feeds_downstream_node() {
                         }),
                         raw_text: "{}".to_string(),
                         assistant_message: None,
+                        reasoning: Vec::new(),
                         usage: None,
                     }))
                 }
@@ -256,6 +259,7 @@ async fn conversational_node_can_pause_on_consecutive_explicit_input_requests() 
                         output: json!({"summary": answer}),
                         raw_text: "{}".to_string(),
                         assistant_message: None,
+                        reasoning: Vec::new(),
                         usage: None,
                     }))
                 }
@@ -343,6 +347,7 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
                 output: json!({"summary": "tool verified ORCHID-91"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
+                reasoning: Vec::new(),
                 usage: None,
             }))
         }
@@ -430,6 +435,7 @@ async fn write_tool_requires_approval_and_mutates_file_after_allow() {
                 output: json!({"summary": "draft saved ORCHID-91"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
+                reasoning: Vec::new(),
                 usage: None,
             }))
         }
@@ -520,6 +526,7 @@ impl AiPort for CheckpointWriteToolAi {
             output: json!({"summary": "draft saved ORCHID-91"}),
             raw_text: "{}".to_string(),
             assistant_message: None,
+            reasoning: Vec::new(),
             usage: None,
         }))
     }
@@ -691,6 +698,7 @@ async fn failed_read_tool_feeds_error_and_node_completes() {
                 output: json!({"summary": "ok after tool error"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
+                reasoning: Vec::new(),
                 usage: None,
             }))
         }
@@ -782,6 +790,7 @@ async fn search_missing_path_surfaces_not_found_not_empty_success() {
                 output: json!({"summary": "ok after search path error"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
+                reasoning: Vec::new(),
                 usage: None,
             }))
         }
@@ -860,6 +869,7 @@ impl AiPort for OutputRepairAcceptanceAi {
                     output: json!({"not_repaired": true}),
                     raw_text: "{}".into(),
                     assistant_message: Some("overseer prose".into()),
+                    reasoning: Vec::new(),
                     usage: None,
                 }));
             }
@@ -871,6 +881,7 @@ impl AiPort for OutputRepairAcceptanceAi {
                 }),
                 raw_text: "{}".into(),
                 assistant_message: Some("clear me".into()),
+                reasoning: Vec::new(),
                 usage: None,
             }));
         }
@@ -903,6 +914,7 @@ impl AiPort for OutputRepairAcceptanceAi {
                     output: json!({"summary": "should-not-reach-without-repair"}),
                     raw_text: "{}".into(),
                     assistant_message: None,
+                    reasoning: Vec::new(),
                     usage: None,
                 }))
             }
@@ -922,6 +934,7 @@ impl AiPort for OutputRepairAcceptanceAi {
                     }),
                     raw_text: "{}".into(),
                     assistant_message: None,
+                    reasoning: Vec::new(),
                     usage: None,
                 }))
             }
@@ -929,6 +942,7 @@ impl AiPort for OutputRepairAcceptanceAi {
                 output: json!({"summary": format!("unexpected {other}")}),
                 raw_text: "{}".into(),
                 assistant_message: None,
+                reasoning: Vec::new(),
                 usage: None,
             })),
         }

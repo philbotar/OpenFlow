@@ -294,6 +294,7 @@ async fn mixed_tool_turn_is_corrected_and_retried_without_executing_calls() {
                 output: json!({"status": "complete"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
+                reasoning: Vec::new(),
                 usage: None,
             }))
         }
@@ -362,6 +363,7 @@ impl AiPort for CompleteAi {
             output: self.output.clone(),
             raw_text: "{}".to_string(),
             assistant_message: None,
+            reasoning: Vec::new(),
             usage: None,
         }))
     }
@@ -409,6 +411,7 @@ async fn run_sleeps_backoff_before_transient_retry() {
                 output: json!({"summary": "ok"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
+                reasoning: Vec::new(),
                 usage: None,
             }))
         }
@@ -536,6 +539,7 @@ fn plan_mode_checkpoint_pins_source_and_packet_when_workflow_settings_change() {
             }),
             raw_text: "{}".to_string(),
             assistant_message: None,
+            reasoning: Vec::new(),
             usage: None,
         })),
     );
@@ -620,6 +624,7 @@ fn checkpoint_rejects_tampered_frozen_change_evidence_packet() {
             output: json!({ "scope": "approved" }),
             raw_text: "{}".to_string(),
             assistant_message: None,
+            reasoning: Vec::new(),
             usage: None,
         })),
     );
@@ -655,6 +660,7 @@ fn checkpoint_rejects_packet_from_a_node_other_than_the_pinned_source() {
             output: json!({ "scope": "approved" }),
             raw_text: "{}".to_string(),
             assistant_message: None,
+            reasoning: Vec::new(),
             usage: None,
         })),
     );
@@ -800,6 +806,7 @@ fn plan_source_cannot_complete_before_an_approved_seal_succeeds() {
             output: json!({ "scope": "not approved" }),
             raw_text: "{}".to_string(),
             assistant_message: None,
+            reasoning: Vec::new(),
             usage: None,
         })),
     );
@@ -1221,6 +1228,7 @@ fn tool_calls_pause_for_approval_and_resume_after_results() {
             output: json!({"summary": "ok"}),
             raw_text: "{}".to_string(),
             assistant_message: None,
+            reasoning: Vec::new(),
             usage: None,
         })),
     ]);
@@ -1295,6 +1303,7 @@ fn yolo_mode_skips_tool_approval() {
             output: json!({"summary": "ok"}),
             raw_text: "{}".to_string(),
             assistant_message: None,
+            reasoning: Vec::new(),
             usage: None,
         })),
     ]);
@@ -1345,6 +1354,7 @@ fn runtime_approval_patch_applies_before_tool_decision() {
         output: json!({"summary": "ok"}),
         raw_text: "{}".to_string(),
         assistant_message: None,
+        reasoning: Vec::new(),
         usage: None,
     }))]);
     block_on(async {
@@ -1371,6 +1381,7 @@ fn misrouted_completion_is_rejected() {
             output: json!({"summary": "wrong"}),
             raw_text: "{}".to_string(),
             assistant_message: None,
+            reasoning: Vec::new(),
             usage: None,
         })),
     );
@@ -1491,6 +1502,7 @@ impl AiPort for BarrierAi {
             output: json!({ "node": request.node_id.0 }),
             raw_text: String::new(),
             assistant_message: None,
+            reasoning: Vec::new(),
             usage: None,
         }))
     }
@@ -1531,6 +1543,7 @@ impl AiPort for ToolOverlapAi {
                 output: json!({ "node": "b" }),
                 raw_text: String::new(),
                 assistant_message: None,
+                reasoning: Vec::new(),
                 usage: None,
             }));
         }
@@ -1543,6 +1556,7 @@ impl AiPort for ToolOverlapAi {
                 output: json!({ "node": "a" }),
                 raw_text: String::new(),
                 assistant_message: None,
+                reasoning: Vec::new(),
                 usage: None,
             }));
         }
@@ -1684,6 +1698,7 @@ fn tool_batch_effects_are_recorded_on_engine() {
                 output: json!({ "ok": true }),
                 raw_text: String::new(),
                 assistant_message: None,
+                reasoning: Vec::new(),
                 usage: None,
             })),
         ]);
