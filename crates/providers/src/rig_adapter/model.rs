@@ -491,6 +491,7 @@ fn completion_request_for(
     openai_config: Option<&OpenAiCompatibleConfig>,
 ) -> Result<CompletionRequest, AgentError> {
     let mut completion_request = convert::to_completion_request(request);
+    apply_tool_choice_policy(&mut completion_request, provider_id);
     match model {
         RigModel::Anthropic(_) => {
             claude_thinking::apply(
@@ -520,7 +521,6 @@ fn completion_request_for(
             )?;
         }
     }
-    apply_tool_choice_policy(&mut completion_request, provider_id);
     Ok(completion_request)
 }
 
@@ -812,6 +812,49 @@ mod tests {
         for model in unsupported {
             assert!(!bedrock_prompt_caching_supported(model), "{model}");
         }
+    }
+
+    #[cfg(feature = "bedrock")]
+    #[test]
+    fn bedrock_claude_thinking_uses_automatic_tool_choice() {
+        let model_id = "anthropic.claude-sonnet-4-20250514-v1:0";
+        let client = rig_bedrock::client::Client::with_profile_name("unused-test-profile");
+        let model = RigModel::Bedrock(client.completion_model(model_id));
+        let mut agent_request = minimal_request();
+        agent_request.model = model_id.into();
+        agent_request.reasoning_effort = Some("low".into());
+
+        let result =
+            completion_request_for(&model, &agent_request, &ProviderId::from("bedrock"), None);
+
+        assert!(result.is_ok_and(|request| {
+            request.tool_choice == Some(ToolChoice::Auto)
+                && request.additional_params.as_ref().is_some_and(|params| {
+                    params["thinking"]["type"] == "enabled"
+                        && params["thinking"]["budget_tokens"] == 10_240
+                })
+        }));
+    }
+
+    #[cfg(feature = "bedrock")]
+    #[test]
+    fn bedrock_claude_without_thinking_requires_tool_use() {
+        let model_id = "anthropic.claude-sonnet-4-20250514-v1:0";
+        let client = rig_bedrock::client::Client::with_profile_name("unused-test-profile");
+        let model = RigModel::Bedrock(client.completion_model(model_id));
+        let mut agent_request = minimal_request();
+        agent_request.model = model_id.into();
+
+        let result =
+            completion_request_for(&model, &agent_request, &ProviderId::from("bedrock"), None);
+
+        assert!(result.is_ok_and(|request| {
+            request.tool_choice == Some(ToolChoice::Required)
+                && request
+                    .additional_params
+                    .as_ref()
+                    .is_none_or(|params| params.get("thinking").is_none())
+        }));
     }
 
     #[test]
