@@ -7,6 +7,8 @@ OpenFlow docs are split by reader intent. Start with the product walkthroughs wh
 ```text
 docs/
 ├── README.md                          # This index
+├── AGENTS.md                          # Docs file map for agents
+├── work-specs/                        # Numbered design / implementation work specs
 ├── getting-started/
 │   └── README.md                      # Install, run, configure a provider, start a workflow
 ├── guides/
