@@ -41,6 +41,8 @@ pub fn to_completion_request(request: &AgentRequest) -> CompletionRequest {
                     reasoning_blocks.push(reasoning.clone());
                     index += 1;
                 }
+                let reasoning_blocks =
+                    reasoning_convert::coalesce_signed_stream_duplicates(reasoning_blocks);
                 if matches!(
                     request.transcript.get(index),
                     Some(AgentTranscriptItem::ToolCall { .. })
@@ -374,6 +376,39 @@ mod tests {
         assert!(matches!(
             content.last(),
             AssistantContent::ToolCall(call) if call.id == "c1"
+        ));
+    }
+
+    #[test]
+    fn replay_replaces_unsigned_reasoning_delta_with_signed_final_block() {
+        let reasoning = |signature| engine::AgentReasoning {
+            id: None,
+            content: vec![engine::AgentReasoningContent::Text {
+                text: "checking the request".into(),
+                signature,
+            }],
+        };
+        let transcript = vec![
+            AgentTranscriptItem::Reasoning {
+                reasoning: reasoning(None),
+            },
+            AgentTranscriptItem::Reasoning {
+                reasoning: reasoning(Some("bedrock-signature".into())),
+            },
+            tc("c1", "search"),
+            tr("c1", "found"),
+        ];
+
+        let req = to_completion_request(&request_with_transcript(transcript));
+        let msgs: Vec<_> = req.chat_history.iter().collect();
+        let Message::Assistant { content, .. } = msgs[1] else {
+            panic!("expected assistant message");
+        };
+        assert_eq!(content.len(), 2);
+        assert!(matches!(
+            content.first(),
+            AssistantContent::Reasoning(reasoning)
+                if reasoning.first_signature() == Some("bedrock-signature")
         ));
     }
 }

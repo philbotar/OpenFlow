@@ -1,6 +1,6 @@
 [package]
 name = "providers"
-version = "0.1.19"
+version = "0.1.20"
 edition.workspace = true
 description.workspace = true
 license.workspace = true

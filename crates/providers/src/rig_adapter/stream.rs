@@ -63,3 +63,63 @@ fn emit_reasoning(sink: &dyn AiStreamSink, reasoning: &Reasoning) {
         sink.on_stream_event(AiStreamEvent::ThinkingDelta { content: text });
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures::stream;
+    use rig_core::message::ReasoningContent;
+    use rig_core::streaming::{RawStreamingChoice, RawStreamingToolCall, StreamingResult};
+
+    struct NoopSink;
+
+    impl AiStreamSink for NoopSink {
+        fn on_stream_event(&self, _event: AiStreamEvent) {}
+    }
+
+    #[tokio::test]
+    async fn drain_replaces_unsigned_reasoning_delta_with_signed_final_block() {
+        let chunks = vec![
+            Ok(RawStreamingChoice::ReasoningDelta {
+                id: None,
+                reasoning: "checking the request".to_string(),
+            }),
+            Ok(RawStreamingChoice::Reasoning {
+                id: None,
+                content: ReasoningContent::Text {
+                    text: "checking the request".to_string(),
+                    signature: Some("bedrock-signature".to_string()),
+                },
+            }),
+            Ok(RawStreamingChoice::ToolCall(RawStreamingToolCall::new(
+                "call-1".to_string(),
+                "search".to_string(),
+                serde_json::json!({"query": "OpenFlow"}),
+            ))),
+        ];
+        let raw: StreamingResult<()> = Box::pin(stream::iter(chunks));
+        let outcome = drain(
+            StreamingCompletionResponse::stream(raw),
+            &NoopSink,
+            "Amazon Bedrock",
+            None,
+            NoToolCallsPolicy::Recover {
+                error: "expected tool call",
+            },
+        )
+        .await;
+
+        let reasoning = match outcome {
+            Ok(AgentTurnOutcome::ToolCalls(batch)) => batch.reasoning,
+            Ok(_) | Err(_) => Vec::new(),
+        };
+        assert_eq!(reasoning.len(), 1);
+        assert!(matches!(
+            reasoning[0].content.as_slice(),
+            [engine::AgentReasoningContent::Text {
+                text,
+                signature: Some(signature),
+            }] if text == "checking the request" && signature == "bedrock-signature"
+        ));
+    }
+}

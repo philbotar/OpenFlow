@@ -138,7 +138,11 @@ pub(super) fn partition_choice(
             AssistantContent::Image(_) => {}
         }
     }
-    (text_parts, reasoning, tool_calls)
+    (
+        text_parts,
+        reasoning_convert::coalesce_signed_stream_duplicates(reasoning),
+        tool_calls,
+    )
 }
 
 /// Canonical empty-turn marker. Engine [`AgentError::is_empty_provider_turn`] matches this
