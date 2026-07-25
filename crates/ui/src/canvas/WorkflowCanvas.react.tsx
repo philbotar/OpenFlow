@@ -267,7 +267,6 @@ export function WorkflowCanvas(props: WorkflowCanvasProps) {
                 type="button"
                 className="secondary-button small workflow-flow-action-button"
                 onClick={handleAutoLayout}
-                title="Arrange workflow left to right"
               >
                 Auto layout
               </button>
