@@ -29,10 +29,18 @@ export function Tooltip(props: TooltipProps) {
     setOpen(false);
   };
 
+  const triggerRect = (el: HTMLElement): DOMRect => {
+    const child = el.firstElementChild;
+    if (child instanceof HTMLElement) {
+      return child.getBoundingClientRect();
+    }
+    return el.getBoundingClientRect();
+  };
+
   const scheduleShow = (el: HTMLElement) => {
     clearTimer();
     timer = window.setTimeout(() => {
-      const rect = el.getBoundingClientRect();
+      const rect = triggerRect(el);
       const tipHeight = 32;
       const spaceBelow = window.innerHeight - rect.bottom;
       const top =
