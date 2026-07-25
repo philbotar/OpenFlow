@@ -3234,7 +3234,7 @@ describe("App schedule screen", () => {
       intervalInput.dispatchEvent(new Event("input", { bubbles: true }));
 
       const saveButton = container.querySelector(
-        '.schedule-row button[title="Save schedule"]',
+        '.schedule-row button[aria-label="Save schedule"]',
       ) as HTMLButtonElement;
       saveButton.click();
       await flush();

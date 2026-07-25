@@ -7,6 +7,7 @@ import {
   ScheduleWorkflowPickerModal,
   SidebarIcon,
   TextSelect,
+  Tooltip,
 } from "@/components";
 import { useAppContext } from "../context/AppContext";
 import {
@@ -204,12 +205,26 @@ function ScheduleRow(props: { workflow: Workflow }) {
       </div>
 
       <div class="schedule-actions">
-        <button class="schedule-icon-action" type="button" title="Save schedule" onClick={save}>
-          <SidebarIcon name="save" />
-        </button>
-        <button class="schedule-icon-action danger" type="button" title="Remove schedule" onClick={remove}>
-          <SidebarIcon name="trash" />
-        </button>
+        <Tooltip label="Save schedule">
+          <button
+            class="schedule-icon-action"
+            type="button"
+            onClick={save}
+            aria-label="Save schedule"
+          >
+            <SidebarIcon name="save" />
+          </button>
+        </Tooltip>
+        <Tooltip label="Remove schedule">
+          <button
+            class="schedule-icon-action danger"
+            type="button"
+            onClick={remove}
+            aria-label="Remove schedule"
+          >
+            <SidebarIcon name="trash" />
+          </button>
+        </Tooltip>
       </div>
     </div>
   );
