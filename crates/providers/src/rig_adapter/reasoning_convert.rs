@@ -31,7 +31,7 @@ pub fn coalesce_signed_stream_duplicates(
             && normalized.last().is_some_and(|previous| {
                 block_signature(previous).is_none()
                     && previous.id == block.id
-                    && block_text(previous) == block_text(&block)
+                    && same_display_fragments(previous, &block)
             });
         if replaces_previous {
             let _ = normalized.pop();
@@ -56,17 +56,19 @@ fn block_signature(reasoning: &AgentReasoning) -> Option<&str> {
     })
 }
 
-fn block_text(reasoning: &AgentReasoning) -> String {
+fn same_display_fragments(left: &AgentReasoning, right: &AgentReasoning) -> bool {
+    display_fragments(left).eq(display_fragments(right))
+}
+
+fn display_fragments(reasoning: &AgentReasoning) -> impl Iterator<Item = (u8, &str)> {
     reasoning
         .content
         .iter()
         .filter_map(|content| match content {
-            AgentReasoningContent::Text { text, .. } | AgentReasoningContent::Summary(text) => {
-                Some(text.as_str())
-            }
+            AgentReasoningContent::Text { text, .. } => Some((0, text.as_str())),
+            AgentReasoningContent::Summary(text) => Some((1, text.as_str())),
             AgentReasoningContent::Encrypted(_) | AgentReasoningContent::Redacted { .. } => None,
         })
-        .collect()
 }
 
 fn rig_content_to_agent(content: &ReasoningContent) -> AgentReasoningContent {
@@ -119,5 +121,39 @@ mod tests {
         let agent = rig_to_agent(&rig);
         let back = agent_to_rig(&agent);
         assert_eq!(rig.first_signature(), back.first_signature());
+    }
+
+    #[test]
+    fn coalescing_preserves_distinct_fragment_boundaries() {
+        let unsigned = AgentReasoning {
+            id: None,
+            content: vec![
+                AgentReasoningContent::Text {
+                    text: "ab".into(),
+                    signature: None,
+                },
+                AgentReasoningContent::Text {
+                    text: "c".into(),
+                    signature: None,
+                },
+            ],
+        };
+        let signed = AgentReasoning {
+            id: None,
+            content: vec![
+                AgentReasoningContent::Text {
+                    text: "a".into(),
+                    signature: Some("sig".into()),
+                },
+                AgentReasoningContent::Text {
+                    text: "bc".into(),
+                    signature: None,
+                },
+            ],
+        };
+
+        let normalized = coalesce_signed_stream_duplicates([unsigned, signed]);
+
+        assert_eq!(normalized.len(), 2);
     }
 }
