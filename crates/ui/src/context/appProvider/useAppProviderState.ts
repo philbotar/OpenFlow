@@ -10,6 +10,7 @@ import type {
   Workflow,
   WorkflowRunState,
 } from "../../lib/types";
+import { eventMatchesShortcut } from "../../lib/shortcuts";
 import { isTextInputTarget, normalizeError, clampDockHeight, viewportHeight } from "../../lib/utils";
 import type { AppContextValue } from "../AppContext";
 import { createRunStateKernel, createToastApi, selectWorkflow } from "./shared";
@@ -303,23 +304,22 @@ export function useAppProviderState(): AppContextValue {
       appShell.closeSidebarDrawer();
       return;
     }
-    const command = event.metaKey || event.ctrlKey;
-    if (command && event.key === "0") {
+    if (eventMatchesShortcut(event, "zoomReset")) {
       event.preventDefault();
       appShell.handleZoomReset();
       return;
     }
-    if (command && (event.key === "=" || event.key === "+")) {
+    if (eventMatchesShortcut(event, "zoomIn")) {
       event.preventDefault();
       appShell.handleZoomIn();
       return;
     }
-    if (command && (event.key === "-" || event.key === "_")) {
+    if (eventMatchesShortcut(event, "zoomOut")) {
       event.preventDefault();
       appShell.handleZoomOut();
       return;
     }
-    if (command && event.key.toLowerCase() === "s") {
+    if (eventMatchesShortcut(event, "save")) {
       event.preventDefault();
       if (appShell.screen() === "agents") {
         void workspace.handleSaveAgents();
@@ -330,7 +330,7 @@ export function useAppProviderState(): AppContextValue {
       }
       return;
     }
-    if (command && event.key === "Enter" && appShell.screen() === "editor") {
+    if (eventMatchesShortcut(event, "run") && appShell.screen() === "editor") {
       event.preventDefault();
       if (runSession.continuableRun() && !runKernel.runState()?.active) {
         void runSession.handleContinueRun();
@@ -339,14 +339,13 @@ export function useAppProviderState(): AppContextValue {
       }
       return;
     }
-    if (command && event.key === "." && appShell.screen() === "editor") {
+    if (eventMatchesShortcut(event, "stop") && appShell.screen() === "editor") {
       event.preventDefault();
       void runSession.handleStopRun();
       return;
     }
     if (
-      command &&
-      event.key.toLowerCase() === "j" &&
+      eventMatchesShortcut(event, "toggleRightPanel") &&
       !isTextInputTarget(event.target) &&
       appShell.screen() === "editor"
     ) {
@@ -354,9 +353,27 @@ export function useAppProviderState(): AppContextValue {
       workflowEditor.handleToggleRightPanel();
       return;
     }
-    if (command && event.key.toLowerCase() === "b" && !isTextInputTarget(event.target)) {
+    if (eventMatchesShortcut(event, "toggleLeftSidebar") && !isTextInputTarget(event.target)) {
       event.preventDefault();
       workflowEditor.handleToggleLeftPanel();
+      return;
+    }
+    if (
+      eventMatchesShortcut(event, "toggleInspector") &&
+      !isTextInputTarget(event.target) &&
+      appShell.screen() === "editor"
+    ) {
+      event.preventDefault();
+      workflowEditor.handleToggleInspector();
+      return;
+    }
+    if (
+      eventMatchesShortcut(event, "toggleChatFocus") &&
+      !isTextInputTarget(event.target) &&
+      appShell.screen() === "editor"
+    ) {
+      event.preventDefault();
+      dock.handleToggleChatFocusMode();
       return;
     }
     if (
