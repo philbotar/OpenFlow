@@ -10,3 +10,4 @@ Orientation for agents editing documentation.
 | [`work-specs/`](work-specs/) | Numbered design / implementation work specs |
 | [`work-specs/AGENTS.md`](work-specs/AGENTS.md) | Work-spec numbering rules |
 | [`work-specs/001-cursor-tooltips.md`](work-specs/001-cursor-tooltips.md) | Cursor-style chrome tooltips + shortcut surfacing (design) |
+| [`work-specs/002-cursor-tooltips-plan.md`](work-specs/002-cursor-tooltips-plan.md) | Implementation plan for WS-001 tooltips |
