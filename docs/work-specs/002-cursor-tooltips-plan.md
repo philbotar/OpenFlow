@@ -1,12 +1,12 @@
 # WS-002: Cursor-style chrome tooltips — implementation plan
 
 - **Date:** 2026-07-25
-- **Scope:** Implementation plan for WS-001 (Cursor-style chrome tooltips + shortcut registry + Mod+I / Mod+Shift+F). Execution not started.
-- **Outcome:** Partial
+- **Scope:** Implementation plan for WS-001 (Cursor-style chrome tooltips + shortcut registry + Mod+I / Mod+Shift+F). Executed via SDD tasks 1–9.
+- **Outcome:** Done
 
 ## What we did
 
-Wrote the implementation plan below from approved design [`001-cursor-tooltips.md`](001-cursor-tooltips.md).
+Wrote the implementation plan below from approved design [`001-cursor-tooltips.md`](001-cursor-tooltips.md). Implementation completed on branch (shortcut registry, Solid/React tooltips, keydown, chrome wiring, sweep + UI verify).
 
 ## Files touched
 
