@@ -1,5 +1,7 @@
 .app-tooltip-trigger {
-  display: contents;
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
 }
 
 .app-tooltip {

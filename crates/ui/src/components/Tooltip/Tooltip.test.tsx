@@ -51,6 +51,26 @@ describe("Tooltip", () => {
     expect(tip?.querySelectorAll(".app-tooltip-key").length).toBeGreaterThan(0);
   });
 
+  test("shows disabledReason after delay when hovering wrapper around disabled button", () => {
+    dispose = render(
+      () => (
+        <Tooltip label="Run" disabledReason="Stop the run first">
+          <button type="button" disabled aria-label="Run">
+            Run
+          </button>
+        </Tooltip>
+      ),
+      container,
+    );
+
+    const wrapper = container.querySelector(".app-tooltip-trigger")!;
+    wrapper.dispatchEvent(new PointerEvent("pointerenter", { bubbles: true }));
+    vi.advanceTimersByTime(400);
+    const tip = document.querySelector(".app-tooltip");
+    expect(tip).not.toBeNull();
+    expect(tip?.textContent).toContain("Stop the run first");
+  });
+
   test("hides on pointer leave", () => {
     dispose = render(
       () => (

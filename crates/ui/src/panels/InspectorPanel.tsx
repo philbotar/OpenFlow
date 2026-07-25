@@ -70,18 +70,10 @@ export function InspectorPanel() {
                         <SidebarIcon name="edit" />
                       </button>
                     </Tooltip>
-                    <Tooltip
-                      label="Delete node"
-                      disabledReason={
-                        ctx.runState()?.active
-                          ? "Stop the run before deleting nodes"
-                          : undefined
-                      }
-                    >
+                    <Tooltip label="Delete node">
                       <button
                         class="inspector-delete-button"
                         onClick={ctx.handleDeleteSelectedNode}
-                        disabled={Boolean(ctx.runState()?.active)}
                         aria-label={`Delete ${node().label}`}
                       >
                         <SidebarIcon name="trash" />
