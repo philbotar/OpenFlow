@@ -19,6 +19,56 @@ pub fn agent_to_rig(reasoning: &AgentReasoning) -> Reasoning {
     rig
 }
 
+/// Replace Rig's unsigned streaming-delta aggregate when the matching signed
+/// final block follows it.
+#[must_use]
+pub fn coalesce_signed_stream_duplicates(
+    reasoning: impl IntoIterator<Item = AgentReasoning>,
+) -> Vec<AgentReasoning> {
+    let mut normalized = Vec::new();
+    for block in reasoning {
+        let replaces_previous = block_signature(&block).is_some()
+            && normalized.last().is_some_and(|previous| {
+                block_signature(previous).is_none()
+                    && previous.id == block.id
+                    && block_text(previous) == block_text(&block)
+            });
+        if replaces_previous {
+            let _ = normalized.pop();
+        }
+        normalized.push(block);
+    }
+    normalized
+}
+
+fn block_signature(reasoning: &AgentReasoning) -> Option<&str> {
+    reasoning.content.iter().find_map(|content| match content {
+        AgentReasoningContent::Text {
+            signature: Some(signature),
+            ..
+        } => Some(signature.as_str()),
+        AgentReasoningContent::Text {
+            signature: None, ..
+        }
+        | AgentReasoningContent::Encrypted(_)
+        | AgentReasoningContent::Redacted { .. }
+        | AgentReasoningContent::Summary(_) => None,
+    })
+}
+
+fn block_text(reasoning: &AgentReasoning) -> String {
+    reasoning
+        .content
+        .iter()
+        .filter_map(|content| match content {
+            AgentReasoningContent::Text { text, .. } | AgentReasoningContent::Summary(text) => {
+                Some(text.as_str())
+            }
+            AgentReasoningContent::Encrypted(_) | AgentReasoningContent::Redacted { .. } => None,
+        })
+        .collect()
+}
+
 fn rig_content_to_agent(content: &ReasoningContent) -> AgentReasoningContent {
     match content {
         ReasoningContent::Text { text, signature } => AgentReasoningContent::Text {
