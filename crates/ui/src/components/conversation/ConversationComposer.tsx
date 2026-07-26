@@ -19,6 +19,7 @@ import { FileReferenceCombobox } from "./FileReferenceCombobox";
 import { SkillCommandCombobox } from "./SkillCommandCombobox";
 import { SkillDescriptionPreview } from "./SkillDescriptionPreview";
 import { Button } from "../Button";
+import { Tooltip } from "../Tooltip";
 
 export function ConversationComposer(props: {
   nodeId: NodeId;
@@ -303,16 +304,18 @@ export function ConversationComposer(props: {
               }
               disabled={!inputEnabled()}
             />
-            <Button
-              variant="primary"
-              class="composer-send-button"
-              onClick={() => void ctx.handleSubmitChat(props.nodeId)}
-              disabled={!ctx.canSendChatFor(props.nodeId)}
-              title={props.kickoff ? "Start workflow" : "Send to paused node"}
-              aria-label={
-                props.kickoff ? "Start workflow with message" : "Send to paused node"
-              }
+            <Tooltip
+              label={props.kickoff ? "Start workflow" : "Send to paused node"}
             >
+              <Button
+                variant="primary"
+                class="composer-send-button"
+                onClick={() => void ctx.handleSubmitChat(props.nodeId)}
+                disabled={!ctx.canSendChatFor(props.nodeId)}
+                aria-label={
+                  props.kickoff ? "Start workflow with message" : "Send to paused node"
+                }
+              >
               <ArrowUp
                 class="composer-send-icon"
                 aria-hidden="true"
@@ -320,6 +323,7 @@ export function ConversationComposer(props: {
                 strokeWidth={2.3}
               />
             </Button>
+            </Tooltip>
           </div>
           <Show when={!props.kickoff}>
             <ComposerRuntimeControls nodeId={props.nodeId} disabled={props.disabled} />

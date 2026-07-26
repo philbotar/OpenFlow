@@ -237,7 +237,7 @@ Two adjacent mechanisms complete the context-economy story:
 
 ### 5.1 Completion is a tool call, not text
 
-There is no "parse the model's final answer" step. A node is **incomplete until it calls `openflow_submit_node_output`** with `{output: <schema-conforming object>, assistant_message}`. The runtime preamble states this contract explicitly ("Plain assistant text does not finish the node and does not advance the workflow"). Likewise, pausing for a human is a tool call: `openflow_request_user_input` with one direct question.
+There is no "parse the model's final answer" step. A node is **incomplete until it calls `openflow_submit_node_output`** with `{output: <schema-conforming object>, assistant_message}`. The runtime preamble states this contract explicitly ("Plain assistant text does not finish the node and does not advance the workflow"). Likewise, pausing for a human is a tool call: `openflow_request_user_input` with a direct free-text question or structured choices.
 
 This makes the **control plane itself tool-driven**. Every turn advertises
 `openflow_submit_node_output`, optional `openflow_request_user_input`, and the node's
@@ -259,7 +259,7 @@ flowchart LR
     Ask -.->|"narration instead of a question"| Retry
 ```
 
-Malformed harness-tool calls get **class-specific retry budgets** with targeted corrective feedback (e.g. `MALFORMED_REQUEST_INPUT_FEEDBACK` tells the model to put the actual question in `assistant_message`), distinct from transient-network retry counters.
+Malformed harness-tool calls get **class-specific retry budgets** with targeted corrective feedback (e.g. `MALFORMED_REQUEST_INPUT_FEEDBACK` tells the model to provide a direct `assistant_message` or valid structured `questions`), distinct from transient-network retry counters.
 After the request-input retry budget is exhausted, the node fails instead of surfacing narration as a human question. Plain provider text never becomes `NeedsUserInput`; only an explicit, valid `openflow_request_user_input` call may pause a running node.
 
 ### 5.2 Humans are nodes, not interrupts

@@ -8,6 +8,7 @@ import { SidebarListRow } from "./SidebarListRow";
 import { SidebarIconButton } from "./SidebarIconButton";
 import { SidebarNavButton } from "./SidebarNavButton";
 import { CollapsibleSection } from "../CollapsibleSection";
+import { Tooltip } from "../Tooltip";
 
 function WorkflowRows() {
   const ctx = useAppContext();
@@ -76,20 +77,22 @@ export function Sidebar() {
           <div class="sidebar-section-header workflows-section-header">
             <div class="sidebar-section-label">Workflows</div>
             <div class="sidebar-section-trailing">
-              <button
-                type="button"
-                class="workflows-section-chevron-btn"
-                onClick={ctx.handleToggleWorkflowsSection}
-                aria-expanded={ctx.workflowsSectionExpanded()}
-                aria-label="Toggle workflows section"
-              >
-                <ChevronRight
-                  class="workflows-section-chevron"
-                  aria-hidden="true"
-                  absoluteStrokeWidth
-                  strokeWidth={ICON_STROKE_WIDTH}
-                />
-              </button>
+              <Tooltip label="Toggle workflows section">
+                <button
+                  type="button"
+                  class="workflows-section-chevron-btn"
+                  onClick={ctx.handleToggleWorkflowsSection}
+                  aria-expanded={ctx.workflowsSectionExpanded()}
+                  aria-label="Toggle workflows section"
+                >
+                  <ChevronRight
+                    class="workflows-section-chevron"
+                    aria-hidden="true"
+                    absoluteStrokeWidth
+                    strokeWidth={ICON_STROKE_WIDTH}
+                  />
+                </button>
+              </Tooltip>
               <SidebarIconButton
                 icon="sparkles"
                 label="Build with AI"
@@ -127,20 +130,22 @@ export function Sidebar() {
           <div class="sidebar-section-header workflows-section-header">
             <div class="sidebar-section-label">Projects</div>
             <div class="sidebar-section-trailing">
-              <button
-                type="button"
-                class="workflows-section-chevron-btn"
-                onClick={ctx.handleToggleProjectsSection}
-                aria-expanded={ctx.projectsSectionExpanded()}
-                aria-label="Toggle projects section"
-              >
-                <ChevronRight
-                  class="workflows-section-chevron"
-                  aria-hidden="true"
-                  absoluteStrokeWidth
-                  strokeWidth={ICON_STROKE_WIDTH}
-                />
-              </button>
+              <Tooltip label="Toggle projects section">
+                <button
+                  type="button"
+                  class="workflows-section-chevron-btn"
+                  onClick={ctx.handleToggleProjectsSection}
+                  aria-expanded={ctx.projectsSectionExpanded()}
+                  aria-label="Toggle projects section"
+                >
+                  <ChevronRight
+                    class="workflows-section-chevron"
+                    aria-hidden="true"
+                    absoluteStrokeWidth
+                    strokeWidth={ICON_STROKE_WIDTH}
+                  />
+                </button>
+              </Tooltip>
               <SidebarIconButton
                 icon="plus"
                 label="Add project"

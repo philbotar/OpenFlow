@@ -27,7 +27,7 @@ For where terms live in code, see [Engine modules](#engine-modules), [Orchestrat
 | **AgentNodeConfig** | Configuration for an agent node: model, prompts, tools, auto-start, callable agents | Node config, agent config |
 | **NodePosition** | Coordinates for rendering a node on the canvas | Position, coordinates |
 | **AutoStart** | Whether a node invokes its model when its execution layer is reached (`auto_start: true`), or first waits for a human kickoff message (`false`) | Auto-execute |
-| **RequestUserInput** | Whether a running node may call `openflow_request_user_input` to ask a direct follow-up question; defaults to false | AutoStart, manual start |
+| **RequestUserInput** | Whether a running node may call `openflow_request_user_input` to ask a free-text or structured follow-up question; defaults to false | AutoStart, manual start |
 | **CallableAgent** | A saved agent definition a node may invoke as a subagent during a run (`engine::CallableAgent`) | Saved subagent, AgentDefinition |
 | **CallableAgentSelection** | Agent IDs on `AgentNodeConfig.callable_agents`; snapshotted at run start | Allowed agents, callable agents |
 | **AllowAllCallableAgents** | When true, every saved agent is snapshotted at run start instead of `callable_agents` | Allow all agents |

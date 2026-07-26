@@ -23,6 +23,17 @@ describe("groupToolMessages", () => {
     ]);
   });
 
+  it("keeps standalone tools outside adjacent tool stacks", () => {
+    const messages = [tool("a"), tool("progress"), tool("b")];
+    expect(
+      groupToolMessages(messages, undefined, null, new Set(["progress"])),
+    ).toEqual([
+      { kind: "tool", message: messages[0] },
+      { kind: "tool", message: messages[1] },
+      { kind: "tool", message: messages[2] },
+    ]);
+  });
+
   it("stacks consecutive runs of length >= 2", () => {
     const messages = [tool("a"), tool("b")];
     expect(groupToolMessages(messages)).toEqual([

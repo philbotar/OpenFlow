@@ -393,13 +393,38 @@ describe("ProvidersSection", () => {
     expect(handleAddKnownModel).toHaveBeenCalledTimes(1);
   });
 
-  test("calls handleRemoveKnownModel when model chip is clicked", () => {
+  test("calls handleRemoveKnownModel from the explicit model remove action", () => {
     const { handleRemoveKnownModel } = renderSection("custom_openai_compatible");
-    const chip = [...container.querySelectorAll(".model-chip")].find((candidate) =>
-      candidate.textContent?.includes("compatible-model"),
+    const removeButton = container.querySelector(
+      'button[aria-label="Remove compatible-model"]',
     ) as HTMLButtonElement;
-    chip.click();
+    removeButton.click();
     expect(handleRemoveKnownModel).toHaveBeenCalledWith("compatible-model");
+  });
+
+  test("keeps models before connection and reasoning in the task flow", () => {
+    renderSection("custom_openai_compatible");
+    const models = subheading("providers-models-heading");
+    const connection = subheading("providers-connection-heading");
+    const reasoning = subheading("providers-reasoning-heading");
+
+    expect(models?.compareDocumentPosition(connection!)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(connection?.compareDocumentPosition(reasoning!)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  test("collapses advanced settings by default and exposes expansion state", () => {
+    renderSection("custom_openai_compatible");
+    const advancedToggle = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Advanced settings"),
+    ) as HTMLButtonElement;
+
+    expect(advancedToggle.getAttribute("aria-expanded")).toBe("false");
+    advancedToggle.click();
+    expect(advancedToggle.getAttribute("aria-expanded")).toBe("true");
   });
 
   test("sets an Anthropic Messages transport override for a custom model", async () => {

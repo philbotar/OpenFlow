@@ -284,12 +284,30 @@ export interface NodeRunOutput {
   output: unknown;
 }
 
+export type PostRunSuggestionCategory =
+  | "prompt"
+  | "tools"
+  | "workflow"
+  | "model"
+  | "coordination";
+
+export interface PostRunSuggestion {
+  id: string;
+  category: PostRunSuggestionCategory;
+  targetNodeId: NodeId | null;
+  title: string;
+  evidence: string;
+  recommendation: string;
+}
+
 export interface RunReport {
   workflow_id: WorkflowId;
   outputs: NodeRunOutput[];
   read_calls?: number;
   redundant_reads?: number;
   tokens_in?: number;
+  suggestions?: PostRunSuggestion[];
+  suggestions_error?: string | null;
 }
 
 export type FileChangeOp = "create" | "update" | "delete" | "rename";
@@ -330,11 +348,28 @@ export interface EditBatch {
   snapshots: FileSnapshot[];
 }
 
+export interface UserInputOption {
+  label: string;
+  description: string;
+}
+
+export interface UserInputQuestion {
+  id: string;
+  header: string;
+  question: string;
+  options: UserInputOption[];
+}
+
+export interface StructuredUserInput {
+  questions: UserInputQuestion[];
+}
+
 export interface WorkflowRunState {
   active: boolean;
   runId?: string | null;
   awaitingNodeId: NodeId | null;
   awaitingNodeIds?: NodeId[];
+  structuredInputByNode?: Record<NodeId, StructuredUserInput>;
   activeManualNodeId: NodeId | null;
   activeToolCallId: string | null;
   pendingApprovals: PendingToolApproval[];

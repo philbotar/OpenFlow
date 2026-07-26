@@ -2,6 +2,8 @@
 
 `crates/providers` implements outbound LLM adapters for `engine::AiPort`. Orchestration resolves settings into provider configuration and calls `create_provider()`; it does not depend on concrete provider clients.
 
+For desktop provider onboarding (keys, OAuth, readiness), see [`../guides/provider-setup.md`](../guides/provider-setup.md).
+
 Transport goes through **Rig 0.39** (`rig_adapter/`). Pre-Rig modules `openai_compat.rs`, `anthropic.rs`, and `sse.rs` were removed.
 
 ## Supported adapter families

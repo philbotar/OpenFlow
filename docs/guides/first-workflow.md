@@ -8,7 +8,7 @@ This walkthrough builds a two-node workflow: one node drafts a plan, and a secon
 ./scripts/start.sh
 ```
 
-Open Settings and confirm the active provider is ready. If readiness fails, check [`../troubleshooting/README.md#provider-not-ready`](../troubleshooting/README.md#provider-not-ready).
+Open Settings and confirm the active provider is ready. Setup steps: [`provider-setup.md`](provider-setup.md). If readiness still fails, see [`../troubleshooting/README.md#provider-not-ready`](../troubleshooting/README.md#provider-not-ready).
 
 ## 2. Create the Workflow
 
@@ -69,4 +69,9 @@ cargo nextest run -p orchestration --test workflow_acceptance --no-capture
 
 ## 7. Make It Reusable
 
-When a prompt should be shared across workflows, save it as an agent and add it through the callable-agent flow. Callable agents are resolved as snapshots for a workflow run, so a saved-agent edit does not silently mutate a running workflow. See [`../architecture/callable-agents.md`](../architecture/callable-agents.md).
+When a prompt should be shared across workflows, save it as an agent on the **Agents** screen and add it through the callable-agent flow on a node. Callable agents are resolved as snapshots for a workflow run, so a saved-agent edit does not silently mutate a running workflow. See [`../architecture/callable-agents.md`](../architecture/callable-agents.md) and [`using-the-app.md`](using-the-app.md#saved-agents-and-callable-agents).
+
+## Next
+
+- [`using-the-app.md`](using-the-app.md) — projects, schedules, dock tabs, skills, and MCP.
+- [`../concepts/workflows-and-runs.md`](../concepts/workflows-and-runs.md) — run states, Plan → Execute, post-run review.

@@ -121,13 +121,17 @@ fn push_tool_turn(
         .map(|block| AssistantContent::Reasoning(reasoning_convert::agent_to_rig(block)))
         .collect();
     contents.extend(calls.iter().map(|call| {
-        AssistantContent::ToolCall(RigToolCall::new(
+        let rig_call = RigToolCall::new(
             call.id.clone(),
             ToolFunction {
                 name: call.name.clone(),
                 arguments: call.arguments.clone(),
             },
-        ))
+        );
+        AssistantContent::ToolCall(match &call.provider_call_id {
+            Some(provider_call_id) => rig_call.with_call_id(provider_call_id.clone()),
+            None => rig_call,
+        })
     }));
     if let Ok(content) = OneOrMany::many(contents) {
         history.push(Message::Assistant { id: None, content });
@@ -135,17 +139,17 @@ fn push_tool_turn(
     let result_contents: Vec<UserContent> = calls
         .iter()
         .map(|call| match results_by_id.remove(&call.id) {
-            Some(result) => UserContent::tool_result(
+            Some(result) => rig_tool_result(
                 result.tool_call_id,
-                OneOrMany::one(ToolResultContent::text(result.content)),
+                call.provider_call_id.as_deref(),
+                result.content,
             ),
             // A call with no recorded result (interrupted batch) must still be
             // answered or strict providers reject the whole transcript.
-            None => UserContent::tool_result(
+            None => rig_tool_result(
                 call.id.clone(),
-                OneOrMany::one(ToolResultContent::text(
-                    "Tool execution was interrupted before a result was produced.",
-                )),
+                call.provider_call_id.as_deref(),
+                "Tool execution was interrupted before a result was produced.".to_string(),
             ),
         })
         .collect();
@@ -159,6 +163,16 @@ fn push_tool_turn(
         history.push(Message::user(result.content));
     }
     consumed
+}
+
+fn rig_tool_result(id: String, provider_call_id: Option<&str>, content: String) -> UserContent {
+    let content = OneOrMany::one(ToolResultContent::text(content));
+    match provider_call_id {
+        Some(provider_call_id) => {
+            UserContent::tool_result_with_call_id(id, provider_call_id.to_string(), content)
+        }
+        None => UserContent::tool_result(id, content),
+    }
 }
 
 #[cfg(test)]
@@ -199,6 +213,7 @@ mod tests {
         AgentTranscriptItem::ToolCall {
             call: EngineToolCall {
                 id: id.into(),
+                provider_call_id: None,
                 name: name.into(),
                 arguments: json!({}),
             },
@@ -246,6 +261,7 @@ mod tests {
             AgentTranscriptItem::ToolCall {
                 call: EngineToolCall {
                     id: "c1".into(),
+                    provider_call_id: None,
                     name: "search".into(),
                     arguments: json!({"q": "x"}),
                 },

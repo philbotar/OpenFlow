@@ -5,7 +5,7 @@ import Plus from "lucide-solid/icons/plus";
 import TerminalSquare from "lucide-solid/icons/terminal";
 import X from "lucide-solid/icons/x";
 import { createEffect, For, onCleanup, onMount, Show } from "solid-js";
-import { PanelEmptyState } from "@/components";
+import { PanelEmptyState, Tooltip } from "@/components";
 import { useAppContext } from "../context/AppContext";
 import { readTerminalThemeColors } from "@/lib/theme";
 import { terminalFontSizeForZoom } from "@/lib/uiZoom";
@@ -159,21 +159,22 @@ export function TerminalPanel() {
                   class="terminal-tab"
                   classList={{ active: ctx.activeTerminalSessionId() === session.sessionId }}
                 >
-                  <button
-                    type="button"
-                    class="terminal-tab-close"
-                    onClick={() => void ctx.handleStopTerminal(session.sessionId)}
-                    title="Close terminal"
-                    aria-label={`Close ${terminalTabLabel(session.cwd)} terminal`}
-                  >
-                    <X
-                      width={12}
-                      height={12}
-                      aria-hidden="true"
-                      absoluteStrokeWidth
-                      strokeWidth={ICON_STROKE_WIDTH}
-                    />
-                  </button>
+                  <Tooltip label="Close terminal">
+                    <button
+                      type="button"
+                      class="terminal-tab-close"
+                      onClick={() => void ctx.handleStopTerminal(session.sessionId)}
+                      aria-label={`Close ${terminalTabLabel(session.cwd)} terminal`}
+                    >
+                      <X
+                        width={12}
+                        height={12}
+                        aria-hidden="true"
+                        absoluteStrokeWidth
+                        strokeWidth={ICON_STROKE_WIDTH}
+                      />
+                    </button>
+                  </Tooltip>
                   <button
                     type="button"
                     class="terminal-tab-select"
@@ -185,22 +186,23 @@ export function TerminalPanel() {
                 </div>
               )}
             </For>
-            <button
-              type="button"
-              class="terminal-tab-add"
-              disabled={ctx.terminalStarting()}
-              onClick={openNewTerminal}
-              title="New terminal"
-              aria-label="New terminal"
-            >
-              <Plus
-                width={14}
-                height={14}
-                aria-hidden="true"
-                absoluteStrokeWidth
-                strokeWidth={ICON_STROKE_WIDTH}
-              />
-            </button>
+            <Tooltip label="New terminal">
+              <button
+                type="button"
+                class="terminal-tab-add"
+                disabled={ctx.terminalStarting()}
+                onClick={openNewTerminal}
+                aria-label="New terminal"
+              >
+                <Plus
+                  width={14}
+                  height={14}
+                  aria-hidden="true"
+                  absoluteStrokeWidth
+                  strokeWidth={ICON_STROKE_WIDTH}
+                />
+              </button>
+            </Tooltip>
           </div>
         </div>
         <Show

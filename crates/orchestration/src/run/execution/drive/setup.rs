@@ -24,6 +24,7 @@ where
 {
     pub engine: InteractiveEngine,
     pub ai_adapter: Arc<RunAiAdapter<A>>,
+    pub review_ai: Arc<RepairingAiPort<A>>,
     pub tool_port: ToolPortImpl<RunAiAdapter<A>>,
     pub workflow: Arc<Workflow>,
     pub pending_engine_reverts: Arc<Mutex<Vec<EditBatch>>>,
@@ -180,6 +181,7 @@ where
     Ok(RunWiring {
         engine,
         ai_adapter,
+        review_ai: repairing,
         tool_port,
         workflow,
         pending_engine_reverts,

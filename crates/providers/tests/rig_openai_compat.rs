@@ -138,6 +138,57 @@ async fn responses_submit_output_completes_node() {
 }
 
 #[tokio::test]
+async fn responses_replays_distinct_tool_call_and_result_ids() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(responses_submit_fixture()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let mut request = test_request();
+    request.transcript = vec![
+        engine::AgentTranscriptItem::ToolCall {
+            call: ToolCall {
+                id: "fc_external_1".into(),
+                provider_call_id: Some("call_external_1".into()),
+                name: "read".into(),
+                arguments: json!({"path": "README.md"}),
+            },
+        },
+        engine::AgentTranscriptItem::ToolResult {
+            result: engine::ToolResult {
+                tool_call_id: "fc_external_1".into(),
+                tool_name: "read".into(),
+                content: "OpenFlow".into(),
+                is_error: false,
+                artifact_ids: Vec::new(),
+                output_meta: None,
+            },
+        },
+    ];
+
+    let client = create_provider(openai_test_config(&server.uri(), WireApi::Responses));
+    let outcome = client.invoke(request).await.unwrap();
+    assert!(matches!(outcome, AgentTurnOutcome::Completed(_)));
+
+    let requests = server.received_requests().await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+    let input = body["input"].as_array().unwrap();
+    let replayed_call = input
+        .iter()
+        .find(|item| item["type"] == "function_call")
+        .unwrap();
+    assert_eq!(replayed_call["id"], "fc_external_1");
+    assert_eq!(replayed_call["call_id"], "call_external_1");
+    let replayed_result = input
+        .iter()
+        .find(|item| item["type"] == "function_call_output")
+        .unwrap();
+    assert_eq!(replayed_result["call_id"], "call_external_1");
+}
+
+#[tokio::test]
 async fn custom_chat_submits_large_file_backed_output_without_document_duplication() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -179,6 +230,7 @@ async fn custom_chat_submits_large_file_backed_output_without_document_duplicati
         engine::AgentTranscriptItem::ToolCall {
             call: ToolCall {
                 id: "write-large-spec".into(),
+                provider_call_id: None,
                 name: "write".into(),
                 arguments: json!({
                     "path": "artifacts/0005-implementation-spec.md",
@@ -535,6 +587,7 @@ async fn chat_completions_external_tool_call_batch() {
             assistant_message: Some("I need to inspect the README.".into()),
             tool_calls: vec![ToolCall {
                 id: "call-7".into(),
+                provider_call_id: None,
                 name: "read".into(),
                 arguments: json!({"path": "README.md"}),
             }],
@@ -574,6 +627,7 @@ async fn multi_tool_call_history_reaches_wire_as_single_assistant_message() {
         engine::AgentTranscriptItem::ToolCall {
             call: ToolCall {
                 id: "c1".into(),
+                provider_call_id: None,
                 name: "read".into(),
                 arguments: json!({}),
             },
@@ -581,6 +635,7 @@ async fn multi_tool_call_history_reaches_wire_as_single_assistant_message() {
         engine::AgentTranscriptItem::ToolCall {
             call: ToolCall {
                 id: "c2".into(),
+                provider_call_id: None,
                 name: "read".into(),
                 arguments: json!({}),
             },

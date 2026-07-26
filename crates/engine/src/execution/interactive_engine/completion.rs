@@ -15,7 +15,7 @@ use crate::execution::NodeFailureKind;
 use crate::graph::{apply_runtime_patch_to_tool_config, runtime_patch_for, NodeId, RetryPolicy};
 use crate::ports::{
     AgentError, AgentNeedUserInput, AgentToolCallBatch, AgentTurnOutcome, AgentTurnSuccess,
-    ToolAccessPolicy, UsageReport,
+    StructuredUserInput, ToolAccessPolicy, UsageReport,
 };
 use crate::tools::{
     is_plan_draft_mutation_call, relativize_tool_call_arguments, tool_access_policy_allows_call,
@@ -181,7 +181,11 @@ impl InteractiveEngine {
         node_id: &NodeId,
         input: &AgentNeedUserInput,
     ) -> bool {
-        if is_clarifying_question(&input.assistant_message) {
+        let request_is_valid = input.structured_input.as_ref().map_or_else(
+            || is_clarifying_question(&input.assistant_message),
+            StructuredUserInput::is_valid,
+        );
+        if request_is_valid {
             return false;
         }
 
@@ -195,7 +199,7 @@ impl InteractiveEngine {
                 node_id.clone(),
                 format!(
                     "node produced more than {MAX_MALFORMED_REQUEST_INPUT_RETRIES} invalid \
-                     human-input requests without a direct question"
+                     human-input requests"
                 ),
             );
             return true;
@@ -225,7 +229,7 @@ impl InteractiveEngine {
         *retry_count += 1;
 
         let content = format!(
-            "Your last response mixed harness and executable tools ({tool_names}) and was rejected; no calls from that response were executed. Call either exactly one harness tool by itself (openflow_submit_node_output when complete, or openflow_request_user_input with one direct question), or one or more executable tools with no harness tools in the same batch."
+            "Your last response mixed harness and executable tools ({tool_names}) and was rejected; no calls from that response were executed. Call either exactly one harness tool by itself (openflow_submit_node_output when complete, or openflow_request_user_input with a direct question or structured choices), or one or more executable tools with no harness tools in the same batch."
         );
         self.transcripts
             .entry(node_id.clone())
@@ -618,6 +622,12 @@ impl InteractiveEngine {
     }
 
     fn apply_user_input_request(&mut self, node_id: &NodeId, input: AgentNeedUserInput) {
+        if let Some(structured_input) = input.structured_input {
+            self.structured_input_by_node
+                .insert(node_id.clone(), structured_input);
+        } else {
+            self.structured_input_by_node.remove(node_id);
+        }
         self.apply_conversational_turn(node_id, input.assistant_message, input.reasoning, None);
     }
 

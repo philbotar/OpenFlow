@@ -52,6 +52,7 @@ export function EditorScreen() {
             onCreateEdge={ctx.handleCreateEdge}
             onReconnectEdge={ctx.handleReconnectEdge}
             onDeleteEdge={ctx.handleDeleteEdge}
+            onDeleteNode={ctx.handleDeleteNode}
             onAddNode={() => ctx.handleOpenAddNodePicker()}
             onInterruptNode={(nodeId) => void ctx.handleInterruptNode(nodeId)}
             onRetryNode={(nodeId) => void ctx.handleRetryNode(nodeId)}

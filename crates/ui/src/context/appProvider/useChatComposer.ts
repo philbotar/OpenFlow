@@ -224,6 +224,27 @@ export function useChatComposer(params: UseChatComposerParams) {
     }
   };
 
+  const handleSubmitStructuredInput = async (nodeId: NodeId, text: string) => {
+    if (
+      params.replayRunId() ||
+      !canSendChat(
+        params.runState(),
+        nodeId,
+        params.readiness()?.ready ?? false,
+        text,
+      )
+    ) {
+      return;
+    }
+    try {
+      const nextRunState = await desktop.submitUserInput(nodeId, text);
+      params.publishBackendRunState(nextRunState);
+      setChatDraft(nodeId, "");
+    } catch (error) {
+      params.showErrorToast(normalizeError(error));
+    }
+  };
+
   createEffect(() => {
     const state = params.runState();
     if (!state?.active) {
@@ -273,6 +294,7 @@ export function useChatComposer(params: UseChatComposerParams) {
     composerBusyFor,
     resolveChatSubmittedText,
     handleSubmitChat,
+    handleSubmitStructuredInput,
     setPendingKickoff,
     flushPendingKickoff,
     bindStartRunFromChat,

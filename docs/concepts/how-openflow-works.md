@@ -77,7 +77,8 @@ If there is no typed consumer, prefer calling the concrete type directly instead
 
 ## Where to Go Deeper
 
-- [`workflows-and-runs.md`](workflows-and-runs.md) - product vocabulary.
+- [`workflows-and-runs.md`](workflows-and-runs.md) - product vocabulary and Plan → Execute summary.
+- [`../guides/using-the-app.md`](../guides/using-the-app.md) - UI entry points for runs and settings.
 - [`../architecture/technical-overview.md`](../architecture/technical-overview.md) - deeper runtime overview.
 - [`../architecture/threading-concurrency.md`](../architecture/threading-concurrency.md) - runtimes, async I/O, and blocking work.
 - [`../architecture/run-persistence.md`](../architecture/run-persistence.md) - durable run records, replay, and resume.

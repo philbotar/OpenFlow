@@ -2,6 +2,8 @@
 
 Use this page for commands, storage paths, and operational facts that should be easy to look up.
 
+Agent and harness tools (built-ins, MCP, authoring): [`tools.md`](tools.md).
+
 ## Dev Commands
 
 | Goal | Command |
@@ -28,6 +30,7 @@ Use this page for commands, storage paths, and operational facts that should be 
 | Saved agents | `{data_local}/openflow/agents.json` |
 | Project workflows | `{project}/.flow/workflows/{workflowId}.workflow.json` |
 | Provider API keys | Plaintext in `settings.json` as `ProviderProfile.api_key` |
+| Web search API keys | Plaintext in `settings.json` under `search.keys` (per search-cli provider id) |
 | ChatGPT Codex OAuth | Plaintext in `settings.json` as `ProviderProfile.codex_oauth`; redacted from normal settings IPC |
 
 `AppBackend::load_all_workflows` merges app-store and project-discovered workflows. Project files win on ID collision.

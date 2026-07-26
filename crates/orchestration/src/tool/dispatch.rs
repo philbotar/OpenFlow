@@ -63,6 +63,82 @@ fn map_http_status_error(url: &str, status: StatusCode) -> ToolError {
     }
 }
 
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum TodoStatus {
+    Pending,
+    InProgress,
+    Completed,
+}
+
+#[derive(Debug, Deserialize)]
+struct TodoItemArgs {
+    content: String,
+    status: TodoStatus,
+}
+
+#[derive(Debug, Deserialize)]
+struct UpdateTodoListArgs {
+    todos: Vec<TodoItemArgs>,
+}
+
+fn update_todo_list(args: Value) -> Result<String, ToolError> {
+    let args: UpdateTodoListArgs = serde_json::from_value(args).map_err(|error| {
+        ToolError::InvalidArgs {
+            tool: "openflow_update_todo_list".to_string(),
+            problem: error.to_string(),
+            hint: "required field: todos (1-12 items with content and pending, in_progress, or completed status)".to_string(),
+        }
+    })?;
+    if !(1..=12).contains(&args.todos.len()) {
+        return Err(ToolError::InvalidArgs {
+            tool: "openflow_update_todo_list".to_string(),
+            problem: format!("todos must contain 1-12 items, got {}", args.todos.len()),
+            hint: "send the complete current phase checklist with 1-12 items".to_string(),
+        });
+    }
+
+    let mut completed = 0;
+    let mut in_progress = 0;
+    let mut current = None;
+    for (index, todo) in args.todos.iter().enumerate() {
+        let content = todo.content.trim();
+        if content.is_empty() || content.chars().count() > 160 {
+            return Err(ToolError::InvalidArgs {
+                tool: "openflow_update_todo_list".to_string(),
+                problem: format!(
+                    "todos[{index}].content must contain 1-160 non-whitespace characters"
+                ),
+                hint: "use a short action-oriented phase label".to_string(),
+            });
+        }
+        match todo.status {
+            TodoStatus::Pending => {}
+            TodoStatus::InProgress => {
+                in_progress += 1;
+                current = Some(content);
+            }
+            TodoStatus::Completed => completed += 1,
+        }
+    }
+    if in_progress > 1 {
+        return Err(ToolError::InvalidArgs {
+            tool: "openflow_update_todo_list".to_string(),
+            problem: "only one todo may be in_progress".to_string(),
+            hint: "mark other unfinished phases pending".to_string(),
+        });
+    }
+
+    let mut result = format!(
+        "Checklist updated: {completed}/{} completed.",
+        args.todos.len()
+    );
+    if let Some(content) = current {
+        result.push_str(&format!(" In progress: {content}"));
+    }
+    Ok(result)
+}
+
 impl ToolRunner {
     pub(super) async fn dispatch(
         &self,
@@ -88,6 +164,31 @@ impl ToolRunner {
                 let raw = self.ast_grep(call.arguments.clone()).await?;
                 self.finalize_record(call, raw, Vec::new(), None).await
             }
+            BuiltinToolKind::AstEdit => {
+                let lsp = ctx
+                    .as_ref()
+                    .map(|context| context.lsp.clone())
+                    .unwrap_or_default();
+                let outcome = crate::tools::ast_edit::execute_ast_edit(
+                    &self.cwd,
+                    call.arguments.clone(),
+                    &self.cancel_token,
+                    lsp,
+                )
+                .await;
+                match outcome.output {
+                    Ok(raw) => {
+                        self.finalize_record(call, raw, outcome.file_changes, None)
+                            .await
+                    }
+                    Err(error) if outcome.file_changes.is_empty() => {
+                        Err(ToolRunnerError::Tool(error))
+                    }
+                    Err(error) => {
+                        Ok(self.failed_record(call, error.to_string(), outcome.file_changes, None))
+                    }
+                }
+            }
             BuiltinToolKind::Bash => {
                 let update_tx = ctx.as_ref().and_then(|context| context.update_tx.clone());
                 let outcome = crate::tools::bash::execute_bash(
@@ -101,6 +202,10 @@ impl ToolRunner {
             }
             BuiltinToolKind::WebSearch => {
                 let raw = self.web_search(call.arguments.clone()).await?;
+                self.finalize_record(call, raw, Vec::new(), None).await
+            }
+            BuiltinToolKind::UpdateTodoList => {
+                let raw = update_todo_list(call.arguments.clone())?;
                 self.finalize_record(call, raw, Vec::new(), None).await
             }
             BuiltinToolKind::WritePlanArtifact => self.write_plan_artifact(call),
@@ -512,6 +617,39 @@ mod tests {
             StatusCode::INTERNAL_SERVER_ERROR,
         );
         assert!(matches!(server_error, ToolError::ExecutionFailed { .. }));
+    }
+
+    #[test]
+    fn todo_list_accepts_one_active_phase_and_summarizes_progress() {
+        let result = update_todo_list(serde_json::json!({
+            "todos": [
+                { "content": "Trace current behavior", "status": "completed" },
+                { "content": "Implement checklist", "status": "in_progress" },
+                { "content": "Verify focused gates", "status": "pending" }
+            ],
+            "_i": "Share current progress"
+        }))
+        .unwrap();
+
+        assert_eq!(
+            result,
+            "Checklist updated: 1/3 completed. In progress: Implement checklist"
+        );
+    }
+
+    #[test]
+    fn todo_list_rejects_multiple_active_phases() {
+        let error = update_todo_list(serde_json::json!({
+            "todos": [
+                { "content": "Implement checklist", "status": "in_progress" },
+                { "content": "Verify focused gates", "status": "in_progress" }
+            ]
+        }))
+        .unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("only one todo may be in_progress"));
     }
 
     // ponytail: ToolRunner::new builds reqwest→aws-lc (FFI Miri rejects); also spawns subprocess

@@ -45,6 +45,10 @@ describe("formatToolDisplayName", () => {
     expect(formatToolDisplayName("ast_grep")).toBe("AST Search");
   });
 
+  it("maps ast_edit to 'AST Edit'", () => {
+    expect(formatToolDisplayName("ast_edit")).toBe("AST Edit");
+  });
+
   it("maps openflow_call_subagent to 'Call Subagent'", () => {
     expect(formatToolDisplayName("openflow_call_subagent")).toBe("Call Subagent");
   });
@@ -87,16 +91,16 @@ describe("formatToolDisplayName", () => {
     expect(typeof result).toBe("string");
   });
 
-  it("TOOL_DISPLAY_NAMES map has exactly 12 entries", () => {
+  it("TOOL_DISPLAY_NAMES map has exactly 13 entries", () => {
     // Guard against accidental additions or removals. If you add a new tool,
     // update this count and add a corresponding test above.
-    const expectedCount = 12;
+    const expectedCount = 13;
     const result = formatToolDisplayName("read");
     expect(result).toBe("Read File");
     // Count the known mappings by testing every expected key
     const knownKeys = [
       "read", "write", "edit", "apply_patch",
-      "bash", "search", "find", "ast_grep",
+      "bash", "search", "find", "ast_grep", "ast_edit",
       "openflow_call_subagent", "openflow_declare_subagents",
       "openflow_submit_node_output", "openflow_request_user_input",
     ];
@@ -198,6 +202,19 @@ describe("toolBubbleLineText", () => {
     expect(
       toolBubbleLineText("search", "completed", { pattern: "TODO", paths: "crates/ui" }),
     ).toBe("Grepped TODO in crates/ui");
+  });
+
+  it("maps ast_edit to Rewriting/Rewrote", () => {
+    const args = {
+      ops: [{ pat: "oldApi($$$ARGS)", out: "newApi($$$ARGS)" }],
+      paths: ["src/**/*.ts"],
+    };
+    expect(toolBubbleLineText("ast_edit", "running", args)).toBe(
+      "Rewriting oldApi($$$ARGS) in src/**/*.ts",
+    );
+    expect(toolBubbleLineText("ast_edit", "completed", args)).toBe(
+      "Rewrote oldApi($$$ARGS) in src/**/*.ts",
+    );
   });
 });
 

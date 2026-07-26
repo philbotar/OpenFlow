@@ -68,6 +68,7 @@ type WorkflowCanvasProps = {
   onCreateEdge: (from: NodeId, to: NodeId) => void;
   onReconnectEdge: (edgeId: EdgeId, from: NodeId, to: NodeId) => void;
   onDeleteEdge: (edgeId: EdgeId) => void;
+  onDeleteNode: (nodeId: NodeId) => void;
   onAddNode: () => void;
   onInterruptNode?: (nodeId: NodeId) => void;
   onRetryNode?: (nodeId: NodeId) => void;
@@ -77,8 +78,48 @@ const NODE_TYPES = {
   workflowNode: WorkflowNode,
 };
 
+function AddNodeIcon() {
+  return (
+    <svg
+      className="workflow-flow-action-icon"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M5 12h14" />
+      <path d="M12 5v14" />
+    </svg>
+  );
+}
+
+function AutoLayoutIcon() {
+  return (
+    <svg
+      className="workflow-flow-action-icon"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <rect width="7" height="7" x="3" y="3" rx="1" />
+      <rect width="7" height="7" x="14" y="3" rx="1" />
+      <rect width="7" height="7" x="14" y="14" rx="1" />
+      <rect width="7" height="7" x="3" y="14" rx="1" />
+    </svg>
+  );
+}
+
 export function WorkflowCanvas(props: WorkflowCanvasProps) {
   const previewMode = props.previewMode ?? false;
+  const runActive = props.runActive ?? false;
+  const editingLocked = previewMode || runActive;
   const externalNodes = useMemo<WorkflowCanvasNode[]>(
     () =>
       buildFlowNodes(
@@ -102,14 +143,37 @@ export function WorkflowCanvas(props: WorkflowCanvasProps) {
   );
 
   const colorMode = props.colorMode ?? "light";
-  const runActive = props.runActive ?? false;
-
   const externalEdges = useMemo<WorkflowCanvasEdge[]>(
     () => buildFlowEdges(props.graph, props.selectedEdgeId, runActive, colorMode),
     [props.graph, props.selectedEdgeId, runActive, colorMode],
   );
 
   const graphSignature = useMemo(() => graphStructureSignature(props.graph), [props.graph]);
+  const selectedNode = useMemo(
+    () => props.graph?.nodes.find((node) => node.id === props.selectedNodeId) ?? null,
+    [props.graph, props.selectedNodeId],
+  );
+  const selectedNodeConnectionCount = useMemo(
+    () =>
+      selectedNode
+        ? (props.graph?.edges.filter(
+            (edge) => edge.from === selectedNode.id || edge.to === selectedNode.id,
+          ).length ?? 0)
+        : 0,
+    [props.graph, selectedNode],
+  );
+  const selectedEdge = useMemo(
+    () => props.graph?.edges.find((edge) => edge.id === props.selectedEdgeId) ?? null,
+    [props.graph, props.selectedEdgeId],
+  );
+  const selectedEdgeLabel = useMemo(() => {
+    if (!selectedEdge || !props.graph) {
+      return "Connection";
+    }
+    const source = props.graph.nodes.find((node) => node.id === selectedEdge.from)?.label;
+    const target = props.graph.nodes.find((node) => node.id === selectedEdge.to)?.label;
+    return source && target ? `${source} → ${target}` : "Connection";
+  }, [props.graph, selectedEdge]);
 
   const flowEdgeDefaults = useMemo(() => defaultEdgeOptions(colorMode), [colorMode]);
 
@@ -148,7 +212,7 @@ export function WorkflowCanvas(props: WorkflowCanvasProps) {
 
   const handleNodesChange = useCallback(
     (changes: NodeChange<WorkflowCanvasNode>[]) => {
-      if (previewMode) {
+      if (editingLocked) {
         return;
       }
       const allowedChanges = withoutProgrammaticNodeChanges(changes);
@@ -159,14 +223,36 @@ export function WorkflowCanvas(props: WorkflowCanvasProps) {
       onNodesChange(allowedChanges);
       forEachNodePositionChange(allowedChanges, props.onUpdateNodePosition);
     },
-    [onNodesChange, previewMode, props.onUpdateNodePosition],
+    [editingLocked, onNodesChange, props.onUpdateNodePosition],
   );
 
-  const handleBeforeDelete = useCallback(() => Promise.resolve(false), []);
+  const handleBeforeDelete = useCallback(
+    ({
+      nodes: nodesToDelete,
+      edges: edgesToDelete,
+    }: {
+      nodes: WorkflowCanvasNode[];
+      edges: WorkflowCanvasEdge[];
+    }) => {
+      if (editingLocked) {
+        return Promise.resolve(false);
+      }
+      const node = nodesToDelete[0];
+      if (node) {
+        props.onDeleteNode(node.id);
+        return Promise.resolve(false);
+      }
+      for (const edge of edgesToDelete) {
+        props.onDeleteEdge(edge.id);
+      }
+      return Promise.resolve(false);
+    },
+    [editingLocked, props.onDeleteEdge, props.onDeleteNode],
+  );
 
   const handleEdgesChange = useCallback(
     (changes: EdgeChange<WorkflowCanvasEdge>[]) => {
-      if (previewMode) {
+      if (editingLocked) {
         return;
       }
       const allowedChanges = withoutProgrammaticEdgeChanges(changes);
@@ -175,29 +261,29 @@ export function WorkflowCanvas(props: WorkflowCanvasProps) {
       }
       forEachRemovedEdge(changes, props.onDeleteEdge);
     },
-    [onEdgesChange, previewMode, props.onDeleteEdge],
+    [editingLocked, onEdgesChange, props.onDeleteEdge],
   );
 
   const handleConnect = useCallback(
     (connection: Connection) => {
-      if (previewMode || !connection.source || !connection.target) {
+      if (editingLocked || !connection.source || !connection.target) {
         return;
       }
 
       props.onCreateEdge(connection.source, connection.target);
     },
-    [previewMode, props.onCreateEdge],
+    [editingLocked, props.onCreateEdge],
   );
 
   const handleReconnect = useCallback(
     (edge: WorkflowCanvasEdge, connection: Connection) => {
-      if (previewMode || !connection.source || !connection.target) {
+      if (editingLocked || !connection.source || !connection.target) {
         return;
       }
 
       props.onReconnectEdge(edge.id, connection.source, connection.target);
     },
-    [previewMode, props.onReconnectEdge],
+    [editingLocked, props.onReconnectEdge],
   );
 
   const handlePaneClick = useCallback(() => {
@@ -231,18 +317,18 @@ export function WorkflowCanvas(props: WorkflowCanvasProps) {
           onNodeClick={handleNodeClick}
           onEdgeClick={handleEdgeClick}
           onBeforeDelete={handleBeforeDelete}
-          deleteKeyCode={null}
+          deleteKeyCode={["Backspace", "Delete"]}
           fitView={false}
           fitViewOptions={FIT_ALL_VIEWPORT_OPTIONS}
           minZoom={0.4}
           maxZoom={1.8}
           panOnScroll
           selectionOnDrag={false}
-          nodesDraggable={!previewMode}
-          nodesConnectable={!previewMode}
-          edgesReconnectable={!previewMode}
+          nodesDraggable={!editingLocked}
+          nodesConnectable={!editingLocked}
+          edgesReconnectable={!editingLocked}
           isValidConnection={isValidCanvasConnection}
-          snapToGrid={!previewMode}
+          snapToGrid={!editingLocked}
           snapGrid={[16, 16]}
         >
           <CanvasViewportController
@@ -258,18 +344,70 @@ export function WorkflowCanvas(props: WorkflowCanvasProps) {
             color={backgroundDotForTheme(colorMode)}
             variant={BackgroundVariant.Dots}
           />
-          {!previewMode ? (
+          {!editingLocked ? (
             <Panel position="top-left" className="workflow-flow-panel">
-              <button type="button" className="secondary-button small workflow-flow-action-button" onClick={handleAddNode}>
-                Add node
-              </button>
+              <div
+                className="workflow-flow-toolbar"
+                role="toolbar"
+                aria-label="Workflow editing tools"
+                aria-orientation="vertical"
+              >
+                <button
+                  type="button"
+                  className="workflow-flow-action-button"
+                  onClick={handleAddNode}
+                  aria-label="Add node"
+                  title="Add node"
+                >
+                  <AddNodeIcon />
+                </button>
+                <button
+                  type="button"
+                  className="workflow-flow-action-button"
+                  onClick={handleAutoLayout}
+                  aria-label="Auto layout"
+                  title="Auto layout"
+                >
+                  <AutoLayoutIcon />
+                </button>
+              </div>
+            </Panel>
+          ) : null}
+          {runActive ? (
+            <Panel position="top-left" className="workflow-flow-lock-panel">
+              <span className="workflow-flow-lock-dot" aria-hidden="true" />
+              Running · Editing locked
+            </Panel>
+          ) : null}
+          {!editingLocked && selectedNode ? (
+            <Panel position="top-center" className="workflow-flow-selection-panel">
+              <span className="workflow-flow-selection-label">{selectedNode.label}</span>
               <button
                 type="button"
-                className="secondary-button small workflow-flow-action-button"
-                onClick={handleAutoLayout}
-                title="Arrange workflow left to right"
+                className="workflow-flow-delete-button"
+                onClick={() => props.onDeleteNode(selectedNode.id)}
+                aria-label={`Delete ${selectedNode.label}${
+                  selectedNodeConnectionCount === 0
+                    ? ""
+                    : ` and ${selectedNodeConnectionCount} connection${
+                        selectedNodeConnectionCount === 1 ? "" : "s"
+                      }`
+                }`}
               >
-                Auto layout
+                Delete
+              </button>
+            </Panel>
+          ) : null}
+          {!editingLocked && selectedEdge ? (
+            <Panel position="top-center" className="workflow-flow-selection-panel">
+              <span className="workflow-flow-selection-label">{selectedEdgeLabel}</span>
+              <button
+                type="button"
+                className="workflow-flow-delete-button"
+                onClick={() => props.onDeleteEdge(selectedEdge.id)}
+                aria-label="Delete connection"
+              >
+                Delete
               </button>
             </Panel>
           ) : null}

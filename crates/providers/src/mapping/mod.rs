@@ -2,10 +2,9 @@ use engine::{
     complete_submit_output, effective_output_schema, filter_tool_turn_assistant_message,
     malformed_submit_invalid_json, AgentError, AgentMessageTurn, AgentNeedUserInput,
     AgentReasoning, AgentRequest, AgentToolCallBatch, AgentTurnOutcome, AgentTurnSuccess,
-    CompleteSubmitOutputParams, ToolCall, ToolDefinition, OUTPUT_REPAIR_RAW_ARGUMENTS_MAX_BYTES,
-    SUBMIT_NODE_OUTPUT_TOOL,
+    CompleteSubmitOutputParams, StructuredUserInput, ToolCall, ToolDefinition, UserInputOption,
+    UserInputQuestion, OUTPUT_REPAIR_RAW_ARGUMENTS_MAX_BYTES, SUBMIT_NODE_OUTPUT_TOOL,
 };
-use serde::Deserialize;
 use serde_json::{json, Value};
 
 pub const SUBMIT_OUTPUT_TOOL: &str = SUBMIT_NODE_OUTPUT_TOOL;
@@ -88,19 +87,64 @@ fn annotate_large_string_file_references(schema: &mut Value) {
 pub fn request_input_tool() -> ToolSpec {
     ToolSpec {
         name: REQUEST_INPUT_TOOL.to_string(),
-        description:
-            "Pause the node and ask the human one direct clarifying question before continuing."
-                .to_string(),
+        description: "Pause the node and ask the human for required clarification. Use assistant_message for a free-text question, questions for 1-3 structured multiple-choice questions, or both for a short intro plus choices."
+            .to_string(),
         parameters: json!({
             "type": "object",
             "additionalProperties": false,
             "properties": {
                 "assistant_message": {
                     "type": "string",
-                    "description": "The exact question for the human (typically ending with ?). Must not be preamble, narration, or a plan — ask the question directly."
+                    "description": "Optional free-text question or short intro. When questions is omitted, this must be one direct question."
+                },
+                "questions": {
+                    "type": "array",
+                    "description": "Optional structured questions. Prefer these when 2-3 clear choices cover the likely answers.",
+                    "minItems": 1,
+                    "maxItems": 3,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]*$",
+                                "description": "Stable snake_case id used when returning the answer."
+                            },
+                            "header": {
+                                "type": "string",
+                                "maxLength": 12,
+                                "description": "Short label shown above the question."
+                            },
+                            "question": {
+                                "type": "string",
+                                "description": "Single-sentence question shown to the human."
+                            },
+                            "options": {
+                                "type": "array",
+                                "minItems": 2,
+                                "maxItems": 3,
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "properties": {
+                                        "label": {
+                                            "type": "string",
+                                            "description": "Concise option label."
+                                        },
+                                        "description": {
+                                            "type": "string",
+                                            "description": "One sentence explaining the impact or tradeoff."
+                                        }
+                                    },
+                                    "required": ["label", "description"]
+                                }
+                            }
+                        },
+                        "required": ["id", "header", "question", "options"]
+                    }
                 }
-            },
-            "required": ["assistant_message"]
+            }
         }),
     }
 }
@@ -187,20 +231,27 @@ pub fn parse_internal_tool_outcome(
             })
         }
         REQUEST_INPUT_TOOL => {
-            #[derive(Deserialize)]
-            struct RequestInputArgs {
-                assistant_message: String,
-            }
-
-            let args: RequestInputArgs =
-                try_deserialize_or_recover_json(arguments).map_err(|error| {
-                    AgentError::Failed(format!(
-                        "{label} human-input tool arguments were not valid JSON: {error}"
-                    ))
-                })?;
+            let decoded = try_parse_or_recover_json(arguments).unwrap_or(Value::Null);
+            let structured_input = decoded.get("questions").map(parse_structured_user_input);
+            let assistant_message = decoded
+                .get("assistant_message")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+                .filter(|message| !message.trim().is_empty())
+                .or_else(|| {
+                    structured_input.as_ref().map(|request| {
+                        if request.questions.len() == 1 {
+                            request.questions[0].question.clone()
+                        } else {
+                            "Please answer these questions so I can continue.".to_string()
+                        }
+                    })
+                })
+                .unwrap_or_default();
             Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
                 raw_text: arguments.to_string(),
-                assistant_message: args.assistant_message,
+                assistant_message,
+                structured_input,
                 reasoning,
             }))
         }
@@ -208,6 +259,44 @@ pub fn parse_internal_tool_outcome(
             "{label} attempted unknown internal tool {tool_name}"
         ))),
     }
+}
+
+fn parse_structured_user_input(value: &Value) -> StructuredUserInput {
+    let questions = value
+        .as_array()
+        .map(|questions| {
+            questions
+                .iter()
+                .map(|question| UserInputQuestion {
+                    id: string_field(question, "id"),
+                    header: string_field(question, "header"),
+                    question: string_field(question, "question"),
+                    options: question
+                        .get("options")
+                        .and_then(Value::as_array)
+                        .map(|options| {
+                            options
+                                .iter()
+                                .map(|option| UserInputOption {
+                                    label: string_field(option, "label"),
+                                    description: string_field(option, "description"),
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    StructuredUserInput { questions }
+}
+
+fn string_field(value: &Value, field: &str) -> String {
+    value
+        .get(field)
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string()
 }
 
 /// How to handle a provider turn that collected no tool calls.
@@ -390,13 +479,6 @@ fn try_parse_or_recover_json(input: &str) -> Result<Value, serde_json::Error> {
     }
 }
 
-fn try_deserialize_or_recover_json<T: for<'de> Deserialize<'de>>(
-    input: &str,
-) -> Result<T, serde_json::Error> {
-    let value = try_parse_or_recover_json(input)?;
-    serde_json::from_value(value)
-}
-
 /// Private wire marker so Rig can deserialize while mapping retains the raw candidate.
 #[allow(clippy::redundant_pub_crate)] // crate-private module; keep pub(crate) for intentional crate API
 pub(crate) const MALFORMED_TOOL_ARGS_MARKER_KEY: &str = "__openflow_malformed_tool_args_v1";
@@ -506,6 +588,7 @@ mod tests {
             .ok_or_else(|| AgentError::Failed("tool call missing function.arguments".into()))?;
         Ok(ToolCall {
             id: call_id.to_string(),
+            provider_call_id: None,
             name: name.to_string(),
             arguments: try_parse_or_recover_json(arguments).map_err(|error| {
                 AgentError::Failed(format!("tool call arguments were not valid JSON: {error}"))
@@ -631,6 +714,110 @@ mod tests {
         };
         assert_eq!(success.output, json!({"summary": "done"}));
         assert_eq!(success.assistant_message, None);
+    }
+
+    #[test]
+    fn request_input_parses_structured_questions_without_free_text() {
+        let outcome = parse_internal_tool_outcome(
+            REQUEST_INPUT_TOOL,
+            r#"{"questions":[{"id":"target_env","header":"Target","question":"Which environment should I target?","options":[{"label":"Staging","description":"Deploy to the shared staging environment."},{"label":"Production","description":"Deploy to the live production environment."}]}]}"#,
+            None,
+            "test",
+            None,
+            Vec::new(),
+        )
+        .expect("structured request");
+
+        let AgentTurnOutcome::NeedsUserInput(input) = outcome else {
+            panic!("expected human-input request");
+        };
+        assert_eq!(
+            input.assistant_message,
+            "Which environment should I target?"
+        );
+        let structured = input.structured_input.expect("structured payload");
+        assert_eq!(structured.questions[0].id, "target_env");
+        assert_eq!(structured.questions[0].options.len(), 2);
+    }
+
+    #[test]
+    fn request_input_keeps_legacy_free_text_form() {
+        let outcome = parse_internal_tool_outcome(
+            REQUEST_INPUT_TOOL,
+            r#"{"assistant_message":"Which environment should I target?"}"#,
+            None,
+            "test",
+            None,
+            Vec::new(),
+        )
+        .expect("legacy request");
+
+        let AgentTurnOutcome::NeedsUserInput(input) = outcome else {
+            panic!("expected human-input request");
+        };
+        assert_eq!(
+            input.assistant_message,
+            "Which environment should I target?"
+        );
+        assert!(input.structured_input.is_none());
+    }
+
+    #[test]
+    fn request_input_preserves_invalid_structure_for_engine_retry() {
+        let outcome = parse_internal_tool_outcome(
+            REQUEST_INPUT_TOOL,
+            r#"{"questions":[{"id":"target_env","header":"Header longer than twelve","question":"Which environment?","options":[{"label":"Staging","description":"Use staging."},{"label":"Production","description":"Use production."}]}]}"#,
+            None,
+            "test",
+            None,
+            Vec::new(),
+        )
+        .expect("request-input outcome");
+
+        let AgentTurnOutcome::NeedsUserInput(input) = outcome else {
+            panic!("expected human-input request");
+        };
+        assert_eq!(
+            input
+                .structured_input
+                .expect("structured payload")
+                .questions[0]
+                .header,
+            "Header longer than twelve"
+        );
+    }
+
+    #[test]
+    fn request_input_preserves_malformed_nested_fields_for_engine_retry() {
+        let outcome = parse_internal_tool_outcome(
+            REQUEST_INPUT_TOOL,
+            r#"{"questions":[{"id":"target_env","header":"Target","question":"Which environment?","options":[{"label":"Staging"},{"label":"Production","description":"Use production."}]}]}"#,
+            None,
+            "test",
+            None,
+            Vec::new(),
+        )
+        .expect("malformed structure should reach engine retry handling");
+
+        let AgentTurnOutcome::NeedsUserInput(input) = outcome else {
+            panic!("expected human-input request");
+        };
+        let structured = input.structured_input.expect("structured payload");
+        assert_eq!(structured.questions[0].options[0].label, "Staging");
+        assert_eq!(structured.questions[0].options[0].description, "");
+    }
+
+    #[test]
+    fn request_input_tool_schema_supports_legacy_and_structured_forms() {
+        let schema = request_input_tool().parameters;
+        assert_eq!(schema["properties"]["assistant_message"]["type"], "string");
+        assert_eq!(schema["properties"]["questions"]["minItems"], 1);
+        assert_eq!(schema["properties"]["questions"]["maxItems"], 3);
+        assert_eq!(
+            schema["properties"]["questions"]["items"]["properties"]["options"]["minItems"],
+            2
+        );
+        assert!(schema.get("required").is_none());
     }
 
     #[test]
@@ -862,11 +1049,13 @@ mod tests {
             tool_calls: vec![
                 ToolCall {
                     id: "1".to_string(),
+                    provider_call_id: None,
                     name: SUBMIT_OUTPUT_TOOL.to_string(),
                     arguments: json!({"output": {"x": 1}}),
                 },
                 ToolCall {
                     id: "2".to_string(),
+                    provider_call_id: None,
                     name: "search".to_string(),
                     arguments: json!({"pattern": "x"}),
                 },
@@ -895,11 +1084,13 @@ mod tests {
             tool_calls: vec![
                 ToolCall {
                     id: "1".to_string(),
+                    provider_call_id: None,
                     name: REQUEST_INPUT_TOOL.to_string(),
                     arguments: json!({"assistant_message": "Which env?"}),
                 },
                 ToolCall {
                     id: "2".to_string(),
+                    provider_call_id: None,
                     name: SUBMIT_OUTPUT_TOOL.to_string(),
                     arguments: json!({"output": {"x": 1}}),
                 },

@@ -58,11 +58,13 @@ function renderChatPanel(overrides: Partial<AppContextValue> = {}) {
     skillById: () => new Map(),
     setChatDraft: () => {},
     handleSubmitChat: async () => {},
+    handleSubmitStructuredInput: async () => {},
     handleChatInputKeyDown: () => {},
     searchProjectFileReferences: async () => [],
     handleInterruptNode: async () => {},
     handleRetryNode: async () => {},
     handleUpdateNodeRuntimeConfig: async () => {},
+    activeProfileMemo: () => ({ reasoning_effort_options: [] }),
     activeWorkflow: () => ({ id: "w1", name: "Workflow", nodes: [], edges: [] }),
     ...overrides,
   } as unknown as AppContextValue;
@@ -114,6 +116,123 @@ describe("ChatPanel replay mode", () => {
     }
   });
 
+  it("renders a structured ask and submits the selected answer", async () => {
+    const handleSubmitStructuredInput = vi.fn(async () => {});
+    const { container, dispose } = renderChatPanel({
+      replayRunId: () => null,
+      handleSubmitStructuredInput,
+      chatLayout: () => ({
+        settled: [
+          {
+            nodeId: "builder",
+            label: "Builder",
+            status: "awaiting_input",
+            messages: [],
+          },
+        ],
+        live: [],
+        liveIds: [],
+      }),
+      runState: () =>
+        ({
+          active: true,
+          pendingApprovals: [],
+          statusByNode: { builder: "awaiting_input" },
+          chatLogs: { builder: [] },
+          toolCallsByNode: {},
+          awaitingNodeId: "builder",
+          awaitingNodeIds: ["builder"],
+          structuredInputByNode: {
+            builder: {
+              questions: [
+                {
+                  id: "target_env",
+                  header: "Target",
+                  question: "Which environment should I target?",
+                  options: [
+                    {
+                      label: "Staging",
+                      description: "Use the shared staging environment.",
+                    },
+                    {
+                      label: "Production",
+                      description: "Use the live production environment.",
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        }) as unknown as ReturnType<AppContextValue["runState"]>,
+    });
+
+    try {
+      const production = Array.from(container.querySelectorAll("button")).find(
+        (button) => button.textContent?.includes("Production"),
+      );
+      production?.click();
+
+      const submit = Array.from(container.querySelectorAll("button")).find(
+        (button) => button.textContent?.includes("Submit answers"),
+      );
+      submit?.click();
+      await Promise.resolve();
+
+      expect(container.textContent).toContain("Which environment should I target?");
+      expect(handleSubmitStructuredInput).toHaveBeenCalledWith(
+        "builder",
+        "Structured answers:\n- target_env: Production",
+      );
+    } finally {
+      dispose();
+      container.remove();
+    }
+  });
+
+  it("shows suggestions after a completed full run", () => {
+    const { container, dispose } = renderChatPanel({
+      runState: () =>
+        ({
+          active: false,
+          pendingApprovals: [],
+          statusByNode: { builder: "completed" },
+          chatLogs: {},
+          toolCallsByNode: {},
+          awaitingNodeIds: [],
+          lastReport: {
+            workflow_id: "w1",
+            outputs: [],
+            suggestions: [
+              {
+                id: "suggestion-1",
+                category: "prompt",
+                targetNodeId: "builder",
+                title: "Require verification",
+                evidence: "The agent skipped tests.",
+                recommendation: "Add the focused test command to its prompt.",
+              },
+            ],
+          },
+        }) as unknown as ReturnType<AppContextValue["runState"]>,
+      activeWorkflow: () =>
+        ({
+          id: "w1",
+          name: "Workflow",
+          nodes: [{ id: "builder", label: "Builder" }],
+          edges: [],
+          settings: {},
+        }) as unknown as ReturnType<AppContextValue["activeWorkflow"]>,
+    });
+    try {
+      expect(container.textContent).toContain("Suggestions");
+      expect(container.textContent).toContain("Require verification");
+      expect(container.textContent).toContain("Builder");
+    } finally {
+      dispose();
+      container.remove();
+    }
+  });
+
   it("shows a retry prompt instead of claiming a failed run is starting", () => {
     const { container, dispose } = renderChatPanel({
       replayRunId: () => null,
@@ -129,6 +248,28 @@ describe("ChatPanel replay mode", () => {
     });
     try {
       expect(container.textContent).toContain("Waiting to retry…");
+      expect(container.textContent).not.toContain("Starting workflow…");
+    } finally {
+      dispose();
+      container.remove();
+    }
+  });
+
+  it("shows review progress after every workflow node completes", () => {
+    const { container, dispose } = renderChatPanel({
+      replayRunId: () => null,
+      runState: () =>
+        ({
+          active: true,
+          pendingApprovals: [],
+          statusByNode: { "node-1": "completed" },
+          chatLogs: {},
+          toolCallsByNode: {},
+          awaitingNodeIds: [],
+        }) as unknown as ReturnType<AppContextValue["runState"]>,
+    });
+    try {
+      expect(container.textContent).toContain("Reviewing run…");
       expect(container.textContent).not.toContain("Starting workflow…");
     } finally {
       dispose();

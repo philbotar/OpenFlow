@@ -11,7 +11,9 @@ const TOOL_VERBS: Record<string, { active: string; done: string }> = {
   search: { active: "Grepping", done: "Grepped" },
   find: { active: "Searching", done: "Searched" },
   ast_grep: { active: "Searching", done: "Searched" },
+  ast_edit: { active: "Rewriting", done: "Rewrote" },
   web_search: { active: "Searching web", done: "Searched web" },
+  openflow_update_todo_list: { active: "Updating progress", done: "Updated progress" },
   openflow_write_plan_artifact: { active: "Sealing plan", done: "Sealed plan" },
   openflow_call_subagent: { active: "Calling subagent", done: "Called subagent" },
   openflow_declare_subagents: { active: "Declaring subagents", done: "Declared subagents" },
@@ -28,6 +30,8 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   search: "Search Files",
   find: "Search Folders",
   ast_grep: "AST Search",
+  ast_edit: "AST Edit",
+  openflow_update_todo_list: "Update Progress",
   openflow_call_subagent: "Call Subagent",
   openflow_declare_subagents: "Declare Subagents",
   openflow_submit_node_output: "Submit Output",
@@ -44,7 +48,9 @@ const TOOL_STACK_NOUNS: Record<string, { one: string; many: string }> = {
   search: { one: "pattern", many: "patterns" },
   find: { one: "folder", many: "folders" },
   ast_grep: { one: "pattern", many: "patterns" },
+  ast_edit: { one: "rewrite", many: "rewrites" },
   web_search: { one: "result", many: "results" },
+  openflow_update_todo_list: { one: "update", many: "updates" },
   openflow_call_subagent: { one: "subagent", many: "subagents" },
   openflow_declare_subagents: { one: "declaration", many: "declarations" },
   openflow_submit_node_output: { one: "output", many: "outputs" },
@@ -207,6 +213,16 @@ function patchFileHint(args: unknown): string | undefined {
   return match?.[1]?.trim();
 }
 
+function astEditPattern(args: unknown): string | undefined {
+  if (!args || typeof args !== "object" || Array.isArray(args)) return undefined;
+  const ops = (args as Record<string, unknown>).ops;
+  if (!Array.isArray(ops)) return undefined;
+  const first = ops[0];
+  if (!first || typeof first !== "object" || Array.isArray(first)) return undefined;
+  const pat = (first as Record<string, unknown>).pat;
+  return typeof pat === "string" && pat.trim() ? pat.trim() : undefined;
+}
+
 /** Human-readable intent from the tool call, when present. */
 export function toolBubbleIntentText(summary: Pick<ToolCallSummary, "intent" | "arguments">): string {
   if (typeof summary.intent === "string" && summary.intent.trim()) {
@@ -241,6 +257,12 @@ export function toolBubbleTargetText(
       return truncate(argString(args, "command") ?? "");
     case "ast_grep": {
       const pat = argString(args, "pat");
+      const paths = argStringOrArray(args, "paths", cwd);
+      if (pat && paths) return `${pat} in ${paths}`;
+      return pat ?? paths ?? "";
+    }
+    case "ast_edit": {
+      const pat = astEditPattern(args);
       const paths = argStringOrArray(args, "paths", cwd);
       if (pat && paths) return `${pat} in ${paths}`;
       return pat ?? paths ?? "";

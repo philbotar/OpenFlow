@@ -120,6 +120,10 @@
   --radius-full: 50%;
 
   /* ── Layout / spacing ── */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
   --page-gutter: 24px;
   --page-gutter-compact: 18px;
   --page-stack-gap: 20px;

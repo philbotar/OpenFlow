@@ -15,6 +15,17 @@ Use this page for setup, provider, run, and verification failures. Capture the e
 
 OAuth credentials are plaintext in the local OpenFlow `settings.json`, matching stored provider API keys. Normal settings IPC and logs redact them. Use Settings → ChatGPT (Codex) → **Disconnect** to delete them.
 
+## Provider not ready
+
+| Symptom | Likely cause | Fix |
+| --- | --- | --- |
+| Header shows API key missing or **Run** stays disabled | No resolvable key for the active API-key provider | Open **Settings → Providers**, select the active profile, add a key or set the provider env var (for example `OPENAI_API_KEY`), then save. |
+| Readiness message on the authoring or run screen | Same as above, or the chosen model/profile is incomplete | Confirm the active provider row shows ready; switch profile or model if needed. |
+| ChatGPT (Codex) not ready | No stored OAuth session or expired login | **Settings → Providers** with **ChatGPT (Codex)** active → **Sign in with ChatGPT**, or **Disconnect** and sign in again. See [ChatGPT Codex sign-in](#chatgpt-codex-sign-in). |
+| Bedrock not ready | AWS credentials or region misconfigured | Set profile/region in the Bedrock provider panel and verify the credential chain. |
+
+Key order for API-key providers: transient run input, stored `settings.json` key, then environment variable. Details: [`../reference/README.md#provider-key-resolution`](../reference/README.md#provider-key-resolution).
+
 ## Provider readiness
 
 - API-key providers resolve transient input, then stored profile key, then their environment variable.

@@ -12,11 +12,13 @@ pub enum BuiltinToolKind {
     Search,
     Find,
     AstGrep,
+    AstEdit,
     Write,
     Edit,
     ApplyPatch,
     Bash,
     WebSearch,
+    UpdateTodoList,
     WritePlanArtifact,
     DeclareSubagents,
     CallSubagent,
@@ -50,10 +52,12 @@ impl ToolRegistry {
         register(&mut tools, search_tool());
         register(&mut tools, find_tool());
         register(&mut tools, ast_grep_tool());
+        register(&mut tools, ast_edit_tool());
         register(&mut tools, write_tool());
         register(&mut tools, edit_tool());
         register(&mut tools, apply_patch_tool());
         register(&mut tools, bash_tool());
+        register(&mut tools, update_todo_list_tool());
         register(&mut tools, write_plan_artifact_tool());
         register(&mut tools, declare_subagents_tool());
         register(&mut tools, call_subagent_tool());
@@ -374,6 +378,49 @@ fn write_plan_artifact_tool() -> RegisteredTool {
     }
 }
 
+fn update_todo_list_tool() -> RegisteredTool {
+    RegisteredTool {
+        definition: ToolDefinition {
+            name: "openflow_update_todo_list".to_string(),
+            description: "Replace the current node's visible phase checklist. Use for work with multiple distinct phases; skip for simple tasks. Send the entire current list on every update, keep at most one item in_progress, and update it whenever a phase starts or completes.".to_string(),
+            input_schema: with_intent_field(serde_json::json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "todos": {
+                        "type": "array",
+                        "description": "The complete current phase checklist in display order.",
+                        "minItems": 1,
+                        "maxItems": 12,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "content": {
+                                    "type": "string",
+                                    "description": "Short action-oriented phase label.",
+                                    "minLength": 1,
+                                    "maxLength": 160
+                                },
+                                "status": {
+                                    "type": "string",
+                                    "description": "Current phase state.",
+                                    "enum": ["pending", "in_progress", "completed"]
+                                }
+                            },
+                            "required": ["content", "status"]
+                        }
+                    }
+                },
+                "required": ["todos"]
+            })),
+            tier: ToolTier::Read,
+            concurrency: ToolConcurrency::Shared,
+        },
+        kind: BuiltinToolKind::UpdateTodoList,
+    }
+}
+
 fn edit_tool() -> RegisteredTool {
     RegisteredTool {
         definition: ToolDefinition {
@@ -542,6 +589,51 @@ fn ast_grep_tool() -> RegisteredTool {
     }
 }
 
+fn ast_edit_tool() -> RegisteredTool {
+    RegisteredTool {
+        definition: ToolDefinition {
+            name: "ast_edit".to_string(),
+            description: "Rewrite code structurally with ast-grep. Use for codemods and structural multi-file changes; prefer edit for one-off local changes. Ops run sequentially, and an empty out deletes each match.".to_string(),
+            input_schema: with_intent_field(serde_json::json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "ops": {
+                        "type": "array",
+                        "description": "One or more sequential ast-grep rewrite operations.",
+                        "minItems": 1,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "pat": {
+                                    "type": "string",
+                                    "description": "ast-grep pattern (use $VAR or $$$ARGS metavariables)."
+                                },
+                                "out": {
+                                    "type": "string",
+                                    "description": "Rewrite template. Use an empty string to delete each match."
+                                }
+                            },
+                            "required": ["pat", "out"]
+                        }
+                    },
+                    "paths": {
+                        "type": "array",
+                        "description": "Files, directories, or globs under the execution folder.",
+                        "minItems": 1,
+                        "items": { "type": "string" }
+                    }
+                },
+                "required": ["ops", "paths"]
+            })),
+            tier: ToolTier::Write,
+            concurrency: ToolConcurrency::Exclusive,
+        },
+        kind: BuiltinToolKind::AstEdit,
+    }
+}
+
 pub fn declare_subagents_tool() -> RegisteredTool {
     RegisteredTool {
         definition: ToolDefinition {
@@ -610,6 +702,7 @@ mod tests {
         assert_eq!(concurrency("bash"), engine::ToolConcurrency::NodeExclusive);
         assert_eq!(concurrency("edit"), engine::ToolConcurrency::Exclusive);
         assert_eq!(concurrency("write"), engine::ToolConcurrency::Exclusive);
+        assert_eq!(concurrency("ast_edit"), engine::ToolConcurrency::Exclusive);
         assert_eq!(
             concurrency("apply_patch"),
             engine::ToolConcurrency::Exclusive
@@ -621,7 +714,11 @@ mod tests {
         let registry = ToolRegistry::new();
         let config = NodeToolConfig::default();
         let definitions = registry.definitions_for(&config);
-        assert_eq!(definitions.len(), 10);
+        assert_eq!(definitions.len(), 12);
+        assert!(definitions.iter().any(|tool| tool.name == "ast_edit"));
+        assert!(definitions
+            .iter()
+            .any(|tool| tool.name == "openflow_update_todo_list"));
         assert!(definitions
             .iter()
             .any(|tool| tool.name == "openflow_declare_subagents"));
@@ -640,10 +737,14 @@ mod tests {
             approval_mode: Some(engine::ApprovalMode::ReadOnly),
         };
         let definitions = registry.definitions_for(&config);
-        assert_eq!(definitions.len(), 4);
+        assert_eq!(definitions.len(), 5);
+        assert!(definitions
+            .iter()
+            .any(|tool| tool.name == "openflow_update_todo_list"));
         assert!(definitions
             .iter()
             .all(|tool| tool.tier == engine::ToolTier::Read));
+        assert!(!definitions.iter().any(|tool| tool.name == "ast_edit"));
     }
 
     #[test]
@@ -688,6 +789,7 @@ mod tests {
         assert!(definitions.iter().any(|tool| tool.name == "write"));
         assert!(definitions.iter().any(|tool| tool.name == "edit"));
         assert!(!definitions.iter().any(|tool| tool.name == "bash"));
+        assert!(!definitions.iter().any(|tool| tool.name == "ast_edit"));
         assert!(!definitions
             .iter()
             .any(|tool| tool.name == "openflow_call_subagent"));
@@ -779,10 +881,12 @@ mod tests {
             "search",
             "find",
             "ast_grep",
+            "ast_edit",
             "write",
             "edit",
             "apply_patch",
             "bash",
+            "openflow_update_todo_list",
             WRITE_PLAN_ARTIFACT_TOOL,
         ];
         for name in builtins {
@@ -815,10 +919,12 @@ mod tests {
             "search",
             "find",
             "ast_grep",
+            "ast_edit",
             "write",
             "edit",
             "apply_patch",
             "bash",
+            "openflow_update_todo_list",
             WRITE_PLAN_ARTIFACT_TOOL,
         ];
         for name in builtins {

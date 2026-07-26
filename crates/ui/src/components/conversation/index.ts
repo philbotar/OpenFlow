@@ -1,4 +1,5 @@
 export { ChatPanel } from "./ChatPanel";
+export { PostRunSuggestions } from "./PostRunSuggestions";
 export { ComposerInput } from "./ComposerInput";
 export { Conversation, ConversationContent, ConversationScrollButton } from "./Conversation";
 export type { ConversationApi } from "./Conversation";
@@ -15,6 +16,7 @@ export { NodeCompletedBubble } from "./NodeCompletedBubble";
 export type { NodeCompletedBubbleProps } from "./NodeCompletedBubble";
 export { SkillCommandCombobox } from "./SkillCommandCombobox";
 export { SkillDescriptionPreview } from "./SkillDescriptionPreview";
+export { StructuredAskCard } from "./StructuredAskCard";
 export { ThinkingBubble } from "./ThinkingBubble";
 export { ToolApprovalCardBody } from "./ToolApprovalCard";
 export { ToolBubble } from "./ToolBubble";

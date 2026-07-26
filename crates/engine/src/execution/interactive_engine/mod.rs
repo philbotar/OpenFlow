@@ -17,7 +17,9 @@ use crate::graph::{
     apply_runtime_patch_to_agent, apply_runtime_patch_to_request, runtime_patch_for, Node, NodeId,
     NodeRuntimeConfigStore, Workflow,
 };
-use crate::ports::{AgentRequest, AiPort, ToolAccessPolicy, ToolBatchOutput, ToolPort};
+use crate::ports::{
+    AgentRequest, AiPort, StructuredUserInput, ToolAccessPolicy, ToolBatchOutput, ToolPort,
+};
 use crate::tools::{FileChangeRecord, ReadRecord, ToolCall};
 use futures::stream::{FuturesUnordered, StreamExt};
 use serde_json::Value;
@@ -38,6 +40,7 @@ pub struct EngineAwaitInput {
     pub label: String,
     pub context: String,
     pub is_initial: bool,
+    pub structured_input: Option<StructuredUserInput>,
 }
 
 /// Pause payload when a node needs tool approval.
@@ -185,6 +188,7 @@ pub struct InteractiveEngine {
     tokens_in: u32,
     transcripts: BTreeMap<NodeId, Vec<AgentTranscriptItem>>,
     awaiting_nodes: BTreeSet<NodeId>,
+    structured_input_by_node: BTreeMap<NodeId, StructuredUserInput>,
     in_flight_ai: BTreeSet<NodeId>,
     /// Source selected at run start, preserved across workflow edits on resume.
     plan_mode_source_node_id: Option<NodeId>,
@@ -219,15 +223,14 @@ pub(crate) const MAX_EMPTY_PROVIDER_TURN_RETRIES: u8 = 3;
 pub(crate) const MAX_MIXED_TOOL_TURN_RETRIES: u8 = 3;
 pub(crate) const MAX_AUTO_CONTINUE_STREAK: u8 = 10;
 pub(crate) const MALFORMED_REQUEST_INPUT_FEEDBACK: &str =
-    "Your last turn ended as a request for human input, but without a direct question. \
-    If you need human clarification, call openflow_request_user_input with \
-    assistant_message set to one direct question (usually ending with ?). If you do not \
-    need human input, call executable tools or call openflow_submit_node_output when complete. \
-    Do not end a turn with plain narration.";
+    "Your last human-input request was invalid. Call openflow_request_user_input with either \
+    assistant_message set to one direct question, or questions set to 1-3 structured questions \
+    with 2-3 options each. If you do not need human input, call executable tools or call \
+    openflow_submit_node_output when complete. Do not end a turn with plain narration.";
 pub(crate) const INTERACTIVE_CONTINUE_FEEDBACK: &str =
-    "Call openflow_request_user_input with one direct question if human clarification is needed, \
-    call executable tools if more work is required, or call openflow_submit_node_output when the \
-    task is complete. Do not end with plain text only.";
+    "Call openflow_request_user_input with a direct question or structured choices if human \
+    clarification is needed, call executable tools if more work is required, or call \
+    openflow_submit_node_output when the task is complete. Do not end with plain text only.";
 pub(crate) const AUTONOMOUS_CONTINUE_FEEDBACK: &str =
     "No human input is available for this node. Call executable tools if more work is required, \
     or call openflow_submit_node_output when the task is complete. Do not end with plain text only.";
@@ -346,6 +349,7 @@ impl InteractiveEngine {
             tokens_in: 0,
             transcripts: BTreeMap::new(),
             awaiting_nodes: BTreeSet::new(),
+            structured_input_by_node: BTreeMap::new(),
             in_flight_ai: BTreeSet::new(),
             plan_mode_source_node_id,
             frozen_change_evidence_packet: None,
@@ -490,6 +494,8 @@ impl InteractiveEngine {
                 read_calls: self.read_calls,
                 redundant_reads: self.redundant_reads,
                 tokens_in: self.tokens_in,
+                suggestions: Vec::new(),
+                suggestions_error: None,
             });
         }
         None
@@ -678,6 +684,7 @@ impl InteractiveEngine {
                     label: node.label.clone(),
                     context: self.assemble_context(&node.id),
                     is_initial: self.conversation_history(&node.id).is_empty(),
+                    structured_input: self.structured_input_by_node.get(&node.id).cloned(),
                 })
             })
             .collect()
@@ -829,6 +836,7 @@ impl InteractiveEngine {
                 got: node_id.clone(),
             });
         }
+        self.structured_input_by_node.remove(node_id);
         self.transcripts.entry(node_id.clone()).or_default().push(
             AgentTranscriptItem::UserMessage {
                 content: text.to_string(),

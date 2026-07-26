@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
 /** @jsxRuntime automatic */
 import { Handle, Position } from "@xyflow/react";
+import { AppTooltip } from "./AppTooltip.react";
 import { labelForAgentStatus } from "../lib/agentStatusLabels";
 import type { AgentStatus, SubagentSummary } from "../lib/types";
 
@@ -62,32 +63,34 @@ export function WorkflowNode({
           <span className={`node-dot status-${status}`} />
           <span className="node-status-label">{labelForAgentStatus(status)}</span>
           {canInterrupt && (
-            <button
-              type="button"
-              className="node-action-btn node-action-stop"
-              title="Interrupt node"
-              aria-label="Interrupt node"
-              onClick={(event) => {
-                event.stopPropagation();
-                data.onInterrupt?.(id);
-              }}
-            >
-              ■
-            </button>
+            <AppTooltip label="Interrupt node">
+              <button
+                type="button"
+                className="node-action-btn node-action-stop"
+                aria-label="Interrupt node"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  data.onInterrupt?.(id);
+                }}
+              >
+                ■
+              </button>
+            </AppTooltip>
           )}
           {canRetry && (
-            <button
-              type="button"
-              className="node-action-btn node-action-retry"
-              title="Retry node"
-              aria-label="Retry node"
-              onClick={(event) => {
-                event.stopPropagation();
-                data.onRetry?.(id);
-              }}
-            >
-              ↻
-            </button>
+            <AppTooltip label="Retry node">
+              <button
+                type="button"
+                className="node-action-btn node-action-retry"
+                aria-label="Retry node"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  data.onRetry?.(id);
+                }}
+              >
+                ↻
+              </button>
+            </AppTooltip>
           )}
         </div>
         <strong>{data.label}</strong>

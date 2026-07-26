@@ -18,6 +18,7 @@ import {
   ConversationScrollButton,
 } from "./Conversation";
 import { ConversationSegmentMessages } from "./ConversationSegmentMessages";
+import { PostRunSuggestions } from "./PostRunSuggestions";
 
 export function ConversationMessages() {
   const ctx = useAppContext();
@@ -40,6 +41,13 @@ export function ConversationMessages() {
   });
 
   const showFilterChips = createMemo(() => filterChips().length > 1);
+  const completedReport = createMemo(() => ctx.runState()?.lastReport ?? null);
+  const showPostRunSuggestions = createMemo(
+    () =>
+      completedReport() !== null &&
+      ctx.chatFilterNodeId() === null &&
+      ctx.pickedLiveNodeId() === null,
+  );
 
   const liveNodeIds = createMemo(
     () => new Set(ctx.chatLayout().live.map((segment) => segment.nodeId)),
@@ -123,7 +131,7 @@ export function ConversationMessages() {
             <ConversationContent conversation={conversation} class="chat-transcript-scroll">
               <div class="chat-transcript-lane">
                 <Show
-                  when={visibleSettled().length > 0}
+                  when={visibleSettled().length > 0 || showPostRunSuggestions()}
                   fallback={
                     <PanelEmptyState
                       title="No messages yet"
@@ -175,6 +183,14 @@ export function ConversationMessages() {
                       </section>
                     )}
                   </For>
+                  <Show when={showPostRunSuggestions() && completedReport()}>
+                    {(report) => (
+                      <PostRunSuggestions
+                        report={report()}
+                        nodes={ctx.activeWorkflow()?.nodes ?? []}
+                      />
+                    )}
+                  </Show>
                 </Show>
               </div>
             </ConversationContent>

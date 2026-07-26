@@ -480,6 +480,7 @@ mod tests {
     fn call(name: &str, arguments: Value) -> ToolCall {
         ToolCall {
             id: "call-1".to_string(),
+            provider_call_id: None,
             name: name.to_string(),
             arguments,
         }

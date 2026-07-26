@@ -36,6 +36,7 @@ pub enum RunTelemetry {
         label: String,
         context: String,
         is_initial: bool,
+        structured_input: Option<crate::StructuredUserInput>,
     },
     ToolCallProposed {
         node_id: NodeId,

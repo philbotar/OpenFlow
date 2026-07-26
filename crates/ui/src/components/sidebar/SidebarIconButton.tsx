@@ -1,4 +1,5 @@
 import { SidebarIcon, type SidebarIconName } from "../SidebarIcon";
+import { Tooltip } from "../Tooltip";
 
 export type SidebarIconButtonProps = {
   icon: SidebarIconName;
@@ -10,15 +11,16 @@ export type SidebarIconButtonProps = {
 
 export function SidebarIconButton(props: SidebarIconButtonProps) {
   return (
-    <button
-      type="button"
-      class={props.class ? `sidebar-icon-button ${props.class}` : "sidebar-icon-button"}
-      classList={{ active: props.active }}
-      title={props.label}
-      aria-label={props.label}
-      onClick={() => props.onClick()}
-    >
-      <SidebarIcon name={props.icon} />
-    </button>
+    <Tooltip label={props.label}>
+      <button
+        type="button"
+        class={props.class ? `sidebar-icon-button ${props.class}` : "sidebar-icon-button"}
+        classList={{ active: props.active }}
+        aria-label={props.label}
+        onClick={() => props.onClick()}
+      >
+        <SidebarIcon name={props.icon} />
+      </button>
+    </Tooltip>
   );
 }

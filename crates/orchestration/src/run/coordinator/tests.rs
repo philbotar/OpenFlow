@@ -46,6 +46,7 @@ fn empty_engine_checkpoint(workflow: &Workflow) -> InteractiveEngineCheckpoint {
         reads_by_node: Default::default(),
         transcripts: Default::default(),
         awaiting_nodes: Default::default(),
+        structured_input_by_node: Default::default(),
         pending_tool_batches: Default::default(),
         retries_by_node: Default::default(),
         transient_streaks_by_node: Default::default(),
@@ -92,6 +93,7 @@ fn sample_pending_approval(node_id: &str, approval_id: &str) -> PendingToolAppro
         node_label: node_id.to_string(),
         tool_call: ToolCall {
             id: "call-1".to_string(),
+            provider_call_id: None,
             name: "write".to_string(),
             arguments: serde_json::json!({ "path": "notes.txt", "content": "hello" }),
         },

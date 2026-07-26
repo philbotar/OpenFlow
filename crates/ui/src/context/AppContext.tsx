@@ -180,6 +180,7 @@ export interface AppContextValue {
 
   // ── Agent handlers ────────────────────────────────────────────────────────
   handleCreateAgent: () => Promise<void>;
+  handleCreateAgentWithAi: (description: string) => Promise<boolean>;
   handleSaveAgents: () => Promise<void>;
   handleAgentSchemaInput: (text: string) => void;
   updateSelectedAgent: (mutator: (draft: AgentDefinition) => void) => void;
@@ -208,6 +209,7 @@ export interface AppContextValue {
   handleCreateEdge: (from: NodeId, to: NodeId) => void;
   handleReconnectEdge: (edgeId: EdgeId, from: NodeId, to: NodeId) => void;
   handleDeleteEdge: (edgeId: EdgeId) => void;
+  handleDeleteNode: (nodeId: NodeId) => void;
   handleDeleteSelectedNode: () => void;
   handleOpenAddNodePicker: () => void;
   handleAddNode: (agentId: string | null) => Promise<void>;
@@ -243,6 +245,7 @@ export interface AppContextValue {
   handleExitReplay: () => Promise<void>;
   handleResumeDurableRun: (runId: string) => Promise<void>;
   handleSubmitChat: (nodeId: NodeId) => Promise<void>;
+  handleSubmitStructuredInput: (nodeId: NodeId, text: string) => Promise<void>;
   handleRefreshSkills: () => Promise<void>;
   searchProjectFileReferences: (query: string) => Promise<ProjectFileReference[]>;
   handleToolApproval: (approvalId: string, allow: boolean) => Promise<void>;

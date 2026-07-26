@@ -85,10 +85,66 @@ pub struct AgentToolCallBatch {
     pub usage: Option<UsageReport>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserInputOption {
+    pub label: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserInputQuestion {
+    pub id: String,
+    pub header: String,
+    pub question: String,
+    pub options: Vec<UserInputOption>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StructuredUserInput {
+    pub questions: Vec<UserInputQuestion>,
+}
+
+impl StructuredUserInput {
+    #[must_use]
+    pub(crate) fn is_valid(&self) -> bool {
+        if !(1..=3).contains(&self.questions.len()) {
+            return false;
+        }
+
+        let mut ids = std::collections::BTreeSet::new();
+        self.questions.iter().all(|question| {
+            let id = question.id.trim();
+            let header = question.header.trim();
+            let prompt = question.question.trim();
+            let mut labels = std::collections::BTreeSet::new();
+            let valid_id = id.as_bytes().first().is_some_and(u8::is_ascii_lowercase)
+                && id.as_bytes().iter().all(|byte| {
+                    byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'_'
+                });
+            valid_id
+                && ids.insert(id)
+                && !header.is_empty()
+                && header.chars().count() <= 12
+                && !prompt.is_empty()
+                && (2..=3).contains(&question.options.len())
+                && question.options.iter().all(|option| {
+                    let label = option.label.trim();
+                    !label.is_empty()
+                        && labels.insert(label)
+                        && !option.description.trim().is_empty()
+                })
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentNeedUserInput {
     pub raw_text: String,
     pub assistant_message: String,
+    pub structured_input: Option<StructuredUserInput>,
     pub reasoning: Vec<AgentReasoning>,
 }
 

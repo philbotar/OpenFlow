@@ -100,11 +100,23 @@ pub fn apply_event_to_run_state(
                 state.chat_logs.remove(&node_id);
             }
         }
-        ExecutionEvent::NodeAwaitingInput { node_id, label, .. } => {
+        ExecutionEvent::NodeAwaitingInput {
+            node_id,
+            label,
+            structured_input,
+            ..
+        } => {
             state
                 .status_by_node
                 .insert(node_id.clone(), AgentStatus::AwaitingInput);
             add_awaiting_node(state, node_id.clone());
+            if let Some(structured_input) = structured_input {
+                state
+                    .structured_input_by_node
+                    .insert(node_id.clone(), structured_input);
+            } else {
+                state.structured_input_by_node.remove(&node_id);
+            }
             state.active_manual_node_id = None;
             state.run_trace.push(RunTraceEntry {
                 node_id,
@@ -401,6 +413,7 @@ pub fn apply_event_to_run_state(
             state.active = false;
             state.awaiting_node_id = None;
             state.awaiting_node_ids.clear();
+            state.structured_input_by_node.clear();
             state.active_manual_node_id = None;
             state.active_tool_call_id = None;
             state.pending_approvals.clear();
@@ -410,6 +423,7 @@ pub fn apply_event_to_run_state(
             state.active = false;
             state.awaiting_node_id = None;
             state.awaiting_node_ids.clear();
+            state.structured_input_by_node.clear();
             state.active_manual_node_id = None;
             state.active_tool_call_id = None;
             state.pending_approvals.clear();
@@ -446,6 +460,7 @@ pub fn apply_event_to_run_state(
             state.active = false;
             state.awaiting_node_id = None;
             state.awaiting_node_ids.clear();
+            state.structured_input_by_node.clear();
             state.active_manual_node_id = None;
             state.active_tool_call_id = None;
             state.pending_approvals.clear();
@@ -700,6 +715,7 @@ fn add_awaiting_node(state: &mut WorkflowRunState, node_id: NodeId) {
 
 fn remove_awaiting_node(state: &mut WorkflowRunState, node_id: &NodeId) {
     state.awaiting_node_ids.retain(|id| id != node_id);
+    state.structured_input_by_node.remove(node_id);
     if state.awaiting_node_id.as_ref() == Some(node_id) {
         state.awaiting_node_id = state.awaiting_node_ids.first().cloned();
     }
@@ -875,6 +891,7 @@ mod tests {
             node_label: "Plan".to_string(),
             tool_call: ToolCall {
                 id: "call-1".to_string(),
+                provider_call_id: None,
                 name: "bash".to_string(),
                 arguments: serde_json::json!({}),
             },

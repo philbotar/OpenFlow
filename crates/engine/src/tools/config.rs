@@ -95,7 +95,9 @@ pub fn tool_tier_for_call(_config: &NodeToolConfig, tool_name: &str) -> ToolTier
 
 fn default_tier_for_tool_name(tool_name: &str) -> ToolTier {
     match tool_name {
-        "read" | "search" | "find" | "ast_grep" | "web_search" => ToolTier::Read,
+        "read" | "search" | "find" | "ast_grep" | "web_search" | "openflow_update_todo_list" => {
+            ToolTier::Read
+        }
         name if name.starts_with("mcp/") => ToolTier::Write,
         _ => ToolTier::Write,
     }
@@ -234,6 +236,9 @@ pub struct ToolDefinition {
 #[serde(rename_all = "camelCase")]
 pub struct ToolCall {
     pub id: String,
+    /// Provider-specific correlation ID when distinct from [`Self::id`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_call_id: Option<String>,
     pub name: String,
     pub arguments: Value,
 }
@@ -362,6 +367,27 @@ mod tests {
     }
 
     #[test]
+    fn tool_call_provider_call_id_is_optional_and_camel_case() {
+        let mut call: ToolCall = serde_json::from_value(json!({
+            "id": "fc_1",
+            "name": "read",
+            "arguments": {"path": "README.md"}
+        }))
+        .unwrap();
+        assert!(call.provider_call_id.is_none());
+        assert!(serde_json::to_value(&call)
+            .unwrap()
+            .get("providerCallId")
+            .is_none());
+
+        call.provider_call_id = Some("call_1".to_string());
+        assert_eq!(
+            serde_json::to_value(call).unwrap()["providerCallId"],
+            "call_1"
+        );
+    }
+
+    #[test]
     fn requires_approval_honours_modes_and_tiers() {
         for tier in [ToolTier::Read, ToolTier::Write] {
             assert_eq!(
@@ -395,6 +421,7 @@ mod tests {
         };
         let call = ToolCall {
             id: "call-bash".to_string(),
+            provider_call_id: None,
             name: "bash".to_string(),
             arguments: json!({"command": "rm -rf /"}),
         };
@@ -410,10 +437,15 @@ mod tests {
         assert_eq!(tool_tier_for_call(&config, "read"), ToolTier::Read);
         assert_eq!(tool_tier_for_call(&config, "web_search"), ToolTier::Read);
         assert_eq!(
+            tool_tier_for_call(&config, "openflow_update_todo_list"),
+            ToolTier::Read
+        );
+        assert_eq!(
             tool_decision_for_call(
                 &config,
                 &ToolCall {
                     id: "call-web".to_string(),
+                    provider_call_id: None,
                     name: "web_search".to_string(),
                     arguments: json!({"query": "rust"}),
                 }
@@ -421,6 +453,7 @@ mod tests {
             ToolDecision::AutoAllow
         );
         assert_eq!(tool_tier_for_call(&config, "bash"), ToolTier::Write);
+        assert_eq!(tool_tier_for_call(&config, "ast_edit"), ToolTier::Write);
         assert_eq!(tool_tier_for_call(&config, "custom_write"), ToolTier::Write);
         assert_eq!(
             tool_tier_for_call(&config, "mcp/gh/search"),
@@ -433,18 +466,30 @@ mod tests {
         let config = NodeToolConfig::default();
         let writer = ToolCall {
             id: "plan".to_string(),
+            provider_call_id: None,
             name: WRITE_PLAN_ARTIFACT_TOOL.to_string(),
             arguments: json!({}),
         };
         let read = ToolCall {
             id: "read".to_string(),
+            provider_call_id: None,
             name: "read".to_string(),
             arguments: json!({ "path": "README.md" }),
         };
         let write = ToolCall {
             id: "write".to_string(),
+            provider_call_id: None,
             name: "write".to_string(),
             arguments: json!({ "path": "blocked", "content": "no" }),
+        };
+        let ast_edit = ToolCall {
+            id: "ast-edit".to_string(),
+            provider_call_id: None,
+            name: "ast_edit".to_string(),
+            arguments: json!({
+                "ops": [{"pat": "old()", "out": "new()"}],
+                "paths": ["src/**/*.ts"]
+            }),
         };
 
         assert!(tool_access_policy_allows_call(
@@ -467,6 +512,11 @@ mod tests {
             &config,
             &write
         ));
+        assert!(!tool_access_policy_allows_call(
+            ToolAccessPolicy::Planning,
+            &config,
+            &ast_edit
+        ));
     }
 
     #[test]
@@ -476,6 +526,7 @@ mod tests {
         };
         let plan_write = ToolCall {
             id: "plan-write".to_string(),
+            provider_call_id: None,
             name: "write".to_string(),
             arguments: json!({
                 "path": "run://PLAN.md",
@@ -484,6 +535,7 @@ mod tests {
         };
         let plan_edit = ToolCall {
             id: "plan-edit".to_string(),
+            provider_call_id: None,
             name: "edit".to_string(),
             arguments: json!({
                 "path": "run://PLAN.md",
@@ -492,6 +544,7 @@ mod tests {
         };
         let docs_write = ToolCall {
             id: "docs-write".to_string(),
+            provider_call_id: None,
             name: "write".to_string(),
             arguments: json!({
                 "path": "docs/plan.md",
@@ -526,6 +579,7 @@ mod tests {
         let config = NodeToolConfig::default();
         let docs_write = ToolCall {
             id: "w".to_string(),
+            provider_call_id: None,
             name: "write".to_string(),
             arguments: json!({
                 "path": "docs/feature-briefs/002-ai.md",
@@ -534,6 +588,7 @@ mod tests {
         };
         let docs_edit = ToolCall {
             id: "e".to_string(),
+            provider_call_id: None,
             name: "edit".to_string(),
             arguments: json!({
                 "path": "docs/AGENTS.md",
@@ -542,6 +597,7 @@ mod tests {
         };
         let hashline_edit = ToolCall {
             id: "h".to_string(),
+            provider_call_id: None,
             name: "edit".to_string(),
             arguments: json!({
                 "input": "¶docs/product-specs/001-x.md#abc\n- keep"
@@ -549,21 +605,25 @@ mod tests {
         };
         let code_write = ToolCall {
             id: "c".to_string(),
+            provider_call_id: None,
             name: "write".to_string(),
             arguments: json!({ "path": "src/lib.rs", "content": "fn main() {}" }),
         };
         let escape = ToolCall {
             id: "esc".to_string(),
+            provider_call_id: None,
             name: "write".to_string(),
             arguments: json!({ "path": "docs/../src/lib.rs", "content": "no" }),
         };
         let md_outside = ToolCall {
             id: "out".to_string(),
+            provider_call_id: None,
             name: "write".to_string(),
             arguments: json!({ "path": "README.md", "content": "no" }),
         };
         let bash = ToolCall {
             id: "b".to_string(),
+            provider_call_id: None,
             name: "bash".to_string(),
             arguments: json!({ "command": "echo hi > docs/x.md" }),
         };

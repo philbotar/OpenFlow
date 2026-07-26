@@ -111,6 +111,7 @@ mod tests {
             label: "Review plan".to_string(),
             context: "Please review the plan.".to_string(),
             is_initial: false,
+            structured_input: None,
         };
 
         let notification = notification_for_event(&event, "Launch Flow").expect("notification");
@@ -132,6 +133,7 @@ mod tests {
                 node_label: "Implementer".to_string(),
                 tool_call: ToolCall {
                     id: "tool-1".to_string(),
+                    provider_call_id: None,
                     name: "bash".to_string(),
                     arguments: json!({ "cmd": "cargo test -p desktop" }),
                 },
@@ -166,6 +168,8 @@ mod tests {
             read_calls: 0,
             redundant_reads: 0,
             tokens_in: 0,
+            suggestions: Vec::new(),
+            suggestions_error: None,
         });
 
         let notification = notification_for_event(&event, "Launch Flow").expect("notification");

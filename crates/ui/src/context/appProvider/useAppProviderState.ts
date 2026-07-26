@@ -10,6 +10,7 @@ import type {
   Workflow,
   WorkflowRunState,
 } from "../../lib/types";
+import { eventMatchesShortcut } from "../../lib/shortcuts";
 import { isTextInputTarget, normalizeError, clampDockHeight, viewportHeight } from "../../lib/utils";
 import type { AppContextValue } from "../AppContext";
 import { createRunStateKernel, createToastApi, selectWorkflow } from "./shared";
@@ -63,6 +64,7 @@ export function useAppProviderState(): AppContextValue {
       runKernel.setRunStateByWorkflowId(updater as never),
     refreshReadiness: settingsState.refreshReadiness,
     settings: settingsState.settings,
+    activeProviderKeyInput: settingsState.activeProviderKeyInput,
     setSettings: settingsState.setSettings,
     showErrorToast: toastApi.showErrorToast,
     showSuccessToast: toastApi.showSuccessToast,
@@ -79,6 +81,7 @@ export function useAppProviderState(): AppContextValue {
     isCompactViewport: () => isCompactViewportAccessor(),
     showErrorToast: toastApi.showErrorToast,
     showSuccessToast: toastApi.showSuccessToast,
+    showUndoToast: toastApi.showUndoToast,
     clearStatusToast: toastApi.clearStatusToast,
   });
   applySchemaEditorRef = workflowEditor.applySchemaEditor;
@@ -303,23 +306,22 @@ export function useAppProviderState(): AppContextValue {
       appShell.closeSidebarDrawer();
       return;
     }
-    const command = event.metaKey || event.ctrlKey;
-    if (command && event.key === "0") {
+    if (eventMatchesShortcut(event, "zoomReset")) {
       event.preventDefault();
       appShell.handleZoomReset();
       return;
     }
-    if (command && (event.key === "=" || event.key === "+")) {
+    if (eventMatchesShortcut(event, "zoomIn")) {
       event.preventDefault();
       appShell.handleZoomIn();
       return;
     }
-    if (command && (event.key === "-" || event.key === "_")) {
+    if (eventMatchesShortcut(event, "zoomOut")) {
       event.preventDefault();
       appShell.handleZoomOut();
       return;
     }
-    if (command && event.key.toLowerCase() === "s") {
+    if (eventMatchesShortcut(event, "save")) {
       event.preventDefault();
       if (appShell.screen() === "agents") {
         void workspace.handleSaveAgents();
@@ -330,7 +332,7 @@ export function useAppProviderState(): AppContextValue {
       }
       return;
     }
-    if (command && event.key === "Enter" && appShell.screen() === "editor") {
+    if (eventMatchesShortcut(event, "run") && appShell.screen() === "editor") {
       event.preventDefault();
       if (runSession.continuableRun() && !runKernel.runState()?.active) {
         void runSession.handleContinueRun();
@@ -339,14 +341,13 @@ export function useAppProviderState(): AppContextValue {
       }
       return;
     }
-    if (command && event.key === "." && appShell.screen() === "editor") {
+    if (eventMatchesShortcut(event, "stop") && appShell.screen() === "editor") {
       event.preventDefault();
       void runSession.handleStopRun();
       return;
     }
     if (
-      command &&
-      event.key.toLowerCase() === "j" &&
+      eventMatchesShortcut(event, "toggleRightPanel") &&
       !isTextInputTarget(event.target) &&
       appShell.screen() === "editor"
     ) {
@@ -354,9 +355,27 @@ export function useAppProviderState(): AppContextValue {
       workflowEditor.handleToggleRightPanel();
       return;
     }
-    if (command && event.key.toLowerCase() === "b" && !isTextInputTarget(event.target)) {
+    if (eventMatchesShortcut(event, "toggleLeftSidebar") && !isTextInputTarget(event.target)) {
       event.preventDefault();
       workflowEditor.handleToggleLeftPanel();
+      return;
+    }
+    if (
+      eventMatchesShortcut(event, "toggleInspector") &&
+      !isTextInputTarget(event.target) &&
+      appShell.screen() === "editor"
+    ) {
+      event.preventDefault();
+      workflowEditor.handleToggleInspector();
+      return;
+    }
+    if (
+      eventMatchesShortcut(event, "toggleChatFocus") &&
+      !isTextInputTarget(event.target) &&
+      appShell.screen() === "editor"
+    ) {
+      event.preventDefault();
+      dock.handleToggleChatFocusMode();
       return;
     }
     if (
@@ -554,6 +573,7 @@ export function useAppProviderState(): AppContextValue {
     isProjectExpanded: workspace.isProjectExpanded,
     workflowsForProject: workspace.workflowsForProject,
     handleCreateAgent: workspace.handleCreateAgent,
+    handleCreateAgentWithAi: workspace.handleCreateAgentWithAi,
     handleSaveAgents: workspace.handleSaveAgents,
     handleAgentSchemaInput: workspace.handleAgentSchemaInput,
     updateSelectedAgent: workspace.updateSelectedAgent,
@@ -578,6 +598,7 @@ export function useAppProviderState(): AppContextValue {
     handleCreateEdge: workflowEditor.handleCreateEdge,
     handleReconnectEdge: workflowEditor.handleReconnectEdge,
     handleDeleteEdge: workflowEditor.handleDeleteEdge,
+    handleDeleteNode: workflowEditor.handleDeleteNode,
     handleDeleteSelectedNode: workflowEditor.handleDeleteSelectedNode,
     handleOpenAddNodePicker: workflowEditor.handleOpenAddNodePicker,
     handleAddNode: workflowEditor.handleAddNode,
@@ -608,6 +629,7 @@ export function useAppProviderState(): AppContextValue {
     handleExitReplay: runSession.handleExitReplay,
     handleResumeDurableRun: runSession.handleResumeDurableRun,
     handleSubmitChat: chatComposer.handleSubmitChat,
+    handleSubmitStructuredInput: chatComposer.handleSubmitStructuredInput,
     handleRefreshSkills: workspace.handleRefreshSkills,
     searchProjectFileReferences: runSession.searchProjectFileReferences,
     handleToolApproval: runSession.handleToolApproval,

@@ -1,6 +1,6 @@
 use crate::ipc_types::CommandError;
 use orchestration::backend::{AgentDefinitionSummary, AppBackend};
-use orchestration::{AgentDefinition, SkillSummary};
+use orchestration::{AgentDefinition, AppSettings, SkillSummary};
 
 #[tauri::command]
 pub fn list_agents(
@@ -27,6 +27,18 @@ pub fn create_agent_definition(
     name: String,
 ) -> Result<AgentDefinition, CommandError> {
     Ok(backend.create_agent_definition(name)?)
+}
+
+#[tauri::command]
+pub async fn create_agent_definition_with_ai(
+    backend: tauri::State<'_, AppBackend>,
+    description: String,
+    settings: AppSettings,
+    transient_api_key: Option<String>,
+) -> Result<AgentDefinition, CommandError> {
+    Ok(backend
+        .create_agent_definition_with_ai(description, &settings, transient_api_key.as_deref())
+        .await?)
 }
 
 #[tauri::command]

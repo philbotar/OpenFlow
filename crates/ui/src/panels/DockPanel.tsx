@@ -1,7 +1,7 @@
 import { For, Show } from "solid-js";
 import Maximize2 from "lucide-solid/icons/maximize-2";
 import Minimize2 from "lucide-solid/icons/minimize-2";
-import { ChatPanel, PanelEmptyState } from "@/components";
+import { ChatPanel, PanelEmptyState, Tooltip } from "@/components";
 import { useAppContext } from "../context/AppContext";
 import { TerminalPanel } from "./TerminalPanel";
 import { RunHistoryPanel } from "./RunHistoryPanel";
@@ -47,18 +47,22 @@ export function DockPanel() {
         </div>
         <Show when={ctx.dockOpen()}>
           <div class="dock-tab-actions">
-            <button
-              type="button"
-              class="dock-icon-action dock-focus-action"
-              title={ctx.chatFocusMode() ? "Show canvas" : "Focus panel"}
-              aria-label={ctx.chatFocusMode() ? "Show canvas" : "Focus panel"}
-              aria-pressed={ctx.chatFocusMode()}
-              onClick={() => ctx.handleToggleChatFocusMode()}
+            <Tooltip
+              label={ctx.chatFocusMode() ? "Show canvas" : "Focus panel"}
+              shortcutId="toggleChatFocus"
             >
-              <Show when={ctx.chatFocusMode()} fallback={<Maximize2 width={15} height={15} />}>
-                <Minimize2 width={15} height={15} />
-              </Show>
-            </button>
+              <button
+                type="button"
+                class="dock-icon-action dock-focus-action"
+                aria-label={ctx.chatFocusMode() ? "Show canvas" : "Focus panel"}
+                aria-pressed={ctx.chatFocusMode()}
+                onClick={() => ctx.handleToggleChatFocusMode()}
+              >
+                <Show when={ctx.chatFocusMode()} fallback={<Maximize2 width={15} height={15} />}>
+                  <Minimize2 width={15} height={15} />
+                </Show>
+              </button>
+            </Tooltip>
           </div>
         </Show>
       </div>

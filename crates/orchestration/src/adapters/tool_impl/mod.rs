@@ -1,5 +1,6 @@
 //! Tool implementation: edit tool, patching, and file system operations.
 
+pub mod ast_edit;
 pub mod bash;
 pub mod edit;
 pub mod grep;

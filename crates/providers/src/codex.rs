@@ -311,8 +311,22 @@ mod tests {
     }
 
     fn completed_submit_sse() -> String {
+        let tool_call = json!({
+            "type": "response.output_item.done",
+            "sequence_number": 1,
+            "output_index": 0,
+            "item": {
+                "type": "function_call",
+                "id": "fc_1",
+                "call_id": "call-submit",
+                "name": "openflow_submit_node_output",
+                "arguments": "{\"output\":{\"summary\":\"done\"},\"assistant_message\":null}",
+                "status": "completed"
+            }
+        });
         let response = json!({
             "type": "response.completed",
+            "sequence_number": 2,
             "response": {
                 "id": "resp_1",
                 "object": "response",
@@ -341,7 +355,7 @@ mod tests {
                 "tools": []
             }
         });
-        format!("data: {response}\n\ndata: [DONE]\n\n")
+        format!("data: {tool_call}\n\ndata: {response}\n\ndata: [DONE]\n\n")
     }
 
     async fn mount_refresh(server: &MockServer) {
@@ -391,8 +405,7 @@ mod tests {
             .and(header("authorization", "Bearer access-new"))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .insert_header("content-type", "text/event-stream")
-                    .set_body_string(completed_submit_sse()),
+                    .set_body_raw(completed_submit_sse(), "text/event-stream"),
             )
             .expect(1)
             .mount(&server)

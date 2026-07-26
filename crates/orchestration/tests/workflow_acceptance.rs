@@ -22,6 +22,15 @@ struct ScriptedAi {
     requests: Arc<Mutex<Vec<AgentRequest>>>,
 }
 
+fn needs_user_input(message: &str) -> AgentTurnOutcome {
+    AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
+        raw_text: message.to_string(),
+        assistant_message: message.to_string(),
+        structured_input: None,
+        reasoning: Vec::new(),
+    })
+}
+
 #[async_trait]
 impl AiPort for ScriptedAi {
     async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
@@ -130,17 +139,22 @@ async fn manual_node_pauses_accepts_input_and_feeds_downstream_node() {
     impl AiPort for ManualAi {
         async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
             self.requests.lock().push(request.clone());
+            if request.node_id == "__post_run_review" {
+                return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    output: json!({"suggestions": []}),
+                    raw_text: "{}".to_string(),
+                    assistant_message: None,
+                    reasoning: Vec::new(),
+                    usage: None,
+                }));
+            }
             match &*request.node_id {
                 "human-review" => {
                     let asked_already = request.transcript.iter().any(|item| {
                         matches!(item, engine::AgentTranscriptItem::AssistantMessage { .. })
                     });
                     if !asked_already {
-                        return Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
-                            raw_text: "{}".to_string(),
-                            assistant_message: "Which approval is mandatory?".to_string(),
-                            reasoning: vec![],
-                        }));
+                        return Ok(needs_user_input("Which approval is mandatory?"));
                     }
                     let answer = request
                         .transcript
@@ -233,16 +247,10 @@ async fn conversational_node_can_pause_on_consecutive_explicit_input_requests() 
                 .filter(|item| matches!(item, engine::AgentTranscriptItem::AssistantMessage { .. }))
                 .count();
             match assistant_turns {
-                0 => Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
-                    raw_text: "Which Supabase products should this include?".to_string(),
-                    assistant_message: "Which Supabase products should this include?".to_string(),
-                    reasoning: Vec::new(),
-                })),
-                1 => Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
-                    raw_text: "Should I add Storage too?".to_string(),
-                    assistant_message: "Should I add Storage too?".to_string(),
-                    reasoning: Vec::new(),
-                })),
+                0 => Ok(needs_user_input(
+                    "Which Supabase products should this include?",
+                )),
+                1 => Ok(needs_user_input("Should I add Storage too?")),
                 _ => {
                     let answer = request
                         .transcript
@@ -319,18 +327,36 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
     #[async_trait]
     impl AiPort for ToolAi {
         async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            if request.node_id == "__post_run_review" {
+                return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    output: json!({"suggestions": []}),
+                    raw_text: "{}".to_string(),
+                    assistant_message: None,
+                    reasoning: Vec::new(),
+                    usage: None,
+                }));
+            }
             let call_number = {
                 let mut calls = self.calls.lock();
                 *calls += 1;
                 *calls
             };
             if call_number == 1 {
-                assert_eq!(request.available_tools.len(), 10);
+                assert_eq!(request.available_tools.len(), 12);
+                assert!(request
+                    .available_tools
+                    .iter()
+                    .any(|tool| tool.name == "ast_edit"));
+                assert!(request
+                    .available_tools
+                    .iter()
+                    .any(|tool| tool.name == "openflow_update_todo_list"));
                 return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
                     raw_text: String::new(),
                     assistant_message: Some("Need repo context".to_string()),
                     tool_calls: vec![ToolCall {
                         id: "call-1".to_string(),
+                        provider_call_id: None,
                         name: "read".to_string(),
                         arguments: json!({"path": "README.md"}),
                     }],
@@ -408,6 +434,15 @@ async fn write_tool_requires_approval_and_mutates_file_after_allow() {
     #[async_trait]
     impl AiPort for WriteAi {
         async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            if request.node_id == "__post_run_review" {
+                return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    output: json!({"suggestions": []}),
+                    raw_text: "{}".to_string(),
+                    assistant_message: None,
+                    reasoning: Vec::new(),
+                    usage: None,
+                }));
+            }
             let call_number = {
                 let mut calls = self.calls.lock();
                 *calls += 1;
@@ -419,6 +454,7 @@ async fn write_tool_requires_approval_and_mutates_file_after_allow() {
                     assistant_message: Some("Saving draft".to_string()),
                     tool_calls: vec![ToolCall {
                         id: "call-write".to_string(),
+                        provider_call_id: None,
                         name: "write".to_string(),
                         arguments: json!({"path": "draft.txt", "content": "saved ORCHID-91\n"}),
                     }],
@@ -503,6 +539,15 @@ struct CheckpointWriteToolAi {
 impl AiPort for CheckpointWriteToolAi {
     async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
         use std::sync::atomic::Ordering;
+        if request.node_id == "__post_run_review" {
+            return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                output: json!({"suggestions": []}),
+                raw_text: "{}".to_string(),
+                assistant_message: None,
+                reasoning: Vec::new(),
+                usage: None,
+            }));
+        }
         let call_number = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
         if call_number == 1 {
             return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
@@ -510,6 +555,7 @@ impl AiPort for CheckpointWriteToolAi {
                 assistant_message: Some("Saving draft".to_string()),
                 tool_calls: vec![ToolCall {
                     id: "call-write".to_string(),
+                    provider_call_id: None,
                     name: "write".to_string(),
                     arguments: json!({"path": "draft.txt", "content": "checkpoint ORCHID-91\n"}),
                 }],
@@ -672,6 +718,15 @@ async fn failed_read_tool_feeds_error_and_node_completes() {
     #[async_trait]
     impl AiPort for RecoverAi {
         async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            if request.node_id == "__post_run_review" {
+                return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    output: json!({"suggestions": []}),
+                    raw_text: "{}".to_string(),
+                    assistant_message: None,
+                    reasoning: Vec::new(),
+                    usage: None,
+                }));
+            }
             let n = {
                 let mut calls = self.calls.lock();
                 *calls += 1;
@@ -683,6 +738,7 @@ async fn failed_read_tool_feeds_error_and_node_completes() {
                     assistant_message: None,
                     tool_calls: vec![ToolCall {
                         id: "call-1".to_string(),
+                        provider_call_id: None,
                         name: "read".to_string(),
                         arguments: json!({"path": "missing-acceptance-file.txt"}),
                     }],
@@ -743,6 +799,15 @@ async fn search_missing_path_surfaces_not_found_not_empty_success() {
     #[async_trait]
     impl AiPort for SearchMissingAi {
         async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            if request.node_id == "__post_run_review" {
+                return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    output: json!({"suggestions": []}),
+                    raw_text: "{}".to_string(),
+                    assistant_message: None,
+                    reasoning: Vec::new(),
+                    usage: None,
+                }));
+            }
             let n = {
                 let mut calls = self.calls.lock();
                 *calls += 1;
@@ -754,6 +819,7 @@ async fn search_missing_path_surfaces_not_found_not_empty_success() {
                     assistant_message: None,
                     tool_calls: vec![ToolCall {
                         id: "call-search".to_string(),
+                        provider_call_id: None,
                         name: "search".to_string(),
                         arguments: json!({
                             "pattern": "ORCHID-91",

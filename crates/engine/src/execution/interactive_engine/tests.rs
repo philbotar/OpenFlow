@@ -18,8 +18,8 @@ use crate::graph::{
 };
 use crate::ports::{
     AgentError, AgentMessageTurn, AgentNeedUserInput, AgentRequest, AgentToolCallBatch,
-    AgentTurnOutcome, AgentTurnSuccess, AiPort, ToolAccessPolicy, ToolBatchEffects,
-    ToolBatchOutput, ToolPort,
+    AgentTurnOutcome, AgentTurnSuccess, AiPort, StructuredUserInput, ToolAccessPolicy,
+    ToolBatchEffects, ToolBatchOutput, ToolPort, UserInputOption, UserInputQuestion,
 };
 use crate::tools::{ApprovalMode, FileChangeRecord, ToolCall, ToolResult};
 use async_trait::async_trait;
@@ -134,6 +134,7 @@ fn mark_node_interrupted_closes_dangling_tool_calls() {
     let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
     let call = ToolCall {
         id: "call-1".to_string(),
+        provider_call_id: None,
         name: "bash".to_string(),
         arguments: json!({}),
     };
@@ -693,21 +694,25 @@ async fn plan_mode_denies_hidden_write_mcp_and_subagent_calls_before_tool_port()
             tool_calls: vec![
                 ToolCall {
                     id: "write".to_string(),
+                    provider_call_id: None,
                     name: "write".to_string(),
                     arguments: json!({ "path": "src/lib.rs", "content": "bad" }),
                 },
                 ToolCall {
                     id: "mcp".to_string(),
+                    provider_call_id: None,
                     name: "mcp/example".to_string(),
                     arguments: json!({}),
                 },
                 ToolCall {
                     id: "subagent".to_string(),
+                    provider_call_id: None,
                     name: "openflow_call_subagent".to_string(),
                     arguments: json!({}),
                 },
                 ToolCall {
                     id: "read".to_string(),
+                    provider_call_id: None,
                     name: "read".to_string(),
                     arguments: json!({ "path": "README.md" }),
                 },
@@ -766,6 +771,7 @@ fn plan_source_seal_always_requires_explicit_human_approval() {
             assistant_message: None,
             tool_calls: vec![ToolCall {
                 id: "seal".to_string(),
+                provider_call_id: None,
                 name: crate::tools::WRITE_PLAN_ARTIFACT_TOOL.to_string(),
                 arguments: json!({ "_i": "Approve and seal the implementation plan" }),
             }],
@@ -842,6 +848,7 @@ fn non_source_node_cannot_mutate_or_seal_the_run_plan() {
             tool_calls: vec![
                 ToolCall {
                     id: "draft".to_string(),
+                    provider_call_id: None,
                     name: "write".to_string(),
                     arguments: json!({
                         "path": crate::tools::PLAN_DRAFT_PATH,
@@ -850,6 +857,7 @@ fn non_source_node_cannot_mutate_or_seal_the_run_plan() {
                 },
                 ToolCall {
                     id: "seal".to_string(),
+                    provider_call_id: None,
                     name: crate::tools::WRITE_PLAN_ARTIFACT_TOOL.to_string(),
                     arguments: json!({}),
                 },
@@ -887,6 +895,7 @@ fn committed_plan_artifact_records_reference_without_plan_payload() {
     let planner_id = NodeId::from("planner");
     let call = ToolCall {
         id: "plan-call".to_string(),
+        provider_call_id: None,
         name: crate::tools::WRITE_PLAN_ARTIFACT_TOOL.to_string(),
         arguments: json!({}),
     };
@@ -1218,6 +1227,7 @@ fn tool_calls_pause_for_approval_and_resume_after_results() {
             assistant_message: None,
             tool_calls: vec![ToolCall {
                 id: "call-1".to_string(),
+                provider_call_id: None,
                 name: "read".to_string(),
                 arguments: json!({"path": "README.md"}),
             }],
@@ -1263,6 +1273,7 @@ fn apply_tool_calls_relativizes_absolute_paths_under_project_root() {
             assistant_message: None,
             tool_calls: vec![ToolCall {
                 id: "call-1".to_string(),
+                provider_call_id: None,
                 name: "edit".to_string(),
                 arguments: json!({
                     "path": format!("{root}/package.json"),
@@ -1293,6 +1304,7 @@ fn yolo_mode_skips_tool_approval() {
             assistant_message: None,
             tool_calls: vec![ToolCall {
                 id: "call-1".to_string(),
+                provider_call_id: None,
                 name: "read".to_string(),
                 arguments: json!({"path": "README.md"}),
             }],
@@ -1342,6 +1354,7 @@ fn runtime_approval_patch_applies_before_tool_decision() {
             assistant_message: None,
             tool_calls: vec![ToolCall {
                 id: "call-1".to_string(),
+                provider_call_id: None,
                 name: "bash".to_string(),
                 arguments: json!({"command": "echo hi"}),
             }],
@@ -1567,6 +1580,7 @@ impl AiPort for ToolOverlapAi {
             usage: None,
             tool_calls: vec![ToolCall {
                 id: "t1".to_string(),
+                provider_call_id: None,
                 name: "bash".to_string(),
                 arguments: json!({}),
             }],
@@ -1687,6 +1701,7 @@ fn tool_batch_effects_are_recorded_on_engine() {
                 usage: None,
                 tool_calls: vec![ToolCall {
                     id: "t1".to_string(),
+                    provider_call_id: None,
                     name: "write".to_string(),
                     arguments: json!({
                         "path": "src/x.rs",
@@ -1725,6 +1740,7 @@ fn checkpoint_stop_mid_tool_execution_retains_approved_batch() {
         node_id: NodeId::from("idea"),
         tool_calls: vec![ToolCall {
             id: "call-1".to_string(),
+            provider_call_id: None,
             name: "read".to_string(),
             arguments: json!({"path": "foo.txt"}),
         }],
@@ -1753,6 +1769,7 @@ fn needs_input(message: &str) -> AgentTurnOutcome {
     AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
         raw_text: message.to_string(),
         assistant_message: message.to_string(),
+        structured_input: None,
         reasoning: Vec::new(),
     })
 }
@@ -1909,6 +1926,7 @@ fn incomplete_write_is_rejected_with_chunked_write_nudge() {
             raw_text: String::new(),
             tool_calls: vec![ToolCall {
                 id: "w1".to_string(),
+                provider_call_id: None,
                 name: "write".to_string(),
                 arguments: json!({ "path": "docs/feature-briefs/002.md" }),
             }],
@@ -1950,6 +1968,7 @@ fn write_with_empty_content_is_allowed_through_to_pending() {
             raw_text: String::new(),
             tool_calls: vec![ToolCall {
                 id: "w1".to_string(),
+                provider_call_id: None,
                 name: "write".to_string(),
                 arguments: json!({ "path": "docs/stub.md", "content": "" }),
             }],
@@ -2049,6 +2068,7 @@ fn autonomous_auto_continue_streak_resets_on_tool_calls() {
             raw_text: String::new(),
             tool_calls: vec![ToolCall {
                 id: "c1".to_string(),
+                provider_call_id: None,
                 name: "read".to_string(),
                 arguments: json!({}),
             }],
@@ -2080,6 +2100,88 @@ fn interactive_node_still_pauses_for_real_questions() {
         Ok(needs_input("Which environment should I target?")),
     );
     assert!(engine.awaiting_nodes.contains(&node_a));
+}
+
+#[test]
+fn structured_question_pauses_and_survives_checkpoint_restore() {
+    let mut workflow = Workflow::new("wf");
+    workflow.nodes = vec![interactive_node("a")];
+    let mut engine = InteractiveEngine::new(workflow.clone(), None, None).unwrap();
+    let node_a = NodeId("a".to_string());
+    let structured_input = StructuredUserInput {
+        questions: vec![UserInputQuestion {
+            id: "target_env".to_string(),
+            header: "Target".to_string(),
+            question: "Which environment should I target?".to_string(),
+            options: vec![
+                UserInputOption {
+                    label: "Staging".to_string(),
+                    description: "Use the shared staging environment.".to_string(),
+                },
+                UserInputOption {
+                    label: "Production".to_string(),
+                    description: "Use the live production environment.".to_string(),
+                },
+            ],
+        }],
+    };
+
+    engine.test_insert_in_flight(node_a.clone());
+    engine.on_ai_complete(
+        &node_a,
+        Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
+            raw_text: "{}".to_string(),
+            assistant_message: "Choose a deployment target.".to_string(),
+            structured_input: Some(structured_input.clone()),
+            reasoning: Vec::new(),
+        })),
+    );
+
+    assert!(engine.awaiting_nodes.contains(&node_a));
+    assert_eq!(
+        engine.gather_await_inputs()[0].structured_input,
+        Some(structured_input.clone())
+    );
+
+    let checkpoint = engine.prepare_stop_checkpoint();
+    let restored = InteractiveEngine::from_checkpoint(workflow, checkpoint, None).unwrap();
+    assert_eq!(
+        restored.gather_await_inputs()[0].structured_input,
+        Some(structured_input)
+    );
+}
+
+#[test]
+fn invalid_structured_question_retries_even_when_prompt_looks_direct() {
+    let mut workflow = Workflow::new("wf");
+    workflow.nodes = vec![interactive_node("a")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let node_a = NodeId("a".to_string());
+
+    engine.test_insert_in_flight(node_a.clone());
+    engine.on_ai_complete(
+        &node_a,
+        Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
+            raw_text: "{}".to_string(),
+            assistant_message: "Which environment should I target?".to_string(),
+            structured_input: Some(StructuredUserInput {
+                questions: vec![UserInputQuestion {
+                    id: "target_env".to_string(),
+                    header: "Header longer than twelve".to_string(),
+                    question: "Which environment should I target?".to_string(),
+                    options: Vec::new(),
+                }],
+            }),
+            reasoning: Vec::new(),
+        })),
+    );
+
+    assert!(!engine.awaiting_nodes.contains(&node_a));
+    assert!(matches!(
+        engine.transcript(&node_a).last(),
+        Some(AgentTranscriptItem::UserMessage { content })
+            if content.contains("structured questions")
+    ));
 }
 
 #[test]
@@ -2179,6 +2281,7 @@ fn narrated_write_after_successful_write_nudges_edit_chunks() {
             AgentTranscriptItem::ToolCall {
                 call: ToolCall {
                     id: "w1".to_string(),
+                    provider_call_id: None,
                     name: "write".to_string(),
                     arguments: json!({
                         "path": "docs/feature-briefs/002.md",
@@ -2334,6 +2437,7 @@ fn malformed_request_input_retries_reset_on_tool_call_progress() {
             raw_text: String::new(),
             tool_calls: vec![ToolCall {
                 id: "c1".to_string(),
+                provider_call_id: None,
                 name: "read".to_string(),
                 arguments: json!({}),
             }],

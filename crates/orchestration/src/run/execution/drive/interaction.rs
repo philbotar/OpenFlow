@@ -154,6 +154,7 @@ pub(super) fn emit_interaction_pause(
                 label: input.label.clone(),
                 context: input.context.clone(),
                 is_initial: input.is_initial,
+                structured_input: input.structured_input.clone(),
             },
         );
     }

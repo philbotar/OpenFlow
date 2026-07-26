@@ -169,6 +169,7 @@ impl ToolRunner {
             BuiltinToolKind::Write
                 | BuiltinToolKind::Edit
                 | BuiltinToolKind::ApplyPatch
+                | BuiltinToolKind::AstEdit
                 | BuiltinToolKind::Bash
         ) {
             self.cache.bump_write_epoch();
@@ -475,6 +476,7 @@ mod tests {
             .execute(
                 ToolCall {
                     id: "call-1".to_string(),
+                    provider_call_id: None,
                     name: "read".to_string(),
                     arguments: serde_json::json!({"path": "note.txt:2-3"}),
                 },
@@ -500,6 +502,7 @@ mod tests {
             .execute(
                 ToolCall {
                     id: "call-trunc".to_string(),
+                    provider_call_id: None,
                     name: "read".to_string(),
                     arguments: serde_json::json!({"path": "big.txt"}),
                 },
@@ -529,6 +532,7 @@ mod tests {
             .execute(
                 ToolCall {
                     id: "call-2".to_string(),
+                    provider_call_id: None,
                     name: "search".to_string(),
                     arguments: serde_json::json!({"pattern": "beta", "paths": "note.txt"}),
                 },
@@ -548,6 +552,7 @@ mod tests {
             .execute(
                 ToolCall {
                     id: "call-write".to_string(),
+                    provider_call_id: None,
                     name: "write".to_string(),
                     arguments: serde_json::json!({"path": "new.txt", "content": "hello\n"}),
                 },
@@ -576,6 +581,7 @@ mod tests {
             .execute(
                 ToolCall {
                     id: "call-edit".to_string(),
+                    provider_call_id: None,
                     name: "edit".to_string(),
                     arguments: serde_json::json!({
                         "path": "note.txt",
@@ -605,6 +611,7 @@ mod tests {
             .execute(
                 ToolCall {
                     id: "call-escape".to_string(),
+                    provider_call_id: None,
                     name: "write".to_string(),
                     arguments: serde_json::json!({"path": "../escape.txt", "content": "nope"}),
                 },
@@ -625,6 +632,7 @@ mod tests {
             .execute(
                 ToolCall {
                     id: "call-noop".to_string(),
+                    provider_call_id: None,
                     name: "write".to_string(),
                     arguments: serde_json::json!({"path": "note.txt", "content": "alpha\n"}),
                 },
@@ -649,6 +657,7 @@ mod tests {
             .execute(
                 ToolCall {
                     id: "call-edit-escape".to_string(),
+                    provider_call_id: None,
                     name: "edit".to_string(),
                     arguments: serde_json::json!({
                         "path": "../escape.txt",
@@ -672,6 +681,7 @@ mod tests {
             .execute(
                 ToolCall {
                     id: "call-patch".to_string(),
+                    provider_call_id: None,
                     name: "apply_patch".to_string(),
                     arguments: serde_json::json!({"input": patch}),
                 },
@@ -693,6 +703,7 @@ mod tests {
     fn read_call(id: &str, path: &str) -> ToolCall {
         ToolCall {
             id: id.to_string(),
+            provider_call_id: None,
             name: "read".to_string(),
             arguments: serde_json::json!({ "path": path }),
         }
@@ -768,6 +779,7 @@ mod tests {
         let runner = runner(dir.path());
         let search = |id: &str| ToolCall {
             id: id.to_string(),
+            provider_call_id: None,
             name: "search".to_string(),
             arguments: serde_json::json!({"pattern": "alpha", "paths": "."}),
         };
@@ -784,6 +796,7 @@ mod tests {
             .execute(
                 ToolCall {
                     id: "call-write".to_string(),
+                    provider_call_id: None,
                     name: "write".to_string(),
                     arguments: serde_json::json!({"path": "other.txt", "content": "alpha too\n"}),
                 },
@@ -807,6 +820,7 @@ mod tests {
         let runner = runner(dir.path());
         let search = |id: &str| ToolCall {
             id: id.to_string(),
+            provider_call_id: None,
             name: "search".to_string(),
             arguments: serde_json::json!({"pattern": "alpha", "paths": "."}),
         };
@@ -869,6 +883,7 @@ mod tests {
             .execute(
                 ToolCall {
                     id: "plan-draft".to_string(),
+                    provider_call_id: None,
                     name: "write".to_string(),
                     arguments: serde_json::json!({
                         "path": engine::PLAN_DRAFT_PATH,
@@ -886,6 +901,7 @@ mod tests {
             .execute(
                 ToolCall {
                     id: "plan-edit".to_string(),
+                    provider_call_id: None,
                     name: "edit".to_string(),
                     arguments: serde_json::json!({
                         "path": engine::PLAN_DRAFT_PATH,
@@ -910,6 +926,7 @@ mod tests {
             .execute(
                 ToolCall {
                     id: "plan-write".to_string(),
+                    provider_call_id: None,
                     name: engine::WRITE_PLAN_ARTIFACT_TOOL.to_string(),
                     arguments: serde_json::json!({}),
                 },
@@ -959,6 +976,7 @@ mod tests {
             .execute(
                 ToolCall {
                     id: "call-partial".to_string(),
+                    provider_call_id: None,
                     name: "apply_patch".to_string(),
                     arguments: serde_json::json!({"input": patch}),
                 },
@@ -979,6 +997,7 @@ mod tests {
             .execute(
                 ToolCall {
                     id: "call-after-partial".to_string(),
+                    provider_call_id: None,
                     name: "write".to_string(),
                     arguments: serde_json::json!({"path": "after.txt", "content": "ok\n"}),
                 },
@@ -1019,6 +1038,7 @@ mod tests {
             .execute(
                 ToolCall {
                     id: "call-mcp".into(),
+                    provider_call_id: None,
                     name: "mcp/test/echo".into(),
                     arguments: serde_json::json!({}),
                 },

@@ -1,33 +1,64 @@
 import { createMemo, For, Show } from "solid-js";
 import { displayChatContent } from "../../lib/stripToolCallMarkup";
 import { useAppContext } from "../../context/AppContext";
-import type { ChatMessage } from "../../lib/types";
+import type { ChatMessage, ToolCallSummary } from "../../lib/types";
 import { isProviderThinkingMessage } from "./providerThinking";
 import { chatRoleToMessageFrom, messageLabel } from "./chatRole";
 import { Message } from "./Message";
 import { NodeCompletedBubble } from "./NodeCompletedBubble";
 import { ThinkingBubble } from "./ThinkingBubble";
+import {
+  TodoChecklist,
+  todoItemsFromArguments,
+  UPDATE_TODO_LIST_TOOL,
+} from "./TodoChecklist";
 import { ToolBubble } from "./ToolBubble";
 import { ToolStackBubble } from "./ToolStackBubble";
 import { groupToolMessages, type GroupedConversationItem } from "./groupToolMessages";
 import { resolveToolSummary, toolStackSummaryWithThinking } from "./toolBubbleState";
 
+function todoItemsForSummary(summary: ToolCallSummary | undefined) {
+  if (
+    summary?.toolName !== UPDATE_TODO_LIST_TOOL ||
+    summary.isError ||
+    summary.status === "failed" ||
+    summary.status === "blocked" ||
+    summary.status === "aborted"
+  ) {
+    return null;
+  }
+  return todoItemsFromArguments(summary.arguments);
+}
+
 function MarkerToolBubble(props: { message: ChatMessage; nodeId: string }) {
   const ctx = useAppContext();
   const summary = () =>
     resolveToolSummary(props.nodeId, props.message.toolCallId!, ctx.runState());
+  const todoItems = () => todoItemsForSummary(summary());
 
   return (
-    <ToolBubble
-      toolName={summary()?.toolName ?? "Tool"}
-      status={summary()?.status ?? "proposed"}
-      output={summary()?.lastOutput}
-      arguments={summary()?.arguments}
-      intent={summary()?.intent}
-      isError={summary()?.isError}
-      streaming={summary()?.streaming ?? false}
-      cwd={ctx.executionCwdForActiveWorkflow()}
-    />
+    <Show
+      when={todoItems()}
+      fallback={
+        <ToolBubble
+          toolName={summary()?.toolName ?? "Tool"}
+          status={summary()?.status ?? "proposed"}
+          output={summary()?.lastOutput}
+          arguments={summary()?.arguments}
+          intent={summary()?.intent}
+          isError={summary()?.isError}
+          streaming={summary()?.streaming ?? false}
+          cwd={ctx.executionCwdForActiveWorkflow()}
+        />
+      }
+    >
+      {(items) => (
+        <TodoChecklist
+          items={items()}
+          toolStatus={summary()?.status ?? "proposed"}
+        />
+      )}
+    </Show>
   );
 }
 
@@ -137,8 +168,50 @@ export function ConversationSegmentMessages(props: {
   emptyLabel?: string;
   segmentHeaderShowsNode?: boolean;
 }) {
+  const ctx = useAppContext();
+  const todoSummaries = createMemo(() => {
+    return (ctx.runState()?.toolCallsByNode[props.nodeId] ?? []).filter(
+      (summary) => summary.toolName === UPDATE_TODO_LIST_TOOL,
+    );
+  });
+  const latestTodoCallId = createMemo(() => {
+    let latest: string | null = null;
+    for (const summary of todoSummaries()) {
+      if (todoItemsForSummary(summary)) {
+        latest = summary.toolCallId;
+      }
+    }
+    return latest;
+  });
+  const visibleMessages = createMemo(() => {
+    const todoById = new Map(
+      todoSummaries().map((summary) => [summary.toolCallId, summary]),
+    );
+    const latest = latestTodoCallId();
+    return props.messages.filter((message) => {
+      if (!message.toolCallId) return true;
+      const summary = todoById.get(message.toolCallId);
+      if (!summary) return true;
+      return message.toolCallId === latest || todoItemsForSummary(summary) === null;
+    });
+  });
+  const standaloneToolCallIds = createMemo(() => {
+    const todoIds = new Set(todoSummaries().map((summary) => summary.toolCallId));
+    return new Set(
+      visibleMessages()
+        .map((message) => message.toolCallId)
+        .filter(
+          (id): id is string => typeof id === "string" && todoIds.has(id),
+        ),
+    );
+  });
   const items = createMemo((prev: GroupedConversationItem[] | undefined) =>
-    groupToolMessages(props.messages, undefined, prev ?? null),
+    groupToolMessages(
+      visibleMessages(),
+      undefined,
+      prev ?? null,
+      standaloneToolCallIds(),
+    ),
   );
 
   return (

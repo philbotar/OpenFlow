@@ -95,6 +95,7 @@ Use inline `impl AiPort` stubs (e.g. node-id-aware `ScriptedAi` in `workflow_acc
 | Deterministic workflow acceptance | `cargo nextest run -p orchestration --test workflow_acceptance --no-capture` | A whole workflow can run headlessly with scripted AI outputs, tool calls, and approval pauses |
 | Orchestration headless E2E (stack mock) | `cargo nextest run -p orchestration --test workflow_e2e --no-capture` | Full orchestration + engine runs with `MockAiStack` (`tests/support/`) - happy path, retries, missing input/approval, interrupt; no real providers |
 | Live AI smoke | `STEP_WORKFLOW_LIVE_AI=1 STEP_WORKFLOW_LIVE_API_KEY=... STEP_WORKFLOW_LIVE_MODEL=... cargo nextest run -p orchestration --test live_workflow --run-ignored ignored-only --no-capture` | A real BYOK provider can complete a small workflow and satisfy schema-level rules |
+| Manual saved-provider smoke | `./scripts/smoke-live-ai.sh` | The provider selected in saved app settings supports workflow authoring, agent authoring, a fixed two-node run, and post-run review |
 | Miri (engine + orchestration UB) | `./scripts/miri.sh` or `./scripts/verify.sh --deep miri` | UB interpreter over `engine` + `orchestration` **lib** tests; runs in `release.yml` `release-verify` on tag push (Ubuntu); not on PR CI. |
 
 ## Miri
@@ -349,6 +350,26 @@ STEP_WORKFLOW_LIVE_API_KEY="$OPENAI_API_KEY" \
 STEP_WORKFLOW_LIVE_MODEL="gpt-4o-mini" \
 cargo nextest run -p orchestration --test live_workflow --run-ignored ignored-only --no-capture
 ```
+
+To check every direct app AI surface with the provider and model already selected in OpenFlow
+Settings, run:
+
+```bash
+./scripts/smoke-live-ai.sh
+```
+
+This command is manual-only. CI and `./scripts/verify.sh` never run it. It loads the same saved
+API key or subscription OAuth credentials as the app, then reports a separate result for:
+
+1. Workflow **Create with AI** producing a valid small DAG. The generated DAG is not executed.
+2. Agent **Create with AI** producing a valid reusable agent in a temporary store.
+3. A separate fixed two-node workflow preserving `ORCHID-91` through its handoff.
+4. The automatic post-run AI review completing without an error.
+
+The smoke does not save generated workflows or agents. A subscription token refresh may update the
+saved OAuth credentials, matching normal app behavior. Output repair remains covered by deterministic
+acceptance tests because deliberately forcing malformed live model output would make this smoke
+non-deterministic.
 
 DeepInfra-compatible chat completions example:
 

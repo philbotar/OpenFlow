@@ -11,7 +11,7 @@ import {
 } from "@/lib/workflow";
 import { CallableAgentsEditor } from "../forms/CallableAgentsEditor";
 import { ToolConfigEditor } from "../forms/ToolConfigEditor";
-import { InspectorSection, SidebarIcon, Button, ButtonRow } from "@/components";
+import { InspectorSection, SidebarIcon, Button, ButtonRow, Tooltip } from "@/components";
 
 export function InspectorPanel() {
   const ctx = useAppContext();
@@ -59,24 +59,26 @@ export function InspectorPanel() {
                     />
                   </Show>
                   <div class="panel-header-actions">
-                    <button
-                      class="inspector-action-button"
-                      onClick={() =>
-                        ctx.handleStartNodeLabelEdit(node().id, node().label)
-                      }
-                      title="Rename node"
-                      aria-label={`Rename ${node().label}`}
-                    >
-                      <SidebarIcon name="edit" />
-                    </button>
-                    <button
-                      class="inspector-delete-button"
-                      onClick={ctx.handleDeleteSelectedNode}
-                      title="Delete node"
-                      aria-label={`Delete ${node().label}`}
-                    >
-                      <SidebarIcon name="trash" />
-                    </button>
+                    <Tooltip label="Rename node">
+                      <button
+                        class="inspector-action-button"
+                        onClick={() =>
+                          ctx.handleStartNodeLabelEdit(node().id, node().label)
+                        }
+                        aria-label={`Rename ${node().label}`}
+                      >
+                        <SidebarIcon name="edit" />
+                      </button>
+                    </Tooltip>
+                    <Tooltip label="Delete node">
+                      <button
+                        class="inspector-delete-button"
+                        onClick={ctx.handleDeleteSelectedNode}
+                        aria-label={`Delete ${node().label}`}
+                      >
+                        <SidebarIcon name="trash" />
+                      </button>
+                    </Tooltip>
                   </div>
                 </div>
               </div>

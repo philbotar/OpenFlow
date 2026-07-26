@@ -82,9 +82,8 @@ export function buildFlowNodes(
       onInterrupt: onInterruptNode ? (nodeId: string) => onInterruptNode(nodeId) : undefined,
       onRetry: onRetryNode ? (nodeId: string) => onRetryNode(nodeId) : undefined,
     },
-    draggable: true,
     selectable: true,
-    deletable: false,
+    deletable: true,
     width: NODE_WIDTH,
     height: NODE_HEIGHT,
   }));
@@ -109,6 +108,7 @@ export function buildFlowEdges(
     selected: selectedEdgeId === edge.id,
     reconnectable: true,
     deletable: true,
+    interactionWidth: 28,
     animated: runActive,
     markerEnd: edgeOptions.markerEnd,
     style: edgeOptions.style,

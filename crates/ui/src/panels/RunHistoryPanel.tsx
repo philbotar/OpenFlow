@@ -2,7 +2,7 @@ import { createEffect, For, Show } from "solid-js";
 import History from "lucide-solid/icons/history";
 import Play from "lucide-solid/icons/play";
 import RotateCcw from "lucide-solid/icons/rotate-ccw";
-import { PanelEmptyState } from "@/components";
+import { PanelEmptyState, Tooltip } from "@/components";
 import { useAppContext } from "../context/AppContext";
 import type { RunSummary } from "@/lib/types";
 
@@ -49,25 +49,27 @@ export function RunHistoryPanel() {
                     <div>{formatRunTime(run.updatedAtMs)}</div>
                   </div>
                   <div class="run-history-actions">
-                    <button
-                      type="button"
-                      class="dock-icon-action"
-                      title="Open replay"
-                      aria-label="Open replay"
-                      onClick={() => void ctx.handleReplayRun(run.runId)}
-                    >
-                      <Play width={15} height={15} />
-                    </button>
-                    <Show when={canResume(run)}>
+                    <Tooltip label="Open replay">
                       <button
                         type="button"
                         class="dock-icon-action"
-                        title="Resume run"
-                        aria-label="Resume run"
-                        onClick={() => void ctx.handleResumeDurableRun(run.runId)}
+                        aria-label="Open replay"
+                        onClick={() => void ctx.handleReplayRun(run.runId)}
                       >
-                        <RotateCcw width={15} height={15} />
+                        <Play width={15} height={15} />
                       </button>
+                    </Tooltip>
+                    <Show when={canResume(run)}>
+                      <Tooltip label="Resume run">
+                        <button
+                          type="button"
+                          class="dock-icon-action"
+                          aria-label="Resume run"
+                          onClick={() => void ctx.handleResumeDurableRun(run.runId)}
+                        >
+                          <RotateCcw width={15} height={15} />
+                        </button>
+                      </Tooltip>
                     </Show>
                   </div>
                 </div>

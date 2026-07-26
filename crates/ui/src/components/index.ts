@@ -15,6 +15,7 @@ export * from "./ScheduleWorkflowPickerModal";
 export * from "./SidebarIcon";
 export * from "./Spinner";
 export * from "./TextSelect";
+export * from "./Tooltip";
 export * from "./WorkflowPickerModal";
 export * from "./conversation";
 export * from "./sidebar";

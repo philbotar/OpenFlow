@@ -4,6 +4,7 @@ import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import type { Project, Workflow } from "../../lib/types";
 import { ICON_STROKE_WIDTH } from "../../lib/utils";
 import { SidebarIcon } from "../SidebarIcon";
+import { Tooltip } from "../Tooltip";
 import { SidebarListRow } from "./SidebarListRow";
 
 export type ProjectFolderRowProps = {
@@ -97,20 +98,21 @@ export function ProjectFolderRow(props: ProjectFolderRowProps) {
           </span>
         </button>
         <div class="project-folder-menu-anchor" ref={menuAnchor}>
-          <button
-            type="button"
-            class="sidebar-icon-button project-folder-action"
-            title="Add workflow"
-            aria-label={`Add workflow to ${props.project.name}`}
-            aria-haspopup="menu"
-            aria-expanded={menuOpen()}
-            onClick={(event) => {
-              event.stopPropagation();
-              setMenuOpen((open) => !open);
-            }}
-          >
-            <SidebarIcon name="plus" />
-          </button>
+          <Tooltip label="Add workflow">
+            <button
+              type="button"
+              class="sidebar-icon-button project-folder-action"
+              aria-label={`Add workflow to ${props.project.name}`}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen()}
+              onClick={(event) => {
+                event.stopPropagation();
+                setMenuOpen((open) => !open);
+              }}
+            >
+              <SidebarIcon name="plus" />
+            </button>
+          </Tooltip>
           <Show when={menuOpen()}>
             <div class="project-folder-menu" role="menu">
               <button
