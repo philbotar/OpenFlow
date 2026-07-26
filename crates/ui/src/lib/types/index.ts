@@ -284,12 +284,30 @@ export interface NodeRunOutput {
   output: unknown;
 }
 
+export type PostRunSuggestionCategory =
+  | "prompt"
+  | "tools"
+  | "workflow"
+  | "model"
+  | "coordination";
+
+export interface PostRunSuggestion {
+  id: string;
+  category: PostRunSuggestionCategory;
+  targetNodeId: NodeId | null;
+  title: string;
+  evidence: string;
+  recommendation: string;
+}
+
 export interface RunReport {
   workflow_id: WorkflowId;
   outputs: NodeRunOutput[];
   read_calls?: number;
   redundant_reads?: number;
   tokens_in?: number;
+  suggestions?: PostRunSuggestion[];
+  suggestions_error?: string | null;
 }
 
 export type FileChangeOp = "create" | "update" | "delete" | "rename";

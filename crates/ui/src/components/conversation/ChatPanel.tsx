@@ -41,6 +41,10 @@ export function ChatPanel() {
       (status) => status === "failed" || status === "interrupted",
     ),
   );
+  const reviewingRun = createMemo(() => {
+    const statuses = Object.values(ctx.runState()?.statusByNode ?? {});
+    return statuses.length > 0 && statuses.every((status) => status === "completed");
+  });
 
   // Surface approval outside the parallel-live picker — otherwise the card only
   // appears after the user picks (or the sibling finishes and folds inline).
@@ -135,7 +139,11 @@ export function ChatPanel() {
           >
             <div class="chat-live-strip chat-live-strip--pending" aria-live="polite">
               <p class="chat-live-starting">
-                {waitingToRetry() ? "Waiting to retry…" : "Starting workflow…"}
+                {waitingToRetry()
+                  ? "Waiting to retry…"
+                  : reviewingRun()
+                    ? "Reviewing run…"
+                    : "Starting workflow…"}
               </p>
             </div>
           </Show>

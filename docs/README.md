@@ -12,7 +12,10 @@ docs/
 ├── getting-started/
 │   └── README.md                      # Install, run, configure a provider, start a workflow
 ├── guides/
-│   └── first-workflow.md              # End-to-end workflow walkthrough
+│   ├── for-new-users.md               # Feature map and first-hour path
+│   ├── first-workflow.md              # End-to-end workflow walkthrough
+│   ├── provider-setup.md              # Provider onboarding, keys, OAuth, Rig wiring
+│   └── using-the-app.md               # Editor, runs, projects, schedules, integrations
 ├── concepts/
 │   ├── README.md                      # Product vocabulary and mental model
 │   ├── how-openflow-works.md          # Runtime overview for users and contributors
@@ -48,22 +51,28 @@ Architecture check rules are machine configuration, not documentation. They live
 
 ## Read Order
 
-1. [`getting-started/README.md`](getting-started/README.md) - run OpenFlow locally and configure a provider.
-2. [`guides/first-workflow.md`](guides/first-workflow.md) - build and run a small workflow.
-3. [`concepts/how-openflow-works.md`](concepts/how-openflow-works.md) - understand the engine, orchestration host, providers, tools, and UI.
-4. [`concepts/workflows-and-runs.md`](concepts/workflows-and-runs.md) - learn workflow and run vocabulary.
-5. [`reference/README.md`](reference/README.md) - commands, persistence paths, provider key rules.
-6. [`troubleshooting/README.md`](troubleshooting/README.md) - fix common local setup and run failures.
-7. [`architecture/end-to-end-runtime.md`](architecture/end-to-end-runtime.md) - code-grounded run path before changing execution or IPC.
-8. [`architecture/contract.md`](architecture/contract.md) - read before changing layer boundaries.
-9. [`contributing/development-lanes.md`](contributing/development-lanes.md) - classify code changes and choose verification.
+1. [`guides/for-new-users.md`](guides/for-new-users.md) - feature map and suggested first hour.
+2. [`getting-started/README.md`](getting-started/README.md) - run OpenFlow locally and configure a provider.
+3. [`guides/provider-setup.md`](guides/provider-setup.md) - configure a model provider and confirm readiness.
+4. [`guides/first-workflow.md`](guides/first-workflow.md) - build and run a small workflow.
+5. [`guides/using-the-app.md`](guides/using-the-app.md) - day-to-day UI: runs, dock, projects, schedule, MCP, skills.
+6. [`concepts/how-openflow-works.md`](concepts/how-openflow-works.md) - understand the engine, orchestration host, providers, tools, and UI.
+7. [`concepts/workflows-and-runs.md`](concepts/workflows-and-runs.md) - learn workflow and run vocabulary.
+8. [`reference/README.md`](reference/README.md) - commands, persistence paths, provider key rules.
+9. [`troubleshooting/README.md`](troubleshooting/README.md) - fix common local setup and run failures.
+10. [`architecture/end-to-end-runtime.md`](architecture/end-to-end-runtime.md) - code-grounded run path before changing execution or IPC.
+11. [`architecture/contract.md`](architecture/contract.md) - read before changing layer boundaries.
+12. [`contributing/development-lanes.md`](contributing/development-lanes.md) - classify code changes and choose verification.
 
 ## Doc Map
 
 | Goal | Read |
 | --- | --- |
+| New user overview and feature map | [`guides/for-new-users.md`](guides/for-new-users.md) |
 | Run the app | [`getting-started/README.md`](getting-started/README.md) |
+| Configure a provider | [`guides/provider-setup.md`](guides/provider-setup.md) |
 | Build your first workflow | [`guides/first-workflow.md`](guides/first-workflow.md) |
+| Use the desktop UI (runs, projects, schedule) | [`guides/using-the-app.md`](guides/using-the-app.md) |
 | Understand the runtime | [`concepts/how-openflow-works.md`](concepts/how-openflow-works.md), [`architecture/end-to-end-runtime.md`](architecture/end-to-end-runtime.md) |
 | Learn workflow terms | [`concepts/workflows-and-runs.md`](concepts/workflows-and-runs.md), [`glossary.md`](glossary.md) |
 | Find commands and paths | [`reference/README.md`](reference/README.md) |

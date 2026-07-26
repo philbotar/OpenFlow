@@ -2,7 +2,15 @@
 
 Use this page to run OpenFlow locally, configure a model provider, and start the first workflow.
 
-## Prerequisites
+New to the product? Start with [`../guides/for-new-users.md`](../guides/for-new-users.md) for a feature map and first-hour path.
+
+## Install (release build)
+
+Download the latest macOS build from [GitHub Releases](https://github.com/philbotar/OpenFlow/releases/latest) and open **OpenFlow**. No Rust or Node required.
+
+If macOS blocks the app, right-click **OpenFlow** → **Open**, or run `xattr -cr /path/to/OpenFlow.app` on the `.app` bundle.
+
+## Prerequisites (from source)
 
 - Rust toolchain for the workspace crates.
 - Node.js and npm for the Tauri desktop and Solid UI packages.
@@ -28,24 +36,11 @@ This builds a `.dmg` installer and opens it. Drag **OpenFlow** to **Applications
 
 ## Configure a Provider
 
-1. Open the app.
-2. Go to Settings.
-3. Choose the active provider profile.
-4. Authenticate for that provider:
-   - API-key providers: add a key or rely on the provider environment variable.
-   - ChatGPT (Codex): choose **Sign in with ChatGPT** and finish the browser or device-code flow.
-   - Bedrock: configure the AWS profile/region and test the credential chain.
-5. Save settings.
+Runs need a ready model provider. On first launch, use **Set up provider →** on the last onboarding slide, or open **Settings → Providers**.
 
-Provider key resolution uses this order:
+Follow [`../guides/provider-setup.md`](../guides/provider-setup.md) for API keys, ChatGPT (Codex) sign-in, Bedrock, verification, and how orchestration wires providers through Rig at run time.
 
-1. Transient key entered for the current run.
-2. Stored profile key in the OpenFlow settings file.
-3. Provider environment variable fallback, such as `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`.
-
-Stored keys are plaintext in the local settings file. See [`../reference/README.md#runtime-and-persistence-paths`](../reference/README.md#runtime-and-persistence-paths).
-
-ChatGPT OAuth credentials are also stored plaintext in that file. They are not returned to the UI; use **Disconnect** in the Codex provider panel to delete them. ChatGPT subscription access is distinct from OpenAI API-key billing and depends on the account/workspace having Codex entitlement.
+Key resolution and storage paths: [`../reference/README.md#provider-key-resolution`](../reference/README.md#provider-key-resolution) and [`../reference/README.md#runtime-and-persistence-paths`](../reference/README.md#runtime-and-persistence-paths).
 
 ## Create a Workflow
 
@@ -60,16 +55,20 @@ For a complete walkthrough, see [`../guides/first-workflow.md`](../guides/first-
 
 ## Run and Inspect
 
-1. Start the workflow from the editor.
-2. Provide entrypoint text when the run needs user input.
+1. Start the workflow from the editor (**Run** in the top bar).
+2. Provide entrypoint text in the chat composer when the run needs user input.
 3. Approve or deny tool calls when approval is required.
-4. Watch the run trace and conversation output.
-5. Resume a paused or durable run from run history when needed.
+4. Use the bottom dock: **Chat** for conversation, **Run trace** for the event timeline, **History** for past runs (replay or resume).
+5. After a successful run, check **Run review** suggestions in chat when present.
+
+See [`../guides/using-the-app.md`](../guides/using-the-app.md) for sidebar screens, projects, schedules, and settings sections.
 
 The deterministic acceptance tests cover the same runtime contracts without clicking through the app. See [`../contributing/testing-workflows.md`](../contributing/testing-workflows.md).
 
 ## Next
 
+- [`../guides/provider-setup.md`](../guides/provider-setup.md) - configure providers and readiness.
 - [`../guides/first-workflow.md`](../guides/first-workflow.md) - build and run a useful starter workflow.
+- [`../guides/using-the-app.md`](../guides/using-the-app.md) - editor, runs, projects, and schedules.
 - [`../concepts/how-openflow-works.md`](../concepts/how-openflow-works.md) - understand what happens during a run.
 - [`../troubleshooting/README.md`](../troubleshooting/README.md) - fix local setup and provider failures.

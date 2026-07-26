@@ -137,6 +137,8 @@ cargo nextest run -p orchestration --test workflow_acceptance --no-capture
 
 | Resource | Path |
 | --- | --- |
+| New users — feature map & first hour | [`docs/guides/for-new-users.md`](docs/guides/for-new-users.md) |
+| Install, provider, first workflow | [`docs/getting-started/README.md`](docs/getting-started/README.md) |
 | Repo map & change paths | [`AGENTS.md`](AGENTS.md) |
 | Architecture overview | [`docs/architecture/technical-overview.md`](docs/architecture/technical-overview.md) |
 | Coding patterns | [`docs/contributing/coding-patterns.md`](docs/contributing/coding-patterns.md) |

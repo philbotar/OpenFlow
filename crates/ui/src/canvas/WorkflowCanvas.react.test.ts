@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import type { EdgeChange, NodeChange } from "@xyflow/react";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { SubagentStatus, Workflow } from "../lib/types";
@@ -97,7 +97,7 @@ describe("WorkflowCanvas adapter helpers", () => {
       id: "node-1",
       position: { x: 96, y: 96 },
       selected: false,
-      deletable: false,
+      deletable: true,
       data: { label: "Plan", status: "completed" },
       width: 320,
       height: 88,
@@ -141,6 +141,7 @@ describe("WorkflowCanvas adapter helpers", () => {
         selected: true,
         reconnectable: true,
         deletable: true,
+        interactionWidth: 28,
         animated: false,
       }),
     ]);
@@ -261,7 +262,203 @@ describe("WorkflowCanvas adapter helpers", () => {
 });
 
 describe("WorkflowCanvas component", () => {
-  test("renders an add node panel button that triggers the callback", () => {
+  test("offers a contextual delete action for the selected node", () => {
+    const onDeleteNode = vi.fn();
+
+    render(
+      createElement(
+        "div",
+        { style: { width: "960px", height: "640px" } },
+        createElement(WorkflowCanvas, {
+          graph,
+          selectedNodeId: "node-1",
+          selectedEdgeId: null,
+          statusByNode,
+          subagentsByNode: null,
+          onSelectNode: vi.fn(),
+          onSelectEdge: vi.fn(),
+          onUpdateNodePosition: vi.fn(),
+          onAutoLayout: vi.fn(),
+          onCreateEdge: vi.fn(),
+          onReconnectEdge: vi.fn(),
+          onDeleteEdge: vi.fn(),
+          onDeleteNode,
+          onAddNode: vi.fn(),
+        }),
+      ),
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Delete Plan and 1 connection",
+      }),
+    );
+
+    expect(onDeleteNode).toHaveBeenCalledWith("node-1");
+  });
+
+  test("offers a contextual delete action for the selected edge", () => {
+    const onDeleteEdge = vi.fn();
+
+    render(
+      createElement(
+        "div",
+        { style: { width: "960px", height: "640px" } },
+        createElement(WorkflowCanvas, {
+          graph,
+          selectedNodeId: null,
+          selectedEdgeId: "edge-1",
+          statusByNode,
+          subagentsByNode: null,
+          onSelectNode: vi.fn(),
+          onSelectEdge: vi.fn(),
+          onUpdateNodePosition: vi.fn(),
+          onAutoLayout: vi.fn(),
+          onCreateEdge: vi.fn(),
+          onReconnectEdge: vi.fn(),
+          onDeleteEdge,
+          onDeleteNode: vi.fn(),
+          onAddNode: vi.fn(),
+        }),
+      ),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete connection" }));
+
+    expect(onDeleteEdge).toHaveBeenCalledWith("edge-1");
+  });
+
+  test("locks structural editing while a run is active", () => {
+    render(
+      createElement(
+        "div",
+        { style: { width: "960px", height: "640px" } },
+        createElement(WorkflowCanvas, {
+          graph,
+          selectedNodeId: "node-1",
+          selectedEdgeId: null,
+          statusByNode,
+          subagentsByNode: null,
+          runActive: true,
+          onSelectNode: vi.fn(),
+          onSelectEdge: vi.fn(),
+          onUpdateNodePosition: vi.fn(),
+          onAutoLayout: vi.fn(),
+          onCreateEdge: vi.fn(),
+          onReconnectEdge: vi.fn(),
+          onDeleteEdge: vi.fn(),
+          onDeleteNode: vi.fn(),
+          onAddNode: vi.fn(),
+        }),
+      ),
+    );
+
+    expect(screen.getByText("Running · Editing locked")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Add node" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Delete Plan/ })).toBeNull();
+    expect(screen.getByTestId("rf__node-node-1").classList.contains("draggable")).toBe(false);
+  });
+
+  test("deletes the selected edge with Backspace", async () => {
+    const onDeleteEdge = vi.fn();
+
+    render(
+      createElement(
+        "div",
+        { style: { width: "960px", height: "640px" } },
+        createElement(WorkflowCanvas, {
+          graph,
+          selectedNodeId: null,
+          selectedEdgeId: "edge-1",
+          statusByNode,
+          subagentsByNode: null,
+          onSelectNode: vi.fn(),
+          onSelectEdge: vi.fn(),
+          onUpdateNodePosition: vi.fn(),
+          onAutoLayout: vi.fn(),
+          onCreateEdge: vi.fn(),
+          onReconnectEdge: vi.fn(),
+          onDeleteEdge,
+          onDeleteNode: vi.fn(),
+          onAddNode: vi.fn(),
+        }),
+      ),
+    );
+
+    fireEvent.keyDown(document, { key: "Backspace", code: "Backspace" });
+
+    await vi.waitFor(() => expect(onDeleteEdge).toHaveBeenCalledWith("edge-1"));
+  });
+
+  test("deletes the selected node with Delete", async () => {
+    const onDeleteNode = vi.fn();
+    const onDeleteEdge = vi.fn();
+
+    render(
+      createElement(
+        "div",
+        { style: { width: "960px", height: "640px" } },
+        createElement(WorkflowCanvas, {
+          graph,
+          selectedNodeId: "node-1",
+          selectedEdgeId: null,
+          statusByNode,
+          subagentsByNode: null,
+          onSelectNode: vi.fn(),
+          onSelectEdge: vi.fn(),
+          onUpdateNodePosition: vi.fn(),
+          onAutoLayout: vi.fn(),
+          onCreateEdge: vi.fn(),
+          onReconnectEdge: vi.fn(),
+          onDeleteEdge,
+          onDeleteNode,
+          onAddNode: vi.fn(),
+        }),
+      ),
+    );
+
+    fireEvent.keyDown(document, { key: "Delete", code: "Delete" });
+
+    await vi.waitFor(() => expect(onDeleteNode).toHaveBeenCalledWith("node-1"));
+    expect(onDeleteEdge).not.toHaveBeenCalled();
+  });
+
+  test("ignores deletion shortcuts while a run is active", async () => {
+    const onDeleteNode = vi.fn();
+    const onDeleteEdge = vi.fn();
+
+    render(
+      createElement(
+        "div",
+        { style: { width: "960px", height: "640px" } },
+        createElement(WorkflowCanvas, {
+          graph,
+          selectedNodeId: "node-1",
+          selectedEdgeId: null,
+          statusByNode,
+          subagentsByNode: null,
+          runActive: true,
+          onSelectNode: vi.fn(),
+          onSelectEdge: vi.fn(),
+          onUpdateNodePosition: vi.fn(),
+          onAutoLayout: vi.fn(),
+          onCreateEdge: vi.fn(),
+          onReconnectEdge: vi.fn(),
+          onDeleteEdge,
+          onDeleteNode,
+          onAddNode: vi.fn(),
+        }),
+      ),
+    );
+
+    fireEvent.keyDown(document, { key: "Delete", code: "Delete" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(onDeleteNode).not.toHaveBeenCalled();
+    expect(onDeleteEdge).not.toHaveBeenCalled();
+  });
+
+  test("groups canvas actions in one workflow editing toolbar", () => {
     const onAddNode = vi.fn();
     const onAutoLayout = vi.fn();
 
@@ -282,17 +479,23 @@ describe("WorkflowCanvas component", () => {
           onCreateEdge: vi.fn(),
           onReconnectEdge: vi.fn(),
           onDeleteEdge: vi.fn(),
+          onDeleteNode: vi.fn(),
           onAddNode,
         }),
       ),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Add node" }));
+    const toolbar = screen.getByRole("toolbar", { name: "Workflow editing tools" });
+    const addNodeButton = within(toolbar).getByRole("button", { name: "Add node" });
+    const autoLayoutButton = within(toolbar).getByRole("button", { name: "Auto layout" });
 
+    expect(addNodeButton.textContent).toBe("");
+    expect(autoLayoutButton.textContent).toBe("");
+
+    fireEvent.click(addNodeButton);
     expect(onAddNode).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByRole("button", { name: "Auto layout" }));
-
+    fireEvent.click(autoLayoutButton);
     expect(onAutoLayout).toHaveBeenCalledTimes(1);
   });
 });

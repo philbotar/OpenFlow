@@ -64,7 +64,9 @@ docs/
 ├── getting-started/
 │   └── README.md
 ├── guides/
-│   └── first-workflow.md
+│   ├── first-workflow.md
+│   ├── provider-setup.md
+│   └── using-the-app.md
 ├── concepts/
 │   ├── README.md
 │   ├── how-openflow-works.md
@@ -90,7 +92,9 @@ docs/
 | --- | --- |
 | `docs/README.md` | First read; filesystem index |
 | `docs/getting-started/README.md` | Running the app and configuring a provider |
+| `docs/guides/provider-setup.md` | Provider onboarding, keys, OAuth, Rig wiring |
 | `docs/guides/first-workflow.md` | Building the first workflow |
+| `docs/guides/using-the-app.md` | Desktop UI tasks: runs, projects, schedule, MCP, skills |
 | `docs/concepts/how-openflow-works.md` | Understanding the runtime path |
 | `docs/reference/README.md` | Commands, storage paths, provider key resolution |
 | `docs/troubleshooting/README.md` | Setup, provider, run, and verification failures |

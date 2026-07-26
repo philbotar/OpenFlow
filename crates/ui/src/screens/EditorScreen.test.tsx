@@ -152,6 +152,7 @@ function makeMockContext(overrides: Partial<AppContextValue> = {}): AppContextVa
     handleCreateEdge: () => {},
     handleReconnectEdge: () => {},
     handleDeleteEdge: () => {},
+    handleDeleteNode: () => {},
     handleDeleteSelectedNode: () => {},
     handleOpenAddNodePicker: () => {},
     handleAddNode: async () => {},

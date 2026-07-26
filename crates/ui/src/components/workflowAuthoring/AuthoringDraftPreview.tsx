@@ -73,6 +73,7 @@ export function AuthoringDraftPreview(props: {
           onCreateEdge={noop}
           onReconnectEdge={noop}
           onDeleteEdge={noop}
+          onDeleteNode={noop}
           onAddNode={noop}
         />
       </div>

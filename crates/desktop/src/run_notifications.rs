@@ -166,6 +166,8 @@ mod tests {
             read_calls: 0,
             redundant_reads: 0,
             tokens_in: 0,
+            suggestions: Vec::new(),
+            suggestions_error: None,
         });
 
         let notification = notification_for_event(&event, "Launch Flow").expect("notification");

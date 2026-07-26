@@ -73,6 +73,27 @@ pub struct NodeRunOutput {
     pub output: Value,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PostRunSuggestionCategory {
+    Prompt,
+    Tools,
+    Workflow,
+    Model,
+    Coordination,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PostRunSuggestion {
+    pub id: String,
+    pub category: PostRunSuggestionCategory,
+    pub target_node_id: Option<NodeId>,
+    pub title: String,
+    pub evidence: String,
+    pub recommendation: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RunReport {
     pub workflow_id: WorkflowId,
@@ -83,4 +104,8 @@ pub struct RunReport {
     pub redundant_reads: u32,
     #[serde(default)]
     pub tokens_in: u32,
+    #[serde(default)]
+    pub suggestions: Vec<PostRunSuggestion>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suggestions_error: Option<String>,
 }

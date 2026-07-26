@@ -2,8 +2,8 @@ mod interaction;
 mod lifecycle;
 mod setup;
 
-use crate::run::persistence::RunCheckpointReason;
-use engine::{AiPort, EngineRunResult, NodeId, RunError};
+use crate::run::persistence::{PendingRunCheckpoint, RunCheckpointReason};
+use engine::{review_completed_run, AiPort, EngineRunResult, NodeId, PostRunReview, RunError};
 use std::collections::HashSet;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio_util::sync::CancellationToken;
@@ -99,12 +99,26 @@ pub(super) async fn drive_interactive_workflow<A>(
                     return;
                 }
             }
-            EngineRunResult::Completed(report) => {
-                publish_checkpoint(
-                    &mut wiring.engine,
-                    &wiring.checkpoint_sink,
-                    RunCheckpointReason::Completed,
-                );
+            EngineRunResult::Completed(mut report) => {
+                let checkpoint = wiring.engine.prepare_stop_checkpoint();
+                let review = tokio::select! {
+                    () = cancel_token.cancelled() => PostRunReview {
+                        suggestions: Vec::new(),
+                        error: Some("Post-run review was cancelled.".to_string()),
+                    },
+                    review = review_completed_run(
+                        &*wiring.review_ai,
+                        &wiring.workflow,
+                        &checkpoint,
+                        &report,
+                    ) => review,
+                };
+                report.suggestions = review.suggestions;
+                report.suggestions_error = review.error;
+                *wiring.checkpoint_sink.lock() = Some(PendingRunCheckpoint {
+                    reason: RunCheckpointReason::Completed,
+                    engine: checkpoint,
+                });
                 send_or_log(&event_tx, ExecutionEvent::Finished(report));
                 return;
             }

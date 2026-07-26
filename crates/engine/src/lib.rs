@@ -20,13 +20,14 @@ pub use conversation::{
 pub use execution::{
     advance_subagent_invoke, augment_call_subagent_tool_description, complete_submit_output,
     handle_declare_subagents, is_subagent_runtime_builtin, malformed_submit_invalid_json,
-    merge_subagent_summaries, normalize_submit_output_arguments, start_subagent_invoke,
-    subagent_runtime_builtin_denied, validate_checkpoint_against_workflow,
+    merge_subagent_summaries, normalize_submit_output_arguments, review_completed_run,
+    start_subagent_invoke, subagent_runtime_builtin_denied, validate_checkpoint_against_workflow,
     CompleteSubmitOutputParams, EngineAwaitApproval, EngineAwaitInput, EngineRetryableNode,
     EngineRunResult, FrozenChangeEvidencePacket, InteractiveEngine, InteractiveEngineCheckpoint,
-    NodeRunOutput, OutputRepairPolicy, RepairingAiPort, RunError, RunReport, RunTelemetry,
-    SubagentInvokeSession, SubagentInvokeStep, SubagentStartOutcome, CALL_SUBAGENT_TOOL,
-    DECLARE_SUBAGENTS_TOOL, OUTPUT_REPAIR_RAW_ARGUMENTS_MAX_BYTES, SUBMIT_NODE_OUTPUT_TOOL,
+    NodeRunOutput, OutputRepairPolicy, PostRunReview, PostRunSuggestion, PostRunSuggestionCategory,
+    RepairingAiPort, RunError, RunReport, RunTelemetry, SubagentInvokeSession, SubagentInvokeStep,
+    SubagentStartOutcome, CALL_SUBAGENT_TOOL, DECLARE_SUBAGENTS_TOOL,
+    OUTPUT_REPAIR_RAW_ARGUMENTS_MAX_BYTES, SUBMIT_NODE_OUTPUT_TOOL,
 };
 pub use graph::{
     apply_runtime_patch_to_agent, apply_runtime_patch_to_request,

@@ -383,6 +383,61 @@ impl<T> core::convert::From<T> for engine::execution::artifacts::NodeFailureKind
 pub fn engine::execution::artifacts::NodeFailureKind::from(T) -> T
 impl<T> typenum::type_operators::Same for engine::execution::artifacts::NodeFailureKind
 pub type engine::execution::artifacts::NodeFailureKind::Output = T
+pub enum engine::execution::artifacts::PostRunSuggestionCategory
+pub engine::execution::artifacts::PostRunSuggestionCategory::Coordination
+pub engine::execution::artifacts::PostRunSuggestionCategory::Model
+pub engine::execution::artifacts::PostRunSuggestionCategory::Prompt
+pub engine::execution::artifacts::PostRunSuggestionCategory::Tools
+pub engine::execution::artifacts::PostRunSuggestionCategory::Workflow
+impl core::clone::Clone for engine::execution::artifacts::PostRunSuggestionCategory
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::clone(&self) -> engine::execution::artifacts::PostRunSuggestionCategory
+impl core::cmp::Eq for engine::execution::artifacts::PostRunSuggestionCategory
+impl core::cmp::PartialEq for engine::execution::artifacts::PostRunSuggestionCategory
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::eq(&self, &engine::execution::artifacts::PostRunSuggestionCategory) -> bool
+impl core::fmt::Debug for engine::execution::artifacts::PostRunSuggestionCategory
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for engine::execution::artifacts::PostRunSuggestionCategory
+impl core::marker::StructuralPartialEq for engine::execution::artifacts::PostRunSuggestionCategory
+impl serde_core::ser::Serialize for engine::execution::artifacts::PostRunSuggestionCategory
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for engine::execution::artifacts::PostRunSuggestionCategory
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for engine::execution::artifacts::PostRunSuggestionCategory
+impl core::marker::Send for engine::execution::artifacts::PostRunSuggestionCategory
+impl core::marker::Sync for engine::execution::artifacts::PostRunSuggestionCategory
+impl core::marker::Unpin for engine::execution::artifacts::PostRunSuggestionCategory
+impl core::marker::UnsafeUnpin for engine::execution::artifacts::PostRunSuggestionCategory
+impl core::panic::unwind_safe::RefUnwindSafe for engine::execution::artifacts::PostRunSuggestionCategory
+impl core::panic::unwind_safe::UnwindSafe for engine::execution::artifacts::PostRunSuggestionCategory
+impl<Q, K> equivalent::Equivalent<K> for engine::execution::artifacts::PostRunSuggestionCategory where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::equivalent(&self, &K) -> bool
+impl<T, U> core::convert::Into<U> for engine::execution::artifacts::PostRunSuggestionCategory where U: core::convert::From<T>
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::execution::artifacts::PostRunSuggestionCategory where U: core::convert::Into<T>
+pub type engine::execution::artifacts::PostRunSuggestionCategory::Error = core::convert::Infallible
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::execution::artifacts::PostRunSuggestionCategory where U: core::convert::TryFrom<T>
+pub type engine::execution::artifacts::PostRunSuggestionCategory::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::execution::artifacts::PostRunSuggestionCategory where T: core::clone::Clone
+pub type engine::execution::artifacts::PostRunSuggestionCategory::Owned = T
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::clone_into(&self, &mut T)
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::to_owned(&self) -> T
+impl<T> core::any::Any for engine::execution::artifacts::PostRunSuggestionCategory where T: 'static + ?core::marker::Sized
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::execution::artifacts::PostRunSuggestionCategory where T: ?core::marker::Sized
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::execution::artifacts::PostRunSuggestionCategory where T: ?core::marker::Sized
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::execution::artifacts::PostRunSuggestionCategory where T: core::clone::Clone
+pub unsafe fn engine::execution::artifacts::PostRunSuggestionCategory::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::execution::artifacts::PostRunSuggestionCategory
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::from(T) -> T
+impl<T> outref::AsOut<T> for engine::execution::artifacts::PostRunSuggestionCategory where T: core::marker::Copy
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::as_out(&mut self) -> outref::Out<'_, T>
+impl<T> serde_core::de::DeserializeOwned for engine::execution::artifacts::PostRunSuggestionCategory where T: for<'de> serde_core::de::Deserialize<'de>
+impl<T> typenum::type_operators::Same for engine::execution::artifacts::PostRunSuggestionCategory
+pub type engine::execution::artifacts::PostRunSuggestionCategory::Output = T
 pub enum engine::execution::artifacts::RunError
 pub engine::execution::artifacts::RunError::NodeFailed
 pub engine::execution::artifacts::RunError::NodeFailed::kind: engine::execution::artifacts::NodeFailureKind
@@ -480,10 +535,65 @@ pub fn engine::execution::artifacts::NodeRunOutput::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::execution::artifacts::NodeRunOutput where T: for<'de> serde_core::de::Deserialize<'de>
 impl<T> typenum::type_operators::Same for engine::execution::artifacts::NodeRunOutput
 pub type engine::execution::artifacts::NodeRunOutput::Output = T
+pub struct engine::execution::artifacts::PostRunSuggestion
+pub engine::execution::artifacts::PostRunSuggestion::category: engine::execution::artifacts::PostRunSuggestionCategory
+pub engine::execution::artifacts::PostRunSuggestion::evidence: alloc::string::String
+pub engine::execution::artifacts::PostRunSuggestion::id: alloc::string::String
+pub engine::execution::artifacts::PostRunSuggestion::recommendation: alloc::string::String
+pub engine::execution::artifacts::PostRunSuggestion::target_node_id: core::option::Option<engine::graph::workflow::NodeId>
+pub engine::execution::artifacts::PostRunSuggestion::title: alloc::string::String
+impl core::clone::Clone for engine::execution::artifacts::PostRunSuggestion
+pub fn engine::execution::artifacts::PostRunSuggestion::clone(&self) -> engine::execution::artifacts::PostRunSuggestion
+impl core::cmp::Eq for engine::execution::artifacts::PostRunSuggestion
+impl core::cmp::PartialEq for engine::execution::artifacts::PostRunSuggestion
+pub fn engine::execution::artifacts::PostRunSuggestion::eq(&self, &engine::execution::artifacts::PostRunSuggestion) -> bool
+impl core::fmt::Debug for engine::execution::artifacts::PostRunSuggestion
+pub fn engine::execution::artifacts::PostRunSuggestion::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::execution::artifacts::PostRunSuggestion
+impl serde_core::ser::Serialize for engine::execution::artifacts::PostRunSuggestion
+pub fn engine::execution::artifacts::PostRunSuggestion::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for engine::execution::artifacts::PostRunSuggestion
+pub fn engine::execution::artifacts::PostRunSuggestion::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for engine::execution::artifacts::PostRunSuggestion
+impl core::marker::Send for engine::execution::artifacts::PostRunSuggestion
+impl core::marker::Sync for engine::execution::artifacts::PostRunSuggestion
+impl core::marker::Unpin for engine::execution::artifacts::PostRunSuggestion
+impl core::marker::UnsafeUnpin for engine::execution::artifacts::PostRunSuggestion
+impl core::panic::unwind_safe::RefUnwindSafe for engine::execution::artifacts::PostRunSuggestion
+impl core::panic::unwind_safe::UnwindSafe for engine::execution::artifacts::PostRunSuggestion
+impl<Q, K> equivalent::Equivalent<K> for engine::execution::artifacts::PostRunSuggestion where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn engine::execution::artifacts::PostRunSuggestion::equivalent(&self, &K) -> bool
+impl<T, U> core::convert::Into<U> for engine::execution::artifacts::PostRunSuggestion where U: core::convert::From<T>
+pub fn engine::execution::artifacts::PostRunSuggestion::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::execution::artifacts::PostRunSuggestion where U: core::convert::Into<T>
+pub type engine::execution::artifacts::PostRunSuggestion::Error = core::convert::Infallible
+pub fn engine::execution::artifacts::PostRunSuggestion::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::execution::artifacts::PostRunSuggestion where U: core::convert::TryFrom<T>
+pub type engine::execution::artifacts::PostRunSuggestion::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::execution::artifacts::PostRunSuggestion::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::execution::artifacts::PostRunSuggestion where T: core::clone::Clone
+pub type engine::execution::artifacts::PostRunSuggestion::Owned = T
+pub fn engine::execution::artifacts::PostRunSuggestion::clone_into(&self, &mut T)
+pub fn engine::execution::artifacts::PostRunSuggestion::to_owned(&self) -> T
+impl<T> core::any::Any for engine::execution::artifacts::PostRunSuggestion where T: 'static + ?core::marker::Sized
+pub fn engine::execution::artifacts::PostRunSuggestion::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::execution::artifacts::PostRunSuggestion where T: ?core::marker::Sized
+pub fn engine::execution::artifacts::PostRunSuggestion::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::execution::artifacts::PostRunSuggestion where T: ?core::marker::Sized
+pub fn engine::execution::artifacts::PostRunSuggestion::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::execution::artifacts::PostRunSuggestion where T: core::clone::Clone
+pub unsafe fn engine::execution::artifacts::PostRunSuggestion::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::execution::artifacts::PostRunSuggestion
+pub fn engine::execution::artifacts::PostRunSuggestion::from(T) -> T
+impl<T> serde_core::de::DeserializeOwned for engine::execution::artifacts::PostRunSuggestion where T: for<'de> serde_core::de::Deserialize<'de>
+impl<T> typenum::type_operators::Same for engine::execution::artifacts::PostRunSuggestion
+pub type engine::execution::artifacts::PostRunSuggestion::Output = T
 pub struct engine::execution::artifacts::RunReport
 pub engine::execution::artifacts::RunReport::outputs: alloc::vec::Vec<engine::execution::artifacts::NodeRunOutput>
 pub engine::execution::artifacts::RunReport::read_calls: u32
 pub engine::execution::artifacts::RunReport::redundant_reads: u32
+pub engine::execution::artifacts::RunReport::suggestions: alloc::vec::Vec<engine::execution::artifacts::PostRunSuggestion>
+pub engine::execution::artifacts::RunReport::suggestions_error: core::option::Option<alloc::string::String>
 pub engine::execution::artifacts::RunReport::tokens_in: u32
 pub engine::execution::artifacts::RunReport::workflow_id: engine::graph::workflow::WorkflowId
 impl core::clone::Clone for engine::execution::artifacts::RunReport
@@ -1487,6 +1597,61 @@ impl<T> core::convert::From<T> for engine::execution::artifacts::NodeFailureKind
 pub fn engine::execution::artifacts::NodeFailureKind::from(T) -> T
 impl<T> typenum::type_operators::Same for engine::execution::artifacts::NodeFailureKind
 pub type engine::execution::artifacts::NodeFailureKind::Output = T
+pub enum engine::execution::PostRunSuggestionCategory
+pub engine::execution::PostRunSuggestionCategory::Coordination
+pub engine::execution::PostRunSuggestionCategory::Model
+pub engine::execution::PostRunSuggestionCategory::Prompt
+pub engine::execution::PostRunSuggestionCategory::Tools
+pub engine::execution::PostRunSuggestionCategory::Workflow
+impl core::clone::Clone for engine::execution::artifacts::PostRunSuggestionCategory
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::clone(&self) -> engine::execution::artifacts::PostRunSuggestionCategory
+impl core::cmp::Eq for engine::execution::artifacts::PostRunSuggestionCategory
+impl core::cmp::PartialEq for engine::execution::artifacts::PostRunSuggestionCategory
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::eq(&self, &engine::execution::artifacts::PostRunSuggestionCategory) -> bool
+impl core::fmt::Debug for engine::execution::artifacts::PostRunSuggestionCategory
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for engine::execution::artifacts::PostRunSuggestionCategory
+impl core::marker::StructuralPartialEq for engine::execution::artifacts::PostRunSuggestionCategory
+impl serde_core::ser::Serialize for engine::execution::artifacts::PostRunSuggestionCategory
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for engine::execution::artifacts::PostRunSuggestionCategory
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for engine::execution::artifacts::PostRunSuggestionCategory
+impl core::marker::Send for engine::execution::artifacts::PostRunSuggestionCategory
+impl core::marker::Sync for engine::execution::artifacts::PostRunSuggestionCategory
+impl core::marker::Unpin for engine::execution::artifacts::PostRunSuggestionCategory
+impl core::marker::UnsafeUnpin for engine::execution::artifacts::PostRunSuggestionCategory
+impl core::panic::unwind_safe::RefUnwindSafe for engine::execution::artifacts::PostRunSuggestionCategory
+impl core::panic::unwind_safe::UnwindSafe for engine::execution::artifacts::PostRunSuggestionCategory
+impl<Q, K> equivalent::Equivalent<K> for engine::execution::artifacts::PostRunSuggestionCategory where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::equivalent(&self, &K) -> bool
+impl<T, U> core::convert::Into<U> for engine::execution::artifacts::PostRunSuggestionCategory where U: core::convert::From<T>
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::execution::artifacts::PostRunSuggestionCategory where U: core::convert::Into<T>
+pub type engine::execution::artifacts::PostRunSuggestionCategory::Error = core::convert::Infallible
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::execution::artifacts::PostRunSuggestionCategory where U: core::convert::TryFrom<T>
+pub type engine::execution::artifacts::PostRunSuggestionCategory::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::execution::artifacts::PostRunSuggestionCategory where T: core::clone::Clone
+pub type engine::execution::artifacts::PostRunSuggestionCategory::Owned = T
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::clone_into(&self, &mut T)
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::to_owned(&self) -> T
+impl<T> core::any::Any for engine::execution::artifacts::PostRunSuggestionCategory where T: 'static + ?core::marker::Sized
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::execution::artifacts::PostRunSuggestionCategory where T: ?core::marker::Sized
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::execution::artifacts::PostRunSuggestionCategory where T: ?core::marker::Sized
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::execution::artifacts::PostRunSuggestionCategory where T: core::clone::Clone
+pub unsafe fn engine::execution::artifacts::PostRunSuggestionCategory::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::execution::artifacts::PostRunSuggestionCategory
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::from(T) -> T
+impl<T> outref::AsOut<T> for engine::execution::artifacts::PostRunSuggestionCategory where T: core::marker::Copy
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::as_out(&mut self) -> outref::Out<'_, T>
+impl<T> serde_core::de::DeserializeOwned for engine::execution::artifacts::PostRunSuggestionCategory where T: for<'de> serde_core::de::Deserialize<'de>
+impl<T> typenum::type_operators::Same for engine::execution::artifacts::PostRunSuggestionCategory
+pub type engine::execution::artifacts::PostRunSuggestionCategory::Output = T
 pub enum engine::execution::RunError
 pub engine::execution::RunError::NodeFailed
 pub engine::execution::RunError::NodeFailed::kind: engine::execution::artifacts::NodeFailureKind
@@ -2244,6 +2409,103 @@ impl<T> core::convert::From<T> for engine::execution::output_repair::OutputRepai
 pub fn engine::execution::output_repair::OutputRepairPolicy::from(T) -> T
 impl<T> typenum::type_operators::Same for engine::execution::output_repair::OutputRepairPolicy
 pub type engine::execution::output_repair::OutputRepairPolicy::Output = T
+pub struct engine::execution::PostRunReview
+pub engine::execution::PostRunReview::error: core::option::Option<alloc::string::String>
+pub engine::execution::PostRunReview::suggestions: alloc::vec::Vec<engine::execution::artifacts::PostRunSuggestion>
+impl core::clone::Clone for engine::PostRunReview
+pub fn engine::PostRunReview::clone(&self) -> engine::PostRunReview
+impl core::cmp::Eq for engine::PostRunReview
+impl core::cmp::PartialEq for engine::PostRunReview
+pub fn engine::PostRunReview::eq(&self, &engine::PostRunReview) -> bool
+impl core::fmt::Debug for engine::PostRunReview
+pub fn engine::PostRunReview::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::PostRunReview
+impl core::marker::Freeze for engine::PostRunReview
+impl core::marker::Send for engine::PostRunReview
+impl core::marker::Sync for engine::PostRunReview
+impl core::marker::Unpin for engine::PostRunReview
+impl core::marker::UnsafeUnpin for engine::PostRunReview
+impl core::panic::unwind_safe::RefUnwindSafe for engine::PostRunReview
+impl core::panic::unwind_safe::UnwindSafe for engine::PostRunReview
+impl<Q, K> equivalent::Equivalent<K> for engine::PostRunReview where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn engine::PostRunReview::equivalent(&self, &K) -> bool
+impl<T, U> core::convert::Into<U> for engine::PostRunReview where U: core::convert::From<T>
+pub fn engine::PostRunReview::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::PostRunReview where U: core::convert::Into<T>
+pub type engine::PostRunReview::Error = core::convert::Infallible
+pub fn engine::PostRunReview::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::PostRunReview where U: core::convert::TryFrom<T>
+pub type engine::PostRunReview::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::PostRunReview::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::PostRunReview where T: core::clone::Clone
+pub type engine::PostRunReview::Owned = T
+pub fn engine::PostRunReview::clone_into(&self, &mut T)
+pub fn engine::PostRunReview::to_owned(&self) -> T
+impl<T> core::any::Any for engine::PostRunReview where T: 'static + ?core::marker::Sized
+pub fn engine::PostRunReview::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::PostRunReview where T: ?core::marker::Sized
+pub fn engine::PostRunReview::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::PostRunReview where T: ?core::marker::Sized
+pub fn engine::PostRunReview::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::PostRunReview where T: core::clone::Clone
+pub unsafe fn engine::PostRunReview::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::PostRunReview
+pub fn engine::PostRunReview::from(T) -> T
+impl<T> typenum::type_operators::Same for engine::PostRunReview
+pub type engine::PostRunReview::Output = T
+pub struct engine::execution::PostRunSuggestion
+pub engine::execution::PostRunSuggestion::category: engine::execution::artifacts::PostRunSuggestionCategory
+pub engine::execution::PostRunSuggestion::evidence: alloc::string::String
+pub engine::execution::PostRunSuggestion::id: alloc::string::String
+pub engine::execution::PostRunSuggestion::recommendation: alloc::string::String
+pub engine::execution::PostRunSuggestion::target_node_id: core::option::Option<engine::graph::workflow::NodeId>
+pub engine::execution::PostRunSuggestion::title: alloc::string::String
+impl core::clone::Clone for engine::execution::artifacts::PostRunSuggestion
+pub fn engine::execution::artifacts::PostRunSuggestion::clone(&self) -> engine::execution::artifacts::PostRunSuggestion
+impl core::cmp::Eq for engine::execution::artifacts::PostRunSuggestion
+impl core::cmp::PartialEq for engine::execution::artifacts::PostRunSuggestion
+pub fn engine::execution::artifacts::PostRunSuggestion::eq(&self, &engine::execution::artifacts::PostRunSuggestion) -> bool
+impl core::fmt::Debug for engine::execution::artifacts::PostRunSuggestion
+pub fn engine::execution::artifacts::PostRunSuggestion::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::execution::artifacts::PostRunSuggestion
+impl serde_core::ser::Serialize for engine::execution::artifacts::PostRunSuggestion
+pub fn engine::execution::artifacts::PostRunSuggestion::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for engine::execution::artifacts::PostRunSuggestion
+pub fn engine::execution::artifacts::PostRunSuggestion::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for engine::execution::artifacts::PostRunSuggestion
+impl core::marker::Send for engine::execution::artifacts::PostRunSuggestion
+impl core::marker::Sync for engine::execution::artifacts::PostRunSuggestion
+impl core::marker::Unpin for engine::execution::artifacts::PostRunSuggestion
+impl core::marker::UnsafeUnpin for engine::execution::artifacts::PostRunSuggestion
+impl core::panic::unwind_safe::RefUnwindSafe for engine::execution::artifacts::PostRunSuggestion
+impl core::panic::unwind_safe::UnwindSafe for engine::execution::artifacts::PostRunSuggestion
+impl<Q, K> equivalent::Equivalent<K> for engine::execution::artifacts::PostRunSuggestion where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn engine::execution::artifacts::PostRunSuggestion::equivalent(&self, &K) -> bool
+impl<T, U> core::convert::Into<U> for engine::execution::artifacts::PostRunSuggestion where U: core::convert::From<T>
+pub fn engine::execution::artifacts::PostRunSuggestion::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::execution::artifacts::PostRunSuggestion where U: core::convert::Into<T>
+pub type engine::execution::artifacts::PostRunSuggestion::Error = core::convert::Infallible
+pub fn engine::execution::artifacts::PostRunSuggestion::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::execution::artifacts::PostRunSuggestion where U: core::convert::TryFrom<T>
+pub type engine::execution::artifacts::PostRunSuggestion::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::execution::artifacts::PostRunSuggestion::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::execution::artifacts::PostRunSuggestion where T: core::clone::Clone
+pub type engine::execution::artifacts::PostRunSuggestion::Owned = T
+pub fn engine::execution::artifacts::PostRunSuggestion::clone_into(&self, &mut T)
+pub fn engine::execution::artifacts::PostRunSuggestion::to_owned(&self) -> T
+impl<T> core::any::Any for engine::execution::artifacts::PostRunSuggestion where T: 'static + ?core::marker::Sized
+pub fn engine::execution::artifacts::PostRunSuggestion::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::execution::artifacts::PostRunSuggestion where T: ?core::marker::Sized
+pub fn engine::execution::artifacts::PostRunSuggestion::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::execution::artifacts::PostRunSuggestion where T: ?core::marker::Sized
+pub fn engine::execution::artifacts::PostRunSuggestion::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::execution::artifacts::PostRunSuggestion where T: core::clone::Clone
+pub unsafe fn engine::execution::artifacts::PostRunSuggestion::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::execution::artifacts::PostRunSuggestion
+pub fn engine::execution::artifacts::PostRunSuggestion::from(T) -> T
+impl<T> serde_core::de::DeserializeOwned for engine::execution::artifacts::PostRunSuggestion where T: for<'de> serde_core::de::Deserialize<'de>
+impl<T> typenum::type_operators::Same for engine::execution::artifacts::PostRunSuggestion
+pub type engine::execution::artifacts::PostRunSuggestion::Output = T
 pub struct engine::execution::RepairingAiPort<A>
 impl<A> engine::execution::output_repair::RepairingAiPort<A>
 pub const fn engine::execution::output_repair::RepairingAiPort<A>::inner(&self) -> &A
@@ -2281,6 +2543,8 @@ pub struct engine::execution::RunReport
 pub engine::execution::RunReport::outputs: alloc::vec::Vec<engine::execution::artifacts::NodeRunOutput>
 pub engine::execution::RunReport::read_calls: u32
 pub engine::execution::RunReport::redundant_reads: u32
+pub engine::execution::RunReport::suggestions: alloc::vec::Vec<engine::execution::artifacts::PostRunSuggestion>
+pub engine::execution::RunReport::suggestions_error: core::option::Option<alloc::string::String>
 pub engine::execution::RunReport::tokens_in: u32
 pub engine::execution::RunReport::workflow_id: engine::graph::workflow::WorkflowId
 impl core::clone::Clone for engine::execution::artifacts::RunReport
@@ -2381,6 +2645,7 @@ pub fn engine::execution::is_subagent_runtime_builtin(&str) -> bool
 pub fn engine::execution::malformed_submit_invalid_json(impl core::convert::Into<alloc::string::String>, &str, impl core::convert::Into<alloc::string::String>, core::option::Option<&serde_json::value::Value>, core::option::Option<alloc::string::String>, core::option::Option<&str>, core::option::Option<engine::ports::outbound::UsageReport>) -> engine::ports::outbound::AgentError
 pub fn engine::execution::merge_subagent_summaries(&mut alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::SubagentSummary>, &[engine::SubagentSummary])
 pub fn engine::execution::normalize_submit_output_arguments(serde_json::value::Value, core::option::Option<&serde_json::value::Value>) -> serde_json::value::Value
+pub async fn engine::execution::review_completed_run<A: engine::ports::outbound::AiPort>(&A, &engine::graph::workflow::Workflow, &engine::InteractiveEngineCheckpoint, &engine::execution::artifacts::RunReport) -> engine::PostRunReview
 pub fn engine::execution::start_subagent_invoke(&engine::graph::workflow::Workflow, &engine::graph::workflow::NodeId, &engine::ToolCall, &mut alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::SubagentSummary>, &alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::graph::callable_agent::CallableAgent>, alloc::vec::Vec<engine::ToolDefinition>) -> engine::execution::subagent_runtime::SubagentStartOutcome
 pub fn engine::execution::subagent_runtime_builtin_denied(&engine::ToolCall) -> engine::ToolResult
 pub fn engine::execution::validate_checkpoint_against_workflow(&engine::graph::workflow::Workflow, &engine::InteractiveEngineCheckpoint) -> core::result::Result<(), engine::execution::interactive_engine::checkpoint::CheckpointError>
@@ -7448,6 +7713,61 @@ impl<T> outref::AsOut<T> for engine::ports::outbound::OutputRepairFailureKind wh
 pub fn engine::ports::outbound::OutputRepairFailureKind::as_out(&mut self) -> outref::Out<'_, T>
 impl<T> typenum::type_operators::Same for engine::ports::outbound::OutputRepairFailureKind
 pub type engine::ports::outbound::OutputRepairFailureKind::Output = T
+pub enum engine::PostRunSuggestionCategory
+pub engine::PostRunSuggestionCategory::Coordination
+pub engine::PostRunSuggestionCategory::Model
+pub engine::PostRunSuggestionCategory::Prompt
+pub engine::PostRunSuggestionCategory::Tools
+pub engine::PostRunSuggestionCategory::Workflow
+impl core::clone::Clone for engine::execution::artifacts::PostRunSuggestionCategory
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::clone(&self) -> engine::execution::artifacts::PostRunSuggestionCategory
+impl core::cmp::Eq for engine::execution::artifacts::PostRunSuggestionCategory
+impl core::cmp::PartialEq for engine::execution::artifacts::PostRunSuggestionCategory
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::eq(&self, &engine::execution::artifacts::PostRunSuggestionCategory) -> bool
+impl core::fmt::Debug for engine::execution::artifacts::PostRunSuggestionCategory
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for engine::execution::artifacts::PostRunSuggestionCategory
+impl core::marker::StructuralPartialEq for engine::execution::artifacts::PostRunSuggestionCategory
+impl serde_core::ser::Serialize for engine::execution::artifacts::PostRunSuggestionCategory
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for engine::execution::artifacts::PostRunSuggestionCategory
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for engine::execution::artifacts::PostRunSuggestionCategory
+impl core::marker::Send for engine::execution::artifacts::PostRunSuggestionCategory
+impl core::marker::Sync for engine::execution::artifacts::PostRunSuggestionCategory
+impl core::marker::Unpin for engine::execution::artifacts::PostRunSuggestionCategory
+impl core::marker::UnsafeUnpin for engine::execution::artifacts::PostRunSuggestionCategory
+impl core::panic::unwind_safe::RefUnwindSafe for engine::execution::artifacts::PostRunSuggestionCategory
+impl core::panic::unwind_safe::UnwindSafe for engine::execution::artifacts::PostRunSuggestionCategory
+impl<Q, K> equivalent::Equivalent<K> for engine::execution::artifacts::PostRunSuggestionCategory where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::equivalent(&self, &K) -> bool
+impl<T, U> core::convert::Into<U> for engine::execution::artifacts::PostRunSuggestionCategory where U: core::convert::From<T>
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::execution::artifacts::PostRunSuggestionCategory where U: core::convert::Into<T>
+pub type engine::execution::artifacts::PostRunSuggestionCategory::Error = core::convert::Infallible
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::execution::artifacts::PostRunSuggestionCategory where U: core::convert::TryFrom<T>
+pub type engine::execution::artifacts::PostRunSuggestionCategory::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::execution::artifacts::PostRunSuggestionCategory where T: core::clone::Clone
+pub type engine::execution::artifacts::PostRunSuggestionCategory::Owned = T
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::clone_into(&self, &mut T)
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::to_owned(&self) -> T
+impl<T> core::any::Any for engine::execution::artifacts::PostRunSuggestionCategory where T: 'static + ?core::marker::Sized
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::execution::artifacts::PostRunSuggestionCategory where T: ?core::marker::Sized
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::execution::artifacts::PostRunSuggestionCategory where T: ?core::marker::Sized
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::execution::artifacts::PostRunSuggestionCategory where T: core::clone::Clone
+pub unsafe fn engine::execution::artifacts::PostRunSuggestionCategory::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::execution::artifacts::PostRunSuggestionCategory
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::from(T) -> T
+impl<T> outref::AsOut<T> for engine::execution::artifacts::PostRunSuggestionCategory where T: core::marker::Copy
+pub fn engine::execution::artifacts::PostRunSuggestionCategory::as_out(&mut self) -> outref::Out<'_, T>
+impl<T> serde_core::de::DeserializeOwned for engine::execution::artifacts::PostRunSuggestionCategory where T: for<'de> serde_core::de::Deserialize<'de>
+impl<T> typenum::type_operators::Same for engine::execution::artifacts::PostRunSuggestionCategory
+pub type engine::execution::artifacts::PostRunSuggestionCategory::Output = T
 pub enum engine::RunError
 pub engine::RunError::NodeFailed
 pub engine::RunError::NodeFailed::kind: engine::execution::artifacts::NodeFailureKind
@@ -9779,6 +10099,103 @@ pub fn engine::graph::workflow::PlanModeConfig::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::graph::workflow::PlanModeConfig where T: for<'de> serde_core::de::Deserialize<'de>
 impl<T> typenum::type_operators::Same for engine::graph::workflow::PlanModeConfig
 pub type engine::graph::workflow::PlanModeConfig::Output = T
+pub struct engine::PostRunReview
+pub engine::PostRunReview::error: core::option::Option<alloc::string::String>
+pub engine::PostRunReview::suggestions: alloc::vec::Vec<engine::execution::artifacts::PostRunSuggestion>
+impl core::clone::Clone for engine::PostRunReview
+pub fn engine::PostRunReview::clone(&self) -> engine::PostRunReview
+impl core::cmp::Eq for engine::PostRunReview
+impl core::cmp::PartialEq for engine::PostRunReview
+pub fn engine::PostRunReview::eq(&self, &engine::PostRunReview) -> bool
+impl core::fmt::Debug for engine::PostRunReview
+pub fn engine::PostRunReview::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::PostRunReview
+impl core::marker::Freeze for engine::PostRunReview
+impl core::marker::Send for engine::PostRunReview
+impl core::marker::Sync for engine::PostRunReview
+impl core::marker::Unpin for engine::PostRunReview
+impl core::marker::UnsafeUnpin for engine::PostRunReview
+impl core::panic::unwind_safe::RefUnwindSafe for engine::PostRunReview
+impl core::panic::unwind_safe::UnwindSafe for engine::PostRunReview
+impl<Q, K> equivalent::Equivalent<K> for engine::PostRunReview where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn engine::PostRunReview::equivalent(&self, &K) -> bool
+impl<T, U> core::convert::Into<U> for engine::PostRunReview where U: core::convert::From<T>
+pub fn engine::PostRunReview::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::PostRunReview where U: core::convert::Into<T>
+pub type engine::PostRunReview::Error = core::convert::Infallible
+pub fn engine::PostRunReview::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::PostRunReview where U: core::convert::TryFrom<T>
+pub type engine::PostRunReview::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::PostRunReview::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::PostRunReview where T: core::clone::Clone
+pub type engine::PostRunReview::Owned = T
+pub fn engine::PostRunReview::clone_into(&self, &mut T)
+pub fn engine::PostRunReview::to_owned(&self) -> T
+impl<T> core::any::Any for engine::PostRunReview where T: 'static + ?core::marker::Sized
+pub fn engine::PostRunReview::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::PostRunReview where T: ?core::marker::Sized
+pub fn engine::PostRunReview::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::PostRunReview where T: ?core::marker::Sized
+pub fn engine::PostRunReview::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::PostRunReview where T: core::clone::Clone
+pub unsafe fn engine::PostRunReview::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::PostRunReview
+pub fn engine::PostRunReview::from(T) -> T
+impl<T> typenum::type_operators::Same for engine::PostRunReview
+pub type engine::PostRunReview::Output = T
+pub struct engine::PostRunSuggestion
+pub engine::PostRunSuggestion::category: engine::execution::artifacts::PostRunSuggestionCategory
+pub engine::PostRunSuggestion::evidence: alloc::string::String
+pub engine::PostRunSuggestion::id: alloc::string::String
+pub engine::PostRunSuggestion::recommendation: alloc::string::String
+pub engine::PostRunSuggestion::target_node_id: core::option::Option<engine::graph::workflow::NodeId>
+pub engine::PostRunSuggestion::title: alloc::string::String
+impl core::clone::Clone for engine::execution::artifacts::PostRunSuggestion
+pub fn engine::execution::artifacts::PostRunSuggestion::clone(&self) -> engine::execution::artifacts::PostRunSuggestion
+impl core::cmp::Eq for engine::execution::artifacts::PostRunSuggestion
+impl core::cmp::PartialEq for engine::execution::artifacts::PostRunSuggestion
+pub fn engine::execution::artifacts::PostRunSuggestion::eq(&self, &engine::execution::artifacts::PostRunSuggestion) -> bool
+impl core::fmt::Debug for engine::execution::artifacts::PostRunSuggestion
+pub fn engine::execution::artifacts::PostRunSuggestion::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::execution::artifacts::PostRunSuggestion
+impl serde_core::ser::Serialize for engine::execution::artifacts::PostRunSuggestion
+pub fn engine::execution::artifacts::PostRunSuggestion::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for engine::execution::artifacts::PostRunSuggestion
+pub fn engine::execution::artifacts::PostRunSuggestion::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for engine::execution::artifacts::PostRunSuggestion
+impl core::marker::Send for engine::execution::artifacts::PostRunSuggestion
+impl core::marker::Sync for engine::execution::artifacts::PostRunSuggestion
+impl core::marker::Unpin for engine::execution::artifacts::PostRunSuggestion
+impl core::marker::UnsafeUnpin for engine::execution::artifacts::PostRunSuggestion
+impl core::panic::unwind_safe::RefUnwindSafe for engine::execution::artifacts::PostRunSuggestion
+impl core::panic::unwind_safe::UnwindSafe for engine::execution::artifacts::PostRunSuggestion
+impl<Q, K> equivalent::Equivalent<K> for engine::execution::artifacts::PostRunSuggestion where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn engine::execution::artifacts::PostRunSuggestion::equivalent(&self, &K) -> bool
+impl<T, U> core::convert::Into<U> for engine::execution::artifacts::PostRunSuggestion where U: core::convert::From<T>
+pub fn engine::execution::artifacts::PostRunSuggestion::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::execution::artifacts::PostRunSuggestion where U: core::convert::Into<T>
+pub type engine::execution::artifacts::PostRunSuggestion::Error = core::convert::Infallible
+pub fn engine::execution::artifacts::PostRunSuggestion::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::execution::artifacts::PostRunSuggestion where U: core::convert::TryFrom<T>
+pub type engine::execution::artifacts::PostRunSuggestion::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::execution::artifacts::PostRunSuggestion::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::execution::artifacts::PostRunSuggestion where T: core::clone::Clone
+pub type engine::execution::artifacts::PostRunSuggestion::Owned = T
+pub fn engine::execution::artifacts::PostRunSuggestion::clone_into(&self, &mut T)
+pub fn engine::execution::artifacts::PostRunSuggestion::to_owned(&self) -> T
+impl<T> core::any::Any for engine::execution::artifacts::PostRunSuggestion where T: 'static + ?core::marker::Sized
+pub fn engine::execution::artifacts::PostRunSuggestion::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::execution::artifacts::PostRunSuggestion where T: ?core::marker::Sized
+pub fn engine::execution::artifacts::PostRunSuggestion::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::execution::artifacts::PostRunSuggestion where T: ?core::marker::Sized
+pub fn engine::execution::artifacts::PostRunSuggestion::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::execution::artifacts::PostRunSuggestion where T: core::clone::Clone
+pub unsafe fn engine::execution::artifacts::PostRunSuggestion::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::execution::artifacts::PostRunSuggestion
+pub fn engine::execution::artifacts::PostRunSuggestion::from(T) -> T
+impl<T> serde_core::de::DeserializeOwned for engine::execution::artifacts::PostRunSuggestion where T: for<'de> serde_core::de::Deserialize<'de>
+impl<T> typenum::type_operators::Same for engine::execution::artifacts::PostRunSuggestion
+pub type engine::execution::artifacts::PostRunSuggestion::Output = T
 pub struct engine::ReadRecord
 pub engine::ReadRecord::outline: core::option::Option<alloc::string::String>
 pub engine::ReadRecord::path: alloc::string::String
@@ -9916,6 +10333,8 @@ pub struct engine::RunReport
 pub engine::RunReport::outputs: alloc::vec::Vec<engine::execution::artifacts::NodeRunOutput>
 pub engine::RunReport::read_calls: u32
 pub engine::RunReport::redundant_reads: u32
+pub engine::RunReport::suggestions: alloc::vec::Vec<engine::execution::artifacts::PostRunSuggestion>
+pub engine::RunReport::suggestions_error: core::option::Option<alloc::string::String>
 pub engine::RunReport::tokens_in: u32
 pub engine::RunReport::workflow_id: engine::graph::workflow::WorkflowId
 impl core::clone::Clone for engine::execution::artifacts::RunReport
@@ -10784,6 +11203,7 @@ pub fn engine::merge_subagent_summaries(&mut alloc::collections::btree::map::BTr
 pub fn engine::new_runtime_config_store() -> engine::graph::runtime_config::NodeRuntimeConfigStore
 pub fn engine::normalize_submit_output_arguments(serde_json::value::Value, core::option::Option<&serde_json::value::Value>) -> serde_json::value::Value
 pub fn engine::resolve_callable_agent_snapshots(&engine::graph::workflow::Workflow, &[engine::graph::callable_agent::CallableAgent]) -> alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::graph::callable_agent::CallableAgent>
+pub async fn engine::review_completed_run<A: engine::ports::outbound::AiPort>(&A, &engine::graph::workflow::Workflow, &engine::InteractiveEngineCheckpoint, &engine::execution::artifacts::RunReport) -> engine::PostRunReview
 pub fn engine::runtime_patch_for(&engine::graph::runtime_config::NodeRuntimeConfigStore, &engine::graph::workflow::NodeId) -> core::option::Option<engine::graph::runtime_config::NodeRuntimeConfigPatch>
 pub fn engine::start_subagent_invoke(&engine::graph::workflow::Workflow, &engine::graph::workflow::NodeId, &engine::ToolCall, &mut alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::SubagentSummary>, &alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::graph::callable_agent::CallableAgent>, alloc::vec::Vec<engine::ToolDefinition>) -> engine::execution::subagent_runtime::SubagentStartOutcome
 pub fn engine::strip_tool_call_markup(&str) -> alloc::string::String

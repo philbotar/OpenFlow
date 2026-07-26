@@ -208,6 +208,7 @@ export interface AppContextValue {
   handleCreateEdge: (from: NodeId, to: NodeId) => void;
   handleReconnectEdge: (edgeId: EdgeId, from: NodeId, to: NodeId) => void;
   handleDeleteEdge: (edgeId: EdgeId) => void;
+  handleDeleteNode: (nodeId: NodeId) => void;
   handleDeleteSelectedNode: () => void;
   handleOpenAddNodePicker: () => void;
   handleAddNode: (agentId: string | null) => Promise<void>;

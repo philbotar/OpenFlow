@@ -55,12 +55,23 @@ export function createToastApi(
     appendLocalDebugLog("info", message, context);
     toast(toastMessageForDebugMode(message, debugOutputEnabled()), { id: STATUS_TOAST_ID });
   };
+  const showUndoToast = (message: string, onUndo: () => void) => {
+    toast(message, {
+      id: STATUS_TOAST_ID,
+      duration: 8_000,
+      action: {
+        label: "Undo",
+        onClick: () => onUndo(),
+      },
+    });
+  };
 
   return {
     clearStatusToast,
     showErrorToast,
     showSuccessToast,
     showInfoToast,
+    showUndoToast,
   };
 }
 

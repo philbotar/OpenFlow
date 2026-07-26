@@ -156,12 +156,8 @@ pub fn validate_checkpoint_against_workflow(
 }
 
 impl InteractiveEngine {
-    /// Normalize engine state for stop and produce a resumable checkpoint.
-    pub fn prepare_stop_checkpoint(&mut self) -> InteractiveEngineCheckpoint {
-        self.interrupted_nodes
-            .extend(std::mem::take(&mut self.in_flight_ai));
-        self.retry_after_by_node.clear();
-
+    #[must_use]
+    fn checkpoint(&self) -> InteractiveEngineCheckpoint {
         InteractiveEngineCheckpoint {
             workflow_id: self.workflow.id.clone(),
             layer_idx: self.layer_idx,
@@ -188,6 +184,15 @@ impl InteractiveEngine {
             interrupted_nodes: self.interrupted_nodes.clone(),
             failed_nodes: self.failed_nodes.clone(),
         }
+    }
+
+    /// Normalize engine state for stop and produce a resumable checkpoint.
+    pub fn prepare_stop_checkpoint(&mut self) -> InteractiveEngineCheckpoint {
+        self.interrupted_nodes
+            .extend(std::mem::take(&mut self.in_flight_ai));
+        self.retry_after_by_node.clear();
+
+        self.checkpoint()
     }
 
     /// Restore an engine from a checkpoint for the given workflow.

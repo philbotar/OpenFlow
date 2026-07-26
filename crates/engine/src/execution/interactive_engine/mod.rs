@@ -490,6 +490,8 @@ impl InteractiveEngine {
                 read_calls: self.read_calls,
                 redundant_reads: self.redundant_reads,
                 tokens_in: self.tokens_in,
+                suggestions: Vec::new(),
+                suggestions_error: None,
             });
         }
         None

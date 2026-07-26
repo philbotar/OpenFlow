@@ -127,17 +127,33 @@ vi.mock("../canvas/WorkflowCanvasHost", () => ({
   default: (props: {
     onAddNode: () => void;
     onSelectNode?: (nodeId: string) => void;
-    graph?: { nodes: { id: string }[] } | null;
+    onDeleteNode?: (nodeId: string) => void;
+    onDeleteEdge?: (edgeId: string) => void;
+    graph?: { nodes: { id: string }[]; edges: { id: string }[] } | null;
   }) => (
     <>
       <button aria-label="Canvas add node" onClick={() => props.onAddNode()}>
         Canvas add node
       </button>
       {props.graph?.nodes.map((node) => (
+        <>
+          <button
+            type="button"
+            aria-label={`Select node ${node.id}`}
+            onClick={() => props.onSelectNode?.(node.id)}
+          />
+          <button
+            type="button"
+            aria-label={`Canvas delete node ${node.id}`}
+            onClick={() => props.onDeleteNode?.(node.id)}
+          />
+        </>
+      ))}
+      {props.graph?.edges.map((edge) => (
         <button
           type="button"
-          aria-label={`Select node ${node.id}`}
-          onClick={() => props.onSelectNode?.(node.id)}
+          aria-label={`Canvas delete edge ${edge.id}`}
+          onClick={() => props.onDeleteEdge?.(edge.id)}
         />
       ))}
     </>
@@ -1489,6 +1505,182 @@ describe("App agent dashboard", () => {
       expect(savedWorkflows?.[0]?.nodes[0]?.agent.tools).toEqual({
         approvalMode: "write",
       });
+    } finally {
+      dispose();
+    }
+  });
+});
+
+describe("App workflow structural editing", () => {
+  afterEach(() => {
+    document.body.innerHTML = "";
+    vi.clearAllMocks();
+    window.localStorage.clear();
+  });
+
+  beforeEach(() => {
+    installDefaultApiMocks();
+  });
+
+  test("deleting a node removes its connections and persists immediately", async () => {
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    workflow.nodes.push({
+      ...makeNodeFromAgent(1, 480, 140, null),
+      id: "workflow-1-node-2",
+      label: "Review",
+    });
+    workflow.edges.push({
+      id: "edge-1",
+      from: "workflow-1-node-1",
+      to: "workflow-1-node-2",
+    });
+    const { container, dispose } = await mountApp(makeBootstrapPayload([workflow]));
+
+    try {
+      const deleteButton = await waitForElement(
+        () =>
+          container.querySelector(
+            'button[aria-label="Canvas delete node workflow-1-node-1"]',
+          ) as HTMLButtonElement | null,
+        "canvas node delete button",
+      );
+      deleteButton.click();
+      await flush();
+
+      await vi.waitFor(() => expect(apiMocks.saveWorkflow).toHaveBeenCalledTimes(1));
+      expect(apiMocks.saveWorkflow).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: "workflow-1",
+          nodes: [expect.objectContaining({ id: "workflow-1-node-2" })],
+          edges: [],
+        }),
+      );
+    } finally {
+      dispose();
+    }
+  });
+
+  test("undo restores a deleted node and its connections", async () => {
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    workflow.nodes.push({
+      ...makeNodeFromAgent(1, 480, 140, null),
+      id: "workflow-1-node-2",
+      label: "Review",
+    });
+    workflow.edges.push({
+      id: "edge-1",
+      from: "workflow-1-node-1",
+      to: "workflow-1-node-2",
+    });
+    const { container, dispose } = await mountApp(makeBootstrapPayload([workflow]));
+
+    try {
+      const deleteButton = await waitForElement(
+        () =>
+          container.querySelector(
+            'button[aria-label="Canvas delete node workflow-1-node-1"]',
+          ) as HTMLButtonElement | null,
+        "canvas node delete button",
+      );
+      deleteButton.click();
+      await vi.waitFor(() => expect(apiMocks.saveWorkflow).toHaveBeenCalledTimes(1));
+
+      const undoButton = await waitForElement(
+        () =>
+          Array.from(document.body.querySelectorAll("button")).find(
+            (button) => button.textContent?.trim() === "Undo",
+          ) as HTMLButtonElement | null,
+        "delete undo button",
+      );
+      undoButton.click();
+
+      await vi.waitFor(() => expect(apiMocks.saveWorkflow).toHaveBeenCalledTimes(2));
+      const restored = apiMocks.saveWorkflow.mock.calls[1]?.[0] as Workflow;
+      expect(restored.nodes.map((node) => node.id)).toEqual([
+        "workflow-1-node-1",
+        "workflow-1-node-2",
+      ]);
+      expect(restored.edges).toEqual([
+        {
+          id: "edge-1",
+          from: "workflow-1-node-1",
+          to: "workflow-1-node-2",
+        },
+      ]);
+    } finally {
+      dispose();
+    }
+  });
+
+  test("deleting an edge persists immediately and can be undone", async () => {
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    workflow.nodes.push({
+      ...makeNodeFromAgent(1, 480, 140, null),
+      id: "workflow-1-node-2",
+      label: "Review",
+    });
+    workflow.edges.push({
+      id: "edge-1",
+      from: "workflow-1-node-1",
+      to: "workflow-1-node-2",
+    });
+    const { container, dispose } = await mountApp(makeBootstrapPayload([workflow]));
+
+    try {
+      const deleteButton = await waitForElement(
+        () =>
+          container.querySelector(
+            'button[aria-label="Canvas delete edge edge-1"]',
+          ) as HTMLButtonElement | null,
+        "canvas edge delete button",
+      );
+      deleteButton.click();
+      await vi.waitFor(() => expect(apiMocks.saveWorkflow).toHaveBeenCalledTimes(1));
+      expect((apiMocks.saveWorkflow.mock.calls[0]?.[0] as Workflow).edges).toEqual([]);
+
+      const undoButton = await waitForElement(
+        () =>
+          Array.from(document.body.querySelectorAll("button")).find(
+            (button) => button.textContent?.trim() === "Undo",
+          ) as HTMLButtonElement | null,
+        "edge delete undo button",
+      );
+      undoButton.click();
+
+      await vi.waitFor(() => expect(apiMocks.saveWorkflow).toHaveBeenCalledTimes(2));
+      expect((apiMocks.saveWorkflow.mock.calls[1]?.[0] as Workflow).edges).toEqual([
+        {
+          id: "edge-1",
+          from: "workflow-1-node-1",
+          to: "workflow-1-node-2",
+        },
+      ]);
+    } finally {
+      dispose();
+    }
+  });
+
+  test("structural edits are blocked while a run is active", async () => {
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    const payload = makeBootstrapPayload([workflow]);
+    payload.runState = makeAwaitingRunState(workflow);
+    const { container, dispose } = await mountApp(payload);
+
+    try {
+      const deleteButton = await waitForElement(
+        () =>
+          container.querySelector(
+            'button[aria-label="Canvas delete node workflow-1-node-1"]',
+          ) as HTMLButtonElement | null,
+        "canvas node delete button",
+      );
+      deleteButton.click();
+      await flush();
+
+      expect(apiMocks.saveWorkflow).not.toHaveBeenCalled();
+      expect(
+        container.querySelector('button[aria-label="Select node workflow-1-node-1"]'),
+      ).not.toBeNull();
     } finally {
       dispose();
     }

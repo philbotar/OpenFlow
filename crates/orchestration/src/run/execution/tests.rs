@@ -588,6 +588,15 @@ async fn headless_run_auto_approves_read_tool_and_reenters_model_loop() {
             &self,
             request: AgentRequest,
         ) -> Result<AgentTurnOutcome, engine::AgentError> {
+            if request.node_id == "__post_run_review" {
+                return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    output: json!({"suggestions": []}),
+                    raw_text: "{}".to_string(),
+                    assistant_message: None,
+                    reasoning: Vec::new(),
+                    usage: None,
+                }));
+            }
             let mut calls = self.calls.lock();
             *calls += 1;
             if *calls == 1 {
@@ -652,6 +661,15 @@ async fn headless_run_survives_permanent_tool_failure_and_completes() {
             &self,
             request: AgentRequest,
         ) -> Result<AgentTurnOutcome, engine::AgentError> {
+            if request.node_id == "__post_run_review" {
+                return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    output: json!({"suggestions": []}),
+                    raw_text: "{}".to_string(),
+                    assistant_message: None,
+                    reasoning: Vec::new(),
+                    usage: None,
+                }));
+            }
             let mut calls = self.calls.lock();
             *calls += 1;
             if *calls == 1 {
@@ -1690,6 +1708,73 @@ async fn stale_input_is_ignored_and_run_continues() {
 
 #[cfg_attr(miri, ignore)]
 #[tokio::test]
+async fn completed_run_includes_post_run_suggestions() {
+    #[derive(Clone)]
+    struct ReviewingAi {
+        requests: Arc<Mutex<Vec<AgentRequest>>>,
+    }
+
+    #[async_trait]
+    impl AiPort for ReviewingAi {
+        async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            self.requests.lock().push(request.clone());
+            let output = if request.node_id == "__post_run_review" {
+                json!({
+                    "suggestions": [{
+                        "category": "prompt",
+                        "targetNodeId": "first",
+                        "title": "Require verification",
+                        "evidence": "First returned an output without test evidence.",
+                        "recommendation": "Add a focused verification requirement."
+                    }]
+                })
+            } else {
+                json!({"summary": "done"})
+            };
+            Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                output,
+                raw_text: "{}".to_string(),
+                assistant_message: None,
+                reasoning: Vec::new(),
+                usage: None,
+            }))
+        }
+    }
+
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let ai = ReviewingAi {
+        requests: Arc::clone(&requests),
+    };
+    let temp = TempDir::new().expect("tempdir");
+    let (params, _) = interactive_run_params_with_sink(workflow(), temp.path().to_path_buf(), ai);
+    let (handle, mut event_rx, _action_tx, _cancel, _) =
+        spawn_interactive_workflow_run(&tokio::runtime::Handle::current(), params);
+
+    let mut report = None;
+    while let Ok(Some(event)) = timeout(Duration::from_secs(5), event_rx.recv()).await {
+        if let ExecutionEvent::Finished(finished) = event {
+            report = Some(finished);
+            break;
+        }
+    }
+    handle.await.expect("drive task");
+
+    let report = report.expect("finished report");
+    assert!(report.suggestions_error.is_none());
+    assert_eq!(report.suggestions.len(), 1);
+    assert_eq!(
+        report.suggestions[0].target_node_id,
+        Some(NodeId::from("first"))
+    );
+    assert_eq!(requests.lock().len(), 2);
+    assert_eq!(
+        requests.lock()[1].node_id,
+        NodeId::from("__post_run_review")
+    );
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
 async fn stop_mid_run_then_continue_completes_node() {
     #[derive(Clone)]
     struct SlowCompleteAi;
@@ -2140,12 +2225,13 @@ async fn headless_repairs_malformed_submit_emits_trace_without_ai_invoke_failed(
     }
 
     let requests = captured.lock().expect("lock");
-    assert_eq!(requests.len(), 2);
+    assert_eq!(requests.len(), 3);
     assert!(requests[1].node_id.ends_with("__output_repair"));
     assert!(requests[1].transcript.is_empty());
     assert!(requests[1].available_tools.is_empty());
     assert_eq!(requests[1].model, "overseer-m");
     assert!(!format!("{:?}", requests[1].input).contains("prior transcript"));
+    assert_eq!(requests[2].node_id, NodeId::from("__post_run_review"));
 }
 
 #[cfg_attr(miri, ignore)]

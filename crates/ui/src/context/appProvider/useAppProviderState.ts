@@ -80,6 +80,7 @@ export function useAppProviderState(): AppContextValue {
     isCompactViewport: () => isCompactViewportAccessor(),
     showErrorToast: toastApi.showErrorToast,
     showSuccessToast: toastApi.showSuccessToast,
+    showUndoToast: toastApi.showUndoToast,
     clearStatusToast: toastApi.clearStatusToast,
   });
   applySchemaEditorRef = workflowEditor.applySchemaEditor;
@@ -595,6 +596,7 @@ export function useAppProviderState(): AppContextValue {
     handleCreateEdge: workflowEditor.handleCreateEdge,
     handleReconnectEdge: workflowEditor.handleReconnectEdge,
     handleDeleteEdge: workflowEditor.handleDeleteEdge,
+    handleDeleteNode: workflowEditor.handleDeleteNode,
     handleDeleteSelectedNode: workflowEditor.handleDeleteSelectedNode,
     handleOpenAddNodePicker: workflowEditor.handleOpenAddNodePicker,
     handleAddNode: workflowEditor.handleAddNode,

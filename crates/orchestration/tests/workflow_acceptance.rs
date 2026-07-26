@@ -130,6 +130,15 @@ async fn manual_node_pauses_accepts_input_and_feeds_downstream_node() {
     impl AiPort for ManualAi {
         async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
             self.requests.lock().push(request.clone());
+            if request.node_id == "__post_run_review" {
+                return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    output: json!({"suggestions": []}),
+                    raw_text: "{}".to_string(),
+                    assistant_message: None,
+                    reasoning: Vec::new(),
+                    usage: None,
+                }));
+            }
             match &*request.node_id {
                 "human-review" => {
                     let asked_already = request.transcript.iter().any(|item| {
@@ -319,6 +328,15 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
     #[async_trait]
     impl AiPort for ToolAi {
         async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            if request.node_id == "__post_run_review" {
+                return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    output: json!({"suggestions": []}),
+                    raw_text: "{}".to_string(),
+                    assistant_message: None,
+                    reasoning: Vec::new(),
+                    usage: None,
+                }));
+            }
             let call_number = {
                 let mut calls = self.calls.lock();
                 *calls += 1;
@@ -408,6 +426,15 @@ async fn write_tool_requires_approval_and_mutates_file_after_allow() {
     #[async_trait]
     impl AiPort for WriteAi {
         async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            if request.node_id == "__post_run_review" {
+                return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    output: json!({"suggestions": []}),
+                    raw_text: "{}".to_string(),
+                    assistant_message: None,
+                    reasoning: Vec::new(),
+                    usage: None,
+                }));
+            }
             let call_number = {
                 let mut calls = self.calls.lock();
                 *calls += 1;
@@ -503,6 +530,15 @@ struct CheckpointWriteToolAi {
 impl AiPort for CheckpointWriteToolAi {
     async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
         use std::sync::atomic::Ordering;
+        if request.node_id == "__post_run_review" {
+            return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                output: json!({"suggestions": []}),
+                raw_text: "{}".to_string(),
+                assistant_message: None,
+                reasoning: Vec::new(),
+                usage: None,
+            }));
+        }
         let call_number = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
         if call_number == 1 {
             return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
@@ -672,6 +708,15 @@ async fn failed_read_tool_feeds_error_and_node_completes() {
     #[async_trait]
     impl AiPort for RecoverAi {
         async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            if request.node_id == "__post_run_review" {
+                return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    output: json!({"suggestions": []}),
+                    raw_text: "{}".to_string(),
+                    assistant_message: None,
+                    reasoning: Vec::new(),
+                    usage: None,
+                }));
+            }
             let n = {
                 let mut calls = self.calls.lock();
                 *calls += 1;
@@ -743,6 +788,15 @@ async fn search_missing_path_surfaces_not_found_not_empty_success() {
     #[async_trait]
     impl AiPort for SearchMissingAi {
         async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            if request.node_id == "__post_run_review" {
+                return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    output: json!({"suggestions": []}),
+                    raw_text: "{}".to_string(),
+                    assistant_message: None,
+                    reasoning: Vec::new(),
+                    usage: None,
+                }));
+            }
             let n = {
                 let mut calls = self.calls.lock();
                 *calls += 1;

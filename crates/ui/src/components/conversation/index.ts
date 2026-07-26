@@ -1,4 +1,5 @@
 export { ChatPanel } from "./ChatPanel";
+export { PostRunSuggestions } from "./PostRunSuggestions";
 export { ComposerInput } from "./ComposerInput";
 export { Conversation, ConversationContent, ConversationScrollButton } from "./Conversation";
 export type { ConversationApi } from "./Conversation";

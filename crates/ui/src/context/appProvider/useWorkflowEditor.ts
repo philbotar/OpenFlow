@@ -17,6 +17,7 @@ import type {
 } from "../../lib/types";
 import {
   dagreLayoutWorkflowLeftToRight,
+  cloneWorkflow,
   nextNodePlacement,
   nodeOutput,
   projectWorkflowCanvasGraph,
@@ -47,6 +48,7 @@ interface UseWorkflowEditorParams {
   isCompactViewport: Accessor<boolean>;
   showErrorToast: ToastHandler;
   showSuccessToast: ToastHandler;
+  showUndoToast: (message: string, onUndo: () => void) => void;
   clearStatusToast: () => void;
 }
 
@@ -74,6 +76,20 @@ export function useWorkflowEditor(params: UseWorkflowEditorParams) {
   const [editingNodeId, setEditingNodeId] = createSignal<NodeId | null>(null);
   const [nodeLabelDraft, setNodeLabelDraft] = createSignal("");
   const [addNodePickerOpen, setAddNodePickerOpen] = createSignal(false);
+  const structuralEditingLocked = () => Boolean(params.runState()?.active);
+  let structuralSaveQueue: Promise<void> = Promise.resolve();
+
+  const persistStructuralWorkflow = (workflow: Workflow) => {
+    structuralSaveQueue = structuralSaveQueue.then(async () => {
+      try {
+        await desktop.saveWorkflow(workflow);
+      } catch (error) {
+        params.showErrorToast(
+          `Workflow changed locally but could not be saved: ${normalizeError(error)}`,
+        );
+      }
+    });
+  };
 
   const canvasGraph = createMemo<WorkflowCanvasGraph | null>(
     (previous) => projectWorkflowCanvasGraph(params.activeWorkflow(), previous),
@@ -208,27 +224,33 @@ export function useWorkflowEditor(params: UseWorkflowEditorParams) {
   };
 
   const handleCanvasNodePosition = (nodeId: NodeId, x: number, y: number) => {
-    workflowMutations.updateActiveWorkflow((draft) => {
+    if (structuralEditingLocked()) return;
+    const next = workflowMutations.updateActiveWorkflow((draft) => {
       const node = draft.nodes.find((item) => item.id === nodeId);
       if (node) {
         node.position.x = x;
         node.position.y = y;
       }
     });
+    if (next) {
+      persistStructuralWorkflow(next);
+    }
   };
 
   const handleAutoLayoutWorkflow = () => {
+    if (structuralEditingLocked()) return;
     const workflow = params.activeWorkflow();
     if (!workflow) {
       return;
     }
     const next = dagreLayoutWorkflowLeftToRight(workflow);
     params.setWorkflows(replaceWorkflow(params.workflows(), next));
+    persistStructuralWorkflow(next);
     params.showSuccessToast("Auto-laid out workflow");
   };
 
   const handleOpenAddNodePicker = () => {
-    if (!params.activeWorkflow()) return;
+    if (structuralEditingLocked() || !params.activeWorkflow()) return;
     setSelectedEdgeId(null);
     setAddNodePickerOpen(true);
   };
@@ -251,8 +273,9 @@ export function useWorkflowEditor(params: UseWorkflowEditorParams) {
     }
   };
 
-  const persistAllChanges = async (successText = "Saved") =>
-    persistAll({
+  const persistAllChanges = async (successText = "Saved") => {
+    await structuralSaveQueue;
+    return persistAll({
       applySchemaEditor,
       workflows: params.workflows,
       settings: params.settings,
@@ -260,8 +283,10 @@ export function useWorkflowEditor(params: UseWorkflowEditorParams) {
       showErrorToast: params.showErrorToast,
       successText,
     });
+  };
 
   const handleAddNode = async (agentId: string | null) => {
+    if (structuralEditingLocked()) return;
     const workflow = params.activeWorkflow();
     if (!workflow) return;
     const placement = nextNodePlacement(workflow);
@@ -281,6 +306,7 @@ export function useWorkflowEditor(params: UseWorkflowEditorParams) {
         nextAgent = { ...nextAgent, model: profile.default_model };
       }
       const nextNode = { ...node, agent: nextAgent };
+      if (structuralEditingLocked()) return;
       const nextWorkflow = workflowMutations.updateActiveWorkflow((draft) => {
         draft.nodes.push(nextNode);
       });
@@ -297,6 +323,7 @@ export function useWorkflowEditor(params: UseWorkflowEditorParams) {
         setSelectedNodeId(workflow.nodes[0]?.id ?? null);
       });
       if (valid) {
+        persistStructuralWorkflow(nextWorkflow);
         params.showSuccessToast(agentId ? "Added saved agent to workflow" : "Added node");
       }
     } catch (error) {
@@ -304,31 +331,111 @@ export function useWorkflowEditor(params: UseWorkflowEditorParams) {
     }
   };
 
-  const handleDeleteSelectedNode = () => {
+  const handleDeleteNode = (nodeId: NodeId) => {
+    if (structuralEditingLocked()) return;
     const workflow = params.activeWorkflow();
-    const nodeId = selectedNodeId();
-    if (!workflow || !nodeId) return;
+    const deletedNode = workflow?.nodes.find((node) => node.id === nodeId);
+    if (!workflow || !deletedNode) return;
+    const deletedNodeIndex = workflow.nodes.findIndex((node) => node.id === nodeId);
+    const deletedEdges = workflow.edges
+      .map((edge, index) => ({ edge, index }))
+      .filter(({ edge }) => edge.from === nodeId || edge.to === nodeId);
     const next = removeSelectedNode(workflow, nodeId);
     params.setWorkflows(replaceWorkflow(params.workflows(), next));
-    const nextSelected = next.nodes[0]?.id ?? null;
-    setSelectedNodeId(nextSelected);
-    if (!nextSelected) {
-      setInspectorOpen(false);
+    if (selectedNodeId() === nodeId) {
+      const nextSelected = next.nodes[0]?.id ?? null;
+      setSelectedNodeId(nextSelected);
+      if (!nextSelected) {
+        setInspectorOpen(false);
+      }
     }
     setSelectedEdgeId(null);
     setEditingNodeId(null);
     setNodeLabelDraft("");
+    persistStructuralWorkflow(next);
+    const connectionText =
+      deletedEdges.length === 0
+        ? ""
+        : ` and ${deletedEdges.length} connection${deletedEdges.length === 1 ? "" : "s"}`;
+    params.showUndoToast(`Deleted ${deletedNode.label}${connectionText}`, () => {
+      if (structuralEditingLocked()) return;
+      const current = params.workflows().find((item) => item.id === workflow.id);
+      if (!current || current.nodes.some((node) => node.id === deletedNode.id)) {
+        return;
+      }
+      const restored = cloneWorkflow(current);
+      restored.nodes.splice(
+        Math.min(deletedNodeIndex, restored.nodes.length),
+        0,
+        deletedNode,
+      );
+      for (const { edge, index } of deletedEdges) {
+        const endpointsExist =
+          restored.nodes.some((node) => node.id === edge.from) &&
+          restored.nodes.some((node) => node.id === edge.to);
+        if (endpointsExist && !restored.edges.some((item) => item.id === edge.id)) {
+          restored.edges.splice(Math.min(index, restored.edges.length), 0, edge);
+        }
+      }
+      params.setWorkflows(replaceWorkflow(params.workflows(), restored));
+      if (params.activeWorkflow()?.id === workflow.id) {
+        setSelectedNodeId(deletedNode.id);
+        setSelectedEdgeId(null);
+      }
+      persistStructuralWorkflow(restored);
+    });
+  };
+
+  const handleDeleteSelectedNode = () => {
+    const nodeId = selectedNodeId();
+    if (nodeId) {
+      handleDeleteNode(nodeId);
+    }
   };
 
   const handleDeleteEdge = (edgeId: EdgeId) => {
-    workflowMutations.updateActiveWorkflow((draft) => {
+    if (structuralEditingLocked()) return;
+    const workflow = params.activeWorkflow();
+    const deletedEdge = workflow?.edges.find((edge) => edge.id === edgeId);
+    if (!workflow || !deletedEdge) {
+      return;
+    }
+    const deletedEdgeIndex = workflow.edges.findIndex((edge) => edge.id === edgeId);
+    const next = workflowMutations.updateActiveWorkflow((draft) => {
       draft.edges = draft.edges.filter((edge) => edge.id !== edgeId);
     });
     if (selectedEdgeId() === edgeId) setSelectedEdgeId(null);
+    if (next) {
+      persistStructuralWorkflow(next);
+    }
+    params.showUndoToast("Deleted connection", () => {
+      if (structuralEditingLocked()) return;
+      const current = params.workflows().find((item) => item.id === workflow.id);
+      if (
+        !current ||
+        current.edges.some((edge) => edge.id === deletedEdge.id) ||
+        !current.nodes.some((node) => node.id === deletedEdge.from) ||
+        !current.nodes.some((node) => node.id === deletedEdge.to)
+      ) {
+        return;
+      }
+      const restored = cloneWorkflow(current);
+      restored.edges.splice(
+        Math.min(deletedEdgeIndex, restored.edges.length),
+        0,
+        deletedEdge,
+      );
+      params.setWorkflows(replaceWorkflow(params.workflows(), restored));
+      if (params.activeWorkflow()?.id === workflow.id) {
+        setSelectedNodeId(null);
+        setSelectedEdgeId(deletedEdge.id);
+      }
+      persistStructuralWorkflow(restored);
+    });
   };
 
   const handleCreateEdge = (from: NodeId, to: NodeId) => {
-    if (from === to) return;
+    if (structuralEditingLocked() || from === to) return;
     const edgeId = crypto.randomUUID();
     let created = false;
     const nextWorkflow = workflowMutations.updateActiveWorkflow((draft) => {
@@ -343,18 +450,24 @@ export function useWorkflowEditor(params: UseWorkflowEditorParams) {
       setEditingNodeId(null);
       setNodeLabelDraft("");
       if (nextWorkflow) {
-        void workflowMutations.validateActiveWorkflow(nextWorkflow, () => {
-          workflowMutations.updateActiveWorkflow((draft) => {
-            draft.edges = draft.edges.filter((edge) => edge.id !== edgeId);
+        void workflowMutations
+          .validateActiveWorkflow(nextWorkflow, () => {
+            workflowMutations.updateActiveWorkflow((draft) => {
+              draft.edges = draft.edges.filter((edge) => edge.id !== edgeId);
+            });
+            setSelectedEdgeId(null);
+          })
+          .then((valid) => {
+            if (valid) {
+              persistStructuralWorkflow(nextWorkflow);
+            }
           });
-          setSelectedEdgeId(null);
-        });
       }
     }
   };
 
   const handleReconnectEdge = (edgeId: EdgeId, from: NodeId, to: NodeId) => {
-    if (from === to) return;
+    if (structuralEditingLocked() || from === to) return;
     const existing = params.activeWorkflow()?.edges.find((edge) => edge.id === edgeId);
     if (!existing) return;
     const previousFrom = existing.from;
@@ -377,15 +490,21 @@ export function useWorkflowEditor(params: UseWorkflowEditorParams) {
       setEditingNodeId(null);
       setNodeLabelDraft("");
       if (nextWorkflow) {
-        void workflowMutations.validateActiveWorkflow(nextWorkflow, () => {
-          workflowMutations.updateActiveWorkflow((draft) => {
-            const edge = draft.edges.find((item) => item.id === edgeId);
-            if (edge) {
-              edge.from = previousFrom;
-              edge.to = previousTo;
+        void workflowMutations
+          .validateActiveWorkflow(nextWorkflow, () => {
+            workflowMutations.updateActiveWorkflow((draft) => {
+              const edge = draft.edges.find((item) => item.id === edgeId);
+              if (edge) {
+                edge.from = previousFrom;
+                edge.to = previousTo;
+              }
+            });
+          })
+          .then((valid) => {
+            if (valid) {
+              persistStructuralWorkflow(nextWorkflow);
             }
           });
-        });
       }
     }
   };
@@ -455,6 +574,7 @@ export function useWorkflowEditor(params: UseWorkflowEditorParams) {
     handleCreateEdge,
     handleReconnectEdge,
     handleDeleteEdge,
+    handleDeleteNode,
     handleDeleteSelectedNode,
     handleOpenAddNodePicker,
     handleAddNode,

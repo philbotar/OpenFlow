@@ -388,6 +388,95 @@
   margin-bottom: 0;
 }
 
+.post-run-suggestions {
+  margin: 22px 0 8px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-muted);
+}
+
+.post-run-suggestions-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.post-run-suggestions-header h3 {
+  margin: 2px 0 0;
+  font-size: 15px;
+}
+
+.post-run-suggestions-icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--text);
+  background: var(--surface-raised);
+}
+
+.post-run-suggestions-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.post-run-suggestion {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.post-run-suggestion:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.post-run-suggestion h4,
+.post-run-suggestion p {
+  margin: 0;
+}
+
+.post-run-suggestion h4 {
+  margin-top: 5px;
+  font-size: 14px;
+}
+
+.post-run-suggestion p {
+  margin-top: 7px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.post-run-suggestion .post-run-suggestion-evidence {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.post-run-suggestion-meta {
+  display: flex;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.post-run-suggestion-meta span + span::before {
+  margin-right: 6px;
+  content: "·";
+}
+
+.post-run-suggestions-empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
 .workflow-authoring-composer-row {
   display: flex;
   align-items: center;
