@@ -10,12 +10,17 @@ function toolMsg(id: string): ChatMessage {
   return { role: "Thinking", content: "", toolCallId: id };
 }
 
-function summary(id: string, toolName: string): ToolCallSummary {
+function summary(
+  id: string,
+  toolName: string,
+  argumentsValue: unknown = {},
+  status: ToolCallSummary["status"] = "completed",
+): ToolCallSummary {
   return {
     toolCallId: id,
     toolName,
-    status: "completed",
-    arguments: {},
+    status,
+    arguments: argumentsValue,
     lastOutput: "ok",
     isError: false,
     streaming: false,
@@ -75,6 +80,55 @@ describe("ConversationSegmentMessages tool stacking", () => {
     const messages = [toolMsg("a")];
     renderSegment(messages, [summary("a", "read")]);
     expect(container.querySelectorAll(".tool-stack")).toHaveLength(0);
+    expect(container.querySelectorAll(".tool-line[data-tool-name='read']")).toHaveLength(1);
+  });
+
+  it("keeps the prior checklist visible when a later update fails", () => {
+    const failed = summary(
+      "todo-2",
+      "openflow_update_todo_list",
+      { todos: [] },
+      "failed",
+    );
+    failed.isError = true;
+    failed.lastOutput = "todos must contain 1-12 items";
+    renderSegment([toolMsg("todo-1"), toolMsg("todo-2")], [
+      summary("todo-1", "openflow_update_todo_list", {
+        todos: [{ content: "Implement checklist", status: "in_progress" }],
+      }),
+      failed,
+    ]);
+
+    expect(container.querySelectorAll(".todo-checklist")).toHaveLength(1);
+    expect(container.textContent).toContain("Implement checklist");
+    expect(
+      container.querySelectorAll(
+        ".tool-line[data-tool-name='openflow_update_todo_list'][data-status='failed']",
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("renders only the latest todo update as a standalone checklist", () => {
+    const messages = [toolMsg("todo-1"), toolMsg("read"), toolMsg("todo-2")];
+    renderSegment(messages, [
+      summary("todo-1", "openflow_update_todo_list", {
+        todos: [{ content: "Trace behavior", status: "in_progress" }],
+      }),
+      summary("read", "read"),
+      summary("todo-2", "openflow_update_todo_list", {
+        todos: [
+          { content: "Trace behavior", status: "completed" },
+          { content: "Implement checklist", status: "in_progress" },
+          { content: "Verify gates", status: "pending" },
+        ],
+      }),
+    ]);
+
+    expect(container.querySelectorAll(".todo-checklist")).toHaveLength(1);
+    expect(container.querySelectorAll(".tool-stack")).toHaveLength(0);
+    expect(container.textContent).not.toContain("Trace behaviorTrace behavior");
+    expect(container.textContent).toContain("Progress1/3");
+    expect(container.textContent).toContain("Implement checklist");
     expect(container.querySelectorAll(".tool-line[data-tool-name='read']")).toHaveLength(1);
   });
 

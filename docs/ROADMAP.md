@@ -66,6 +66,7 @@ Getting the right context into and out of agents.
 | 22 | **MCP integration** — settings-gated MCP servers as external tool sources on agent nodes; default external tools to prompt/exec until sandboxing exists | Planned | [MCP integration](#mcp-integration) |
 | 23 | **Cron / scheduled runs + workflow retry loop** — execute the schedule/retry schema fields that already exist | In progress | [Cron / scheduled runs](#cron--scheduled-runs) — cron schedule + Schedule screen + due-run loop **Done**; workflow retry loop **Planned** |
 | 24 | **Run checkpoint, history, and replay** — persist run checkpoints to disk; browse run history; resume paused runs or replay from a checkpoint (read-only trace or forked re-execution); depends on persistence policy (#6) | Planned | [Run checkpoint & replay](#run-checkpoint-history-and-replay) |
+| 39 | **Concurrent top-level runs** — keep multiple independent workflow runs active simultaneously; route state, events, and controls by run id; enforce resource and same-project write safety | Planned | [Concurrent top-level runs](#concurrent-top-level-runs) |
 | 25 | **Programmatic / non-AI nodes** — code/script, API-call, and transform nodes between agent nodes; deterministic execution without LLM turns | Planned | [Programmatic nodes](#programmatic--non-ai-nodes) |
 | 26 | **External connectors** — Composio / n8n-style integration nodes | Planned | |
 | 27 | **Run insights & self-learning** — extract durable lessons from completed runs; surface patterns, failures, and optimization hints; inject approved insights into future runs | Planned | [Run insights & self-learning](#run-insights--self-learning) |
@@ -108,7 +109,7 @@ Small or speculative items — pick up opportunistically or when a tier item tou
 - Workflow authoring polish — inspector apply UX, template library integration (validation banner → [#36 Workflow insights](#workflow-insights))
 - T7 node-local max-tool-rounds (only if D4 changes), T17 concurrent layer siblings in headless runner (stretch)
 
-**Deferred** until workflow retry loop ([#23](#cron--scheduled-runs)) and [#35 Workflow orchestration](#workflow-orchestration--reinvoke) land: background job start/stop/resume at the process level (distinct from in-workflow child runs). Cron scheduling while the app is open is **Done** — see [#23](#cron--scheduled-runs).
+**Deferred** until workflow retry loop ([#23](#cron--scheduled-runs)), [#39 Concurrent top-level runs](#concurrent-top-level-runs), and [#35 Workflow orchestration](#workflow-orchestration--reinvoke) land: background job start/stop/resume at the process level (distinct from in-workflow child runs). Cron scheduling while the app is open is **Done** — see [#23](#cron--scheduled-runs).
 
 ---
 
@@ -226,6 +227,47 @@ Runs today live entirely in memory: `RunCoordinator` holds `WorkflowRunState`; `
 **Depends on:** #6 (persistence policy). **Unlocks:** #23 (scheduled runs need durable run records), #17 (handoff artifact paths), #27 (run insights need durable run records), [#35 Workflow orchestration](#workflow-orchestration--reinvoke), audit/compliance use cases.
 
 **Reference:** Live projection — `WorkflowRunState` in `crates/orchestration/src/run/state/mod.rs`; headless snapshot — `WorkflowRunSnapshot` in `crates/orchestration/src/run/execution/mod.rs`; artifact temp dirs — `drive.rs` (`openflow-run-{uuid}`).
+
+### Concurrent top-level runs
+
+OpenFlow currently owns one live `RunSession`. Starting a run replaces the previous session, and run-scoped commands infer that single active run. Users cannot start workflow B while workflow A is running or awaiting input. This capability covers independent top-level runs started by a user, schedule, or project script. It is distinct from same-workflow node parallelism and [#35 Workflow orchestration](#workflow-orchestration--reinvoke), which adds parent/child runs.
+
+| Layer | Gap |
+| --- | --- |
+| `crates/orchestration/src/run/coordinator/` | One live session instead of a run registry keyed by `run_id`; handles, actions, checkpoints, and projections are not independently addressable |
+| `crates/orchestration/src/backend/` + `crates/desktop/src/commands/run.rs` | Most run actions infer the current session instead of requiring `run_id` |
+| `crates/desktop/src/run_event_bridge.rs` | Bridge ownership follows one current run; no independent event lifecycle per run |
+| `crates/ui/src/context/` | One live `runState`; selected workflow/run and executing runs are coupled |
+| Provider/tool execution | Node-level concurrency exists, but there is no cross-run capacity budget or same-repository mutation policy |
+
+**Decisions (resolve before coding):**
+
+| ID | Question | Recommendation |
+| --- | --- | --- |
+| M1 | What is a top-level run? | Every `start_run` creates an independent run record and session. Starting or selecting another run never stops existing runs |
+| M2 | How are commands routed? | Require `run_id` on every run-scoped read or mutation (`stop`, input, approval, retry, interrupt, state, continue); only start/list operations omit it |
+| M3 | How many run at once? | Configurable global `max_concurrent_runs`, default **3**; queue overflow and show its position instead of rejecting or replacing a run |
+| M4 | What does “active” mean in the UI? | `selected_run_id` controls presentation only. Each running/paused run keeps its own status, unread-attention badge, trace, and controls |
+| M5 | How are same-project writes protected? | Allow independent projects and read-only runs concurrently. Hold one mutation-capable run lease per canonical execution cwd; queue conflicting runs. Add isolated git-worktree execution later for true parallel writes to one repo |
+| M6 | How are provider/tool limits enforced? | Share provider request and tool-exec budgets across runs so run-level concurrency cannot multiply into unbounded model calls or subprocesses |
+
+| Item | Priority | Status |
+| --- | --- | --- |
+| Run registry — replace the single session slot with sessions keyed by `run_id`; never abort another run on start | High | Planned |
+| Run-scoped command contract — thread `run_id` through backend, desktop IPC, actions, approvals, retries, stop, continue, and state reads | High | Planned |
+| Per-run event routing — one bridge/subscription lifecycle per run; include `run_id` in every emitted state update | High | Planned |
+| UI run switcher — show running, queued, paused, and attention-required runs; switching views does not affect execution | High | Planned |
+| Global concurrency queue — configurable cap, fair start order, visible queue position, cancellation before start | High | Planned |
+| Same-cwd mutation lease — serialize write-capable runs against one canonical execution root; explain the blocked reason in UI | High | Planned |
+| Shared resource budgets — provider-call and subprocess limits across all live runs | Medium | Planned |
+| Close/restart behavior — cancel, checkpoint, or preserve each run independently; never apply a bulk action silently | Medium | Planned |
+| Acceptance coverage — two runs interleave events; input/approval routes correctly; stopping one leaves the other active; queued runs start when capacity frees | High | Planned |
+
+**Target:** Start workflow A, switch to workflow B, and start B while A continues. If A pauses for approval, its badge changes without stealing focus from B. Opening A shows its own trace and controls. Stopping A does not affect B. Runs in different projects can execute concurrently; unsafe writes to the same execution root queue with a clear reason.
+
+**Depends on:** #6 (run lifecycle ownership) and [#24 Run checkpoint & replay](#run-checkpoint-history-and-replay) (durable run identity). **Unlocks:** reliable overlapping schedules, background project runs, and [#35 Workflow orchestration](#workflow-orchestration--reinvoke).
+
+**Reference:** Single-run ownership — `RunCoordinator` in `crates/orchestration/src/run/coordinator/`; event bridge — `crates/desktop/src/run_event_bridge.rs`; current concurrency model — [`architecture/threading-concurrency.md`](architecture/threading-concurrency.md).
 
 ### Workflow insights
 
@@ -577,26 +619,25 @@ Per-node and workflow-level `reasoning_effort` / `reasoning_budget_tokens` are i
 
 ### Agent questions & todos
 
-Agents can already ask for free-text input via `openflow_request_user_input` (`AgentNeedUserInput` → `AwaitInput` → chat composer when `awaitingNodeId` matches). There is no structured question UI, no todo model, and no way to send input while a node is still running.
+Agents can ask for free-text or structured input via `openflow_request_user_input` (`AgentNeedUserInput` → `AwaitInput` → chat composer or option cards when `awaitingNodeId` matches). Agents can also publish an in-chat phase checklist with `openflow_update_todo_list`. Input still cannot be queued while a node is running.
 
 | Layer | Gap |
 | --- | --- |
-| `crates/providers/src/mapping.rs` | `request_input_tool` accepts one string only; no options or question id |
-| `crates/engine/src/execution/interactive_engine/mod.rs` | No in-run todo state; questions resume as plain user messages |
-| `crates/orchestration/src/run/coordinator/mod.rs` | `submit_user_input` rejects unless `awaiting_node_id` matches |
-| `crates/orchestration/src/run/execution/drive.rs` | `ProvideInput` ignored during tool approval; no input buffer |
-| `crates/orchestration/src/run/state/mod.rs` | Run state has no todo or pending-question projection; no input queue |
-| `crates/ui/src/components/conversation/` | Composer disabled unless node is awaiting; no queued-message UI |
+| `crates/engine/src/execution/interactive_engine/mod.rs` | Structured answers resume as formatted user text; no separate typed answer object |
+| `crates/orchestration/src/run/coordinator.rs` | `submit_user_input` rejects unless `awaiting_node_id` matches |
+| `crates/orchestration/src/run/execution/drive/interaction.rs` | `ProvideInput` ignored during tool approval; no input buffer |
+| `crates/orchestration/src/run/state.rs` | Run state has no input queue |
+| `crates/ui/src/components/conversation/` | Composer remains disabled unless the node is awaiting; no queued-message UI |
 
 | Item | Priority | Status |
 | --- | --- | --- |
 | Input queue — accept chat while node is active; buffer per node in run state | High | Planned |
 | Drain queue on `AwaitInput` — deliver oldest-first when agent requests input | High | Planned |
 | Queued input UI — show pending messages in composer; allow edit/remove before delivery | Medium | Planned |
-| Structured questions — option cards / multiple-choice in chat | High | Planned |
-| Question builtin — extend or replace `openflow_request_user_input` with options, allow-multiple, question id | High | Planned |
+| Structured questions — option cards / multiple-choice in chat | High | Done |
+| Question builtin — extend `openflow_request_user_input` with 1-3 questions, options, and question id | High | Done |
 | In-run todo list — agent-managed tasks visible in dock or chat chrome | Medium | Planned |
-| Todo builtin — `openflow_update_todos` internal tool + run-state projection to UI | Medium | Planned |
+| Todo builtin — `openflow_update_todo_list` internal tool + conversation projection to UI | Medium | Done |
 | Notify when an agent asks a question while user is on another node | Medium | Planned |
 | Persist todos per workflow run; optional export under project `.flow/` | Low | Planned |
 
@@ -790,6 +831,7 @@ Agents read and mutate project files under the execution cwd via builtins in `cr
 { "name": "search", "tier": "read" },
 { "name": "find", "tier": "read" },
 { "name": "ast_grep", "tier": "read" },
+{ "name": "ast_edit" },
 { "name": "write" },
 { "name": "edit" },
 { "name": "apply_patch" }
@@ -799,7 +841,7 @@ Under `ApprovalMode::Write`, **read** tier auto-allows; **write** and **exec** t
 
 | Layer | Role |
 | --- | --- |
-| `crates/orchestration/src/tool/registry.rs` | Builtin catalog — read tier: `read`, `search`, `find`, `ast_grep`; write tier: `write`, `edit`, `apply_patch`; exec tier: `bash`. **Adding a tool:** register here and update `NODE_RUNTIME_PREAMBLE` (`engine/src/execution/node_invocation.rs`) |
+| `crates/orchestration/src/tool/registry.rs` | Builtin catalog — read tier: `read`, `search`, `find`, `ast_grep`; write tier: `ast_edit`, `write`, `edit`, `apply_patch`; exec tier: `bash`. **Adding a tool:** register here and update `NODE_RUNTIME_PREAMBLE` (`engine/src/execution/node_invocation.rs`) |
 | `crates/orchestration/src/tool/runner.rs` | `ToolRunner` executes builtins under execution cwd; drains `FileChangeRecord` ledger after write-tier calls |
 | `crates/engine/src/tools/config.rs` | `ToolTier`, `ToolRef.tier`, `ApprovalMode`, per-call tier resolution and approval policy |
 | `crates/engine/src/execution/interactive_engine.rs` | Batches tool calls; pauses on write-tier approval via `AwaitToolApproval` |
@@ -992,7 +1034,7 @@ Runs today are flat: one workflow, one `start_run`, one engine instance. A user 
 
 | Layer | Gap |
 | --- | --- |
-| `crates/orchestration/src/run/coordinator/mod.rs` | Single active run per session focus; no parent/child run registry or `invoke_workflow(workflow_id, entrypoint)` API |
+| `crates/orchestration/src/run/coordinator/mod.rs` | [#39](#concurrent-top-level-runs) provides independent top-level sessions; this item still needs parent/child metadata, child aggregation, and `invoke_workflow(workflow_id, entrypoint)` |
 | `crates/engine/src/execution/interactive_engine/` | No "jump to node" or "re-execute subgraph" without resetting completed upstream state |
 | `crates/orchestration/src/run/execution/drive.rs` | No wait-for-child-runs poll step; no aggregation of child outputs into parent node output |
 | `crates/desktop/src/lib.rs` | No batch `start_runs` or scripting IPC; no `reinvoke_from_node` |
@@ -1035,7 +1077,7 @@ Runs today are flat: one workflow, one `start_run`, one engine instance. A user 
 
 **Target:** A workflow with a **Code** node iterates `git ls-files '*.md'`, calls `invoke_workflow` for each path, and a downstream agent summarizes all child outputs. A project script in `.flow/scripts/` can start the same workflow ten times with different entrypoints without clicking Run. After a failed node, choose **Re-run from here** to re-execute that node and downstream without replaying the whole DAG.
 
-**Depends on:** [#24 Run checkpoint & replay](#run-checkpoint-history-and-replay) (durable child run records), [#25 Programmatic nodes](#programmatic--non-ai-nodes) (Code node + `invoke_workflow`), [#6 Run lifecycle](#run-lifecycle) (artifact layout). **Unlocks:** repo-wide refactors, workflow test batteries, CI-style automation inside the app, promoted background multi-run orchestration.
+**Depends on:** [#24 Run checkpoint & replay](#run-checkpoint-history-and-replay) (durable child run records), [#39 Concurrent top-level runs](#concurrent-top-level-runs) (run registry and routed controls), [#25 Programmatic nodes](#programmatic--non-ai-nodes) (Code node + `invoke_workflow`), [#6 Run lifecycle](#run-lifecycle) (artifact layout). **Unlocks:** repo-wide refactors, workflow test batteries, CI-style automation inside the app, promoted background multi-run orchestration.
 
 **Reference:** Run coordinator — [`coordinator.rs`](../crates/orchestration/src/run/coordinator/mod.rs); checkpoint fork — [#24](#run-checkpoint-history-and-replay) "Replay from node"; schedule loop — schedule sidebar plan (`docs/superpowers/plans/2026-06-16-schedule-sidebar.md`).
 

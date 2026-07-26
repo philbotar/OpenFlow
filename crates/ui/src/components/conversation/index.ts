@@ -16,6 +16,7 @@ export { NodeCompletedBubble } from "./NodeCompletedBubble";
 export type { NodeCompletedBubbleProps } from "./NodeCompletedBubble";
 export { SkillCommandCombobox } from "./SkillCommandCombobox";
 export { SkillDescriptionPreview } from "./SkillDescriptionPreview";
+export { StructuredAskCard } from "./StructuredAskCard";
 export { ThinkingBubble } from "./ThinkingBubble";
 export { ToolApprovalCardBody } from "./ToolApprovalCard";
 export { ToolBubble } from "./ToolBubble";

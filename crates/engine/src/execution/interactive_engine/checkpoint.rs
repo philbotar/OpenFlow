@@ -2,7 +2,7 @@ use super::{FrozenChangeEvidencePacket, InteractiveEngine, PendingToolBatch};
 use crate::conversation::AgentTranscriptItem;
 use crate::graph::validation::WorkflowValidationError;
 use crate::graph::{NodeId, Workflow, WorkflowId};
-use crate::ports::ToolAccessPolicy;
+use crate::ports::{StructuredUserInput, ToolAccessPolicy};
 use crate::tools::{FileChangeRecord, ReadRecord, ToolCall};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -54,6 +54,8 @@ pub struct InteractiveEngineCheckpoint {
     pub transcripts: BTreeMap<NodeId, Vec<AgentTranscriptItem>>,
     pub awaiting_nodes: BTreeSet<NodeId>,
     #[serde(default)]
+    pub structured_input_by_node: BTreeMap<NodeId, StructuredUserInput>,
+    #[serde(default)]
     pub plan_mode_source_node_id: Option<NodeId>,
     #[serde(default)]
     pub frozen_change_evidence_packet: Option<FrozenChangeEvidencePacket>,
@@ -97,6 +99,7 @@ fn collect_checkpoint_node_ids(checkpoint: &InteractiveEngineCheckpoint) -> BTre
     ids.extend(checkpoint.changed_files_by_node.keys().cloned());
     ids.extend(checkpoint.reads_by_node.keys().cloned());
     ids.extend(checkpoint.awaiting_nodes.iter().cloned());
+    ids.extend(checkpoint.structured_input_by_node.keys().cloned());
     ids.extend(checkpoint.plan_mode_source_node_id.iter().cloned());
     ids.extend(
         checkpoint
@@ -166,6 +169,7 @@ impl InteractiveEngine {
             reads_by_node: self.reads_by_node.clone(),
             transcripts: self.transcripts.clone(),
             awaiting_nodes: self.awaiting_nodes.clone(),
+            structured_input_by_node: self.structured_input_by_node.clone(),
             plan_mode_source_node_id: self.plan_mode_source_node_id.clone(),
             frozen_change_evidence_packet: self.frozen_change_evidence_packet.clone(),
             pending_tool_batches: self
@@ -237,6 +241,7 @@ impl InteractiveEngine {
             tokens_in: 0,
             transcripts: checkpoint.transcripts,
             awaiting_nodes: checkpoint.awaiting_nodes,
+            structured_input_by_node: checkpoint.structured_input_by_node,
             in_flight_ai: BTreeSet::new(),
             plan_mode_source_node_id,
             frozen_change_evidence_packet: checkpoint.frozen_change_evidence_packet,

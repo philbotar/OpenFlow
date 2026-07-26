@@ -168,11 +168,13 @@ impl AiPort for IncrementalAuthoringAi {
                 tool_calls: vec![
                     ToolCall {
                         id: "call-meta".to_string(),
+                        provider_call_id: None,
                         name: "openflow_set_workflow_meta".to_string(),
                         arguments: json!({ "name": "Demo" }),
                     },
                     ToolCall {
                         id: "call-root".to_string(),
+                        provider_call_id: None,
                         name: "openflow_add_node".to_string(),
                         arguments: json!({
                             "id": "root",
@@ -192,6 +194,7 @@ impl AiPort for IncrementalAuthoringAi {
                 tool_calls: vec![
                     ToolCall {
                         id: "call-plan".to_string(),
+                        provider_call_id: None,
                         name: "openflow_add_node".to_string(),
                         arguments: json!({
                             "id": "plan",
@@ -203,6 +206,7 @@ impl AiPort for IncrementalAuthoringAi {
                     },
                     ToolCall {
                         id: "call-edge".to_string(),
+                        provider_call_id: None,
                         name: "openflow_add_edge".to_string(),
                         arguments: json!({ "id": "root-plan", "from": "root", "to": "plan" }),
                     },
@@ -290,11 +294,13 @@ impl AiPort for MixedToolTurnRetryAi {
                     tool_calls: vec![
                         ToolCall {
                             id: "call-meta".to_string(),
+                            provider_call_id: None,
                             name: "openflow_set_workflow_meta".to_string(),
                             arguments: json!({ "name": "Demo" }),
                         },
                         ToolCall {
                             id: "call-root".to_string(),
+                            provider_call_id: None,
                             name: "openflow_add_node".to_string(),
                             arguments: json!({
                                 "id": "root",
@@ -507,6 +513,7 @@ impl AiPort for ClarificationThenDraftAi {
             Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
                 raw_text: "What kind of workflow?".to_string(),
                 assistant_message: "What kind of workflow do you want?".to_string(),
+                structured_input: None,
                 reasoning: vec![],
             }))
         } else {
@@ -593,6 +600,7 @@ impl AiPort for AlwaysClarifyAi {
         Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
             raw_text: "What kind of workflow?".to_string(),
             assistant_message: "What kind of workflow do you want?".to_string(),
+            structured_input: None,
             reasoning: vec![],
         }))
     }

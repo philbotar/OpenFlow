@@ -468,6 +468,7 @@ fn submit_tool_approval_updates_snapshot_and_sends_action() {
             node_label: "Idea".to_string(),
             tool_call: engine::ToolCall {
                 id: "call-1".to_string(),
+                provider_call_id: None,
                 name: "read".to_string(),
                 arguments: serde_json::json!({ "path": "README.md" }),
             },
@@ -706,6 +707,7 @@ fn submit_tool_approval_denied_forwards_reason() {
             node_label: "Idea".to_string(),
             tool_call: engine::ToolCall {
                 id: "call-2".to_string(),
+                provider_call_id: None,
                 name: "bash".to_string(),
                 arguments: serde_json::json!({ "command": "echo hi" }),
             },

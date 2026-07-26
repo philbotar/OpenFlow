@@ -118,6 +118,7 @@ export function groupToolMessages(
   messages: ChatMessage[],
   threshold: number = DEFAULT_STACK_THRESHOLD,
   prev: GroupedConversationItem[] | null = null,
+  standaloneToolCallIds: ReadonlySet<string> = new Set(),
 ): GroupedConversationItem[] {
   const out: GroupedConversationItem[] = [];
   const run: ChatMessage[] = [];
@@ -132,6 +133,15 @@ export function groupToolMessages(
 
   for (const message of expandThinkMessages(messages)) {
     if (isToolMarker(message)) {
+      if (
+        message.toolCallId &&
+        standaloneToolCallIds.has(message.toolCallId)
+      ) {
+        flushPendingThinkingAsMessages();
+        flushToolRun(run, out, threshold);
+        out.push({ kind: "tool", message });
+        continue;
+      }
       if (pendingThinking.length > 0) {
         run.push(...pendingThinking);
         pendingThinking.length = 0;

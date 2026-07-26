@@ -58,11 +58,13 @@ function renderChatPanel(overrides: Partial<AppContextValue> = {}) {
     skillById: () => new Map(),
     setChatDraft: () => {},
     handleSubmitChat: async () => {},
+    handleSubmitStructuredInput: async () => {},
     handleChatInputKeyDown: () => {},
     searchProjectFileReferences: async () => [],
     handleInterruptNode: async () => {},
     handleRetryNode: async () => {},
     handleUpdateNodeRuntimeConfig: async () => {},
+    activeProfileMemo: () => ({ reasoning_effort_options: [] }),
     activeWorkflow: () => ({ id: "w1", name: "Workflow", nodes: [], edges: [] }),
     ...overrides,
   } as unknown as AppContextValue;
@@ -108,6 +110,79 @@ describe("ChatPanel replay mode", () => {
     try {
       expect(container.textContent).not.toContain("Viewing saved run");
       expect(container.querySelector("textarea")).not.toBeNull();
+    } finally {
+      dispose();
+      container.remove();
+    }
+  });
+
+  it("renders a structured ask and submits the selected answer", async () => {
+    const handleSubmitStructuredInput = vi.fn(async () => {});
+    const { container, dispose } = renderChatPanel({
+      replayRunId: () => null,
+      handleSubmitStructuredInput,
+      chatLayout: () => ({
+        settled: [
+          {
+            nodeId: "builder",
+            label: "Builder",
+            status: "awaiting_input",
+            messages: [],
+          },
+        ],
+        live: [],
+        liveIds: [],
+      }),
+      runState: () =>
+        ({
+          active: true,
+          pendingApprovals: [],
+          statusByNode: { builder: "awaiting_input" },
+          chatLogs: { builder: [] },
+          toolCallsByNode: {},
+          awaitingNodeId: "builder",
+          awaitingNodeIds: ["builder"],
+          structuredInputByNode: {
+            builder: {
+              questions: [
+                {
+                  id: "target_env",
+                  header: "Target",
+                  question: "Which environment should I target?",
+                  options: [
+                    {
+                      label: "Staging",
+                      description: "Use the shared staging environment.",
+                    },
+                    {
+                      label: "Production",
+                      description: "Use the live production environment.",
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        }) as unknown as ReturnType<AppContextValue["runState"]>,
+    });
+
+    try {
+      const production = Array.from(container.querySelectorAll("button")).find(
+        (button) => button.textContent?.includes("Production"),
+      );
+      production?.click();
+
+      const submit = Array.from(container.querySelectorAll("button")).find(
+        (button) => button.textContent?.includes("Submit answers"),
+      );
+      submit?.click();
+      await Promise.resolve();
+
+      expect(container.textContent).toContain("Which environment should I target?");
+      expect(handleSubmitStructuredInput).toHaveBeenCalledWith(
+        "builder",
+        "Structured answers:\n- target_env: Production",
+      );
     } finally {
       dispose();
       container.remove();

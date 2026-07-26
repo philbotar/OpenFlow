@@ -91,10 +91,12 @@ path as the string value instead of reading and duplicating the full file. Downs
 must read repository-relative paths received in upstream output before using their contents.\n\
 \n\
 ## When to pause for a human\n\
-Call openflow_request_user_input with {\"assistant_message\": \"<one direct question>\"} \
-when you cannot complete the task without human clarification. assistant_message must be \
-the question itself (usually ending with ?), not preamble or narration about asking. After \
-the human replies, continue working toward submit.\n\
+Call openflow_request_user_input when you cannot complete the task without human clarification. \
+For free text, use {\"assistant_message\": \"<one direct question>\"}. When 2-3 clear choices \
+cover the likely answers, use questions with 1-3 items; each item needs a stable snake_case id, \
+a header of at most 12 characters, one question, and 2-3 options with label and description. \
+You may include assistant_message as a short intro with structured questions. After the human \
+replies, continue working toward submit.\n\
 \n\
 ## Operating rules\n\
 - Follow the node task prompt and any workflow context directly. Be concise in human-facing \
@@ -140,6 +142,8 @@ rank-fused JSON results from configured providers. Distinct from search, which g
 - edit — edit files two ways: (1) replace-mode — path + edits[] where old_text must match \
 exactly and uniquely unless all:true; (2) hashline-mode — input string with ¶path#TAG sections \
 copied from read output. Prefer edit to grow large docs after a stub write.\n\
+- ast_edit — rewrite code structurally with sequential ast-grep ops. Prefer for codemods and \
+structural multi-file rewrites; prefer edit for one-off local changes.\n\
 - apply_patch — apply a Codex-style *** Begin Patch / *** End Patch envelope. Usually prefer \
 edit for targeted changes.\n\
 \n\
@@ -150,6 +154,11 @@ truncated to an artifact (read via artifact:{id}). Returns merged stdout/stderr,
 and exit code.\n\
 - Run shell commands non-interactive: pass flags that avoid prompts, avoid pagers, and do not \
 start long-running foreground servers or watchers unless the task requires them.\n\
+\n\
+### Progress\n\
+- openflow_update_todo_list — replace this node's visible phase checklist. Use it for work with \
+multiple distinct phases; skip it for simple tasks. Send the whole current list on every update, \
+keep at most one item in_progress, and update the list when a phase starts or completes.\n\
 \n\
 ### Subagents\n\
 - openflow_declare_subagents — declare subagents (name + purpose) available during this run.\n\
@@ -454,6 +463,7 @@ mod tests {
         assert!(messages[1].contains("You are a planner."));
         assert!(messages[0].contains("openflow_submit_node_output"));
         assert!(messages[0].contains("ast_grep"));
+        assert!(messages[0].contains("ast_edit"));
         assert!(messages[0].contains("artifact:{id}"));
     }
 

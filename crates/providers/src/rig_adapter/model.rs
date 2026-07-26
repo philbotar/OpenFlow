@@ -14,7 +14,8 @@ use crate::rig_adapter::{
 };
 use crate::spec::{ModelTransport, ProviderId, WireApi};
 use engine::{
-    emit_assistant_deltas_from_outcome, AgentError, AgentRequest, AgentTurnOutcome, AiStreamSink,
+    emit_assistant_deltas_from_outcome, AgentError, AgentRequest, AgentTurnOutcome, AiStreamEvent,
+    AiStreamSink,
 };
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest::Client as ReqwestClient;
@@ -36,6 +37,12 @@ use rig_bedrock::completion::CompletionModel as BedrockCompletionModel;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const ANTHROPIC_MAX_TOKENS: u64 = 4096;
+
+struct DiscardStreamSink;
+
+impl AiStreamSink for DiscardStreamSink {
+    fn on_stream_event(&self, _event: AiStreamEvent) {}
+}
 
 #[derive(Clone)]
 pub enum RigModel {
@@ -352,17 +359,21 @@ impl RigModel {
                     )
                 }
             },
-            Self::ChatGPT(model) => match model.completion(completion_request).await {
+            // ChatGPT's buffered completion conversion trusts `response.completed.output`
+            // whenever it contains any item. Some Codex models return reasoning there while
+            // emitting the function call only in preceding SSE events. Drain the SSE stream so
+            // those calls remain available to non-streaming AiPort callers.
+            Self::ChatGPT(model) => match model.stream(completion_request).await {
                 Err(e) => Err(error::to_agent_error(e, provider_label)),
-                Ok(response) => {
-                    let choice: Vec<AssistantContent> = response.choice.into_iter().collect();
-                    outcome::resolve_outcome(
-                        choice,
-                        response.usage,
+                Ok(rig_stream) => {
+                    stream::drain(
+                        rig_stream,
+                        &DiscardStreamSink,
                         provider_label,
                         Some(&request.output_schema),
                         no_tool_calls,
                     )
+                    .await
                 }
             },
             #[cfg(feature = "bedrock")]

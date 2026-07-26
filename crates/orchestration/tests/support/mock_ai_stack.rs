@@ -89,6 +89,7 @@ impl MockTurn {
         Self::ToolCalls {
             calls: vec![ToolCall {
                 id: "call-read".to_string(),
+                provider_call_id: None,
                 name: "read".to_string(),
                 arguments: serde_json::json!({ "path": path }),
             }],
@@ -101,6 +102,7 @@ impl MockTurn {
         Self::ToolCalls {
             calls: vec![ToolCall {
                 id: "call-bash".to_string(),
+                provider_call_id: None,
                 name: "bash".to_string(),
                 arguments: serde_json::json!({ "command": command, "timeout": timeout }),
             }],
@@ -188,6 +190,7 @@ impl MockAiStack {
                 Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
                     raw_text: "{}".to_string(),
                     assistant_message: message,
+                    structured_input: None,
                     reasoning: vec![],
                 }))
             }

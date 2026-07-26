@@ -129,6 +129,7 @@ pub(super) fn partition_choice(
             AssistantContent::Text(Text { text, .. }) => text_parts.push(text),
             AssistantContent::ToolCall(call) => tool_calls.push(engine::ToolCall {
                 id: call.id,
+                provider_call_id: call.call_id,
                 name: call.function.name,
                 arguments: call.function.arguments,
             }),

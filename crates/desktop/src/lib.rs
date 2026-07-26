@@ -57,6 +57,7 @@ pub fn run() {
             commands::agent::list_skills,
             commands::agent::load_agents,
             commands::agent::create_agent_definition,
+            commands::agent::create_agent_definition_with_ai,
             commands::agent::save_agents,
             commands::settings::load_settings,
             commands::settings::save_settings,

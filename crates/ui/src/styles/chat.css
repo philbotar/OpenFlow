@@ -202,6 +202,127 @@
   margin: 0 auto 8px;
 }
 
+.structured-ask-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(920px, calc(100% - 72px));
+  margin: 0 auto;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border-subtle));
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--accent-soft) 35%, var(--raised-surface));
+  box-shadow: var(--shadow-panel);
+}
+
+.structured-ask-question {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.structured-ask-question + .structured-ask-question {
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.structured-ask-header {
+  padding: 0;
+  color: var(--text-muted);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.structured-ask-prompt {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.9375rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.structured-ask-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
+  gap: 8px;
+}
+
+.structured-ask-option {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--raised-surface) 94%, transparent);
+  color: var(--text);
+  text-align: left;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease;
+}
+
+.structured-ask-option:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-subtle));
+  background: var(--raised-surface);
+}
+
+.structured-ask-option.selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent-soft) 70%, var(--raised-surface));
+}
+
+.structured-ask-option:focus-visible,
+.structured-ask-custom-input:focus-visible {
+  outline: 2px solid var(--focus-strong);
+  outline-offset: 2px;
+}
+
+.structured-ask-option:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.structured-ask-option-label {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.structured-ask-option-description {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.structured-ask-custom-input {
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 9px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--raised-surface);
+  color: var(--text);
+}
+
+.structured-ask-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 2px;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
 .chat-composer {
   width: min(920px, calc(100% - 72px));
   margin: 0 auto;
@@ -386,6 +507,87 @@
   width: auto;
   height: auto;
   margin-bottom: 0;
+}
+
+/* ── In-node phase checklist ── */
+.todo-checklist {
+  display: grid;
+  gap: 7px;
+  margin-block: 5px;
+  padding: 9px 11px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface-muted) 72%, transparent);
+}
+
+.todo-checklist-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.todo-checklist-title {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.todo-checklist-count {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.todo-checklist-items {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.todo-checklist-item {
+  display: grid;
+  grid-template-columns: 15px minmax(0, 1fr);
+  align-items: start;
+  gap: 7px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.todo-checklist-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  margin-top: 1px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-full);
+  color: var(--surface-muted);
+}
+
+.todo-checklist-item.status-in_progress {
+  color: var(--text-primary);
+  font-weight: 520;
+}
+
+.todo-checklist-item.status-in_progress .todo-checklist-marker {
+  border: 4px solid color-mix(in srgb, var(--accent-primary) 85%, var(--text));
+}
+
+.todo-checklist-item.status-completed {
+  color: var(--text-tertiary);
+}
+
+.todo-checklist-item.status-completed .todo-checklist-marker {
+  border-color: color-mix(in srgb, var(--success) 72%, var(--border-strong));
+  background: color-mix(in srgb, var(--success) 72%, var(--surface-muted));
+  color: var(--surface-muted);
 }
 
 .post-run-suggestions {

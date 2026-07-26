@@ -98,6 +98,8 @@ pub struct WorkflowRunState {
     pub awaiting_node_id: Option<NodeId>,
     #[serde(default)]
     pub awaiting_node_ids: Vec<NodeId>,
+    #[serde(default)]
+    pub structured_input_by_node: BTreeMap<NodeId, engine::StructuredUserInput>,
     pub active_manual_node_id: Option<NodeId>,
     pub active_tool_call_id: Option<String>,
     pub pending_approvals: Vec<engine::PendingToolApproval>,
@@ -144,6 +146,7 @@ impl WorkflowRunState {
             run_id: None,
             awaiting_node_id: None,
             awaiting_node_ids: Vec::new(),
+            structured_input_by_node: BTreeMap::new(),
             active_manual_node_id: None,
             active_tool_call_id: None,
             pending_approvals: Vec::new(),
@@ -179,6 +182,7 @@ impl WorkflowRunState {
         self.active = false;
         self.awaiting_node_id = None;
         self.awaiting_node_ids.clear();
+        self.structured_input_by_node.clear();
         self.active_manual_node_id = None;
         self.active_tool_call_id = None;
         self.pending_approvals.clear();
@@ -217,6 +221,7 @@ mod tests {
             node_label: "Node".to_string(),
             tool_call: engine::ToolCall {
                 id: "call-1".to_string(),
+                provider_call_id: None,
                 name: "read".to_string(),
                 arguments: serde_json::json!({}),
             },

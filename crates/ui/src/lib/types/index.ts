@@ -348,11 +348,28 @@ export interface EditBatch {
   snapshots: FileSnapshot[];
 }
 
+export interface UserInputOption {
+  label: string;
+  description: string;
+}
+
+export interface UserInputQuestion {
+  id: string;
+  header: string;
+  question: string;
+  options: UserInputOption[];
+}
+
+export interface StructuredUserInput {
+  questions: UserInputQuestion[];
+}
+
 export interface WorkflowRunState {
   active: boolean;
   runId?: string | null;
   awaitingNodeId: NodeId | null;
   awaitingNodeIds?: NodeId[];
+  structuredInputByNode?: Record<NodeId, StructuredUserInput>;
   activeManualNodeId: NodeId | null;
   activeToolCallId: string | null;
   pendingApprovals: PendingToolApproval[];

@@ -21,7 +21,8 @@ docs/
 │   ├── how-openflow-works.md          # Runtime overview for users and contributors
 │   └── workflows-and-runs.md          # Workflows, nodes, runs, tools, approvals
 ├── reference/
-│   └── README.md                      # Commands, storage paths, provider key resolution
+│   ├── README.md                      # Commands, storage paths, provider key resolution
+│   └── tools.md                       # Built-in, harness, MCP, and authoring tools
 ├── troubleshooting/
 │   └── README.md                      # Common setup, provider, run, and verification failures
 ├── glossary.md                        # Engine vocabulary
@@ -76,6 +77,7 @@ Architecture check rules are machine configuration, not documentation. They live
 | Understand the runtime | [`concepts/how-openflow-works.md`](concepts/how-openflow-works.md), [`architecture/end-to-end-runtime.md`](architecture/end-to-end-runtime.md) |
 | Learn workflow terms | [`concepts/workflows-and-runs.md`](concepts/workflows-and-runs.md), [`glossary.md`](glossary.md) |
 | Find commands and paths | [`reference/README.md`](reference/README.md) |
+| Look up agent tools | [`reference/tools.md`](reference/tools.md) |
 | Debug setup or run failures | [`troubleshooting/README.md`](troubleshooting/README.md) |
 | Change code safely | [`AGENTS.md`](../AGENTS.md), [`contributing/development-lanes.md`](contributing/development-lanes.md) |
 | Check architecture boundaries | [`architecture/contract.md`](architecture/contract.md) |

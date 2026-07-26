@@ -45,7 +45,7 @@ Optional workflow setting: before normal execution, a designated **evidence sour
 
 A tool call is a model-requested action handled by orchestration through `ToolPortImpl`. Tool calls can be approved, denied, executed, and routed back into the model loop as tool results.
 
-Add tool access narrowly. A node should only receive tools that are relevant to its job.
+Add tool access narrowly. A node should only receive tools that are relevant to its job. Per-tool reference: [`../reference/tools.md`](../reference/tools.md).
 
 ## Callable Agent
 

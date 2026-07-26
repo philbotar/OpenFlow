@@ -11,6 +11,7 @@ const apiMocks = vi.hoisted(() => ({
   listWorkflows: vi.fn(),
   clearRunTrace: vi.fn(),
   createAgentDefinition: vi.fn(),
+  createAgentDefinitionWithAi: vi.fn(),
   createAgentNode: vi.fn(),
   createWorkflow: vi.fn(),
   listenToRunState: vi.fn(),
@@ -70,6 +71,7 @@ vi.mock("../api", async (importOriginal) => {
     listWorkflows: apiMocks.listWorkflows,
     clearRunTrace: apiMocks.clearRunTrace,
     createAgentDefinition: apiMocks.createAgentDefinition,
+    createAgentDefinitionWithAi: apiMocks.createAgentDefinitionWithAi,
     createAgentNode: apiMocks.createAgentNode,
     createWorkflow: apiMocks.createWorkflow,
     listenToRunState: apiMocks.listenToRunState,
@@ -129,6 +131,7 @@ vi.mock("../canvas/WorkflowCanvasHost", () => ({
     onSelectNode?: (nodeId: string) => void;
     onDeleteNode?: (nodeId: string) => void;
     onDeleteEdge?: (edgeId: string) => void;
+    onCreateEdge?: (from: string, to: string) => void;
     graph?: { nodes: { id: string }[]; edges: { id: string }[] } | null;
   }) => (
     <>
@@ -156,6 +159,16 @@ vi.mock("../canvas/WorkflowCanvasHost", () => ({
           onClick={() => props.onDeleteEdge?.(edge.id)}
         />
       ))}
+      {props.graph?.nodes.slice(1).map((node, index) => {
+        const from = props.graph?.nodes[index]?.id;
+        return (
+          <button
+            type="button"
+            aria-label={`Canvas create edge ${from} ${node.id}`}
+            onClick={() => from && props.onCreateEdge?.(from, node.id)}
+          />
+        );
+      })}
     </>
   ),
 }));
@@ -467,6 +480,9 @@ function installDefaultApiMocks() {
   });
   apiMocks.createWorkflow.mockImplementation(async (name: string) => makeWorkflow("created-workflow", name));
   apiMocks.createAgentDefinition.mockImplementation(async (name: string) => makeAgent("created-agent", name));
+  apiMocks.createAgentDefinitionWithAi.mockResolvedValue(
+    makeAgent("ai-created-agent", "Research Reviewer"),
+  );
   apiMocks.createAgentNode.mockImplementation(
     async (index: number, x: number, y: number, agentId: string | null = null) => {
       const agent = agentId ? makeAgent(agentId, agentId === "agent-2" ? "Writer Agent" : "Research Agent") : null;
@@ -1336,6 +1352,67 @@ describe("App agent dashboard", () => {
     }
   });
 
+  test("creates an agent with AI from the row below New agent", async () => {
+    const { container, dispose } = await mountApp(
+      makeBootstrapPayload([makeWorkflow("workflow-1", "Workflow One")], []),
+    );
+
+    try {
+      const agentsButton = await waitForElement(
+        () =>
+          Array.from(container.querySelectorAll(".sidebar-nav-button")).find((element) =>
+            element.textContent?.includes("Agents"),
+          ) as HTMLButtonElement | null,
+        "agents button",
+      );
+      agentsButton.click();
+      await flush();
+
+      const createRows = Array.from(
+        container.querySelectorAll(".agents-sidebar-panel .sidebar-nav-button"),
+      ) as HTMLButtonElement[];
+      expect(createRows.slice(0, 2).map((row) => row.textContent?.trim())).toEqual([
+        "New agent",
+        "Create with AI",
+      ]);
+
+      createRows[1].click();
+      await flush();
+
+      const description = await waitForElement(
+        () =>
+          Array.from(container.querySelectorAll("label span"))
+            .find((element) => element.textContent === "What should this agent do?")
+            ?.parentElement?.querySelector("textarea") as HTMLTextAreaElement | null,
+        "agent description",
+      );
+      description.value = "Review research notes and identify unsupported claims.";
+      description.dispatchEvent(new Event("input", { bubbles: true }));
+
+      const createButton = Array.from(container.querySelectorAll("button")).find(
+        (element) => element.textContent === "Create Agent",
+      ) as HTMLButtonElement | undefined;
+      expect(createButton?.disabled).toBe(false);
+      createButton?.click();
+      await flush();
+
+      expect(apiMocks.createAgentDefinitionWithAi).toHaveBeenCalledWith(
+        "Review research notes and identify unsupported claims.",
+        expect.any(Object),
+        "stored-openai-key",
+      );
+      expect(
+        container.querySelector(".agents-sidebar-panel .workflow-row-title")?.textContent,
+      ).toBe("Research Reviewer");
+      const generatedNameInput = Array.from(container.querySelectorAll("label span"))
+        .find((element) => element.textContent === "Name")
+        ?.parentElement?.querySelector("input") as HTMLInputElement | null;
+      expect(generatedNameInput?.value).toBe("Research Reviewer");
+    } finally {
+      dispose();
+    }
+  });
+
   test("lets you choose a saved agent when adding a node", async () => {
     const workflow = makeWorkflow("workflow-1", "Workflow One");
     const savedAgents = [makeAgent("agent-1", "Research Agent"), makeAgent("agent-2", "Writer Agent")];
@@ -1655,6 +1732,67 @@ describe("App workflow structural editing", () => {
           to: "workflow-1-node-2",
         },
       ]);
+    } finally {
+      dispose();
+    }
+  });
+
+  test("serializes edge validation and saves snapshots in edit order", async () => {
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    workflow.nodes.push(
+      {
+        ...makeNodeFromAgent(1, 480, 140, null),
+        id: "workflow-1-node-2",
+      },
+      {
+        ...makeNodeFromAgent(2, 840, 140, null),
+        id: "workflow-1-node-3",
+      },
+    );
+    let resolveFirstValidation:
+      | ((value: { layerCount: number; layers: string[][] }) => void)
+      | undefined;
+    apiMocks.validateWorkflow
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirstValidation = resolve;
+          }),
+      )
+      .mockResolvedValue({ layerCount: 1, layers: [["node-1"]] });
+    const { container, dispose } = await mountApp(makeBootstrapPayload([workflow]));
+
+    try {
+      const firstEdgeButton = await waitForElement(
+        () =>
+          container.querySelector(
+            'button[aria-label="Canvas create edge workflow-1-node-1 workflow-1-node-2"]',
+          ) as HTMLButtonElement | null,
+        "first edge button",
+      );
+      firstEdgeButton.click();
+      await flush();
+
+      const secondEdgeButton = await waitForElement(
+        () =>
+          container.querySelector(
+            'button[aria-label="Canvas create edge workflow-1-node-2 workflow-1-node-3"]',
+          ) as HTMLButtonElement | null,
+        "second edge button",
+      );
+
+      secondEdgeButton.click();
+      await flush();
+
+      expect(apiMocks.validateWorkflow).toHaveBeenCalledTimes(1);
+      expect(apiMocks.saveWorkflow).not.toHaveBeenCalled();
+
+      resolveFirstValidation?.({ layerCount: 1, layers: [["node-1"]] });
+      await vi.waitFor(() => expect(apiMocks.validateWorkflow).toHaveBeenCalledTimes(2));
+      await vi.waitFor(() => expect(apiMocks.saveWorkflow).toHaveBeenCalledTimes(2));
+
+      expect((apiMocks.saveWorkflow.mock.calls[0]?.[0] as Workflow).edges).toHaveLength(1);
+      expect((apiMocks.saveWorkflow.mock.calls[1]?.[0] as Workflow).edges).toHaveLength(2);
     } finally {
       dispose();
     }

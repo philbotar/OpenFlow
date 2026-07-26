@@ -17,6 +17,8 @@ pub enum BackendError {
     ProjectNotFound(String),
     #[error("agent {0} not found")]
     AgentNotFound(String),
+    #[error("agent authoring failed: {0}")]
+    AgentAuthoringFailed(String),
     #[error("{0}")]
     InvalidExecutionCwd(String),
     #[error("{0}")]

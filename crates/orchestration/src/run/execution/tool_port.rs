@@ -472,6 +472,7 @@ where
         }
         ToolCall {
             id: tool_call.id.clone(),
+            provider_call_id: tool_call.provider_call_id.clone(),
             name: tool_call.name.clone(),
             arguments: json!({
                 "sealed_from": engine::PLAN_DRAFT_PATH
@@ -731,6 +732,15 @@ fn path_keys(paths: Vec<String>) -> Vec<String> {
     keys
 }
 
+const FILE_MUTATION_LOCK_KEY: &str = "file-mutation";
+
+fn file_mutation_keys(mut keys: Vec<String>) -> Vec<String> {
+    keys.push(FILE_MUTATION_LOCK_KEY.to_string());
+    keys.sort();
+    keys.dedup();
+    keys
+}
+
 fn hashline_paths(input: &str) -> Vec<String> {
     input
         .lines()
@@ -784,22 +794,24 @@ fn exclusive_lock_keys(
     if concurrency == ToolConcurrency::NodeExclusive {
         return fallback;
     }
-    match kind {
+    let keys = match kind {
         Kind::Write => match call.arguments.get("path").and_then(|v| v.as_str()) {
             Some(path) => path_keys(vec![path.to_string()]),
             None => fallback,
         },
         Kind::Edit => {
             if let Some(path) = call.arguments.get("path").and_then(|v| v.as_str()) {
-                return path_keys(vec![path.to_string()]);
-            }
-            if let Some(input) = call.arguments.get("input").and_then(|v| v.as_str()) {
+                path_keys(vec![path.to_string()])
+            } else if let Some(input) = call.arguments.get("input").and_then(|v| v.as_str()) {
                 let paths = hashline_paths(input);
                 if !paths.is_empty() {
-                    return path_keys(paths);
+                    path_keys(paths)
+                } else {
+                    fallback
                 }
+            } else {
+                fallback
             }
-            fallback
         }
         Kind::ApplyPatch => {
             let paths = call
@@ -814,8 +826,35 @@ fn exclusive_lock_keys(
                 path_keys(paths)
             }
         }
+        Kind::AstEdit => {
+            let paths = call
+                .arguments
+                .get("paths")
+                .and_then(serde_json::Value::as_array)
+                .map(|paths| {
+                    paths
+                        .iter()
+                        .filter_map(serde_json::Value::as_str)
+                        .map(str::to_string)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            if paths.is_empty() {
+                fallback
+            } else {
+                path_keys(paths)
+            }
+        }
         Kind::WritePlanArtifact => path_keys(vec![engine::PLAN_DRAFT_PATH.to_string()]),
         _ => fallback,
+    };
+    if matches!(
+        kind,
+        Kind::Write | Kind::Edit | Kind::ApplyPatch | Kind::AstEdit | Kind::WritePlanArtifact
+    ) {
+        file_mutation_keys(keys)
+    } else {
+        keys
     }
 }
 
@@ -914,6 +953,7 @@ mod tests {
     fn call(name: &str, args: serde_json::Value) -> ToolCall {
         ToolCall {
             id: "tc1".to_string(),
+            provider_call_id: None,
             name: name.to_string(),
             arguments: args,
         }
@@ -969,6 +1009,7 @@ mod tests {
         let calls = vec![
             ToolCall {
                 id: "plan-draft".to_string(),
+                provider_call_id: None,
                 name: "write".to_string(),
                 arguments: serde_json::json!({
                     "path": engine::PLAN_DRAFT_PATH,
@@ -977,6 +1018,7 @@ mod tests {
             },
             ToolCall {
                 id: "write".to_string(),
+                provider_call_id: None,
                 name: "write".to_string(),
                 arguments: serde_json::json!({
                     "path": "docs/blocked.md",
@@ -985,11 +1027,13 @@ mod tests {
             },
             ToolCall {
                 id: "mcp".to_string(),
+                provider_call_id: None,
                 name: "mcp/example".to_string(),
                 arguments: serde_json::json!({}),
             },
             ToolCall {
                 id: "subagent".to_string(),
+                provider_call_id: None,
                 name: CALL_SUBAGENT_TOOL.to_string(),
                 arguments: serde_json::json!({}),
             },
@@ -1074,6 +1118,7 @@ mod tests {
                     ),
                     ToolCall {
                         id: "seal".to_string(),
+                        provider_call_id: None,
                         name: engine::WRITE_PLAN_ARTIFACT_TOOL.to_string(),
                         arguments: serde_json::json!({}),
                     },
@@ -1170,7 +1215,13 @@ mod tests {
                 serde_json::json!({"path": "./src/lib.rs", "content": "x"}),
             ),
         );
-        assert_eq!(keys, vec!["path:src/lib.rs".to_string()]);
+        assert_eq!(
+            keys,
+            vec![
+                FILE_MUTATION_LOCK_KEY.to_string(),
+                "path:src/lib.rs".to_string()
+            ]
+        );
     }
 
     #[test]
@@ -1184,7 +1235,13 @@ mod tests {
                 serde_json::json!({"path": "src/a.rs", "edits": [{"old_text": "x", "new_text": "y"}]}),
             ),
         );
-        assert_eq!(keys, vec!["path:src/a.rs".to_string()]);
+        assert_eq!(
+            keys,
+            vec![
+                FILE_MUTATION_LOCK_KEY.to_string(),
+                "path:src/a.rs".to_string()
+            ]
+        );
     }
 
     #[test]
@@ -1198,7 +1255,65 @@ mod tests {
         );
         assert_eq!(
             keys,
-            vec!["path:src/a.rs".to_string(), "path:src/b.rs".to_string()]
+            vec![
+                FILE_MUTATION_LOCK_KEY.to_string(),
+                "path:src/a.rs".to_string(),
+                "path:src/b.rs".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn ast_edit_locks_each_target_path_sorted_deduped() {
+        let keys = exclusive_lock_keys(
+            BuiltinToolKind::AstEdit,
+            ToolConcurrency::Exclusive,
+            &node("a"),
+            &call(
+                "ast_edit",
+                serde_json::json!({
+                    "ops": [{"pat": "old()", "out": "new()"}],
+                    "paths": ["src/**/*.ts", "./src/special.ts", "src/**/*.ts"]
+                }),
+            ),
+        );
+        assert_eq!(
+            keys,
+            vec![
+                FILE_MUTATION_LOCK_KEY.to_string(),
+                "path:src/**/*.ts".to_string(),
+                "path:src/special.ts".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn ast_edit_and_write_share_a_file_mutation_lock() {
+        let ast_edit_keys = exclusive_lock_keys(
+            BuiltinToolKind::AstEdit,
+            ToolConcurrency::Exclusive,
+            &node("ast"),
+            &call(
+                "ast_edit",
+                serde_json::json!({
+                    "ops": [{"pat": "old()", "out": "new()"}],
+                    "paths": ["src/**/*.ts"]
+                }),
+            ),
+        );
+        let write_keys = exclusive_lock_keys(
+            BuiltinToolKind::Write,
+            ToolConcurrency::Exclusive,
+            &node("write"),
+            &call(
+                "write",
+                serde_json::json!({"path": "src/example.ts", "content": "new();"}),
+            ),
+        );
+
+        assert!(
+            ast_edit_keys.iter().any(|key| write_keys.contains(key)),
+            "ast_edit globs must serialize with writes to matching files"
         );
     }
 
@@ -1210,7 +1325,10 @@ mod tests {
             &node("a"),
             &call("edit", serde_json::json!({})),
         );
-        assert_eq!(keys, vec!["tool:edit".to_string()]);
+        assert_eq!(
+            keys,
+            vec![FILE_MUTATION_LOCK_KEY.to_string(), "tool:edit".to_string()]
+        );
     }
 
     #[test]
@@ -1224,7 +1342,11 @@ mod tests {
         );
         assert_eq!(
             keys,
-            vec!["path:src/a.rs".to_string(), "path:src/b.rs".to_string()]
+            vec![
+                FILE_MUTATION_LOCK_KEY.to_string(),
+                "path:src/a.rs".to_string(),
+                "path:src/b.rs".to_string()
+            ]
         );
     }
 
@@ -1236,7 +1358,13 @@ mod tests {
             &node("a"),
             &call("apply_patch", serde_json::json!({"input": "garbage"})),
         );
-        assert_eq!(keys, vec!["tool:apply_patch".to_string()]);
+        assert_eq!(
+            keys,
+            vec![
+                FILE_MUTATION_LOCK_KEY.to_string(),
+                "tool:apply_patch".to_string()
+            ]
+        );
     }
 
     #[test]

@@ -46,6 +46,7 @@ interface UseWorkspaceCatalogParams {
   setRunStateByWorkflowId: (setter: (state: Record<string, WorkflowRunState>) => Record<string, WorkflowRunState>) => void;
   refreshReadiness: (nextSettings?: AppSettings) => Promise<void>;
   settings: Accessor<AppSettings>;
+  activeProviderKeyInput: Accessor<string>;
   setSettings: Setter<AppSettings>;
   showErrorToast: ToastHandler;
   showSuccessToast: ToastHandler;
@@ -401,6 +402,25 @@ export function useWorkspaceCatalog(params: UseWorkspaceCatalogParams) {
     }
   };
 
+  const handleCreateAgentWithAi = async (description: string) => {
+    try {
+      const agent = await desktop.createAgentDefinitionWithAi(
+        description,
+        params.settings(),
+        params.activeProviderKeyInput() || null,
+      );
+      setAgents([...agents(), agent]);
+      setSelectedAgentId(agent.id);
+      setAgentSchemaDraft(JSON.stringify(agent.output_schema, null, 2));
+      params.setScreen("agents");
+      params.showSuccessToast(`Created agent "${agent.name}"`);
+      return true;
+    } catch (error) {
+      params.showErrorToast(normalizeError(error));
+      return false;
+    }
+  };
+
   const handleStartAgentNameEdit = (agentId: string, currentName: string) => {
     setEditingAgentId(agentId);
     setAgentNameDraft(currentName);
@@ -550,6 +570,7 @@ export function useWorkspaceCatalog(params: UseWorkspaceCatalogParams) {
     scheduleDraftFromSchedule,
     describeWorkflowSchedule,
     handleCreateAgent,
+    handleCreateAgentWithAi,
     handleSaveAgents,
     handleAgentSchemaInput,
     updateSelectedAgent,

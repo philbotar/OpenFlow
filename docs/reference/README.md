@@ -2,6 +2,8 @@
 
 Use this page for commands, storage paths, and operational facts that should be easy to look up.
 
+Agent and harness tools (built-ins, MCP, authoring): [`tools.md`](tools.md).
+
 ## Dev Commands
 
 | Goal | Command |

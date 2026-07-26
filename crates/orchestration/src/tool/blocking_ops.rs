@@ -75,6 +75,7 @@ impl BlockingToolOps {
             BuiltinToolKind::Edit => ops.edit(args),
             BuiltinToolKind::ApplyPatch => ops.apply_patch(args),
             BuiltinToolKind::AstGrep => Err(ToolError::failed("ast_grep must use async runner")),
+            BuiltinToolKind::AstEdit => Err(ToolError::failed("ast_edit must use async runner")),
             _ => Err(ToolError::failed(
                 "blocking runner received a non-blocking tool",
             )),

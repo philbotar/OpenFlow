@@ -79,18 +79,6 @@ export function useWorkflowEditor(params: UseWorkflowEditorParams) {
   const structuralEditingLocked = () => Boolean(params.runState()?.active);
   let structuralSaveQueue: Promise<void> = Promise.resolve();
 
-  const persistStructuralWorkflow = (workflow: Workflow) => {
-    structuralSaveQueue = structuralSaveQueue.then(async () => {
-      try {
-        await desktop.saveWorkflow(workflow);
-      } catch (error) {
-        params.showErrorToast(
-          `Workflow changed locally but could not be saved: ${normalizeError(error)}`,
-        );
-      }
-    });
-  };
-
   const canvasGraph = createMemo<WorkflowCanvasGraph | null>(
     (previous) => projectWorkflowCanvasGraph(params.activeWorkflow(), previous),
     null,
@@ -115,6 +103,36 @@ export function useWorkflowEditor(params: UseWorkflowEditorParams) {
     selectedNodeId,
     showErrorToast: params.showErrorToast,
   });
+
+  const saveStructuralWorkflow = async (workflow: Workflow): Promise<boolean> => {
+    try {
+      await desktop.saveWorkflow(workflow);
+      return true;
+    } catch (error) {
+      params.showErrorToast(
+        `Workflow changed locally but could not be saved: ${normalizeError(error)}`,
+      );
+      return false;
+    }
+  };
+
+  const persistStructuralWorkflow = (workflow: Workflow) => {
+    structuralSaveQueue = structuralSaveQueue.then(async () => {
+      await saveStructuralWorkflow(workflow);
+    });
+  };
+
+  const validateAndPersistStructuralWorkflow = (
+    workflow: Workflow,
+    onInvalid: () => void,
+  ): Promise<boolean> => {
+    const operation = structuralSaveQueue.then(async () => {
+      const valid = await workflowMutations.validateActiveWorkflow(workflow, onInvalid);
+      return valid ? saveStructuralWorkflow(workflow) : false;
+    });
+    structuralSaveQueue = operation.then(() => undefined);
+    return operation;
+  };
 
   const closeAddNodePicker = () => setAddNodePickerOpen(false);
 
@@ -316,14 +334,13 @@ export function useWorkflowEditor(params: UseWorkflowEditorParams) {
       setEditingNodeId(null);
       setNodeLabelDraft("");
       if (!nextWorkflow) return;
-      const valid = await workflowMutations.validateActiveWorkflow(nextWorkflow, () => {
+      const valid = await validateAndPersistStructuralWorkflow(nextWorkflow, () => {
         workflowMutations.updateActiveWorkflow((draft) => {
           draft.nodes = draft.nodes.filter((item) => item.id !== nextNode.id);
         });
         setSelectedNodeId(workflow.nodes[0]?.id ?? null);
       });
       if (valid) {
-        persistStructuralWorkflow(nextWorkflow);
         params.showSuccessToast(agentId ? "Added saved agent to workflow" : "Added node");
       }
     } catch (error) {
@@ -450,17 +467,11 @@ export function useWorkflowEditor(params: UseWorkflowEditorParams) {
       setEditingNodeId(null);
       setNodeLabelDraft("");
       if (nextWorkflow) {
-        void workflowMutations
-          .validateActiveWorkflow(nextWorkflow, () => {
+        void validateAndPersistStructuralWorkflow(nextWorkflow, () => {
             workflowMutations.updateActiveWorkflow((draft) => {
               draft.edges = draft.edges.filter((edge) => edge.id !== edgeId);
             });
             setSelectedEdgeId(null);
-          })
-          .then((valid) => {
-            if (valid) {
-              persistStructuralWorkflow(nextWorkflow);
-            }
           });
       }
     }
@@ -490,8 +501,7 @@ export function useWorkflowEditor(params: UseWorkflowEditorParams) {
       setEditingNodeId(null);
       setNodeLabelDraft("");
       if (nextWorkflow) {
-        void workflowMutations
-          .validateActiveWorkflow(nextWorkflow, () => {
+        void validateAndPersistStructuralWorkflow(nextWorkflow, () => {
             workflowMutations.updateActiveWorkflow((draft) => {
               const edge = draft.edges.find((item) => item.id === edgeId);
               if (edge) {
@@ -499,11 +509,6 @@ export function useWorkflowEditor(params: UseWorkflowEditorParams) {
                 edge.to = previousTo;
               }
             });
-          })
-          .then((valid) => {
-            if (valid) {
-              persistStructuralWorkflow(nextWorkflow);
-            }
           });
       }
     }

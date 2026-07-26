@@ -183,6 +183,18 @@ export function createAgentDefinition(name: string) {
   return invoke<AgentDefinition>("create_agent_definition", { name });
 }
 
+export function createAgentDefinitionWithAi(
+  description: string,
+  settings: AppSettings,
+  transientApiKey: string | null = null,
+) {
+  return invoke<AgentDefinition>("create_agent_definition_with_ai", {
+    description,
+    settings,
+    transientApiKey,
+  });
+}
+
 export function saveAgents(agents: AgentDefinition[]) {
   return invoke<void>("save_agents", { agents });
 }

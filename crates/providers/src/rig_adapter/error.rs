@@ -62,6 +62,9 @@ pub fn to_agent_error(error: CompletionError, label: &str) -> AgentError {
             if is_rig_empty_response(&message) {
                 return AgentError::Failed(EMPTY_TURN_ERROR.to_string());
             }
+            if let Some((status, body)) = rig_provider_http_status(&message) {
+                return classify_status(status, body, label);
+            }
             let rendered = format!("{label} provider error: {message}");
             if crate::http_errors::is_retryable_proxy_body(&message) {
                 AgentError::Transient(rendered)
@@ -70,6 +73,16 @@ pub fn to_agent_error(error: CompletionError, label: &str) -> AgentError {
             }
         }
     }
+}
+
+fn rig_provider_http_status(message: &str) -> Option<(u16, &str)> {
+    let detail = message.strip_prefix("Invalid status code ")?;
+    let (status, detail) = detail.split_once(' ')?;
+    let status = status.parse().ok()?;
+    let body = detail
+        .split_once(" with message: ")
+        .map_or("", |(_, body)| body);
+    Some((status, body))
 }
 
 fn http_client_error(error: HttpClientError, label: &str) -> AgentError {
@@ -189,6 +202,19 @@ mod tests {
             "Custom OpenAI-compatible API",
         );
         assert!(matches!(err, AgentError::Failed(_)));
+    }
+
+    #[test]
+    fn provider_http_status_error_uses_structured_classification() {
+        let err = to_agent_error(
+            CompletionError::ProviderError(
+                "Invalid status code 401 Unauthorized with message: expired".to_string(),
+            ),
+            "OpenAI Codex",
+        );
+
+        assert!(matches!(err, AgentError::Permanent(_)));
+        assert!(is_unauthorized(&err, "OpenAI Codex"));
     }
 
     #[test]

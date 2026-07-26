@@ -53,6 +53,8 @@ Agent nodes can invoke built-in tools (read and edit files, run shell commands, 
 
 Denied tools return an error result to the model; the run can continue unless the agent cannot recover. Callable **Subagents** in the same inspector delegate work to saved agents without redrawing the graph.
 
+Per-tool names, arguments, and limits: [`../reference/tools.md`](../reference/tools.md).
+
 ## Run trace, history, and replay
 
 - **Run trace** — structured timeline of node and tool events for the current or replayed run.

@@ -825,6 +825,7 @@ pub engine::execution::interactive_engine::EngineAwaitInput::context: alloc::str
 pub engine::execution::interactive_engine::EngineAwaitInput::is_initial: bool
 pub engine::execution::interactive_engine::EngineAwaitInput::label: alloc::string::String
 pub engine::execution::interactive_engine::EngineAwaitInput::node_id: engine::graph::workflow::NodeId
+pub engine::execution::interactive_engine::EngineAwaitInput::structured_input: core::option::Option<engine::ports::outbound::StructuredUserInput>
 impl core::clone::Clone for engine::execution::interactive_engine::EngineAwaitInput
 pub fn engine::execution::interactive_engine::EngineAwaitInput::clone(&self) -> engine::execution::interactive_engine::EngineAwaitInput
 impl core::fmt::Debug for engine::execution::interactive_engine::EngineAwaitInput
@@ -1026,6 +1027,7 @@ pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::plan_mod
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::reads_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::ReadRecord>>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::request_input_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
+pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::structured_input_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, engine::ports::outbound::StructuredUserInput>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::submit_output_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::transcripts: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::conversation::AgentTranscriptItem>>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::transient_streaks_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
@@ -1359,6 +1361,7 @@ pub engine::execution::telemetry::RunTelemetry::NodeAwaitingInput::context: allo
 pub engine::execution::telemetry::RunTelemetry::NodeAwaitingInput::is_initial: bool
 pub engine::execution::telemetry::RunTelemetry::NodeAwaitingInput::label: alloc::string::String
 pub engine::execution::telemetry::RunTelemetry::NodeAwaitingInput::node_id: engine::graph::workflow::NodeId
+pub engine::execution::telemetry::RunTelemetry::NodeAwaitingInput::structured_input: core::option::Option<engine::ports::outbound::StructuredUserInput>
 pub engine::execution::telemetry::RunTelemetry::NodeCompleted
 pub engine::execution::telemetry::RunTelemetry::NodeCompleted::label: alloc::string::String
 pub engine::execution::telemetry::RunTelemetry::NodeCompleted::node_id: engine::graph::workflow::NodeId
@@ -1729,6 +1732,7 @@ pub engine::execution::RunTelemetry::NodeAwaitingInput::context: alloc::string::
 pub engine::execution::RunTelemetry::NodeAwaitingInput::is_initial: bool
 pub engine::execution::RunTelemetry::NodeAwaitingInput::label: alloc::string::String
 pub engine::execution::RunTelemetry::NodeAwaitingInput::node_id: engine::graph::workflow::NodeId
+pub engine::execution::RunTelemetry::NodeAwaitingInput::structured_input: core::option::Option<engine::ports::outbound::StructuredUserInput>
 pub engine::execution::RunTelemetry::NodeCompleted
 pub engine::execution::RunTelemetry::NodeCompleted::label: alloc::string::String
 pub engine::execution::RunTelemetry::NodeCompleted::node_id: engine::graph::workflow::NodeId
@@ -2061,6 +2065,7 @@ pub engine::execution::EngineAwaitInput::context: alloc::string::String
 pub engine::execution::EngineAwaitInput::is_initial: bool
 pub engine::execution::EngineAwaitInput::label: alloc::string::String
 pub engine::execution::EngineAwaitInput::node_id: engine::graph::workflow::NodeId
+pub engine::execution::EngineAwaitInput::structured_input: core::option::Option<engine::ports::outbound::StructuredUserInput>
 impl core::clone::Clone for engine::execution::interactive_engine::EngineAwaitInput
 pub fn engine::execution::interactive_engine::EngineAwaitInput::clone(&self) -> engine::execution::interactive_engine::EngineAwaitInput
 impl core::fmt::Debug for engine::execution::interactive_engine::EngineAwaitInput
@@ -2262,6 +2267,7 @@ pub engine::execution::InteractiveEngineCheckpoint::plan_mode_source_node_id: co
 pub engine::execution::InteractiveEngineCheckpoint::reads_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::ReadRecord>>
 pub engine::execution::InteractiveEngineCheckpoint::request_input_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::execution::InteractiveEngineCheckpoint::retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
+pub engine::execution::InteractiveEngineCheckpoint::structured_input_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, engine::ports::outbound::StructuredUserInput>
 pub engine::execution::InteractiveEngineCheckpoint::submit_output_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::execution::InteractiveEngineCheckpoint::transcripts: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::conversation::AgentTranscriptItem>>
 pub engine::execution::InteractiveEngineCheckpoint::transient_streaks_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
@@ -4806,6 +4812,7 @@ pub struct engine::ports::outbound::AgentNeedUserInput
 pub engine::ports::outbound::AgentNeedUserInput::assistant_message: alloc::string::String
 pub engine::ports::outbound::AgentNeedUserInput::raw_text: alloc::string::String
 pub engine::ports::outbound::AgentNeedUserInput::reasoning: alloc::vec::Vec<engine::conversation::AgentReasoning>
+pub engine::ports::outbound::AgentNeedUserInput::structured_input: core::option::Option<engine::ports::outbound::StructuredUserInput>
 impl core::clone::Clone for engine::ports::outbound::AgentNeedUserInput
 pub fn engine::ports::outbound::AgentNeedUserInput::clone(&self) -> engine::ports::outbound::AgentNeedUserInput
 impl core::cmp::Eq for engine::ports::outbound::AgentNeedUserInput
@@ -5053,6 +5060,54 @@ impl<T> core::convert::From<T> for engine::ports::outbound::OutputRepairCandidat
 pub fn engine::ports::outbound::OutputRepairCandidate::from(T) -> T
 impl<T> typenum::type_operators::Same for engine::ports::outbound::OutputRepairCandidate
 pub type engine::ports::outbound::OutputRepairCandidate::Output = T
+pub struct engine::ports::outbound::StructuredUserInput
+pub engine::ports::outbound::StructuredUserInput::questions: alloc::vec::Vec<engine::ports::outbound::UserInputQuestion>
+impl core::clone::Clone for engine::ports::outbound::StructuredUserInput
+pub fn engine::ports::outbound::StructuredUserInput::clone(&self) -> engine::ports::outbound::StructuredUserInput
+impl core::cmp::Eq for engine::ports::outbound::StructuredUserInput
+impl core::cmp::PartialEq for engine::ports::outbound::StructuredUserInput
+pub fn engine::ports::outbound::StructuredUserInput::eq(&self, &engine::ports::outbound::StructuredUserInput) -> bool
+impl core::fmt::Debug for engine::ports::outbound::StructuredUserInput
+pub fn engine::ports::outbound::StructuredUserInput::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::ports::outbound::StructuredUserInput
+impl serde_core::ser::Serialize for engine::ports::outbound::StructuredUserInput
+pub fn engine::ports::outbound::StructuredUserInput::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for engine::ports::outbound::StructuredUserInput
+pub fn engine::ports::outbound::StructuredUserInput::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for engine::ports::outbound::StructuredUserInput
+impl core::marker::Send for engine::ports::outbound::StructuredUserInput
+impl core::marker::Sync for engine::ports::outbound::StructuredUserInput
+impl core::marker::Unpin for engine::ports::outbound::StructuredUserInput
+impl core::marker::UnsafeUnpin for engine::ports::outbound::StructuredUserInput
+impl core::panic::unwind_safe::RefUnwindSafe for engine::ports::outbound::StructuredUserInput
+impl core::panic::unwind_safe::UnwindSafe for engine::ports::outbound::StructuredUserInput
+impl<Q, K> equivalent::Equivalent<K> for engine::ports::outbound::StructuredUserInput where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn engine::ports::outbound::StructuredUserInput::equivalent(&self, &K) -> bool
+impl<T, U> core::convert::Into<U> for engine::ports::outbound::StructuredUserInput where U: core::convert::From<T>
+pub fn engine::ports::outbound::StructuredUserInput::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::ports::outbound::StructuredUserInput where U: core::convert::Into<T>
+pub type engine::ports::outbound::StructuredUserInput::Error = core::convert::Infallible
+pub fn engine::ports::outbound::StructuredUserInput::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::ports::outbound::StructuredUserInput where U: core::convert::TryFrom<T>
+pub type engine::ports::outbound::StructuredUserInput::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::ports::outbound::StructuredUserInput::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::ports::outbound::StructuredUserInput where T: core::clone::Clone
+pub type engine::ports::outbound::StructuredUserInput::Owned = T
+pub fn engine::ports::outbound::StructuredUserInput::clone_into(&self, &mut T)
+pub fn engine::ports::outbound::StructuredUserInput::to_owned(&self) -> T
+impl<T> core::any::Any for engine::ports::outbound::StructuredUserInput where T: 'static + ?core::marker::Sized
+pub fn engine::ports::outbound::StructuredUserInput::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::ports::outbound::StructuredUserInput where T: ?core::marker::Sized
+pub fn engine::ports::outbound::StructuredUserInput::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::ports::outbound::StructuredUserInput where T: ?core::marker::Sized
+pub fn engine::ports::outbound::StructuredUserInput::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::ports::outbound::StructuredUserInput where T: core::clone::Clone
+pub unsafe fn engine::ports::outbound::StructuredUserInput::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::ports::outbound::StructuredUserInput
+pub fn engine::ports::outbound::StructuredUserInput::from(T) -> T
+impl<T> serde_core::de::DeserializeOwned for engine::ports::outbound::StructuredUserInput where T: for<'de> serde_core::de::Deserialize<'de>
+impl<T> typenum::type_operators::Same for engine::ports::outbound::StructuredUserInput
+pub type engine::ports::outbound::StructuredUserInput::Output = T
 pub struct engine::ports::outbound::ToolBatchEffects
 pub engine::ports::outbound::ToolBatchEffects::file_changes: alloc::vec::Vec<engine::FileChangeRecord>
 pub engine::ports::outbound::ToolBatchEffects::interrupted: bool
@@ -5192,6 +5247,106 @@ impl<T> core::convert::From<T> for engine::ports::outbound::UsageReport
 pub fn engine::ports::outbound::UsageReport::from(T) -> T
 impl<T> typenum::type_operators::Same for engine::ports::outbound::UsageReport
 pub type engine::ports::outbound::UsageReport::Output = T
+pub struct engine::ports::outbound::UserInputOption
+pub engine::ports::outbound::UserInputOption::description: alloc::string::String
+pub engine::ports::outbound::UserInputOption::label: alloc::string::String
+impl core::clone::Clone for engine::ports::outbound::UserInputOption
+pub fn engine::ports::outbound::UserInputOption::clone(&self) -> engine::ports::outbound::UserInputOption
+impl core::cmp::Eq for engine::ports::outbound::UserInputOption
+impl core::cmp::PartialEq for engine::ports::outbound::UserInputOption
+pub fn engine::ports::outbound::UserInputOption::eq(&self, &engine::ports::outbound::UserInputOption) -> bool
+impl core::fmt::Debug for engine::ports::outbound::UserInputOption
+pub fn engine::ports::outbound::UserInputOption::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::ports::outbound::UserInputOption
+impl serde_core::ser::Serialize for engine::ports::outbound::UserInputOption
+pub fn engine::ports::outbound::UserInputOption::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for engine::ports::outbound::UserInputOption
+pub fn engine::ports::outbound::UserInputOption::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for engine::ports::outbound::UserInputOption
+impl core::marker::Send for engine::ports::outbound::UserInputOption
+impl core::marker::Sync for engine::ports::outbound::UserInputOption
+impl core::marker::Unpin for engine::ports::outbound::UserInputOption
+impl core::marker::UnsafeUnpin for engine::ports::outbound::UserInputOption
+impl core::panic::unwind_safe::RefUnwindSafe for engine::ports::outbound::UserInputOption
+impl core::panic::unwind_safe::UnwindSafe for engine::ports::outbound::UserInputOption
+impl<Q, K> equivalent::Equivalent<K> for engine::ports::outbound::UserInputOption where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn engine::ports::outbound::UserInputOption::equivalent(&self, &K) -> bool
+impl<T, U> core::convert::Into<U> for engine::ports::outbound::UserInputOption where U: core::convert::From<T>
+pub fn engine::ports::outbound::UserInputOption::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::ports::outbound::UserInputOption where U: core::convert::Into<T>
+pub type engine::ports::outbound::UserInputOption::Error = core::convert::Infallible
+pub fn engine::ports::outbound::UserInputOption::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::ports::outbound::UserInputOption where U: core::convert::TryFrom<T>
+pub type engine::ports::outbound::UserInputOption::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::ports::outbound::UserInputOption::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::ports::outbound::UserInputOption where T: core::clone::Clone
+pub type engine::ports::outbound::UserInputOption::Owned = T
+pub fn engine::ports::outbound::UserInputOption::clone_into(&self, &mut T)
+pub fn engine::ports::outbound::UserInputOption::to_owned(&self) -> T
+impl<T> core::any::Any for engine::ports::outbound::UserInputOption where T: 'static + ?core::marker::Sized
+pub fn engine::ports::outbound::UserInputOption::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::ports::outbound::UserInputOption where T: ?core::marker::Sized
+pub fn engine::ports::outbound::UserInputOption::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::ports::outbound::UserInputOption where T: ?core::marker::Sized
+pub fn engine::ports::outbound::UserInputOption::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::ports::outbound::UserInputOption where T: core::clone::Clone
+pub unsafe fn engine::ports::outbound::UserInputOption::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::ports::outbound::UserInputOption
+pub fn engine::ports::outbound::UserInputOption::from(T) -> T
+impl<T> serde_core::de::DeserializeOwned for engine::ports::outbound::UserInputOption where T: for<'de> serde_core::de::Deserialize<'de>
+impl<T> typenum::type_operators::Same for engine::ports::outbound::UserInputOption
+pub type engine::ports::outbound::UserInputOption::Output = T
+pub struct engine::ports::outbound::UserInputQuestion
+pub engine::ports::outbound::UserInputQuestion::header: alloc::string::String
+pub engine::ports::outbound::UserInputQuestion::id: alloc::string::String
+pub engine::ports::outbound::UserInputQuestion::options: alloc::vec::Vec<engine::ports::outbound::UserInputOption>
+pub engine::ports::outbound::UserInputQuestion::question: alloc::string::String
+impl core::clone::Clone for engine::ports::outbound::UserInputQuestion
+pub fn engine::ports::outbound::UserInputQuestion::clone(&self) -> engine::ports::outbound::UserInputQuestion
+impl core::cmp::Eq for engine::ports::outbound::UserInputQuestion
+impl core::cmp::PartialEq for engine::ports::outbound::UserInputQuestion
+pub fn engine::ports::outbound::UserInputQuestion::eq(&self, &engine::ports::outbound::UserInputQuestion) -> bool
+impl core::fmt::Debug for engine::ports::outbound::UserInputQuestion
+pub fn engine::ports::outbound::UserInputQuestion::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::ports::outbound::UserInputQuestion
+impl serde_core::ser::Serialize for engine::ports::outbound::UserInputQuestion
+pub fn engine::ports::outbound::UserInputQuestion::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for engine::ports::outbound::UserInputQuestion
+pub fn engine::ports::outbound::UserInputQuestion::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for engine::ports::outbound::UserInputQuestion
+impl core::marker::Send for engine::ports::outbound::UserInputQuestion
+impl core::marker::Sync for engine::ports::outbound::UserInputQuestion
+impl core::marker::Unpin for engine::ports::outbound::UserInputQuestion
+impl core::marker::UnsafeUnpin for engine::ports::outbound::UserInputQuestion
+impl core::panic::unwind_safe::RefUnwindSafe for engine::ports::outbound::UserInputQuestion
+impl core::panic::unwind_safe::UnwindSafe for engine::ports::outbound::UserInputQuestion
+impl<Q, K> equivalent::Equivalent<K> for engine::ports::outbound::UserInputQuestion where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn engine::ports::outbound::UserInputQuestion::equivalent(&self, &K) -> bool
+impl<T, U> core::convert::Into<U> for engine::ports::outbound::UserInputQuestion where U: core::convert::From<T>
+pub fn engine::ports::outbound::UserInputQuestion::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::ports::outbound::UserInputQuestion where U: core::convert::Into<T>
+pub type engine::ports::outbound::UserInputQuestion::Error = core::convert::Infallible
+pub fn engine::ports::outbound::UserInputQuestion::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::ports::outbound::UserInputQuestion where U: core::convert::TryFrom<T>
+pub type engine::ports::outbound::UserInputQuestion::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::ports::outbound::UserInputQuestion::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::ports::outbound::UserInputQuestion where T: core::clone::Clone
+pub type engine::ports::outbound::UserInputQuestion::Owned = T
+pub fn engine::ports::outbound::UserInputQuestion::clone_into(&self, &mut T)
+pub fn engine::ports::outbound::UserInputQuestion::to_owned(&self) -> T
+impl<T> core::any::Any for engine::ports::outbound::UserInputQuestion where T: 'static + ?core::marker::Sized
+pub fn engine::ports::outbound::UserInputQuestion::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::ports::outbound::UserInputQuestion where T: ?core::marker::Sized
+pub fn engine::ports::outbound::UserInputQuestion::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::ports::outbound::UserInputQuestion where T: ?core::marker::Sized
+pub fn engine::ports::outbound::UserInputQuestion::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::ports::outbound::UserInputQuestion where T: core::clone::Clone
+pub unsafe fn engine::ports::outbound::UserInputQuestion::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::ports::outbound::UserInputQuestion
+pub fn engine::ports::outbound::UserInputQuestion::from(T) -> T
+impl<T> serde_core::de::DeserializeOwned for engine::ports::outbound::UserInputQuestion where T: for<'de> serde_core::de::Deserialize<'de>
+impl<T> typenum::type_operators::Same for engine::ports::outbound::UserInputQuestion
+pub type engine::ports::outbound::UserInputQuestion::Output = T
 pub trait engine::ports::outbound::AiPort: core::marker::Send + core::marker::Sync
 pub fn engine::ports::outbound::AiPort::invoke<'life0, 'async_trait>(&'life0 self, engine::ports::outbound::AgentRequest) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = core::result::Result<engine::ports::outbound::AgentTurnOutcome, engine::ports::outbound::AgentError>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
 pub fn engine::ports::outbound::AiPort::invoke_stream<'life0, 'life1, 'async_trait>(&'life0 self, engine::ports::outbound::AgentRequest, &'life1 dyn engine::ports::outbound::AiStreamSink) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = core::result::Result<engine::ports::outbound::AgentTurnOutcome, engine::ports::outbound::AgentError>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
@@ -5520,6 +5675,7 @@ pub struct engine::ports::AgentNeedUserInput
 pub engine::ports::AgentNeedUserInput::assistant_message: alloc::string::String
 pub engine::ports::AgentNeedUserInput::raw_text: alloc::string::String
 pub engine::ports::AgentNeedUserInput::reasoning: alloc::vec::Vec<engine::conversation::AgentReasoning>
+pub engine::ports::AgentNeedUserInput::structured_input: core::option::Option<engine::ports::outbound::StructuredUserInput>
 impl core::clone::Clone for engine::ports::outbound::AgentNeedUserInput
 pub fn engine::ports::outbound::AgentNeedUserInput::clone(&self) -> engine::ports::outbound::AgentNeedUserInput
 impl core::cmp::Eq for engine::ports::outbound::AgentNeedUserInput
@@ -5767,6 +5923,54 @@ impl<T> core::convert::From<T> for engine::ports::outbound::OutputRepairCandidat
 pub fn engine::ports::outbound::OutputRepairCandidate::from(T) -> T
 impl<T> typenum::type_operators::Same for engine::ports::outbound::OutputRepairCandidate
 pub type engine::ports::outbound::OutputRepairCandidate::Output = T
+pub struct engine::ports::StructuredUserInput
+pub engine::ports::StructuredUserInput::questions: alloc::vec::Vec<engine::ports::outbound::UserInputQuestion>
+impl core::clone::Clone for engine::ports::outbound::StructuredUserInput
+pub fn engine::ports::outbound::StructuredUserInput::clone(&self) -> engine::ports::outbound::StructuredUserInput
+impl core::cmp::Eq for engine::ports::outbound::StructuredUserInput
+impl core::cmp::PartialEq for engine::ports::outbound::StructuredUserInput
+pub fn engine::ports::outbound::StructuredUserInput::eq(&self, &engine::ports::outbound::StructuredUserInput) -> bool
+impl core::fmt::Debug for engine::ports::outbound::StructuredUserInput
+pub fn engine::ports::outbound::StructuredUserInput::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::ports::outbound::StructuredUserInput
+impl serde_core::ser::Serialize for engine::ports::outbound::StructuredUserInput
+pub fn engine::ports::outbound::StructuredUserInput::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for engine::ports::outbound::StructuredUserInput
+pub fn engine::ports::outbound::StructuredUserInput::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for engine::ports::outbound::StructuredUserInput
+impl core::marker::Send for engine::ports::outbound::StructuredUserInput
+impl core::marker::Sync for engine::ports::outbound::StructuredUserInput
+impl core::marker::Unpin for engine::ports::outbound::StructuredUserInput
+impl core::marker::UnsafeUnpin for engine::ports::outbound::StructuredUserInput
+impl core::panic::unwind_safe::RefUnwindSafe for engine::ports::outbound::StructuredUserInput
+impl core::panic::unwind_safe::UnwindSafe for engine::ports::outbound::StructuredUserInput
+impl<Q, K> equivalent::Equivalent<K> for engine::ports::outbound::StructuredUserInput where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn engine::ports::outbound::StructuredUserInput::equivalent(&self, &K) -> bool
+impl<T, U> core::convert::Into<U> for engine::ports::outbound::StructuredUserInput where U: core::convert::From<T>
+pub fn engine::ports::outbound::StructuredUserInput::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::ports::outbound::StructuredUserInput where U: core::convert::Into<T>
+pub type engine::ports::outbound::StructuredUserInput::Error = core::convert::Infallible
+pub fn engine::ports::outbound::StructuredUserInput::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::ports::outbound::StructuredUserInput where U: core::convert::TryFrom<T>
+pub type engine::ports::outbound::StructuredUserInput::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::ports::outbound::StructuredUserInput::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::ports::outbound::StructuredUserInput where T: core::clone::Clone
+pub type engine::ports::outbound::StructuredUserInput::Owned = T
+pub fn engine::ports::outbound::StructuredUserInput::clone_into(&self, &mut T)
+pub fn engine::ports::outbound::StructuredUserInput::to_owned(&self) -> T
+impl<T> core::any::Any for engine::ports::outbound::StructuredUserInput where T: 'static + ?core::marker::Sized
+pub fn engine::ports::outbound::StructuredUserInput::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::ports::outbound::StructuredUserInput where T: ?core::marker::Sized
+pub fn engine::ports::outbound::StructuredUserInput::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::ports::outbound::StructuredUserInput where T: ?core::marker::Sized
+pub fn engine::ports::outbound::StructuredUserInput::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::ports::outbound::StructuredUserInput where T: core::clone::Clone
+pub unsafe fn engine::ports::outbound::StructuredUserInput::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::ports::outbound::StructuredUserInput
+pub fn engine::ports::outbound::StructuredUserInput::from(T) -> T
+impl<T> serde_core::de::DeserializeOwned for engine::ports::outbound::StructuredUserInput where T: for<'de> serde_core::de::Deserialize<'de>
+impl<T> typenum::type_operators::Same for engine::ports::outbound::StructuredUserInput
+pub type engine::ports::outbound::StructuredUserInput::Output = T
 pub struct engine::ports::ToolBatchEffects
 pub engine::ports::ToolBatchEffects::file_changes: alloc::vec::Vec<engine::FileChangeRecord>
 pub engine::ports::ToolBatchEffects::interrupted: bool
@@ -5906,6 +6110,106 @@ impl<T> core::convert::From<T> for engine::ports::outbound::UsageReport
 pub fn engine::ports::outbound::UsageReport::from(T) -> T
 impl<T> typenum::type_operators::Same for engine::ports::outbound::UsageReport
 pub type engine::ports::outbound::UsageReport::Output = T
+pub struct engine::ports::UserInputOption
+pub engine::ports::UserInputOption::description: alloc::string::String
+pub engine::ports::UserInputOption::label: alloc::string::String
+impl core::clone::Clone for engine::ports::outbound::UserInputOption
+pub fn engine::ports::outbound::UserInputOption::clone(&self) -> engine::ports::outbound::UserInputOption
+impl core::cmp::Eq for engine::ports::outbound::UserInputOption
+impl core::cmp::PartialEq for engine::ports::outbound::UserInputOption
+pub fn engine::ports::outbound::UserInputOption::eq(&self, &engine::ports::outbound::UserInputOption) -> bool
+impl core::fmt::Debug for engine::ports::outbound::UserInputOption
+pub fn engine::ports::outbound::UserInputOption::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::ports::outbound::UserInputOption
+impl serde_core::ser::Serialize for engine::ports::outbound::UserInputOption
+pub fn engine::ports::outbound::UserInputOption::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for engine::ports::outbound::UserInputOption
+pub fn engine::ports::outbound::UserInputOption::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for engine::ports::outbound::UserInputOption
+impl core::marker::Send for engine::ports::outbound::UserInputOption
+impl core::marker::Sync for engine::ports::outbound::UserInputOption
+impl core::marker::Unpin for engine::ports::outbound::UserInputOption
+impl core::marker::UnsafeUnpin for engine::ports::outbound::UserInputOption
+impl core::panic::unwind_safe::RefUnwindSafe for engine::ports::outbound::UserInputOption
+impl core::panic::unwind_safe::UnwindSafe for engine::ports::outbound::UserInputOption
+impl<Q, K> equivalent::Equivalent<K> for engine::ports::outbound::UserInputOption where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn engine::ports::outbound::UserInputOption::equivalent(&self, &K) -> bool
+impl<T, U> core::convert::Into<U> for engine::ports::outbound::UserInputOption where U: core::convert::From<T>
+pub fn engine::ports::outbound::UserInputOption::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::ports::outbound::UserInputOption where U: core::convert::Into<T>
+pub type engine::ports::outbound::UserInputOption::Error = core::convert::Infallible
+pub fn engine::ports::outbound::UserInputOption::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::ports::outbound::UserInputOption where U: core::convert::TryFrom<T>
+pub type engine::ports::outbound::UserInputOption::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::ports::outbound::UserInputOption::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::ports::outbound::UserInputOption where T: core::clone::Clone
+pub type engine::ports::outbound::UserInputOption::Owned = T
+pub fn engine::ports::outbound::UserInputOption::clone_into(&self, &mut T)
+pub fn engine::ports::outbound::UserInputOption::to_owned(&self) -> T
+impl<T> core::any::Any for engine::ports::outbound::UserInputOption where T: 'static + ?core::marker::Sized
+pub fn engine::ports::outbound::UserInputOption::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::ports::outbound::UserInputOption where T: ?core::marker::Sized
+pub fn engine::ports::outbound::UserInputOption::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::ports::outbound::UserInputOption where T: ?core::marker::Sized
+pub fn engine::ports::outbound::UserInputOption::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::ports::outbound::UserInputOption where T: core::clone::Clone
+pub unsafe fn engine::ports::outbound::UserInputOption::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::ports::outbound::UserInputOption
+pub fn engine::ports::outbound::UserInputOption::from(T) -> T
+impl<T> serde_core::de::DeserializeOwned for engine::ports::outbound::UserInputOption where T: for<'de> serde_core::de::Deserialize<'de>
+impl<T> typenum::type_operators::Same for engine::ports::outbound::UserInputOption
+pub type engine::ports::outbound::UserInputOption::Output = T
+pub struct engine::ports::UserInputQuestion
+pub engine::ports::UserInputQuestion::header: alloc::string::String
+pub engine::ports::UserInputQuestion::id: alloc::string::String
+pub engine::ports::UserInputQuestion::options: alloc::vec::Vec<engine::ports::outbound::UserInputOption>
+pub engine::ports::UserInputQuestion::question: alloc::string::String
+impl core::clone::Clone for engine::ports::outbound::UserInputQuestion
+pub fn engine::ports::outbound::UserInputQuestion::clone(&self) -> engine::ports::outbound::UserInputQuestion
+impl core::cmp::Eq for engine::ports::outbound::UserInputQuestion
+impl core::cmp::PartialEq for engine::ports::outbound::UserInputQuestion
+pub fn engine::ports::outbound::UserInputQuestion::eq(&self, &engine::ports::outbound::UserInputQuestion) -> bool
+impl core::fmt::Debug for engine::ports::outbound::UserInputQuestion
+pub fn engine::ports::outbound::UserInputQuestion::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::ports::outbound::UserInputQuestion
+impl serde_core::ser::Serialize for engine::ports::outbound::UserInputQuestion
+pub fn engine::ports::outbound::UserInputQuestion::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for engine::ports::outbound::UserInputQuestion
+pub fn engine::ports::outbound::UserInputQuestion::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for engine::ports::outbound::UserInputQuestion
+impl core::marker::Send for engine::ports::outbound::UserInputQuestion
+impl core::marker::Sync for engine::ports::outbound::UserInputQuestion
+impl core::marker::Unpin for engine::ports::outbound::UserInputQuestion
+impl core::marker::UnsafeUnpin for engine::ports::outbound::UserInputQuestion
+impl core::panic::unwind_safe::RefUnwindSafe for engine::ports::outbound::UserInputQuestion
+impl core::panic::unwind_safe::UnwindSafe for engine::ports::outbound::UserInputQuestion
+impl<Q, K> equivalent::Equivalent<K> for engine::ports::outbound::UserInputQuestion where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn engine::ports::outbound::UserInputQuestion::equivalent(&self, &K) -> bool
+impl<T, U> core::convert::Into<U> for engine::ports::outbound::UserInputQuestion where U: core::convert::From<T>
+pub fn engine::ports::outbound::UserInputQuestion::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::ports::outbound::UserInputQuestion where U: core::convert::Into<T>
+pub type engine::ports::outbound::UserInputQuestion::Error = core::convert::Infallible
+pub fn engine::ports::outbound::UserInputQuestion::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::ports::outbound::UserInputQuestion where U: core::convert::TryFrom<T>
+pub type engine::ports::outbound::UserInputQuestion::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::ports::outbound::UserInputQuestion::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::ports::outbound::UserInputQuestion where T: core::clone::Clone
+pub type engine::ports::outbound::UserInputQuestion::Owned = T
+pub fn engine::ports::outbound::UserInputQuestion::clone_into(&self, &mut T)
+pub fn engine::ports::outbound::UserInputQuestion::to_owned(&self) -> T
+impl<T> core::any::Any for engine::ports::outbound::UserInputQuestion where T: 'static + ?core::marker::Sized
+pub fn engine::ports::outbound::UserInputQuestion::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::ports::outbound::UserInputQuestion where T: ?core::marker::Sized
+pub fn engine::ports::outbound::UserInputQuestion::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::ports::outbound::UserInputQuestion where T: ?core::marker::Sized
+pub fn engine::ports::outbound::UserInputQuestion::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::ports::outbound::UserInputQuestion where T: core::clone::Clone
+pub unsafe fn engine::ports::outbound::UserInputQuestion::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::ports::outbound::UserInputQuestion
+pub fn engine::ports::outbound::UserInputQuestion::from(T) -> T
+impl<T> serde_core::de::DeserializeOwned for engine::ports::outbound::UserInputQuestion where T: for<'de> serde_core::de::Deserialize<'de>
+impl<T> typenum::type_operators::Same for engine::ports::outbound::UserInputQuestion
+pub type engine::ports::outbound::UserInputQuestion::Output = T
 pub trait engine::ports::AiPort: core::marker::Send + core::marker::Sync
 pub fn engine::ports::AiPort::invoke<'life0, 'async_trait>(&'life0 self, engine::ports::outbound::AgentRequest) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = core::result::Result<engine::ports::outbound::AgentTurnOutcome, engine::ports::outbound::AgentError>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait
 pub fn engine::ports::AiPort::invoke_stream<'life0, 'life1, 'async_trait>(&'life0 self, engine::ports::outbound::AgentRequest, &'life1 dyn engine::ports::outbound::AiStreamSink) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = core::result::Result<engine::ports::outbound::AgentTurnOutcome, engine::ports::outbound::AgentError>> + core::marker::Send + 'async_trait)>> where Self: 'async_trait, 'life0: 'async_trait, 'life1: 'async_trait
@@ -5931,13 +6235,13 @@ pub mod engine::template::store
 pub enum engine::template::store::TemplateStoreError
 pub engine::template::store::TemplateStoreError::CannotCreateDir
 pub engine::template::store::TemplateStoreError::CannotCreateDir::path: alloc::string::String
-pub engine::template::store::TemplateStoreError::CannotCreateDir::source: core::io::error::Error
+pub engine::template::store::TemplateStoreError::CannotCreateDir::source: std::io::error::Error
 pub engine::template::store::TemplateStoreError::CannotRead
 pub engine::template::store::TemplateStoreError::CannotRead::path: alloc::string::String
-pub engine::template::store::TemplateStoreError::CannotRead::source: core::io::error::Error
+pub engine::template::store::TemplateStoreError::CannotRead::source: std::io::error::Error
 pub engine::template::store::TemplateStoreError::CannotWrite
 pub engine::template::store::TemplateStoreError::CannotWrite::path: alloc::string::String
-pub engine::template::store::TemplateStoreError::CannotWrite::source: core::io::error::Error
+pub engine::template::store::TemplateStoreError::CannotWrite::source: std::io::error::Error
 pub engine::template::store::TemplateStoreError::DataDirUnavailable
 pub engine::template::store::TemplateStoreError::NotFound
 pub engine::template::store::TemplateStoreError::NotFound::id: alloc::string::String
@@ -5985,13 +6289,13 @@ pub fn engine::template::store::TemplateStore::update(&self, engine::template::T
 pub enum engine::template::TemplateStoreError
 pub engine::template::TemplateStoreError::CannotCreateDir
 pub engine::template::TemplateStoreError::CannotCreateDir::path: alloc::string::String
-pub engine::template::TemplateStoreError::CannotCreateDir::source: core::io::error::Error
+pub engine::template::TemplateStoreError::CannotCreateDir::source: std::io::error::Error
 pub engine::template::TemplateStoreError::CannotRead
 pub engine::template::TemplateStoreError::CannotRead::path: alloc::string::String
-pub engine::template::TemplateStoreError::CannotRead::source: core::io::error::Error
+pub engine::template::TemplateStoreError::CannotRead::source: std::io::error::Error
 pub engine::template::TemplateStoreError::CannotWrite
 pub engine::template::TemplateStoreError::CannotWrite::path: alloc::string::String
-pub engine::template::TemplateStoreError::CannotWrite::source: core::io::error::Error
+pub engine::template::TemplateStoreError::CannotWrite::source: std::io::error::Error
 pub engine::template::TemplateStoreError::DataDirUnavailable
 pub engine::template::TemplateStoreError::NotFound
 pub engine::template::TemplateStoreError::NotFound::id: alloc::string::String
@@ -6832,6 +7136,7 @@ pub struct engine::tools::ToolCall
 pub engine::tools::ToolCall::arguments: serde_json::value::Value
 pub engine::tools::ToolCall::id: alloc::string::String
 pub engine::tools::ToolCall::name: alloc::string::String
+pub engine::tools::ToolCall::provider_call_id: core::option::Option<alloc::string::String>
 impl core::clone::Clone for engine::ToolCall
 pub fn engine::ToolCall::clone(&self) -> engine::ToolCall
 impl core::cmp::Eq for engine::ToolCall
@@ -7845,6 +8150,7 @@ pub engine::RunTelemetry::NodeAwaitingInput::context: alloc::string::String
 pub engine::RunTelemetry::NodeAwaitingInput::is_initial: bool
 pub engine::RunTelemetry::NodeAwaitingInput::label: alloc::string::String
 pub engine::RunTelemetry::NodeAwaitingInput::node_id: engine::graph::workflow::NodeId
+pub engine::RunTelemetry::NodeAwaitingInput::structured_input: core::option::Option<engine::ports::outbound::StructuredUserInput>
 pub engine::RunTelemetry::NodeCompleted
 pub engine::RunTelemetry::NodeCompleted::label: alloc::string::String
 pub engine::RunTelemetry::NodeCompleted::node_id: engine::graph::workflow::NodeId
@@ -8114,13 +8420,13 @@ pub type engine::SubagentStatus::Output = T
 pub enum engine::TemplateStoreError
 pub engine::TemplateStoreError::CannotCreateDir
 pub engine::TemplateStoreError::CannotCreateDir::path: alloc::string::String
-pub engine::TemplateStoreError::CannotCreateDir::source: core::io::error::Error
+pub engine::TemplateStoreError::CannotCreateDir::source: std::io::error::Error
 pub engine::TemplateStoreError::CannotRead
 pub engine::TemplateStoreError::CannotRead::path: alloc::string::String
-pub engine::TemplateStoreError::CannotRead::source: core::io::error::Error
+pub engine::TemplateStoreError::CannotRead::source: std::io::error::Error
 pub engine::TemplateStoreError::CannotWrite
 pub engine::TemplateStoreError::CannotWrite::path: alloc::string::String
-pub engine::TemplateStoreError::CannotWrite::source: core::io::error::Error
+pub engine::TemplateStoreError::CannotWrite::source: std::io::error::Error
 pub engine::TemplateStoreError::DataDirUnavailable
 pub engine::TemplateStoreError::NotFound
 pub engine::TemplateStoreError::NotFound::id: alloc::string::String
@@ -8539,6 +8845,7 @@ pub struct engine::AgentNeedUserInput
 pub engine::AgentNeedUserInput::assistant_message: alloc::string::String
 pub engine::AgentNeedUserInput::raw_text: alloc::string::String
 pub engine::AgentNeedUserInput::reasoning: alloc::vec::Vec<engine::conversation::AgentReasoning>
+pub engine::AgentNeedUserInput::structured_input: core::option::Option<engine::ports::outbound::StructuredUserInput>
 impl core::clone::Clone for engine::ports::outbound::AgentNeedUserInput
 pub fn engine::ports::outbound::AgentNeedUserInput::clone(&self) -> engine::ports::outbound::AgentNeedUserInput
 impl core::cmp::Eq for engine::ports::outbound::AgentNeedUserInput
@@ -9222,6 +9529,7 @@ pub engine::EngineAwaitInput::context: alloc::string::String
 pub engine::EngineAwaitInput::is_initial: bool
 pub engine::EngineAwaitInput::label: alloc::string::String
 pub engine::EngineAwaitInput::node_id: engine::graph::workflow::NodeId
+pub engine::EngineAwaitInput::structured_input: core::option::Option<engine::ports::outbound::StructuredUserInput>
 impl core::clone::Clone for engine::execution::interactive_engine::EngineAwaitInput
 pub fn engine::execution::interactive_engine::EngineAwaitInput::clone(&self) -> engine::execution::interactive_engine::EngineAwaitInput
 impl core::fmt::Debug for engine::execution::interactive_engine::EngineAwaitInput
@@ -9526,6 +9834,7 @@ pub engine::InteractiveEngineCheckpoint::plan_mode_source_node_id: core::option:
 pub engine::InteractiveEngineCheckpoint::reads_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::ReadRecord>>
 pub engine::InteractiveEngineCheckpoint::request_input_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::InteractiveEngineCheckpoint::retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
+pub engine::InteractiveEngineCheckpoint::structured_input_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, engine::ports::outbound::StructuredUserInput>
 pub engine::InteractiveEngineCheckpoint::submit_output_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::InteractiveEngineCheckpoint::transcripts: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::conversation::AgentTranscriptItem>>
 pub engine::InteractiveEngineCheckpoint::transient_streaks_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
@@ -10383,6 +10692,54 @@ pub fn engine::execution::artifacts::RunReport::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::execution::artifacts::RunReport where T: for<'de> serde_core::de::Deserialize<'de>
 impl<T> typenum::type_operators::Same for engine::execution::artifacts::RunReport
 pub type engine::execution::artifacts::RunReport::Output = T
+pub struct engine::StructuredUserInput
+pub engine::StructuredUserInput::questions: alloc::vec::Vec<engine::ports::outbound::UserInputQuestion>
+impl core::clone::Clone for engine::ports::outbound::StructuredUserInput
+pub fn engine::ports::outbound::StructuredUserInput::clone(&self) -> engine::ports::outbound::StructuredUserInput
+impl core::cmp::Eq for engine::ports::outbound::StructuredUserInput
+impl core::cmp::PartialEq for engine::ports::outbound::StructuredUserInput
+pub fn engine::ports::outbound::StructuredUserInput::eq(&self, &engine::ports::outbound::StructuredUserInput) -> bool
+impl core::fmt::Debug for engine::ports::outbound::StructuredUserInput
+pub fn engine::ports::outbound::StructuredUserInput::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::ports::outbound::StructuredUserInput
+impl serde_core::ser::Serialize for engine::ports::outbound::StructuredUserInput
+pub fn engine::ports::outbound::StructuredUserInput::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for engine::ports::outbound::StructuredUserInput
+pub fn engine::ports::outbound::StructuredUserInput::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for engine::ports::outbound::StructuredUserInput
+impl core::marker::Send for engine::ports::outbound::StructuredUserInput
+impl core::marker::Sync for engine::ports::outbound::StructuredUserInput
+impl core::marker::Unpin for engine::ports::outbound::StructuredUserInput
+impl core::marker::UnsafeUnpin for engine::ports::outbound::StructuredUserInput
+impl core::panic::unwind_safe::RefUnwindSafe for engine::ports::outbound::StructuredUserInput
+impl core::panic::unwind_safe::UnwindSafe for engine::ports::outbound::StructuredUserInput
+impl<Q, K> equivalent::Equivalent<K> for engine::ports::outbound::StructuredUserInput where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn engine::ports::outbound::StructuredUserInput::equivalent(&self, &K) -> bool
+impl<T, U> core::convert::Into<U> for engine::ports::outbound::StructuredUserInput where U: core::convert::From<T>
+pub fn engine::ports::outbound::StructuredUserInput::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::ports::outbound::StructuredUserInput where U: core::convert::Into<T>
+pub type engine::ports::outbound::StructuredUserInput::Error = core::convert::Infallible
+pub fn engine::ports::outbound::StructuredUserInput::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::ports::outbound::StructuredUserInput where U: core::convert::TryFrom<T>
+pub type engine::ports::outbound::StructuredUserInput::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::ports::outbound::StructuredUserInput::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::ports::outbound::StructuredUserInput where T: core::clone::Clone
+pub type engine::ports::outbound::StructuredUserInput::Owned = T
+pub fn engine::ports::outbound::StructuredUserInput::clone_into(&self, &mut T)
+pub fn engine::ports::outbound::StructuredUserInput::to_owned(&self) -> T
+impl<T> core::any::Any for engine::ports::outbound::StructuredUserInput where T: 'static + ?core::marker::Sized
+pub fn engine::ports::outbound::StructuredUserInput::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::ports::outbound::StructuredUserInput where T: ?core::marker::Sized
+pub fn engine::ports::outbound::StructuredUserInput::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::ports::outbound::StructuredUserInput where T: ?core::marker::Sized
+pub fn engine::ports::outbound::StructuredUserInput::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::ports::outbound::StructuredUserInput where T: core::clone::Clone
+pub unsafe fn engine::ports::outbound::StructuredUserInput::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::ports::outbound::StructuredUserInput
+pub fn engine::ports::outbound::StructuredUserInput::from(T) -> T
+impl<T> serde_core::de::DeserializeOwned for engine::ports::outbound::StructuredUserInput where T: for<'de> serde_core::de::Deserialize<'de>
+impl<T> typenum::type_operators::Same for engine::ports::outbound::StructuredUserInput
+pub type engine::ports::outbound::StructuredUserInput::Output = T
 pub struct engine::SubagentInvokeSession
 pub engine::SubagentInvokeSession::parent_node_id: engine::graph::workflow::NodeId
 pub engine::SubagentInvokeSession::request: engine::ports::outbound::AgentRequest
@@ -10626,6 +10983,7 @@ pub struct engine::ToolCall
 pub engine::ToolCall::arguments: serde_json::value::Value
 pub engine::ToolCall::id: alloc::string::String
 pub engine::ToolCall::name: alloc::string::String
+pub engine::ToolCall::provider_call_id: core::option::Option<alloc::string::String>
 impl core::clone::Clone for engine::ToolCall
 pub fn engine::ToolCall::clone(&self) -> engine::ToolCall
 impl core::cmp::Eq for engine::ToolCall
@@ -10925,6 +11283,106 @@ impl<T> core::convert::From<T> for engine::ports::outbound::UsageReport
 pub fn engine::ports::outbound::UsageReport::from(T) -> T
 impl<T> typenum::type_operators::Same for engine::ports::outbound::UsageReport
 pub type engine::ports::outbound::UsageReport::Output = T
+pub struct engine::UserInputOption
+pub engine::UserInputOption::description: alloc::string::String
+pub engine::UserInputOption::label: alloc::string::String
+impl core::clone::Clone for engine::ports::outbound::UserInputOption
+pub fn engine::ports::outbound::UserInputOption::clone(&self) -> engine::ports::outbound::UserInputOption
+impl core::cmp::Eq for engine::ports::outbound::UserInputOption
+impl core::cmp::PartialEq for engine::ports::outbound::UserInputOption
+pub fn engine::ports::outbound::UserInputOption::eq(&self, &engine::ports::outbound::UserInputOption) -> bool
+impl core::fmt::Debug for engine::ports::outbound::UserInputOption
+pub fn engine::ports::outbound::UserInputOption::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::ports::outbound::UserInputOption
+impl serde_core::ser::Serialize for engine::ports::outbound::UserInputOption
+pub fn engine::ports::outbound::UserInputOption::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for engine::ports::outbound::UserInputOption
+pub fn engine::ports::outbound::UserInputOption::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for engine::ports::outbound::UserInputOption
+impl core::marker::Send for engine::ports::outbound::UserInputOption
+impl core::marker::Sync for engine::ports::outbound::UserInputOption
+impl core::marker::Unpin for engine::ports::outbound::UserInputOption
+impl core::marker::UnsafeUnpin for engine::ports::outbound::UserInputOption
+impl core::panic::unwind_safe::RefUnwindSafe for engine::ports::outbound::UserInputOption
+impl core::panic::unwind_safe::UnwindSafe for engine::ports::outbound::UserInputOption
+impl<Q, K> equivalent::Equivalent<K> for engine::ports::outbound::UserInputOption where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn engine::ports::outbound::UserInputOption::equivalent(&self, &K) -> bool
+impl<T, U> core::convert::Into<U> for engine::ports::outbound::UserInputOption where U: core::convert::From<T>
+pub fn engine::ports::outbound::UserInputOption::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::ports::outbound::UserInputOption where U: core::convert::Into<T>
+pub type engine::ports::outbound::UserInputOption::Error = core::convert::Infallible
+pub fn engine::ports::outbound::UserInputOption::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::ports::outbound::UserInputOption where U: core::convert::TryFrom<T>
+pub type engine::ports::outbound::UserInputOption::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::ports::outbound::UserInputOption::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::ports::outbound::UserInputOption where T: core::clone::Clone
+pub type engine::ports::outbound::UserInputOption::Owned = T
+pub fn engine::ports::outbound::UserInputOption::clone_into(&self, &mut T)
+pub fn engine::ports::outbound::UserInputOption::to_owned(&self) -> T
+impl<T> core::any::Any for engine::ports::outbound::UserInputOption where T: 'static + ?core::marker::Sized
+pub fn engine::ports::outbound::UserInputOption::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::ports::outbound::UserInputOption where T: ?core::marker::Sized
+pub fn engine::ports::outbound::UserInputOption::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::ports::outbound::UserInputOption where T: ?core::marker::Sized
+pub fn engine::ports::outbound::UserInputOption::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::ports::outbound::UserInputOption where T: core::clone::Clone
+pub unsafe fn engine::ports::outbound::UserInputOption::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::ports::outbound::UserInputOption
+pub fn engine::ports::outbound::UserInputOption::from(T) -> T
+impl<T> serde_core::de::DeserializeOwned for engine::ports::outbound::UserInputOption where T: for<'de> serde_core::de::Deserialize<'de>
+impl<T> typenum::type_operators::Same for engine::ports::outbound::UserInputOption
+pub type engine::ports::outbound::UserInputOption::Output = T
+pub struct engine::UserInputQuestion
+pub engine::UserInputQuestion::header: alloc::string::String
+pub engine::UserInputQuestion::id: alloc::string::String
+pub engine::UserInputQuestion::options: alloc::vec::Vec<engine::ports::outbound::UserInputOption>
+pub engine::UserInputQuestion::question: alloc::string::String
+impl core::clone::Clone for engine::ports::outbound::UserInputQuestion
+pub fn engine::ports::outbound::UserInputQuestion::clone(&self) -> engine::ports::outbound::UserInputQuestion
+impl core::cmp::Eq for engine::ports::outbound::UserInputQuestion
+impl core::cmp::PartialEq for engine::ports::outbound::UserInputQuestion
+pub fn engine::ports::outbound::UserInputQuestion::eq(&self, &engine::ports::outbound::UserInputQuestion) -> bool
+impl core::fmt::Debug for engine::ports::outbound::UserInputQuestion
+pub fn engine::ports::outbound::UserInputQuestion::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::ports::outbound::UserInputQuestion
+impl serde_core::ser::Serialize for engine::ports::outbound::UserInputQuestion
+pub fn engine::ports::outbound::UserInputQuestion::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for engine::ports::outbound::UserInputQuestion
+pub fn engine::ports::outbound::UserInputQuestion::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for engine::ports::outbound::UserInputQuestion
+impl core::marker::Send for engine::ports::outbound::UserInputQuestion
+impl core::marker::Sync for engine::ports::outbound::UserInputQuestion
+impl core::marker::Unpin for engine::ports::outbound::UserInputQuestion
+impl core::marker::UnsafeUnpin for engine::ports::outbound::UserInputQuestion
+impl core::panic::unwind_safe::RefUnwindSafe for engine::ports::outbound::UserInputQuestion
+impl core::panic::unwind_safe::UnwindSafe for engine::ports::outbound::UserInputQuestion
+impl<Q, K> equivalent::Equivalent<K> for engine::ports::outbound::UserInputQuestion where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn engine::ports::outbound::UserInputQuestion::equivalent(&self, &K) -> bool
+impl<T, U> core::convert::Into<U> for engine::ports::outbound::UserInputQuestion where U: core::convert::From<T>
+pub fn engine::ports::outbound::UserInputQuestion::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::ports::outbound::UserInputQuestion where U: core::convert::Into<T>
+pub type engine::ports::outbound::UserInputQuestion::Error = core::convert::Infallible
+pub fn engine::ports::outbound::UserInputQuestion::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::ports::outbound::UserInputQuestion where U: core::convert::TryFrom<T>
+pub type engine::ports::outbound::UserInputQuestion::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::ports::outbound::UserInputQuestion::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::ports::outbound::UserInputQuestion where T: core::clone::Clone
+pub type engine::ports::outbound::UserInputQuestion::Owned = T
+pub fn engine::ports::outbound::UserInputQuestion::clone_into(&self, &mut T)
+pub fn engine::ports::outbound::UserInputQuestion::to_owned(&self) -> T
+impl<T> core::any::Any for engine::ports::outbound::UserInputQuestion where T: 'static + ?core::marker::Sized
+pub fn engine::ports::outbound::UserInputQuestion::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::ports::outbound::UserInputQuestion where T: ?core::marker::Sized
+pub fn engine::ports::outbound::UserInputQuestion::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::ports::outbound::UserInputQuestion where T: ?core::marker::Sized
+pub fn engine::ports::outbound::UserInputQuestion::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::ports::outbound::UserInputQuestion where T: core::clone::Clone
+pub unsafe fn engine::ports::outbound::UserInputQuestion::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::ports::outbound::UserInputQuestion
+pub fn engine::ports::outbound::UserInputQuestion::from(T) -> T
+impl<T> serde_core::de::DeserializeOwned for engine::ports::outbound::UserInputQuestion where T: for<'de> serde_core::de::Deserialize<'de>
+impl<T> typenum::type_operators::Same for engine::ports::outbound::UserInputQuestion
+pub type engine::ports::outbound::UserInputQuestion::Output = T
 pub struct engine::Workflow
 pub engine::Workflow::edges: alloc::vec::Vec<engine::graph::workflow::Edge>
 pub engine::Workflow::id: engine::graph::workflow::WorkflowId

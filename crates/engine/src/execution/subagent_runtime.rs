@@ -513,6 +513,7 @@ mod tests {
 
         let tool_call = ToolCall {
             id: "call-1".to_string(),
+            provider_call_id: None,
             name: CALL_SUBAGENT_TOOL.to_string(),
             arguments: json!({
                 "subagent_id": "sub-1",
@@ -551,6 +552,7 @@ mod tests {
         );
         let tool_call = ToolCall {
             id: "call-1".to_string(),
+            provider_call_id: None,
             name: CALL_SUBAGENT_TOOL.to_string(),
             arguments: json!({ "subagent_id": "sub-1", "input": "go" }),
         };
@@ -574,6 +576,7 @@ mod tests {
         let mut declared = std::collections::BTreeMap::new();
         let tool_call = ToolCall {
             id: "call-1".to_string(),
+            provider_call_id: None,
             name: DECLARE_SUBAGENTS_TOOL.to_string(),
             arguments: json!({ "subagents": "not-an-array" }),
         };
@@ -601,6 +604,7 @@ mod tests {
 
         let tool_call = ToolCall {
             id: "call-1".to_string(),
+            provider_call_id: None,
             name: CALL_SUBAGENT_TOOL.to_string(),
             arguments: json!({ "subagent_id": "agent-1", "input": "go" }),
         };
@@ -627,6 +631,7 @@ mod tests {
         let session = sample_session();
         let tool_call = ToolCall {
             id: "call-1".to_string(),
+            provider_call_id: None,
             name: "read_file".to_string(),
             arguments: json!({ "path": "notes.txt" }),
         };

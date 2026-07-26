@@ -63,6 +63,7 @@ async fn adapter_emits_clarifying_question_after_streamed_preamble() {
             Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
                 raw_text: "{}".to_string(),
                 assistant_message: "Should tool rows animate like Cursor's shimmer?".to_string(),
+                structured_input: None,
                 reasoning: vec![],
             }))
         }
@@ -128,6 +129,7 @@ fn tool_updated_keeps_tool_running_and_records_last_output() {
             label: "Agent".to_string(),
             tool_call: engine::ToolCall {
                 id: "tool-1".to_string(),
+                provider_call_id: None,
                 name: "bash".to_string(),
                 arguments: serde_json::json!({"command": "cargo test", "_i": "run tests"}),
             },
@@ -172,6 +174,7 @@ fn reducer_aborted_deactivates_run_and_marks_in_progress_tools() {
             label: "First".to_string(),
             tool_call: ToolCall {
                 id: "call-1".to_string(),
+                provider_call_id: None,
                 name: "read".to_string(),
                 arguments: json!({ "path": "README.md" }),
             },
@@ -497,11 +500,30 @@ fn record_user_input_restores_thinking_status() {
             label: "First".to_string(),
             context: "Need more detail".to_string(),
             is_initial: false,
+            structured_input: Some(engine::StructuredUserInput {
+                questions: vec![engine::UserInputQuestion {
+                    id: "target_env".to_string(),
+                    header: "Target".to_string(),
+                    question: "Which environment?".to_string(),
+                    options: vec![
+                        engine::UserInputOption {
+                            label: "Staging".to_string(),
+                            description: "Use staging.".to_string(),
+                        },
+                        engine::UserInputOption {
+                            label: "Production".to_string(),
+                            description: "Use production.".to_string(),
+                        },
+                    ],
+                }],
+            }),
         },
     );
+    assert!(state.structured_input_by_node.contains_key(&node_id));
     record_user_input(&mut state, "first", "Continue".to_string());
 
     assert!(!state.awaiting_node_ids.contains(&node_id));
+    assert!(!state.structured_input_by_node.contains_key(&node_id));
     assert_eq!(
         state.status_by_node.get(&node_id),
         Some(&crate::run::state::AgentStatus::Started)
@@ -520,6 +542,7 @@ fn reducer_tracks_tool_approval_and_completion() {
             label: "First".to_string(),
             tool_call: ToolCall {
                 id: "call-1".to_string(),
+                provider_call_id: None,
                 name: "read".to_string(),
                 arguments: json!({"path": "README.md"}),
             },
@@ -535,6 +558,7 @@ fn reducer_tracks_tool_approval_and_completion() {
                 node_label: "First".to_string(),
                 tool_call: ToolCall {
                     id: "call-1".to_string(),
+                    provider_call_id: None,
                     name: "read".to_string(),
                     arguments: json!({"path": "README.md"}),
                 },
@@ -610,6 +634,7 @@ async fn headless_run_auto_approves_read_tool_and_reenters_model_loop() {
                     assistant_message: Some("Inspecting docs".to_string()),
                     tool_calls: vec![ToolCall {
                         id: "call-1".to_string(),
+                        provider_call_id: None,
                         name: "read".to_string(),
                         arguments: json!({"path": "README.md"}),
                     }],
@@ -678,6 +703,7 @@ async fn headless_run_survives_permanent_tool_failure_and_completes() {
                     assistant_message: None,
                     tool_calls: vec![ToolCall {
                         id: "call-missing".to_string(),
+                        provider_call_id: None,
                         name: "read".to_string(),
                         arguments: json!({"path": "definitely-missing-file-orch-test.txt"}),
                     }],
@@ -748,6 +774,7 @@ async fn headless_run_requires_scripted_approval_for_prompted_tool() {
                 assistant_message: None,
                 tool_calls: vec![ToolCall {
                     id: "call-1".to_string(),
+                    provider_call_id: None,
                     name: "read".to_string(),
                     arguments: json!({"path": "README.md"}),
                 }],
@@ -1214,6 +1241,7 @@ async fn interrupt_during_slow_tool_emits_node_interrupted() {
                 assistant_message: None,
                 tool_calls: vec![ToolCall {
                     id: "call-sleep".to_string(),
+                    provider_call_id: None,
                     name: "bash".to_string(),
                     arguments: json!({"command": "sleep 30", "timeout": 30}),
                 }],
@@ -1894,6 +1922,7 @@ async fn resolve_approval_uses_engine_node_id_after_stop_and_continue() {
                     assistant_message: None,
                     tool_calls: vec![ToolCall {
                         id: "call-write".to_string(),
+                        provider_call_id: None,
                         name: "write".to_string(),
                         arguments: json!({"path": "out.txt", "content": "deny-me\n"}),
                     }],
