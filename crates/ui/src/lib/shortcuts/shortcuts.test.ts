@@ -36,4 +36,20 @@ describe("eventMatchesShortcut", () => {
     expect(eventMatchesShortcut(withShift, "toggleChatFocus")).toBe(true);
     expect(eventMatchesShortcut(without, "toggleChatFocus")).toBe(false);
   });
+
+  test("matches zoom shortcuts when the symbol requires Shift", () => {
+    const zoomIn = new KeyboardEvent("keydown", {
+      key: "+",
+      metaKey: true,
+      shiftKey: true,
+    });
+    const zoomOut = new KeyboardEvent("keydown", {
+      key: "_",
+      metaKey: true,
+      shiftKey: true,
+    });
+
+    expect(eventMatchesShortcut(zoomIn, "zoomIn")).toBe(true);
+    expect(eventMatchesShortcut(zoomOut, "zoomOut")).toBe(true);
+  });
 });

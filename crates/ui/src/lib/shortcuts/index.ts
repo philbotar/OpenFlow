@@ -46,7 +46,7 @@ export function eventMatchesShortcut(event: KeyboardEvent, id: ShortcutId): bool
   const chord = CHORDS[id];
   const mod = event.metaKey || event.ctrlKey;
   if (!mod) return false;
-  if (Boolean(chord.shift) !== event.shiftKey) return false;
+  if (typeof chord.shift === "boolean" && chord.shift !== event.shiftKey) return false;
   const key = event.key;
   if (chord.key === "Enter") return key === "Enter";
   if (chord.key === "=") return key === "=" || key === "+";
