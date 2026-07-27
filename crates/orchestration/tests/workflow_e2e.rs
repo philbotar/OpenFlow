@@ -86,10 +86,16 @@ async fn transient_then_success_auto_retries() {
         snapshot.outputs[&NodeId("first".into())],
         json!({"summary": "ok"})
     );
+    let model_attempts = ai
+        .recorded_requests()
+        .into_iter()
+        .filter(|request| request.node_id == NodeId("first".into()))
+        .map(|request| request.model_attempt)
+        .collect::<Vec<_>>();
     assert_eq!(
-        ai.recorded_requests().len(),
-        3,
-        "transient errors should re-invoke"
+        model_attempts,
+        vec![1, 2, 3],
+        "transient errors should re-invoke the failed node"
     );
 }
 
