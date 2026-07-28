@@ -1339,6 +1339,7 @@ fn runtime_approval_patch_applies_before_tool_decision() {
     let store = new_runtime_config_store();
     engine.set_runtime_config_store(store.clone());
     let runtime_patch = NodeRuntimeConfigPatch {
+        model: None,
         approval_mode: Some(ApprovalMode::Yolo),
         reasoning_effort: None,
         reasoning_budget_tokens: None,

@@ -26,6 +26,7 @@ desktop / ui
 backend/                  AppBackend facade and composition root
     │
     ├── workflow/          workflow catalog and authoring services
+    ├── chat.rs            saved direct-chat metadata
     ├── agent.rs           saved agent library
     ├── project/           project registry and file references
     ├── settings/          settings facade, provider readiness, skills
@@ -77,6 +78,7 @@ orchestration/src/
 │   ├── mcp/
 │   └── infrastructure/
 ├── agent.rs
+├── chat.rs
 ├── incident/
 ├── project/
 ├── run/
@@ -114,6 +116,14 @@ Catalog owns merge policy. Stores only read and write bytes.
 | `agent.rs` | `agent` | Callable agent CRUD, `create_agent_node`, and agent store trait. |
 | `adapters/storage/agent_store.rs` | `adapters::storage::agent_store` | Persist `openflow/agents.json`. |
 
+### Chat
+
+| File | Module path | Responsibility |
+| --- | --- | --- |
+| `chat.rs` | `chat` | Persisted Chat identity, project/runtime config, title, timestamps, and durable run reference. |
+| `backend/chat.rs` | `backend::chat` | Direct-chat commands and private workflow execution adapter. |
+| `adapters/storage/chat_store.rs` | `adapters::storage::chat_store` | Persist `openflow/chats.json` separately from the workflow catalog. |
+
 ### Project
 
 | File | Module path | Responsibility |
@@ -131,6 +141,7 @@ Catalog owns merge policy. Stores only read and write bytes.
 | `run/execution/` | `run::execution` | Host loop, AI adapter, `ToolPortImpl`, headless execution, telemetry event projection. |
 | `run/persistence.rs` | `run::persistence` | Durable run roots, records, and checkpoint metadata. |
 | `run/ports.rs` | `run::ports` | Run checkpoint store trait. |
+| `run/skill_invocation.rs` | `run::skill_invocation` | Resolve installed task-prompt skill tokens into frozen runtime prompt guidance. |
 | `run/state.rs` | `run::state` | `WorkflowRunState` projected for UI and IPC. |
 | `adapters/storage/run_checkpoint_store.rs` | `adapters::storage::run_checkpoint_store` | Persist run records and engine checkpoints. |
 

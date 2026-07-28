@@ -83,6 +83,7 @@ impl AppBackend {
                 settings,
                 transient_api_key,
                 agent_store: self.agents.store(),
+                skill_catalog: self.settings.skill_catalog(),
                 settings_store: self.settings.store_arc(),
                 run_store: self.run_store.as_ref(),
                 env: self.settings.env(),
@@ -101,6 +102,26 @@ impl AppBackend {
         transient_api_key: Option<&str>,
     ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
         let run_root = self.run_root_for_workflow(&workflow.id)?;
+        self.start_run_with_root(
+            workflow,
+            entrypoint,
+            execution_cwd,
+            run_root,
+            settings,
+            transient_api_key,
+        )
+        .await
+    }
+
+    pub(super) async fn start_run_with_root(
+        &self,
+        workflow: Workflow,
+        entrypoint: Option<String>,
+        execution_cwd: Option<String>,
+        run_root: RunStoreRoot,
+        settings: &crate::settings::model::AppSettings,
+        transient_api_key: Option<&str>,
+    ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
         self.runs
             .start_run(RunStartParams {
                 workflow,
@@ -110,6 +131,7 @@ impl AppBackend {
                 settings,
                 transient_api_key,
                 agent_store: self.agents.store(),
+                skill_catalog: self.settings.skill_catalog(),
                 settings_store: self.settings.store_arc(),
                 run_store: self.run_store.as_ref(),
                 env: self.settings.env(),
@@ -139,6 +161,7 @@ impl AppBackend {
                 settings,
                 transient_api_key,
                 agent_store: self.agents.store(),
+                skill_catalog: self.settings.skill_catalog(),
                 settings_store: self.settings.store_arc(),
                 run_store: self.run_store.as_ref(),
                 env: self.settings.env(),
@@ -280,6 +303,7 @@ impl AppBackend {
                 settings: &settings,
                 transient_api_key: None,
                 agent_store: self.agents.store(),
+                skill_catalog: self.settings.skill_catalog(),
                 settings_store: self.settings.store_arc(),
                 run_store: self.run_store.as_ref(),
                 env: self.settings.env(),

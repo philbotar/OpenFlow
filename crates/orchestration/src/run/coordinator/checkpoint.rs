@@ -24,6 +24,7 @@ pub(super) fn load_replay_projection(
 
 pub(crate) fn status_for_checkpoint(reason: RunCheckpointReason) -> RunStatus {
     match reason {
+        RunCheckpointReason::Started => RunStatus::Running,
         RunCheckpointReason::AwaitingInput
         | RunCheckpointReason::AwaitingToolApproval
         | RunCheckpointReason::AwaitingRetry => RunStatus::Paused,

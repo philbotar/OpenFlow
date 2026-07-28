@@ -1,11 +1,11 @@
+import Ellipsis from "lucide-solid/icons/ellipsis";
 import FolderClosed from "lucide-solid/icons/folder-closed";
 import FolderOpen from "lucide-solid/icons/folder-open";
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import type { Project, Workflow } from "../../lib/types";
 import { ICON_STROKE_WIDTH } from "../../lib/utils";
-import { SidebarIcon } from "../SidebarIcon";
 import { Tooltip } from "../Tooltip";
-import { SidebarListRow } from "./SidebarListRow";
+import { WorkflowListRow } from "./WorkflowListRow";
 
 export type ProjectFolderRowProps = {
   project: Project;
@@ -20,9 +20,11 @@ export type ProjectFolderRowProps = {
   onSelectProject: () => void;
   onSelectWorkflow: (workflowId: string) => void;
   onRenameWorkflow: (workflowId: string, name: string) => void;
+  onDeleteWorkflow: (workflowId: string) => void;
   onCreateWorkflow: () => void;
   onCreateWorkflowWithAi: () => void;
   onAddExistingWorkflow: () => void;
+  onRemoveProject: () => void;
   setWorkflowNameInputRef: (el: HTMLInputElement | undefined) => void;
   setWorkflowNameDraft: (value: string) => void;
   onWorkflowNameCommit: () => void;
@@ -98,11 +100,11 @@ export function ProjectFolderRow(props: ProjectFolderRowProps) {
           </span>
         </button>
         <div class="project-folder-menu-anchor" ref={menuAnchor}>
-          <Tooltip label="Add workflow">
+          <Tooltip label={`Project options for ${props.project.name}`}>
             <button
               type="button"
               class="sidebar-icon-button project-folder-action"
-              aria-label={`Add workflow to ${props.project.name}`}
+              aria-label={`Project options for ${props.project.name}`}
               aria-haspopup="menu"
               aria-expanded={menuOpen()}
               onClick={(event) => {
@@ -110,11 +112,20 @@ export function ProjectFolderRow(props: ProjectFolderRowProps) {
                 setMenuOpen((open) => !open);
               }}
             >
-              <SidebarIcon name="plus" />
+              <Ellipsis
+                class="sidebar-icon"
+                aria-hidden="true"
+                absoluteStrokeWidth
+                strokeWidth={ICON_STROKE_WIDTH}
+              />
             </button>
           </Tooltip>
           <Show when={menuOpen()}>
-            <div class="project-folder-menu" role="menu">
+            <div
+              class="project-folder-menu"
+              role="menu"
+              aria-label={`Project options for ${props.project.name}`}
+            >
               <button
                 type="button"
                 class="project-folder-menu-item"
@@ -151,6 +162,18 @@ export function ProjectFolderRow(props: ProjectFolderRowProps) {
               >
                 Copy from…
               </button>
+              <button
+                type="button"
+                class="project-folder-menu-item"
+                role="menuitem"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  closeMenu();
+                  props.onRemoveProject();
+                }}
+              >
+                Remove project
+              </button>
             </div>
           </Show>
         </div>
@@ -163,12 +186,13 @@ export function ProjectFolderRow(props: ProjectFolderRowProps) {
                 workflow.id === props.activeWorkflowId && props.screen === "editor";
               const editing = () => workflow.id === props.editingWorkflowId;
               return (
-                <SidebarListRow
+                <WorkflowListRow
                   title={workflow.name}
                   active={active()}
                   editing={editing()}
                   onSelect={() => props.onSelectWorkflow(workflow.id)}
                   onRename={() => props.onRenameWorkflow(workflow.id, workflow.name)}
+                  onDelete={() => props.onDeleteWorkflow(workflow.id)}
                   editSlot={
                     <input
                       ref={(el) => props.setWorkflowNameInputRef(el)}

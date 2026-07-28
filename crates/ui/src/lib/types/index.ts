@@ -15,7 +15,7 @@ export interface RunSummary {
   updatedAtMs: number;
   status: DurableRunStatus;
 }
-export type Screen = "editor" | "settings" | "agents" | "workflow-authoring" | "schedule";
+export type Screen = "chat" | "editor" | "settings" | "agents" | "workflow-authoring" | "schedule";
 
 export interface RetryPolicy {
   max_attempts: number;
@@ -99,6 +99,28 @@ export interface Workflow {
   settings: WorkflowSettings;
 }
 
+export interface ChatConfig {
+  model: string | null;
+  approvalMode: ApprovalMode;
+  reasoningEffort: string | null;
+  reasoningBudgetTokens: number | null;
+  projectId: string | null;
+}
+
+export interface Chat {
+  id: string;
+  title: string;
+  config: ChatConfig;
+  runId: string | null;
+  createdAtMs: number;
+  updatedAtMs: number;
+}
+
+export interface ChatRunPayload {
+  chat: Chat;
+  runState: WorkflowRunState;
+}
+
 export interface CopyWorkflowToProjectResult {
   workflow: Workflow;
   projects: Project[];
@@ -126,6 +148,7 @@ export interface NodeToolConfig {
 }
 
 export interface NodeRuntimeConfigUpdate {
+  model?: string;
   approvalMode?: ApprovalMode | null;
   reasoningEffort?: string | null;
   reasoningBudgetTokens?: number | null;
@@ -588,6 +611,7 @@ export type TerminalEvent =
 
 export interface BootstrapPayload {
   workflows: Workflow[];
+  chats?: Chat[];
   agents: AgentDefinition[];
   projects?: Project[];
   skills: SkillSummary[];

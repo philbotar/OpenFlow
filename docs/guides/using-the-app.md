@@ -6,13 +6,27 @@ Task-oriented map of the OpenFlow desktop UI after install and provider setup. F
 
 | Control | Purpose |
 | --- | --- |
+| **New chat** | Start a saved, direct AI conversation without creating or opening a workflow. Existing chats appear under **Chats**. |
 | **Agents** | Create and edit saved agent definitions (prompt, model, tools, output schema). |
 | **Schedule** | Enable timed or interval schedules on workflows that already exist in the catalog. |
-| **Workflows** | App-level workflows stored under the OpenFlow data directory. **New workflow** creates one; **Build with AI** opens the authoring chat. |
+| **Workflows** | App-level workflows stored under the OpenFlow data directory. **New workflow** creates one; **Build with AI** opens the authoring chat. Use a workflow row's options menu to rename or delete it. |
 | **Projects** | Bind a repository folder, create or assign workflows under `.flow/workflows/`, and open project workflows in the editor. |
 | **Settings** | Appearance, providers ([`provider-setup.md`](provider-setup.md)), web search keys, MCP servers, diagnostics, and about. |
 
 Project workflow files override app workflows when both share the same workflow ID. Paths are listed in [`../reference/README.md#runtime-and-persistence-paths`](../reference/README.md#runtime-and-persistence-paths).
+
+## Direct chats
+
+Select **New chat**, then send a message in the full-page, single-pane composer. OpenFlow saves the Chat separately from the workflow catalog and names it from the first message. Select an existing entry under the separate **Chats** sidebar heading to restore its flat transcript; sending another message resumes its durable run. Open a chat row's options menu to remove it from chat history. Stop its run first when that chat is active.
+
+Use the controls below the composer to choose:
+
+- **Project** — scopes file references, execution cwd, and durable run storage to that project. Choose before sending the first message.
+- **Model** — selects the model for the next assistant turn.
+- **Approval mode** — controls which tools require confirmation.
+- **Reasoning effort** — selects a provider-supported effort level and, when required, its token budget.
+
+The saved Chat contains only chat metadata and its durable run ID. At run start, the backend privately adapts that Chat to the workflow execution engine. This execution detail is not returned in the Chat DTO or written to `chats.json`: direct chats do not expose nodes or appear in **Workflows**, the canvas, project assignments, or `workflows.json`.
 
 ## Editor layout
 
@@ -77,6 +91,14 @@ Open **Schedule** in the sidebar to attach a schedule to an existing workflow: c
 ## Saved agents and callable agents
 
 Saved agents on the **Agents** screen are library entries. To reuse one inside a workflow, add it as a **callable agent** on a node that should delegate work. Snapshots are frozen at run start; editing the library agent later does not change an in-flight run. See [`../architecture/callable-agents.md`](../architecture/callable-agents.md).
+
+To invoke installed skills from a workflow node or saved agent, type one or more `/skill-id` tokens anywhere in its **Task prompt**:
+
+```text
+Implement the approved ticket with /tdd and /code-review
+```
+
+The task-prompt editor lists matching skills after you type `/`, using the same discovered-skill catalog as the bottom composer. Recognized tokens show the same skill name and description bubble as chat. At run start, OpenFlow resolves each installed token to its exact `SKILL.md`, adds a system instruction to read those files before other work, and freezes the resolved paths for that run. An unknown leading command blocks the run with the node or callable-agent name; unknown inline tokens stay literal.
 
 ## Settings beyond providers
 

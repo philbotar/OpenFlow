@@ -17,6 +17,15 @@ pub enum BackendError {
     ProjectNotFound(String),
     #[error("agent {0} not found")]
     AgentNotFound(String),
+    #[error("chat {0} not found")]
+    ChatNotFound(String),
+    #[error("chat run started without a run id")]
+    ChatRunMissingId,
+    #[error("skill /{skill_id} invoked by {invoked_by} is not installed")]
+    SkillNotFound {
+        skill_id: String,
+        invoked_by: String,
+    },
     #[error("agent authoring failed: {0}")]
     AgentAuthoringFailed(String),
     #[error("{0}")]
@@ -25,6 +34,8 @@ pub enum BackendError {
     ProjectOperation(String),
     #[error("workflow run is not active")]
     NoActiveRun,
+    #[error("cannot clear the workflow run trace while the run is active")]
+    ActiveRun,
     #[error("no execution folder is bound to the current session")]
     NoExecutionCwd,
     #[error("workflow run is not awaiting input")]

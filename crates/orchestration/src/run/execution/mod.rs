@@ -10,8 +10,8 @@ use crate::lsp::LspSettings;
 use crate::run::persistence::PendingRunCheckpoint;
 use crate::run::state::{RunTraceEntry, ToolArtifactSummary, ToolCallSummary};
 use engine::{
-    AiPort, CallableAgent, ChatMessage, EditBatch, InteractiveEngineCheckpoint, NodeId, RunReport,
-    RunTelemetry, Workflow,
+    AiPort, CallableAgent, ChatMessage, EditBatch, InteractiveEngine, InteractiveEngineCheckpoint,
+    NodeId, RunReport, RunTelemetry, Workflow, WorkflowValidationError,
 };
 use parking_lot::Mutex;
 use serde_json::Value;
@@ -35,6 +35,19 @@ pub type ExecutionEvent = RunTelemetry;
 
 /// Per-node interrupt tokens keyed by node id and model attempt.
 pub type NodeInterrupts = Arc<Mutex<BTreeMap<NodeId, (u8, CancellationToken)>>>;
+
+/// Build the durable checkpoint saved before a new run starts.
+///
+/// # Errors
+/// Returns an error when the workflow fails engine validation.
+pub fn initial_engine_checkpoint(
+    workflow: Workflow,
+    entrypoint: Option<String>,
+    project_repository_root: Option<String>,
+) -> Result<InteractiveEngineCheckpoint, WorkflowValidationError> {
+    let mut engine = InteractiveEngine::new(workflow, entrypoint, project_repository_root)?;
+    Ok(engine.prepare_stop_checkpoint())
+}
 
 pub fn send_or_log(event_tx: &UnboundedSender<ExecutionEvent>, event: ExecutionEvent) {
     if let Err(error) = event_tx.send(event) {

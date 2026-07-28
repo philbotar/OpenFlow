@@ -14,6 +14,100 @@
   padding: 0;
 }
 
+.chat-screen {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  justify-content: center;
+  background: var(--dock-bg);
+}
+
+.chat-screen > .chat-layout {
+  width: min(920px, 100%);
+  padding: 24px;
+}
+
+.direct-chat-layout {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.direct-chat-conversation {
+  flex: 1;
+  min-height: 0;
+}
+
+.direct-chat-transcript {
+  background: transparent;
+}
+
+.direct-chat-transcript-lane {
+  display: flex;
+  flex-direction: column;
+  width: min(
+    var(--direct-chat-content-width),
+    calc(100% - var(--direct-chat-horizontal-gutter))
+  );
+  min-height: 100%;
+  margin: 0 auto;
+  padding: var(--direct-chat-transcript-top-space) 0 var(--space-lg);
+}
+
+.direct-chat-empty {
+  display: flex;
+  flex: 1;
+  justify-content: center;
+  min-height: 0;
+  border: 0;
+  background: transparent;
+}
+
+.direct-chat-composer-bar {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: var(--space-sm);
+  width: min(
+    var(--direct-chat-content-width),
+    calc(100% - var(--direct-chat-horizontal-gutter))
+  );
+  margin: 0 auto;
+  padding: 0 0 var(--space-lg);
+}
+
+.direct-chat-composer-bar > .chat-composer,
+.direct-chat-composer-bar > .structured-ask-card,
+.direct-chat-composer-bar > .tool-approval-card {
+  width: 100%;
+  margin: 0;
+}
+
+.direct-chat-generating {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+}
+
+@media (max-width: 640px) {
+  .direct-chat-transcript-lane,
+  .direct-chat-composer-bar {
+    width: calc(100% - var(--direct-chat-compact-horizontal-gutter));
+  }
+
+  .direct-chat-transcript-lane {
+    padding-top: var(--space-lg);
+  }
+
+  .direct-chat-composer-bar {
+    padding-bottom: var(--space-md);
+  }
+}
+
 .terminal-shell {
   border-radius: var(--radius-none);
   border: 0;
@@ -336,6 +430,15 @@
   gap: 2px 6px;
   min-width: 0;
   padding-top: 2px;
+}
+
+.direct-chat-runtime-controls {
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.direct-chat-runtime-controls .direct-chat-project-select .text-select-trigger {
+  max-width: 12rem;
 }
 
 .composer-runtime-controls .composer-runtime-select.text-select-root {

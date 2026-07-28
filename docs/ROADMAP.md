@@ -12,7 +12,7 @@ A single prioritized queue. Work top to bottom — each numbered item is meant t
 
 | # | Item | Status | Details |
 | --- | --- | --- | --- |
-| 1 | **Chat presentation** — thinking bubbles, collapsible tool rows, tool intent summaries, live tool updates, pretty tool names, args one-liners | In progress | [Chat presentation](#chat-presentation--thinking-bubbles--tool-cleanup) — bubbles, intent, live updates, and chat pretty-names **Done**; run-trace pretty-names, legacy thinking-line cleanup, and OpenAI-only provider thinking **remain** |
+| 1 | **Chat presentation** — thinking bubbles, collapsible tool rows, tool intent summaries, live tool updates, pretty tool names, args one-liners | Done | [Chat presentation](#chat-presentation--thinking-bubbles--tool-cleanup) |
 | 2 | **Entrypoint wiring** — pass entrypoint text from UI through `start_run` to root node input | Done | [Entrypoint wiring](#wire-entrypoint-text-through-the-desktop-run-path) |
 
 Entrypoint wiring is small but blocks attachments (#15) and any "kick off a run with instructions" flow — do it early.
@@ -36,7 +36,7 @@ The things you hit every single run.
 | # | Item | Status | Details |
 | --- | --- | --- | --- |
 | 8 | **Canvas run feedback** — colored status icons per agent state; scrollable in-node subagent list (drop `+N more`); chat node chips use same status colors as canvas | Planned | [Canvas run feedback](#canvas-run-feedback) |
-| 9 | **Thinking levels** — `reasoning_effort` schema (node + provider default), gear-panel + inspector controls, provider reasoning param wiring, thinking transcript items | In progress | [Thinking & chat presentation](#thinking--chat-presentation) — schema, UI controls, OpenAI-compat wiring, and `ThinkingBubble` **Done**; Anthropic reasoning/thinking **Planned**; per-run override **Planned** |
+| 9 | **Thinking levels** — `reasoning_effort` schema (node + provider default), gear-panel + inspector controls, provider reasoning param wiring, thinking transcript items | Done | [Thinking & chat presentation](#thinking--chat-presentation) |
 | 10 | **Pre-run workflow validation** — validate before `start_run`: dangling edges, cycles, missing provider/model/key, empty prompts; surface as canvas badges + blocking dialog | Planned | *New* |
 | 36 | **Workflow insights** — continuous design-time advisory panel: graph smells, config gaps, and best-practice suggestions; non-blocking; jump-to-node fixes | Planned | [Workflow insights](#workflow-insights) |
 | 11 | **Project rules** — `.flow/rules/` under linked projects; discovered on load, merged into shared context at run start | Planned | [Project rules](#project-rules) |
@@ -447,21 +447,21 @@ Today a failed tool call becomes a single `is_error: true` [`ToolResult`](../cra
 
 ### Chat presentation — thinking bubbles & tool cleanup
 
-Assistant token streaming is wired (`ChatMessageDelta` → chat log). Collapsible tool rows, thinking bubbles, intent summaries, and live tool tails are shipped in chat. Remaining polish: run-trace pretty-names, legacy thinking-line cleanup, and Anthropic provider thinking.
+Assistant token streaming is wired (`ChatMessageDelta` → chat log). Collapsible tool rows, thinking bubbles, intent summaries, live tool tails, and shared pretty tool names are shipped across chat and run trace. Legacy tool-I/O prose from saved runs is hidden in favor of structured tool bubbles. OpenAI-compatible and Anthropic-shaped provider reasoning streams into thinking bubbles.
 
 | Item | Priority | Status |
 | --- | --- | --- |
 | Collapsible tool bubbles — collapsed row shows tool name + one-line outcome; expand for args and full output | High | Done |
 | Thinking bubble UI — collapsible reasoning block in chat; distinct from assistant messages; collapsed by default | High | Done |
-| Provider thinking in transcript — parse reasoning blocks from provider responses; project to chat (not legacy `ChatRole::Thinking` tool lines) | High | In progress — OpenAI-compat (`reasoning_content` / `ThinkingDelta`) **Done**; Anthropic thinking blocks **Planned** |
+| Provider thinking in transcript — parse reasoning blocks from provider responses; project to chat (not legacy `ChatRole::Thinking` tool lines) | High | Done |
 | Tool intent field — add optional `_i` / `intent` text to tool-call schema; show it as the collapsed tool-row summary when present | High | Done |
 | Pretty tool names — human-readable labels in chat (`ToolBubble`, `ToolApprovalCard`, `FileChangesPanel`) | Medium | Done |
-| Pretty tool names — same mapping in run trace rows (`events.rs` still uses raw ids) | Medium | Planned |
+| Pretty tool names — same mapping in run trace rows | Medium | Done |
 | Tool row chrome — drop `Tool Invocation:` header; status chip (running / completed / failed); chevron expand | Medium | Done |
 | Args summary — one-line path/query preview when collapsed; full formatted JSON only when expanded | Medium | Done |
 | Live tool updates — emit `ToolUpdated` / tail events for long-running tools; stream current tail into the expanded row while preserving final full output or artifact | High | Done |
 | Streaming thinking — append reasoning tokens into the thinking bubble during active turns | Medium | Done |
-| Hide legacy thinking tool lines — stop grouping provider reasoning with legacy tool I/O prose | Medium | Planned |
+| Hide legacy thinking tool lines — stop grouping provider reasoning with legacy tool I/O prose | Medium | Done |
 
 **Reference:** [`ToolBubble.tsx`](../crates/ui/src/components/conversation/ToolBubble.tsx); full spec in [Thinking & chat presentation](#thinking--chat-presentation).
 
@@ -585,15 +585,15 @@ Keyboard QoL exists for run, save, delete, and zoom (`AppProvider` global handle
 
 ### Thinking & chat presentation
 
-Per-node and workflow-level `reasoning_effort` / `reasoning_budget_tokens` are in the schema. Settings, gear panel, and inspector expose controls. OpenAI-compatible providers forward reasoning params and stream `ThinkingDelta` into `ThinkingBubble` rows. Anthropic thinking lives in `rig_adapter/` (`claude_thinking.rs`, `reasoning_convert.rs`) — keep that path current when extending Anthropic reasoning. Legacy `ChatRole::Thinking` tool prose still appears alongside structured bubbles until cleanup lands.
+Per-node and workflow-level `reasoning_effort` / `reasoning_budget_tokens` are in the schema. Settings, gear panel, inspector, and active-run composer expose controls. OpenAI-compatible and Anthropic-shaped providers map reasoning params and stream reasoning into `ThinkingBubble` rows. Anthropic thinking lives in `rig_adapter/` (`claude_thinking.rs`, `reasoning_convert.rs`). Legacy `ChatRole::Thinking` tool prose from saved runs is suppressed; structured tool bubbles remain the tool lifecycle UI.
 
-| Layer | Gap |
+| Layer | Status |
 | --- | --- |
-| `crates/providers/src/rig_adapter/` (Anthropic) | Confirm thinking/budget mapping and block parsing stay complete for all Anthropic models |
+| `crates/providers/src/rig_adapter/` (Anthropic) | Thinking/budget mapping and reasoning block parsing shipped |
 | `crates/providers/src/rig_adapter/` (OpenAI-compat) | Forwards reasoning params; streams reasoning as `ThinkingDelta` — **Done** |
-| `crates/ui/src/lib/parseLegacyToolMessages.ts` | Legacy tool I/O lines still reuse `ChatRole::Thinking`; provider reasoning is distinguished via `isProviderThinkingMessage` |
-| `crates/orchestration/src/run/execution/events.rs` | Run trace tool rows still use raw tool ids (pretty-names chat-only today) |
-| `crates/ui/src/components/conversation/` | No per-run thinking override in chat chrome |
+| `crates/ui/src/components/conversation/providerThinking.ts` | Distinguishes provider reasoning and hides legacy tool-I/O thinking lines |
+| `crates/ui/src/panels/DockPanel.tsx` | Run trace uses the shared human-readable tool-name mapping |
+| `crates/ui/src/components/conversation/ComposerRuntimeControls.tsx` | Active-run reasoning effort and budget override shipped |
 
 | Item | Priority | Status |
 | --- | --- | --- |
@@ -602,18 +602,18 @@ Per-node and workflow-level `reasoning_effort` / `reasoning_budget_tokens` are i
 | Workflow settings control — pick default thinking level in gear panel (off / low / medium / high or provider-aligned presets) | High | Done |
 | Inspector control — pick thinking level per node; inherit provider default when unset | High | Done |
 | Provider wiring (OpenAI-compat) — map level to reasoning params; parse `reasoning_content` into `ThinkingDelta` | High | Done |
-| Provider wiring (Anthropic) — map level to Anthropic thinking/reasoning params; parse thinking blocks from responses | High | Planned |
-| Thinking transcript items — stream reasoning into chat as `ThinkingBubble` rows (distinct from legacy `ChatRole::Thinking` tool lines) | High | Done (OpenAI-compat); Planned (Anthropic) |
+| Provider wiring (Anthropic) — map level to Anthropic thinking/reasoning params; parse thinking blocks from responses | High | Done |
+| Thinking transcript items — stream reasoning into chat as `ThinkingBubble` rows (distinct from legacy `ChatRole::Thinking` tool lines) | High | Done |
 | Collapsible tool bubbles — collapsed row shows tool name + one-line outcome; expand for args and full output | High | Done |
 | Tool intent field — support optional `_i` / `intent` in tool-call args; collapsed tool row prefers intent over raw-arg summaries | High | Done |
 | Live tool updates — add `ToolUpdated` event and tail-buffer UI for bash/eval/job output while a tool is still running | High | Done |
 | Pretty tool names — map builtin/subagent ids to short human labels in `ToolBubble`, `ToolApprovalCard`, and `FileChangesPanel` | Medium | Done |
-| Pretty tool names — same mapping in run trace rows | Medium | Planned |
+| Pretty tool names — same mapping in run trace rows | Medium | Done |
 | Tool row chrome — icon + name + status chip; remove `Tool Invocation:` label; chevron toggle | Medium | Done |
 | Args one-liner — path/query/file summary when collapsed; `prettyJson` args only when expanded | Medium | Done |
 | Streaming thinking — append reasoning tokens into the thinking bubble during active turns | Medium | Done |
-| Hide legacy thinking tool lines — stop using `ChatRole::Thinking` for tool request/result prose once structured bubbles land | Medium | Planned |
-| Per-run thinking override — transient level tweak from chat chrome without editing the workflow | Low | Planned |
+| Hide legacy thinking tool lines — suppress saved tool request/result prose now represented by structured bubbles | Medium | Done |
+| Per-run thinking override — transient level tweak from chat chrome without editing the workflow | Low | Done |
 
 **Target:** Users choose how much model reasoning each node uses. Provider thinking appears as collapsible blocks in chat. Tool invocations show a compact “what it did” line until expanded — no always-on scroll panes or raw-args dumps in the default view.
 
@@ -747,29 +747,29 @@ Users can invoke skills with `/skill` tokens and attach project context with `@{
 
 ### Agent prompt skill references
 
-Today `/skill` works in the **chat composer** (`resolveChatSubmission` in [`chatCommands/index.ts`](../crates/ui/src/lib/chatCommands/index.ts)): type `/ponytail` (or pick from the combobox), see a description preview, and on send the skill id is recorded in formatted submit text. **Saved agents** and **node inspector** system/task prompts are plain textareas — authors must paste full skill instructions or duplicate prose by hand.
+`/skill` works in the **chat composer** (`resolveChatSubmission` in [`chatCommands/index.ts`](../crates/ui/src/lib/chatCommands/index.ts)). Installed `/skill-id` tokens anywhere in saved-agent and node task prompts also work. OpenFlow resolves those tokens at run start, appends exact installed `SKILL.md` paths plus mandatory read guidance to the system prompt, then freezes the augmented prompt in the run snapshot.
 
 | Layer | Role / gap |
 | --- | --- |
-| `crates/ui/src/forms/AgentConfigForm.tsx` | System + task prompt fields — no slash combobox or skill preview |
-| `crates/ui/src/screens/AgentsScreen.tsx` | Saved-agent editor — same gap |
+| `crates/ui/src/forms/AgentConfigForm.tsx` | Task prompt uses the shared slash combobox — **Done** |
+| `crates/ui/src/screens/AgentsScreen.tsx` | Saved-agent task prompt supports the same invocation UX — **Done** |
 | `crates/ui/src/lib/chatCommands.ts` | Slash token parse, combobox match, submit resolution — **Done** for composer only |
-| `crates/ui/src/components/conversation/SkillCommandCombobox.tsx` | Reusable slash UI — composer-only today |
-| `crates/orchestration/src/adapters/storage/skill_store.rs` | Skill discovery + `SkillSummary` — read skill file body for expansion |
-| `crates/engine/src/execution/node_invocation.rs` | `AgentRequest` assembly — prompts passed verbatim; no `/skill` expansion |
+| `crates/ui/src/components/conversation/SkillCommandCombobox.tsx` | Reused by chat and task-prompt editors — **Done** |
+| `crates/orchestration/src/adapters/storage/skill_store.rs` | Skill discovery + exact `SKILL.md` paths — **Done** |
+| `crates/orchestration/src/run/skill_invocation.rs` | Resolve installed tokens for nodes + snapshotted callable agents — **Done** |
 
-**Intent:** Write `/ponytail` (or `/openflow-engine-change`) in a system or task prompt instead of copying the whole skill markdown. At **run start** (or first `CallAi` for that node), expand each referenced skill into the assembled system prompt — same discovery roots as Settings skill scan. Persist **tokens** in `agents.json` / workflow JSON; store expanded text only in run snapshots if needed for replay ([#24](#run-checkpoint-history-and-replay)).
+**Contract:** Add `/ponytail` or multiple tokens such as `/tdd /code-review` anywhere in a task prompt. Persist those tokens in `agents.json` or workflow JSON. At run start, resolve installed tokens through the same catalog as Settings, add mandatory read guidance and exact paths to the runtime system prompt, and store the augmented node workflow in the durable run snapshot. Unknown inline tokens remain prose; an unknown leading command fails before execution.
 
 | Item | Priority | Status |
 | --- | --- | --- |
-| Slash UX in prompt fields — reuse combobox + description preview on system/task textareas (Agents screen + node inspector) | High | Planned |
-| Token syntax — `/skillId` at line start or inline; unknown ids left literal with editor warning | High | Planned |
-| Expansion — resolve skill file content from `skill_store` into prompt assembly; dedupe repeated ids | High | Planned |
-| Snapshot policy — expand at run-start into frozen `CallableAgent` / node config snapshot (deterministic reruns) | Medium | Planned |
+| Slash UX in task prompt fields — reuse combobox on Agents screen + node inspector | High | Done |
+| Token syntax — one or more installed `/skillId` tokens anywhere; unknown inline tokens stay literal; unknown leading ids block run | High | Done |
+| Resolution — map installed ids to exact `SKILL.md` paths, dedupe repeated ids, require complete reads before work | High | Done |
+| Snapshot policy — resolve at run start into frozen `CallableAgent` / node runtime prompts | Medium | Done |
 | Context ledger — list expanded skills in [#18 Context used](#context-used) per turn | Medium | Planned |
 | Optional `@` in prompts — same jail as [#15](#attachments--file-references) for `{path}` in static prompts (stretch) | Low | Planned |
 
-**Target:** On the Agents screen, system prompt is `You follow /ponytail and /openflow-engine-change.` — no pasted skill bodies. Start a run → the model receives expanded skill instructions in its system prompt. Inspector shows which skills resolved and which ids were missing.
+**Target:** On the Agents screen or node inspector, type `Do the work with /ponytail /openflow-engine-change`. Start a run → the model receives exact installed skill paths and must read them before other work. Unknown leading ids fail before execution with source context.
 
 **Depends on:** skill discovery (`list_skills` / `skill_store`). **Complements:** [#15 Attachments](#attachments--file-references) (composer `/skill`), [#18 Context used](#context-used). **Unlocks:** shorter saved-agent library, composable agent personas without duplication.
 

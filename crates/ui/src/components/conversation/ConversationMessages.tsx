@@ -135,7 +135,11 @@ export function ConversationMessages() {
                   fallback={
                     <PanelEmptyState
                       title="No messages yet"
-                      description="Send a message to start the workflow."
+                      description={
+                        ctx.screen() === "chat"
+                          ? "Send a message to start the conversation."
+                          : "Send a message to start the workflow."
+                      }
                       icon={
                         <MessageCircle
                           class="conversation-empty-icon-svg"

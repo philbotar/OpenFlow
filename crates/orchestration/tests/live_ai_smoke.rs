@@ -1,7 +1,14 @@
 use engine::{AiPort, Edge, Node, NodeId, Workflow};
 use orchestration::adapters::storage::agent_store::FileAgentStore;
+use orchestration::adapters::storage::app_workflow_store::FileWorkflowStore;
+use orchestration::adapters::storage::chat_store::FileChatStore;
+use orchestration::adapters::storage::project_store::FileProjectStore;
+use orchestration::adapters::storage::project_workflow_store::FileProjectWorkflowStore;
 use orchestration::adapters::storage::settings_store::FileSettingsStore;
+use orchestration::adapters::storage::skill_store::FileSkillCatalog;
 use orchestration::agent::AgentLibrary;
+use orchestration::backend::{AppBackend, AppBackendDeps};
+use orchestration::chat::ChatConfig;
 use orchestration::run::execution::{run_workflow_headless, WorkflowRunSnapshot};
 use orchestration::run::prep::provider_reasoning_for_profile;
 use orchestration::settings::model::AppSettings;
@@ -179,6 +186,88 @@ fn fixed_smoke_node(id: &str, label: &str, task: &str, model: &str) -> Node {
         "required": ["project_code", "summary"]
     });
     node
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+#[ignore = "manual only: probes direct chat through AppBackend using the saved provider"]
+async fn saved_provider_direct_chat_probe() {
+    assert_eq!(
+        std::env::var(ENABLE_ENV).as_deref(),
+        Ok("1"),
+        "set OPENFLOW_LIVE_AI_SMOKE=1 to enable"
+    );
+    let context = load_smoke_context().expect("load saved provider");
+    let model = std::env::var("OPENFLOW_LIVE_AI_PROBE_MODEL").unwrap_or(context.model);
+    let dir = tempdir().expect("tempdir");
+    let backend = AppBackend::new(
+        AppBackendDeps {
+            workflow_store: Box::new(FileWorkflowStore::new(dir.path().join("workflows.json"))),
+            chat_store: Box::new(FileChatStore::new(dir.path().join("chats.json"))),
+            project_workflow_store: Box::new(FileProjectWorkflowStore),
+            agent_store: Box::new(FileAgentStore::new(dir.path().join("agents.json"))),
+            project_store: Box::new(FileProjectStore::new(dir.path().join("projects.json"))),
+            settings_store: Arc::new(FileSettingsStore::new(FileSettingsStore::default_path())),
+            skill_catalog: Box::new(FileSkillCatalog),
+            env: ProviderEnv::from_system(),
+            runtime_handle: tokio::runtime::Handle::current(),
+        },
+        None,
+    );
+    let project = backend
+        .create_project_from_directory(dir.path().display().to_string())
+        .expect("create project");
+    let chat = backend.create_chat().expect("create chat");
+    let chat = backend
+        .update_chat_config(
+            &chat.id,
+            ChatConfig {
+                model: Some(model),
+                project_id: Some(project.id),
+                ..ChatConfig::default()
+            },
+        )
+        .expect("configure chat");
+    let (_, initial_state, mut event_rx) = backend
+        .start_chat(
+            &chat.id,
+            Some("Reply briefly: what is up?".to_string()),
+            &context.settings,
+            None,
+        )
+        .await
+        .expect("start chat");
+
+    assert!(initial_state.chat_logs.values().flatten().any(|message| {
+        message.role == engine::ChatRole::User && message.content == "Reply briefly: what is up?"
+    }));
+
+    let paused = tokio::time::timeout(std::time::Duration::from_secs(45), async {
+        while let Some(event) = event_rx.recv().await {
+            let state = backend
+                .apply_execution_event(event)
+                .await
+                .expect("apply execution event");
+            if state.awaiting_node_id.is_some() {
+                return state;
+            }
+            assert!(
+                state.active,
+                "direct chat stopped before awaiting input: {:?}",
+                state.last_error
+            );
+        }
+        panic!("direct chat event channel closed before awaiting input");
+    })
+    .await
+    .expect("direct chat did not pause for input within 45 seconds");
+
+    assert!(paused
+        .chat_logs
+        .values()
+        .flatten()
+        .any(|message| message.role == engine::ChatRole::Assistant));
+    backend.stop_run().await.expect("stop chat");
 }
 
 async fn smoke_fixed_workflow() -> Result<WorkflowRunSnapshot, String> {

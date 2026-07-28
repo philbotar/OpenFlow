@@ -61,6 +61,8 @@ Add a port/trait only when a consumer is typed on that interface. Otherwise call
 docs/
 ├── README.md
 ├── glossary.md
+├── research/
+│   └── matt-pocock-skills.md
 ├── getting-started/
 │   └── README.md
 ├── guides/
@@ -98,6 +100,7 @@ docs/
 | `docs/concepts/how-openflow-works.md` | Understanding the runtime path |
 | `docs/reference/README.md` | Commands, storage paths, provider key resolution |
 | `docs/troubleshooting/README.md` | Setup, provider, run, and verification failures |
+| `docs/research/matt-pocock-skills.md` | Source-backed Matt Pocock skills usage |
 | `docs/contributing/development-lanes.md` | Classifying a change, selecting playbook/skill, choosing verification |
 | `docs/contributing/coding-patterns.md` | Ownership, runtime semantics, conventions |
 | `docs/contributing/testing-workflows.md` | Acceptance tests, live-AI smoke |
@@ -156,8 +159,10 @@ Before editing, classify the change with [`docs/contributing/development-lanes.m
 | `crates/orchestration/src/settings/facade.rs` | Settings, keys, skills, validation summaries | Changing settings or provider readiness UX |
 | `crates/orchestration/src/run/coordinator.rs` | Active run session, start/submit/apply events | Changing run lifecycle coordination |
 | `crates/orchestration/src/run/execution/` | `drive/`, `headless.rs`, `tool_port.rs`, event projection, cwd | Changing execution host semantics |
+| `crates/orchestration/src/run/skill_invocation.rs` | Resolve task-prompt `/skill-id` commands at run start | Changing static agent skill invocation |
 | `crates/orchestration/src/run/state.rs` | Run/edit state, trace, chat logs | Changing run state or editor mutations |
 | `crates/orchestration/src/adapters/storage/app_workflow_store.rs` | App workflows (`workflows.json`) | Changing app workflow persistence |
+| `crates/orchestration/src/adapters/storage/chat_store.rs` | Direct chats (`openflow/chats.json`) | Changing saved ad-hoc conversation persistence |
 | `crates/orchestration/src/adapters/storage/project_workflow_store.rs` | Project workflows (`.flow/workflows/`) | Changing repo workflow file layout |
 | `crates/orchestration/src/adapters/storage/project_store.rs` | Projects (`openflow/projects.json`) | Changing project bindings |
 | `crates/orchestration/src/adapters/storage/agent_store.rs` | Saved agents (`openflow/agents.json`) | Changing agent definitions storage |
@@ -226,6 +231,7 @@ Before editing, classify the change with [`docs/contributing/development-lanes.m
 | Data | Path |
 | --- | --- |
 | App workflows | `{data_local}/openflow/workflows.json` |
+| Chats | `{data_local}/openflow/chats.json` |
 | Settings | `{data_local}/openflow/settings.json` |
 | Projects | `{data_local}/openflow/projects.json` (migrates from legacy slug) |
 | Saved agents | `{data_local}/openflow/agents.json` (migrates from legacy slug) |
@@ -235,6 +241,9 @@ Before editing, classify the change with [`docs/contributing/development-lanes.m
 `AppBackend::load_all_workflows` merges app-store and project-discovered workflows (project files win on ID collision).
 
 API key resolution order (highest to lowest): transient input panel → stored settings key (`ProviderProfile.api_key`) → provider env var fallback (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, etc.).
+
+At run prep, an empty node model inherits the active provider's `default_model`.
+An explicit node model overrides that default.
 
 ## Verification Commands
 

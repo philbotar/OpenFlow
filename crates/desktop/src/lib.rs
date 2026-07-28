@@ -33,6 +33,11 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             commands::bootstrap::bootstrap_app,
+            commands::chat::create_chat,
+            commands::chat::list_chats,
+            commands::chat::delete_chat,
+            commands::chat::update_chat_config,
+            commands::chat::start_chat,
             commands::project::list_projects,
             commands::project::list_project_file_references,
             commands::project::save_projects,

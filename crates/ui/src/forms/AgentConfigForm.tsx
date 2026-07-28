@@ -1,6 +1,7 @@
 import { createEffect, createMemo, Show, type Accessor } from "solid-js";
 import { TextSelect } from "@/components";
-import type { ReasoningEffortOption } from "@/lib/types";
+import type { ReasoningEffortOption, SkillSummary } from "@/lib/types";
+import { SkillPromptTextarea } from "./SkillPromptTextarea";
 
 export function AgentConfigForm(props: {
   model: string;
@@ -13,6 +14,7 @@ export function AgentConfigForm(props: {
   onSystemPromptChange: (value: string) => void;
   taskPrompt: string;
   onTaskPromptChange: (value: string) => void;
+  skills?: readonly SkillSummary[];
   schemaJson: string;
   onSchemaChange: (value: string) => void;
   knownModels: Accessor<readonly string[]>;
@@ -158,15 +160,19 @@ export function AgentConfigForm(props: {
           onInput={(event) => props.onSystemPromptChange(event.currentTarget.value)}
         />
       </label>
-      <label>
+      <div class="agent-prompt-field">
         <span>Task prompt</span>
-        <textarea
-          class="text-area"
-          rows={props.taskPromptRows ?? 3}
+        <SkillPromptTextarea
           value={props.taskPrompt}
-          onInput={(event) => props.onTaskPromptChange(event.currentTarget.value)}
+          onInput={props.onTaskPromptChange}
+          skills={props.skills ?? []}
+          rows={props.taskPromptRows ?? 3}
         />
-      </label>
+        <p class="field-help">
+          Type an installed <code>/skill-id</code> anywhere in the prompt to load it before this
+          task runs.
+        </p>
+      </div>
       <Show when={props.showSchema !== false}>
         <label>
           <span>JSON output schema</span>

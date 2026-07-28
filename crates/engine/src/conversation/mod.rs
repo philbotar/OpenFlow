@@ -282,12 +282,10 @@ pub struct AgentReasoning {
 }
 
 /// Opaque reasoning payload from provider APIs (text, signature, encrypted, etc.).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentReasoningContent {
     Text {
         text: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         signature: Option<String>,
     },
     Encrypted(String),
@@ -295,6 +293,80 @@ pub enum AgentReasoningContent {
         data: String,
     },
     Summary(String),
+}
+
+#[derive(Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum AgentReasoningContentRef<'a> {
+    Text {
+        text: &'a str,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        signature: Option<&'a str>,
+    },
+    Encrypted {
+        data: &'a str,
+    },
+    Redacted {
+        data: &'a str,
+    },
+    Summary {
+        text: &'a str,
+    },
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum AgentReasoningContentValue {
+    Text {
+        text: String,
+        #[serde(default)]
+        signature: Option<String>,
+    },
+    Encrypted {
+        data: String,
+    },
+    Redacted {
+        data: String,
+    },
+    Summary {
+        text: String,
+    },
+}
+
+impl Serialize for AgentReasoningContent {
+    fn serialize<__S>(&self, serializer: __S) -> Result<__S::Ok, __S::Error>
+    where
+        __S: serde::Serializer,
+    {
+        match self {
+            Self::Text { text, signature } => AgentReasoningContentRef::Text {
+                text,
+                signature: signature.as_deref(),
+            },
+            Self::Encrypted(data) => AgentReasoningContentRef::Encrypted { data },
+            Self::Redacted { data } => AgentReasoningContentRef::Redacted { data },
+            Self::Summary(text) => AgentReasoningContentRef::Summary { text },
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for AgentReasoningContent {
+    fn deserialize<__D>(deserializer: __D) -> Result<Self, __D::Error>
+    where
+        __D: serde::Deserializer<'de>,
+    {
+        Ok(
+            match AgentReasoningContentValue::deserialize(deserializer)? {
+                AgentReasoningContentValue::Text { text, signature } => {
+                    Self::Text { text, signature }
+                }
+                AgentReasoningContentValue::Encrypted { data } => Self::Encrypted(data),
+                AgentReasoningContentValue::Redacted { data } => Self::Redacted { data },
+                AgentReasoningContentValue::Summary { text } => Self::Summary(text),
+            },
+        )
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -331,6 +403,31 @@ mod tests {
         assert!(completed_json.contains("\"messageKind\":\"node_completed\""));
         let completed_back: ChatMessage = serde_json::from_str(&completed_json).unwrap();
         assert_eq!(completed, completed_back);
+    }
+
+    #[test]
+    fn reasoning_content_serde_roundtrip() {
+        let reasoning = AgentReasoning {
+            id: Some("reasoning-1".to_string()),
+            content: vec![
+                AgentReasoningContent::Text {
+                    text: "Inspecting the request.".to_string(),
+                    signature: Some("signature".to_string()),
+                },
+                AgentReasoningContent::Encrypted("opaque".to_string()),
+                AgentReasoningContent::Redacted {
+                    data: "redacted".to_string(),
+                },
+                AgentReasoningContent::Summary("Choosing the next action.".to_string()),
+            ],
+        };
+
+        let json = serde_json::to_string(&reasoning).unwrap();
+        let back: AgentReasoning = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(reasoning, back);
+        assert!(json.contains(r#""type":"encrypted","data":"opaque""#));
+        assert!(json.contains(r#""type":"summary","text":"Choosing the next action.""#));
     }
 
     #[test]

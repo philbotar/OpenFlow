@@ -1,5 +1,6 @@
 export const PANEL_VISIBILITY_STORAGE_KEY = "openflow.rightPanelHidden";
 export const LEFT_PANEL_VISIBILITY_STORAGE_KEY = "openflow.leftPanelHidden";
+export const CHATS_SECTION_STORAGE_KEY = "openflow.chatsSectionHidden";
 export const WORKFLOWS_SECTION_STORAGE_KEY = "openflow.workflowsSectionHidden";
 export const PROJECTS_SECTION_STORAGE_KEY = "openflow.projectsSectionHidden";
 

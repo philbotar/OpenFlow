@@ -8,6 +8,7 @@ export type SidebarListRowProps = {
   onSelect: () => void;
   onRename?: () => void;
   editSlot?: JSX.Element;
+  actionSlot?: JSX.Element;
 };
 
 export function SidebarListRow(props: SidebarListRowProps) {
@@ -28,6 +29,7 @@ export function SidebarListRow(props: SidebarListRowProps) {
           </div>
         </button>
       </Show>
+      {props.actionSlot}
       <Show when={props.onRename}>
         <SidebarIconButton
           icon="edit"

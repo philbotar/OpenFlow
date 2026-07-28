@@ -1,19 +1,16 @@
-import { createMemo, For, Show } from "solid-js";
-import { useAppContext } from "../../context/AppContext";
-import type { NodeId } from "../../lib/types";
+import { For, Show } from "solid-js";
+import type { SkillSummary } from "../../lib/types";
 
-export function SkillDescriptionPreview(props: { nodeId: NodeId }) {
-  const ctx = useAppContext();
-  const invokedSkills = createMemo(
-    () => ctx.chatSubmissionFor(props.nodeId).invokedSkills,
-  );
-
+export function SkillDescriptionPreview(props: {
+  skillIds: readonly string[];
+  skillById: ReadonlyMap<string, SkillSummary>;
+}) {
   return (
-    <Show when={invokedSkills().length > 0}>
+    <Show when={props.skillIds.length > 0}>
       <div class="skill-description-preview" aria-live="polite">
-        <For each={invokedSkills()}>
+        <For each={props.skillIds}>
           {(skillId) => {
-            const skill = () => ctx.skillById().get(skillId);
+            const skill = () => props.skillById.get(skillId);
             return (
               <article class="skill-description-entry">
                 <p class="eyebrow">/{skillId}</p>

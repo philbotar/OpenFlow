@@ -314,6 +314,7 @@ Orchestration wraps raw `AiPort` with `AiInvocationAdapter` to emit streaming de
 | Data | Location | Writer | Notes |
 | --- | --- | --- | --- |
 | App workflows | `{data_local}/openflow/workflows.json` | `app_workflow_store` | Unassigned workflows only on save |
+| Chats | `{data_local}/openflow/chats.json` | `chat_store` | Chat identity, title, project/runtime config, timestamps, and durable run ID; separate from workflow catalog |
 | Project workflows | `{project}/.flow/workflows/{id}.workflow.json` | `project_workflow_store` | Wins on ID collision at load |
 | Settings + API keys | `{data_local}/openflow/settings.json` | `settings_store` | Plaintext keys |
 | Projects registry | `{data_local}/openflow/projects.json` | `project_store` | Bindings + assigned workflow ids |
@@ -362,7 +363,9 @@ Orchestration wraps raw `AiPort` with `AiInvocationAdapter` to emit streaming de
 1. Node with `auto_start: false` hits layer → `schedule_manual_nodes_in_layer` → `awaiting_nodes`.
 2. `run()` returns `NeedsInteraction { inputs: [EngineAwaitInput { is_initial: true, ... }], ... }`.
 3. Orchestration emits `NodeAwaitingInput` → UI composer enabled.
-4. User: `submit_user_input` → `engine.on_human_input(node_id, text)`.
+4. User: `submit_user_input` accepts the text, removes that node's actionable structured
+   request from `WorkflowRunState`, appends the user transcript message, then forwards to
+   `engine.on_human_input(node_id, text)`. Awaiting/status transitions still follow execution events.
 5. Next `run()` → AI invoke with User message in transcript.
 
 ### C. Tool needs approval, approve, continue

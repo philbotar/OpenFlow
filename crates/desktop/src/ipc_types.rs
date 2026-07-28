@@ -1,7 +1,7 @@
 use orchestration::api::McpDiscoveryRow;
 use orchestration::backend::{BackendError, ScheduleStatus};
 use orchestration::run::state::WorkflowRunState;
-use orchestration::{AgentDefinition, AppSettings, Project, SkillSummary, Workflow};
+use orchestration::{AgentDefinition, AppSettings, Chat, Project, SkillSummary, Workflow};
 use serde::{Deserialize, Serialize};
 
 /// Bootstrap payload returned on app startup.
@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub(crate) struct BootstrapPayload {
     pub(crate) workflows: Vec<Workflow>,
+    pub(crate) chats: Vec<Chat>,
     pub(crate) agents: Vec<AgentDefinition>,
     pub(crate) projects: Vec<Project>,
     pub(crate) skills: Vec<SkillSummary>,
@@ -17,6 +18,13 @@ pub(crate) struct BootstrapPayload {
     pub(crate) run_state: Option<WorkflowRunState>,
     pub(crate) run_continuable: bool,
     pub(crate) schedule_statuses: Vec<ScheduleStatus>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ChatRunPayload {
+    pub(crate) chat: Chat,
+    pub(crate) run_state: WorkflowRunState,
 }
 
 /// Error type returned to Tauri frontend.

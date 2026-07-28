@@ -2721,6 +2721,7 @@ pub fn engine::graph::callable_agent::resolve_callable_agent_snapshots(&engine::
 pub mod engine::graph::runtime_config
 pub struct engine::graph::runtime_config::NodeRuntimeConfigPatch
 pub engine::graph::runtime_config::NodeRuntimeConfigPatch::approval_mode: core::option::Option<engine::ApprovalMode>
+pub engine::graph::runtime_config::NodeRuntimeConfigPatch::model: core::option::Option<alloc::string::String>
 pub engine::graph::runtime_config::NodeRuntimeConfigPatch::reasoning_budget_tokens: core::option::Option<core::option::Option<u32>>
 pub engine::graph::runtime_config::NodeRuntimeConfigPatch::reasoning_effort: core::option::Option<core::option::Option<alloc::string::String>>
 impl engine::graph::runtime_config::NodeRuntimeConfigPatch
@@ -4111,6 +4112,7 @@ impl<T> typenum::type_operators::Same for engine::graph::workflow::NodePosition
 pub type engine::graph::workflow::NodePosition::Output = T
 pub struct engine::graph::NodeRuntimeConfigPatch
 pub engine::graph::NodeRuntimeConfigPatch::approval_mode: core::option::Option<engine::ApprovalMode>
+pub engine::graph::NodeRuntimeConfigPatch::model: core::option::Option<alloc::string::String>
 pub engine::graph::NodeRuntimeConfigPatch::reasoning_budget_tokens: core::option::Option<core::option::Option<u32>>
 pub engine::graph::NodeRuntimeConfigPatch::reasoning_effort: core::option::Option<core::option::Option<alloc::string::String>>
 impl engine::graph::runtime_config::NodeRuntimeConfigPatch
@@ -10109,6 +10111,7 @@ impl<T> typenum::type_operators::Same for engine::execution::artifacts::NodeRunO
 pub type engine::execution::artifacts::NodeRunOutput::Output = T
 pub struct engine::NodeRuntimeConfigPatch
 pub engine::NodeRuntimeConfigPatch::approval_mode: core::option::Option<engine::ApprovalMode>
+pub engine::NodeRuntimeConfigPatch::model: core::option::Option<alloc::string::String>
 pub engine::NodeRuntimeConfigPatch::reasoning_budget_tokens: core::option::Option<core::option::Option<u32>>
 pub engine::NodeRuntimeConfigPatch::reasoning_effort: core::option::Option<core::option::Option<alloc::string::String>>
 impl engine::graph::runtime_config::NodeRuntimeConfigPatch

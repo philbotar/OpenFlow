@@ -1,11 +1,13 @@
 use crate::adapters::storage::agent_store::FileAgentStore;
 use crate::adapters::storage::app_workflow_store::FileWorkflowStore;
+use crate::adapters::storage::chat_store::FileChatStore;
 use crate::adapters::storage::project_store::FileProjectStore;
 use crate::adapters::storage::project_workflow_store::FileProjectWorkflowStore;
 use crate::adapters::storage::run_checkpoint_store::FileRunCheckpointStore;
 use crate::adapters::storage::settings_store::FileSettingsStore;
 use crate::adapters::storage::skill_store::FileSkillCatalog;
 use crate::agent::{AgentLibrary, AgentStore};
+use crate::chat::{ChatCatalog, ChatStore};
 use crate::project::ports::ProjectStore;
 use crate::project::registry::ProjectRegistry;
 use crate::run::coordinator::RunCoordinator;
@@ -22,6 +24,7 @@ use std::sync::Arc;
 
 mod agents;
 mod authoring;
+mod chat;
 mod helpers;
 mod projects;
 mod runs;
@@ -40,6 +43,7 @@ pub use crate::CodexLoginStatus;
 
 pub struct AppBackendDeps {
     pub workflow_store: Box<dyn WorkflowStore>,
+    pub chat_store: Box<dyn ChatStore>,
     pub project_workflow_store: Box<dyn ProjectWorkflowStore>,
     pub agent_store: Box<dyn AgentStore>,
     pub project_store: Box<dyn ProjectStore>,
@@ -51,6 +55,7 @@ pub struct AppBackendDeps {
 
 pub struct AppBackend {
     pub(super) workflows: WorkflowCatalog,
+    pub(super) chats: ChatCatalog,
     pub(super) agents: AgentLibrary,
     pub(super) projects: ProjectRegistry,
     pub(super) settings: SettingsFacade,
@@ -68,6 +73,7 @@ impl AppBackend {
     pub fn new(deps: AppBackendDeps, owned_runtime: Option<tokio::runtime::Runtime>) -> Self {
         Self {
             workflows: WorkflowCatalog::new(deps.workflow_store, deps.project_workflow_store),
+            chats: ChatCatalog::new(deps.chat_store),
             agents: AgentLibrary::new(deps.agent_store),
             projects: ProjectRegistry::new(deps.project_store),
             settings: SettingsFacade::new(deps.settings_store, deps.skill_catalog, deps.env),
@@ -84,6 +90,7 @@ impl AppBackend {
     pub fn default_deps(runtime_handle: tokio::runtime::Handle) -> AppBackendDeps {
         AppBackendDeps {
             workflow_store: Box::new(FileWorkflowStore::new(FileWorkflowStore::default_path())),
+            chat_store: Box::new(FileChatStore::new(FileChatStore::default_path())),
             project_workflow_store: Box::new(FileProjectWorkflowStore),
             agent_store: Box::new(FileAgentStore::new(FileAgentStore::default_path())),
             project_store: Box::new(FileProjectStore::new(FileProjectStore::default_path())),

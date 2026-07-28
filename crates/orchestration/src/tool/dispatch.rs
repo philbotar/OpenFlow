@@ -256,10 +256,17 @@ impl ToolRunner {
                         server_id: call.name.clone(),
                     })
                 })?;
-                let raw = clients
+                let outcome = clients
                     .call_namespaced(&call.name, call.arguments.clone())
                     .await?;
-                self.finalize_record(call, raw, Vec::new(), None).await
+                self.finalize_record_with_status(
+                    call,
+                    outcome.content,
+                    outcome.is_error,
+                    Vec::new(),
+                    None,
+                )
+                .await
             }
         }
     }

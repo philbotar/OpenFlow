@@ -7,6 +7,7 @@ import {
   formatSubmissionWithFileReferences,
 } from "../../lib/fileReferences";
 import type {
+  Chat,
   NodeId,
   ProviderReadiness,
   SkillSummary,
@@ -37,7 +38,9 @@ export type ChatNavigateOptions = {
 
 interface UseChatComposerParams {
   activeWorkflow: Accessor<Workflow | undefined>;
+  activeChat: Accessor<Chat | null>;
   activeWorkflowId: Accessor<string | null>;
+  backendRunWorkflowId: Accessor<string | null>;
   runState: Accessor<WorkflowRunState | null>;
   readiness: Accessor<ProviderReadiness | null>;
   startingRun: Accessor<boolean>;
@@ -63,6 +66,9 @@ export function useChatComposer(params: UseChatComposerParams) {
   let pendingKickoffText: string | null = null;
 
   const [startRunFromChatHandler, setStartRunFromChatHandler] = createSignal<
+    ((nodeId: NodeId) => Promise<void>) | null
+  >(null);
+  const [resumeChatFromInputHandler, setResumeChatFromInputHandler] = createSignal<
     ((nodeId: NodeId) => Promise<void>) | null
   >(null);
 
@@ -116,7 +122,7 @@ export function useChatComposer(params: UseChatComposerParams) {
       return canSendIdleRunKickoff(
         params.runState(),
         params.readiness()?.ready ?? false,
-        !!params.activeWorkflow(),
+        !!params.activeWorkflow() || !!params.activeChat(),
         params.startingRun(),
         chatSubmissionFor(nodeId).submittedText,
       );
@@ -205,10 +211,24 @@ export function useChatComposer(params: UseChatComposerParams) {
     setStartRunFromChatHandler(() => handler);
   };
 
+  const bindResumeChatFromInput = (handler: (nodeId: NodeId) => Promise<void>) => {
+    setResumeChatFromInputHandler(() => handler);
+  };
+
   const handleSubmitChat = async (nodeId: NodeId) => {
     if (!canSendChatFor(nodeId)) return;
     if (isGlobalRunEntryNodeId(nodeId)) {
       const handler = startRunFromChatHandler();
+      if (handler) {
+        await handler(nodeId);
+      }
+      return;
+    }
+    if (
+      params.activeChat()?.runId &&
+      params.backendRunWorkflowId() !== params.activeWorkflowId()
+    ) {
+      const handler = resumeChatFromInputHandler();
       if (handler) {
         await handler(nodeId);
       }
@@ -298,6 +318,7 @@ export function useChatComposer(params: UseChatComposerParams) {
     setPendingKickoff,
     flushPendingKickoff,
     bindStartRunFromChat,
+    bindResumeChatFromInput,
     chatFilterNodeId,
     setChatFilterNodeId,
     pickedLiveNodeId,

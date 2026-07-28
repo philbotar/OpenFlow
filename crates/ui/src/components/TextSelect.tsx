@@ -14,7 +14,8 @@ export type TextSelectOption = {
   label: string;
 };
 
-type MenuPlacement = "above" | "below";
+type MenuPlacement = "auto" | "above" | "below";
+type ResolvedMenuPlacement = Exclude<MenuPlacement, "auto">;
 
 type TextSelectProps = {
   value: string;
@@ -24,6 +25,7 @@ type TextSelectProps = {
   class?: string;
   classList?: JSX.HTMLAttributes<HTMLDivElement>["classList"];
   menuPlacement?: MenuPlacement;
+  valuePrefix?: string;
   "aria-label"?: string;
 };
 
@@ -31,14 +33,22 @@ type MenuStyle = {
   top: string;
   left: string;
   width: string;
+  "max-height"?: string;
   transform?: string;
 };
+
+const MENU_GAP_PX = 4;
+const MENU_MIN_WIDTH_PX = 180;
 
 let nextListboxId = 0;
 
 export function TextSelect(props: TextSelectProps) {
   const [local] = splitProps(props, ["class", "classList"]);
   const [open, setOpen] = createSignal(false);
+  const [resolvedMenuPlacement, setResolvedMenuPlacement] =
+    createSignal<ResolvedMenuPlacement>(
+      props.menuPlacement === "above" ? "above" : "below",
+    );
   const [menuStyle, setMenuStyle] = createSignal<MenuStyle>({
     top: "0px",
     left: "0px",
@@ -46,30 +56,64 @@ export function TextSelect(props: TextSelectProps) {
   });
   let rootRef: HTMLDivElement | undefined;
   let triggerRef: HTMLButtonElement | undefined;
+  let menuRef: HTMLUListElement | undefined;
   const listboxId = `text-select-${++nextListboxId}`;
 
-  const selectedLabel = createMemo(
-    () => props.options.find((option) => option.value === props.value)?.label ?? props.value,
-  );
+  const selectedLabel = createMemo(() => {
+    const label =
+      props.options.find((option) => option.value === props.value)?.label ?? props.value;
+    return `${props.valuePrefix ?? ""}${label}`;
+  });
 
   const syncMenuPosition = () => {
     const trigger = triggerRef;
     if (!trigger) return;
     const rect = trigger.getBoundingClientRect();
-    const width = `${Math.max(rect.width, 180)}px`;
-    if (props.menuPlacement === "above") {
+    const effectiveScale =
+      trigger.offsetWidth > 0 ? rect.width / trigger.offsetWidth : 1;
+    const positionScale =
+      Number.isFinite(effectiveScale) && effectiveScale > 0 ? effectiveScale : 1;
+    const left = rect.left / positionScale;
+    const width = `${Math.max(trigger.offsetWidth, MENU_MIN_WIDTH_PX)}px`;
+    const viewport = window.visualViewport;
+    const viewportTop = viewport?.offsetTop ?? 0;
+    const viewportHeight = viewport?.height ?? window.innerHeight;
+    const viewportBottom = viewportTop + viewportHeight;
+    const availableAbove = Math.max(0, rect.top - viewportTop);
+    const availableBelow = Math.max(0, viewportBottom - rect.bottom);
+    const menuHeight =
+      menuRef?.isConnected ? menuRef.getBoundingClientRect().height : 0;
+    const requestedPlacement = props.menuPlacement ?? "auto";
+    const placement: ResolvedMenuPlacement =
+      requestedPlacement === "above" ||
+      (requestedPlacement === "auto" &&
+        menuHeight > 0 &&
+        availableBelow < menuHeight + MENU_GAP_PX * positionScale &&
+        availableAbove > availableBelow)
+        ? "above"
+        : "below";
+    const availableHeight = placement === "above" ? availableAbove : availableBelow;
+    const constrainedMaxHeight =
+      menuHeight > 0 &&
+      availableHeight < menuHeight + MENU_GAP_PX * positionScale
+        ? `${Math.max(0, availableHeight / positionScale - MENU_GAP_PX)}px`
+        : undefined;
+    setResolvedMenuPlacement(placement);
+    if (placement === "above") {
       setMenuStyle({
-        top: `${rect.top - 4}px`,
-        left: `${rect.left}px`,
+        top: `${rect.top / positionScale - MENU_GAP_PX}px`,
+        left: `${left}px`,
         width,
+        "max-height": constrainedMaxHeight,
         transform: "translateY(-100%)",
       });
       return;
     }
     setMenuStyle({
-      top: `${rect.bottom + 4}px`,
-      left: `${rect.left}px`,
+      top: `${rect.bottom / positionScale + MENU_GAP_PX}px`,
+      left: `${left}px`,
       width,
+      "max-height": constrainedMaxHeight,
       transform: "none",
     });
   };
@@ -147,9 +191,13 @@ export function TextSelect(props: TextSelectProps) {
       </button>
       <Show when={open()}>
         <ul
+          ref={(element) => {
+            menuRef = element;
+            queueMicrotask(syncMenuPosition);
+          }}
           id={listboxId}
           class="text-select-menu"
-          classList={{ "text-select-menu--above": props.menuPlacement === "above" }}
+          classList={{ "text-select-menu--above": resolvedMenuPlacement() === "above" }}
           role="listbox"
           aria-label={props["aria-label"]}
           style={menuStyle()}
@@ -163,10 +211,11 @@ export function TextSelect(props: TextSelectProps) {
                   classList={{ "is-selected": option.value === props.value }}
                   role="option"
                   aria-selected={option.value === props.value}
+                  title={option.label}
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => selectValue(option.value)}
                 >
-                  {option.label}
+                  <span class="text-select-option-label">{option.label}</span>
                 </button>
               </li>
             )}

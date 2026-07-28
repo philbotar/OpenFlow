@@ -11,6 +11,8 @@ import type {
   AgentDefinitionSummary,
   AppSettings,
   BootstrapPayload,
+  Chat,
+  ChatRunPayload,
   CodexLoginStatus,
   DebugLogEntry,
   DebugLogWrite,
@@ -153,6 +155,25 @@ export function loadWorkflow(workflowId: string) {
 
 export function createWorkflow(name: string) {
   return invoke<Workflow>("create_workflow", { name });
+}
+
+export function createChat() {
+  return invoke<Chat>("create_chat");
+}
+
+export function listChats() {
+  return invoke<Chat[]>("list_chats");
+}
+
+export function deleteChat(chatId: string) {
+  return invoke<void>("delete_chat", { chatId });
+}
+
+export function updateChatConfig(
+  chatId: string,
+  config: import("./lib/types").ChatConfig,
+) {
+  return invoke<Chat>("update_chat_config", { chatId, config });
 }
 
 export function saveWorkflow(workflow: Workflow) {
@@ -322,6 +343,20 @@ export function startRun(
     workflow,
     settings,
     executionCwd,
+    transientApiKey,
+    entrypoint,
+  });
+}
+
+export function startChat(
+  chatId: string,
+  settings: AppSettings,
+  transientApiKey: string | null,
+  entrypoint: string,
+) {
+  return invoke<ChatRunPayload>("start_chat", {
+    chatId,
+    settings,
     transientApiKey,
     entrypoint,
   });

@@ -54,6 +54,18 @@ export type OpenflowIpcMockOptions = {
   providerApiKeys?: Record<string, string | null>;
 };
 
+export interface OpenflowBootstrapFixture {
+  workflows: readonly unknown[];
+  agents: readonly unknown[];
+  projects: readonly unknown[];
+  skills?: readonly unknown[];
+  settings: Record<string, unknown>;
+  discoveredMcp?: readonly unknown[];
+  runState?: unknown;
+  runContinuable?: boolean;
+  scheduleStatuses?: readonly unknown[];
+}
+
 /** Handlers are toString'd into the page — embed literals, no outer closures. */
 function mockReturn<T>(value: T): (args?: Record<string, unknown>) => T {
   const json = JSON.stringify(value);
@@ -110,7 +122,7 @@ const DIALOG_PLUGIN_MOCKS: Record<string, (args?: Record<string, unknown>) => un
 };
 
 export function createOpenflowIpcMocks(
-  bootstrap: typeof EMPTY_BOOTSTRAP = EMPTY_BOOTSTRAP,
+  bootstrap: OpenflowBootstrapFixture = EMPTY_BOOTSTRAP,
   options: OpenflowIpcMockOptions = {},
 ): Record<string, (args?: Record<string, unknown>) => unknown> {
   const providerApiKeys = options.providerApiKeys ?? DEFAULT_PROVIDER_API_KEYS;

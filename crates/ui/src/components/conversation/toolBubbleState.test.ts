@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { NodeId, ToolCallStatus, WorkflowRunState } from "../../lib/types";
 import {
   formatToolDisplayName,
+  formatRunTraceLabel,
+  formatRunTraceMessage,
   resolveToolSummary,
   toolBubbleIntentText,
   toolBubbleLineText,
@@ -109,6 +111,40 @@ describe("formatToolDisplayName", () => {
     for (const key of knownKeys) {
       expect(formatToolDisplayName(key)).not.toBe(key);
     }
+  });
+});
+
+describe("run trace tool presentation", () => {
+  it("uses the chat tool display name for running tool rows", () => {
+    const entry = {
+      nodeLabel: "openflow_call_subagent",
+      message: "running tool openflow_call_subagent",
+    };
+
+    expect(formatRunTraceLabel(entry)).toBe("Call Subagent");
+    expect(formatRunTraceMessage(entry)).toBe("Running Call Subagent");
+  });
+
+  it("preserves retry details while humanizing the tool name", () => {
+    const entry = {
+      nodeLabel: "bash",
+      message: "retrying tool bash (attempt 2, backoff 500ms)",
+    };
+
+    expect(formatRunTraceLabel(entry)).toBe("Run Command");
+    expect(formatRunTraceMessage(entry)).toBe(
+      "Retrying Run Command (attempt 2, backoff 500ms)",
+    );
+  });
+
+  it("does not reinterpret ordinary node rows as tools", () => {
+    const entry = {
+      nodeLabel: "read",
+      message: "invoking model",
+    };
+
+    expect(formatRunTraceLabel(entry)).toBe("read");
+    expect(formatRunTraceMessage(entry)).toBe("invoking model");
   });
 });
 

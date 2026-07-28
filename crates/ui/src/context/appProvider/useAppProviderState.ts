@@ -46,6 +46,8 @@ export function useAppProviderState(): AppContextValue {
   let closeAddNodePickerRef: () => void = () => undefined;
   let revealProjectsSectionRef: () => void = () => undefined;
   let selectWorkflowRef: (workflow: Workflow) => void = () => undefined;
+  let selectChatRef: (chatId: string, state: WorkflowRunState | null) => void =
+    () => undefined;
   const setScreenProxy = ((next: Screen | ((prev: Screen) => Screen)) =>
     setScreenRef(next as never)) as Setter<Screen>;
 
@@ -56,6 +58,7 @@ export function useAppProviderState(): AppContextValue {
     navigateToScreen: (screen) => navigateToScreenRef(screen),
     setScreen: setScreenProxy,
     selectWorkflow: (workflow) => selectWorkflowRef(workflow),
+    selectChat: (chatId, state) => selectChatRef(chatId, state),
     runState: runKernel.runState,
     backendRunWorkflowId: runKernel.backendRunWorkflowId,
     setBackendRunWorkflowId: runKernel.setBackendRunWorkflowId,
@@ -92,7 +95,9 @@ export function useAppProviderState(): AppContextValue {
   let replayRunIdAccessor: Accessor<string | null> = () => null;
   const chatComposer = useChatComposer({
     activeWorkflow: workspace.activeWorkflow,
+    activeChat: workspace.activeChat,
     activeWorkflowId: workspace.activeWorkflowId,
+    backendRunWorkflowId: runKernel.backendRunWorkflowId,
     runState: runKernel.runState,
     readiness: settingsState.readiness,
     startingRun: () => startingRunAccessor(),
@@ -112,6 +117,7 @@ export function useAppProviderState(): AppContextValue {
   let refreshRunHistoryRef: () => Promise<void> = async () => undefined;
   const runSession = useRunSession({
     activeWorkflow: workspace.activeWorkflow,
+    activeChat: workspace.activeChat,
     activeWorkflowId: workspace.activeWorkflowId,
     settings: settingsState.settings,
     readiness: settingsState.readiness,
@@ -138,11 +144,13 @@ export function useAppProviderState(): AppContextValue {
     flushPendingKickoff: chatComposer.flushPendingKickoff,
     handleRefreshRunHistoryRef: () => refreshRunHistoryRef(),
     updateActiveWorkflow: workflowEditor.updateActiveWorkflow,
+    updateChat: workspace.updateChat,
   });
   refreshRunHistoryRef = runSession.handleRefreshRunHistory;
   startingRunAccessor = runSession.startingRun;
   replayRunIdAccessor = runSession.replayRunId;
   chatComposer.bindStartRunFromChat(runSession.handleStartRunFromChat);
+  chatComposer.bindResumeChatFromInput(runSession.handleResumeChatFromInput);
 
   selectWorkflowRef = (workflow: Workflow) => {
     runSession.setReplayRunId(null);
@@ -162,6 +170,27 @@ export function useAppProviderState(): AppContextValue {
       setSelectedTraceIndex: runSession.setSelectedTraceIndex,
       resetWorkflowChatUi: chatComposer.resetWorkflowChatUi,
     });
+  };
+  selectChatRef = (chatId: string, state: WorkflowRunState | null) => {
+    runSession.setReplayRunId(null);
+    const previousId = workspace.activeWorkflowId();
+    const previousState = runKernel.runState();
+    if (previousId && previousState) {
+      runKernel.cacheRunStateForWorkflow(previousId, previousState);
+    }
+    if (state) {
+      runKernel.cacheRunStateForWorkflow(chatId, state);
+    }
+    workspace.setActiveWorkflowId(chatId);
+    workflowEditor.setSelectedNodeId(null);
+    workflowEditor.setSelectedEdgeId(null);
+    workflowEditor.setEditingNodeId(null);
+    workflowEditor.setNodeLabelDraft("");
+    runSession.setSelectedTraceIndex(null);
+    chatComposer.resetWorkflowChatUi();
+    runKernel.applyRunStateSnapshot(
+      state ?? runKernel.runStateByWorkflowId[chatId] ?? null,
+    );
   };
 
   let keyDownActions: (event: KeyboardEvent) => void = () => undefined;
@@ -253,6 +282,7 @@ export function useAppProviderState(): AppContextValue {
       void desktop.debugLogPath().then(setLocalDebugLogPath).catch(() => undefined);
       await workspace.initializeWorkspace(
         data.workflows,
+        data.chats ?? [],
         data.agents,
         data.projects ?? [],
         data.settings,
@@ -450,9 +480,11 @@ export function useAppProviderState(): AppContextValue {
 
   return {
     workflows: workspace.workflows,
+    chats: workspace.chats,
     projects: workspace.projects,
     agents: workspace.agents,
     activeWorkflowId: workspace.activeWorkflowId,
+    activeChatId: workspace.activeChatId,
     selectedNodeId: workflowEditor.selectedNodeId,
     selectedEdgeId: workflowEditor.selectedEdgeId,
     screen: appShell.screen,
@@ -533,6 +565,7 @@ export function useAppProviderState(): AppContextValue {
     setSettingsSection: appShell.setSettingsSection,
     navigateToScreen: appShell.navigateToScreen,
     activeWorkflow: workspace.activeWorkflow,
+    activeChat: workspace.activeChat,
     activeProject: workspace.activeProject,
     gitRepoAvailable,
     independentWorkflows: workspace.independentWorkflows,
@@ -555,11 +588,15 @@ export function useAppProviderState(): AppContextValue {
     setWorkflowNameInputRef: workspace.setWorkflowNameInputRef,
     setAgentNameInputRef: workspace.setAgentNameInputRef,
     handleSwitchWorkflow: workspace.handleSwitchWorkflow,
+    handleCreateChat: workspace.handleCreateChat,
+    handleOpenChat: workspace.handleOpenChat,
+    handleDeleteChat: workspace.handleDeleteChat,
     handleCreateWorkflow: workspace.handleCreateWorkflow,
     handleOpenAssignWorkflowPicker: workspace.handleOpenAssignWorkflowPicker,
     closeAssignWorkflowPicker: workspace.closeAssignWorkflowPicker,
     workflowsAddableToProject: workspace.workflowsAddableToProject,
     handleCopyWorkflowToProject: workspace.handleCopyWorkflowToProject,
+    handleDeleteWorkflow: workspace.handleDeleteWorkflow,
     handleDeleteActiveWorkflow: workspace.handleDeleteActiveWorkflow,
     handleOpenAgents: workspace.handleOpenAgents,
     handleOpenSchedule: workspace.handleOpenSchedule,
@@ -568,6 +605,7 @@ export function useAppProviderState(): AppContextValue {
     scheduleDraftFromSchedule: workspace.scheduleDraftFromSchedule,
     describeWorkflowSchedule: workspace.describeWorkflowSchedule,
     handleAddProject: workspace.handleAddProject,
+    handleRemoveProject: workspace.handleRemoveProject,
     handleSelectProject: workspace.handleSelectProject,
     handleToggleProjectExpanded: workspace.handleToggleProjectExpanded,
     isProjectExpanded: workspace.isProjectExpanded,
@@ -633,6 +671,7 @@ export function useAppProviderState(): AppContextValue {
     handleRefreshSkills: workspace.handleRefreshSkills,
     searchProjectFileReferences: runSession.searchProjectFileReferences,
     handleToolApproval: runSession.handleToolApproval,
+    handleUpdateChatConfig: runSession.handleUpdateChatConfig,
     handleUpdateNodeRuntimeConfig: runSession.handleUpdateNodeRuntimeConfig,
     handleStartNodeLabelEdit: workflowEditor.handleStartNodeLabelEdit,
     handleCancelNodeLabelEdit: workflowEditor.handleCancelNodeLabelEdit,
@@ -642,6 +681,7 @@ export function useAppProviderState(): AppContextValue {
     handleWorkflowNameCommit: workspace.handleWorkflowNameCommit,
     handleWorkflowNameKeyDown: workspace.handleWorkflowNameKeyDown,
     handleChatInputKeyDown,
+    handleToggleChatsSection: workflowEditor.handleToggleChatsSection,
     handleToggleWorkflowsSection: workflowEditor.handleToggleWorkflowsSection,
     handleToggleProjectsSection: workflowEditor.handleToggleProjectsSection,
     handleToggleWorkflowSettings: workflowEditor.handleToggleWorkflowSettings,
@@ -668,6 +708,7 @@ export function useAppProviderState(): AppContextValue {
     handleZoomReset: appShell.handleZoomReset,
     rightPanelHidden: workflowEditor.rightPanelHidden,
     leftPanelHidden: workflowEditor.leftPanelHidden,
+    chatsSectionExpanded: workflowEditor.chatsSectionExpanded,
     workflowsSectionExpanded: workflowEditor.workflowsSectionExpanded,
     projectsSectionExpanded: workflowEditor.projectsSectionExpanded,
   };

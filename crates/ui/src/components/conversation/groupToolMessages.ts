@@ -1,6 +1,9 @@
 import type { ChatMessage } from "../../lib/types";
 import { displayChatContent, extractThinkContent } from "../../lib/stripToolCallMarkup";
-import { isProviderThinkingMessage } from "./providerThinking";
+import {
+  isLegacyToolThinkingMessage,
+  isProviderThinkingMessage,
+} from "./providerThinking";
 
 export type GroupedConversationItem =
   | { kind: "message"; message: ChatMessage }
@@ -68,6 +71,7 @@ function isInvisibleNonTool(message: ChatMessage): boolean {
   if (message.messageKind === "node_completed") return false;
   if (isToolMarker(message)) return false;
   if (isApprovalSystemLine(message)) return true;
+  if (isLegacyToolThinkingMessage(message)) return true;
   if (message.streaming) return false;
   if (isProviderThinkingMessage(message)) {
     return message.content.trim().length === 0;

@@ -51,7 +51,7 @@ pub(super) async fn drive_interactive_workflow<A>(
                 &event_tx,
                 aborted_emitted.as_ref(),
             );
-            return;
+            break;
         }
         apply_pending_engine_reverts(
             &wiring.pending_engine_reverts,
@@ -96,7 +96,7 @@ pub(super) async fn drive_interactive_workflow<A>(
                 )
                 .await
                 {
-                    return;
+                    break;
                 }
             }
             EngineRunResult::Completed(mut report) => {
@@ -120,7 +120,7 @@ pub(super) async fn drive_interactive_workflow<A>(
                     engine: checkpoint,
                 });
                 send_or_log(&event_tx, ExecutionEvent::Finished(report));
-                return;
+                break;
             }
             EngineRunResult::Failed(error) => {
                 publish_checkpoint(
@@ -145,11 +145,11 @@ pub(super) async fn drive_interactive_workflow<A>(
                                 error: kind.to_string(),
                             },
                         );
-                        return;
+                        break;
                     }
                     other => {
                         send_or_log(&event_tx, ExecutionEvent::Error(other.to_string()));
-                        return;
+                        break;
                     }
                 }
             }
@@ -160,8 +160,12 @@ pub(super) async fn drive_interactive_workflow<A>(
                     &event_tx,
                     aborted_emitted.as_ref(),
                 );
-                return;
+                break;
             }
         }
+    }
+
+    if let Err(error) = wiring.tool_port.tool_runner().close_mcp_clients().await {
+        log::warn!("failed to close MCP clients at run end: {error}");
     }
 }

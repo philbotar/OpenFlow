@@ -26,6 +26,17 @@ pub(crate) fn spawn_run_event_bridge(
         let mut failed = false;
         while !failed {
             let Some(event) = event_rx.recv().await else {
+                let backend = app.state::<AppBackend>();
+                if bridge_still_owns_run(&backend, &bridge_run_id).await
+                    && backend.is_run_active().await
+                {
+                    log::error!(
+                        "run event channel closed while run {bridge_run_id:?} remained active"
+                    );
+                    if let Ok(run_state) = backend.stop_run().await {
+                        let _ = app.emit("run-state", run_state);
+                    }
+                }
                 break;
             };
             let notification =
@@ -36,7 +47,15 @@ pub(crate) fn spawn_run_event_bridge(
             }
             let mut run_state = match backend.apply_execution_event(event).await {
                 Ok(state) => state,
-                Err(_) => break,
+                Err(error) => {
+                    log::error!(
+                        "failed to apply execution event for run {bridge_run_id:?}: {error}"
+                    );
+                    let Some(state) = backend.get_run_state().await else {
+                        break;
+                    };
+                    state
+                }
             };
             if let Some(notification) = notification.as_ref() {
                 run_notifications::show_run_notification(&app, notification);
@@ -65,9 +84,16 @@ pub(crate) fn spawn_run_event_bridge(
                                         );
                                     }
                                 }
-                                Err(_) => {
-                                    failed = true;
-                                    break;
+                                Err(error) => {
+                                    log::error!(
+                                        "failed to apply coalesced execution event for run \
+                                         {bridge_run_id:?}: {error}"
+                                    );
+                                    let Some(state) = backend.get_run_state().await else {
+                                        failed = true;
+                                        break;
+                                    };
+                                    run_state = state;
                                 }
                             }
                         },

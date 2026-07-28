@@ -15,6 +15,7 @@ Composition root: entity domain logic + centralized adapters + run lifecycle. De
 ```
 desktop → AppBackend (backend/mod.rs)
             ├── WorkflowCatalog      workflow CRUD, merge, assign
+            ├── ChatCatalog          saved direct-chat metadata
             ├── AgentLibrary         saved CallableAgent definitions
             ├── ProjectRegistry      folder-scoped projects
             ├── SettingsFacade       settings, keys, skills
@@ -87,6 +88,7 @@ orchestration/src/
 | New desktop command surface | Delegate in `backend/mod.rs`; logic in entity folder |
 | Workflow merge / project assign | `workflow/catalog.rs`, `adapters/storage/*_workflow_store.rs` |
 | Saved agents | `agent.rs`, `adapters/storage/agent_store.rs` |
+| Direct chats | `chat.rs`, `adapters/storage/chat_store.rs` |
 | Run start, input, approval | `run/coordinator.rs`, `run/execution/` |
 | UI run snapshot fields | `run/state.rs` + engine telemetry if needed |
 | New builtin tool | `adapters/tool_impl/` + `tool/registry.rs`; tier in `engine/tools/config.rs`; update `NODE_RUNTIME_PREAMBLE` |
@@ -103,13 +105,17 @@ See [`docs/architecture/orchestration-layout.md`](../../docs/architecture/orches
 2. **Execution cwd** — resolved at run start from project `default_execution_cwd` or process cwd.
 3. **Callable agents** — snapshotted at run start via `resolve_callable_agent_snapshots`.
 4. **Provider override** — `WorkflowSettings.provider_id` overrides active provider for the run.
-5. **Workflow storage** — app `workflows.json` + project `.flow/workflows/`; merge on load (project wins on ID collision).
+5. **Model default** — an empty node model inherits the active provider's `default_model` at run prep; an explicit node model wins.
+6. **Skill invocation** — installed `/skill-id` task-prompt tokens resolve through `SkillCatalog` at run start and augment node/callable-agent system prompts.
+7. **Workflow storage** — app `workflows.json` + project `.flow/workflows/`; merge on load (project wins on ID collision).
+8. **Direct chats** — `ChatCatalog` persists metadata plus project/model/approval/reasoning config. `backend/chat.rs` privately builds the execution `Workflow` at run start without returning it in the Chat DTO or adding it to `WorkflowCatalog`.
 
 ### Persistence (quick reference)
 
 | Store | Path |
 | --- | --- |
 | App workflows | `{data_local}/openflow/workflows.json` |
+| Chats | `{data_local}/openflow/chats.json` |
 | Project workflows | `{project}/.flow/workflows/{id}.workflow.json` |
 | Agents | `{data_local}/openflow/agents.json` |
 | Projects | `{data_local}/openflow/projects.json` |

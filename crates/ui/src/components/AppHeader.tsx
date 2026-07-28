@@ -10,6 +10,8 @@ export function AppHeader() {
 
   const title = () => {
     switch (ctx.screen()) {
+      case "chat":
+        return ctx.activeChat()?.title ?? "New chat";
       case "agents":
         return "Agents";
       case "schedule":

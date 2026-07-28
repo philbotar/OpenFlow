@@ -1,9 +1,10 @@
 use crate::adapters::storage::json_file_store::{
     read_json_file, write_json_file, OPENFLOW_DATA_DIR_SLUG,
 };
-use crate::workflow::ports::WorkflowStore;
+use crate::workflow::ports::{WorkflowStore, WorkflowStoreState};
 use engine::Workflow;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -15,6 +16,8 @@ pub struct FileWorkflowStore {
 #[derive(Debug, Serialize, Deserialize, Default, PartialEq)]
 struct StoredWorkflows {
     workflows: Vec<Workflow>,
+    #[serde(default)]
+    seeded_examples: BTreeSet<String>,
 }
 
 impl FileWorkflowStore {
@@ -33,18 +36,13 @@ impl FileWorkflowStore {
     /// # Errors
     /// Returns an error if the file cannot be read or parsed.
     pub fn load(&self) -> io::Result<Vec<Workflow>> {
-        let stored: StoredWorkflows =
-            read_json_file(&self.path, "workflow store JSON invalid")?.unwrap_or_default();
-        Ok(stored.workflows)
+        WorkflowStore::load(self)
     }
 
     /// # Errors
     /// Returns an error if the file cannot be serialized or written.
     pub fn save(&self, workflows: &[Workflow]) -> io::Result<()> {
-        let stored = StoredWorkflows {
-            workflows: workflows.to_vec(),
-        };
-        write_json_file(&self.path, &stored, "workflow store JSON")
+        WorkflowStore::save(self, workflows)
     }
 
     #[must_use]
@@ -54,12 +52,21 @@ impl FileWorkflowStore {
 }
 
 impl WorkflowStore for FileWorkflowStore {
-    fn load(&self) -> io::Result<Vec<Workflow>> {
-        FileWorkflowStore::load(self)
+    fn load_state(&self) -> io::Result<WorkflowStoreState> {
+        let stored: StoredWorkflows =
+            read_json_file(&self.path, "workflow store JSON invalid")?.unwrap_or_default();
+        Ok(WorkflowStoreState {
+            workflows: stored.workflows,
+            applied_seeds: stored.seeded_examples,
+        })
     }
 
-    fn save(&self, workflows: &[Workflow]) -> io::Result<()> {
-        FileWorkflowStore::save(self, workflows)
+    fn save_state(&self, state: &WorkflowStoreState) -> io::Result<()> {
+        let stored = StoredWorkflows {
+            workflows: state.workflows.clone(),
+            seeded_examples: state.applied_seeds.clone(),
+        };
+        write_json_file(&self.path, &stored, "workflow store JSON")
     }
 }
 
@@ -129,5 +136,38 @@ mod tests {
 
         assert!(path.exists());
         assert!(!path.with_extension("tmp").exists());
+    }
+
+    #[test]
+    fn workflow_state_migrates_legacy_store_and_persists_seed_markers() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("workflows.json");
+        let store = FileWorkflowStore::new(&path);
+        let workflow = Workflow::new("Legacy workflow");
+        fs::write(
+            &path,
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "workflows": [workflow]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let mut state = store.load_state().unwrap();
+
+        assert_eq!(state.workflows[0].name, "Legacy workflow");
+        assert!(state.applied_seeds.is_empty());
+
+        state.applied_seeds.insert("example@1".to_string());
+        store.save_state(&state).unwrap();
+
+        let raw: serde_json::Value =
+            serde_json::from_slice(&fs::read(store.path()).unwrap()).unwrap();
+        assert_eq!(raw["seeded_examples"], serde_json::json!(["example@1"]));
+        assert!(store
+            .load_state()
+            .unwrap()
+            .applied_seeds
+            .contains("example@1"));
     }
 }

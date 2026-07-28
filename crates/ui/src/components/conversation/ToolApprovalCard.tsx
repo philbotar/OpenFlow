@@ -25,6 +25,7 @@ function opLabel(op: string): string {
 export function ToolApprovalCardBody(props: {
   approval: PendingToolApproval;
   onApprove: (allow: boolean) => void;
+  showNodeLabel?: boolean;
 }) {
   const [preview] = createResource(
     () => {
@@ -89,7 +90,9 @@ export function ToolApprovalCardBody(props: {
         <div class="eyebrow">Approval required</div>
       </div>
       <h3>{formatToolDisplayName(props.approval.toolCall.name)}</h3>
-      <p class="tool-approval-node">{props.approval.nodeLabel}</p>
+      <Show when={props.showNodeLabel !== false}>
+        <p class="tool-approval-node">{props.approval.nodeLabel}</p>
+      </Show>
 
       <Show
         when={isFileEditTool(props.approval.toolCall.name)}

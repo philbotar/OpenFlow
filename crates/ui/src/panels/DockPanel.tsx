@@ -1,7 +1,13 @@
 import { For, Show } from "solid-js";
 import Maximize2 from "lucide-solid/icons/maximize-2";
 import Minimize2 from "lucide-solid/icons/minimize-2";
-import { ChatPanel, PanelEmptyState, Tooltip } from "@/components";
+import {
+  ChatPanel,
+  formatRunTraceLabel,
+  formatRunTraceMessage,
+  PanelEmptyState,
+  Tooltip,
+} from "@/components";
 import { useAppContext } from "../context/AppContext";
 import { TerminalPanel } from "./TerminalPanel";
 import { RunHistoryPanel } from "./RunHistoryPanel";
@@ -121,8 +127,8 @@ function TracePanel() {
                 {entry.status.replace("_", " ")}
               </span>
               <div>
-                <strong>{entry.nodeLabel}</strong>
-                <div>{entry.message}</div>
+                <strong>{formatRunTraceLabel(entry)}</strong>
+                <div>{formatRunTraceMessage(entry)}</div>
               </div>
             </button>
           )}
@@ -141,8 +147,8 @@ function TracePanel() {
           {(entry) => (
             <>
               <div class="eyebrow">Trace detail</div>
-              <h3>{entry().nodeLabel}</h3>
-              <p>{entry().message}</p>
+              <h3>{formatRunTraceLabel(entry())}</h3>
+              <p>{formatRunTraceMessage(entry())}</p>
               <pre>
                 {entry().output ? JSON.stringify(entry().output, null, 2) : "No output recorded."}
               </pre>

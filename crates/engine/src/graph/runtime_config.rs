@@ -6,9 +6,10 @@ use crate::tools::{ApprovalMode, NodeToolConfig};
 use crate::AgentNodeConfig;
 use crate::NodeId;
 
-/// Mid-run overrides for per-node tool approval and reasoning settings.
+/// Mid-run overrides for per-node model, tool approval, and reasoning settings.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct NodeRuntimeConfigPatch {
+    pub model: Option<String>,
     pub approval_mode: Option<ApprovalMode>,
     pub reasoning_effort: Option<Option<String>>,
     pub reasoning_budget_tokens: Option<Option<u32>>,
@@ -16,6 +17,9 @@ pub struct NodeRuntimeConfigPatch {
 
 impl NodeRuntimeConfigPatch {
     pub fn merge_into(&self, target: &mut Self) {
+        if self.model.is_some() {
+            target.model.clone_from(&self.model);
+        }
         if self.approval_mode.is_some() {
             target.approval_mode = self.approval_mode;
         }
@@ -70,6 +74,9 @@ pub const fn apply_runtime_patch_to_tool_config(
 
 pub fn apply_runtime_patch_to_agent(agent: &mut AgentNodeConfig, patch: &NodeRuntimeConfigPatch) {
     apply_runtime_patch_to_tool_config(&mut agent.tools, patch);
+    if let Some(model) = &patch.model {
+        agent.model.clone_from(model);
+    }
     if let Some(effort) = &patch.reasoning_effort {
         agent.reasoning_effort.clone_from(effort);
         if effort.is_none() {
@@ -83,6 +90,9 @@ pub fn apply_runtime_patch_to_agent(agent: &mut AgentNodeConfig, patch: &NodeRun
 
 pub fn apply_runtime_patch_to_request(request: &mut AgentRequest, patch: &NodeRuntimeConfigPatch) {
     apply_runtime_patch_to_tool_config(&mut request.tool_config, patch);
+    if let Some(model) = &patch.model {
+        request.model.clone_from(model);
+    }
     if let Some(effort) = &patch.reasoning_effort {
         request.reasoning_effort.clone_from(effort);
         if effort.is_none() {
@@ -103,6 +113,7 @@ mod tests {
     fn patch_merges_and_applies_to_request() {
         let store = new_runtime_config_store();
         let patch_value = NodeRuntimeConfigPatch {
+            model: Some("gpt-next".to_string()),
             approval_mode: Some(ApprovalMode::ReadOnly),
             reasoning_effort: Some(Some("high".to_string())),
             reasoning_budget_tokens: None,
@@ -137,6 +148,7 @@ mod tests {
             request.tool_config.approval_mode,
             Some(ApprovalMode::ReadOnly)
         );
+        assert_eq!(request.model, "gpt-next");
         assert_eq!(request.reasoning_effort, Some("high".to_string()));
     }
 }

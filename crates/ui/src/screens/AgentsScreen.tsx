@@ -209,6 +209,7 @@ export function AgentsScreen() {
                         draft.task_prompt = value;
                       })
                     }
+                    skills={ctx.availableSkills()}
                     schemaJson={ctx.agentSchemaDraft()}
                     onSchemaChange={(value) => ctx.handleAgentSchemaInput(value)}
                     knownModels={() => ctx.activeProfileMemo().known_models}

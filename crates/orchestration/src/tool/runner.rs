@@ -126,6 +126,14 @@ impl ToolRunner {
         self
     }
 
+    pub async fn close_mcp_clients(&self) -> Result<(), crate::adapters::mcp::McpError> {
+        if let Some(clients) = &self.mcp_clients {
+            clients.close().await
+        } else {
+            Ok(())
+        }
+    }
+
     /// Invalidate epoch-validated cache entries after files changed outside
     /// tool execution (e.g. edit-batch reverts).
     pub fn bump_cache_epoch(&self) {
@@ -364,6 +372,18 @@ impl ToolRunner {
         file_changes: Vec<FileChangeRecord>,
         edit_batch: Option<EditBatch>,
     ) -> Result<ToolExecutionRecord, ToolRunnerError> {
+        self.finalize_record_with_status(call, raw_output, false, file_changes, edit_batch)
+            .await
+    }
+
+    pub(super) async fn finalize_record_with_status(
+        &self,
+        call: ToolCall,
+        raw_output: String,
+        is_error: bool,
+        file_changes: Vec<FileChangeRecord>,
+        edit_batch: Option<EditBatch>,
+    ) -> Result<ToolExecutionRecord, ToolRunnerError> {
         let (content, artifact, output_meta) = if Self::is_artifact_read(&call) {
             (raw_output, None, None)
         } else {
@@ -374,7 +394,7 @@ impl ToolRunner {
                 tool_call_id: call.id,
                 tool_name: call.name,
                 content,
-                is_error: false,
+                is_error,
                 artifact_ids: artifact
                     .as_ref()
                     .map(|record| vec![record.artifact_id.clone()])
@@ -1008,6 +1028,31 @@ mod tests {
         assert!(!write_record.result.is_error);
         assert_eq!(write_record.file_changes.len(), 1);
         assert_eq!(write_record.file_changes[0].path, "after.txt");
+    }
+
+    #[cfg_attr(miri, ignore)]
+    #[tokio::test]
+    async fn external_tool_result_preserves_error_status() {
+        let dir = tempfile::tempdir().unwrap();
+        let runner = runner(dir.path());
+        let record = runner
+            .finalize_record_with_status(
+                ToolCall {
+                    id: "call-external".into(),
+                    provider_call_id: None,
+                    name: "mcp/test/echo".into(),
+                    arguments: serde_json::json!({}),
+                },
+                "invalid input".into(),
+                true,
+                Vec::new(),
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(record.result.content, "invalid input");
+        assert!(record.result.is_error);
     }
 
     #[cfg_attr(miri, ignore)]

@@ -1,4 +1,6 @@
 export { Sidebar } from "./AppSidebar";
+export { ChatHistoryRow } from "./ChatHistoryRow";
+export type { ChatHistoryRowProps } from "./ChatHistoryRow";
 export { ProjectFolderRow } from "./ProjectFolderRow";
 export type { ProjectFolderRowProps } from "./ProjectFolderRow";
 export { SidebarNavButton } from "./SidebarNavButton";
@@ -9,3 +11,5 @@ export { SidebarList } from "./SidebarList";
 export type { SidebarListProps } from "./SidebarList";
 export { SidebarListRow } from "./SidebarListRow";
 export type { SidebarListRowProps } from "./SidebarListRow";
+export { WorkflowListRow } from "./WorkflowListRow";
+export type { WorkflowListRowProps } from "./WorkflowListRow";

@@ -16,10 +16,12 @@ import CircleHelp from "lucide-solid/icons/circle-help";
 import Sparkles from "lucide-solid/icons/sparkles";
 import Search from "lucide-solid/icons/search";
 import GitBranch from "lucide-solid/icons/git-branch";
+import MessageSquare from "lucide-solid/icons/message-square";
 import { ICON_STROKE_WIDTH } from "../lib/utils";
 
 export type SidebarIconName =
   | "agents"
+  | "chat"
   | "schedule"
   | "plus"
   | "sparkles"
@@ -40,6 +42,7 @@ export type SidebarIconName =
 
 const SIDEBAR_ICONS = {
   agents: Bot,
+  chat: MessageSquare,
   schedule: CalendarClock,
   plus: Plus,
   sparkles: Sparkles,

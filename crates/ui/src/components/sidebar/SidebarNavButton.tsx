@@ -4,6 +4,8 @@ export type SidebarNavButtonProps = {
   icon: SidebarIconName;
   label: string;
   active?: boolean;
+  ariaHasPopup?: "menu";
+  ariaExpanded?: boolean;
   /** Blue dot when an app update is available. */
   updateAvailable?: boolean;
   onClick: () => void;
@@ -16,6 +18,8 @@ export function SidebarNavButton(props: SidebarNavButtonProps) {
       class="sidebar-nav-button"
       classList={{ active: props.active }}
       onClick={() => props.onClick()}
+      aria-haspopup={props.ariaHasPopup}
+      aria-expanded={props.ariaExpanded}
       aria-label={
         props.updateAvailable ? `${props.label} (update available)` : props.label
       }

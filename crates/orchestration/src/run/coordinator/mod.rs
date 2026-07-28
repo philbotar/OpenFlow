@@ -3,10 +3,12 @@ use crate::error::BackendError;
 #[cfg(test)]
 use crate::run::execution::NodeInterrupts;
 use crate::run::execution::{
-    apply_event_to_run_state, record_entrypoint_message, resolve_execution_cwd,
-    should_record_entrypoint_in_chat, ExecutionAction, ExecutionEvent,
+    apply_event_to_run_state, initial_engine_checkpoint, record_entrypoint_message,
+    resolve_execution_cwd, should_record_entrypoint_in_chat, ExecutionAction, ExecutionEvent,
 };
-use crate::run::persistence::{workflow_hash, RunRecord, RunStatus, RunStoreRoot};
+use crate::run::persistence::{
+    workflow_hash, PendingRunCheckpoint, RunCheckpointReason, RunRecord, RunStatus, RunStoreRoot,
+};
 use crate::run::ports::RunCheckpointStore;
 use crate::run::state::{AgentStatus, WorkflowRunState};
 use crate::tools::edit::preview::preview_file_edit;
@@ -89,6 +91,7 @@ impl RunCoordinator {
             settings,
             transient_api_key,
             agent_store,
+            skill_catalog,
             settings_store,
             run_store,
             env,
@@ -109,6 +112,7 @@ impl RunCoordinator {
             settings,
             transient_api_key,
             agent_store,
+            skill_catalog,
             settings_store,
             env,
         )?;
@@ -138,8 +142,39 @@ impl RunCoordinator {
         };
         run_store.create_run(&run_root, &run_record)?;
 
+        let mut initial_state = WorkflowRunState::running_for_workflow(&workflow);
+        initial_state.run_id = Some(run_id.clone());
+        if let Some(text) = entrypoint.clone().filter(|text| !text.trim().is_empty()) {
+            if let Ok(layers) = execution_layers(&workflow) {
+                if let Some(root_id) = layers.first().and_then(|layer| layer.first()) {
+                    if should_record_entrypoint_in_chat(&workflow, root_id) {
+                        record_entrypoint_message(&mut initial_state, &root_id.0, text);
+                    }
+                }
+            }
+        }
+        let project_repository_root = run_root
+            .project_id
+            .as_ref()
+            .map(|_| resolved_cwd.display().to_string());
+        let initial_checkpoint = initial_engine_checkpoint(
+            workflow.clone(),
+            entrypoint.clone(),
+            project_repository_root,
+        )?;
+        persist_pending_checkpoint(
+            run_store,
+            &run_root,
+            &run_id,
+            &initial_state,
+            PendingRunCheckpoint {
+                reason: RunCheckpointReason::Started,
+                engine: initial_checkpoint,
+            },
+        )?;
+
         let resources = fresh_execution_resources(&prepared.persisted_settings);
-        let entrypoint_for_chat = entrypoint.clone();
+        let initial_state_for_session = initial_state.clone();
         finalize_run_launch(
             &self.runtime_handle,
             &self.session,
@@ -161,19 +196,8 @@ impl RunCoordinator {
                 session.run_id = Some(run_id.clone());
                 session.run_root = Some(run_root);
                 session.project_id = run_record.project_id.clone();
-                let mut initial_state = WorkflowRunState::running_for_workflow(&workflow);
-                initial_state.run_id = session.run_id.clone();
-                if let Some(text) = entrypoint_for_chat.filter(|t| !t.trim().is_empty()) {
-                    if let Ok(layers) = execution_layers(&workflow) {
-                        if let Some(root_id) = layers.first().and_then(|layer| layer.first()) {
-                            if should_record_entrypoint_in_chat(&workflow, root_id) {
-                                record_entrypoint_message(&mut initial_state, &root_id.0, text);
-                            }
-                        }
-                    }
-                }
-                session.run_state = Some(initial_state.clone());
-                Ok(initial_state)
+                session.run_state = Some(initial_state_for_session.clone());
+                Ok(initial_state_for_session)
             },
         )
         .await
@@ -193,6 +217,7 @@ impl RunCoordinator {
             settings,
             transient_api_key,
             agent_store,
+            skill_catalog,
             settings_store,
             env,
             ..
@@ -252,6 +277,7 @@ impl RunCoordinator {
             settings,
             transient_api_key,
             agent_store,
+            skill_catalog,
             settings_store,
             env,
         )?;
@@ -458,7 +484,7 @@ impl RunCoordinator {
         event: ExecutionEvent,
         run_store: &dyn RunCheckpointStore,
     ) -> Result<WorkflowRunState, BackendError> {
-        let (snapshot, pending_persist, finished) = {
+        let (snapshot, pending_persist, stopped_checkpoint, finished) = {
             let mut session = self.session.lock().await;
             let workflow = session.workflow.clone().ok_or(BackendError::NoActiveRun)?;
             let run_state = require_run_state_mut(&mut session)?;
@@ -474,6 +500,13 @@ impl RunCoordinator {
                 .checkpoint_sink
                 .as_ref()
                 .and_then(|sink| sink.lock().take());
+            let stopped_checkpoint = pending_checkpoint
+                .as_ref()
+                .filter(|pending| pending.reason == RunCheckpointReason::UserStopped)
+                .map(|pending| pending.engine.clone());
+            if let Some(checkpoint) = stopped_checkpoint.as_ref() {
+                session.engine_checkpoint = Some(checkpoint.clone());
+            }
             let pending_persist = match (
                 session.run_root.clone(),
                 session.run_id.clone(),
@@ -482,7 +515,7 @@ impl RunCoordinator {
                 (Some(root), Some(run_id), Some(pending)) => Some((root, run_id, pending)),
                 _ => None,
             };
-            (snapshot, pending_persist, finished)
+            (snapshot, pending_persist, stopped_checkpoint, finished)
         };
 
         if let Some((root, run_id, pending)) = pending_persist {
@@ -491,6 +524,9 @@ impl RunCoordinator {
         if finished {
             let mut session = self.session.lock().await;
             finish_run_session(&mut session);
+            if let Some(checkpoint) = stopped_checkpoint {
+                session.engine_checkpoint = Some(checkpoint);
+            }
         }
         Ok(snapshot)
     }
@@ -534,6 +570,7 @@ impl RunCoordinator {
             params.settings,
             params.transient_api_key,
             params.agent_store,
+            params.skill_catalog,
             params.settings_store,
             params.env,
         )?;
@@ -615,8 +652,10 @@ impl RunCoordinator {
                 text: text.clone(),
             })
             .map_err(|_| BackendError::RunChannelClosed)?;
-        // ponytail: chat-only optimistic append; awaiting/status follow execution events
+        // The accepted request is no longer actionable. Awaiting/status still
+        // follow execution events so the node remains busy until execution resumes.
         let run_state = require_run_state_mut(&mut session)?;
+        run_state.structured_input_by_node.remove(&node_id_key);
         run_state
             .chat_logs
             .entry(node_id_key)
@@ -798,6 +837,13 @@ impl RunCoordinator {
 
     pub async fn clear_run_trace(&self) -> Result<Option<WorkflowRunState>, BackendError> {
         let mut session = self.session.lock().await;
+        if session.run_state.as_ref().is_some_and(|state| state.active)
+            || session.action_tx.is_some()
+            || session.handle.is_some()
+            || session.cancel_token.is_some()
+        {
+            return Err(BackendError::ActiveRun);
+        }
         let workflow = session.workflow.clone();
         let run_state = session.run_state.as_mut();
         let snapshot = match (workflow, run_state) {
