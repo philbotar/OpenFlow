@@ -69,4 +69,25 @@ describe("Message", () => {
     user.dispose();
     assistant.dispose();
   });
+
+  it("renders GitHub-Flavored Markdown tables in assistant replies", () => {
+    const { container, dispose } = renderMessage({
+      from: "assistant",
+      label: "Assistant",
+      content: [
+        "| Retailer | Price |",
+        "| --- | ---: |",
+        "| DJI Australia | A$959 |",
+        "| Amazon AU | A$958.97 |",
+      ].join("\n"),
+    });
+
+    const table = container.querySelector("table");
+    expect(table).not.toBeNull();
+    expect(table?.querySelectorAll("th")).toHaveLength(2);
+    expect(table?.querySelectorAll("tbody tr")).toHaveLength(2);
+    expect(table?.textContent).toContain("Amazon AU");
+
+    dispose();
+  });
 });

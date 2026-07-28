@@ -76,10 +76,10 @@ impl AppBackend {
         let client = crate::adapters::mcp::McpStdioClient::spawn(&config)
             .await
             .map_err(|error| io::Error::other(error.to_string()))?;
-        let names = client
-            .list_tool_names()
-            .await
-            .map_err(|error| io::Error::other(error.to_string()))?;
+        let names = client.list_tool_names().await;
+        let close = client.close().await;
+        let names = names.map_err(|error| io::Error::other(error.to_string()))?;
+        close.map_err(|error| io::Error::other(error.to_string()))?;
         Ok(names)
     }
 

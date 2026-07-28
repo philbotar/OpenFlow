@@ -131,7 +131,7 @@ export function ChatPanel() {
               <Show when={!ctx.runState()?.active}>
                 <ConversationComposer
                   nodeId={GLOBAL_RUN_ENTRY_NODE_ID}
-                  label="workflow"
+                  label={ctx.screen() === "chat" ? "chat" : "workflow"}
                   kickoff
                 />
               </Show>

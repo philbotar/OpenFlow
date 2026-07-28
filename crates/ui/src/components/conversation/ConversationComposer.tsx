@@ -20,12 +20,14 @@ import { SkillCommandCombobox } from "./SkillCommandCombobox";
 import { SkillDescriptionPreview } from "./SkillDescriptionPreview";
 import { Button } from "../Button";
 import { Tooltip } from "../Tooltip";
+import { ChatRuntimeControls } from "./ChatRuntimeControls";
 
 export function ConversationComposer(props: {
   nodeId: NodeId;
   label: string;
   disabled?: boolean;
   kickoff?: boolean;
+  directChat?: boolean;
 }) {
   const ctx = useAppContext();
   let textareaRef: HTMLTextAreaElement | undefined;
@@ -238,7 +240,10 @@ export function ConversationComposer(props: {
 
   return (
     <div class="chat-composer">
-      <SkillDescriptionPreview nodeId={props.nodeId} />
+      <SkillDescriptionPreview
+        skillIds={ctx.chatSubmissionFor(props.nodeId).invokedSkills}
+        skillById={ctx.skillById()}
+      />
       <div class="chat-composer-input-shell">
         <SkillCommandCombobox
           open={comboboxOpen()}
@@ -294,7 +299,9 @@ export function ConversationComposer(props: {
               onKeyUp={(event) => syncCaret(event.currentTarget)}
               onKeyDown={handleKeyDown}
               placeholder={
-                props.kickoff
+                props.directChat
+                  ? "Message OpenFlow"
+                  : props.kickoff
                   ? "Optional message, or use Run in the top bar. / skills · @ files"
                   : props.disabled
                     ? "Run the workflow to chat with agents."
@@ -305,7 +312,13 @@ export function ConversationComposer(props: {
               disabled={!inputEnabled()}
             />
             <Tooltip
-              label={props.kickoff ? "Start workflow" : "Send to paused node"}
+              label={
+                props.directChat
+                  ? "Send message"
+                  : props.kickoff
+                    ? "Start workflow"
+                    : "Send to paused node"
+              }
             >
               <Button
                 variant="primary"
@@ -313,7 +326,11 @@ export function ConversationComposer(props: {
                 onClick={() => void ctx.handleSubmitChat(props.nodeId)}
                 disabled={!ctx.canSendChatFor(props.nodeId)}
                 aria-label={
-                  props.kickoff ? "Start workflow with message" : "Send to paused node"
+                  props.directChat
+                    ? "Send message"
+                    : props.kickoff
+                      ? "Start workflow with message"
+                      : "Send to paused node"
                 }
               >
               <ArrowUp
@@ -325,7 +342,10 @@ export function ConversationComposer(props: {
             </Button>
             </Tooltip>
           </div>
-          <Show when={!props.kickoff}>
+          <Show when={props.directChat}>
+            <ChatRuntimeControls />
+          </Show>
+          <Show when={!props.kickoff && !props.directChat}>
             <ComposerRuntimeControls nodeId={props.nodeId} disabled={props.disabled} />
           </Show>
         </div>

@@ -24,7 +24,7 @@ export default defineConfig({
     }),
   ],
   optimizeDeps: {
-    include: ["remark-parse", "remark-rehype", "unified"],
+    include: ["remark-gfm", "remark-parse", "remark-rehype", "unified"],
   },
   test: {
     environment: "jsdom",

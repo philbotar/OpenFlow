@@ -20,6 +20,7 @@ import { normalizeError } from "../../lib/utils";
 import type {
   AgentDefinition,
   AppSettings,
+  Chat,
   Project,
   RunSummary,
   ScheduleDraft,
@@ -39,6 +40,7 @@ interface UseWorkspaceCatalogParams {
   navigateToScreen: (screen: Screen) => void;
   setScreen: Setter<Screen>;
   selectWorkflow: (workflow: Workflow) => void;
+  selectChat: (chatId: string, state: WorkflowRunState | null) => void;
   runState: Accessor<WorkflowRunState | null>;
   backendRunWorkflowId: Accessor<string | null>;
   setBackendRunWorkflowId: Setter<string | null>;
@@ -54,12 +56,14 @@ interface UseWorkspaceCatalogParams {
 
 export function useWorkspaceCatalog(params: UseWorkspaceCatalogParams) {
   const [workflows, setWorkflows] = createSignal<Workflow[]>([]);
+  const [chats, setChats] = createSignal<Chat[]>([]);
   const [projects, setProjects] = createSignal<Project[]>([]);
   const [expandedProjectIds, setExpandedProjectIds] = createSignal(
     readExpandedProjectIds(globalThis.localStorage),
   );
   const [selectedProjectId, setSelectedProjectId] = createSignal<string | null>(null);
   const [activeWorkflowId, setActiveWorkflowId] = createSignal<string | null>(null);
+  const [activeChatId, setActiveChatId] = createSignal<string | null>(null);
   const [editingWorkflowId, setEditingWorkflowId] = createSignal<string | null>(null);
   const [workflowNameDraft, setWorkflowNameDraft] = createSignal("");
   const [agents, setAgents] = createSignal<AgentDefinition[]>([]);
@@ -102,6 +106,9 @@ export function useWorkspaceCatalog(params: UseWorkspaceCatalogParams) {
     });
   });
 
+  const activeChat = createMemo(
+    () => chats().find((chat) => chat.id === activeChatId()) ?? null,
+  );
   const activeWorkflow = createMemo(() =>
     workflows().find((workflow) => workflow.id === activeWorkflowId()),
   );
@@ -109,6 +116,10 @@ export function useWorkspaceCatalog(params: UseWorkspaceCatalogParams) {
     independentWorkflows(workflows(), projects()),
   );
   const activeProject = createMemo(() => {
+    const chatProjectId = activeChat()?.config.projectId;
+    if (chatProjectId) {
+      return projects().find((project) => project.id === chatProjectId);
+    }
     const workflowId = activeWorkflowId();
     if (!workflowId) return undefined;
     const selected = selectedProjectId();
@@ -119,6 +130,13 @@ export function useWorkspaceCatalog(params: UseWorkspaceCatalogParams) {
     return findProjectForWorkflow(projects(), workflowId);
   });
   const executionCwdForActiveWorkflow = createMemo(() => {
+    const chatProjectId = activeChat()?.config.projectId;
+    if (chatProjectId) {
+      const project = projects().find((item) => item.id === chatProjectId);
+      if (project) {
+        return project.default_execution_cwd.trim() || project.path;
+      }
+    }
     const workflowId = activeWorkflowId();
     if (!workflowId) return null;
     return executionCwdForWorkflow(projects(), workflowId, selectedProjectId());
@@ -141,6 +159,7 @@ export function useWorkspaceCatalog(params: UseWorkspaceCatalogParams) {
 
   const initializeWorkspace = async (
     initialWorkflows: Workflow[],
+    initialChats: Chat[],
     initialAgents: AgentDefinition[],
     initialProjects: Project[],
     initialSettings: AppSettings,
@@ -152,6 +171,7 @@ export function useWorkspaceCatalog(params: UseWorkspaceCatalogParams) {
     }
     const firstWorkflow = nextWorkflows[0];
     setWorkflows(nextWorkflows);
+    setChats(initialChats);
     setProjects(initialProjects);
     setAgents(initialAgents);
     setSelectedAgentId(initialAgents[0]?.id ?? null);
@@ -174,9 +194,80 @@ export function useWorkspaceCatalog(params: UseWorkspaceCatalogParams) {
     if (!params.applySchemaEditor()) return;
     const workflow = workflows().find((item) => item.id === workflowId);
     if (!workflow) return;
+    setActiveChatId(null);
     params.closeAddNodePicker();
     params.selectWorkflow(workflow);
     params.setScreen("editor");
+  };
+
+  const handleCreateChat = async () => {
+    try {
+      const chat = await desktop.createChat();
+      setChats([chat, ...chats()]);
+      setActiveChatId(chat.id);
+      params.selectChat(chat.id, null);
+      params.setScreen("chat");
+    } catch (error) {
+      params.showErrorToast(normalizeError(error));
+    }
+  };
+
+  const handleOpenChat = async (chatId: string) => {
+    const chat = chats().find((item) => item.id === chatId);
+    if (!chat) return;
+    let replay: WorkflowRunState | null = null;
+    if (chat.runId) {
+      try {
+        replay = await desktop.replayRun(chat.runId);
+      } catch (error) {
+        params.showErrorToast(`Could not restore chat history: ${normalizeError(error)}`);
+      }
+    }
+    setActiveChatId(chat.id);
+    params.selectChat(chat.id, replay);
+    params.setScreen("chat");
+  };
+
+  const handleDeleteChat = async (chatId: string) => {
+    const chat = chats().find((item) => item.id === chatId);
+    if (!chat) return;
+    if (params.runState()?.active && params.backendRunWorkflowId() === chat.id) {
+      params.showErrorToast("Stop the run before deleting this chat.");
+      return;
+    }
+    const confirmed = await confirmNativeDialog(
+      `Delete "${chat.title}"? This removes it from chat history.`,
+      { title: "Delete chat", kind: "warning" },
+    );
+    if (!confirmed) return;
+
+    try {
+      await desktop.deleteChat(chat.id);
+      const remaining = chats().filter((item) => item.id !== chat.id);
+      setChats(remaining);
+      params.setRunStateByWorkflowId((state) => {
+        const { [chat.id]: _removed, ...rest } = state;
+        return rest;
+      });
+      if (activeChatId() === chat.id) {
+        setActiveChatId(null);
+        const nextChat = remaining[0];
+        if (nextChat) {
+          await handleOpenChat(nextChat.id);
+        } else {
+          const workflow = workflows()[0];
+          if (workflow) params.selectWorkflow(workflow);
+          params.setScreen("editor");
+        }
+      }
+      params.showSuccessToast(`Deleted ${chat.title}`);
+    } catch (error) {
+      params.showErrorToast(normalizeError(error));
+    }
+  };
+
+  const updateChat = (updated: Chat) => {
+    setChats(chats().map((chat) => (chat.id === updated.id ? updated : chat)));
   };
 
   const expandProject = (projectId: string) => {
@@ -199,6 +290,7 @@ export function useWorkspaceCatalog(params: UseWorkspaceCatalogParams) {
         expandProject(projectId);
         setSelectedProjectId(projectId);
       }
+      setActiveChatId(null);
       params.selectWorkflow(workflow);
       params.setScreen("editor");
       params.showSuccessToast("Created workflow");
@@ -253,8 +345,8 @@ export function useWorkspaceCatalog(params: UseWorkspaceCatalogParams) {
     return saved;
   };
 
-  const handleDeleteActiveWorkflow = async () => {
-    const workflow = activeWorkflow();
+  const handleDeleteWorkflow = async (workflowId: string) => {
+    const workflow = workflows().find((item) => item.id === workflowId);
     if (!workflow) return;
     if (params.runState()?.active && params.backendRunWorkflowId() === workflow.id) {
       params.showErrorToast("Stop the run before deleting this workflow.");
@@ -278,11 +370,21 @@ export function useWorkspaceCatalog(params: UseWorkspaceCatalogParams) {
         remaining = [created];
       }
       setWorkflows(remaining);
-      params.selectWorkflow(remaining[0]);
+      if (editingWorkflowId() === workflow.id) {
+        handleCancelWorkflowNameEdit();
+      }
+      if (activeWorkflowId() === workflow.id) {
+        params.selectWorkflow(remaining[0]);
+      }
       params.showSuccessToast(`Deleted ${workflow.name}`);
     } catch (error) {
       params.showErrorToast(normalizeError(error));
     }
+  };
+
+  const handleDeleteActiveWorkflow = async () => {
+    const workflow = activeWorkflow();
+    if (workflow) await handleDeleteWorkflow(workflow.id);
   };
 
   const handleAddProject = async () => {
@@ -304,6 +406,63 @@ export function useWorkspaceCatalog(params: UseWorkspaceCatalogParams) {
         return next;
       });
       params.showSuccessToast(`Added project ${project.name}`);
+    } catch (error) {
+      params.showErrorToast(normalizeError(error));
+    }
+  };
+
+  const handleRemoveProject = async (projectId: string) => {
+    const project = projects().find((item) => item.id === projectId);
+    if (!project) return;
+    const projectRunActive =
+      params.runState()?.active &&
+      (project.workflow_ids.includes(params.backendRunWorkflowId() ?? "") ||
+        activeChat()?.config.projectId === projectId);
+    if (projectRunActive) {
+      params.showErrorToast("Stop the project run before removing this project.");
+      return;
+    }
+    if (chats().some((chat) => chat.config.projectId === projectId)) {
+      params.showErrorToast(
+        "Move or delete chats linked to this project before removing it.",
+      );
+      return;
+    }
+    const confirmed = await confirmNativeDialog(
+      `Remove "${project.name}" from OpenFlow? Its folder and workflow files stay on disk.`,
+      { title: "Remove project", kind: "warning" },
+    );
+    if (!confirmed) return;
+
+    try {
+      const remainingProjects = projects().filter((item) => item.id !== projectId);
+      await desktop.saveProjects(remainingProjects);
+      let remainingWorkflows = await desktop.loadAllWorkflows();
+      if (remainingWorkflows.length === 0) {
+        remainingWorkflows = [await desktop.createWorkflow("Workflow 1")];
+      }
+      setProjects(remainingProjects);
+      setWorkflows(remainingWorkflows);
+      setExpandedProjectIds((current) => {
+        const next = new Set(current);
+        next.delete(projectId);
+        writeExpandedProjectIds(globalThis.localStorage, next);
+        return next;
+      });
+      if (selectedProjectId() === projectId) {
+        setSelectedProjectId(null);
+      }
+      if (assignWorkflowPickerProjectId() === projectId) {
+        closeAssignWorkflowPicker();
+      }
+      const currentWorkflowId = activeWorkflowId();
+      if (
+        !currentWorkflowId ||
+        !remainingWorkflows.some((workflow) => workflow.id === currentWorkflowId)
+      ) {
+        params.selectWorkflow(remainingWorkflows[0]);
+      }
+      params.showSuccessToast(`Removed ${project.name}`);
     } catch (error) {
       params.showErrorToast(normalizeError(error));
     }
@@ -519,12 +678,16 @@ export function useWorkspaceCatalog(params: UseWorkspaceCatalogParams) {
   return {
     workflows,
     setWorkflows,
+    chats,
+    setChats,
     projects,
     setProjects,
     selectedProjectId,
     setSelectedProjectId,
     activeWorkflowId,
     setActiveWorkflowId,
+    activeChatId,
+    activeChat,
     editingWorkflowId,
     workflowNameDraft,
     setWorkflowNameDraft,
@@ -551,14 +714,20 @@ export function useWorkspaceCatalog(params: UseWorkspaceCatalogParams) {
     setAgentNameInputRef,
     initializeWorkspace,
     handleSwitchWorkflow,
+    handleCreateChat,
+    handleOpenChat,
+    handleDeleteChat,
+    updateChat,
     handleCreateWorkflow,
     handleOpenAssignWorkflowPicker,
     closeAssignWorkflowPicker,
     workflowsAddableToProject: workflowsAddableToProjectMemo,
     handleCopyWorkflowToProject,
     handlePersistWorkflowAuthoringDraft,
+    handleDeleteWorkflow,
     handleDeleteActiveWorkflow,
     handleAddProject,
+    handleRemoveProject,
     handleSelectProject,
     handleToggleProjectExpanded,
     isProjectExpanded,

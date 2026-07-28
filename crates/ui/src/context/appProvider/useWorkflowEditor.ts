@@ -1,5 +1,6 @@
 import { createMemo, createSignal, type Accessor, type Setter } from "solid-js";
 import {
+  CHATS_SECTION_STORAGE_KEY,
   LEFT_PANEL_VISIBILITY_STORAGE_KEY,
   PANEL_VISIBILITY_STORAGE_KEY,
   PROJECTS_SECTION_STORAGE_KEY,
@@ -62,6 +63,10 @@ export function useWorkflowEditor(params: UseWorkflowEditorParams) {
   const [leftPanelHidden, setLeftPanelHidden] = createSignal(
     readStoredBoolean(globalThis.localStorage, LEFT_PANEL_VISIBILITY_STORAGE_KEY),
   );
+  const [chatsSectionHidden, setChatsSectionHidden] = createSignal(
+    readStoredBoolean(globalThis.localStorage, CHATS_SECTION_STORAGE_KEY),
+  );
+  const chatsSectionExpanded = createMemo(() => !chatsSectionHidden());
   const [workflowsSectionHidden, setWorkflowsSectionHidden] = createSignal(
     readStoredBoolean(globalThis.localStorage, WORKFLOWS_SECTION_STORAGE_KEY),
   );
@@ -200,6 +205,12 @@ export function useWorkflowEditor(params: UseWorkflowEditorParams) {
     const next = !leftPanelHidden();
     setLeftPanelHidden(next);
     writeStoredBoolean(globalThis.localStorage, LEFT_PANEL_VISIBILITY_STORAGE_KEY, next);
+  };
+
+  const handleToggleChatsSection = () => {
+    const next = !chatsSectionExpanded();
+    setChatsSectionHidden(!next);
+    writeStoredBoolean(globalThis.localStorage, CHATS_SECTION_STORAGE_KEY, !next);
   };
 
   const handleToggleWorkflowsSection = () => {
@@ -550,6 +561,7 @@ export function useWorkflowEditor(params: UseWorkflowEditorParams) {
     inspectorOpen,
     gitPanelOpen,
     setGitPanelOpen,
+    chatsSectionExpanded,
     workflowsSectionExpanded,
     projectsSectionExpanded,
     editingNodeId,
@@ -591,6 +603,7 @@ export function useWorkflowEditor(params: UseWorkflowEditorParams) {
     handleToggleGitPanel,
     handleToggleRightPanel,
     handleToggleLeftPanel,
+    handleToggleChatsSection,
     handleToggleWorkflowsSection,
     handleToggleProjectsSection,
   };

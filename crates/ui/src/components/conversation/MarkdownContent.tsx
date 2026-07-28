@@ -1,6 +1,7 @@
 import { SolidMarkdown } from "solid-markdown";
 import { splitProps } from "solid-js";
 import type { ComponentProps } from "solid-js";
+import remarkGfm from "remark-gfm";
 
 interface MarkdownContentProps extends ComponentProps<"div"> {
   content: string;
@@ -12,7 +13,9 @@ export function MarkdownContent(props: MarkdownContentProps) {
   const [local, rest] = splitProps(props, ["content", "class"]);
   return (
     <div class={`markdown-body ${local.class ?? ""}`} {...rest}>
-      <SolidMarkdown renderingStrategy="reconcile">{local.content}</SolidMarkdown>
+      <SolidMarkdown renderingStrategy="reconcile" remarkPlugins={[remarkGfm]}>
+        {local.content}
+      </SolidMarkdown>
     </div>
   );
 }

@@ -28,7 +28,7 @@ export default defineConfig({
   optimizeDeps: {
     // remark-parse/unified use `export { default } from` re-exports that WebKit
     // (Tauri on macOS) cannot load unless Vite pre-bundles them first.
-    include: ["remark-parse", "remark-rehype", "unified"],
+    include: ["remark-gfm", "remark-parse", "remark-rehype", "unified"],
   },
   clearScreen: false,
   server: {

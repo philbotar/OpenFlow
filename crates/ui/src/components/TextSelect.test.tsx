@@ -5,6 +5,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import { TextSelect } from "./TextSelect";
 
 describe("TextSelect", () => {
+  const initialInnerHeight = window.innerHeight;
   let container: HTMLDivElement;
   let scrollHost: HTMLDivElement | undefined;
   let dispose: () => void;
@@ -14,6 +15,10 @@ describe("TextSelect", () => {
     container?.remove();
     scrollHost?.remove();
     scrollHost = undefined;
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      value: initialInnerHeight,
+    });
   });
 
   test("opens below trigger and selects a value", () => {
@@ -131,6 +136,68 @@ describe("TextSelect", () => {
     trigger.click();
 
     const menu = container.querySelector(".text-select-menu") as HTMLUListElement;
+    expect(menu.classList.contains("text-select-menu--above")).toBe(true);
+    expect(menu.style.transform).toBe("translateY(-100%)");
+    expect(menu.style.top).toBe("396px");
+  });
+
+  test("opens above automatically when the menu does not fit below", async () => {
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      value: 450,
+    });
+    container = document.createElement("div");
+    document.body.append(container);
+    dispose = render(
+      () => (
+        <TextSelect
+          value=""
+          options={[
+            { value: "", label: "None" },
+            { value: "fast", label: "Fast" },
+            { value: "low", label: "Low" },
+            { value: "medium", label: "Medium" },
+            { value: "high", label: "High" },
+          ]}
+        />
+      ),
+      container,
+    );
+
+    const trigger = container.querySelector(".text-select-trigger") as HTMLButtonElement;
+    Object.defineProperty(trigger, "offsetWidth", {
+      configurable: true,
+      value: 320,
+    });
+    trigger.getBoundingClientRect = () =>
+      ({
+        top: 400,
+        bottom: 424,
+        left: 16,
+        width: 320,
+        right: 336,
+        height: 24,
+        x: 16,
+        y: 400,
+        toJSON: () => ({}),
+      }) as DOMRect;
+    trigger.click();
+
+    const menu = container.querySelector(".text-select-menu") as HTMLUListElement;
+    menu.getBoundingClientRect = () =>
+      ({
+        top: 0,
+        bottom: 168,
+        left: 16,
+        width: 320,
+        right: 336,
+        height: 168,
+        x: 16,
+        y: 0,
+        toJSON: () => ({}),
+      }) as DOMRect;
+    await Promise.resolve();
+
     expect(menu.classList.contains("text-select-menu--above")).toBe(true);
     expect(menu.style.transform).toBe("translateY(-100%)");
     expect(menu.style.top).toBe("396px");

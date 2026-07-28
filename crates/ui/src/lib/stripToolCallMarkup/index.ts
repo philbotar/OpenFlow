@@ -125,7 +125,19 @@ function shouldStripThinkMarkup(role: ChatRole): boolean {
   return shouldStripToolCallMarkup(role);
 }
 
-/** Chat display text: strip tool-call echo + think blocks for assistant/thinking. */
+function displayStructuredAnswers(content: string): string {
+  const lines = content.split(/\r?\n/);
+  if (lines[0]?.trim() !== "Structured answers:" || lines.length < 2) {
+    return content;
+  }
+  const answers = lines.slice(1).map((line) => line.match(/^-\s+[^:]+:\s*(.+)$/)?.[1]?.trim());
+  if (answers.some((answer) => !answer)) {
+    return content;
+  }
+  return answers.length === 1 ? answers[0]! : answers.map((answer) => `- ${answer}`).join("\n");
+}
+
+/** Chat display text: remove internal protocol markup while preserving user-visible content. */
 export function displayChatContent(role: ChatRole, content: string): string {
   let text = content;
   if (shouldStripToolCallMarkup(role)) {
@@ -133,6 +145,9 @@ export function displayChatContent(role: ChatRole, content: string): string {
   }
   if (shouldStripThinkMarkup(role)) {
     text = stripThinkMarkup(text);
+  }
+  if (role === "user" || role === "User") {
+    text = displayStructuredAnswers(text);
   }
   return text.trim();
 }

@@ -5,6 +5,7 @@ use serde::Serialize;
 use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
+use uuid::Uuid;
 
 pub const OPENFLOW_DATA_DIR_SLUG: &str = "openflow";
 
@@ -16,7 +17,7 @@ pub fn atomic_write(path: &Path, content: &str) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let tmp = path.with_extension("tmp");
+    let tmp = path.with_extension(format!("tmp-{}", Uuid::new_v4()));
     {
         let mut file = fs::File::create(&tmp)?;
         file.write_all(content.as_bytes())?;
@@ -111,6 +112,30 @@ mod tests {
         atomic_write(&path, "long content payload").unwrap();
         assert!(!path.with_extension("tmp").exists());
         assert_eq!(fs::read_to_string(&path).unwrap(), "long content payload");
+    }
+
+    #[test]
+    fn concurrent_atomic_writes_do_not_share_a_temp_path() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("store.json");
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
+
+        std::thread::scope(|scope| {
+            let mut handles = Vec::new();
+            for value in 0..8 {
+                let barrier = std::sync::Arc::clone(&barrier);
+                let path = path.clone();
+                handles.push(scope.spawn(move || {
+                    barrier.wait();
+                    atomic_write(&path, &format!(r#"{{"value":{value}}}"#))
+                }));
+            }
+            for handle in handles {
+                handle.join().unwrap().unwrap();
+            }
+        });
+
+        let _: Sample = serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
     }
 
     #[test]

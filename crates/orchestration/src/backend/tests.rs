@@ -1,10 +1,15 @@
 use super::*;
+use crate::chat::{Chat, ChatConfig, ChatStore};
 use crate::run::execution::{ExecutionAction, ExecutionEvent};
 use crate::run::state::WorkflowRunState;
 use crate::settings::model::{AppSettings, ProviderProfile, ProviderTransport};
 use crate::workflow::catalog::default_workflow;
-use engine::{Node, NodeId, Workflow};
+use crate::workflow::ports::{WorkflowStore, WorkflowStoreState};
+use engine::{ApprovalMode, ChatRole, Node, NodeId, Workflow, WorkflowId};
 use providers::ProviderId;
+use std::io;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use tempfile::tempdir;
 
 fn project_dir(dir: &tempfile::TempDir) -> String {
@@ -15,10 +20,19 @@ fn project_dir(dir: &tempfile::TempDir) -> String {
 
 fn backend() -> (AppBackend, tempfile::TempDir) {
     let dir = tempdir().expect("tempdir");
+    let chat_store = FileChatStore::new(dir.path().join("chats.json"));
+    backend_with_chat_store(Box::new(chat_store), dir)
+}
+
+fn backend_with_chat_store(
+    chat_store: Box<dyn ChatStore>,
+    dir: tempfile::TempDir,
+) -> (AppBackend, tempfile::TempDir) {
     let runtime = tokio::runtime::Runtime::new().expect("runtime");
     let backend = AppBackend::new(
         AppBackendDeps {
             workflow_store: Box::new(FileWorkflowStore::new(dir.path().join("workflows.json"))),
+            chat_store,
             project_workflow_store: Box::new(FileProjectWorkflowStore),
             agent_store: Box::new(FileAgentStore::new(dir.path().join("agents.json"))),
             project_store: Box::new(FileProjectStore::new(dir.path().join("projects.json"))),
@@ -35,6 +49,293 @@ fn backend() -> (AppBackend, tempfile::TempDir) {
         Some(runtime),
     );
     (backend, dir)
+}
+
+struct FailingChatStore {
+    chats: Mutex<Vec<Chat>>,
+    fail_saves: AtomicBool,
+}
+
+impl ChatStore for Arc<FailingChatStore> {
+    fn load(&self) -> io::Result<Vec<Chat>> {
+        Ok(self.chats.lock().expect("chat store lock").clone())
+    }
+
+    fn save(&self, _chats: &[Chat]) -> io::Result<()> {
+        if self.fail_saves.load(Ordering::SeqCst) {
+            Err(io::Error::other("attach save failed"))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+#[cfg_attr(miri, ignore)]
+#[test]
+fn fresh_profile_includes_matt_pocock_idea_to_ship_example() {
+    let (backend, _dir) = backend();
+
+    let workflows = backend.load_all_workflows().expect("load workflows");
+    let example = workflows
+        .iter()
+        .find(|workflow| workflow.id == "matt-pocock-idea-to-ship")
+        .expect("seeded example");
+
+    assert_eq!(example.name, "Matt Pocock skills: idea to ship");
+    assert_eq!(example.nodes.len(), 4);
+}
+
+#[cfg_attr(miri, ignore)]
+#[test]
+fn existing_workflow_with_seed_id_is_not_overwritten() {
+    let (backend, dir) = backend();
+    let mut existing = Workflow::new("My edited workflow");
+    existing.id = WorkflowId("matt-pocock-idea-to-ship".to_string());
+    FileWorkflowStore::new(dir.path().join("workflows.json"))
+        .save(std::slice::from_ref(&existing))
+        .expect("prepopulate workflow");
+
+    let loaded = backend
+        .load_workflow("matt-pocock-idea-to-ship")
+        .expect("load existing workflow");
+
+    assert_eq!(loaded, existing);
+}
+
+#[cfg_attr(miri, ignore)]
+#[test]
+fn incomplete_matt_pocock_seed_is_repaired() {
+    let (backend, dir) = backend();
+    let mut incomplete = Workflow::new("Matt Pocock skills: idea to ship");
+    incomplete.id = WorkflowId("matt-pocock-idea-to-ship".to_string());
+    for (id, label, x) in [
+        ("select-ticket", "2. Select frontier ticket", 528.0),
+        ("commit-gate", "4. Human commit gate", 1392.0),
+    ] {
+        let mut node = Node::agent(label, x, 96.0);
+        node.id = NodeId(id.to_string());
+        incomplete.nodes.push(node);
+    }
+    let mut state = WorkflowStoreState {
+        workflows: vec![incomplete],
+        ..WorkflowStoreState::default()
+    };
+    state
+        .applied_seeds
+        .insert("matt-pocock-idea-to-ship".to_string());
+    FileWorkflowStore::new(dir.path().join("workflows.json"))
+        .save_state(&state)
+        .expect("prepopulate incomplete seed");
+
+    let repaired = backend
+        .load_workflow("matt-pocock-idea-to-ship")
+        .expect("load repaired workflow");
+
+    assert_eq!(
+        repaired
+            .nodes
+            .iter()
+            .map(|node| &*node.id)
+            .collect::<Vec<_>>(),
+        [
+            "shape-work",
+            "select-ticket",
+            "implement-ticket",
+            "commit-gate",
+        ]
+    );
+    assert_eq!(repaired.edges.len(), 3);
+}
+
+#[cfg_attr(miri, ignore)]
+#[test]
+fn deleted_seeded_example_stays_deleted() {
+    let (backend, _dir) = backend();
+    backend.load_all_workflows().expect("seed workflows");
+
+    backend
+        .delete_workflow("matt-pocock-idea-to-ship")
+        .expect("delete seeded example");
+
+    assert!(backend
+        .list_workflows()
+        .expect("list workflows")
+        .iter()
+        .all(|workflow| workflow.id != "matt-pocock-idea-to-ship"));
+}
+
+#[cfg_attr(miri, ignore)]
+#[test]
+fn create_chat_is_valid_and_does_not_create_a_workflow() {
+    let (backend, _dir) = backend();
+    let workflow_ids_before = backend
+        .list_workflows()
+        .expect("list workflows")
+        .into_iter()
+        .map(|workflow| workflow.id)
+        .collect::<Vec<_>>();
+
+    let chat = backend.create_chat().expect("create chat");
+    let serialized = serde_json::to_value(&chat).expect("serialize chat");
+
+    assert_eq!(chat.title, "New chat");
+    assert!(chat.run_id.is_none());
+    assert!(serialized.get("workflow").is_none());
+    assert!(serialized.get("nodes").is_none());
+    assert_eq!(serialized["config"]["approvalMode"], "read_only");
+    assert!(serialized["config"]["reasoningEffort"].is_null());
+    assert!(serialized["config"]["projectId"].is_null());
+    assert_eq!(
+        backend
+            .list_workflows()
+            .expect("list workflows after chat")
+            .into_iter()
+            .map(|workflow| workflow.id)
+            .collect::<Vec<_>>(),
+        workflow_ids_before
+    );
+}
+
+#[cfg_attr(miri, ignore)]
+#[test]
+fn delete_chat_removes_only_the_requested_chat() {
+    let (backend, _dir) = backend();
+    let deleted = backend.create_chat().expect("create deleted chat");
+    let survivor = backend.create_chat().expect("create surviving chat");
+
+    backend.delete_chat(&deleted.id).expect("delete chat");
+
+    assert_eq!(backend.list_chats().expect("list chats"), vec![survivor]);
+    assert!(matches!(
+        backend.delete_chat(&deleted.id),
+        Err(BackendError::ChatNotFound(id)) if id == deleted.id
+    ));
+}
+
+#[cfg_attr(miri, ignore)]
+#[test]
+fn chat_runtime_config_persists_with_project_scope() {
+    let (backend, dir) = backend();
+    let project = backend
+        .create_project_from_directory(project_dir(&dir))
+        .expect("create project");
+    let chat = backend.create_chat().expect("create chat");
+    let config = ChatConfig {
+        model: Some("gpt-5".to_string()),
+        approval_mode: ApprovalMode::AlwaysAsk,
+        reasoning_effort: Some("high".to_string()),
+        reasoning_budget_tokens: Some(24_000),
+        project_id: Some(project.id),
+    };
+
+    let updated = backend
+        .update_chat_config(&chat.id, config.clone())
+        .expect("update chat config");
+    let reopened = backend
+        .list_chats()
+        .expect("list chats")
+        .into_iter()
+        .find(|item| item.id == chat.id)
+        .expect("configured chat");
+
+    assert_eq!(updated.config, config);
+    assert_eq!(reopened.config, config);
+}
+
+#[cfg_attr(miri, ignore)]
+#[test]
+fn start_chat_attaches_a_durable_run_without_creating_a_workflow() {
+    let (backend, dir) = backend();
+    let project = backend
+        .create_project_from_directory(project_dir(&dir))
+        .expect("create project");
+    let chat = backend.create_chat().expect("create chat");
+    let chat = backend
+        .update_chat_config(
+            &chat.id,
+            ChatConfig {
+                project_id: Some(project.id.clone()),
+                ..ChatConfig::default()
+            },
+        )
+        .expect("scope chat to project");
+
+    backend.block_on_test(async {
+        let (updated, initial_state, _event_rx) = backend
+            .start_chat(
+                &chat.id,
+                Some("Explain durable runs".to_string()),
+                &AppSettings::default(),
+                None,
+            )
+            .await
+            .expect("start chat");
+
+        assert_eq!(updated.run_id, initial_state.run_id);
+        assert!(updated.run_id.is_some());
+        assert_eq!(updated.title, "Explain durable runs");
+        assert!(initial_state.chat_logs.values().flatten().any(|message| {
+            message.role == ChatRole::User && message.content == "Explain durable runs"
+        }));
+        let replay = backend
+            .replay_run(updated.run_id.as_deref().expect("chat run id"))
+            .expect("replay initial chat checkpoint");
+        assert!(replay.chat_logs.values().flatten().any(|message| {
+            message.role == ChatRole::User && message.content == "Explain durable runs"
+        }));
+        assert_eq!(
+            backend
+                .list_runs(Some(&chat.id))
+                .expect("list chat runs")
+                .first()
+                .and_then(|run| run.project_id.as_deref()),
+            Some(project.id.as_str())
+        );
+        assert!(backend
+            .list_workflows()
+            .expect("list workflows")
+            .iter()
+            .all(|workflow| workflow.id != chat.id));
+
+        backend.stop_run().await.expect("stop chat");
+    });
+}
+
+#[cfg_attr(miri, ignore)]
+#[test]
+fn start_chat_stops_run_when_chat_attachment_fails() {
+    let chat = Chat {
+        id: "chat-transactional".to_string(),
+        title: "New chat".to_string(),
+        config: ChatConfig::default(),
+        run_id: None,
+        created_at_ms: 1,
+        updated_at_ms: 1,
+    };
+    let store = Arc::new(FailingChatStore {
+        chats: Mutex::new(vec![chat.clone()]),
+        fail_saves: AtomicBool::new(true),
+    });
+    let (backend, _dir) =
+        backend_with_chat_store(Box::new(Arc::clone(&store)), tempdir().expect("tempdir"));
+
+    backend.block_on_test(async {
+        let error = backend
+            .start_chat(
+                &chat.id,
+                Some("Do not persist before validation".to_string()),
+                &AppSettings::default(),
+                None,
+            )
+            .await
+            .expect_err("attachment failure");
+
+        assert!(error.to_string().contains("attach save failed"));
+        assert!(!backend.is_run_active().await);
+        let chats = store.chats.lock().expect("chat store lock");
+        assert_eq!(chats[0].title, "New chat");
+        assert!(chats[0].run_id.is_none());
+    });
 }
 
 #[cfg_attr(miri, ignore)]
@@ -59,8 +360,9 @@ fn create_and_load_workflow_round_trips() {
     let items = backend.list_workflows().expect("list workflows");
     let loaded = backend.load_workflow(&workflow.id).expect("load workflow");
 
-    assert_eq!(items.len(), 1);
-    assert_eq!(items[0].name, "Workflow 1");
+    assert!(items
+        .iter()
+        .any(|item| item.id == workflow.id.to_string() && item.name == "Workflow 1"));
     assert_eq!(loaded.id, workflow.id);
     assert_eq!(loaded.nodes.len(), 1);
 }
@@ -81,8 +383,8 @@ fn save_workflows_overwrites_store() {
         .expect("save workflows");
 
     let items = backend.list_workflows().expect("list workflows");
-    assert_eq!(items.len(), 1);
-    assert_eq!(items[0].id, first.id.to_string());
+    assert!(items.iter().any(|item| item.id == first.id.to_string()));
+    assert!(items.iter().all(|item| item.id != second.id.to_string()));
     assert_eq!(
         backend
             .load_workflow(&second.id)
@@ -203,6 +505,7 @@ fn provider_readiness_reports_missing_key() {
     let readiness = AppBackend::new(
         AppBackendDeps {
             workflow_store: Box::new(FileWorkflowStore::new("/tmp/unused-workflows.json")),
+            chat_store: Box::new(FileChatStore::new("/tmp/unused-chats.json")),
             project_workflow_store: Box::new(FileProjectWorkflowStore),
             agent_store: Box::new(FileAgentStore::new("/tmp/unused-agents.json")),
             project_store: Box::new(FileProjectStore::new("/tmp/unused-projects.json")),
@@ -593,7 +896,9 @@ fn rename_workflow_updates_list_and_load() {
 
     assert_eq!(renamed.name, "Renamed");
     let items = backend.list_workflows().expect("list workflows");
-    assert_eq!(items[0].name, "Renamed");
+    assert!(items
+        .iter()
+        .any(|item| item.id == workflow.id.to_string() && item.name == "Renamed"));
     assert_eq!(
         backend
             .load_workflow(&workflow.id)
@@ -663,7 +968,11 @@ fn delete_workflow_removes_independent_workflow() {
         .delete_workflow(&workflow.id.to_string())
         .expect("delete workflow");
 
-    assert!(backend.list_workflows().expect("list").is_empty());
+    assert!(backend
+        .list_workflows()
+        .expect("list")
+        .iter()
+        .all(|item| item.id != workflow.id.to_string()));
     assert!(backend
         .load_workflow(&workflow.id)
         .expect_err("workflow gone")
@@ -690,7 +999,11 @@ fn delete_workflow_removes_project_assigned_workflow() {
         .expect("delete workflow");
 
     assert!(projects[0].workflow_ids.is_empty());
-    assert!(backend.list_workflows().expect("list").is_empty());
+    assert!(backend
+        .list_workflows()
+        .expect("list")
+        .iter()
+        .all(|item| item.id != workflow.id.to_string()));
 }
 
 #[cfg_attr(miri, ignore)]

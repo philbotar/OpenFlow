@@ -64,6 +64,7 @@ function renderChatPanel(overrides: Partial<AppContextValue> = {}) {
     handleInterruptNode: async () => {},
     handleRetryNode: async () => {},
     handleUpdateNodeRuntimeConfig: async () => {},
+    screen: () => "editor",
     activeProfileMemo: () => ({ reasoning_effort_options: [] }),
     activeWorkflow: () => ({ id: "w1", name: "Workflow", nodes: [], edges: [] }),
     ...overrides,
@@ -183,6 +184,69 @@ describe("ChatPanel replay mode", () => {
         "builder",
         "Structured answers:\n- target_env: Production",
       );
+    } finally {
+      dispose();
+      container.remove();
+    }
+  });
+
+  it("renders a submitted answer cleanly while showing a new structured request", () => {
+    const answer = {
+      role: "user" as const,
+      content: "Structured answers:\n- next_step: Just chatting",
+    };
+    const { container, dispose } = renderChatPanel({
+      replayRunId: () => null,
+      chatLayout: () => ({
+        settled: [
+          {
+            nodeId: "builder",
+            label: "Builder",
+            status: "awaiting_input",
+            messages: [answer],
+          },
+        ],
+        live: [],
+        liveIds: [],
+      }),
+      runState: () =>
+        ({
+          active: true,
+          pendingApprovals: [],
+          statusByNode: { builder: "awaiting_input" },
+          chatLogs: { builder: [answer] },
+          toolCallsByNode: {},
+          awaitingNodeId: "builder",
+          awaitingNodeIds: ["builder"],
+          structuredInputByNode: {
+            builder: {
+              questions: [
+                {
+                  id: "topic",
+                  header: "Topic",
+                  question: "What should we chat about?",
+                  options: [
+                    {
+                      label: "Something personal",
+                      description: "Talk about your day.",
+                    },
+                    {
+                      label: "Something random",
+                      description: "Share an interesting thought.",
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        }) as unknown as ReturnType<AppContextValue["runState"]>,
+    });
+
+    try {
+      expect(container.textContent).toContain("Just chatting");
+      expect(container.textContent).toContain("What should we chat about?");
+      expect(container.textContent).not.toContain("Structured answers");
+      expect(container.textContent).not.toContain("next_step");
     } finally {
       dispose();
       container.remove();

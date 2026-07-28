@@ -10,8 +10,10 @@ use crate::run::persistence::{
 };
 use crate::run::ports::RunCheckpointStore;
 use crate::run::prep::prepare_workflow_for_execution;
+use crate::run::skill_invocation::{apply_skill_invocations, has_skill_invocations};
 use crate::run::state::WorkflowRunState;
 use crate::settings::model::{merge_preserved_secrets, AppSettings};
+use crate::settings::ports::SkillCatalog;
 use crate::settings::provider::{
     attach_codex_credential_sink, resolve_provider_config, ProviderEnv,
 };
@@ -68,6 +70,7 @@ pub(super) fn prepare_workflow_run(
     settings: &AppSettings,
     transient_api_key: Option<&str>,
     agent_store: &dyn crate::agent::AgentStore,
+    skill_catalog: &dyn SkillCatalog,
     settings_store: Arc<dyn crate::settings::ports::SettingsStore>,
     env: &ProviderEnv,
 ) -> Result<PreparedWorkflowRun, BackendError> {
@@ -88,7 +91,11 @@ pub(super) fn prepare_workflow_run(
     let mut workflow = workflow;
     prepare_workflow_for_execution(&mut workflow, Some(provider_settings.active_profile()));
     let agents = agent_store.load()?;
-    let agent_snapshots = resolve_callable_agent_snapshots(&workflow, &agents);
+    let mut agent_snapshots = resolve_callable_agent_snapshots(&workflow, &agents);
+    if has_skill_invocations(&workflow, &agent_snapshots) {
+        let skills = skill_catalog.discover(&provider_settings.skill_search_paths)?;
+        apply_skill_invocations(&mut workflow, &mut agent_snapshots, &skills)?;
+    }
     Ok(PreparedWorkflowRun {
         workflow,
         ai,
@@ -356,6 +363,7 @@ pub struct RunStartParams<'a> {
     pub settings: &'a AppSettings,
     pub transient_api_key: Option<&'a str>,
     pub agent_store: &'a dyn crate::agent::AgentStore,
+    pub skill_catalog: &'a dyn SkillCatalog,
     pub settings_store: Arc<dyn crate::settings::ports::SettingsStore>,
     pub run_store: &'a dyn RunCheckpointStore,
     pub env: &'a ProviderEnv,
@@ -369,6 +377,7 @@ pub struct DurableResumeParams<'a> {
     pub settings: &'a AppSettings,
     pub transient_api_key: Option<&'a str>,
     pub agent_store: &'a dyn crate::agent::AgentStore,
+    pub skill_catalog: &'a dyn SkillCatalog,
     pub settings_store: Arc<dyn crate::settings::ports::SettingsStore>,
     pub run_store: &'a dyn RunCheckpointStore,
     pub env: &'a ProviderEnv,

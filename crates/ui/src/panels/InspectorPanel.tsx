@@ -116,6 +116,7 @@ export function InspectorPanel() {
                     nextNode.agent.task_prompt = value;
                   })
                 }
+                skills={ctx.availableSkills()}
                 schemaJson={ctx.schemaText()}
                 onSchemaChange={(value) => ctx.setSchemaText(value)}
                 knownModels={() => ctx.activeProfileMemo().known_models}

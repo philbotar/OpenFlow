@@ -123,6 +123,20 @@ describe("groupToolMessages", () => {
     ]);
   });
 
+  it("hides legacy tool I/O thinking lines now represented by tool bubbles", () => {
+    const messages = [
+      thinking("Tool request: read path"),
+      thinking("Running tool: read"),
+      tool("a"),
+      thinking("Tool result: complete"),
+      tool("b"),
+    ];
+
+    expect(groupToolMessages(messages)).toEqual([
+      { kind: "toolStack", messages: [messages[2], messages[4]] },
+    ]);
+  });
+
   it("skips assistant content that is only tool-call markup", () => {
     const markup = text(
       "<tool_call>\n<function=search>\n</function>\n</tool_call>",

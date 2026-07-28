@@ -26,6 +26,12 @@ const EMPTY_SETTINGS = {
       chat_completions_path: "chat/completions",
       known_models: ["gpt-4.1-mini"],
       default_model: "gpt-4.1-mini",
+      reasoning_effort_options: [
+        { value: "fast", label: "Fast", uses_budget_tokens: false },
+        { value: "low", label: "Low", uses_budget_tokens: false },
+        { value: "medium", label: "Medium", uses_budget_tokens: false },
+        { value: "high", label: "High", uses_budget_tokens: false },
+      ],
       editable: false,
     },
     custom_openai_compatible: {
@@ -62,12 +68,39 @@ function thinkingLine(text: string) {
   return { role: "Thinking", content: text };
 }
 
-function writeToolLine(path: string) {
+function writeToolMarker(toolCallId: string) {
   return {
     role: "Thinking",
-    content: `Tool request: write\nArguments:\n{\n  "path": "${path}"\n}`,
+    content: "",
+    toolCallId,
   };
 }
+
+function writeToolSummary(toolCallId: string, path: string, intent: string) {
+  return {
+    toolCallId,
+    toolName: "write",
+    status: "completed",
+    arguments: { path },
+    intent,
+    lastOutput: `Wrote ${path}`,
+    isError: false,
+    streaming: false,
+  };
+}
+
+const TOOL_CALLS = {
+  [NODE_IDS[0]]: [
+    writeToolSummary("write-architecture", "docs/architecture.md", "architecture doc"),
+  ],
+  [NODE_IDS[1]]: [
+    writeToolSummary("write-test-plan", "docs/test-plan.md", "test plan"),
+  ],
+  [NODE_IDS[2]]: [
+    writeToolSummary("write-package", "package.json", "package config"),
+    writeToolSummary("write-env", ".env", "environment config"),
+  ],
+};
 
 const runState = {
   active: false,
@@ -75,7 +108,7 @@ const runState = {
   activeManualNodeId: null,
   activeToolCallId: null,
   pendingApprovals: [],
-  toolCallsByNode: {},
+  toolCallsByNode: TOOL_CALLS,
   toolArtifacts: {},
   execApprovalGranted: false,
   statusByNode: Object.fromEntries(NODE_IDS.map((id) => [id, "completed"])),
@@ -85,16 +118,16 @@ const runState = {
   chatLogs: {
     [NODE_IDS[0]]: [
       thinkingLine("Let me analyze the requirements and outline the architecture."),
-      writeToolLine("docs/architecture.md"),
+      writeToolMarker(TOOL_CALLS[NODE_IDS[0]][0].toolCallId),
     ],
     [NODE_IDS[1]]: [
       thinkingLine("I'll draft a test plan covering unit and integration cases."),
-      writeToolLine("docs/test-plan.md"),
+      writeToolMarker(TOOL_CALLS[NODE_IDS[1]][0].toolCallId),
     ],
     [NODE_IDS[2]]: [
       thinkingLine("Implementing the feature with file writes."),
-      writeToolLine("package.json"),
-      writeToolLine(".env"),
+      writeToolMarker(TOOL_CALLS[NODE_IDS[2]][0].toolCallId),
+      writeToolMarker(TOOL_CALLS[NODE_IDS[2]][1].toolCallId),
     ],
   },
   runTrace: [],
@@ -120,6 +153,7 @@ export const MULTI_SEGMENT_BOOTSTRAP = {
   ],
   projects: [],
   skills: [],
+  discoveredMcp: [],
   settings: EMPTY_SETTINGS,
   runState,
   runContinuable: false,

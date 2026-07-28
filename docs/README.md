@@ -9,6 +9,8 @@ docs/
 ├── README.md                          # This index
 ├── AGENTS.md                          # Docs file map for agents
 ├── work-specs/                        # Numbered design / implementation work specs
+├── research/
+│   └── matt-pocock-skills.md          # Source-backed Matt Pocock skills usage
 ├── getting-started/
 │   └── README.md                      # Install, run, configure a provider, start a workflow
 ├── guides/
@@ -78,6 +80,7 @@ Architecture check rules are machine configuration, not documentation. They live
 | Learn workflow terms | [`concepts/workflows-and-runs.md`](concepts/workflows-and-runs.md), [`glossary.md`](glossary.md) |
 | Find commands and paths | [`reference/README.md`](reference/README.md) |
 | Look up agent tools | [`reference/tools.md`](reference/tools.md) |
+| Review Matt Pocock skills usage | [`research/matt-pocock-skills.md`](research/matt-pocock-skills.md) |
 | Debug setup or run failures | [`troubleshooting/README.md`](troubleshooting/README.md) |
 | Change code safely | [`AGENTS.md`](../AGENTS.md), [`contributing/development-lanes.md`](contributing/development-lanes.md) |
 | Check architecture boundaries | [`architecture/contract.md`](architecture/contract.md) |

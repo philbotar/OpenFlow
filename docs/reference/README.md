@@ -25,6 +25,7 @@ Agent and harness tools (built-ins, MCP, authoring): [`tools.md`](tools.md).
 | Data | Path |
 | --- | --- |
 | App workflows | `{data_local}/openflow/workflows.json` |
+| Chats | `{data_local}/openflow/chats.json` |
 | Settings | `{data_local}/openflow/settings.json` |
 | Projects | `{data_local}/openflow/projects.json` |
 | Saved agents | `{data_local}/openflow/agents.json` |

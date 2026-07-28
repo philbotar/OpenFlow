@@ -27,20 +27,25 @@ import {
   confirmNativeDialog,
   cancelCodexLogin,
   codexLoginStatus,
+  createChat,
   debugLogPath,
+  deleteChat,
   deleteWorkflow,
   disconnectCodex,
   getRunState,
   listenToRunState,
   listScheduleStatuses,
   listRuns,
+  listChats,
   replayRun,
   refreshSchedules,
   resumeDurableRun,
   startWorkflowAuthoring,
   startCodexLogin,
   startRun,
+  startChat,
   submitToolApproval,
+  updateChatConfig,
   workflowAuthoringTurn,
 } from "./api";
 import type { AppSettings, Workflow } from "./lib/types";
@@ -111,6 +116,39 @@ describe("api desktop seam", () => {
       transientApiKey: "sk-test",
       entrypoint: "Kickoff text",
     });
+  });
+
+  test("chat wrappers use dedicated chat commands", async () => {
+    const config = {
+      model: "gpt-5",
+      approvalMode: "always_ask" as const,
+      reasoningEffort: "high",
+      reasoningBudgetTokens: null,
+      projectId: "project-1",
+    };
+    await createChat();
+    await listChats();
+    await updateChatConfig("chat-1", config);
+    await startChat("chat-1", settings, "sk-test", "Hello");
+
+    expect(invoke).toHaveBeenNthCalledWith(1, "create_chat");
+    expect(invoke).toHaveBeenNthCalledWith(2, "list_chats");
+    expect(invoke).toHaveBeenNthCalledWith(3, "update_chat_config", {
+      chatId: "chat-1",
+      config,
+    });
+    expect(invoke).toHaveBeenNthCalledWith(4, "start_chat", {
+      chatId: "chat-1",
+      settings,
+      transientApiKey: "sk-test",
+      entrypoint: "Hello",
+    });
+  });
+
+  test("deleteChat invokes delete_chat", async () => {
+    await deleteChat("chat-1");
+
+    expect(invoke).toHaveBeenCalledWith("delete_chat", { chatId: "chat-1" });
   });
 
   test("submitToolApproval passes null reason when omitted", async () => {

@@ -7,6 +7,7 @@ pub async fn bootstrap_app(
     backend: tauri::State<'_, AppBackend>,
 ) -> Result<BootstrapPayload, CommandError> {
     let workflows = backend.load_all_workflows()?;
+    let chats = backend.list_chats()?;
     let agents = backend.load_agents()?;
     let projects = backend.list_projects()?;
     let skills = backend.list_skills()?;
@@ -16,6 +17,7 @@ pub async fn bootstrap_app(
     let schedule_statuses = backend.refresh_schedules()?;
     Ok(BootstrapPayload {
         workflows,
+        chats,
         agents,
         projects,
         skills,

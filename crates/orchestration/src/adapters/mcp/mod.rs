@@ -2,7 +2,10 @@
 
 mod discover;
 
-pub use discover::{effective_mcp_servers, parse_mcp_servers_json, scan_external_mcp_for_api};
+pub use discover::{
+    effective_mcp_servers, parse_mcp_servers_json, parse_mcp_servers_json_with_diagnostics,
+    scan_external_mcp_for_api, McpParseDiagnostic, McpParseResult,
+};
 
 use crate::settings::model::{McpServerConfig, McpSettings};
 use engine::{ToolConcurrency, ToolDefinition, ToolTier};
@@ -14,10 +17,13 @@ use rmcp::{
 };
 use serde_json::Value;
 use std::collections::HashMap;
+use std::time::Duration;
 use thiserror::Error;
 use tokio::process::Command;
+use tokio::sync::RwLock;
 
 const MCP_PREFIX: &str = "mcp/";
+const MCP_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum McpError {
@@ -29,6 +35,16 @@ pub enum McpError {
     ServerNotConnected { server_id: String },
     #[error("MCP transport error: {0}")]
     Transport(String),
+    #[error("failed to project MCP tool result: {0}")]
+    ResultProjection(String),
+    #[error("MCP server `{server_id}` did not stop within {after_secs} seconds")]
+    ShutdownTimeout { server_id: String, after_secs: u64 },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpToolOutcome {
+    pub content: String,
+    pub is_error: bool,
 }
 
 pub fn namespaced_tool_name(server_id: &str, tool_name: &str) -> Result<String, McpError> {
@@ -75,21 +91,32 @@ fn mcp_tool_to_definition(server_id: &str, tool: &McpTool) -> Result<ToolDefinit
             .unwrap_or_else(|| tool.name.to_string()),
         input_schema: serde_json::Value::Object(tool.input_schema.as_ref().clone()),
         tier: ToolTier::Write,
-        concurrency: ToolConcurrency::Shared,
+        concurrency: ToolConcurrency::Exclusive,
     })
 }
 
-fn format_tool_result(result: &rmcp::model::CallToolResult) -> String {
-    result
-        .content
-        .iter()
-        .filter_map(|block| block.as_text().map(|text| text.text.clone()))
-        .collect::<Vec<_>>()
-        .join("\n")
+fn project_tool_result(result: &rmcp::model::CallToolResult) -> Result<McpToolOutcome, McpError> {
+    let has_rich_content = result.structured_content.is_some()
+        || result.content.iter().any(|block| block.as_text().is_none());
+    let content = if has_rich_content {
+        serde_json::to_string_pretty(result)
+            .map_err(|error| McpError::ResultProjection(error.to_string()))?
+    } else {
+        result
+            .content
+            .iter()
+            .filter_map(|block| block.as_text().map(|text| text.text.clone()))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    Ok(McpToolOutcome {
+        content,
+        is_error: result.is_error.unwrap_or(false),
+    })
 }
 
 pub struct McpStdioClient {
-    service: RunningService<RoleClient, ()>,
+    service: RwLock<RunningService<RoleClient, ()>>,
     server_id: String,
 }
 
@@ -121,14 +148,14 @@ impl McpStdioClient {
             .map_err(|error| McpError::Transport(error.to_string()))?;
 
         Ok(Self {
-            service,
+            service: RwLock::new(service),
             server_id: config.id.clone(),
         })
     }
 
     pub async fn list_tool_definitions(&self) -> Result<Vec<ToolDefinition>, McpError> {
-        let tools = self
-            .service
+        let service = self.service.read().await;
+        let tools = service
             .list_all_tools()
             .await
             .map_err(|error| McpError::Transport(error.to_string()))?;
@@ -147,17 +174,36 @@ impl McpStdioClient {
             .collect())
     }
 
-    pub async fn call_tool(&self, tool_name: &str, args: Value) -> Result<String, McpError> {
+    pub async fn call_tool(
+        &self,
+        tool_name: &str,
+        args: Value,
+    ) -> Result<McpToolOutcome, McpError> {
         let mut params = CallToolRequestParams::new(tool_name.to_string());
         if let Some(arguments) = args.as_object().cloned() {
             params = params.with_arguments(arguments);
         }
-        let result = self
-            .service
+        let service = self.service.read().await;
+        let result = service
             .call_tool(params)
             .await
             .map_err(|error| McpError::Transport(error.to_string()))?;
-        Ok(format_tool_result(&result))
+        project_tool_result(&result)
+    }
+
+    pub async fn close(&self) -> Result<(), McpError> {
+        let close = async {
+            let mut service = self.service.write().await;
+            service.close().await
+        };
+        match tokio::time::timeout(MCP_SHUTDOWN_TIMEOUT, close).await {
+            Ok(Ok(_)) => Ok(()),
+            Ok(Err(error)) => Err(McpError::Transport(error.to_string())),
+            Err(_) => Err(McpError::ShutdownTimeout {
+                server_id: self.server_id.clone(),
+                after_secs: MCP_SHUTDOWN_TIMEOUT.as_secs(),
+            }),
+        }
     }
 }
 
@@ -177,7 +223,14 @@ impl McpRunClients {
     pub async fn connect(settings: &McpSettings) -> Result<Self, McpError> {
         let mut clients = HashMap::new();
         for config in settings.servers.iter().filter(|server| server.enabled) {
-            let client = McpStdioClient::spawn(config).await?;
+            let client = match McpStdioClient::spawn(config).await {
+                Ok(client) => client,
+                Err(error) => {
+                    let connected = Self { clients };
+                    let _ = connected.close().await;
+                    return Err(error);
+                }
+            };
             clients.insert(config.id.clone(), client);
         }
         Ok(Self { clients })
@@ -195,7 +248,7 @@ impl McpRunClients {
         &self,
         namespaced_name: &str,
         args: Value,
-    ) -> Result<String, McpError> {
+    ) -> Result<McpToolOutcome, McpError> {
         let (server_id, tool_name) = parse_namespaced_tool_name(namespaced_name)?;
         let client = self
             .clients
@@ -205,11 +258,83 @@ impl McpRunClients {
             })?;
         client.call_tool(tool_name, args).await
     }
+
+    pub async fn close(&self) -> Result<(), McpError> {
+        let mut first_error = None;
+        for client in self.clients.values() {
+            if let Err(error) = client.close().await {
+                first_error.get_or_insert(error);
+            }
+        }
+        first_error.map_or(Ok(()), Err)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tool_result_projection_preserves_error_status_for_text() {
+        let result: rmcp::model::CallToolResult = serde_json::from_value(serde_json::json!({
+            "content": [
+                {"type": "text", "text": "invalid input"},
+                {"type": "text", "text": "try again"}
+            ],
+            "isError": true
+        }))
+        .unwrap();
+
+        let projected = project_tool_result(&result).unwrap();
+
+        assert_eq!(projected.content, "invalid input\ntry again");
+        assert!(projected.is_error);
+    }
+
+    #[test]
+    fn tool_result_projection_preserves_structured_and_non_text_content() {
+        let result: rmcp::model::CallToolResult = serde_json::from_value(serde_json::json!({
+            "content": [
+                {"type": "text", "text": "before"},
+                {"type": "image", "data": "aW1hZ2U=", "mimeType": "image/png"},
+                {"type": "text", "text": "after"}
+            ],
+            "structuredContent": {"answer": 42}
+        }))
+        .unwrap();
+
+        let projected = project_tool_result(&result).unwrap();
+        let content: Value = serde_json::from_str(&projected.content).unwrap();
+
+        assert_eq!(content["content"][1]["type"], "image");
+        assert_eq!(content["content"][1]["mimeType"], "image/png");
+        assert_eq!(content["structuredContent"]["answer"], 42);
+        assert!(!projected.is_error);
+    }
+
+    #[test]
+    fn discovered_mcp_tools_are_server_exclusive_by_default() {
+        let tool: McpTool = serde_json::from_value(serde_json::json!({
+            "name": "write_file",
+            "description": "Write a file",
+            "inputSchema": {"type": "object"}
+        }))
+        .expect("MCP tool");
+
+        let definition = mcp_tool_to_definition("filesystem", &tool).expect("definition");
+
+        assert_eq!(definition.concurrency, ToolConcurrency::Exclusive);
+    }
+
+    #[tokio::test]
+    async fn closing_empty_run_clients_is_idempotent() {
+        let clients = McpRunClients {
+            clients: HashMap::new(),
+        };
+
+        clients.close().await.unwrap();
+        clients.close().await.unwrap();
+    }
 
     #[test]
     fn namespaced_tool_name_rejects_slashes_in_segments() {
@@ -230,21 +355,49 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "requires STEP_MCP_LIVE=1"]
-    async fn stdio_client_lists_tools() {
+    async fn stdio_client_round_trips_tool_results() {
         if std::env::var("STEP_MCP_LIVE").ok().as_deref() != Some("1") {
             return;
         }
         let client = McpStdioClient::spawn(&McpServerConfig {
-            id: "time".into(),
-            display_name: "time".into(),
+            id: "everything".into(),
+            display_name: "Everything".into(),
             command: "npx".into(),
-            args: vec!["-y".into(), "@modelcontextprotocol/server-time".into()],
+            args: vec![
+                "-y".into(),
+                "@modelcontextprotocol/server-everything@2026.7.4".into(),
+            ],
             env: Default::default(),
             enabled: true,
         })
         .await
         .expect("spawn");
         let tools = client.list_tool_definitions().await.expect("list");
-        assert!(!tools.is_empty());
+        assert!(tools.iter().any(|tool| tool.name == "mcp/everything/echo"));
+
+        let echo = client
+            .call_tool(
+                "echo",
+                serde_json::json!({ "message": "OpenFlow live MCP" }),
+            )
+            .await
+            .expect("call echo");
+        assert_eq!(echo.content, "Echo: OpenFlow live MCP");
+        assert!(!echo.is_error);
+
+        let invalid = client
+            .call_tool("echo", serde_json::json!({}))
+            .await
+            .expect("invalid args return a tool result");
+        assert!(invalid.is_error);
+
+        let image = client
+            .call_tool("get-tiny-image", serde_json::json!({}))
+            .await
+            .expect("call image tool");
+        let image: Value = serde_json::from_str(&image.content).expect("rich result JSON");
+        assert_eq!(image["content"][1]["type"], "image");
+
+        client.close().await.expect("close");
     }
 }

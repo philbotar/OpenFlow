@@ -1,12 +1,13 @@
-import { For, Show } from "solid-js";
+import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { useAppContext } from "../../context/AppContext";
 import { isMacOS, ICON_STROKE_WIDTH } from "../../lib/utils";
 import ChevronRight from "lucide-solid/icons/chevron-right";
+import { ChatHistoryRow } from "./ChatHistoryRow";
 import { ProjectFolderRow } from "./ProjectFolderRow";
 import { SidebarList } from "./SidebarList";
-import { SidebarListRow } from "./SidebarListRow";
 import { SidebarIconButton } from "./SidebarIconButton";
 import { SidebarNavButton } from "./SidebarNavButton";
+import { WorkflowListRow } from "./WorkflowListRow";
 import { CollapsibleSection } from "../CollapsibleSection";
 import { Tooltip } from "../Tooltip";
 
@@ -20,7 +21,7 @@ function WorkflowRows() {
           workflow.id === ctx.activeWorkflowId() && ctx.screen() === "editor";
         const editing = () => workflow.id === ctx.editingWorkflowId();
         return (
-          <SidebarListRow
+          <WorkflowListRow
             title={workflow.name}
             active={active()}
             editing={editing()}
@@ -28,6 +29,7 @@ function WorkflowRows() {
             onRename={() =>
               ctx.handleStartWorkflowNameEdit(workflow.id, workflow.name)
             }
+            onDelete={() => void ctx.handleDeleteWorkflow(workflow.id)}
             editSlot={
               <input
                 ref={(el) => ctx.setWorkflowNameInputRef(el)}
@@ -48,8 +50,51 @@ function WorkflowRows() {
   );
 }
 
+function ChatRows() {
+  const ctx = useAppContext();
+
+  return (
+    <For each={ctx.chats()}>
+      {(chat) => (
+        <ChatHistoryRow
+          title={chat.title}
+          active={chat.id === ctx.activeChatId() && ctx.screen() === "chat"}
+          onSelect={() => void ctx.handleOpenChat(chat.id)}
+          onDelete={() => void ctx.handleDeleteChat(chat.id)}
+        />
+      )}
+    </For>
+  );
+}
+
 export function Sidebar() {
   const ctx = useAppContext();
+  const [newWorkflowMenuOpen, setNewWorkflowMenuOpen] = createSignal(false);
+  let newWorkflowMenuAnchor: HTMLDivElement | undefined;
+
+  const closeNewWorkflowMenu = () => setNewWorkflowMenuOpen(false);
+
+  createEffect(() => {
+    if (!newWorkflowMenuOpen()) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (newWorkflowMenuAnchor?.contains(target)) return;
+      closeNewWorkflowMenu();
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeNewWorkflowMenu();
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    onCleanup(() => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    });
+  });
 
   return (
     <aside
@@ -61,6 +106,50 @@ export function Sidebar() {
       aria-hidden={ctx.leftPanelHidden() && !ctx.isCompactViewport()}
     >
       <SidebarList>
+        <div class="sidebar-new-workflow-menu" ref={newWorkflowMenuAnchor}>
+          <SidebarNavButton
+            icon="plus"
+            label="New workflow"
+            ariaHasPopup="menu"
+            ariaExpanded={newWorkflowMenuOpen()}
+            onClick={() => setNewWorkflowMenuOpen((open) => !open)}
+          />
+          <Show when={newWorkflowMenuOpen()}>
+            <div
+              class="sidebar-new-workflow-popover"
+              role="menu"
+              aria-label="New workflow options"
+            >
+              <button
+                type="button"
+                class="sidebar-new-workflow-menu-item"
+                role="menuitem"
+                onClick={() => {
+                  closeNewWorkflowMenu();
+                  void ctx.handleCreateWorkflow();
+                }}
+              >
+                Create new workflow
+              </button>
+              <button
+                type="button"
+                class="sidebar-new-workflow-menu-item"
+                role="menuitem"
+                onClick={() => {
+                  closeNewWorkflowMenu();
+                  void ctx.handleOpenWorkflowAuthoring();
+                }}
+              >
+                Create with AI
+              </button>
+            </div>
+          </Show>
+        </div>
+        <SidebarNavButton
+          icon="chat"
+          label="New chat"
+          onClick={() => void ctx.handleCreateChat()}
+        />
         <SidebarNavButton
           icon="agents"
           label="Agents"
@@ -73,7 +162,36 @@ export function Sidebar() {
           active={ctx.screen() === "schedule"}
           onClick={ctx.handleOpenSchedule}
         />
-        <div class="sidebar-section-group">
+        <div class="sidebar-section-group sidebar-chats-section" aria-label="Chats">
+          <div class="sidebar-section-header workflows-section-header">
+            <div class="sidebar-section-label">Chats</div>
+            <div class="sidebar-section-trailing">
+              <Tooltip label="Toggle chats section">
+                <button
+                  type="button"
+                  class="workflows-section-chevron-btn"
+                  onClick={ctx.handleToggleChatsSection}
+                  aria-expanded={ctx.chatsSectionExpanded()}
+                  aria-label="Toggle chats section"
+                >
+                  <ChevronRight
+                    class="workflows-section-chevron"
+                    aria-hidden="true"
+                    absoluteStrokeWidth
+                    strokeWidth={ICON_STROKE_WIDTH}
+                  />
+                </button>
+              </Tooltip>
+            </div>
+          </div>
+          <CollapsibleSection
+            open={ctx.chatsSectionExpanded()}
+            class="sidebar-chats-collapsible"
+          >
+            <ChatRows />
+          </CollapsibleSection>
+        </div>
+        <div class="sidebar-section-group sidebar-workflows-section">
           <div class="sidebar-section-header workflows-section-header">
             <div class="sidebar-section-label">Workflows</div>
             <div class="sidebar-section-trailing">
@@ -93,19 +211,6 @@ export function Sidebar() {
                   />
                 </button>
               </Tooltip>
-              <SidebarIconButton
-                icon="sparkles"
-                label="Build with AI"
-                class="sidebar-section-action"
-                active={ctx.screen() === "workflow-authoring"}
-                onClick={() => void ctx.handleOpenWorkflowAuthoring()}
-              />
-              <SidebarIconButton
-                icon="plus"
-                label="New workflow"
-                class="sidebar-section-action"
-                onClick={() => void ctx.handleCreateWorkflow()}
-              />
             </div>
           </div>
           <Show
@@ -118,7 +223,10 @@ export function Sidebar() {
               </div>
             }
           >
-            <CollapsibleSection open={ctx.workflowsSectionExpanded()}>
+            <CollapsibleSection
+              open={ctx.workflowsSectionExpanded()}
+              class="sidebar-workflows-collapsible"
+            >
               <WorkflowRows />
             </CollapsibleSection>
           </Show>
@@ -174,11 +282,15 @@ export function Sidebar() {
                       ctx.handleSwitchWorkflow(workflowId);
                     }}
                     onRenameWorkflow={ctx.handleStartWorkflowNameEdit}
+                    onDeleteWorkflow={(workflowId) =>
+                      void ctx.handleDeleteWorkflow(workflowId)
+                    }
                     onCreateWorkflow={() => void ctx.handleCreateWorkflow(project.id)}
                     onCreateWorkflowWithAi={() =>
                       void ctx.handleOpenWorkflowAuthoring(undefined, project.id)
                     }
                     onAddExistingWorkflow={() => ctx.handleOpenAssignWorkflowPicker(project.id)}
+                    onRemoveProject={() => void ctx.handleRemoveProject(project.id)}
                     setWorkflowNameInputRef={ctx.setWorkflowNameInputRef}
                     setWorkflowNameDraft={ctx.setWorkflowNameDraft}
                     onWorkflowNameCommit={ctx.handleWorkflowNameCommit}

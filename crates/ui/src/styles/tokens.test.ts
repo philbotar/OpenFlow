@@ -1,0 +1,85 @@
+// @vitest-environment jsdom
+import { readFileSync } from "node:fs";
+import { afterEach, describe, expect, test } from "vitest";
+import { applyTheme } from "../lib/theme";
+
+const tokensCss = readFileSync("src/styles/tokens.css", "utf8");
+const indexCss = readFileSync("src/styles/index.css", "utf8");
+
+describe("dark theme palette", () => {
+  let style: HTMLStyleElement | undefined;
+
+  afterEach(() => {
+    document.body.innerHTML = "";
+    style?.remove();
+    style = undefined;
+    document.documentElement.removeAttribute("data-theme");
+    document.documentElement.style.removeProperty("color-scheme");
+  });
+
+  test("uses neutral charcoal surfaces and actions", () => {
+    expect(tokensCss).toContain('[data-theme="dark"]');
+    style = document.createElement("style");
+    style.textContent = tokensCss.slice(tokensCss.indexOf('[data-theme="dark"]'));
+    document.head.append(style);
+    applyTheme("dark");
+
+    const theme = getComputedStyle(document.documentElement);
+
+    expect(theme.getPropertyValue("--base-sand-100").trim()).toBe("#101010");
+    expect(theme.getPropertyValue("--base-sand-50").trim()).toBe("#181818");
+    expect(theme.getPropertyValue("--surface-panel").trim()).toBe(
+      "rgba(28, 28, 29, 0.9)",
+    );
+    expect(theme.getPropertyValue("--accent-primary").trim()).toBe(
+      "var(--base-action-500)",
+    );
+    expect(theme.getPropertyValue("--base-action-500").trim()).toBe("#e8e8ea");
+    expect(theme.getPropertyValue("--sidebar-active").trim()).toBe(
+      "rgba(255, 255, 255, 0.08)",
+    );
+  });
+
+  test("uses dark text for the dark topbar run action", () => {
+    style = document.createElement("style");
+    style.textContent = `${tokensCss}\n${indexCss}`;
+    document.head.append(style);
+    applyTheme("dark");
+
+    const runButton = document.createElement("button");
+    runButton.className = "topbar-primary-button";
+    document.body.append(runButton);
+
+    expect(
+      getComputedStyle(document.documentElement)
+        .getPropertyValue("--action-foreground")
+        .trim(),
+    ).toBe("#111111");
+    expect(getComputedStyle(runButton).color).toBe("var(--action-foreground)");
+
+    runButton.remove();
+  });
+
+  test("constrains sidebar lists horizontally while menus overlay vertically", () => {
+    style = document.createElement("style");
+    style.textContent = `${tokensCss}\n${indexCss}`;
+    document.head.append(style);
+
+    const section = document.createElement("div");
+    section.className = "sidebar-section-group sidebar-workflows-section";
+    const collapsible = document.createElement("div");
+    collapsible.className =
+      "collapsible-section collapsible-section--open sidebar-workflows-collapsible";
+    const inner = document.createElement("div");
+    inner.className = "collapsible-section-inner";
+    collapsible.append(inner);
+    section.append(collapsible);
+    document.body.append(section);
+
+    expect(getComputedStyle(inner).overflowX).toBe("clip");
+    expect(getComputedStyle(inner).overflowY).toBe("visible");
+    expect(getComputedStyle(inner).minWidth).toBe("0");
+    expect(getComputedStyle(section).position).toBe("relative");
+    expect(getComputedStyle(section).zIndex).toBe("var(--z-dropdown)");
+  });
+});

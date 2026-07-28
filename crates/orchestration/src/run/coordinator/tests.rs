@@ -9,10 +9,12 @@ use super::{DurableResumeParams, RunCoordinator, RunStartParams, TestSessionSeed
 use crate::adapters::storage::agent_store::FileAgentStore;
 use crate::adapters::storage::run_checkpoint_store::FileRunCheckpointStore;
 use crate::adapters::storage::settings_store::FileSettingsStore;
+use crate::adapters::storage::skill_store::FileSkillCatalog;
 use crate::error::BackendError;
 use crate::run::execution::{ExecutionAction, ExecutionEvent, NodeInterrupts};
 use crate::run::persistence::{
-    workflow_hash, RunCheckpointPayload, RunCheckpointReason, RunRecord, RunStatus, RunStoreRoot,
+    workflow_hash, PendingRunCheckpoint, RunCheckpointPayload, RunCheckpointReason, RunRecord,
+    RunStatus, RunStoreRoot,
 };
 use crate::run::ports::RunCheckpointStore;
 use crate::run::state::{AgentStatus, WorkflowRunState};
@@ -137,6 +139,7 @@ fn run_start_params<'a>(stores: &'a LocalStores, workflow: Workflow) -> RunStart
         settings: &stores.settings,
         transient_api_key: None,
         agent_store: &stores.agent_store,
+        skill_catalog: &FileSkillCatalog,
         settings_store: stores.settings_store.clone(),
         run_store: &stores.run_store,
         env: &stores.env,
@@ -196,6 +199,10 @@ fn apply_user_stop_to_session_marks_run_aborted() {
 
 #[test]
 fn status_for_checkpoint_maps_pause_and_terminal_reasons() {
+    assert_eq!(
+        status_for_checkpoint(RunCheckpointReason::Started),
+        RunStatus::Running
+    );
     assert_eq!(
         status_for_checkpoint(RunCheckpointReason::AwaitingInput),
         RunStatus::Paused
@@ -369,6 +376,61 @@ async fn clear_run_trace_preserves_chat_and_outputs() {
     assert!(cleared.outputs.contains_key(&node_id_for_assert));
 }
 
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+async fn clear_run_trace_rejects_an_active_run() {
+    let dir = tempdir().expect("tempdir");
+    let coordinator = coordinator(dir.path());
+    let workflow = default_workflow("Clear active");
+    let (action_tx, _) = tokio::sync::mpsc::unbounded_channel();
+
+    coordinator
+        .test_seed_session(
+            workflow.clone(),
+            WorkflowRunState::running_for_workflow(&workflow),
+            action_tx,
+        )
+        .await;
+
+    assert!(matches!(
+        coordinator.clear_run_trace().await,
+        Err(BackendError::ActiveRun)
+    ));
+    assert!(coordinator.is_run_active().await);
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+async fn aborted_event_preserves_user_stopped_checkpoint_for_continue() {
+    let dir = tempdir().expect("tempdir");
+    let coordinator = coordinator(dir.path());
+    let store = FileRunCheckpointStore;
+    let workflow = default_workflow("Stop race");
+    let checkpoint = empty_engine_checkpoint(&workflow);
+    let sink = Arc::new(parking_lot::Mutex::new(Some(PendingRunCheckpoint {
+        reason: RunCheckpointReason::UserStopped,
+        engine: checkpoint,
+    })));
+    let mut run_state = WorkflowRunState::running_for_workflow(&workflow);
+    run_state.run_id = Some("stop-race".to_string());
+
+    coordinator
+        .test_seed_full(TestSessionSeed {
+            workflow,
+            run_state,
+            checkpoint_sink: Some(sink),
+            ..empty_seed_fields()
+        })
+        .await;
+
+    coordinator
+        .apply_execution_event(ExecutionEvent::Aborted, &store)
+        .await
+        .expect("apply aborted event");
+
+    assert!(coordinator.is_run_continuable().await);
+}
+
 // ── replay / list ────────────────────────────────────────────────────────────
 
 #[cfg_attr(miri, ignore)]
@@ -480,6 +542,62 @@ async fn start_run_spawns_active_session_and_persists_record() {
     drop(event_rx);
     let stopped = coordinator.stop_run().await.expect("stop");
     assert!(!stopped.active);
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+async fn start_run_resolves_task_prompt_skill_into_durable_workflow_snapshot() {
+    let mut stores = local_stores();
+    let skill_root = stores.dir.path().join("skills");
+    let skill_path = skill_root.join("tdd").join("SKILL.md");
+    fs::create_dir_all(skill_path.parent().expect("skill parent")).expect("create skill");
+    fs::write(
+        &skill_path,
+        "---\nname: tdd\ndescription: Test first.\n---\n\n# TDD",
+    )
+    .expect("write skill");
+    stores.settings.skill_search_paths = vec![skill_root.display().to_string()];
+
+    let coordinator = coordinator(stores.dir.path());
+    let mut workflow = default_workflow("Skill invocation");
+    workflow.nodes[0].agent.task_prompt = "/tdd Implement the ticket.".to_string();
+
+    let (state, event_rx) = coordinator
+        .start_run(run_start_params(&stores, workflow))
+        .await
+        .expect("start run");
+
+    let run_id = state.run_id.as_deref().expect("durable run id");
+    let (_, record) = stores
+        .run_store
+        .load_record(std::slice::from_ref(&stores.run_root), run_id)
+        .expect("load run record")
+        .expect("persisted run record");
+    let system_prompt = &record.workflow_snapshot.nodes[0].agent.system_prompt;
+    assert!(system_prompt.contains("--- Invoked skills ---"));
+    assert!(system_prompt.contains(&format!("/tdd: {}", skill_path.display())));
+
+    drop(event_rx);
+    let _ = coordinator.stop_run().await;
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+async fn start_run_rejects_unknown_task_prompt_skill() {
+    let stores = local_stores();
+    let coordinator = coordinator(stores.dir.path());
+    let mut workflow = default_workflow("Missing skill");
+    workflow.nodes[0].agent.task_prompt = "/not-installed Implement the ticket.".to_string();
+
+    let error = coordinator
+        .start_run(run_start_params(&stores, workflow))
+        .await
+        .expect_err("missing skill");
+
+    assert_eq!(
+        error.to_string(),
+        "skill /not-installed invoked by node \"Idea\" is not installed"
+    );
 }
 
 #[cfg_attr(miri, ignore)]
@@ -597,6 +715,7 @@ async fn resume_durable_run_uses_recorded_workflow_snapshot() {
             settings: &stores.settings,
             transient_api_key: None,
             agent_store: &stores.agent_store,
+            skill_catalog: &FileSkillCatalog,
             settings_store: stores.settings_store.clone(),
             run_store: &stores.run_store,
             env: &stores.env,
@@ -640,6 +759,7 @@ async fn resume_durable_run_restores_active_session() {
             settings: &stores.settings,
             transient_api_key: None,
             agent_store: &stores.agent_store,
+            skill_catalog: &FileSkillCatalog,
             settings_store: stores.settings_store.clone(),
             run_store: &stores.run_store,
             env: &stores.env,
@@ -664,6 +784,10 @@ async fn submit_user_input_appends_chat_and_sends_action() {
     let mut run_state = WorkflowRunState::running_for_workflow(&workflow);
     run_state.awaiting_node_id = Some(NodeId("idea".to_string()));
     run_state.awaiting_node_ids = vec![NodeId("idea".to_string())];
+    run_state.structured_input_by_node.insert(
+        NodeId("idea".to_string()),
+        engine::StructuredUserInput { questions: vec![] },
+    );
     coordinator
         .test_seed_session(workflow, run_state, action_tx)
         .await;
@@ -674,6 +798,9 @@ async fn submit_user_input_appends_chat_and_sends_action() {
         .expect("submit");
 
     assert_eq!(run_state.awaiting_node_id, Some(NodeId("idea".to_string())));
+    assert!(!run_state
+        .structured_input_by_node
+        .contains_key(&NodeId("idea".to_string())));
     assert_eq!(
         run_state
             .chat_logs

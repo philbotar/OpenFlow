@@ -150,7 +150,7 @@ describe("WorkflowCanvas adapter helpers", () => {
   test("buildFlowEdges animates edges while a run is active", () => {
     const edges = buildFlowEdges(graph, null, true, "dark");
     expect(edges[0].animated).toBe(true);
-    expect(edges[0].style).toEqual({ stroke: "#4b5568", strokeWidth: 2 });
+    expect(edges[0].style).toEqual({ stroke: "#55555c", strokeWidth: 2 });
   });
 
   test("graphStructureSignature ignores node positions", () => {

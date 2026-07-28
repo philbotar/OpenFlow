@@ -143,6 +143,7 @@ cargo nextest run -p orchestration --test workflow_acceptance --no-capture
 | Architecture overview | [`docs/architecture/technical-overview.md`](docs/architecture/technical-overview.md) |
 | Coding patterns | [`docs/contributing/coding-patterns.md`](docs/contributing/coding-patterns.md) |
 | Testing workflows | [`docs/contributing/testing-workflows.md`](docs/contributing/testing-workflows.md) |
+| Example workflows | [`examples/README.md`](examples/README.md) |
 | Domain glossary | [`docs/glossary.md`](docs/glossary.md) |
 
 ## Contributing

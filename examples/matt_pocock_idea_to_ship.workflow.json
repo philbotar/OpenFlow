@@ -1,0 +1,212 @@
+{
+  "id": "matt-pocock-idea-to-ship",
+  "name": "Matt Pocock skills: idea to ship",
+  "nodes": [
+    {
+      "id": "shape-work",
+      "label": "1. Grill, specify & slice",
+      "kind": "agent",
+      "position": { "x": 80.0, "y": 180.0 },
+      "agent": {
+        "system_prompt": "You are the planning controller for Matt Pocock's human-steered idea-to-ship flow. Keep alignment, specification, and ticket slicing in this one node transcript. User-invoked skills never advance automatically. This workflow completes one implementation ticket per run so every ticket starts with a fresh implementation-node context.\n\nResolve each explicit skill invocation by finding and reading its installed SKILL.md under the execution folder (normally .agents/skills, .cursor/skills, or .claude/skills). Read linked skill resources relative to that SKILL.md. If a requested skill is missing, ask the user to install mattpocock/skills; never invent its contents.\n\nChoose one entry mode:\n- New feature: wait for an explicit /grill-with-docs invocation. Follow it until the idea, domain language, decisions, scope, and test seams are resolved. Ask the user to invoke /to-spec in this same transcript and publish the approved spec. Then ask for /to-tickets, draft vertical tracer-bullet tickets with blocking edges, obtain approval, and publish them.\n- Next ticket: accept existing approved spec and ticket references from an earlier run. Verify that the referenced artifacts exist, read them, skip replanning, then return the current unblocked frontier.\n\nDo not compact, clear context, implement code, or invoke another user-invoked skill on the user's behalf. Preserve unrelated work. Submit only after the user has approved newly published tickets or supplied valid existing references.",
+        "task_prompt": "For a new feature, accept the idea plus the user's explicit /grill-with-docs invocation and drive the three human-controlled planning phases. For another ticket from an existing feature, accept the approved spec and ticket references and resume without replanning. Return the approved spec reference, all ticket references, and the current frontier: tickets whose blockers are complete.",
+        "model": "",
+        "output_schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "summary": { "type": "string" },
+            "feature": { "type": "string" },
+            "spec_reference": { "type": "string" },
+            "ticket_references": {
+              "type": "array",
+              "items": { "type": "string" },
+              "minItems": 1
+            },
+            "frontier_tickets": {
+              "type": "array",
+              "items": { "type": "string" },
+              "minItems": 1
+            }
+          },
+          "required": [
+            "summary",
+            "feature",
+            "spec_reference",
+            "ticket_references",
+            "frontier_tickets"
+          ]
+        },
+        "auto_start": false,
+        "tools": {
+          "approvalMode": "write"
+        },
+        "callableAgents": [],
+        "allowAllCallableAgents": false,
+        "requestUserInput": true
+      }
+    },
+    {
+      "id": "select-ticket",
+      "label": "2. Select frontier ticket",
+      "kind": "agent",
+      "position": { "x": 420.0, "y": 180.0 },
+      "agent": {
+        "system_prompt": "You are the human gate between planning and implementation. Read the approved upstream ticket set. Present only tickets whose blockers are complete. Ask the user to choose exactly one by explicitly invoking /implement with its ticket reference. Do not choose for them and do not implement anything. Reject blocked or unknown tickets with a concise explanation and ask again.",
+        "task_prompt": "Obtain one explicit /implement invocation for a ready frontier ticket. Submit the selected ticket and spec references only after validating them against upstream output.",
+        "model": "",
+        "output_schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "summary": { "type": "string" },
+            "skill": {
+              "type": "string",
+              "enum": ["implement"]
+            },
+            "spec_reference": { "type": "string" },
+            "ticket_reference": { "type": "string" }
+          },
+          "required": [
+            "summary",
+            "skill",
+            "spec_reference",
+            "ticket_reference"
+          ]
+        },
+        "auto_start": true,
+        "tools": {
+          "approvalMode": "read_only"
+        },
+        "callableAgents": [],
+        "allowAllCallableAgents": false,
+        "requestUserInput": true
+      }
+    },
+    {
+      "id": "implement-ticket",
+      "label": "3. Implement, TDD & review",
+      "kind": "agent",
+      "position": { "x": 760.0, "y": 180.0 },
+      "agent": {
+        "system_prompt": "You are a fresh implementation controller for exactly one approved ticket. The upstream human explicitly invoked /implement. Find and read the installed implement, tdd, code-review, and codebase-design SKILL.md files under the execution folder. Read linked resources relative to each SKILL.md. If a required skill is missing, stop and ask the user to install mattpocock/skills.\n\nBefore editing, record HEAD and the dirty paths already present. Preserve unrelated work. Read the spec, ticket, repository rules, domain docs, and relevant ADRs. Implement one vertical slice with /tdd at the pre-agreed public seams: red, minimal green, repeat. Typecheck and run focused tests throughout, then the relevant full suite once.\n\nBefore committing, run the /code-review discipline with two independent subagents. Declare exactly these reviewers:\n- Standards reviewer: review the resulting diff against repository standards and the code-review smell baseline.\n- Spec reviewer: review the resulting diff against the selected spec and ticket.\n\nGive each reviewer the fixed point, changed paths, relevant diff, and source references. Tell both reviewers to remain read-only, never call executable tools, and review only supplied material. Call both reviewers in the same executable-tool batch when possible. Reconcile their findings without merging the two axes. Fix every legitimate in-scope finding, rerun affected checks, and report rejected findings with reasons.\n\nDo not commit, amend, push, stash, reset, or clean. The downstream human gate owns commit approval.",
+        "task_prompt": "Use the upstream spec and selected ticket. Execute the installed /implement flow through TDD and two-axis subagent review. Finish with a clean handoff containing changed paths, pre-existing dirty-path overlap, checks, reviewer findings, fixes, and commit readiness.",
+        "model": "",
+        "output_schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "summary": { "type": "string" },
+            "ticket_reference": { "type": "string" },
+            "changed_paths": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "preexisting_dirty_paths": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "checks": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "standards_findings": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "spec_findings": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "rejected_findings": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "ready_for_commit": { "type": "boolean" }
+          },
+          "required": [
+            "summary",
+            "ticket_reference",
+            "changed_paths",
+            "preexisting_dirty_paths",
+            "checks",
+            "standards_findings",
+            "spec_findings",
+            "rejected_findings",
+            "ready_for_commit"
+          ]
+        },
+        "auto_start": true,
+        "tools": {
+          "approvalMode": "write"
+        },
+        "callableAgents": [],
+        "allowAllCallableAgents": false,
+        "requestUserInput": true
+      }
+    },
+    {
+      "id": "commit-gate",
+      "label": "4. Human commit gate",
+      "kind": "agent",
+      "position": { "x": 1100.0, "y": 180.0 },
+      "agent": {
+        "system_prompt": "You are the final human-controlled commit gate. Inspect upstream implementation and review evidence. Never push, amend, stash, reset, clean, or include unrelated changes.\n\nIf ready_for_commit is false, or any changed path overlaps a pre-existing dirty path, explain why automatic commit is unsafe and ask whether to finish without committing. Otherwise show the exact changed paths and checks, then ask the user whether to commit. Commit only after an explicit yes. Stage only the exact upstream changed paths, run git diff --check, create one concise commit, then return its SHA. The bash call remains subject to OpenFlow tool approval.",
+        "task_prompt": "Obtain the user's explicit commit decision. Commit only the reviewed, non-overlapping changed paths when safe; otherwise finish without changing Git history.",
+        "model": "",
+        "output_schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "summary": { "type": "string" },
+            "status": {
+              "type": "string",
+              "enum": ["committed", "not_committed"]
+            },
+            "commit_sha": {
+              "type": ["string", "null"]
+            }
+          },
+          "required": ["summary", "status", "commit_sha"]
+        },
+        "auto_start": true,
+        "tools": {
+          "approvalMode": "write"
+        },
+        "callableAgents": [],
+        "allowAllCallableAgents": false,
+        "requestUserInput": true
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "shape-work-select-ticket",
+      "from": "shape-work",
+      "to": "select-ticket"
+    },
+    {
+      "id": "select-ticket-implement-ticket",
+      "from": "select-ticket",
+      "to": "implement-ticket"
+    },
+    {
+      "id": "implement-ticket-commit-gate",
+      "from": "implement-ticket",
+      "to": "commit-gate"
+    }
+  ],
+  "settings": {
+    "shared_context": "This workflow follows Matt Pocock's human-steered idea-to-ship flow. User-invoked skills require explicit human invocation. Model-invoked skills provide reusable implementation discipline. Preserve unrelated work, keep planning in one context, implement exactly one frontier ticket in a fresh context, and separate Standards review from Spec review.",
+    "retry_policy": {
+      "max_attempts": 3,
+      "backoff_ms": 1000
+    },
+    "provider_id": null,
+    "reasoningEffort": null,
+    "reasoningBudgetTokens": null,
+    "forwardUpstreamReads": true,
+    "planMode": null,
+    "outputRepairModel": null
+  }
+}

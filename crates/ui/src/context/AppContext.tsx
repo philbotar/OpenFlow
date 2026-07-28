@@ -5,6 +5,8 @@ import type {
   AiProviderKind,
   AppSettings,
   BottomTab,
+  Chat,
+  ChatConfig,
   EdgeId,
   McpDiscoveryRow,
   NodeId,
@@ -40,9 +42,11 @@ import type { SettingsSectionId } from "../settings/types";
 export interface AppContextValue {
   // ── Signal accessors ──────────────────────────────────────────────────────
   workflows: Accessor<Workflow[]>;
+  chats: Accessor<Chat[]>;
   projects: Accessor<Project[]>;
   agents: Accessor<AgentDefinition[]>;
   activeWorkflowId: Accessor<string | null>;
+  activeChatId: Accessor<string | null>;
   selectedNodeId: Accessor<NodeId | null>;
   selectedEdgeId: Accessor<EdgeId | null>;
   screen: Accessor<Screen>;
@@ -102,6 +106,7 @@ export interface AppContextValue {
   chatFocusNode: Accessor<{ nodeId: NodeId; tick: number } | null>;
   pickedLiveNodeId: Accessor<NodeId | null>;
   chatSegmentOrder: Accessor<NodeId[]>;
+  chatsSectionExpanded: Accessor<boolean>;
   workflowsSectionExpanded: Accessor<boolean>;
   projectsSectionExpanded: Accessor<boolean>;
   terminalSessions: Accessor<TerminalStart[]>;
@@ -130,6 +135,7 @@ export interface AppContextValue {
 
   // ── Derived memos ─────────────────────────────────────────────────────────
   activeWorkflow: Accessor<Workflow | undefined>;
+  activeChat: Accessor<Chat | null>;
   activeProject: Accessor<Project | undefined>;
   gitRepoAvailable: Accessor<boolean>;
   independentWorkflows: Accessor<Workflow[]>;
@@ -157,11 +163,16 @@ export interface AppContextValue {
 
   // ── Workflow handlers ─────────────────────────────────────────────────────
   handleSwitchWorkflow: (workflowId: string) => void;
+  handleCreateChat: () => Promise<void>;
+  handleOpenChat: (chatId: string) => Promise<void>;
+  handleDeleteChat: (chatId: string) => Promise<void>;
+  handleUpdateChatConfig: (config: ChatConfig) => Promise<void>;
   handleCreateWorkflow: (projectId?: string) => Promise<void>;
   handleOpenAssignWorkflowPicker: (projectId: string) => void;
   closeAssignWorkflowPicker: () => void;
   workflowsAddableToProject: (projectId: string) => Workflow[];
   handleCopyWorkflowToProject: (projectId: string, workflowId: string) => Promise<void>;
+  handleDeleteWorkflow: (workflowId: string) => Promise<void>;
   handleDeleteActiveWorkflow: () => Promise<void>;
   handleOpenAgents: () => void;
   handleOpenSchedule: () => void;
@@ -173,6 +184,7 @@ export interface AppContextValue {
   scheduleDraftFromSchedule: (schedule: WorkflowSchedule) => Promise<ScheduleDraft>;
   describeWorkflowSchedule: (schedule: WorkflowSchedule) => Promise<string>;
   handleAddProject: () => Promise<void>;
+  handleRemoveProject: (projectId: string) => Promise<void>;
   handleSelectProject: (projectId: string) => void;
   handleToggleProjectExpanded: (projectId: string) => void;
   isProjectExpanded: (projectId: string) => boolean;
@@ -269,6 +281,7 @@ export interface AppContextValue {
   handleChatInputKeyDown: (event: KeyboardEvent, nodeId: NodeId) => void;
 
   // ── Workflow settings handlers ────────────────────────────────────────────
+  handleToggleChatsSection: () => void;
   handleToggleWorkflowsSection: () => void;
   handleToggleProjectsSection: () => void;
   handleToggleWorkflowSettings: () => void;

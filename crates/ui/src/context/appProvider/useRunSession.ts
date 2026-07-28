@@ -3,6 +3,8 @@ import * as desktop from "../../api";
 import type {
   AppSettings,
   BottomTab,
+  Chat,
+  ChatConfig,
   NodeId,
   ProjectFileReference,
   ProviderReadiness,
@@ -12,6 +14,7 @@ import type {
   NodeRuntimeConfigUpdate,
 } from "../../lib/types";
 import {
+  activeProfile,
   canSendIdleRunKickoff,
   createIdleRunState,
   isGlobalRunEntryNodeId,
@@ -22,6 +25,7 @@ type ToastHandler = (message: string, context?: string) => void;
 
 interface UseRunSessionParams {
   activeWorkflow: Accessor<Workflow | undefined>;
+  activeChat: Accessor<Chat | null>;
   activeWorkflowId: Accessor<string | null>;
   settings: Accessor<AppSettings>;
   readiness: Accessor<ProviderReadiness | null>;
@@ -48,6 +52,7 @@ interface UseRunSessionParams {
   flushPendingKickoff: (state: WorkflowRunState) => Promise<void>;
   handleRefreshRunHistoryRef: () => Promise<void>;
   updateActiveWorkflow: (mutator: (draft: Workflow) => void) => Workflow | null;
+  updateChat: (chat: Chat) => void;
 }
 
 export function useRunSession(params: UseRunSessionParams) {
@@ -96,6 +101,25 @@ export function useRunSession(params: UseRunSessionParams) {
     params.clearStatusToast();
   };
 
+  const beginSynchronizedRunSession = async (
+    initialState: WorkflowRunState,
+  ): Promise<WorkflowRunState> => {
+    beginRunSession(initialState);
+    if (!initialState.runId) {
+      return initialState;
+    }
+    try {
+      const liveState = await desktop.getRunState();
+      if (liveState?.runId === initialState.runId) {
+        params.publishBackendRunState(liveState);
+        return liveState;
+      }
+    } catch {
+      // The run-state listener remains the live source if this reconciliation read fails.
+    }
+    return initialState;
+  };
+
   const refreshContinuableRun = async () => {
     try {
       setContinuableRunBackend(await desktop.isRunContinuable());
@@ -103,6 +127,13 @@ export function useRunSession(params: UseRunSessionParams) {
       setContinuableRunBackend(false);
     }
   };
+
+  const runtimeUpdateForChat = (config: ChatConfig): NodeRuntimeConfigUpdate => ({
+    model: config.model ?? activeProfile(params.settings()).default_model ?? undefined,
+    approvalMode: config.approvalMode,
+    reasoningEffort: config.reasoningEffort,
+    reasoningBudgetTokens: config.reasoningBudgetTokens,
+  });
 
   const handleRun = async () => {
     const workflow = params.activeWorkflow();
@@ -124,7 +155,7 @@ export function useRunSession(params: UseRunSessionParams) {
         params.activeProviderKeyInput() || null,
         null,
       );
-      beginRunSession(nextRunState);
+      await beginSynchronizedRunSession(nextRunState);
     } catch (error) {
       params.showErrorToast(normalizeError(error));
     } finally {
@@ -132,12 +163,45 @@ export function useRunSession(params: UseRunSessionParams) {
     }
   };
 
+  const resumeChatWithInput = async (
+    chat: Chat,
+    draftNodeId: NodeId,
+    submittedText: string,
+    targetNodeId?: NodeId,
+  ) => {
+    if (!chat.runId) {
+      throw new Error("Chat has no durable run to resume.");
+    }
+    const resumed = await desktop.resumeDurableRun(
+      chat.runId,
+      params.settings(),
+      params.activeProviderKeyInput() || null,
+    );
+    const liveState = await beginSynchronizedRunSession(resumed);
+    const awaitingNodeId =
+      targetNodeId ??
+      liveState.awaitingNodeIds?.[0] ??
+      liveState.awaitingNodeId;
+    if (!awaitingNodeId) {
+      throw new Error("Chat run is not awaiting a message.");
+    }
+    const configured = await desktop.updateNodeRuntimeConfig(
+      awaitingNodeId,
+      runtimeUpdateForChat(chat.config),
+    );
+    params.publishBackendRunState(configured);
+    const next = await desktop.submitUserInput(awaitingNodeId, submittedText);
+    params.publishBackendRunState(next);
+    params.setChatDraft(draftNodeId, "");
+  };
+
   const handleStartRunFromChat = async (nodeId: NodeId) => {
     const workflow = params.activeWorkflow();
+    const chat = params.activeChat();
     if (
-      !workflow ||
+      (!workflow && !chat) ||
       !isGlobalRunEntryNodeId(nodeId) ||
-      !params.applySchemaEditor() ||
+      (!chat && !params.applySchemaEditor()) ||
       stoppingRun() ||
       startingRun()
     ) {
@@ -163,20 +227,68 @@ export function useRunSession(params: UseRunSessionParams) {
       return;
     }
     setStartingRun(true);
-    params.setPendingKickoff(submittedText);
+    if (chat?.runId && params.runState()) {
+      try {
+        await resumeChatWithInput(chat, nodeId, submittedText);
+      } catch (error) {
+        params.showErrorToast(normalizeError(error));
+      } finally {
+        setStartingRun(false);
+      }
+      return;
+    }
+    if (!chat) {
+      params.setPendingKickoff(submittedText);
+    }
     try {
-      const nextRunState = await desktop.startRun(
-        workflow,
-        params.settings(),
-        params.executionCwdForActiveWorkflow(),
-        params.activeProviderKeyInput() || null,
-        submittedText,
-      );
+      let nextRunState: WorkflowRunState;
+      if (chat) {
+        const result = await desktop.startChat(
+          chat.id,
+          params.settings(),
+          params.activeProviderKeyInput() || null,
+          submittedText,
+        );
+        params.updateChat(result.chat);
+        nextRunState = result.runState;
+      } else {
+        nextRunState = await desktop.startRun(
+          workflow!,
+          params.settings(),
+          params.executionCwdForActiveWorkflow(),
+          params.activeProviderKeyInput() || null,
+          submittedText,
+        );
+      }
       params.setChatDraft(nodeId, "");
-      beginRunSession(nextRunState);
-      await params.flushPendingKickoff(nextRunState);
+      const liveState = await beginSynchronizedRunSession(nextRunState);
+      if (!chat) {
+        await params.flushPendingKickoff(liveState);
+      }
     } catch (error) {
       params.setPendingKickoff(null);
+      params.showErrorToast(normalizeError(error));
+    } finally {
+      setStartingRun(false);
+    }
+  };
+
+  const handleResumeChatFromInput = async (nodeId: NodeId) => {
+    const chat = params.activeChat();
+    if (!chat?.runId || stoppingRun() || startingRun()) {
+      return;
+    }
+    let submittedText: string;
+    try {
+      submittedText = await params.resolveChatSubmittedText(nodeId);
+    } catch (error) {
+      params.showErrorToast(normalizeError(error));
+      return;
+    }
+    setStartingRun(true);
+    try {
+      await resumeChatWithInput(chat, nodeId, submittedText, nodeId);
+    } catch (error) {
       params.showErrorToast(normalizeError(error));
     } finally {
       setStartingRun(false);
@@ -193,7 +305,7 @@ export function useRunSession(params: UseRunSessionParams) {
         params.settings(),
         params.activeProviderKeyInput() || null,
       );
-      beginRunSession(nextRunState);
+      await beginSynchronizedRunSession(nextRunState);
     } catch (error) {
       params.showErrorToast(normalizeError(error));
     } finally {
@@ -322,7 +434,7 @@ export function useRunSession(params: UseRunSessionParams) {
         params.activeProviderKeyInput() || null,
       );
       setReplayRunId(null);
-      beginRunSession(nextRunState);
+      await beginSynchronizedRunSession(nextRunState);
       await params.handleRefreshRunHistoryRef();
     } catch (error) {
       params.showErrorToast(normalizeError(error));
@@ -345,6 +457,35 @@ export function useRunSession(params: UseRunSessionParams) {
     try {
       const nextRunState = await desktop.submitToolApproval(approvalId, allow);
       params.publishBackendRunState(nextRunState);
+    } catch (error) {
+      params.showErrorToast(normalizeError(error));
+    }
+  };
+
+  const handleUpdateChatConfig = async (config: ChatConfig) => {
+    const chat = params.activeChat();
+    if (!chat) {
+      return;
+    }
+    try {
+      const updated = await desktop.updateChatConfig(chat.id, config);
+      params.updateChat(updated);
+      const state = params.runState();
+      if (!state?.active) {
+        return;
+      }
+      const nodeId =
+        state.awaitingNodeIds?.[0] ??
+        state.awaitingNodeId ??
+        Object.keys(state.statusByNode)[0];
+      if (!nodeId) {
+        return;
+      }
+      const next = await desktop.updateNodeRuntimeConfig(
+        nodeId,
+        runtimeUpdateForChat(updated.config),
+      );
+      params.publishBackendRunState(next);
     } catch (error) {
       params.showErrorToast(normalizeError(error));
     }
@@ -402,6 +543,7 @@ export function useRunSession(params: UseRunSessionParams) {
     beginRunSession,
     handleRun,
     handleStartRunFromChat,
+    handleResumeChatFromInput,
     handleContinueRun,
     handleStopRun,
     handleInterruptNode,
@@ -413,6 +555,7 @@ export function useRunSession(params: UseRunSessionParams) {
     handleResumeDurableRun,
     searchProjectFileReferences,
     handleToolApproval,
+    handleUpdateChatConfig,
     handleUpdateNodeRuntimeConfig,
   };
 }

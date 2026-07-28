@@ -67,6 +67,16 @@ pub fn new_in_memory_snapshot_store(
     Arc::new(crate::tools::edit::hashline::snapshots::InMemorySnapshotStore::new())
 }
 
+async fn close_mcp_after_setup_error(
+    clients: &crate::adapters::mcp::McpRunClients,
+    error: String,
+) -> String {
+    if let Err(close_error) = clients.close().await {
+        log::warn!("failed to close MCP clients after run setup error: {close_error}");
+    }
+    error
+}
+
 pub(super) async fn wire_run<A>(
     params: InteractiveWorkflowRunParams<A>,
     event_tx: tokio::sync::mpsc::UnboundedSender<super::super::ExecutionEvent>,
@@ -118,10 +128,12 @@ where
         .await
         .map_err(|error| error.to_string())?;
 
-    let definitions = mcp_clients
-        .list_all_tool_definitions()
-        .await
-        .map_err(|error| error.to_string())?;
+    let definitions = match mcp_clients.list_all_tool_definitions().await {
+        Ok(definitions) => definitions,
+        Err(error) => {
+            return Err(close_mcp_after_setup_error(&mcp_clients, error.to_string()).await);
+        }
+    };
     let mcp_tools = definitions
         .into_iter()
         .map(|definition| crate::tool::registry::RegisteredTool {
@@ -129,9 +141,9 @@ where
             kind: crate::tool::registry::BuiltinToolKind::Mcp,
         })
         .collect();
-    tool_registry
-        .extend_mcp(mcp_tools)
-        .map_err(|error| error.to_string())?;
+    if let Err(error) = tool_registry.extend_mcp(mcp_tools) {
+        return Err(close_mcp_after_setup_error(&mcp_clients, error.to_string()).await);
+    }
 
     if search.enabled
         && search.has_configured_keys()
@@ -140,7 +152,12 @@ where
         tool_registry.register_web_search();
     }
 
-    let artifacts = ArtifactStore::new(artifact_root).map_err(|error| error.to_string())?;
+    let artifacts = match ArtifactStore::new(artifact_root) {
+        Ok(artifacts) => artifacts,
+        Err(error) => {
+            return Err(close_mcp_after_setup_error(&mcp_clients, error.to_string()).await);
+        }
+    };
 
     let tool_runner = Arc::new(
         ToolRunner::new(

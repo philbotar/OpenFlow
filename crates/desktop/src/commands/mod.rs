@@ -1,6 +1,7 @@
 pub mod agent;
 pub mod authoring;
 pub mod bootstrap;
+pub mod chat;
 pub mod git;
 pub mod project;
 pub mod run;

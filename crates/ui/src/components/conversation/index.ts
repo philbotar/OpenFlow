@@ -1,4 +1,5 @@
 export { ChatPanel } from "./ChatPanel";
+export { ChatRuntimeControls } from "./ChatRuntimeControls";
 export { PostRunSuggestions } from "./PostRunSuggestions";
 export { ComposerInput } from "./ComposerInput";
 export { Conversation, ConversationContent, ConversationScrollButton } from "./Conversation";
@@ -23,3 +24,7 @@ export { ToolBubble } from "./ToolBubble";
 export type { ToolBubbleProps } from "./ToolBubble";
 export { ToolStackBubble } from "./ToolStackBubble";
 export type { ToolStackBubbleProps } from "./ToolStackBubble";
+export {
+  formatRunTraceLabel,
+  formatRunTraceMessage,
+} from "./toolBubbleState";

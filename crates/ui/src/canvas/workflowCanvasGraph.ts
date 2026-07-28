@@ -34,7 +34,7 @@ export function graphStructureSignature(graph: WorkflowCanvasGraph | null): stri
 }
 
 function edgeStrokeForTheme(colorMode: "light" | "dark") {
-  return colorMode === "dark" ? "#4b5568" : "#c3cbda";
+  return colorMode === "dark" ? "#55555c" : "#c3cbda";
 }
 
 export function backgroundDotForTheme(colorMode: "light" | "dark") {

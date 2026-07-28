@@ -13,6 +13,7 @@ import { AgentsScreen } from "./screens/AgentsScreen";
 import { EditorScreen } from "./screens/EditorScreen";
 import { WorkflowAuthoringScreen } from "./screens/WorkflowAuthoringScreen";
 import { ScheduleScreen } from "./screens/ScheduleScreen";
+import { ChatScreen } from "./screens/ChatScreen";
 import { BANNER_DISMISS_MS } from "@/lib/utils";
 
 function ScreenRouter() {
@@ -21,6 +22,9 @@ function ScreenRouter() {
     <div class="screen-router">
       <div class="screen-view">
         <Switch>
+          <Match when={ctx.screen() === "chat"}>
+            <ChatScreen />
+          </Match>
           <Match when={ctx.screen() === "editor"}>
             <EditorScreen />
           </Match>
@@ -50,10 +54,10 @@ function AppToaster() {
 
   return (
     <Toaster
+      theme={ctx.resolvedTheme()}
       position="top-right"
       offset={{ top: topOffset(), right: "16px" }}
       visibleToasts={1}
-      richColors
       closeButton
       duration={BANNER_DISMISS_MS}
       style={{

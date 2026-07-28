@@ -44,6 +44,9 @@
   --base-indigo-500: #6f7cf7;
   --base-indigo-600: #5360d9;
   --base-indigo-soft: rgba(111, 124, 247, 0.18);
+  --base-action-500: var(--base-indigo-500);
+  --base-action-600: var(--base-indigo-600);
+  --base-action-soft: var(--base-indigo-soft);
   --base-green-600: #2f8b63;
   --base-green-soft: #e7f6ee;
   --base-amber-600: #b7821b;
@@ -62,9 +65,10 @@
   --text-tertiary: var(--base-ink-500);
   --border-subtle: rgba(24, 24, 27, 0.08);
   --border-strong: rgba(24, 24, 27, 0.12);
-  --accent-primary: var(--base-indigo-500);
-  --accent-primary-hover: var(--base-indigo-600);
+  --accent-primary: var(--base-action-500);
+  --accent-primary-hover: var(--base-action-600);
   --accent-soft: var(--base-sand-300);
+  --action-foreground: #ffffff;
   --status-success: var(--base-green-600);
   --status-success-soft: var(--base-green-soft);
   --status-warning: var(--base-amber-600);
@@ -73,6 +77,8 @@
   --status-danger-soft: var(--base-red-soft);
   --update-badge: #2563eb;
   --update-badge-ring: var(--sidebar-bg);
+  --menu-row-height: 30px;
+  --menu-row-padding-inline: 8px;
   --control-size-md: 36px;
   --composer-input-max-rows: 4;
   --composer-input-min-height: var(--control-size-md);
@@ -132,6 +138,10 @@
   --chat-segment-gap: 20px;
   --chat-item-gap: 16px;
   --chat-segment-header-pad: 8px;
+  --direct-chat-content-width: 760px;
+  --direct-chat-horizontal-gutter: 48px;
+  --direct-chat-compact-horizontal-gutter: 32px;
+  --direct-chat-transcript-top-space: 48px;
   --dock-surface: var(--dock-bg);
   --dock-tab-inset: 12px 14px 14px;
   --dock-tab-feed-gap: 10px;
@@ -164,7 +174,7 @@
   --text-muted: var(--text-secondary);
   --text-subtle: var(--text-tertiary);
   --accent: #111111;
-  --focus: var(--base-indigo-soft);
+  --focus: var(--base-action-soft);
   --focus-strong: var(--accent-primary);
   --success: var(--status-success);
   --success-soft: var(--status-success-soft);
@@ -206,18 +216,21 @@
   color-scheme: dark;
 
   /* ── Layer 1: base palette (dark) ── */
-  --base-sand-50: #171a22;
-  --base-sand-100: #12141a;
-  --base-sand-200: #141820;
-  --base-sand-300: #2a3140;
-  --base-sand-400: #1a1e28;
-  --base-sand-500: #232836;
-  --base-ink-900: #f3f4f6;
-  --base-ink-700: #a6adbb;
-  --base-ink-500: #7d8596;
+  --base-sand-50: #181818;
+  --base-sand-100: #101010;
+  --base-sand-200: #141414;
+  --base-sand-300: #303032;
+  --base-sand-400: #1b1b1c;
+  --base-sand-500: #242425;
+  --base-ink-900: #f2f2f3;
+  --base-ink-700: #b0b0b3;
+  --base-ink-500: #85858b;
   --base-indigo-500: #818cf8;
   --base-indigo-600: #6366f1;
   --base-indigo-soft: rgba(129, 140, 248, 0.22);
+  --base-action-500: #e8e8ea;
+  --base-action-600: #ffffff;
+  --base-action-soft: rgba(255, 255, 255, 0.14);
   --base-green-600: #4ade80;
   --base-green-soft: rgba(74, 222, 128, 0.12);
   --base-amber-600: #fbbf24;
@@ -227,8 +240,8 @@
 
   /* ── Layer 2: semantic UI tokens ── */
   --surface-ground: var(--base-sand-100);
-  --surface-panel: rgba(28, 32, 42, 0.88);
-  --surface-raised: rgba(30, 34, 44, 0.9);
+  --surface-panel: rgba(28, 28, 29, 0.9);
+  --surface-raised: rgba(32, 32, 33, 0.92);
   --surface-muted: var(--base-sand-400);
   --surface-hover: rgba(255, 255, 255, 0.06);
   --text-primary: var(--base-ink-900);
@@ -236,9 +249,10 @@
   --text-tertiary: var(--base-ink-500);
   --border-subtle: rgba(255, 255, 255, 0.08);
   --border-strong: rgba(255, 255, 255, 0.14);
-  --accent-primary: var(--base-indigo-500);
-  --accent-primary-hover: var(--base-indigo-600);
+  --accent-primary: var(--base-action-500);
+  --accent-primary-hover: var(--base-action-600);
   --accent-soft: var(--base-sand-300);
+  --action-foreground: #111111;
   --status-success: var(--base-green-600);
   --status-success-soft: var(--base-green-soft);
   --status-warning: var(--base-amber-600);
@@ -251,16 +265,16 @@
   /* ── Legacy bridge ── */
   --app-bg: var(--surface-ground);
   --app-bg-strong: var(--base-sand-50);
-  --sidebar-bg: rgba(20, 23, 31, 0.92);
+  --sidebar-bg: rgba(18, 18, 19, 0.94);
   --surface: var(--surface-panel);
-  --surface-strong: #1f2430;
+  --surface-strong: #242425;
   --surface-emphasis: var(--base-sand-500);
   --border: var(--border-subtle);
   --text: var(--text-primary);
   --text-muted: var(--text-secondary);
   --text-subtle: var(--text-tertiary);
   --accent: #f8fafc;
-  --focus: var(--base-indigo-soft);
+  --focus: var(--base-action-soft);
   --focus-strong: var(--accent-primary);
   --success: var(--status-success);
   --success-soft: var(--status-success-soft);
@@ -270,19 +284,19 @@
   --danger-soft: var(--status-danger-soft);
   --shadow-soft: 0 18px 50px rgba(0, 0, 0, 0.35);
   --shadow-panel: 0 12px 30px rgba(0, 0, 0, 0.28);
-  --canvas-edge-stroke: #4b5568;
+  --canvas-edge-stroke: #55555c;
   --canvas-bg-dot: rgba(255, 255, 255, 0.08);
-  --input-bg: rgba(26, 30, 40, 0.96);
-  --chrome-bg: rgba(24, 27, 36, 0.96);
-  --raised-surface: rgba(30, 34, 44, 0.9);
-  --bar-bg: rgba(24, 27, 36, 0.92);
-  --dock-bg: rgba(20, 22, 30, 0.98);
-  --composer-bg: rgba(34, 38, 50, 0.92);
+  --input-bg: rgba(27, 27, 28, 0.96);
+  --chrome-bg: rgba(22, 22, 23, 0.96);
+  --raised-surface: rgba(32, 32, 33, 0.92);
+  --bar-bg: rgba(22, 22, 23, 0.94);
+  --dock-bg: rgba(16, 16, 17, 0.98);
+  --composer-bg: rgba(33, 33, 34, 0.94);
   --hover-overlay: rgba(255, 255, 255, 0.06);
   --sidebar-hover: rgba(255, 255, 255, 0.04);
-  --sidebar-active: rgba(129, 140, 248, 0.1);
-  --sidebar-active-border: rgba(129, 140, 248, 0.14);
-  --panel-surface: rgba(28, 32, 42, 0.92);
+  --sidebar-active: rgba(255, 255, 255, 0.08);
+  --sidebar-active-border: rgba(255, 255, 255, 0.1);
+  --panel-surface: rgba(28, 28, 29, 0.94);
 
   --scrollbar-thumb: rgba(255, 255, 255, 0.18);
   --scrollbar-thumb-hover: rgba(255, 255, 255, 0.32);

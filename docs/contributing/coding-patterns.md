@@ -56,8 +56,9 @@ Keep these execution rules in `crates/orchestration/src/run/**` and `crates/engi
 2. **Execution cwd** - resolved at run start from the bound project's `default_execution_cwd`, else the process cwd. Filesystem tools run against this path.
 3. **Callable agents** - `AgentNodeConfig.callable_agents` (or `allow_all_callable_agents`) is snapshotted at run start via `engine::resolve_callable_agent_snapshots` into `CallableAgent` records; persisted agents use the same type (`orchestration::AgentDefinition` alias). Invocable through runtime builtins `openflow_call_subagent` and `openflow_declare_subagents`.
 4. **Provider override** - when `WorkflowSettings.provider_id` is set, it overrides the active settings provider for that run.
-5. **Workflow storage split** - app-local workflows live in `workflows.json`; project-linked workflows persist under `{project}/.flow/workflows/`. `AppBackend` merges both on load.
-6. **Tool concurrency** - shared tools may run in parallel within a batch; exclusive tools acquire a per-tool semaphore in `ToolPortImpl`.
+5. **Model default** - at run prep, a node with an empty `AgentNodeConfig.model` inherits the active `ProviderProfile.default_model`; an explicit node model always wins.
+6. **Workflow storage split** - app-local workflows live in `workflows.json`; project-linked workflows persist under `{project}/.flow/workflows/`. `AppBackend` merges both on load.
+7. **Tool concurrency** - shared tools may run in parallel within a batch; exclusive tools acquire a per-tool semaphore in `ToolPortImpl`.
 
 ## Persistence conventions
 

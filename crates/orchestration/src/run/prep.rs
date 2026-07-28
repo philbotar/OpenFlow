@@ -9,13 +9,32 @@ use engine::Workflow;
 pub fn prepare_workflow_for_execution(workflow: &mut Workflow, profile: Option<&ProviderProfile>) {
     apply_workflow_reasoning_defaults(workflow);
     if let Some(profile) = profile {
+        apply_provider_model_default(workflow, profile);
         apply_provider_reasoning_defaults(workflow, profile);
+    }
+}
+
+fn apply_provider_model_default(workflow: &mut Workflow, profile: &ProviderProfile) {
+    let Some(default_model) = profile
+        .default_model
+        .as_ref()
+        .map(|model| model.trim())
+        .filter(|model| !model.is_empty())
+    else {
+        return;
+    };
+
+    for node in &mut workflow.nodes {
+        if node.agent.model.trim().is_empty() {
+            node.agent.model = default_model.to_string();
+        }
     }
 }
 
 /// Apply workflow then provider reasoning defaults to unset nodes.
 pub fn apply_reasoning_defaults(workflow: &mut Workflow, profile: &ProviderProfile) {
-    prepare_workflow_for_execution(workflow, Some(profile));
+    apply_workflow_reasoning_defaults(workflow);
+    apply_provider_reasoning_defaults(workflow, profile);
 }
 
 /// Apply workflow-level reasoning defaults to nodes that have no per-node override.
@@ -139,6 +158,31 @@ mod tests {
             workflow.nodes[0].agent.reasoning_effort,
             Some("medium".to_string())
         );
+    }
+
+    #[test]
+    fn prepare_workflow_for_execution_applies_provider_default_model() {
+        let mut workflow = sample_workflow();
+        let mut profile =
+            ProviderProfile::from_spec(provider_spec(&ProviderId::from("anthropic")).unwrap());
+        profile.default_model = Some("profile-default-model".to_string());
+
+        prepare_workflow_for_execution(&mut workflow, Some(&profile));
+
+        assert_eq!(workflow.nodes[0].agent.model, "profile-default-model");
+    }
+
+    #[test]
+    fn prepare_workflow_for_execution_preserves_node_model_override() {
+        let mut workflow = sample_workflow();
+        workflow.nodes[0].agent.model = "node-model".to_string();
+        let mut profile =
+            ProviderProfile::from_spec(provider_spec(&ProviderId::from("anthropic")).unwrap());
+        profile.default_model = Some("profile-default-model".to_string());
+
+        prepare_workflow_for_execution(&mut workflow, Some(&profile));
+
+        assert_eq!(workflow.nodes[0].agent.model, "node-model");
     }
 
     #[test]

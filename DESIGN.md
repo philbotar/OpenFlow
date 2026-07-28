@@ -1,6 +1,6 @@
 ---
 name: OpenFlow
-description: Visual IDE for multi-agent workflows — warm sand surfaces, indigo actions, tonal depth.
+description: Visual IDE for multi-agent workflows — warm sand light mode, neutral charcoal dark mode, tonal depth.
 colors:
   sand-ground: "#f6f3ed"
   sand-strong: "#fcfbf8"
@@ -17,6 +17,14 @@ colors:
   status-warning: "#b7821b"
   status-danger: "#b04d57"
   input-bg: "#fffffff0"
+  dark-ground: "#101010"
+  dark-strong: "#181818"
+  dark-panel: "#1c1c1de6"
+  dark-raised: "#202021eb"
+  dark-text-primary: "#f2f2f3"
+  dark-text-secondary: "#b0b0b3"
+  dark-action: "#e8e8ea"
+  dark-action-text: "#111111"
 typography:
   display:
     fontFamily: "-apple-system-body, ui-sans-serif, system-ui, sans-serif"
@@ -101,13 +109,13 @@ components:
 
 ## Overview
 
-OpenFlow is a desktop workflow IDE: canvas graph, conversation dock, inspector panels, settings. Design serves the task — users spend hours wiring agents, approving tools, reading run output. Surfaces stay warm and quiet; indigo marks primary actions and selection; the canvas and chat carry visual energy.
+OpenFlow is a desktop workflow IDE: canvas graph, conversation dock, inspector panels, settings. Design serves the task — users spend hours wiring agents, approving tools, reading run output. Light surfaces stay warm and quiet. Dark surfaces use neutral charcoal and black. Tonal contrast marks hierarchy; the canvas and chat carry visual energy.
 
 Light theme is default (`color-scheme: light` on `:root`). Dark theme via `data-theme="dark"` on `<html>`. Tokens live in `crates/ui/src/styles/tokens.css`; patterns in `index.css` and `chat.css`. SolidJS components wrap shared class vocabulary (`Button`, `SettingsSection`, sidebar primitives).
 
 **Key Characteristics:**
 
-- **Restrained accent** — indigo on primary buttons, focus rings, active nav; not decorative wash
+- **Restrained accent** — indigo in light mode; neutral off-white actions in dark mode; never decorative wash
 - **Tonal depth** — frosted panels (`rgba` whites), border shifts, hover washes; shadows reserved for modals and primary CTAs
 - **System sans throughout** — one family, fixed rem scale; no display/body pairing
 - **Pill actions, rounded fields** — buttons use `--radius-pill`; inputs use `--radius-sm` (8px)
@@ -118,7 +126,7 @@ Explicitly rejects: gradient text, glassmorphism-as-decoration, hero-metric temp
 
 ## Colors
 
-Warm sand neutrals carry the chrome; indigo is the sole interactive accent; semantic greens/ambers/reds for status only.
+Warm sand neutrals carry light chrome. Neutral charcoal and black carry dark chrome. Indigo is the light-theme interactive accent; dark-theme actions use off-white. Semantic greens/ambers/reds remain status-only.
 
 ### Primary
 
@@ -135,13 +143,23 @@ Warm sand neutrals carry the chrome; indigo is the sole interactive accent; sema
 - **Ink Tertiary** (`#8a877f` / `--text-tertiary`): Placeholders, disabled-adjacent labels — verify contrast; bump toward secondary if borderline.
 - **Hairline** (`rgba(24, 24, 27, 0.08)` / `--border-subtle`): Inputs, dividers, button outlines on secondary.
 
+### Dark neutral
+
+- **Black Ground** (`#101010` / `--surface-ground`): Dark app and canvas foundation.
+- **Charcoal Lift** (`#181818` → `#202021`): Chrome, panels, raised controls. RGB channels stay neutral; no blue cast.
+- **Dark Ink** (`#f2f2f3`, `#b0b0b3`, `#85858b`): Primary, secondary, tertiary text.
+- **Light Action** (`#e8e8ea` / `--accent-primary`): Dark-theme primary actions and focus. Hover moves to white; `--action-foreground` keeps labels and icons black.
+- **Neutral Selection** (`rgba(255, 255, 255, 0.08)`): Active nav, segmented controls, selected rows.
+
+Dark mode does not use colored ambient gradients. Color appears only for semantic run status, warnings, errors, links, and update badges.
+
 ### Tertiary (status)
 
 - **Run Green** (`#2f8b63`), **Caution Amber** (`#b7821b`), **Stop Rose** (`#b04d57`) — chips, toasts, danger buttons only. Each has a soft background token (`--status-*-soft`).
 
 ### Named Rules
 
-**The Accent Rarity Rule.** Indigo appears on primary actions, focus, and current selection — not on static labels, section headers, or canvas decoration. If more than ~10% of a panel reads indigo, pull back.
+**The Accent Rarity Rule.** Indigo appears on light-theme primary actions and focus — not on static labels, section headers, or canvas decoration. Dark mode stays monochrome except semantic color. If more than ~10% of a panel reads colored, pull back.
 
 **The Sand Not Cream Rule.** Warmth lives in sand ink tints and accent, not a generic near-white cream body. Body bg uses `--surface-ground` and layered gradients; avoid introducing new untokenized beige hex values.
 
@@ -187,7 +205,7 @@ Dark theme scales shadow alphas up (`0.28`–`0.35`); same roles, stronger separ
 ### Buttons
 
 - **Shape:** Full pill (`--radius-pill` / 999px).
-- **Primary:** `--accent-primary` fill, white text, 10×16px padding; soft indigo drop shadow on rest.
+- **Primary:** `--accent-primary` fill, `--action-foreground` text, 10×16px padding; soft drop shadow on rest. Foreground resolves white in light mode, black in dark mode.
 - **Hover / Focus:** `--accent-primary-hover`; no scale transform (explicitly `transform: none` on hover).
 - **Secondary:** White 72% fill, `--border` outline, inset highlight; ghost variant transparent with hover wash.
 - **Danger:** `--danger-soft` background, `#9c3946` text, rose border tint.

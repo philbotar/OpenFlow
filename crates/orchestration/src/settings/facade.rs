@@ -47,6 +47,11 @@ impl SettingsFacade {
             .map_err(BackendError::from)
     }
 
+    #[must_use]
+    pub(crate) fn skill_catalog(&self) -> &dyn SkillCatalog {
+        &*self.skills
+    }
+
     /// # Errors
     /// Returns an error if the settings file cannot be read.
     pub fn load(&self) -> Result<AppSettings, BackendError> {

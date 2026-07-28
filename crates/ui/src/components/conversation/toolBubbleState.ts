@@ -1,4 +1,11 @@
-import type { ChatMessage, NodeId, ToolCallSummary, ToolCallStatus, WorkflowRunState } from "../../lib/types";
+import type {
+  ChatMessage,
+  NodeId,
+  RunTraceEntry,
+  ToolCallSummary,
+  ToolCallStatus,
+  WorkflowRunState,
+} from "../../lib/types";
 import { relativizeDisplayPath } from "../../lib/relativizePath";
 import { isProviderThinkingMessage } from "./providerThinking";
 
@@ -150,6 +157,47 @@ export function toolStackSummaryWithThinking(
 export function formatToolDisplayName(toolName: string | undefined | null): string {
   if (toolName == null) return "";
   return TOOL_DISPLAY_NAMES[toolName] ?? toolName;
+}
+
+type RunTracePresentationEntry = Pick<RunTraceEntry, "nodeLabel" | "message">;
+
+function runTraceToolAction(
+  entry: RunTracePresentationEntry,
+): { action: "running" | "retrying"; suffix: string } | null {
+  const running = `running tool ${entry.nodeLabel}`;
+  if (entry.message === running) {
+    return { action: "running", suffix: "" };
+  }
+
+  const retrying = `retrying tool ${entry.nodeLabel}`;
+  if (
+    entry.message === retrying ||
+    entry.message.startsWith(`${retrying} (`)
+  ) {
+    return {
+      action: "retrying",
+      suffix: entry.message.slice(retrying.length),
+    };
+  }
+
+  return null;
+}
+
+/** Human-readable trace label for semantic tool lifecycle rows. */
+export function formatRunTraceLabel(entry: RunTracePresentationEntry): string {
+  return runTraceToolAction(entry)
+    ? formatToolDisplayName(entry.nodeLabel)
+    : entry.nodeLabel;
+}
+
+/** Human-readable trace message while preserving retry details. */
+export function formatRunTraceMessage(entry: RunTracePresentationEntry): string {
+  const action = runTraceToolAction(entry);
+  if (!action) {
+    return entry.message;
+  }
+  const verb = action.action === "running" ? "Running" : "Retrying";
+  return `${verb} ${formatToolDisplayName(entry.nodeLabel)}${action.suffix}`;
 }
 
 export function resolveToolSummary(

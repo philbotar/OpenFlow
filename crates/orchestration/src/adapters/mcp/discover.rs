@@ -12,14 +12,47 @@ struct ScannedServer {
     source_path: PathBuf,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpParseDiagnostic {
+    pub server_id: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpParseResult {
+    pub servers: Vec<McpServerConfig>,
+    pub diagnostics: Vec<McpParseDiagnostic>,
+}
+
 pub fn parse_mcp_servers_json(content: &str) -> Option<Vec<McpServerConfig>> {
+    parse_mcp_servers_json_with_diagnostics(content).map(|result| result.servers)
+}
+
+pub fn parse_mcp_servers_json_with_diagnostics(content: &str) -> Option<McpParseResult> {
     let value: Value = serde_json::from_str(content).ok()?;
     let servers_obj = value.get("mcpServers").and_then(|v| v.as_object())?;
     let mut out = Vec::new();
+    let mut diagnostics = Vec::new();
     for (id, cfg) in servers_obj {
-        let obj = cfg.as_object()?;
-        let command = obj.get("command").and_then(|v| v.as_str())?;
-        if obj.get("url").and_then(|v| v.as_str()).is_some() && command.is_empty() {
+        let Some(obj) = cfg.as_object() else {
+            diagnostics.push(McpParseDiagnostic {
+                server_id: id.clone(),
+                message: "entry is not an object".to_string(),
+            });
+            continue;
+        };
+        let Some(command) = obj.get("command").and_then(|v| v.as_str()) else {
+            diagnostics.push(McpParseDiagnostic {
+                server_id: id.clone(),
+                message: "entry has no stdio command".to_string(),
+            });
+            continue;
+        };
+        if command.trim().is_empty() {
+            diagnostics.push(McpParseDiagnostic {
+                server_id: id.clone(),
+                message: "stdio command is empty".to_string(),
+            });
             continue;
         }
         let args = obj
@@ -49,7 +82,10 @@ pub fn parse_mcp_servers_json(content: &str) -> Option<Vec<McpServerConfig>> {
             enabled: obj.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true),
         });
     }
-    Some(out)
+    Some(McpParseResult {
+        servers: out,
+        diagnostics,
+    })
 }
 
 fn candidate_paths(home: &Path, root: &Path) -> Vec<(String, PathBuf)> {
@@ -76,10 +112,18 @@ fn scan_scanned_servers(settings: &McpSettings, root: &Path) -> BTreeMap<String,
         let Ok(content) = std::fs::read_to_string(&path) else {
             continue;
         };
-        let Some(parsed) = parse_mcp_servers_json(&content) else {
+        let Some(parsed) = parse_mcp_servers_json_with_diagnostics(&content) else {
             continue;
         };
-        for config in parsed {
+        for diagnostic in parsed.diagnostics {
+            log::warn!(
+                "skipping MCP server `{}` from {}: {}",
+                diagnostic.server_id,
+                path.display(),
+                diagnostic.message
+            );
+        }
+        for config in parsed.servers {
             if config.command.is_empty() {
                 continue;
             }
@@ -156,6 +200,24 @@ mod tests {
         let servers = super::parse_mcp_servers_json(json).expect("parse");
         assert_eq!(servers[0].id, "gh");
         assert_eq!(servers[0].command, "npx");
+    }
+
+    #[test]
+    fn parse_mcp_servers_json_skips_invalid_entries_and_keeps_valid_servers() {
+        let json = r#"{
+            "mcpServers": {
+                "valid": {"command": "server", "args": ["--stdio"]},
+                "url-only": {"url": "https://example.test/mcp"},
+                "not-an-object": "invalid",
+                "missing-command": {"args": []}
+            }
+        }"#;
+
+        let parsed = super::parse_mcp_servers_json_with_diagnostics(json).expect("parse");
+
+        assert_eq!(parsed.servers.len(), 1);
+        assert_eq!(parsed.servers[0].id, "valid");
+        assert_eq!(parsed.diagnostics.len(), 3);
     }
 
     #[test]

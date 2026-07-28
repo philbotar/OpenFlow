@@ -679,8 +679,8 @@ fn render_tool_error(error: ToolRunnerError) -> String {
 }
 
 /// Run-wide lock table for exclusive tool calls, keyed by lock key
-/// (`path:<p>`, `tool:<name>`, or node-scoped tool keys). Keys must be
-/// pre-sorted (they are, by `exclusive_lock_keys`) so overlapping
+/// (`path:<p>`, `tool:<name>`, `mcp-server:<id>`, or node-scoped tool keys).
+/// Keys must be pre-sorted (they are, by `exclusive_lock_keys`) so overlapping
 /// acquisitions cannot deadlock.
 #[derive(Default)]
 struct ExclusiveLocks {
@@ -793,6 +793,14 @@ fn exclusive_lock_keys(
     let fallback = vec![tool_fallback_key(concurrency, node_id, &call.name)];
     if concurrency == ToolConcurrency::NodeExclusive {
         return fallback;
+    }
+    if kind == Kind::Mcp {
+        let server_id = call
+            .name
+            .strip_prefix("mcp/")
+            .and_then(|name| name.split_once('/'))
+            .map_or_else(|| call.name.as_str(), |(server_id, _)| server_id);
+        return vec![format!("mcp-server:{server_id}")];
     }
     let keys = match kind {
         Kind::Write => match call.arguments.get("path").and_then(|v| v.as_str()) {
@@ -1368,14 +1376,14 @@ mod tests {
     }
 
     #[test]
-    fn exclusive_mcp_tool_keeps_per_tool_lock() {
+    fn exclusive_mcp_tools_share_a_server_lock() {
         let keys = exclusive_lock_keys(
             BuiltinToolKind::Mcp,
             ToolConcurrency::Exclusive,
             &node("a"),
-            &call("some_mcp_tool", serde_json::json!({})),
+            &call("mcp/server/write", serde_json::json!({})),
         );
-        assert_eq!(keys, vec!["tool:some_mcp_tool".to_string()]);
+        assert_eq!(keys, vec!["mcp-server:server".to_string()]);
     }
 
     #[test]

@@ -53,9 +53,11 @@ function defaultProps(overrides: Partial<Parameters<typeof ProjectFolderRow>[0]>
     onSelectProject: vi.fn(),
     onSelectWorkflow: vi.fn(),
     onRenameWorkflow: vi.fn(),
+    onDeleteWorkflow: vi.fn(),
     onCreateWorkflow: vi.fn(),
     onCreateWorkflowWithAi: vi.fn(),
     onAddExistingWorkflow: vi.fn(),
+    onRemoveProject: vi.fn(),
     setWorkflowNameInputRef: vi.fn(),
     setWorkflowNameDraft: vi.fn(),
     onWorkflowNameCommit: vi.fn(),
@@ -132,10 +134,51 @@ describe("ProjectFolderRow", () => {
     expect(onSelectWorkflow).toHaveBeenCalledWith("wf-1");
   });
 
-  test("add menu creates, creates with AI, or assigns workflows", () => {
+  test("shows the workflow options menu for project workflows", () => {
+    const onRenameWorkflow = vi.fn();
+    const onDeleteWorkflow = vi.fn();
+    dispose = render(
+      () => (
+        <ProjectFolderRow
+          {...defaultProps({
+            expanded: true,
+            onRenameWorkflow,
+            onDeleteWorkflow,
+          })}
+        />
+      ),
+      container,
+    );
+
+    (
+      container.querySelector(
+        "button[aria-label='Workflow options for Feature flow']",
+      ) as HTMLButtonElement
+    ).click();
+    const menuItems = () =>
+      Array.from(
+        container.querySelectorAll<HTMLButtonElement>("[role='menuitem']"),
+      );
+
+    menuItems().find((button) => button.textContent === "Rename")!.click();
+    expect(onRenameWorkflow).toHaveBeenCalledWith("wf-1", "Feature flow");
+
+    (
+      container.querySelector(
+        "button[aria-label='Workflow options for Feature flow']",
+      ) as HTMLButtonElement
+    ).click();
+    menuItems()
+      .find((button) => button.textContent === "Delete workflow")!
+      .click();
+    expect(onDeleteWorkflow).toHaveBeenCalledWith("wf-1");
+  });
+
+  test("project options menu creates, copies, or removes", () => {
     const onCreateWorkflow = vi.fn();
     const onCreateWorkflowWithAi = vi.fn();
     const onAddExistingWorkflow = vi.fn();
+    const onRemoveProject = vi.fn();
     dispose = render(
       () => (
         <ProjectFolderRow
@@ -143,26 +186,34 @@ describe("ProjectFolderRow", () => {
             onCreateWorkflow,
             onCreateWorkflowWithAi,
             onAddExistingWorkflow,
+            onRemoveProject,
           })}
         />
       ),
       container,
     );
 
-    (container.querySelector(".project-folder-action") as HTMLButtonElement).click();
+    const menuButton = container.querySelector(
+      "button[aria-label='Project options for Demo Project']",
+    ) as HTMLButtonElement;
+    menuButton.click();
     const items = container.querySelectorAll(".project-folder-menu-item");
-    expect(items).toHaveLength(3);
+    expect(items).toHaveLength(4);
 
     (items[0] as HTMLButtonElement).click();
     expect(onCreateWorkflow).toHaveBeenCalledTimes(1);
 
-    (container.querySelector(".project-folder-action") as HTMLButtonElement).click();
+    menuButton.click();
     (container.querySelectorAll(".project-folder-menu-item")[1] as HTMLButtonElement).click();
     expect(onCreateWorkflowWithAi).toHaveBeenCalledTimes(1);
 
-    (container.querySelector(".project-folder-action") as HTMLButtonElement).click();
+    menuButton.click();
     (container.querySelectorAll(".project-folder-menu-item")[2] as HTMLButtonElement).click();
     expect(onAddExistingWorkflow).toHaveBeenCalledTimes(1);
+
+    menuButton.click();
+    (container.querySelectorAll(".project-folder-menu-item")[3] as HTMLButtonElement).click();
+    expect(onRemoveProject).toHaveBeenCalledTimes(1);
   });
 
   test("closes menu on outside pointer down", () => {
