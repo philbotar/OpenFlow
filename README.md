@@ -1,12 +1,15 @@
 <p align="center">
-  <img src="crates/desktop/icons/icon.png" alt="OpenFlow" width="128" height="128" />
+  <img src="crates/desktop/icons/icon.png" alt="OpenFlow logo" width="128" height="128" />
 </p>
 
-<h1 align="center">OpenFlow</h1>
+<h1 align="center">OpenFlow: Visual AI Agent Workflow Builder</h1>
 
 <p align="center">
-  <strong>The visual IDE for multi-agent workflows.</strong><br/>
-  Built for repeatable pipelines, with the extensibility and feel of Claude Code.
+  <strong>Open-source desktop IDE for building, running, and debugging multi-agent LLM workflows.</strong>
+</p>
+
+<p align="center">
+  Design agent pipelines on a canvas. Orchestrate models, tools, subagents, human approvals, and MCP servers without hand-wiring prompts, provider SDKs, or state.
 </p>
 
 <p align="center">
@@ -17,20 +20,22 @@
 </p>
 
 <p align="center">
-  <a href="#what-is-openflow">What is OpenFlow?</a> ·
+  <a href="#visual-multi-agent-workflow-orchestration">Overview</a> ·
   <a href="#install">Install</a> ·
-  <a href="#features">Features</a> ·
+  <a href="#use-cases">Use cases</a> ·
+  <a href="#features-for-ai-agent-workflows">Features</a> ·
+  <a href="#supported-ai-model-providers">Providers</a> ·
   <a href="#developing">Developing</a> ·
   <a href="#contributing">Contributing</a>
 </p>
 
-## What is OpenFlow?
+## Visual multi-agent workflow orchestration
 
-Building a multi-agent LLM pipeline usually means gluing prompts, state, and provider SDKs together by hand, then debugging it blind. OpenFlow gives you a canvas instead: drag out agents, wire them into a pipeline, and watch each one think, call tools, and hand off to the next in real time.
+OpenFlow replaces hand-built prompt chains with a visual DAG editor and agent runtime. Drag AI agent nodes onto a canvas, connect their dependencies, configure prompts and tools, then watch the workflow execute in real time.
 
-Underneath the canvas is a full agent harness. Tool use, approvals, subagents, and multiple LLM providers are all built in, so what you draw is what actually runs, and runs again the same way next time.
+Each graph is an executable, repeatable LLM workflow. Independent agents run in parallel, downstream nodes receive upstream output, and structured results move through the pipeline automatically.
 
-You can also choose how it runs. Keep it interactive like a Claude Code session, pausing to chat and approve each tool call, or switch a workflow to auto-approve and let it run standalone from start to finish.
+Use OpenFlow like a Claude Code-style interactive agent session, with chat and tool approvals, or enable auto-approve for an autonomous run. Project workflows can live in Git under `.flow/workflows/`.
 
 ## Install
 
@@ -40,7 +45,15 @@ Grab the latest build from [Releases](https://github.com/philbotar/OpenFlow/rele
 
 Want to build the installer yourself instead? See [Developing](#developing) below.
 
-## Features
+## Use cases
+
+- **AI coding workflows** — connect planning, implementation, code review, testing, and release agents in one visible pipeline.
+- **Parallel research** — fan work out across specialist agents, then merge their findings into one structured result.
+- **Human-in-the-loop automation** — pause for questions or tool approval before an agent edits files or runs commands.
+- **Local AI agent workflows** — use Ollama or LM Studio while keeping workflow definitions and project state on your machine.
+- **Repeatable LLM pipelines** — version prompts, agent settings, graph structure, and project context alongside your code.
+
+## Features for AI agent workflows
 
 <table>
 <tr>
@@ -64,14 +77,14 @@ Nodes in the same topological layer run concurrently. Downstream agents receive 
 
 ### Tools & subagents
 
-Agents can read/write files, run shell commands, and search code, each gated by an approval policy you control. Hand off a sub-task to another saved agent mid-run with no manual wiring.
+Agents can read and edit files, run shell commands, search code or the web, and call MCP tools. Approval policies gate writes, commands, and subagent delegation.
 
 </td>
 <td width="50%" valign="top">
 
 ### Multi-provider LLM support
 
-Point any node at an OpenAI-compatible or Anthropic model. Mix providers in one workflow, or swap a model out, without touching the rest of the pipeline.
+Use hosted APIs, ChatGPT OAuth, Amazon Bedrock, local Ollama or LM Studio, and custom OpenAI-compatible endpoints. Select a provider per workflow and models per node.
 
 </td>
 </tr>
@@ -87,11 +100,19 @@ Workflows save automatically, either in the app or checked into your repo, so th
 
 ### Interactive or standalone runs
 
-Run it like a Claude Code session, pausing to approve tools and chat with individual nodes as thinking and results stream in, or flip on auto-approve and let the whole workflow run to completion on its own.
+Chat with individual agents, inspect streamed reasoning and results, and approve tools as they run. Or enable auto-approve and let the workflow finish unattended.
 
 </td>
 </tr>
 </table>
+
+## Supported AI model providers
+
+Built-in profiles: **OpenAI**, **Anthropic**, **ChatGPT (Codex)**, **Amazon Bedrock**, **OpenRouter**, **Groq**, **Together AI**, **Fireworks AI**, **DeepSeek**, **xAI / Grok**, **Mistral AI**, **Perplexity**, and **Gemini**.
+
+Run local models through **Ollama** or **LM Studio**. Connect other gateways with a custom OpenAI-compatible endpoint.
+
+See the [provider setup guide](docs/guides/provider-setup.md) for auth, endpoints, model selection, and the full compatibility matrix.
 
 ## Developing
 
@@ -148,7 +169,9 @@ cargo nextest run -p orchestration --test workflow_acceptance --no-capture
 
 ## Contributing
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the PR checklist. Classify your change with [`docs/contributing/development-lanes.md`](docs/contributing/development-lanes.md), run `./scripts/verify.sh`, and update [`CHANGELOG.md`](CHANGELOG.md) for user-visible changes.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the PR checklist.
+
+Classify your change with [`docs/contributing/development-lanes.md`](docs/contributing/development-lanes.md), run `./scripts/verify.sh`, and update [`CHANGELOG.md`](CHANGELOG.md) for user-visible changes.
 
 ## License
 
