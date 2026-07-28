@@ -21,11 +21,15 @@ export function ChatRuntimeControls() {
     if (defaultModel && !models.includes(defaultModel)) {
       models.unshift(defaultModel);
     }
-    return models.map((model) => ({ value: model, label: model }));
+    return [
+      {
+        value: "",
+        label: defaultModel ? `Default (${defaultModel})` : "Default model",
+      },
+      ...models.map((model) => ({ value: model, label: model })),
+    ];
   });
-  const selectedModel = createMemo(
-    () => chat()?.config.model ?? ctx.activeProfileMemo().default_model ?? "",
-  );
+  const selectedModel = createMemo(() => chat()?.config.model ?? "");
   const effortOptions = createMemo(() =>
     reasoningEffortOptions(ctx.activeProfileMemo()),
   );

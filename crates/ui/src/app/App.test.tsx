@@ -3719,7 +3719,7 @@ describe("Ad-hoc chats", () => {
       ).toBe("Project: None");
       expect(
         container.querySelector('[aria-label="Chat model"]')?.textContent,
-      ).toBe("Model: gpt-4.1-mini");
+      ).toBe("Model: Default (gpt-4.1-mini)");
       expect(
         container.querySelector('[aria-label="Chat tool approval mode"]')?.textContent,
       ).toBe("Approval: Read only");
@@ -3741,6 +3741,24 @@ describe("Ad-hoc chats", () => {
       expect(apiMocks.updateChatConfig).toHaveBeenCalledWith(
         "chat-1",
         expect.objectContaining({ model: "gpt-5" }),
+      );
+
+      (container.querySelector('[aria-label="Chat model"]') as HTMLButtonElement).click();
+      await flush();
+      const defaultModelOption = Array.from(
+        container.querySelectorAll(".text-select-option"),
+      ).find(
+        (element) => element.textContent === "Default (gpt-4.1-mini)",
+      ) as HTMLButtonElement;
+      defaultModelOption.click();
+      await flush();
+
+      expect(
+        container.querySelector('[aria-label="Chat model"]')?.textContent,
+      ).toBe("Model: Default (gpt-4.1-mini)");
+      expect(apiMocks.updateChatConfig).toHaveBeenCalledWith(
+        "chat-1",
+        expect.objectContaining({ model: null }),
       );
 
       (container.querySelector('[aria-label="Chat project"]') as HTMLButtonElement).click();
