@@ -46,12 +46,13 @@ impl OpenAiHttpClient {
 impl HttpClientExt for OpenAiHttpClient {
     fn send<T, U>(
         &self,
-        request: Request<T>,
+        mut request: Request<T>,
     ) -> impl Future<Output = Result<Response<LazyBody<U>>>> + Send + 'static
     where
         T: Into<Bytes> + Send,
         U: From<Bytes> + Send + 'static,
     {
+        strip_empty_bearer_auth(&mut request);
         let response = self.inner.send::<T, Bytes>(request);
         let debug_output = self.debug_output;
         let provider_label = self.provider_label.clone();
@@ -70,23 +71,36 @@ impl HttpClientExt for OpenAiHttpClient {
 
     fn send_multipart<U>(
         &self,
-        request: Request<MultipartForm>,
+        mut request: Request<MultipartForm>,
     ) -> impl Future<Output = Result<Response<LazyBody<U>>>> + Send + 'static
     where
         U: From<Bytes> + Send + 'static,
     {
+        strip_empty_bearer_auth(&mut request);
         self.inner.send_multipart(request)
     }
 
     fn send_streaming<T>(
         &self,
-        request: Request<T>,
+        mut request: Request<T>,
     ) -> impl Future<Output = Result<StreamingResponse>> + Send
     where
         T: Into<Bytes> + Send,
     {
         // Streaming recovery of SSE argument fragments is deferred (slice 2 scope).
+        strip_empty_bearer_auth(&mut request);
         self.inner.send_streaming(request)
+    }
+}
+
+fn strip_empty_bearer_auth<T>(request: &mut Request<T>) {
+    let empty_bearer = request
+        .headers()
+        .get("authorization")
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.trim() == "Bearer");
+    if empty_bearer {
+        request.headers_mut().remove("authorization");
     }
 }
 

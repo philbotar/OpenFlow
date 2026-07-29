@@ -3,21 +3,23 @@ use crate::error::BackendError;
 #[cfg(test)]
 use crate::run::execution::NodeInterrupts;
 use crate::run::execution::{
-    apply_event_to_run_state, initial_engine_checkpoint, record_entrypoint_message,
-    resolve_execution_cwd, should_record_entrypoint_in_chat, ExecutionAction, ExecutionEvent,
+    apply_event_to_run_state, initial_engine_checkpoint,
+    record_entrypoint_message_with_attachments, resolve_execution_cwd, ExecutionAction,
+    ExecutionEvent, ResumeContinuation,
 };
 use crate::run::persistence::{
-    workflow_hash, PendingRunCheckpoint, RunCheckpointReason, RunRecord, RunStatus, RunStoreRoot,
+    run_name, workflow_hash, PendingRunCheckpoint, RunCheckpointReason, RunRecord, RunStatus,
+    RunStoreRoot,
 };
-use crate::run::ports::RunCheckpointStore;
+use crate::run::ports::{RunAttachmentStore, RunCheckpointStore};
+use crate::run::skill_invocation::skill_prompt_for_ids;
 use crate::run::state::{AgentStatus, WorkflowRunState};
 use crate::tools::edit::preview::preview_file_edit;
 use chrono::Utc;
 #[cfg(test)]
 use engine::Workflow;
 use engine::{
-    apply_runtime_patch_to_agent, execution_layers, upsert_runtime_patch, validate_workflow,
-    ChatMessage, ChatRole, NodeId,
+    apply_runtime_patch_to_agent, execution_layers, upsert_runtime_patch, validate_workflow, NodeId,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -43,6 +45,7 @@ use session::{
 
 pub struct RunCoordinator {
     runtime_handle: tokio::runtime::Handle,
+    attachment_store: Arc<dyn RunAttachmentStore>,
     session: Mutex<RunSession>,
 }
 
@@ -52,17 +55,35 @@ mod tests;
 impl RunCoordinator {
     #[must_use]
     pub fn new(runtime_handle: tokio::runtime::Handle) -> Self {
+        Self::with_attachment_store(
+            runtime_handle,
+            Arc::new(
+                crate::adapters::storage::run_attachment_store::FileRunAttachmentStore::default(),
+            ),
+        )
+    }
+
+    #[must_use]
+    pub fn with_attachment_store(
+        runtime_handle: tokio::runtime::Handle,
+        attachment_store: Arc<dyn RunAttachmentStore>,
+    ) -> Self {
         Self {
             runtime_handle,
+            attachment_store,
             session: Mutex::new(RunSession {
                 workflow: None,
                 run_state: None,
                 run_id: None,
                 run_root: None,
                 project_id: None,
+                skill_paths: Default::default(),
                 execution_cwd: None,
                 entrypoint: None,
+                entrypoint_attachments: Vec::new(),
                 artifact_root: None,
+                attachment_root: None,
+                generation: 0,
                 engine_checkpoint: None,
                 checkpoint_sink: None,
                 snapshot_store: None,
@@ -85,6 +106,7 @@ impl RunCoordinator {
     ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
         let RunStartParams {
             workflow,
+            invoked_skill_ids,
             entrypoint,
             execution_cwd,
             run_root,
@@ -109,6 +131,7 @@ impl RunCoordinator {
 
         let prepared = prepare_workflow_run(
             workflow,
+            &invoked_skill_ids,
             settings,
             transient_api_key,
             agent_store,
@@ -117,6 +140,11 @@ impl RunCoordinator {
             env,
         )?;
         let workflow = prepared.workflow.clone();
+        let run_entrypoint = entrypoint.filter(|message| !message.is_empty());
+        let entrypoint_text = run_entrypoint
+            .as_ref()
+            .map(|message| message.text.clone())
+            .filter(|text| !text.trim().is_empty());
 
         self.terminate_active_run(TerminationMode::Replaced).await;
         {
@@ -125,10 +153,13 @@ impl RunCoordinator {
         }
 
         let run_id = Uuid::new_v4().to_string();
-        let artifact_root = run_store.run_dir(&run_root, &run_id).join("artifacts");
+        let run_dir = run_store.run_dir(&run_root, &run_id);
+        let artifact_root = run_dir.join("artifacts");
+        let attachment_root = run_dir.join("attachments");
         let now_ms = Utc::now().timestamp_millis();
         let run_record = RunRecord {
             run_id: run_id.clone(),
+            name: Some(run_name(&workflow.name, entrypoint_text.as_deref())),
             workflow_id: workflow.id.to_string(),
             workflow_name: workflow.name.clone(),
             workflow_hash: workflow_hash(&workflow),
@@ -141,28 +172,68 @@ impl RunCoordinator {
             status: RunStatus::Running,
         };
         run_store.create_run(&run_root, &run_record)?;
+        let attachment_source_paths = run_entrypoint
+            .as_ref()
+            .map(|message| {
+                message
+                    .attachment_source_paths
+                    .iter()
+                    .map(PathBuf::from)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let attachment_store = Arc::clone(&self.attachment_store);
+        let attachment_root_for_ingest = attachment_root.clone();
+        let entrypoint_attachments = match self
+            .runtime_handle
+            .spawn_blocking(move || {
+                attachment_store.ingest_batch(&attachment_root_for_ingest, &attachment_source_paths)
+            })
+            .await
+        {
+            Ok(Ok(attachments)) => attachments,
+            Ok(Err(error)) => {
+                let _ = run_store.remove_run(&run_root, &run_id);
+                return Err(error.into());
+            }
+            Err(error) => {
+                let _ = run_store.remove_run(&run_root, &run_id);
+                return Err(BackendError::PreviewFailed(error.to_string()));
+            }
+        };
 
         let mut initial_state = WorkflowRunState::running_for_workflow(&workflow);
         initial_state.run_id = Some(run_id.clone());
-        if let Some(text) = entrypoint.clone().filter(|text| !text.trim().is_empty()) {
-            if let Ok(layers) = execution_layers(&workflow) {
-                if let Some(root_id) = layers.first().and_then(|layer| layer.first()) {
-                    if should_record_entrypoint_in_chat(&workflow, root_id) {
-                        record_entrypoint_message(&mut initial_state, &root_id.0, text);
-                    }
-                }
+        if entrypoint_text.is_some() || !entrypoint_attachments.is_empty() {
+            if let Some(root_id) = execution_layers(&workflow)
+                .ok()
+                .and_then(|layers| layers.first().and_then(|layer| layer.first()).cloned())
+            {
+                record_entrypoint_message_with_attachments(
+                    &mut initial_state,
+                    &root_id.0,
+                    entrypoint_text.clone().unwrap_or_default(),
+                    entrypoint_attachments.clone(),
+                );
             }
         }
         let project_repository_root = run_root
             .project_id
             .as_ref()
             .map(|_| resolved_cwd.display().to_string());
-        let initial_checkpoint = initial_engine_checkpoint(
+        let initial_checkpoint = match initial_engine_checkpoint(
             workflow.clone(),
-            entrypoint.clone(),
+            entrypoint_text.clone(),
+            entrypoint_attachments.clone(),
             project_repository_root,
-        )?;
-        persist_pending_checkpoint(
+        ) {
+            Ok(checkpoint) => checkpoint,
+            Err(error) => {
+                let _ = run_store.remove_run(&run_root, &run_id);
+                return Err(error.into());
+            }
+        };
+        if let Err(error) = persist_pending_checkpoint(
             run_store,
             &run_root,
             &run_id,
@@ -171,7 +242,10 @@ impl RunCoordinator {
                 reason: RunCheckpointReason::Started,
                 engine: initial_checkpoint,
             },
-        )?;
+        ) {
+            let _ = run_store.remove_run(&run_root, &run_id);
+            return Err(error);
+        }
 
         let resources = fresh_execution_resources(&prepared.persisted_settings);
         let initial_state_for_session = initial_state.clone();
@@ -181,16 +255,22 @@ impl RunCoordinator {
             prepared,
             RunLaunchTail {
                 spawn_input: SpawnRunInput {
-                    entrypoint: entrypoint.clone(),
+                    entrypoint: entrypoint_text.clone(),
+                    entrypoint_attachments: entrypoint_attachments.clone(),
                     execution_cwd: resolved_cwd.clone(),
                     project_id: run_root.project_id.clone(),
                     artifact_root: artifact_root.clone(),
+                    attachment_root: attachment_root.clone(),
+                    attachment_store: Arc::clone(&self.attachment_store),
                     resume_checkpoint: None,
+                    resume_continuation: None,
                 },
                 resources,
-                entrypoint,
+                entrypoint: entrypoint_text,
+                entrypoint_attachments,
                 execution_cwd: resolved_cwd,
                 artifact_root,
+                attachment_root,
             },
             |session| {
                 session.run_id = Some(run_id.clone());
@@ -213,6 +293,7 @@ impl RunCoordinator {
     ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
         let RunStartParams {
             workflow,
+            invoked_skill_ids,
             entrypoint,
             settings,
             transient_api_key,
@@ -227,6 +308,7 @@ impl RunCoordinator {
         let (
             checkpoint,
             artifact_root,
+            attachment_root,
             execution_cwd,
             snapshot_store,
             lsp_settings,
@@ -248,6 +330,10 @@ impl RunCoordinator {
                 checkpoint,
                 session
                     .artifact_root
+                    .clone()
+                    .ok_or(BackendError::NoContinuableRun)?,
+                session
+                    .attachment_root
                     .clone()
                     .ok_or(BackendError::NoContinuableRun)?,
                 session
@@ -274,6 +360,7 @@ impl RunCoordinator {
 
         let prepared = prepare_workflow_run(
             workflow,
+            &invoked_skill_ids,
             settings,
             transient_api_key,
             agent_store,
@@ -291,22 +378,32 @@ impl RunCoordinator {
             checkpoint_sink: Arc::new(parking_lot::Mutex::new(None)),
             runtime_config_store: engine::new_runtime_config_store(),
         };
+        let entrypoint_text = entrypoint
+            .map(|message| message.text)
+            .filter(|text| !text.trim().is_empty());
+        let entrypoint_attachments = Vec::new();
         finalize_run_launch(
             &self.runtime_handle,
             &self.session,
             prepared,
             RunLaunchTail {
                 spawn_input: SpawnRunInput {
-                    entrypoint: entrypoint.clone(),
+                    entrypoint: entrypoint_text.clone(),
+                    entrypoint_attachments: entrypoint_attachments.clone(),
                     execution_cwd: execution_cwd.clone(),
                     project_id,
                     artifact_root: artifact_root.clone(),
+                    attachment_root: attachment_root.clone(),
+                    attachment_store: Arc::clone(&self.attachment_store),
                     resume_checkpoint: Some(checkpoint),
+                    resume_continuation: None,
                 },
                 resources,
-                entrypoint,
+                entrypoint: entrypoint_text,
+                entrypoint_attachments,
                 execution_cwd,
                 artifact_root,
+                attachment_root,
             },
             |session| {
                 let run_id = session.run_id.clone();
@@ -447,6 +544,7 @@ impl RunCoordinator {
             if session.handle.is_none() && session.cancel_token.is_none() {
                 return None;
             }
+            session.generation = session.generation.wrapping_add(1);
             (
                 session.handle.take(),
                 session.action_tx.take(),
@@ -555,6 +653,18 @@ impl RunCoordinator {
         &self,
         params: DurableResumeParams<'_>,
     ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
+        self.resume_durable_run_with_continuation(params, None)
+            .await
+    }
+
+    /// # Errors
+    /// Returns an error when the checkpoint cannot accept the continuation or provider
+    /// configuration fails.
+    pub async fn resume_durable_run_with_continuation(
+        &self,
+        params: DurableResumeParams<'_>,
+        continuation: Option<crate::api::DurableRunContinuationInput>,
+    ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
         let workflow = params.record.workflow_snapshot.clone();
         if workflow_hash(&workflow) != params.record.workflow_hash {
             return Err(BackendError::RunWorkflowChanged(
@@ -567,6 +677,7 @@ impl RunCoordinator {
 
         let prepared = prepare_workflow_run(
             workflow,
+            &[],
             params.settings,
             params.transient_api_key,
             params.agent_store,
@@ -574,12 +685,38 @@ impl RunCoordinator {
             params.settings_store,
             params.env,
         )?;
+        let resume_continuation = continuation
+            .map(|continuation| {
+                let node_id = NodeId(continuation.node_id);
+                let checkpoint = &params.checkpoint.engine;
+                if !checkpoint.awaiting_nodes.contains(&node_id)
+                    && !checkpoint.interrupted_nodes.contains(&node_id)
+                    && !checkpoint.failed_nodes.contains_key(&node_id)
+                {
+                    return Err(BackendError::NodeNotRetryable(node_id.to_string()));
+                }
+                let skill_prompt = skill_prompt_for_ids(
+                    &continuation.invoked_skill_ids,
+                    &prepared.skill_paths,
+                    &format!("saved run continuation for node {node_id:?}"),
+                )?;
+                Ok(ResumeContinuation {
+                    node_id,
+                    text: continuation.text,
+                    skill_prompt,
+                })
+            })
+            .transpose()?;
         let engine_checkpoint = params.checkpoint.engine;
 
         self.terminate_active_run(TerminationMode::Replaced).await;
 
         let resources = fresh_execution_resources(&prepared.persisted_settings);
         let artifact_root = PathBuf::from(&params.record.artifact_root);
+        let attachment_root = params
+            .run_store
+            .run_dir(&params.root, params.run_id)
+            .join("attachments");
         let execution_cwd = PathBuf::from(&params.record.execution_cwd);
         let run_root = params.root.clone();
         let run_id = params.run_id.to_string();
@@ -587,6 +724,13 @@ impl RunCoordinator {
         let mut resumed_state = params.checkpoint.projection;
         resumed_state.active = true;
         resumed_state.run_id = Some(run_id.clone());
+        if let Some(continuation) = &resume_continuation {
+            crate::run::execution::record_user_input(
+                &mut resumed_state,
+                &continuation.node_id.0,
+                continuation.text.clone(),
+            );
+        }
 
         let (state, event_rx) = finalize_run_launch(
             &self.runtime_handle,
@@ -595,15 +739,21 @@ impl RunCoordinator {
             RunLaunchTail {
                 spawn_input: SpawnRunInput {
                     entrypoint: None,
+                    entrypoint_attachments: Vec::new(),
                     execution_cwd: execution_cwd.clone(),
                     project_id: project_id.clone(),
                     artifact_root: artifact_root.clone(),
+                    attachment_root: attachment_root.clone(),
+                    attachment_store: Arc::clone(&self.attachment_store),
                     resume_checkpoint: Some(engine_checkpoint),
+                    resume_continuation,
                 },
                 resources,
                 entrypoint: None,
+                entrypoint_attachments: Vec::new(),
                 execution_cwd,
                 artifact_root,
+                attachment_root,
             },
             |session| {
                 session.run_state = Some(resumed_state.clone());
@@ -630,37 +780,119 @@ impl RunCoordinator {
         node_id: &str,
         text: String,
     ) -> Result<WorkflowRunState, BackendError> {
-        let mut session = self.session.lock().await;
-        let run_state = require_run_state(&session)?;
+        self.submit_user_input_with_skill_ids(node_id, text, &[])
+            .await
+    }
+
+    pub async fn submit_user_input_with_skill_ids(
+        &self,
+        node_id: &str,
+        text: String,
+        skill_ids: &[String],
+    ) -> Result<WorkflowRunState, BackendError> {
+        self.submit_user_message_with_skill_ids(
+            node_id,
+            crate::api::UserMessageInput::text(text),
+            skill_ids,
+        )
+        .await
+    }
+
+    pub async fn submit_user_message_with_skill_ids(
+        &self,
+        node_id: &str,
+        message: crate::api::UserMessageInput,
+        skill_ids: &[String],
+    ) -> Result<WorkflowRunState, BackendError> {
         let node_id_key = NodeId(node_id.to_string());
-        if !run_state.awaiting_node_ids.contains(&node_id_key)
-            && run_state.awaiting_node_id.as_ref() != Some(&node_id_key)
-        {
-            let expected = run_state
-                .awaiting_node_id
-                .clone()
-                .or_else(|| run_state.awaiting_node_ids.first().cloned())
-                .ok_or(BackendError::NoAwaitingInput)?;
-            return Err(BackendError::WrongAwaitingNode {
-                expected,
-                received: node_id_key,
-            });
+        let (run_id, attachment_root, generation, action_tx, skill_prompt) = {
+            let session = self.session.lock().await;
+            validate_chat_target(&session, &node_id_key)?;
+            let skill_prompt = skill_prompt_for_ids(
+                skill_ids,
+                &session.skill_paths,
+                &format!("chat input for node {:?}", node_id_key),
+            )?;
+            (
+                session.run_id.clone(),
+                session.attachment_root.clone(),
+                session.generation,
+                require_action_tx(&session)?.clone(),
+                skill_prompt,
+            )
+        };
+
+        let source_paths = message
+            .attachment_source_paths
+            .iter()
+            .map(PathBuf::from)
+            .collect::<Vec<_>>();
+        let attachments = if source_paths.is_empty() {
+            Vec::new()
+        } else {
+            let attachment_root_for_ingest =
+                attachment_root.clone().ok_or(BackendError::NoActiveRun)?;
+            let attachment_store = Arc::clone(&self.attachment_store);
+            self.runtime_handle
+                .spawn_blocking(move || {
+                    attachment_store.ingest_batch(&attachment_root_for_ingest, &source_paths)
+                })
+                .await
+                .map_err(|error| BackendError::PreviewFailed(error.to_string()))??
+        };
+
+        let mut session = self.session.lock().await;
+        let still_current = session.generation == generation
+            && session.run_id == run_id
+            && session
+                .action_tx
+                .as_ref()
+                .is_some_and(|current| current.same_channel(&action_tx));
+        let validation = if still_current {
+            validate_chat_target(&session, &node_id_key)
+        } else {
+            Err(BackendError::NoActiveRun)
+        };
+        if let Err(error) = validation {
+            drop(session);
+            remove_ingested_attachments(
+                &self.runtime_handle,
+                Arc::clone(&self.attachment_store),
+                attachment_root.clone(),
+                attachments,
+            )
+            .await;
+            return Err(error);
         }
-        require_action_tx(&session)?
+        if action_tx
             .send(ExecutionAction::ProvideInput {
                 node_id: node_id_key.clone(),
-                text: text.clone(),
+                text: message.text.clone(),
+                attachments: attachments.clone(),
+                skill_prompt,
             })
-            .map_err(|_| BackendError::RunChannelClosed)?;
-        // The accepted request is no longer actionable. Awaiting/status still
-        // follow execution events so the node remains busy until execution resumes.
+            .is_err()
+        {
+            drop(session);
+            remove_ingested_attachments(
+                &self.runtime_handle,
+                Arc::clone(&self.attachment_store),
+                attachment_root,
+                attachments,
+            )
+            .await;
+            return Err(BackendError::RunChannelClosed);
+        }
+        // The accepted request is no longer actionable. Project it immediately
+        // so duplicate sends cannot race the drive loop.
         let run_state = require_run_state_mut(&mut session)?;
         run_state.structured_input_by_node.remove(&node_id_key);
-        run_state
-            .chat_logs
-            .entry(node_id_key)
-            .or_default()
-            .push(ChatMessage::text(ChatRole::User, text));
+        crate::run::execution::record_user_input_with_attachments(
+            run_state,
+            node_id,
+            message.text,
+            attachments,
+        );
         Ok(run_state.clone())
     }
 
@@ -866,6 +1098,11 @@ impl RunCoordinator {
     #[allow(dead_code, reason = "coordinator tests seed varied session shapes")]
     pub(crate) async fn test_seed_full(&self, seed: TestSessionSeed) {
         let mut session = self.session.lock().await;
+        let attachment_root = seed
+            .artifact_root
+            .as_deref()
+            .and_then(std::path::Path::parent)
+            .map(|run_dir| run_dir.join("attachments"));
         session.run_id = seed.run_id.or_else(|| seed.run_state.run_id.clone());
         session.run_root = seed.run_root;
         session.project_id = seed.project_id;
@@ -875,6 +1112,7 @@ impl RunCoordinator {
         session.execution_cwd = seed.execution_cwd;
         session.entrypoint = seed.entrypoint;
         session.artifact_root = seed.artifact_root;
+        session.attachment_root = attachment_root;
         session.engine_checkpoint = seed.engine_checkpoint;
         session.checkpoint_sink = seed.checkpoint_sink;
         session.snapshot_store = seed.snapshot_store;
@@ -915,6 +1153,50 @@ impl RunCoordinator {
             handle: None,
         })
         .await;
+    }
+}
+
+fn validate_chat_target(session: &RunSession, node_id: &NodeId) -> Result<(), BackendError> {
+    let run_state = require_run_state(session)?;
+    if run_state.awaiting_node_ids.contains(node_id)
+        || run_state.awaiting_node_id.as_ref() == Some(node_id)
+        || matches!(
+            run_state.status_by_node.get(node_id),
+            Some(AgentStatus::Failed | AgentStatus::Interrupted)
+        )
+    {
+        return Ok(());
+    }
+    let expected = run_state
+        .awaiting_node_id
+        .clone()
+        .or_else(|| run_state.awaiting_node_ids.first().cloned())
+        .ok_or(BackendError::NoAwaitingInput)?;
+    Err(BackendError::WrongAwaitingNode {
+        expected,
+        received: node_id.clone(),
+    })
+}
+
+async fn remove_ingested_attachments(
+    runtime_handle: &tokio::runtime::Handle,
+    attachment_store: Arc<dyn RunAttachmentStore>,
+    attachment_root: Option<PathBuf>,
+    attachments: Vec<engine::ChatAttachmentRef>,
+) {
+    let Some(attachment_root) = attachment_root else {
+        return;
+    };
+    if attachments.is_empty() {
+        return;
+    }
+    match runtime_handle
+        .spawn_blocking(move || attachment_store.remove_batch(&attachment_root, &attachments))
+        .await
+    {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => log::warn!("failed to roll back attachments: {error}"),
+        Err(error) => log::warn!("failed to join attachment rollback task: {error}"),
     }
 }
 

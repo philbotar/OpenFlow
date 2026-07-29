@@ -66,12 +66,6 @@ export function useWorkflowAuthoring(params: UseWorkflowAuthoringParams) {
     resetWorkflowAuthoringSession();
   };
 
-  createEffect(() => {
-    if (params.screen() !== "workflow-authoring" && workflowAuthoringSessionId() !== null) {
-      releaseWorkflowAuthoringSession(workflowAuthoringSessionId());
-    }
-  });
-
   const activeSessionId = { current: null as string | null };
   createEffect(() => {
     activeSessionId.current = workflowAuthoringSessionId();
@@ -106,6 +100,10 @@ export function useWorkflowAuthoring(params: UseWorkflowAuthoringParams) {
     onCleanup(() => {
       unlistenThinking?.();
       unlistenDraft?.();
+      const sessionId = activeSessionId.current;
+      if (sessionId) {
+        void desktop.endWorkflowAuthoring(sessionId);
+      }
     });
   });
 
@@ -114,10 +112,10 @@ export function useWorkflowAuthoring(params: UseWorkflowAuthoringParams) {
     targetProjectId: string | null = null,
   ) => {
     if (
-      params.screen() === "workflow-authoring" &&
       workflowAuthoringSessionId() !== null &&
       baseWorkflow === undefined
     ) {
+      params.navigateToScreen("workflow-authoring");
       return;
     }
     const priorSessionId = workflowAuthoringSessionId();
@@ -218,10 +216,16 @@ export function useWorkflowAuthoring(params: UseWorkflowAuthoringParams) {
       );
       params.setWorkflows(replaceWorkflow(params.workflows(), saved));
       params.selectWorkflow(saved);
+      const sessionId = workflowAuthoringSessionId();
+      if (sessionId) {
+        void desktop.endWorkflowAuthoring(sessionId);
+      }
       resetWorkflowAuthoringSession();
       setWorkflowAuthoringTargetProjectId(null);
       params.navigateToScreen("editor");
-      params.showSuccessToast(`Applied workflow "${saved.name}"`);
+      params.showSuccessToast(
+        `Created workflow "${saved.name}". Click Run to start it.`,
+      );
     } catch (error) {
       params.showErrorToast(normalizeError(error));
     }

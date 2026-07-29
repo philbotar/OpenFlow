@@ -71,6 +71,7 @@ export function useAppProviderState(): AppContextValue {
     setSettings: settingsState.setSettings,
     showErrorToast: toastApi.showErrorToast,
     showSuccessToast: toastApi.showSuccessToast,
+    showInfoToast: toastApi.showInfoToast,
   });
   activeWorkflowIdAccessor = workspace.activeWorkflowId;
 
@@ -138,10 +139,8 @@ export function useAppProviderState(): AppContextValue {
     cacheRunStateForWorkflow: runKernel.cacheRunStateForWorkflow,
     applyRunStateSnapshot: runKernel.applyRunStateSnapshot,
     chatSubmissionFor: chatComposer.chatSubmissionFor,
-    resolveChatSubmittedText: chatComposer.resolveChatSubmittedText,
-    setChatDraft: chatComposer.setChatDraft,
-    setPendingKickoff: chatComposer.setPendingKickoff,
-    flushPendingKickoff: chatComposer.flushPendingKickoff,
+    resolveChatSubmissionPayload: chatComposer.resolveChatSubmissionPayload,
+    clearChatSubmission: chatComposer.clearChatSubmission,
     handleRefreshRunHistoryRef: () => refreshRunHistoryRef(),
     updateActiveWorkflow: workflowEditor.updateActiveWorkflow,
     updateChat: workspace.updateChat,
@@ -151,6 +150,7 @@ export function useAppProviderState(): AppContextValue {
   replayRunIdAccessor = runSession.replayRunId;
   chatComposer.bindStartRunFromChat(runSession.handleStartRunFromChat);
   chatComposer.bindResumeChatFromInput(runSession.handleResumeChatFromInput);
+  chatComposer.bindResumeReplayFromInput(runSession.handleResumeReplayFromInput);
 
   selectWorkflowRef = (workflow: Workflow) => {
     runSession.setReplayRunId(null);
@@ -224,7 +224,6 @@ export function useAppProviderState(): AppContextValue {
         if (activeId !== backendId) {
           return;
         }
-        void chatComposer.flushPendingKickoff(nextRunState);
         if (!nextRunState.active) {
           lastNotifiedPendingApprovalId = null;
           lastNotifiedAwaitingKey = null;
@@ -564,6 +563,7 @@ export function useAppProviderState(): AppContextValue {
     setScreen: appShell.setScreen,
     setSettingsSection: appShell.setSettingsSection,
     navigateToScreen: appShell.navigateToScreen,
+    returnFromSettings: appShell.returnFromSettings,
     activeWorkflow: workspace.activeWorkflow,
     activeChat: workspace.activeChat,
     activeProject: workspace.activeProject,
@@ -583,8 +583,12 @@ export function useAppProviderState(): AppContextValue {
     currentNodeOutput: workflowEditor.currentNodeOutput,
     chatLayout: chatComposer.chatLayout,
     chatSubmissionFor: chatComposer.chatSubmissionFor,
+    pendingChatAttachments: chatComposer.pendingChatAttachments,
     canSendChatFor: chatComposer.canSendChatFor,
     composerBusyFor: chatComposer.composerBusyFor,
+    handlePickChatAttachments: chatComposer.pickChatAttachments,
+    handleStageChatAttachments: chatComposer.stageChatAttachments,
+    handleRemovePendingChatAttachment: chatComposer.removePendingChatAttachment,
     setWorkflowNameInputRef: workspace.setWorkflowNameInputRef,
     setAgentNameInputRef: workspace.setAgentNameInputRef,
     handleSwitchWorkflow: workspace.handleSwitchWorkflow,

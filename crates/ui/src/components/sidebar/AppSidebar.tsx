@@ -150,6 +150,18 @@ export function Sidebar() {
           label="New chat"
           onClick={() => void ctx.handleCreateChat()}
         />
+        <Show
+          when={
+            ctx.workflowAuthoringSessionReady() &&
+            ctx.screen() !== "workflow-authoring"
+          }
+        >
+          <SidebarNavButton
+            icon="sparkles"
+            label="Resume AI workflow draft"
+            onClick={() => void ctx.handleOpenWorkflowAuthoring()}
+          />
+        </Show>
         <SidebarNavButton
           icon="agents"
           label="Agents"

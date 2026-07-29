@@ -92,12 +92,6 @@ export function InspectorPanel() {
                     nextNode.agent.model = value;
                   })
                 }
-                autoStart={node().agent.auto_start}
-                onAutoStartChange={(value) =>
-                  ctx.updateCurrentNode((nextNode) => {
-                    nextNode.agent.auto_start = value;
-                  })
-                }
                 requestUserInput={node().agent.requestUserInput ?? false}
                 onRequestUserInputChange={(value) =>
                   ctx.updateCurrentNode((nextNode) => {

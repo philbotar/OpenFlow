@@ -10,6 +10,7 @@ use crate::adapters::storage::agent_store::FileAgentStore;
 use crate::adapters::storage::run_checkpoint_store::FileRunCheckpointStore;
 use crate::adapters::storage::settings_store::FileSettingsStore;
 use crate::adapters::storage::skill_store::FileSkillCatalog;
+use crate::api::{DurableRunContinuationInput, UserMessageInput};
 use crate::error::BackendError;
 use crate::run::execution::{ExecutionAction, ExecutionEvent, NodeInterrupts};
 use crate::run::persistence::{
@@ -24,6 +25,7 @@ use crate::workflow::catalog::default_workflow;
 use engine::{
     InteractiveEngineCheckpoint, NodeId, PendingToolApproval, ToolCall, ToolTier, Workflow,
 };
+use image::{ImageFormat, Rgba, RgbaImage};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -58,6 +60,7 @@ fn empty_engine_checkpoint(workflow: &Workflow) -> InteractiveEngineCheckpoint {
         mixed_tool_turn_retries_by_node: Default::default(),
         auto_continue_streaks_by_node: Default::default(),
         entrypoint_text: None,
+        entrypoint_attachments: Vec::new(),
         interrupted_nodes: Default::default(),
         failed_nodes: Default::default(),
         plan_mode_source_node_id: None,
@@ -72,9 +75,13 @@ fn seeded_session(artifact_root: PathBuf) -> RunSession {
         run_id: None,
         run_root: None,
         project_id: None,
+        skill_paths: Default::default(),
         execution_cwd: None,
         entrypoint: None,
+        entrypoint_attachments: Vec::new(),
         artifact_root: Some(artifact_root),
+        attachment_root: None,
+        generation: 0,
         engine_checkpoint: None,
         checkpoint_sink: None,
         snapshot_store: None,
@@ -133,6 +140,7 @@ fn local_stores() -> LocalStores {
 fn run_start_params<'a>(stores: &'a LocalStores, workflow: Workflow) -> RunStartParams<'a> {
     RunStartParams {
         workflow,
+        invoked_skill_ids: Vec::new(),
         entrypoint: None,
         execution_cwd: None,
         run_root: stores.run_root.clone(),
@@ -546,6 +554,34 @@ async fn start_run_spawns_active_session_and_persists_record() {
 
 #[cfg_attr(miri, ignore)]
 #[tokio::test]
+async fn start_run_persists_natural_language_name_from_entrypoint() {
+    let stores = local_stores();
+    let coordinator = coordinator(stores.dir.path());
+    let workflow = default_workflow("Named run");
+    let mut params = run_start_params(&stores, workflow);
+    params.entrypoint = Some(UserMessageInput::text(
+        "  Audit   provider retries in the workflow  ",
+    ));
+
+    let (state, event_rx) = coordinator.start_run(params).await.expect("start run");
+    let run_id = state.run_id.as_deref().expect("durable run id");
+    let (_, record) = stores
+        .run_store
+        .load_record(std::slice::from_ref(&stores.run_root), run_id)
+        .expect("load run record")
+        .expect("persisted run record");
+
+    assert_eq!(
+        record.name.as_deref(),
+        Some("Audit provider retries in the workflow")
+    );
+
+    drop(event_rx);
+    coordinator.stop_run().await.expect("stop run");
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
 async fn start_run_resolves_task_prompt_skill_into_durable_workflow_snapshot() {
     let mut stores = local_stores();
     let skill_root = stores.dir.path().join("skills");
@@ -576,6 +612,83 @@ async fn start_run_resolves_task_prompt_skill_into_durable_workflow_snapshot() {
     let system_prompt = &record.workflow_snapshot.nodes[0].agent.system_prompt;
     assert!(system_prompt.contains("--- Invoked skills ---"));
     assert!(system_prompt.contains(&format!("/tdd: {}", skill_path.display())));
+    assert!(system_prompt.contains("# TDD"));
+
+    drop(event_rx);
+    let _ = coordinator.stop_run().await;
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+async fn start_run_applies_chat_skill_ids_to_root_system_prompt() {
+    let mut stores = local_stores();
+    let skill_root = stores.dir.path().join("skills");
+    let skill_path = skill_root.join("tdd").join("SKILL.md");
+    fs::create_dir_all(skill_path.parent().expect("skill parent")).expect("create skill");
+    fs::write(&skill_path, "# TDD\n\nWrite the test first.").expect("write skill");
+    stores.settings.skill_search_paths = vec![skill_root.display().to_string()];
+
+    let coordinator = coordinator(stores.dir.path());
+    let workflow = default_workflow("Chat skill invocation");
+    let mut params = run_start_params(&stores, workflow);
+    params.entrypoint = Some(UserMessageInput::text("Please inspect the ticket"));
+    params.invoked_skill_ids = vec!["tdd".to_string()];
+
+    let (state, event_rx) = coordinator.start_run(params).await.expect("start run");
+    let run_id = state.run_id.as_deref().expect("durable run id");
+    let (_, record) = stores
+        .run_store
+        .load_record(std::slice::from_ref(&stores.run_root), run_id)
+        .expect("load run record")
+        .expect("persisted run record");
+    let system_prompt = &record.workflow_snapshot.nodes[0].agent.system_prompt;
+    assert!(system_prompt.contains("/tdd:"));
+    assert!(system_prompt.contains("Write the test first."));
+
+    drop(event_rx);
+    let _ = coordinator.stop_run().await;
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+async fn start_run_ingests_entrypoint_attachment_into_projection_and_checkpoint() {
+    let stores = local_stores();
+    let coordinator = coordinator(stores.dir.path());
+    let source = stores.dir.path().join("kickoff.png");
+    write_png(&source);
+    let workflow = default_workflow("Attachment kickoff");
+    let mut params = run_start_params(&stores, workflow);
+    params.entrypoint = Some(UserMessageInput {
+        text: String::new(),
+        attachment_source_paths: vec![source.display().to_string()],
+    });
+
+    let (state, event_rx) = coordinator.start_run(params).await.expect("start run");
+
+    let run_id = state.run_id.as_deref().expect("run id");
+    let attachment = state
+        .chat_logs
+        .values()
+        .flatten()
+        .flat_map(|message| message.attachments.iter())
+        .next()
+        .expect("projected attachment");
+    assert_eq!(attachment.file_name, "kickoff.png");
+    let checkpoint = stores
+        .run_store
+        .load_latest_checkpoint(&stores.run_root, run_id)
+        .expect("load checkpoint")
+        .expect("checkpoint");
+    assert_eq!(
+        checkpoint.engine.entrypoint_attachments,
+        vec![attachment.clone()]
+    );
+    assert!(stores
+        .run_store
+        .run_dir(&stores.run_root, run_id)
+        .join("attachments")
+        .join(format!("{}.png", attachment.id))
+        .exists());
 
     drop(event_rx);
     let _ = coordinator.stop_run().await;
@@ -772,6 +885,69 @@ async fn resume_durable_run_restores_active_session() {
     let _ = coordinator.stop_run().await;
 }
 
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+async fn resume_durable_run_with_continuation_projects_user_message() {
+    let stores = local_stores();
+    let coordinator = coordinator(stores.dir.path());
+    let workflow = default_workflow("Durable continuation");
+    let node_id = workflow.nodes[0].id.clone();
+    let record = run_record(stores.dir.path(), &workflow, "run-message");
+    stores
+        .run_store
+        .create_run(&stores.run_root, &record)
+        .expect("create");
+
+    let mut projection = WorkflowRunState::running_for_workflow(&workflow);
+    projection.active = false;
+    projection.run_id = Some("run-message".to_string());
+    projection
+        .status_by_node
+        .insert(node_id.clone(), AgentStatus::Stopped);
+    let mut checkpoint = durable_checkpoint(&workflow, projection);
+    checkpoint.engine.interrupted_nodes.insert(node_id.clone());
+
+    let (resumed, event_rx) = coordinator
+        .resume_durable_run_with_continuation(
+            DurableResumeParams {
+                run_id: "run-message",
+                root: stores.run_root.clone(),
+                record,
+                checkpoint,
+                settings: &stores.settings,
+                transient_api_key: None,
+                agent_store: &stores.agent_store,
+                skill_catalog: &FileSkillCatalog,
+                settings_store: stores.settings_store.clone(),
+                run_store: &stores.run_store,
+                env: &stores.env,
+            },
+            Some(DurableRunContinuationInput {
+                node_id: node_id.0.clone(),
+                text: "Continue with verification".to_string(),
+                invoked_skill_ids: Vec::new(),
+            }),
+        )
+        .await
+        .expect("resume with message");
+
+    assert!(resumed.active);
+    assert_eq!(
+        resumed
+            .chat_logs
+            .get(&node_id)
+            .and_then(|messages| messages.last())
+            .map(|message| message.content.as_str()),
+        Some("Continue with verification")
+    );
+    assert_eq!(
+        resumed.status_by_node.get(&node_id),
+        Some(&AgentStatus::Started)
+    );
+    drop(event_rx);
+    let _ = coordinator.stop_run().await;
+}
+
 // ── interaction ──────────────────────────────────────────────────────────────
 
 #[cfg_attr(miri, ignore)]
@@ -797,7 +973,8 @@ async fn submit_user_input_appends_chat_and_sends_action() {
         .await
         .expect("submit");
 
-    assert_eq!(run_state.awaiting_node_id, Some(NodeId("idea".to_string())));
+    assert!(run_state.awaiting_node_id.is_none());
+    assert!(run_state.awaiting_node_ids.is_empty());
     assert!(!run_state
         .structured_input_by_node
         .contains_key(&NodeId("idea".to_string())));
@@ -810,9 +987,16 @@ async fn submit_user_input_appends_chat_and_sends_action() {
         "hello"
     );
     match action_rx.recv().await.expect("action") {
-        ExecutionAction::ProvideInput { node_id, text } => {
+        ExecutionAction::ProvideInput {
+            node_id,
+            text,
+            attachments,
+            skill_prompt,
+        } => {
             assert_eq!(node_id, NodeId("idea".to_string()));
             assert_eq!(text, "hello");
+            assert!(attachments.is_empty());
+            assert!(skill_prompt.is_none());
         }
         ExecutionAction::Stop
         | ExecutionAction::ResolveApproval { .. }
@@ -820,6 +1004,100 @@ async fn submit_user_input_appends_chat_and_sends_action() {
             panic!("unexpected action")
         }
     }
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+async fn submit_user_input_retries_failed_node_with_new_message() {
+    let dir = tempdir().expect("tempdir");
+    let coordinator = coordinator(dir.path());
+    let workflow = default_workflow("Retry with input");
+    let (action_tx, mut action_rx) = tokio::sync::mpsc::unbounded_channel();
+    let mut run_state = WorkflowRunState::running_for_workflow(&workflow);
+    run_state
+        .status_by_node
+        .insert(NodeId("idea".to_string()), AgentStatus::Failed);
+    coordinator
+        .test_seed_session(workflow, run_state, action_tx)
+        .await;
+
+    let run_state = coordinator
+        .submit_user_input("idea", "Try again".to_string())
+        .await
+        .expect("submit failed-node input");
+
+    assert_eq!(
+        run_state.status_by_node[&NodeId("idea".to_string())],
+        AgentStatus::Started
+    );
+    match action_rx.recv().await.expect("action") {
+        ExecutionAction::ProvideInput { node_id, text, .. } => {
+            assert_eq!(node_id, NodeId("idea".to_string()));
+            assert_eq!(text, "Try again");
+        }
+        ExecutionAction::Stop
+        | ExecutionAction::ResolveApproval { .. }
+        | ExecutionAction::RetryNode { .. } => {
+            panic!("unexpected action")
+        }
+    }
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+async fn submit_user_message_copies_attachment_and_sends_same_ref_atomically() {
+    let dir = tempdir().expect("tempdir");
+    let coordinator = coordinator(dir.path());
+    let source = dir.path().join("reply.png");
+    write_png(&source);
+    let workflow = default_workflow("Attachment reply");
+    let (action_tx, mut action_rx) = tokio::sync::mpsc::unbounded_channel();
+    let mut run_state = WorkflowRunState::running_for_workflow(&workflow);
+    run_state.run_id = Some("run-reply".to_string());
+    run_state.awaiting_node_id = Some(NodeId("idea".to_string()));
+    run_state.awaiting_node_ids = vec![NodeId("idea".to_string())];
+    coordinator
+        .test_seed_full(TestSessionSeed {
+            workflow,
+            run_state,
+            action_tx: Some(action_tx),
+            run_id: Some("run-reply".to_string()),
+            artifact_root: Some(dir.path().join("run-reply/artifacts")),
+            ..empty_seed_fields()
+        })
+        .await;
+
+    let state = coordinator
+        .submit_user_message_with_skill_ids(
+            "idea",
+            UserMessageInput {
+                text: "What is shown?".to_string(),
+                attachment_source_paths: vec![source.display().to_string()],
+            },
+            &[],
+        )
+        .await
+        .expect("submit attachment");
+
+    let projected = &state.chat_logs[&NodeId("idea".to_string())][0].attachments[0];
+    match action_rx.recv().await.expect("action") {
+        ExecutionAction::ProvideInput {
+            text,
+            attachments,
+            skill_prompt,
+            ..
+        } => {
+            assert_eq!(text, "What is shown?");
+            assert_eq!(attachments, vec![projected.clone()]);
+            assert!(skill_prompt.is_none());
+        }
+        _ => panic!("unexpected action"),
+    }
+    assert!(dir
+        .path()
+        .join("run-reply/attachments")
+        .join(format!("{}.png", projected.id))
+        .exists());
 }
 
 #[cfg_attr(miri, ignore)]
@@ -1159,9 +1437,16 @@ fn empty_seed_fields() -> TestSessionSeed {
     }
 }
 
+fn write_png(path: &Path) {
+    RgbaImage::from_pixel(2, 2, Rgba([20, 40, 60, 255]))
+        .save_with_format(path, ImageFormat::Png)
+        .expect("write png");
+}
+
 fn run_record(dir: &Path, workflow: &Workflow, run_id: &str) -> RunRecord {
     RunRecord {
         run_id: run_id.to_string(),
+        name: Some(format!("{} run", workflow.name)),
         workflow_id: workflow.id.to_string(),
         workflow_name: workflow.name.clone(),
         workflow_hash: workflow_hash(workflow),

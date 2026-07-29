@@ -465,7 +465,7 @@ const BUILTIN_PROVIDER_SPECS: &[ProviderSpec] = &[
         kind: ProviderKind::OpenAiCompatible(OPENAI_COMPAT_CHAT),
         auth: AuthSpec::Bearer {
             env_var: "OPENAI_COMPATIBLE_API_KEY",
-            required: true,
+            required: false,
         },
         default_models: CUSTOM_MODELS,
         default_model: "model-name",

@@ -1,7 +1,23 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
 import { render } from "solid-js/web";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { applyTheme } from "../../lib/theme";
 import { Message } from "./Message";
+
+const mermaidMocks = vi.hoisted(() => ({
+  initialize: vi.fn(),
+  render: vi.fn().mockResolvedValue({
+    svg: '<svg viewBox="0 0 160 40"><text>Request to Response</text></svg>',
+  }),
+}));
+
+vi.mock("mermaid", () => ({
+  default: mermaidMocks,
+}));
+
+const tokensCss = readFileSync("src/styles/tokens.css", "utf8");
+const indexCss = readFileSync("src/styles/index.css", "utf8");
 
 function renderMessage(props: Parameters<typeof Message>[0]) {
   const container = document.createElement("div");
@@ -89,5 +105,203 @@ describe("Message", () => {
     expect(table?.textContent).toContain("Amazon AU");
 
     dispose();
+  });
+
+  it("renders fenced Mermaid diagrams in assistant replies", async () => {
+    const { container, dispose } = renderMessage({
+      from: "assistant",
+      label: "Assistant",
+      content: "```mermaid\nflowchart LR\n  Request --> Response\n```",
+    });
+
+    try {
+      await vi.waitFor(() => {
+        const diagram = container.querySelector('[role="img"][aria-label="Mermaid diagram"]');
+        expect(diagram).not.toBeNull();
+        expect(diagram!.querySelector("svg")).not.toBeNull();
+        expect(diagram!.textContent).toContain("Request to Response");
+      });
+    } finally {
+      dispose();
+      container.remove();
+    }
+  });
+
+  it("opens rendered Mermaid diagrams in a full-screen dialog", async () => {
+    const { container, dispose } = renderMessage({
+      from: "assistant",
+      label: "Assistant",
+      content: "```mermaid\nflowchart LR\n  Request --> Response\n```",
+    });
+
+    try {
+      const openButton = await vi.waitFor(() => {
+        const button = container.querySelector<HTMLButtonElement>(
+          'button[aria-label="View Mermaid diagram full screen"]',
+        );
+        expect(button).not.toBeNull();
+        return button!;
+      });
+
+      openButton.click();
+
+      const dialog = await vi.waitFor(() => {
+        const element = document.body.querySelector(
+          '[role="dialog"][aria-label="Mermaid diagram full screen"]',
+        );
+        expect(element).not.toBeNull();
+        return element!;
+      });
+      expect(
+        dialog.querySelector('[role="img"][aria-label="Mermaid diagram, full screen"] svg'),
+      ).not.toBeNull();
+
+      dialog.querySelector<HTMLButtonElement>('button[aria-label="Exit full screen"]')!.click();
+
+      await vi.waitFor(() => {
+        expect(
+          document.body.querySelector(
+            '[role="dialog"][aria-label="Mermaid diagram full screen"]',
+          ),
+        ).toBeNull();
+      });
+    } finally {
+      dispose();
+      container.remove();
+    }
+  });
+
+  it("renders Mermaid diagrams with the active app color scheme", async () => {
+    const style = document.createElement("style");
+    style.textContent = tokensCss;
+    document.head.append(style);
+    applyTheme("dark");
+    mermaidMocks.initialize.mockClear();
+    const { container, dispose } = renderMessage({
+      from: "assistant",
+      label: "Assistant",
+      content: "```mermaid\nflowchart LR\n  Dark --> Theme\n```",
+    });
+
+    try {
+      await vi.waitFor(() => {
+        expect(container.querySelector('[role="img"][aria-label="Mermaid diagram"]')).not.toBeNull();
+      });
+      expect(mermaidMocks.initialize).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          theme: "base",
+          themeVariables: expect.objectContaining({
+            background: "#101010",
+            primaryColor: "#242425",
+            primaryTextColor: "#f2f2f3",
+            lineColor: "#55555c",
+          }),
+        }),
+      );
+    } finally {
+      dispose();
+      container.remove();
+      style.remove();
+      document.documentElement.removeAttribute("data-theme");
+      document.documentElement.style.removeProperty("color-scheme");
+    }
+  });
+
+  it("keeps Mermaid labels readable on source-defined light node fills", async () => {
+    applyTheme("dark");
+    mermaidMocks.render.mockResolvedValueOnce({
+      svg: [
+        '<svg viewBox="0 0 320 160">',
+        '<g class="node" data-node="light">',
+        '<rect class="label-container" style="fill: rgb(232, 241, 255)"></rect>',
+        '<foreignObject><div><span class="nodeLabel" style="color: rgb(242, 242, 243)">Workflow definition</span></div></foreignObject>',
+        "</g>",
+        '<g class="node" data-node="dark">',
+        '<rect class="label-container" style="fill: rgb(36, 36, 37)"></rect>',
+        '<foreignObject><div><span class="nodeLabel" style="color: rgb(242, 242, 243)">Workflow loader</span></div></foreignObject>',
+        "</g>",
+        "</svg>",
+      ].join(""),
+    });
+    const { container, dispose } = renderMessage({
+      from: "assistant",
+      label: "Assistant",
+      content: "```mermaid\nflowchart TB\n  Light --> Dark\n```",
+    });
+
+    try {
+      await vi.waitFor(() => {
+        const lightLabel = container.querySelector<HTMLElement>(
+          '[data-node="light"] .nodeLabel',
+        );
+        expect(getComputedStyle(lightLabel!).color).toBe("rgb(24, 24, 27)");
+      });
+      const darkLabel = container.querySelector<HTMLElement>('[data-node="dark"] .nodeLabel');
+      expect(getComputedStyle(darkLabel!).color).toBe("rgb(242, 242, 243)");
+    } finally {
+      dispose();
+      container.remove();
+      document.documentElement.removeAttribute("data-theme");
+      document.documentElement.style.removeProperty("color-scheme");
+    }
+  });
+
+  it("keeps Mermaid cluster titles readable on source-defined light fills", async () => {
+    applyTheme("dark");
+    mermaidMocks.render.mockResolvedValueOnce({
+      svg: [
+        '<svg viewBox="0 0 320 160">',
+        '<g class="cluster" data-cluster="light">',
+        '<rect style="fill: rgb(240, 253, 244)"></rect>',
+        '<g class="cluster-label"><foreignObject><div><span class="nodeLabel" style="color: rgb(242, 242, 243)">Tokio execution runtime</span></div></foreignObject></g>',
+        "</g>",
+        "</svg>",
+      ].join(""),
+    });
+    const { container, dispose } = renderMessage({
+      from: "assistant",
+      label: "Assistant",
+      content: "```mermaid\nflowchart TB\n  subgraph Runtime\n    A --> B\n  end\n```",
+    });
+
+    try {
+      await vi.waitFor(() => {
+        const clusterLabel = container.querySelector<HTMLElement>(
+          '[data-cluster="light"] .nodeLabel',
+        );
+        expect(getComputedStyle(clusterLabel!).color).toBe("rgb(24, 24, 27)");
+      });
+    } finally {
+      dispose();
+      container.remove();
+      document.documentElement.removeAttribute("data-theme");
+      document.documentElement.style.removeProperty("color-scheme");
+    }
+  });
+
+  it("gives fenced code blocks an elevated dark-theme surface", () => {
+    const style = document.createElement("style");
+    style.textContent = `${tokensCss}\n${indexCss}`;
+    document.head.append(style);
+    applyTheme("dark");
+    const { container, dispose } = renderMessage({
+      from: "assistant",
+      label: "Assistant",
+      content: "```ts\nconst answer = 42;\n```",
+    });
+
+    try {
+      const codeBlock = container.querySelector("pre");
+      expect(codeBlock).not.toBeNull();
+      expect(getComputedStyle(codeBlock!).background).toBe("var(--surface-emphasis)");
+      expect(getComputedStyle(codeBlock!).borderTopWidth).toBe("1px");
+      expect(getComputedStyle(codeBlock!).color).toBe("var(--text-primary)");
+    } finally {
+      dispose();
+      container.remove();
+      style.remove();
+      document.documentElement.removeAttribute("data-theme");
+      document.documentElement.style.removeProperty("color-scheme");
+    }
   });
 });

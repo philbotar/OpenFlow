@@ -501,7 +501,7 @@ fn completion_request_for(
     provider_id: &ProviderId,
     openai_config: Option<&OpenAiCompatibleConfig>,
 ) -> Result<CompletionRequest, AgentError> {
-    let mut completion_request = convert::to_completion_request(request);
+    let mut completion_request = convert::to_completion_request(request)?;
     apply_tool_choice_policy(&mut completion_request, provider_id);
     match model {
         RigModel::Anthropic(_) => {
@@ -658,7 +658,7 @@ fn rig_http_client(request_timeout: Duration) -> ReqwestClient {
         .unwrap_or_else(|_| ReqwestClient::new())
 }
 
-fn rig_openai_base_url(config: &OpenAiCompatibleConfig, wire_api: WireApi) -> String {
+pub(super) fn rig_openai_base_url(config: &OpenAiCompatibleConfig, wire_api: WireApi) -> String {
     let path = match wire_api {
         WireApi::ChatCompletions => config.chat_completions_path.as_str(),
         WireApi::Responses => config.responses_path.as_str(),
@@ -728,6 +728,8 @@ mod tests {
             tool_config: NodeToolConfig::default(),
             available_tools: Vec::new(),
             transcript: Vec::new(),
+            entrypoint_attachments: Vec::new(),
+            resolved_attachments: std::collections::BTreeMap::default(),
             model_attempt: 1,
             reasoning_effort: None,
             reasoning_budget_tokens: None,
@@ -870,7 +872,11 @@ mod tests {
 
     #[test]
     fn custom_openai_compatible_requires_a_tool_call() {
-        let mut request = convert::to_completion_request(&minimal_request());
+        let result = convert::to_completion_request(&minimal_request());
+        assert!(result.is_ok());
+        let Ok(mut request) = result else {
+            return;
+        };
         apply_tool_choice_policy(&mut request, &ProviderId::from("custom_openai_compatible"));
         assert_eq!(request.tool_choice, Some(ToolChoice::Required));
     }

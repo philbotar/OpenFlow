@@ -83,6 +83,32 @@ describe("ConversationSegmentMessages tool stacking", () => {
     expect(container.querySelectorAll(".tool-line[data-tool-name='read']")).toHaveLength(1);
   });
 
+  it("renders an attachment-only user message", () => {
+    renderSegment(
+      [
+        {
+          role: "User",
+          content: "",
+          attachments: [
+            {
+              id: "document-1",
+              fileName: "brief.pdf",
+              mediaType: "application/pdf",
+              sizeBytes: 4096,
+              sha256: "abc",
+              kind: "document",
+            },
+          ],
+        },
+      ],
+      [],
+    );
+
+    expect(container.querySelector(".message-user")).not.toBeNull();
+    expect(container.textContent).toContain("brief.pdf");
+    expect(container.querySelector("iframe")).toBeNull();
+  });
+
   it("keeps the prior checklist visible when a later update fails", () => {
     const failed = summary(
       "todo-2",

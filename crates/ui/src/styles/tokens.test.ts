@@ -82,4 +82,24 @@ describe("dark theme palette", () => {
     expect(getComputedStyle(section).position).toBe("relative");
     expect(getComputedStyle(section).zIndex).toBe("var(--z-dropdown)");
   });
+
+  test("stacks chat menus above the following workflow section", () => {
+    style = document.createElement("style");
+    style.textContent = `${tokensCss}\n${indexCss}`
+      .split("calc(var(--z-dropdown) + 1)")
+      .join("121")
+      .split("var(--z-dropdown)")
+      .join("120");
+    document.head.append(style);
+
+    const chatsSection = document.createElement("div");
+    chatsSection.className = "sidebar-section-group sidebar-chats-section";
+    const workflowsSection = document.createElement("div");
+    workflowsSection.className = "sidebar-section-group sidebar-workflows-section";
+    document.body.append(chatsSection, workflowsSection);
+
+    expect(Number(getComputedStyle(chatsSection).zIndex)).toBeGreaterThan(
+      Number(getComputedStyle(workflowsSection).zIndex),
+    );
+  });
 });

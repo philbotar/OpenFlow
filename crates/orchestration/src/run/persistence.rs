@@ -30,6 +30,8 @@ pub enum RunCheckpointReason {
 #[serde(rename_all = "camelCase")]
 pub struct RunRecord {
     pub run_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     pub workflow_id: String,
     pub workflow_name: String,
     pub workflow_hash: String,
@@ -69,12 +71,41 @@ pub struct RunStoreRoot {
 #[serde(rename_all = "camelCase")]
 pub struct RunSummary {
     pub run_id: String,
+    pub name: String,
     pub workflow_id: String,
     pub workflow_name: String,
     pub project_id: Option<String>,
     pub started_at_ms: i64,
     pub updated_at_ms: i64,
     pub status: RunStatus,
+}
+
+#[must_use]
+pub(crate) fn run_name(workflow_name: &str, entrypoint_text: Option<&str>) -> String {
+    let normalized_entrypoint = entrypoint_text
+        .unwrap_or_default()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if !normalized_entrypoint.is_empty() {
+        let mut chars = normalized_entrypoint.chars();
+        let name = chars.by_ref().take(60).collect::<String>();
+        return if chars.next().is_some() {
+            format!("{name}…")
+        } else {
+            name
+        };
+    }
+
+    let workflow_name = workflow_name
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if workflow_name.is_empty() {
+        "Workflow run".to_string()
+    } else {
+        format!("{workflow_name} run")
+    }
 }
 
 #[must_use]
@@ -90,6 +121,10 @@ impl RunRecord {
     pub fn summary(&self) -> RunSummary {
         RunSummary {
             run_id: self.run_id.clone(),
+            name: self
+                .name
+                .clone()
+                .unwrap_or_else(|| run_name(&self.workflow_name, None)),
             workflow_id: self.workflow_id.clone(),
             workflow_name: self.workflow_name.clone(),
             project_id: self.project_id.clone(),
@@ -109,6 +144,7 @@ mod tests {
     fn run_record_serializes_camel_case_fields() {
         let record = RunRecord {
             run_id: "run-1".to_string(),
+            name: Some("Review provider retries".to_string()),
             workflow_id: "wf-1".to_string(),
             workflow_name: "Demo".to_string(),
             workflow_hash: "abc".to_string(),

@@ -11,21 +11,33 @@ use std::collections::BTreeMap;
 
 use crate::mapping::{all_tool_specs, build_node_context, ToolSpec};
 use crate::rig_adapter::reasoning_convert;
-use engine::{AgentReasoning, AgentRequest, AgentTranscriptItem};
+use base64::Engine as _;
+use engine::{
+    AgentError, AgentReasoning, AgentRequest, AgentTranscriptItem, ChatAttachmentKind,
+    ChatAttachmentRef,
+};
 use rig_core::completion::CompletionRequest;
 use rig_core::message::{
-    AssistantContent, Message, ToolCall as RigToolCall, ToolChoice, ToolFunction,
-    ToolResultContent, UserContent,
+    AssistantContent, Document, DocumentMediaType, DocumentSourceKind, ImageMediaType, Message,
+    ToolCall as RigToolCall, ToolChoice, ToolFunction, ToolResultContent, UserContent,
 };
 use rig_core::OneOrMany;
 
-pub fn to_completion_request(request: &AgentRequest) -> CompletionRequest {
-    let mut history: Vec<Message> = vec![Message::user(build_node_context(request))];
+pub fn to_completion_request(request: &AgentRequest) -> Result<CompletionRequest, AgentError> {
+    let node_context = build_node_context(request);
+    let mut history: Vec<Message> = vec![rig_user_message(
+        request,
+        &node_context,
+        &request.entrypoint_attachments,
+    )?];
     let mut index = 0;
     while index < request.transcript.len() {
         match &request.transcript[index] {
-            AgentTranscriptItem::UserMessage { content } => {
-                history.push(Message::user(content.clone()));
+            AgentTranscriptItem::UserMessage {
+                content,
+                attachments,
+            } => {
+                history.push(rig_user_message(request, content, attachments)?);
                 index += 1;
             }
             AgentTranscriptItem::AssistantMessage { content } => {
@@ -68,11 +80,13 @@ pub fn to_completion_request(request: &AgentRequest) -> CompletionRequest {
             }
         }
     }
-    CompletionRequest {
+    let chat_history = OneOrMany::many(history).map_err(|_| {
+        AgentError::Permanent("provider request contains no user messages".to_string())
+    })?;
+    Ok(CompletionRequest {
         model: Some(request.model.clone()),
         preamble: Some(request.system_content()),
-        chat_history: OneOrMany::many(history)
-            .unwrap_or_else(|_| OneOrMany::one(Message::user(build_node_context(request)))),
+        chat_history,
         documents: Vec::new(),
         tools: all_tool_specs(request).into_iter().map(rig_tool).collect(),
         temperature: None,
@@ -80,7 +94,102 @@ pub fn to_completion_request(request: &AgentRequest) -> CompletionRequest {
         tool_choice: Some(ToolChoice::Required),
         additional_params: None,
         output_schema: None,
+    })
+}
+
+fn rig_user_message(
+    request: &AgentRequest,
+    text: &str,
+    attachments: &[ChatAttachmentRef],
+) -> Result<Message, AgentError> {
+    let mut content = Vec::with_capacity(usize::from(!text.is_empty()) + attachments.len());
+    if !text.is_empty() {
+        content.push(UserContent::text(text));
     }
+    for attachment in attachments {
+        content.push(rig_attachment(request, attachment)?);
+    }
+    if content.is_empty() {
+        content.push(UserContent::text(""));
+    }
+    let content = OneOrMany::many(content).map_err(|_| {
+        AgentError::Permanent("provider user message contains no content".to_string())
+    })?;
+    Ok(Message::User { content })
+}
+
+fn rig_attachment(
+    request: &AgentRequest,
+    attachment: &ChatAttachmentRef,
+) -> Result<UserContent, AgentError> {
+    let resolved = request
+        .resolved_attachments
+        .get(&attachment.id)
+        .ok_or_else(|| {
+            AgentError::Permanent(format!(
+                "attachment `{}` ({}) was not resolved",
+                attachment.file_name, attachment.id
+            ))
+        })?;
+    match attachment.kind {
+        ChatAttachmentKind::Image => {
+            let media_type = match attachment.media_type.as_str() {
+                "image/jpeg" => ImageMediaType::JPEG,
+                "image/png" => ImageMediaType::PNG,
+                "image/gif" => ImageMediaType::GIF,
+                "image/webp" => ImageMediaType::WEBP,
+                _ => return Err(unsupported_attachment_media_type(attachment)),
+            };
+            Ok(UserContent::image_base64(
+                base64::engine::general_purpose::STANDARD.encode(&resolved.bytes),
+                Some(media_type),
+                None,
+            ))
+        }
+        ChatAttachmentKind::Document if attachment.media_type == "application/pdf" => {
+            Ok(UserContent::Document(Document {
+                data: DocumentSourceKind::Base64(
+                    base64::engine::general_purpose::STANDARD.encode(&resolved.bytes),
+                ),
+                media_type: Some(DocumentMediaType::PDF),
+                additional_params: None,
+            }))
+        }
+        ChatAttachmentKind::Document if is_utf8_document_media_type(&attachment.media_type) => {
+            let document = std::str::from_utf8(&resolved.bytes).map_err(|_| {
+                AgentError::Permanent(format!(
+                    "attachment `{}` is not valid UTF-8",
+                    attachment.file_name
+                ))
+            })?;
+            Ok(UserContent::text(format!(
+                "Attachment: {}\n{document}",
+                attachment.file_name
+            )))
+        }
+        ChatAttachmentKind::Document => Err(unsupported_attachment_media_type(attachment)),
+    }
+}
+
+fn is_utf8_document_media_type(media_type: &str) -> bool {
+    matches!(
+        media_type,
+        "text/plain"
+            | "text/markdown"
+            | "text/csv"
+            | "application/json"
+            | "text/html"
+            | "text/css"
+            | "application/javascript"
+            | "text/x-python"
+    )
+}
+
+fn unsupported_attachment_media_type(attachment: &ChatAttachmentRef) -> AgentError {
+    AgentError::Permanent(format!(
+        "attachment `{}` uses unsupported media type `{}`",
+        attachment.file_name, attachment.media_type
+    ))
 }
 
 fn rig_tool(spec: ToolSpec) -> rig_core::completion::ToolDefinition {
@@ -184,8 +293,13 @@ fn rig_tool_result(id: String, provider_call_id: Option<&str>, content: String) 
 mod tests {
     use super::*;
     use crate::mapping::SUBMIT_OUTPUT_TOOL;
-    use engine::{NodeId, ToolCall as EngineToolCall, WorkflowId};
-    use rig_core::message::{Text, ToolResultContent, UserContent};
+    use engine::{
+        ChatAttachmentKind, ChatAttachmentRef, NodeId, ResolvedChatAttachment,
+        ToolCall as EngineToolCall, WorkflowId,
+    };
+    use rig_core::message::{
+        DocumentMediaType, DocumentSourceKind, ImageMediaType, Text, ToolResultContent, UserContent,
+    };
     use serde_json::json;
 
     fn request_with_transcript(transcript: Vec<AgentTranscriptItem>) -> AgentRequest {
@@ -201,6 +315,8 @@ mod tests {
             tool_config: engine::NodeToolConfig::default(),
             available_tools: Vec::new(),
             transcript,
+            entrypoint_attachments: Vec::new(),
+            resolved_attachments: BTreeMap::default(),
             model_attempt: 1,
             reasoning_effort: None,
             reasoning_budget_tokens: None,
@@ -233,9 +349,207 @@ mod tests {
         }
     }
 
+    fn attachment(
+        id: &str,
+        file_name: &str,
+        media_type: &str,
+        kind: ChatAttachmentKind,
+    ) -> ChatAttachmentRef {
+        ChatAttachmentRef {
+            id: id.into(),
+            file_name: file_name.into(),
+            media_type: media_type.into(),
+            size_bytes: 3,
+            sha256: "fixture".into(),
+            kind,
+        }
+    }
+
+    #[test]
+    fn entrypoint_image_is_mapped_after_node_context_text() {
+        let mut request = request_with_transcript(Vec::new());
+        request.entrypoint_attachments = vec![attachment(
+            "image-1",
+            "diagram.png",
+            "image/png",
+            ChatAttachmentKind::Image,
+        )];
+        request.resolved_attachments.insert(
+            "image-1".into(),
+            ResolvedChatAttachment {
+                bytes: vec![1, 2, 3],
+            },
+        );
+
+        let completion = to_completion_request(&request).expect("image should map");
+        let Message::User { content } = completion.chat_history.first() else {
+            panic!("expected initial user message");
+        };
+        let items: Vec<_> = content.iter().collect();
+        assert!(matches!(items[0], UserContent::Text(_)));
+        assert!(matches!(
+            items[1],
+            UserContent::Image(image)
+                if image.media_type == Some(ImageMediaType::PNG)
+                    && image.data == DocumentSourceKind::Base64("AQID".into())
+        ));
+    }
+
+    #[test]
+    fn historical_user_message_keeps_text_and_attachment_ref_order_in_one_message() {
+        let image = attachment(
+            "image-1",
+            "diagram.webp",
+            "image/webp",
+            ChatAttachmentKind::Image,
+        );
+        let document = attachment(
+            "document-1",
+            "brief.pdf",
+            "application/pdf",
+            ChatAttachmentKind::Document,
+        );
+        let transcript = vec![AgentTranscriptItem::UserMessage {
+            content: "Compare these.".into(),
+            attachments: vec![image, document],
+        }];
+        let mut request = request_with_transcript(transcript);
+        request.resolved_attachments.insert(
+            "image-1".into(),
+            ResolvedChatAttachment {
+                bytes: vec![1, 2, 3],
+            },
+        );
+        request.resolved_attachments.insert(
+            "document-1".into(),
+            ResolvedChatAttachment {
+                bytes: b"%PDF-1".to_vec(),
+            },
+        );
+
+        let completion = to_completion_request(&request).expect("attachments should map");
+        let messages: Vec<_> = completion.chat_history.iter().collect();
+        assert_eq!(messages.len(), 2);
+        let Message::User { content } = messages[1] else {
+            panic!("expected historical user message");
+        };
+        let items: Vec<_> = content.iter().collect();
+        assert!(matches!(
+            items[0],
+            UserContent::Text(Text { text, .. }) if text == "Compare these."
+        ));
+        assert!(matches!(
+            items[1],
+            UserContent::Image(image) if image.media_type == Some(ImageMediaType::WEBP)
+        ));
+        assert!(matches!(
+            items[2],
+            UserContent::Document(document)
+                if document.media_type == Some(DocumentMediaType::PDF)
+                    && document.data == DocumentSourceKind::Base64("JVBERi0x".into())
+        ));
+    }
+
+    #[test]
+    fn utf8_documents_become_named_text_blocks_including_json() {
+        let transcript = vec![AgentTranscriptItem::UserMessage {
+            content: String::new(),
+            attachments: vec![
+                attachment(
+                    "markdown-1",
+                    "notes.md",
+                    "text/markdown",
+                    ChatAttachmentKind::Document,
+                ),
+                attachment(
+                    "json-1",
+                    "data.json",
+                    "application/json",
+                    ChatAttachmentKind::Document,
+                ),
+            ],
+        }];
+        let mut request = request_with_transcript(transcript);
+        request.resolved_attachments.insert(
+            "markdown-1".into(),
+            ResolvedChatAttachment {
+                bytes: b"# Notes".to_vec(),
+            },
+        );
+        request.resolved_attachments.insert(
+            "json-1".into(),
+            ResolvedChatAttachment {
+                bytes: br#"{"answer":42}"#.to_vec(),
+            },
+        );
+
+        let completion = to_completion_request(&request).expect("documents should map");
+        let messages: Vec<_> = completion.chat_history.iter().collect();
+        let Message::User { content } = messages[1] else {
+            panic!("expected historical user message");
+        };
+        let text: Vec<_> = content
+            .iter()
+            .map(|item| match item {
+                UserContent::Text(Text { text, .. }) => text.as_str(),
+                other => panic!("expected named text attachment, got {other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            text,
+            vec![
+                "Attachment: notes.md\n# Notes",
+                "Attachment: data.json\n{\"answer\":42}",
+            ]
+        );
+    }
+
+    #[test]
+    fn missing_resolved_attachment_fails_before_transport() {
+        let mut request = request_with_transcript(Vec::new());
+        request.entrypoint_attachments = vec![attachment(
+            "missing-1",
+            "missing.png",
+            "image/png",
+            ChatAttachmentKind::Image,
+        )];
+
+        let error = to_completion_request(&request).expect_err("missing bytes must fail");
+        assert!(matches!(
+            error,
+            engine::AgentError::Permanent(message)
+                if message.contains("missing.png") && message.contains("not resolved")
+        ));
+    }
+
+    #[test]
+    fn unsupported_attachment_media_type_fails_before_transport() {
+        let mut request = request_with_transcript(Vec::new());
+        request.entrypoint_attachments = vec![attachment(
+            "unsupported-1",
+            "photo.heic",
+            "image/heic",
+            ChatAttachmentKind::Image,
+        )];
+        request.resolved_attachments.insert(
+            "unsupported-1".into(),
+            ResolvedChatAttachment {
+                bytes: vec![1, 2, 3],
+            },
+        );
+
+        let error = to_completion_request(&request).expect_err("unsupported MIME must fail");
+        assert!(matches!(
+            error,
+            engine::AgentError::Permanent(message)
+                if message.contains("photo.heic") && message.contains("image/heic")
+        ));
+    }
+
     #[test]
     fn maps_system_messages_and_task_prompt() {
-        let req = to_completion_request(&request_with_transcript(Vec::new()));
+        let req = to_completion_request(&request_with_transcript(Vec::new()))
+            .expect("request should map");
         assert_eq!(req.preamble.as_deref(), Some("sys-a\n\nsys-b"));
         let first = req.chat_history.first();
         assert!(matches!(first, Message::User { .. }));
@@ -250,7 +564,8 @@ mod tests {
 
     #[test]
     fn always_includes_submit_output_tool_and_requires_tool_choice() {
-        let req = to_completion_request(&request_with_transcript(Vec::new()));
+        let req = to_completion_request(&request_with_transcript(Vec::new()))
+            .expect("request should map");
         assert!(req.tools.iter().any(|t| t.name == SUBMIT_OUTPUT_TOOL));
         assert_eq!(req.tool_choice, Some(ToolChoice::Required));
     }
@@ -277,7 +592,8 @@ mod tests {
                 },
             },
         ];
-        let req = to_completion_request(&request_with_transcript(transcript));
+        let req = to_completion_request(&request_with_transcript(transcript))
+            .expect("request should map");
         let msgs: Vec<_> = req.chat_history.iter().collect();
         assert_eq!(msgs.len(), 3);
         assert!(matches!(msgs[0], Message::User { .. }));
@@ -308,7 +624,8 @@ mod tests {
             tr("c2", "two"),
             tr("c1", "one"),
         ];
-        let req = to_completion_request(&request_with_transcript(transcript));
+        let req = to_completion_request(&request_with_transcript(transcript))
+            .expect("request should map");
         let msgs: Vec<_> = req.chat_history.iter().collect();
         // [node context, assistant(c1+c2), one user message with both results].
         // Bedrock requires every toolResult for a toolUse batch in the single
@@ -353,7 +670,8 @@ mod tests {
     #[test]
     fn missing_result_is_synthesized_so_no_call_goes_unanswered() {
         let transcript = vec![tc("c1", "bash"), tc("c2", "read"), tr("c2", "two")];
-        let req = to_completion_request(&request_with_transcript(transcript));
+        let req = to_completion_request(&request_with_transcript(transcript))
+            .expect("request should map");
         let msgs: Vec<_> = req.chat_history.iter().collect();
         assert_eq!(msgs.len(), 3);
         let Message::User { content } = msgs[2] else {
@@ -383,7 +701,8 @@ mod tests {
             tc("c1", "search"),
             tr("c1", "found"),
         ];
-        let req = to_completion_request(&request_with_transcript(transcript));
+        let req = to_completion_request(&request_with_transcript(transcript))
+            .expect("request should map");
         let msgs: Vec<_> = req.chat_history.iter().collect();
         let Message::Assistant { content, .. } = msgs[1] else {
             panic!("expected assistant message");
@@ -415,7 +734,8 @@ mod tests {
             tr("c1", "found"),
         ];
 
-        let req = to_completion_request(&request_with_transcript(transcript));
+        let req = to_completion_request(&request_with_transcript(transcript))
+            .expect("request should map");
         let msgs: Vec<_> = req.chat_history.iter().collect();
         let Message::Assistant { content, .. } = msgs[1] else {
             panic!("expected assistant message");

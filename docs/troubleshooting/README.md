@@ -32,6 +32,16 @@ Key order for API-key providers: transient run input, stored `settings.json` key
 - ChatGPT (Codex) requires a stored refreshable ChatGPT login and ignores `OPENAI_API_KEY`.
 - Bedrock uses the AWS credential chain and configured region/profile.
 
+## Chat attachments
+
+| Symptom | Likely cause | Fix |
+| --- | --- | --- |
+| File stays pending with a size/type error | More than 4 files, one file over 10 MiB, total over 25 MiB, unsupported extension, empty file, or content/type mismatch | Remove the rejected file or export it as JPEG, PNG, GIF, WebP, PDF, TXT, Markdown, CSV, JSON, HTML, CSS, JavaScript, or Python, then retry. |
+| Provider rejects an accepted image or document | The configured transport can serialize it, but the selected model/account does not accept that media | Switch to a media-capable model for that provider and retry. Custom models remain provider-dependent. |
+| “missing or corrupt” attachment | The managed run copy is absent, changed, or fails its saved size/hash/type checks | Reattach the original file. OpenFlow rejects the request before provider HTTP. |
+| Image card has no preview | The bounded local preview failed or its run data is unavailable | The message stays visible as a generic attachment card. Reattach only if the provider also reports an attachment error. |
+| Chat deletion reports cleanup pending | Metadata deletion succeeded but run-directory cleanup could not finish | Restart or open run history to retry quarantined cleanup. Do not manually edit `chats.json`. |
+
 ## Focused verification
 
 ```bash

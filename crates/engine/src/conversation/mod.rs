@@ -24,10 +24,31 @@ pub enum ChatMessageKind {
     NodeCompleted,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ChatAttachmentKind {
+    Image,
+    Document,
+}
+
+/// Durable attachment metadata. Storage paths and attachment bytes stay outside engine state.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatAttachmentRef {
+    pub id: String,
+    pub file_name: String,
+    pub media_type: String,
+    pub size_bytes: u64,
+    pub sha256: String,
+    pub kind: ChatAttachmentKind,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ChatMessage {
     pub role: ChatRole,
     pub content: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<ChatAttachmentRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
     #[serde(default, rename = "streaming")]
@@ -52,6 +73,7 @@ impl ChatMessage {
         Self {
             role,
             content: content.into(),
+            attachments: Vec::new(),
             id: None,
             streaming: false,
             tool_call_id: None,
@@ -64,6 +86,7 @@ impl ChatMessage {
         Self {
             role: ChatRole::Assistant,
             content: content.into(),
+            attachments: Vec::new(),
             id: Some(id.into()),
             streaming: true,
             tool_call_id: None,
@@ -76,6 +99,7 @@ impl ChatMessage {
         Self {
             role: ChatRole::Thinking,
             content: content.into(),
+            attachments: Vec::new(),
             id: Some(id.into()),
             streaming: true,
             tool_call_id: None,
@@ -88,6 +112,7 @@ impl ChatMessage {
         Self {
             role: ChatRole::Thinking,
             content: String::new(),
+            attachments: Vec::new(),
             id: None,
             streaming: false,
             tool_call_id: Some(tool_call_id.into()),
@@ -100,6 +125,7 @@ impl ChatMessage {
         Self {
             role: ChatRole::Assistant,
             content: summary.into(),
+            attachments: Vec::new(),
             id: None,
             streaming: false,
             tool_call_id: None,
@@ -372,11 +398,23 @@ impl<'de> Deserialize<'de> for AgentReasoningContent {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentTranscriptItem {
-    AssistantMessage { content: String },
-    UserMessage { content: String },
-    Reasoning { reasoning: AgentReasoning },
-    ToolCall { call: ToolCall },
-    ToolResult { result: ToolResult },
+    AssistantMessage {
+        content: String,
+    },
+    UserMessage {
+        content: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        attachments: Vec<ChatAttachmentRef>,
+    },
+    Reasoning {
+        reasoning: AgentReasoning,
+    },
+    ToolCall {
+        call: ToolCall,
+    },
+    ToolResult {
+        result: ToolResult,
+    },
 }
 
 #[cfg(test)]
@@ -384,6 +422,76 @@ pub enum AgentTranscriptItem {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    fn image_attachment() -> ChatAttachmentRef {
+        ChatAttachmentRef {
+            id: "attachment-1".to_string(),
+            file_name: "diagram.png".to_string(),
+            media_type: "image/png".to_string(),
+            size_bytes: 4,
+            sha256: "abcd".to_string(),
+            kind: ChatAttachmentKind::Image,
+        }
+    }
+
+    #[test]
+    fn legacy_user_messages_default_attachments_to_empty() {
+        let message: ChatMessage = serde_json::from_value(json!({
+            "role": "user",
+            "content": "Legacy chat message",
+            "streaming": false
+        }))
+        .unwrap();
+        assert!(message.attachments.is_empty());
+
+        let transcript: AgentTranscriptItem = serde_json::from_value(json!({
+            "user_message": {
+                "content": "Legacy transcript message"
+            }
+        }))
+        .unwrap();
+        assert_eq!(
+            transcript,
+            AgentTranscriptItem::UserMessage {
+                content: "Legacy transcript message".to_string(),
+                attachments: Vec::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn attachment_message_serde_roundtrip_uses_camel_case_metadata() {
+        let message = ChatMessage {
+            role: ChatRole::User,
+            content: "Review this diagram".to_string(),
+            id: None,
+            streaming: false,
+            tool_call_id: None,
+            message_kind: None,
+            attachments: vec![image_attachment()],
+        };
+
+        let json = serde_json::to_value(&message).unwrap();
+        assert_eq!(json["attachments"][0]["fileName"], "diagram.png");
+        assert_eq!(json["attachments"][0]["mediaType"], "image/png");
+        assert_eq!(json["attachments"][0]["sizeBytes"], 4);
+        assert_eq!(json["attachments"][0]["kind"], "image");
+        assert!(json["attachments"][0].get("file_name").is_none());
+        assert_eq!(
+            serde_json::from_value::<ChatMessage>(json).unwrap(),
+            message
+        );
+
+        let transcript = AgentTranscriptItem::UserMessage {
+            content: "Review this diagram".to_string(),
+            attachments: vec![image_attachment()],
+        };
+        let json = serde_json::to_value(&transcript).unwrap();
+        assert_eq!(
+            serde_json::from_value::<AgentTranscriptItem>(json).unwrap(),
+            transcript
+        );
+    }
 
     #[test]
     fn chat_message_serde_roundtrip() {

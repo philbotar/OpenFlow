@@ -6,7 +6,8 @@ export const STATUS_TOAST_ID = "app-status";
 export const BANNER_DISMISS_MS = 4000;
 export const DEFAULT_DOCK_HEIGHT = 188;
 export const COLLAPSED_DOCK_HEIGHT = 52;
-const RESTORED_CHAT_DOCK_HEIGHT_RATIO = 0.75;
+const RESTORED_CHAT_DOCK_HEIGHT_RATIO = 0.5;
+const MIN_CHAT_DOCK_HEIGHT_RATIO = 0.5;
 const DOCK_VIEWPORT_MARGIN = 160;
 const COMPACT_VIEWPORT_MAX = 980;
 const COMPACT_DOCK_VIEWPORT_MARGIN = 240;
@@ -137,11 +138,16 @@ export function layoutViewportHeight(
   return nextViewportHeight / zoom;
 }
 
-export function minimumDockHeight(tab: BottomTab, compact = isCompactViewportWidth()): number {
-  if (compact) {
-    return tab === "chat" ? 104 : 132;
+export function minimumDockHeight(
+  tab: BottomTab,
+  compact = isCompactViewportWidth(),
+  nextViewportHeight = viewportHeight(),
+  uiZoom = 1,
+): number {
+  if (tab === "chat") {
+    return Math.round(layoutViewportHeight(nextViewportHeight, uiZoom) * MIN_CHAT_DOCK_HEIGHT_RATIO);
   }
-  return tab === "chat" ? 116 : 168;
+  return compact ? 132 : 168;
 }
 
 export function clampDockHeight(
@@ -151,7 +157,7 @@ export function clampDockHeight(
   compact = isCompactViewportWidth(),
   uiZoom = 1,
 ): number {
-  const min = minimumDockHeight(tab, compact);
+  const min = minimumDockHeight(tab, compact, nextViewportHeight, uiZoom);
   const max = Math.max(
     min,
     Math.round(layoutViewportHeight(nextViewportHeight, uiZoom) - dockViewportMargin(compact)),
@@ -177,8 +183,13 @@ export function shouldCollapseDock(
   height: number,
   tab: BottomTab,
   compact = isCompactViewportWidth(),
+  nextViewportHeight = viewportHeight(),
+  uiZoom = 1,
 ): boolean {
-  return height <= Math.max(COLLAPSED_DOCK_HEIGHT + 16, minimumDockHeight(tab, compact) - 32);
+  return height <= Math.max(
+    COLLAPSED_DOCK_HEIGHT + 16,
+    minimumDockHeight(tab, compact, nextViewportHeight, uiZoom) - 32,
+  );
 }
 
 export function chatRoleLabel(
@@ -219,7 +230,8 @@ export function isMacOS(): boolean {
   return typeof navigator === "object" && /Mac/i.test(navigator.userAgent);
 }
 
-export const COMPOSER_INPUT_MAX_ROWS = 4;
+// ponytail: keep in sync with --composer-input-max-rows in styles/tokens.css
+export const COMPOSER_INPUT_MAX_ROWS = 3;
 
 export function resizeComposerTextarea(textarea: HTMLTextAreaElement) {
   const style = getComputedStyle(textarea);

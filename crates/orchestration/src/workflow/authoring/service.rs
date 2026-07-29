@@ -172,6 +172,7 @@ impl WorkflowAuthoringService {
                 }),
                 WorkflowAuthoringRole::User => Some(AgentTranscriptItem::UserMessage {
                     content: message.content.clone(),
+                    attachments: Vec::new(),
                 }),
                 WorkflowAuthoringRole::Thinking => None,
             })
@@ -216,6 +217,8 @@ impl WorkflowAuthoringService {
                 tool_config: Default::default(),
                 available_tools: authoring_tool_definitions(),
                 transcript: transcript.clone(),
+                entrypoint_attachments: Vec::new(),
+                resolved_attachments: Default::default(),
                 model_attempt,
                 reasoning_effort: reasoning_effort.clone(),
                 reasoning_budget_tokens,
@@ -365,6 +368,7 @@ impl WorkflowAuthoringService {
                     });
                     transcript.push(AgentTranscriptItem::UserMessage {
                         content: AUTHORING_FINISH_REQUIRED_FEEDBACK.to_string(),
+                        attachments: Vec::new(),
                     });
                 }
                 Ok(AgentTurnOutcome::Message(_)) => {
@@ -382,6 +386,7 @@ impl WorkflowAuthoringService {
                     });
                     transcript.push(AgentTranscriptItem::UserMessage {
                         content: AUTHORING_FINISH_REQUIRED_FEEDBACK.to_string(),
+                        attachments: Vec::new(),
                     });
                     model_attempt += 1;
                 }
@@ -430,6 +435,7 @@ impl WorkflowAuthoringService {
                     });
                     transcript.push(AgentTranscriptItem::UserMessage {
                         content: missing_submit_turn_feedback(&error),
+                        attachments: Vec::new(),
                     });
                 }
                 Err(error)
@@ -440,6 +446,7 @@ impl WorkflowAuthoringService {
                     model_attempt += 1;
                     transcript.push(AgentTranscriptItem::UserMessage {
                         content: malformed_submit_output_feedback(&error),
+                        attachments: Vec::new(),
                     });
                 }
                 Err(error)
@@ -450,6 +457,7 @@ impl WorkflowAuthoringService {
                     model_attempt = model_attempt.saturating_add(1);
                     transcript.push(AgentTranscriptItem::UserMessage {
                         content: mixed_tool_turn_feedback(&error),
+                        attachments: Vec::new(),
                     });
                 }
                 Err(error) => return Err(error.into()),
@@ -612,7 +620,10 @@ fn push_invalid_draft_retry(
             "Your workflow draft failed validation: {error}. Use the authoring tools to fix the draft, then call openflow_submit_node_output with assistantMessage only."
         )
     };
-    transcript.push(AgentTranscriptItem::UserMessage { content: feedback });
+    transcript.push(AgentTranscriptItem::UserMessage {
+        content: feedback,
+        attachments: Vec::new(),
+    });
 }
 
 fn output_contains_legacy_draft(output: &Value) -> bool {

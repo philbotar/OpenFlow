@@ -6,7 +6,7 @@ mod tools;
 
 pub use checkpoint::{validate_checkpoint_against_workflow, InteractiveEngineCheckpoint};
 
-use crate::conversation::{AgentTranscriptItem, ChatMessage, ChatRole};
+use crate::conversation::{AgentTranscriptItem, ChatAttachmentRef, ChatMessage, ChatRole};
 use crate::execution::node_invocation::{
     build_agent_request, build_upstream_map, NodeInvocationContext,
 };
@@ -210,6 +210,7 @@ pub struct InteractiveEngine {
     /// user input; reset whenever the node makes tool-call progress.
     auto_continue_streaks_by_node: BTreeMap<NodeId, u8>,
     entrypoint_text: Option<String>,
+    entrypoint_attachments: Vec<ChatAttachmentRef>,
     project_repository_root: Option<String>,
     terminal_error: Option<RunError>,
     interrupted_nodes: BTreeSet<NodeId>,
@@ -322,6 +323,24 @@ impl InteractiveEngine {
         entrypoint_text: Option<String>,
         project_repository_root: Option<String>,
     ) -> Result<Self, WorkflowValidationError> {
+        Self::new_with_entrypoint_attachments(
+            workflow,
+            entrypoint_text,
+            Vec::new(),
+            project_repository_root,
+        )
+    }
+
+    /// Construct an engine with durable attachment refs for the initial user message.
+    ///
+    /// # Errors
+    /// Returns an error if the workflow fails validation.
+    pub fn new_with_entrypoint_attachments(
+        workflow: Workflow,
+        entrypoint_text: Option<String>,
+        entrypoint_attachments: Vec<ChatAttachmentRef>,
+        project_repository_root: Option<String>,
+    ) -> Result<Self, WorkflowValidationError> {
         let layers = execution_layers(&workflow)?;
         let upstream_map = build_upstream_map(&workflow);
         let node_index = workflow
@@ -364,6 +383,7 @@ impl InteractiveEngine {
             mixed_tool_turn_retries_by_node: BTreeMap::new(),
             auto_continue_streaks_by_node: BTreeMap::new(),
             entrypoint_text,
+            entrypoint_attachments,
             project_repository_root,
             terminal_error: None,
             interrupted_nodes: BTreeSet::new(),
@@ -423,23 +443,6 @@ impl InteractiveEngine {
         let now = Instant::now();
         self.retry_after_by_node
             .retain(|_, deadline| now < *deadline);
-    }
-
-    fn schedule_manual_nodes_in_layer(&mut self) {
-        for i in 0..self.current_layer_nodes().len() {
-            let node_id = self.layers[self.layer_idx][i].clone();
-            if self.is_node_blocked(&node_id) {
-                continue;
-            }
-            let Some(node) = self.find_node(&node_id) else {
-                continue;
-            };
-            if node.agent.auto_start || !self.transcript(&node_id).is_empty() {
-                continue;
-            }
-            self.awaiting_nodes.insert(node_id.clone());
-            self.transcripts.entry(node_id).or_default();
-        }
     }
 
     /// Move stale in-flight markers for incomplete layer nodes to interrupted so the host can retry.
@@ -563,7 +566,6 @@ impl InteractiveEngine {
                         }
                     }
                 }
-                self.schedule_manual_nodes_in_layer();
                 self.recover_stale_in_flight_nodes();
                 let inputs = self.gather_await_inputs();
                 let approvals = self.gather_await_approvals();
@@ -648,18 +650,12 @@ impl InteractiveEngine {
             if self.is_node_blocked(&node_id) {
                 continue;
             }
-            let Some(node) = self.find_node(&node_id) else {
-                continue;
-            };
             if let Some(missing) = self.missing_upstream_outputs(&node_id) {
                 self.terminal_error = Some(RunError::NodeFailed {
                     node_id,
                     kind: NodeFailureKind::MissingUpstreamOutput(missing),
                 });
                 break;
-            }
-            if !node.agent.auto_start && self.transcript(&node_id).is_empty() {
-                continue;
             }
             self.in_flight_ai.insert(node_id.clone());
             match self.build_request(&node_id) {
@@ -821,9 +817,36 @@ impl InteractiveEngine {
         Ok(())
     }
 
+    /// Retry a failed or interrupted node after appending new human context.
+    ///
+    /// # Errors
+    /// Returns [`EngineInputError::NodeNotRetryable`] when the node is not paused for retry.
+    pub fn retry_node_with_message(
+        &mut self,
+        node_id: &NodeId,
+        text: &str,
+        attachments: Vec<ChatAttachmentRef>,
+    ) -> Result<(), EngineInputError> {
+        self.retry_node(node_id)?;
+        self.transcripts.entry(node_id.clone()).or_default().push(
+            AgentTranscriptItem::UserMessage {
+                content: text.to_string(),
+                attachments,
+            },
+        );
+        Ok(())
+    }
+
+    /// Add a structured human message to a node awaiting input.
+    ///
     /// # Errors
     /// Returns an error if no node is awaiting input or the wrong node id is provided.
-    pub fn on_human_input(&mut self, node_id: &NodeId, text: &str) -> Result<(), EngineInputError> {
+    pub fn on_human_message(
+        &mut self,
+        node_id: &NodeId,
+        text: &str,
+        attachments: Vec<ChatAttachmentRef>,
+    ) -> Result<(), EngineInputError> {
         if !self.awaiting_nodes.remove(node_id) {
             let expected = self
                 .awaiting_nodes
@@ -840,9 +863,32 @@ impl InteractiveEngine {
         self.transcripts.entry(node_id.clone()).or_default().push(
             AgentTranscriptItem::UserMessage {
                 content: text.to_string(),
+                attachments,
             },
         );
         Ok(())
+    }
+
+    /// Add text-only human input to a node awaiting input.
+    ///
+    /// # Errors
+    /// Returns an error if no node is awaiting input or the wrong node id is provided.
+    pub fn on_human_input(&mut self, node_id: &NodeId, text: &str) -> Result<(), EngineInputError> {
+        self.on_human_message(node_id, text, Vec::new())
+    }
+
+    /// Append host-resolved instructions to the node before its next model turn.
+    pub fn append_system_prompt(&mut self, node_id: &NodeId, prompt: &str) {
+        let Some(node) = self.find_node_mut(node_id) else {
+            return;
+        };
+        if prompt.trim().is_empty() || node.agent.system_prompt.contains(prompt) {
+            return;
+        }
+        if !node.agent.system_prompt.trim().is_empty() {
+            node.agent.system_prompt.push_str("\n\n");
+        }
+        node.agent.system_prompt.push_str(prompt);
     }
 
     pub fn record_file_changes(&mut self, node_id: &NodeId, records: Vec<FileChangeRecord>) {
@@ -902,8 +948,13 @@ impl InteractiveEngine {
                 AgentTranscriptItem::AssistantMessage { content } => {
                     Some(ChatMessage::text(ChatRole::Assistant, content.clone()))
                 }
-                AgentTranscriptItem::UserMessage { content } => {
-                    Some(ChatMessage::text(ChatRole::User, content.clone()))
+                AgentTranscriptItem::UserMessage {
+                    content,
+                    attachments,
+                } => {
+                    let mut message = ChatMessage::text(ChatRole::User, content.clone());
+                    message.attachments.clone_from(attachments);
+                    Some(message)
                 }
                 AgentTranscriptItem::ToolCall { .. }
                 | AgentTranscriptItem::ToolResult { .. }
@@ -931,6 +982,7 @@ impl InteractiveEngine {
             changed_files_by_node: &self.changed_files_by_node,
             reads_by_node: &self.reads_by_node,
             entrypoint_text: self.entrypoint_text.as_deref(),
+            entrypoint_attachments: &self.entrypoint_attachments,
             transcript: self.transcript(&node.id),
             available_tools: &[],
             project_repository_root: self.project_repository_root.as_deref(),

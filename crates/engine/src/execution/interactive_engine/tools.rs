@@ -69,6 +69,7 @@ impl InteractiveEngine {
         if incomplete_write {
             transcript.push(AgentTranscriptItem::UserMessage {
                 content: super::INCOMPLETE_WRITE_FEEDBACK.to_string(),
+                attachments: Vec::new(),
             });
         }
         self.pending_tool_batches.remove(&approval_id);

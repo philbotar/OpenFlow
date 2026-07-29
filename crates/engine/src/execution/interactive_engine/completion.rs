@@ -59,6 +59,7 @@ impl InteractiveEngine {
                                       seal request must receive explicit human approval before \
                                       openflow_submit_node_output."
                                 .to_string(),
+                            attachments: Vec::new(),
                         },
                     );
                     return;
@@ -170,8 +171,9 @@ impl InteractiveEngine {
                      Call openflow_submit_node_output again with arguments shaped as \
                      {{\"output\": <object matching the node output schema>, \"assistant_message\": null}}. \
                      Put schema fields under \"output\", not at the top level. \
-                     Node output schema: {schema_hint}"
+                    Node output schema: {schema_hint}"
                 ),
+                attachments: Vec::new(),
             });
         true
     }
@@ -209,6 +211,7 @@ impl InteractiveEngine {
         self.transcripts.entry(node_id.clone()).or_default().push(
             AgentTranscriptItem::UserMessage {
                 content: MALFORMED_REQUEST_INPUT_FEEDBACK.to_string(),
+                attachments: Vec::new(),
             },
         );
         true
@@ -231,10 +234,12 @@ impl InteractiveEngine {
         let content = format!(
             "Your last response mixed harness and executable tools ({tool_names}) and was rejected; no calls from that response were executed. Call either exactly one harness tool by itself (openflow_submit_node_output when complete, or openflow_request_user_input with a direct question or structured choices), or one or more executable tools with no harness tools in the same batch."
         );
-        self.transcripts
-            .entry(node_id.clone())
-            .or_default()
-            .push(AgentTranscriptItem::UserMessage { content });
+        self.transcripts.entry(node_id.clone()).or_default().push(
+            AgentTranscriptItem::UserMessage {
+                content,
+                attachments: Vec::new(),
+            },
+        );
         true
     }
 
@@ -283,6 +288,7 @@ impl InteractiveEngine {
         self.transcripts.entry(node_id.clone()).or_default().push(
             AgentTranscriptItem::UserMessage {
                 content: continue_feedback.to_string(),
+                attachments: Vec::new(),
             },
         );
         true
@@ -300,7 +306,7 @@ impl InteractiveEngine {
                 {
                     return true;
                 }
-                AgentTranscriptItem::UserMessage { content }
+                AgentTranscriptItem::UserMessage { content, .. }
                     if content.contains("narrated creating or updating a file")
                         || content.contains("already intended to write a file")
                         || content.contains("A write already succeeded") =>
@@ -419,6 +425,7 @@ impl InteractiveEngine {
         self.transcripts.entry(node_id.clone()).or_default().push(
             AgentTranscriptItem::UserMessage {
                 content: feedback.to_string(),
+                attachments: Vec::new(),
             },
         );
     }
@@ -602,6 +609,7 @@ impl InteractiveEngine {
             self.transcripts.entry(node_id.clone()).or_default().push(
                 AgentTranscriptItem::UserMessage {
                     content: INCOMPLETE_WRITE_FEEDBACK.to_string(),
+                    attachments: Vec::new(),
                 },
             );
         }

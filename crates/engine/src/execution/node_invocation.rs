@@ -1,6 +1,7 @@
 //! Shared node input assembly and [`AgentRequest`] construction for execution engines.
 
 use crate::conversation::AgentTranscriptItem;
+use crate::conversation::ChatAttachmentRef;
 use crate::execution::RunError;
 use crate::graph::{Node, NodeId, Workflow};
 use crate::ports::AgentRequest;
@@ -327,6 +328,7 @@ pub(crate) fn build_node_input<S: std::hash::BuildHasher>(
     upstream_by_node: &HashMap<NodeId, Vec<NodeId>, S>,
     outputs_by_node: &BTreeMap<NodeId, Value>,
     entrypoint_text: Option<&str>,
+    entrypoint_attachments: &[ChatAttachmentRef],
     changed_files_by_node: &BTreeMap<NodeId, Vec<FileChangeRecord>>,
     reads_by_node: &BTreeMap<NodeId, Vec<ReadRecord>>,
     forward_upstream_reads: bool,
@@ -355,11 +357,17 @@ pub(crate) fn build_node_input<S: std::hash::BuildHasher>(
     };
 
     if upstream.is_empty() {
-        if let Some(text) = entrypoint_text.filter(|text| !text.trim().is_empty()) {
+        let text = entrypoint_text
+            .filter(|text| !text.trim().is_empty())
+            .unwrap_or_default();
+        if !text.is_empty() || !entrypoint_attachments.is_empty() {
             let mut payload = json!({
                 "entrypoint": { "text": text },
                 "upstream": []
             });
+            if !entrypoint_attachments.is_empty() {
+                payload["entrypoint"]["attachments"] = json!(entrypoint_attachments);
+            }
             if !changed_files.is_empty() {
                 payload["changed_files"] = json!(changed_files);
             }
@@ -394,6 +402,7 @@ pub(crate) struct NodeInvocationContext<'a> {
     pub changed_files_by_node: &'a BTreeMap<NodeId, Vec<FileChangeRecord>>,
     pub reads_by_node: &'a BTreeMap<NodeId, Vec<ReadRecord>>,
     pub entrypoint_text: Option<&'a str>,
+    pub entrypoint_attachments: &'a [ChatAttachmentRef],
     pub transcript: &'a [AgentTranscriptItem],
     pub available_tools: &'a [ToolDefinition],
     pub project_repository_root: Option<&'a str>,
@@ -429,6 +438,7 @@ pub(crate) fn build_agent_request(
             ctx.upstream_map,
             ctx.outputs,
             ctx.entrypoint_text,
+            ctx.entrypoint_attachments,
             ctx.changed_files_by_node,
             ctx.reads_by_node,
             ctx.workflow.settings.forward_upstream_reads,
@@ -438,6 +448,12 @@ pub(crate) fn build_agent_request(
         tool_config: node.agent.tools.clone(),
         available_tools: ctx.available_tools.to_vec(),
         transcript: ctx.transcript.to_vec(),
+        entrypoint_attachments: if ctx.upstream_map.get(&node.id).is_none_or(Vec::is_empty) {
+            ctx.entrypoint_attachments.to_vec()
+        } else {
+            Vec::new()
+        },
+        resolved_attachments: BTreeMap::new(),
         model_attempt: 1,
         reasoning_effort: node.agent.reasoning_effort.clone(),
         reasoning_budget_tokens: node.agent.reasoning_budget_tokens,
@@ -538,6 +554,7 @@ mod tests {
             &HashMap::from([(NodeId("idea".to_string()), Vec::new())]),
             &BTreeMap::new(),
             Some("   "),
+            &[],
             &BTreeMap::new(),
             &BTreeMap::new(),
             true,
@@ -576,6 +593,7 @@ mod tests {
             &upstream_map,
             &outputs,
             None,
+            &[],
             &BTreeMap::new(),
             &BTreeMap::new(),
             true,
@@ -616,6 +634,7 @@ mod tests {
             &upstream_map,
             &outputs,
             None,
+            &[],
             &changed_files_by_node,
             &BTreeMap::new(),
             true,
@@ -689,6 +708,7 @@ mod tests {
             &upstream_map,
             &BTreeMap::new(),
             None,
+            &[],
             &changed_files_by_node,
             &BTreeMap::new(),
             true,
@@ -719,6 +739,7 @@ mod tests {
             &upstream_map,
             &outputs,
             None,
+            &[],
             &BTreeMap::new(),
             &reads_by_node,
             true,
@@ -747,6 +768,7 @@ mod tests {
             &upstream_map,
             &BTreeMap::new(),
             None,
+            &[],
             &BTreeMap::new(),
             &reads_by_node,
             false,
@@ -772,6 +794,7 @@ mod tests {
             changed_files_by_node: &BTreeMap::new(),
             reads_by_node: &BTreeMap::new(),
             entrypoint_text: None,
+            entrypoint_attachments: &[],
             transcript: &[],
             available_tools: &[],
             project_repository_root: None,
@@ -797,6 +820,7 @@ mod tests {
             changed_files_by_node: &BTreeMap::new(),
             reads_by_node: &BTreeMap::new(),
             entrypoint_text: None,
+            entrypoint_attachments: &[],
             transcript: &[],
             available_tools: &[],
             project_repository_root: None,

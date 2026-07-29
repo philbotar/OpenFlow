@@ -344,6 +344,10 @@ html.ui-zoomed .collapsible-section {
   z-index: var(--z-dropdown);
 }
 
+.sidebar-chats-section {
+  z-index: calc(var(--z-dropdown) + 1);
+}
+
 .sidebar-projects-section {
   display: flex;
   flex-direction: column;
@@ -422,16 +426,15 @@ html.ui-zoomed .collapsible-section {
   stroke-width: 1.11px;
 }
 
-.sidebar-nav-update-badge {
-  position: absolute;
-  top: -1px;
-  right: -1px;
-  width: 8px;
-  height: 8px;
+.sidebar-nav-update-action {
+  margin-left: auto;
+  padding: 2px 7px;
   border-radius: var(--radius-pill);
-  background: var(--update-badge);
-  border: 2px solid var(--update-badge-ring);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--update-badge) 35%, transparent);
+  background: var(--accent-primary);
+  color: var(--action-foreground);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
 }
 
 .sidebar-footer .settings-nav-menu {
@@ -1417,6 +1420,12 @@ label > span {
   height: 100%;
 }
 
+.workflow-flow-shell {
+  /* React Flow measures handles in its own viewport coordinates. Cancel the
+     shell's CSS zoom; CanvasViewportController reapplies it as graph zoom. */
+  zoom: var(--ui-zoom-inverse);
+}
+
 .workflow-flow-shell .react-flow {
   --xy-background-color: transparent;
 }
@@ -1459,8 +1468,7 @@ label > span {
 .workflow-flow-toolbar {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  width: 46px;
+  width: calc(var(--control-size-md) + (var(--space-xs) * 2));
   padding: var(--space-xs);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -1473,8 +1481,8 @@ label > span {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: var(--control-size-md);
+  height: var(--control-size-md);
   padding: 0;
   border: 0;
   border-radius: var(--radius-base);
@@ -1489,13 +1497,30 @@ label > span {
   stroke-width: 1.8;
 }
 
-.workflow-flow-action-button:hover {
+.workflow-flow-action-button:not(:disabled):hover {
   background: var(--surface-hover);
 }
 
 .workflow-flow-action-button:focus-visible {
   outline: 2px solid var(--focus-strong);
   outline-offset: -2px;
+}
+
+.workflow-flow-action-button:disabled {
+  color: var(--text-subtle);
+  cursor: default;
+  pointer-events: none;
+}
+
+.workflow-flow-action-button-danger:not(:disabled) {
+  color: var(--danger);
+}
+
+.workflow-flow-toolbar-divider {
+  display: block;
+  width: 100%;
+  margin: var(--space-xs) 0;
+  border-top: 1px solid var(--border);
 }
 
 .workflow-flow-shell .react-flow__panel.workflow-flow-lock-panel {
@@ -1518,53 +1543,6 @@ label > span {
   height: 7px;
   border-radius: var(--radius-pill);
   background: var(--status-success);
-}
-
-.workflow-flow-shell .react-flow__panel.workflow-flow-selection-panel {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  margin: var(--space-md);
-  padding: 6px 6px 6px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  background: var(--surface-strong);
-  box-shadow: var(--shadow-panel);
-}
-
-.workflow-flow-selection-label {
-  max-width: 220px;
-  overflow: hidden;
-  color: var(--text);
-  font-size: var(--text-label-sm);
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.workflow-flow-delete-button {
-  padding: 6px 10px;
-  border: 0;
-  border-radius: var(--radius-pill);
-  background: var(--danger-soft);
-  color: var(--danger);
-  font-size: var(--text-meta-xs);
-  font-weight: 600;
-}
-
-.workflow-flow-delete-button:hover {
-  background: color-mix(in srgb, var(--danger) 16%, transparent);
-}
-
-.workflow-flow-shell .react-flow__controls {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  box-shadow: var(--shadow-soft);
-}
-
-.workflow-flow-shell .react-flow__controls-button {
-  border-bottom-color: var(--border);
 }
 
 .workflow-flow-shell .react-flow__background {
@@ -2583,6 +2561,27 @@ label {
   align-items: center;
   justify-content: center;
   min-height: 64px;
+  overflow: visible;
+}
+
+.chat-retry-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.chat-retry-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chat-retry-prompt {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
 }
 
 .chat-replay-banner {
@@ -3838,10 +3837,126 @@ label {
   white-space: pre-wrap;
 }
 
+[data-theme="dark"] .message-content .markdown-body pre {
+  background: var(--surface-emphasis);
+  border-color: var(--border-strong);
+  border-style: solid;
+  border-width: 1px;
+  color: var(--text-primary);
+}
+
 .message-content .markdown-body pre code {
   background: none;
   padding: 0;
   font-size: 0.82em;
+}
+
+.message-content .markdown-body .mermaid-diagram {
+  margin: 0.75em 0;
+  padding: 12px;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+
+.message-content .markdown-body .mermaid-diagram-shell {
+  position: relative;
+  margin: 0.75em 0;
+}
+
+.message-content .markdown-body .mermaid-diagram-shell > .mermaid-diagram {
+  margin: 0;
+}
+
+.message-content .markdown-body .mermaid-diagram svg {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+
+.mermaid-diagram-fullscreen-trigger,
+.mermaid-fullscreen-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  box-shadow: var(--shadow-panel);
+  cursor: pointer;
+  transition:
+    background 150ms ease,
+    color 150ms ease;
+}
+
+.mermaid-diagram-fullscreen-trigger {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
+.mermaid-diagram-fullscreen-trigger:hover,
+.mermaid-fullscreen-close:hover {
+  background: var(--surface-strong);
+  color: var(--text-primary);
+}
+
+.mermaid-fullscreen-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal-backdrop);
+  display: grid;
+  background: var(--app-bg);
+}
+
+.mermaid-fullscreen-card {
+  position: relative;
+  z-index: var(--z-modal);
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--app-bg);
+}
+
+.mermaid-fullscreen-diagram {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  padding: clamp(24px, 5vw, 72px);
+  overflow: auto;
+  place-items: center;
+}
+
+.mermaid-fullscreen-diagram svg {
+  display: block;
+  width: 100%;
+  max-width: 100% !important;
+  height: 100%;
+  max-height: 100%;
+}
+
+.mermaid-fullscreen-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+}
+
+.message-content .markdown-body .mermaid-diagram--loading,
+.message-content .markdown-body .mermaid-diagram-error > div {
+  color: var(--text-muted);
+  font-size: 0.82em;
+  text-align: center;
+}
+
+.message-content .markdown-body .mermaid-diagram-error > pre {
+  margin-top: 0.5em;
 }
 
 .message-content .markdown-body blockquote {
@@ -5220,6 +5335,58 @@ label {
   display: grid;
   gap: var(--space-sm);
   margin: 0;
+}
+
+.provider-model-discovery {
+  display: grid;
+  gap: var(--space-sm);
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-md);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-muted);
+}
+
+.provider-model-discovery legend {
+  padding: 0 var(--space-xs);
+  color: var(--text-primary);
+  font-size: var(--text-label-sm);
+  font-weight: 600;
+}
+
+.provider-model-discovery p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-label-sm);
+}
+
+.provider-model-discovery-list {
+  display: grid;
+  gap: var(--space-xs);
+  max-height: 240px;
+  overflow: auto;
+}
+
+.provider-model-discovery-option {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-sm);
+}
+
+.provider-model-discovery-option:hover {
+  background: var(--surface-hover);
+}
+
+.provider-model-discovery-option span {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-label-sm);
+  overflow-wrap: anywhere;
 }
 
 .provider-model-row {

@@ -12,12 +12,14 @@ import type {
   Workflow,
   WorkflowRunState,
   NodeRuntimeConfigUpdate,
+  UserMessageInput,
 } from "../../lib/types";
 import {
   activeProfile,
   canSendIdleRunKickoff,
   createIdleRunState,
   isGlobalRunEntryNodeId,
+  replayContinuationNodeId,
 } from "../../lib/workflow";
 import { clampDockHeight, normalizeError, viewportHeight } from "../../lib/utils";
 
@@ -45,11 +47,12 @@ interface UseRunSessionParams {
   isCompactViewport: Accessor<boolean>;
   cacheRunStateForWorkflow: (workflowId: string, state: WorkflowRunState) => void;
   applyRunStateSnapshot: (next: WorkflowRunState | null) => void;
-  chatSubmissionFor: (nodeId: NodeId) => { submittedText: string };
-  resolveChatSubmittedText: (nodeId: NodeId) => Promise<string>;
-  setChatDraft: (nodeId: NodeId, text: string) => void;
-  setPendingKickoff: (text: string | null) => void;
-  flushPendingKickoff: (state: WorkflowRunState) => Promise<void>;
+  chatSubmissionFor: (nodeId: NodeId) => {
+    submittedText: string;
+    invokedSkills?: readonly string[];
+  };
+  resolveChatSubmissionPayload: (nodeId: NodeId) => Promise<UserMessageInput>;
+  clearChatSubmission: (nodeId: NodeId) => void;
   handleRefreshRunHistoryRef: () => Promise<void>;
   updateActiveWorkflow: (mutator: (draft: Workflow) => void) => Workflow | null;
   updateChat: (chat: Chat) => void;
@@ -135,6 +138,37 @@ export function useRunSession(params: UseRunSessionParams) {
     reasoningBudgetTokens: config.reasoningBudgetTokens,
   });
 
+  const startRunFromChat = (
+    workflow: Workflow,
+    message: UserMessageInput | null,
+    invokedSkillIds: readonly string[],
+  ) =>
+    invokedSkillIds.length > 0
+      ? desktop.startRun(
+          workflow,
+          params.settings(),
+          params.executionCwdForActiveWorkflow(),
+          params.activeProviderKeyInput() || null,
+          message,
+          invokedSkillIds,
+        )
+      : desktop.startRun(
+          workflow,
+          params.settings(),
+          params.executionCwdForActiveWorkflow(),
+          params.activeProviderKeyInput() || null,
+          message,
+        );
+
+  const submitChatInput = (
+    nodeId: NodeId,
+    message: UserMessageInput,
+    invokedSkillIds: readonly string[],
+  ) =>
+    invokedSkillIds.length > 0
+      ? desktop.submitUserInput(nodeId, message, invokedSkillIds)
+      : desktop.submitUserInput(nodeId, message);
+
   const handleRun = async () => {
     const workflow = params.activeWorkflow();
     if (
@@ -166,8 +200,9 @@ export function useRunSession(params: UseRunSessionParams) {
   const resumeChatWithInput = async (
     chat: Chat,
     draftNodeId: NodeId,
-    submittedText: string,
+    message: UserMessageInput,
     targetNodeId?: NodeId,
+    invokedSkillIds: readonly string[] = [],
   ) => {
     if (!chat.runId) {
       throw new Error("Chat has no durable run to resume.");
@@ -190,9 +225,9 @@ export function useRunSession(params: UseRunSessionParams) {
       runtimeUpdateForChat(chat.config),
     );
     params.publishBackendRunState(configured);
-    const next = await desktop.submitUserInput(awaitingNodeId, submittedText);
+    const next = await submitChatInput(awaitingNodeId, message, invokedSkillIds);
     params.publishBackendRunState(next);
-    params.setChatDraft(draftNodeId, "");
+    params.clearChatSubmission(draftNodeId);
   };
 
   const handleStartRunFromChat = async (nodeId: NodeId) => {
@@ -208,28 +243,32 @@ export function useRunSession(params: UseRunSessionParams) {
       return;
     }
     const submission = params.chatSubmissionFor(nodeId);
-    let submittedText = submission.submittedText;
+    const invokedSkillIds = submission.invokedSkills ?? [];
+    const sendableText = submission.submittedText || (invokedSkillIds.length > 0 ? "/skill" : "");
+    let message: UserMessageInput;
+    try {
+      message = await params.resolveChatSubmissionPayload(nodeId);
+    } catch (error) {
+      params.showErrorToast(normalizeError(error));
+      return;
+    }
     if (
       !canSendIdleRunKickoff(
         params.runState(),
         params.readiness()?.ready ?? false,
         true,
         startingRun(),
-        submission.submittedText,
+        sendableText,
+        message.attachmentSourcePaths.length > 0,
+        !!workflow && !chat,
       )
     ) {
-      return;
-    }
-    try {
-      submittedText = await params.resolveChatSubmittedText(nodeId);
-    } catch (error) {
-      params.showErrorToast(normalizeError(error));
       return;
     }
     setStartingRun(true);
     if (chat?.runId && params.runState()) {
       try {
-        await resumeChatWithInput(chat, nodeId, submittedText);
+        await resumeChatWithInput(chat, nodeId, message, undefined, invokedSkillIds);
       } catch (error) {
         params.showErrorToast(normalizeError(error));
       } finally {
@@ -237,36 +276,36 @@ export function useRunSession(params: UseRunSessionParams) {
       }
       return;
     }
-    if (!chat) {
-      params.setPendingKickoff(submittedText);
-    }
     try {
       let nextRunState: WorkflowRunState;
       if (chat) {
-        const result = await desktop.startChat(
-          chat.id,
-          params.settings(),
-          params.activeProviderKeyInput() || null,
-          submittedText,
-        );
+        const result =
+          invokedSkillIds.length > 0
+            ? await desktop.startChat(
+                chat.id,
+                params.settings(),
+                params.activeProviderKeyInput() || null,
+                message,
+                invokedSkillIds,
+              )
+            : await desktop.startChat(
+                chat.id,
+                params.settings(),
+                params.activeProviderKeyInput() || null,
+                message,
+              );
         params.updateChat(result.chat);
         nextRunState = result.runState;
       } else {
-        nextRunState = await desktop.startRun(
-          workflow!,
-          params.settings(),
-          params.executionCwdForActiveWorkflow(),
-          params.activeProviderKeyInput() || null,
-          submittedText,
-        );
+        const kickoffMessage =
+          sendableText.trim() !== "" || message.attachmentSourcePaths.length > 0
+            ? message
+            : null;
+        nextRunState = await startRunFromChat(workflow!, kickoffMessage, invokedSkillIds);
       }
-      params.setChatDraft(nodeId, "");
-      const liveState = await beginSynchronizedRunSession(nextRunState);
-      if (!chat) {
-        await params.flushPendingKickoff(liveState);
-      }
+      params.clearChatSubmission(nodeId);
+      await beginSynchronizedRunSession(nextRunState);
     } catch (error) {
-      params.setPendingKickoff(null);
       params.showErrorToast(normalizeError(error));
     } finally {
       setStartingRun(false);
@@ -278,16 +317,67 @@ export function useRunSession(params: UseRunSessionParams) {
     if (!chat?.runId || stoppingRun() || startingRun()) {
       return;
     }
-    let submittedText: string;
+    let message: UserMessageInput;
+    const submission = params.chatSubmissionFor(nodeId);
     try {
-      submittedText = await params.resolveChatSubmittedText(nodeId);
+      message = await params.resolveChatSubmissionPayload(nodeId);
     } catch (error) {
       params.showErrorToast(normalizeError(error));
       return;
     }
     setStartingRun(true);
     try {
-      await resumeChatWithInput(chat, nodeId, submittedText, nodeId);
+      await resumeChatWithInput(
+        chat,
+        nodeId,
+        message,
+        nodeId,
+        submission.invokedSkills ?? [],
+      );
+    } catch (error) {
+      params.showErrorToast(normalizeError(error));
+    } finally {
+      setStartingRun(false);
+    }
+  };
+
+  const handleResumeReplayFromInput = async (draftNodeId: NodeId) => {
+    const runId = replayRunId();
+    const workflow = params.activeWorkflow();
+    const targetNodeId = replayContinuationNodeId(workflow, params.runState());
+    if (
+      !runId ||
+      !workflow ||
+      !targetNodeId ||
+      !params.applySchemaEditor() ||
+      stoppingRun() ||
+      startingRun()
+    ) {
+      return;
+    }
+    const submission = params.chatSubmissionFor(draftNodeId);
+    let message: UserMessageInput;
+    try {
+      message = await params.resolveChatSubmissionPayload(draftNodeId);
+    } catch (error) {
+      params.showErrorToast(normalizeError(error));
+      return;
+    }
+    setStartingRun(true);
+    try {
+      const resumed = await desktop.resumeDurableRun(
+        runId,
+        params.settings(),
+        params.activeProviderKeyInput() || null,
+        {
+          nodeId: targetNodeId,
+          text: message.text,
+          invokedSkillIds: [...(submission.invokedSkills ?? [])],
+        },
+      );
+      await beginSynchronizedRunSession(resumed);
+      params.clearChatSubmission(draftNodeId);
+      await params.handleRefreshRunHistoryRef();
     } catch (error) {
       params.showErrorToast(normalizeError(error));
     } finally {
@@ -316,7 +406,6 @@ export function useRunSession(params: UseRunSessionParams) {
   const handleStopRun = async () => {
     if (!params.runState()?.active || stoppingRun()) return;
     setStoppingRun(true);
-    params.setPendingKickoff(null);
     try {
       const nextRunState = await desktop.stopRun();
       params.publishBackendRunState(nextRunState);
@@ -544,6 +633,7 @@ export function useRunSession(params: UseRunSessionParams) {
     handleRun,
     handleStartRunFromChat,
     handleResumeChatFromInput,
+    handleResumeReplayFromInput,
     handleContinueRun,
     handleStopRun,
     handleInterruptNode,

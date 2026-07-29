@@ -137,6 +137,8 @@ mod tests {
             tool_config: NodeToolConfig::default(),
             available_tools: vec![],
             transcript: vec![],
+            entrypoint_attachments: Vec::new(),
+            resolved_attachments: std::collections::BTreeMap::new(),
             model_attempt: 1,
             reasoning_effort: None,
             reasoning_budget_tokens: None,

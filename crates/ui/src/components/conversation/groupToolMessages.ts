@@ -70,6 +70,7 @@ export function expandThinkMessages(messages: ChatMessage[]): ChatMessage[] {
 function isInvisibleNonTool(message: ChatMessage): boolean {
   if (message.messageKind === "node_completed") return false;
   if (isToolMarker(message)) return false;
+  if ((message.attachments?.length ?? 0) > 0) return false;
   if (isApprovalSystemLine(message)) return true;
   if (isLegacyToolThinkingMessage(message)) return true;
   if (message.streaming) return false;

@@ -93,8 +93,8 @@ flowchart LR
 ```mermaid
 stateDiagram-v2
     [*] --> Running
-    Running --> CallAi : runnable auto-start node<br/>(or manual node with transcript)
-    Running --> AwaitInput : manual node (auto-start off)<br/>or agent asked a question
+    Running --> CallAi : node inputs ready
+    Running --> AwaitInput : agent asked a question
     Running --> AwaitToolApproval : pending batch needs approval
     Running --> RunTools : pending batch auto-allowed
     Running --> Completed : all layers done → RunReport
@@ -262,9 +262,9 @@ flowchart LR
 Malformed harness-tool calls get **class-specific retry budgets** with targeted corrective feedback (e.g. `MALFORMED_REQUEST_INPUT_FEEDBACK` tells the model to provide a direct `assistant_message` or valid structured `questions`), distinct from transient-network retry counters.
 After the request-input retry budget is exhausted, the node fails instead of surfacing narration as a human question. Plain provider text never becomes `NeedsUserInput`; only an explicit, valid `openflow_request_user_input` call may pause a running node.
 
-### 5.2 Humans are nodes, not interrupts
+### 5.2 Human input is an explicit runtime request
 
-Toggling **auto-start off** turns any agent node into a human checkpoint *at the same position in the graph*. The engine schedules it like any other node — it waits for upstream outputs, shows the assembled context (`assemble_context`) in the chat before you type, and your text becomes the node's contribution. Orchestration resumes the same state machine through `InteractiveEngine::on_human_input` and `InteractiveEngine::on_tool_decision`.
+Every node starts as soon as its upstream inputs are ready. A node configured with `request_user_input` may call `openflow_request_user_input` when it needs clarification or a decision. Orchestration resumes the same state machine through `InteractiveEngine::on_human_input` and `InteractiveEngine::on_tool_decision`.
 
 Because `NeedsInteraction` batches all paused nodes, parallel branches don't serialize on the human: branch A can await your input while branch B keeps executing tools.
 

@@ -14,8 +14,8 @@ pub mod tools;
 
 pub use conversation::{
     filter_tool_turn_assistant_message, strip_tool_call_markup, summary_from_node_output,
-    AgentReasoning, AgentReasoningContent, AgentTranscriptItem, ChatMessage, ChatMessageKind,
-    ChatRole,
+    AgentReasoning, AgentReasoningContent, AgentTranscriptItem, ChatAttachmentKind,
+    ChatAttachmentRef, ChatMessage, ChatMessageKind, ChatRole,
 };
 pub use execution::{
     advance_subagent_invoke, augment_call_subagent_tool_description, complete_submit_output,
@@ -41,9 +41,9 @@ pub use graph::{
 pub use ports::{
     emit_assistant_deltas_from_outcome, AgentError, AgentMessageTurn, AgentNeedUserInput,
     AgentRequest, AgentToolCallBatch, AgentTurnOutcome, AgentTurnSuccess, AiPort, AiStreamEvent,
-    AiStreamSink, OutputRepairCandidate, OutputRepairFailureKind, StructuredUserInput,
-    ToolAccessPolicy, ToolBatchEffects, ToolBatchOutput, ToolPort, UsageReport, UserInputOption,
-    UserInputQuestion,
+    AiStreamSink, OutputRepairCandidate, OutputRepairFailureKind, ResolvedChatAttachment,
+    StructuredUserInput, ToolAccessPolicy, ToolBatchEffects, ToolBatchOutput, ToolPort,
+    UsageReport, UserInputOption, UserInputQuestion,
 };
 pub use template::{default_templates, Template, TemplateStore, TemplateStoreError};
 pub use tools::{

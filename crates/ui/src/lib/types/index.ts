@@ -8,6 +8,7 @@ export type DurableRunStatus = "running" | "paused" | "stopped" | "completed" | 
 
 export interface RunSummary {
   runId: string;
+  name: string;
   workflowId: string;
   workflowName: string;
   projectId: string | null;
@@ -159,6 +160,7 @@ export interface AgentNodeConfig {
   task_prompt: string;
   model: string;
   output_schema: unknown;
+  /** Legacy wire field. Runtime scheduling ignores it. */
   auto_start: boolean;
   tools: NodeToolConfig;
   callable_agents: string[];
@@ -186,6 +188,7 @@ export interface AgentDefinition {
   task_prompt: string;
   model: string;
   output_schema: unknown;
+  /** Legacy wire field. Saved agents run when invoked. */
   auto_start: boolean;
   tools: NodeToolConfig;
 }
@@ -208,9 +211,57 @@ export type ChatRole =
 
 export type ChatMessageKind = "node_completed";
 
+export type ChatAttachmentKind = "image" | "document";
+
+export interface ChatAttachmentRef {
+  id: string;
+  fileName: string;
+  mediaType: string;
+  sizeBytes: number;
+  sha256: string;
+  kind: ChatAttachmentKind;
+}
+
+export interface UserMessageInput {
+  text: string;
+  attachmentSourcePaths: string[];
+}
+
+export interface DurableRunContinuationInput {
+  nodeId: NodeId;
+  text: string;
+  invokedSkillIds: string[];
+}
+
+export interface PendingChatAttachment {
+  sourcePath: string;
+  fileName: string;
+  sizeBytes?: number;
+  kind: ChatAttachmentKind;
+  staged?: boolean;
+}
+
+export interface StagedChatAttachment {
+  token: string;
+  fileName: string;
+  sizeBytes: number;
+  kind: ChatAttachmentKind;
+}
+
+export interface AttachmentPreview {
+  mediaType: string;
+  dataBase64: string;
+}
+
+export type ChatDeleteResult =
+  | "deleted"
+  | "deletedCleanupPending"
+  | { status: "deleted" | "deletedCleanupPending" };
+
 export interface ChatMessage {
   role: ChatRole;
   content: string;
+  attachments?: ChatAttachmentRef[];
   id?: string;
   streaming?: boolean;
   toolCallId?: string;
@@ -387,6 +438,13 @@ export interface StructuredUserInput {
   questions: UserInputQuestion[];
 }
 
+export interface ContextWindowSnapshot {
+  usedTokens: number;
+  maxTokens: number;
+  model: string;
+  nodeId: NodeId;
+}
+
 export interface WorkflowRunState {
   active: boolean;
   runId?: string | null;
@@ -410,6 +468,7 @@ export interface WorkflowRunState {
   changedFiles: FileChangeRecord[];
   changedFilesByNode: Record<NodeId, FileChangeRecord[]>;
   editBatches: EditBatch[];
+  contextWindowByNode?: Record<NodeId, ContextWindowSnapshot>;
 }
 
 export type ProviderId = string;

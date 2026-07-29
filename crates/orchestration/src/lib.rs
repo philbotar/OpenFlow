@@ -28,12 +28,15 @@ pub use adapters::infrastructure::git;
 pub use adapters::infrastructure::lsp;
 
 // Re-exports of engine types consumed by downstream layers
-pub use api::{ProjectFileReference, ProjectFileReferenceKind};
+pub use api::{
+    AttachmentPreviewPayload, ChatDeleteResult, DurableRunContinuationInput, ProjectFileReference,
+    ProjectFileReferenceKind, StagedAttachmentPayload, UserMessageInput,
+};
 pub use chat::{Chat, ChatConfig};
 pub use engine::CallableAgent as AgentDefinition;
 pub use engine::{
-    Node, NodeId, NodeRunOutput, PendingToolApproval, RunReport, RunTelemetry, ToolCall, ToolTier,
-    Workflow, WorkflowId, WorkflowSchedule,
+    ChatAttachmentKind, ChatAttachmentRef, Node, NodeId, NodeRunOutput, PendingToolApproval,
+    RunReport, RunTelemetry, ToolCall, ToolTier, Workflow, WorkflowId, WorkflowSchedule,
 };
 pub use project::ports::Project;
 pub use settings::codex_login::CodexLoginStatus;

@@ -1,7 +1,7 @@
 //! Outbound ports owned by the engine.
 
 use crate::conversation::{
-    filter_tool_turn_assistant_message, AgentReasoning, AgentTranscriptItem,
+    filter_tool_turn_assistant_message, AgentReasoning, AgentTranscriptItem, ChatAttachmentRef,
 };
 use crate::graph::{NodeId, WorkflowId};
 use crate::tools::{
@@ -9,6 +9,7 @@ use crate::tools::{
 };
 use async_trait::async_trait;
 use serde_json::Value;
+use std::collections::BTreeMap;
 use thiserror::Error;
 
 /// Run-scoped capability policy selected by the engine.
@@ -21,6 +22,11 @@ pub enum ToolAccessPolicy {
     #[default]
     Execution,
     Planning,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedChatAttachment {
+    pub bytes: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,6 +43,10 @@ pub struct AgentRequest {
     pub tool_config: NodeToolConfig,
     pub available_tools: Vec<ToolDefinition>,
     pub transcript: Vec<AgentTranscriptItem>,
+    /// Initial user attachment refs for this invocation.
+    pub entrypoint_attachments: Vec<ChatAttachmentRef>,
+    /// Transient bytes hydrated by the run host, keyed by attachment id.
+    pub resolved_attachments: BTreeMap<String, ResolvedChatAttachment>,
     /// 1-based model invocation attempt for this node (retries increment).
     pub model_attempt: u8,
     /// Opaque reasoning effort level forwarded to the provider.

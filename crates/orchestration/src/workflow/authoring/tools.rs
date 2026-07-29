@@ -68,14 +68,13 @@ pub fn authoring_tool_definitions() -> Vec<ToolDefinition> {
                     "label": { "type": "string" },
                     "systemPrompt": { "type": "string" },
                     "taskPrompt": { "type": "string" },
-                    "autoStart": { "type": "boolean" },
                     "requestUserInput": {
                         "type": "boolean",
                         "description": "True only when this node genuinely needs an ongoing human conversation. Use false for autonomous planning, coding, searching, reviewing, and verification nodes."
                     },
                     "outputSchema": { "type": "object" }
                 },
-                "required": ["id", "label", "systemPrompt", "taskPrompt", "autoStart"]
+                "required": ["id", "label", "systemPrompt", "taskPrompt"]
             }),
             tier: ToolTier::Write,
             concurrency: ToolConcurrency::Shared,
@@ -91,7 +90,6 @@ pub fn authoring_tool_definitions() -> Vec<ToolDefinition> {
                     "label": { "type": "string" },
                     "systemPrompt": { "type": "string" },
                     "taskPrompt": { "type": "string" },
-                    "autoStart": { "type": "boolean" },
                     "requestUserInput": { "type": "boolean" },
                     "outputSchema": { "type": "object" }
                 },
@@ -245,7 +243,6 @@ impl AuthoringToolState {
             label: String,
             system_prompt: String,
             task_prompt: String,
-            auto_start: bool,
             #[serde(default)]
             request_user_input: bool,
             output_schema: Option<Value>,
@@ -271,7 +268,6 @@ impl AuthoringToolState {
                 .output_schema
                 .filter(|schema| schema.is_object())
                 .unwrap_or_else(default_node_output_schema),
-            auto_start: args.auto_start,
             request_user_input: args.request_user_input,
         });
         Ok(())
@@ -285,7 +281,6 @@ impl AuthoringToolState {
             label: Option<String>,
             system_prompt: Option<String>,
             task_prompt: Option<String>,
-            auto_start: Option<bool>,
             request_user_input: Option<bool>,
             output_schema: Option<Value>,
         }
@@ -314,9 +309,6 @@ impl AuthoringToolState {
                 return Err("taskPrompt must be non-empty".to_string());
             }
             node.task_prompt = task_prompt;
-        }
-        if let Some(auto_start) = args.auto_start {
-            node.auto_start = auto_start;
         }
         if let Some(request_user_input) = args.request_user_input {
             node.request_user_input = request_user_input;

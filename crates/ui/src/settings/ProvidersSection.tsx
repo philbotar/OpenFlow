@@ -6,6 +6,7 @@ import {
   codexLoginStatus,
   disconnectCodex,
   refreshBedrockModels,
+  refreshProviderModels,
   startCodexLogin,
   verifyBedrockCredentials,
 } from "../api";
@@ -58,11 +59,20 @@ export function ProvidersSection() {
   const profileEditable = () => ctx.activeProfileMemo().editable;
   const isBedrock = () => ctx.settings().active_provider === "bedrock";
   const isCodex = () => ctx.settings().active_provider === "openai-codex";
+  const isCustomOpenAi = () =>
+    ctx.settings().active_provider === "custom_openai_compatible";
+  const supportsRemoteModelDiscovery = () => !isBedrock() && !isCodex();
   const bedrockRegion = createMemo(
     () => ctx.activeProfileMemo().aws_region ?? ctx.activeProfileMemo().base_url,
   );
   const profileModeLabel = () => (profileEditable() ? "Custom endpoint" : "Managed provider");
   const [refreshingModels, setRefreshingModels] = createSignal(false);
+  const [remoteModelsByProvider, setRemoteModelsByProvider] = createSignal<
+    Record<string, string[]>
+  >({});
+  const remoteModels = createMemo(
+    () => remoteModelsByProvider()[ctx.settings().active_provider] ?? [],
+  );
   const [verifyingCredentials, setVerifyingCredentials] = createSignal(false);
   const [newEffortValue, setNewEffortValue] = createSignal("");
   const [newEffortLabel, setNewEffortLabel] = createSignal("");
@@ -162,26 +172,62 @@ export function ProvidersSection() {
   }
 
   async function handleRefreshBedrockModels() {
+    const providerId = ctx.settings().active_provider;
     setRefreshingModels(true);
     try {
       const models = await refreshBedrockModels(ctx.settings());
-      await ctx.updateSettings((draft) => {
-        const profile = activeProfile(draft);
-        profile.known_models = models;
-        if (
-          profile.default_model &&
-          !models.includes(profile.default_model)
-        ) {
-          profile.default_model = models[0] ?? null;
-        } else if (!profile.default_model) {
-          profile.default_model = models[0] ?? null;
-        }
-      });
+      setRemoteModelsByProvider((current) => ({
+        ...current,
+        [providerId]: models,
+      }));
     } catch (error) {
       ctx.showErrorToast(normalizeError(error), "Refresh Bedrock models");
     } finally {
       setRefreshingModels(false);
     }
+  }
+
+  async function handleRefreshProviderModels() {
+    const providerId = ctx.settings().active_provider;
+    setRefreshingModels(true);
+    try {
+      const models = await refreshProviderModels(
+        ctx.settings(),
+        ctx.activeProviderKeyInput() || null,
+      );
+      setRemoteModelsByProvider((current) => ({
+        ...current,
+        [providerId]: models,
+      }));
+      if (models.length === 0) {
+        ctx.showErrorToast(
+          "The provider returned no models.",
+          "Fetch provider models",
+        );
+      }
+    } catch (error) {
+      ctx.showErrorToast(normalizeError(error), "Fetch provider models");
+    } finally {
+      setRefreshingModels(false);
+    }
+  }
+
+  function setRemoteModelSelected(model: string, selected: boolean) {
+    void ctx.updateSettings((draft) => {
+      const profile = activeProfile(draft);
+      const models = selected
+        ? [...new Set([...profile.known_models, model])]
+        : profile.known_models.filter((candidate) => candidate !== model);
+      profile.known_models = models;
+      if (!selected && profile.default_model === model) {
+        profile.default_model = models[0] ?? null;
+      }
+      if (!selected && profile.model_transports) {
+        const transports = { ...profile.model_transports };
+        delete transports[model];
+        profile.model_transports = transports;
+      }
+    });
   }
 
   function updateModelTransport(model: string, transport: string) {
@@ -244,6 +290,22 @@ export function ProvidersSection() {
                 }
               />
             </label>
+            <Show when={profileEditable()}>
+              <label>
+                <span>API base URL</span>
+                <input
+                  class="text-input"
+                  value={ctx.activeProfileMemo().base_url}
+                  placeholder="https://provider.internal/v1"
+                  onInput={(event) =>
+                    void ctx.updateSettings((draft) => {
+                      activeProfile(draft).base_url =
+                        event.currentTarget.value;
+                    })
+                  }
+                />
+              </label>
+            </Show>
           </section>
 
           <section
@@ -257,14 +319,18 @@ export function ProvidersSection() {
                     ? "AWS credentials"
                     : isCodex()
                       ? "ChatGPT account"
-                      : "API key"}
+                      : isCustomOpenAi()
+                        ? "API key (optional)"
+                        : "API key"}
                 </h3>
                 <p class="providers-panel-copy">
                   {isBedrock()
                     ? "Use an AWS profile, region, or exported credentials command."
                     : isCodex()
                       ? "Use your ChatGPT subscription to run supported Codex models."
-                      : "Use a stored local key, with environment variables as fallback."}
+                      : isCustomOpenAi()
+                        ? "Optional for endpoints reached through localhost, a VPN or trusted network. Add one only when the endpoint requires auth."
+                        : "Use a stored local key, with environment variables as fallback."}
                 </p>
               </div>
             </div>
@@ -511,10 +577,57 @@ export function ProvidersSection() {
                       absoluteStrokeWidth
                       strokeWidth={ICON_STROKE_WIDTH}
                     />
-                    {refreshingModels() ? "Refreshing…" : "Refresh from AWS"}
+                    {refreshingModels() ? "Fetching…" : "Fetch from AWS"}
+                  </Button>
+                </Show>
+                <Show when={supportsRemoteModelDiscovery()}>
+                  <Button
+                    variant="secondary"
+                    class="providers-icon-button"
+                    disabled={refreshingModels()}
+                    onClick={() => void handleRefreshProviderModels()}
+                  >
+                    <RefreshCw
+                      aria-hidden="true"
+                      absoluteStrokeWidth
+                      strokeWidth={ICON_STROKE_WIDTH}
+                    />
+                    {refreshingModels() ? "Fetching…" : "Fetch models"}
                   </Button>
                 </Show>
               </div>
+              <Show when={remoteModels().length > 0}>
+                <fieldset class="provider-model-discovery">
+                  <legend>Models returned by API</legend>
+                  <p>Select every model you want available in OpenFlow.</p>
+                  <div
+                    class="provider-model-discovery-list"
+                    role="group"
+                    aria-label="Select provider models"
+                  >
+                    <For each={remoteModels()}>
+                      {(model) => (
+                        <label class="provider-model-discovery-option">
+                          <input
+                            type="checkbox"
+                            aria-label={`Use ${model}`}
+                            checked={ctx
+                              .activeProfileMemo()
+                              .known_models.includes(model)}
+                            onChange={(event) =>
+                              setRemoteModelSelected(
+                                model,
+                                event.currentTarget.checked,
+                              )
+                            }
+                          />
+                          <span>{model}</span>
+                        </label>
+                      )}
+                    </For>
+                  </div>
+                </fieldset>
+              </Show>
             </div>
             <div class="provider-model-catalog">
               <span class="provider-model-list-heading">Available models</span>
@@ -591,28 +704,30 @@ export function ProvidersSection() {
                   </div>
                 </div>
                 <div class="field-grid">
-                  <label>
-                    <span>{isBedrock() ? "AWS region" : "Base URL"}</span>
-                    <input
-                      class="text-input"
-                      value={
-                        isBedrock()
-                          ? bedrockRegion()
-                          : ctx.activeProfileMemo().base_url
-                      }
-                      disabled={!profileEditable() && !isBedrock()}
-                      onInput={(event) =>
-                        void ctx.updateSettings((draft) => {
-                          const profile = activeProfile(draft);
-                          if (isBedrock()) {
-                            profile.aws_region = event.currentTarget.value;
-                          } else {
-                            profile.base_url = event.currentTarget.value;
-                          }
-                        })
-                      }
-                    />
-                  </label>
+                  <Show when={!profileEditable()}>
+                    <label>
+                      <span>{isBedrock() ? "AWS region" : "Base URL"}</span>
+                      <input
+                        class="text-input"
+                        value={
+                          isBedrock()
+                            ? bedrockRegion()
+                            : ctx.activeProfileMemo().base_url
+                        }
+                        disabled={!isBedrock()}
+                        onInput={(event) =>
+                          void ctx.updateSettings((draft) => {
+                            const profile = activeProfile(draft);
+                            if (isBedrock()) {
+                              profile.aws_region = event.currentTarget.value;
+                            } else {
+                              profile.base_url = event.currentTarget.value;
+                            }
+                          })
+                        }
+                      />
+                    </label>
+                  </Show>
                   <Show when={!isBedrock()}>
                     <label>
                       <span>Transport</span>

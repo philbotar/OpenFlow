@@ -56,6 +56,7 @@ export type OpenflowIpcMockOptions = {
 
 export interface OpenflowBootstrapFixture {
   workflows: readonly unknown[];
+  chats?: readonly unknown[];
   agents: readonly unknown[];
   projects: readonly unknown[];
   skills?: readonly unknown[];

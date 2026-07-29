@@ -34,6 +34,7 @@ interface UseAppShellParams {
 
 export function useAppShell(params: UseAppShellParams) {
   const [screen, setScreen] = createSignal<Screen>("editor");
+  let settingsReturnScreen: Exclude<Screen, "settings"> = "editor";
   const [settingsSection, setSettingsSection] =
     createSignal<SettingsSectionId>("appearance");
   const [themePreference, setThemePreference] = createSignal<ThemePreference>(
@@ -51,8 +52,17 @@ export function useAppShell(params: UseAppShellParams) {
   const clearAppUpdateAvailable = () => setAppUpdateAvailable(false);
 
   const navigateToScreen = (next: Screen) => {
-    if (screen() === next) return;
+    const current = screen();
+    if (current === next) return;
+    if (next === "settings" && current !== "settings") {
+      settingsReturnScreen = current;
+    }
     setScreen(next);
+  };
+
+  const returnFromSettings = () => {
+    if (screen() !== "settings") return;
+    setScreen(settingsReturnScreen);
   };
 
   const syncCompactViewport = (width = globalThis.innerWidth ?? 1280) => {
@@ -167,6 +177,7 @@ export function useAppShell(params: UseAppShellParams) {
     settingsSection,
     setSettingsSection,
     navigateToScreen,
+    returnFromSettings,
     themePreference,
     resolvedTheme,
     handleSetThemePreference,

@@ -3,10 +3,11 @@ use async_trait::async_trait;
 use engine::{
     filter_tool_turn_assistant_message, AgentError, AgentMessageTurn, AgentNeedUserInput,
     AgentRequest, AgentToolCallBatch, AgentTurnOutcome, AgentTurnSuccess, AiPort, AiStreamEvent,
-    AiStreamSink, ChatRole, NodeId,
+    AiStreamSink, ChatRole, NodeId, ResolvedChatAttachment,
 };
 use parking_lot::Mutex;
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
@@ -21,6 +22,8 @@ pub struct AiInvocationAdapter<A> {
     node_interrupts: NodeInterrupts,
     run_cancel_token: CancellationToken,
     context_window_sizes: BTreeMap<String, u32>,
+    attachment_root: Option<PathBuf>,
+    attachment_store: Option<Arc<dyn crate::run::ports::RunAttachmentStore>>,
 }
 
 impl<A> AiInvocationAdapter<A>
@@ -41,7 +44,58 @@ where
             node_interrupts,
             run_cancel_token,
             context_window_sizes,
+            attachment_root: None,
+            attachment_store: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_attachment_store(
+        mut self,
+        attachment_root: PathBuf,
+        attachment_store: Arc<dyn crate::run::ports::RunAttachmentStore>,
+    ) -> Self {
+        self.attachment_root = Some(attachment_root);
+        self.attachment_store = Some(attachment_store);
+        self
+    }
+
+    async fn hydrate_attachments(&self, request: &mut AgentRequest) -> Result<(), AgentError> {
+        let mut refs = BTreeMap::new();
+        for attachment in &request.entrypoint_attachments {
+            refs.insert(attachment.id.clone(), attachment.clone());
+        }
+        for item in &request.transcript {
+            if let engine::AgentTranscriptItem::UserMessage { attachments, .. } = item {
+                for attachment in attachments {
+                    refs.insert(attachment.id.clone(), attachment.clone());
+                }
+            }
+        }
+        if refs.is_empty() {
+            request.resolved_attachments.clear();
+            return Ok(());
+        }
+        let root = self.attachment_root.clone().ok_or_else(|| {
+            AgentError::Permanent("run attachment storage is unavailable".to_string())
+        })?;
+        let store = self.attachment_store.clone().ok_or_else(|| {
+            AgentError::Permanent("run attachment storage is unavailable".to_string())
+        })?;
+        let resolved = tokio::task::spawn_blocking(move || {
+            refs.into_values()
+                .map(|attachment| {
+                    store
+                        .read(&root, &attachment)
+                        .map(|bytes| (attachment.id, ResolvedChatAttachment { bytes }))
+                })
+                .collect::<Result<BTreeMap<_, _>, _>>()
+        })
+        .await
+        .map_err(|error| AgentError::Permanent(format!("attachment hydration failed: {error}")))?
+        .map_err(|error| AgentError::Permanent(error.to_string()))?;
+        request.resolved_attachments = resolved;
+        Ok(())
     }
 
     fn node_token_for(&self, node_id: &NodeId, attempt: u8) -> CancellationToken {
@@ -137,7 +191,8 @@ impl<A> AiPort for AiInvocationAdapter<A>
 where
     A: AiPort + Send + Sync + 'static,
 {
-    async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+    async fn invoke(&self, mut request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+        self.hydrate_attachments(&mut request).await?;
         maybe_send_node_start_events(self, &request);
         let node_id = request.node_id.clone();
         let label = request.node_label.clone();
@@ -199,8 +254,10 @@ where
             );
         }
         if let Ok(outcome) = &result {
-            if should_emit_assistant_message(did_stream, outcome, &streamed_content.lock()) {
-                emit_assistant_message(&self.event_tx, &node_id, outcome);
+            if let Some(content) =
+                assistant_message_to_emit(did_stream, outcome, &streamed_content.lock())
+            {
+                emit_assistant_message(&self.event_tx, &node_id, content);
             }
             // Emit usage report if available
             let usage = match outcome {
@@ -292,40 +349,44 @@ fn assistant_message_for_outcome(outcome: &AgentTurnOutcome) -> Option<String> {
     }
 }
 
-fn should_emit_assistant_message(
+fn assistant_message_to_emit(
     did_stream: bool,
     outcome: &AgentTurnOutcome,
     streamed_text: &str,
-) -> bool {
-    if !did_stream {
-        return true;
-    }
-    let Some(content) = filter_tool_turn_assistant_message(assistant_message_for_outcome(outcome))
-    else {
-        return false;
-    };
+) -> Option<String> {
+    let content = filter_tool_turn_assistant_message(assistant_message_for_outcome(outcome))?;
     let trimmed = content.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if !did_stream {
+        return Some(content);
+    }
     let stripped_streamed =
         filter_tool_turn_assistant_message(Some(streamed_text.to_string())).unwrap_or_default();
-    !trimmed.is_empty() && !stripped_streamed.contains(trimmed)
+    let streamed_trimmed = stripped_streamed.trim();
+    if stripped_streamed.contains(trimmed) {
+        return None;
+    }
+    if !streamed_trimmed.is_empty() {
+        if let Some(suffix) = trimmed.strip_prefix(streamed_trimmed) {
+            return Some(suffix.trim_start().to_string()).filter(|suffix| !suffix.is_empty());
+        }
+    }
+    Some(content)
 }
 
 fn emit_assistant_message(
     event_tx: &UnboundedSender<ExecutionEvent>,
     node_id: &NodeId,
-    outcome: &AgentTurnOutcome,
+    content: String,
 ) {
-    if let Some(content) =
-        filter_tool_turn_assistant_message(assistant_message_for_outcome(outcome))
-            .filter(|value| !value.trim().is_empty())
-    {
-        send_or_log(
-            event_tx,
-            ExecutionEvent::ChatMessage {
-                node_id: node_id.clone(),
-                role: ChatRole::Assistant,
-                content,
-            },
-        );
-    }
+    send_or_log(
+        event_tx,
+        ExecutionEvent::ChatMessage {
+            node_id: node_id.clone(),
+            role: ChatRole::Assistant,
+            content,
+        },
+    );
 }

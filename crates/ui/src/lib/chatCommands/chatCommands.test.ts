@@ -37,7 +37,7 @@ describe("resolveChatSubmission", () => {
     ).toEqual({
       bodyText: "Investigate ORCHID-91",
       invokedSkills: ["systematic-debugging"],
-      submittedText: "Skill invocation:\n- systematic-debugging\n\nUser message:\nInvestigate ORCHID-91",
+      submittedText: "Investigate ORCHID-91",
     });
   });
 
@@ -50,7 +50,17 @@ describe("resolveChatSubmission", () => {
     ).toEqual({
       bodyText: "Prepare the brief",
       invokedSkills: ["brainstorming", "documents"],
-      submittedText: "Skill invocation:\n- brainstorming\n- documents\n\nUser message:\nPrepare the brief",
+      submittedText: "Prepare the brief",
+    });
+  });
+
+  test("collects a known skill token after user prose", () => {
+    expect(
+      resolveChatSubmission("Please use /browser to inspect the page", FIXTURE_SKILL_IDS),
+    ).toEqual({
+      bodyText: "Please use to inspect the page",
+      invokedSkills: ["browser"],
+      submittedText: "Please use to inspect the page",
     });
   });
 
@@ -66,7 +76,7 @@ describe("resolveChatSubmission", () => {
     expect(resolveChatSubmission("/browser /not-a-skill check the page", FIXTURE_SKILL_IDS)).toEqual({
       bodyText: "/not-a-skill check the page",
       invokedSkills: ["browser"],
-      submittedText: "Skill invocation:\n- browser\n\nUser message:\n/not-a-skill check the page",
+      submittedText: "/not-a-skill check the page",
     });
   });
 
@@ -74,7 +84,7 @@ describe("resolveChatSubmission", () => {
     expect(resolveChatSubmission("/requesting-code-review", FIXTURE_SKILL_IDS)).toEqual({
       bodyText: "",
       invokedSkills: ["requesting-code-review"],
-      submittedText: "Skill invocation:\n- requesting-code-review",
+      submittedText: "",
     });
   });
 });

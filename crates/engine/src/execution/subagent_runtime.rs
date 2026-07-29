@@ -235,6 +235,7 @@ fn build_saved_agent_request(
             "You are the saved agent \"{}\".\n\nTask: {input}",
             agent.name
         ),
+        attachments: Vec::new(),
     }];
     AgentRequest {
         workflow_id: workflow.id.clone(),
@@ -248,6 +249,8 @@ fn build_saved_agent_request(
         tool_config: sub_node_config,
         available_tools,
         transcript: sub_transcript,
+        entrypoint_attachments: Vec::new(),
+        resolved_attachments: std::collections::BTreeMap::new(),
         model_attempt: 1,
         reasoning_effort: None,
         reasoning_budget_tokens: None,
@@ -269,6 +272,7 @@ fn build_adhoc_agent_request(
             "You are a subagent named \"{}\" with the purpose: \"{}\"\n\nTask: {input}",
             subagent.name, subagent.purpose
         ),
+        attachments: Vec::new(),
     }];
     let system_prompt = merge_shared_context(
         workflow,
@@ -286,6 +290,8 @@ fn build_adhoc_agent_request(
         tool_config: sub_node_config,
         available_tools,
         transcript: sub_transcript,
+        entrypoint_attachments: Vec::new(),
+        resolved_attachments: std::collections::BTreeMap::new(),
         model_attempt: 1,
         reasoning_effort: None,
         reasoning_budget_tokens: None,
@@ -375,6 +381,7 @@ fn continue_autonomous_subagent(
         .transcript
         .push(AgentTranscriptItem::UserMessage {
             content: AUTONOMOUS_CONTINUE_FEEDBACK.to_string(),
+            attachments: Vec::new(),
         });
     session.text_turn_streak += 1;
     session.request.model_attempt = session.request.model_attempt.saturating_add(1);
@@ -480,7 +487,10 @@ mod tests {
                 available_tools: Vec::new(),
                 transcript: vec![AgentTranscriptItem::UserMessage {
                     content: "Do work".to_string(),
+                    attachments: Vec::new(),
                 }],
+                entrypoint_attachments: Vec::new(),
+                resolved_attachments: std::collections::BTreeMap::new(),
                 model_attempt: 1,
                 reasoning_effort: None,
                 reasoning_budget_tokens: None,
@@ -657,6 +667,7 @@ mod tests {
                 vec![
                     AgentTranscriptItem::UserMessage {
                         content: "Do work".to_string(),
+                        attachments: Vec::new(),
                     },
                     AgentTranscriptItem::AssistantMessage {
                         content: "Reading notes".to_string(),
@@ -687,7 +698,7 @@ mod tests {
                 assert_eq!(next.request.model_attempt, 2);
                 assert!(matches!(
                     next.request.transcript.last(),
-                    Some(AgentTranscriptItem::UserMessage { content })
+                    Some(AgentTranscriptItem::UserMessage { content, .. })
                         if content.contains("No human input is available")
                 ));
             }

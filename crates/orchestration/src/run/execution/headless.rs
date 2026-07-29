@@ -66,15 +66,22 @@ where
     let pending_engine_reverts = Arc::new(parking_lot::Mutex::new(Vec::new()));
 
     let node_interrupts: NodeInterrupts = Arc::new(parking_lot::Mutex::new(BTreeMap::new()));
+    let attachment_root = super::new_artifact_root().join("attachments");
 
     let handle = tokio::spawn(drive_interactive_workflow(
         InteractiveWorkflowRunParams {
             workflow: workflow.clone(),
             entrypoint,
+            entrypoint_attachments: Vec::new(),
             execution_cwd,
             project_repository_root: None,
             artifact_root: super::new_artifact_root(),
+            attachment_root,
+            attachment_store: Arc::new(
+                crate::adapters::storage::run_attachment_store::FileRunAttachmentStore::default(),
+            ),
             resume_checkpoint: None,
+            resume_continuation: None,
             checkpoint_sink: Arc::new(parking_lot::Mutex::new(None)),
             ai,
             agent_snapshots,
@@ -159,6 +166,8 @@ where
                     .send(ExecutionAction::ProvideInput {
                         node_id: input.node_id.clone(),
                         text: input.text.clone(),
+                        attachments: Vec::new(),
+                        skill_prompt: None,
                     })
                     .map_err(|_| {
                         WorkflowExecutionError::Execution("run channel closed".to_string())

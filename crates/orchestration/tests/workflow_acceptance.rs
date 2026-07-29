@@ -5,6 +5,7 @@ use engine::{
     AgentError, AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTurnOutcome,
     AgentTurnSuccess, AiPort, ApprovalMode, Edge, NodeId, ToolCall, Workflow,
 };
+use orchestration::adapters::storage::run_attachment_store::FileRunAttachmentStore;
 use orchestration::run::execution::{
     new_artifact_root, new_in_memory_snapshot_store, run_workflow_headless,
     spawn_interactive_workflow_run, ApprovalResponse, ExecutionAction, ExecutionEvent,
@@ -129,7 +130,7 @@ async fn branch_join_workflow_preserves_sentinel_and_trace_contract() {
 
 #[cfg_attr(miri, ignore)]
 #[tokio::test]
-async fn manual_node_pauses_accepts_input_and_feeds_downstream_node() {
+async fn node_starts_then_pauses_for_question_and_feeds_downstream_node() {
     #[derive(Clone, Default)]
     struct ManualAi {
         requests: Arc<Mutex<Vec<AgentRequest>>>,
@@ -161,7 +162,7 @@ async fn manual_node_pauses_accepts_input_and_feeds_downstream_node() {
                         .iter()
                         .rev()
                         .find_map(|item| match item {
-                            engine::AgentTranscriptItem::UserMessage { content } => {
+                            engine::AgentTranscriptItem::UserMessage { content, .. } => {
                                 Some(content.clone())
                             }
                             _ => None,
@@ -204,16 +205,10 @@ async fn manual_node_pauses_accepts_input_and_feeds_downstream_node() {
         workflow,
         Some("Use project code ORCHID-91".to_string()),
         ManualAi::default(),
-        vec![
-            ManualInput {
-                node_id: NodeId("human-review".into()),
-                text: "Need the mandatory approval".to_string(),
-            },
-            ManualInput {
-                node_id: NodeId("human-review".into()),
-                text: "Legal sign-off keeps ORCHID-91".to_string(),
-            },
-        ],
+        vec![ManualInput {
+            node_id: NodeId("human-review".into()),
+            text: "Legal sign-off keeps ORCHID-91".to_string(),
+        }],
         vec![],
         BTreeMap::new(),
         None,
@@ -257,7 +252,7 @@ async fn conversational_node_can_pause_on_consecutive_explicit_input_requests() 
                         .iter()
                         .rev()
                         .find_map(|item| match item {
-                            engine::AgentTranscriptItem::UserMessage { content } => {
+                            engine::AgentTranscriptItem::UserMessage { content, .. } => {
                                 Some(content.clone())
                             }
                             _ => None,
@@ -595,13 +590,18 @@ fn checkpoint_interactive_params<A: AiPort + Send + Sync + 'static>(
         parking_lot::Mutex<Option<orchestration::run::persistence::PendingRunCheckpoint>>,
     >,
 ) -> InteractiveWorkflowRunParams<A> {
+    let attachment_root = execution_cwd.join("attachments");
     InteractiveWorkflowRunParams {
         workflow,
         entrypoint: None,
+        entrypoint_attachments: Vec::new(),
         execution_cwd,
         project_repository_root: None,
         artifact_root: new_artifact_root(),
+        attachment_root,
+        attachment_store: Arc::new(FileRunAttachmentStore::default()),
         resume_checkpoint,
+        resume_continuation: None,
         checkpoint_sink,
         ai,
         agent_snapshots: BTreeMap::new(),

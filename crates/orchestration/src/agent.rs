@@ -81,7 +81,10 @@ impl AgentLibrary {
             available_tools: Vec::new(),
             transcript: vec![AgentTranscriptItem::UserMessage {
                 content: description.to_string(),
+                attachments: Vec::new(),
             }],
+            entrypoint_attachments: Vec::new(),
+            resolved_attachments: Default::default(),
             model_attempt: 1,
             reasoning_effort,
             reasoning_budget_tokens,
@@ -172,7 +175,6 @@ impl AgentLibrary {
         node.agent.task_prompt = agent.task_prompt.clone();
         node.agent.model = agent.model.clone();
         node.agent.output_schema = agent.output_schema.clone();
-        node.agent.auto_start = agent.auto_start;
         node.agent.tools = agent.tools.clone();
 
         Ok(node)
@@ -190,7 +192,6 @@ struct AgentAuthoringDraft {
     system_prompt: String,
     task_prompt: String,
     output_schema_json: String,
-    auto_start: bool,
 }
 
 fn materialize_agent_draft(
@@ -217,7 +218,6 @@ fn materialize_agent_draft(
     agent.task_prompt = task_prompt;
     agent.model = model;
     agent.output_schema = output_schema;
-    agent.auto_start = draft.auto_start;
     Ok(agent)
 }
 
@@ -239,15 +239,13 @@ fn agent_authoring_output_schema() -> Value {
             "name": { "type": "string" },
             "systemPrompt": { "type": "string" },
             "taskPrompt": { "type": "string" },
-            "outputSchemaJson": { "type": "string" },
-            "autoStart": { "type": "boolean" }
+            "outputSchemaJson": { "type": "string" }
         },
         "required": [
             "name",
             "systemPrompt",
             "taskPrompt",
-            "outputSchemaJson",
-            "autoStart"
+            "outputSchemaJson"
         ]
     })
 }
@@ -289,8 +287,7 @@ mod tests {
                     "name": "Research Reviewer",
                     "systemPrompt": "You review research with a skeptical eye.",
                     "taskPrompt": "Review the supplied research and identify weak claims.",
-                    "outputSchemaJson": "{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"findings\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}},\"required\":[\"findings\"]}",
-                    "autoStart": true
+                    "outputSchemaJson": "{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"findings\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}},\"required\":[\"findings\"]}"
                 }),
                 raw_text: String::new(),
                 assistant_message: None,

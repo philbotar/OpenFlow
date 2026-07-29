@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const invoke = vi.hoisted(() => vi.fn());
 const listen = vi.hoisted(() => vi.fn());
+const openDialog = vi.hoisted(() => vi.fn());
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke,
@@ -16,7 +17,7 @@ vi.mock("@tauri-apps/api/window", () => ({
 }));
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
-  open: vi.fn(),
+  open: openDialog,
   confirm: vi.fn(),
 }));
 
@@ -37,18 +38,23 @@ import {
   listScheduleStatuses,
   listRuns,
   listChats,
+  loadChatAttachmentPreview,
+  pickChatAttachmentSources,
   replayRun,
+  refreshProviderModels,
   refreshSchedules,
   resumeDurableRun,
   startWorkflowAuthoring,
   startCodexLogin,
   startRun,
   startChat,
+  submitUserInput,
+  stageChatAttachment,
   submitToolApproval,
   updateChatConfig,
   workflowAuthoringTurn,
 } from "./api";
-import type { AppSettings, Workflow } from "./lib/types";
+import type { AppSettings, DurableRunContinuationInput, Workflow } from "./lib/types";
 import { createEmptyToolConfig } from "./lib/workflow/testHelpers";
 
 const settings: AppSettings = {
@@ -68,6 +74,7 @@ describe("api desktop seam", () => {
   beforeEach(() => {
     invoke.mockReset();
     listen.mockReset();
+    openDialog.mockReset();
     invoke.mockResolvedValue(null);
     listen.mockResolvedValue(() => {});
   });
@@ -80,6 +87,15 @@ describe("api desktop seam", () => {
   test("debugLogPath invokes debug_log_path", async () => {
     await debugLogPath();
     expect(invoke).toHaveBeenCalledWith("debug_log_path");
+  });
+
+  test("refreshProviderModels forwards settings and transient auth", async () => {
+    await refreshProviderModels(settings, "vpn-key");
+
+    expect(invoke).toHaveBeenCalledWith("refresh_provider_models", {
+      settings,
+      transientApiKey: "vpn-key",
+    });
   });
 
   test("Codex login wrappers use the secret-free settings commands", async () => {
@@ -106,15 +122,78 @@ describe("api desktop seam", () => {
     expect(invoke).toHaveBeenCalledWith("append_debug_log", { settings, entry });
   });
 
-  test("startRun forwards workflow, settings, cwd, key, and entrypoint", async () => {
-    await startRun(workflow, settings, "/tmp/project", "sk-test", "Kickoff text");
+  test("startRun forwards workflow, settings, cwd, key, and structured message", async () => {
+    const message = { text: "Kickoff text", attachmentSourcePaths: ["/tmp/image.png"] };
+    await startRun(workflow, settings, "/tmp/project", "sk-test", message);
 
     expect(invoke).toHaveBeenCalledWith("start_run", {
       workflow,
       settings,
       executionCwd: "/tmp/project",
       transientApiKey: "sk-test",
-      entrypoint: "Kickoff text",
+      message,
+    });
+  });
+
+  test("run commands forward invoked skill IDs", async () => {
+    const message = { text: "Inspect", attachmentSourcePaths: ["/tmp/screenshot.png"] };
+    await startRun(workflow, settings, null, null, message, ["systematic-debugging"]);
+    await startChat("chat-1", settings, null, message, ["browser"]);
+    await submitUserInput("node-1", message, ["tdd"]);
+
+    expect(invoke).toHaveBeenNthCalledWith(1, "start_run", {
+      workflow,
+      settings,
+      executionCwd: null,
+      transientApiKey: null,
+      message,
+      invokedSkillIds: ["systematic-debugging"],
+    });
+    expect(invoke).toHaveBeenNthCalledWith(2, "start_chat", {
+      chatId: "chat-1",
+      settings,
+      transientApiKey: null,
+      message,
+      invokedSkillIds: ["browser"],
+    });
+    expect(invoke).toHaveBeenNthCalledWith(3, "submit_user_input", {
+      nodeId: "node-1",
+      message,
+      invokedSkillIds: ["tdd"],
+    });
+  });
+
+  test("attachment picker accepts the supported image and document formats", async () => {
+    openDialog.mockResolvedValue(["/tmp/a.png", "/tmp/notes.md"]);
+
+    await expect(pickChatAttachmentSources()).resolves.toEqual([
+      "/tmp/a.png",
+      "/tmp/notes.md",
+    ]);
+    expect(openDialog).toHaveBeenCalledWith({
+      multiple: true,
+      directory: false,
+      filters: [
+        {
+          name: "Images and documents",
+          extensions: expect.arrayContaining(["png", "webp", "pdf", "md", "json", "py"]),
+        },
+      ],
+    });
+  });
+
+  test("attachment staging and previews use typed desktop commands", async () => {
+    await stageChatAttachment("capture.png", "image/png", "cG5n");
+    await loadChatAttachmentPreview("run-1", "attachment-1");
+
+    expect(invoke).toHaveBeenNthCalledWith(1, "stage_chat_attachment", {
+      fileName: "capture.png",
+      mediaType: "image/png",
+      dataBase64: "cG5n",
+    });
+    expect(invoke).toHaveBeenNthCalledWith(2, "load_chat_attachment_preview", {
+      runId: "run-1",
+      attachmentId: "attachment-1",
     });
   });
 
@@ -129,7 +208,10 @@ describe("api desktop seam", () => {
     await createChat();
     await listChats();
     await updateChatConfig("chat-1", config);
-    await startChat("chat-1", settings, "sk-test", "Hello");
+    await startChat("chat-1", settings, "sk-test", {
+      text: "Hello",
+      attachmentSourcePaths: [],
+    });
 
     expect(invoke).toHaveBeenNthCalledWith(1, "create_chat");
     expect(invoke).toHaveBeenNthCalledWith(2, "list_chats");
@@ -141,7 +223,7 @@ describe("api desktop seam", () => {
       chatId: "chat-1",
       settings,
       transientApiKey: "sk-test",
-      entrypoint: "Hello",
+      message: { text: "Hello", attachmentSourcePaths: [] },
     });
   });
 
@@ -256,6 +338,24 @@ describe("api desktop seam", () => {
       runId: "run-1",
       settings,
       transientApiKey: "key",
+    });
+  });
+
+  test("passes a continuation message atomically to resume_durable_run", async () => {
+    const continuation: DurableRunContinuationInput = {
+      nodeId: "node-1",
+      text: "Continue with verification",
+      invokedSkillIds: ["tdd"],
+    };
+    vi.mocked(invoke).mockResolvedValueOnce({ active: true });
+
+    await resumeDurableRun("run-1", settings, "key", continuation);
+
+    expect(invoke).toHaveBeenCalledWith("resume_durable_run", {
+      runId: "run-1",
+      settings,
+      transientApiKey: "key",
+      continuation,
     });
   });
 });

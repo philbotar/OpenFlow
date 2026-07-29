@@ -8,6 +8,7 @@ const apiMocks = vi.hoisted(() => ({
   codexLoginStatus: vi.fn(),
   disconnectCodex: vi.fn(),
   refreshBedrockModels: vi.fn(),
+  refreshProviderModels: vi.fn(),
   startCodexLogin: vi.fn(),
   verifyBedrockCredentials: vi.fn(),
 }));
@@ -112,6 +113,7 @@ describe("ProvidersSection", () => {
     apiMocks.codexLoginStatus.mockReset().mockResolvedValue({ state: "disconnected" });
     apiMocks.disconnectCodex.mockReset().mockResolvedValue({ state: "disconnected" });
     apiMocks.refreshBedrockModels.mockReset().mockResolvedValue([]);
+    apiMocks.refreshProviderModels.mockReset().mockResolvedValue([]);
     apiMocks.startCodexLogin.mockReset().mockResolvedValue({ state: "awaitingBrowser" });
     apiMocks.verifyBedrockCredentials.mockReset().mockResolvedValue("AWS credentials verified");
     container = document.createElement("div");
@@ -223,6 +225,62 @@ describe("ProvidersSection", () => {
     await Promise.resolve();
 
     expect(settings().providers.custom_openai_compatible.request_timeout_secs).toBe(180);
+  });
+
+  test("shows editable base URL without opening advanced settings", () => {
+    renderSection("custom_openai_compatible");
+
+    const baseUrlInput = Array.from(
+      container.querySelectorAll<HTMLInputElement>("label input"),
+    ).find((input) => input.value === "https://example.invalid/v1");
+
+    expect(baseUrlInput).not.toBeUndefined();
+    expect(baseUrlInput?.closest(".providers-advanced")).toBeNull();
+  });
+
+  test("marks the custom endpoint API key as optional", () => {
+    renderSection("custom_openai_compatible");
+
+    expect(subheading("providers-auth-heading")?.textContent).toBe("API key (optional)");
+    expect(container.textContent).toContain("VPN or trusted network");
+  });
+
+  test("fetches remote models and lets the user select multiple models", async () => {
+    apiMocks.refreshProviderModels.mockResolvedValue([
+      "compatible-model",
+      "fresh-model",
+    ]);
+    const { settings } = renderSection("custom_openai_compatible");
+
+    const fetchButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Fetch models",
+    ) as HTMLButtonElement;
+    fetchButton.click();
+
+    await vi.waitFor(() => {
+      expect(apiMocks.refreshProviderModels).toHaveBeenCalledWith(
+        expect.objectContaining({
+          active_provider: "custom_openai_compatible",
+        }),
+        "stored-key",
+      );
+    });
+
+    const existing = container.querySelector<HTMLInputElement>(
+      'input[aria-label="Use compatible-model"]',
+    );
+    const fresh = container.querySelector<HTMLInputElement>(
+      'input[aria-label="Use fresh-model"]',
+    );
+    expect(existing?.checked).toBe(true);
+    expect(fresh?.checked).toBe(false);
+
+    fresh!.click();
+    await vi.waitFor(() => {
+      expect(
+        settings().providers.custom_openai_compatible.known_models,
+      ).toEqual(["compatible-model", "fresh-model"]);
+    });
   });
 
   test("readiness chip gets ready class when provider is ready", () => {
@@ -508,6 +566,33 @@ describe("ProvidersSection", () => {
         button.textContent?.includes("Test AWS connection"),
       ),
     ).toBe(true);
+  });
+
+  test("bedrock fetch uses the same model multiselect", async () => {
+    apiMocks.refreshBedrockModels.mockResolvedValue([
+      "anthropic.claude-sonnet-4-20250514-v1:0",
+      "amazon.nova-pro-v1:0",
+    ]);
+    renderSection("bedrock");
+
+    const fetch = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Fetch from AWS",
+    ) as HTMLButtonElement;
+    fetch.click();
+
+    await vi.waitFor(() => {
+      expect(apiMocks.refreshBedrockModels).toHaveBeenCalled();
+    });
+    expect(
+      container.querySelector<HTMLInputElement>(
+        'input[aria-label="Use anthropic.claude-sonnet-4-20250514-v1:0"]',
+      )?.checked,
+    ).toBe(true);
+    expect(
+      container.querySelector<HTMLInputElement>(
+        'input[aria-label="Use amazon.nova-pro-v1:0"]',
+      )?.checked,
+    ).toBe(false);
   });
 
   test("bedrock aws region input updates aws_region instead of base_url", async () => {

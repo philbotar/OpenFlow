@@ -3,7 +3,6 @@
 import {
   Background,
   BackgroundVariant,
-  Controls,
   Panel,
   ReactFlow,
   ReactFlowProvider,
@@ -12,12 +11,15 @@ import {
   type NodeChange,
   useEdgesState,
   useNodesState,
+  useReactFlow,
+  useStore,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import * as React from "react";
 import { useCallback, useEffect, useMemo } from "react";
 import type { EdgeId, NodeId } from "../lib/types";
 import type { WorkflowCanvasGraph, WorkflowCanvasStatusByNode, WorkflowCanvasSubagentsByNode } from "../lib/workflow";
+import { AppTooltip } from "./AppTooltip.react";
 import { WorkflowNode } from "./WorkflowNode.react";
 import {
   backgroundDotForTheme,
@@ -35,7 +37,12 @@ import {
   type WorkflowCanvasEdge,
   type WorkflowCanvasNode,
 } from "./workflowCanvasGraph";
-import { CanvasViewportController, FIT_ALL_VIEWPORT_OPTIONS } from "./workflowCanvasViewport";
+import {
+  CANVAS_MAX_ZOOM,
+  CANVAS_MIN_ZOOM,
+  CanvasViewportController,
+  FIT_ALL_VIEWPORT_OPTIONS,
+} from "./workflowCanvasViewport";
 
 export type { WorkflowCanvasEdge, WorkflowCanvasNode, WorkflowCanvasNodeData } from "./workflowCanvasGraph";
 export {
@@ -61,6 +68,7 @@ type WorkflowCanvasProps = {
   previewMode?: boolean;
   runActive?: boolean;
   colorMode?: "light" | "dark";
+  uiZoom?: number;
   onSelectNode: (nodeId: NodeId | null) => void;
   onSelectEdge: (edgeId: EdgeId | null) => void;
   onUpdateNodePosition: (nodeId: NodeId, x: number, y: number) => void;
@@ -116,9 +124,154 @@ function AutoLayoutIcon() {
   );
 }
 
+function ZoomInIcon() {
+  return (
+    <svg
+      className="workflow-flow-action-icon"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <circle cx="11" cy="11" r="8" />
+      <path d="m21 21-4.35-4.35" />
+      <path d="M8 11h6" />
+      <path d="M11 8v6" />
+    </svg>
+  );
+}
+
+function ZoomOutIcon() {
+  return (
+    <svg
+      className="workflow-flow-action-icon"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <circle cx="11" cy="11" r="8" />
+      <path d="m21 21-4.35-4.35" />
+      <path d="M8 11h6" />
+    </svg>
+  );
+}
+
+function DeleteIcon() {
+  return (
+    <svg
+      className="workflow-flow-action-icon"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M3 6h18" />
+      <path d="M8 6V4h8v2" />
+      <path d="M19 6l-1 14H6L5 6" />
+      <path d="M10 11v5" />
+      <path d="M14 11v5" />
+    </svg>
+  );
+}
+
+type WorkflowCanvasToolbarProps = {
+  editingLocked: boolean;
+  deleteLabel: string;
+  deleteEnabled: boolean;
+  onAddNode: () => void;
+  onAutoLayout: () => void;
+  onDeleteSelected: () => void;
+};
+
+function WorkflowCanvasToolbar(props: WorkflowCanvasToolbarProps) {
+  const { zoomIn, zoomOut } = useReactFlow<WorkflowCanvasNode, WorkflowCanvasEdge>();
+  const minZoomReached = useStore((state) => state.transform[2] <= state.minZoom);
+  const maxZoomReached = useStore((state) => state.transform[2] >= state.maxZoom);
+
+  return (
+    <Panel position="top-left" className="workflow-flow-panel">
+      <div
+        className="workflow-flow-toolbar"
+        role="toolbar"
+        aria-label="Workflow canvas tools"
+        aria-orientation="vertical"
+      >
+        <AppTooltip label="Add node" side="right">
+          <button
+            type="button"
+            className="workflow-flow-action-button"
+            onClick={props.onAddNode}
+            aria-label="Add node"
+            disabled={props.editingLocked}
+          >
+            <AddNodeIcon />
+          </button>
+        </AppTooltip>
+        <AppTooltip label="Auto layout" side="right">
+          <button
+            type="button"
+            className="workflow-flow-action-button"
+            onClick={props.onAutoLayout}
+            aria-label="Auto layout"
+            disabled={props.editingLocked}
+          >
+            <AutoLayoutIcon />
+          </button>
+        </AppTooltip>
+        <span className="workflow-flow-toolbar-divider" role="separator" />
+        <AppTooltip label="Zoom in" side="right">
+          <button
+            type="button"
+            className="workflow-flow-action-button"
+            onClick={() => void zoomIn()}
+            aria-label="Zoom in"
+            disabled={maxZoomReached}
+          >
+            <ZoomInIcon />
+          </button>
+        </AppTooltip>
+        <AppTooltip label="Zoom out" side="right">
+          <button
+            type="button"
+            className="workflow-flow-action-button"
+            onClick={() => void zoomOut()}
+            aria-label="Zoom out"
+            disabled={minZoomReached}
+          >
+            <ZoomOutIcon />
+          </button>
+        </AppTooltip>
+        <span className="workflow-flow-toolbar-divider" role="separator" />
+        <AppTooltip label={props.deleteLabel} side="right">
+          <button
+            type="button"
+            className="workflow-flow-action-button workflow-flow-action-button-danger"
+            onClick={props.onDeleteSelected}
+            aria-label={props.deleteLabel}
+            disabled={!props.deleteEnabled}
+          >
+            <DeleteIcon />
+          </button>
+        </AppTooltip>
+      </div>
+    </Panel>
+  );
+}
+
 export function WorkflowCanvas(props: WorkflowCanvasProps) {
   const previewMode = props.previewMode ?? false;
   const runActive = props.runActive ?? false;
+  const uiZoom = props.uiZoom ?? 1;
   const editingLocked = previewMode || runActive;
   const externalNodes = useMemo<WorkflowCanvasNode[]>(
     () =>
@@ -299,6 +452,31 @@ export function WorkflowCanvas(props: WorkflowCanvasProps) {
     props.onAutoLayout();
   }, [props.onAutoLayout]);
 
+  const handleDeleteSelected = useCallback(() => {
+    if (editingLocked) {
+      return;
+    }
+    if (selectedNode) {
+      props.onDeleteNode(selectedNode.id);
+      return;
+    }
+    if (selectedEdge) {
+      props.onDeleteEdge(selectedEdge.id);
+    }
+  }, [editingLocked, props.onDeleteEdge, props.onDeleteNode, selectedEdge, selectedNode]);
+
+  const deleteSelectedLabel = selectedNode
+    ? `Delete ${selectedNode.label}${
+        selectedNodeConnectionCount === 0
+          ? ""
+          : ` and ${selectedNodeConnectionCount} connection${
+              selectedNodeConnectionCount === 1 ? "" : "s"
+            }`
+      }`
+    : selectedEdge
+      ? `Delete connection ${selectedEdgeLabel}`
+      : "Delete selected";
+
   return (
     <div className="workflow-flow-shell">
       <ReactFlowProvider>
@@ -320,8 +498,8 @@ export function WorkflowCanvas(props: WorkflowCanvasProps) {
           deleteKeyCode={["Backspace", "Delete"]}
           fitView={false}
           fitViewOptions={FIT_ALL_VIEWPORT_OPTIONS}
-          minZoom={0.4}
-          maxZoom={1.8}
+          minZoom={CANVAS_MIN_ZOOM * uiZoom}
+          maxZoom={CANVAS_MAX_ZOOM * uiZoom}
           panOnScroll
           selectionOnDrag={false}
           nodesDraggable={!editingLocked}
@@ -337,6 +515,7 @@ export function WorkflowCanvas(props: WorkflowCanvasProps) {
             selectedNodeId={props.selectedNodeId}
             chatFocusNode={props.chatFocusNode}
             viewportEnabled={props.viewportEnabled ?? true}
+            uiZoom={uiZoom}
           />
           <Background
             gap={22}
@@ -344,74 +523,20 @@ export function WorkflowCanvas(props: WorkflowCanvasProps) {
             color={backgroundDotForTheme(colorMode)}
             variant={BackgroundVariant.Dots}
           />
-          {!editingLocked ? (
-            <Panel position="top-left" className="workflow-flow-panel">
-              <div
-                className="workflow-flow-toolbar"
-                role="toolbar"
-                aria-label="Workflow editing tools"
-                aria-orientation="vertical"
-              >
-                <button
-                  type="button"
-                  className="workflow-flow-action-button"
-                  onClick={handleAddNode}
-                  aria-label="Add node"
-                  title="Add node"
-                >
-                  <AddNodeIcon />
-                </button>
-                <button
-                  type="button"
-                  className="workflow-flow-action-button"
-                  onClick={handleAutoLayout}
-                  aria-label="Auto layout"
-                  title="Auto layout"
-                >
-                  <AutoLayoutIcon />
-                </button>
-              </div>
-            </Panel>
-          ) : null}
+          <WorkflowCanvasToolbar
+            editingLocked={editingLocked}
+            deleteLabel={deleteSelectedLabel}
+            deleteEnabled={!editingLocked && Boolean(selectedNode || selectedEdge)}
+            onAddNode={handleAddNode}
+            onAutoLayout={handleAutoLayout}
+            onDeleteSelected={handleDeleteSelected}
+          />
           {runActive ? (
-            <Panel position="top-left" className="workflow-flow-lock-panel">
+            <Panel position="top-right" className="workflow-flow-lock-panel">
               <span className="workflow-flow-lock-dot" aria-hidden="true" />
               Running · Editing locked
             </Panel>
           ) : null}
-          {!editingLocked && selectedNode ? (
-            <Panel position="top-center" className="workflow-flow-selection-panel">
-              <span className="workflow-flow-selection-label">{selectedNode.label}</span>
-              <button
-                type="button"
-                className="workflow-flow-delete-button"
-                onClick={() => props.onDeleteNode(selectedNode.id)}
-                aria-label={`Delete ${selectedNode.label}${
-                  selectedNodeConnectionCount === 0
-                    ? ""
-                    : ` and ${selectedNodeConnectionCount} connection${
-                        selectedNodeConnectionCount === 1 ? "" : "s"
-                      }`
-                }`}
-              >
-                Delete
-              </button>
-            </Panel>
-          ) : null}
-          {!editingLocked && selectedEdge ? (
-            <Panel position="top-center" className="workflow-flow-selection-panel">
-              <span className="workflow-flow-selection-label">{selectedEdgeLabel}</span>
-              <button
-                type="button"
-                className="workflow-flow-delete-button"
-                onClick={() => props.onDeleteEdge(selectedEdge.id)}
-                aria-label="Delete connection"
-              >
-                Delete
-              </button>
-            </Panel>
-          ) : null}
-          <Controls showInteractive={false} position="bottom-left" />
         </ReactFlow>
       </ReactFlowProvider>
     </div>

@@ -67,6 +67,7 @@ symbols = [
     "CodexLoginPrompt",
     "CodexOAuthCredentials",
     "login_codex",
+    "list_remote_models",
     "list_bedrock_foundation_models",
     "verify_bedrock_credentials",
     "ensure_process_home_env",

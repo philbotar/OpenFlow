@@ -17,6 +17,11 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::time::{Duration, SystemTime};
 
+#[allow(clippy::redundant_pub_crate)]
+pub(crate) fn openai_api_base_url(config: &crate::OpenAiCompatibleConfig) -> String {
+    model::rig_openai_base_url(config, config.wire_api)
+}
+
 #[allow(clippy::redundant_pub_crate)] // crate-private module; keep pub(crate) for intentional crate API
 pub(crate) fn build_codex_model(
     provider_label: &str,

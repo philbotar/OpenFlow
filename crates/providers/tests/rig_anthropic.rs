@@ -32,12 +32,63 @@ fn test_request() -> engine::AgentRequest {
         tool_config: engine::NodeToolConfig::default(),
         available_tools: Vec::new(),
         transcript: Vec::new(),
+        entrypoint_attachments: Vec::new(),
+        resolved_attachments: std::collections::BTreeMap::default(),
         model_attempt: 1,
         reasoning_effort: None,
         reasoning_budget_tokens: None,
         tool_access_policy: engine::ToolAccessPolicy::Execution,
         allow_user_input: true,
     }
+}
+
+fn attachment_request() -> engine::AgentRequest {
+    let mut request = test_request();
+    request.entrypoint_attachments = vec![
+        engine::ChatAttachmentRef {
+            id: "image-1".into(),
+            file_name: "diagram.png".into(),
+            media_type: "image/png".into(),
+            size_bytes: 3,
+            sha256: "fixture-image".into(),
+            kind: engine::ChatAttachmentKind::Image,
+        },
+        engine::ChatAttachmentRef {
+            id: "pdf-1".into(),
+            file_name: "brief.pdf".into(),
+            media_type: "application/pdf".into(),
+            size_bytes: 4,
+            sha256: "fixture-pdf".into(),
+            kind: engine::ChatAttachmentKind::Document,
+        },
+        engine::ChatAttachmentRef {
+            id: "json-1".into(),
+            file_name: "data.json".into(),
+            media_type: "application/json".into(),
+            size_bytes: 7,
+            sha256: "fixture-json".into(),
+            kind: engine::ChatAttachmentKind::Document,
+        },
+    ];
+    request.resolved_attachments.insert(
+        "image-1".into(),
+        engine::ResolvedChatAttachment {
+            bytes: vec![1, 2, 3],
+        },
+    );
+    request.resolved_attachments.insert(
+        "pdf-1".into(),
+        engine::ResolvedChatAttachment {
+            bytes: b"%PDF".to_vec(),
+        },
+    );
+    request.resolved_attachments.insert(
+        "json-1".into(),
+        engine::ResolvedChatAttachment {
+            bytes: br#"{"x":1}"#.to_vec(),
+        },
+    );
+    request
 }
 
 fn anthropic_test_config(base_url: &str) -> AiClientConfig {
@@ -57,6 +108,55 @@ fn anthropic_test_config(base_url: &str) -> AiClientConfig {
         }),
         debug_output: false,
     }
+}
+
+#[tokio::test]
+async fn anthropic_serializes_ordered_image_pdf_and_named_json_content() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "msg_attachments",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-3-5-sonnet-latest",
+            "content": [{
+                "type": "tool_use",
+                "id": "toolu_attachments",
+                "name": "openflow_submit_node_output",
+                "input": {
+                    "output": {"summary": "done"},
+                    "assistant_message": null
+                }
+            }],
+            "stop_reason": "tool_use",
+            "usage": {
+                "input_tokens": 101,
+                "output_tokens": 19
+            }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = create_provider(anthropic_test_config(&server.uri()));
+    let outcome = client.invoke(attachment_request()).await.unwrap();
+    assert!(matches!(outcome, engine::AgentTurnOutcome::Completed(_)));
+
+    let requests = server.received_requests().await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+    let content = body["messages"][0]["content"].as_array().unwrap();
+    assert_eq!(content[0]["type"], "text");
+    assert_eq!(content[1]["type"], "image");
+    assert_eq!(content[1]["source"]["type"], "base64");
+    assert_eq!(content[1]["source"]["media_type"], "image/png");
+    assert_eq!(content[1]["source"]["data"], "AQID");
+    assert_eq!(content[2]["type"], "document");
+    assert_eq!(content[2]["source"]["type"], "base64");
+    assert_eq!(content[2]["source"]["media_type"], "application/pdf");
+    assert_eq!(content[2]["source"]["data"], "JVBERg==");
+    assert_eq!(content[3]["type"], "text");
+    assert_eq!(content[3]["text"], "Attachment: data.json\n{\"x\":1}");
 }
 
 #[tokio::test]

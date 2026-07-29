@@ -281,7 +281,7 @@ impl AiPort for MixedToolTurnRetryAi {
                     request.transcript.iter().any(|item| {
                         matches!(
                             item,
-                            AgentTranscriptItem::UserMessage { content }
+                            AgentTranscriptItem::UserMessage { content, .. }
                                 if content.contains("mixed finish/submit tools and authoring tools")
                                     && content.contains("openflow_submit_node_output, openflow_add_node")
                         )
@@ -659,7 +659,7 @@ impl AiPort for MalformedSubmitThenDraftAi {
             request
                 .transcript
                 .iter()
-                .any(|item| matches!(item, AgentTranscriptItem::UserMessage { content } if content.contains("openflow_submit_node_output"))),
+                .any(|item| matches!(item, AgentTranscriptItem::UserMessage { content, .. } if content.contains("openflow_submit_node_output"))),
             "expected malformed-submit feedback in transcript"
         );
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
@@ -842,7 +842,7 @@ impl AiPort for InvalidDraftThenValidAi {
             assert!(
                 request.transcript.iter().any(|item| matches!(
                     item,
-                    AgentTranscriptItem::UserMessage { content }
+                    AgentTranscriptItem::UserMessage { content, .. }
                         if content.contains("missing field `edges`")
                 )),
                 "expected invalid-draft feedback in transcript"

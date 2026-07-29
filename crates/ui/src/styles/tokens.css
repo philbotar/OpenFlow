@@ -75,15 +75,13 @@
   --status-warning-soft: var(--base-amber-soft);
   --status-danger: var(--base-red-600);
   --status-danger-soft: var(--base-red-soft);
-  --update-badge: #2563eb;
-  --update-badge-ring: var(--sidebar-bg);
   --menu-row-height: 30px;
   --menu-row-padding-inline: 8px;
   --control-size-md: 36px;
-  --composer-input-max-rows: 4;
+  --composer-input-max-rows: 3;
   --composer-input-min-height: var(--control-size-md);
   --composer-input-max-height: calc(var(--composer-input-max-rows) * 1.25em);
-  --composer-padding: var(--dock-tab-card-padding);
+  --composer-padding: 8px 14px;
   --composer-send-size: var(--control-size-md);
   --control-size-compact: 40px;
   --topbar-control-size: 24px;
@@ -259,8 +257,6 @@
   --status-warning-soft: var(--base-amber-soft);
   --status-danger: var(--base-red-600);
   --status-danger-soft: var(--base-red-soft);
-  --update-badge: #60a5fa;
-  --update-badge-ring: var(--sidebar-bg);
 
   /* ── Legacy bridge ── */
   --app-bg: var(--surface-ground);

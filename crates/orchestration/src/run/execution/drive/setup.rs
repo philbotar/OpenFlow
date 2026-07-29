@@ -13,6 +13,7 @@ use uuid::Uuid;
 use super::super::ai_adapter::AiInvocationAdapter;
 use super::super::tool_port::ToolPortImpl;
 use super::super::InteractiveWorkflowRunParams;
+use super::super::ResumeContinuation;
 
 /// Run-scoped AI stack: provider → overseer repair → invocation adapter.
 type RunAiAdapter<A> = AiInvocationAdapter<RepairingAiPort<A>>;
@@ -37,23 +38,47 @@ where
 fn build_engine(
     workflow: Workflow,
     entrypoint: Option<String>,
+    entrypoint_attachments: Vec<engine::ChatAttachmentRef>,
     resume_checkpoint: Option<InteractiveEngineCheckpoint>,
+    resume_continuation: Option<ResumeContinuation>,
     project_repository_root: Option<String>,
 ) -> Result<InteractiveEngine, String> {
     match resume_checkpoint {
         Some(checkpoint) => {
-            InteractiveEngine::from_checkpoint(workflow, checkpoint, project_repository_root)
-                .map(|mut engine| {
-                    let failures = engine.prepare_resume();
-                    if !failures.is_empty() {
-                        log::warn!("prepare_resume could not retry nodes: {failures:?}");
-                    }
-                    engine
-                })
-                .map_err(|error| error.to_string())
+            let awaiting_continuation = resume_continuation.as_ref().is_some_and(|continuation| {
+                checkpoint.awaiting_nodes.contains(&continuation.node_id)
+            });
+            let mut engine =
+                InteractiveEngine::from_checkpoint(workflow, checkpoint, project_repository_root)
+                    .map_err(|error| error.to_string())?;
+            if let Some(continuation) = resume_continuation {
+                let result = if awaiting_continuation {
+                    engine.on_human_message(&continuation.node_id, &continuation.text, Vec::new())
+                } else {
+                    engine.retry_node_with_message(
+                        &continuation.node_id,
+                        &continuation.text,
+                        Vec::new(),
+                    )
+                };
+                result.map_err(|error| error.to_string())?;
+                if let Some(skill_prompt) = continuation.skill_prompt {
+                    engine.append_system_prompt(&continuation.node_id, &skill_prompt);
+                }
+            }
+            let failures = engine.prepare_resume();
+            if !failures.is_empty() {
+                log::warn!("prepare_resume could not retry nodes: {failures:?}");
+            }
+            Ok(engine)
         }
-        None => InteractiveEngine::new(workflow, entrypoint, project_repository_root)
-            .map_err(|error| error.to_string()),
+        None => InteractiveEngine::new_with_entrypoint_attachments(
+            workflow,
+            entrypoint,
+            entrypoint_attachments,
+            project_repository_root,
+        )
+        .map_err(|error| error.to_string()),
     }
 }
 
@@ -88,10 +113,14 @@ where
     let InteractiveWorkflowRunParams {
         workflow,
         entrypoint,
+        entrypoint_attachments,
         execution_cwd,
         project_repository_root,
         artifact_root,
+        attachment_root,
+        attachment_store,
         resume_checkpoint,
+        resume_continuation,
         checkpoint_sink,
         ai,
         agent_snapshots,
@@ -108,7 +137,9 @@ where
     let mut engine = build_engine(
         workflow.clone(),
         entrypoint,
+        entrypoint_attachments,
         resume_checkpoint,
+        resume_continuation,
         project_repository_root
             .as_ref()
             .map(|path| path.display().to_string()),
@@ -174,13 +205,16 @@ where
     let repair_policy = OutputRepairPolicy::from_workflow_settings(&workflow.settings);
     let repairing = Arc::new(RepairingAiPort::new(ai, repair_policy));
     let node_interrupts_for_tools = node_interrupts.clone();
-    let ai_adapter = Arc::new(AiInvocationAdapter::new(
-        Arc::clone(&repairing),
-        event_tx.clone(),
-        node_interrupts,
-        cancel_token.clone(),
-        context_window_sizes,
-    ));
+    let ai_adapter = Arc::new(
+        AiInvocationAdapter::new(
+            Arc::clone(&repairing),
+            event_tx.clone(),
+            node_interrupts,
+            cancel_token.clone(),
+            context_window_sizes,
+        )
+        .with_attachment_store(attachment_root, attachment_store),
+    );
     let aborted_emitted = Arc::new(Mutex::new(false));
     let tool_port = ToolPortImpl::new(
         Arc::clone(&tool_runner),

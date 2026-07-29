@@ -16,7 +16,7 @@ pub struct Template {
     pub display_name: String,
     pub description: String,
     pub default_config: AgentNodeConfig,
-    /// Valid field names: `system_prompt`, `task_prompt`, `model`, `output_schema`, `auto_start`
+    /// Valid field names: `system_prompt`, `task_prompt`, `model`, `output_schema`
     pub locked_fields: HashSet<String>,
 }
 

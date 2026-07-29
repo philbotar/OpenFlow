@@ -139,6 +139,17 @@ pub async fn refresh_bedrock_models(
 }
 
 #[tauri::command]
+pub async fn refresh_provider_models(
+    backend: tauri::State<'_, AppBackend>,
+    settings: AppSettings,
+    transient_api_key: Option<String>,
+) -> Result<Vec<String>, CommandError> {
+    Ok(backend
+        .refresh_provider_models(&settings, transient_api_key.as_deref())
+        .await?)
+}
+
+#[tauri::command]
 pub async fn verify_bedrock_credentials(
     backend: tauri::State<'_, AppBackend>,
     settings: AppSettings,

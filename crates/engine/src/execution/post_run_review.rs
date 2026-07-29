@@ -78,6 +78,8 @@ pub async fn review_completed_run<A: AiPort>(
         tool_config: NodeToolConfig::default(),
         available_tools: Vec::new(),
         transcript: Vec::new(),
+        entrypoint_attachments: Vec::new(),
+        resolved_attachments: std::collections::BTreeMap::new(),
         model_attempt: 1,
         reasoning_effort: reviewer.agent.reasoning_effort.clone(),
         reasoning_budget_tokens: reviewer.agent.reasoning_budget_tokens,
@@ -322,6 +324,7 @@ mod tests {
             mixed_tool_turn_retries_by_node: BTreeMap::default(),
             auto_continue_streaks_by_node: BTreeMap::default(),
             entrypoint_text: Some("x".repeat(MAX_REVIEW_EVIDENCE_BYTES * 2)),
+            entrypoint_attachments: Vec::new(),
             interrupted_nodes: BTreeSet::default(),
             failed_nodes: BTreeMap::default(),
         };
@@ -371,6 +374,7 @@ mod tests {
             mixed_tool_turn_retries_by_node: BTreeMap::default(),
             auto_continue_streaks_by_node: BTreeMap::default(),
             entrypoint_text: None,
+            entrypoint_attachments: Vec::new(),
             interrupted_nodes: BTreeSet::default(),
             failed_nodes: BTreeMap::default(),
         };

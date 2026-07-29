@@ -1,5 +1,5 @@
 use super::{FrozenChangeEvidencePacket, InteractiveEngine, PendingToolBatch};
-use crate::conversation::AgentTranscriptItem;
+use crate::conversation::{AgentTranscriptItem, ChatAttachmentRef};
 use crate::graph::validation::WorkflowValidationError;
 use crate::graph::{NodeId, Workflow, WorkflowId};
 use crate::ports::{StructuredUserInput, ToolAccessPolicy};
@@ -72,6 +72,8 @@ pub struct InteractiveEngineCheckpoint {
     #[serde(default)]
     pub auto_continue_streaks_by_node: BTreeMap<NodeId, u8>,
     pub entrypoint_text: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub entrypoint_attachments: Vec<ChatAttachmentRef>,
     pub interrupted_nodes: BTreeSet<NodeId>,
     pub failed_nodes: BTreeMap<NodeId, String>,
 }
@@ -185,6 +187,7 @@ impl InteractiveEngine {
             mixed_tool_turn_retries_by_node: self.mixed_tool_turn_retries_by_node.clone(),
             auto_continue_streaks_by_node: self.auto_continue_streaks_by_node.clone(),
             entrypoint_text: self.entrypoint_text.clone(),
+            entrypoint_attachments: self.entrypoint_attachments.clone(),
             interrupted_nodes: self.interrupted_nodes.clone(),
             failed_nodes: self.failed_nodes.clone(),
         }
@@ -260,6 +263,7 @@ impl InteractiveEngine {
             mixed_tool_turn_retries_by_node: checkpoint.mixed_tool_turn_retries_by_node,
             auto_continue_streaks_by_node: checkpoint.auto_continue_streaks_by_node,
             entrypoint_text: checkpoint.entrypoint_text,
+            entrypoint_attachments: checkpoint.entrypoint_attachments,
             project_repository_root,
             terminal_error: None,
             interrupted_nodes: checkpoint.interrupted_nodes,

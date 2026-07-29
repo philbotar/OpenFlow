@@ -55,6 +55,7 @@ describe("SettingsScreen", () => {
       updateSettings: vi.fn(),
       setNewModelInputByProvider: vi.fn(),
       navigateToScreen: vi.fn(),
+      returnFromSettings: vi.fn(),
       isMaximized: () => false,
       ...overrides,
     } as AppContextValue;

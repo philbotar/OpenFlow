@@ -13,6 +13,7 @@ import {
   cloneWorkflow,
   canSendChat,
   canSendIdleRunKickoff,
+  createIdleRunState,
   dagreLayoutWorkflowLeftToRight,
   executionLayers,
   firstLayerRootNodeIds,
@@ -31,6 +32,7 @@ import {
   projectWorkflowCanvasGraph,
   projectWorkflowCanvasStatusByNode,
   projectWorkflowCanvasSubagentsByNode,
+  replayContinuationNodeId,
   inferRunStateWorkflowId,
   normalizeWorkflowLayout,
   withDefaultReasoningFromWorkflow,
@@ -372,7 +374,22 @@ describe("workflow helpers", () => {
 
     expect(pendingApprovalForNode(multiplexState, "node-2")).toBeUndefined();
     expect(canSendChat(multiplexState, "node-2", true, "continue")).toBe(true);
+    expect(canSendChat(multiplexState, "node-2", true, "", true)).toBe(true);
     expect(canSendChat(multiplexState, "node-1", true, "continue")).toBe(false);
+  });
+
+  test("canSendChat accepts a new message for a failed node", () => {
+    const failedState: WorkflowRunState = {
+      ...runState,
+      awaitingNodeId: null,
+      awaitingNodeIds: [],
+      statusByNode: {
+        ...runState.statusByNode,
+        "node-2": "failed",
+      },
+    };
+
+    expect(canSendChat(failedState, "node-2", true, "try again")).toBe(true);
   });
 
   test("isChatComposerBusy only returns true while the selected node is started or running a tool", () => {
@@ -985,7 +1002,7 @@ describe("idle run kickoff", () => {
     expect(GLOBAL_RUN_ENTRY_NODE_ID).toBe("__run_entry__");
   });
 
-  test("canSendIdleRunKickoff requires inactive run, readiness, and non-empty text", () => {
+  test("canSendIdleRunKickoff permits empty workflow starts only when requested", () => {
     expect(canSendIdleRunKickoff(null, true, true, false, "  kickoff  ")).toBe(true);
     expect(
       canSendIdleRunKickoff(
@@ -1000,6 +1017,24 @@ describe("idle run kickoff", () => {
     expect(canSendIdleRunKickoff(null, true, false, false, "x")).toBe(false);
     expect(canSendIdleRunKickoff(null, true, true, true, "x")).toBe(false);
     expect(canSendIdleRunKickoff(null, true, true, false, "   ")).toBe(false);
+    expect(canSendIdleRunKickoff(null, true, true, false, "   ", true)).toBe(true);
+    expect(canSendIdleRunKickoff(null, true, true, false, "   ", false, true)).toBe(true);
+  });
+
+  test("replayContinuationNodeId prefers awaiting input then stopped work", () => {
+    const replay = createIdleRunState(workflow);
+    replay.statusByNode = {
+      "node-1": "stopped",
+      "node-2": "awaiting_input",
+    };
+
+    expect(replayContinuationNodeId(workflow, replay)).toBe("node-2");
+
+    replay.statusByNode["node-2"] = "completed";
+    expect(replayContinuationNodeId(workflow, replay)).toBe("node-1");
+
+    replay.statusByNode["node-1"] = "completed";
+    expect(replayContinuationNodeId(workflow, replay)).toBeNull();
   });
 
   test("firstLayerRootNodeIds returns layer-0 nodes in declaration order", () => {

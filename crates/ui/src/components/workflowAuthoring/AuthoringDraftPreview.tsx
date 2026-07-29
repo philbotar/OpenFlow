@@ -13,6 +13,7 @@ export function AuthoringDraftPreview(props: {
   validation: WorkflowAuthoringValidation | null;
   busy: boolean;
   colorMode: "light" | "dark";
+  uiZoom: number;
 }) {
   const [selectedNodeId, setSelectedNodeId] = createSignal<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = createSignal<string | null>(null);
@@ -66,6 +67,7 @@ export function AuthoringDraftPreview(props: {
           viewportEnabled
           previewMode
           colorMode={props.colorMode}
+          uiZoom={props.uiZoom}
           onSelectNode={setSelectedNodeId}
           onSelectEdge={setSelectedEdgeId}
           onUpdateNodePosition={noop}

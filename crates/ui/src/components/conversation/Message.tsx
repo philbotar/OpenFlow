@@ -1,6 +1,8 @@
 import { Show, splitProps } from "solid-js";
 import type { ComponentProps, JSX } from "solid-js";
 import { MarkdownContent } from "./MarkdownContent";
+import type { ChatAttachmentRef } from "../../lib/types";
+import { MessageAttachments } from "./MessageAttachments";
 
 // ── Message ──────────────────────────────────────────────────────────
 
@@ -11,6 +13,8 @@ interface MessageProps extends ComponentProps<"div"> {
   label: string;
   content: string;
   streaming?: boolean;
+  attachments?: readonly ChatAttachmentRef[];
+  runId?: string | null;
 }
 
 export function Message(allProps: MessageProps) {
@@ -22,6 +26,8 @@ export function Message(allProps: MessageProps) {
     "label",
     "content",
     "streaming",
+    "attachments",
+    "runId",
   ]);
   const animationClass = () =>
     local.from === "assistant" || local.from === "user" ? "" : "conversation-item-enter";
@@ -42,7 +48,13 @@ export function Message(allProps: MessageProps) {
           "message-content--empty": local.content.trim().length === 0,
         }}
       >
-        <MarkdownContent content={local.content} />
+        <Show when={local.content.trim().length > 0}>
+          <MarkdownContent content={local.content} />
+        </Show>
+        <MessageAttachments
+          attachments={local.attachments ?? []}
+          runId={local.runId ?? null}
+        />
       </div>
     </div>
   );

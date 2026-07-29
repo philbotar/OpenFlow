@@ -19,6 +19,8 @@ pub struct CallableAgent {
     pub model: String,
     #[serde(alias = "outputSchema")]
     pub output_schema: Value,
+    /// Legacy wire field retained for saved-agent compatibility.
+    /// Callable agents run when explicitly invoked.
     #[serde(default, alias = "autoStart")]
     pub auto_start: bool,
     #[serde(default)]

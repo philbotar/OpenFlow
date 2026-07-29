@@ -24,10 +24,9 @@ For where terms live in code, see [Engine modules](#engine-modules), [Orchestrat
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
 | **NodeKind** | The variant of a node (e.g. Agent) determining its runtime behavior | Node type, node variant |
-| **AgentNodeConfig** | Configuration for an agent node: model, prompts, tools, auto-start, callable agents | Node config, agent config |
+| **AgentNodeConfig** | Configuration for an agent node: model, prompts, tools, callable agents, and optional human questions | Node config, agent config |
 | **NodePosition** | Coordinates for rendering a node on the canvas | Position, coordinates |
-| **AutoStart** | Whether a node invokes its model when its execution layer is reached (`auto_start: true`), or first waits for a human kickoff message (`false`) | Auto-execute |
-| **RequestUserInput** | Whether a running node may call `openflow_request_user_input` to ask a free-text or structured follow-up question; defaults to false | AutoStart, manual start |
+| **RequestUserInput** | Whether a running node may call `openflow_request_user_input` to ask a free-text or structured follow-up question; defaults to false | Manual start |
 | **CallableAgent** | A saved agent definition a node may invoke as a subagent during a run (`engine::CallableAgent`) | Saved subagent, AgentDefinition |
 | **CallableAgentSelection** | Agent IDs on `AgentNodeConfig.callable_agents`; snapshotted at run start | Allowed agents, callable agents |
 | **AllowAllCallableAgents** | When true, every saved agent is snapshotted at run start instead of `callable_agents` | Allow all agents |
@@ -59,7 +58,7 @@ For where terms live in code, see [Engine modules](#engine-modules), [Orchestrat
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
 | **Template** | Reusable node definition with default `AgentNodeConfig` and locked fields | Node preset, blueprint |
-| **LockedField** | Field name users cannot edit when a template is applied (e.g. `output_schema`, `auto_start`) | Protected field, frozen field |
+| **LockedField** | Field name users cannot edit when a template is applied (e.g. `output_schema`) | Protected field, frozen field |
 | **TemplateStore** | Engine-level seam for listing and mutating templates | |
 
 ## Execution model

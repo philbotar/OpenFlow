@@ -370,7 +370,6 @@ mod tests {
             .iter()
             .find(|node| node.id == "shape-work")
             .expect("planning node");
-        assert!(!planning.agent.auto_start);
         assert!(planning.agent.request_user_input);
 
         let selection = workflow

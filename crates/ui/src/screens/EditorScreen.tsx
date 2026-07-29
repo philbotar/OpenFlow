@@ -45,6 +45,7 @@ export function EditorScreen() {
             viewportEnabled={!chatFocusActive()}
             runActive={Boolean(ctx.runState()?.active)}
             colorMode={ctx.resolvedTheme()}
+            uiZoom={ctx.uiZoom()}
             onSelectNode={ctx.handleSelectNode}
             onSelectEdge={ctx.handleSelectEdge}
             onUpdateNodePosition={ctx.handleCanvasNodePosition}

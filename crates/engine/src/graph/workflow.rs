@@ -252,6 +252,8 @@ pub struct AgentNodeConfig {
     #[serde(default)]
     pub model: String,
     pub output_schema: Value,
+    /// Legacy wire field retained for saved-workflow compatibility.
+    /// Runtime scheduling ignores this value; nodes start when dependencies are ready.
     #[serde(default = "default_auto_start")]
     pub auto_start: bool,
     #[serde(default)]

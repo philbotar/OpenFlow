@@ -40,6 +40,7 @@ fn backend_with_chat_store(
                 dir.path().join("settings.json"),
             )),
             skill_catalog: Box::new(FileSkillCatalog),
+            attachment_store: Arc::new(FileRunAttachmentStore::default()),
             env: ProviderEnv::from_pairs([
                 ("OPENAI_API_KEY", "openai-key"),
                 ("OPENAI_COMPATIBLE_API_KEY", "compatible-key"),
@@ -203,11 +204,13 @@ fn delete_chat_removes_only_the_requested_chat() {
     let deleted = backend.create_chat().expect("create deleted chat");
     let survivor = backend.create_chat().expect("create surviving chat");
 
-    backend.delete_chat(&deleted.id).expect("delete chat");
+    backend
+        .block_on_test(backend.delete_chat(&deleted.id))
+        .expect("delete chat");
 
     assert_eq!(backend.list_chats().expect("list chats"), vec![survivor]);
     assert!(matches!(
-        backend.delete_chat(&deleted.id),
+        backend.block_on_test(backend.delete_chat(&deleted.id)),
         Err(BackendError::ChatNotFound(id)) if id == deleted.id
     ));
 }
@@ -479,7 +482,7 @@ fn create_agent_node_from_template_id_copies_agent_config() {
         node.agent.output_schema,
         serde_json::json!({ "type": "object", "properties": { "ok": { "type": "boolean" } } })
     );
-    assert!(!node.agent.auto_start);
+    assert!(node.agent.auto_start);
     assert_eq!(
         node.agent.tools.approval_mode,
         Some(engine::ApprovalMode::AlwaysAsk)
@@ -488,7 +491,7 @@ fn create_agent_node_from_template_id_copies_agent_config() {
 
 #[cfg_attr(miri, ignore)]
 #[test]
-fn provider_readiness_reports_missing_key() {
+fn custom_provider_readiness_allows_a_trusted_endpoint_without_a_key() {
     let mut settings = AppSettings {
         active_provider: ProviderId::from("custom_openai_compatible"),
         ..AppSettings::default()
@@ -513,6 +516,7 @@ fn provider_readiness_reports_missing_key() {
                 "/tmp/unused-settings.json",
             )),
             skill_catalog: Box::new(FileSkillCatalog),
+            attachment_store: Arc::new(FileRunAttachmentStore::default()),
             env: ProviderEnv::default(),
             runtime_handle: runtime.handle().clone(),
         },
@@ -520,13 +524,14 @@ fn provider_readiness_reports_missing_key() {
     )
     .resolve_provider_readiness(&settings, None);
 
-    assert!(!readiness.ready);
+    assert!(readiness.ready);
+    assert_eq!(readiness.message, "Ready");
     assert_eq!(readiness.env_var, "OPENAI_COMPATIBLE_API_KEY");
 }
 
 #[cfg_attr(miri, ignore)]
 #[test]
-fn start_run_returns_initial_state_and_manual_events() {
+fn start_run_ignores_legacy_non_auto_start_flag() {
     let (backend, _dir) = backend();
     backend.block_on_test(async {
         let mut workflow = Workflow::new("Manual run");
@@ -544,7 +549,7 @@ fn start_run_returns_initial_state_and_manual_events() {
         assert!(initial_state.awaiting_node_id.is_none());
 
         let first = event_rx.recv().await.expect("queued event");
-        let second = event_rx.recv().await.expect("awaiting event");
+        let second = event_rx.recv().await.expect("started event");
         assert!(matches!(
             first,
             ExecutionEvent::NodeQueued { ref node_id, ref label }
@@ -552,7 +557,7 @@ fn start_run_returns_initial_state_and_manual_events() {
         ));
         assert!(matches!(
             second,
-            ExecutionEvent::NodeAwaitingInput { ref node_id, ref label, is_initial: true, .. }
+            ExecutionEvent::NodeStarted { ref node_id, ref label }
                 if node_id == "review" && label == "Review"
         ));
 
@@ -565,7 +570,7 @@ fn start_run_returns_initial_state_and_manual_events() {
 
 #[cfg_attr(miri, ignore)]
 #[test]
-fn start_run_with_entrypoint_skips_chat_for_manual_root() {
+fn start_run_with_entrypoint_records_chat_for_legacy_non_auto_start_root() {
     let (backend, _dir) = backend();
     backend.block_on_test(async {
         let mut workflow = Workflow::new("Manual kickoff");
@@ -574,7 +579,7 @@ fn start_run_with_entrypoint_skips_chat_for_manual_root() {
         node.agent.auto_start = false;
         workflow.nodes = vec![node];
 
-        let (initial_state, mut event_rx) = backend
+        let (initial_state, _event_rx) = backend
             .start_run(
                 workflow,
                 Some("Plan ORCHID-91".to_string()),
@@ -590,11 +595,9 @@ fn start_run_with_entrypoint_skips_chat_for_manual_root() {
                 .chat_logs
                 .get(&NodeId("review".into()))
                 .map_or(0, Vec::len),
-            0
+            1
         );
 
-        let _ = event_rx.recv().await;
-        let _ = event_rx.recv().await;
         backend.stop_run().await.expect("stop run");
     });
 }
@@ -732,7 +735,8 @@ fn submit_user_input_updates_snapshot_and_sends_action() {
             .await
             .expect("submit input");
 
-        assert_eq!(run_state.awaiting_node_id, Some(NodeId("idea".to_string())));
+        assert!(run_state.awaiting_node_id.is_none());
+        assert!(run_state.awaiting_node_ids.is_empty());
         assert_eq!(
             run_state
                 .chat_logs
@@ -744,9 +748,16 @@ fn submit_user_input_updates_snapshot_and_sends_action() {
             "Continue with approvals"
         );
         match action_rx.recv().await.expect("action") {
-            ExecutionAction::ProvideInput { node_id, text } => {
+            ExecutionAction::ProvideInput {
+                node_id,
+                text,
+                attachments,
+                skill_prompt,
+            } => {
                 assert_eq!(node_id, NodeId("idea".to_string()));
                 assert_eq!(text, "Continue with approvals");
+                assert!(attachments.is_empty());
+                assert!(skill_prompt.is_none());
             }
             ExecutionAction::ResolveApproval { .. } => {
                 panic!("unexpected approval action");

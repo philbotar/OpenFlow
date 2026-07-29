@@ -26,8 +26,6 @@ pub struct WorkflowAuthoringNodeDraft {
     pub task_prompt: String,
     #[serde(default)]
     pub output_schema: Value,
-    #[serde(default)]
-    pub auto_start: bool,
     /// Whether the runtime may pause this node for a direct human question.
     /// Autonomous authored nodes default to false.
     #[serde(default)]
@@ -63,7 +61,6 @@ pub fn workflow_to_authoring_draft(workflow: &Workflow) -> WorkflowAuthoringDraf
                 system_prompt: node.agent.system_prompt.clone(),
                 task_prompt: node.agent.task_prompt.clone(),
                 output_schema: node.agent.output_schema.clone(),
-                auto_start: node.agent.auto_start,
                 request_user_input: node.agent.request_user_input,
             })
             .collect(),
@@ -185,7 +182,6 @@ pub fn materialize_authoring_draft(
                 } else {
                     node_draft.output_schema
                 },
-                auto_start: node_draft.auto_start,
                 request_user_input: node_draft.request_user_input,
                 ..Default::default()
             },
@@ -292,7 +288,6 @@ mod tests {
                     system_prompt: node.agent.system_prompt.clone(),
                     task_prompt: node.agent.task_prompt.clone(),
                     output_schema: node.agent.output_schema.clone(),
-                    auto_start: node.agent.auto_start,
                     request_user_input: node.agent.request_user_input,
                 })
                 .collect(),

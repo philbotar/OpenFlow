@@ -65,15 +65,40 @@ function buttonNamed(container: HTMLElement, name: string) {
   );
 }
 
+function radioWithValue(container: HTMLElement, value: string) {
+  return container.querySelector<HTMLInputElement>(
+    `input[type="radio"][value="${value}"]`,
+  );
+}
+
 describe("StructuredAskCard", () => {
+  it("renders each question as a plain list of native radio options", () => {
+    const { container, dispose } = renderCard();
+    try {
+      const optionLists = Array.from(
+        container.querySelectorAll<HTMLUListElement>("ul.structured-ask-options"),
+      );
+
+      expect(optionLists).toHaveLength(2);
+      expect(optionLists.map((list) => list.querySelectorAll(":scope > li").length)).toEqual([
+        2, 2,
+      ]);
+      expect(container.querySelectorAll('input[type="radio"]')).toHaveLength(4);
+      expect(container.textContent).not.toContain("Other");
+    } finally {
+      dispose();
+      container.remove();
+    }
+  });
+
   it("requires every question, then submits stable ids with selected labels", async () => {
     const { container, dispose, handleSubmitStructuredInput } = renderCard();
     try {
       const submit = buttonNamed(container, "Submit answers");
       expect(submit?.disabled).toBe(true);
 
-      buttonNamed(container, "Production")?.click();
-      buttonNamed(container, "Gradual")?.click();
+      radioWithValue(container, "Production")?.click();
+      radioWithValue(container, "Gradual")?.click();
       expect(submit?.disabled).toBe(false);
 
       submit?.click();
@@ -82,47 +107,6 @@ describe("StructuredAskCard", () => {
       expect(handleSubmitStructuredInput).toHaveBeenCalledWith(
         "builder",
         "Structured answers:\n- target_env: Production\n- rollout: Gradual",
-      );
-    } finally {
-      dispose();
-      container.remove();
-    }
-  });
-
-  it("supports a free-form Other answer", async () => {
-    const singleQuestion = { questions: [request.questions[0]] };
-    const handleSubmitStructuredInput = vi.fn(async () => {});
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const dispose = render(
-      () => (
-        <AppContext.Provider
-          value={{
-            handleSubmitStructuredInput,
-            readiness: () => ({ ready: true }),
-          } as unknown as AppContextValue}
-        >
-          <StructuredAskCard nodeId="builder" request={singleQuestion} />
-        </AppContext.Provider>
-      ),
-      container,
-    );
-
-    try {
-      buttonNamed(container, "Other")?.click();
-      const input = container.querySelector<HTMLInputElement>(
-        'input[aria-label="Other answer for Target"]',
-      );
-      expect(input).not.toBeNull();
-      input!.value = "Preview";
-      input!.dispatchEvent(new InputEvent("input", { bubbles: true }));
-
-      buttonNamed(container, "Submit answers")?.click();
-      await Promise.resolve();
-
-      expect(handleSubmitStructuredInput).toHaveBeenCalledWith(
-        "builder",
-        "Structured answers:\n- target_env: Preview",
       );
     } finally {
       dispose();
@@ -149,16 +133,12 @@ describe("StructuredAskCard", () => {
     );
 
     try {
-      buttonNamed(container, "Production")?.click();
-      buttonNamed(container, "Gradual")?.click();
+      radioWithValue(container, "Production")?.click();
+      radioWithValue(container, "Gradual")?.click();
       setCurrentRequest(structuredClone(request));
 
-      expect(buttonNamed(container, "Production")?.getAttribute("aria-checked")).toBe(
-        "true",
-      );
-      expect(buttonNamed(container, "Gradual")?.getAttribute("aria-checked")).toBe(
-        "true",
-      );
+      expect(radioWithValue(container, "Production")?.checked).toBe(true);
+      expect(radioWithValue(container, "Gradual")?.checked).toBe(true);
     } finally {
       dispose();
       container.remove();

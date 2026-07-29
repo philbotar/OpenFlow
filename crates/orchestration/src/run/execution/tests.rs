@@ -30,6 +30,8 @@ fn sample_agent_request() -> AgentRequest {
         tool_config: NodeToolConfig::default(),
         available_tools: Vec::new(),
         transcript: Vec::new(),
+        entrypoint_attachments: Vec::new(),
+        resolved_attachments: BTreeMap::new(),
         model_attempt: 1,
         reasoning_effort: None,
         reasoning_budget_tokens: None,
@@ -104,6 +106,75 @@ async fn adapter_emits_clarifying_question_after_streamed_preamble() {
     assert!(
         emitted_question,
         "expected clarifying question ChatMessage after streamed preamble"
+    );
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+async fn adapter_does_not_repeat_streamed_prefix_in_input_request() {
+    struct StreamingRepeatedAnswerAi;
+
+    #[async_trait]
+    impl engine::AiPort for StreamingRepeatedAnswerAi {
+        async fn invoke(
+            &self,
+            _request: AgentRequest,
+        ) -> Result<AgentTurnOutcome, engine::AgentError> {
+            panic!("AiInvocationAdapter should call invoke_stream");
+        }
+
+        async fn invoke_stream(
+            &self,
+            _request: AgentRequest,
+            sink: &dyn AiStreamSink,
+        ) -> Result<AgentTurnOutcome, engine::AgentError> {
+            sink.on_stream_event(AiStreamEvent::AssistantDelta {
+                content: "OpenFlow keeps runs durable. ".to_string(),
+            });
+            Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
+                raw_text: "{}".to_string(),
+                assistant_message: "OpenFlow keeps runs durable. What should we explore next?"
+                    .to_string(),
+                structured_input: None,
+                reasoning: vec![],
+            }))
+        }
+    }
+
+    let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
+    let node_interrupts = Arc::new(parking_lot::Mutex::new(BTreeMap::new()));
+    let adapter = AiInvocationAdapter::new(
+        Arc::new(StreamingRepeatedAnswerAi),
+        event_tx,
+        node_interrupts,
+        CancellationToken::new(),
+        BTreeMap::new(),
+    );
+    adapter
+        .invoke(sample_agent_request())
+        .await
+        .expect("invoke succeeds");
+
+    let mut displayed = String::new();
+    while let Ok(event) = event_rx.try_recv() {
+        match event {
+            ExecutionEvent::ChatMessageDelta {
+                role: ChatRole::Assistant,
+                delta,
+                ..
+            }
+            | ExecutionEvent::ChatMessage {
+                role: ChatRole::Assistant,
+                content: delta,
+                ..
+            } => displayed.push_str(&delta),
+            _ => {}
+        }
+    }
+
+    assert_eq!(
+        displayed,
+        "OpenFlow keeps runs durable. What should we explore next?"
     );
 }
 
@@ -1180,6 +1251,8 @@ fn parallel_pause_workflow() -> Workflow {
     let mut wait = engine::Node::agent("Wait", 0.0, 0.0);
     wait.id = NodeId("wait".to_string());
     wait.agent.auto_start = false;
+    wait.agent.request_user_input = true;
+    wait.agent.model = "test-model".to_string();
     let mut fail = engine::Node::agent("Fail", 200.0, 0.0);
     fail.id = NodeId("fail".to_string());
     fail.agent.auto_start = true;
@@ -1196,13 +1269,20 @@ fn interactive_run_params<A>(
 where
     A: AiPort + Send + Sync + 'static,
 {
+    let attachment_root = execution_cwd.join("attachments");
     InteractiveWorkflowRunParams {
         workflow,
         entrypoint: None,
+        entrypoint_attachments: Vec::new(),
         execution_cwd,
         project_repository_root: None,
         artifact_root: super::new_artifact_root(),
+        attachment_root,
+        attachment_store: Arc::new(
+            crate::adapters::storage::run_attachment_store::FileRunAttachmentStore::default(),
+        ),
         resume_checkpoint: None,
+        resume_continuation: None,
         checkpoint_sink: Arc::new(parking_lot::Mutex::new(None)),
         ai,
         agent_snapshots: BTreeMap::new(),
@@ -1311,8 +1391,16 @@ async fn retrying_failed_node_does_not_re_emit_sibling_input_pause() {
             request: AgentRequest,
             _sink: &dyn AiStreamSink,
         ) -> Result<AgentTurnOutcome, AgentError> {
-            assert_eq!(request.node_id.0, "fail");
-            Err(AgentError::Permanent("boom".to_string()))
+            match &*request.node_id {
+                "wait" => Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
+                    raw_text: "{}".to_string(),
+                    assistant_message: "Which input should I wait for?".to_string(),
+                    structured_input: None,
+                    reasoning: Vec::new(),
+                })),
+                "fail" => Err(AgentError::Permanent("boom".to_string())),
+                other => panic!("unexpected node {other}"),
+            }
         }
     }
 
@@ -1361,6 +1449,99 @@ async fn retrying_failed_node_does_not_re_emit_sibling_input_pause() {
         wait_input_events, 1,
         "retry must not re-emit NodeAwaitingInput for the sibling wait node"
     );
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+async fn new_message_retries_failed_node_with_message_in_transcript() {
+    #[derive(Clone, Default)]
+    struct FailThenCompleteAi {
+        calls: Arc<AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl AiPort for FailThenCompleteAi {
+        async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            self.invoke_stream(request, &NoopStreamSink).await
+        }
+
+        async fn invoke_stream(
+            &self,
+            request: AgentRequest,
+            _sink: &dyn AiStreamSink,
+        ) -> Result<AgentTurnOutcome, AgentError> {
+            if request.node_id == "__post_run_review" {
+                return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    output: json!({"suggestions": []}),
+                    raw_text: "{}".to_string(),
+                    assistant_message: None,
+                    reasoning: Vec::new(),
+                    usage: None,
+                }));
+            }
+            if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                return Err(AgentError::Permanent("boom".to_string()));
+            }
+            assert!(
+                request.transcript.iter().any(|item| matches!(
+                    item,
+                    engine::AgentTranscriptItem::UserMessage { content, .. }
+                        if content == "Try again"
+                )),
+                "retry request should include the new user message"
+            );
+            Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                output: json!({"summary": "done"}),
+                raw_text: "{}".to_string(),
+                assistant_message: None,
+                reasoning: Vec::new(),
+                usage: None,
+            }))
+        }
+    }
+
+    struct NoopStreamSink;
+
+    impl AiStreamSink for NoopStreamSink {
+        fn on_stream_event(&self, _event: AiStreamEvent) {}
+    }
+
+    let temp = TempDir::new().expect("tempdir");
+    let (handle, mut event_rx, action_tx, _cancel, _) = spawn_interactive_workflow_run(
+        &tokio::runtime::Handle::current(),
+        interactive_run_params(
+            workflow(),
+            temp.path().to_path_buf(),
+            FailThenCompleteAi::default(),
+        ),
+    );
+
+    let mut sent_message = false;
+    let mut finished = false;
+    while let Ok(Some(event)) = timeout(Duration::from_secs(5), event_rx.recv()).await {
+        match event {
+            ExecutionEvent::NodeErrored { node_id, .. } if node_id.0 == "first" => {
+                sent_message = true;
+                action_tx
+                    .send(ExecutionAction::ProvideInput {
+                        node_id,
+                        text: "Try again".to_string(),
+                        attachments: Vec::new(),
+                        skill_prompt: None,
+                    })
+                    .expect("retry input");
+            }
+            ExecutionEvent::Finished(_) => {
+                finished = true;
+                break;
+            }
+            _ => {}
+        }
+    }
+    handle.await.expect("drive task");
+
+    assert!(sent_message, "expected failed node before retry input");
+    assert!(finished, "expected run to finish after retry input");
 }
 
 #[cfg_attr(miri, ignore)]
@@ -1523,9 +1704,29 @@ fn manual_review_workflow() -> Workflow {
     let mut node = engine::Node::agent("review", 0.0, 0.0);
     node.id = engine::NodeId("review".to_string());
     node.agent.auto_start = false;
+    node.agent.request_user_input = true;
     node.agent.model = "test-model".to_string();
     workflow.nodes = vec![node];
     workflow
+}
+
+fn question_then_complete(request: &AgentRequest) -> AgentTurnOutcome {
+    if request.transcript.is_empty() {
+        AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
+            raw_text: "{}".to_string(),
+            assistant_message: "Which result should I review?".to_string(),
+            structured_input: None,
+            reasoning: Vec::new(),
+        })
+    } else {
+        AgentTurnOutcome::Completed(AgentTurnSuccess {
+            output: json!({"summary": "done"}),
+            raw_text: "{}".to_string(),
+            assistant_message: None,
+            reasoning: Vec::new(),
+            usage: None,
+        })
+    }
 }
 
 fn interactive_run_params_with_sink<A>(
@@ -1540,13 +1741,20 @@ where
     A: AiPort + Send + Sync + 'static,
 {
     let checkpoint_sink = Arc::new(parking_lot::Mutex::new(None));
+    let attachment_root = execution_cwd.join("attachments");
     let params = InteractiveWorkflowRunParams {
         workflow,
         entrypoint: None,
+        entrypoint_attachments: Vec::new(),
         execution_cwd,
         project_repository_root: None,
         artifact_root: super::new_artifact_root(),
+        attachment_root,
+        attachment_store: Arc::new(
+            crate::adapters::storage::run_attachment_store::FileRunAttachmentStore::default(),
+        ),
         resume_checkpoint: None,
+        resume_continuation: None,
         checkpoint_sink: checkpoint_sink.clone(),
         ai,
         agent_snapshots: BTreeMap::new(),
@@ -1578,16 +1786,10 @@ async fn stop_then_continue_restores_awaiting_input() {
 
         async fn invoke_stream(
             &self,
-            _request: AgentRequest,
+            request: AgentRequest,
             _sink: &dyn AiStreamSink,
         ) -> Result<AgentTurnOutcome, AgentError> {
-            Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                output: json!({"summary": "done"}),
-                raw_text: "{}".to_string(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
-            }))
+            Ok(question_then_complete(&request))
         }
     }
 
@@ -1651,6 +1853,8 @@ async fn stop_then_continue_restores_awaiting_input() {
                 .send(ExecutionAction::ProvideInput {
                     node_id: engine::NodeId("review".to_string()),
                     text: "continue".to_string(),
+                    attachments: Vec::new(),
+                    skill_prompt: None,
                 })
                 .expect("input");
         }
@@ -1679,16 +1883,10 @@ async fn stale_input_is_ignored_and_run_continues() {
 
         async fn invoke_stream(
             &self,
-            _request: AgentRequest,
+            request: AgentRequest,
             _sink: &dyn AiStreamSink,
         ) -> Result<AgentTurnOutcome, AgentError> {
-            Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
-                output: json!({"summary": "done"}),
-                raw_text: "{}".to_string(),
-                assistant_message: None,
-                reasoning: Vec::new(),
-                usage: None,
-            }))
+            Ok(question_then_complete(&request))
         }
     }
 
@@ -1715,12 +1913,16 @@ async fn stale_input_is_ignored_and_run_continues() {
                 .send(ExecutionAction::ProvideInput {
                     node_id: NodeId("wrong-node".to_string()),
                     text: "ignored".to_string(),
+                    attachments: Vec::new(),
+                    skill_prompt: None,
                 })
                 .expect("stale input");
             action_tx
                 .send(ExecutionAction::ProvideInput {
                     node_id: NodeId("review".to_string()),
                     text: "continue".to_string(),
+                    attachments: Vec::new(),
+                    skill_prompt: None,
                 })
                 .expect("valid input");
         }
@@ -1803,9 +2005,11 @@ async fn completed_run_includes_post_run_suggestions() {
 
 #[cfg_attr(miri, ignore)]
 #[tokio::test]
-async fn stop_mid_run_then_continue_completes_node() {
+async fn stopped_run_continuation_retries_node_with_message() {
     #[derive(Clone)]
-    struct SlowCompleteAi;
+    struct SlowCompleteAi {
+        expected_message: Option<&'static str>,
+    }
 
     #[async_trait]
     impl AiPort for SlowCompleteAi {
@@ -1815,9 +2019,21 @@ async fn stop_mid_run_then_continue_completes_node() {
 
         async fn invoke_stream(
             &self,
-            _request: AgentRequest,
+            request: AgentRequest,
             _sink: &dyn AiStreamSink,
         ) -> Result<AgentTurnOutcome, AgentError> {
+            if request.node_id == NodeId("idea".to_string()) {
+                if let Some(expected_message) = self.expected_message {
+                    assert!(
+                        request.transcript.iter().any(|item| matches!(
+                            item,
+                            engine::AgentTranscriptItem::UserMessage { content, .. }
+                                if content == expected_message
+                        )),
+                        "resumed request should include the continuation message"
+                    );
+                }
+            }
             tokio::time::sleep(Duration::from_millis(200)).await;
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
                 output: json!({"summary": "resumed"}),
@@ -1846,7 +2062,9 @@ async fn stop_mid_run_then_continue_completes_node() {
     let (params, checkpoint_sink) = interactive_run_params_with_sink(
         workflow.clone(),
         temp.path().to_path_buf(),
-        SlowCompleteAi,
+        SlowCompleteAi {
+            expected_message: None,
+        },
     );
     let (handle, mut event_rx, _action_tx, cancel, _) =
         spawn_interactive_workflow_run(&tokio::runtime::Handle::current(), params);
@@ -1865,11 +2083,21 @@ async fn stop_mid_run_then_continue_completes_node() {
     assert!(stopped, "expected to stop during node execution");
 
     let checkpoint = checkpoint_sink.lock().clone().expect("checkpoint").engine;
-    let (resume_params, _) =
-        interactive_run_params_with_sink(workflow, temp.path().to_path_buf(), SlowCompleteAi);
+    let (resume_params, _) = interactive_run_params_with_sink(
+        workflow,
+        temp.path().to_path_buf(),
+        SlowCompleteAi {
+            expected_message: Some("Continue with verification"),
+        },
+    );
     let resume_params = InteractiveWorkflowRunParams {
         artifact_root,
         resume_checkpoint: Some(checkpoint),
+        resume_continuation: Some(ResumeContinuation {
+            node_id: NodeId("idea".to_string()),
+            text: "Continue with verification".to_string(),
+            skill_prompt: None,
+        }),
         ..resume_params
     };
     let (handle, mut event_rx, _, _cancel, _) =

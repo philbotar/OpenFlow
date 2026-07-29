@@ -50,7 +50,7 @@ Getting the right context into and out of agents.
 
 | # | Item | Status | Details |
 | --- | --- | --- | --- |
-| 15 | **Attachments & file references** — attach button, `@` token combobox, drag-drop; resolved content in submit payload and entrypoint | In progress | [Attachments](#attachments--file-references) — `@` combobox + resolve-on-submit (inlined text) **Done**; attach button, drag-drop, structured payload, pills, images **Planned** |
+| 15 | **Attachments & file references** — attach button, `@` token combobox, drag-drop; resolved content in submit payload and entrypoint | In progress | [Attachments](#attachments--file-references) — managed image/document attachments and `@` references **Done**; line-range refs and assistant-originated media **Planned** |
 | 37 | **Agent prompt skill references** — `/skill` tokens in saved-agent and node system/task prompts; slash combobox + preview; expand skill bodies at run-start (or per turn) instead of pasting full instructions | Planned | [Agent prompt skill references](#agent-prompt-skill-references) |
 | 16 | **Upstream read-file context** — read-tier ledger per node; `read_files` in downstream node input alongside `changed_files` | Planned | [Upstream read-file context](#upstream-read-file-context) |
 | 17 | **Node handoff artifacts & output review** — per-node plan/md files in a canonical run dir; per-node opt-in review gate before downstream starts (Cursor-like) | Planned | [Node handoff artifacts & output review](#node-handoff-artifacts--output-review) |
@@ -650,7 +650,7 @@ Agents can ask for free-text or structured input via `openflow_request_user_inpu
 | Layer | Role |
 | --- | --- |
 | `crates/ui/src/lib/workflow.ts` | `projectChatLayout` — layer order, settled vs live columns, overflow tabs |
-| `crates/ui/src/context/appProvider/useRunSession.ts` + `useChatComposer.ts` | Merged layout state, kickoff/flush, per-node draft + submit routing |
+| `crates/ui/src/context/appProvider/useRunSession.ts` + `useChatComposer.ts` | Merged layout state, direct kickoff, per-node draft + submit routing |
 | `crates/ui/src/components/conversation/ChatPanel.tsx` | Settled segments + live column strip |
 | `crates/orchestration/src/run/state/` | `chatLogs: Record<NodeId, ChatMessage[]>` — source of truth |
 
@@ -718,7 +718,7 @@ A workflow node is **incomplete** until the agent calls `openflow_submit_node_ou
 
 ### Attachments & file references
 
-Users can invoke skills with `/skill` tokens and attach project context with `@{path}` tokens in the chat composer. On submit (including idle run kickoff), referenced paths are read under the execution cwd and inlined into the message text. Structured `referenced_files` payloads, attach button, drag-drop, pills, and vision images are not shipped yet.
+Users can invoke skills with `/skill` tokens, attach project context with `@{path}` tokens, or add managed files in the chat composer. Paperclip selection, image paste, and drag-drop accept images and allowlisted documents. The backend validates and copies them into the run, persists metadata refs in transcripts/checkpoints, and hydrates bytes only for provider invocation. `@` references remain execution-cwd text context; line-range structured refs are still planned.
 
 | Layer | Role / gap |
 | --- | --- |
@@ -726,8 +726,8 @@ Users can invoke skills with `/skill` tokens and attach project context with `@{
 | `crates/ui/src/components/conversation/FileReferenceCombobox.tsx` | Project file combobox in composer — **Done** |
 | `crates/orchestration/src/project/file_refs.rs` | List + read referenced paths under execution cwd jail — **Done** |
 | `crates/ui/src/context/appProvider/useChatComposer.ts` | `resolveChatSubmission` reads refs before `submit_user_input` / run kickoff — **Done** |
-| `crates/ui/src/components/conversation/` | No attach button, drag-drop target, reference pills, or preview chrome |
-| `crates/engine/src/execution/` | User input is a single string; no structured `referenced_files` in transcript or node input |
+| `crates/ui/src/components/conversation/` | Attach button, paste/drop, pending cards, image previews, and document cards — **Done** |
+| `crates/engine/src/execution/` | Text plus attachment refs in entrypoint and user transcript turns — **Done** |
 
 | Item | Priority | Status |
 | --- | --- | --- |
@@ -735,15 +735,16 @@ Users can invoke skills with `/skill` tokens and attach project context with `@{
 | Reference resolution — read file content under execution cwd on submit; reject paths outside project jail | High | Done |
 | Entrypoint attachments — resolve `@{path}` tokens when starting a run from idle composer | Medium | Done (inlined into entrypoint text) |
 | Reference budget — max files, max bytes, truncate with notice in formatted submit text | Low | Done (65536-byte cap in `file_refs.rs`) |
-| Attach button — paperclip in composer opens file picker over linked-project tree | High | Planned |
-| Drag-and-drop — drop files onto composer to attach (paths resolved under execution cwd jail) | Medium | Planned |
-| Structured submit payload — `referenced_files: [{ path, content \| excerpt }]` alongside message text | High | Planned |
+| Attach button — paperclip opens the native multi-file picker | High | Done |
+| Drag-and-drop and image paste — stage opaque app-data copies, then ingest managed run copies | Medium | Done |
+| Structured submit payload — text plus ordered attachment source tokens/paths; transcript stores safe refs | High | Done |
 | Transcript shape — persist references in `AgentTranscriptItem::UserMessage` and chat log projection | Medium | Planned |
-| Composer chrome — pills for attached paths; expandable preview (path + line range + size cap); remove via × | Medium | Planned |
-| Image attachments — paste or pick images; encode for vision-capable providers when model supports it | Medium | Planned |
+| Composer chrome — ordered filename/size cards with remove control; no source-path display | Medium | Done |
+| Image attachments — paste, drop, or pick; provider encoding plus durable replay preview | Medium | Done |
+| Document attachments — PDF and allowlisted UTF-8 documents; inactive metadata cards | Medium | Done |
 | Line-range refs — `@path:10-40` or selection-from-editor hook | Low | Planned |
 
-**Target:** Attach project files via button, `@` token, or drag-drop before send (or on run start). Resolved content is injected into the user message or entrypoint JSON so the agent sees explicit file context without an extra `read` tool round. Images attach when the selected model supports vision.
+**Target:** Attach files via button, `@` token, paste, or drag-drop before send or run start. Managed files survive replay without exposing original paths. Images/documents reach providers when the selected model supports that media. Line-range reference UX remains planned.
 
 ### Agent prompt skill references
 

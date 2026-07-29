@@ -191,12 +191,6 @@ export function AgentsScreen() {
                         draft.model = value;
                       })
                     }
-                    autoStart={agent().auto_start}
-                    onAutoStartChange={(value) =>
-                      ctx.updateSelectedAgent((draft) => {
-                        draft.auto_start = value;
-                      })
-                    }
                     systemPrompt={agent().system_prompt}
                     onSystemPromptChange={(value) =>
                       ctx.updateSelectedAgent((draft) => {

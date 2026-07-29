@@ -24,7 +24,7 @@ Orchestration working copy with filesystem backing. Converted to `CallableAgent`
 ## Run lifecycle
 
 1. **Run start** - `RunCoordinator` loads agents via `AgentLibrary` and freezes the selected records as `CallableAgent` snapshots.
-2. **Skill resolution** - installed `/skill-id` tokens anywhere in task prompts resolve through the configured skill catalog. Resolved `SKILL.md` paths are appended to the node or callable-agent system prompt before the snapshot starts executing.
+2. **Skill resolution** - installed `/skill-id` tokens anywhere in task prompts resolve through the configured skill catalog. OpenFlow reads the exact `SKILL.md` files, appends their contents to the node or callable-agent system prompt before the snapshot starts executing, and keeps resolved paths available for later chat turns.
 3. **Subagent invocation** - the engine uses the snapshot and never re-fetches saved agents during the run.
 4. **Run completion** - the snapshot is discarded; the next run gets a fresh snapshot.
 

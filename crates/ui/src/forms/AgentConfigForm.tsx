@@ -6,8 +6,6 @@ import { SkillPromptTextarea } from "./SkillPromptTextarea";
 export function AgentConfigForm(props: {
   model: string;
   onModelChange: (value: string) => void;
-  autoStart: boolean;
-  onAutoStartChange: (value: boolean) => void;
   requestUserInput?: boolean;
   onRequestUserInputChange?: (value: boolean) => void;
   systemPrompt: string;
@@ -133,14 +131,6 @@ export function AgentConfigForm(props: {
           </label>
         </Show>
       </Show>
-      <label class="checkbox-row">
-        <input
-          type="checkbox"
-          checked={props.autoStart}
-          onChange={(event) => props.onAutoStartChange(event.currentTarget.checked)}
-        />
-        <span>Start automatically</span>
-      </label>
       <Show when={props.onRequestUserInputChange}>
         <label class="checkbox-row">
           <input

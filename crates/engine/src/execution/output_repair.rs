@@ -273,6 +273,8 @@ fn build_repair_request(
         tool_config: NodeToolConfig::default(),
         available_tools: Vec::new(),
         transcript: Vec::new(),
+        entrypoint_attachments: Vec::new(),
+        resolved_attachments: std::collections::BTreeMap::new(),
         model_attempt: 1,
         reasoning_effort: None,
         reasoning_budget_tokens: None,
@@ -354,6 +356,8 @@ mod tests {
             transcript: vec![AgentTranscriptItem::AssistantMessage {
                 content: "prior".into(),
             }],
+            entrypoint_attachments: Vec::new(),
+            resolved_attachments: std::collections::BTreeMap::new(),
             model_attempt: 1,
             reasoning_effort: None,
             reasoning_budget_tokens: None,

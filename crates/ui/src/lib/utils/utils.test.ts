@@ -56,10 +56,17 @@ describe("dock height vs ui zoom", () => {
     expect(atZoom07).toBeGreaterThan(atZoom1);
   });
 
+  test("clampDockHeight keeps chat dock at least half the layout viewport", () => {
+    expect(clampDockHeight(100, "chat", 1000, false, 1)).toBe(500);
+    expect(clampDockHeight(100, "chat", 1000, false, 0.7)).toBe(
+      Math.round((1000 / 0.7) * 0.5),
+    );
+  });
+
   test("restoredChatDockHeight scales with zoom", () => {
-    expect(restoredChatDockHeight(1000, false, 1)).toBe(750);
+    expect(restoredChatDockHeight(1000, false, 1)).toBe(500);
     expect(restoredChatDockHeight(1000, false, 0.7)).toBe(
-      Math.round((1000 / 0.7) * 0.75),
+      Math.round((1000 / 0.7) * 0.5),
     );
   });
 });
@@ -82,7 +89,7 @@ describe("toastMessageForDebugMode", () => {
   });
 });
 
-test("resizeComposerTextarea caps growth at four rows", () => {
+test("resizeComposerTextarea caps growth at three rows", () => {
   const textarea = document.createElement("textarea");
   textarea.style.paddingTop = "0px";
   textarea.style.paddingBottom = "0px";
@@ -114,12 +121,12 @@ test("resizeComposerTextarea caps growth at four rows", () => {
 
   textarea.value = "x".repeat(20 * COMPOSER_INPUT_MAX_ROWS);
   resizeComposerTextarea(textarea);
-  expect(textarea.style.height).toBe("80px");
+  expect(textarea.style.height).toBe("60px");
   expect(textarea.style.overflowY).toBe("hidden");
 
   textarea.value = "x".repeat(20 * (COMPOSER_INPUT_MAX_ROWS + 2));
   resizeComposerTextarea(textarea);
-  expect(textarea.style.height).toBe("80px");
+  expect(textarea.style.height).toBe("60px");
   expect(textarea.style.overflowY).toBe("auto");
 
   textarea.remove();

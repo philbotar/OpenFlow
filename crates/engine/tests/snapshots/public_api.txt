@@ -64,6 +64,7 @@ pub engine::conversation::AgentTranscriptItem::ToolCall::call: engine::ToolCall
 pub engine::conversation::AgentTranscriptItem::ToolResult
 pub engine::conversation::AgentTranscriptItem::ToolResult::result: engine::ToolResult
 pub engine::conversation::AgentTranscriptItem::UserMessage
+pub engine::conversation::AgentTranscriptItem::UserMessage::attachments: alloc::vec::Vec<engine::conversation::ChatAttachmentRef>
 pub engine::conversation::AgentTranscriptItem::UserMessage::content: alloc::string::String
 impl core::clone::Clone for engine::conversation::AgentTranscriptItem
 pub fn engine::conversation::AgentTranscriptItem::clone(&self) -> engine::conversation::AgentTranscriptItem
@@ -111,6 +112,58 @@ pub fn engine::conversation::AgentTranscriptItem::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::conversation::AgentTranscriptItem where T: for<'de> serde_core::de::Deserialize<'de>
 impl<T> typenum::type_operators::Same for engine::conversation::AgentTranscriptItem
 pub type engine::conversation::AgentTranscriptItem::Output = T
+pub enum engine::conversation::ChatAttachmentKind
+pub engine::conversation::ChatAttachmentKind::Document
+pub engine::conversation::ChatAttachmentKind::Image
+impl core::clone::Clone for engine::conversation::ChatAttachmentKind
+pub fn engine::conversation::ChatAttachmentKind::clone(&self) -> engine::conversation::ChatAttachmentKind
+impl core::cmp::Eq for engine::conversation::ChatAttachmentKind
+impl core::cmp::PartialEq for engine::conversation::ChatAttachmentKind
+pub fn engine::conversation::ChatAttachmentKind::eq(&self, &engine::conversation::ChatAttachmentKind) -> bool
+impl core::fmt::Debug for engine::conversation::ChatAttachmentKind
+pub fn engine::conversation::ChatAttachmentKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for engine::conversation::ChatAttachmentKind
+impl core::marker::StructuralPartialEq for engine::conversation::ChatAttachmentKind
+impl serde_core::ser::Serialize for engine::conversation::ChatAttachmentKind
+pub fn engine::conversation::ChatAttachmentKind::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for engine::conversation::ChatAttachmentKind
+pub fn engine::conversation::ChatAttachmentKind::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for engine::conversation::ChatAttachmentKind
+impl core::marker::Send for engine::conversation::ChatAttachmentKind
+impl core::marker::Sync for engine::conversation::ChatAttachmentKind
+impl core::marker::Unpin for engine::conversation::ChatAttachmentKind
+impl core::marker::UnsafeUnpin for engine::conversation::ChatAttachmentKind
+impl core::panic::unwind_safe::RefUnwindSafe for engine::conversation::ChatAttachmentKind
+impl core::panic::unwind_safe::UnwindSafe for engine::conversation::ChatAttachmentKind
+impl<Q, K> equivalent::Equivalent<K> for engine::conversation::ChatAttachmentKind where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn engine::conversation::ChatAttachmentKind::equivalent(&self, &K) -> bool
+impl<T, U> core::convert::Into<U> for engine::conversation::ChatAttachmentKind where U: core::convert::From<T>
+pub fn engine::conversation::ChatAttachmentKind::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::conversation::ChatAttachmentKind where U: core::convert::Into<T>
+pub type engine::conversation::ChatAttachmentKind::Error = core::convert::Infallible
+pub fn engine::conversation::ChatAttachmentKind::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::conversation::ChatAttachmentKind where U: core::convert::TryFrom<T>
+pub type engine::conversation::ChatAttachmentKind::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::conversation::ChatAttachmentKind::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::conversation::ChatAttachmentKind where T: core::clone::Clone
+pub type engine::conversation::ChatAttachmentKind::Owned = T
+pub fn engine::conversation::ChatAttachmentKind::clone_into(&self, &mut T)
+pub fn engine::conversation::ChatAttachmentKind::to_owned(&self) -> T
+impl<T> core::any::Any for engine::conversation::ChatAttachmentKind where T: 'static + ?core::marker::Sized
+pub fn engine::conversation::ChatAttachmentKind::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::conversation::ChatAttachmentKind where T: ?core::marker::Sized
+pub fn engine::conversation::ChatAttachmentKind::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::conversation::ChatAttachmentKind where T: ?core::marker::Sized
+pub fn engine::conversation::ChatAttachmentKind::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::conversation::ChatAttachmentKind where T: core::clone::Clone
+pub unsafe fn engine::conversation::ChatAttachmentKind::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::conversation::ChatAttachmentKind
+pub fn engine::conversation::ChatAttachmentKind::from(T) -> T
+impl<T> outref::AsOut<T> for engine::conversation::ChatAttachmentKind where T: core::marker::Copy
+pub fn engine::conversation::ChatAttachmentKind::as_out(&mut self) -> outref::Out<'_, T>
+impl<T> serde_core::de::DeserializeOwned for engine::conversation::ChatAttachmentKind where T: for<'de> serde_core::de::Deserialize<'de>
+impl<T> typenum::type_operators::Same for engine::conversation::ChatAttachmentKind
+pub type engine::conversation::ChatAttachmentKind::Output = T
 pub enum engine::conversation::ChatMessageKind
 pub engine::conversation::ChatMessageKind::NodeCompleted
 impl core::clone::Clone for engine::conversation::ChatMessageKind
@@ -259,7 +312,61 @@ pub fn engine::conversation::AgentReasoning::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::conversation::AgentReasoning where T: for<'de> serde_core::de::Deserialize<'de>
 impl<T> typenum::type_operators::Same for engine::conversation::AgentReasoning
 pub type engine::conversation::AgentReasoning::Output = T
+pub struct engine::conversation::ChatAttachmentRef
+pub engine::conversation::ChatAttachmentRef::file_name: alloc::string::String
+pub engine::conversation::ChatAttachmentRef::id: alloc::string::String
+pub engine::conversation::ChatAttachmentRef::kind: engine::conversation::ChatAttachmentKind
+pub engine::conversation::ChatAttachmentRef::media_type: alloc::string::String
+pub engine::conversation::ChatAttachmentRef::sha256: alloc::string::String
+pub engine::conversation::ChatAttachmentRef::size_bytes: u64
+impl core::clone::Clone for engine::conversation::ChatAttachmentRef
+pub fn engine::conversation::ChatAttachmentRef::clone(&self) -> engine::conversation::ChatAttachmentRef
+impl core::cmp::Eq for engine::conversation::ChatAttachmentRef
+impl core::cmp::PartialEq for engine::conversation::ChatAttachmentRef
+pub fn engine::conversation::ChatAttachmentRef::eq(&self, &engine::conversation::ChatAttachmentRef) -> bool
+impl core::fmt::Debug for engine::conversation::ChatAttachmentRef
+pub fn engine::conversation::ChatAttachmentRef::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::conversation::ChatAttachmentRef
+impl serde_core::ser::Serialize for engine::conversation::ChatAttachmentRef
+pub fn engine::conversation::ChatAttachmentRef::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for engine::conversation::ChatAttachmentRef
+pub fn engine::conversation::ChatAttachmentRef::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for engine::conversation::ChatAttachmentRef
+impl core::marker::Send for engine::conversation::ChatAttachmentRef
+impl core::marker::Sync for engine::conversation::ChatAttachmentRef
+impl core::marker::Unpin for engine::conversation::ChatAttachmentRef
+impl core::marker::UnsafeUnpin for engine::conversation::ChatAttachmentRef
+impl core::panic::unwind_safe::RefUnwindSafe for engine::conversation::ChatAttachmentRef
+impl core::panic::unwind_safe::UnwindSafe for engine::conversation::ChatAttachmentRef
+impl<Q, K> equivalent::Equivalent<K> for engine::conversation::ChatAttachmentRef where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn engine::conversation::ChatAttachmentRef::equivalent(&self, &K) -> bool
+impl<T, U> core::convert::Into<U> for engine::conversation::ChatAttachmentRef where U: core::convert::From<T>
+pub fn engine::conversation::ChatAttachmentRef::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::conversation::ChatAttachmentRef where U: core::convert::Into<T>
+pub type engine::conversation::ChatAttachmentRef::Error = core::convert::Infallible
+pub fn engine::conversation::ChatAttachmentRef::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::conversation::ChatAttachmentRef where U: core::convert::TryFrom<T>
+pub type engine::conversation::ChatAttachmentRef::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::conversation::ChatAttachmentRef::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::conversation::ChatAttachmentRef where T: core::clone::Clone
+pub type engine::conversation::ChatAttachmentRef::Owned = T
+pub fn engine::conversation::ChatAttachmentRef::clone_into(&self, &mut T)
+pub fn engine::conversation::ChatAttachmentRef::to_owned(&self) -> T
+impl<T> core::any::Any for engine::conversation::ChatAttachmentRef where T: 'static + ?core::marker::Sized
+pub fn engine::conversation::ChatAttachmentRef::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::conversation::ChatAttachmentRef where T: ?core::marker::Sized
+pub fn engine::conversation::ChatAttachmentRef::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::conversation::ChatAttachmentRef where T: ?core::marker::Sized
+pub fn engine::conversation::ChatAttachmentRef::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::conversation::ChatAttachmentRef where T: core::clone::Clone
+pub unsafe fn engine::conversation::ChatAttachmentRef::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::conversation::ChatAttachmentRef
+pub fn engine::conversation::ChatAttachmentRef::from(T) -> T
+impl<T> serde_core::de::DeserializeOwned for engine::conversation::ChatAttachmentRef where T: for<'de> serde_core::de::Deserialize<'de>
+impl<T> typenum::type_operators::Same for engine::conversation::ChatAttachmentRef
+pub type engine::conversation::ChatAttachmentRef::Output = T
 pub struct engine::conversation::ChatMessage
+pub engine::conversation::ChatMessage::attachments: alloc::vec::Vec<engine::conversation::ChatAttachmentRef>
 pub engine::conversation::ChatMessage::content: alloc::string::String
 pub engine::conversation::ChatMessage::id: core::option::Option<alloc::string::String>
 pub engine::conversation::ChatMessage::message_kind: core::option::Option<engine::conversation::ChatMessageKind>
@@ -960,18 +1067,22 @@ impl<T> typenum::type_operators::Same for engine::execution::interactive_engine:
 pub type engine::execution::interactive_engine::FrozenChangeEvidencePacket::Output = T
 pub struct engine::execution::interactive_engine::InteractiveEngine
 impl engine::execution::interactive_engine::InteractiveEngine
+pub fn engine::execution::interactive_engine::InteractiveEngine::append_system_prompt(&mut self, &engine::graph::workflow::NodeId, &str)
 pub fn engine::execution::interactive_engine::InteractiveEngine::conversation_history(&self, &engine::graph::workflow::NodeId) -> alloc::vec::Vec<engine::conversation::ChatMessage>
 pub fn engine::execution::interactive_engine::InteractiveEngine::mark_node_interrupted(&mut self, &engine::graph::workflow::NodeId)
 pub fn engine::execution::interactive_engine::InteractiveEngine::model_attempt_for_node(&self, &engine::graph::workflow::NodeId) -> u8
 pub fn engine::execution::interactive_engine::InteractiveEngine::new(engine::graph::workflow::Workflow, core::option::Option<alloc::string::String>, core::option::Option<alloc::string::String>) -> core::result::Result<Self, engine::graph::validation::WorkflowValidationError>
+pub fn engine::execution::interactive_engine::InteractiveEngine::new_with_entrypoint_attachments(engine::graph::workflow::Workflow, core::option::Option<alloc::string::String>, alloc::vec::Vec<engine::conversation::ChatAttachmentRef>, core::option::Option<alloc::string::String>) -> core::result::Result<Self, engine::graph::validation::WorkflowValidationError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::node_output(&self, &engine::graph::workflow::NodeId) -> core::option::Option<serde_json::value::Value>
 pub fn engine::execution::interactive_engine::InteractiveEngine::note_read_call(&mut self, &engine::graph::workflow::NodeId, &str)
 pub const fn engine::execution::interactive_engine::InteractiveEngine::note_usage(&mut self, &engine::ports::outbound::UsageReport)
 pub fn engine::execution::interactive_engine::InteractiveEngine::on_human_input(&mut self, &engine::graph::workflow::NodeId, &str) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
+pub fn engine::execution::interactive_engine::InteractiveEngine::on_human_message(&mut self, &engine::graph::workflow::NodeId, &str, alloc::vec::Vec<engine::conversation::ChatAttachmentRef>) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::pending_tool_batch_node(&self, &str) -> core::option::Option<engine::graph::workflow::NodeId>
 pub fn engine::execution::interactive_engine::InteractiveEngine::record_file_changes(&mut self, &engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>)
 pub fn engine::execution::interactive_engine::InteractiveEngine::record_reads(&mut self, &engine::graph::workflow::NodeId, alloc::vec::Vec<engine::ReadRecord>)
 pub fn engine::execution::interactive_engine::InteractiveEngine::retry_node(&mut self, &engine::graph::workflow::NodeId) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
+pub fn engine::execution::interactive_engine::InteractiveEngine::retry_node_with_message(&mut self, &engine::graph::workflow::NodeId, &str, alloc::vec::Vec<engine::conversation::ChatAttachmentRef>) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::revert_file_changes_for_batch(&mut self, &str, &engine::graph::workflow::NodeId)
 pub async fn engine::execution::interactive_engine::InteractiveEngine::run<A: engine::ports::outbound::AiPort, T: engine::ports::outbound::ToolPort>(&mut self, &A, &T, &tokio_util::sync::cancellation_token::CancellationToken) -> engine::execution::interactive_engine::EngineRunResult
 pub fn engine::execution::interactive_engine::InteractiveEngine::set_runtime_config_store(&mut self, engine::graph::runtime_config::NodeRuntimeConfigStore)
@@ -1015,6 +1126,7 @@ pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::auto_con
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::awaiting_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::changed_files_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::empty_turn_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
+pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::entrypoint_attachments: alloc::vec::Vec<engine::conversation::ChatAttachmentRef>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::entrypoint_text: core::option::Option<alloc::string::String>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::failed_nodes: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::string::String>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::frozen_change_evidence_packet: core::option::Option<engine::execution::interactive_engine::FrozenChangeEvidencePacket>
@@ -2200,18 +2312,22 @@ impl<T> typenum::type_operators::Same for engine::execution::interactive_engine:
 pub type engine::execution::interactive_engine::FrozenChangeEvidencePacket::Output = T
 pub struct engine::execution::InteractiveEngine
 impl engine::execution::interactive_engine::InteractiveEngine
+pub fn engine::execution::interactive_engine::InteractiveEngine::append_system_prompt(&mut self, &engine::graph::workflow::NodeId, &str)
 pub fn engine::execution::interactive_engine::InteractiveEngine::conversation_history(&self, &engine::graph::workflow::NodeId) -> alloc::vec::Vec<engine::conversation::ChatMessage>
 pub fn engine::execution::interactive_engine::InteractiveEngine::mark_node_interrupted(&mut self, &engine::graph::workflow::NodeId)
 pub fn engine::execution::interactive_engine::InteractiveEngine::model_attempt_for_node(&self, &engine::graph::workflow::NodeId) -> u8
 pub fn engine::execution::interactive_engine::InteractiveEngine::new(engine::graph::workflow::Workflow, core::option::Option<alloc::string::String>, core::option::Option<alloc::string::String>) -> core::result::Result<Self, engine::graph::validation::WorkflowValidationError>
+pub fn engine::execution::interactive_engine::InteractiveEngine::new_with_entrypoint_attachments(engine::graph::workflow::Workflow, core::option::Option<alloc::string::String>, alloc::vec::Vec<engine::conversation::ChatAttachmentRef>, core::option::Option<alloc::string::String>) -> core::result::Result<Self, engine::graph::validation::WorkflowValidationError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::node_output(&self, &engine::graph::workflow::NodeId) -> core::option::Option<serde_json::value::Value>
 pub fn engine::execution::interactive_engine::InteractiveEngine::note_read_call(&mut self, &engine::graph::workflow::NodeId, &str)
 pub const fn engine::execution::interactive_engine::InteractiveEngine::note_usage(&mut self, &engine::ports::outbound::UsageReport)
 pub fn engine::execution::interactive_engine::InteractiveEngine::on_human_input(&mut self, &engine::graph::workflow::NodeId, &str) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
+pub fn engine::execution::interactive_engine::InteractiveEngine::on_human_message(&mut self, &engine::graph::workflow::NodeId, &str, alloc::vec::Vec<engine::conversation::ChatAttachmentRef>) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::pending_tool_batch_node(&self, &str) -> core::option::Option<engine::graph::workflow::NodeId>
 pub fn engine::execution::interactive_engine::InteractiveEngine::record_file_changes(&mut self, &engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>)
 pub fn engine::execution::interactive_engine::InteractiveEngine::record_reads(&mut self, &engine::graph::workflow::NodeId, alloc::vec::Vec<engine::ReadRecord>)
 pub fn engine::execution::interactive_engine::InteractiveEngine::retry_node(&mut self, &engine::graph::workflow::NodeId) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
+pub fn engine::execution::interactive_engine::InteractiveEngine::retry_node_with_message(&mut self, &engine::graph::workflow::NodeId, &str, alloc::vec::Vec<engine::conversation::ChatAttachmentRef>) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::revert_file_changes_for_batch(&mut self, &str, &engine::graph::workflow::NodeId)
 pub async fn engine::execution::interactive_engine::InteractiveEngine::run<A: engine::ports::outbound::AiPort, T: engine::ports::outbound::ToolPort>(&mut self, &A, &T, &tokio_util::sync::cancellation_token::CancellationToken) -> engine::execution::interactive_engine::EngineRunResult
 pub fn engine::execution::interactive_engine::InteractiveEngine::set_runtime_config_store(&mut self, engine::graph::runtime_config::NodeRuntimeConfigStore)
@@ -2255,6 +2371,7 @@ pub engine::execution::InteractiveEngineCheckpoint::auto_continue_streaks_by_nod
 pub engine::execution::InteractiveEngineCheckpoint::awaiting_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
 pub engine::execution::InteractiveEngineCheckpoint::changed_files_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>>
 pub engine::execution::InteractiveEngineCheckpoint::empty_turn_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
+pub engine::execution::InteractiveEngineCheckpoint::entrypoint_attachments: alloc::vec::Vec<engine::conversation::ChatAttachmentRef>
 pub engine::execution::InteractiveEngineCheckpoint::entrypoint_text: core::option::Option<alloc::string::String>
 pub engine::execution::InteractiveEngineCheckpoint::failed_nodes: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::string::String>
 pub engine::execution::InteractiveEngineCheckpoint::frozen_change_evidence_packet: core::option::Option<engine::execution::interactive_engine::FrozenChangeEvidencePacket>
@@ -2783,6 +2900,9 @@ pub engine::graph::validation::WorkflowValidationError::DuplicateEdgeId(engine::
 pub engine::graph::validation::WorkflowValidationError::DuplicateNodeId(engine::graph::workflow::NodeId)
 pub engine::graph::validation::WorkflowValidationError::EmptyWorkflow
 pub engine::graph::validation::WorkflowValidationError::InternalConsistency(alloc::string::String)
+pub engine::graph::validation::WorkflowValidationError::InvalidOutputSchema
+pub engine::graph::validation::WorkflowValidationError::InvalidOutputSchema::detail: alloc::string::String
+pub engine::graph::validation::WorkflowValidationError::InvalidOutputSchema::node_id: engine::graph::workflow::NodeId
 pub engine::graph::validation::WorkflowValidationError::MissingEndpoint
 pub engine::graph::validation::WorkflowValidationError::MissingEndpoint::edge_id: engine::graph::workflow::EdgeId
 pub engine::graph::validation::WorkflowValidationError::MissingEndpoint::node_id: engine::graph::workflow::NodeId
@@ -3635,6 +3755,9 @@ pub engine::graph::WorkflowValidationError::DuplicateEdgeId(engine::graph::workf
 pub engine::graph::WorkflowValidationError::DuplicateNodeId(engine::graph::workflow::NodeId)
 pub engine::graph::WorkflowValidationError::EmptyWorkflow
 pub engine::graph::WorkflowValidationError::InternalConsistency(alloc::string::String)
+pub engine::graph::WorkflowValidationError::InvalidOutputSchema
+pub engine::graph::WorkflowValidationError::InvalidOutputSchema::detail: alloc::string::String
+pub engine::graph::WorkflowValidationError::InvalidOutputSchema::node_id: engine::graph::workflow::NodeId
 pub engine::graph::WorkflowValidationError::MissingEndpoint
 pub engine::graph::WorkflowValidationError::MissingEndpoint::edge_id: engine::graph::workflow::EdgeId
 pub engine::graph::WorkflowValidationError::MissingEndpoint::node_id: engine::graph::workflow::NodeId
@@ -4859,6 +4982,7 @@ pub type engine::ports::outbound::AgentNeedUserInput::Output = T
 pub struct engine::ports::outbound::AgentRequest
 pub engine::ports::outbound::AgentRequest::allow_user_input: bool
 pub engine::ports::outbound::AgentRequest::available_tools: alloc::vec::Vec<engine::ToolDefinition>
+pub engine::ports::outbound::AgentRequest::entrypoint_attachments: alloc::vec::Vec<engine::conversation::ChatAttachmentRef>
 pub engine::ports::outbound::AgentRequest::input: serde_json::value::Value
 pub engine::ports::outbound::AgentRequest::model: alloc::string::String
 pub engine::ports::outbound::AgentRequest::model_attempt: u8
@@ -4867,6 +4991,7 @@ pub engine::ports::outbound::AgentRequest::node_label: alloc::string::String
 pub engine::ports::outbound::AgentRequest::output_schema: serde_json::value::Value
 pub engine::ports::outbound::AgentRequest::reasoning_budget_tokens: core::option::Option<u32>
 pub engine::ports::outbound::AgentRequest::reasoning_effort: core::option::Option<alloc::string::String>
+pub engine::ports::outbound::AgentRequest::resolved_attachments: alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::ports::outbound::ResolvedChatAttachment>
 pub engine::ports::outbound::AgentRequest::system_messages: alloc::vec::Vec<alloc::string::String>
 pub engine::ports::outbound::AgentRequest::task_prompt: alloc::string::String
 pub engine::ports::outbound::AgentRequest::tool_access_policy: engine::ports::outbound::ToolAccessPolicy
@@ -5062,6 +5187,49 @@ impl<T> core::convert::From<T> for engine::ports::outbound::OutputRepairCandidat
 pub fn engine::ports::outbound::OutputRepairCandidate::from(T) -> T
 impl<T> typenum::type_operators::Same for engine::ports::outbound::OutputRepairCandidate
 pub type engine::ports::outbound::OutputRepairCandidate::Output = T
+pub struct engine::ports::outbound::ResolvedChatAttachment
+pub engine::ports::outbound::ResolvedChatAttachment::bytes: alloc::vec::Vec<u8>
+impl core::clone::Clone for engine::ports::outbound::ResolvedChatAttachment
+pub fn engine::ports::outbound::ResolvedChatAttachment::clone(&self) -> engine::ports::outbound::ResolvedChatAttachment
+impl core::cmp::Eq for engine::ports::outbound::ResolvedChatAttachment
+impl core::cmp::PartialEq for engine::ports::outbound::ResolvedChatAttachment
+pub fn engine::ports::outbound::ResolvedChatAttachment::eq(&self, &engine::ports::outbound::ResolvedChatAttachment) -> bool
+impl core::fmt::Debug for engine::ports::outbound::ResolvedChatAttachment
+pub fn engine::ports::outbound::ResolvedChatAttachment::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::ports::outbound::ResolvedChatAttachment
+impl core::marker::Freeze for engine::ports::outbound::ResolvedChatAttachment
+impl core::marker::Send for engine::ports::outbound::ResolvedChatAttachment
+impl core::marker::Sync for engine::ports::outbound::ResolvedChatAttachment
+impl core::marker::Unpin for engine::ports::outbound::ResolvedChatAttachment
+impl core::marker::UnsafeUnpin for engine::ports::outbound::ResolvedChatAttachment
+impl core::panic::unwind_safe::RefUnwindSafe for engine::ports::outbound::ResolvedChatAttachment
+impl core::panic::unwind_safe::UnwindSafe for engine::ports::outbound::ResolvedChatAttachment
+impl<Q, K> equivalent::Equivalent<K> for engine::ports::outbound::ResolvedChatAttachment where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn engine::ports::outbound::ResolvedChatAttachment::equivalent(&self, &K) -> bool
+impl<T, U> core::convert::Into<U> for engine::ports::outbound::ResolvedChatAttachment where U: core::convert::From<T>
+pub fn engine::ports::outbound::ResolvedChatAttachment::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::ports::outbound::ResolvedChatAttachment where U: core::convert::Into<T>
+pub type engine::ports::outbound::ResolvedChatAttachment::Error = core::convert::Infallible
+pub fn engine::ports::outbound::ResolvedChatAttachment::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::ports::outbound::ResolvedChatAttachment where U: core::convert::TryFrom<T>
+pub type engine::ports::outbound::ResolvedChatAttachment::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::ports::outbound::ResolvedChatAttachment::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::ports::outbound::ResolvedChatAttachment where T: core::clone::Clone
+pub type engine::ports::outbound::ResolvedChatAttachment::Owned = T
+pub fn engine::ports::outbound::ResolvedChatAttachment::clone_into(&self, &mut T)
+pub fn engine::ports::outbound::ResolvedChatAttachment::to_owned(&self) -> T
+impl<T> core::any::Any for engine::ports::outbound::ResolvedChatAttachment where T: 'static + ?core::marker::Sized
+pub fn engine::ports::outbound::ResolvedChatAttachment::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::ports::outbound::ResolvedChatAttachment where T: ?core::marker::Sized
+pub fn engine::ports::outbound::ResolvedChatAttachment::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::ports::outbound::ResolvedChatAttachment where T: ?core::marker::Sized
+pub fn engine::ports::outbound::ResolvedChatAttachment::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::ports::outbound::ResolvedChatAttachment where T: core::clone::Clone
+pub unsafe fn engine::ports::outbound::ResolvedChatAttachment::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::ports::outbound::ResolvedChatAttachment
+pub fn engine::ports::outbound::ResolvedChatAttachment::from(T) -> T
+impl<T> typenum::type_operators::Same for engine::ports::outbound::ResolvedChatAttachment
+pub type engine::ports::outbound::ResolvedChatAttachment::Output = T
 pub struct engine::ports::outbound::StructuredUserInput
 pub engine::ports::outbound::StructuredUserInput::questions: alloc::vec::Vec<engine::ports::outbound::UserInputQuestion>
 impl core::clone::Clone for engine::ports::outbound::StructuredUserInput
@@ -5722,6 +5890,7 @@ pub type engine::ports::outbound::AgentNeedUserInput::Output = T
 pub struct engine::ports::AgentRequest
 pub engine::ports::AgentRequest::allow_user_input: bool
 pub engine::ports::AgentRequest::available_tools: alloc::vec::Vec<engine::ToolDefinition>
+pub engine::ports::AgentRequest::entrypoint_attachments: alloc::vec::Vec<engine::conversation::ChatAttachmentRef>
 pub engine::ports::AgentRequest::input: serde_json::value::Value
 pub engine::ports::AgentRequest::model: alloc::string::String
 pub engine::ports::AgentRequest::model_attempt: u8
@@ -5730,6 +5899,7 @@ pub engine::ports::AgentRequest::node_label: alloc::string::String
 pub engine::ports::AgentRequest::output_schema: serde_json::value::Value
 pub engine::ports::AgentRequest::reasoning_budget_tokens: core::option::Option<u32>
 pub engine::ports::AgentRequest::reasoning_effort: core::option::Option<alloc::string::String>
+pub engine::ports::AgentRequest::resolved_attachments: alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::ports::outbound::ResolvedChatAttachment>
 pub engine::ports::AgentRequest::system_messages: alloc::vec::Vec<alloc::string::String>
 pub engine::ports::AgentRequest::task_prompt: alloc::string::String
 pub engine::ports::AgentRequest::tool_access_policy: engine::ports::outbound::ToolAccessPolicy
@@ -5925,6 +6095,49 @@ impl<T> core::convert::From<T> for engine::ports::outbound::OutputRepairCandidat
 pub fn engine::ports::outbound::OutputRepairCandidate::from(T) -> T
 impl<T> typenum::type_operators::Same for engine::ports::outbound::OutputRepairCandidate
 pub type engine::ports::outbound::OutputRepairCandidate::Output = T
+pub struct engine::ports::ResolvedChatAttachment
+pub engine::ports::ResolvedChatAttachment::bytes: alloc::vec::Vec<u8>
+impl core::clone::Clone for engine::ports::outbound::ResolvedChatAttachment
+pub fn engine::ports::outbound::ResolvedChatAttachment::clone(&self) -> engine::ports::outbound::ResolvedChatAttachment
+impl core::cmp::Eq for engine::ports::outbound::ResolvedChatAttachment
+impl core::cmp::PartialEq for engine::ports::outbound::ResolvedChatAttachment
+pub fn engine::ports::outbound::ResolvedChatAttachment::eq(&self, &engine::ports::outbound::ResolvedChatAttachment) -> bool
+impl core::fmt::Debug for engine::ports::outbound::ResolvedChatAttachment
+pub fn engine::ports::outbound::ResolvedChatAttachment::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::ports::outbound::ResolvedChatAttachment
+impl core::marker::Freeze for engine::ports::outbound::ResolvedChatAttachment
+impl core::marker::Send for engine::ports::outbound::ResolvedChatAttachment
+impl core::marker::Sync for engine::ports::outbound::ResolvedChatAttachment
+impl core::marker::Unpin for engine::ports::outbound::ResolvedChatAttachment
+impl core::marker::UnsafeUnpin for engine::ports::outbound::ResolvedChatAttachment
+impl core::panic::unwind_safe::RefUnwindSafe for engine::ports::outbound::ResolvedChatAttachment
+impl core::panic::unwind_safe::UnwindSafe for engine::ports::outbound::ResolvedChatAttachment
+impl<Q, K> equivalent::Equivalent<K> for engine::ports::outbound::ResolvedChatAttachment where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn engine::ports::outbound::ResolvedChatAttachment::equivalent(&self, &K) -> bool
+impl<T, U> core::convert::Into<U> for engine::ports::outbound::ResolvedChatAttachment where U: core::convert::From<T>
+pub fn engine::ports::outbound::ResolvedChatAttachment::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::ports::outbound::ResolvedChatAttachment where U: core::convert::Into<T>
+pub type engine::ports::outbound::ResolvedChatAttachment::Error = core::convert::Infallible
+pub fn engine::ports::outbound::ResolvedChatAttachment::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::ports::outbound::ResolvedChatAttachment where U: core::convert::TryFrom<T>
+pub type engine::ports::outbound::ResolvedChatAttachment::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::ports::outbound::ResolvedChatAttachment::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::ports::outbound::ResolvedChatAttachment where T: core::clone::Clone
+pub type engine::ports::outbound::ResolvedChatAttachment::Owned = T
+pub fn engine::ports::outbound::ResolvedChatAttachment::clone_into(&self, &mut T)
+pub fn engine::ports::outbound::ResolvedChatAttachment::to_owned(&self) -> T
+impl<T> core::any::Any for engine::ports::outbound::ResolvedChatAttachment where T: 'static + ?core::marker::Sized
+pub fn engine::ports::outbound::ResolvedChatAttachment::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::ports::outbound::ResolvedChatAttachment where T: ?core::marker::Sized
+pub fn engine::ports::outbound::ResolvedChatAttachment::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::ports::outbound::ResolvedChatAttachment where T: ?core::marker::Sized
+pub fn engine::ports::outbound::ResolvedChatAttachment::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::ports::outbound::ResolvedChatAttachment where T: core::clone::Clone
+pub unsafe fn engine::ports::outbound::ResolvedChatAttachment::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::ports::outbound::ResolvedChatAttachment
+pub fn engine::ports::outbound::ResolvedChatAttachment::from(T) -> T
+impl<T> typenum::type_operators::Same for engine::ports::outbound::ResolvedChatAttachment
+pub type engine::ports::outbound::ResolvedChatAttachment::Output = T
 pub struct engine::ports::StructuredUserInput
 pub engine::ports::StructuredUserInput::questions: alloc::vec::Vec<engine::ports::outbound::UserInputQuestion>
 impl core::clone::Clone for engine::ports::outbound::StructuredUserInput
@@ -6237,13 +6450,13 @@ pub mod engine::template::store
 pub enum engine::template::store::TemplateStoreError
 pub engine::template::store::TemplateStoreError::CannotCreateDir
 pub engine::template::store::TemplateStoreError::CannotCreateDir::path: alloc::string::String
-pub engine::template::store::TemplateStoreError::CannotCreateDir::source: std::io::error::Error
+pub engine::template::store::TemplateStoreError::CannotCreateDir::source: core::io::error::Error
 pub engine::template::store::TemplateStoreError::CannotRead
 pub engine::template::store::TemplateStoreError::CannotRead::path: alloc::string::String
-pub engine::template::store::TemplateStoreError::CannotRead::source: std::io::error::Error
+pub engine::template::store::TemplateStoreError::CannotRead::source: core::io::error::Error
 pub engine::template::store::TemplateStoreError::CannotWrite
 pub engine::template::store::TemplateStoreError::CannotWrite::path: alloc::string::String
-pub engine::template::store::TemplateStoreError::CannotWrite::source: std::io::error::Error
+pub engine::template::store::TemplateStoreError::CannotWrite::source: core::io::error::Error
 pub engine::template::store::TemplateStoreError::DataDirUnavailable
 pub engine::template::store::TemplateStoreError::NotFound
 pub engine::template::store::TemplateStoreError::NotFound::id: alloc::string::String
@@ -6291,13 +6504,13 @@ pub fn engine::template::store::TemplateStore::update(&self, engine::template::T
 pub enum engine::template::TemplateStoreError
 pub engine::template::TemplateStoreError::CannotCreateDir
 pub engine::template::TemplateStoreError::CannotCreateDir::path: alloc::string::String
-pub engine::template::TemplateStoreError::CannotCreateDir::source: std::io::error::Error
+pub engine::template::TemplateStoreError::CannotCreateDir::source: core::io::error::Error
 pub engine::template::TemplateStoreError::CannotRead
 pub engine::template::TemplateStoreError::CannotRead::path: alloc::string::String
-pub engine::template::TemplateStoreError::CannotRead::source: std::io::error::Error
+pub engine::template::TemplateStoreError::CannotRead::source: core::io::error::Error
 pub engine::template::TemplateStoreError::CannotWrite
 pub engine::template::TemplateStoreError::CannotWrite::path: alloc::string::String
-pub engine::template::TemplateStoreError::CannotWrite::source: std::io::error::Error
+pub engine::template::TemplateStoreError::CannotWrite::source: core::io::error::Error
 pub engine::template::TemplateStoreError::DataDirUnavailable
 pub engine::template::TemplateStoreError::NotFound
 pub engine::template::TemplateStoreError::NotFound::id: alloc::string::String
@@ -7523,6 +7736,7 @@ pub engine::AgentTranscriptItem::ToolCall::call: engine::ToolCall
 pub engine::AgentTranscriptItem::ToolResult
 pub engine::AgentTranscriptItem::ToolResult::result: engine::ToolResult
 pub engine::AgentTranscriptItem::UserMessage
+pub engine::AgentTranscriptItem::UserMessage::attachments: alloc::vec::Vec<engine::conversation::ChatAttachmentRef>
 pub engine::AgentTranscriptItem::UserMessage::content: alloc::string::String
 impl core::clone::Clone for engine::conversation::AgentTranscriptItem
 pub fn engine::conversation::AgentTranscriptItem::clone(&self) -> engine::conversation::AgentTranscriptItem
@@ -7727,6 +7941,58 @@ pub fn engine::ApprovalMode::as_out(&mut self) -> outref::Out<'_, T>
 impl<T> serde_core::de::DeserializeOwned for engine::ApprovalMode where T: for<'de> serde_core::de::Deserialize<'de>
 impl<T> typenum::type_operators::Same for engine::ApprovalMode
 pub type engine::ApprovalMode::Output = T
+pub enum engine::ChatAttachmentKind
+pub engine::ChatAttachmentKind::Document
+pub engine::ChatAttachmentKind::Image
+impl core::clone::Clone for engine::conversation::ChatAttachmentKind
+pub fn engine::conversation::ChatAttachmentKind::clone(&self) -> engine::conversation::ChatAttachmentKind
+impl core::cmp::Eq for engine::conversation::ChatAttachmentKind
+impl core::cmp::PartialEq for engine::conversation::ChatAttachmentKind
+pub fn engine::conversation::ChatAttachmentKind::eq(&self, &engine::conversation::ChatAttachmentKind) -> bool
+impl core::fmt::Debug for engine::conversation::ChatAttachmentKind
+pub fn engine::conversation::ChatAttachmentKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for engine::conversation::ChatAttachmentKind
+impl core::marker::StructuralPartialEq for engine::conversation::ChatAttachmentKind
+impl serde_core::ser::Serialize for engine::conversation::ChatAttachmentKind
+pub fn engine::conversation::ChatAttachmentKind::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for engine::conversation::ChatAttachmentKind
+pub fn engine::conversation::ChatAttachmentKind::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for engine::conversation::ChatAttachmentKind
+impl core::marker::Send for engine::conversation::ChatAttachmentKind
+impl core::marker::Sync for engine::conversation::ChatAttachmentKind
+impl core::marker::Unpin for engine::conversation::ChatAttachmentKind
+impl core::marker::UnsafeUnpin for engine::conversation::ChatAttachmentKind
+impl core::panic::unwind_safe::RefUnwindSafe for engine::conversation::ChatAttachmentKind
+impl core::panic::unwind_safe::UnwindSafe for engine::conversation::ChatAttachmentKind
+impl<Q, K> equivalent::Equivalent<K> for engine::conversation::ChatAttachmentKind where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn engine::conversation::ChatAttachmentKind::equivalent(&self, &K) -> bool
+impl<T, U> core::convert::Into<U> for engine::conversation::ChatAttachmentKind where U: core::convert::From<T>
+pub fn engine::conversation::ChatAttachmentKind::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::conversation::ChatAttachmentKind where U: core::convert::Into<T>
+pub type engine::conversation::ChatAttachmentKind::Error = core::convert::Infallible
+pub fn engine::conversation::ChatAttachmentKind::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::conversation::ChatAttachmentKind where U: core::convert::TryFrom<T>
+pub type engine::conversation::ChatAttachmentKind::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::conversation::ChatAttachmentKind::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::conversation::ChatAttachmentKind where T: core::clone::Clone
+pub type engine::conversation::ChatAttachmentKind::Owned = T
+pub fn engine::conversation::ChatAttachmentKind::clone_into(&self, &mut T)
+pub fn engine::conversation::ChatAttachmentKind::to_owned(&self) -> T
+impl<T> core::any::Any for engine::conversation::ChatAttachmentKind where T: 'static + ?core::marker::Sized
+pub fn engine::conversation::ChatAttachmentKind::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::conversation::ChatAttachmentKind where T: ?core::marker::Sized
+pub fn engine::conversation::ChatAttachmentKind::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::conversation::ChatAttachmentKind where T: ?core::marker::Sized
+pub fn engine::conversation::ChatAttachmentKind::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::conversation::ChatAttachmentKind where T: core::clone::Clone
+pub unsafe fn engine::conversation::ChatAttachmentKind::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::conversation::ChatAttachmentKind
+pub fn engine::conversation::ChatAttachmentKind::from(T) -> T
+impl<T> outref::AsOut<T> for engine::conversation::ChatAttachmentKind where T: core::marker::Copy
+pub fn engine::conversation::ChatAttachmentKind::as_out(&mut self) -> outref::Out<'_, T>
+impl<T> serde_core::de::DeserializeOwned for engine::conversation::ChatAttachmentKind where T: for<'de> serde_core::de::Deserialize<'de>
+impl<T> typenum::type_operators::Same for engine::conversation::ChatAttachmentKind
+pub type engine::conversation::ChatAttachmentKind::Output = T
 pub enum engine::ChatMessageKind
 pub engine::ChatMessageKind::NodeCompleted
 impl core::clone::Clone for engine::conversation::ChatMessageKind
@@ -8422,13 +8688,13 @@ pub type engine::SubagentStatus::Output = T
 pub enum engine::TemplateStoreError
 pub engine::TemplateStoreError::CannotCreateDir
 pub engine::TemplateStoreError::CannotCreateDir::path: alloc::string::String
-pub engine::TemplateStoreError::CannotCreateDir::source: std::io::error::Error
+pub engine::TemplateStoreError::CannotCreateDir::source: core::io::error::Error
 pub engine::TemplateStoreError::CannotRead
 pub engine::TemplateStoreError::CannotRead::path: alloc::string::String
-pub engine::TemplateStoreError::CannotRead::source: std::io::error::Error
+pub engine::TemplateStoreError::CannotRead::source: core::io::error::Error
 pub engine::TemplateStoreError::CannotWrite
 pub engine::TemplateStoreError::CannotWrite::path: alloc::string::String
-pub engine::TemplateStoreError::CannotWrite::source: std::io::error::Error
+pub engine::TemplateStoreError::CannotWrite::source: core::io::error::Error
 pub engine::TemplateStoreError::DataDirUnavailable
 pub engine::TemplateStoreError::NotFound
 pub engine::TemplateStoreError::NotFound::id: alloc::string::String
@@ -8743,6 +9009,9 @@ pub engine::WorkflowValidationError::DuplicateEdgeId(engine::graph::workflow::Ed
 pub engine::WorkflowValidationError::DuplicateNodeId(engine::graph::workflow::NodeId)
 pub engine::WorkflowValidationError::EmptyWorkflow
 pub engine::WorkflowValidationError::InternalConsistency(alloc::string::String)
+pub engine::WorkflowValidationError::InvalidOutputSchema
+pub engine::WorkflowValidationError::InvalidOutputSchema::detail: alloc::string::String
+pub engine::WorkflowValidationError::InvalidOutputSchema::node_id: engine::graph::workflow::NodeId
 pub engine::WorkflowValidationError::MissingEndpoint
 pub engine::WorkflowValidationError::MissingEndpoint::edge_id: engine::graph::workflow::EdgeId
 pub engine::WorkflowValidationError::MissingEndpoint::node_id: engine::graph::workflow::NodeId
@@ -9002,6 +9271,7 @@ pub type engine::conversation::AgentReasoning::Output = T
 pub struct engine::AgentRequest
 pub engine::AgentRequest::allow_user_input: bool
 pub engine::AgentRequest::available_tools: alloc::vec::Vec<engine::ToolDefinition>
+pub engine::AgentRequest::entrypoint_attachments: alloc::vec::Vec<engine::conversation::ChatAttachmentRef>
 pub engine::AgentRequest::input: serde_json::value::Value
 pub engine::AgentRequest::model: alloc::string::String
 pub engine::AgentRequest::model_attempt: u8
@@ -9010,6 +9280,7 @@ pub engine::AgentRequest::node_label: alloc::string::String
 pub engine::AgentRequest::output_schema: serde_json::value::Value
 pub engine::AgentRequest::reasoning_budget_tokens: core::option::Option<u32>
 pub engine::AgentRequest::reasoning_effort: core::option::Option<alloc::string::String>
+pub engine::AgentRequest::resolved_attachments: alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::ports::outbound::ResolvedChatAttachment>
 pub engine::AgentRequest::system_messages: alloc::vec::Vec<alloc::string::String>
 pub engine::AgentRequest::task_prompt: alloc::string::String
 pub engine::AgentRequest::tool_access_policy: engine::ports::outbound::ToolAccessPolicy
@@ -9212,7 +9483,61 @@ pub fn engine::graph::callable_agent::CallableAgent::from(T) -> T
 impl<T> serde_core::de::DeserializeOwned for engine::graph::callable_agent::CallableAgent where T: for<'de> serde_core::de::Deserialize<'de>
 impl<T> typenum::type_operators::Same for engine::graph::callable_agent::CallableAgent
 pub type engine::graph::callable_agent::CallableAgent::Output = T
+pub struct engine::ChatAttachmentRef
+pub engine::ChatAttachmentRef::file_name: alloc::string::String
+pub engine::ChatAttachmentRef::id: alloc::string::String
+pub engine::ChatAttachmentRef::kind: engine::conversation::ChatAttachmentKind
+pub engine::ChatAttachmentRef::media_type: alloc::string::String
+pub engine::ChatAttachmentRef::sha256: alloc::string::String
+pub engine::ChatAttachmentRef::size_bytes: u64
+impl core::clone::Clone for engine::conversation::ChatAttachmentRef
+pub fn engine::conversation::ChatAttachmentRef::clone(&self) -> engine::conversation::ChatAttachmentRef
+impl core::cmp::Eq for engine::conversation::ChatAttachmentRef
+impl core::cmp::PartialEq for engine::conversation::ChatAttachmentRef
+pub fn engine::conversation::ChatAttachmentRef::eq(&self, &engine::conversation::ChatAttachmentRef) -> bool
+impl core::fmt::Debug for engine::conversation::ChatAttachmentRef
+pub fn engine::conversation::ChatAttachmentRef::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::conversation::ChatAttachmentRef
+impl serde_core::ser::Serialize for engine::conversation::ChatAttachmentRef
+pub fn engine::conversation::ChatAttachmentRef::serialize<__S>(&self, __S) -> core::result::Result<<__S as serde_core::ser::Serializer>::Ok, <__S as serde_core::ser::Serializer>::Error> where __S: serde_core::ser::Serializer
+impl<'de> serde_core::de::Deserialize<'de> for engine::conversation::ChatAttachmentRef
+pub fn engine::conversation::ChatAttachmentRef::deserialize<__D>(__D) -> core::result::Result<Self, <__D as serde_core::de::Deserializer>::Error> where __D: serde_core::de::Deserializer<'de>
+impl core::marker::Freeze for engine::conversation::ChatAttachmentRef
+impl core::marker::Send for engine::conversation::ChatAttachmentRef
+impl core::marker::Sync for engine::conversation::ChatAttachmentRef
+impl core::marker::Unpin for engine::conversation::ChatAttachmentRef
+impl core::marker::UnsafeUnpin for engine::conversation::ChatAttachmentRef
+impl core::panic::unwind_safe::RefUnwindSafe for engine::conversation::ChatAttachmentRef
+impl core::panic::unwind_safe::UnwindSafe for engine::conversation::ChatAttachmentRef
+impl<Q, K> equivalent::Equivalent<K> for engine::conversation::ChatAttachmentRef where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn engine::conversation::ChatAttachmentRef::equivalent(&self, &K) -> bool
+impl<T, U> core::convert::Into<U> for engine::conversation::ChatAttachmentRef where U: core::convert::From<T>
+pub fn engine::conversation::ChatAttachmentRef::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::conversation::ChatAttachmentRef where U: core::convert::Into<T>
+pub type engine::conversation::ChatAttachmentRef::Error = core::convert::Infallible
+pub fn engine::conversation::ChatAttachmentRef::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::conversation::ChatAttachmentRef where U: core::convert::TryFrom<T>
+pub type engine::conversation::ChatAttachmentRef::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::conversation::ChatAttachmentRef::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::conversation::ChatAttachmentRef where T: core::clone::Clone
+pub type engine::conversation::ChatAttachmentRef::Owned = T
+pub fn engine::conversation::ChatAttachmentRef::clone_into(&self, &mut T)
+pub fn engine::conversation::ChatAttachmentRef::to_owned(&self) -> T
+impl<T> core::any::Any for engine::conversation::ChatAttachmentRef where T: 'static + ?core::marker::Sized
+pub fn engine::conversation::ChatAttachmentRef::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::conversation::ChatAttachmentRef where T: ?core::marker::Sized
+pub fn engine::conversation::ChatAttachmentRef::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::conversation::ChatAttachmentRef where T: ?core::marker::Sized
+pub fn engine::conversation::ChatAttachmentRef::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::conversation::ChatAttachmentRef where T: core::clone::Clone
+pub unsafe fn engine::conversation::ChatAttachmentRef::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::conversation::ChatAttachmentRef
+pub fn engine::conversation::ChatAttachmentRef::from(T) -> T
+impl<T> serde_core::de::DeserializeOwned for engine::conversation::ChatAttachmentRef where T: for<'de> serde_core::de::Deserialize<'de>
+impl<T> typenum::type_operators::Same for engine::conversation::ChatAttachmentRef
+pub type engine::conversation::ChatAttachmentRef::Output = T
 pub struct engine::ChatMessage
+pub engine::ChatMessage::attachments: alloc::vec::Vec<engine::conversation::ChatAttachmentRef>
 pub engine::ChatMessage::content: alloc::string::String
 pub engine::ChatMessage::id: core::option::Option<alloc::string::String>
 pub engine::ChatMessage::message_kind: core::option::Option<engine::conversation::ChatMessageKind>
@@ -9769,18 +10094,22 @@ impl<T> typenum::type_operators::Same for engine::execution::interactive_engine:
 pub type engine::execution::interactive_engine::FrozenChangeEvidencePacket::Output = T
 pub struct engine::InteractiveEngine
 impl engine::execution::interactive_engine::InteractiveEngine
+pub fn engine::execution::interactive_engine::InteractiveEngine::append_system_prompt(&mut self, &engine::graph::workflow::NodeId, &str)
 pub fn engine::execution::interactive_engine::InteractiveEngine::conversation_history(&self, &engine::graph::workflow::NodeId) -> alloc::vec::Vec<engine::conversation::ChatMessage>
 pub fn engine::execution::interactive_engine::InteractiveEngine::mark_node_interrupted(&mut self, &engine::graph::workflow::NodeId)
 pub fn engine::execution::interactive_engine::InteractiveEngine::model_attempt_for_node(&self, &engine::graph::workflow::NodeId) -> u8
 pub fn engine::execution::interactive_engine::InteractiveEngine::new(engine::graph::workflow::Workflow, core::option::Option<alloc::string::String>, core::option::Option<alloc::string::String>) -> core::result::Result<Self, engine::graph::validation::WorkflowValidationError>
+pub fn engine::execution::interactive_engine::InteractiveEngine::new_with_entrypoint_attachments(engine::graph::workflow::Workflow, core::option::Option<alloc::string::String>, alloc::vec::Vec<engine::conversation::ChatAttachmentRef>, core::option::Option<alloc::string::String>) -> core::result::Result<Self, engine::graph::validation::WorkflowValidationError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::node_output(&self, &engine::graph::workflow::NodeId) -> core::option::Option<serde_json::value::Value>
 pub fn engine::execution::interactive_engine::InteractiveEngine::note_read_call(&mut self, &engine::graph::workflow::NodeId, &str)
 pub const fn engine::execution::interactive_engine::InteractiveEngine::note_usage(&mut self, &engine::ports::outbound::UsageReport)
 pub fn engine::execution::interactive_engine::InteractiveEngine::on_human_input(&mut self, &engine::graph::workflow::NodeId, &str) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
+pub fn engine::execution::interactive_engine::InteractiveEngine::on_human_message(&mut self, &engine::graph::workflow::NodeId, &str, alloc::vec::Vec<engine::conversation::ChatAttachmentRef>) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::pending_tool_batch_node(&self, &str) -> core::option::Option<engine::graph::workflow::NodeId>
 pub fn engine::execution::interactive_engine::InteractiveEngine::record_file_changes(&mut self, &engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>)
 pub fn engine::execution::interactive_engine::InteractiveEngine::record_reads(&mut self, &engine::graph::workflow::NodeId, alloc::vec::Vec<engine::ReadRecord>)
 pub fn engine::execution::interactive_engine::InteractiveEngine::retry_node(&mut self, &engine::graph::workflow::NodeId) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
+pub fn engine::execution::interactive_engine::InteractiveEngine::retry_node_with_message(&mut self, &engine::graph::workflow::NodeId, &str, alloc::vec::Vec<engine::conversation::ChatAttachmentRef>) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::revert_file_changes_for_batch(&mut self, &str, &engine::graph::workflow::NodeId)
 pub async fn engine::execution::interactive_engine::InteractiveEngine::run<A: engine::ports::outbound::AiPort, T: engine::ports::outbound::ToolPort>(&mut self, &A, &T, &tokio_util::sync::cancellation_token::CancellationToken) -> engine::execution::interactive_engine::EngineRunResult
 pub fn engine::execution::interactive_engine::InteractiveEngine::set_runtime_config_store(&mut self, engine::graph::runtime_config::NodeRuntimeConfigStore)
@@ -9824,6 +10153,7 @@ pub engine::InteractiveEngineCheckpoint::auto_continue_streaks_by_node: alloc::c
 pub engine::InteractiveEngineCheckpoint::awaiting_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
 pub engine::InteractiveEngineCheckpoint::changed_files_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::vec::Vec<engine::FileChangeRecord>>
 pub engine::InteractiveEngineCheckpoint::empty_turn_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
+pub engine::InteractiveEngineCheckpoint::entrypoint_attachments: alloc::vec::Vec<engine::conversation::ChatAttachmentRef>
 pub engine::InteractiveEngineCheckpoint::entrypoint_text: core::option::Option<alloc::string::String>
 pub engine::InteractiveEngineCheckpoint::failed_nodes: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, alloc::string::String>
 pub engine::InteractiveEngineCheckpoint::frozen_change_evidence_packet: core::option::Option<engine::execution::interactive_engine::FrozenChangeEvidencePacket>
@@ -10590,6 +10920,49 @@ impl<T> core::convert::From<T> for engine::execution::output_repair::RepairingAi
 pub fn engine::execution::output_repair::RepairingAiPort<A>::from(T) -> T
 impl<T> typenum::type_operators::Same for engine::execution::output_repair::RepairingAiPort<A>
 pub type engine::execution::output_repair::RepairingAiPort<A>::Output = T
+pub struct engine::ResolvedChatAttachment
+pub engine::ResolvedChatAttachment::bytes: alloc::vec::Vec<u8>
+impl core::clone::Clone for engine::ports::outbound::ResolvedChatAttachment
+pub fn engine::ports::outbound::ResolvedChatAttachment::clone(&self) -> engine::ports::outbound::ResolvedChatAttachment
+impl core::cmp::Eq for engine::ports::outbound::ResolvedChatAttachment
+impl core::cmp::PartialEq for engine::ports::outbound::ResolvedChatAttachment
+pub fn engine::ports::outbound::ResolvedChatAttachment::eq(&self, &engine::ports::outbound::ResolvedChatAttachment) -> bool
+impl core::fmt::Debug for engine::ports::outbound::ResolvedChatAttachment
+pub fn engine::ports::outbound::ResolvedChatAttachment::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::ports::outbound::ResolvedChatAttachment
+impl core::marker::Freeze for engine::ports::outbound::ResolvedChatAttachment
+impl core::marker::Send for engine::ports::outbound::ResolvedChatAttachment
+impl core::marker::Sync for engine::ports::outbound::ResolvedChatAttachment
+impl core::marker::Unpin for engine::ports::outbound::ResolvedChatAttachment
+impl core::marker::UnsafeUnpin for engine::ports::outbound::ResolvedChatAttachment
+impl core::panic::unwind_safe::RefUnwindSafe for engine::ports::outbound::ResolvedChatAttachment
+impl core::panic::unwind_safe::UnwindSafe for engine::ports::outbound::ResolvedChatAttachment
+impl<Q, K> equivalent::Equivalent<K> for engine::ports::outbound::ResolvedChatAttachment where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn engine::ports::outbound::ResolvedChatAttachment::equivalent(&self, &K) -> bool
+impl<T, U> core::convert::Into<U> for engine::ports::outbound::ResolvedChatAttachment where U: core::convert::From<T>
+pub fn engine::ports::outbound::ResolvedChatAttachment::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::ports::outbound::ResolvedChatAttachment where U: core::convert::Into<T>
+pub type engine::ports::outbound::ResolvedChatAttachment::Error = core::convert::Infallible
+pub fn engine::ports::outbound::ResolvedChatAttachment::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::ports::outbound::ResolvedChatAttachment where U: core::convert::TryFrom<T>
+pub type engine::ports::outbound::ResolvedChatAttachment::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::ports::outbound::ResolvedChatAttachment::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::ports::outbound::ResolvedChatAttachment where T: core::clone::Clone
+pub type engine::ports::outbound::ResolvedChatAttachment::Owned = T
+pub fn engine::ports::outbound::ResolvedChatAttachment::clone_into(&self, &mut T)
+pub fn engine::ports::outbound::ResolvedChatAttachment::to_owned(&self) -> T
+impl<T> core::any::Any for engine::ports::outbound::ResolvedChatAttachment where T: 'static + ?core::marker::Sized
+pub fn engine::ports::outbound::ResolvedChatAttachment::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::ports::outbound::ResolvedChatAttachment where T: ?core::marker::Sized
+pub fn engine::ports::outbound::ResolvedChatAttachment::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::ports::outbound::ResolvedChatAttachment where T: ?core::marker::Sized
+pub fn engine::ports::outbound::ResolvedChatAttachment::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::ports::outbound::ResolvedChatAttachment where T: core::clone::Clone
+pub unsafe fn engine::ports::outbound::ResolvedChatAttachment::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::ports::outbound::ResolvedChatAttachment
+pub fn engine::ports::outbound::ResolvedChatAttachment::from(T) -> T
+impl<T> typenum::type_operators::Same for engine::ports::outbound::ResolvedChatAttachment
+pub type engine::ports::outbound::ResolvedChatAttachment::Output = T
 pub struct engine::RetryPolicy
 pub engine::RetryPolicy::backoff_ms: u64
 pub engine::RetryPolicy::max_attempts: u8

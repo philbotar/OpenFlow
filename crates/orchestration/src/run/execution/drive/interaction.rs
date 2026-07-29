@@ -247,7 +247,24 @@ pub(super) async fn await_interaction_actions(
                 snapshot_and_abort(engine, checkpoint_sink, event_tx, aborted_emitted);
                 return false;
             }
-            ExecutionAction::ProvideInput { node_id, text } => {
+            ExecutionAction::ProvideInput {
+                node_id,
+                text,
+                attachments,
+                skill_prompt,
+            } => {
+                if pause.retryables.contains(&node_id) {
+                    if let Err(error) = engine.retry_node_with_message(&node_id, &text, attachments)
+                    {
+                        send_or_log(event_tx, ExecutionEvent::Error(error.to_string()));
+                        return false;
+                    }
+                    if let Some(prompt) = skill_prompt {
+                        engine.append_system_prompt(&node_id, &prompt);
+                    }
+                    pause.retryables.remove(&node_id);
+                    continue;
+                }
                 // Stale actions (wrong pause) are logged and skipped — UI may race with resume.
                 if !pause.inputs.contains(&node_id) {
                     log::warn!(
@@ -255,9 +272,12 @@ pub(super) async fn await_interaction_actions(
                     );
                     continue;
                 }
-                if let Err(error) = engine.on_human_input(&node_id, &text) {
+                if let Err(error) = engine.on_human_message(&node_id, &text, attachments) {
                     send_or_log(event_tx, ExecutionEvent::Error(error.to_string()));
                     return false;
+                }
+                if let Some(prompt) = skill_prompt {
+                    engine.append_system_prompt(&node_id, &prompt);
                 }
                 pause.inputs.remove(&node_id);
             }

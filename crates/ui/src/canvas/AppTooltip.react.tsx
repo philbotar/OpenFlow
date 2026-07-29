@@ -16,12 +16,14 @@ const SHOW_DELAY_MS = 400;
 export type AppTooltipProps = {
   label: string;
   shortcutId?: ShortcutId;
+  side?: "auto" | "right";
   children: ReactElement;
 };
 
 export function AppTooltip({
   label,
   shortcutId,
+  side = "auto",
   children,
 }: AppTooltipProps): ReactElement {
   const triggerRef = useRef<HTMLSpanElement>(null);
@@ -55,6 +57,14 @@ export function AppTooltip({
     clearTimer();
     timerRef.current = window.setTimeout(() => {
       const rect = triggerRect(el);
+      if (side === "right") {
+        setCoords({
+          top: rect.top + rect.height / 2,
+          left: rect.right + 6,
+        });
+        setOpen(true);
+        return;
+      }
       const tipHeight = 32;
       const spaceBelow = window.innerHeight - rect.bottom;
       const top =
@@ -62,7 +72,7 @@ export function AppTooltip({
       setCoords({ top, left: rect.left + rect.width / 2 });
       setOpen(true);
     }, SHOW_DELAY_MS);
-  }, [clearTimer, triggerRect]);
+  }, [clearTimer, side, triggerRect]);
 
   useEffect(() => () => hide(), [hide]);
 
@@ -90,6 +100,7 @@ export function AppTooltip({
               left: `${coords.left}px`,
             }}
             role="tooltip"
+            data-side={side}
           >
             <span className="app-tooltip-label">{label}</span>
             {parts.length > 0 ? (

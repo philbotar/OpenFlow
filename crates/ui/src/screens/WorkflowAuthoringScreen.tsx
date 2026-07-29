@@ -31,6 +31,7 @@ export function WorkflowAuthoringScreen() {
             validation={ctx.workflowAuthoringValidation()}
             busy={ctx.workflowAuthoringBusy()}
             colorMode={ctx.resolvedTheme()}
+            uiZoom={ctx.uiZoom()}
           />
         </Show>
 
@@ -90,16 +91,23 @@ export function WorkflowAuthoringScreen() {
                   providerMessage={ctx.readiness()?.message ?? "Checking provider..."}
                   onSend={(message) => void ctx.handleWorkflowAuthoringSend(message)}
                 />
-                <Button
-                  variant="primary"
-                  class="workflow-authoring-apply"
-                  disabled={
-                    ctx.workflowAuthoringValidation()?.valid !== true || ctx.workflowAuthoringBusy()
-                  }
-                  onClick={() => void ctx.handleApplyWorkflowAuthoringDraft()}
-                >
-                  Create Workflow
-                </Button>
+                <div class="workflow-authoring-apply-group">
+                  <p>
+                    AI creates a draft. Click Create Workflow to save it. Then
+                    click Run in the editor to start it.
+                  </p>
+                  <Button
+                    variant="primary"
+                    class="workflow-authoring-apply"
+                    disabled={
+                      ctx.workflowAuthoringValidation()?.valid !== true ||
+                      ctx.workflowAuthoringBusy()
+                    }
+                    onClick={() => void ctx.handleApplyWorkflowAuthoringDraft()}
+                  >
+                    Create Workflow
+                  </Button>
+                </div>
               </div>
             </Show>
           </div>

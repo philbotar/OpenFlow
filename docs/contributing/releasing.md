@@ -56,13 +56,13 @@ git tag v0.1.5              # must match tauri.conf.json version
 git push origin v0.1.5
 ```
 
-1. **Release** workflow first runs `release-verify` on Ubuntu — Miri over `engine`+`orchestration`, `test-fast --execution --desktop`, and `cargo nextest run -p orchestration --test workflow_e2e`. The macOS build only proceeds if `release-verify` passes, then builds signed artifacts and opens a **draft** GitHub Release.
+1. **Release** workflow first runs `release-verify` on Ubuntu — Miri over `engine`+`orchestration`, `test-fast --execution --desktop`, and `cargo nextest run -p orchestration --test workflow_e2e`. The macOS build only proceeds if `release-verify` passes, then builds code-signed and updater-signed artifacts, verifies their signatures and architectures, and opens a **draft** GitHub Release.
 2. Review assets (`latest.json`, `.tar.gz`, `.dmg`).
 3. **Publish** the release.
 
 Installed apps check `https://github.com/philbotar/OpenFlow/releases/latest/download/latest.json`. Users see the blue **Settings** badge when the published version is newer.
 
-## One-time setup
+## Updater signing setup
 
 | Secret / config | Purpose |
 | --- | --- |
@@ -89,6 +89,40 @@ Validate before tagging:
 ```
 
 If pubkey mismatch (secret already on GitHub): `./scripts/sync-tauri-pubkey.sh` then commit `tauri.conf.json`.
+
+Updater signatures protect update integrity. They do not satisfy macOS Gatekeeper.
+
+## macOS code signing and notarization
+
+`tauri.conf.json` sets `bundle.macOS.signingIdentity` to `-`. This creates a complete
+ad-hoc signature when Developer ID secrets are absent. It prevents Apple Silicon from
+treating the downloaded app as damaged, but users must still approve the app in
+System Settings → Privacy & Security.
+
+Public distribution should use a paid Apple Developer Program account. Create and
+export a **Developer ID Application** certificate, then add all of these repository
+secrets:
+
+| Secret | Purpose |
+| --- | --- |
+| `APPLE_CERTIFICATE` | Base64-encoded exported `.p12` certificate |
+| `APPLE_CERTIFICATE_PASSWORD` | Password used when exporting the `.p12` |
+| `APPLE_SIGNING_IDENTITY` | Full `Developer ID Application: Name (TEAMID)` identity |
+| `APPLE_ID` | Apple account email used for notarization |
+| `APPLE_PASSWORD` | App-specific Apple account password |
+| `APPLE_TEAM_ID` | Apple Developer team ID |
+| `KEYCHAIN_PASSWORD` | Ephemeral CI keychain password |
+
+When all secrets exist, the Release workflow imports the certificate, overrides the
+ad-hoc identity, asks Tauri to notarize and staple the app, then requires Gatekeeper
+and stapler validation to pass. A partial secret setup fails before the build.
+
+Before publishing a draft, download both DMGs and confirm:
+
+```bash
+./scripts/verify-macos-app.sh /path/to/OpenFlow.app arm64 developer-id
+./scripts/verify-macos-app.sh /path/to/OpenFlow.app x86_64 developer-id
+```
 
 ## Common cases
 

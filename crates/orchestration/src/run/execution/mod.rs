@@ -25,8 +25,9 @@ use tokio_util::sync::CancellationToken;
 
 pub use drive::{new_artifact_root, new_in_memory_snapshot_store};
 pub use events::{
-    apply_event_to_run_state, record_entrypoint_message, record_user_input,
-    should_record_entrypoint_in_chat,
+    apply_event_to_run_state, record_entrypoint_message,
+    record_entrypoint_message_with_attachments, record_user_input,
+    record_user_input_with_attachments,
 };
 pub use headless::run_workflow_headless;
 
@@ -43,9 +44,15 @@ pub type NodeInterrupts = Arc<Mutex<BTreeMap<NodeId, (u8, CancellationToken)>>>;
 pub fn initial_engine_checkpoint(
     workflow: Workflow,
     entrypoint: Option<String>,
+    entrypoint_attachments: Vec<engine::ChatAttachmentRef>,
     project_repository_root: Option<String>,
 ) -> Result<InteractiveEngineCheckpoint, WorkflowValidationError> {
-    let mut engine = InteractiveEngine::new(workflow, entrypoint, project_repository_root)?;
+    let mut engine = InteractiveEngine::new_with_entrypoint_attachments(
+        workflow,
+        entrypoint,
+        entrypoint_attachments,
+        project_repository_root,
+    )?;
     Ok(engine.prepare_stop_checkpoint())
 }
 
@@ -86,6 +93,8 @@ pub enum ExecutionAction {
     ProvideInput {
         node_id: NodeId,
         text: String,
+        attachments: Vec<engine::ChatAttachmentRef>,
+        skill_prompt: Option<String>,
     },
     ResolveApproval {
         approval_id: String,
@@ -179,10 +188,14 @@ fn expand_tilde(path: &str) -> PathBuf {
 pub struct InteractiveWorkflowRunParams<A> {
     pub workflow: Workflow,
     pub entrypoint: Option<String>,
+    pub entrypoint_attachments: Vec<engine::ChatAttachmentRef>,
     pub execution_cwd: PathBuf,
     pub project_repository_root: Option<PathBuf>,
     pub artifact_root: PathBuf,
+    pub attachment_root: PathBuf,
+    pub attachment_store: Arc<dyn crate::run::ports::RunAttachmentStore>,
     pub resume_checkpoint: Option<InteractiveEngineCheckpoint>,
+    pub resume_continuation: Option<ResumeContinuation>,
     pub checkpoint_sink: Arc<Mutex<Option<PendingRunCheckpoint>>>,
     pub ai: A,
     pub agent_snapshots: BTreeMap<String, CallableAgent>,
@@ -194,6 +207,13 @@ pub struct InteractiveWorkflowRunParams<A> {
     pub mcp: crate::settings::model::McpSettings,
     pub search: crate::settings::model::SearchSettings,
     pub runtime_config_store: engine::NodeRuntimeConfigStore,
+}
+
+#[derive(Debug, Clone)]
+pub struct ResumeContinuation {
+    pub node_id: engine::NodeId,
+    pub text: String,
+    pub skill_prompt: Option<String>,
 }
 
 pub fn spawn_interactive_workflow_run<A>(

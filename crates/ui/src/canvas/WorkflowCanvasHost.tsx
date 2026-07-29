@@ -16,6 +16,7 @@ type WorkflowCanvasHostProps = {
   previewMode?: boolean;
   runActive?: boolean;
   colorMode?: "light" | "dark";
+  uiZoom?: number;
   onSelectNode: (nodeId: NodeId | null) => void;
   onSelectEdge: (edgeId: EdgeId | null) => void;
   onUpdateNodePosition: (nodeId: NodeId, x: number, y: number) => void;
@@ -39,6 +40,7 @@ function WorkflowCanvasHost(props: WorkflowCanvasHostProps) {
     }
     root.render(
       createElement(WorkflowCanvas, {
+        key: props.graph?.id ?? "empty-workflow",
         graph: props.graph,
         selectedNodeId: props.selectedNodeId,
         selectedEdgeId: props.selectedEdgeId,
@@ -49,6 +51,7 @@ function WorkflowCanvasHost(props: WorkflowCanvasHostProps) {
         previewMode: props.previewMode,
         runActive: props.runActive,
         colorMode: props.colorMode,
+        uiZoom: props.uiZoom,
         onSelectNode: props.onSelectNode,
         onSelectEdge: props.onSelectEdge,
         onUpdateNodePosition: props.onUpdateNodePosition,

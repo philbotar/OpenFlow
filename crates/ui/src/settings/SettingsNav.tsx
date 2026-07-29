@@ -18,7 +18,7 @@ export function SettingsNav(props: {
       <button
         type="button"
         class="settings-back-button"
-        onClick={() => ctx.navigateToScreen("editor")}
+        onClick={ctx.returnFromSettings}
         data-tauri-drag-region="false"
       >
         <ChevronLeft
@@ -27,7 +27,7 @@ export function SettingsNav(props: {
           absoluteStrokeWidth
           strokeWidth={ICON_STROKE_WIDTH}
         />
-        <span>Back to editor</span>
+        <span>Back</span>
       </button>
       <div class="settings-nav-heading" data-tauri-drag-region>
         <div class="eyebrow">Settings</div>

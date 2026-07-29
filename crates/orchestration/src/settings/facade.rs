@@ -7,12 +7,10 @@ use crate::settings::provider::{
     active_provider_env_var, active_provider_label, resolve_provider_config, ProviderConfigError,
     ProviderEnv,
 };
-#[cfg(feature = "bedrock")]
-use engine::AgentError;
-use engine::{execution_layers, validate_workflow, Workflow};
+use engine::{execution_layers, validate_workflow, AgentError, Workflow};
 #[cfg(feature = "bedrock")]
 use providers::{list_bedrock_foundation_models, verify_bedrock_credentials};
-use providers::{ProviderAdapterConfig, ProviderId};
+use providers::{list_remote_models, ProviderAdapterConfig, ProviderId};
 use std::sync::Arc;
 
 pub struct SettingsFacade {
@@ -262,6 +260,21 @@ impl SettingsFacade {
     }
 
     /// # Errors
+    /// Returns an error if the active provider cannot list models.
+    pub async fn refresh_provider_models(
+        &self,
+        settings: &AppSettings,
+        transient_api_key: Option<&str>,
+    ) -> Result<Vec<String>, BackendError> {
+        let mut merged = settings.clone();
+        merge_preserved_secrets(&mut merged, &self.store.load()?);
+        let config = resolve_provider_config(&merged, transient_api_key, &self.env)?;
+        list_remote_models(&config)
+            .await
+            .map_err(map_agent_error_to_backend)
+    }
+
+    /// # Errors
     /// Returns an error if Bedrock credentials cannot be loaded for the active profile.
     pub async fn verify_bedrock_credentials(
         &self,
@@ -335,7 +348,6 @@ impl SettingsFacade {
     }
 }
 
-#[cfg(feature = "bedrock")]
 fn map_agent_error_to_backend(error: AgentError) -> BackendError {
     BackendError::from(std::io::Error::other(error.to_string()))
 }

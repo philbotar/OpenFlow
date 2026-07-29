@@ -149,7 +149,7 @@ stateDiagram-v2
 
 | Struct | Fields | When |
 | --- | --- | --- |
-| `EngineAwaitInput` | `node_id`, `label`, `context`, `is_initial` | Manual kickoff or `NeedsUserInput` / conversational `Message` |
+| `EngineAwaitInput` | `node_id`, `label`, `context`, `is_initial` | Explicit `NeedsUserInput` request |
 | `EngineAwaitApproval` | `approval_id`, `node_id`, `label`, `tool_calls` | Batch has `requires_approval == true` |
 | `EngineRetryableNode` | `node_id`, `label`, `error`, `interrupted` | Transient exhaustion, user interrupt, or recoverable node error |
 
@@ -260,7 +260,6 @@ Subagent turns run **inside** a parent `CALL_SUBAGENT` tool execution (`subagent
 | --- | --- | --- | --- | --- | --- | --- |
 | Workflow validation | Empty graph, duplicate ids, dangling edge, cycle | **engine** | Yes (start) | Fix workflow | `WorkflowValidationError` | `graph/validation.rs` → `validate_workflow` |
 | Provider / key readiness | No resolvable API key (non-local provider) | **orchestration** | Yes (start) | Settings / transient key | Backend error to UI | `settings/provider.rs` → `resolve_provider_config` |
-| `auto_start` vs kickoff | `auto_start: false` + empty transcript | **engine** | Yes (pause) | `submit_user_input` → `on_human_input` | Stalls layer until input | `mod.rs` → `schedule_manual_nodes_in_layer` |
 | `request_user_input` | Model calls `openflow_request_user_input` with a valid free-text or structured question | **engine** | Yes (pause) | `submit_user_input` | Invalid request → nudge then fail | `completion.rs`, `allow_user_input` on `AgentRequest` |
 | Tool approval (`ApprovalMode`) | Write-tier tool under `write` / `always_ask` | **engine** policy; **orch** catalog | Yes (pause) | `submit_tool_approval` → `on_tool_decision` | Deny → synthetic denied `ToolResult` | `tools/config.rs`, `completion.rs` |
 | `read_only` tool exposure | Write-tier tool not in catalog | **orchestration** | Yes (model can't call) | Switch `ApprovalMode` | Tool unavailable to model | `tool/registry.rs` → `is_read_only` |
@@ -349,19 +348,19 @@ Orchestration wraps raw `AiPort` with `AiInvocationAdapter` to emit streaming de
 
 ## 8. Worked scenarios (step-by-step with types)
 
-### A. Linear 2-node auto-start happy path
+### A. Linear 2-node readiness happy path
 
-1. UI: `start_run` with `entrypoint: null`; both nodes `auto_start: true`.
+1. UI: `start_run` with `entrypoint: null`.
 2. `validate_workflow` → layers `[ [A], [B] ]`.
-3. `InteractiveEngine::new` → layer 0: node A `gather_call_ai_actions` → `AiPort::invoke_stream`.
+3. `InteractiveEngine::new` → layer 0: node A has all required inputs → `gather_call_ai_actions` → `AiPort::invoke_stream`.
 4. Outcome `Completed(AgentTurnSuccess)` → output stored → layer advances.
 5. Node B receives upstream map in `AgentRequest.input` → completes → `EngineRunResult::Completed(RunReport)`.
 6. `RunTelemetry::Finished(report)` → `WorkflowRunState.active = false`.
 
 ### B. Node pauses for user input, resume
 
-1. Node with `auto_start: false` hits layer → `schedule_manual_nodes_in_layer` → `awaiting_nodes`.
-2. `run()` returns `NeedsInteraction { inputs: [EngineAwaitInput { is_initial: true, ... }], ... }`.
+1. A node with `request_user_input: true` starts when its upstream inputs are ready.
+2. The model calls `openflow_request_user_input` → `awaiting_nodes` → `run()` returns `NeedsInteraction { inputs: [EngineAwaitInput { ... }], ... }`.
 3. Orchestration emits `NodeAwaitingInput` → UI composer enabled.
 4. User: `submit_user_input` accepts the text, removes that node's actionable structured
    request from `WorkflowRunState`, appends the user transcript message, then forwards to

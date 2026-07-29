@@ -1,6 +1,6 @@
 use crate::adapters::storage::json_file_store::atomic_write;
 use crate::run::persistence::{
-    RunCheckpointPayload, RunRecord, RunStatus, RunStoreRoot, RunSummary,
+    run_name, RunCheckpointPayload, RunRecord, RunStatus, RunStoreRoot, RunSummary,
 };
 use crate::run::ports::RunCheckpointStore;
 use std::fs;
@@ -25,6 +25,22 @@ impl FileRunCheckpointStore {
 
 fn run_dir(root: &RunStoreRoot, run_id: &str) -> PathBuf {
     root.root.join(run_id)
+}
+
+fn validate_run_id(run_id: &str) -> io::Result<()> {
+    let path = Path::new(run_id);
+    if run_id.is_empty()
+        || path.is_absolute()
+        || path.components().count() != 1
+        || run_id == "."
+        || run_id == ".."
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "run id must be one non-empty path component",
+        ));
+    }
+    Ok(())
 }
 
 fn checkpoints_dir(root: &RunStoreRoot, run_id: &str) -> PathBuf {
@@ -126,17 +142,48 @@ impl RunCheckpointStore for FileRunCheckpointStore {
             }
             for entry in fs::read_dir(&root.root)? {
                 let entry = entry?;
+                if entry
+                    .file_name()
+                    .to_str()
+                    .is_some_and(|name| name.starts_with(".delete-"))
+                {
+                    if let Err(error) = fs::remove_dir_all(entry.path()) {
+                        log::warn!(
+                            "failed to retry quarantined run cleanup {}: {error}",
+                            entry.path().display()
+                        );
+                    }
+                    continue;
+                }
                 let path = entry.path().join(RUN_FILE_NAME);
                 if !path.exists() {
                     continue;
                 }
-                let record = match read_run_record(&path) {
+                let mut record = match read_run_record(&path) {
                     Ok(record) => record,
                     Err(error) if error.kind() == io::ErrorKind::InvalidData => continue,
                     Err(error) => return Err(error),
                 };
                 if workflow_id.is_some_and(|expected| expected != record.workflow_id) {
                     continue;
+                }
+                if record.name.is_none() {
+                    let entrypoint_text = match self.load_latest_checkpoint(root, &record.run_id) {
+                        Ok(checkpoint) => {
+                            checkpoint.and_then(|payload| payload.engine.entrypoint_text)
+                        }
+                        Err(error) => {
+                            log::warn!(
+                                "failed to derive run name from checkpoint {}: {error}",
+                                record.run_id
+                            );
+                            None
+                        }
+                    };
+                    record.name = Some(run_name(&record.workflow_name, entrypoint_text.as_deref()));
+                    if let Err(error) = write_json(&path, &record) {
+                        log::warn!("failed to persist run name {}: {error}", record.run_id);
+                    }
                 }
                 runs.push(record.summary());
             }
@@ -162,6 +209,57 @@ impl RunCheckpointStore for FileRunCheckpointStore {
     fn run_dir(&self, root: &RunStoreRoot, run_id: &str) -> PathBuf {
         run_dir(root, run_id)
     }
+
+    fn remove_run(&self, root: &RunStoreRoot, run_id: &str) -> io::Result<()> {
+        validate_run_id(run_id)?;
+        let path = run_dir(root, run_id);
+        match fs::remove_dir_all(path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error),
+        }
+    }
+
+    fn quarantine_run(&self, root: &RunStoreRoot, run_id: &str) -> io::Result<Option<PathBuf>> {
+        validate_run_id(run_id)?;
+        let source = run_dir(root, run_id);
+        if !source.exists() {
+            return Ok(None);
+        }
+        let quarantine = root
+            .root
+            .join(format!(".delete-{run_id}-{}", uuid::Uuid::new_v4()));
+        fs::rename(source, &quarantine)?;
+        Ok(Some(quarantine))
+    }
+
+    fn restore_quarantined_run(
+        &self,
+        quarantine_path: &Path,
+        root: &RunStoreRoot,
+        run_id: &str,
+    ) -> io::Result<()> {
+        validate_run_id(run_id)?;
+        fs::rename(quarantine_path, run_dir(root, run_id))
+    }
+
+    fn remove_quarantined_run(&self, quarantine_path: &Path) -> io::Result<()> {
+        let is_quarantine = quarantine_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with(".delete-"));
+        if !is_quarantine {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "run quarantine path is invalid",
+            ));
+        }
+        match fs::remove_dir_all(quarantine_path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -182,6 +280,7 @@ mod tests {
     fn record(base: &Path, run_id: &str) -> RunRecord {
         RunRecord {
             run_id: run_id.to_string(),
+            name: None,
             workflow_id: "wf-1".to_string(),
             workflow_name: "Demo".to_string(),
             workflow_hash: "hash".to_string(),
@@ -210,6 +309,7 @@ mod tests {
             projection: WorkflowRunState::running_for_workflow(&workflow),
             engine: InteractiveEngineCheckpoint {
                 workflow_id: workflow.id,
+                entrypoint_attachments: Vec::new(),
                 layer_idx: 0,
                 outputs: BTreeMap::new(),
                 changed_files_by_node: BTreeMap::new(),
@@ -279,6 +379,26 @@ mod tests {
     }
 
     #[test]
+    fn list_runs_names_existing_run_from_entrypoint_text() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = FileRunCheckpointStore;
+        let root = root(dir.path());
+        let record = record(dir.path(), "run-named");
+        let mut checkpoint = checkpoint(1);
+        checkpoint.engine.entrypoint_text =
+            Some("  Audit   provider retries in the workflow  ".to_string());
+
+        store.create_run(&root, &record).expect("create run");
+        store
+            .append_checkpoint(&root, "run-named", &checkpoint)
+            .expect("append checkpoint");
+
+        let runs = store.list_runs(&[root], None).expect("list runs");
+
+        assert_eq!(runs[0].name, "Audit provider retries in the workflow");
+    }
+
+    #[test]
     fn list_runs_skips_legacy_records_missing_workflow_snapshot() {
         let dir = tempfile::tempdir().expect("tempdir");
         let store = FileRunCheckpointStore;
@@ -330,5 +450,55 @@ mod tests {
 
         assert_eq!(loaded.status, RunStatus::Completed);
         assert_eq!(loaded.updated_at_ms, 300);
+    }
+
+    #[test]
+    fn remove_run_deletes_only_the_exact_run_tree() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = FileRunCheckpointStore;
+        let root = root(dir.path());
+        store
+            .create_run(&root, &record(dir.path(), "run-remove"))
+            .expect("create removed run");
+        store
+            .create_run(&root, &record(dir.path(), "run-keep"))
+            .expect("create retained run");
+        let attachments = store.run_dir(&root, "run-remove").join("attachments");
+        fs::create_dir_all(&attachments).expect("create attachments");
+        fs::write(attachments.join("image.png"), b"private attachment").expect("write attachment");
+
+        store.remove_run(&root, "run-remove").expect("remove run");
+
+        assert!(!store.run_dir(&root, "run-remove").exists());
+        assert!(store.run_dir(&root, "run-keep").exists());
+    }
+
+    #[test]
+    fn quarantine_can_restore_or_retry_exact_run_cleanup() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = FileRunCheckpointStore;
+        let root = root(dir.path());
+        store
+            .create_run(&root, &record(dir.path(), "run-delete"))
+            .expect("create run");
+
+        let quarantine = store
+            .quarantine_run(&root, "run-delete")
+            .expect("quarantine")
+            .expect("quarantine path");
+        assert!(!store.run_dir(&root, "run-delete").exists());
+        assert!(quarantine.exists());
+
+        store
+            .restore_quarantined_run(&quarantine, &root, "run-delete")
+            .expect("restore");
+        assert!(store.run_dir(&root, "run-delete").exists());
+
+        let quarantine = store
+            .quarantine_run(&root, "run-delete")
+            .expect("quarantine again")
+            .expect("quarantine path");
+        assert!(store.list_runs(std::slice::from_ref(&root), None).is_ok());
+        assert!(!quarantine.exists());
     }
 }
