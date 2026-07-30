@@ -9,6 +9,8 @@ pub enum AuthoringError {
     ModelToolCalls,
     #[error("authoring tool loop exceeded the maximum of {0} rounds")]
     ToolRoundLimitExceeded(u8),
+    #[error("project read tools unavailable: {0}")]
+    ProjectReadTools(String),
     #[error("{0}")]
     Agent(String),
     #[error("{0}")]

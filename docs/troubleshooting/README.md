@@ -20,7 +20,7 @@ OAuth credentials are plaintext in the local OpenFlow `settings.json`, matching 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
 | Header shows API key missing or **Run** stays disabled | No resolvable key for the active API-key provider | Open **Settings → Providers**, select the active profile, add a key or set the provider env var (for example `OPENAI_API_KEY`), then save. |
-| Readiness message on the authoring or run screen | Same as above, or the chosen model/profile is incomplete | Confirm the active provider row shows ready; switch profile or model if needed. |
+| Readiness message on the authoring or run screen | Same as above, or a shared/node provider is incomplete | Confirm every provider referenced by the workflow has valid auth and a model; switch profile or model if needed. |
 | ChatGPT (Codex) not ready | No stored OAuth session or expired login | **Settings → Providers** with **ChatGPT (Codex)** active → **Sign in with ChatGPT**, or **Disconnect** and sign in again. See [ChatGPT Codex sign-in](#chatgpt-codex-sign-in). |
 | Bedrock not ready | AWS credentials or region misconfigured | Set profile/region in the Bedrock provider panel and verify the credential chain. |
 
@@ -31,6 +31,16 @@ Key order for API-key providers: transient run input, stored `settings.json` key
 - API-key providers resolve transient input, then stored profile key, then their environment variable.
 - ChatGPT (Codex) requires a stored refreshable ChatGPT login and ignores `OPENAI_API_KEY`.
 - Bedrock uses the AWS credential chain and configured region/profile.
+
+## Chat attachments
+
+| Symptom | Likely cause | Fix |
+| --- | --- | --- |
+| File stays pending with a size/type error | More than 4 files, one file over 10 MiB, total over 25 MiB, unsupported extension, empty file, or content/type mismatch | Remove the rejected file or export it as JPEG, PNG, GIF, WebP, PDF, TXT, Markdown, CSV, JSON, HTML, CSS, JavaScript, or Python, then retry. |
+| Provider rejects an accepted image or document | The configured transport can serialize it, but the selected model/account does not accept that media | Switch to a media-capable model for that provider and retry. Custom models remain provider-dependent. |
+| “missing or corrupt” attachment | The managed run copy is absent, changed, or fails its saved size/hash/type checks | Reattach the original file. OpenFlow rejects the request before provider HTTP. |
+| Image card has no preview | The bounded local preview failed or its run data is unavailable | The message stays visible as a generic attachment card. Reattach only if the provider also reports an attachment error. |
+| Chat deletion reports cleanup pending | Metadata deletion succeeded but run-directory cleanup could not finish | Restart or open run history to retry quarantined cleanup. Do not manually edit `chats.json`. |
 
 ## Focused verification
 

@@ -10,8 +10,8 @@ use super::{
     checkpoint::CheckpointError, EngineInputError, EngineRunResult, InteractiveEngine,
     PendingToolBatch, RunError, MAX_MALFORMED_REQUEST_INPUT_RETRIES, MAX_MIXED_TOOL_TURN_RETRIES,
 };
-use crate::conversation::AgentTranscriptItem;
-use crate::execution::NodeFailureKind;
+use crate::conversation::{AgentTranscriptItem, ChatAttachmentKind, ChatAttachmentRef, ChatRole};
+use crate::execution::{HandoffArtifact, HandoffFormat, NodeFailureKind};
 use crate::graph::{
     new_runtime_config_store, upsert_runtime_patch, Node, NodeId, NodeRuntimeConfigPatch,
     PlanModeConfig, Workflow,
@@ -34,6 +34,17 @@ fn node(id: &str) -> Node {
     node.id = NodeId(id.to_string());
     node.agent.model = "test-model".to_string();
     node
+}
+
+fn image_attachment() -> ChatAttachmentRef {
+    ChatAttachmentRef {
+        id: "attachment-1".to_string(),
+        file_name: "diagram.png".to_string(),
+        media_type: "image/png".to_string(),
+        size_bytes: 4,
+        sha256: "abcd".to_string(),
+        kind: ChatAttachmentKind::Image,
+    }
 }
 
 fn mark_plan_sealed(engine: &mut InteractiveEngine, node_id: &NodeId) {
@@ -194,6 +205,7 @@ fn retry_failed_node_preserves_conversation_and_resets_recovery_budgets() {
         node_id.clone(),
         vec![AgentTranscriptItem::UserMessage {
             content: "keep retry context".to_string(),
+            attachments: Vec::new(),
         }],
     );
     engine.transient_streaks_by_node.insert(node_id.clone(), 2);
@@ -222,6 +234,28 @@ fn retry_failed_node_preserves_conversation_and_resets_recovery_budgets() {
         .mixed_tool_turn_retries_by_node
         .contains_key(&node_id));
     assert!(!engine.auto_continue_streaks_by_node.contains_key(&node_id));
+    assert_eq!(engine.model_attempt_for_node(&node_id), 2);
+}
+
+#[test]
+fn retry_failed_node_appends_new_human_message() {
+    let mut workflow = Workflow::new("wf");
+    workflow.nodes.push(node("a"));
+    let node_id = NodeId("a".to_string());
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    engine
+        .failed_nodes
+        .insert(node_id.clone(), "boom".to_string());
+
+    engine
+        .retry_node_with_message(&node_id, "Try again", Vec::new())
+        .unwrap();
+
+    assert!(matches!(
+        engine.transcript(&node_id).last(),
+        Some(AgentTranscriptItem::UserMessage { content, attachments })
+            if content == "Try again" && attachments.is_empty()
+    ));
     assert_eq!(engine.model_attempt_for_node(&node_id), 2);
 }
 
@@ -286,12 +320,13 @@ async fn mixed_tool_turn_is_corrected_and_retried_without_executing_calls() {
                 .any(|item| {
                     matches!(
                         item,
-                        AgentTranscriptItem::UserMessage { content }
+                        AgentTranscriptItem::UserMessage { content, .. }
                             if content.contains("mixed harness and executable tools")
                                 && content.contains("write")
                     )
                 }));
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                handoff: None,
                 output: json!({"status": "complete"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
@@ -361,6 +396,7 @@ impl AiPort for CompleteAi {
     async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
         self.captured.lock().expect("lock").push(request);
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+            handoff: None,
             output: self.output.clone(),
             raw_text: "{}".to_string(),
             assistant_message: None,
@@ -409,6 +445,7 @@ async fn run_sleeps_backoff_before_transient_retry() {
                 return Err(AgentError::Transient("timeout".to_string()));
             }
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                handoff: None,
                 output: json!({"summary": "ok"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
@@ -533,6 +570,7 @@ fn plan_mode_checkpoint_pins_source_and_packet_when_workflow_settings_change() {
     engine.on_ai_complete(
         &freeze_id,
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+            handoff: None,
             output: json!({
                 "scope": "only this change",
                 "planArtifact": "artifact:sealed-plan",
@@ -622,6 +660,7 @@ fn checkpoint_rejects_tampered_frozen_change_evidence_packet() {
     engine.on_ai_complete(
         &freeze_id,
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+            handoff: None,
             output: json!({ "scope": "approved" }),
             raw_text: "{}".to_string(),
             assistant_message: None,
@@ -658,6 +697,7 @@ fn checkpoint_rejects_packet_from_a_node_other_than_the_pinned_source() {
     engine.on_ai_complete(
         &freeze_id,
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+            handoff: None,
             output: json!({ "scope": "approved" }),
             raw_text: "{}".to_string(),
             assistant_message: None,
@@ -809,6 +849,7 @@ fn plan_source_cannot_complete_before_an_approved_seal_succeeds() {
     engine.on_ai_complete(
         &planner_id,
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+            handoff: None,
             output: json!({ "scope": "not approved" }),
             raw_text: "{}".to_string(),
             assistant_message: None,
@@ -821,7 +862,7 @@ fn plan_source_cannot_complete_before_an_approved_seal_succeeds() {
     assert!(!engine.outputs.contains_key(&planner_id));
     assert!(matches!(
         engine.transcript(&planner_id).last(),
-        Some(AgentTranscriptItem::UserMessage { content })
+        Some(AgentTranscriptItem::UserMessage { content, .. })
             if content.contains(crate::tools::WRITE_PLAN_ARTIFACT_TOOL)
                 && content.contains("explicit human approval")
     ));
@@ -1128,7 +1169,7 @@ fn auto_start_node_runs_ai_and_completes() {
 }
 
 #[test]
-fn non_auto_start_node_pauses_awaiting_input() {
+fn legacy_non_auto_start_node_runs_without_initial_input() {
     let mut workflow = Workflow::new("test");
     let mut idea = node("idea");
     idea.agent.auto_start = false;
@@ -1137,27 +1178,24 @@ fn non_auto_start_node_pauses_awaiting_input() {
 
     let result = block_on(run_once(
         &mut engine,
-        &CompleteAi::new(json!({})),
+        &CompleteAi::new(json!({"summary": "ok"})),
         &NoopToolPort,
     ));
-    match result {
-        EngineRunResult::NeedsInteraction { inputs, .. } => {
-            assert_eq!(inputs.len(), 1);
-            assert_eq!(inputs[0].node_id, NodeId::from("idea"));
-            assert!(inputs[0].is_initial);
-        }
-        other => panic!("expected pause, got {other:?}"),
-    }
+    let EngineRunResult::Completed(report) = result else {
+        panic!("expected completed run");
+    };
+    assert_eq!(report.outputs[0].output, json!({"summary": "ok"}));
 }
 
 #[test]
-fn manual_node_user_input_starts_ai_request() {
-    let mut workflow = Workflow::new("manual");
-    let mut idea = node("idea");
-    idea.agent.auto_start = false;
-    workflow.nodes = vec![idea];
+fn model_requested_user_input_resumes_ai_request() {
+    let mut workflow = Workflow::new("interactive");
+    workflow.nodes = vec![interactive_node("idea")];
     let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
-    let ai = CompleteAi::new(json!({"summary": "ok"}));
+    let ai = ScriptedAi::new(vec![
+        Ok(needs_input("Which launch scope should I use?")),
+        Ok(completed(json!({"summary": "ok"}))),
+    ]);
 
     block_on(async {
         let pause = run_once(&mut engine, &ai, &NoopToolPort).await;
@@ -1177,23 +1215,129 @@ fn manual_node_user_input_starts_ai_request() {
     assert_eq!(request.node_id, "idea");
     assert_eq!(
         request.transcript,
-        vec![AgentTranscriptItem::UserMessage {
-            content: "Need a smaller launch scope".to_string(),
-        }]
+        vec![
+            AgentTranscriptItem::AssistantMessage {
+                content: "Which launch scope should I use?".to_string(),
+            },
+            AgentTranscriptItem::UserMessage {
+                content: "Need a smaller launch scope".to_string(),
+                attachments: Vec::new(),
+            },
+        ]
+    );
+}
+
+#[test]
+fn entrypoint_attachments_are_exposed_on_first_request_and_checkpoint() {
+    let mut workflow = Workflow::new("entrypoint-attachment");
+    workflow.nodes = vec![node("idea")];
+    let attachment = image_attachment();
+    let mut engine = InteractiveEngine::new_with_entrypoint_attachments(
+        workflow.clone(),
+        Some("Review this".to_string()),
+        vec![attachment.clone()],
+        None,
+    )
+    .unwrap();
+
+    let request = engine.build_request(&NodeId::from("idea")).unwrap();
+    assert_eq!(request.entrypoint_attachments, vec![attachment.clone()]);
+    assert_eq!(
+        request.input["entrypoint"]["attachments"],
+        serde_json::to_value([attachment.clone()]).unwrap()
+    );
+    assert!(request.resolved_attachments.is_empty());
+
+    let checkpoint = engine.prepare_stop_checkpoint();
+    let serialized = serde_json::to_value(&checkpoint).unwrap();
+    assert_eq!(
+        serialized["entrypoint_attachments"],
+        serde_json::to_value([attachment.clone()]).unwrap()
+    );
+    let restored = InteractiveEngine::from_checkpoint(workflow, checkpoint, None).expect("restore");
+    let mut restored = restored;
+    let request = restored.build_request(&NodeId::from("idea")).unwrap();
+    assert_eq!(request.entrypoint_attachments, vec![attachment]);
+}
+
+#[test]
+fn legacy_checkpoint_defaults_entrypoint_attachments_to_empty() {
+    let mut workflow = Workflow::new("legacy-checkpoint");
+    workflow.nodes = vec![node("idea")];
+    let mut engine = InteractiveEngine::new(
+        workflow.clone(),
+        Some("Legacy entrypoint".to_string()),
+        None,
+    )
+    .unwrap();
+    let checkpoint = engine.prepare_stop_checkpoint();
+    let mut serialized = serde_json::to_value(checkpoint).unwrap();
+    serialized
+        .as_object_mut()
+        .expect("checkpoint object")
+        .remove("entrypoint_attachments");
+
+    let checkpoint = serde_json::from_value(serialized).expect("legacy checkpoint");
+    let mut restored =
+        InteractiveEngine::from_checkpoint(workflow, checkpoint, None).expect("restore");
+    let request = restored.build_request(&NodeId::from("idea")).unwrap();
+
+    assert!(request.entrypoint_attachments.is_empty());
+}
+
+#[test]
+fn structured_human_message_survives_history_and_checkpoint() {
+    let mut workflow = Workflow::new("interactive-attachment");
+    workflow.nodes = vec![interactive_node("idea")];
+    let mut engine = InteractiveEngine::new(workflow.clone(), None, None).unwrap();
+    let attachment = image_attachment();
+    let ai = ScriptedAi::new(vec![Ok(needs_input("Which attachment should I review?"))]);
+
+    block_on(async {
+        let pause = run_once(&mut engine, &ai, &NoopToolPort).await;
+        assert!(matches!(pause, EngineRunResult::NeedsInteraction { .. }));
+    });
+    engine
+        .on_human_message(
+            &NodeId::from("idea"),
+            "Review this",
+            vec![attachment.clone()],
+        )
+        .unwrap();
+
+    assert_eq!(
+        engine.conversation_history(&NodeId::from("idea")).last(),
+        Some(&crate::conversation::ChatMessage {
+            role: ChatRole::User,
+            content: "Review this".to_string(),
+            id: None,
+            streaming: false,
+            tool_call_id: None,
+            message_kind: None,
+            attachments: vec![attachment.clone()],
+        })
+    );
+    let checkpoint = engine.prepare_stop_checkpoint();
+    let restored = InteractiveEngine::from_checkpoint(workflow, checkpoint, None).expect("restore");
+    assert_eq!(
+        restored.transcript(&NodeId::from("idea")).last(),
+        Some(&AgentTranscriptItem::UserMessage {
+            content: "Review this".to_string(),
+            attachments: vec![attachment],
+        })
     );
 }
 
 #[test]
 fn wrong_node_human_input_is_rejected_without_advancing() {
-    let mut workflow = Workflow::new("manual");
-    let mut idea = node("idea");
-    idea.agent.auto_start = false;
-    workflow.nodes = vec![idea];
+    let mut workflow = Workflow::new("interactive");
+    workflow.nodes = vec![interactive_node("idea")];
     let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let ai = ScriptedAi::new(vec![Ok(needs_input("Which node should I update?"))]);
 
     block_on(async {
         assert!(matches!(
-            run_once(&mut engine, &CompleteAi::new(json!({})), &NoopToolPort).await,
+            run_once(&mut engine, &ai, &NoopToolPort).await,
             EngineRunResult::NeedsInteraction { .. }
         ));
         let error = engine
@@ -1207,7 +1351,7 @@ fn wrong_node_human_input_is_rejected_without_advancing() {
             }
         );
         assert!(matches!(
-            run_once(&mut engine, &CompleteAi::new(json!({})), &NoopToolPort).await,
+            run_once(&mut engine, &ai, &NoopToolPort).await,
             EngineRunResult::NeedsInteraction { .. }
         ));
     });
@@ -1235,6 +1379,7 @@ fn tool_calls_pause_for_approval_and_resume_after_results() {
             usage: None,
         })),
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+            handoff: None,
             output: json!({"summary": "ok"}),
             raw_text: "{}".to_string(),
             assistant_message: None,
@@ -1312,6 +1457,7 @@ fn yolo_mode_skips_tool_approval() {
             usage: None,
         })),
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+            handoff: None,
             output: json!({"summary": "ok"}),
             raw_text: "{}".to_string(),
             assistant_message: None,
@@ -1365,6 +1511,7 @@ fn runtime_approval_patch_applies_before_tool_decision() {
     );
 
     let ai = ScriptedAi::new(vec![Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+        handoff: None,
         output: json!({"summary": "ok"}),
         raw_text: "{}".to_string(),
         assistant_message: None,
@@ -1392,6 +1539,7 @@ fn misrouted_completion_is_rejected() {
     engine.on_ai_complete(
         &NodeId::from("other"),
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+            handoff: None,
             output: json!({"summary": "wrong"}),
             raw_text: "{}".to_string(),
             assistant_message: None,
@@ -1447,14 +1595,13 @@ async fn stale_in_flight_in_parallel_layer_surfaces_needs_interaction() {
 #[test]
 fn checkpoint_roundtrip_preserves_awaiting_input_pause() {
     let mut workflow = Workflow::new("pause");
-    let mut manual = node("review");
-    manual.agent.auto_start = false;
-    workflow.nodes = vec![manual];
+    workflow.nodes = vec![interactive_node("review")];
     let mut engine = InteractiveEngine::new(workflow.clone(), None, None).unwrap();
+    let ai = ScriptedAi::new(vec![Ok(needs_input("Which result should I approve?"))]);
 
     block_on(async {
         assert!(matches!(
-            run_once(&mut engine, &CompleteAi::new(json!({})), &NoopToolPort).await,
+            run_once(&mut engine, &ai, &NoopToolPort).await,
             EngineRunResult::NeedsInteraction { .. }
         ));
     });
@@ -1468,6 +1615,38 @@ fn checkpoint_roundtrip_preserves_awaiting_input_pause() {
             EngineRunResult::NeedsInteraction { .. }
         ));
     });
+}
+
+#[test]
+fn checkpoint_roundtrip_preserves_node_handoff() {
+    let mut workflow = Workflow::new("handoff");
+    workflow.nodes = vec![node("research")];
+    let node_id = NodeId::from("research");
+    let handoff = HandoffArtifact {
+        format: HandoffFormat::Markdown,
+        uri: "run://handoffs/research/HANDOFF.md".to_string(),
+        media_type: "text/markdown".to_string(),
+        sha256: "abc123".to_string(),
+        size_bytes: 42,
+    };
+    let mut engine = InteractiveEngine::new(workflow.clone(), None, None).unwrap();
+    engine.test_insert_in_flight(node_id.clone());
+    engine.on_ai_complete(
+        &node_id,
+        Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+            handoff: Some(handoff.clone()),
+            output: json!({"summary": "done"}),
+            raw_text: String::new(),
+            assistant_message: None,
+            reasoning: vec![],
+            usage: None,
+        })),
+    );
+
+    let checkpoint = engine.prepare_stop_checkpoint();
+    let restored = InteractiveEngine::from_checkpoint(workflow, checkpoint, None).unwrap();
+
+    assert_eq!(restored.node_handoff(&node_id), Some(handoff));
 }
 
 #[test]
@@ -1513,6 +1692,7 @@ impl AiPort for BarrierAi {
         // Completes only when both nodes' invocations are in flight simultaneously.
         self.barrier.wait().await;
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+            handoff: None,
             output: json!({ "node": request.node_id.0 }),
             raw_text: String::new(),
             assistant_message: None,
@@ -1554,6 +1734,7 @@ impl AiPort for ToolOverlapAi {
             // Held open until node a's tool batch reaches the same barrier.
             self.barrier.wait().await;
             return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                handoff: None,
                 output: json!({ "node": "b" }),
                 raw_text: String::new(),
                 assistant_message: None,
@@ -1567,6 +1748,7 @@ impl AiPort for ToolOverlapAi {
             .any(|item| matches!(item, AgentTranscriptItem::ToolResult { .. }));
         if has_tool_result {
             return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                handoff: None,
                 output: json!({ "node": "a" }),
                 raw_text: String::new(),
                 assistant_message: None,
@@ -1711,6 +1893,7 @@ fn tool_batch_effects_are_recorded_on_engine() {
                 }],
             })),
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                handoff: None,
                 output: json!({ "ok": true }),
                 raw_text: String::new(),
                 assistant_message: None,
@@ -1766,12 +1949,29 @@ fn interactive_node(id: &str) -> Node {
     node
 }
 
+fn conversation_node(id: &str) -> Node {
+    let mut node = interactive_node(id);
+    node.agent.conversation_mode = true;
+    node
+}
+
 fn needs_input(message: &str) -> AgentTurnOutcome {
     AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
         raw_text: message.to_string(),
         assistant_message: message.to_string(),
         structured_input: None,
         reasoning: Vec::new(),
+    })
+}
+
+fn completed(output: Value) -> AgentTurnOutcome {
+    AgentTurnOutcome::Completed(AgentTurnSuccess {
+        handoff: None,
+        output,
+        raw_text: "{}".to_string(),
+        assistant_message: None,
+        reasoning: Vec::new(),
+        usage: None,
     })
 }
 
@@ -1807,7 +2007,7 @@ fn empty_provider_turn_retries_with_tool_nudge_before_failing() {
     }
     assert!(matches!(
         engine.transcript(&node_a).last(),
-        Some(AgentTranscriptItem::UserMessage { content })
+        Some(AgentTranscriptItem::UserMessage { content, .. })
             if content.contains("No human input is available")
     ));
 
@@ -1834,7 +2034,7 @@ fn interactive_empty_provider_turn_keeps_human_input_available() {
     let transcript = engine.transcript(&grill);
     assert!(matches!(
         transcript.last(),
-        Some(AgentTranscriptItem::UserMessage { content })
+        Some(AgentTranscriptItem::UserMessage { content, .. })
             if content.contains("openflow_request_user_input")
                 && !content.contains("No human input is available")
     ));
@@ -1890,7 +2090,7 @@ fn empty_after_narrated_write_uses_write_specific_nudge() {
     );
     assert!(matches!(
         engine.transcript(&brief).last(),
-        Some(AgentTranscriptItem::UserMessage { content })
+        Some(AgentTranscriptItem::UserMessage { content, .. })
             if content.contains("narrated creating or updating a file")
     ));
 
@@ -1904,7 +2104,7 @@ fn empty_after_narrated_write_uses_write_specific_nudge() {
     assert!(!engine.failed_nodes.contains_key(&brief));
     assert!(matches!(
         engine.transcript(&brief).last(),
-        Some(AgentTranscriptItem::UserMessage { content })
+        Some(AgentTranscriptItem::UserMessage { content, .. })
             if content.contains("already intended to write a file")
                 && content.contains("write tool call")
     ));
@@ -1949,7 +2149,7 @@ fn incomplete_write_is_rejected_with_chunked_write_nudge() {
     }));
     assert!(matches!(
         transcript.last(),
-        Some(AgentTranscriptItem::UserMessage { content })
+        Some(AgentTranscriptItem::UserMessage { content, .. })
             if content.contains("missing required `content`")
                 && content.contains("small stub")
     ));
@@ -1983,7 +2183,7 @@ fn write_with_empty_content_is_allowed_through_to_pending() {
     assert!(!engine.transcript(&node_a).iter().any(|item| {
         matches!(
             item,
-            AgentTranscriptItem::UserMessage { content }
+            AgentTranscriptItem::UserMessage { content, .. }
                 if content.contains("missing required `content`")
         )
     }));
@@ -2004,7 +2204,7 @@ fn autonomous_node_auto_continues_instead_of_awaiting_input() {
     let transcript = engine.transcript(&node_a);
     assert!(matches!(
         transcript.last(),
-        Some(AgentTranscriptItem::UserMessage { content })
+        Some(AgentTranscriptItem::UserMessage { content, .. })
             if content.contains("Call write immediately")
     ));
     assert!(matches!(
@@ -2028,7 +2228,7 @@ fn autonomous_node_repairs_plain_message_instead_of_awaiting_input() {
     assert!(!engine.failed_nodes.contains_key(&node_a));
     assert!(matches!(
         engine.transcript(&node_a).last(),
-        Some(AgentTranscriptItem::UserMessage { content })
+        Some(AgentTranscriptItem::UserMessage { content, .. })
             if content.contains("No human input is available")
     ));
 }
@@ -2104,6 +2304,58 @@ fn interactive_node_still_pauses_for_real_questions() {
 }
 
 #[test]
+fn interactive_node_accepts_a_complete_response_without_a_forced_question() {
+    let mut workflow = Workflow::new("wf");
+    workflow.nodes = vec![interactive_node("a")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let node_a = NodeId("a".to_string());
+
+    engine.test_insert_in_flight(node_a.clone());
+    engine.on_ai_complete(
+        &node_a,
+        Ok(needs_input(
+            "The list now includes the requested item and remains sorted.",
+        )),
+    );
+
+    assert!(
+        engine.awaiting_nodes.contains(&node_a),
+        "an explicit input-request tool call must end a conversational turn without requiring a question"
+    );
+}
+
+#[test]
+fn direct_conversation_plain_reply_ends_the_turn() {
+    let mut workflow = Workflow::new("direct chat");
+    workflow.nodes = vec![conversation_node("assistant")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let node_id = NodeId::from("assistant");
+
+    engine.test_insert_in_flight(node_id.clone());
+    engine.on_ai_complete(
+        &node_id,
+        Ok(message(
+            "The list now includes the requested item and remains sorted.",
+        )),
+    );
+
+    assert!(engine.awaiting_nodes.contains(&node_id));
+    assert!(matches!(
+        engine.transcript(&node_id).last(),
+        Some(AgentTranscriptItem::AssistantMessage { content })
+            if content == "The list now includes the requested item and remains sorted."
+    ));
+    assert!(
+        engine.transcript(&node_id).iter().all(|item| !matches!(
+            item,
+            AgentTranscriptItem::UserMessage { content, .. }
+                if content.contains("openflow_request_user_input")
+        )),
+        "a natural direct-chat reply must not receive a harness-tool nudge"
+    );
+}
+
+#[test]
 fn structured_question_pauses_and_survives_checkpoint_restore() {
     let mut workflow = Workflow::new("wf");
     workflow.nodes = vec![interactive_node("a")];
@@ -2153,6 +2405,91 @@ fn structured_question_pauses_and_survives_checkpoint_restore() {
 }
 
 #[test]
+fn structured_question_is_not_projected_when_disabled_for_the_node() {
+    let mut workflow = Workflow::new("direct chat");
+    let mut assistant = interactive_node("assistant");
+    assistant.agent.tools.allow_structured_user_input = false;
+    workflow.nodes = vec![assistant];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let node_id = NodeId::from("assistant");
+
+    engine.test_insert_in_flight(node_id.clone());
+    engine.on_ai_complete(
+        &node_id,
+        Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
+            raw_text: "{}".to_string(),
+            assistant_message: "Yo! What can I help you with?".to_string(),
+            structured_input: Some(StructuredUserInput {
+                questions: vec![UserInputQuestion {
+                    id: "continue_chat".to_string(),
+                    header: "Continue".to_string(),
+                    question: "What would you like to do?".to_string(),
+                    options: vec![
+                        UserInputOption {
+                            label: "Ask something".to_string(),
+                            description: "Send a question or task.".to_string(),
+                        },
+                        UserInputOption {
+                            label: "Just chat".to_string(),
+                            description: "Have a casual conversation.".to_string(),
+                        },
+                    ],
+                }],
+            }),
+            reasoning: Vec::new(),
+        })),
+    );
+
+    assert!(engine.awaiting_nodes.contains(&node_id));
+    assert_eq!(engine.gather_await_inputs()[0].structured_input, None);
+}
+
+#[test]
+fn structured_only_request_retries_with_free_text_feedback_when_disabled() {
+    let mut workflow = Workflow::new("direct chat");
+    let mut assistant = interactive_node("assistant");
+    assistant.agent.tools.allow_structured_user_input = false;
+    workflow.nodes = vec![assistant];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let node_id = NodeId::from("assistant");
+
+    engine.test_insert_in_flight(node_id.clone());
+    engine.on_ai_complete(
+        &node_id,
+        Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
+            raw_text: "{}".to_string(),
+            assistant_message: String::new(),
+            structured_input: Some(StructuredUserInput {
+                questions: vec![UserInputQuestion {
+                    id: "continue_chat".to_string(),
+                    header: "Continue".to_string(),
+                    question: "What would you like to do?".to_string(),
+                    options: vec![
+                        UserInputOption {
+                            label: "Ask something".to_string(),
+                            description: "Send a question or task.".to_string(),
+                        },
+                        UserInputOption {
+                            label: "Just chat".to_string(),
+                            description: "Have a casual conversation.".to_string(),
+                        },
+                    ],
+                }],
+            }),
+            reasoning: Vec::new(),
+        })),
+    );
+
+    assert!(!engine.awaiting_nodes.contains(&node_id));
+    assert!(matches!(
+        engine.transcript(&node_id).last(),
+        Some(AgentTranscriptItem::UserMessage { content, .. })
+            if content.contains("Structured questions are not available")
+                && content.contains("one direct human-facing question")
+    ));
+}
+
+#[test]
 fn invalid_structured_question_retries_even_when_prompt_looks_direct() {
     let mut workflow = Workflow::new("wf");
     workflow.nodes = vec![interactive_node("a")];
@@ -2180,7 +2517,7 @@ fn invalid_structured_question_retries_even_when_prompt_looks_direct() {
     assert!(!engine.awaiting_nodes.contains(&node_a));
     assert!(matches!(
         engine.transcript(&node_a).last(),
-        Some(AgentTranscriptItem::UserMessage { content })
+        Some(AgentTranscriptItem::UserMessage { content, .. })
             if content.contains("structured questions")
     ));
 }
@@ -2206,7 +2543,7 @@ fn conversational_node_auto_continues_plain_message_without_pausing() {
     let transcript = engine.transcript(&brief);
     assert!(matches!(
         transcript.last(),
-        Some(AgentTranscriptItem::UserMessage { content })
+        Some(AgentTranscriptItem::UserMessage { content, .. })
             if content.contains("openflow_request_user_input")
                 && !content.contains("No human input is available")
                 && !content.contains("narrated creating or updating")
@@ -2238,7 +2575,7 @@ fn narrated_write_without_tool_gets_write_specific_nudge() {
     assert_eq!(engine.auto_continue_streaks_by_node.get(&brief), Some(&1));
     assert!(matches!(
         engine.transcript(&brief).last(),
-        Some(AgentTranscriptItem::UserMessage { content })
+        Some(AgentTranscriptItem::UserMessage { content, .. })
             if content.contains("narrated creating or updating a file")
                 && content.contains("Call write immediately")
     ));
@@ -2262,7 +2599,7 @@ fn plan_mode_narrated_write_nudge_uses_run_local_draft_and_seal_tool() {
 
     assert!(matches!(
         engine.transcript(&planner).last(),
-        Some(AgentTranscriptItem::UserMessage { content })
+        Some(AgentTranscriptItem::UserMessage { content, .. })
             if content.contains(crate::tools::PLAN_DRAFT_PATH)
                 && content.contains(crate::tools::WRITE_PLAN_ARTIFACT_TOOL)
                 && content.contains("call write")
@@ -2314,7 +2651,7 @@ fn narrated_write_after_successful_write_nudges_edit_chunks() {
     assert!(!engine.failed_nodes.contains_key(&brief));
     assert!(matches!(
         engine.transcript(&brief).last(),
-        Some(AgentTranscriptItem::UserMessage { content })
+        Some(AgentTranscriptItem::UserMessage { content, .. })
             if content.contains("A write already succeeded")
                 && content.contains("Call edit")
     ));
@@ -2393,7 +2730,7 @@ fn valid_conversational_pause_resets_protocol_recovery_budgets() {
     assert!(!engine.failed_nodes.contains_key(&brief));
     assert!(matches!(
         engine.transcript(&brief).last(),
-        Some(AgentTranscriptItem::UserMessage { content })
+        Some(AgentTranscriptItem::UserMessage { content, .. })
             if content.contains("openflow_request_user_input")
     ));
 }
@@ -2407,7 +2744,7 @@ fn malformed_request_input_fails_after_retry_cap_without_pausing() {
 
     for _ in 0..=MAX_MALFORMED_REQUEST_INPUT_RETRIES {
         engine.test_insert_in_flight(node_a.clone());
-        engine.on_ai_complete(&node_a, Ok(needs_input("Working on the next file.")));
+        engine.on_ai_complete(&node_a, Ok(needs_input("")));
     }
 
     assert!(!engine.awaiting_nodes.contains(&node_a));
@@ -2427,7 +2764,7 @@ fn malformed_request_input_retries_reset_on_tool_call_progress() {
 
     for _ in 0..3 {
         engine.test_insert_in_flight(node_a.clone());
-        engine.on_ai_complete(&node_a, Ok(needs_input("Working on the next file.")));
+        engine.on_ai_complete(&node_a, Ok(needs_input("")));
         assert!(!engine.awaiting_nodes.contains(&node_a));
     }
 
@@ -2449,10 +2786,10 @@ fn malformed_request_input_retries_reset_on_tool_call_progress() {
     );
 
     engine.test_insert_in_flight(node_a.clone());
-    engine.on_ai_complete(&node_a, Ok(needs_input("Now updating the route.")));
+    engine.on_ai_complete(&node_a, Ok(needs_input("")));
     assert!(
         !engine.awaiting_nodes.contains(&node_a),
-        "narration after progress must self-nudge, not pause"
+        "invalid input after progress must retry instead of pausing"
     );
 }
 

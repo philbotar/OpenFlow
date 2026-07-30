@@ -1,5 +1,5 @@
 use crate::run::state::WorkflowRunState;
-use engine::{InteractiveEngineCheckpoint, Workflow};
+use engine::{AgentTranscriptItem, ChatMessage, ChatRole, InteractiveEngineCheckpoint, Workflow};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
@@ -30,6 +30,8 @@ pub enum RunCheckpointReason {
 #[serde(rename_all = "camelCase")]
 pub struct RunRecord {
     pub run_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     pub workflow_id: String,
     pub workflow_name: String,
     pub workflow_hash: String,
@@ -53,6 +55,97 @@ pub struct RunCheckpointPayload {
     pub projection: WorkflowRunState,
 }
 
+impl RunCheckpointPayload {
+    /// Drop a pre-dedicated-tool choice card while preserving the underlying pause.
+    pub(crate) fn discard_structured_user_input(&mut self) {
+        self.engine.structured_input_by_node.clear();
+        self.projection.structured_input_by_node.clear();
+    }
+
+    /// Repair a direct-chat projection from the canonical engine transcript.
+    ///
+    /// Older checkpoints could capture engine state after a model turn while their projection
+    /// still lagged behind. Merge missing visible messages at their transcript position.
+    pub(crate) fn repair_direct_chat_projection(&mut self) -> bool {
+        let Some(node_id) = self.engine.transcripts.keys().next().cloned() else {
+            return false;
+        };
+        let transcript = self
+            .engine
+            .transcripts
+            .get(&node_id)
+            .cloned()
+            .unwrap_or_default();
+        let entrypoint = self.engine.entrypoint_text.clone().map(|content| {
+            let mut message = ChatMessage::text(ChatRole::User, content);
+            message
+                .attachments
+                .clone_from(&self.engine.entrypoint_attachments);
+            message
+        });
+        let transcript_messages = transcript
+            .into_iter()
+            .filter_map(|item| match item {
+                AgentTranscriptItem::AssistantMessage { content } => {
+                    Some(ChatMessage::text(ChatRole::Assistant, content))
+                }
+                AgentTranscriptItem::UserMessage {
+                    content,
+                    attachments,
+                } => {
+                    let mut message = ChatMessage::text(ChatRole::User, content);
+                    message.attachments = attachments;
+                    Some(message)
+                }
+                AgentTranscriptItem::Reasoning { .. }
+                | AgentTranscriptItem::ToolCall { .. }
+                | AgentTranscriptItem::ToolResult { .. } => None,
+            })
+            .collect::<Vec<_>>();
+        let messages = self.projection.chat_logs.entry(node_id).or_default();
+        let mut changed = false;
+        let mut cursor = 0;
+
+        if let Some(entrypoint) = entrypoint {
+            if let Some(index) = messages
+                .iter()
+                .position(|message| visible_message_matches(message, &entrypoint))
+            {
+                cursor = index + 1;
+            } else {
+                messages.insert(0, entrypoint);
+                cursor = 1;
+                changed = true;
+            }
+        }
+
+        for transcript_message in transcript_messages {
+            if let Some(offset) = messages[cursor..]
+                .iter()
+                .position(|message| visible_message_matches(message, &transcript_message))
+            {
+                let index = cursor + offset;
+                if messages[index].streaming {
+                    messages[index].streaming = false;
+                    changed = true;
+                }
+                cursor = index + 1;
+            } else {
+                messages.insert(cursor, transcript_message);
+                cursor += 1;
+                changed = true;
+            }
+        }
+        changed
+    }
+}
+
+fn visible_message_matches(actual: &ChatMessage, expected: &ChatMessage) -> bool {
+    actual.role == expected.role
+        && actual.content == expected.content
+        && actual.attachments == expected.attachments
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct PendingRunCheckpoint {
     pub reason: RunCheckpointReason,
@@ -69,12 +162,41 @@ pub struct RunStoreRoot {
 #[serde(rename_all = "camelCase")]
 pub struct RunSummary {
     pub run_id: String,
+    pub name: String,
     pub workflow_id: String,
     pub workflow_name: String,
     pub project_id: Option<String>,
     pub started_at_ms: i64,
     pub updated_at_ms: i64,
     pub status: RunStatus,
+}
+
+#[must_use]
+pub(crate) fn run_name(workflow_name: &str, entrypoint_text: Option<&str>) -> String {
+    let normalized_entrypoint = entrypoint_text
+        .unwrap_or_default()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if !normalized_entrypoint.is_empty() {
+        let mut chars = normalized_entrypoint.chars();
+        let name = chars.by_ref().take(60).collect::<String>();
+        return if chars.next().is_some() {
+            format!("{name}…")
+        } else {
+            name
+        };
+    }
+
+    let workflow_name = workflow_name
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if workflow_name.is_empty() {
+        "Workflow run".to_string()
+    } else {
+        format!("{workflow_name} run")
+    }
 }
 
 #[must_use]
@@ -90,6 +212,10 @@ impl RunRecord {
     pub fn summary(&self) -> RunSummary {
         RunSummary {
             run_id: self.run_id.clone(),
+            name: self
+                .name
+                .clone()
+                .unwrap_or_else(|| run_name(&self.workflow_name, None)),
             workflow_id: self.workflow_id.clone(),
             workflow_name: self.workflow_name.clone(),
             project_id: self.project_id.clone(),
@@ -109,6 +235,7 @@ mod tests {
     fn run_record_serializes_camel_case_fields() {
         let record = RunRecord {
             run_id: "run-1".to_string(),
+            name: Some("Review provider retries".to_string()),
             workflow_id: "wf-1".to_string(),
             workflow_name: "Demo".to_string(),
             workflow_hash: "abc".to_string(),

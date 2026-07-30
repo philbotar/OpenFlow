@@ -4,6 +4,7 @@ pub mod chat_store;
 pub mod json_file_store;
 pub mod project_store;
 pub mod project_workflow_store;
+pub mod run_attachment_store;
 pub mod run_checkpoint_store;
 pub mod settings_store;
 pub mod skill_store;

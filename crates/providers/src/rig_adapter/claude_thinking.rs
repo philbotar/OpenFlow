@@ -307,6 +307,7 @@ mod tests {
             node_id: NodeId("n1".into()),
             node_label: "Node".into(),
             model: model.into(),
+            provider_id: None,
             system_messages: vec!["sys".into()],
             task_prompt: "task".into(),
             input: json!({}),
@@ -314,11 +315,14 @@ mod tests {
             tool_config: engine::NodeToolConfig::default(),
             available_tools: Vec::new(),
             transcript: Vec::new(),
+            entrypoint_attachments: Vec::new(),
+            resolved_attachments: std::collections::BTreeMap::default(),
             model_attempt: 1,
             reasoning_effort: None,
             reasoning_budget_tokens: None,
             tool_access_policy: engine::ToolAccessPolicy::Execution,
             allow_user_input: false,
+            conversation_mode: false,
         }
     }
 

@@ -12,7 +12,6 @@ import type {
   AppSettings,
   EdgeId,
   NodeId,
-  ProviderProfile,
   Workflow,
   WorkflowRunState,
 } from "../../lib/types";
@@ -29,6 +28,7 @@ import {
   selectedNode,
   withDefaultReasoningFromProfile,
   withDefaultReasoningFromWorkflow,
+  workflowProviderProfile,
   type WorkflowCanvasGraph,
   type WorkflowCanvasStatusByNode,
   type WorkflowCanvasSubagentsByNode,
@@ -45,7 +45,6 @@ interface UseWorkflowEditorParams {
   activeWorkflow: Accessor<Workflow | undefined>;
   runState: Accessor<WorkflowRunState | null>;
   settings: Accessor<AppSettings>;
-  activeProfileMemo: Accessor<ProviderProfile>;
   isCompactViewport: Accessor<boolean>;
   showErrorToast: ToastHandler;
   showSuccessToast: ToastHandler;
@@ -326,7 +325,7 @@ export function useWorkflowEditor(params: UseWorkflowEditorParams) {
         placement.y,
         agentId,
       );
-      const profile = params.activeProfileMemo();
+      const profile = workflowProviderProfile(params.settings(), workflow.settings);
       let nextAgent = withDefaultReasoningFromWorkflow(
         withDefaultReasoningFromProfile(node.agent, profile),
         workflow.settings,

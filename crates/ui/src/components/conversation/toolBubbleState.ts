@@ -26,6 +26,7 @@ const TOOL_VERBS: Record<string, { active: string; done: string }> = {
   openflow_declare_subagents: { active: "Declaring subagents", done: "Declared subagents" },
   openflow_submit_node_output: { active: "Submitting output", done: "Submitted output" },
   openflow_request_user_input: { active: "Requesting input", done: "Requested input" },
+  openflow_ask_user_question: { active: "Asking question", done: "Asked question" },
 };
 
 const TOOL_DISPLAY_NAMES: Record<string, string> = {
@@ -43,6 +44,7 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   openflow_declare_subagents: "Declare Subagents",
   openflow_submit_node_output: "Submit Output",
   openflow_request_user_input: "Request Input",
+  openflow_ask_user_question: "Ask Question",
   openflow_write_plan_artifact: "Seal Plan",
 };
 
@@ -62,6 +64,7 @@ const TOOL_STACK_NOUNS: Record<string, { one: string; many: string }> = {
   openflow_declare_subagents: { one: "declaration", many: "declarations" },
   openflow_submit_node_output: { one: "output", many: "outputs" },
   openflow_request_user_input: { one: "request", many: "requests" },
+  openflow_ask_user_question: { one: "question", many: "questions" },
   openflow_write_plan_artifact: { one: "plan", many: "plans" },
 };
 

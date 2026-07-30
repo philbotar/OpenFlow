@@ -1,7 +1,7 @@
 //! Outbound ports owned by the engine.
 
 use crate::conversation::{
-    filter_tool_turn_assistant_message, AgentReasoning, AgentTranscriptItem,
+    filter_tool_turn_assistant_message, AgentReasoning, AgentTranscriptItem, ChatAttachmentRef,
 };
 use crate::graph::{NodeId, WorkflowId};
 use crate::tools::{
@@ -9,6 +9,7 @@ use crate::tools::{
 };
 use async_trait::async_trait;
 use serde_json::Value;
+use std::collections::BTreeMap;
 use thiserror::Error;
 
 /// Run-scoped capability policy selected by the engine.
@@ -24,11 +25,18 @@ pub enum ToolAccessPolicy {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedChatAttachment {
+    pub bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentRequest {
     pub workflow_id: WorkflowId,
     pub node_id: NodeId,
     pub node_label: String,
     pub model: String,
+    /// Effective provider selected for this turn. `None` lets the host use its run default.
+    pub provider_id: Option<String>,
     /// Ordered system instruction bodies assembled by the engine; providers map to wire format as-is.
     pub system_messages: Vec<String>,
     pub task_prompt: String,
@@ -37,6 +45,10 @@ pub struct AgentRequest {
     pub tool_config: NodeToolConfig,
     pub available_tools: Vec<ToolDefinition>,
     pub transcript: Vec<AgentTranscriptItem>,
+    /// Initial user attachment refs for this invocation.
+    pub entrypoint_attachments: Vec<ChatAttachmentRef>,
+    /// Transient bytes hydrated by the run host, keyed by attachment id.
+    pub resolved_attachments: BTreeMap<String, ResolvedChatAttachment>,
     /// 1-based model invocation attempt for this node (retries increment).
     pub model_attempt: u8,
     /// Opaque reasoning effort level forwarded to the provider.
@@ -45,10 +57,12 @@ pub struct AgentRequest {
     pub reasoning_budget_tokens: Option<u32>,
     /// Hard capability policy for this run phase.
     pub tool_access_policy: ToolAccessPolicy,
-    /// Whether this node may pause for human input. When false, providers must
-    /// not offer the request-input tool nor convert plain-text turns into
-    /// input requests.
+    /// Whether this node may pause through a human-input harness tool. When
+    /// false, providers must not offer free-text or structured input tools.
     pub allow_user_input: bool,
+    /// Whether a provider plain-message turn is valid without a tool call.
+    /// Providers use automatic tool choice when this is true.
+    pub conversation_mode: bool,
 }
 
 impl AgentRequest {
@@ -69,6 +83,7 @@ pub struct UsageReport {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentTurnSuccess {
+    pub handoff: Option<crate::execution::HandoffArtifact>,
     pub output: Value,
     pub raw_text: String,
     pub assistant_message: Option<String>,

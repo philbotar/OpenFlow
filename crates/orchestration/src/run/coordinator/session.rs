@@ -3,14 +3,18 @@
 use crate::error::BackendError;
 use crate::run::execution::{
     apply_event_to_run_state, spawn_interactive_workflow_run, ExecutionAction, ExecutionEvent,
-    InteractiveWorkflowRunParams, NodeInterrupts,
+    InteractiveWorkflowRunParams, NodeInterrupts, ProviderContextWindowSizes, ProviderRouter,
+    ResumeContinuation,
 };
 use crate::run::persistence::{
     PendingRunCheckpoint, RunCheckpointPayload, RunRecord, RunStoreRoot,
 };
 use crate::run::ports::RunCheckpointStore;
-use crate::run::prep::prepare_workflow_for_execution;
-use crate::run::skill_invocation::{apply_skill_invocations, has_skill_invocations};
+use crate::run::prep::prepare_workflow_for_execution_with_profiles;
+use crate::run::skill_invocation::{
+    apply_explicit_skill_invocations, apply_skill_invocations, has_skill_invocations, skill_paths,
+    SkillPaths,
+};
 use crate::run::state::WorkflowRunState;
 use crate::settings::model::{merge_preserved_secrets, AppSettings};
 use crate::settings::ports::SkillCatalog;
@@ -24,7 +28,7 @@ use engine::{
 };
 use parking_lot::Mutex as ParkingMutex;
 use providers::{create_provider, ProviderId};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -37,7 +41,8 @@ pub(super) struct PreparedWorkflowRun {
     pub ai: Box<dyn AiPort>,
     pub agent_snapshots: BTreeMap<String, CallableAgent>,
     pub persisted_settings: AppSettings,
-    pub context_window_sizes: BTreeMap<String, u32>,
+    pub context_window_sizes: ProviderContextWindowSizes,
+    pub skill_paths: SkillPaths,
 }
 
 pub(super) struct ExecutionResources {
@@ -51,10 +56,14 @@ pub(super) struct ExecutionResources {
 
 pub(super) struct SpawnRunInput {
     pub entrypoint: Option<String>,
+    pub entrypoint_attachments: Vec<engine::ChatAttachmentRef>,
     pub execution_cwd: PathBuf,
     pub project_id: Option<String>,
     pub artifact_root: PathBuf,
+    pub attachment_root: PathBuf,
+    pub attachment_store: Arc<dyn crate::run::ports::RunAttachmentStore>,
     pub resume_checkpoint: Option<InteractiveEngineCheckpoint>,
+    pub resume_continuation: Option<ResumeContinuation>,
 }
 
 pub(super) struct SpawnedRun {
@@ -65,8 +74,13 @@ pub(super) struct SpawnedRun {
 }
 
 /// Provider wiring shared by fresh start, in-session continue, and durable resume.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "run preparation composes explicit persistence, provider, agent, and skill ports"
+)]
 pub(super) fn prepare_workflow_run(
     workflow: Workflow,
+    invoked_skill_ids: &[String],
     settings: &AppSettings,
     transient_api_key: Option<&str>,
     agent_store: &dyn crate::agent::AgentStore,
@@ -85,26 +99,63 @@ pub(super) fn prepare_workflow_run(
     {
         provider_settings.active_provider = ProviderId::from(provider_id.as_str());
     }
-    let mut provider_config = resolve_provider_config(&provider_settings, transient_api_key, env)?;
-    attach_codex_credential_sink(&mut provider_config, settings_store);
-    let ai = create_provider(provider_config);
+    let default_provider_id = provider_settings.active_provider.clone();
+    let mut required_provider_ids = BTreeSet::from([default_provider_id.clone()]);
+    required_provider_ids.extend(workflow.nodes.iter().filter_map(|node| {
+        node.agent
+            .provider_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|provider_id| !provider_id.is_empty())
+            .map(ProviderId::from)
+    }));
+    let mut provider_clients = BTreeMap::new();
+    let mut context_window_sizes = BTreeMap::new();
+    for provider_id in required_provider_ids {
+        let mut selected_settings = provider_settings.clone();
+        selected_settings.active_provider = provider_id.clone();
+        let selected_transient_key = if provider_id == default_provider_id {
+            transient_api_key
+        } else {
+            None
+        };
+        let mut provider_config =
+            resolve_provider_config(&selected_settings, selected_transient_key, env)?;
+        attach_codex_credential_sink(&mut provider_config, Arc::clone(&settings_store));
+        context_window_sizes.insert(
+            provider_id.to_string(),
+            selected_settings
+                .active_profile()
+                .context_window_sizes
+                .clone(),
+        );
+        provider_clients.insert(provider_id.to_string(), create_provider(provider_config));
+    }
+    let ai: Box<dyn AiPort> = Box::new(ProviderRouter::new(
+        default_provider_id.to_string(),
+        provider_clients,
+    ));
     let mut workflow = workflow;
-    prepare_workflow_for_execution(&mut workflow, Some(provider_settings.active_profile()));
+    prepare_workflow_for_execution_with_profiles(
+        &mut workflow,
+        &default_provider_id,
+        &provider_settings.providers,
+    )?;
     let agents = agent_store.load()?;
     let mut agent_snapshots = resolve_callable_agent_snapshots(&workflow, &agents);
+    let skills = skill_catalog.discover(&provider_settings.skill_search_paths)?;
+    let resolved_skill_paths = skill_paths(&skills);
     if has_skill_invocations(&workflow, &agent_snapshots) {
-        let skills = skill_catalog.discover(&provider_settings.skill_search_paths)?;
         apply_skill_invocations(&mut workflow, &mut agent_snapshots, &skills)?;
     }
+    apply_explicit_skill_invocations(&mut workflow, invoked_skill_ids, &resolved_skill_paths)?;
     Ok(PreparedWorkflowRun {
         workflow,
         ai,
         agent_snapshots,
         persisted_settings,
-        context_window_sizes: provider_settings
-            .active_profile()
-            .context_window_sizes
-            .clone(),
+        context_window_sizes,
+        skill_paths: resolved_skill_paths,
     })
 }
 
@@ -132,13 +183,17 @@ pub(super) fn spawn_prepared_run(
         InteractiveWorkflowRunParams {
             workflow: prepared.workflow.clone(),
             entrypoint: input.entrypoint,
+            entrypoint_attachments: input.entrypoint_attachments,
             execution_cwd: input.execution_cwd.clone(),
             project_repository_root: crate::run::execution::project_repository_root(
                 input.project_id.as_deref(),
                 &input.execution_cwd,
             ),
             artifact_root: input.artifact_root.clone(),
+            attachment_root: input.attachment_root,
+            attachment_store: input.attachment_store,
             resume_checkpoint: input.resume_checkpoint,
+            resume_continuation: input.resume_continuation,
             checkpoint_sink: resources.checkpoint_sink.clone(),
             ai: prepared.ai,
             agent_snapshots: prepared.agent_snapshots,
@@ -164,8 +219,10 @@ pub(super) struct RunLaunchTail {
     pub spawn_input: SpawnRunInput,
     pub resources: ExecutionResources,
     pub entrypoint: Option<String>,
+    pub entrypoint_attachments: Vec<engine::ChatAttachmentRef>,
     pub execution_cwd: PathBuf,
     pub artifact_root: PathBuf,
+    pub attachment_root: PathBuf,
 }
 
 /// Shared tail for fresh start, in-session continue, and durable resume launches.
@@ -177,12 +234,15 @@ pub(super) async fn finalize_run_launch(
     configure_session: impl FnOnce(&mut RunSession) -> Result<WorkflowRunState, BackendError>,
 ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
     let workflow = prepared.workflow.clone();
+    let skill_paths = prepared.skill_paths.clone();
     let RunLaunchTail {
         spawn_input,
         resources,
         entrypoint,
+        entrypoint_attachments,
         execution_cwd,
         artifact_root,
+        attachment_root,
     } = tail;
     let mut spawned = spawn_prepared_run(runtime_handle, prepared, spawn_input, &resources);
     let event_rx = spawned.event_rx.take().expect("spawned run event channel");
@@ -192,21 +252,31 @@ pub(super) async fn finalize_run_launch(
         &mut session_guard,
         workflow,
         entrypoint,
+        entrypoint_attachments,
         execution_cwd,
         artifact_root,
+        attachment_root,
         resources,
+        skill_paths,
         spawned,
     );
     Ok((initial_state, event_rx))
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "single session mutation installs one complete run launch atomically"
+)]
 pub(super) fn attach_execution_handles(
     session: &mut RunSession,
     workflow: Workflow,
     entrypoint: Option<String>,
+    entrypoint_attachments: Vec<engine::ChatAttachmentRef>,
     execution_cwd: PathBuf,
     artifact_root: PathBuf,
+    attachment_root: PathBuf,
     resources: ExecutionResources,
+    skill_paths: SkillPaths,
     spawned: SpawnedRun,
 ) {
     let SpawnedRun {
@@ -224,9 +294,13 @@ pub(super) fn attach_execution_handles(
         runtime_config_store,
     } = resources;
     session.workflow = Some(workflow);
+    session.skill_paths = skill_paths;
     session.entrypoint = entrypoint;
+    session.entrypoint_attachments = entrypoint_attachments;
     session.execution_cwd = Some(execution_cwd);
     session.artifact_root = Some(artifact_root);
+    session.attachment_root = Some(attachment_root);
+    session.generation = session.generation.wrapping_add(1);
     session.engine_checkpoint = None;
     session.checkpoint_sink = Some(checkpoint_sink);
     session.snapshot_store = Some(snapshot_store);
@@ -241,6 +315,7 @@ pub(super) fn attach_execution_handles(
 
 /// Clears session-scoped resources when a run becomes inactive.
 pub(crate) fn finish_run_session(session: &mut RunSession) {
+    session.generation = session.generation.wrapping_add(1);
     session.snapshot_store = None;
     session.lsp_settings = None;
     session.pending_engine_reverts = None;
@@ -251,6 +326,7 @@ pub(crate) fn finish_run_session(session: &mut RunSession) {
     session.checkpoint_sink = None;
     session.runtime_config_store = None;
     session.engine_checkpoint = None;
+    session.skill_paths.clear();
 }
 
 pub(crate) fn clear_artifact_root(session: &mut RunSession) {
@@ -334,9 +410,13 @@ pub(crate) struct RunSession {
     pub(crate) run_id: Option<String>,
     pub(crate) run_root: Option<RunStoreRoot>,
     pub(crate) project_id: Option<String>,
+    pub(crate) skill_paths: SkillPaths,
     pub(crate) execution_cwd: Option<PathBuf>,
     pub(crate) entrypoint: Option<String>,
+    pub(crate) entrypoint_attachments: Vec<engine::ChatAttachmentRef>,
     pub(crate) artifact_root: Option<PathBuf>,
+    pub(crate) attachment_root: Option<PathBuf>,
+    pub(crate) generation: u64,
     pub(crate) engine_checkpoint: Option<InteractiveEngineCheckpoint>,
     pub(crate) checkpoint_sink: Option<Arc<ParkingMutex<Option<PendingRunCheckpoint>>>>,
     pub(crate) snapshot_store:
@@ -357,7 +437,8 @@ pub(super) enum TerminationMode {
 
 pub struct RunStartParams<'a> {
     pub workflow: Workflow,
-    pub entrypoint: Option<String>,
+    pub invoked_skill_ids: Vec<String>,
+    pub entrypoint: Option<crate::api::UserMessageInput>,
     pub execution_cwd: Option<String>,
     pub run_root: RunStoreRoot,
     pub settings: &'a AppSettings,

@@ -1,7 +1,7 @@
 
 # Tools reference
 
-Agents call **tools** during a workflow run. Built-in repository tools are registered in `crates/orchestration/src/tool/registry.rs`. **Harness** tools (`openflow_submit_node_output`, `openflow_request_user_input`) control node completion and human pauses. **MCP** tools are added at run start from **Settings → MCP Servers** and appear as `mcp/<server>/<tool>`.
+Agents call **tools** during a workflow run. Built-in repository tools are registered in `crates/orchestration/src/tool/registry.rs`. **Harness** tools (`openflow_submit_node_output`, `openflow_request_user_input`, `openflow_ask_user_question`) control node completion and human pauses. **MCP** tools are added at run start from **Settings → MCP Servers** and appear as `mcp/<server>/<tool>`.
 
 Paths are relative to the run **execution folder** (project checkout when the workflow is project-bound, otherwise the process working directory). Approval behavior depends on the node **Approval mode** in the inspector; see [`../guides/using-the-app.md#tools-and-approval`](../guides/using-the-app.md#tools-and-approval).
 
@@ -34,6 +34,7 @@ In **Read only** approval mode, write-tier and `bash` are not offered to the mod
 | [`openflow_call_subagent`](#openflow_call_subagent) | Call Subagent | Write |
 | [`openflow_submit_node_output`](#openflow_submit_node_output) | Submit Output | Harness |
 | [`openflow_request_user_input`](#openflow_request_user_input) | Request Input | Harness |
+| [`openflow_ask_user_question`](#openflow_ask_user_question) | Ask Question | Harness |
 | [MCP tools](#mcp-tools) | varies | Write |
 | [Authoring tools](#workflow-authoring-tools-build-with-ai) | varies | Authoring session only |
 
@@ -251,21 +252,37 @@ Schema fields belong under `output`, not at the top level. Invalid submits may t
 
 ## `openflow_request_user_input`
 
-**Purpose:** Pause the run and ask the human for free-text or structured clarification in chat.
+**Purpose:** Pause a workflow node with one required free-text question.
 
-**When to use:** Clarification is required and cannot be resolved with tools or upstream input.
+**When to use:** Clarification is required, choices do not cover the likely answers, and the answer cannot be resolved with tools or upstream input. Normal direct-chat replies do not call this tool; plain assistant text ends the turn.
 
-**Availability:** Only when the node has **request user input** enabled in configuration (inspector / agent template).
+**Availability:** Only when the node has **request user input** and free-text input enabled. Direct chat disables this tool because its plain-message lifecycle already accepts the next user message.
 
 **Key arguments:**
 
-- Free text: `{ "assistant_message": "<one direct question>" }`.
-- Structured: `{ "questions": [{ "id": "<snake_case id>", "header": "<12 chars max>", "question": "<question>", "options": [{ "label": "<choice>", "description": "<tradeoff>" }] }] }`.
+- `{ "assistant_message": "<one direct human-facing question>" }`
 
-Structured requests accept 1-3 questions with 2-3 options each. The UI adds an **Other** answer. `assistant_message` may accompany `questions` as a short intro.
-Provide at least one of `assistant_message` or `questions`.
+**Rules:** Call **alone** in a model turn (like submit). Plain provider text does not pause ordinary workflow nodes.
 
-**Rules:** Call **alone** in a model turn (like submit). Plain text in the assistant message does not pause the run.
+**Approval:** Harness.
+
+---
+
+## `openflow_ask_user_question`
+
+**Purpose:** Pause with 1-3 structured multiple-choice questions.
+
+**When to use:** A human answer is required and 2-3 clear choices make the decision easier. Do not use it merely to keep a conversation open.
+
+**Availability:** Only when the node has **request user input** and structured input enabled. Direct chat offers this tool as an optional alternative to a normal plain reply.
+
+**Key arguments:**
+
+- `{ "questions": [{ "id": "<snake_case id>", "header": "<12 chars max>", "question": "<question>", "options": [{ "label": "<choice>", "description": "<tradeoff>" }] }] }`
+
+Each call accepts 1-3 questions with 2-3 options each. The normal composer remains available for a free-text answer.
+
+**Rules:** Call **alone** in a model turn. Do not mix it with submit, free-text input, or executable tools.
 
 **Approval:** Harness.
 

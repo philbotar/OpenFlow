@@ -16,7 +16,7 @@ pub struct Template {
     pub display_name: String,
     pub description: String,
     pub default_config: AgentNodeConfig,
-    /// Valid field names: `system_prompt`, `task_prompt`, `model`, `output_schema`, `auto_start`
+    /// Valid field names: `system_prompt`, `task_prompt`, `model`, `output_schema`
     pub locked_fields: HashSet<String>,
 }
 
@@ -128,6 +128,7 @@ mod tests {
             task_prompt: "custom task".to_string(),
             model: "o3".to_string(),
             output_schema: serde_json::json!({"custom": true}),
+            handoff: crate::graph::HandoffSpec::Json,
             auto_start: false,
             tools: AgentNodeConfig::default().tools,
             callable_agents: Vec::new(),
@@ -136,6 +137,7 @@ mod tests {
             reasoning_budget_tokens: None,
             provider_id: None,
             request_user_input: true,
+            conversation_mode: false,
         };
         let template = Template::new("Test", "desc", config.clone(), HashSet::new());
         let node = template.instantiate(0.0, 0.0);

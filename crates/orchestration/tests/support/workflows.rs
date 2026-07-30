@@ -5,6 +5,7 @@ pub fn agent_node(id: &str, label: &str) -> Node {
     let mut node = Node::agent(label, 0.0, 0.0);
     node.id = NodeId(id.to_string());
     node.agent.model = "test-model".to_string();
+    node.agent.handoff = engine::HandoffSpec::Json;
     node.agent.output_schema = json!({
         "type": "object",
         "additionalProperties": false,

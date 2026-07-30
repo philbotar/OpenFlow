@@ -3,7 +3,10 @@
 // ponytail: at `run/` root (not `coordinator/`) so execution can import without coordinator→execution cycle.
 
 use crate::settings::model::ProviderProfile;
-use engine::Workflow;
+use crate::settings::provider::ProviderConfigError;
+use engine::{AgentNodeConfig, Workflow};
+use providers::ProviderId;
+use std::collections::BTreeMap;
 
 /// Normalize a workflow before coordinator spawn or headless execution.
 pub fn prepare_workflow_for_execution(workflow: &mut Workflow, profile: Option<&ProviderProfile>) {
@@ -14,7 +17,46 @@ pub fn prepare_workflow_for_execution(workflow: &mut Workflow, profile: Option<&
     }
 }
 
+/// Normalize each node from its override provider, then the shared workflow provider.
+///
+/// # Errors
+/// Returns an unsupported-provider error when a referenced profile is unavailable.
+pub fn prepare_workflow_for_execution_with_profiles(
+    workflow: &mut Workflow,
+    default_provider_id: &ProviderId,
+    profiles: &BTreeMap<ProviderId, ProviderProfile>,
+) -> Result<(), ProviderConfigError> {
+    workflow.settings.provider_id = Some(default_provider_id.to_string());
+    apply_workflow_reasoning_defaults(workflow);
+
+    for node in &mut workflow.nodes {
+        let provider_id = node
+            .agent
+            .provider_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|provider_id| !provider_id.is_empty())
+            .map(ProviderId::from)
+            .unwrap_or_else(|| default_provider_id.clone());
+        let profile =
+            profiles
+                .get(&provider_id)
+                .ok_or_else(|| ProviderConfigError::UnsupportedProvider {
+                    provider: provider_id.to_string(),
+                })?;
+        apply_provider_model_default_to_agent(&mut node.agent, profile);
+        apply_provider_reasoning_default_to_agent(&mut node.agent, profile);
+    }
+    Ok(())
+}
+
 fn apply_provider_model_default(workflow: &mut Workflow, profile: &ProviderProfile) {
+    for node in &mut workflow.nodes {
+        apply_provider_model_default_to_agent(&mut node.agent, profile);
+    }
+}
+
+fn apply_provider_model_default_to_agent(agent: &mut AgentNodeConfig, profile: &ProviderProfile) {
     let Some(default_model) = profile
         .default_model
         .as_ref()
@@ -24,10 +66,8 @@ fn apply_provider_model_default(workflow: &mut Workflow, profile: &ProviderProfi
         return;
     };
 
-    for node in &mut workflow.nodes {
-        if node.agent.model.trim().is_empty() {
-            node.agent.model = default_model.to_string();
-        }
+    if agent.model.trim().is_empty() {
+        agent.model = default_model.to_string();
     }
 }
 
@@ -98,6 +138,15 @@ pub fn provider_reasoning_for_profile(profile: &ProviderProfile) -> (Option<Stri
 
 /// Apply provider-level reasoning defaults to nodes that have no per-node override.
 pub fn apply_provider_reasoning_defaults(workflow: &mut Workflow, profile: &ProviderProfile) {
+    for node in &mut workflow.nodes {
+        apply_provider_reasoning_default_to_agent(&mut node.agent, profile);
+    }
+}
+
+fn apply_provider_reasoning_default_to_agent(
+    agent: &mut AgentNodeConfig,
+    profile: &ProviderProfile,
+) {
     let Some(default_effort) = profile
         .default_reasoning_effort
         .as_ref()
@@ -117,21 +166,19 @@ pub fn apply_provider_reasoning_defaults(workflow: &mut Workflow, profile: &Prov
         .find(|option| option.value == default_effort)
         .is_some_and(|option| option.uses_budget_tokens);
 
-    for node in &mut workflow.nodes {
-        if node.agent.reasoning_effort.is_some() {
-            continue;
-        }
-        node.agent.reasoning_effort = Some(default_effort.clone());
-        if uses_budget && node.agent.reasoning_budget_tokens.is_none() {
-            node.agent.reasoning_budget_tokens = default_budget;
-        }
+    if agent.reasoning_effort.is_some() {
+        return;
+    }
+    agent.reasoning_effort = Some(default_effort);
+    if uses_budget && agent.reasoning_budget_tokens.is_none() {
+        agent.reasoning_budget_tokens = default_budget;
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::settings::model::ProviderProfile;
+    use crate::settings::model::{AppSettings, ProviderProfile};
     use engine::{AgentNodeConfig, Node, NodeId, NodeKind, NodePosition, Workflow};
     use providers::{provider_spec, ProviderId};
 
@@ -183,6 +230,48 @@ mod tests {
         prepare_workflow_for_execution(&mut workflow, Some(&profile));
 
         assert_eq!(workflow.nodes[0].agent.model, "node-model");
+    }
+
+    #[test]
+    fn prepare_workflow_for_execution_uses_each_nodes_effective_provider_defaults() {
+        let mut workflow = sample_workflow();
+        workflow
+            .nodes
+            .push(Node::agent("Anthropic node", 100.0, 0.0));
+        workflow.nodes[1].agent.provider_id = Some("anthropic".to_string());
+
+        let mut settings = AppSettings::default();
+        let openai = settings
+            .providers
+            .get_mut(&ProviderId::from("openai"))
+            .expect("openai profile");
+        openai.default_model = Some("openai-default".to_string());
+        openai.default_reasoning_effort = Some("medium".to_string());
+        let anthropic = settings
+            .providers
+            .get_mut(&ProviderId::from("anthropic"))
+            .expect("anthropic profile");
+        anthropic.default_model = Some("anthropic-default".to_string());
+        anthropic.default_reasoning_effort = Some("adaptive".to_string());
+
+        prepare_workflow_for_execution_with_profiles(
+            &mut workflow,
+            &ProviderId::from("openai"),
+            &settings.providers,
+        )
+        .expect("known providers");
+
+        assert_eq!(workflow.settings.provider_id.as_deref(), Some("openai"));
+        assert_eq!(workflow.nodes[0].agent.model, "openai-default");
+        assert_eq!(
+            workflow.nodes[0].agent.reasoning_effort.as_deref(),
+            Some("medium")
+        );
+        assert_eq!(workflow.nodes[1].agent.model, "anthropic-default");
+        assert_eq!(
+            workflow.nodes[1].agent.reasoning_effort.as_deref(),
+            Some("adaptive")
+        );
     }
 
     #[test]

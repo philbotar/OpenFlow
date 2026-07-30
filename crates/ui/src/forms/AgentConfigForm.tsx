@@ -1,13 +1,14 @@
 import { createEffect, createMemo, Show, type Accessor } from "solid-js";
-import { TextSelect } from "@/components";
+import { TextSelect, type TextSelectOption } from "@/components";
 import type { ReasoningEffortOption, SkillSummary } from "@/lib/types";
 import { SkillPromptTextarea } from "./SkillPromptTextarea";
 
 export function AgentConfigForm(props: {
+  providerId?: string | null;
+  providerOptions?: readonly TextSelectOption[];
+  onProviderChange?: (value: string) => void;
   model: string;
   onModelChange: (value: string) => void;
-  autoStart: boolean;
-  onAutoStartChange: (value: boolean) => void;
   requestUserInput?: boolean;
   onRequestUserInputChange?: (value: boolean) => void;
   systemPrompt: string;
@@ -77,6 +78,16 @@ export function AgentConfigForm(props: {
 
   return (
     <>
+      <Show when={props.providerOptions && props.onProviderChange}>
+        <label>
+          <span>Provider</span>
+          <TextSelect
+            value={props.providerId ?? ""}
+            options={props.providerOptions ?? []}
+            onChange={(event) => props.onProviderChange?.(event.currentTarget.value)}
+          />
+        </label>
+      </Show>
       <label>
         <span>Model</span>
         <TextSelect
@@ -133,14 +144,6 @@ export function AgentConfigForm(props: {
           </label>
         </Show>
       </Show>
-      <label class="checkbox-row">
-        <input
-          type="checkbox"
-          checked={props.autoStart}
-          onChange={(event) => props.onAutoStartChange(event.currentTarget.checked)}
-        />
-        <span>Start automatically</span>
-      </label>
       <Show when={props.onRequestUserInputChange}>
         <label class="checkbox-row">
           <input

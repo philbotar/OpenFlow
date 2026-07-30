@@ -2,6 +2,8 @@ import { render } from "solid-js/web";
 import "solid-sonner/styles.css";
 import App from "../App";
 import "../styles/index.css";
+import "../styles/sidebar.css";
+import "../styles/dock-chrome.css";
 import "../styles/chat.css";
 
 const root = document.getElementById("root");

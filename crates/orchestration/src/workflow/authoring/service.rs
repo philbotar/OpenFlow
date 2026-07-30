@@ -5,6 +5,7 @@ use crate::api::{
 };
 use crate::run::prep::provider_reasoning_for_profile;
 use crate::settings::model::AppSettings;
+use crate::tool::ProjectReadTools;
 use crate::workflow::authoring::tools::{
     authoring_tool_definitions, is_authoring_tool, AuthoringToolState, MAX_AUTHORING_TOOL_ROUNDS,
 };
@@ -172,6 +173,7 @@ impl WorkflowAuthoringService {
                 }),
                 WorkflowAuthoringRole::User => Some(AgentTranscriptItem::UserMessage {
                     content: message.content.clone(),
+                    attachments: Vec::new(),
                 }),
                 WorkflowAuthoringRole::Thinking => None,
             })
@@ -184,6 +186,22 @@ impl WorkflowAuthoringService {
 
         let system_prompt = authoring_system_prompt(project_context.as_ref());
         let output_schema = authoring_finish_output_schema();
+        let project_read_tools = project_context
+            .as_ref()
+            .map(|project| {
+                let cwd = project
+                    .default_execution_cwd
+                    .as_deref()
+                    .filter(|cwd| !cwd.trim().is_empty())
+                    .unwrap_or(&project.path);
+                ProjectReadTools::new(cwd)
+                    .map_err(|error| AuthoringError::ProjectReadTools(error.to_string()))
+            })
+            .transpose()?;
+        let mut available_tools = authoring_tool_definitions();
+        if project_read_tools.is_some() {
+            available_tools.extend(ProjectReadTools::definitions());
+        }
         let task_prompt = if base_context.is_empty() {
             "Create the workflow draft incrementally using the authoring tools.".to_string()
         } else {
@@ -209,17 +227,21 @@ impl WorkflowAuthoringService {
                 node_id: NodeId::from("authoring"),
                 node_label: "Workflow authoring".to_string(),
                 model: model.clone(),
+                provider_id: None,
                 system_messages: vec![system_prompt.clone()],
                 task_prompt: task_prompt.clone(),
                 input: json!({ "userMessage": user_message }),
                 output_schema: output_schema.clone(),
                 tool_config: Default::default(),
-                available_tools: authoring_tool_definitions(),
+                available_tools: available_tools.clone(),
                 transcript: transcript.clone(),
+                entrypoint_attachments: Vec::new(),
+                resolved_attachments: Default::default(),
                 model_attempt,
                 reasoning_effort: reasoning_effort.clone(),
                 reasoning_budget_tokens,
                 allow_user_input: false,
+                conversation_mode: false,
                 tool_access_policy: engine::ToolAccessPolicy::Execution,
             };
 
@@ -232,11 +254,12 @@ impl WorkflowAuthoringService {
 
             match ai.invoke_stream(request, &sink).await {
                 Ok(AgentTurnOutcome::ToolCalls(batch)) => {
-                    if batch
-                        .tool_calls
-                        .iter()
-                        .any(|call| !is_authoring_tool(&call.name))
-                    {
+                    if batch.tool_calls.iter().any(|call| {
+                        !is_authoring_tool(&call.name)
+                            && !project_read_tools
+                                .as_ref()
+                                .is_some_and(|tools| tools.handles(&call.name))
+                    }) {
                         return Err(AuthoringError::ModelToolCalls);
                     }
                     if authoring_tool_rounds >= MAX_AUTHORING_TOOL_ROUNDS {
@@ -257,13 +280,25 @@ impl WorkflowAuthoringService {
                     {
                         transcript.push(AgentTranscriptItem::AssistantMessage { content });
                     }
+                    let mut draft_changed = false;
                     for call in &batch.tool_calls {
                         transcript.push(AgentTranscriptItem::ToolCall { call: call.clone() });
-                        let result = tool_state.execute(call);
+                        let result = if is_authoring_tool(&call.name) {
+                            draft_changed = true;
+                            tool_state.execute(call)
+                        } else {
+                            project_read_tools
+                                .as_ref()
+                                .expect("project read tool calls were validated")
+                                .execute(call)
+                                .await
+                        };
                         transcript.push(AgentTranscriptItem::ToolResult { result });
                     }
 
-                    publish_draft_progress(self, session_id, &tool_state, &on_draft_update);
+                    if draft_changed {
+                        publish_draft_progress(self, session_id, &tool_state, &on_draft_update);
+                    }
 
                     let thinking_text = thinking_buffer
                         .lock()
@@ -365,6 +400,7 @@ impl WorkflowAuthoringService {
                     });
                     transcript.push(AgentTranscriptItem::UserMessage {
                         content: AUTHORING_FINISH_REQUIRED_FEEDBACK.to_string(),
+                        attachments: Vec::new(),
                     });
                 }
                 Ok(AgentTurnOutcome::Message(_)) => {
@@ -382,6 +418,7 @@ impl WorkflowAuthoringService {
                     });
                     transcript.push(AgentTranscriptItem::UserMessage {
                         content: AUTHORING_FINISH_REQUIRED_FEEDBACK.to_string(),
+                        attachments: Vec::new(),
                     });
                     model_attempt += 1;
                 }
@@ -430,6 +467,7 @@ impl WorkflowAuthoringService {
                     });
                     transcript.push(AgentTranscriptItem::UserMessage {
                         content: missing_submit_turn_feedback(&error),
+                        attachments: Vec::new(),
                     });
                 }
                 Err(error)
@@ -440,6 +478,7 @@ impl WorkflowAuthoringService {
                     model_attempt += 1;
                     transcript.push(AgentTranscriptItem::UserMessage {
                         content: malformed_submit_output_feedback(&error),
+                        attachments: Vec::new(),
                     });
                 }
                 Err(error)
@@ -450,6 +489,7 @@ impl WorkflowAuthoringService {
                     model_attempt = model_attempt.saturating_add(1);
                     transcript.push(AgentTranscriptItem::UserMessage {
                         content: mixed_tool_turn_feedback(&error),
+                        attachments: Vec::new(),
                     });
                 }
                 Err(error) => return Err(error.into()),
@@ -612,7 +652,10 @@ fn push_invalid_draft_retry(
             "Your workflow draft failed validation: {error}. Use the authoring tools to fix the draft, then call openflow_submit_node_output with assistantMessage only."
         )
     };
-    transcript.push(AgentTranscriptItem::UserMessage { content: feedback });
+    transcript.push(AgentTranscriptItem::UserMessage {
+        content: feedback,
+        attachments: Vec::new(),
+    });
 }
 
 fn output_contains_legacy_draft(output: &Value) -> bool {
@@ -694,6 +737,9 @@ fn authoring_system_prompt(project_context: Option<&WorkflowAuthoringProjectCont
          Project name: {name}\n\
          Project path: {path}\n\
          Default execution cwd: {default_execution_cwd}\n\n\
+         Read-only project tools are available in this conversation: read, search, and find. \
+         Use them to inspect relevant files before designing repository-specific nodes. All paths \
+         must be relative to the project's execution cwd. These tools cannot modify files.\n\n\
          Use this context to make repository-aware assumptions. Prefer nodes that can inspect, \
          reason about, and modify files relative to the project's execution cwd when the user's \
          request is about this codebase. Build incrementally with the authoring tools; do not ask \

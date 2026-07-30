@@ -128,6 +128,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(agent.tools, engine::NodeToolConfig::default());
+        assert_eq!(agent.handoff, engine::HandoffSpec::Json);
         assert!(!agent.auto_start);
     }
     #[test]

@@ -5,6 +5,7 @@ import {
   ConversationContent,
   ConversationScrollButton,
   ConversationSegmentMessages,
+  Button,
   PanelEmptyState,
   StructuredAskCard,
   ToolApprovalCardBody,
@@ -21,10 +22,16 @@ export function ChatScreen() {
     }
     return state.awaitingNodeIds?.[0] ?? state.awaitingNodeId ?? null;
   });
+  const executionNodeId = createMemo(
+    () =>
+      Object.keys(ctx.runState()?.statusByNode ?? {})[0] ??
+      Object.keys(ctx.runState()?.chatLogs ?? {})[0] ??
+      null,
+  );
   const transcriptNodeId = createMemo(
     () =>
       awaitingNodeId() ??
-      Object.keys(ctx.runState()?.chatLogs ?? {})[0] ??
+      executionNodeId() ??
       GLOBAL_RUN_ENTRY_NODE_ID,
   );
   const messages = createMemo(() =>
@@ -41,9 +48,28 @@ export function ChatScreen() {
       ? ctx.runState()?.structuredInputByNode?.[nodeId] ?? null
       : null;
   });
+  const failedNodeId = createMemo(() => {
+    const state = ctx.runState();
+    if (!state?.active) {
+      return null;
+    }
+    return (
+      Object.entries(state.statusByNode).find(
+        ([, status]) => status === "failed",
+      )?.[0] ?? null
+    );
+  });
   const generating = createMemo(
-    () => ctx.runState()?.active === true && awaitingNodeId() === null,
+    () =>
+      ctx.runState()?.active === true &&
+      awaitingNodeId() === null &&
+      failedNodeId() === null,
   );
+  const contextWindow = createMemo(() => {
+    const snapshots = ctx.runState()?.contextWindowByNode ?? {};
+    const nodeId = executionNodeId();
+    return (nodeId ? snapshots[nodeId] : undefined) ?? Object.values(snapshots)[0] ?? null;
+  });
 
   return (
     <section class="chat-screen">
@@ -101,15 +127,67 @@ export function ChatScreen() {
               Thinking…
             </p>
           </Show>
+          <Show when={failedNodeId()}>
+            {(nodeId) => (
+              <div class="direct-chat-error" role="alert">
+                <div>
+                  <strong>Message failed</strong>
+                  <span>
+                    {ctx.runState()?.lastError ??
+                      "The provider request failed. Retry when the provider is available."}
+                  </span>
+                </div>
+                <Button
+                  variant="secondary"
+                  aria-label="Retry failed chat"
+                  onClick={() => void ctx.handleRetryNode(nodeId())}
+                >
+                  Retry
+                </Button>
+              </div>
+            )}
+          </Show>
+          <Show when={contextWindow()}>
+            {(usage) => (
+              <span
+                class="direct-chat-token-usage"
+                title={`Context usage for ${usage().model}`}
+              >
+                {formatTokenUsage(usage().usedTokens, usage().maxTokens)}
+              </span>
+            )}
+          </Show>
           <ConversationComposer
-            nodeId={awaitingNodeId() ?? GLOBAL_RUN_ENTRY_NODE_ID}
+            nodeId={
+              ctx.runState()?.active === true
+                ? awaitingNodeId() ??
+                  executionNodeId() ??
+                  GLOBAL_RUN_ENTRY_NODE_ID
+                : GLOBAL_RUN_ENTRY_NODE_ID
+            }
             label="chat"
-            kickoff={awaitingNodeId() === null}
-            disabled={generating() || pendingApproval() !== null}
+            kickoff={ctx.runState()?.active !== true}
+            disabled={pendingApproval() !== null}
             directChat
           />
         </div>
       </div>
     </section>
   );
+}
+
+function formatTokenUsage(usedTokens: number, maxTokens: number): string {
+  const used = formatTokenCount(usedTokens);
+  if (maxTokens <= 0) {
+    return `${used} tokens`;
+  }
+  return `${used} / ${formatTokenCount(maxTokens)} tokens`;
+}
+
+function formatTokenCount(tokens: number): string {
+  if (tokens < 1_000) {
+    return String(tokens);
+  }
+  const thousands = tokens / 1_000;
+  return `${Number.isInteger(thousands) ? thousands.toFixed(0) : thousands.toFixed(1)}k`;
 }

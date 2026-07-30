@@ -40,7 +40,7 @@ The things you hit every single run.
 | 10 | **Pre-run workflow validation** — validate before `start_run`: dangling edges, cycles, missing provider/model/key, empty prompts; surface as canvas badges + blocking dialog | Planned | *New* |
 | 36 | **Workflow insights** — continuous design-time advisory panel: graph smells, config gaps, and best-practice suggestions; non-blocking; jump-to-node fixes | Planned | [Workflow insights](#workflow-insights) |
 | 11 | **Project rules** — `.flow/rules/` under linked projects; discovered on load, merged into shared context at run start | Planned | [Project rules](#project-rules) |
-| 12 | **Input queue + structured questions** — type ahead during active runs (buffer per node, drain on `AwaitInput`); option-card questions via extended `openflow_request_user_input` | Planned | [Agent questions & todos](#agent-questions--todos) |
+| 12 | **Input queue + structured questions** — type ahead during active runs (buffer per node, drain on `AwaitInput`); option-card questions via `openflow_ask_user_question` | Planned | [Agent questions & todos](#agent-questions--todos) |
 | 13 | **Token & cost tracking** — per-turn usage from provider responses; per-node and per-run totals in trace and overview; rough cost estimate per model | Planned | *New* |
 | 14 | **Project terminal & jobs** — interactive shell tab in the bottom dock; cwd follows linked project / active run execution root; background job handles for long-running commands | In progress | [Project terminal](#project-terminal) — interactive terminal tab **Done**; job manager + async bash job ids **Planned** |
 
@@ -50,10 +50,10 @@ Getting the right context into and out of agents.
 
 | # | Item | Status | Details |
 | --- | --- | --- | --- |
-| 15 | **Attachments & file references** — attach button, `@` token combobox, drag-drop; resolved content in submit payload and entrypoint | In progress | [Attachments](#attachments--file-references) — `@` combobox + resolve-on-submit (inlined text) **Done**; attach button, drag-drop, structured payload, pills, images **Planned** |
+| 15 | **Attachments & file references** — attach button, `@` token combobox, drag-drop; resolved content in submit payload and entrypoint | In progress | [Attachments](#attachments--file-references) — managed image/document attachments and `@` references **Done**; line-range refs and assistant-originated media **Planned** |
 | 37 | **Agent prompt skill references** — `/skill` tokens in saved-agent and node system/task prompts; slash combobox + preview; expand skill bodies at run-start (or per turn) instead of pasting full instructions | Planned | [Agent prompt skill references](#agent-prompt-skill-references) |
 | 16 | **Upstream read-file context** — read-tier ledger per node; `read_files` in downstream node input alongside `changed_files` | Planned | [Upstream read-file context](#upstream-read-file-context) |
-| 17 | **Node handoff artifacts & output review** — per-node plan/md files in a canonical run dir; per-node opt-in review gate before downstream starts (Cursor-like) | Planned | [Node handoff artifacts & output review](#node-handoff-artifacts--output-review) |
+| 17 | **Node handoff artifacts & output review** — canonical Markdown/JSON artifacts plus an optional review gate before downstream starts | In progress | [Node handoff artifacts & output review](#node-handoff-artifacts--output-review) — artifact formats, storage, manifests, downstream reads, and Inspector controls **Done**; review gate/UI **Planned** |
 | 18 | **Context used panel** — per-turn ledger of shared context, rules, skills, attachments, upstream artifacts; composer panel + per-turn attribution | Planned | [Context used](#context-used) |
 | 19 | **Global chat** — unified run-wide transcript in execution-layer order; per-awaiting-node reply bubbles for parallel pauses | Done | [Global chat](#global-chat) |
 
@@ -96,7 +96,6 @@ Small or speculative items — pick up opportunistically or when a tier item tou
 
 - Remove `Context:` / `Task:` labels from chat (upstream `Context:` blocks no longer projected on pause; model prompt labels may still appear in trace)
 - Skill discovery settings — unified skills section in Settings (currently scans Cursor/Codex/Claude roots)
-- Remove per-node JSON output schema editing (keep internal defaults)
 - System-level notifications (run complete, agent question while unfocused)
 - Sidebar search across workflows and agents
 - Warn on close: unsaved changes / active run
@@ -619,7 +618,7 @@ Per-node and workflow-level `reasoning_effort` / `reasoning_budget_tokens` are i
 
 ### Agent questions & todos
 
-Agents can ask for free-text or structured input via `openflow_request_user_input` (`AgentNeedUserInput` → `AwaitInput` → chat composer or option cards when `awaitingNodeId` matches). Agents can also publish an in-chat phase checklist with `openflow_update_todo_list`. Input still cannot be queued while a node is running.
+Agents ask for free-text input via `openflow_request_user_input` or structured choices via `openflow_ask_user_question` (`AgentNeedUserInput` → `AwaitInput` → chat composer or option cards when `awaitingNodeId` matches). Direct-chat plain messages end a turn without either tool. Agents can also publish an in-chat phase checklist with `openflow_update_todo_list`. Input still cannot be queued while a node is running.
 
 | Layer | Gap |
 | --- | --- |
@@ -635,7 +634,7 @@ Agents can ask for free-text or structured input via `openflow_request_user_inpu
 | Drain queue on `AwaitInput` — deliver oldest-first when agent requests input | High | Planned |
 | Queued input UI — show pending messages in composer; allow edit/remove before delivery | Medium | Planned |
 | Structured questions — option cards / multiple-choice in chat | High | Done |
-| Question builtin — extend `openflow_request_user_input` with 1-3 questions, options, and question id | High | Done |
+| Question builtin — dedicated `openflow_ask_user_question` with 1-3 questions, options, and question id | High | Done |
 | In-run todo list — agent-managed tasks visible in dock or chat chrome | Medium | Planned |
 | Todo builtin — `openflow_update_todo_list` internal tool + conversation projection to UI | Medium | Done |
 | Notify when an agent asks a question while user is on another node | Medium | Planned |
@@ -650,7 +649,7 @@ Agents can ask for free-text or structured input via `openflow_request_user_inpu
 | Layer | Role |
 | --- | --- |
 | `crates/ui/src/lib/workflow.ts` | `projectChatLayout` — layer order, settled vs live columns, overflow tabs |
-| `crates/ui/src/context/appProvider/useRunSession.ts` + `useChatComposer.ts` | Merged layout state, kickoff/flush, per-node draft + submit routing |
+| `crates/ui/src/context/appProvider/useRunSession.ts` + `useChatComposer.ts` | Merged layout state, direct kickoff, per-node draft + submit routing |
 | `crates/ui/src/components/conversation/ChatPanel.tsx` | Settled segments + live column strip |
 | `crates/orchestration/src/run/state/` | `chatLogs: Record<NodeId, ChatMessage[]>` — source of truth |
 
@@ -718,7 +717,7 @@ A workflow node is **incomplete** until the agent calls `openflow_submit_node_ou
 
 ### Attachments & file references
 
-Users can invoke skills with `/skill` tokens and attach project context with `@{path}` tokens in the chat composer. On submit (including idle run kickoff), referenced paths are read under the execution cwd and inlined into the message text. Structured `referenced_files` payloads, attach button, drag-drop, pills, and vision images are not shipped yet.
+Users can invoke skills with `/skill` tokens, attach project context with `@{path}` tokens, or add managed files in the chat composer. Paperclip selection, image paste, and drag-drop accept images and allowlisted documents. The backend validates and copies them into the run, persists metadata refs in transcripts/checkpoints, and hydrates bytes only for provider invocation. `@` references remain execution-cwd text context; line-range structured refs are still planned.
 
 | Layer | Role / gap |
 | --- | --- |
@@ -726,8 +725,8 @@ Users can invoke skills with `/skill` tokens and attach project context with `@{
 | `crates/ui/src/components/conversation/FileReferenceCombobox.tsx` | Project file combobox in composer — **Done** |
 | `crates/orchestration/src/project/file_refs.rs` | List + read referenced paths under execution cwd jail — **Done** |
 | `crates/ui/src/context/appProvider/useChatComposer.ts` | `resolveChatSubmission` reads refs before `submit_user_input` / run kickoff — **Done** |
-| `crates/ui/src/components/conversation/` | No attach button, drag-drop target, reference pills, or preview chrome |
-| `crates/engine/src/execution/` | User input is a single string; no structured `referenced_files` in transcript or node input |
+| `crates/ui/src/components/conversation/` | Attach button, paste/drop, pending cards, image previews, and document cards — **Done** |
+| `crates/engine/src/execution/` | Text plus attachment refs in entrypoint and user transcript turns — **Done** |
 
 | Item | Priority | Status |
 | --- | --- | --- |
@@ -735,15 +734,16 @@ Users can invoke skills with `/skill` tokens and attach project context with `@{
 | Reference resolution — read file content under execution cwd on submit; reject paths outside project jail | High | Done |
 | Entrypoint attachments — resolve `@{path}` tokens when starting a run from idle composer | Medium | Done (inlined into entrypoint text) |
 | Reference budget — max files, max bytes, truncate with notice in formatted submit text | Low | Done (65536-byte cap in `file_refs.rs`) |
-| Attach button — paperclip in composer opens file picker over linked-project tree | High | Planned |
-| Drag-and-drop — drop files onto composer to attach (paths resolved under execution cwd jail) | Medium | Planned |
-| Structured submit payload — `referenced_files: [{ path, content \| excerpt }]` alongside message text | High | Planned |
+| Attach button — paperclip opens the native multi-file picker | High | Done |
+| Drag-and-drop and image paste — stage opaque app-data copies, then ingest managed run copies | Medium | Done |
+| Structured submit payload — text plus ordered attachment source tokens/paths; transcript stores safe refs | High | Done |
 | Transcript shape — persist references in `AgentTranscriptItem::UserMessage` and chat log projection | Medium | Planned |
-| Composer chrome — pills for attached paths; expandable preview (path + line range + size cap); remove via × | Medium | Planned |
-| Image attachments — paste or pick images; encode for vision-capable providers when model supports it | Medium | Planned |
+| Composer chrome — ordered filename/size cards with remove control; no source-path display | Medium | Done |
+| Image attachments — paste, drop, or pick; provider encoding plus durable replay preview | Medium | Done |
+| Document attachments — PDF and allowlisted UTF-8 documents; inactive metadata cards | Medium | Done |
 | Line-range refs — `@path:10-40` or selection-from-editor hook | Low | Planned |
 
-**Target:** Attach project files via button, `@` token, or drag-drop before send (or on run start). Resolved content is injected into the user message or entrypoint JSON so the agent sees explicit file context without an extra `read` tool round. Images attach when the selected model supports vision.
+**Target:** Attach files via button, `@` token, paste, or drag-drop before send or run start. Managed files survive replay without exposing original paths. Images/documents reach providers when the selected model supports that media. Line-range reference UX remains planned.
 
 ### Agent prompt skill references
 
@@ -894,48 +894,30 @@ Downstream nodes receive upstream `output` JSON and transitive `changed_files` (
 
 ### Node handoff artifacts & output review
 
-Planning nodes often produce markdown plans or specs that downstream implementer nodes must read. Today handoff is only structured JSON in `openflow_submit_node_output` — agents can `write` a plan anywhere under the execution cwd, but there is no canonical path, no stable reference in upstream input, and no human review gate before the next layer starts. The standalone [plan review tool](#interactive-plan-review-tool) covers offline review; this item brings the same workflow **in-app** at node completion.
+Nodes now select a Markdown or JSON handoff in the Inspector. New nodes default to a heading-based Markdown template; workflows saved before this field existed load as JSON to preserve their output schemas. After `openflow_submit_node_output`, orchestration validates the configured contract and writes `HANDOFF.md` or `HANDOFF.json` under the run root. The completion event, checkpoint, run state, and downstream `input.upstream[].handoff` carry an immutable `run://` URI, media type, size, and SHA-256 digest. Downstream nodes can open that URI with `read`.
 
-| Layer | Gap |
-| --- | --- |
-| `crates/engine/src/graph/` | No `handoff` config on agent nodes (primary artifact filename, optional extra paths); no `require_output_review` flag |
-| `crates/engine/src/execution/interactive_engine/` | Submit success immediately stores output and may schedule downstream — no `AwaitOutputReview` pause |
-| `crates/engine/src/execution/node_invocation.rs` | `build_node_input` passes `upstream[].output` only — no `handoff_files` block with canonical paths |
-| `crates/orchestration/src/run/execution/drive.rs` | No handoff dir materialization under the run artifact root |
-| `crates/orchestration/src/adapters/storage/` | No `{project}/.flow/runs/{run_id}/handoffs/{node_id}/` layout (ties to [#24 Run checkpoint & replay](#run-checkpoint-history-and-replay)) |
-| `crates/ui/src/forms/` | Inspector has no "Require output review" toggle or primary handoff filename |
-| `crates/ui/src/components/conversation/` | No in-run plan review panel (markdown render, anchored comments, approve / request changes) |
-
-**Decisions (resolve before coding):**
-
-| ID | Question | Recommendation |
-| --- | --- | --- |
-| H1 | Review scope | **Per-node opt-in** — `require_output_review` on agent node config; default off; planning nodes enable explicitly |
-| H2 | Where do handoff files live? | Run-scoped under linked project: `{project}/.flow/runs/{run_id}/handoffs/{node_id}/` (app-only workflows mirror in app data dir) |
-| H3 | Canonical primary file | Default `plan.md` per node; overridable in inspector (e.g. `spec.md`, `design.md`) |
-| H4 | Who writes the file? | Agent via `write`/`edit` under the handoff path **or** host copies `assistant_message` / submit `output.plan_text` when present — preamble documents the convention |
-| H5 | When does review run? | After valid `openflow_submit_node_output`, **before** output is committed and downstream layer schedules — new `AwaitOutputReview` engine pause (parallel to `AwaitToolApproval`) |
-| H6 | Review actions | **Approve** — commit output, write handoff manifest, advance layer. **Request changes** — reject submit, inject review comments into transcript, resume agent. **Block** — mark node failed or stopped per workflow policy |
-| H7 | Downstream discovery | `AgentRequest.input` adds `handoff_files: [{ node_id, primary_path, paths[] }]` per upstream node that produced artifacts — downstream preamble: "read upstream handoff at …" |
+The remaining scope is optional human output review before downstream scheduling. The standalone [plan review tool](#interactive-plan-review-tool) covers offline review; this item brings the same workflow **in-app** at node completion.
 
 | Item | Priority | Status |
 | --- | --- | --- |
-| Handoff path convention — document `{run_id}/handoffs/{node_id}/plan.md` in `NODE_RUNTIME_PREAMBLE` and glossary | High | Planned |
-| Node schema — `handoff.primary_file` (default `plan.md`), optional `handoff.additional_paths`; `require_output_review: bool` | High | Planned |
-| Inspector controls — primary filename + "Require output review before handoff" toggle per node | High | Planned |
-| Handoff materialization — on submit, ensure handoff dir exists; copy or validate agent-written files; write `manifest.json` (paths, hashes, review status) | High | Planned |
+| Handoff path convention — `{run_id}/handoffs/{node_id}/HANDOFF.md` or `HANDOFF.json`; expose as `run://handoffs/...` | High | Done |
+| Node schema — tagged `HandoffSpec` with Markdown template or JSON schema; old workflows migrate to JSON | High | Done |
+| Inspector controls — select Markdown/JSON, edit Markdown template or JSON output schema | High | Done |
+| Handoff materialization — validate submit, atomically write artifact, calculate SHA-256 manifest | High | Done |
+| Downstream input/read — attach manifest to `input.upstream[]`; allow `read` on `run://handoffs/...` | High | Done |
+| Run state/checkpoint — retain handoff manifest through completion projection and resume | Medium | Done |
+| Node schema — `require_output_review: bool`, default off | High | Planned |
 | `AwaitOutputReview` — engine pause after schema-valid submit when `require_output_review`; hold output in pending until human decision | High | Planned |
 | In-app review UI — render primary markdown in dock/chat; select-to-comment; verdict chips (`approve` / `block` / `question`); reuse patterns from `tools/plan-review.html` | High | Planned |
 | Review IPC — `submit_output_review(node_id, decision, comments?)` → engine `on_output_review_decision` | High | Planned |
-| Downstream input — `handoff_files` in `build_node_input` alongside `upstream` and `changed_files` | High | Planned |
-| Run state projection — `pendingOutputReviews`, handoff paths in trace/overview, status icon `awaiting_output_review` | Medium | Planned |
+| Review run state — `pendingOutputReviews` plus status icon `awaiting_output_review` | Medium | Planned |
 | Export review — export anchored comments as markdown for the implementing agent (same format as standalone plan review tool) | Medium | Planned |
-| Checkpoint round-trip — pending output review + handoff manifest included in resume snapshot ([#24](#run-checkpoint-history-and-replay)) | Medium | Planned |
+| Checkpoint round-trip — pending output-review state included in resume snapshot ([#24](#run-checkpoint-history-and-replay)) | Medium | Planned |
 | Optional workflow template — bundled plan→review→implement workflow using handoff + review toggles | Low | Planned |
 
-**Target:** A planning node writes `plan.md` to a known path, pauses for human review when opted in, and only then hands off. The implementer node's input lists the exact path(s) — no guessing which file the planner meant. Review UX matches Cursor plan review: read markdown, comment on passages, approve or send back for revision.
+**Remaining target:** A configured node pauses after creating its canonical handoff, before downstream scheduling. Review UX matches Cursor plan review: read Markdown, comment on passages, approve, block, or send back for revision.
 
-**Depends on:** [#5 Node completion](#node-completion) (submit contract), [#6 Run lifecycle](#run-lifecycle) (artifact dirs), [#24 Run checkpoint & replay](#run-checkpoint-history-and-replay) (durable handoff paths). **Unlocks:** plan→implement workflow templates, audit trail for agent plans, LLM handoff via exported review markdown.
+**Depends on:** [#5 Node completion](#node-completion) (submit contract) and [#24 Run checkpoint & replay](#run-checkpoint-history-and-replay) (durable review state). **Unlocks:** reviewed plan→implement workflow templates and LLM handoff via exported review Markdown.
 
 **Reference:** Submit contract — [`node_invocation.rs`](../crates/engine/src/execution/node_invocation.rs); offline review UX — `tools/plan-review.html`; tool-approval pause pattern — `AwaitToolApproval` in [`interactive_engine`](../crates/engine/src/execution/interactive_engine/mod.rs).
 

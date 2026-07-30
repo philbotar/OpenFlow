@@ -130,7 +130,7 @@ Before editing, classify the change with [`docs/contributing/development-lanes.m
 | Path | Purpose | Change Here When... |
 | --- | --- | --- |
 | `Cargo.toml` | Workspace members and shared dependencies | Adding crates or shared dep versions |
-| `crates/engine/src/graph/` | Workflow model, `WorkflowSettings`, node config, `CallableAgent`, DAG validation | Changing schema, graph rules, or scheduling |
+| `crates/engine/src/graph/` | Workflow model, `WorkflowSettings`, node config, `HandoffSpec`, `CallableAgent`, DAG validation | Changing schema, graph rules, handoff contracts, or scheduling |
 | `crates/engine/src/execution/interactive_engine/` | Interactive engine `run()` loop | Changing pause/resume or self-driving run behavior |
 | `crates/engine/src/execution/subagent_runtime.rs` | Subagent declare/call builtins + turn machine | Changing subagent invocation semantics |
 | `crates/engine/src/execution/telemetry.rs` | `RunTelemetry` interactive event enum | Changing run event vocabulary |
@@ -160,6 +160,7 @@ Before editing, classify the change with [`docs/contributing/development-lanes.m
 | `crates/orchestration/src/run/coordinator.rs` | Active run session, start/submit/apply events | Changing run lifecycle coordination |
 | `crates/orchestration/src/run/execution/` | `drive/`, `headless.rs`, `tool_port.rs`, event projection, cwd | Changing execution host semantics |
 | `crates/orchestration/src/run/skill_invocation.rs` | Resolve task-prompt `/skill-id` commands at run start | Changing static agent skill invocation |
+| `crates/orchestration/src/run/handoff.rs` | Validate, persist, hash, and resolve canonical node handoff artifacts | Changing `HANDOFF.md` / `HANDOFF.json` storage |
 | `crates/orchestration/src/run/state.rs` | Run/edit state, trace, chat logs | Changing run state or editor mutations |
 | `crates/orchestration/src/adapters/storage/app_workflow_store.rs` | App workflows (`workflows.json`) | Changing app workflow persistence |
 | `crates/orchestration/src/adapters/storage/chat_store.rs` | Direct chats (`openflow/chats.json`) | Changing saved ad-hoc conversation persistence |
@@ -182,7 +183,7 @@ Before editing, classify the change with [`docs/contributing/development-lanes.m
 | `crates/ui/src/components/` | Header, sidebar, conversation UI | Changing shared chrome |
 | `crates/ui/src/panels/` | Inspector, workflow settings, dock | Changing editor side panels |
 | `crates/ui/src/canvas/` | Workflow graph rendering | Changing canvas look/behavior |
-| `crates/ui/src/forms/` | Node/agent configuration editors | Changing inspector forms |
+| `crates/ui/src/forms/` | Node/agent configuration editors, including `HandoffEditor` | Changing inspector forms |
 | `crates/ui/src/api.ts` | Typed Tauri invoke/event wrappers and UI desktop boundary | Changing RPC names, event listeners, or payloads |
 | `crates/ui/src/lib/types.ts` | Frontend DTO mirror types | Changing command payload shapes |
 | `crates/ui/src/styles/index.css` | Global styles and layout tokens | Changing spacing, inspector, dock CSS |
@@ -236,13 +237,17 @@ Before editing, classify the change with [`docs/contributing/development-lanes.m
 | Projects | `{data_local}/openflow/projects.json` (migrates from legacy slug) |
 | Saved agents | `{data_local}/openflow/agents.json` (migrates from legacy slug) |
 | Project workflows | `{project}/.flow/workflows/{workflowId}.workflow.json` |
+| Node handoffs | `{run_root}/{runId}/handoffs/{nodeId}/HANDOFF.md` or `HANDOFF.json` |
 | Provider API keys | Plaintext in `settings.json` (`ProviderProfile.api_key`) |
 
 `AppBackend::load_all_workflows` merges app-store and project-discovered workflows (project files win on ID collision).
 
 API key resolution order (highest to lowest): transient input panel → stored settings key (`ProviderProfile.api_key`) → provider env var fallback (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, etc.).
 
-At run prep, an empty node model inherits the active provider's `default_model`.
+Provider resolution order is node `AgentNodeConfig.provider_id` → workflow
+`WorkflowSettings.provider_id` → active settings provider.
+
+At run prep, an empty node model inherits its effective provider's `default_model`.
 An explicit node model overrides that default.
 
 ## Verification Commands

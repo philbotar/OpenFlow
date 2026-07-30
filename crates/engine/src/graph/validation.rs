@@ -1,5 +1,5 @@
-use crate::graph::workflow::Workflow;
-use crate::graph::{EdgeId, NodeId};
+use crate::graph::workflow::{effective_output_schema, Workflow};
+use crate::graph::{validate_markdown_handoff_template, EdgeId, HandoffSpec, NodeId};
 use std::collections::{HashMap, HashSet};
 use thiserror::Error;
 
@@ -21,6 +21,10 @@ pub enum WorkflowValidationError {
     PlanModeSourceMissing(NodeId),
     #[error("plan mode source node {0} must allow user input")]
     PlanModeSourceNotInteractive(NodeId),
+    #[error("node {node_id} output schema is invalid: {detail}")]
+    InvalidOutputSchema { node_id: NodeId, detail: String },
+    #[error("node {node_id} Markdown handoff template is invalid: {detail}")]
+    InvalidHandoffTemplate { node_id: NodeId, detail: String },
     #[error("internal consistency: {0}")]
     InternalConsistency(String),
 }
@@ -84,6 +88,31 @@ fn check_plan_mode_source(workflow: &Workflow) -> Result<(), WorkflowValidationE
     Ok(())
 }
 
+fn check_output_schemas(workflow: &Workflow) -> Result<(), WorkflowValidationError> {
+    for node in &workflow.nodes {
+        match &node.agent.handoff {
+            HandoffSpec::Markdown { template } => {
+                if let Err(error) = validate_markdown_handoff_template(template) {
+                    return Err(WorkflowValidationError::InvalidHandoffTemplate {
+                        node_id: node.id.clone(),
+                        detail: error.to_string(),
+                    });
+                }
+            }
+            HandoffSpec::Legacy | HandoffSpec::Json => {
+                let schema = effective_output_schema(&node.agent.output_schema);
+                if let Err(error) = jsonschema::validator_for(&schema) {
+                    return Err(WorkflowValidationError::InvalidOutputSchema {
+                        node_id: node.id.clone(),
+                        detail: error.to_string(),
+                    });
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 /// # Errors
 /// Returns an error if the workflow is invalid.
 pub fn validate_workflow(workflow: &Workflow) -> Result<(), WorkflowValidationError> {
@@ -91,14 +120,15 @@ pub fn validate_workflow(workflow: &Workflow) -> Result<(), WorkflowValidationEr
 }
 
 /// # Errors
-/// Returns an error if the workflow is invalid (empty, duplicate ids, missing endpoints, cycles,
-/// or internal consistency violation).
+/// Returns an error if the workflow is invalid (empty, malformed output schema, duplicate ids,
+/// missing endpoints, cycles, or internal consistency violation).
 pub fn execution_layers(workflow: &Workflow) -> Result<Vec<Vec<NodeId>>, WorkflowValidationError> {
     if workflow.nodes.is_empty() {
         return Err(WorkflowValidationError::EmptyWorkflow);
     }
 
     let node_ids = check_duplicate_nodes(workflow)?;
+    check_output_schemas(workflow)?;
     check_duplicate_edges_and_endpoints(workflow, &node_ids)?;
     check_plan_mode_source(workflow)?;
 
@@ -328,5 +358,47 @@ mod tests {
 
         workflow.nodes[0].agent.request_user_input = true;
         assert!(validate_workflow(&workflow).is_ok());
+    }
+
+    #[test]
+    fn rejects_malformed_effective_output_schema_before_provider_invocation() {
+        let mut workflow = workflow_with_nodes(&["broken"]);
+        workflow.nodes[0].agent.handoff = crate::graph::HandoffSpec::Json;
+        workflow.nodes[0].agent.output_schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "summary": "string"
+            }
+        });
+
+        let error = validate_workflow(&workflow).unwrap_err();
+        assert!(error
+            .to_string()
+            .starts_with("node broken output schema is invalid:"));
+
+        assert!(
+            matches!(
+                error,
+                WorkflowValidationError::InvalidOutputSchema { ref node_id, .. }
+                    if node_id == &NodeId::from("broken")
+            ),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn rejects_markdown_handoff_template_without_headings() {
+        let mut workflow = workflow_with_nodes(&["broken"]);
+        workflow.nodes[0].agent.handoff = crate::graph::HandoffSpec::Markdown {
+            template: "Write a useful handoff.".to_string(),
+        };
+
+        assert_eq!(
+            validate_workflow(&workflow),
+            Err(WorkflowValidationError::InvalidHandoffTemplate {
+                node_id: NodeId::from("broken"),
+                detail: "template requires at least one Markdown heading".to_string(),
+            })
+        );
     }
 }

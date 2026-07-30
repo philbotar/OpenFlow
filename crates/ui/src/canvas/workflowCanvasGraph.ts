@@ -84,8 +84,8 @@ export function buildFlowNodes(
     },
     selectable: true,
     deletable: true,
-    width: NODE_WIDTH,
-    height: NODE_HEIGHT,
+    initialWidth: NODE_WIDTH,
+    initialHeight: NODE_HEIGHT,
   }));
 }
 
@@ -147,8 +147,8 @@ export function reconcileFlowNodes(
       current.position.x === position.x &&
       current.position.y === position.y &&
       current.data === data &&
-      current.width === incoming.width &&
-      current.height === incoming.height
+      current.initialWidth === incoming.initialWidth &&
+      current.initialHeight === incoming.initialHeight
     ) {
       result.push(current);
       continue;

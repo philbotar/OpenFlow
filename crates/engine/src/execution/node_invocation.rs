@@ -1,8 +1,9 @@
 //! Shared node input assembly and [`AgentRequest`] construction for execution engines.
 
 use crate::conversation::AgentTranscriptItem;
-use crate::execution::RunError;
-use crate::graph::{Node, NodeId, Workflow};
+use crate::conversation::ChatAttachmentRef;
+use crate::execution::{HandoffArtifact, RunError};
+use crate::graph::{submission_output_schema, HandoffSpec, Node, NodeId, Workflow};
 use crate::ports::AgentRequest;
 use crate::tools::{
     merge_file_change_record, merge_read_record, FileChangeRecord, ReadRecord, ToolDefinition,
@@ -51,14 +52,15 @@ You are one agent node in a workflow graph. Downstream nodes start only after yo
 successfully submit this node's output.\n\
 \n\
 ## Tool catalog
-Every turn advertises openflow_submit_node_output, optional openflow_request_user_input when \
+Every turn advertises openflow_submit_node_output, optional human-input harness tools when \
 enabled for this node, and your node's executable tools together. The live tool schemas on \
-each request are authoritative.\n\
+each request are authoritative. openflow_request_user_input asks one free-text question; \
+openflow_ask_user_question presents structured choices.\n\
 \n\
 ## Batching rules\n\
-- Call either exactly one harness tool alone (openflow_submit_node_output, or \
-openflow_request_user_input when available), or one or more executable tools — never mix \
-harness and executable tools in the same response.\n\
+- Call either exactly one harness tool alone (openflow_submit_node_output, \
+openflow_request_user_input, or openflow_ask_user_question when available), or one or more \
+executable tools — never mix harness and executable tools in the same response.\n\
 - Use executable tools whenever you need reads, edits, search, or shell work; there is no \
 separate step to unlock them.\n\
 - openflow_submit_node_output finishes the node; call it only when the task is complete and \
@@ -91,18 +93,18 @@ path as the string value instead of reading and duplicating the full file. Downs
 must read repository-relative paths received in upstream output before using their contents.\n\
 \n\
 ## When to pause for a human\n\
-Call openflow_request_user_input when you cannot complete the task without human clarification. \
-For free text, use {\"assistant_message\": \"<one direct question>\"}. When 2-3 clear choices \
-cover the likely answers, use questions with 1-3 items; each item needs a stable snake_case id, \
-a header of at most 12 characters, one question, and 2-3 options with label and description. \
-You may include assistant_message as a short intro with structured questions. After the human \
-replies, continue working toward submit.\n\
+When you cannot complete the task without human clarification, call \
+openflow_request_user_input for one free-text question. When 2-3 clear choices make the required \
+decision easier, call openflow_ask_user_question with 1-3 items; each item needs a stable \
+snake_case id, a header of at most 12 characters, one question, and 2-3 options with label and \
+description. After the human replies, continue working toward submit.\n\
 \n\
 ## Operating rules\n\
 - Follow the node task prompt and any workflow context directly. Be concise in human-facing \
 assistant messages; keep detailed reasoning in your private work.\n\
 - Gather enough context before acting. Use input.upstream, input.changed_files, and input.reads \
-first, then read/search/find only the files needed to make a correct change or answer.\n\
+first. When an upstream entry includes handoff, read its run:// URI before using the artifact's \
+contents. Then read/search/find only the files needed to make a correct change or answer.\n\
 - Read before you edit. For existing files, inspect the relevant contents, preserve indentation \
 and local style, and prefer the smallest edit that satisfies the task.\n\
 - Recover from failed tool calls. Tool errors, failed edits, empty searches, and truncated output \
@@ -119,7 +121,8 @@ Never mix a harness tool with executable tools in the same response. Tool schema
 request are authoritative for parameters.\n\
 \n\
 ### Read and search\n\
-- read — read a local file, directory listing, HTTP(S) URL, or spilled tool artifact. Default \
+- read — read a local file, directory listing, HTTP(S) URL, run:// handoff, or spilled tool \
+artifact. Default \
 output is numbered lines (3000-line cap). Append :start-end for a line range (e.g. src/lib.rs:10-20) \
 or :raw for full unnumbered content. Truncated tool output is readable via artifact:{id} \
 (same selectors apply).\n\
@@ -199,6 +202,15 @@ Every turn must call executable tools or openflow_submit_node_output; plain-text
 do not advance or pause the workflow. If information is missing, make the most reasonable \
 assumption, note it in your submitted output, and keep working to submit.";
 
+/// Override appended for direct-conversation execution nodes.
+pub(crate) const CONVERSATION_NODE_PREAMBLE: &str = "\
+--- Conversation mode ---\n\
+A plain assistant message completes the current turn and pauses for the next human message. \
+This overrides the workflow rule that prose never pauses. Reply naturally without calling a \
+harness tool. Call openflow_ask_user_question only when the human's answer is required and \
+structured choices make the decision easier. openflow_request_user_input is not available. \
+Call openflow_submit_node_output only when the conversation itself should terminate.";
+
 /// Extra capability contract visible only to the selected Plan Mode evidence source.
 pub(crate) const PLAN_SOURCE_PREAMBLE: &str = "\
 --- Selected Plan Mode evidence source ---\n\
@@ -236,6 +248,30 @@ pub(crate) fn build_system_messages(
     }
     if !node.agent.request_user_input && !is_plan_source {
         messages.push(AUTONOMOUS_NODE_PREAMBLE.to_string());
+    }
+    if node.agent.conversation_mode {
+        messages.push(CONVERSATION_NODE_PREAMBLE.to_string());
+    }
+    match &node.agent.handoff {
+        HandoffSpec::Markdown { template } => {
+            messages.push(format!(
+                "--- Markdown handoff ---\n\
+Your final result is a run-scoped Markdown artifact. Fill every heading in this template, \
+preserve the heading text, then submit it under output.markdown. The host validates the \
+headings, stores HANDOFF.md, and gives downstream nodes its immutable run:// reference.\n\
+\n\
+{template}"
+            ));
+        }
+        HandoffSpec::Json => {
+            messages.push(
+                "--- JSON handoff ---\n\
+Your schema-valid output becomes HANDOFF.json. The host gives downstream nodes its immutable \
+run:// reference alongside the structured output."
+                    .to_string(),
+            );
+        }
+        HandoffSpec::Legacy => {}
     }
     if let Some(root) = project_repository_root
         .map(str::trim)
@@ -326,7 +362,9 @@ pub(crate) fn build_node_input<S: std::hash::BuildHasher>(
     node_id: &str,
     upstream_by_node: &HashMap<NodeId, Vec<NodeId>, S>,
     outputs_by_node: &BTreeMap<NodeId, Value>,
+    handoffs_by_node: &BTreeMap<NodeId, HandoffArtifact>,
     entrypoint_text: Option<&str>,
+    entrypoint_attachments: &[ChatAttachmentRef],
     changed_files_by_node: &BTreeMap<NodeId, Vec<FileChangeRecord>>,
     reads_by_node: &BTreeMap<NodeId, Vec<ReadRecord>>,
     forward_upstream_reads: bool,
@@ -340,10 +378,14 @@ pub(crate) fn build_node_input<S: std::hash::BuildHasher>(
         .flat_map(|ids| ids.iter())
         .filter_map(|id| {
             outputs_by_node.get(id).map(|output| {
-                json!({
+                let mut upstream = json!({
                     "node_id": id,
                     "output": output
-                })
+                });
+                if let Some(handoff) = handoffs_by_node.get(id) {
+                    upstream["handoff"] = json!(handoff);
+                }
+                upstream
             })
         })
         .collect::<Vec<_>>();
@@ -355,11 +397,17 @@ pub(crate) fn build_node_input<S: std::hash::BuildHasher>(
     };
 
     if upstream.is_empty() {
-        if let Some(text) = entrypoint_text.filter(|text| !text.trim().is_empty()) {
+        let text = entrypoint_text
+            .filter(|text| !text.trim().is_empty())
+            .unwrap_or_default();
+        if !text.is_empty() || !entrypoint_attachments.is_empty() {
             let mut payload = json!({
                 "entrypoint": { "text": text },
                 "upstream": []
             });
+            if !entrypoint_attachments.is_empty() {
+                payload["entrypoint"]["attachments"] = json!(entrypoint_attachments);
+            }
             if !changed_files.is_empty() {
                 payload["changed_files"] = json!(changed_files);
             }
@@ -391,14 +439,28 @@ pub(crate) struct NodeInvocationContext<'a> {
     pub workflow: &'a Workflow,
     pub upstream_map: &'a HashMap<NodeId, Vec<NodeId>>,
     pub outputs: &'a BTreeMap<NodeId, Value>,
+    pub handoffs: &'a BTreeMap<NodeId, HandoffArtifact>,
     pub changed_files_by_node: &'a BTreeMap<NodeId, Vec<FileChangeRecord>>,
     pub reads_by_node: &'a BTreeMap<NodeId, Vec<ReadRecord>>,
     pub entrypoint_text: Option<&'a str>,
+    pub entrypoint_attachments: &'a [ChatAttachmentRef],
     pub transcript: &'a [AgentTranscriptItem],
     pub available_tools: &'a [ToolDefinition],
     pub project_repository_root: Option<&'a str>,
     pub frozen_change_evidence_packet:
         Option<&'a crate::execution::interactive_engine::FrozenChangeEvidencePacket>,
+}
+
+pub(crate) fn effective_node_provider_id(workflow: &Workflow, node: &Node) -> Option<String> {
+    [
+        node.agent.provider_id.as_deref(),
+        workflow.settings.provider_id.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .map(str::trim)
+    .find(|provider_id| !provider_id.is_empty())
+    .map(ToString::to_string)
 }
 
 /// # Errors
@@ -422,27 +484,37 @@ pub(crate) fn build_agent_request(
         node_id: node.id.clone(),
         node_label: node.label.clone(),
         model: node.agent.model.clone(),
+        provider_id: effective_node_provider_id(ctx.workflow, node),
         system_messages: build_system_messages(ctx.workflow, node, ctx.project_repository_root),
         task_prompt: node.agent.task_prompt.clone(),
         input: build_node_input(
             &node.id,
             ctx.upstream_map,
             ctx.outputs,
+            ctx.handoffs,
             ctx.entrypoint_text,
+            ctx.entrypoint_attachments,
             ctx.changed_files_by_node,
             ctx.reads_by_node,
             ctx.workflow.settings.forward_upstream_reads,
             ctx.frozen_change_evidence_packet,
         ),
-        output_schema: node.agent.output_schema.clone(),
+        output_schema: submission_output_schema(&node.agent),
         tool_config: node.agent.tools.clone(),
         available_tools: ctx.available_tools.to_vec(),
         transcript: ctx.transcript.to_vec(),
+        entrypoint_attachments: if ctx.upstream_map.get(&node.id).is_none_or(Vec::is_empty) {
+            ctx.entrypoint_attachments.to_vec()
+        } else {
+            Vec::new()
+        },
+        resolved_attachments: BTreeMap::new(),
         model_attempt: 1,
         reasoning_effort: node.agent.reasoning_effort.clone(),
         reasoning_budget_tokens: node.agent.reasoning_budget_tokens,
         tool_access_policy: crate::ports::ToolAccessPolicy::Execution,
         allow_user_input: node.agent.request_user_input,
+        conversation_mode: node.agent.conversation_mode,
     })
 }
 
@@ -460,11 +532,14 @@ mod tests {
         node.agent.system_prompt = "You are a planner.".to_string();
         let messages = build_system_messages(&workflow, &node, None);
         assert!(messages[0].contains("--- OpenFlow runtime ---"));
-        assert!(messages[1].contains("You are a planner."));
+        assert!(messages
+            .iter()
+            .any(|message| message.contains("You are a planner.")));
         assert!(messages[0].contains("openflow_submit_node_output"));
         assert!(messages[0].contains("ast_grep"));
         assert!(messages[0].contains("ast_edit"));
         assert!(messages[0].contains("artifact:{id}"));
+        assert!(messages[0].contains("run://"));
     }
 
     #[test]
@@ -483,6 +558,22 @@ mod tests {
         assert!(NODE_RUNTIME_PREAMBLE.contains("Never call write with path only"));
         assert!(NODE_RUNTIME_PREAMBLE.contains("bash is not available during planning"));
         assert!(NODE_RUNTIME_PREAMBLE.contains("small stub first"));
+    }
+
+    #[test]
+    fn conversation_mode_overrides_workflow_turn_completion_instructions() {
+        let workflow = Workflow::new("direct chat");
+        let mut node = crate::graph::Node::agent("Assistant", 0.0, 0.0);
+        node.agent.request_user_input = true;
+        node.agent.conversation_mode = true;
+
+        let messages = build_system_messages(&workflow, &node, None);
+
+        assert!(messages.iter().any(|message| {
+            message.contains("--- Conversation mode ---")
+                && message.contains("A plain assistant message completes the current turn")
+                && message.contains("openflow_ask_user_question")
+        }));
     }
 
     #[test]
@@ -515,9 +606,13 @@ mod tests {
         let mut node = crate::graph::Node::agent("idea", 0.0, 0.0);
         node.agent.request_user_input = true;
         let messages = build_system_messages(&workflow, &node, None);
-        assert!(messages[1].contains("focused AI agent"));
-        assert!(messages[2].contains("--- Workflow context ---"));
-        assert!(messages[2].contains("Use the style guide."));
+        assert!(messages
+            .iter()
+            .any(|message| message.contains("focused AI agent")));
+        assert!(messages
+            .last()
+            .is_some_and(|message| message.contains("--- Workflow context ---")
+                && message.contains("Use the style guide.")));
     }
 
     #[test]
@@ -527,8 +622,9 @@ mod tests {
         node.agent.request_user_input = true;
         let messages = build_system_messages(&workflow, &node, Some("/tmp/my-repo"));
         assert!(messages[0].contains("--- OpenFlow runtime ---"));
-        assert!(messages[1].contains("--- Project repository ---"));
-        assert!(messages[1].contains("/tmp/my-repo"));
+        assert!(messages.iter().any(|message| {
+            message.contains("--- Project repository ---") && message.contains("/tmp/my-repo")
+        }));
     }
 
     #[test]
@@ -537,7 +633,9 @@ mod tests {
             "idea",
             &HashMap::from([(NodeId("idea".to_string()), Vec::new())]),
             &BTreeMap::new(),
+            &BTreeMap::new(),
             Some("   "),
+            &[],
             &BTreeMap::new(),
             &BTreeMap::new(),
             true,
@@ -570,12 +668,24 @@ mod tests {
         let mut outputs = BTreeMap::new();
         outputs.insert(NodeId("alpha".into()), json!({"summary": "from alpha"}));
         outputs.insert(NodeId("beta".into()), json!({"summary": "from beta"}));
+        let handoffs = BTreeMap::from([(
+            NodeId("alpha".into()),
+            crate::execution::HandoffArtifact {
+                format: crate::execution::HandoffFormat::Markdown,
+                uri: "run://handoffs/alpha/HANDOFF.md".to_string(),
+                media_type: "text/markdown".to_string(),
+                sha256: "abc123".to_string(),
+                size_bytes: 42,
+            },
+        )]);
 
         let input = build_node_input(
             "join",
             &upstream_map,
             &outputs,
+            &handoffs,
             None,
+            &[],
             &BTreeMap::new(),
             &BTreeMap::new(),
             true,
@@ -585,7 +695,17 @@ mod tests {
             input,
             json!({
                 "upstream": [
-                    { "node_id": "alpha", "output": { "summary": "from alpha" } },
+                    {
+                        "node_id": "alpha",
+                        "output": { "summary": "from alpha" },
+                        "handoff": {
+                            "format": "markdown",
+                            "uri": "run://handoffs/alpha/HANDOFF.md",
+                            "mediaType": "text/markdown",
+                            "sha256": "abc123",
+                            "sizeBytes": 42
+                        }
+                    },
                     { "node_id": "beta", "output": { "summary": "from beta" } }
                 ]
             })
@@ -615,7 +735,9 @@ mod tests {
             "join",
             &upstream_map,
             &outputs,
+            &BTreeMap::new(),
             None,
+            &[],
             &changed_files_by_node,
             &BTreeMap::new(),
             true,
@@ -688,7 +810,9 @@ mod tests {
             "gamma",
             &upstream_map,
             &BTreeMap::new(),
+            &BTreeMap::new(),
             None,
+            &[],
             &changed_files_by_node,
             &BTreeMap::new(),
             true,
@@ -718,7 +842,9 @@ mod tests {
             "join",
             &upstream_map,
             &outputs,
+            &BTreeMap::new(),
             None,
+            &[],
             &BTreeMap::new(),
             &reads_by_node,
             true,
@@ -746,7 +872,9 @@ mod tests {
             "join",
             &upstream_map,
             &BTreeMap::new(),
+            &BTreeMap::new(),
             None,
+            &[],
             &BTreeMap::new(),
             &reads_by_node,
             false,
@@ -769,9 +897,11 @@ mod tests {
             workflow: &workflow,
             upstream_map: &upstream_map,
             outputs: &BTreeMap::new(),
+            handoffs: &BTreeMap::new(),
             changed_files_by_node: &BTreeMap::new(),
             reads_by_node: &BTreeMap::new(),
             entrypoint_text: None,
+            entrypoint_attachments: &[],
             transcript: &[],
             available_tools: &[],
             project_repository_root: None,
@@ -783,20 +913,86 @@ mod tests {
     }
 
     #[test]
-    fn build_agent_request_maps_request_user_input_flag() {
-        let mut workflow = Workflow::new("wf");
-        let mut node = crate::graph::Node::agent("a", 0.0, 0.0);
-        node.agent.model = "m".to_string();
-        node.agent.request_user_input = true;
+    fn build_agent_request_uses_markdown_handoff_contract() {
+        let mut workflow = Workflow::new("test");
+        let mut node = crate::graph::Node::agent("research", 0.0, 0.0);
+        node.agent.model = "gpt-test".to_string();
         workflow.nodes.push(node.clone());
         let upstream_map = build_upstream_map(&workflow);
         let ctx = NodeInvocationContext {
             workflow: &workflow,
             upstream_map: &upstream_map,
             outputs: &BTreeMap::new(),
+            handoffs: &BTreeMap::new(),
             changed_files_by_node: &BTreeMap::new(),
             reads_by_node: &BTreeMap::new(),
             entrypoint_text: None,
+            entrypoint_attachments: &[],
+            transcript: &[],
+            available_tools: &[],
+            project_repository_root: None,
+            frozen_change_evidence_packet: None,
+        };
+
+        let request = build_agent_request(&ctx, &node, true).unwrap();
+
+        assert_eq!(request.output_schema["required"], json!(["markdown"]));
+        assert!(request
+            .system_messages
+            .iter()
+            .any(|message| message.contains("## Recommended Next Step")));
+    }
+
+    #[test]
+    fn build_agent_request_copies_effective_provider_id() {
+        let mut workflow = Workflow::new("test");
+        workflow.settings.provider_id = Some("openai".to_string());
+        let mut node = crate::graph::Node::agent("idea", 0.0, 0.0);
+        node.agent.model = "claude-sonnet".to_string();
+        node.agent.provider_id = Some("anthropic".to_string());
+        workflow.nodes.push(node.clone());
+        let upstream_map = build_upstream_map(&workflow);
+        let ctx = NodeInvocationContext {
+            workflow: &workflow,
+            upstream_map: &upstream_map,
+            outputs: &BTreeMap::new(),
+            handoffs: &BTreeMap::new(),
+            changed_files_by_node: &BTreeMap::new(),
+            reads_by_node: &BTreeMap::new(),
+            entrypoint_text: None,
+            entrypoint_attachments: &[],
+            transcript: &[],
+            available_tools: &[],
+            project_repository_root: None,
+            frozen_change_evidence_packet: None,
+        };
+
+        let overridden = build_agent_request(&ctx, &node, true).unwrap();
+        assert_eq!(overridden.provider_id.as_deref(), Some("anthropic"));
+
+        node.agent.provider_id = None;
+        let inherited = build_agent_request(&ctx, &node, true).unwrap();
+        assert_eq!(inherited.provider_id.as_deref(), Some("openai"));
+    }
+
+    #[test]
+    fn build_agent_request_maps_conversation_capabilities() {
+        let mut workflow = Workflow::new("wf");
+        let mut node = crate::graph::Node::agent("a", 0.0, 0.0);
+        node.agent.model = "m".to_string();
+        node.agent.request_user_input = true;
+        node.agent.conversation_mode = true;
+        workflow.nodes.push(node.clone());
+        let upstream_map = build_upstream_map(&workflow);
+        let ctx = NodeInvocationContext {
+            workflow: &workflow,
+            upstream_map: &upstream_map,
+            outputs: &BTreeMap::new(),
+            handoffs: &BTreeMap::new(),
+            changed_files_by_node: &BTreeMap::new(),
+            reads_by_node: &BTreeMap::new(),
+            entrypoint_text: None,
+            entrypoint_attachments: &[],
             transcript: &[],
             available_tools: &[],
             project_repository_root: None,
@@ -804,10 +1000,13 @@ mod tests {
         };
         let request = build_agent_request(&ctx, &node, true).unwrap();
         assert!(request.allow_user_input);
+        assert!(request.conversation_mode);
 
         node.agent.request_user_input = false;
+        node.agent.conversation_mode = false;
         let request = build_agent_request(&ctx, &node, true).unwrap();
         assert!(!request.allow_user_input);
+        assert!(!request.conversation_mode);
     }
 
     #[test]

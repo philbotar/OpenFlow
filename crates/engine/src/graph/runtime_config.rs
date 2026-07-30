@@ -130,6 +130,7 @@ mod tests {
             node_id: NodeId("idea".to_string()),
             node_label: "idea".into(),
             model: "gpt".into(),
+            provider_id: None,
             system_messages: vec![],
             task_prompt: String::new(),
             input: serde_json::Value::Null,
@@ -137,11 +138,14 @@ mod tests {
             tool_config: NodeToolConfig::default(),
             available_tools: vec![],
             transcript: vec![],
+            entrypoint_attachments: Vec::new(),
+            resolved_attachments: std::collections::BTreeMap::new(),
             model_attempt: 1,
             reasoning_effort: None,
             reasoning_budget_tokens: None,
             tool_access_policy: crate::ports::ToolAccessPolicy::Execution,
             allow_user_input: true,
+            conversation_mode: false,
         };
         apply_runtime_patch_to_request(&mut request, &patch);
         assert_eq!(

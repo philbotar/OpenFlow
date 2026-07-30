@@ -19,17 +19,18 @@ In **Settings → Providers**:
 3. Adjust models, reasoning, or endpoint fields if needed.
 4. Select **Save settings**.
 
-The summary line states that the active profile is used for workflow runs and agent chat. A readiness chip on this page mirrors the header: **Ready** when configuration resolves, or a specific missing step otherwise.
+The active profile is the default for agent chat and workflows that do not select a shared provider. A readiness chip on this page mirrors the header: **Ready** when configuration resolves, or a specific missing step otherwise.
 
 ## Authenticate by provider type
 
 ### API key providers
 
-Applies to **OpenAI**, **Anthropic**, **OpenRouter**, local **Ollama** / **LM Studio**, **Custom OpenAI-compatible API**, and similar profiles.
+Applies to **OpenAI**, **Anthropic**, **OpenRouter**, local **Ollama** / **LM Studio**, **Custom OpenAI-compatible API**, and similar profiles. Managed providers require a key. Local profiles and custom OpenAI-compatible endpoints allow an empty key.
 
 1. Open the **API key** panel.
-2. Paste a key into the key field. Readiness can turn **Ready** before you save; the typed value is also passed as the transient key for runs until you leave the session.
-3. Select **Save settings** to persist the key in local `settings.json` (plaintext on disk).
+2. Paste a key into the key field when the endpoint requires one. For a custom endpoint reached through localhost, a VPN, or another trusted network, leave the optional field empty.
+3. Readiness can turn **Ready** before you save; the typed value is also passed as the transient key for runs until you leave the session.
+4. Select **Save settings** to persist the key in local `settings.json` (plaintext on disk).
 
 Alternatively, export the provider environment variable (for example `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`) before launching OpenFlow. Resolution order: transient key from the Settings field during a session, stored profile key, then environment variable. See [`../reference/README.md#provider-key-resolution`](../reference/README.md#provider-key-resolution).
 
@@ -46,7 +47,7 @@ Codex does not use `OPENAI_API_KEY`. Billing and entitlement follow the ChatGPT 
 1. Select **Amazon Bedrock** as the active provider.
 2. Set **AWS profile** and **AWS region** (or rely on `AWS_PROFILE` / `AWS_REGION` when OpenFlow inherits your shell environment).
 3. Select **Save settings**, then **Test AWS connection** to verify the credential chain.
-4. Optionally **Refresh from AWS** to load foundation model IDs into the profile.
+4. Optionally **Fetch from AWS**, then select the foundation model IDs to expose in OpenFlow.
 
 Readiness may show region configured before credentials are verified; use **Test AWS connection** to confirm. SSO and GUI `HOME` behavior: [`../architecture/provider-adapters.md#bedrock-with-sso`](../architecture/provider-adapters.md#bedrock-with-sso).
 
@@ -70,10 +71,10 @@ Each row matches the **Provider** dropdown in **Settings → Providers**. Setup 
 | Gemini OpenAI compatibility | API key | `GEMINI_API_KEY` | `https://generativelanguage.googleapis.com/v1beta/openai` | Chat Completions |
 | Ollama local | API key optional | _(none)_ | `http://localhost:11434/v1` | Chat Completions |
 | LM Studio local | API key optional | _(none)_ | `http://localhost:1234/v1` | Chat Completions |
-| Custom OpenAI-compatible API | API key | `OPENAI_COMPATIBLE_API_KEY` | Editable (default `http://localhost:11434/v1`) | Chat Completions (editable) |
+| Custom OpenAI-compatible API | API key optional | `OPENAI_COMPATIBLE_API_KEY` | Editable (default `http://localhost:11434/v1`) | Chat Completions (editable) |
 | Amazon Bedrock | AWS credentials | `AWS_PROFILE`, `AWS_REGION` | _(region-driven)_ | Bedrock Converse (Rig) |
 
-For **Ollama local** and **LM Studio local**, start the local server before **Run**; an API key is not required unless you configure one. For **Custom OpenAI-compatible API**, the profile shows **Custom endpoint**; edit base URL and default wire API there, then **Save settings**.
+For **Ollama local** and **LM Studio local**, start the local server before **Run**; an API key is not required. For **Custom OpenAI-compatible API**, the profile shows **Custom endpoint**; set **API base URL** in the main provider card. Leave the key empty for a trusted no-auth endpoint, or add one when the endpoint requires auth.
 
 Source of truth for IDs, models, and auth rules: `crates/providers/src/spec.rs` (`builtin_provider_specs`).
 
@@ -81,12 +82,13 @@ Source of truth for IDs, models, and auth rules: `crates/providers/src/spec.rs` 
 
 | Control | When to use it |
 | --- | --- |
-| **Known models** / add model | Pick models that appear on agent nodes for this provider. |
+| **Fetch models** / **Fetch from AWS** | Query the active provider, then select multiple model IDs to expose in OpenFlow. |
+| **Known models** / add model | Review selected models or add a model ID the API did not return. |
 | Per-model transport | Override **Responses API**, **Chat Completions API**, or **Anthropic Messages API** for a specific model on custom OpenAI-compatible profiles. |
 | Reasoning effort | Set default extended-thinking effort where the provider supports it. |
 | **Custom endpoint** profile | Edit base URL and default wire API for self-hosted or third-party OpenAI-compatible gateways. |
 
-Node-level model fields still select which model each agent calls; the provider profile supplies credentials and defaults.
+In **Workflow settings**, select the shared provider. In a node's **Inspector**, leave **Provider** on **Use shared provider** or select a node override. Resolution order: node provider → shared workflow provider → active provider. The selected profile supplies that node's credentials, model list, and defaults.
 
 ## Verify
 
@@ -104,15 +106,15 @@ OpenFlow splits responsibilities so workflows stay provider-agnostic:
 
 ```text
 Workflow run (engine)
-  → AgentRequest (prompt, tools, model id)
+  → AgentRequest (prompt, tools, provider id, model id)
     → AiPort (engine port)
-      → orchestration resolves settings + keys
-      → providers::create_provider(...)
+      → orchestration routes to the effective provider
+      → providers::create_provider(...) for each referenced provider
         → mapping/ (transcript + tool wire shape)
         → rig_adapter/ (Rig HTTP + streaming to the vendor API)
 ```
 
-During a run, the **engine** only sees `AiPort`: one interface for model turns, streaming, and tool-call results. **Orchestration** loads `settings.json`, merges secrets, resolves the active `ProviderProfile`, and builds an `AiClientConfig`. It then calls **`create_provider()`** in `crates/providers`, which returns a boxed `AiPort` implementation.
+During a run, the **engine** only sees `AiPort`: one interface for model turns, streaming, and tool-call results. **Orchestration** loads `settings.json`, merges secrets, resolves every provider referenced by the workflow, and builds a run-scoped router over those clients. It validates all referenced provider credentials before execution. A provider failure stays attached to that node; OpenFlow does not retry the request through a different provider.
 
 Inside **`crates/providers`**, **Rig** (`rig-core` 0.39) owns most outbound HTTP and SSE streaming to vendor APIs. OpenFlow code around Rig handles:
 

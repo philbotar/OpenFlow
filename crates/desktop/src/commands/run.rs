@@ -3,10 +3,14 @@ use crate::run_event_bridge::spawn_run_event_bridge;
 use crate::run_sleep_guard;
 use orchestration::backend::{AppBackend, FileEditPreview};
 use orchestration::run::state::WorkflowRunState;
-use orchestration::{AppSettings, Workflow};
+use orchestration::{AppSettings, DurableRunContinuationInput, UserMessageInput, Workflow};
 use tauri::Emitter;
 
 #[tauri::command]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Tauri command keeps each IPC field explicit for stable frontend serialization"
+)]
 pub async fn start_run(
     backend: tauri::State<'_, AppBackend>,
     app: tauri::AppHandle,
@@ -14,16 +18,18 @@ pub async fn start_run(
     settings: AppSettings,
     execution_cwd: Option<String>,
     transient_api_key: Option<String>,
-    entrypoint: Option<String>,
+    message: Option<UserMessageInput>,
+    invoked_skill_ids: Option<Vec<String>>,
 ) -> Result<WorkflowRunState, CommandError> {
     let workflow_name = workflow.name.clone();
     let (initial_state, event_rx) = backend
-        .start_run(
+        .start_run_with_message_and_skill_ids(
             workflow,
-            entrypoint,
+            message,
             execution_cwd,
             &settings,
             transient_api_key.as_deref(),
+            invoked_skill_ids.unwrap_or_default(),
         )
         .await?;
     spawn_run_event_bridge(app, workflow_name, event_rx, initial_state.run_id.clone());
@@ -76,9 +82,15 @@ pub async fn resume_durable_run(
     run_id: String,
     settings: AppSettings,
     transient_api_key: Option<String>,
+    continuation: Option<DurableRunContinuationInput>,
 ) -> Result<WorkflowRunState, CommandError> {
     let (initial_state, event_rx, workflow_name) = backend
-        .resume_durable_run(&run_id, &settings, transient_api_key.as_deref())
+        .resume_durable_run_with_continuation(
+            &run_id,
+            &settings,
+            transient_api_key.as_deref(),
+            continuation,
+        )
         .await?;
     spawn_run_event_bridge(app, workflow_name, event_rx, initial_state.run_id.clone());
     Ok(initial_state)
@@ -155,9 +167,16 @@ pub async fn update_node_runtime_config(
 pub async fn submit_user_input(
     backend: tauri::State<'_, AppBackend>,
     node_id: String,
-    text: String,
+    message: UserMessageInput,
+    invoked_skill_ids: Option<Vec<String>>,
 ) -> Result<WorkflowRunState, CommandError> {
-    Ok(backend.submit_user_input(&node_id, text).await?)
+    Ok(backend
+        .submit_user_message_with_skill_ids(
+            &node_id,
+            message,
+            invoked_skill_ids.unwrap_or_default(),
+        )
+        .await?)
 }
 
 #[tauri::command]

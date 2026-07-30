@@ -49,12 +49,61 @@ fn responses_submit_fixture() -> serde_json::Value {
     })
 }
 
+fn responses_submit_sse_fixture() -> String {
+    let tool_call = json!({
+        "type": "response.output_item.done",
+        "sequence_number": 1,
+        "output_index": 0,
+        "item": {
+            "type": "function_call",
+            "id": "fc_1",
+            "call_id": "call-1",
+            "name": "openflow_submit_node_output",
+            "arguments": "{\"output\":{\"summary\":\"done\"},\"assistant_message\":null}",
+            "status": "completed"
+        }
+    });
+    let response = json!({
+        "type": "response.completed",
+        "sequence_number": 2,
+        "response": {
+            "id": "resp_1",
+            "object": "response",
+            "created_at": 1,
+            "status": "completed",
+            "error": null,
+            "incomplete_details": null,
+            "instructions": null,
+            "max_output_tokens": null,
+            "model": "test-model",
+            "usage": {
+                "input_tokens": 5,
+                "input_tokens_details": {"cached_tokens": 0},
+                "output_tokens": 4,
+                "output_tokens_details": {"reasoning_tokens": 1},
+                "total_tokens": 9
+            },
+            "output": [{
+                "type": "function_call",
+                "id": "fc_1",
+                "call_id": "call-1",
+                "name": "openflow_submit_node_output",
+                "arguments": "{\"output\":{\"summary\":\"done\"},\"assistant_message\":null}",
+                "status": "completed"
+            }],
+            "tools": []
+        }
+    });
+    format!("data: {tool_call}\n\ndata: {response}\n\ndata: [DONE]\n\n")
+}
+
 fn test_request() -> engine::AgentRequest {
     engine::AgentRequest {
         workflow_id: engine::WorkflowId("wf-1".into()),
         node_id: engine::NodeId("idea".into()),
         node_label: "Idea".into(),
         model: "test-model".into(),
+        provider_id: None,
         system_messages: vec!["You are precise.".into()],
         task_prompt: "Summarize the kickoff.".into(),
         input: serde_json::json!({"entrypoint": {"text": "ORCHID-91"}, "upstream": []}),
@@ -69,12 +118,64 @@ fn test_request() -> engine::AgentRequest {
         tool_config: engine::NodeToolConfig::default(),
         available_tools: Vec::new(),
         transcript: Vec::new(),
+        entrypoint_attachments: Vec::new(),
+        resolved_attachments: std::collections::BTreeMap::default(),
         model_attempt: 1,
         reasoning_effort: None,
         reasoning_budget_tokens: None,
         tool_access_policy: engine::ToolAccessPolicy::Execution,
         allow_user_input: true,
+        conversation_mode: false,
     }
+}
+
+fn attachment_request() -> engine::AgentRequest {
+    let mut request = test_request();
+    request.entrypoint_attachments = vec![
+        engine::ChatAttachmentRef {
+            id: "image-1".into(),
+            file_name: "diagram.png".into(),
+            media_type: "image/png".into(),
+            size_bytes: 3,
+            sha256: "fixture-image".into(),
+            kind: engine::ChatAttachmentKind::Image,
+        },
+        engine::ChatAttachmentRef {
+            id: "pdf-1".into(),
+            file_name: "brief.pdf".into(),
+            media_type: "application/pdf".into(),
+            size_bytes: 4,
+            sha256: "fixture-pdf".into(),
+            kind: engine::ChatAttachmentKind::Document,
+        },
+        engine::ChatAttachmentRef {
+            id: "json-1".into(),
+            file_name: "data.json".into(),
+            media_type: "application/json".into(),
+            size_bytes: 7,
+            sha256: "fixture-json".into(),
+            kind: engine::ChatAttachmentKind::Document,
+        },
+    ];
+    request.resolved_attachments.insert(
+        "image-1".into(),
+        engine::ResolvedChatAttachment {
+            bytes: vec![1, 2, 3],
+        },
+    );
+    request.resolved_attachments.insert(
+        "pdf-1".into(),
+        engine::ResolvedChatAttachment {
+            bytes: b"%PDF".to_vec(),
+        },
+    );
+    request.resolved_attachments.insert(
+        "json-1".into(),
+        engine::ResolvedChatAttachment {
+            bytes: br#"{"x":1}"#.to_vec(),
+        },
+    );
+    request
 }
 
 fn openai_test_config(base_url: &str, wire_api: WireApi) -> AiClientConfig {
@@ -104,6 +205,43 @@ fn custom_openai_test_config(base_url: &str) -> AiClientConfig {
     config
 }
 
+#[tokio::test]
+async fn custom_chat_without_a_key_omits_authorization() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(chat_completion_response(&json!({
+                "role": "assistant",
+                "tool_calls": [{
+                    "id": "call-submit",
+                    "type": "function",
+                    "function": {
+                        "name": "openflow_submit_node_output",
+                        "arguments": "{\"output\":{\"summary\":\"done\"},\"assistant_message\":null}"
+                    }
+                }]
+            }))),
+        )
+        .mount(&server)
+        .await;
+
+    let mut config = custom_openai_test_config(&server.uri());
+    config.auth = AuthConfig::Bearer {
+        api_key: None,
+        required: false,
+    };
+
+    let outcome = create_provider(config)
+        .invoke(test_request())
+        .await
+        .unwrap();
+    assert!(matches!(outcome, AgentTurnOutcome::Completed(_)));
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 1);
+    assert!(!requests[0].headers.contains_key("authorization"));
+}
+
 #[derive(Clone, Default)]
 struct RecordingSink(Arc<Mutex<Vec<AiStreamEvent>>>);
 
@@ -117,6 +255,65 @@ impl AiStreamSink for RecordingSink {
     fn on_stream_event(&self, event: AiStreamEvent) {
         self.0.lock().unwrap().push(event);
     }
+}
+
+#[tokio::test]
+async fn responses_serializes_ordered_image_pdf_and_named_json_content() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(responses_submit_fixture()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let client = create_provider(openai_test_config(&server.uri(), WireApi::Responses));
+    let outcome = client.invoke(attachment_request()).await.unwrap();
+    assert!(matches!(outcome, AgentTurnOutcome::Completed(_)));
+
+    let requests = server.received_requests().await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+    let content: Vec<_> = body["input"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|item| item["role"] == "user")
+        .flat_map(|item| item["content"].as_array().into_iter().flatten())
+        .collect();
+    assert_eq!(content[0]["type"], "input_text");
+    assert_eq!(content[1]["type"], "input_image");
+    assert_eq!(content[1]["image_url"], "data:image/png;base64,AQID");
+    assert_eq!(content[2]["type"], "input_file");
+    assert_eq!(
+        content[2]["file_data"],
+        "data:application/pdf;base64,JVBERg=="
+    );
+    assert_eq!(content[3]["type"], "input_text");
+    assert_eq!(content[3]["text"], "Attachment: data.json\n{\"x\":1}");
+}
+
+#[tokio::test]
+async fn responses_rejects_missing_or_unsupported_attachment_before_http() {
+    let server = MockServer::start().await;
+    let config = openai_test_config(&server.uri(), WireApi::Responses);
+
+    let mut missing = attachment_request();
+    missing.resolved_attachments.remove("image-1");
+    let error = create_provider(config.clone())
+        .invoke(missing)
+        .await
+        .unwrap_err();
+    assert!(matches!(error, engine::AgentError::Permanent(_)));
+
+    let mut unsupported = attachment_request();
+    unsupported.entrypoint_attachments[0].media_type = "image/heic".into();
+    let error = create_provider(config)
+        .invoke(unsupported)
+        .await
+        .unwrap_err();
+    assert!(matches!(error, engine::AgentError::Permanent(_)));
+
+    assert!(server.received_requests().await.unwrap().is_empty());
 }
 
 #[tokio::test]
@@ -135,6 +332,32 @@ async fn responses_submit_output_completes_node() {
         panic!("expected completed outcome");
     };
     assert_eq!(success.output, json!({"summary": "done"}));
+}
+
+#[tokio::test]
+async fn responses_stream_preserves_usage() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_raw(responses_submit_sse_fixture(), "text/event-stream"),
+        )
+        .mount(&server)
+        .await;
+
+    let client = create_provider(openai_test_config(&server.uri(), WireApi::Responses));
+    let outcome = client
+        .invoke_stream(test_request(), &RecordingSink::default())
+        .await
+        .unwrap();
+    let AgentTurnOutcome::Completed(success) = outcome else {
+        panic!("expected completed outcome");
+    };
+    assert_eq!(
+        success.usage.as_ref().map(|usage| usage.total_tokens),
+        Some(9)
+    );
 }
 
 #[tokio::test]
@@ -733,7 +956,13 @@ async fn chat_completions_stream_emits_deltas() {
         event,
         AiStreamEvent::AssistantDelta { content } if content == "Hi"
     )));
-    assert!(matches!(outcome, AgentTurnOutcome::Completed(_)));
+    let AgentTurnOutcome::Completed(success) = outcome else {
+        panic!("expected completed outcome");
+    };
+    assert_eq!(
+        success.usage.as_ref().map(|usage| usage.total_tokens),
+        Some(6)
+    );
 }
 
 #[tokio::test]

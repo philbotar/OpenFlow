@@ -89,7 +89,7 @@ if (!("ResizeObserver" in globalThis)) {
 }
 
 describe("WorkflowCanvas adapter helpers", () => {
-  test("buildFlowNodes preserves positions and selected status", () => {
+  test("buildFlowNodes preserves positions and leaves final dimensions to DOM measurement", () => {
     const nodes = buildFlowNodes(graph, "node-2", statusByNode, null);
 
     expect(nodes).toHaveLength(2);
@@ -99,9 +99,11 @@ describe("WorkflowCanvas adapter helpers", () => {
       selected: false,
       deletable: true,
       data: { label: "Plan", status: "completed" },
-      width: 320,
-      height: 88,
+      initialWidth: 320,
+      initialHeight: 88,
     });
+    expect(nodes[0]).not.toHaveProperty("width");
+    expect(nodes[0]).not.toHaveProperty("height");
     expect(nodes[1]).toMatchObject({
       id: "node-2",
       selected: true,
@@ -262,6 +264,43 @@ describe("WorkflowCanvas adapter helpers", () => {
 });
 
 describe("WorkflowCanvas component", () => {
+  test("keeps the workflow in place when wheel scrolling over the canvas", async () => {
+    render(
+      createElement(
+        "div",
+        { style: { width: "960px", height: "640px" } },
+        createElement(WorkflowCanvas, {
+          graph,
+          selectedNodeId: null,
+          selectedEdgeId: null,
+          statusByNode,
+          subagentsByNode: null,
+          onSelectNode: vi.fn(),
+          onSelectEdge: vi.fn(),
+          onUpdateNodePosition: vi.fn(),
+          onAutoLayout: vi.fn(),
+          onCreateEdge: vi.fn(),
+          onReconnectEdge: vi.fn(),
+          onDeleteEdge: vi.fn(),
+          onDeleteNode: vi.fn(),
+          onAddNode: vi.fn(),
+        }),
+      ),
+    );
+
+    const pane = document.querySelector(".react-flow__pane");
+    const viewport = document.querySelector(".react-flow__viewport");
+    expect(pane).not.toBeNull();
+    expect(viewport).not.toBeNull();
+    const initialTransform = viewport!.getAttribute("style");
+
+    fireEvent.wheel(pane!, { deltaX: 0, deltaY: 120, clientX: 480, clientY: 320 });
+
+    await vi.waitFor(() => {
+      expect(viewport!.getAttribute("style")).toBe(initialTransform);
+    });
+  });
+
   test("offers a contextual delete action for the selected node", () => {
     const onDeleteNode = vi.fn();
 
@@ -323,7 +362,7 @@ describe("WorkflowCanvas component", () => {
       ),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete connection" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete connection Plan → Draft" }));
 
     expect(onDeleteEdge).toHaveBeenCalledWith("edge-1");
   });
@@ -354,8 +393,17 @@ describe("WorkflowCanvas component", () => {
     );
 
     expect(screen.getByText("Running · Editing locked")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Add node" })).toBeNull();
-    expect(screen.queryByRole("button", { name: /Delete Plan/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "Add node" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "Auto layout" }).hasAttribute("disabled")).toBe(
+      true,
+    );
+    expect(screen.getByRole("button", { name: /Delete Plan/ }).hasAttribute("disabled")).toBe(
+      true,
+    );
+    expect(screen.getByRole("button", { name: "Zoom in" }).hasAttribute("disabled")).toBe(false);
+    expect(screen.getByRole("button", { name: "Zoom out" }).hasAttribute("disabled")).toBe(
+      false,
+    );
     expect(screen.getByTestId("rf__node-node-1").classList.contains("draggable")).toBe(false);
   });
 
@@ -458,7 +506,7 @@ describe("WorkflowCanvas component", () => {
     expect(onDeleteEdge).not.toHaveBeenCalled();
   });
 
-  test("groups canvas actions in one workflow editing toolbar", () => {
+  test("stacks canvas actions with hover tooltips in one compact toolbar", async () => {
     const onAddNode = vi.fn();
     const onAutoLayout = vi.fn();
 
@@ -485,12 +533,42 @@ describe("WorkflowCanvas component", () => {
       ),
     );
 
-    const toolbar = screen.getByRole("toolbar", { name: "Workflow editing tools" });
+    const toolbar = screen.getByRole("toolbar", { name: "Workflow canvas tools" });
     const addNodeButton = within(toolbar).getByRole("button", { name: "Add node" });
     const autoLayoutButton = within(toolbar).getByRole("button", { name: "Auto layout" });
+    const zoomInButton = within(toolbar).getByRole("button", { name: "Zoom in" });
+    const zoomOutButton = within(toolbar).getByRole("button", { name: "Zoom out" });
+    const deleteButton = within(toolbar).getByRole("button", { name: "Delete selected" });
 
     expect(addNodeButton.textContent).toBe("");
     expect(autoLayoutButton.textContent).toBe("");
+    expect(zoomInButton.textContent).toBe("");
+    expect(zoomOutButton.textContent).toBe("");
+    expect(deleteButton.textContent).toBe("");
+    expect(deleteButton.hasAttribute("disabled")).toBe(true);
+    expect(
+      within(toolbar)
+        .getAllByRole("button")
+        .map((button) => button.getAttribute("aria-label")),
+    ).toEqual(["Add node", "Auto layout", "Zoom in", "Zoom out", "Delete selected"]);
+    expect(
+      within(toolbar)
+        .getAllByRole("button")
+        .every(
+          (button) =>
+            button.closest(".app-tooltip-trigger") !== null &&
+            button.getAttribute("title") === null,
+        ),
+    ).toBe(true);
+
+    const deleteTooltipTrigger = deleteButton.closest(".app-tooltip-trigger");
+    expect(deleteTooltipTrigger).not.toBeNull();
+    fireEvent.pointerEnter(deleteTooltipTrigger!);
+    const tooltip = await screen.findByRole("tooltip", {}, { timeout: 1_000 });
+    expect(tooltip.textContent).toBe("Delete selected");
+    expect(tooltip.getAttribute("data-side")).toBe("right");
+    fireEvent.pointerLeave(deleteTooltipTrigger!);
+    expect(screen.queryByRole("tooltip")).toBeNull();
 
     fireEvent.click(addNodeButton);
     expect(onAddNode).toHaveBeenCalledTimes(1);

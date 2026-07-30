@@ -18,6 +18,10 @@ enum ReadTarget {
         artifact_id: String,
         selector: ReadSelector,
     },
+    Handoff {
+        uri: String,
+        selector: ReadSelector,
+    },
     PlanDraft {
         selector: ReadSelector,
     },
@@ -38,6 +42,12 @@ fn parse_read_target(path: &str) -> ReadTarget {
     if let Some(artifact_id) = base.strip_prefix("artifact:") {
         return ReadTarget::Artifact {
             artifact_id: artifact_id.to_string(),
+            selector,
+        };
+    }
+    if base.starts_with("run://handoffs/") {
+        return ReadTarget::Handoff {
+            uri: base,
             selector,
         };
     }
@@ -297,8 +307,7 @@ impl ToolRunner {
                 tool: "read".to_string(),
                 problem: error.to_string(),
                 hint:
-                    "required field: path (string); supports local paths, URLs, and artifact:{id}"
-                        .to_string(),
+                    "required field: path (string); supports local paths, URLs, artifact:{id}, and run://handoffs/...".to_string(),
             })
         })?;
         match parse_read_target(&args.path) {
@@ -306,6 +315,7 @@ impl ToolRunner {
                 artifact_id,
                 selector,
             } => self.read_artifact(&artifact_id, selector, &args.path),
+            ReadTarget::Handoff { uri, selector } => self.read_handoff(&uri, selector),
             ReadTarget::PlanDraft { selector } => self.read_plan_draft(selector),
             ReadTarget::Url { url, selector } => self
                 .read_url(&url, selector)
@@ -435,6 +445,22 @@ impl ToolRunner {
             )))
         })?;
         Ok(apply_read_selector(label, &text, selector))
+    }
+
+    fn read_handoff(&self, uri: &str, selector: ReadSelector) -> Result<String, ToolRunnerError> {
+        let path = crate::run::handoff::resolve_handoff_uri(self.artifacts.root(), uri)
+            .map_err(|error| ToolRunnerError::Tool(ToolError::failed(error.to_string())))?;
+        let text = std::fs::read_to_string(&path).map_err(|error| {
+            ToolRunnerError::Tool(if error.kind() == std::io::ErrorKind::NotFound {
+                ToolError::NotFound {
+                    what: format!("handoff not found: {uri}"),
+                    hint: "handoffs only live for the current durable run".to_string(),
+                }
+            } else {
+                ToolError::failed(format!("read failed for {uri}: {error}"))
+            })
+        })?;
+        Ok(apply_read_selector(uri, &text, selector))
     }
 
     async fn read_url(&self, url: &str, selector: ReadSelector) -> Result<String, ToolError> {
@@ -611,6 +637,57 @@ mod tests {
                         raw: false,
                     }
         ));
+    }
+
+    #[test]
+    fn read_target_recognizes_run_handoff_uri() {
+        let target = parse_read_target("run://handoffs/research/HANDOFF.md:10-20");
+        assert!(matches!(
+            target,
+            ReadTarget::Handoff { uri, selector }
+                if uri == "run://handoffs/research/HANDOFF.md"
+                    && selector == ReadSelector::Lines {
+                        ranges: vec![crate::tool::read::selector::LineRange {
+                            start: 10,
+                            end: Some(20)
+                        }],
+                        raw: false,
+                    }
+        ));
+    }
+
+    #[cfg_attr(miri, ignore)]
+    #[tokio::test]
+    async fn read_opens_materialized_run_handoff() {
+        let dir = tempfile::tempdir().unwrap();
+        let artifact_root = dir.path().join("artifacts");
+        let handoff_store = crate::run::handoff::HandoffStore::new(
+            crate::run::handoff::handoff_root_for_artifact_root(&artifact_root),
+        );
+        let stored = handoff_store
+            .materialize(
+                &engine::NodeId::from("research"),
+                &engine::HandoffSpec::Json,
+                &serde_json::json!({"summary": "verified"}),
+                None,
+            )
+            .unwrap();
+        let runner = ToolRunner::new(
+            crate::tool::registry::ToolRegistry::new(),
+            dir.path().to_path_buf(),
+            crate::tool::output::ArtifactStore::new(artifact_root).unwrap(),
+            tokio_util::sync::CancellationToken::new(),
+            std::sync::Arc::new(
+                crate::tools::edit::hashline::snapshots::InMemorySnapshotStore::new(),
+            ),
+        );
+
+        let output = runner
+            .read(serde_json::json!({ "path": stored.artifact.uri }))
+            .await
+            .unwrap();
+
+        assert!(output.contains(r#""summary": "verified""#));
     }
 
     #[test]

@@ -5,7 +5,7 @@
 )]
 
 use super::Template;
-use crate::graph::AgentNodeConfig;
+use crate::graph::{AgentNodeConfig, HandoffSpec};
 use std::collections::HashSet;
 
 /// Curated builtin templates for the template library.
@@ -18,7 +18,7 @@ pub fn default_templates() -> Vec<Template> {
             "A basic agent node with a concise agent prompt and minimal output schema. Good starting point for most tasks.",
             AgentNodeConfig {
                 system_prompt: "You are a focused AI agent in a node workflow.".to_string(),
-                task_prompt: "Return a concise JSON object for this node.".to_string(),
+                task_prompt: "Complete the configured handoff for this node.".to_string(),
                 model: String::new(),
                 output_schema: serde_json::json!({
                     "type": "object",
@@ -28,6 +28,7 @@ pub fn default_templates() -> Vec<Template> {
                     },
                     "required": ["summary"]
                 }),
+                handoff: HandoffSpec::markdown_default(),
                 auto_start: true,
                 tools: AgentNodeConfig::default().tools,
                 callable_agents: Vec::new(),
@@ -36,6 +37,7 @@ pub fn default_templates() -> Vec<Template> {
                 reasoning_budget_tokens: None,
                 provider_id: None,
                 request_user_input: false,
+                conversation_mode: false,
             },
             HashSet::new(),
         ),
@@ -70,6 +72,7 @@ pub fn default_templates() -> Vec<Template> {
                     },
                     "required": ["findings"]
                 }),
+                handoff: HandoffSpec::Json,
                 auto_start: true,
                 tools: AgentNodeConfig::default().tools,
                 callable_agents: Vec::new(),
@@ -78,6 +81,7 @@ pub fn default_templates() -> Vec<Template> {
                 reasoning_budget_tokens: None,
                 provider_id: None,
                 request_user_input: false,
+                conversation_mode: false,
             },
             {
                 let mut locked = HashSet::new();
@@ -109,6 +113,7 @@ pub fn default_templates() -> Vec<Template> {
                     },
                     "required": ["executive_summary", "key_points"]
                 }),
+                handoff: HandoffSpec::Json,
                 auto_start: true,
                 tools: AgentNodeConfig::default().tools,
                 callable_agents: Vec::new(),
@@ -117,6 +122,7 @@ pub fn default_templates() -> Vec<Template> {
                 reasoning_budget_tokens: None,
                 provider_id: None,
                 request_user_input: false,
+                conversation_mode: false,
             },
             {
                 let mut locked = HashSet::new();
@@ -142,6 +148,7 @@ pub fn default_templates() -> Vec<Template> {
                     },
                     "required": ["category", "confidence"]
                 }),
+                handoff: HandoffSpec::Json,
                 auto_start: true,
                 tools: AgentNodeConfig::default().tools,
                 callable_agents: Vec::new(),
@@ -150,6 +157,7 @@ pub fn default_templates() -> Vec<Template> {
                 reasoning_budget_tokens: None,
                 provider_id: None,
                 request_user_input: false,
+                conversation_mode: false,
             },
             {
                 let mut locked = HashSet::new();
@@ -159,11 +167,11 @@ pub fn default_templates() -> Vec<Template> {
         ),
         Template::with_id(
             "builtin.manual-start-node",
-            "Manual Start Node",
-            "An agent that must be manually triggered (auto_start: false). Useful for approval gates or human-in-the-loop steps.",
+            "Human Review Node",
+            "A reviewer that starts when ready and may ask a human for an explicit decision.",
             AgentNodeConfig {
-                system_prompt: "You are a reviewer agent. Wait to be triggered before processing.".to_string(),
-                task_prompt: "Review the upstream output and return your assessment.".to_string(),
+                system_prompt: "You are a reviewer agent. Inspect the available context, then use openflow_request_user_input when an explicit human decision is required.".to_string(),
+                task_prompt: "Review the upstream output, ask for approval when needed, then return your assessment.".to_string(),
                 model: String::new(),
                 output_schema: serde_json::json!({
                     "type": "object",
@@ -174,7 +182,8 @@ pub fn default_templates() -> Vec<Template> {
                     },
                     "required": ["approved"]
                 }),
-                auto_start: false,
+                handoff: HandoffSpec::Json,
+                auto_start: true,
                 tools: AgentNodeConfig::default().tools,
                 callable_agents: Vec::new(),
                 allow_all_callable_agents: false,
@@ -182,12 +191,9 @@ pub fn default_templates() -> Vec<Template> {
                 reasoning_budget_tokens: None,
                 provider_id: None,
                 request_user_input: true,
+                conversation_mode: false,
             },
-            {
-                let mut locked = HashSet::new();
-                locked.insert("auto_start".to_string());
-                locked
-            },
+            HashSet::new(),
         ),
     ]
 }

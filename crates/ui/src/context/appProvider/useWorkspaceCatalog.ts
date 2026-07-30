@@ -52,6 +52,7 @@ interface UseWorkspaceCatalogParams {
   setSettings: Setter<AppSettings>;
   showErrorToast: ToastHandler;
   showSuccessToast: ToastHandler;
+  showInfoToast: ToastHandler;
 }
 
 export function useWorkspaceCatalog(params: UseWorkspaceCatalogParams) {
@@ -216,7 +217,8 @@ export function useWorkspaceCatalog(params: UseWorkspaceCatalogParams) {
     const chat = chats().find((item) => item.id === chatId);
     if (!chat) return;
     let replay: WorkflowRunState | null = null;
-    if (chat.runId) {
+    const isActiveBackendChat = params.backendRunWorkflowId() === chat.id;
+    if (chat.runId && !isActiveBackendChat) {
       try {
         replay = await desktop.replayRun(chat.runId);
       } catch (error) {
@@ -236,13 +238,13 @@ export function useWorkspaceCatalog(params: UseWorkspaceCatalogParams) {
       return;
     }
     const confirmed = await confirmNativeDialog(
-      `Delete "${chat.title}"? This removes it from chat history.`,
+      `Delete "${chat.title}"? This removes its local history and attachments.`,
       { title: "Delete chat", kind: "warning" },
     );
     if (!confirmed) return;
 
     try {
-      await desktop.deleteChat(chat.id);
+      const deleteResult = await desktop.deleteChat(chat.id);
       const remaining = chats().filter((item) => item.id !== chat.id);
       setChats(remaining);
       params.setRunStateByWorkflowId((state) => {
@@ -260,7 +262,17 @@ export function useWorkspaceCatalog(params: UseWorkspaceCatalogParams) {
           params.setScreen("editor");
         }
       }
-      params.showSuccessToast(`Deleted ${chat.title}`);
+      if (
+        deleteResult === "deletedCleanupPending" ||
+        (typeof deleteResult === "object" &&
+          deleteResult?.status === "deletedCleanupPending")
+      ) {
+        params.showInfoToast(
+          `Deleted ${chat.title}. Local attachment cleanup will retry on startup.`,
+        );
+      } else {
+        params.showSuccessToast(`Deleted ${chat.title}`);
+      }
     } catch (error) {
       params.showErrorToast(normalizeError(error));
     }
@@ -615,7 +627,8 @@ export function useWorkspaceCatalog(params: UseWorkspaceCatalogParams) {
   };
 
   const handleSaveAgents = async () => {
-    if (selectedAgent()) {
+    const currentAgent = selectedAgent();
+    if (currentAgent && currentAgent.handoff?.format !== "markdown") {
       try {
         const parsed = JSON.parse(agentSchemaDraft());
         updateSelectedAgent((draft) => {
@@ -629,6 +642,34 @@ export function useWorkspaceCatalog(params: UseWorkspaceCatalogParams) {
     try {
       await desktop.saveAgents(agents());
       params.showSuccessToast("Saved agents");
+    } catch (error) {
+      params.showErrorToast(normalizeError(error));
+    }
+  };
+
+  const handleDeleteSelectedAgent = async () => {
+    const currentAgent = selectedAgent();
+    if (!currentAgent) return;
+    const displayName = currentAgent.name.trim() || "Untitled agent";
+    const confirmed = await confirmNativeDialog(
+      `Delete "${displayName}" permanently? This cannot be undone.`,
+      { title: "Delete agent", kind: "warning" },
+    );
+    if (!confirmed) return;
+
+    const currentAgents = agents();
+    const selectedIndex = currentAgents.findIndex((agent) => agent.id === currentAgent.id);
+    const remainingAgents = currentAgents.filter((agent) => agent.id !== currentAgent.id);
+    const nextSelectedAgent =
+      remainingAgents[Math.min(selectedIndex, remainingAgents.length - 1)] ?? null;
+    try {
+      await desktop.saveAgents(remainingAgents);
+      setAgents(remainingAgents);
+      setSelectedAgentId(nextSelectedAgent?.id ?? null);
+      if (editingAgentId() === currentAgent.id) {
+        handleCancelAgentNameEdit();
+      }
+      params.showSuccessToast(`Deleted "${displayName}"`);
     } catch (error) {
       params.showErrorToast(normalizeError(error));
     }
@@ -741,6 +782,7 @@ export function useWorkspaceCatalog(params: UseWorkspaceCatalogParams) {
     handleCreateAgent,
     handleCreateAgentWithAi,
     handleSaveAgents,
+    handleDeleteSelectedAgent,
     handleAgentSchemaInput,
     updateSelectedAgent,
     handleStartAgentNameEdit,

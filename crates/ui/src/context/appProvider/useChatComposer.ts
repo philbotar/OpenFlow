@@ -9,8 +9,10 @@ import {
 import type {
   Chat,
   NodeId,
+  PendingChatAttachment,
   ProviderReadiness,
   SkillSummary,
+  UserMessageInput,
   Workflow,
   WorkflowRunState,
 } from "../../lib/types";
@@ -23,11 +25,35 @@ import {
   isLiveTranscriptSegment,
   isChatNavigatedToNode,
   projectChatLayout,
+  replayContinuationNodeId,
   statusForNode,
 } from "../../lib/workflow";
 import { normalizeError } from "../../lib/utils";
 
 type ToastHandler = (message: string, context?: string) => void;
+
+const MAX_CHAT_ATTACHMENTS = 4;
+const MAX_CHAT_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+const MAX_CHAT_ATTACHMENT_TOTAL_BYTES = 25 * 1024 * 1024;
+const IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "gif", "webp"]);
+
+function fileNameFromSource(sourcePath: string): string {
+  return sourcePath.split(/[\\/]/).pop() || "attachment";
+}
+
+function attachmentKind(fileName: string): PendingChatAttachment["kind"] {
+  const extension = fileName.split(".").pop()?.toLowerCase() ?? "";
+  return IMAGE_EXTENSIONS.has(extension) ? "image" : "document";
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunkSize = 32_768;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
+}
 
 export type ChatNavigateOptions = {
   /** Default true: scroll when navigation target changed. */
@@ -55,6 +81,9 @@ export function useChatComposer(params: UseChatComposerParams) {
   const [chatDraftsByWorkflowId, setChatDraftsByWorkflowId] = createStore<
     Record<string, Record<string, string>>
   >({});
+  const [chatAttachmentsByWorkflowId, setChatAttachmentsByWorkflowId] = createStore<
+    Record<string, Record<string, PendingChatAttachment[]>>
+  >({});
   const [chatFilterNodeId, setChatFilterNodeId] = createSignal<NodeId | null>(null);
   const [pickedLiveNodeId, setPickedLiveNodeId] = createSignal<NodeId | null>(null);
   const [chatSegmentOrder, setChatSegmentOrder] = createSignal<NodeId[]>([]);
@@ -63,12 +92,14 @@ export function useChatComposer(params: UseChatComposerParams) {
     tick: number;
   } | null>(null);
   let chatFocusTick = 0;
-  let pendingKickoffText: string | null = null;
 
   const [startRunFromChatHandler, setStartRunFromChatHandler] = createSignal<
     ((nodeId: NodeId) => Promise<void>) | null
   >(null);
   const [resumeChatFromInputHandler, setResumeChatFromInputHandler] = createSignal<
+    ((nodeId: NodeId) => Promise<void>) | null
+  >(null);
+  const [resumeReplayFromInputHandler, setResumeReplayFromInputHandler] = createSignal<
     ((nodeId: NodeId) => Promise<void>) | null
   >(null);
 
@@ -102,73 +133,237 @@ export function useChatComposer(params: UseChatComposerParams) {
     setChatDraftsByWorkflowId(workflowId, { [nodeId]: text });
   };
 
+  const pendingChatAttachments = (nodeId: NodeId): PendingChatAttachment[] => {
+    const workflowId = params.activeWorkflowId();
+    if (!workflowId) {
+      return [];
+    }
+    return chatAttachmentsByWorkflowId[workflowId]?.[nodeId] ?? [];
+  };
+
+  const setPendingChatAttachments = (
+    workflowId: string,
+    nodeId: NodeId,
+    attachments: PendingChatAttachment[],
+  ) => {
+    const existing = chatAttachmentsByWorkflowId[workflowId];
+    if (existing) {
+      setChatAttachmentsByWorkflowId(workflowId, nodeId, attachments);
+      return;
+    }
+    setChatAttachmentsByWorkflowId(workflowId, { [nodeId]: attachments });
+  };
+
+  const addPendingAttachments = (
+    workflowId: string,
+    nodeId: NodeId,
+    attachments: PendingChatAttachment[],
+  ): PendingChatAttachment[] => {
+    if (params.activeWorkflowId() !== workflowId) {
+      return [];
+    }
+    const current = chatAttachmentsByWorkflowId[workflowId]?.[nodeId] ?? [];
+    const seen = new Set(current.map((attachment) => attachment.sourcePath));
+    const accepted: PendingChatAttachment[] = [];
+    let uniqueCandidateCount = 0;
+    for (const attachment of attachments) {
+      if (seen.has(attachment.sourcePath)) {
+        continue;
+      }
+      uniqueCandidateCount += 1;
+      if (current.length + accepted.length >= MAX_CHAT_ATTACHMENTS) {
+        continue;
+      }
+      seen.add(attachment.sourcePath);
+      accepted.push(attachment);
+    }
+    if (accepted.length < uniqueCandidateCount) {
+      params.showErrorToast(`Attach up to ${MAX_CHAT_ATTACHMENTS} files per message.`);
+    }
+    setPendingChatAttachments(workflowId, nodeId, [...current, ...accepted]);
+    return accepted;
+  };
+
+  const pickChatAttachments = async (nodeId: NodeId) => {
+    const workflowId = params.activeWorkflowId();
+    if (!workflowId || params.replayRunId()) {
+      return;
+    }
+    try {
+      const sources = await desktop.pickChatAttachmentSources();
+      addPendingAttachments(
+        workflowId,
+        nodeId,
+        sources.map((sourcePath) => {
+          const fileName = fileNameFromSource(sourcePath);
+          return {
+            sourcePath,
+            fileName,
+            kind: attachmentKind(fileName),
+          };
+        }),
+      );
+    } catch (error) {
+      params.showErrorToast(normalizeError(error));
+    }
+  };
+
+  const stageChatAttachments = async (nodeId: NodeId, files: readonly File[]) => {
+    const workflowId = params.activeWorkflowId();
+    if (!workflowId || params.replayRunId()) {
+      return;
+    }
+    const current = pendingChatAttachments(nodeId);
+    const slots = Math.max(0, MAX_CHAT_ATTACHMENTS - current.length);
+    const candidates = files.slice(0, slots);
+    if (candidates.length < files.length) {
+      params.showErrorToast(`Attach up to ${MAX_CHAT_ATTACHMENTS} files per message.`);
+    }
+    const currentTotal = current.reduce(
+      (total, attachment) => total + (attachment.sizeBytes ?? 0),
+      0,
+    );
+    let stagedTotal = 0;
+    for (const file of candidates) {
+      if (
+        file.size > MAX_CHAT_ATTACHMENT_BYTES ||
+        currentTotal + stagedTotal + file.size > MAX_CHAT_ATTACHMENT_TOTAL_BYTES
+      ) {
+        params.showErrorToast(`${file.name} exceeds the attachment size limit.`);
+        continue;
+      }
+      try {
+        const dataBase64 = bytesToBase64(new Uint8Array(await file.arrayBuffer()));
+        const staged = await desktop.stageChatAttachment(file.name, file.type, dataBase64);
+        if (params.activeWorkflowId() !== workflowId) {
+          await desktop.removeStagedChatAttachment(staged.token);
+          continue;
+        }
+        const attachment: PendingChatAttachment = {
+          sourcePath: staged.token,
+          fileName: staged.fileName,
+          sizeBytes: staged.sizeBytes,
+          kind: staged.kind,
+          staged: true,
+        };
+        const accepted = addPendingAttachments(workflowId, nodeId, [attachment]);
+        if (accepted.length === 0) {
+          await desktop.removeStagedChatAttachment(staged.token);
+        } else {
+          stagedTotal += staged.sizeBytes;
+        }
+      } catch (error) {
+        params.showErrorToast(normalizeError(error));
+      }
+    }
+  };
+
+  const removePendingChatAttachment = async (nodeId: NodeId, sourcePath: string) => {
+    const workflowId = params.activeWorkflowId();
+    if (!workflowId) {
+      return;
+    }
+    const current = pendingChatAttachments(nodeId);
+    const removed = current.find((attachment) => attachment.sourcePath === sourcePath);
+    setPendingChatAttachments(
+      workflowId,
+      nodeId,
+      current.filter((attachment) => attachment.sourcePath !== sourcePath),
+    );
+    if (removed?.staged) {
+      try {
+        await desktop.removeStagedChatAttachment(removed.sourcePath);
+      } catch (error) {
+        params.showErrorToast(normalizeError(error));
+      }
+    }
+  };
+
+  const clearChatSubmission = (nodeId: NodeId) => {
+    const workflowId = params.activeWorkflowId();
+    setChatDraft(nodeId, "");
+    if (workflowId) {
+      const staged = pendingChatAttachments(nodeId).filter(
+        (attachment) => attachment.staged,
+      );
+      setPendingChatAttachments(workflowId, nodeId, []);
+      for (const attachment of staged) {
+        void desktop.removeStagedChatAttachment(attachment.sourcePath).catch((error) => {
+          params.showErrorToast(normalizeError(error));
+        });
+      }
+    }
+  };
+
   const skillIdsMemo = createMemo(
     () => new Set(params.availableSkills().map((skill) => skill.id)),
   );
   const chatSubmissionFor = (nodeId: NodeId) =>
     resolveChatSubmission(chatDraft(nodeId), skillIdsMemo());
 
-  const resolveChatSubmittedText = async (nodeId: NodeId): Promise<string> => {
+  const sendableSubmissionText = (nodeId: NodeId) => {
+    const submission = chatSubmissionFor(nodeId);
+    return submission.submittedText || (submission.invokedSkills.length > 0 ? "/skill" : "");
+  };
+
+  const submitUserInput = (
+    nodeId: NodeId,
+    message: UserMessageInput,
+    invokedSkills: readonly string[],
+  ) =>
+    invokedSkills.length > 0
+      ? desktop.submitUserInput(nodeId, message, invokedSkills)
+      : desktop.submitUserInput(nodeId, message);
+
+  const resolveChatSubmissionPayload = async (nodeId: NodeId): Promise<UserMessageInput> => {
     const submission = chatSubmissionFor(nodeId);
     const paths = extractReferencedFilePaths(chatDraft(nodeId));
-    return formatSubmissionWithFileReferences(submission.submittedText, paths);
+    return {
+      text: await formatSubmissionWithFileReferences(submission.submittedText, paths),
+      attachmentSourcePaths: pendingChatAttachments(nodeId).map(
+        (attachment) => attachment.sourcePath,
+      ),
+    };
   };
 
   const canSendChatFor = (nodeId: NodeId) => {
     if (params.replayRunId()) {
-      return false;
+      return (
+        isGlobalRunEntryNodeId(nodeId) &&
+        replayContinuationNodeId(params.activeWorkflow(), params.runState()) !== null &&
+        canSendIdleRunKickoff(
+          params.runState(),
+          params.readiness()?.ready ?? false,
+          Boolean(params.activeWorkflow()),
+          params.startingRun(),
+          sendableSubmissionText(nodeId),
+          false,
+        )
+      );
     }
     if (isGlobalRunEntryNodeId(nodeId)) {
+      const activeWorkflow = params.activeWorkflow();
+      const activeChat = params.activeChat();
       return canSendIdleRunKickoff(
         params.runState(),
         params.readiness()?.ready ?? false,
-        !!params.activeWorkflow() || !!params.activeChat(),
+        !!activeWorkflow || !!activeChat,
         params.startingRun(),
-        chatSubmissionFor(nodeId).submittedText,
+        sendableSubmissionText(nodeId),
+        pendingChatAttachments(nodeId).length > 0,
+        !!activeWorkflow && !activeChat,
       );
     }
     return canSendChat(
       params.runState(),
       nodeId,
       params.readiness()?.ready ?? false,
-      chatSubmissionFor(nodeId).submittedText,
+      sendableSubmissionText(nodeId),
+      pendingChatAttachments(nodeId).length > 0,
     );
   };
 
   const composerBusyFor = (nodeId: NodeId) => isChatComposerBusy(params.runState(), nodeId);
-
-  const setPendingKickoff = (text: string | null) => {
-    pendingKickoffText = text;
-  };
-
-  const flushPendingKickoff = async (state: WorkflowRunState) => {
-    const text = pendingKickoffText;
-    if (!text || !state.active) {
-      return;
-    }
-    const awaitingIds =
-      state.awaitingNodeIds && state.awaitingNodeIds.length > 0
-        ? state.awaitingNodeIds
-        : state.awaitingNodeId
-          ? [state.awaitingNodeId]
-          : [];
-    if (awaitingIds.length === 1) {
-      pendingKickoffText = null;
-      try {
-        const next = await desktop.submitUserInput(awaitingIds[0], text);
-        params.publishBackendRunState(next);
-      } catch (error) {
-        params.showErrorToast(normalizeError(error));
-      }
-      return;
-    }
-    if (awaitingIds.length === 0 && !state.active) {
-      pendingKickoffText = null;
-    }
-    if (awaitingIds.length > 1) {
-      pendingKickoffText = null;
-    }
-  };
 
   const focusChatNode = (nodeId: NodeId) => {
     chatFocusTick += 1;
@@ -215,8 +410,19 @@ export function useChatComposer(params: UseChatComposerParams) {
     setResumeChatFromInputHandler(() => handler);
   };
 
+  const bindResumeReplayFromInput = (handler: (nodeId: NodeId) => Promise<void>) => {
+    setResumeReplayFromInputHandler(() => handler);
+  };
+
   const handleSubmitChat = async (nodeId: NodeId) => {
     if (!canSendChatFor(nodeId)) return;
+    if (params.replayRunId()) {
+      const handler = resumeReplayFromInputHandler();
+      if (handler) {
+        await handler(nodeId);
+      }
+      return;
+    }
     if (isGlobalRunEntryNodeId(nodeId)) {
       const handler = startRunFromChatHandler();
       if (handler) {
@@ -235,10 +441,11 @@ export function useChatComposer(params: UseChatComposerParams) {
       return;
     }
     try {
-      const submittedText = await resolveChatSubmittedText(nodeId);
-      const nextRunState = await desktop.submitUserInput(nodeId, submittedText);
+      const submission = chatSubmissionFor(nodeId);
+      const message = await resolveChatSubmissionPayload(nodeId);
+      const nextRunState = await submitUserInput(nodeId, message, submission.invokedSkills);
       params.publishBackendRunState(nextRunState);
-      setChatDraft(nodeId, "");
+      clearChatSubmission(nodeId);
     } catch (error) {
       params.showErrorToast(normalizeError(error));
     }
@@ -257,7 +464,10 @@ export function useChatComposer(params: UseChatComposerParams) {
       return;
     }
     try {
-      const nextRunState = await desktop.submitUserInput(nodeId, text);
+      const nextRunState = await desktop.submitUserInput(nodeId, {
+        text,
+        attachmentSourcePaths: [],
+      });
       params.publishBackendRunState(nextRunState);
       setChatDraft(nodeId, "");
     } catch (error) {
@@ -309,16 +519,20 @@ export function useChatComposer(params: UseChatComposerParams) {
     chatLayout,
     chatDraft,
     setChatDraft,
+    pendingChatAttachments,
+    pickChatAttachments,
+    stageChatAttachments,
+    removePendingChatAttachment,
+    clearChatSubmission,
     chatSubmissionFor,
     canSendChatFor,
     composerBusyFor,
-    resolveChatSubmittedText,
+    resolveChatSubmissionPayload,
     handleSubmitChat,
     handleSubmitStructuredInput,
-    setPendingKickoff,
-    flushPendingKickoff,
     bindStartRunFromChat,
     bindResumeChatFromInput,
+    bindResumeReplayFromInput,
     chatFilterNodeId,
     setChatFilterNodeId,
     pickedLiveNodeId,

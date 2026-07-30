@@ -18,6 +18,12 @@ export function WorkflowAuthoringScreen() {
     const draft = ctx.workflowAuthoringDraft();
     return Boolean(draft && draft.nodes.length > 0);
   };
+  const updatingExistingWorkflow = () => {
+    const draft = ctx.workflowAuthoringDraft();
+    return Boolean(
+      draft && ctx.workflows().some((workflow) => workflow.id === draft.id),
+    );
+  };
 
   return (
     <section class="workflow-authoring-screen">
@@ -31,6 +37,7 @@ export function WorkflowAuthoringScreen() {
             validation={ctx.workflowAuthoringValidation()}
             busy={ctx.workflowAuthoringBusy()}
             colorMode={ctx.resolvedTheme()}
+            uiZoom={ctx.uiZoom()}
           />
         </Show>
 
@@ -90,16 +97,24 @@ export function WorkflowAuthoringScreen() {
                   providerMessage={ctx.readiness()?.message ?? "Checking provider..."}
                   onSend={(message) => void ctx.handleWorkflowAuthoringSend(message)}
                 />
-                <Button
-                  variant="primary"
-                  class="workflow-authoring-apply"
-                  disabled={
-                    ctx.workflowAuthoringValidation()?.valid !== true || ctx.workflowAuthoringBusy()
-                  }
-                  onClick={() => void ctx.handleApplyWorkflowAuthoringDraft()}
-                >
-                  Create Workflow
-                </Button>
+                <div class="workflow-authoring-apply-group">
+                  <p>
+                    {updatingExistingWorkflow()
+                      ? "AI prepares a revised draft. Review it, then click Apply Changes."
+                      : "AI creates a draft. Click Create Workflow to save it. Then click Run in the editor to start it."}
+                  </p>
+                  <Button
+                    variant="primary"
+                    class="workflow-authoring-apply"
+                    disabled={
+                      ctx.workflowAuthoringValidation()?.valid !== true ||
+                      ctx.workflowAuthoringBusy()
+                    }
+                    onClick={() => void ctx.handleApplyWorkflowAuthoringDraft()}
+                  >
+                    {updatingExistingWorkflow() ? "Apply Changes" : "Create Workflow"}
+                  </Button>
+                </div>
               </div>
             </Show>
           </div>

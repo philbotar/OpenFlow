@@ -8,7 +8,7 @@ import {
   Show,
 } from "solid-js";
 import { labelForAgentStatus } from "../../lib/agentStatusLabels";
-import type { NodeId } from "../../lib/types";
+import type { Node, NodeId, PostRunSuggestion } from "../../lib/types";
 import { isLiveTranscriptSegment, sortTranscriptSegmentsByNodeOrder } from "../../lib/workflow";
 import { useAppContext } from "../../context/AppContext";
 import { PanelEmptyState } from "../PanelEmptyState";
@@ -19,6 +19,26 @@ import {
 } from "./Conversation";
 import { ConversationSegmentMessages } from "./ConversationSegmentMessages";
 import { PostRunSuggestions } from "./PostRunSuggestions";
+
+function postRunSuggestionAuthoringMessage(
+  suggestion: PostRunSuggestion,
+  nodes: Node[],
+) {
+  const target = suggestion.targetNodeId
+    ? nodes.find((node) => node.id === suggestion.targetNodeId)
+    : null;
+  const targetDescription = suggestion.targetNodeId
+    ? `${target?.label ?? suggestion.targetNodeId} (${suggestion.targetNodeId})`
+    : "Workflow-wide";
+  return [
+    "Revise the current workflow draft to implement this post-run improvement.",
+    "Preserve unrelated workflow behavior. Make only the changes needed for this suggestion.",
+    `Title: ${suggestion.title}`,
+    `Target node: ${targetDescription}`,
+    `Run evidence: ${suggestion.evidence}`,
+    `Requested change: ${suggestion.recommendation}`,
+  ].join("\n");
+}
 
 export function ConversationMessages() {
   const ctx = useAppContext();
@@ -192,6 +212,20 @@ export function ConversationMessages() {
                       <PostRunSuggestions
                         report={report()}
                         nodes={ctx.activeWorkflow()?.nodes ?? []}
+                        onApply={(suggestion) => {
+                          const workflow = ctx.activeWorkflow();
+                          if (!workflow) {
+                            return;
+                          }
+                          void ctx.handleOpenWorkflowAuthoring(
+                            workflow,
+                            ctx.activeProject()?.id ?? null,
+                            postRunSuggestionAuthoringMessage(
+                              suggestion,
+                              workflow.nodes,
+                            ),
+                          );
+                        }}
                       />
                     )}
                   </Show>

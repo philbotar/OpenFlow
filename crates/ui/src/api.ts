@@ -3,6 +3,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open as openDialog, confirm as confirmDialog } from "@tauri-apps/plugin-dialog";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import type { ConfirmDialogOptions, OpenDialogOptions } from "@tauri-apps/plugin-dialog";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
@@ -12,16 +13,19 @@ import type {
   AppSettings,
   BootstrapPayload,
   Chat,
+  ChatDeleteResult,
   ChatRunPayload,
   CodexLoginStatus,
   DebugLogEntry,
   DebugLogWrite,
+  DurableRunContinuationInput,
   Node,
   Project,
   ProjectFileReference,
   CopyWorkflowToProjectResult,
   McpServerConfig,
   SettingsLoadPayload,
+  StagedChatAttachment,
   SkillSummary,
   ProviderReadiness,
   RunSummary,
@@ -33,6 +37,8 @@ import type {
   WorkflowAuthoringTurnResult,
   WorkflowAuthoringDraftEvent,
   WorkflowAuthoringThinkingEvent,
+  UserMessageInput,
+  AttachmentPreview,
   TerminalEvent,
   TerminalStart,
   ScheduleDraft,
@@ -62,6 +68,14 @@ export function getAppVersion() {
     return Promise.resolve("dev");
   }
   return getVersion();
+}
+
+export function openExternalUrl(url: string): Promise<void> {
+  if (!isTauri()) {
+    window.open(url, "_blank", "noopener,noreferrer");
+    return Promise.resolve();
+  }
+  return openUrl(url);
 }
 
 export async function checkAppUpdateAvailable(): Promise<AppUpdateAvailability> {
@@ -166,7 +180,7 @@ export function listChats() {
 }
 
 export function deleteChat(chatId: string) {
-  return invoke<void>("delete_chat", { chatId });
+  return invoke<ChatDeleteResult>("delete_chat", { chatId });
 }
 
 export function updateChatConfig(
@@ -292,6 +306,16 @@ export function refreshBedrockModels(settings: AppSettings) {
   return invoke<string[]>("refresh_bedrock_models", { settings });
 }
 
+export function refreshProviderModels(
+  settings: AppSettings,
+  transientApiKey: string | null = null,
+) {
+  return invoke<string[]>("refresh_provider_models", {
+    settings,
+    transientApiKey,
+  });
+}
+
 export function verifyBedrockCredentials(settings: AppSettings) {
   return invoke<string>("verify_bedrock_credentials", { settings });
 }
@@ -337,14 +361,16 @@ export function startRun(
   settings: AppSettings,
   executionCwd: string | null = null,
   transientApiKey: string | null = null,
-  entrypoint: string | null = null,
+  message: UserMessageInput | null = null,
+  invokedSkillIds: readonly string[] = [],
 ) {
   return invoke<WorkflowRunState>("start_run", {
     workflow,
     settings,
     executionCwd,
     transientApiKey,
-    entrypoint,
+    message,
+    ...(invokedSkillIds.length > 0 ? { invokedSkillIds: [...invokedSkillIds] } : {}),
   });
 }
 
@@ -352,13 +378,15 @@ export function startChat(
   chatId: string,
   settings: AppSettings,
   transientApiKey: string | null,
-  entrypoint: string,
+  message: UserMessageInput,
+  invokedSkillIds: readonly string[] = [],
 ) {
   return invoke<ChatRunPayload>("start_chat", {
     chatId,
     settings,
     transientApiKey,
-    entrypoint,
+    message,
+    ...(invokedSkillIds.length > 0 ? { invokedSkillIds: [...invokedSkillIds] } : {}),
   });
 }
 
@@ -394,11 +422,13 @@ export function resumeDurableRun(
   runId: string,
   settings: AppSettings,
   transientApiKey: string | null = null,
+  continuation?: DurableRunContinuationInput,
 ) {
   return invoke<WorkflowRunState>("resume_durable_run", {
     runId,
     settings,
     transientApiKey,
+    ...(continuation ? { continuation } : {}),
   });
 }
 
@@ -449,8 +479,16 @@ export function revertEditBatch(batchId: string) {
   return invoke<WorkflowRunState>("revert_edit_batch", { batchId });
 }
 
-export function submitUserInput(nodeId: string, text: string) {
-  return invoke<WorkflowRunState>("submit_user_input", { nodeId, text });
+export function submitUserInput(
+  nodeId: string,
+  message: UserMessageInput,
+  invokedSkillIds: readonly string[] = [],
+) {
+  return invoke<WorkflowRunState>("submit_user_input", {
+    nodeId,
+    message,
+    ...(invokedSkillIds.length > 0 ? { invokedSkillIds: [...invokedSkillIds] } : {}),
+  });
 }
 
 export function submitToolApproval(
@@ -549,6 +587,68 @@ export function getAppWindow() {
 /** Native file/folder picker (Tauri seam). */
 export function openNativeDialog(options?: OpenDialogOptions) {
   return openDialog(options);
+}
+
+const CHAT_ATTACHMENT_FILTERS: OpenDialogOptions["filters"] = [
+  {
+    name: "Images and documents",
+    extensions: [
+      "jpg",
+      "jpeg",
+      "png",
+      "gif",
+      "webp",
+      "pdf",
+      "txt",
+      "md",
+      "markdown",
+      "csv",
+      "json",
+      "html",
+      "htm",
+      "css",
+      "js",
+      "mjs",
+      "cjs",
+      "py",
+    ],
+  },
+];
+
+/** Native chat attachment picker. Returns source paths in selection order. */
+export async function pickChatAttachmentSources(): Promise<string[]> {
+  const selected = await openDialog({
+    multiple: true,
+    directory: false,
+    filters: CHAT_ATTACHMENT_FILTERS,
+  });
+  if (!selected) {
+    return [];
+  }
+  return Array.isArray(selected) ? selected : [selected];
+}
+
+export function stageChatAttachment(
+  fileName: string,
+  mediaType: string,
+  dataBase64: string,
+) {
+  return invoke<StagedChatAttachment>("stage_chat_attachment", {
+    fileName,
+    mediaType,
+    dataBase64,
+  });
+}
+
+export function removeStagedChatAttachment(token: string) {
+  return invoke<void>("remove_staged_chat_attachment", { token });
+}
+
+export function loadChatAttachmentPreview(runId: string, attachmentId: string) {
+  return invoke<AttachmentPreview>("load_chat_attachment_preview", {
+    runId,
+    attachmentId,
+  });
 }
 
 /** Native confirm dialog (Tauri seam). */

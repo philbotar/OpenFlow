@@ -107,6 +107,7 @@ pub enum RunTelemetry {
         node_id: NodeId,
         label: String,
         output: Value,
+        handoff: Option<crate::execution::HandoffArtifact>,
     },
     NodeFailed {
         node_id: NodeId,

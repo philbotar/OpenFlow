@@ -23,6 +23,10 @@
   white-space: nowrap;
 }
 
+.app-tooltip[data-side="right"] {
+  transform: translateY(-50%);
+}
+
 .app-tooltip-keys {
   display: inline-flex;
   gap: 3px;

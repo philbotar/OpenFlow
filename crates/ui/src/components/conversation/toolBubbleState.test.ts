@@ -67,6 +67,10 @@ describe("formatToolDisplayName", () => {
     expect(formatToolDisplayName("openflow_request_user_input")).toBe("Request Input");
   });
 
+  it("maps openflow_ask_user_question to 'Ask Question'", () => {
+    expect(formatToolDisplayName("openflow_ask_user_question")).toBe("Ask Question");
+  });
+
   it("maps openflow_write_plan_artifact to 'Seal Plan'", () => {
     expect(formatToolDisplayName("openflow_write_plan_artifact")).toBe("Seal Plan");
   });
@@ -93,10 +97,10 @@ describe("formatToolDisplayName", () => {
     expect(typeof result).toBe("string");
   });
 
-  it("TOOL_DISPLAY_NAMES map has exactly 13 entries", () => {
+  it("TOOL_DISPLAY_NAMES map has exactly 14 entries", () => {
     // Guard against accidental additions or removals. If you add a new tool,
     // update this count and add a corresponding test above.
-    const expectedCount = 13;
+    const expectedCount = 14;
     const result = formatToolDisplayName("read");
     expect(result).toBe("Read File");
     // Count the known mappings by testing every expected key
@@ -105,6 +109,7 @@ describe("formatToolDisplayName", () => {
       "bash", "search", "find", "ast_grep", "ast_edit",
       "openflow_call_subagent", "openflow_declare_subagents",
       "openflow_submit_node_output", "openflow_request_user_input",
+      "openflow_ask_user_question",
     ];
     expect(knownKeys.length).toBe(expectedCount);
     // Every known key must map to a different value than its raw name

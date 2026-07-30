@@ -1,9 +1,7 @@
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For } from "solid-js";
 import { useAppContext } from "../../context/AppContext";
 import type { NodeId, StructuredUserInput } from "../../lib/types";
 import { Button } from "../Button";
-
-const OTHER_VALUE = "__openflow_other__";
 
 export function StructuredAskCard(props: {
   nodeId: NodeId;
@@ -11,7 +9,6 @@ export function StructuredAskCard(props: {
 }) {
   const ctx = useAppContext();
   const [selectedById, setSelectedById] = createSignal<Record<string, string>>({});
-  const [customById, setCustomById] = createSignal<Record<string, string>>({});
   const [submitting, setSubmitting] = createSignal(false);
   let requestKey = "";
 
@@ -22,17 +19,11 @@ export function StructuredAskCard(props: {
     }
     requestKey = nextRequestKey;
     setSelectedById({});
-    setCustomById({});
     setSubmitting(false);
   });
 
-  const answerFor = (questionId: string) => {
-    const selected = selectedById()[questionId];
-    if (selected === OTHER_VALUE) {
-      return customById()[questionId]?.trim() ?? "";
-    }
-    return selected?.trim() ?? "";
-  };
+  const answerFor = (questionId: string) =>
+    selectedById()[questionId]?.trim() ?? "";
 
   const complete = createMemo(
     () =>
@@ -72,64 +63,36 @@ export function StructuredAskCard(props: {
               <p class="structured-ask-prompt" id={promptId}>
                 {question.question}
               </p>
-              <div
-                class="structured-ask-options"
-                role="radiogroup"
-                aria-labelledby={promptId}
-              >
+              <ul class="structured-ask-options" aria-labelledby={promptId}>
                 <For each={question.options}>
                   {(option) => (
-                    <button
-                      type="button"
-                      class="structured-ask-option"
+                    <li
+                      class="structured-ask-option-row"
                       classList={{
                         selected: selectedById()[question.id] === option.label,
                       }}
-                      role="radio"
-                      aria-checked={selectedById()[question.id] === option.label}
-                      disabled={!inputEnabled() || submitting()}
-                      onClick={() => select(question.id, option.label)}
                     >
-                      <span class="structured-ask-option-label">{option.label}</span>
-                      <span class="structured-ask-option-description">
-                        {option.description}
-                      </span>
-                    </button>
+                      <label class="structured-ask-option">
+                        <input
+                          class="structured-ask-option-control"
+                          type="radio"
+                          name={`${props.nodeId}-${question.id}`}
+                          value={option.label}
+                          checked={selectedById()[question.id] === option.label}
+                          disabled={!inputEnabled() || submitting()}
+                          onChange={() => select(question.id, option.label)}
+                        />
+                        <span class="structured-ask-option-copy">
+                          <span class="structured-ask-option-label">{option.label}</span>
+                          <span class="structured-ask-option-description">
+                            {option.description}
+                          </span>
+                        </span>
+                      </label>
+                    </li>
                   )}
                 </For>
-                <button
-                  type="button"
-                  class="structured-ask-option"
-                  classList={{
-                    selected: selectedById()[question.id] === OTHER_VALUE,
-                  }}
-                  role="radio"
-                  aria-checked={selectedById()[question.id] === OTHER_VALUE}
-                  disabled={!inputEnabled() || submitting()}
-                  onClick={() => select(question.id, OTHER_VALUE)}
-                >
-                  <span class="structured-ask-option-label">Other</span>
-                  <span class="structured-ask-option-description">
-                    Enter a different answer.
-                  </span>
-                </button>
-              </div>
-              <Show when={selectedById()[question.id] === OTHER_VALUE}>
-                <input
-                  class="structured-ask-custom-input"
-                  type="text"
-                  value={customById()[question.id] ?? ""}
-                  aria-label={`Other answer for ${question.header}`}
-                  placeholder="Type your answer"
-                  disabled={!inputEnabled() || submitting()}
-                  onInput={(event) =>
-                    setCustomById((current) => ({
-                      ...current,
-                      [question.id]: event.currentTarget.value,
-                    }))
-                  }
-                />
-              </Show>
+              </ul>
             </fieldset>
           );
         }}

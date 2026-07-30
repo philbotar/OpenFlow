@@ -10,6 +10,17 @@ import { WorkflowSettingsPanel } from "./WorkflowSettingsPanel";
 const settings: AppSettings = {
   active_provider: "anthropic",
   providers: {
+    openai: {
+      display_name: "OpenAI",
+      base_url: "https://api.openai.com",
+      transport: "responses",
+      responses_path: "v1/responses",
+      chat_completions_path: "v1/chat/completions",
+      request_timeout_secs: 300,
+      known_models: ["gpt-5"],
+      default_model: "gpt-5",
+      editable: false,
+    },
     anthropic: {
       display_name: "Anthropic",
       base_url: "https://api.anthropic.com",
@@ -137,6 +148,22 @@ describe("WorkflowSettingsPanel", () => {
     expect(workflow().settings.shared_context).toBe("Updated shared context");
   });
 
+  test("selects a shared workflow provider", () => {
+    const { workflow } = renderPanel(makeWorkflow());
+    const providerTrigger = [...container.querySelectorAll(".text-select-trigger")].find(
+      (button) => button.closest("label")?.textContent?.includes("Shared provider"),
+    ) as HTMLButtonElement | undefined;
+
+    expect(providerTrigger).toBeTruthy();
+    providerTrigger!.click();
+    const openAiOption = [...container.querySelectorAll(".text-select-option")].find(
+      (element) => element.textContent === "OpenAI",
+    ) as HTMLButtonElement;
+    openAiOption.click();
+
+    expect(workflow().settings.provider_id).toBe("openai");
+  });
+
   test("enables Plan → Execute with a conversational freeze node", () => {
     const initial = makeWorkflow();
     initial.nodes[0].agent.requestUserInput = true;
@@ -179,8 +206,11 @@ describe("WorkflowSettingsPanel", () => {
 
   test("updates workflow default reasoning effort", () => {
     const { workflow } = renderPanel(makeWorkflow());
-    const trigger = container.querySelector(".text-select-trigger") as HTMLButtonElement;
-    trigger.click();
+    const trigger = [...container.querySelectorAll(".text-select-trigger")].find((button) =>
+      button.closest("label")?.textContent?.includes("Default reasoning effort"),
+    ) as HTMLButtonElement | undefined;
+    expect(trigger).toBeTruthy();
+    trigger!.click();
     const mediumOption = [...container.querySelectorAll(".text-select-option")].find(
       (element) => element.textContent === "Medium",
     ) as HTMLButtonElement;
@@ -230,8 +260,11 @@ describe("WorkflowSettingsPanel", () => {
     const { workflow } = renderPanel(
       makeWorkflow({ reasoning_effort: "low", reasoning_budget_tokens: 10_240 }),
     );
-    const trigger = container.querySelector(".text-select-trigger") as HTMLButtonElement;
-    trigger.click();
+    const trigger = [...container.querySelectorAll(".text-select-trigger")].find((button) =>
+      button.closest("label")?.textContent?.includes("Default reasoning effort"),
+    ) as HTMLButtonElement | undefined;
+    expect(trigger).toBeTruthy();
+    trigger!.click();
     const mediumOption = [...container.querySelectorAll(".text-select-option")].find(
       (element) => element.textContent === "Medium",
     ) as HTMLButtonElement;

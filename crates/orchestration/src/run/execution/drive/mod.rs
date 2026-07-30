@@ -68,6 +68,21 @@ pub(super) async fn drive_interactive_workflow<A>(
                 approvals,
                 retryables,
             } => {
+                let checkpoint_reason = if !approvals.is_empty() {
+                    RunCheckpointReason::AwaitingToolApproval
+                } else if !retryables.is_empty() {
+                    RunCheckpointReason::AwaitingRetry
+                } else {
+                    RunCheckpointReason::AwaitingInput
+                };
+                // Stage the engine snapshot before emitting projection events. The
+                // coordinator keeps it pending until every checkpointed pause item
+                // has reached the projection.
+                publish_checkpoint(
+                    &mut wiring.engine,
+                    &wiring.checkpoint_sink,
+                    checkpoint_reason,
+                );
                 let (mut pause, approval_ctx) = emit_interaction_pause(
                     &inputs,
                     &approvals,
@@ -78,11 +93,6 @@ pub(super) async fn drive_interactive_workflow<A>(
                     wiring.tool_port.tool_runner(),
                     &mut proposed_tool_calls,
                     &mut emitted_retryables,
-                );
-                publish_checkpoint(
-                    &mut wiring.engine,
-                    &wiring.checkpoint_sink,
-                    pause.checkpoint_reason(),
                 );
                 if !await_interaction_actions(
                     &mut pause,

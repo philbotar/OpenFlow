@@ -1,4 +1,5 @@
 use engine::{AiPort, CallableAgent, Workflow};
+use orchestration::adapters::storage::run_attachment_store::FileRunAttachmentStore;
 use orchestration::run::execution::{
     new_artifact_root, new_in_memory_snapshot_store, run_workflow_headless,
     spawn_interactive_workflow_run, ApprovalResponse, ExecutionAction, ExecutionEvent,
@@ -60,13 +61,18 @@ pub fn spawn_interactive_script<A>(
 where
     A: AiPort + Send + Sync + 'static,
 {
+    let attachment_root = execution_cwd.join("attachments");
     let params = InteractiveWorkflowRunParams {
         workflow,
         entrypoint: None,
+        entrypoint_attachments: Vec::new(),
         execution_cwd,
         project_repository_root: None,
         artifact_root: new_artifact_root(),
+        attachment_root,
+        attachment_store: Arc::new(FileRunAttachmentStore::default()),
         resume_checkpoint: None,
+        resume_continuation: None,
         checkpoint_sink: Arc::new(parking_lot::Mutex::new(None)),
         ai,
         agent_snapshots: BTreeMap::<String, CallableAgent>::new(),

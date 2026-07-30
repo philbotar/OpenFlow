@@ -501,8 +501,12 @@ fn completion_request_for(
     provider_id: &ProviderId,
     openai_config: Option<&OpenAiCompatibleConfig>,
 ) -> Result<CompletionRequest, AgentError> {
-    let mut completion_request = convert::to_completion_request(request);
-    apply_tool_choice_policy(&mut completion_request, provider_id);
+    let mut completion_request = convert::to_completion_request(request)?;
+    apply_tool_choice_policy(
+        &mut completion_request,
+        provider_id,
+        request.conversation_mode,
+    );
     match model {
         RigModel::Anthropic(_) => {
             claude_thinking::apply(
@@ -550,9 +554,17 @@ fn merge_codex_params(request: &mut CompletionRequest, agent_request: &AgentRequ
     });
 }
 
-fn apply_tool_choice_policy(request: &mut CompletionRequest, provider_id: &ProviderId) {
+fn apply_tool_choice_policy(
+    request: &mut CompletionRequest,
+    provider_id: &ProviderId,
+    conversation_mode: bool,
+) {
     let _ = provider_id;
-    request.tool_choice = Some(ToolChoice::Required);
+    request.tool_choice = Some(if conversation_mode {
+        ToolChoice::Auto
+    } else {
+        ToolChoice::Required
+    });
 }
 
 fn apply_anthropic_cache_params(request: &mut CompletionRequest) {
@@ -658,7 +670,7 @@ fn rig_http_client(request_timeout: Duration) -> ReqwestClient {
         .unwrap_or_else(|_| ReqwestClient::new())
 }
 
-fn rig_openai_base_url(config: &OpenAiCompatibleConfig, wire_api: WireApi) -> String {
+pub(super) fn rig_openai_base_url(config: &OpenAiCompatibleConfig, wire_api: WireApi) -> String {
     let path = match wire_api {
         WireApi::ChatCompletions => config.chat_completions_path.as_str(),
         WireApi::Responses => config.responses_path.as_str(),
@@ -721,6 +733,7 @@ mod tests {
             node_id: NodeId::from("n1"),
             node_label: "Idea".into(),
             model: "mimo-v2.5".into(),
+            provider_id: None,
             system_messages: vec!["sys".into()],
             task_prompt: "task".into(),
             input: serde_json::json!({}),
@@ -728,11 +741,14 @@ mod tests {
             tool_config: NodeToolConfig::default(),
             available_tools: Vec::new(),
             transcript: Vec::new(),
+            entrypoint_attachments: Vec::new(),
+            resolved_attachments: std::collections::BTreeMap::default(),
             model_attempt: 1,
             reasoning_effort: None,
             reasoning_budget_tokens: None,
             tool_access_policy: engine::ToolAccessPolicy::Execution,
             allow_user_input: false,
+            conversation_mode: false,
         }
     }
 
@@ -870,9 +886,36 @@ mod tests {
 
     #[test]
     fn custom_openai_compatible_requires_a_tool_call() {
-        let mut request = convert::to_completion_request(&minimal_request());
-        apply_tool_choice_policy(&mut request, &ProviderId::from("custom_openai_compatible"));
+        let result = convert::to_completion_request(&minimal_request());
+        assert!(result.is_ok());
+        let Ok(mut request) = result else {
+            return;
+        };
+        apply_tool_choice_policy(
+            &mut request,
+            &ProviderId::from("custom_openai_compatible"),
+            false,
+        );
         assert_eq!(request.tool_choice, Some(ToolChoice::Required));
+    }
+
+    #[test]
+    fn natural_conversation_uses_automatic_tool_choice() {
+        let mut agent_request = minimal_request();
+        agent_request.conversation_mode = true;
+        let result = convert::to_completion_request(&agent_request);
+        assert!(result.is_ok());
+        let Ok(mut request) = result else {
+            return;
+        };
+
+        apply_tool_choice_policy(
+            &mut request,
+            &ProviderId::from("openai"),
+            agent_request.conversation_mode,
+        );
+
+        assert_eq!(request.tool_choice, Some(ToolChoice::Auto));
     }
 
     #[test]

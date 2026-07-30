@@ -121,7 +121,10 @@ function PlainMessage(props: {
     displayChatContent(props.message.role, props.message.content),
   );
   const shouldRender = createMemo(
-    () => content().trim().length > 0 || props.message.streaming,
+    () =>
+      content().trim().length > 0 ||
+      props.message.streaming ||
+      (props.message.attachments?.length ?? 0) > 0,
   );
   return (
     <Show when={shouldRender()}>
@@ -132,6 +135,8 @@ function PlainMessage(props: {
         })}
         content={content()}
         streaming={props.message.streaming}
+        attachments={props.message.attachments}
+        runId={useAppContext().runState()?.runId ?? null}
       />
     </Show>
   );

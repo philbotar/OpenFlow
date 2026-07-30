@@ -426,7 +426,7 @@ mod tests {
             resolved.auth,
             AuthConfig::Bearer {
                 api_key: Some("vendor-key".to_string()),
-                required: true,
+                required: false,
             }
         );
         let ProviderAdapterConfig::OpenAiCompatible(config) = resolved.adapter else {
@@ -731,24 +731,24 @@ mod tests {
     }
 
     #[test]
-    fn missing_key_reports_selected_provider_and_env_var() {
+    fn custom_compatible_provider_allows_a_trusted_endpoint_without_a_key() {
         let settings = AppSettings {
             active_provider: ProviderId::from("custom_openai_compatible"),
             ..Default::default()
         };
 
-        let error = resolve_provider_config(
+        let resolved = resolve_provider_config(
             &settings,
             None,
             &ProviderEnv::from_pairs([("OPENAI_API_KEY", "sk-openai")]),
         )
-        .unwrap_err();
+        .expect("custom endpoint without key");
 
         assert_eq!(
-            error,
-            ProviderConfigError::MissingApiKey {
-                provider: "Custom OpenAI-compatible API".to_string(),
-                env_var: "OPENAI_COMPATIBLE_API_KEY".to_string(),
+            resolved.auth,
+            AuthConfig::Bearer {
+                api_key: None,
+                required: false,
             }
         );
     }

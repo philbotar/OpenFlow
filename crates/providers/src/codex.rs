@@ -291,6 +291,7 @@ mod tests {
             node_id: engine::NodeId("node-1".into()),
             node_label: "Node".into(),
             model: "gpt-5.3-codex".into(),
+            provider_id: None,
             system_messages: vec!["Be precise.".into()],
             task_prompt: "Return the result.".into(),
             input: json!({}),
@@ -302,11 +303,14 @@ mod tests {
             tool_config: engine::NodeToolConfig::default(),
             available_tools: Vec::new(),
             transcript: Vec::new(),
+            entrypoint_attachments: Vec::new(),
+            resolved_attachments: std::collections::BTreeMap::default(),
             model_attempt: 1,
             reasoning_effort: Some("high".into()),
             reasoning_budget_tokens: None,
             tool_access_policy: engine::ToolAccessPolicy::Execution,
             allow_user_input: false,
+            conversation_mode: false,
         }
     }
 

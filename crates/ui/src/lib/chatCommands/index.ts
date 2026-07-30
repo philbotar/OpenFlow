@@ -101,37 +101,22 @@ export function resolveChatSubmission(
   }
 
   const invokedSkills: string[] = [];
-  let remaining = trimmed;
-
-  while (remaining.startsWith("/")) {
-    const separatorIndex = remaining.search(/\s/);
-    const token = separatorIndex === -1 ? remaining : remaining.slice(0, separatorIndex);
-    const skill = token.slice(1);
-    if (skill === "" || !knownSkillIds.has(skill)) {
-      break;
+  const bodyTokens: string[] = [];
+  for (const token of trimmed.split(/\s+/)) {
+    const skill = token.startsWith("/") ? token.slice(1) : "";
+    if (skill !== "" && knownSkillIds.has(skill)) {
+      if (!invokedSkills.includes(skill)) {
+        invokedSkills.push(skill);
+      }
+      continue;
     }
-    if (!invokedSkills.includes(skill)) {
-      invokedSkills.push(skill);
-    }
-    remaining = separatorIndex === -1 ? "" : remaining.slice(separatorIndex).trimStart();
+    bodyTokens.push(token);
   }
 
-  const bodyText = remaining.trim();
+  const bodyText = bodyTokens.join(" ");
   return {
     bodyText,
     invokedSkills,
-    submittedText: formatSubmittedText(invokedSkills, bodyText, trimmed),
+    submittedText: bodyText,
   };
-}
-
-function formatSubmittedText(invokedSkills: readonly string[], bodyText: string, fallbackText: string) {
-  if (invokedSkills.length === 0) {
-    return fallbackText;
-  }
-
-  const lines = ["Skill invocation:", ...invokedSkills.map((skill) => `- ${skill}`)];
-  if (bodyText !== "") {
-    lines.push("", "User message:", bodyText);
-  }
-  return lines.join("\n");
 }

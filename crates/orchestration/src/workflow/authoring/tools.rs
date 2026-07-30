@@ -1,13 +1,15 @@
 use super::draft::{
-    default_node_output_schema, materialize_authoring_draft, workflow_to_authoring_draft,
-    WorkflowAuthoringDraft, WorkflowAuthoringEdgeDraft, WorkflowAuthoringNodeDraft,
+    default_node_handoff, default_node_output_schema, materialize_authoring_draft,
+    workflow_to_authoring_draft, WorkflowAuthoringDraft, WorkflowAuthoringEdgeDraft,
+    WorkflowAuthoringNodeDraft,
 };
 use super::error::AuthoringError;
 use super::layout::layout_workflow_by_layers;
 use super::validate::validate_authoring_workflow;
 use crate::api::WorkflowAuthoringValidation;
 use engine::{
-    ToolCall, ToolConcurrency, ToolDefinition, ToolResult, ToolTier, Workflow, WorkflowId,
+    HandoffSpec, ToolCall, ToolConcurrency, ToolDefinition, ToolResult, ToolTier, Workflow,
+    WorkflowId,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -59,7 +61,7 @@ pub fn authoring_tool_definitions() -> Vec<ToolDefinition> {
         },
         ToolDefinition {
             name: ADD_NODE_TOOL.to_string(),
-            description: "Add one agent node. Call once per node with short prompts (1-2 sentences). outputSchema is optional — defaults to { summary: string }.".to_string(),
+            description: "Add one agent node. Call once per node with short prompts (1-2 sentences). handoffFormat defaults to markdown; use json only for typed machine data.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "additionalProperties": false,
@@ -68,14 +70,21 @@ pub fn authoring_tool_definitions() -> Vec<ToolDefinition> {
                     "label": { "type": "string" },
                     "systemPrompt": { "type": "string" },
                     "taskPrompt": { "type": "string" },
-                    "autoStart": { "type": "boolean" },
                     "requestUserInput": {
                         "type": "boolean",
                         "description": "True only when this node genuinely needs an ongoing human conversation. Use false for autonomous planning, coding, searching, reviewing, and verification nodes."
                     },
+                    "handoffFormat": {
+                        "type": "string",
+                        "enum": ["markdown", "json"]
+                    },
+                    "handoffTemplate": {
+                        "type": "string",
+                        "description": "Markdown heading template. Used only with handoffFormat markdown."
+                    },
                     "outputSchema": { "type": "object" }
                 },
-                "required": ["id", "label", "systemPrompt", "taskPrompt", "autoStart"]
+                "required": ["id", "label", "systemPrompt", "taskPrompt"]
             }),
             tier: ToolTier::Write,
             concurrency: ToolConcurrency::Shared,
@@ -91,8 +100,12 @@ pub fn authoring_tool_definitions() -> Vec<ToolDefinition> {
                     "label": { "type": "string" },
                     "systemPrompt": { "type": "string" },
                     "taskPrompt": { "type": "string" },
-                    "autoStart": { "type": "boolean" },
                     "requestUserInput": { "type": "boolean" },
+                    "handoffFormat": {
+                        "type": "string",
+                        "enum": ["markdown", "json"]
+                    },
+                    "handoffTemplate": { "type": "string" },
                     "outputSchema": { "type": "object" }
                 },
                 "required": ["id"]
@@ -245,9 +258,10 @@ impl AuthoringToolState {
             label: String,
             system_prompt: String,
             task_prompt: String,
-            auto_start: bool,
             #[serde(default)]
             request_user_input: bool,
+            handoff_format: Option<String>,
+            handoff_template: Option<String>,
             output_schema: Option<Value>,
         }
         let args: Args = serde_json::from_value(args.clone())
@@ -262,6 +276,11 @@ impl AuthoringToolState {
         if self.draft.nodes.iter().any(|node| node.id == args.id) {
             return Err(format!("node id '{}' already exists", args.id));
         }
+        let handoff = handoff_from_args(
+            args.handoff_format.as_deref(),
+            args.handoff_template,
+            args.output_schema.is_some(),
+        )?;
         self.draft.nodes.push(WorkflowAuthoringNodeDraft {
             id: args.id,
             label: args.label,
@@ -271,7 +290,7 @@ impl AuthoringToolState {
                 .output_schema
                 .filter(|schema| schema.is_object())
                 .unwrap_or_else(default_node_output_schema),
-            auto_start: args.auto_start,
+            handoff,
             request_user_input: args.request_user_input,
         });
         Ok(())
@@ -285,8 +304,9 @@ impl AuthoringToolState {
             label: Option<String>,
             system_prompt: Option<String>,
             task_prompt: Option<String>,
-            auto_start: Option<bool>,
             request_user_input: Option<bool>,
+            handoff_format: Option<String>,
+            handoff_template: Option<String>,
             output_schema: Option<Value>,
         }
         let args: Args = serde_json::from_value(args.clone())
@@ -315,11 +335,12 @@ impl AuthoringToolState {
             }
             node.task_prompt = task_prompt;
         }
-        if let Some(auto_start) = args.auto_start {
-            node.auto_start = auto_start;
-        }
         if let Some(request_user_input) = args.request_user_input {
             node.request_user_input = request_user_input;
+        }
+        if args.handoff_format.is_some() || args.handoff_template.is_some() {
+            node.handoff =
+                handoff_from_args(args.handoff_format.as_deref(), args.handoff_template, false)?;
         }
         if let Some(output_schema) = args.output_schema {
             if !output_schema.is_object() {
@@ -443,6 +464,27 @@ impl AuthoringToolState {
     }
 }
 
+fn handoff_from_args(
+    format: Option<&str>,
+    template: Option<String>,
+    infer_json_from_schema: bool,
+) -> Result<HandoffSpec, String> {
+    match format {
+        Some("markdown") => Ok(HandoffSpec::Markdown {
+            template: template.unwrap_or_else(engine::default_markdown_handoff_template),
+        }),
+        Some("json") => Ok(HandoffSpec::Json),
+        Some(other) => Err(format!(
+            "handoffFormat must be markdown or json, got '{other}'"
+        )),
+        None if template.is_some() => Ok(HandoffSpec::Markdown {
+            template: template.unwrap_or_else(engine::default_markdown_handoff_template),
+        }),
+        None if infer_json_from_schema => Ok(HandoffSpec::Json),
+        None => Ok(default_node_handoff()),
+    }
+}
+
 fn validate_node_id(id: &str) -> Result<(), String> {
     if id.trim().is_empty() {
         return Err("node id must be non-empty".to_string());
@@ -540,6 +582,39 @@ mod tests {
             .nodes
             .iter()
             .all(|node| !node.agent.request_user_input));
+        assert!(workflow
+            .nodes
+            .iter()
+            .all(|node| matches!(node.agent.handoff, engine::HandoffSpec::Markdown { .. })));
+    }
+
+    #[test]
+    fn add_node_can_select_json_handoff() {
+        let mut state = AuthoringToolState::new(None, "gpt-5.5");
+        state.execute(&call(
+            SET_WORKFLOW_META_TOOL,
+            json!({ "name": "Typed handoff" }),
+        ));
+        let result = state.execute(&call(
+            ADD_NODE_TOOL,
+            json!({
+                "id": "classify",
+                "label": "Classify",
+                "systemPrompt": "Classify the input.",
+                "taskPrompt": "Return the classification.",
+                "handoffFormat": "json",
+                "outputSchema": {
+                    "type": "object",
+                    "properties": { "category": { "type": "string" } },
+                    "required": ["category"]
+                }
+            }),
+        ));
+
+        assert!(!result.is_error, "{}", result.content);
+        let (workflow, validation) = state.materialize_workflow().expect("materialize");
+        assert!(validation.valid, "{:?}", validation.errors);
+        assert_eq!(workflow.nodes[0].agent.handoff, engine::HandoffSpec::Json);
     }
 
     #[test]

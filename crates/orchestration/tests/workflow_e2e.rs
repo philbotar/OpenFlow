@@ -143,11 +143,13 @@ async fn invalid_output_schema_completes_without_panic() {
 
 #[cfg_attr(miri, ignore)]
 #[tokio::test]
-async fn missing_manual_input_surfaces_typed_error() {
-    let ai = MockAiStack::from_invocation_order([MockTurn::ok_summary("unused")]);
+async fn unanswered_node_question_surfaces_typed_error() {
+    let ai = MockAiStack::from_invocation_order([MockTurn::NeedsUserInput {
+        message: "Which environment should I target?".to_string(),
+    }]);
 
     let mut workflow = single_agent_workflow();
-    workflow.nodes[0].agent.auto_start = false;
+    workflow.nodes[0].agent.request_user_input = true;
 
     let error = run_headless_script(
         workflow,
@@ -158,7 +160,7 @@ async fn missing_manual_input_surfaces_typed_error() {
         },
     )
     .await
-    .expect_err("manual node without input should fail");
+    .expect_err("unanswered node question should fail");
 
     assert!(matches!(
         error,

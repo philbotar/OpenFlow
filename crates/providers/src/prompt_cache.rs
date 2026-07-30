@@ -26,6 +26,7 @@ mod tests {
             node_id: NodeId("idea".to_string()),
             node_label: "Idea".to_string(),
             model: "test".to_string(),
+            provider_id: None,
             system_messages: vec!["sys".to_string()],
             task_prompt: "task".to_string(),
             input: serde_json::Value::Null,
@@ -33,11 +34,14 @@ mod tests {
             tool_config: engine::NodeToolConfig::default(),
             available_tools: Vec::new(),
             transcript: Vec::new(),
+            entrypoint_attachments: Vec::new(),
+            resolved_attachments: std::collections::BTreeMap::default(),
             model_attempt: 1,
             reasoning_effort: None,
             reasoning_budget_tokens: None,
             tool_access_policy: engine::ToolAccessPolicy::Execution,
             allow_user_input: true,
+            conversation_mode: false,
         }
     }
 

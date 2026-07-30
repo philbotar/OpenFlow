@@ -1,15 +1,17 @@
 use crate::adapters::storage::run_checkpoint_store::FileRunCheckpointStore;
+use crate::api::{AttachmentPreviewPayload, StagedAttachmentPayload, UserMessageInput};
 use crate::run::coordinator::{DurableResumeParams, RunStartParams};
 use crate::run::execution::ExecutionEvent;
-use crate::run::persistence::RunStoreRoot;
+use crate::run::persistence::{workflow_hash, RunStoreRoot};
 use crate::run::state::WorkflowRunState;
+use base64::Engine as _;
 use engine::Workflow;
 use tokio::sync::mpsc::UnboundedReceiver;
 
 use super::{AppBackend, BackendError, FileEditPreview, ScheduledRunCandidate};
 
 impl AppBackend {
-    fn run_roots(&self) -> Result<Vec<RunStoreRoot>, BackendError> {
+    pub(super) fn run_roots(&self) -> Result<Vec<RunStoreRoot>, BackendError> {
         let mut roots = vec![RunStoreRoot {
             project_id: None,
             root: FileRunCheckpointStore::app_runs_root(),
@@ -53,8 +55,96 @@ impl AppBackend {
 
     pub fn replay_run(&self, run_id: &str) -> Result<WorkflowRunState, BackendError> {
         let roots = self.run_roots()?;
-        self.runs
-            .replay_run(self.run_store.as_ref(), &roots, run_id)
+        let (root, _) = self
+            .run_store
+            .load_record(&roots, run_id)?
+            .ok_or_else(|| BackendError::RunNotFound(run_id.to_string()))?;
+        let mut checkpoint = self
+            .run_store
+            .load_latest_checkpoint(&root, run_id)?
+            .ok_or_else(|| BackendError::RunHasNoCheckpoints(run_id.to_string()))?;
+        if self
+            .chats
+            .list()?
+            .iter()
+            .any(|chat| chat.run_id.as_deref() == Some(run_id))
+        {
+            checkpoint.repair_direct_chat_projection();
+        }
+        Ok(checkpoint.projection.into_replay_projection())
+    }
+
+    pub async fn load_chat_attachment_preview(
+        &self,
+        run_id: &str,
+        attachment_id: &str,
+    ) -> Result<AttachmentPreviewPayload, BackendError> {
+        let roots = self.run_roots()?;
+        let (root, _) = self
+            .run_store
+            .load_record(&roots, run_id)?
+            .ok_or_else(|| BackendError::RunNotFound(run_id.to_string()))?;
+        let current_attachment = if self.current_run_id().await.as_deref() == Some(run_id) {
+            self.get_run_state().await.and_then(|state| {
+                state
+                    .chat_logs
+                    .values()
+                    .flatten()
+                    .flat_map(|message| message.attachments.iter())
+                    .find(|attachment| attachment.id == attachment_id)
+                    .cloned()
+            })
+        } else {
+            None
+        };
+        let attachment = match current_attachment {
+            Some(attachment) => attachment,
+            None => self
+                .run_store
+                .load_latest_checkpoint(&root, run_id)?
+                .ok_or_else(|| BackendError::RunHasNoCheckpoints(run_id.to_string()))?
+                .projection
+                .chat_logs
+                .values()
+                .flatten()
+                .flat_map(|message| message.attachments.iter())
+                .find(|attachment| attachment.id == attachment_id)
+                .cloned()
+                .ok_or_else(|| crate::run::ports::AttachmentError::Corrupt {
+                    file_name: attachment_id.to_string(),
+                })?,
+        };
+        let attachment_root = self.run_store.run_dir(&root, run_id).join("attachments");
+        let preview = self
+            .attachment_store
+            .preview(&attachment_root, &attachment)?;
+        Ok(AttachmentPreviewPayload {
+            media_type: preview.media_type,
+            data_base64: base64::engine::general_purpose::STANDARD.encode(preview.bytes),
+        })
+    }
+
+    pub fn stage_chat_attachment(
+        &self,
+        file_name: &str,
+        data_base64: &str,
+    ) -> Result<StagedAttachmentPayload, BackendError> {
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(data_base64)
+            .map_err(|_| crate::run::ports::AttachmentError::TypeMismatch {
+                file_name: file_name.to_string(),
+            })?;
+        let staged = self.attachment_store.stage(file_name, &bytes)?;
+        Ok(StagedAttachmentPayload {
+            token: staged.token,
+            file_name: staged.file_name,
+            size_bytes: staged.size_bytes,
+            kind: staged.kind,
+        })
+    }
+
+    pub fn remove_staged_chat_attachment(&self, token: &str) -> Result<(), BackendError> {
+        Ok(self.attachment_store.remove_staged(token)?)
     }
 
     pub async fn resume_durable_run(
@@ -63,31 +153,61 @@ impl AppBackend {
         settings: &crate::settings::model::AppSettings,
         transient_api_key: Option<&str>,
     ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>, String), BackendError> {
+        self.resume_durable_run_with_continuation(run_id, settings, transient_api_key, None)
+            .await
+    }
+
+    pub async fn resume_durable_run_with_continuation(
+        &self,
+        run_id: &str,
+        settings: &crate::settings::model::AppSettings,
+        transient_api_key: Option<&str>,
+        continuation: Option<crate::api::DurableRunContinuationInput>,
+    ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>, String), BackendError> {
         let roots = self.run_roots()?;
-        let (root, record) = self
+        let (root, mut record) = self
             .run_store
             .load_record(&roots, run_id)?
             .ok_or_else(|| BackendError::RunNotFound(run_id.to_string()))?;
+        let direct_chat = self
+            .chats
+            .list()?
+            .into_iter()
+            .find(|chat| chat.run_id.as_deref() == Some(run_id));
+        if let Some(chat) = direct_chat.as_ref() {
+            if super::chat::refresh_execution_workflow_for_chat(chat, &mut record.workflow_snapshot)
+            {
+                record.workflow_hash = workflow_hash(&record.workflow_snapshot);
+                self.run_store.update_record(&root, &record)?;
+            }
+        }
         let workflow_name = record.workflow_name.clone();
-        let checkpoint = self
+        let mut checkpoint = self
             .run_store
             .load_latest_checkpoint(&root, run_id)?
             .ok_or_else(|| BackendError::RunHasNoCheckpoints(run_id.to_string()))?;
+        if direct_chat.is_some() {
+            checkpoint.discard_structured_user_input();
+            checkpoint.repair_direct_chat_projection();
+        }
         let (state, event_rx) = self
             .runs
-            .resume_durable_run(DurableResumeParams {
-                run_id,
-                root,
-                record,
-                checkpoint,
-                settings,
-                transient_api_key,
-                agent_store: self.agents.store(),
-                skill_catalog: self.settings.skill_catalog(),
-                settings_store: self.settings.store_arc(),
-                run_store: self.run_store.as_ref(),
-                env: self.settings.env(),
-            })
+            .resume_durable_run_with_continuation(
+                DurableResumeParams {
+                    run_id,
+                    root,
+                    record,
+                    checkpoint,
+                    settings,
+                    transient_api_key,
+                    agent_store: self.agents.store(),
+                    skill_catalog: self.settings.skill_catalog(),
+                    settings_store: self.settings.store_arc(),
+                    run_store: self.run_store.as_ref(),
+                    env: self.settings.env(),
+                },
+                continuation,
+            )
             .await
             .map_err(|error| self.backend_err(error))?;
         Ok((state, event_rx, workflow_name))
@@ -101,31 +221,78 @@ impl AppBackend {
         settings: &crate::settings::model::AppSettings,
         transient_api_key: Option<&str>,
     ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
-        let run_root = self.run_root_for_workflow(&workflow.id)?;
-        self.start_run_with_root(
+        self.start_run_with_skill_ids(
             workflow,
             entrypoint,
             execution_cwd,
-            run_root,
             settings,
             transient_api_key,
+            Vec::new(),
         )
         .await
     }
 
-    pub(super) async fn start_run_with_root(
+    pub async fn start_run_with_skill_ids(
         &self,
         workflow: Workflow,
         entrypoint: Option<String>,
         execution_cwd: Option<String>,
+        settings: &crate::settings::model::AppSettings,
+        transient_api_key: Option<&str>,
+        invoked_skill_ids: Vec<String>,
+    ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
+        self.start_run_with_message_and_skill_ids(
+            workflow,
+            entrypoint.map(UserMessageInput::text),
+            execution_cwd,
+            settings,
+            transient_api_key,
+            invoked_skill_ids,
+        )
+        .await
+    }
+
+    pub async fn start_run_with_message_and_skill_ids(
+        &self,
+        workflow: Workflow,
+        message: Option<UserMessageInput>,
+        execution_cwd: Option<String>,
+        settings: &crate::settings::model::AppSettings,
+        transient_api_key: Option<&str>,
+        invoked_skill_ids: Vec<String>,
+    ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
+        let run_root = self.run_root_for_workflow(&workflow.id)?;
+        self.start_run_with_root(
+            workflow,
+            message,
+            execution_cwd,
+            run_root,
+            settings,
+            transient_api_key,
+            invoked_skill_ids,
+        )
+        .await
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "internal launch seam keeps run root, auth, settings, and skill inputs explicit"
+    )]
+    pub(super) async fn start_run_with_root(
+        &self,
+        workflow: Workflow,
+        message: Option<UserMessageInput>,
+        execution_cwd: Option<String>,
         run_root: RunStoreRoot,
         settings: &crate::settings::model::AppSettings,
         transient_api_key: Option<&str>,
+        invoked_skill_ids: Vec<String>,
     ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
         self.runs
             .start_run(RunStartParams {
                 workflow,
-                entrypoint,
+                invoked_skill_ids,
+                entrypoint: message,
                 execution_cwd,
                 run_root,
                 settings,
@@ -155,7 +322,8 @@ impl AppBackend {
         self.runs
             .continue_run(RunStartParams {
                 workflow,
-                entrypoint,
+                invoked_skill_ids: Vec::new(),
+                entrypoint: entrypoint.map(UserMessageInput::text),
                 execution_cwd: None,
                 run_root,
                 settings,
@@ -212,8 +380,32 @@ impl AppBackend {
         node_id: &str,
         text: String,
     ) -> Result<WorkflowRunState, BackendError> {
+        self.submit_user_input_with_skill_ids(node_id, text, Vec::new())
+            .await
+    }
+
+    pub async fn submit_user_input_with_skill_ids(
+        &self,
+        node_id: &str,
+        text: String,
+        invoked_skill_ids: Vec<String>,
+    ) -> Result<WorkflowRunState, BackendError> {
+        self.submit_user_message_with_skill_ids(
+            node_id,
+            UserMessageInput::text(text),
+            invoked_skill_ids,
+        )
+        .await
+    }
+
+    pub async fn submit_user_message_with_skill_ids(
+        &self,
+        node_id: &str,
+        message: UserMessageInput,
+        invoked_skill_ids: Vec<String>,
+    ) -> Result<WorkflowRunState, BackendError> {
         self.runs
-            .submit_user_input(node_id, text)
+            .submit_user_message_with_skill_ids(node_id, message, &invoked_skill_ids)
             .await
             .map_err(|error| self.backend_err(error))
     }
@@ -297,6 +489,7 @@ impl AppBackend {
         self.runs
             .start_run(RunStartParams {
                 workflow,
+                invoked_skill_ids: Vec::new(),
                 entrypoint: None,
                 execution_cwd,
                 run_root,

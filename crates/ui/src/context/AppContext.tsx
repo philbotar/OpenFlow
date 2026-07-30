@@ -10,6 +10,7 @@ import type {
   EdgeId,
   McpDiscoveryRow,
   NodeId,
+  PendingChatAttachment,
   ProviderProfile,
   ProviderReadiness,
   ReasoningEffortOption,
@@ -132,6 +133,7 @@ export interface AppContextValue {
   setScreen: Setter<Screen>;
   setSettingsSection: Setter<SettingsSectionId>;
   navigateToScreen: (screen: Screen) => void;
+  returnFromSettings: () => void;
 
   // ── Derived memos ─────────────────────────────────────────────────────────
   activeWorkflow: Accessor<Workflow | undefined>;
@@ -153,9 +155,16 @@ export interface AppContextValue {
   currentNodeOutput: Accessor<unknown>;
   chatLayout: Accessor<ChatLayoutProjection>;
   chatDraft: (nodeId: NodeId) => string;
+  pendingChatAttachments: (nodeId: NodeId) => PendingChatAttachment[];
   chatSubmissionFor: (nodeId: NodeId) => ChatSubmissionResolution;
   canSendChatFor: (nodeId: NodeId) => boolean;
   composerBusyFor: (nodeId: NodeId) => boolean;
+  handlePickChatAttachments: (nodeId: NodeId) => Promise<void>;
+  handleStageChatAttachments: (nodeId: NodeId, files: readonly File[]) => Promise<void>;
+  handleRemovePendingChatAttachment: (
+    nodeId: NodeId,
+    sourcePath: string,
+  ) => Promise<void>;
 
   // ── Ref setters ───────────────────────────────────────────────────────────
   setWorkflowNameInputRef: (el: HTMLInputElement | undefined) => void;
@@ -194,6 +203,7 @@ export interface AppContextValue {
   handleCreateAgent: () => Promise<void>;
   handleCreateAgentWithAi: (description: string) => Promise<boolean>;
   handleSaveAgents: () => Promise<void>;
+  handleDeleteSelectedAgent: () => Promise<void>;
   handleAgentSchemaInput: (text: string) => void;
   updateSelectedAgent: (mutator: (draft: AgentDefinition) => void) => void;
   handleStartAgentNameEdit: (agentId: string, currentName: string) => void;
@@ -237,6 +247,7 @@ export interface AppContextValue {
   handleOpenWorkflowAuthoring: (
     baseWorkflow?: Workflow,
     targetProjectId?: string | null,
+    initialMessage?: string,
   ) => Promise<void>;
   handleCloseWorkflowAuthoring: () => void;
   handleWorkflowAuthoringSend: (message: string) => Promise<void>;

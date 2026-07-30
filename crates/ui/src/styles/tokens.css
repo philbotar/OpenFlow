@@ -75,16 +75,14 @@
   --status-warning-soft: var(--base-amber-soft);
   --status-danger: var(--base-red-600);
   --status-danger-soft: var(--base-red-soft);
-  --update-badge: #2563eb;
-  --update-badge-ring: var(--sidebar-bg);
   --menu-row-height: 30px;
   --menu-row-padding-inline: 8px;
   --control-size-md: 36px;
-  --composer-input-max-rows: 4;
-  --composer-input-min-height: var(--control-size-md);
-  --composer-input-max-height: calc(var(--composer-input-max-rows) * 1.25em);
-  --composer-padding: var(--dock-tab-card-padding);
-  --composer-send-size: var(--control-size-md);
+  --composer-input-max-rows: 3;
+  --composer-send-size: 28px;
+  --composer-input-min-height: var(--composer-send-size);
+  --composer-input-max-height: calc(var(--composer-send-size) + (var(--composer-input-max-rows) - 1) * 1.25em);
+  --composer-padding: 8px 14px;
   --control-size-compact: 40px;
   --topbar-control-size: 24px;
   --topbar-icon-size: 16px;
@@ -147,6 +145,9 @@
   --dock-tab-feed-gap: 10px;
   --dock-tab-card-padding: 12px 14px;
   --dock-tab-card-radius: var(--radius-md);
+  --dock-tabs-padding: 3px 8px;
+  --dock-tab-button-padding: 3px 6px;
+  --dock-icon-action-size: 24px;
 
   /* ── Scrollbars ── */
   --scrollbar-size: 10px;
@@ -259,8 +260,6 @@
   --status-warning-soft: var(--base-amber-soft);
   --status-danger: var(--base-red-600);
   --status-danger-soft: var(--base-red-soft);
-  --update-badge: #60a5fa;
-  --update-badge-ring: var(--sidebar-bg);
 
   /* ── Legacy bridge ── */
   --app-bg: var(--surface-ground);

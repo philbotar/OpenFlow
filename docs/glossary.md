@@ -24,10 +24,12 @@ For where terms live in code, see [Engine modules](#engine-modules), [Orchestrat
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
 | **NodeKind** | The variant of a node (e.g. Agent) determining its runtime behavior | Node type, node variant |
-| **AgentNodeConfig** | Configuration for an agent node: model, prompts, tools, auto-start, callable agents | Node config, agent config |
+| **AgentNodeConfig** | Configuration for an agent node: model, prompts, handoff, tools, callable agents, and optional human questions | Node config, agent config |
+| **HandoffSpec** | Per-node result format: a heading-based Markdown template or a JSON output schema | Output mode |
+| **HandoffArtifact** | Immutable run-scoped `HANDOFF.md` or `HANDOFF.json` reference with media type, size, and SHA-256 digest | Handoff file |
 | **NodePosition** | Coordinates for rendering a node on the canvas | Position, coordinates |
-| **AutoStart** | Whether a node invokes its model when its execution layer is reached (`auto_start: true`), or first waits for a human kickoff message (`false`) | Auto-execute |
-| **RequestUserInput** | Whether a running node may call `openflow_request_user_input` to ask a free-text or structured follow-up question; defaults to false | AutoStart, manual start |
+| **RequestUserInput** | Whether a running node may call enabled human-input harnesses to pause; defaults to false | Manual start |
+| **ConversationMode** | Direct-chat lifecycle where a plain assistant message ends one turn; submit remains terminal and structured questions remain optional | Workflow completion |
 | **CallableAgent** | A saved agent definition a node may invoke as a subagent during a run (`engine::CallableAgent`) | Saved subagent, AgentDefinition |
 | **CallableAgentSelection** | Agent IDs on `AgentNodeConfig.callable_agents`; snapshotted at run start | Allowed agents, callable agents |
 | **AllowAllCallableAgents** | When true, every saved agent is snapshotted at run start instead of `callable_agents` | Allow all agents |
@@ -44,7 +46,7 @@ For where terms live in code, see [Engine modules](#engine-modules), [Orchestrat
 
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
-| **NodeToolConfig** | Approval mode for a node or saved agent (`read_only`, `write`, `always_ask`, `yolo`) | Tool settings, tool setup |
+| **NodeToolConfig** | Tool capabilities for a node or saved agent: approval mode plus separate free-text and structured human-input harness flags | Tool settings, tool setup |
 | **ApprovalMode** | Node-level tool approval strategy: `read_only` (read-class tools only, auto-approved), `write` (all tools; read-class auto, write-class prompt - default), `always_ask` (prompt every call), `yolo` (never prompt) | Approval policy |
 | **Tool capability class** | Static read/write grouping for builtins. Read: retrieval/search tools. Write: mutation, shell, subagent tools. Drives approval and `read_only` availability. | Tool tier |
 | **ToolTier** | Serialized capability class on tool definitions: `read` or `write` | Tool level, access tier |
@@ -59,7 +61,7 @@ For where terms live in code, see [Engine modules](#engine-modules), [Orchestrat
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
 | **Template** | Reusable node definition with default `AgentNodeConfig` and locked fields | Node preset, blueprint |
-| **LockedField** | Field name users cannot edit when a template is applied (e.g. `output_schema`, `auto_start`) | Protected field, frozen field |
+| **LockedField** | Field name users cannot edit when a template is applied (e.g. `output_schema`) | Protected field, frozen field |
 | **TemplateStore** | Engine-level seam for listing and mutating templates | |
 
 ## Execution model
@@ -75,15 +77,17 @@ For where terms live in code, see [Engine modules](#engine-modules), [Orchestrat
 | **RetryPolicy** | Workflow-level retry: max attempts and backoff (`WorkflowSettings.retry_policy`) | Retry config |
 | **WorkflowSchedule** | Optional cron schedule on a workflow | Cron schedule |
 | **NodeInvocation** | Shared assembly of upstream inputs and `AgentRequest` for `InteractiveEngine` | Request builder |
+| **Effective provider** | Provider selected for a node: node override → shared workflow provider → active settings provider | Runtime provider |
 | **FrozenChangeEvidencePacket** | Immutable, hash-verified structured review output injected into later Plan Mode requests as `input.change_evidence_packet` | Plan file, system prompt |
 | **Plan artifact** | Run-owned immutable Markdown evidence built by the selected evidence-source node at `run://PLAN.md`, then sealed through explicit approval of `openflow_write_plan_artifact` and referenced as `artifact:<uuid>` | Repository plan file |
+| **Node handoff** | Canonical run-owned node result under `run://handoffs/{node_id}/`; downstream input carries its manifest next to the compact upstream output | Node output file |
 
 ## AI boundary
 
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
 | **AiPort** | Trait between the workflow engine and an AI backend | AI adapter, backend trait |
-| **AgentRequest** | Payload for one AI turn on one node | AI request, turn request |
+| **AgentRequest** | Payload for one AI turn on one node, including its effective provider and model | AI request, turn request |
 | **AgentTurnOutcome** | Result of one turn: Completed, ToolCalls, NeedsUserInput, or Message | Turn result, AI response |
 | **AgentTurnSuccess** | Completed outcome: structured output, raw text, and typed reasoning blocks | Success result |
 | **AgentToolCallBatch** | ToolCalls outcome: batch of tool invocations from the model | Tool call batch |
@@ -160,12 +164,12 @@ See [orchestration crate layout](architecture/orchestration-layout.md) for the c
 ## Relationships
 
 - A **Workflow** has **Nodes** and **Edges**.
-- An **Edge** passes a source **Node**'s output to a target **Node**.
+- An **Edge** passes a source **Node**'s output and optional **Node handoff** manifest to a target **Node**.
 - **Execution layers** come from DAG topology; same-layer nodes have no dependency on each other.
 - An **AgentNodeConfig** belongs to one **Node** and may include **NodeToolConfig**.
 - A **ChatMessage** or **AgentTranscriptItem** belongs to one **Node**'s transcript.
 - An **AgentRequest** goes to **AiPort** for one **Node** per turn.
-- Every **AgentRequest** advertises harness tools (`openflow_submit_node_output`, optional `openflow_request_user_input`) together with executable tools; a turn may use either exactly one harness tool alone, or one or more executable tools — never both in the same batch.
+- Every **AgentRequest** advertises harness tools (`openflow_submit_node_output`, optional `openflow_request_user_input`, optional `openflow_ask_user_question`) together with executable tools; a turn may use either exactly one harness tool alone, or one or more executable tools — never both in the same batch.
 - **AgentTurnOutcome** selects completion, executable tool work, human input, or a plain message.
 - A **Template** instantiates a **Node** with default config and **LockedField** constraints.
 - **InteractiveEngine::run** returns **EngineRunResult** until **Completed**, **Failed**, **Cancelled**, or **NeedsInteraction**.

@@ -12,6 +12,7 @@ export { FileReferenceCombobox } from "./FileReferenceCombobox";
 export { LiveSegmentFooter } from "./LiveSegmentFooter";
 export { MarkdownContent } from "./MarkdownContent";
 export { Message, MessageContent } from "./Message";
+export { MessageAttachments } from "./MessageAttachments";
 export type { MessageRole } from "./Message";
 export { NodeCompletedBubble } from "./NodeCompletedBubble";
 export type { NodeCompletedBubbleProps } from "./NodeCompletedBubble";

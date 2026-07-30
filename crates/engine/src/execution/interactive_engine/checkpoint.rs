@@ -1,5 +1,6 @@
 use super::{FrozenChangeEvidencePacket, InteractiveEngine, PendingToolBatch};
-use crate::conversation::AgentTranscriptItem;
+use crate::conversation::{AgentTranscriptItem, ChatAttachmentRef};
+use crate::execution::HandoffArtifact;
 use crate::graph::validation::WorkflowValidationError;
 use crate::graph::{NodeId, Workflow, WorkflowId};
 use crate::ports::{StructuredUserInput, ToolAccessPolicy};
@@ -48,6 +49,8 @@ pub struct InteractiveEngineCheckpoint {
     pub workflow_id: WorkflowId,
     pub layer_idx: usize,
     pub outputs: BTreeMap<NodeId, serde_json::Value>,
+    #[serde(default)]
+    pub handoffs: BTreeMap<NodeId, HandoffArtifact>,
     pub changed_files_by_node: BTreeMap<NodeId, Vec<FileChangeRecord>>,
     #[serde(default)]
     pub reads_by_node: BTreeMap<NodeId, Vec<ReadRecord>>,
@@ -72,6 +75,8 @@ pub struct InteractiveEngineCheckpoint {
     #[serde(default)]
     pub auto_continue_streaks_by_node: BTreeMap<NodeId, u8>,
     pub entrypoint_text: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub entrypoint_attachments: Vec<ChatAttachmentRef>,
     pub interrupted_nodes: BTreeSet<NodeId>,
     pub failed_nodes: BTreeMap<NodeId, String>,
 }
@@ -95,6 +100,7 @@ pub enum CheckpointError {
 fn collect_checkpoint_node_ids(checkpoint: &InteractiveEngineCheckpoint) -> BTreeSet<NodeId> {
     let mut ids = BTreeSet::new();
     ids.extend(checkpoint.outputs.keys().cloned());
+    ids.extend(checkpoint.handoffs.keys().cloned());
     ids.extend(checkpoint.transcripts.keys().cloned());
     ids.extend(checkpoint.changed_files_by_node.keys().cloned());
     ids.extend(checkpoint.reads_by_node.keys().cloned());
@@ -165,6 +171,7 @@ impl InteractiveEngine {
             workflow_id: self.workflow.id.clone(),
             layer_idx: self.layer_idx,
             outputs: self.outputs.clone(),
+            handoffs: self.handoffs.clone(),
             changed_files_by_node: self.changed_files_by_node.clone(),
             reads_by_node: self.reads_by_node.clone(),
             transcripts: self.transcripts.clone(),
@@ -185,6 +192,7 @@ impl InteractiveEngine {
             mixed_tool_turn_retries_by_node: self.mixed_tool_turn_retries_by_node.clone(),
             auto_continue_streaks_by_node: self.auto_continue_streaks_by_node.clone(),
             entrypoint_text: self.entrypoint_text.clone(),
+            entrypoint_attachments: self.entrypoint_attachments.clone(),
             interrupted_nodes: self.interrupted_nodes.clone(),
             failed_nodes: self.failed_nodes.clone(),
         }
@@ -234,6 +242,7 @@ impl InteractiveEngine {
             layers,
             layer_idx: checkpoint.layer_idx,
             outputs: checkpoint.outputs,
+            handoffs: checkpoint.handoffs,
             changed_files_by_node: checkpoint.changed_files_by_node,
             reads_by_node: checkpoint.reads_by_node,
             read_calls: 0,
@@ -260,6 +269,7 @@ impl InteractiveEngine {
             mixed_tool_turn_retries_by_node: checkpoint.mixed_tool_turn_retries_by_node,
             auto_continue_streaks_by_node: checkpoint.auto_continue_streaks_by_node,
             entrypoint_text: checkpoint.entrypoint_text,
+            entrypoint_attachments: checkpoint.entrypoint_attachments,
             project_repository_root,
             terminal_error: None,
             interrupted_nodes: checkpoint.interrupted_nodes,

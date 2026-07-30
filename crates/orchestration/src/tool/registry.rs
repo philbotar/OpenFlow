@@ -237,14 +237,14 @@ fn read_tool() -> RegisteredTool {
     RegisteredTool {
         definition: ToolDefinition {
             name: "read".to_string(),
-            description: "Read a local file, directory listing, HTTP(S) URL, or spilled tool artifact. Default output is numbered lines capped at 3000 lines; append :N-M for a line range (e.g. src/lib.rs:10-20) or :raw for full unnumbered content. Truncated tool output can be read via artifact:{id} (supports the same selectors).".to_string(),
+            description: "Read a local file, directory listing, HTTP(S) URL, run:// handoff, or spilled tool artifact. Default output is numbered lines capped at 3000 lines; append :N-M for a line range (e.g. src/lib.rs:10-20) or :raw for full unnumbered content. Truncated tool output can be read via artifact:{id} (supports the same selectors).".to_string(),
             input_schema: with_intent_field(serde_json::json!({
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "Repository-relative local path, URL, or artifact:{id}. Prefer relative paths (e.g. src/lib.rs). Append :start-end for a line range or :raw for full content (e.g. note.txt:1-50, artifact:abc-123:1000-1200)."
+                        "description": "Repository-relative local path, URL, run://handoffs/... URI, or artifact:{id}. Prefer relative paths (e.g. src/lib.rs). Append :start-end for a line range or :raw for full content (e.g. note.txt:1-50, artifact:abc-123:1000-1200)."
                     }
                 },
                 "required": ["path"]
@@ -735,6 +735,7 @@ mod tests {
         let registry = ToolRegistry::new();
         let config = NodeToolConfig {
             approval_mode: Some(engine::ApprovalMode::ReadOnly),
+            ..NodeToolConfig::default()
         };
         let definitions = registry.definitions_for(&config);
         assert_eq!(definitions.len(), 5);
@@ -752,6 +753,7 @@ mod tests {
         let registry = ToolRegistry::new();
         let config = NodeToolConfig {
             approval_mode: Some(engine::ApprovalMode::ReadOnly),
+            ..NodeToolConfig::default()
         };
         let definitions = registry.definitions_for_policy(&config, ToolAccessPolicy::Planning);
         assert!(definitions
@@ -823,6 +825,7 @@ mod tests {
 
         let read_only = NodeToolConfig {
             approval_mode: Some(engine::ApprovalMode::ReadOnly),
+            ..NodeToolConfig::default()
         };
         let read_only_definitions = registry.definitions_for_policy_and_plan_scope(
             &read_only,
@@ -858,6 +861,7 @@ mod tests {
 
         let config = NodeToolConfig {
             approval_mode: Some(engine::ApprovalMode::ReadOnly),
+            ..NodeToolConfig::default()
         };
         assert!(registry
             .definitions_for(&config)

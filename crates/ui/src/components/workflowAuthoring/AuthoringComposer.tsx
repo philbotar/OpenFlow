@@ -48,34 +48,38 @@ export function AuthoringComposer(props: {
     <div class="chat-composer">
       <div class="chat-composer-input-shell">
         <div class="chat-composer-pill" classList={{ "is-busy": props.busy }}>
-          <textarea
-            ref={textareaRef}
-            class="text-area composer-input"
-            rows={1}
-            value={draft()}
-            placeholder={placeholder()}
-            onInput={(event) => {
-              setDraft(event.currentTarget.value);
-              resizeComposerTextarea(event.currentTarget);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                handleSend();
-              }
-            }}
-          />
-          <Button
-            variant="primary"
-            class="composer-send-button"
-            aria-label="Send message"
-            disabled={!canSend()}
-            onClick={handleSend}
-          >
-            <Show when={props.busy} fallback={<ArrowUp class="composer-send-icon" />}>
-              <Spinner size="sm" />
-            </Show>
-          </Button>
+          <div class="chat-composer-main">
+            <div class="composer-input-stack">
+              <textarea
+                ref={textareaRef}
+                class="text-area composer-input"
+                rows={1}
+                value={draft()}
+                placeholder={placeholder()}
+                onInput={(event) => {
+                  setDraft(event.currentTarget.value);
+                  resizeComposerTextarea(event.currentTarget);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    handleSend();
+                  }
+                }}
+              />
+            </div>
+            <Button
+              variant="primary"
+              class="composer-send-button"
+              aria-label="Send message"
+              disabled={!canSend()}
+              onClick={handleSend}
+            >
+              <Show when={props.busy} fallback={<ArrowUp class="composer-send-icon" />}>
+                <Spinner size="sm" />
+              </Show>
+            </Button>
+          </div>
         </div>
       </div>
     </div>

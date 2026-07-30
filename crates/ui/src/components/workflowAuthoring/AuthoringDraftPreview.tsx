@@ -1,10 +1,11 @@
-import { Show, createMemo, createSignal } from "solid-js";
+import { Show, createEffect, createMemo, createSignal } from "solid-js";
 import GitBranch from "lucide-solid/icons/git-branch";
 import Layers from "lucide-solid/icons/layers";
 import WorkflowCanvasHost from "../../canvas/WorkflowCanvasHost";
 import { Spinner } from "../Spinner";
 import type { Workflow, WorkflowAuthoringValidation } from "../../lib/types";
 import { projectWorkflowCanvasGraph } from "../../lib/workflow";
+import { AuthoringDraftInspector } from "./AuthoringDraftInspector";
 
 const noop = () => undefined;
 
@@ -13,11 +14,21 @@ export function AuthoringDraftPreview(props: {
   validation: WorkflowAuthoringValidation | null;
   busy: boolean;
   colorMode: "light" | "dark";
+  uiZoom: number;
 }) {
   const [selectedNodeId, setSelectedNodeId] = createSignal<string | null>(null);
   const [selectedEdgeId, setSelectedEdgeId] = createSignal<string | null>(null);
 
   const graph = createMemo(() => projectWorkflowCanvasGraph(props.draft));
+  const selectedNode = createMemo(() =>
+    props.draft.nodes.find((node) => node.id === selectedNodeId()),
+  );
+
+  createEffect(() => {
+    if (!selectedNode()) {
+      setSelectedNodeId(props.draft.nodes[0]?.id ?? null);
+    }
+  });
 
   const nodeCount = () => props.draft.nodes.length;
   const edgeCount = () => props.draft.edges.length;
@@ -56,26 +67,37 @@ export function AuthoringDraftPreview(props: {
         </Show>
       </div>
 
-      <div class="workflow-authoring-preview-canvas canvas-panel">
-        <WorkflowCanvasHost
-          graph={graph()}
-          selectedNodeId={selectedNodeId()}
-          selectedEdgeId={selectedEdgeId()}
-          statusByNode={null}
-          subagentsByNode={null}
-          viewportEnabled
-          previewMode
-          colorMode={props.colorMode}
-          onSelectNode={setSelectedNodeId}
-          onSelectEdge={setSelectedEdgeId}
-          onUpdateNodePosition={noop}
-          onAutoLayout={noop}
-          onCreateEdge={noop}
-          onReconnectEdge={noop}
-          onDeleteEdge={noop}
-          onDeleteNode={noop}
-          onAddNode={noop}
-        />
+      <div class="workflow-authoring-preview-content">
+        <div class="workflow-authoring-preview-canvas canvas-panel">
+          <WorkflowCanvasHost
+            graph={graph()}
+            selectedNodeId={selectedNodeId()}
+            selectedEdgeId={selectedEdgeId()}
+            statusByNode={null}
+            subagentsByNode={null}
+            viewportEnabled
+            previewMode
+            colorMode={props.colorMode}
+            uiZoom={props.uiZoom}
+            onSelectNode={(nodeId) => {
+              setSelectedNodeId(nodeId);
+              if (nodeId) setSelectedEdgeId(null);
+            }}
+            onSelectEdge={(edgeId) => {
+              setSelectedEdgeId(edgeId);
+            }}
+            onUpdateNodePosition={noop}
+            onAutoLayout={noop}
+            onCreateEdge={noop}
+            onReconnectEdge={noop}
+            onDeleteEdge={noop}
+            onDeleteNode={noop}
+            onAddNode={noop}
+          />
+        </div>
+        <Show when={selectedNode()}>
+          {(node) => <AuthoringDraftInspector node={node()} />}
+        </Show>
       </div>
     </aside>
   );

@@ -60,6 +60,26 @@ describe("dark theme palette", () => {
     runButton.remove();
   });
 
+  test("matches agent delete geometry to save", () => {
+    style = document.createElement("style");
+    style.textContent = `${tokensCss}\n${indexCss}`;
+    document.head.append(style);
+
+    const deleteButton = document.createElement("button");
+    deleteButton.className = "danger-button compact agent-delete-button";
+    const saveButton = document.createElement("button");
+    saveButton.className = "primary-button compact";
+    document.body.append(deleteButton, saveButton);
+
+    const deleteStyle = getComputedStyle(deleteButton);
+    const saveStyle = getComputedStyle(saveButton);
+    expect(deleteStyle.minHeight).toBe(saveStyle.minHeight);
+    expect(deleteStyle.padding).toBe(saveStyle.padding);
+    expect(deleteStyle.fontSize).toBe(saveStyle.fontSize);
+    expect(deleteStyle.fontWeight).toBe(saveStyle.fontWeight);
+    expect(deleteStyle.borderRadius).toBe(saveStyle.borderRadius);
+  });
+
   test("constrains sidebar lists horizontally while menus overlay vertically", () => {
     style = document.createElement("style");
     style.textContent = `${tokensCss}\n${indexCss}`;
@@ -81,5 +101,25 @@ describe("dark theme palette", () => {
     expect(getComputedStyle(inner).minWidth).toBe("0");
     expect(getComputedStyle(section).position).toBe("relative");
     expect(getComputedStyle(section).zIndex).toBe("var(--z-dropdown)");
+  });
+
+  test("stacks chat menus above the following workflow section", () => {
+    style = document.createElement("style");
+    style.textContent = `${tokensCss}\n${indexCss}`
+      .split("calc(var(--z-dropdown) + 1)")
+      .join("121")
+      .split("var(--z-dropdown)")
+      .join("120");
+    document.head.append(style);
+
+    const chatsSection = document.createElement("div");
+    chatsSection.className = "sidebar-section-group sidebar-chats-section";
+    const workflowsSection = document.createElement("div");
+    workflowsSection.className = "sidebar-section-group sidebar-workflows-section";
+    document.body.append(chatsSection, workflowsSection);
+
+    expect(Number(getComputedStyle(chatsSection).zIndex)).toBeGreaterThan(
+      Number(getComputedStyle(workflowsSection).zIndex),
+    );
   });
 });

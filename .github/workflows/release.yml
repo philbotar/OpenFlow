@@ -126,6 +126,77 @@ jobs:
         with:
           workspaces: crates/desktop
 
+      - name: Configure macOS code signing
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY_SECRET: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID_SECRET: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD_SECRET: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID_SECRET: ${{ secrets.APPLE_TEAM_ID }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          if [[
+            -z "$APPLE_CERTIFICATE" &&
+            -z "$APPLE_CERTIFICATE_PASSWORD" &&
+            -z "$APPLE_SIGNING_IDENTITY_SECRET" &&
+            -z "$APPLE_ID_SECRET" &&
+            -z "$APPLE_PASSWORD_SECRET" &&
+            -z "$APPLE_TEAM_ID_SECRET" &&
+            -z "$KEYCHAIN_PASSWORD"
+          ]]; then
+            echo "OPENFLOW_SIGNING_MODE=ad-hoc" >> "$GITHUB_ENV"
+            echo "::warning::Developer ID secrets are absent; using the configured ad-hoc signature."
+            exit 0
+          fi
+
+          for name in \
+            APPLE_CERTIFICATE_PASSWORD \
+            APPLE_SIGNING_IDENTITY_SECRET \
+            APPLE_ID_SECRET \
+            APPLE_PASSWORD_SECRET \
+            APPLE_TEAM_ID_SECRET \
+            KEYCHAIN_PASSWORD
+          do
+            [[ -n "${!name}" ]] || {
+              echo "::error::$name is required when APPLE_CERTIFICATE is set."
+              exit 1
+            }
+          done
+
+          [[ "$APPLE_SIGNING_IDENTITY_SECRET" == "Developer ID Application:"* ]] || {
+            echo "::error::APPLE_SIGNING_IDENTITY must be a Developer ID Application identity."
+            exit 1
+          }
+
+          certificate_path="$RUNNER_TEMP/openflow-certificate.p12"
+          keychain_path="$RUNNER_TEMP/openflow-signing.keychain-db"
+          printf '%s' "$APPLE_CERTIFICATE" |
+            openssl base64 -d -A -out "$certificate_path"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security default-keychain -d user -s "$keychain_path"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security set-keychain-settings -t 3600 -u "$keychain_path"
+          security import "$certificate_path" \
+            -k "$keychain_path" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s \
+            -k "$KEYCHAIN_PASSWORD" \
+            "$keychain_path"
+          security find-identity -v -p codesigning "$keychain_path" |
+            grep -F "\"$APPLE_SIGNING_IDENTITY_SECRET\""
+
+          {
+            echo "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY_SECRET"
+            echo "APPLE_ID=$APPLE_ID_SECRET"
+            echo "APPLE_PASSWORD=$APPLE_PASSWORD_SECRET"
+            echo "APPLE_TEAM_ID=$APPLE_TEAM_ID_SECRET"
+            echo "OPENFLOW_SIGNING_MODE=developer-id"
+          } >> "$GITHUB_ENV"
+
       - name: Build and publish release
         uses: tauri-apps/tauri-action@v0
         env:
@@ -144,3 +215,12 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+
+      - name: Verify macOS app signature and architecture
+        env:
+          EXPECTED_ARCH: ${{ matrix.rust_target == 'aarch64-apple-darwin' && 'arm64' || 'x86_64' }}
+        run: |
+          ./scripts/verify-macos-app.sh \
+            "target/${{ matrix.rust_target }}/release/bundle/macos/OpenFlow.app" \
+            "$EXPECTED_ARCH" \
+            "$OPENFLOW_SIGNING_MODE"

@@ -83,7 +83,15 @@ export function useDock(params: UseDockParams) {
     // clientY is visual; dock height is CSS px inside zoomed shell
     const nextHeight =
       dockResizeState.startHeight + visualDelta / (Number.isFinite(zoom) && zoom > 0 ? zoom : 1);
-    if (shouldCollapseDock(nextHeight, bottomTab(), params.isCompactViewport())) {
+    if (
+      shouldCollapseDock(
+        nextHeight,
+        bottomTab(),
+        params.isCompactViewport(),
+        viewportHeight(),
+        params.uiZoom(),
+      )
+    ) {
       setDockOpen(false);
       return;
     }

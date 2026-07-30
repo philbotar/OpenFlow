@@ -185,19 +185,53 @@ export function isGlobalRunEntryNodeId(nodeId: NodeId): boolean {
   return nodeId === GLOBAL_RUN_ENTRY_NODE_ID;
 }
 
+const REPLAY_CONTINUATION_STATUS_PRIORITY: readonly AgentStatus[] = [
+  "awaiting_input",
+  "stopped",
+  "failed",
+  "interrupted",
+];
+
+export function replayContinuationNodeId(
+  workflow: Workflow | undefined,
+  runState: WorkflowRunState | null,
+): NodeId | null {
+  if (!runState) {
+    return null;
+  }
+  const workflowNodeIds = workflow?.nodes.map((node) => node.id) ?? [];
+  const nodeIds = [
+    ...workflowNodeIds,
+    ...Object.keys(runState.statusByNode).filter(
+      (nodeId) => !workflowNodeIds.includes(nodeId),
+    ),
+  ];
+  for (const status of REPLAY_CONTINUATION_STATUS_PRIORITY) {
+    const nodeId = nodeIds.find(
+      (candidate) => statusForNode(runState.statusByNode, candidate) === status,
+    );
+    if (nodeId) {
+      return nodeId;
+    }
+  }
+  return null;
+}
+
 export function canSendIdleRunKickoff(
   runState: WorkflowRunState | null,
   readinessReady: boolean,
   hasActiveWorkflow: boolean,
   startingRun: boolean,
   text: string,
+  hasAttachments = false,
+  allowEmpty = false,
 ): boolean {
   return (
     runState?.active !== true &&
     hasActiveWorkflow &&
     !startingRun &&
     readinessReady &&
-    text.trim() !== ""
+    (allowEmpty || text.trim() !== "" || hasAttachments)
   );
 }
 
@@ -206,13 +240,21 @@ export function canSendChat(
   selectedNodeId: NodeId | null,
   readinessReady: boolean,
   text: string,
+  hasAttachments = false,
 ): boolean {
+  const status = selectedNodeId
+    ? statusForNode(runState?.statusByNode ?? null, selectedNodeId)
+    : "idle";
+  const canResumeNode =
+    isNodeAwaitingInput(runState, selectedNodeId) ||
+    status === "failed" ||
+    status === "interrupted";
   return (
     runState?.active === true &&
-    isNodeAwaitingInput(runState, selectedNodeId) &&
+    canResumeNode &&
     !pendingApprovalForNode(runState, selectedNodeId) &&
     readinessReady &&
-    text.trim() !== ""
+    (text.trim() !== "" || hasAttachments)
   );
 }
 

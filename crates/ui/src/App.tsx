@@ -4,6 +4,7 @@ import { AppProvider } from "./context/AppProvider";
 import { useAppContext } from "./context/AppContext";
 import {
   AppHeader,
+  ExternalLinkGuard,
   FirstRunOnboarding,
   Sidebar,
   WorkflowPickerModal,
@@ -49,8 +50,8 @@ function AppToaster() {
     "calc((var(--topbar-height) + 16px) / var(--ui-zoom))";
   const toastWidth = () =>
     ctx.settings().local_diagnostics?.debug_output
-      ? "min(720px, calc(100vw - 32px))"
-      : "min(400px, calc(100vw - 32px))";
+      ? "min(360px, calc(100vw - 32px))"
+      : "min(200px, calc(100vw - 32px))";
 
   return (
     <Toaster
@@ -135,7 +136,9 @@ function AppChrome() {
 function App() {
   return (
     <AppProvider>
-      <AppChrome />
+      <ExternalLinkGuard>
+        <AppChrome />
+      </ExternalLinkGuard>
     </AppProvider>
   );
 }

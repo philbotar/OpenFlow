@@ -5,7 +5,9 @@ import { AppContext, type AppContextValue } from "../context/AppContext";
 import { EditorScreen } from "./EditorScreen";
 
 vi.mock("../canvas/WorkflowCanvasHost", () => ({
-  default: () => <div data-testid="canvas" />,
+  default: (props: { uiZoom?: number }) => (
+    <div data-testid="canvas" data-ui-zoom={props.uiZoom} />
+  ),
 }));
 
 vi.mock("../components", async (importOriginal) => ({
@@ -221,6 +223,14 @@ function renderWithContext(overrides: Partial<AppContextValue> = {}) {
   return { container, dispose };
 }
 
+it("projects app zoom into the workflow canvas", () => {
+  renderWithContext({ uiZoom: () => 1.3 });
+
+  expect(
+    document.querySelector<HTMLElement>('[data-testid="canvas"]')?.dataset.uiZoom,
+  ).toBe("1.3");
+});
+
 describe("EditorScreen", () => {
   it("hides both panels when rightPanelHidden is true", () => {
     const { container, dispose } = renderWithContext({
@@ -360,7 +370,7 @@ describe("EditorScreen", () => {
     });
 
     const screen = container.querySelector(".editor-screen") as HTMLElement;
-    expect(screen.style.getPropertyValue("--dock-height")).toBe("52px");
+    expect(screen.style.getPropertyValue("--dock-height")).toBe("30px");
     dispose();
   });
 });

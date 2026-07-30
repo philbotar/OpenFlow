@@ -93,8 +93,8 @@ flowchart LR
 ```mermaid
 stateDiagram-v2
     [*] --> Running
-    Running --> CallAi : runnable auto-start node<br/>(or manual node with transcript)
-    Running --> AwaitInput : manual node (auto-start off)<br/>or agent asked a question
+    Running --> CallAi : node inputs ready
+    Running --> AwaitInput : agent asked a question
     Running --> AwaitToolApproval : pending batch needs approval
     Running --> RunTools : pending batch auto-allowed
     Running --> Completed : all layers done → RunReport
@@ -237,34 +237,36 @@ Two adjacent mechanisms complete the context-economy story:
 
 ### 5.1 Completion is a tool call, not text
 
-There is no "parse the model's final answer" step. A node is **incomplete until it calls `openflow_submit_node_output`** with `{output: <schema-conforming object>, assistant_message}`. The runtime preamble states this contract explicitly ("Plain assistant text does not finish the node and does not advance the workflow"). Likewise, pausing for a human is a tool call: `openflow_request_user_input` with a direct free-text question or structured choices.
+There is no "parse the model's final answer" step. A workflow node is **incomplete until it calls `openflow_submit_node_output`** with `{output: <schema-conforming object>, assistant_message}`. The runtime preamble states this contract explicitly ("Plain assistant text does not finish the node and does not advance the workflow"). Human-input harnesses are explicit: `openflow_request_user_input` asks one free-text question; `openflow_ask_user_question` presents structured choices. Direct-chat nodes use `conversationMode`: a plain assistant message ends one conversation turn without completing the node.
 
 This makes the **control plane itself tool-driven**. Every turn advertises
-`openflow_submit_node_output`, optional `openflow_request_user_input`, and the node's
-executable catalog tools together. The model may call either exactly one harness tool
-alone, or one or more executable tools — never mix harness and executable tools in the
-same response. Providers reject mixed batches as `MixedToolTurn` and the engine retries
-with corrective feedback.
+`openflow_submit_node_output`, optional human-input harnesses, and the node's executable
+catalog tools together. The model may call either exactly one harness tool alone, or one
+or more executable tools — never mix harness and executable tools in the same response.
+Providers reject mixed batches as `MixedToolTurn` and the engine retries with corrective
+feedback. Workflow requests use required tool choice. Direct-chat requests use automatic
+tool choice so the provider may return either plain text or `openflow_ask_user_question`.
 
 ```mermaid
 flowchart LR
     Turn["Model turn<br/>harness + executable tools"] -->|"openflow_submit_node_output alone"| Submit["Validated output stored →<br/>downstream layer may start"]
-    Turn -->|"openflow_request_user_input alone"| Ask["Engine pauses node →<br/>reply appended to transcript"]
+    Turn -->|"openflow_request_user_input alone"| Ask["Engine pauses node →<br/>free-text reply appended"]
+    Turn -->|"openflow_ask_user_question alone"| Choices["Engine pauses node →<br/>option card projected"]
     Turn -->|"executable tool calls only"| ToolsB["Tool batch<br/>(approval policy applies)"]
     ToolsB --> Turn
-    Turn -->|"plain text only"| Nope["Does NOT advance —<br/>engine keeps the node open"]
+    Turn -->|"plain text only"| Nope["Workflow: retry nudge<br/>Direct chat: end turn"]
     Turn -->|"harness + executable mixed"| Reject["MixedToolTurn rejected → retry feedback"]
 
     Submit -.->|"malformed args"| Retry["Structured retry with corrective<br/>feedback injected, max 3 attempts<br/>(separate counters per failure class)"]
     Ask -.->|"narration instead of a question"| Retry
 ```
 
-Malformed harness-tool calls get **class-specific retry budgets** with targeted corrective feedback (e.g. `MALFORMED_REQUEST_INPUT_FEEDBACK` tells the model to provide a direct `assistant_message` or valid structured `questions`), distinct from transient-network retry counters.
-After the request-input retry budget is exhausted, the node fails instead of surfacing narration as a human question. Plain provider text never becomes `NeedsUserInput`; only an explicit, valid `openflow_request_user_input` call may pause a running node.
+Malformed harness-tool calls get **class-specific retry budgets** with targeted corrective feedback (e.g. `MALFORMED_REQUEST_INPUT_FEEDBACK` distinguishes a free-text `assistant_message` from structured `questions`), distinct from transient-network retry counters.
+After the input retry budget is exhausted, the node fails instead of surfacing malformed input. Plain provider text pauses only `conversationMode` nodes; ordinary workflow nodes require a valid human-input tool call.
 
-### 5.2 Humans are nodes, not interrupts
+### 5.2 Human input is an explicit runtime request
 
-Toggling **auto-start off** turns any agent node into a human checkpoint *at the same position in the graph*. The engine schedules it like any other node — it waits for upstream outputs, shows the assembled context (`assemble_context`) in the chat before you type, and your text becomes the node's contribution. Orchestration resumes the same state machine through `InteractiveEngine::on_human_input` and `InteractiveEngine::on_tool_decision`.
+Every node starts as soon as its upstream inputs are ready. A node configured with `request_user_input` may call `openflow_request_user_input` for free text or `openflow_ask_user_question` for choices. Orchestration resumes the same state machine through `InteractiveEngine::on_human_input` and `InteractiveEngine::on_tool_decision`.
 
 Because `NeedsInteraction` batches all paused nodes, parallel branches don't serialize on the human: branch A can await your input while branch B keeps executing tools.
 

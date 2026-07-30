@@ -7,7 +7,7 @@ Task-oriented map of the OpenFlow desktop UI after install and provider setup. F
 | Control | Purpose |
 | --- | --- |
 | **New chat** | Start a saved, direct AI conversation without creating or opening a workflow. Existing chats appear under **Chats**. |
-| **Agents** | Create and edit saved agent definitions (prompt, model, tools, output schema). |
+| **Agents** | Create and edit saved agent definitions (prompt, model, tools, Markdown or JSON output). |
 | **Schedule** | Enable timed or interval schedules on workflows that already exist in the catalog. |
 | **Workflows** | App-level workflows stored under the OpenFlow data directory. **New workflow** creates one; **Build with AI** opens the authoring chat. Use a workflow row's options menu to rename or delete it. |
 | **Projects** | Bind a repository folder, create or assign workflows under `.flow/workflows/`, and open project workflows in the editor. |
@@ -19,6 +19,21 @@ Project workflow files override app workflows when both share the same workflow 
 
 Select **New chat**, then send a message in the full-page, single-pane composer. OpenFlow saves the Chat separately from the workflow catalog and names it from the first message. Select an existing entry under the separate **Chats** sidebar heading to restore its flat transcript; sending another message resumes its durable run. Open a chat row's options menu to remove it from chat history. Stop its run first when that chat is active.
 
+Use the paperclip, paste an image, or drop files onto the composer to attach up to four files per
+message. A single file can be at most 10 MiB; the message total is 25 MiB. Supported formats:
+JPEG, PNG, GIF, WebP, PDF, plain text, Markdown, CSV, JSON, HTML, CSS, JavaScript, and Python.
+Attachment-only messages are valid.
+
+OpenFlow validates each file, copies it into the durable run, then sends the managed copy to the
+provider. Moving or deleting the original does not break chat replay. Image previews are bounded
+local derivatives; documents render as metadata cards and never as active HTML or scripts. Deleting
+a saved chat also deletes its run-owned copies. If cleanup cannot finish immediately, the chat is
+deleted and the app reports that cleanup remains pending.
+
+Provider serializers support these attachment shapes, but the selected model can still reject an
+image or document. Keep the pending card when import fails. For a model capability error, select a
+media-capable model and retry.
+
 Use the controls below the composer to choose:
 
 - **Project** — scopes file references, execution cwd, and durable run storage to that project. Choose before sending the first message.
@@ -26,14 +41,29 @@ Use the controls below the composer to choose:
 - **Approval mode** — controls which tools require confirmation.
 - **Reasoning effort** — selects a provider-supported effort level and, when required, its token budget.
 
+Direct chat ends each assistant turn after a normal reply; it does not require a closing question.
+When your answer is required and clear choices help, the assistant can show a multiple-choice card.
+You can always answer that card through the normal composer instead.
+
 The saved Chat contains only chat metadata and its durable run ID. At run start, the backend privately adapts that Chat to the workflow execution engine. This execution detail is not returned in the Chat DTO or written to `chats.json`: direct chats do not expose nodes or appear in **Workflows**, the canvas, project assignments, or `workflows.json`.
 
 ## Editor layout
 
 - **Canvas** — nodes, edges, validation errors, and per-node run status.
-- **Inspector** — selected node configuration (instruction, model, tools, callable agents).
-- **Workflow settings** — shared context, execution cwd, provider overrides, optional Plan → Execute gate, and schedule metadata.
+- **Inspector** — selected node configuration (instruction, optional provider override, model, handoff, tools, callable agents).
+- **Workflow settings** — shared provider, shared context, execution cwd, optional Plan → Execute gate, and schedule metadata.
 - **Bottom dock** — **Chat**, **Terminal**, **Run trace**, and **History** tabs.
+
+## Node handoffs
+
+Use the Inspector **Handoff** section to choose what a completed node gives its downstream nodes:
+
+- **Markdown** — default for new nodes. Edit the heading template to match the work. The node must preserve and fill every heading. OpenFlow validates the result, stores `HANDOFF.md`, and passes its `run://` URI plus hash and media type downstream.
+- **JSON** — define a JSON output schema for typed machine data. OpenFlow validates the object, stores `HANDOFF.json`, and passes both the structured output and artifact reference downstream.
+
+Saved workflows created before handoff formats existed load as JSON, preserving their existing output schemas. During execution, downstream nodes receive each direct upstream node's compact output and optional `handoff` manifest. The runtime instructs them to read the immutable `run://` artifact before using its contents.
+
+The **Agents** screen exposes the same format editor. OpenFlow saves the choice with the agent and copies it to workflow nodes created from that agent. Existing saved agents without a format continue to load as JSON.
 
 ## Run controls
 
@@ -43,13 +73,15 @@ Use the top bar while a workflow is open in the editor:
 - **Continue** — resume a paused run that still has pending input or approvals.
 - **Stop** — cancel the active run.
 
+Nodes inherit the workflow's shared provider unless their Inspector selects an override. A workflow without a shared provider inherits the active Settings provider. Run start validates every provider referenced by the workflow.
+
 Provider readiness failures are covered in [`../troubleshooting/README.md#provider-not-ready`](../troubleshooting/README.md#provider-not-ready).
 
 ## Chat composer
 
 During a run, each active node has a chat thread in the dock.
 
-- Type `/` to attach a **skill** from discovered `SKILL.md` files (Cursor, Claude, and Agents skill directories on the machine). Skills are read-only catalog entries, not stored inside OpenFlow.
+- Type `/` anywhere in the composer to attach a **skill** from discovered `SKILL.md` files (Cursor, Claude, and Agents skill directories on the machine). The skill bubble shows the recognized invocation; OpenFlow removes the command from the user message, resolves the exact file, and loads it into the run context. Skills are read-only catalog entries, not stored inside OpenFlow.
 - Type `@` to reference project files when the workflow is bound to a project.
 
 Tool calls that require approval appear in the thread; approve or deny before execution continues.
@@ -98,7 +130,7 @@ To invoke installed skills from a workflow node or saved agent, type one or more
 Implement the approved ticket with /tdd and /code-review
 ```
 
-The task-prompt editor lists matching skills after you type `/`, using the same discovered-skill catalog as the bottom composer. Recognized tokens show the same skill name and description bubble as chat. At run start, OpenFlow resolves each installed token to its exact `SKILL.md`, adds a system instruction to read those files before other work, and freezes the resolved paths for that run. An unknown leading command blocks the run with the node or callable-agent name; unknown inline tokens stay literal.
+The task-prompt editor lists matching skills after you type `/`, using the same discovered-skill catalog as the bottom composer. Recognized tokens show the same skill name and description bubble as chat. At run start, OpenFlow resolves each installed token to its exact `SKILL.md`, loads the file contents into system context before other work, and freezes the resolved paths for that run. An unknown leading command blocks the run with the node or callable-agent name; unknown inline tokens stay literal.
 
 ## Settings beyond providers
 

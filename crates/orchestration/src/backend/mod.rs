@@ -3,6 +3,7 @@ use crate::adapters::storage::app_workflow_store::FileWorkflowStore;
 use crate::adapters::storage::chat_store::FileChatStore;
 use crate::adapters::storage::project_store::FileProjectStore;
 use crate::adapters::storage::project_workflow_store::FileProjectWorkflowStore;
+use crate::adapters::storage::run_attachment_store::FileRunAttachmentStore;
 use crate::adapters::storage::run_checkpoint_store::FileRunCheckpointStore;
 use crate::adapters::storage::settings_store::FileSettingsStore;
 use crate::adapters::storage::skill_store::FileSkillCatalog;
@@ -11,7 +12,7 @@ use crate::chat::{ChatCatalog, ChatStore};
 use crate::project::ports::ProjectStore;
 use crate::project::registry::ProjectRegistry;
 use crate::run::coordinator::RunCoordinator;
-use crate::run::ports::RunCheckpointStore;
+use crate::run::ports::{RunAttachmentStore, RunCheckpointStore};
 use crate::schedule::ScheduleService;
 use crate::settings::facade::SettingsFacade;
 use crate::settings::ports::{SettingsStore, SkillCatalog};
@@ -34,9 +35,10 @@ mod terminal;
 mod workflow;
 
 pub use crate::api::{
-    AgentDefinitionSummary, FileEditPreview, ProjectFileReference, ProviderReadiness,
-    ScheduleDraft, ScheduleStatus, ScheduledRunCandidate, WorkflowAuthoringTurnResult,
-    WorkflowListItem, WorkflowValidationSummary,
+    AgentDefinitionSummary, AttachmentPreviewPayload, ChatDeleteResult, FileEditPreview,
+    ProjectFileReference, ProviderReadiness, ScheduleDraft, ScheduleStatus, ScheduledRunCandidate,
+    StagedAttachmentPayload, WorkflowAuthoringTurnResult, WorkflowListItem,
+    WorkflowValidationSummary,
 };
 pub use crate::error::BackendError;
 pub use crate::CodexLoginStatus;
@@ -49,6 +51,7 @@ pub struct AppBackendDeps {
     pub project_store: Box<dyn ProjectStore>,
     pub settings_store: Arc<dyn SettingsStore>,
     pub skill_catalog: Box<dyn SkillCatalog>,
+    pub attachment_store: Arc<dyn RunAttachmentStore>,
     pub env: ProviderEnv,
     pub runtime_handle: tokio::runtime::Handle,
 }
@@ -60,6 +63,7 @@ pub struct AppBackend {
     pub(super) projects: ProjectRegistry,
     pub(super) settings: SettingsFacade,
     pub(super) runs: RunCoordinator,
+    pub(super) attachment_store: Arc<dyn RunAttachmentStore>,
     pub(super) run_store: Box<dyn RunCheckpointStore>,
     pub(super) terminal: TerminalManager,
     pub(super) workflow_authoring: WorkflowAuthoringService,
@@ -71,13 +75,18 @@ pub struct AppBackend {
 impl AppBackend {
     #[must_use]
     pub fn new(deps: AppBackendDeps, owned_runtime: Option<tokio::runtime::Runtime>) -> Self {
+        let attachment_store = deps.attachment_store;
         Self {
             workflows: WorkflowCatalog::new(deps.workflow_store, deps.project_workflow_store),
             chats: ChatCatalog::new(deps.chat_store),
             agents: AgentLibrary::new(deps.agent_store),
             projects: ProjectRegistry::new(deps.project_store),
             settings: SettingsFacade::new(deps.settings_store, deps.skill_catalog, deps.env),
-            runs: RunCoordinator::new(deps.runtime_handle),
+            runs: RunCoordinator::with_attachment_store(
+                deps.runtime_handle,
+                Arc::clone(&attachment_store),
+            ),
+            attachment_store,
             run_store: Box::new(FileRunCheckpointStore),
             terminal: TerminalManager::new(),
             workflow_authoring: WorkflowAuthoringService::new(),
@@ -96,6 +105,7 @@ impl AppBackend {
             project_store: Box::new(FileProjectStore::new(FileProjectStore::default_path())),
             settings_store: Arc::new(FileSettingsStore::new(FileSettingsStore::default_path())),
             skill_catalog: Box::new(FileSkillCatalog),
+            attachment_store: Arc::new(FileRunAttachmentStore::default()),
             env: ProviderEnv::from_system(),
             runtime_handle,
         }

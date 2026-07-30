@@ -1,3 +1,4 @@
+use crate::run::ports::AttachmentError;
 use crate::settings::provider::ProviderConfigError;
 use engine::{NodeId, WorkflowValidationError};
 use std::io;
@@ -11,6 +12,8 @@ pub enum BackendError {
     Validation(#[from] WorkflowValidationError),
     #[error(transparent)]
     ProviderConfig(#[from] ProviderConfigError),
+    #[error(transparent)]
+    Attachment(#[from] AttachmentError),
     #[error("workflow {0} not found")]
     WorkflowNotFound(String),
     #[error("project {0} not found")]
@@ -19,12 +22,20 @@ pub enum BackendError {
     AgentNotFound(String),
     #[error("chat {0} not found")]
     ChatNotFound(String),
+    #[error("cannot delete a chat while its run is active")]
+    ActiveChatRun,
     #[error("chat run started without a run id")]
     ChatRunMissingId,
     #[error("skill /{skill_id} invoked by {invoked_by} is not installed")]
     SkillNotFound {
         skill_id: String,
         invoked_by: String,
+    },
+    #[error("failed to read skill /{skill_id} at {path}: {error}")]
+    SkillReadFailed {
+        skill_id: String,
+        path: String,
+        error: String,
     },
     #[error("agent authoring failed: {0}")]
     AgentAuthoringFailed(String),

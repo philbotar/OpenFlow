@@ -36,6 +36,9 @@
   "bundle": {
     "active": true,
     "createUpdaterArtifacts": true,
+    "macOS": {
+      "signingIdentity": "-"
+    },
     "externalBin": [
       "binaries/search"
     ],

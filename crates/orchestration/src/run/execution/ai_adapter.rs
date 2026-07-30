@@ -1,12 +1,15 @@
-use super::{emit_phase_timed, send_or_log, ExecutionEvent, NodeInterrupts};
+use super::{
+    emit_phase_timed, send_or_log, ExecutionEvent, NodeInterrupts, ProviderContextWindowSizes,
+};
 use async_trait::async_trait;
 use engine::{
     filter_tool_turn_assistant_message, AgentError, AgentMessageTurn, AgentNeedUserInput,
-    AgentRequest, AgentToolCallBatch, AgentTurnOutcome, AgentTurnSuccess, AiPort, AiStreamEvent,
-    AiStreamSink, ChatRole, NodeId,
+    AgentRequest, AgentToolCallBatch, AgentTurnOutcome, AiPort, AiStreamEvent, AiStreamSink,
+    ChatRole, HandoffSpec, NodeId, ResolvedChatAttachment,
 };
 use parking_lot::Mutex;
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
@@ -20,7 +23,11 @@ pub struct AiInvocationAdapter<A> {
     lifecycle_by_node: Mutex<BTreeMap<NodeId, u8>>,
     node_interrupts: NodeInterrupts,
     run_cancel_token: CancellationToken,
-    context_window_sizes: BTreeMap<String, u32>,
+    context_window_sizes: ProviderContextWindowSizes,
+    attachment_root: Option<PathBuf>,
+    attachment_store: Option<Arc<dyn crate::run::ports::RunAttachmentStore>>,
+    handoff_store: Option<Arc<crate::run::handoff::HandoffStore>>,
+    handoff_specs: BTreeMap<NodeId, HandoffSpec>,
 }
 
 impl<A> AiInvocationAdapter<A>
@@ -32,7 +39,7 @@ where
         event_tx: UnboundedSender<ExecutionEvent>,
         node_interrupts: NodeInterrupts,
         run_cancel_token: CancellationToken,
-        context_window_sizes: BTreeMap<String, u32>,
+        context_window_sizes: ProviderContextWindowSizes,
     ) -> Self {
         Self {
             inner,
@@ -41,7 +48,74 @@ where
             node_interrupts,
             run_cancel_token,
             context_window_sizes,
+            attachment_root: None,
+            attachment_store: None,
+            handoff_store: None,
+            handoff_specs: BTreeMap::new(),
         }
+    }
+
+    #[must_use]
+    pub fn with_attachment_store(
+        mut self,
+        attachment_root: PathBuf,
+        attachment_store: Arc<dyn crate::run::ports::RunAttachmentStore>,
+    ) -> Self {
+        self.attachment_root = Some(attachment_root);
+        self.attachment_store = Some(attachment_store);
+        self
+    }
+
+    #[must_use]
+    pub fn with_handoff_store(
+        mut self,
+        root: PathBuf,
+        specs: BTreeMap<NodeId, HandoffSpec>,
+    ) -> Self {
+        self.handoff_store = Some(Arc::new(crate::run::handoff::HandoffStore::new(root)));
+        self.handoff_specs = specs
+            .into_iter()
+            .filter(|(_, spec)| !matches!(spec, HandoffSpec::Legacy))
+            .collect();
+        self
+    }
+
+    async fn hydrate_attachments(&self, request: &mut AgentRequest) -> Result<(), AgentError> {
+        let mut refs = BTreeMap::new();
+        for attachment in &request.entrypoint_attachments {
+            refs.insert(attachment.id.clone(), attachment.clone());
+        }
+        for item in &request.transcript {
+            if let engine::AgentTranscriptItem::UserMessage { attachments, .. } = item {
+                for attachment in attachments {
+                    refs.insert(attachment.id.clone(), attachment.clone());
+                }
+            }
+        }
+        if refs.is_empty() {
+            request.resolved_attachments.clear();
+            return Ok(());
+        }
+        let root = self.attachment_root.clone().ok_or_else(|| {
+            AgentError::Permanent("run attachment storage is unavailable".to_string())
+        })?;
+        let store = self.attachment_store.clone().ok_or_else(|| {
+            AgentError::Permanent("run attachment storage is unavailable".to_string())
+        })?;
+        let resolved = tokio::task::spawn_blocking(move || {
+            refs.into_values()
+                .map(|attachment| {
+                    store
+                        .read(&root, &attachment)
+                        .map(|bytes| (attachment.id, ResolvedChatAttachment { bytes }))
+                })
+                .collect::<Result<BTreeMap<_, _>, _>>()
+        })
+        .await
+        .map_err(|error| AgentError::Permanent(format!("attachment hydration failed: {error}")))?
+        .map_err(|error| AgentError::Permanent(error.to_string()))?;
+        request.resolved_attachments = resolved;
+        Ok(())
     }
 
     fn node_token_for(&self, node_id: &NodeId, attempt: u8) -> CancellationToken {
@@ -137,11 +211,13 @@ impl<A> AiPort for AiInvocationAdapter<A>
 where
     A: AiPort + Send + Sync + 'static,
 {
-    async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+    async fn invoke(&self, mut request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+        self.hydrate_attachments(&mut request).await?;
         maybe_send_node_start_events(self, &request);
         let node_id = request.node_id.clone();
         let label = request.node_label.clone();
         let model = request.model.clone();
+        let provider_id = request.provider_id.clone();
         let attempt = request.model_attempt;
         let assistant_message_id = Uuid::new_v4().to_string();
         let thinking_message_id = Uuid::new_v4().to_string();
@@ -159,11 +235,49 @@ where
         };
         let node_token = self.node_token_for(&node_id, attempt);
         let started = Instant::now();
-        let result = tokio::select! {
+        let mut result = tokio::select! {
             biased;
             () = node_token.cancelled() => Err(AgentError::Interrupted),
             result = self.inner.invoke_stream(request, &sink) => result,
         };
+        if let Ok(AgentTurnOutcome::Completed(success)) = &mut result {
+            if let (Some(store), Some(spec)) = (
+                self.handoff_store.clone(),
+                self.handoff_specs.get(&node_id).cloned(),
+            ) {
+                let node_id_for_store = node_id.clone();
+                let output = success.output.clone();
+                let assistant_message = success.assistant_message.clone();
+                let stored = tokio::task::spawn_blocking(move || {
+                    store.materialize(
+                        &node_id_for_store,
+                        &spec,
+                        &output,
+                        assistant_message.as_deref(),
+                    )
+                })
+                .await
+                .map_err(|error| AgentError::Permanent(format!("handoff task failed: {error}")))
+                .and_then(|stored| {
+                    stored.map_err(|error| {
+                        if error.is_invalid() {
+                            AgentError::malformed_submit_output("node handoff", error.to_string())
+                        } else {
+                            AgentError::Permanent(error.to_string())
+                        }
+                    })
+                });
+                match stored {
+                    Ok(stored) => {
+                        success.output = stored.output;
+                        success.handoff = Some(stored.artifact);
+                    }
+                    Err(error) => {
+                        result = Err(error);
+                    }
+                }
+            }
+        }
         emit_phase_timed(
             &self.event_tx,
             "ai_invoke",
@@ -199,8 +313,10 @@ where
             );
         }
         if let Ok(outcome) = &result {
-            if should_emit_assistant_message(did_stream, outcome, &streamed_content.lock()) {
-                emit_assistant_message(&self.event_tx, &node_id, outcome);
+            if let Some(content) =
+                assistant_message_to_emit(did_stream, outcome, &streamed_content.lock())
+            {
+                emit_assistant_message(&self.event_tx, &node_id, content);
             }
             // Emit usage report if available
             let usage = match outcome {
@@ -210,8 +326,18 @@ where
                 AgentTurnOutcome::Message(message) => message.usage.clone(),
             };
             if let Some(usage) = usage {
-                let max_context_tokens =
-                    crate::settings::lookup_context_window_size(&self.context_window_sizes, &model);
+                let provider_overrides = provider_id
+                    .as_deref()
+                    .and_then(|provider_id| self.context_window_sizes.get(provider_id))
+                    .or_else(|| {
+                        (self.context_window_sizes.len() == 1)
+                            .then(|| self.context_window_sizes.values().next())
+                            .flatten()
+                    });
+                let max_context_tokens = crate::settings::lookup_context_window_size(
+                    provider_overrides.unwrap_or(&BTreeMap::new()),
+                    &model,
+                );
                 send_or_log(
                     &self.event_tx,
                     ExecutionEvent::UsageReported {
@@ -222,13 +348,14 @@ where
                     },
                 );
             }
-            if let AgentTurnOutcome::Completed(AgentTurnSuccess { output, .. }) = outcome {
+            if let AgentTurnOutcome::Completed(success) = outcome {
                 send_or_log(
                     &self.event_tx,
                     ExecutionEvent::NodeCompleted {
                         node_id,
                         label,
-                        output: output.clone(),
+                        output: success.output.clone(),
+                        handoff: success.handoff.clone(),
                     },
                 );
             }
@@ -292,40 +419,44 @@ fn assistant_message_for_outcome(outcome: &AgentTurnOutcome) -> Option<String> {
     }
 }
 
-fn should_emit_assistant_message(
+fn assistant_message_to_emit(
     did_stream: bool,
     outcome: &AgentTurnOutcome,
     streamed_text: &str,
-) -> bool {
-    if !did_stream {
-        return true;
-    }
-    let Some(content) = filter_tool_turn_assistant_message(assistant_message_for_outcome(outcome))
-    else {
-        return false;
-    };
+) -> Option<String> {
+    let content = filter_tool_turn_assistant_message(assistant_message_for_outcome(outcome))?;
     let trimmed = content.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if !did_stream {
+        return Some(content);
+    }
     let stripped_streamed =
         filter_tool_turn_assistant_message(Some(streamed_text.to_string())).unwrap_or_default();
-    !trimmed.is_empty() && !stripped_streamed.contains(trimmed)
+    let streamed_trimmed = stripped_streamed.trim();
+    if stripped_streamed.contains(trimmed) {
+        return None;
+    }
+    if !streamed_trimmed.is_empty() {
+        if let Some(suffix) = trimmed.strip_prefix(streamed_trimmed) {
+            return Some(suffix.trim_start().to_string()).filter(|suffix| !suffix.is_empty());
+        }
+    }
+    Some(content)
 }
 
 fn emit_assistant_message(
     event_tx: &UnboundedSender<ExecutionEvent>,
     node_id: &NodeId,
-    outcome: &AgentTurnOutcome,
+    content: String,
 ) {
-    if let Some(content) =
-        filter_tool_turn_assistant_message(assistant_message_for_outcome(outcome))
-            .filter(|value| !value.trim().is_empty())
-    {
-        send_or_log(
-            event_tx,
-            ExecutionEvent::ChatMessage {
-                node_id: node_id.clone(),
-                role: ChatRole::Assistant,
-                content,
-            },
-        );
-    }
+    send_or_log(
+        event_tx,
+        ExecutionEvent::ChatMessage {
+            node_id: node_id.clone(),
+            role: ChatRole::Assistant,
+            content,
+        },
+    );
 }

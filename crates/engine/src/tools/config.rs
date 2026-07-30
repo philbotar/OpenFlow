@@ -32,12 +32,32 @@ pub enum ApprovalMode {
     Yolo,
 }
 
-/// Tool approval settings attached to an agent node or saved agent.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// Tool behavior settings attached to an agent node or saved agent.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NodeToolConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approval_mode: Option<ApprovalMode>,
+    #[serde(
+        default = "default_allow_structured_user_input",
+        skip_serializing_if = "is_true"
+    )]
+    pub allow_structured_user_input: bool,
+    #[serde(
+        default = "default_allow_free_text_user_input",
+        skip_serializing_if = "is_true"
+    )]
+    pub allow_free_text_user_input: bool,
+}
+
+impl Default for NodeToolConfig {
+    fn default() -> Self {
+        Self {
+            approval_mode: None,
+            allow_structured_user_input: true,
+            allow_free_text_user_input: true,
+        }
+    }
 }
 
 impl NodeToolConfig {
@@ -48,6 +68,22 @@ impl NodeToolConfig {
             None => ApprovalMode::Write,
         }
     }
+}
+
+const fn default_allow_structured_user_input() -> bool {
+    true
+}
+
+const fn default_allow_free_text_user_input() -> bool {
+    true
+}
+
+#[allow(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde skip_serializing_if requires a borrowed field predicate"
+)]
+const fn is_true(value: &bool) -> bool {
+    *value
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -350,12 +386,40 @@ mod tests {
         let config = NodeToolConfig::default();
         assert_eq!(config.approval_mode, None);
         assert_eq!(config.effective_approval_mode(), ApprovalMode::Write);
+        assert!(config.allow_structured_user_input);
+        assert!(config.allow_free_text_user_input);
     }
 
     #[test]
     fn node_tool_config_serde_defaults_backfill() {
         let config: NodeToolConfig = serde_json::from_value(json!({})).unwrap();
         assert_eq!(config, NodeToolConfig::default());
+    }
+
+    #[test]
+    fn node_tool_config_serializes_human_input_capability_opt_outs() {
+        assert_eq!(
+            serde_json::to_value(NodeToolConfig::default()).unwrap(),
+            json!({})
+        );
+
+        let config = NodeToolConfig {
+            allow_structured_user_input: false,
+            ..NodeToolConfig::default()
+        };
+        assert_eq!(
+            serde_json::to_value(config).unwrap(),
+            json!({ "allowStructuredUserInput": false })
+        );
+
+        let config = NodeToolConfig {
+            allow_free_text_user_input: false,
+            ..NodeToolConfig::default()
+        };
+        assert_eq!(
+            serde_json::to_value(config).unwrap(),
+            json!({ "allowFreeTextUserInput": false })
+        );
     }
 
     #[test]
@@ -418,6 +482,7 @@ mod tests {
     fn tool_decision_for_call_never_prompts_in_yolo_even_for_bash() {
         let config = NodeToolConfig {
             approval_mode: Some(ApprovalMode::Yolo),
+            ..NodeToolConfig::default()
         };
         let call = ToolCall {
             id: "call-bash".to_string(),
@@ -523,6 +588,7 @@ mod tests {
     fn read_only_planning_allows_only_run_plan_draft_mutation() {
         let config = NodeToolConfig {
             approval_mode: Some(ApprovalMode::ReadOnly),
+            ..NodeToolConfig::default()
         };
         let plan_write = ToolCall {
             id: "plan-write".to_string(),

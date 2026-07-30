@@ -128,6 +128,16 @@ impl AppBackend {
         self.settings.refresh_bedrock_models(settings).await
     }
 
+    pub async fn refresh_provider_models(
+        &self,
+        settings: &AppSettings,
+        transient_api_key: Option<&str>,
+    ) -> Result<Vec<String>, BackendError> {
+        self.settings
+            .refresh_provider_models(settings, transient_api_key)
+            .await
+    }
+
     pub async fn verify_bedrock_credentials(
         &self,
         settings: &AppSettings,

@@ -45,7 +45,7 @@ export function RunHistoryPanel() {
                 <div class="run-history-row" classList={{ active: ctx.replayRunId() === run.runId }}>
                   <span class={`trace-pill ${run.status}`}>{run.status}</span>
                   <div>
-                    <strong>{run.workflowName}</strong>
+                    <strong>{run.name}</strong>
                     <div>{formatRunTime(run.updatedAtMs)}</div>
                   </div>
                   <div class="run-history-actions">

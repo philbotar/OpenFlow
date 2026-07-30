@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod attachment;
 pub mod authoring;
 pub mod bootstrap;
 pub mod chat;

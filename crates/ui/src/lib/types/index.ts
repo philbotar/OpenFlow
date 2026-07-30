@@ -8,6 +8,7 @@ export type DurableRunStatus = "running" | "paused" | "stopped" | "completed" | 
 
 export interface RunSummary {
   runId: string;
+  name: string;
   workflowId: string;
   workflowName: string;
   projectId: string | null;
@@ -145,6 +146,8 @@ export type ApprovalMode = "read_only" | "always_ask" | "write" | "yolo";
 
 export interface NodeToolConfig {
   approvalMode: ApprovalMode | null;
+  allowStructuredUserInput?: boolean;
+  allowFreeTextUserInput?: boolean;
 }
 
 export interface NodeRuntimeConfigUpdate {
@@ -154,11 +157,29 @@ export interface NodeRuntimeConfigUpdate {
   reasoningBudgetTokens?: number | null;
 }
 
+export type HandoffSpec =
+  | { format: "legacy" }
+  | { format: "markdown"; template: string }
+  | { format: "json" };
+
+export interface HandoffArtifact {
+  format: "markdown" | "json";
+  uri: string;
+  mediaType: string;
+  sha256: string;
+  sizeBytes: number;
+}
+
 export interface AgentNodeConfig {
   system_prompt: string;
   task_prompt: string;
   model: string;
+  /** Optional provider override; blank inherits the workflow provider. */
+  providerId?: string | null;
   output_schema: unknown;
+  /** Canonical node-to-node artifact contract. Missing saved fields migrate to JSON. */
+  handoff?: HandoffSpec;
+  /** Legacy wire field. Runtime scheduling ignores it. */
   auto_start: boolean;
   tools: NodeToolConfig;
   callable_agents: string[];
@@ -171,6 +192,8 @@ export interface AgentNodeConfig {
   reasoningBudgetTokens?: number | null;
   /** When false, the node never pauses for human input (wire key: requestUserInput). */
   requestUserInput?: boolean;
+  /** Plain provider messages complete one direct-conversation turn. */
+  conversationMode?: boolean;
 }
 
 export interface ReasoningEffortOption {
@@ -186,6 +209,9 @@ export interface AgentDefinition {
   task_prompt: string;
   model: string;
   output_schema: unknown;
+  /** Default handoff used when this saved agent creates a workflow node. */
+  handoff?: HandoffSpec;
+  /** Legacy wire field. Saved agents run when invoked. */
   auto_start: boolean;
   tools: NodeToolConfig;
 }
@@ -208,9 +234,58 @@ export type ChatRole =
 
 export type ChatMessageKind = "node_completed";
 
+export type ChatAttachmentKind = "image" | "document";
+
+export interface ChatAttachmentRef {
+  id: string;
+  fileName: string;
+  mediaType: string;
+  sizeBytes: number;
+  sha256: string;
+  kind: ChatAttachmentKind;
+}
+
+export interface UserMessageInput {
+  text: string;
+  attachmentSourcePaths: string[];
+}
+
+export interface DurableRunContinuationInput {
+  nodeId: NodeId;
+  text: string;
+  invokedSkillIds: string[];
+  attachmentSourcePaths: string[];
+}
+
+export interface PendingChatAttachment {
+  sourcePath: string;
+  fileName: string;
+  sizeBytes?: number;
+  kind: ChatAttachmentKind;
+  staged?: boolean;
+}
+
+export interface StagedChatAttachment {
+  token: string;
+  fileName: string;
+  sizeBytes: number;
+  kind: ChatAttachmentKind;
+}
+
+export interface AttachmentPreview {
+  mediaType: string;
+  dataBase64: string;
+}
+
+export type ChatDeleteResult =
+  | "deleted"
+  | "deletedCleanupPending"
+  | { status: "deleted" | "deletedCleanupPending" };
+
 export interface ChatMessage {
   role: ChatRole;
   content: string;
+  attachments?: ChatAttachmentRef[];
   id?: string;
   streaming?: boolean;
   toolCallId?: string;
@@ -387,6 +462,13 @@ export interface StructuredUserInput {
   questions: UserInputQuestion[];
 }
 
+export interface ContextWindowSnapshot {
+  usedTokens: number;
+  maxTokens: number;
+  model: string;
+  nodeId: NodeId;
+}
+
 export interface WorkflowRunState {
   active: boolean;
   runId?: string | null;
@@ -407,9 +489,11 @@ export interface WorkflowRunState {
   chatLogs: Record<NodeId, ChatMessage[]>;
   runTrace: RunTraceEntry[];
   outputs: Record<NodeId, unknown>;
+  handoffs?: Record<NodeId, HandoffArtifact>;
   changedFiles: FileChangeRecord[];
   changedFilesByNode: Record<NodeId, FileChangeRecord[]>;
   editBatches: EditBatch[];
+  contextWindowByNode?: Record<NodeId, ContextWindowSnapshot>;
 }
 
 export type ProviderId = string;

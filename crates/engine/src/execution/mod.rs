@@ -12,8 +12,8 @@ pub mod telemetry;
 pub(crate) mod tool_results;
 
 pub use artifacts::{
-    NodeFailureKind, NodeRunOutput, PostRunSuggestion, PostRunSuggestionCategory, RunError,
-    RunReport,
+    HandoffArtifact, HandoffFormat, NodeFailureKind, NodeRunOutput, PostRunSuggestion,
+    PostRunSuggestionCategory, RunError, RunReport,
 };
 pub use completion_protocol::{
     complete_submit_output, malformed_submit_invalid_json, normalize_submit_output_arguments,

@@ -22,6 +22,7 @@ impl Default for MockAiPort {
 impl AiPort for MockAiPort {
     async fn invoke(&self, _request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+            handoff: None,
             output: serde_json::json!({"result": self.response}),
             raw_text: self.response.clone(),
             assistant_message: Some(self.response.clone()),
@@ -53,6 +54,7 @@ fn sample_request() -> AgentRequest {
         node_id: "node-1".into(),
         node_label: "Agent".to_string(),
         model: "mock".to_string(),
+        provider_id: None,
         system_messages: Vec::new(),
         task_prompt: String::new(),
         input: serde_json::json!({}),
@@ -60,11 +62,14 @@ fn sample_request() -> AgentRequest {
         tool_config: engine::NodeToolConfig::default(),
         available_tools: Vec::new(),
         transcript: Vec::new(),
+        entrypoint_attachments: Vec::new(),
+        resolved_attachments: std::collections::BTreeMap::default(),
         model_attempt: 1,
         reasoning_effort: None,
         reasoning_budget_tokens: None,
         tool_access_policy: engine::ToolAccessPolicy::Execution,
         allow_user_input: true,
+        conversation_mode: false,
     }
 }
 

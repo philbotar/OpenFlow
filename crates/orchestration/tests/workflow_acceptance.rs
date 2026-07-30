@@ -5,6 +5,7 @@ use engine::{
     AgentError, AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTurnOutcome,
     AgentTurnSuccess, AiPort, ApprovalMode, Edge, NodeId, ToolCall, Workflow,
 };
+use orchestration::adapters::storage::run_attachment_store::FileRunAttachmentStore;
 use orchestration::run::execution::{
     new_artifact_root, new_in_memory_snapshot_store, run_workflow_headless,
     spawn_interactive_workflow_run, ApprovalResponse, ExecutionAction, ExecutionEvent,
@@ -67,6 +68,7 @@ impl AiPort for ScriptedAi {
             other => json!({"summary": format!("output from {other}")}),
         };
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+            handoff: None,
             output,
             raw_text: "{}".to_string(),
             assistant_message: None,
@@ -129,7 +131,96 @@ async fn branch_join_workflow_preserves_sentinel_and_trace_contract() {
 
 #[cfg_attr(miri, ignore)]
 #[tokio::test]
-async fn manual_node_pauses_accepts_input_and_feeds_downstream_node() {
+async fn markdown_handoff_is_materialized_and_read_by_downstream_node() {
+    #[derive(Clone)]
+    struct HandoffAi;
+
+    #[async_trait]
+    impl AiPort for HandoffAi {
+        async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            if request.node_id == "__post_run_review" {
+                return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    handoff: None,
+                    output: json!({"suggestions": []}),
+                    raw_text: "{}".to_string(),
+                    assistant_message: None,
+                    reasoning: Vec::new(),
+                    usage: None,
+                }));
+            }
+            if request.node_id == "research" {
+                return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    handoff: None,
+                    output: json!({
+                        "markdown": "# Handoff\n\n## Summary\nVerified ORCHID-91.\n"
+                    }),
+                    raw_text: "{}".to_string(),
+                    assistant_message: Some("Research complete.".to_string()),
+                    reasoning: Vec::new(),
+                    usage: None,
+                }));
+            }
+
+            let handoff_uri = request.input["upstream"][0]["handoff"]["uri"]
+                .as_str()
+                .expect("downstream receives handoff URI");
+            let read_result = request.transcript.iter().find_map(|item| match item {
+                engine::AgentTranscriptItem::ToolResult { result }
+                    if result.tool_name == "read" =>
+                {
+                    Some(result.content.as_str())
+                }
+                _ => None,
+            });
+            if let Some(content) = read_result {
+                assert!(content.contains("Verified ORCHID-91."));
+                return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    handoff: None,
+                    output: json!({"summary": "consumed ORCHID-91 handoff"}),
+                    raw_text: "{}".to_string(),
+                    assistant_message: None,
+                    reasoning: Vec::new(),
+                    usage: None,
+                }));
+            }
+
+            Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+                raw_text: String::new(),
+                tool_calls: vec![ToolCall {
+                    id: "read-handoff".to_string(),
+                    provider_call_id: None,
+                    name: "read".to_string(),
+                    arguments: json!({"path": handoff_uri}),
+                }],
+                assistant_message: None,
+                reasoning: Vec::new(),
+                usage: None,
+            }))
+        }
+    }
+
+    let mut research = agent("research", "Research");
+    research.agent.handoff = engine::HandoffSpec::Markdown {
+        template: "# Handoff\n\n## Summary\n".to_string(),
+    };
+    let implement = agent("implement", "Implement");
+    let mut workflow = Workflow::new("artifact handoff");
+    workflow.nodes = vec![research, implement];
+    workflow.edges = vec![Edge::new("research", "implement")];
+
+    let snapshot = run_headless_script(workflow, HandoffAi, HeadlessRunOpts::default())
+        .await
+        .expect("Markdown handoff workflow completes");
+
+    assert_eq!(
+        snapshot.outputs[&NodeId::from("implement")],
+        json!({"summary": "consumed ORCHID-91 handoff"})
+    );
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+async fn node_starts_then_pauses_for_question_and_feeds_downstream_node() {
     #[derive(Clone, Default)]
     struct ManualAi {
         requests: Arc<Mutex<Vec<AgentRequest>>>,
@@ -141,6 +232,7 @@ async fn manual_node_pauses_accepts_input_and_feeds_downstream_node() {
             self.requests.lock().push(request.clone());
             if request.node_id == "__post_run_review" {
                 return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    handoff: None,
                     output: json!({"suggestions": []}),
                     raw_text: "{}".to_string(),
                     assistant_message: None,
@@ -161,13 +253,14 @@ async fn manual_node_pauses_accepts_input_and_feeds_downstream_node() {
                         .iter()
                         .rev()
                         .find_map(|item| match item {
-                            engine::AgentTranscriptItem::UserMessage { content } => {
+                            engine::AgentTranscriptItem::UserMessage { content, .. } => {
                                 Some(content.clone())
                             }
                             _ => None,
                         })
                         .unwrap();
                     Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                        handoff: None,
                         output: json!({"summary": answer}),
                         raw_text: "{}".to_string(),
                         assistant_message: Some("Locked. Advancing.".to_string()),
@@ -178,6 +271,7 @@ async fn manual_node_pauses_accepts_input_and_feeds_downstream_node() {
                 "final" => {
                     assert_eq!(request.input["upstream"][0]["node_id"], "human-review");
                     Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                        handoff: None,
                         output: json!({
                             "summary": request.input["upstream"][0]["output"]["summary"]
                         }),
@@ -204,16 +298,10 @@ async fn manual_node_pauses_accepts_input_and_feeds_downstream_node() {
         workflow,
         Some("Use project code ORCHID-91".to_string()),
         ManualAi::default(),
-        vec![
-            ManualInput {
-                node_id: NodeId("human-review".into()),
-                text: "Need the mandatory approval".to_string(),
-            },
-            ManualInput {
-                node_id: NodeId("human-review".into()),
-                text: "Legal sign-off keeps ORCHID-91".to_string(),
-            },
-        ],
+        vec![ManualInput {
+            node_id: NodeId("human-review".into()),
+            text: "Legal sign-off keeps ORCHID-91".to_string(),
+        }],
         vec![],
         BTreeMap::new(),
         None,
@@ -257,13 +345,14 @@ async fn conversational_node_can_pause_on_consecutive_explicit_input_requests() 
                         .iter()
                         .rev()
                         .find_map(|item| match item {
-                            engine::AgentTranscriptItem::UserMessage { content } => {
+                            engine::AgentTranscriptItem::UserMessage { content, .. } => {
                                 Some(content.clone())
                             }
                             _ => None,
                         })
                         .expect("second answer");
                     Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                        handoff: None,
                         output: json!({"summary": answer}),
                         raw_text: "{}".to_string(),
                         assistant_message: None,
@@ -329,6 +418,7 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
         async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
             if request.node_id == "__post_run_review" {
                 return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    handoff: None,
                     output: json!({"suggestions": []}),
                     raw_text: "{}".to_string(),
                     assistant_message: None,
@@ -370,6 +460,7 @@ async fn tool_approval_pause_and_result_round_trip_preserve_run_integrity() {
                 .any(|item| matches!(item, engine::AgentTranscriptItem::ToolResult { .. }));
             assert!(saw_tool_result);
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                handoff: None,
                 output: json!({"summary": "tool verified ORCHID-91"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
@@ -436,6 +527,7 @@ async fn write_tool_requires_approval_and_mutates_file_after_allow() {
         async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
             if request.node_id == "__post_run_review" {
                 return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    handoff: None,
                     output: json!({"suggestions": []}),
                     raw_text: "{}".to_string(),
                     assistant_message: None,
@@ -468,6 +560,7 @@ async fn write_tool_requires_approval_and_mutates_file_after_allow() {
                 .any(|item| matches!(item, engine::AgentTranscriptItem::ToolResult { .. }));
             assert!(saw_tool_result);
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                handoff: None,
                 output: json!({"summary": "draft saved ORCHID-91"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
@@ -541,6 +634,7 @@ impl AiPort for CheckpointWriteToolAi {
         use std::sync::atomic::Ordering;
         if request.node_id == "__post_run_review" {
             return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                handoff: None,
                 output: json!({"suggestions": []}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
@@ -569,6 +663,7 @@ impl AiPort for CheckpointWriteToolAi {
             .any(|item| matches!(item, engine::AgentTranscriptItem::ToolResult { .. }));
         assert!(saw_tool_result);
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+            handoff: None,
             output: json!({"summary": "draft saved ORCHID-91"}),
             raw_text: "{}".to_string(),
             assistant_message: None,
@@ -595,13 +690,18 @@ fn checkpoint_interactive_params<A: AiPort + Send + Sync + 'static>(
         parking_lot::Mutex<Option<orchestration::run::persistence::PendingRunCheckpoint>>,
     >,
 ) -> InteractiveWorkflowRunParams<A> {
+    let attachment_root = execution_cwd.join("attachments");
     InteractiveWorkflowRunParams {
         workflow,
         entrypoint: None,
+        entrypoint_attachments: Vec::new(),
         execution_cwd,
         project_repository_root: None,
         artifact_root: new_artifact_root(),
+        attachment_root,
+        attachment_store: Arc::new(FileRunAttachmentStore::default()),
         resume_checkpoint,
+        resume_continuation: None,
         checkpoint_sink,
         ai,
         agent_snapshots: BTreeMap::new(),
@@ -720,6 +820,7 @@ async fn failed_read_tool_feeds_error_and_node_completes() {
         async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
             if request.node_id == "__post_run_review" {
                 return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    handoff: None,
                     output: json!({"suggestions": []}),
                     raw_text: "{}".to_string(),
                     assistant_message: None,
@@ -751,6 +852,7 @@ async fn failed_read_tool_feeds_error_and_node_completes() {
                 engine::AgentTranscriptItem::ToolResult { result } if result.is_error
             )));
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                handoff: None,
                 output: json!({"summary": "ok after tool error"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
@@ -801,6 +903,7 @@ async fn search_missing_path_surfaces_not_found_not_empty_success() {
         async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
             if request.node_id == "__post_run_review" {
                 return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    handoff: None,
                     output: json!({"suggestions": []}),
                     raw_text: "{}".to_string(),
                     assistant_message: None,
@@ -853,6 +956,7 @@ async fn search_missing_path_surfaces_not_found_not_empty_success() {
                 result.content
             );
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                handoff: None,
                 output: json!({"summary": "ok after search path error"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
@@ -932,6 +1036,7 @@ impl AiPort for OutputRepairAcceptanceAi {
         if node_id.ends_with("__output_repair") {
             if self.invalid_repair {
                 return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    handoff: None,
                     output: json!({"not_repaired": true}),
                     raw_text: "{}".into(),
                     assistant_message: Some("overseer prose".into()),
@@ -940,6 +1045,7 @@ impl AiPort for OutputRepairAcceptanceAi {
                 }));
             }
             return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                handoff: None,
                 output: json!({
                     "repaired_arguments": {
                         "output": { "summary": "FIXED-REPAIR" }
@@ -977,6 +1083,7 @@ impl AiPort for OutputRepairAcceptanceAi {
                     ));
                 }
                 Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    handoff: None,
                     output: json!({"summary": "should-not-reach-without-repair"}),
                     raw_text: "{}".into(),
                     assistant_message: None,
@@ -992,6 +1099,7 @@ impl AiPort for OutputRepairAcceptanceAi {
                     "downstream must receive repaired root output"
                 );
                 Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    handoff: None,
                     output: json!({
                         "summary": format!(
                             "down saw {}",
@@ -1005,6 +1113,7 @@ impl AiPort for OutputRepairAcceptanceAi {
                 }))
             }
             other => Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                handoff: None,
                 output: json!({"summary": format!("unexpected {other}")}),
                 raw_text: "{}".into(),
                 assistant_message: None,

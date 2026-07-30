@@ -78,7 +78,7 @@ sequenceDiagram
     DT->>RC: start_run
     RC->>RC: validate_workflow
     RC->>RC: resolve_execution_cwd
-    RC->>RC: prepare_workflow_run (provider, snapshots)
+    RC->>RC: prepare_workflow_run (provider router, snapshots)
     RC->>RC: create RunRecord, spawn drive task
     DR->>EN: InteractiveEngine::new / from_checkpoint
     DR->>EN: run(ai_adapter, tool_port, cancel_token)
@@ -149,7 +149,7 @@ stateDiagram-v2
 
 | Struct | Fields | When |
 | --- | --- | --- |
-| `EngineAwaitInput` | `node_id`, `label`, `context`, `is_initial` | Manual kickoff or `NeedsUserInput` / conversational `Message` |
+| `EngineAwaitInput` | `node_id`, `label`, `context`, `is_initial` | Explicit `NeedsUserInput` request |
 | `EngineAwaitApproval` | `approval_id`, `node_id`, `label`, `tool_calls` | Batch has `requires_approval == true` |
 | `EngineRetryableNode` | `node_id`, `label`, `error`, `interrupted` | Transient exhaustion, user interrupt, or recoverable node error |
 
@@ -177,7 +177,7 @@ stateDiagram-v2
 
 | Kind | Model-facing tools |
 | --- | --- |
-| **Harness** | `openflow_submit_node_output`, optional `openflow_request_user_input` |
+| **Harness** | `openflow_submit_node_output`, optional `openflow_request_user_input`, optional `openflow_ask_user_question` |
 | **Executable** | Catalog tools from registry (+ `ToolPort::augment_request`) |
 
 Batch rule: exactly one harness tool alone, **or** one or more executable tools — never mix. Mixed batches become `AgentError::MixedToolTurn`.
@@ -188,8 +188,11 @@ Batch rule: exactly one harness tool alone, **or** one or more executable tools 
 | --- | --- |
 | `Completed` | Store `NodeRunOutput`, clear recovery state, advance layer when all siblings done |
 | `ToolCalls` | `apply_tool_calls` → approval policy → `pending_tool_batches` |
-| `NeedsUserInput` | Conversational: pause (valid question); Autonomous: auto-continue nudge |
-| `Message` | Auto-continue nudge (max streak) — never pauses; human pauses require `openflow_request_user_input` |
+| `NeedsUserInput` | Conversational: pause (valid human-facing message or structured question); Autonomous: auto-continue nudge |
+| `Message` | Direct chat (`conversationMode`): end turn and await next message. Workflow: auto-continue nudge (max streak) |
+
+Provider requests mirror this lifecycle: workflow nodes require a tool call; `conversationMode`
+nodes use automatic tool choice so plain text remains a valid outcome.
 
 ### 3.3 ToolCallStatus lifecycle
 
@@ -259,9 +262,8 @@ Subagent turns run **inside** a parent `CALL_SUBAGENT` tool execution (`subagent
 | Gate | Trigger | Owner | Blocks? | Resume API | Failure mode | Source |
 | --- | --- | --- | --- | --- | --- | --- |
 | Workflow validation | Empty graph, duplicate ids, dangling edge, cycle | **engine** | Yes (start) | Fix workflow | `WorkflowValidationError` | `graph/validation.rs` → `validate_workflow` |
-| Provider / key readiness | No resolvable API key (non-local provider) | **orchestration** | Yes (start) | Settings / transient key | Backend error to UI | `settings/provider.rs` → `resolve_provider_config` |
-| `auto_start` vs kickoff | `auto_start: false` + empty transcript | **engine** | Yes (pause) | `submit_user_input` → `on_human_input` | Stalls layer until input | `mod.rs` → `schedule_manual_nodes_in_layer` |
-| `request_user_input` | Model calls `openflow_request_user_input` with a valid free-text or structured question | **engine** | Yes (pause) | `submit_user_input` | Invalid request → nudge then fail | `completion.rs`, `allow_user_input` on `AgentRequest` |
+| Provider / key readiness | Any referenced provider lacks resolvable credentials | **orchestration** | Yes (start) | Settings / transient key | Backend error to UI | `settings/provider.rs` → `resolve_provider_config` |
+| `request_user_input` | Model calls `openflow_request_user_input` with one free-text question or `openflow_ask_user_question` with valid structured questions | **engine** | Yes (pause) | `submit_user_input` | Invalid request → nudge then fail | `completion.rs`, `allow_user_input` on `AgentRequest` |
 | Tool approval (`ApprovalMode`) | Write-tier tool under `write` / `always_ask` | **engine** policy; **orch** catalog | Yes (pause) | `submit_tool_approval` → `on_tool_decision` | Deny → synthetic denied `ToolResult` | `tools/config.rs`, `completion.rs` |
 | `read_only` tool exposure | Write-tier tool not in catalog | **orchestration** | Yes (model can't call) | Switch `ApprovalMode` | Tool unavailable to model | `tool/registry.rs` → `is_read_only` |
 | Retryable node / `RetryPolicy` | `AgentError::Transient`, interrupt, recoverable fail | **engine** | Yes (pause) | `retry_node` | Exhaust → `failed_nodes` / run fail | `completion.rs`, `RetryPolicy` in `WorkflowSettings` |
@@ -270,6 +272,8 @@ Subagent turns run **inside** a parent `CALL_SUBAGENT` tool execution (`subagent
 | DAG layer readiness | Upstream node lacks output | **engine** | No (wait) | Auto when upstream completes | — | `is_node_blocked`, `gather_call_ai_actions` |
 | Checkpoint restore | User stop / durable resume | **orchestration** | — | `continue_run` / `resume_durable_run` | Hash / stale node mismatch | `checkpoint.rs`, `run_checkpoint_store.rs` |
 | Callable agent snapshot | Unknown agent id at run start | **engine** | Yes (prep) | Fix workflow/agents | Prep error | `resolve_callable_agent_snapshots` |
+
+**Provider resolution order:** node `AgentNodeConfig.provider_id` → workflow `WorkflowSettings.provider_id` → active settings provider. Run prep creates clients for every referenced provider. Requests do not fail over across providers.
 
 **API key resolution order** (`resolve_api_key`): transient input panel → stored `ProviderProfile.api_key` → provider env var. Bedrock uses AWS profile/region, not API keys.
 
@@ -297,15 +301,15 @@ flowchart LR
 
 | Seam | Type | Important fields |
 | --- | --- | --- |
-| Workflow → invocation | `NodeInvocationContext` | upstream outputs, `entrypoint_text`, `shared_context`, callable snapshots |
-| → `AgentRequest` | `build_agent_request` | `system_messages`, `task_prompt`, `input` JSON, `output_schema`, `tool_config`, `turn_phase`, `allow_user_input`, `transcript` |
-| → provider | `AiPort::invoke_stream` | Model id, reasoning options, phase-specific `available_tools` (`mapping/mod.rs` → `all_tool_specs`) |
-| ← provider | `AgentTurnOutcome` | `Completed.output`, `ToolCalls.tool_calls`, control transitions |
+| Workflow → invocation | `NodeInvocationContext` | upstream outputs and handoff refs, `entrypoint_text`, `shared_context`, callable snapshots |
+| → `AgentRequest` | `build_agent_request` | `provider_id`, `model`, `system_messages`, `task_prompt`, `input` JSON, `output_schema`, `tool_config` (approval + structured-input capability), `turn_phase`, `allow_user_input`, `transcript` |
+| → provider | `ProviderRouter` → `AiPort::invoke_stream` | Effective provider, model id, reasoning options, phase-specific `available_tools` (`mapping/mod.rs` → `all_tool_specs`) |
+| ← provider | `AgentTurnOutcome` | `Completed.output`, optional `Completed.handoff`, `ToolCalls.tool_calls`, control transitions |
 | Tool execution | `ToolPort::execute_batch` | `ToolBatchOutput` → `on_tool_results` |
 | → UI | `RunTelemetry` / `ExecutionEvent` | `ChatMessageDelta`, `NodeAwaitingInput`, `ToolApprovalRequested`, `NodeCompleted`, `Finished` |
-| Projection | `apply_event_to_run_state` | Mutates `status_by_node`, `chat_logs`, `pending_approvals`, `outputs` |
+| Projection | `apply_event_to_run_state` | Mutates `status_by_node`, `chat_logs`, `pending_approvals`, `outputs`, `handoffs` |
 
-Orchestration wraps raw `AiPort` with `AiInvocationAdapter` to emit streaming deltas and usage before outcomes reach projection.
+Orchestration wraps the run-scoped provider router with `AiInvocationAdapter`. After a valid submit, the adapter materializes the configured Markdown or JSON handoff under the run root, attaches its immutable `run://` manifest, then emits completion and usage events.
 
 ---
 
@@ -322,6 +326,7 @@ Orchestration wraps raw `AiPort` with `AiInvocationAdapter` to emit streaming de
 | Run record | `{run_root}/{run_id}/run.json` | `RunCoordinator` | `RunRecord` + `workflow_snapshot` |
 | Checkpoints | `{run_root}/{run_id}/checkpoints/NNNN.json` | `run_checkpoint_store` | Engine + `WorkflowRunState` projection |
 | Artifacts | `{run_root}/{run_id}/artifacts/` | `ArtifactStore` | Large tool outputs |
+| Node handoffs | `{run_root}/{run_id}/handoffs/{node_id}/HANDOFF.md` or `HANDOFF.json` | `HandoffStore` | Canonical node result; SHA-256 manifest travels through run state and downstream input |
 | In-session checkpoint | `RunSession.engine_checkpoint` | drive lifecycle | User stop → Continue (no disk required) |
 
 **Merge rule:** `WorkflowCatalog::load_all` loads app store, then overlays project-discovered workflows (project wins on same `WorkflowId`).
@@ -349,19 +354,19 @@ Orchestration wraps raw `AiPort` with `AiInvocationAdapter` to emit streaming de
 
 ## 8. Worked scenarios (step-by-step with types)
 
-### A. Linear 2-node auto-start happy path
+### A. Linear 2-node readiness happy path
 
-1. UI: `start_run` with `entrypoint: null`; both nodes `auto_start: true`.
+1. UI: `start_run` with `entrypoint: null`.
 2. `validate_workflow` → layers `[ [A], [B] ]`.
-3. `InteractiveEngine::new` → layer 0: node A `gather_call_ai_actions` → `AiPort::invoke_stream`.
+3. `InteractiveEngine::new` → layer 0: node A has all required inputs → `gather_call_ai_actions` → `AiPort::invoke_stream`.
 4. Outcome `Completed(AgentTurnSuccess)` → output stored → layer advances.
 5. Node B receives upstream map in `AgentRequest.input` → completes → `EngineRunResult::Completed(RunReport)`.
 6. `RunTelemetry::Finished(report)` → `WorkflowRunState.active = false`.
 
 ### B. Node pauses for user input, resume
 
-1. Node with `auto_start: false` hits layer → `schedule_manual_nodes_in_layer` → `awaiting_nodes`.
-2. `run()` returns `NeedsInteraction { inputs: [EngineAwaitInput { is_initial: true, ... }], ... }`.
+1. A node with `request_user_input: true` starts when its upstream inputs are ready.
+2. The model calls `openflow_request_user_input` or `openflow_ask_user_question` → `awaiting_nodes` → `run()` returns `NeedsInteraction { inputs: [EngineAwaitInput { ... }], ... }`.
 3. Orchestration emits `NodeAwaitingInput` → UI composer enabled.
 4. User: `submit_user_input` accepts the text, removes that node's actionable structured
    request from `WorkflowRunState`, appends the user transcript message, then forwards to
@@ -429,7 +434,7 @@ Orchestration wraps raw `AiPort` with `AiInvocationAdapter` to emit streaming de
 **Providers must not**
 
 - Decide tool approval, DAG advancement, or run lifecycle.
-- Offer `openflow_request_user_input` when `allow_user_input == false`.
+- Offer a human-input harness when `allow_user_input == false`.
 - Persist workflow or session state.
 
 **Boundary violations to avoid:** UI importing engine types directly; desktop calling orchestration internals; engine performing filesystem/HTTP I/O.
