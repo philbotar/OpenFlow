@@ -1,78 +1,136 @@
+<p align="center">
+  <img src="crates/desktop/icons/icon.png" alt="OpenFlow logo" width="128" height="128" />
+</p>
 
+<h1 align="center">OpenFlow: Visual AI Agent Workflow Builder</h1>
 
-# OpenFlow
+<p align="center">
+  <strong>Open-source desktop IDE for building, running, and debugging multi-agent LLM workflows.</strong>
+</p>
 
-**Claude Code for Workflows**
+<p align="center">
+  Design agent pipelines on a canvas. Orchestrate models, tools, subagents, human approvals, and MCP servers without hand-wiring prompts, provider SDKs, or state.
+</p>
 
-Each agent is its own session, with the ability to use multiple providers in a workflow. Use Fable for planning, Sol for implementation in one clean UI.
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License" /></a>
+  <img src="https://img.shields.io/badge/rust-2021-orange?logo=rust&logoColor=white" alt="Rust 2021" />
+  <img src="https://img.shields.io/badge/tauri-2.0-FFC131?logo=tauri&logoColor=white" alt="Tauri 2" />
+  <img src="https://img.shields.io/badge/solidjs-1.9-2C4F7C?logo=solid&logoColor=white" alt="SolidJS" />
+</p>
 
-Use hosted or local models. Give agents tools and subagents. Keep approvals on while testing, then switch to auto-approve when the workflow is ready.
+<p align="center">
+  <a href="#visual-multi-agent-workflow-orchestration">Overview</a> ·
+  <a href="#install">Install</a> ·
+  <a href="#use-cases">Use cases</a> ·
+  <a href="#features-for-ai-agent-workflows">Features</a> ·
+  <a href="#supported-ai-model-providers">Providers</a> ·
+  <a href="#developing">Developing</a> ·
+  <a href="#contributing">Contributing</a>
+</p>
 
+## Visual multi-agent workflow orchestration
 
+OpenFlow replaces hand-built prompt chains with a visual DAG editor and agent runtime. Drag AI agent nodes onto a canvas, connect their dependencies, configure prompts, providers, models, and tools, then watch the workflow execute in real time.
 
-[Overview](#how-it-works) · [Install](#install) · [Use cases](#use-cases) · [Features](#whats-included) · [Providers](#models-and-providers) · [Developing](#developing) · [Contributing](#contributing)
+Each graph is an executable, repeatable LLM workflow. Independent agents run in parallel, downstream nodes receive upstream output, and explicit handoff artifacts move results through the pipeline.
 
-## How it works
+Use OpenFlow like a Claude Code-style interactive agent session, with chat and tool approvals, or enable auto-approve for an autonomous run. Project workflows can live in Git under `.flow/workflows/`.
 
-A node is one chat: a prompt, a model, some tools, and the context it receives. Connections set the order. Independent branches run in parallel, then pass their results forward.
+<p align="center">
+  <img src="docs/assets/openflow-workflow-demo.gif" alt="OpenFlow running a four-agent feature-planning workflow" width="100%" />
+</p>
 
-You can control what context each node receives, and if you want it to run autonomously or with input.
-
-Workflows can stay in OpenFlow or live with a project under `.flow/workflows/`. Project workflows run from that project and can be reviewed in Git with the code they work on.
-
-## A four-agent run
-
-
-
-*In this scripted run, the middle two agents work in parallel. The final agent turns their results into a Markdown brief.*
+<p align="center">
+  <em>The middle agents run in parallel, then the final agent turns their results into a Markdown brief.</em>
+</p>
 
 ## Install
 
-Download the latest build from [Releases](https://github.com/philbotar/OpenFlow/releases/latest) and open it. Rust and Node are only needed for source builds.
+Grab the latest build from [Releases](https://github.com/philbotar/OpenFlow/releases/latest) and open it. No Rust or Node required.
 
-> **macOS:** Builds are currently unsigned. If Gatekeeper blocks the app, right-click **OpenFlow** and choose **Open**, or run `xattr -cr /path/to/OpenFlow.app`.
+> **macOS Gatekeeper:** If macOS blocks the app on first launch, right-click **OpenFlow** → **Open**, or run `xattr -cr /path/to/OpenFlow.app`.
 
-Building from source? Jump to [Developing](#developing).
+Want to build the installer yourself instead? See [Developing](#developing) below.
 
 ## Use cases
 
-- Give planning, implementation, review, and testing to separate coding agents.
-- Run research tasks side by side, then send their findings to one agent for the summary.
-- Stop for approval before an agent edits a file or runs a command.
-- Run local models through Ollama or LM Studio.
-- Keep a repeatable workflow beside the code it works on.
+- **AI coding workflows** — connect planning, implementation, code review, testing, and release agents in one visible pipeline.
+- **Parallel research** — fan work out across specialist agents, then merge their findings into one structured result.
+- **Human-in-the-loop automation** — pause for questions or tool approval before an agent edits files or runs commands.
+- **Multi-provider workflows** — route individual nodes through different hosted or local model providers.
+- **Repeatable LLM pipelines** — version prompts, agent settings, graph structure, and project context alongside your code.
 
+## Features for AI agent workflows
 
+<table>
+<tr>
+<td width="50%" valign="top">
 
-## What's included
+### Visual workflow editor
 
-- **Canvas.** Add agent nodes, draw connections, and edit settings in the inspector. OpenFlow catches cycles and invalid edges before a run starts.
-- **Parallel work.** Independent branches run together. A downstream node starts when the results it needs are ready.
-- **Tools and subagents.** Let agents work with files, run commands, search code or the web, call MCP tools, and delegate to saved subagents. You choose which actions need approval.
-- **Project workflows.** Keep workflows in OpenFlow or save them under `.flow/workflows/` so they can be committed and reviewed with the code.
-- **Interactive runs.** Open a node's chat while the graph runs. Answer questions, approve tools, inspect results, or turn on auto-approve and leave it alone.
+Drag nodes onto a canvas, wire them into a DAG, and configure each agent in an inspector panel. Validation runs before every run: cycles and broken edges never reach execution.
 
+</td>
+<td width="50%" valign="top">
 
+### Parallel agent layers
 
-## Models and providers
+Nodes in the same topological layer run concurrently. Downstream agents receive upstream output automatically, with no manual plumbing.
 
-OpenFlow comes with profiles for **OpenAI**, **Anthropic**, **ChatGPT (Codex)**, **Amazon Bedrock**, **OpenRouter**, **Groq**, **Together AI**, **Fireworks AI**, **DeepSeek**, **xAI / Grok**, **Mistral AI**, **Perplexity**, and **Gemini**.
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
 
-Use **Ollama** or **LM Studio** for local models. For another gateway, add a custom OpenAI-compatible endpoint.
+### Tools & subagents
 
-See the [provider setup guide](docs/guides/provider-setup.md) for authentication, endpoints, model selection, and compatibility.
+Agents can read and edit files, run shell commands, search code or the web, call MCP tools, and delegate to saved subagents. Approval policies gate sensitive actions.
+
+</td>
+<td width="50%" valign="top">
+
+### Multi-provider LLM support
+
+Choose a provider and model per node. Mix hosted APIs, ChatGPT OAuth, Amazon Bedrock, local Ollama or LM Studio, and custom OpenAI-compatible endpoints in one workflow.
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### Durable context
+
+Attach images, keep workflows beside project code, and preserve run-owned context across replies, retries, checkpoint resume, and replay.
+
+</td>
+<td width="50%" valign="top">
+
+### Interactive or autonomous runs
+
+Chat with individual agents, inspect streamed reasoning and results, and approve tools as they run. Or enable auto-approve and let dependency-ready work finish unattended.
+
+</td>
+</tr>
+</table>
+
+## Supported AI model providers
+
+Built-in profiles: **OpenAI**, **Anthropic**, **ChatGPT (Codex)**, **Amazon Bedrock**, **OpenRouter**, **Groq**, **Together AI**, **Fireworks AI**, **DeepSeek**, **xAI / Grok**, **Mistral AI**, **Perplexity**, and **Gemini**.
+
+Run local models through **Ollama** or **LM Studio**. Connect other gateways with a custom OpenAI-compatible endpoint.
+
+See the [provider setup guide](docs/guides/provider-setup.md) for auth, endpoints, model selection, and the full compatibility matrix.
 
 ## Developing
 
-Want to work on OpenFlow itself? Start here.
+Making changes to OpenFlow itself? Build and run it from source.
 
 ### Prerequisites
 
 - [Rust](https://rustup.rs/) (stable)
 - [Node.js](https://nodejs.org/) 18+
 - Platform build tools for [Tauri](https://v2.tauri.app/start/prerequisites/)
-
-
 
 ### Run in dev mode
 
@@ -106,28 +164,22 @@ npm --prefix crates/ui run typecheck
 cargo nextest run -p orchestration --test workflow_acceptance --no-capture
 ```
 
-
-| Resource                          | Path                                                                                 |
-| --------------------------------- | ------------------------------------------------------------------------------------ |
-| New user guide                    | `[docs/guides/for-new-users.md](docs/guides/for-new-users.md)`                       |
-| Install, provider, first workflow | `[docs/getting-started/README.md](docs/getting-started/README.md)`                   |
-| Repo map & change paths           | `[AGENTS.md](AGENTS.md)`                                                             |
-| Architecture overview             | `[docs/architecture/technical-overview.md](docs/architecture/technical-overview.md)` |
-| Coding patterns                   | `[docs/contributing/coding-patterns.md](docs/contributing/coding-patterns.md)`       |
-| Testing workflows                 | `[docs/contributing/testing-workflows.md](docs/contributing/testing-workflows.md)`   |
-| Example workflows                 | `[examples/README.md](examples/README.md)`                                           |
-| Domain glossary                   | `[docs/glossary.md](docs/glossary.md)`                                               |
-
-
-
+| Resource | Path |
+| --- | --- |
+| New users — feature map & first hour | [`docs/guides/for-new-users.md`](docs/guides/for-new-users.md) |
+| Install, provider, first workflow | [`docs/getting-started/README.md`](docs/getting-started/README.md) |
+| Repo map & change paths | [`AGENTS.md`](AGENTS.md) |
+| Architecture overview | [`docs/architecture/technical-overview.md`](docs/architecture/technical-overview.md) |
+| Coding patterns | [`docs/contributing/coding-patterns.md`](docs/contributing/coding-patterns.md) |
+| Testing workflows | [`docs/contributing/testing-workflows.md`](docs/contributing/testing-workflows.md) |
+| Example workflows | [`examples/README.md`](examples/README.md) |
+| Domain glossary | [`docs/glossary.md`](docs/glossary.md) |
 
 ## Contributing
 
-Read `[CONTRIBUTING.md](CONTRIBUTING.md)` for the PR checklist.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the PR checklist.
 
-Before opening a PR, choose the right development lane, run `./scripts/verify.sh`, and add user-visible changes to `[CHANGELOG.md](CHANGELOG.md)`.
-
-The lane guide lives at `[docs/contributing/development-lanes.md](docs/contributing/development-lanes.md)`.
+Classify your change with [`docs/contributing/development-lanes.md`](docs/contributing/development-lanes.md), run `./scripts/verify.sh`, and update [`CHANGELOG.md`](CHANGELOG.md) for user-visible changes.
 
 ## License
 
