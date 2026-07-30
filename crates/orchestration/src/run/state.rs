@@ -2,6 +2,7 @@ use engine::{ChatMessage, NodeId, RunReport, SubagentSummary, Workflow};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
+use std::ops::{Deref, DerefMut};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -52,6 +53,50 @@ pub struct ToolCallSummary {
     pub is_error: bool,
     #[serde(default)]
     pub streaming: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub started_at_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completed_at_ms: Option<i64>,
+}
+
+/// UI-facing chat projection. The engine message stays transport-neutral while
+/// orchestration owns durable run timing.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectedChatMessage {
+    #[serde(flatten)]
+    pub message: ChatMessage,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completed_at_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub elapsed_since_previous_ms: Option<u64>,
+}
+
+impl From<ChatMessage> for ProjectedChatMessage {
+    fn from(message: ChatMessage) -> Self {
+        Self {
+            message,
+            created_at_ms: None,
+            completed_at_ms: None,
+            elapsed_since_previous_ms: None,
+        }
+    }
+}
+
+impl Deref for ProjectedChatMessage {
+    type Target = ChatMessage;
+
+    fn deref(&self) -> &Self::Target {
+        &self.message
+    }
+}
+
+impl DerefMut for ProjectedChatMessage {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.message
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -83,6 +128,10 @@ pub enum PlanModeRunPhase {
 #[serde(rename_all = "camelCase")]
 pub struct ContextWindowSnapshot {
     pub used_tokens: u32,
+    #[serde(default)]
+    pub cached_input_tokens: u32,
+    #[serde(default)]
+    pub cache_creation_input_tokens: u32,
     pub max_tokens: u32,
     pub model: String,
     pub node_id: NodeId,
@@ -95,6 +144,10 @@ pub struct WorkflowRunState {
     pub active: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub run_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_cwd: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
     pub awaiting_node_id: Option<NodeId>,
     #[serde(default)]
     pub awaiting_node_ids: Vec<NodeId>,
@@ -112,7 +165,7 @@ pub struct WorkflowRunState {
     pub subagents_by_node: BTreeMap<NodeId, Vec<SubagentSummary>>,
     pub last_report: Option<RunReport>,
     pub last_error: Option<String>,
-    pub chat_logs: BTreeMap<NodeId, Vec<ChatMessage>>,
+    pub chat_logs: BTreeMap<NodeId, Vec<ProjectedChatMessage>>,
     pub run_trace: Vec<RunTraceEntry>,
     pub outputs: BTreeMap<NodeId, Value>,
     #[serde(default)]
@@ -146,6 +199,8 @@ impl WorkflowRunState {
         Self {
             active: true,
             run_id: None,
+            execution_cwd: None,
+            project_id: None,
             awaiting_node_id: None,
             awaiting_node_ids: Vec::new(),
             structured_input_by_node: BTreeMap::new(),
@@ -195,7 +250,7 @@ impl WorkflowRunState {
 
 #[cfg(test)]
 mod tests {
-    use super::{AgentStatus, PlanModeRunPhase, WorkflowRunState};
+    use super::{AgentStatus, PlanModeRunPhase, ProjectedChatMessage, WorkflowRunState};
     use engine::{NodeId, PlanModeConfig, Workflow};
 
     #[test]
@@ -208,6 +263,21 @@ mod tests {
             serde_json::to_string(&AgentStatus::RunningTool).expect("serialize"),
             "\"running_tool\""
         );
+    }
+
+    #[test]
+    fn legacy_chat_messages_load_without_timing() {
+        let message: ProjectedChatMessage = serde_json::from_value(serde_json::json!({
+            "role": "user",
+            "content": "Legacy message",
+            "streaming": false
+        }))
+        .expect("deserialize legacy chat message");
+
+        assert_eq!(message.content, "Legacy message");
+        assert!(message.created_at_ms.is_none());
+        assert!(message.completed_at_ms.is_none());
+        assert!(message.elapsed_since_previous_ms.is_none());
     }
 
     #[test]

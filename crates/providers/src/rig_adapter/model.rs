@@ -7,10 +7,13 @@ use crate::auth::{AuthConfig, CodexOAuthCredentials};
 use crate::client::BedrockConfig;
 use crate::client::OpenAiCompatibleConfig;
 use crate::client::{AiClientConfig, AnthropicConfig, ProviderAdapterConfig};
-use crate::prompt_cache::{cache_session_key, openai_compat_cache_key_enabled};
+use crate::prompt_cache::{
+    cache_session_key, openai_compat_cache_key_enabled, openai_explicit_prompt_cache_supported,
+    OPENAI_RESPONSES_CACHE_KEY_METADATA, OPENAI_RESPONSES_CACHE_MODE_METADATA,
+};
 use crate::rig_adapter::{
-    anthropic_http::AnthropicHttpClient, claude_thinking, convert, error,
-    openai_http::OpenAiHttpClient, outcome, stream,
+    anthropic_http::AnthropicHttpClient, claude_thinking, codex_http::CodexHttpClient, convert,
+    error, openai_http::OpenAiHttpClient, outcome, stream,
 };
 use crate::spec::{ModelTransport, ProviderId, WireApi};
 use engine::{
@@ -36,7 +39,7 @@ use serde_json::{json, Value};
 use rig_bedrock::completion::CompletionModel as BedrockCompletionModel;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
-const ANTHROPIC_MAX_TOKENS: u64 = 4096;
+const ANTHROPIC_MIN_OUTPUT_TOKENS: u64 = 16_384;
 
 struct DiscardStreamSink;
 
@@ -45,11 +48,12 @@ impl AiStreamSink for DiscardStreamSink {
 }
 
 #[derive(Clone)]
-pub enum RigModel {
+#[allow(clippy::redundant_pub_crate)] // Used by the crate-level Codex adapter through rig_adapter.
+pub(crate) enum RigModel {
     Anthropic(AnthropicCompletionModel<AnthropicHttpClient>),
     OpenAiChat(OpenAiChatModel<OpenAiHttpClient>),
     OpenAiResponses(ResponsesCompletionModel<OpenAiHttpClient>),
-    ChatGPT(ChatGPTResponsesCompletionModel),
+    ChatGPT(ChatGPTResponsesCompletionModel<CodexHttpClient>),
     #[cfg(feature = "bedrock")]
     Bedrock(BedrockCompletionModel),
 }
@@ -144,7 +148,12 @@ fn build_anthropic(
                 config.provider_label
             ))
         })?;
-    Ok(RigModel::Anthropic(client.completion_model(model)))
+    Ok(RigModel::Anthropic(
+        client
+            .completion_model(model)
+            .with_prompt_caching()
+            .with_automatic_caching(),
+    ))
 }
 
 fn build_openai(
@@ -190,6 +199,7 @@ pub(super) fn build_codex(
     model: &str,
     credentials: &CodexOAuthCredentials,
     http: ReqwestClient,
+    fast_mode: bool,
 ) -> Result<RigModel, AgentError> {
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -205,7 +215,7 @@ pub(super) fn build_codex(
         .default_instructions("")
         .originator("openflow")
         .http_headers(headers)
-        .http_client(http)
+        .http_client(CodexHttpClient::new(http, fast_mode))
         .build()
         .map_err(|error| {
             AgentError::Failed(format!(
@@ -301,9 +311,7 @@ impl RigModel {
             completion_request_for(self, request, provider_id, openai_config)?;
         let result = match self {
             Self::Anthropic(model) => {
-                if completion_request.max_tokens.is_none() {
-                    completion_request.max_tokens = Some(ANTHROPIC_MAX_TOKENS);
-                }
+                ensure_anthropic_output_budget(&model_name, &mut completion_request);
                 match model.completion(completion_request).await {
                     Err(e) => Err(error::to_agent_error(e, provider_label)),
                     Ok(response) => {
@@ -420,9 +428,7 @@ impl RigModel {
             completion_request_for(self, request, provider_id, openai_config)?;
         let result = match self {
             Self::Anthropic(model) => {
-                if completion_request.max_tokens.is_none() {
-                    completion_request.max_tokens = Some(ANTHROPIC_MAX_TOKENS);
-                }
+                ensure_anthropic_output_budget(&model_name, &mut completion_request);
                 match model.stream(completion_request).await {
                     Err(e) => Err(error::to_agent_error(e, provider_label)),
                     Ok(rig_stream) => {
@@ -495,6 +501,22 @@ impl RigModel {
     }
 }
 
+fn ensure_anthropic_output_budget(model: &str, request: &mut CompletionRequest) {
+    if let Some(max_tokens) = request.max_tokens {
+        request.max_tokens = Some(max_tokens.max(ANTHROPIC_MIN_OUTPUT_TOKENS));
+        return;
+    }
+
+    // Rig applies current Claude model-specific defaults (64K-128K). Keep the
+    // field unset so those larger defaults win instead of clamping them here.
+    let rig_has_model_aware_budget = model.starts_with("claude-opus-4")
+        || model.starts_with("claude-sonnet-4")
+        || model.starts_with("claude-haiku-4-5");
+    if !rig_has_model_aware_budget {
+        request.max_tokens = Some(ANTHROPIC_MIN_OUTPUT_TOKENS);
+    }
+}
+
 fn completion_request_for(
     model: &RigModel,
     request: &AgentRequest,
@@ -514,7 +536,6 @@ fn completion_request_for(
                 &mut completion_request,
                 request,
             )?;
-            apply_anthropic_cache_params(&mut completion_request);
         }
         RigModel::OpenAiChat(_) | RigModel::OpenAiResponses(_) => {
             if let Some(config) = openai_config {
@@ -540,10 +561,11 @@ fn completion_request_for(
 }
 
 fn merge_codex_params(request: &mut CompletionRequest, agent_request: &AgentRequest) {
-    let Some(effort) = agent_request.reasoning_effort.as_deref() else {
-        return;
+    let reasoning = match agent_request.reasoning_effort.as_deref() {
+        None => json!({"summary": "auto"}),
+        Some("none") => json!({"effort": "none"}),
+        Some(effort) => json!({"effort": effort, "summary": "auto"}),
     };
-    let reasoning = json!({"effort": effort, "summary": "auto"});
     request.additional_params = Some(match request.additional_params.take() {
         Some(Value::Object(mut existing)) => {
             existing.insert("reasoning".into(), reasoning);
@@ -567,30 +589,28 @@ fn apply_tool_choice_policy(
     });
 }
 
-fn apply_anthropic_cache_params(request: &mut CompletionRequest) {
-    let cache = json!({ "type": "ephemeral" });
-    request.additional_params = Some(match request.additional_params.take() {
-        Some(Value::Object(mut map)) => {
-            map.entry("cache_control".to_string()).or_insert(cache);
-            Value::Object(map)
-        }
-        Some(other) => json!({ "cache_control": cache, "_rig_merge": other }),
-        None => json!({ "cache_control": cache }),
-    });
-}
-
 fn merge_openai_params(
     request: &mut CompletionRequest,
     agent_request: &AgentRequest,
     provider_id: &ProviderId,
-    _wire_api: WireApi,
+    wire_api: WireApi,
 ) {
     let mut params = serde_json::Map::new();
     if openai_compat_cache_key_enabled(provider_id) {
-        params.insert(
-            "prompt_cache_key".into(),
-            json!(cache_session_key(agent_request)),
-        );
+        let cache_key = cache_session_key(agent_request);
+        if provider_id.as_str() == "openai" && wire_api == WireApi::Responses {
+            let mut metadata = serde_json::Map::new();
+            metadata.insert(OPENAI_RESPONSES_CACHE_KEY_METADATA.into(), json!(cache_key));
+            if openai_explicit_prompt_cache_supported(&agent_request.model) {
+                metadata.insert(
+                    OPENAI_RESPONSES_CACHE_MODE_METADATA.into(),
+                    json!("explicit"),
+                );
+            }
+            params.insert("metadata".into(), Value::Object(metadata));
+        } else {
+            params.insert("prompt_cache_key".into(), json!(cache_key));
+        }
     }
     if let Some(effort) = &agent_request.reasoning_effort {
         params.insert("reasoning_effort".into(), json!(effort));
@@ -598,6 +618,9 @@ fn merge_openai_params(
     if let Some(budget) = agent_request.reasoning_budget_tokens {
         params.insert("reasoning_budget_tokens".into(), json!(budget));
         params.insert("reasoning".into(), json!({ "max_tokens": budget }));
+    }
+    if agent_request.fast_mode && provider_id.as_str() == "openai" {
+        params.insert("service_tier".into(), json!("priority"));
     }
     if params.is_empty() {
         return;
@@ -746,6 +769,7 @@ mod tests {
             model_attempt: 1,
             reasoning_effort: None,
             reasoning_budget_tokens: None,
+            fast_mode: false,
             tool_access_policy: engine::ToolAccessPolicy::Execution,
             allow_user_input: false,
             conversation_mode: false,
@@ -802,6 +826,91 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    #[allow(
+        clippy::expect_used,
+        reason = "test fixture construction and assertions require a concrete request"
+    )]
+    fn codex_explicit_none_disables_reasoning_summary() {
+        let mut agent_request = minimal_request();
+        agent_request.reasoning_effort = Some("none".into());
+        let mut request =
+            convert::to_completion_request(&agent_request).expect("completion request");
+
+        merge_codex_params(&mut request, &agent_request);
+
+        let params = request.additional_params.expect("Codex reasoning");
+        let reasoning = &params["reasoning"];
+        assert_eq!(reasoning["effort"], "none");
+        assert!(reasoning.get("summary").is_none());
+    }
+
+    #[test]
+    #[allow(
+        clippy::expect_used,
+        reason = "test fixture construction and assertions require a concrete request"
+    )]
+    fn codex_fast_mode_does_not_mutate_reasoning_effort() {
+        let mut agent_request = minimal_request();
+        agent_request.reasoning_effort = Some("high".into());
+        agent_request.fast_mode = true;
+        let mut request =
+            convert::to_completion_request(&agent_request).expect("completion request");
+
+        merge_codex_params(&mut request, &agent_request);
+
+        let params = request.additional_params.expect("Codex params");
+        assert_eq!(params["reasoning"]["effort"], "high");
+        assert!(params.get("service_tier").is_none());
+    }
+
+    #[test]
+    #[allow(
+        clippy::expect_used,
+        reason = "test fixture construction and assertions require a concrete request"
+    )]
+    fn openai_fast_mode_uses_priority_without_changing_reasoning_effort() {
+        let mut agent_request = minimal_request();
+        agent_request.reasoning_effort = Some("medium".into());
+        agent_request.fast_mode = true;
+        let mut request =
+            convert::to_completion_request(&agent_request).expect("completion request");
+
+        merge_openai_params(
+            &mut request,
+            &agent_request,
+            &ProviderId::from("openai"),
+            WireApi::Responses,
+        );
+
+        let params = request.additional_params.expect("OpenAI params");
+        assert_eq!(params["reasoning_effort"], "medium");
+        assert_eq!(params["service_tier"], "priority");
+    }
+
+    #[test]
+    #[allow(
+        clippy::expect_used,
+        reason = "test fixture construction and assertions require a concrete request"
+    )]
+    fn custom_openai_compatible_provider_does_not_receive_fast_mode() {
+        let mut agent_request = minimal_request();
+        agent_request.fast_mode = true;
+        let mut request =
+            convert::to_completion_request(&agent_request).expect("completion request");
+
+        merge_openai_params(
+            &mut request,
+            &agent_request,
+            &ProviderId::from("custom_openai_compatible"),
+            WireApi::Responses,
+        );
+
+        assert!(request
+            .additional_params
+            .is_none_or(|params| params.get("service_tier").is_none()));
     }
 
     #[cfg(feature = "bedrock")]
@@ -916,6 +1025,32 @@ mod tests {
         );
 
         assert_eq!(request.tool_choice, Some(ToolChoice::Auto));
+    }
+
+    #[test]
+    #[allow(
+        clippy::expect_used,
+        reason = "test fixture construction and assertions require a concrete request"
+    )]
+    fn anthropic_output_budget_supports_large_tool_calls_without_lowering_explicit_budget() {
+        let mut defaulted =
+            convert::to_completion_request(&minimal_request()).expect("minimal completion request");
+        ensure_anthropic_output_budget("custom-anthropic-model", &mut defaulted);
+        assert_eq!(defaulted.max_tokens, Some(16_384));
+
+        let mut explicit =
+            convert::to_completion_request(&minimal_request()).expect("minimal completion request");
+        explicit.max_tokens = Some(64_000);
+        ensure_anthropic_output_budget("custom-anthropic-model", &mut explicit);
+        assert_eq!(explicit.max_tokens, Some(64_000));
+
+        let mut current_claude =
+            convert::to_completion_request(&minimal_request()).expect("minimal completion request");
+        ensure_anthropic_output_budget("claude-sonnet-4-6", &mut current_claude);
+        assert_eq!(
+            current_claude.max_tokens, None,
+            "Rig must apply its larger current-model default"
+        );
     }
 
     #[test]

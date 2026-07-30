@@ -18,6 +18,16 @@ vi.mock("mermaid", () => ({
 
 const tokensCss = readFileSync("src/styles/tokens.css", "utf8");
 const indexCss = readFileSync("src/styles/index.css", "utf8");
+const sidebarCss = readFileSync("src/styles/sidebar.css", "utf8");
+const dockChromeCss = readFileSync("src/styles/dock-chrome.css", "utf8");
+const chatCss = readFileSync("src/styles/chat.css", "utf8");
+const fullCssCascade = [
+  tokensCss,
+  indexCss,
+  sidebarCss,
+  dockChromeCss,
+  chatCss,
+].join("\n");
 
 function renderMessage(props: Parameters<typeof Message>[0]) {
   const container = document.createElement("div");
@@ -63,6 +73,37 @@ describe("Message", () => {
     const row = container.querySelector(".message-user");
     expect(row?.classList.contains("conversation-item-enter")).toBe(false);
     dispose();
+  });
+
+  it("shows the sent date, time, and elapsed time from the prior message", () => {
+    const sentAtMs = Date.UTC(2026, 6, 30, 3, 4, 5);
+    const { container, dispose } = renderMessage({
+      from: "assistant",
+      label: "Assistant",
+      content: "Done",
+      sentAtMs,
+      elapsedSincePreviousMs: 95_000,
+    });
+
+    const timestamp = container.querySelector("time");
+    expect(timestamp?.dateTime).toBe("2026-07-30T03:04:05.000Z");
+    expect(timestamp?.textContent).toContain("2026");
+    expect(container.querySelector(".message-meta")?.textContent).toContain(
+      "1m 35s after previous message",
+    );
+    expect(container.querySelector(".message-meta")?.getAttribute("aria-label")).toContain(
+      "Sent",
+    );
+    dispose();
+  });
+
+  it("reveals message timing on hover or focus without hiding tool timing", () => {
+    expect(fullCssCascade).toMatch(
+      /@media \(hover: hover\) and \(pointer: fine\) \{[\s\S]*?\.chat-message-row \.message-meta\s*\{[^}]*opacity:\s*0;[^}]*\}[\s\S]*?\.chat-message-row:hover \.message-meta,\s*\.chat-message-row:focus-within \.message-meta\s*\{[^}]*opacity:\s*1;/,
+    );
+    expect(fullCssCascade).not.toMatch(
+      /\.tool-line-duration\s*\{[^}]*opacity:\s*0;/,
+    );
   });
 
   it("exposes Codex-inspired transcript layout hooks by role", () => {

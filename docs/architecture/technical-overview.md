@@ -199,7 +199,12 @@ Notable properties:
 
 ## 4. Caching
 
-OpenFlow's cache is not a prompt cache — it is a **per-run, cross-node, validated tool-result cache** ([tool/cache.rs](../../crates/orchestration/src/tool/cache.rs), served from [tool/runner.rs](../../crates/orchestration/src/tool/runner.rs)). The common waste pattern in multi-agent runs is downstream agents re-orienting: re-reading the same files and re-running the same searches their parents already ran. OpenFlow intercepts that.
+OpenFlow uses two independent cache layers. Providers reuse exact LLM prompt prefixes as described
+in [provider adapters](provider-adapters.md#provider-prompt-caching). This section covers the
+**per-run, cross-node, validated tool-result cache**
+([tool/cache.rs](../../crates/orchestration/src/tool/cache.rs), served from
+[tool/runner.rs](../../crates/orchestration/src/tool/runner.rs)). It avoids downstream agents
+re-reading the same files and re-running the same searches their parents already ran.
 
 ```mermaid
 flowchart TD

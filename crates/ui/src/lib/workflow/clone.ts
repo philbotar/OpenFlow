@@ -21,6 +21,7 @@ export function cloneWorkflow(workflow: Workflow): Workflow {
         workflow.settings?.reasoning_budget_tokens ??
         workflow.settings?.reasoningBudgetTokens ??
         null,
+      fast_mode: workflow.settings?.fast_mode ?? workflow.settings?.fastMode ?? false,
       planMode: workflow.settings?.planMode
         ? { evidenceSourceNodeId: workflow.settings.planMode.evidenceSourceNodeId }
         : null,

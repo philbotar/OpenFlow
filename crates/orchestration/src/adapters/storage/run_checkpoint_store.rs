@@ -337,6 +337,7 @@ mod tests {
                 request_input_retries_by_node: BTreeMap::new(),
                 empty_turn_retries_by_node: BTreeMap::new(),
                 mixed_tool_turn_retries_by_node: BTreeMap::new(),
+                output_truncation_retries_by_node: BTreeMap::new(),
                 auto_continue_streaks_by_node: BTreeMap::new(),
                 entrypoint_text: None,
                 interrupted_nodes: BTreeSet::new(),

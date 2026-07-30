@@ -1,4 +1,3 @@
-use crate::adapters::storage::run_checkpoint_store::FileRunCheckpointStore;
 use crate::api::{AttachmentPreviewPayload, StagedAttachmentPayload, UserMessageInput};
 use crate::run::coordinator::{DurableResumeParams, RunStartParams};
 use crate::run::execution::ExecutionEvent;
@@ -14,7 +13,7 @@ impl AppBackend {
     pub(super) fn run_roots(&self) -> Result<Vec<RunStoreRoot>, BackendError> {
         let mut roots = vec![RunStoreRoot {
             project_id: None,
-            root: FileRunCheckpointStore::app_runs_root(),
+            root: self.app_runs_root.clone(),
         }];
         for project in self.projects.load()? {
             roots.push(RunStoreRoot {
@@ -25,23 +24,6 @@ impl AppBackend {
             });
         }
         Ok(roots)
-    }
-
-    fn run_root_for_workflow(&self, workflow_id: &str) -> Result<RunStoreRoot, BackendError> {
-        for project in self.projects.load()? {
-            if project.workflow_ids.iter().any(|id| id == workflow_id) {
-                return Ok(RunStoreRoot {
-                    project_id: Some(project.id),
-                    root: std::path::Path::new(&project.path)
-                        .join(".flow")
-                        .join("runs"),
-                });
-            }
-        }
-        Ok(RunStoreRoot {
-            project_id: None,
-            root: FileRunCheckpointStore::app_runs_root(),
-        })
     }
 
     pub fn list_runs(
@@ -217,14 +199,14 @@ impl AppBackend {
         &self,
         workflow: Workflow,
         entrypoint: Option<String>,
-        execution_cwd: Option<String>,
+        project_id: Option<&str>,
         settings: &crate::settings::model::AppSettings,
         transient_api_key: Option<&str>,
     ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
         self.start_run_with_skill_ids(
             workflow,
             entrypoint,
-            execution_cwd,
+            project_id,
             settings,
             transient_api_key,
             Vec::new(),
@@ -236,7 +218,7 @@ impl AppBackend {
         &self,
         workflow: Workflow,
         entrypoint: Option<String>,
-        execution_cwd: Option<String>,
+        project_id: Option<&str>,
         settings: &crate::settings::model::AppSettings,
         transient_api_key: Option<&str>,
         invoked_skill_ids: Vec<String>,
@@ -244,7 +226,7 @@ impl AppBackend {
         self.start_run_with_message_and_skill_ids(
             workflow,
             entrypoint.map(UserMessageInput::text),
-            execution_cwd,
+            project_id,
             settings,
             transient_api_key,
             invoked_skill_ids,
@@ -256,17 +238,17 @@ impl AppBackend {
         &self,
         workflow: Workflow,
         message: Option<UserMessageInput>,
-        execution_cwd: Option<String>,
+        project_id: Option<&str>,
         settings: &crate::settings::model::AppSettings,
         transient_api_key: Option<&str>,
         invoked_skill_ids: Vec<String>,
     ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
-        let run_root = self.run_root_for_workflow(&workflow.id)?;
+        let workspace = self.workspace_for_workflow(&workflow.id, project_id)?;
         self.start_run_with_root(
             workflow,
             message,
-            execution_cwd,
-            run_root,
+            Some(workspace.execution_cwd),
+            workspace.run_root,
             settings,
             transient_api_key,
             invoked_skill_ids,
@@ -318,14 +300,16 @@ impl AppBackend {
         settings: &crate::settings::model::AppSettings,
         transient_api_key: Option<&str>,
     ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
-        let run_root = self.run_root_for_workflow(&workflow.id)?;
         self.runs
             .continue_run(RunStartParams {
                 workflow,
                 invoked_skill_ids: Vec::new(),
                 entrypoint: entrypoint.map(UserMessageInput::text),
                 execution_cwd: None,
-                run_root,
+                run_root: RunStoreRoot {
+                    project_id: None,
+                    root: self.app_runs_root.clone(),
+                },
                 settings,
                 transient_api_key,
                 agent_store: self.agents.store(),
@@ -456,22 +440,6 @@ impl AppBackend {
         self.runs.clear_run_trace().await
     }
 
-    fn scheduled_execution_cwd(&self, workflow_id: &str) -> Result<Option<String>, BackendError> {
-        let projects = self.projects.load()?;
-        let cwd = projects
-            .iter()
-            .find(|project| project.workflow_ids.iter().any(|id| id == workflow_id))
-            .map(|project| {
-                let candidate = project.default_execution_cwd.trim();
-                if candidate.is_empty() {
-                    project.path.clone()
-                } else {
-                    candidate.to_string()
-                }
-            });
-        Ok(cwd)
-    }
-
     pub async fn start_scheduled_run(
         &self,
         workflow_id: String,
@@ -483,16 +451,15 @@ impl AppBackend {
         }
 
         let workflow = self.load_workflow(&workflow_id)?;
-        let execution_cwd = self.scheduled_execution_cwd(&workflow_id)?;
+        let workspace = self.workspace_for_workflow(&workflow_id, None)?;
         let settings = self.load_settings(None)?.settings;
-        let run_root = self.run_root_for_workflow(&workflow_id)?;
         self.runs
             .start_run(RunStartParams {
                 workflow,
                 invoked_skill_ids: Vec::new(),
                 entrypoint: None,
-                execution_cwd,
-                run_root,
+                execution_cwd: Some(workspace.execution_cwd),
+                run_root: workspace.run_root,
                 settings: &settings,
                 transient_api_key: None,
                 agent_store: self.agents.store(),

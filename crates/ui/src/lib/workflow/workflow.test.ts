@@ -38,6 +38,7 @@ import {
   normalizeWorkflowLayout,
   withDefaultReasoningFromWorkflow,
   workflowProviderProfile,
+  workflowFastMode,
   workflowReasoningEffort,
 } from "../workflow";
 
@@ -259,6 +260,17 @@ describe("workflow helpers", () => {
     const cloned = cloneWorkflow(source);
     expect(workflowReasoningEffort(cloned.settings)).toBe("low");
     expect(cloned.settings.reasoning_budget_tokens).toBe(2_048);
+  });
+
+  test("cloneWorkflow preserves fast mode separately from reasoning effort", () => {
+    const source = cloneWorkflow(workflow);
+    source.settings.reasoning_effort = "high";
+    source.settings.fast_mode = true;
+
+    const cloned = cloneWorkflow(source);
+
+    expect(workflowReasoningEffort(cloned.settings)).toBe("high");
+    expect(workflowFastMode(cloned.settings)).toBe(true);
   });
 
   test("cloneWorkflow preserves node provider overrides", () => {

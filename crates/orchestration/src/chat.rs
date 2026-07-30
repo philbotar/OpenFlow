@@ -11,6 +11,8 @@ pub struct ChatConfig {
     pub approval_mode: ApprovalMode,
     pub reasoning_effort: Option<String>,
     pub reasoning_budget_tokens: Option<u32>,
+    #[serde(default)]
+    pub fast_mode: bool,
     pub project_id: Option<String>,
 }
 
@@ -21,6 +23,7 @@ impl Default for ChatConfig {
             approval_mode: ApprovalMode::ReadOnly,
             reasoning_effort: None,
             reasoning_budget_tokens: None,
+            fast_mode: false,
             project_id: None,
         }
     }
@@ -244,6 +247,21 @@ mod tests {
             catalog.load_one(&created.id).expect("load chat").title,
             "New chat"
         );
+    }
+
+    #[test]
+    fn saved_chat_without_fast_mode_defaults_to_standard_speed() {
+        let config: ChatConfig = serde_json::from_value(serde_json::json!({
+            "model": "gpt-5.4",
+            "approvalMode": "read_only",
+            "reasoningEffort": "high",
+            "reasoningBudgetTokens": null,
+            "projectId": null
+        }))
+        .expect("deserialize legacy chat config");
+
+        assert!(!config.fast_mode);
+        assert_eq!(config.reasoning_effort.as_deref(), Some("high"));
     }
 
     #[test]

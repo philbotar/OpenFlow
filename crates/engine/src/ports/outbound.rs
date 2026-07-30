@@ -55,6 +55,8 @@ pub struct AgentRequest {
     pub reasoning_effort: Option<String>,
     /// Optional reasoning budget token count forwarded to the provider.
     pub reasoning_budget_tokens: Option<u32>,
+    /// Whether the provider should use its faster, higher-cost service tier.
+    pub fast_mode: bool,
     /// Hard capability policy for this run phase.
     pub tool_access_policy: ToolAccessPolicy,
     /// Whether this node may pause through a human-input harness tool. When
@@ -79,6 +81,10 @@ pub struct UsageReport {
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
     pub total_tokens: u32,
+    /// Input tokens served from a provider-managed prompt cache.
+    pub cached_input_tokens: u32,
+    /// Input tokens written to a provider-managed prompt cache.
+    pub cache_creation_input_tokens: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -200,8 +206,80 @@ pub enum AgentError {
         provider_label: String,
         tool_names: String,
     },
+    #[error("{provider_label} response ended before completion: {reason}")]
+    OutputTruncated {
+        provider_label: String,
+        reason: String,
+        /// Redacted partial tool calls retained for bounded recovery.
+        partial_tool_calls: Vec<PartialToolCall>,
+    },
     #[error("interrupted")]
     Interrupted,
+}
+
+/// In-memory tool-call arguments captured before a streamed response cutoff.
+///
+/// [`Debug`] redacts raw arguments to a byte count. Never log
+/// [`Self::raw_arguments`].
+#[derive(Clone, PartialEq, Eq)]
+pub struct PartialToolCall {
+    tool_call_id: String,
+    internal_call_id: String,
+    tool_name: Option<String>,
+    raw_arguments: String,
+}
+
+impl PartialToolCall {
+    #[must_use]
+    pub fn new(
+        tool_call_id: impl Into<String>,
+        internal_call_id: impl Into<String>,
+        tool_name: Option<String>,
+        raw_arguments: impl Into<String>,
+    ) -> Self {
+        Self {
+            tool_call_id: tool_call_id.into(),
+            internal_call_id: internal_call_id.into(),
+            tool_name,
+            raw_arguments: raw_arguments.into(),
+        }
+    }
+
+    #[must_use]
+    pub fn tool_call_id(&self) -> &str {
+        &self.tool_call_id
+    }
+
+    #[must_use]
+    pub fn internal_call_id(&self) -> &str {
+        &self.internal_call_id
+    }
+
+    #[must_use]
+    pub fn tool_name(&self) -> Option<&str> {
+        self.tool_name.as_deref()
+    }
+
+    #[must_use]
+    pub fn raw_arguments(&self) -> &str {
+        &self.raw_arguments
+    }
+
+    #[must_use]
+    pub const fn arguments_len(&self) -> usize {
+        self.raw_arguments.len()
+    }
+}
+
+impl std::fmt::Debug for PartialToolCall {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PartialToolCall")
+            .field("tool_call_id", &self.tool_call_id)
+            .field("internal_call_id", &self.internal_call_id)
+            .field("tool_name", &self.tool_name)
+            .field("raw_arguments_len", &self.raw_arguments.len())
+            .finish()
+    }
 }
 
 /// Why a final-output submit call failed deterministic recovery.
@@ -297,6 +375,19 @@ impl AgentError {
     }
 
     #[must_use]
+    pub fn output_truncated(
+        provider_label: impl Into<String>,
+        reason: impl Into<String>,
+        partial_tool_calls: Vec<PartialToolCall>,
+    ) -> Self {
+        Self::OutputTruncated {
+            provider_label: provider_label.into(),
+            reason: reason.into(),
+            partial_tool_calls,
+        }
+    }
+
+    #[must_use]
     pub const fn is_retryable(&self) -> bool {
         matches!(self, Self::Transient(_))
     }
@@ -334,6 +425,21 @@ impl AgentError {
     pub fn mixed_tool_names(&self) -> Option<&str> {
         match self {
             Self::MixedToolTurn { tool_names, .. } => Some(tool_names),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn is_output_truncated(&self) -> bool {
+        matches!(self, Self::OutputTruncated { .. })
+    }
+
+    #[must_use]
+    pub fn partial_tool_calls(&self) -> Option<&[PartialToolCall]> {
+        match self {
+            Self::OutputTruncated {
+                partial_tool_calls, ..
+            } => Some(partial_tool_calls),
             _ => None,
         }
     }

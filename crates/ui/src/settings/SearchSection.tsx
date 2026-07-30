@@ -1,5 +1,5 @@
 import { createSignal, For, onMount, Show } from "solid-js";
-import { Button, SectionHeader, SettingsSection, SidebarIcon } from "@/components";
+import { Button, SectionHeader, SettingsSection } from "@/components";
 import { deleteSearchApiKey, loadSearchApiKey, saveSearchApiKey } from "../api";
 import { useAppContext } from "../context/AppContext";
 import { normalizeError } from "../lib/utils";
@@ -179,12 +179,8 @@ export function SearchSection() {
 
       <footer class="settings-save-bar">
         <p class="settings-save-hint">
-          Saves enable flag and binary path to local settings. Provider keys save per row.
+          Enable flag and binary path save automatically. Provider keys save per row.
         </p>
-        <Button variant="primary" onClick={() => void ctx.handleSaveSettings()}>
-          <SidebarIcon name="save" />
-          Save settings
-        </Button>
       </footer>
     </SettingsSection>
   );

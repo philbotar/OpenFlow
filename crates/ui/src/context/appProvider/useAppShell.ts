@@ -28,7 +28,6 @@ interface UseAppShellParams {
   handlePointerEnd: () => void;
   onMount: () => Promise<void>;
   onCleanup: () => void;
-  handleOpenWorkflowAuthoring: () => Promise<void>;
   closeAddNodePicker: () => void;
 }
 
@@ -102,16 +101,9 @@ export function useAppShell(params: UseAppShellParams) {
     writeStoredBoolean(globalThis.localStorage, FIRST_RUN_ONBOARDING_STORAGE_KEY, true);
   };
 
-  const handleOnboardingBuildWorkflow = async () => {
-    dismissFirstRunOnboarding();
-    await params.handleOpenWorkflowAuthoring();
-  };
-
-  const handleOnboardingSetupProvider = () => {
-    dismissFirstRunOnboarding();
-    setSettingsSection("providers");
+  const startFirstRunOnboarding = () => {
     params.closeAddNodePicker();
-    navigateToScreen("settings");
+    setFirstRunOnboardingOpen(true);
   };
 
   createEffect(() => {
@@ -186,9 +178,8 @@ export function useAppShell(params: UseAppShellParams) {
     handleZoomOut,
     handleZoomReset,
     firstRunOnboardingOpen,
+    startFirstRunOnboarding,
     dismissFirstRunOnboarding,
-    handleOnboardingBuildWorkflow,
-    handleOnboardingSetupProvider,
     isCompactViewport,
     sidebarDrawerOpen,
     openSidebarDrawer,

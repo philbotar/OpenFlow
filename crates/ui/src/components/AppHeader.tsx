@@ -119,6 +119,7 @@ export function AppHeader() {
                             !ctx.activeWorkflow()
                           }
                           aria-label="Run workflow"
+                          data-tour="run-workflow"
                           data-tauri-drag-region="false"
                         >
                           <Show when={ctx.startingRun()} fallback={<SidebarIcon name="run" />}>
@@ -144,8 +145,9 @@ export function AppHeader() {
                           ctx.startingRun() ||
                           ctx.replayRunId() !== null
                         }
-                        aria-label="Continue workflow"
-                        data-tauri-drag-region="false"
+                          aria-label="Continue workflow"
+                          data-tour="run-workflow"
+                          data-tauri-drag-region="false"
                       >
                         <Show when={ctx.startingRun()} fallback={<SidebarIcon name="run" />}>
                           <Spinner size="sm" />
@@ -163,8 +165,9 @@ export function AppHeader() {
                     classList={{ "topbar-icon-button--loading": ctx.stoppingRun() }}
                     onClick={() => void ctx.handleStopRun()}
                     disabled={ctx.stoppingRun()}
-                    aria-label="Stop workflow"
-                    data-tauri-drag-region="false"
+                  aria-label="Stop workflow"
+                  data-tour="run-workflow"
+                  data-tauri-drag-region="false"
                   >
                     <Show when={ctx.stoppingRun()} fallback={<SidebarIcon name="stop" />}>
                       <Spinner size="sm" />
@@ -197,6 +200,7 @@ export function AppHeader() {
                   classList={{ "topbar-icon-button-active": ctx.inspectorOpen() && Boolean(ctx.selectedNodeId()) }}
                   onClick={() => ctx.handleToggleInspector()}
                   aria-label="Inspector"
+                  data-tour="node-inspector-button"
                   aria-pressed={ctx.inspectorOpen() && Boolean(ctx.selectedNodeId())}
                   data-tauri-drag-region="false"
                 >
@@ -210,6 +214,7 @@ export function AppHeader() {
                   classList={{ "topbar-icon-button-active": ctx.workflowSettingsOpen() }}
                   onClick={() => ctx.handleToggleWorkflowSettings()}
                   aria-label="Workflow settings"
+                  data-tour="workflow-settings-button"
                   aria-pressed={ctx.workflowSettingsOpen()}
                   data-tauri-drag-region="false"
                 >

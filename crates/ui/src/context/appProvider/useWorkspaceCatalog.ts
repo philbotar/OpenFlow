@@ -131,6 +131,13 @@ export function useWorkspaceCatalog(params: UseWorkspaceCatalogParams) {
     return findProjectForWorkflow(projects(), workflowId);
   });
   const executionCwdForActiveWorkflow = createMemo(() => {
+    const retainedRun = params.runState();
+    if (
+      params.backendRunWorkflowId() === activeWorkflowId() &&
+      retainedRun?.executionCwd?.trim()
+    ) {
+      return retainedRun.executionCwd;
+    }
     const chatProjectId = activeChat()?.config.projectId;
     if (chatProjectId) {
       const project = projects().find((item) => item.id === chatProjectId);

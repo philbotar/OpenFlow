@@ -134,4 +134,31 @@ describe("McpSection", () => {
     renderSection();
     expect(mountPoint.querySelector(".mcp-card--composer")).not.toBeNull();
   });
+
+  test("disables every configured and discovered server in one action", async () => {
+    const persisted: { current?: AppSettings } = {};
+    const refreshDiscoveredMcp = vi.fn(async () => {});
+    renderSection({
+      updateSettings: async (mutator) => {
+        const draft = structuredClone(settings);
+        mutator(draft);
+        persisted.current = draft;
+      },
+      refreshDiscoveredMcp,
+    });
+
+    const disableAll = [...mountPoint.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "Disable all",
+    ) as HTMLButtonElement | undefined;
+    expect(disableAll).toBeDefined();
+
+    disableAll?.click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(persisted.current?.mcp?.servers.every((server) => !server.enabled)).toBe(true);
+    expect(persisted.current?.mcp?.discoverExternal).toBe(false);
+    expect(persisted.current?.mcp?.disabledDiscoveredIds).toContain("linear");
+    expect(refreshDiscoveredMcp).toHaveBeenCalledTimes(1);
+  });
 });

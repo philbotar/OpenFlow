@@ -122,11 +122,6 @@ export function ChatScreen() {
               request={structuredInput()!}
             />
           </Show>
-          <Show when={generating()}>
-            <p class="direct-chat-generating" role="status" aria-live="polite">
-              Thinking…
-            </p>
-          </Show>
           <Show when={failedNodeId()}>
             {(nodeId) => (
               <div class="direct-chat-error" role="alert">
@@ -147,15 +142,24 @@ export function ChatScreen() {
               </div>
             )}
           </Show>
-          <Show when={contextWindow()}>
-            {(usage) => (
-              <span
-                class="direct-chat-token-usage"
-                title={`Context usage for ${usage().model}`}
-              >
-                {formatTokenUsage(usage().usedTokens, usage().maxTokens)}
-              </span>
-            )}
+          <Show when={generating() || contextWindow()}>
+            <div class="direct-chat-status-row">
+              <Show when={generating()}>
+                <p class="direct-chat-generating" role="status" aria-live="polite">
+                  Thinking…
+                </p>
+              </Show>
+              <Show when={contextWindow()}>
+                {(usage) => (
+                  <span
+                    class="direct-chat-token-usage"
+                    title={`Context usage for ${usage().model}`}
+                  >
+                    {formatTokenUsage(usage().usedTokens, usage().maxTokens)}
+                  </span>
+                )}
+              </Show>
+            </div>
           </Show>
           <ConversationComposer
             nodeId={

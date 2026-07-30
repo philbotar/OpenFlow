@@ -1,5 +1,6 @@
 import { createSignal, Show, type JSX } from "solid-js";
 import ChevronRight from "lucide-solid/icons/chevron-right";
+import { formatDuration } from "./timing";
 
 /** Survive remounts while a live run appends tools to the same stack. */
 const expandedByKey = new Map<string, boolean>();
@@ -13,6 +14,7 @@ export interface ToolStackBubbleProps {
   summaryText: string;
   /** Stable id for this stack (e.g. nodeId + first toolCallId). */
   persistKey?: string;
+  durationMs?: number | null;
   children: JSX.Element;
 }
 
@@ -20,6 +22,7 @@ export function ToolStackBubble(props: ToolStackBubbleProps) {
   const initial = () =>
     props.persistKey ? (expandedByKey.get(props.persistKey) ?? false) : false;
   const [expanded, setExpanded] = createSignal(initial());
+  const duration = () => formatDuration(props.durationMs);
 
   const setExpandedPersist = (next: boolean | ((value: boolean) => boolean)) => {
     setExpanded((current) => {
@@ -43,6 +46,9 @@ export function ToolStackBubble(props: ToolStackBubbleProps) {
       >
         <span class="tool-line-name">
           <span class="tool-line-name-text">{props.summaryText}</span>
+          <Show when={duration()}>
+            {(value) => <span class="tool-line-duration">· {value()}</span>}
+          </Show>
           <button
             type="button"
             class="tool-line-chevron"

@@ -273,6 +273,8 @@ pub struct NodeRuntimeConfigUpdate {
     pub reasoning_effort: Option<Option<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_budget_tokens: Option<Option<u32>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fast_mode: Option<bool>,
 }
 
 impl NodeRuntimeConfigUpdate {
@@ -282,6 +284,7 @@ impl NodeRuntimeConfigUpdate {
             approval_mode: self.approval_mode,
             reasoning_effort: self.reasoning_effort,
             reasoning_budget_tokens: self.reasoning_budget_tokens,
+            fast_mode: self.fast_mode,
         }
     }
 }

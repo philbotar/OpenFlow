@@ -826,15 +826,9 @@ html.ui-zoomed .collapsible-section {
   width: 24px;
   height: 24px;
   color: var(--text-muted);
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 150ms ease, visibility 150ms ease, color 150ms ease;
-}
-
-.sidebar-section-header:hover .sidebar-section-action,
-.sidebar-section-group:hover .sidebar-section-action {
   opacity: 1;
   visibility: visible;
+  transition: color 150ms ease;
 }
 
 .sidebar-section-action:hover {
@@ -1028,32 +1022,6 @@ html.ui-zoomed .collapsible-section {
   flex-direction: column;
   gap: 2px;
   padding-left: 18px;
-}
-
-.execution-folder-chip {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  padding: 6px 10px;
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.5);
-}
-
-.execution-folder-label {
-  font-size: 12px;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
-.execution-folder-value {
-  font-size: 12px;
-  color: var(--text);
-  max-width: min(200px, 24vw);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .field-help {
@@ -2445,7 +2413,7 @@ label {
   display: flex;
   flex-direction: column;
   gap: var(--chat-item-gap);
-  margin: 8px 8px 16px;
+  margin: 8px 0 16px;
   padding-bottom: 0;
 }
 
@@ -5518,6 +5486,17 @@ label {
   margin-bottom: 12px;
 }
 
+.mcp-card-header--actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mcp-card-header--actions > div {
+  min-width: 0;
+}
+
 .mcp-card-title {
   margin: 0 0 4px;
   font-size: var(--text-sm);
@@ -5619,7 +5598,7 @@ label {
 
 .mcp-configured-fields {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   margin-top: 12px;
 }

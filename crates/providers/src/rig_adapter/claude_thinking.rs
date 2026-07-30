@@ -233,12 +233,18 @@ fn classify_mode(platform: ClaudePlatform, model: &str) -> CapabilityMode {
         return CapabilityMode::AdaptiveAlwaysOn;
     }
     if contains_any(&normalized, &["sonnet-5", "sonnet_5"]) {
-        return CapabilityMode::AdaptiveDefaultOn;
+        return match platform {
+            ClaudePlatform::Anthropic => CapabilityMode::AdaptiveDefaultOn,
+            ClaudePlatform::Bedrock => CapabilityMode::AdaptiveAlwaysOn,
+        };
     }
-    if contains_any(
-        &normalized,
-        &["opus-4-8", "opus-4-7", "opus-4-6", "sonnet-4-6"],
-    ) {
+    if normalized.contains("opus-4-6") {
+        return match platform {
+            ClaudePlatform::Anthropic => CapabilityMode::AdaptiveOptional,
+            ClaudePlatform::Bedrock => CapabilityMode::AdaptiveDefaultOn,
+        };
+    }
+    if contains_any(&normalized, &["opus-4-8", "opus-4-7", "sonnet-4-6"]) {
         return CapabilityMode::AdaptiveOptional;
     }
     if contains_any(&normalized, &["claude-3-7", "claude-3.7"]) {
@@ -320,6 +326,7 @@ mod tests {
             model_attempt: 1,
             reasoning_effort: None,
             reasoning_budget_tokens: None,
+            fast_mode: false,
             tool_access_policy: engine::ToolAccessPolicy::Execution,
             allow_user_input: false,
             conversation_mode: false,
@@ -391,11 +398,80 @@ mod tests {
     }
 
     #[test]
-    fn sonnet_5_none_emits_disabled() {
+    fn anthropic_sonnet_5_none_emits_disabled() {
         let mut req = empty_request();
         let mut agent = minimal_agent("claude-sonnet-5");
         agent.reasoning_effort = Some("none".into());
         assert!(apply(ClaudePlatform::Anthropic, &mut req, &agent).is_ok());
+        assert_eq!(
+            req.additional_params
+                .as_ref()
+                .and_then(|params| params["thinking"]["type"].as_str()),
+            Some("disabled")
+        );
+        assert!(req.tool_choice.is_none());
+    }
+
+    #[test]
+    fn bedrock_sonnet_5_none_keeps_adaptive_thinking_visible() {
+        let mut req = empty_request();
+        let mut agent = minimal_agent("au.anthropic.claude-sonnet-5");
+        agent.reasoning_effort = Some("none".into());
+
+        assert!(apply(ClaudePlatform::Bedrock, &mut req, &agent).is_ok());
+        assert_eq!(
+            req.additional_params
+                .as_ref()
+                .and_then(|params| params["thinking"]["type"].as_str()),
+            Some("adaptive")
+        );
+        assert_eq!(
+            req.additional_params
+                .as_ref()
+                .and_then(|params| params["thinking"]["display"].as_str()),
+            Some("summarized")
+        );
+        assert!(req
+            .additional_params
+            .as_ref()
+            .and_then(|params| params.get("output_config"))
+            .is_none());
+        assert_eq!(req.tool_choice, Some(ToolChoice::Auto));
+    }
+
+    #[test]
+    fn bedrock_opus_4_6_unset_enables_adaptive_thinking_for_workflow_nodes() {
+        let mut req = empty_request();
+        let agent = minimal_agent("au.anthropic.claude-opus-4-6-v1:0");
+
+        assert!(apply(ClaudePlatform::Bedrock, &mut req, &agent).is_ok());
+        assert_eq!(
+            req.additional_params
+                .as_ref()
+                .and_then(|params| params["thinking"]["type"].as_str()),
+            Some("adaptive")
+        );
+        assert_eq!(
+            req.additional_params
+                .as_ref()
+                .and_then(|params| params["thinking"]["display"].as_str()),
+            Some("summarized")
+        );
+        assert!(req
+            .additional_params
+            .as_ref()
+            .and_then(|params| params.get("output_config"))
+            .is_none());
+        assert_eq!(req.tool_choice, Some(ToolChoice::Auto));
+    }
+
+    #[test]
+    fn bedrock_opus_4_6_explicit_none_disables_thinking() {
+        let mut req = empty_request();
+        let mut agent = minimal_agent("au.anthropic.claude-opus-4-6-v1:0");
+        agent.reasoning_effort = Some("none".into());
+
+        assert!(apply(ClaudePlatform::Bedrock, &mut req, &agent).is_ok());
         assert_eq!(
             req.additional_params
                 .as_ref()

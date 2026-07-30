@@ -8,6 +8,7 @@ import type {
 } from "../../lib/types";
 import { relativizeDisplayPath } from "../../lib/relativizePath";
 import { isProviderThinkingMessage } from "./providerThinking";
+import { completedDurationMs, formatDuration } from "./timing";
 
 const TOOL_VERBS: Record<string, { active: string; done: string }> = {
   read: { active: "Reading", done: "Read" },
@@ -127,23 +128,54 @@ export function toolStackSummaryText(
 
 /** One label if the stack contains thinking — no counts. */
 export function toolStackThinkingLabel(
-  messages: ReadonlyArray<Pick<ChatMessage, "role" | "content" | "toolCallId" | "streaming">>,
+  messages: ReadonlyArray<
+    Pick<
+      ChatMessage,
+      | "role"
+      | "content"
+      | "toolCallId"
+      | "streaming"
+      | "createdAtMs"
+      | "completedAtMs"
+    >
+  >,
 ): string | null {
   let any = false;
   let streaming = false;
+  const starts: number[] = [];
+  const completions: number[] = [];
   for (const message of messages) {
     if (!isProviderThinkingMessage(message as ChatMessage)) continue;
     any = true;
     if (message.streaming) streaming = true;
+    if (message.createdAtMs !== undefined) starts.push(message.createdAtMs);
+    if (message.completedAtMs !== undefined) completions.push(message.completedAtMs);
   }
   if (!any) return null;
-  return streaming ? "Thinking" : "Thought for a while";
+  if (streaming) return "Thinking";
+  const duration =
+    starts.length > 0 && completions.length > 0
+      ? formatDuration(
+          completedDurationMs(Math.min(...starts), Math.max(...completions)),
+        )
+      : null;
+  return duration ? `Thought for ${duration}` : "Thought for a while";
 }
 
 /** Tool family summary plus optional thinking substring. */
 export function toolStackSummaryWithThinking(
   entries: ReadonlyArray<{ toolName: string; status: ToolCallStatus }>,
-  messages: ReadonlyArray<Pick<ChatMessage, "role" | "content" | "toolCallId" | "streaming">>,
+  messages: ReadonlyArray<
+    Pick<
+      ChatMessage,
+      | "role"
+      | "content"
+      | "toolCallId"
+      | "streaming"
+      | "createdAtMs"
+      | "completedAtMs"
+    >
+  >,
 ): string {
   const tools = toolStackSummaryText(entries);
   const thinking = toolStackThinkingLabel(messages);

@@ -1,10 +1,11 @@
 //! Jailed read/write helpers for edit tools (OMP `read-file.ts` + patch I/O shell).
 
 use std::fs;
-use std::io;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use thiserror::Error;
+use uuid::Uuid;
 
 use engine::{summarize_diff, FileChangeOp};
 
@@ -143,7 +144,7 @@ impl EditIo {
             }
         }
 
-        fs::write(&absolute, content).map_err(|source| EditIoError::Io {
+        atomic_replace(&absolute, content.as_bytes()).map_err(|source| EditIoError::Io {
             operation: "write",
             path: user_path.to_string(),
             source,
@@ -254,7 +255,7 @@ impl EditIo {
         let payload = restore_line_endings(&normalized, ending);
         let final_content = format!("{bom}{payload}");
 
-        fs::write(&absolute, final_content).map_err(|source| EditIoError::Io {
+        atomic_replace(&absolute, final_content.as_bytes()).map_err(|source| EditIoError::Io {
             operation: "write",
             path: user_path.to_string(),
             source,
@@ -325,6 +326,49 @@ impl EditIo {
     }
 }
 
+fn atomic_replace(path: &Path, content: &[u8]) -> io::Result<()> {
+    let parent = path.parent().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "write target has no parent directory",
+        )
+    })?;
+    let file_name = path.file_name().ok_or_else(|| {
+        io::Error::new(io::ErrorKind::InvalidInput, "write target has no file name")
+    })?;
+    let temporary = parent.join(format!(
+        ".{}.openflow-{}.tmp",
+        file_name.to_string_lossy(),
+        Uuid::new_v4()
+    ));
+    let original_permissions = fs::metadata(path)
+        .ok()
+        .map(|metadata| metadata.permissions());
+
+    let result = (|| {
+        let mut file = fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&temporary)?;
+        file.write_all(content)?;
+        if let Some(permissions) = original_permissions {
+            file.set_permissions(permissions)?;
+        }
+        file.sync_all()?;
+        drop(file);
+        fs::rename(&temporary, path)?;
+        if let Ok(directory) = fs::File::open(parent) {
+            let _ = directory.sync_all();
+        }
+        Ok(())
+    })();
+
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
+}
+
 fn apply_trailing_newline_policy(content: &str, had_final_newline: bool) -> String {
     if had_final_newline {
         if content.ends_with('\n') {
@@ -358,6 +402,33 @@ mod tests {
 
         let bytes = fs::read(temp.path().join(path)).expect("read bytes");
         assert_eq!(bytes, b"new\r\nline\r\n");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn atomic_replace_swaps_complete_file_in_one_rename() {
+        use std::os::unix::fs::MetadataExt;
+
+        let temp = tempfile::TempDir::new().expect("tempdir");
+        let path = temp.path().join("large.txt");
+        fs::write(&path, "old").expect("seed");
+        let old_inode = fs::metadata(&path).expect("old metadata").ino();
+
+        atomic_replace(&path, b"complete replacement").expect("atomic replace");
+
+        assert_eq!(
+            fs::read_to_string(&path).expect("read replacement"),
+            "complete replacement"
+        );
+        assert_ne!(fs::metadata(&path).expect("new metadata").ino(), old_inode);
+        assert_eq!(
+            fs::read_dir(temp.path())
+                .expect("read temp dir")
+                .filter_map(Result::ok)
+                .count(),
+            1,
+            "temporary sibling must be removed"
+        );
     }
 
     #[test]

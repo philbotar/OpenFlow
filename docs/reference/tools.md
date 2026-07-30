@@ -3,7 +3,7 @@
 
 Agents call **tools** during a workflow run. Built-in repository tools are registered in `crates/orchestration/src/tool/registry.rs`. **Harness** tools (`openflow_submit_node_output`, `openflow_request_user_input`, `openflow_ask_user_question`) control node completion and human pauses. **MCP** tools are added at run start from **Settings → MCP Servers** and appear as `mcp/<server>/<tool>`.
 
-Paths are relative to the run **execution folder** (project checkout when the workflow is project-bound, otherwise the process working directory). Approval behavior depends on the node **Approval mode** in the inspector; see [`../guides/using-the-app.md#tools-and-approval`](../guides/using-the-app.md#tools-and-approval).
+Paths are relative to the run **execution folder** (the selected project's configured folder, or an isolated app-managed workspace when no project is selected). Approval behavior depends on the node **Approval mode** in the inspector; see [`../guides/using-the-app.md#tools-and-approval`](../guides/using-the-app.md#tools-and-approval).
 
 Many tools accept optional `_i` (intent): short text shown in the chat UI; the implementation ignores it.
 
@@ -297,6 +297,8 @@ Each call accepts 1-3 questions with 2-3 options each. The normal composer remai
 **When to use:** Integrations (issue trackers, browsers, custom servers) beyond built-ins.
 
 **Setup:** [`../guides/using-the-app.md#settings-beyond-providers`](../guides/using-the-app.md#settings-beyond-providers).
+
+An unavailable server is skipped during run setup. Other MCP servers and the chat continue; OpenFlow adds a system chat message naming the skipped server.
 
 **Approval:** Treated as write tier. **Not available during Plan → Execute planning.**
 

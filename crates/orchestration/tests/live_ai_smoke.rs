@@ -227,6 +227,8 @@ fn prepare_attachment_smoke_chat(
             env: ProviderEnv::from_system(),
             runtime_handle: tokio::runtime::Handle::current(),
             attachment_store: Arc::new(FileRunAttachmentStore::default()),
+            app_runs_root: dir.join("runs"),
+            managed_workspace_root: dir.join("workspaces"),
         },
         None,
     );
@@ -484,6 +486,8 @@ async fn saved_provider_direct_chat_probe() {
             env: ProviderEnv::from_system(),
             runtime_handle: tokio::runtime::Handle::current(),
             attachment_store: Arc::new(FileRunAttachmentStore::default()),
+            app_runs_root: dir.path().join("runs"),
+            managed_workspace_root: dir.path().join("workspaces"),
         },
         None,
     );

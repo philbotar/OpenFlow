@@ -227,7 +227,7 @@ vi.mock("@xterm/addon-fit", () => ({
 }));
 
 import App from "../App";
-import { confirm } from "@tauri-apps/plugin-dialog";
+import { confirm, open as openDialog } from "@tauri-apps/plugin-dialog";
 
 const SETTINGS: AppSettings = {
   active_provider: "openai",
@@ -577,6 +577,7 @@ function makeChat(id: string, title = "New chat"): Chat {
       approvalMode: "read_only",
       reasoningEffort: null,
       reasoningBudgetTokens: null,
+      fastMode: false,
       projectId: null,
     },
     runId: null,
@@ -827,33 +828,20 @@ async function switchWorkflow(container: HTMLElement, name: string) {
 }
 
 function onboardingDialog(container: HTMLElement) {
-  return container.querySelector('[data-testid="first-run-onboarding"]') as HTMLElement | null;
-}
-
-async function dismissOnboardingIntro(container: HTMLElement) {
-  const intro = container.querySelector('[data-testid="first-run-onboarding-intro"]');
-  if (intro instanceof HTMLElement) {
-    intro.click();
-    await flush();
-  }
+  void container;
+  return document.body.querySelector('[data-testid="first-run-onboarding"]') as HTMLElement | null;
 }
 
 async function clickOnboardingAction(container: HTMLElement, label: string) {
   const button = await waitForElement(
     () =>
-      Array.from(container.querySelectorAll("button")).find((element) =>
-        element.textContent?.trim().includes(label),
+      Array.from(document.body.querySelectorAll("button")).find((element) =>
+        element.textContent?.trim() === label,
       ) as HTMLButtonElement | null,
     `onboarding action ${label}`,
   );
   button.click();
   await flush();
-}
-
-async function advanceOnboarding(container: HTMLElement, count: number) {
-  for (let step = 0; step < count; step += 1) {
-    await clickOnboardingAction(container, "Next");
-  }
 }
 
 async function waitForOnboardingClosed(container: HTMLElement) {
@@ -899,7 +887,7 @@ describe("App first-run onboarding", () => {
     installDefaultApiMocks();
   });
 
-  test("shows full-screen slide onboarding and opens Build with AI", async () => {
+  test("walks through tooltips anchored to the actual workflow UI", async () => {
     const { container, dispose } = await mountApp(
       makeBootstrapPayload([makeWorkflow("workflow-1", "Workflow One")]),
     );
@@ -909,24 +897,54 @@ describe("App first-run onboarding", () => {
         () => onboardingDialog(container),
         "first-run onboarding",
       );
-      await dismissOnboardingIntro(container);
-      expect(dialog.getAttribute("aria-label")).toBe("Welcome to OpenFlow");
-      expect(dialog.textContent).toContain("Build repeatable AI workflows.");
+      expect(dialog.getAttribute("data-tour-step")).toBe("new-workflow");
+      expect(dialog.textContent).toContain("Create a workflow");
+      const newWorkflowButton = container.querySelector(
+        '[data-tour="new-workflow"]',
+      ) as HTMLButtonElement | null;
+      expect(newWorkflowButton).not.toBeNull();
+      newWorkflowButton?.click();
+      await flush();
+      expect(container.querySelector('[aria-label="New workflow options"]')).not.toBeNull();
+      newWorkflowButton?.click();
+      await flush();
+      expect(container.querySelector('[aria-label="New workflow options"]')).toBeNull();
+      await waitForElement(
+        () => document.body.querySelector(".of-tour-highlight"),
+        "tour spotlight",
+      );
 
-      await clickOnboardingAction(container, "Next");
-      expect(dialog.textContent).toMatch(/Explain your\s*workflow/i);
+      const remainingSteps = [
+        ["new-chat", "new-chat"],
+        ["workflow-library", "workflow-library"],
+        ["workflow-canvas", "workflow-canvas"],
+        ["node-inspector", "node-inspector-button"],
+        ["workflow-settings", "workflow-settings-button"],
+        ["run-workflow", "run-workflow"],
+        ["workflow-composer", "workflow-composer"],
+        ["settings", "settings"],
+        ["help", "help"],
+      ];
+      for (const [stepId, targetId] of remainingSteps) {
+        await clickOnboardingAction(container, "Next");
+        await waitForElement(
+          () =>
+            onboardingDialog(container)?.getAttribute("data-tour-step") === stepId &&
+            onboardingDialog(container)?.getAttribute("data-tour-target") === targetId
+              ? onboardingDialog(container)
+              : null,
+          `${stepId} tour target`,
+        );
+        expect(container.querySelector(`[data-tour="${targetId}"]`)).not.toBeNull();
+        if (stepId === "node-inspector") {
+          expect(container.querySelector('[data-tour="node-inspector-panel"]')).not.toBeNull();
+        }
+        if (stepId === "workflow-settings") {
+          expect(container.querySelector('[data-tour="workflow-settings-panel"]')).not.toBeNull();
+        }
+      }
 
-      await advanceOnboarding(container, 2);
-      expect(dialog.textContent).toMatch(/Just send\s*a message/i);
-
-      await clickOnboardingAction(container, "Next");
-      expect(dialog.textContent).toMatch(/One thing before\s*you start/i);
-      expect(dialog.textContent).toContain("AI provider key");
-
-      await clickOnboardingAction(container, "Build with AI");
-
-      expect(apiMocks.startWorkflowAuthoring).toHaveBeenCalledWith(null, null);
-      expect(topbarTitle(container)).toBe("Build workflow with AI");
+      await clickOnboardingAction(container, "Done");
       await waitForOnboardingClosed(container);
       expect(window.localStorage.getItem("openflow.firstRunOnboardingDismissed")).toBe("true");
     } finally {
@@ -934,19 +952,47 @@ describe("App first-run onboarding", () => {
     }
   });
 
-  test("opens provider setup from onboarding", async () => {
-    const { container, dispose } = await mountApp(
-      makeBootstrapPayload([makeWorkflow("workflow-1", "Workflow One")]),
-    );
+  test("replays the tour from Help after first-run dismissal", async () => {
+    window.localStorage.setItem("openflow.firstRunOnboardingDismissed", "true");
+    const payload = {
+      ...makeBootstrapPayload([makeWorkflow("workflow-1", "Workflow One")]),
+      chats: [makeChat("chat-1")],
+    };
+    const { container, dispose } = await mountApp(payload);
 
     try {
-      await waitForElement(() => onboardingDialog(container), "first-run onboarding");
-      await dismissOnboardingIntro(container);
-      await advanceOnboarding(container, 4);
+      expect(onboardingDialog(container)).toBeNull();
+      const chatRow = Array.from(container.querySelectorAll(".workflow-row-main")).find(
+        (element) => element.querySelector(".workflow-row-title")?.textContent === "New chat",
+      ) as HTMLButtonElement | undefined;
+      expect(chatRow).toBeDefined();
+      chatRow?.click();
+      await flush();
+      expect(topbarTitle(container)).toBe("New chat");
 
-      await clickOnboardingAction(container, "Set up provider");
+      const helpButton = container.querySelector(
+        'button[aria-label="Help"]',
+      ) as HTMLButtonElement | null;
+      expect(helpButton).not.toBeNull();
+      helpButton?.click();
+      await waitForElement(() => onboardingDialog(container), "replayed onboarding");
+      expect(onboardingDialog(container)?.getAttribute("data-tour-step")).toBe("new-workflow");
 
-      expect(topbarTitle(container)).toBe("Settings");
+      await clickOnboardingAction(container, "Next");
+      expect(onboardingDialog(container)?.getAttribute("data-tour-step")).toBe("new-chat");
+      expect(onboardingDialog(container)?.textContent).toContain("free-form conversations");
+      await clickOnboardingAction(container, "Next");
+      await clickOnboardingAction(container, "Next");
+      await waitForElement(
+        () =>
+          onboardingDialog(container)?.getAttribute("data-tour-step") === "workflow-canvas"
+            ? onboardingDialog(container)
+            : null,
+        "workflow canvas after chat",
+      );
+      expect(topbarTitle(container)).toBe("Workflow One");
+
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
       await waitForOnboardingClosed(container);
       expect(window.localStorage.getItem("openflow.firstRunOnboardingDismissed")).toBe("true");
     } finally {
@@ -1333,6 +1379,29 @@ describe("App workflow rename", () => {
       expect(labels).toEqual(["Chats", "Workflows", "Projects"]);
       expect(workflowTitles(container)).toEqual(["Independent Flow"]);
       expect(container.querySelector(".project-folder-title")?.textContent).toBe("Syntech");
+    } finally {
+      dispose();
+    }
+  });
+
+  test("keeps add controls in the same trailing position for every sidebar collection", async () => {
+    const { container, dispose } = await mountApp(
+      makeBootstrapPayload([makeWorkflow("workflow-1", "Workflow One")]),
+    );
+
+    try {
+      const controls = [
+        [".sidebar-chats-section", "Toggle chats section", "Add chat"],
+        [".sidebar-workflows-section", "Toggle workflows section", "Add workflow"],
+        [".sidebar-projects-section", "Toggle projects section", "Add project"],
+      ];
+
+      for (const [sectionSelector, toggleLabel, addLabel] of controls) {
+        const labels = Array.from(
+          container.querySelectorAll(`${sectionSelector} .sidebar-section-trailing button`),
+        ).map((button) => button.getAttribute("aria-label"));
+        expect(labels).toEqual([toggleLabel, addLabel]);
+      }
     } finally {
       dispose();
     }
@@ -2332,7 +2401,7 @@ describe("App settings persistence", () => {
       settingsNavButton(container, "Providers").click();
       await flush();
       const saveButton = Array.from(container.querySelectorAll("button")).find(
-        (element) => element.textContent === "Save settings",
+        (element) => element.textContent === "Save API key",
       ) as HTMLButtonElement | undefined;
       expect(saveButton).toBeDefined();
       saveButton?.click();
@@ -2438,7 +2507,7 @@ describe("App settings persistence", () => {
       expect(container.querySelector('.providers-section .text-select-trigger')).not.toBeNull();
       expect(
         [...container.querySelectorAll("button")].some(
-          (element) => element.textContent === "Save settings",
+          (element) => element.textContent === "Save API key",
         ),
       ).toBe(true);
     } finally {
@@ -2486,7 +2555,7 @@ describe("App settings persistence", () => {
       await flush();
 
       const saveButton = Array.from(container.querySelectorAll("button")).find(
-        (element) => element.textContent === "Save settings",
+        (element) => element.textContent === "Save API key",
       ) as HTMLButtonElement | undefined;
       expect(saveButton).toBeDefined();
       saveButton?.click();
@@ -2494,11 +2563,11 @@ describe("App settings persistence", () => {
       const successToast = await waitForElement(
         () =>
           Array.from(document.body.querySelectorAll("*")).find(
-            (element) => element.textContent?.includes("Settings saved successfully."),
+            (element) => element.textContent?.includes("API key saved."),
           ) ?? null,
         "settings saved toast",
       );
-      expect(successToast.textContent).toContain("Settings saved successfully.");
+      expect(successToast.textContent).toContain("API key saved.");
 
       expect(apiMocks.saveProviderApiKey).toHaveBeenCalledWith(
         "custom_openai_compatible",
@@ -3309,6 +3378,7 @@ describe("Global chat layout", () => {
       );
       expect(chatTab?.classList.contains("active")).toBe(true);
       expect(inspectorTitle()).toContain("Plan");
+      expect(document.body.textContent).toContain("Branch B is waiting for input");
     } finally {
       dispose();
     }
@@ -4070,6 +4140,63 @@ describe("Ad-hoc chats", () => {
     apiMocks.listenToRunState.mockResolvedValue(() => {});
   });
 
+  test("does not show the awaiting-input toast inside a direct chat", async () => {
+    let emitRunState: ((state: WorkflowRunState) => void) | undefined;
+    apiMocks.listenToRunState.mockImplementation(async (handler) => {
+      emitRunState = handler;
+      return () => {};
+    });
+    const chat = makeChat("chat-1");
+    const executionWorkflow = makeWorkflow(chat.id, chat.title);
+    const nodeId = executionWorkflow.nodes[0].id;
+    const startedState = makeAwaitingRunState(executionWorkflow);
+    startedState.runId = "run-1";
+    startedState.awaitingNodeId = null;
+    startedState.awaitingNodeIds = [];
+    startedState.statusByNode[nodeId] = "started";
+    const awaitingState = {
+      ...startedState,
+      awaitingNodeId: nodeId,
+      awaitingNodeIds: [nodeId],
+      statusByNode: {
+        ...startedState.statusByNode,
+        [nodeId]: "awaiting_input" as const,
+      },
+    };
+    apiMocks.createChat.mockResolvedValue(chat);
+    apiMocks.startChat.mockResolvedValue({
+      chat: { ...chat, runId: "run-1" },
+      runState: startedState,
+    });
+    apiMocks.getRunState.mockResolvedValue(startedState);
+    const { container, dispose } = await mountApp(
+      makeBootstrapPayload([makeWorkflow("workflow-1", "Workflow One")]),
+    );
+
+    try {
+      (container.querySelector('button[aria-label="New chat"]') as HTMLButtonElement).click();
+      await flush();
+
+      const textarea = container.querySelector(
+        ".chat-composer-pill textarea",
+      ) as HTMLTextAreaElement;
+      textarea.value = "Ask me a question";
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      container
+        .querySelector(".composer-send-button")
+        ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await flush();
+
+      expect(emitRunState).toBeDefined();
+      emitRunState?.(awaitingState);
+      await flush();
+
+      expect(document.body.textContent).not.toContain("Node is waiting for input");
+    } finally {
+      dispose();
+    }
+  });
+
   test("hides chats and persists the collapsed section", async () => {
     const payload = {
       ...makeBootstrapPayload([makeWorkflow("workflow-1", "Workflow One")]),
@@ -4140,7 +4267,7 @@ describe("Ad-hoc chats", () => {
     }
   });
 
-  test("shows approval, effort, and project controls for a chat", async () => {
+  test("shows separate speed, approval, effort, and project controls for a chat", async () => {
     const chat = makeChat("chat-1");
     const project = makeProject("project-1", "OpenFlow");
     const chatSettings: AppSettings = {
@@ -4153,6 +4280,7 @@ describe("Ad-hoc chats", () => {
           reasoning_effort_options: [
             { value: "high", label: "High", uses_budget_tokens: false },
           ],
+          fast_mode_available: true,
         },
       },
     };
@@ -4185,6 +4313,9 @@ describe("Ad-hoc chats", () => {
       expect(
         container.querySelector('[aria-label="Chat model"]')?.textContent,
       ).toBe("Model: Default (gpt-4.1-mini)");
+      expect(
+        container.querySelector('[aria-label="Chat speed"]')?.textContent,
+      ).toBe("Speed: Standard");
       expect(
         container.querySelector('[aria-label="Chat tool approval mode"]')?.textContent,
       ).toBe("Approval: Read only");
@@ -4224,6 +4355,22 @@ describe("Ad-hoc chats", () => {
       expect(apiMocks.updateChatConfig).toHaveBeenCalledWith(
         "chat-1",
         expect.objectContaining({ model: null }),
+      );
+
+      (container.querySelector('[aria-label="Chat speed"]') as HTMLButtonElement).click();
+      await flush();
+      const fastOption = Array.from(
+        container.querySelectorAll(".text-select-option"),
+      ).find((element) => element.textContent === "Fast") as HTMLButtonElement;
+      fastOption.click();
+      await flush();
+
+      expect(
+        container.querySelector('[aria-label="Chat speed"]')?.textContent,
+      ).toBe("Speed: Fast");
+      expect(apiMocks.updateChatConfig).toHaveBeenCalledWith(
+        "chat-1",
+        expect.objectContaining({ fastMode: true, reasoningEffort: null }),
       );
 
       (container.querySelector('[aria-label="Chat project"]') as HTMLButtonElement).click();
@@ -4280,6 +4427,60 @@ describe("Ad-hoc chats", () => {
       expect(apiMocks.updateChatConfig).toHaveBeenLastCalledWith(
         "chat-1",
         expect.objectContaining({ reasoningEffort: "high" }),
+      );
+    } finally {
+      dispose();
+    }
+  });
+
+  test("adds and selects a project from the chat project dropdown", async () => {
+    const chat = makeChat("chat-1");
+    const project = makeProject("project-new", "New Project");
+    vi.mocked(openDialog).mockResolvedValueOnce(project.path);
+    apiMocks.createProjectFromDirectory.mockResolvedValue(project);
+    apiMocks.updateChatConfig.mockImplementation(async (_chatId, config) => ({
+      ...chat,
+      config,
+    }));
+    const payload = {
+      ...makeBootstrapPayload([makeWorkflow("workflow-1", "Workflow One")]),
+      chats: [chat],
+    };
+    const { container, dispose } = await mountApp(payload);
+
+    try {
+      const chatRow = Array.from(container.querySelectorAll(".workflow-row-main")).find(
+        (element) => element.querySelector(".workflow-row-title")?.textContent === "New chat",
+      ) as HTMLButtonElement;
+      chatRow.click();
+      await flush();
+
+      (container.querySelector('[aria-label="Chat project"]') as HTMLButtonElement).click();
+      await flush();
+      const addProject = Array.from(
+        container.querySelectorAll(".text-select-option"),
+      ).find((element) => element.textContent === "Add Project…") as HTMLButtonElement | undefined;
+      expect(addProject).toBeDefined();
+
+      addProject?.click();
+      await waitForElement(
+        () =>
+          container.querySelector('[aria-label="Chat project"]')?.textContent ===
+          "Project: New Project"
+            ? (container.querySelector('[aria-label="Chat project"]') as HTMLButtonElement)
+            : null,
+        "new chat project selection",
+      );
+
+      expect(openDialog).toHaveBeenCalledWith({
+        directory: true,
+        multiple: false,
+        title: "Select project folder",
+      });
+      expect(apiMocks.createProjectFromDirectory).toHaveBeenCalledWith(project.path);
+      expect(apiMocks.updateChatConfig).toHaveBeenCalledWith(
+        "chat-1",
+        expect.objectContaining({ projectId: "project-new" }),
       );
     } finally {
       dispose();
@@ -4470,6 +4671,7 @@ describe("Ad-hoc chats", () => {
         {
           model: "gpt-5",
           approvalMode: "read_only",
+          fastMode: false,
           reasoningEffort: null,
           reasoningBudgetTokens: null,
         },
@@ -4492,6 +4694,8 @@ describe("Ad-hoc chats", () => {
     activeState.contextWindowByNode = {
       [nodeId]: {
         usedTokens: 12_400,
+        cachedInputTokens: 8_000,
+        cacheCreationInputTokens: 1_000,
         maxTokens: 50_000,
         model: "gpt-4.1-mini",
         nodeId,
@@ -4525,6 +4729,14 @@ describe("Ad-hoc chats", () => {
       textarea.dispatchEvent(new Event("input", { bubbles: true }));
       expect(textarea.value).toBe("Queue this next");
       expect(container.querySelector(".direct-chat-token-usage")?.textContent).toContain(
+        "12.4k / 50k tokens",
+      );
+      const statusRow = container.querySelector(".direct-chat-status-row");
+      expect(statusRow).not.toBeNull();
+      expect(statusRow!.querySelector(".direct-chat-generating")?.textContent).toContain(
+        "Thinking",
+      );
+      expect(statusRow!.querySelector(".direct-chat-token-usage")?.textContent).toContain(
         "12.4k / 50k tokens",
       );
     } finally {

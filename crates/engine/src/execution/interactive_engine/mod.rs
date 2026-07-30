@@ -207,6 +207,7 @@ pub struct InteractiveEngine {
     request_input_retries_by_node: BTreeMap<NodeId, u8>,
     empty_turn_retries_by_node: BTreeMap<NodeId, u8>,
     mixed_tool_turn_retries_by_node: BTreeMap<NodeId, u8>,
+    output_truncation_retries_by_node: BTreeMap<NodeId, u8>,
     /// Consecutive auto-continued text-only turns for nodes that disallow
     /// user input; reset whenever the node makes tool-call progress.
     auto_continue_streaks_by_node: BTreeMap<NodeId, u8>,
@@ -223,6 +224,7 @@ pub(crate) const MAX_MALFORMED_SUBMIT_OUTPUT_RETRIES: u8 = 3;
 pub(crate) const MAX_MALFORMED_REQUEST_INPUT_RETRIES: u8 = 3;
 pub(crate) const MAX_EMPTY_PROVIDER_TURN_RETRIES: u8 = 3;
 pub(crate) const MAX_MIXED_TOOL_TURN_RETRIES: u8 = 3;
+pub(crate) const MAX_OUTPUT_TRUNCATION_RETRIES: u8 = 3;
 pub(crate) const MAX_AUTO_CONTINUE_STREAK: u8 = 10;
 pub(crate) const MALFORMED_REQUEST_INPUT_FEEDBACK: &str =
     "Your last human-input request was invalid. Call openflow_request_user_input with \
@@ -388,6 +390,7 @@ impl InteractiveEngine {
             request_input_retries_by_node: BTreeMap::new(),
             empty_turn_retries_by_node: BTreeMap::new(),
             mixed_tool_turn_retries_by_node: BTreeMap::new(),
+            output_truncation_retries_by_node: BTreeMap::new(),
             auto_continue_streaks_by_node: BTreeMap::new(),
             entrypoint_text,
             entrypoint_attachments,
@@ -818,6 +821,7 @@ impl InteractiveEngine {
         self.request_input_retries_by_node.remove(node_id);
         self.empty_turn_retries_by_node.remove(node_id);
         self.mixed_tool_turn_retries_by_node.remove(node_id);
+        self.output_truncation_retries_by_node.remove(node_id);
         self.auto_continue_streaks_by_node.remove(node_id);
         let retry_count = self.retries_by_node.entry(node_id.clone()).or_default();
         *retry_count = retry_count.saturating_add(1);

@@ -44,9 +44,9 @@ pub use graph::{
 pub use ports::{
     emit_assistant_deltas_from_outcome, AgentError, AgentMessageTurn, AgentNeedUserInput,
     AgentRequest, AgentToolCallBatch, AgentTurnOutcome, AgentTurnSuccess, AiPort, AiStreamEvent,
-    AiStreamSink, OutputRepairCandidate, OutputRepairFailureKind, ResolvedChatAttachment,
-    StructuredUserInput, ToolAccessPolicy, ToolBatchEffects, ToolBatchOutput, ToolPort,
-    UsageReport, UserInputOption, UserInputQuestion,
+    AiStreamSink, OutputRepairCandidate, OutputRepairFailureKind, PartialToolCall,
+    ResolvedChatAttachment, StructuredUserInput, ToolAccessPolicy, ToolBatchEffects,
+    ToolBatchOutput, ToolPort, UsageReport, UserInputOption, UserInputQuestion,
 };
 pub use template::{default_templates, Template, TemplateStore, TemplateStoreError};
 pub use tools::{

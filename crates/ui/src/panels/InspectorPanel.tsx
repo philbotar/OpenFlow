@@ -52,7 +52,7 @@ export function InspectorPanel() {
   });
 
   return (
-    <aside class="inspector-panel panel-enter">
+    <aside class="inspector-panel panel-enter" data-tour="node-inspector-panel">
       <Show when={ctx.currentNode()}>
         {(node) => (
           <>

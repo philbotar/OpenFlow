@@ -11,7 +11,12 @@ Task-oriented map of the OpenFlow desktop UI after install and provider setup. F
 | **Schedule** | Enable timed or interval schedules on workflows that already exist in the catalog. |
 | **Workflows** | App-level workflows stored under the OpenFlow data directory. **New workflow** creates one; **Build with AI** opens the authoring chat. Use a workflow row's options menu to rename or delete it. |
 | **Projects** | Bind a repository folder, create or assign workflows under `.flow/workflows/`, and open project workflows in the editor. |
+| **Help** | Replay the guided UI tour. |
 | **Settings** | Appearance, providers ([`provider-setup.md`](provider-setup.md)), web search keys, MCP servers, diagnostics, and about. |
+
+On first launch, OpenFlow explains chats versus workflows, then highlights the real canvas, Inspector, Workflow Settings, run control, and composer. Use **Next** and **Back** to move through the tour, **Skip tour** or Escape to dismiss it, then **Help** to replay it later.
+
+The **Chats**, **Workflows**, and **Projects** headings keep their `+` actions visible. Use them to create a chat or workflow, or select a repository folder to add as a project.
 
 Project workflow files override app workflows when both share the same workflow ID. Paths are listed in [`../reference/README.md#runtime-and-persistence-paths`](../reference/README.md#runtime-and-persistence-paths).
 
@@ -36,10 +41,15 @@ media-capable model and retry.
 
 Use the controls below the composer to choose:
 
-- **Project** — scopes file references, execution cwd, and durable run storage to that project. Choose before sending the first message.
+- **Project** — scopes file references, execution cwd, and durable run storage to that project. Choose before sending the first message. Select **Add Project…** in this menu to add a repository folder and select it for the chat.
 - **Model** — selects the model for the next assistant turn.
+- **Speed** — selects Standard or Fast for OpenAI and ChatGPT (Codex). Fast changes service priority, not reasoning effort.
 - **Approval mode** — controls which tools require confirmation.
 - **Reasoning effort** — selects a provider-supported effort level and, when required, its token budget.
+
+Without a project, OpenFlow runs the chat in an isolated app-managed workspace. With a project,
+OpenFlow uses that project's configured execution folder and stores run metadata under `.flow/runs/`.
+Adding a project or starting its run checks `.flow` write access first.
 
 Direct chat ends each assistant turn after a normal reply; it does not require a closing question.
 When your answer is required and clear choices help, the assistant can show a multiple-choice card.
@@ -51,7 +61,7 @@ The saved Chat contains only chat metadata and its durable run ID. At run start,
 
 - **Canvas** — nodes, edges, validation errors, and per-node run status.
 - **Inspector** — selected node configuration (instruction, optional provider override, model, handoff, tools, callable agents).
-- **Workflow settings** — shared provider, shared context, execution cwd, optional Plan → Execute gate, and schedule metadata.
+- **Workflow settings** — shared provider, speed, reasoning effort, shared context, optional Plan → Execute gate, and schedule metadata.
 - **Bottom dock** — **Chat**, **Terminal**, **Run trace**, and **History** tabs.
 
 ## Node handoffs
@@ -137,7 +147,7 @@ The task-prompt editor lists matching skills after you type `/`, using the same 
 | Section | Use when |
 | --- | --- |
 | **Search** | Workflows call web search through bundled search-cli; store per-provider API keys here or export keys in the shell environment. |
-| **MCP Servers** | Add MCP server commands, probe connectivity, enable or disable discovered servers from external config, and control whether external discovery runs. |
+| **MCP Servers** | Add, edit, test, delete, or disable server commands. Changes save automatically. **Disable all** turns off configured servers plus external discovery in one action. |
 | **Diagnostics** | Local debug output and related developer options. |
 
-MCP tools become available to nodes that advertise MCP access during a run.
+MCP tools become available to nodes that advertise MCP access during a run. If an enabled server cannot connect or list tools, OpenFlow skips that server, shows a system message in chat, and continues the run without its tools.

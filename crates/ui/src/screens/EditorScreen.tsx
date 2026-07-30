@@ -34,7 +34,7 @@ export function EditorScreen() {
       <NodePickerModal />
 
       <div class="editor-main">
-        <section class="canvas-panel">
+        <section class="canvas-panel" data-tour="workflow-canvas">
           <WorkflowCanvasHost
             graph={ctx.canvasGraph()}
             selectedNodeId={ctx.selectedNodeId()}

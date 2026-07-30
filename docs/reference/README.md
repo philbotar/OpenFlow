@@ -30,6 +30,7 @@ Agent and harness tools (built-ins, MCP, authoring): [`tools.md`](tools.md).
 | Projects | `{data_local}/openflow/projects.json` |
 | Saved agents | `{data_local}/openflow/agents.json` |
 | Project workflows | `{project}/.flow/workflows/{workflowId}.workflow.json` |
+| App-managed execution folders | `{data_local}/openflow/workspaces/{workflows|chats}/{id}` |
 | App-run attachments | `{data_local}/openflow/runs/{runId}/attachments/{attachmentId}.{ext}` |
 | Project-run attachments | `{project}/.flow/runs/{runId}/attachments/{attachmentId}.{ext}` |
 | App-run node handoffs | `{data_local}/openflow/runs/{runId}/handoffs/{nodeId}/HANDOFF.md` or `HANDOFF.json` |
@@ -39,6 +40,9 @@ Agent and harness tools (built-ins, MCP, authoring): [`tools.md`](tools.md).
 | ChatGPT Codex OAuth | Plaintext in `settings.json` as `ProviderProfile.codex_oauth`; redacted from normal settings IPC |
 
 `AppBackend::load_all_workflows` merges app-store and project-discovered workflows. Project files win on ID collision.
+Run start accepts a project ID, then the backend resolves the cwd and run root. Project runs use
+the exact selected project; app workflow/chat runs use the isolated managed folders above.
+OpenFlow does not use a global `~/.flow`; `.flow` stays project-local.
 
 Chat checkpoints persist attachment refs only: generated ID, sanitized filename, media type, byte
 size, SHA-256, and kind. They never persist source paths or inline attachment bytes. The

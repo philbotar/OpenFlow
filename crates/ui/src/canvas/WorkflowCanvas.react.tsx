@@ -188,6 +188,7 @@ type WorkflowCanvasToolbarProps = {
   editingLocked: boolean;
   deleteLabel: string;
   deleteEnabled: boolean;
+  toolbarRef: React.RefObject<HTMLDivElement | null>;
   onAddNode: () => void;
   onAutoLayout: () => void;
   onDeleteSelected: () => void;
@@ -201,6 +202,7 @@ function WorkflowCanvasToolbar(props: WorkflowCanvasToolbarProps) {
   return (
     <Panel position="top-left" className="workflow-flow-panel">
       <div
+        ref={props.toolbarRef}
         className="workflow-flow-toolbar"
         role="toolbar"
         aria-label="Workflow canvas tools"
@@ -269,6 +271,8 @@ function WorkflowCanvasToolbar(props: WorkflowCanvasToolbarProps) {
 }
 
 export function WorkflowCanvas(props: WorkflowCanvasProps) {
+  const canvasRef = React.useRef<HTMLDivElement>(null);
+  const toolbarRef = React.useRef<HTMLDivElement>(null);
   const previewMode = props.previewMode ?? false;
   const runActive = props.runActive ?? false;
   const uiZoom = props.uiZoom ?? 1;
@@ -478,7 +482,7 @@ export function WorkflowCanvas(props: WorkflowCanvasProps) {
       : "Delete selected";
 
   return (
-    <div className="workflow-flow-shell">
+    <div ref={canvasRef} className="workflow-flow-shell">
       <ReactFlowProvider>
         <ReactFlow<WorkflowCanvasNode, WorkflowCanvasEdge>
           nodes={nodes}
@@ -517,6 +521,8 @@ export function WorkflowCanvas(props: WorkflowCanvasProps) {
             chatFocusNode={props.chatFocusNode}
             viewportEnabled={props.viewportEnabled ?? true}
             uiZoom={uiZoom}
+            canvasRef={canvasRef}
+            toolbarRef={toolbarRef}
           />
           <Background
             gap={22}
@@ -528,6 +534,7 @@ export function WorkflowCanvas(props: WorkflowCanvasProps) {
             editingLocked={editingLocked}
             deleteLabel={deleteSelectedLabel}
             deleteEnabled={!editingLocked && Boolean(selectedNode || selectedEdge)}
+            toolbarRef={toolbarRef}
             onAddNode={handleAddNode}
             onAutoLayout={handleAutoLayout}
             onDeleteSelected={handleDeleteSelected}

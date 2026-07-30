@@ -321,6 +321,7 @@ mod tests {
             model_attempt: 1,
             reasoning_effort: None,
             reasoning_budget_tokens: None,
+            fast_mode: false,
             tool_access_policy: engine::ToolAccessPolicy::Execution,
             allow_user_input: true,
             conversation_mode: false,

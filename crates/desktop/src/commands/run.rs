@@ -16,7 +16,7 @@ pub async fn start_run(
     app: tauri::AppHandle,
     workflow: Workflow,
     settings: AppSettings,
-    execution_cwd: Option<String>,
+    project_id: Option<String>,
     transient_api_key: Option<String>,
     message: Option<UserMessageInput>,
     invoked_skill_ids: Option<Vec<String>>,
@@ -26,7 +26,7 @@ pub async fn start_run(
         .start_run_with_message_and_skill_ids(
             workflow,
             message,
-            execution_cwd,
+            project_id.as_deref(),
             &settings,
             transient_api_key.as_deref(),
             invoked_skill_ids.unwrap_or_default(),

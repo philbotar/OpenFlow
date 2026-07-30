@@ -148,6 +148,9 @@ pub struct WorkflowSettings {
         alias = "reasoning_budget_tokens"
     )]
     pub reasoning_budget_tokens: Option<u32>,
+    /// Use the effective provider's faster, higher-cost service tier.
+    #[serde(default, rename = "fastMode", alias = "fast_mode")]
+    pub fast_mode: bool,
     /// Forward upstream read outlines to downstream node input JSON.
     #[serde(default = "default_true", rename = "forwardUpstreamReads")]
     pub forward_upstream_reads: bool,
@@ -178,6 +181,7 @@ impl Default for WorkflowSettings {
             provider_id: None,
             reasoning_effort: None,
             reasoning_budget_tokens: None,
+            fast_mode: false,
             forward_upstream_reads: default_true(),
             plan_mode: None,
             output_repair_model: None,
@@ -626,17 +630,20 @@ mod tests {
             shared_context: "ctx".to_string(),
             reasoning_effort: Some("low".to_string()),
             reasoning_budget_tokens: Some(10_240),
+            fast_mode: true,
             ..WorkflowSettings::default()
         };
         let value = serde_json::to_value(&settings).unwrap();
         assert_eq!(value["reasoningEffort"], json!("low"));
         assert_eq!(value["reasoningBudgetTokens"], json!(10_240));
+        assert_eq!(value["fastMode"], json!(true));
         let back: WorkflowSettings = serde_json::from_value(value).unwrap();
         assert_eq!(back.reasoning_effort, settings.reasoning_effort);
         assert_eq!(
             back.reasoning_budget_tokens,
             settings.reasoning_budget_tokens
         );
+        assert!(back.fast_mode);
     }
 
     #[test]

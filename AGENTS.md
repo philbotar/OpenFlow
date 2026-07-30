@@ -237,10 +237,15 @@ Before editing, classify the change with [`docs/contributing/development-lanes.m
 | Projects | `{data_local}/openflow/projects.json` (migrates from legacy slug) |
 | Saved agents | `{data_local}/openflow/agents.json` (migrates from legacy slug) |
 | Project workflows | `{project}/.flow/workflows/{workflowId}.workflow.json` |
+| App-managed execution folders | `{data_local}/openflow/workspaces/{workflows|chats}/{id}` |
+| Project run metadata | `{project}/.flow/runs/{runId}/` |
 | Node handoffs | `{run_root}/{runId}/handoffs/{nodeId}/HANDOFF.md` or `HANDOFF.json` |
 | Provider API keys | Plaintext in `settings.json` (`ProviderProfile.api_key`) |
 
 `AppBackend::load_all_workflows` merges app-store and project-discovered workflows (project files win on ID collision).
+New app workflow/chat runs use an app-managed execution folder. Project runs use the exact selected
+project's `default_execution_cwd` (or project root) and persist under that project's `.flow/runs/`.
+Project registration and run start probe `.flow` write access before continuing.
 
 API key resolution order (highest to lowest): transient input panel → stored settings key (`ProviderProfile.api_key`) → provider env var fallback (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, etc.).
 

@@ -20,6 +20,7 @@ const settings: AppSettings = {
       known_models: ["gpt-5"],
       default_model: "gpt-5",
       editable: false,
+      fast_mode_available: true,
     },
     anthropic: {
       display_name: "Anthropic",
@@ -216,6 +217,24 @@ describe("WorkflowSettingsPanel", () => {
     ) as HTMLButtonElement;
     mediumOption.click();
 
+    expect(workflow().settings.reasoning_effort).toBe("medium");
+  });
+
+  test("updates fast mode separately from reasoning effort", () => {
+    const { workflow } = renderPanel(
+      makeWorkflow({ provider_id: "openai", reasoning_effort: "medium" }),
+    );
+    const trigger = [...container.querySelectorAll(".text-select-trigger")].find((button) =>
+      button.closest("label")?.textContent?.includes("Speed"),
+    ) as HTMLButtonElement | undefined;
+    expect(trigger).toBeTruthy();
+    trigger!.click();
+    const fastOption = [...container.querySelectorAll(".text-select-option")].find(
+      (element) => element.textContent === "Fast",
+    ) as HTMLButtonElement;
+    fastOption.click();
+
+    expect(workflow().settings.fast_mode).toBe(true);
     expect(workflow().settings.reasoning_effort).toBe("medium");
   });
 

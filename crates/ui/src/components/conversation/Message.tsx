@@ -3,6 +3,11 @@ import type { ComponentProps, JSX } from "solid-js";
 import { MarkdownContent } from "./MarkdownContent";
 import type { ChatAttachmentRef } from "../../lib/types";
 import { MessageAttachments } from "./MessageAttachments";
+import {
+  formatDuration,
+  formatMessageTimestamp,
+  isoMessageTimestamp,
+} from "./timing";
 
 // ── Message ──────────────────────────────────────────────────────────
 
@@ -15,6 +20,8 @@ interface MessageProps extends ComponentProps<"div"> {
   streaming?: boolean;
   attachments?: readonly ChatAttachmentRef[];
   runId?: string | null;
+  sentAtMs?: number | null;
+  elapsedSincePreviousMs?: number | null;
 }
 
 export function Message(allProps: MessageProps) {
@@ -28,9 +35,13 @@ export function Message(allProps: MessageProps) {
     "streaming",
     "attachments",
     "runId",
+    "sentAtMs",
+    "elapsedSincePreviousMs",
   ]);
   const animationClass = () =>
     local.from === "assistant" || local.from === "user" ? "" : "conversation-item-enter";
+  const sentAt = () => formatMessageTimestamp(local.sentAtMs);
+  const elapsed = () => formatDuration(local.elapsedSincePreviousMs);
   return (
     <div
       class={`chat-row chat-message-row chat-message-row--${local.from} message message-${local.from} role-${local.from} ${animationClass()} ${local.class ?? ""}`}
@@ -56,6 +67,28 @@ export function Message(allProps: MessageProps) {
           runId={local.runId ?? null}
         />
       </div>
+      <Show when={sentAt()}>
+        {(timestamp) => (
+          <div
+            class="message-meta"
+            aria-label={`Sent ${timestamp()}${
+              elapsed() ? `, ${elapsed()} after previous message` : ""
+            }`}
+          >
+            <time dateTime={isoMessageTimestamp(local.sentAtMs!)}>
+              {timestamp()}
+            </time>
+            <Show when={elapsed()}>
+              {(duration) => (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span>{duration()} after previous message</span>
+                </>
+              )}
+            </Show>
+          </div>
+        )}
+      </Show>
     </div>
   );
 }

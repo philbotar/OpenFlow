@@ -1,7 +1,8 @@
 use crate::run::state::{
-    AgentStatus, ContextWindowSnapshot, RunTraceEntry, ToolArtifactSummary, ToolCallSummary,
-    TraceStatus, WorkflowRunState,
+    AgentStatus, ContextWindowSnapshot, ProjectedChatMessage, RunTraceEntry, ToolArtifactSummary,
+    ToolCallSummary, TraceStatus, WorkflowRunState,
 };
+use chrono::Utc;
 use engine::{
     strip_tool_call_markup, summary_from_node_output, ChatMessage, ChatRole, NodeId,
     SubagentStatus, ToolCallStatus, Workflow,
@@ -11,9 +12,18 @@ use serde_json::json;
 use super::ExecutionEvent;
 
 pub fn apply_event_to_run_state(
+    workflow: &Workflow,
+    state: &mut WorkflowRunState,
+    event: ExecutionEvent,
+) {
+    apply_event_to_run_state_at(workflow, state, event, Utc::now().timestamp_millis());
+}
+
+fn apply_event_to_run_state_at(
     _workflow: &Workflow,
     state: &mut WorkflowRunState,
     event: ExecutionEvent,
+    now_ms: i64,
 ) {
     match event {
         ExecutionEvent::NodeQueued { node_id, label } => {
@@ -48,13 +58,7 @@ pub fn apply_event_to_run_state(
             node_id,
             role,
             content,
-        } => {
-            state
-                .chat_logs
-                .entry(node_id)
-                .or_default()
-                .push(ChatMessage::text(role, content));
-        }
+        } => push_chat_message_at(state, node_id, ChatMessage::text(role, content), now_ms),
         ExecutionEvent::ChatMessageDelta {
             node_id,
             message_id,
@@ -78,6 +82,7 @@ pub fn apply_event_to_run_state(
                 }
                 if finalize {
                     message.streaming = false;
+                    message.completed_at_ms = Some(now_ms);
                     if message.role == ChatRole::Assistant {
                         message.content = strip_tool_call_markup(&message.content);
                     }
@@ -91,7 +96,7 @@ pub fn apply_event_to_run_state(
                 } else {
                     ChatMessage::streaming_assistant(message_id, delta)
                 };
-                logs.push(message);
+                push_message_to_logs_at(logs, message, now_ms);
             }
             if let Some(id) = drop_message_id {
                 logs.retain(|message| message.id.as_deref() != Some(id.as_str()));
@@ -139,12 +144,15 @@ pub fn apply_event_to_run_state(
                 last_output: None,
                 is_error: false,
                 streaming: false,
+                started_at_ms: None,
+                completed_at_ms: None,
             });
-            state
-                .chat_logs
-                .entry(node_id)
-                .or_default()
-                .push(ChatMessage::tool_marker(tool_call.id.clone()));
+            push_chat_message_at(
+                state,
+                node_id,
+                ChatMessage::tool_marker(tool_call.id.clone()),
+                now_ms,
+            );
         }
         ExecutionEvent::ToolApprovalRequested { request } => {
             remove_awaiting_node(state, &request.node_id);
@@ -166,14 +174,15 @@ pub fn apply_event_to_run_state(
                 message: format!("awaiting approval for {}", request.tool_call.name),
                 output: None,
             });
-            state
-                .chat_logs
-                .entry(request.node_id.clone())
-                .or_default()
-                .push(ChatMessage::text(
+            push_chat_message_at(
+                state,
+                request.node_id.clone(),
+                ChatMessage::text(
                     ChatRole::System,
                     format!("Approval required for tool '{}'.", request.tool_call.name),
-                ));
+                ),
+                now_ms,
+            );
             update_tool_status(
                 state,
                 &request.node_id,
@@ -237,6 +246,7 @@ pub fn apply_event_to_run_state(
             if tool_name == "bash" {
                 set_tool_streaming(state, &node_id, &tool_call_id, true);
             }
+            mark_tool_started(state, &node_id, &tool_call_id, now_ms);
             update_tool_status(
                 state,
                 &node_id,
@@ -318,6 +328,7 @@ pub fn apply_event_to_run_state(
                 Some(content),
                 is_error,
             );
+            mark_tool_completed(state, &node_id, &tool_call_id, now_ms);
             restore_active_node_status(state, &node_id);
         }
         ExecutionEvent::FileChanged { node_id, record } => {
@@ -375,11 +386,7 @@ pub fn apply_event_to_run_state(
                 output: Some(output.clone()),
             });
             if let Some(summary) = summary_from_node_output(&output) {
-                state
-                    .chat_logs
-                    .entry(node_id)
-                    .or_default()
-                    .push(ChatMessage::node_completed(summary));
+                push_chat_message_at(state, node_id, ChatMessage::node_completed(summary), now_ms);
             }
         }
         ExecutionEvent::NodeInterrupted { node_id, label } => {
@@ -394,25 +401,23 @@ pub fn apply_event_to_run_state(
                 message: "interrupted by user".to_string(),
                 output: None,
             });
-            state
-                .chat_logs
-                .entry(node_id)
-                .or_default()
-                .push(ChatMessage::text(
-                    ChatRole::System,
-                    "Interrupted by user.".to_string(),
-                ));
+            push_chat_message_at(
+                state,
+                node_id,
+                ChatMessage::text(ChatRole::System, "Interrupted by user.".to_string()),
+                now_ms,
+            );
         }
         ExecutionEvent::NodeErrored {
             node_id,
             label,
             error,
-        } => record_node_failure(state, node_id, label, error, false),
+        } => record_node_failure(state, node_id, label, error, false, now_ms),
         ExecutionEvent::NodeFailed {
             node_id,
             label,
             error,
-        } => record_node_failure(state, node_id, label, error, true),
+        } => record_node_failure(state, node_id, label, error, true, now_ms),
         ExecutionEvent::Finished(report) => {
             state.active = false;
             state.awaiting_node_id = None;
@@ -431,7 +436,7 @@ pub fn apply_event_to_run_state(
             state.active_manual_node_id = None;
             state.active_tool_call_id = None;
             state.pending_approvals.clear();
-            abort_in_progress_tools(state);
+            abort_in_progress_tools(state, now_ms);
             if let Some((node_id, label)) = running_node_snapshot(state) {
                 state
                     .status_by_node
@@ -480,14 +485,12 @@ pub fn apply_event_to_run_state(
                     entry.push(summary);
                 }
             }
-            state
-                .chat_logs
-                .entry(node_id)
-                .or_default()
-                .push(ChatMessage::text(
-                    ChatRole::System,
-                    format!("Registered {count} subagent(s)."),
-                ));
+            push_chat_message_at(
+                state,
+                node_id,
+                ChatMessage::text(ChatRole::System, format!("Registered {count} subagent(s).")),
+                now_ms,
+            );
         }
         ExecutionEvent::SubagentStarted {
             node_id,
@@ -498,14 +501,15 @@ pub fn apply_event_to_run_state(
                     sub.status = SubagentStatus::Active;
                 }
             }
-            state
-                .chat_logs
-                .entry(node_id.clone())
-                .or_default()
-                .push(ChatMessage::text(
+            push_chat_message_at(
+                state,
+                node_id.clone(),
+                ChatMessage::text(
                     ChatRole::System,
                     format!("Subagent {} started.", subagent_id),
-                ));
+                ),
+                now_ms,
+            );
         }
         ExecutionEvent::SubagentCompleted {
             node_id,
@@ -516,14 +520,15 @@ pub fn apply_event_to_run_state(
                     sub.status = SubagentStatus::Completed;
                 }
             }
-            state
-                .chat_logs
-                .entry(node_id.clone())
-                .or_default()
-                .push(ChatMessage::text(
+            push_chat_message_at(
+                state,
+                node_id.clone(),
+                ChatMessage::text(
                     ChatRole::System,
                     format!("Subagent {} completed.", subagent_id),
-                ));
+                ),
+                now_ms,
+            );
         }
         ExecutionEvent::SubagentFailed {
             node_id,
@@ -535,14 +540,15 @@ pub fn apply_event_to_run_state(
                     sub.status = SubagentStatus::Failed;
                 }
             }
-            state
-                .chat_logs
-                .entry(node_id.clone())
-                .or_default()
-                .push(ChatMessage::text(
+            push_chat_message_at(
+                state,
+                node_id.clone(),
+                ChatMessage::text(
                     ChatRole::System,
                     format!("Subagent {} failed: {}", subagent_id, error),
-                ));
+                ),
+                now_ms,
+            );
         }
         ExecutionEvent::PhaseTimed {
             phase,
@@ -570,6 +576,8 @@ pub fn apply_event_to_run_state(
                 node_id.clone(),
                 ContextWindowSnapshot {
                     used_tokens: usage.total_tokens,
+                    cached_input_tokens: usage.cached_input_tokens,
+                    cache_creation_input_tokens: usage.cache_creation_input_tokens,
                     max_tokens,
                     model,
                     node_id,
@@ -633,6 +641,29 @@ fn find_tool_call_mut<'a>(
         .find(|call| call.tool_call_id == tool_call_id)
 }
 
+fn mark_tool_started(
+    state: &mut WorkflowRunState,
+    node_id: &NodeId,
+    tool_call_id: &str,
+    now_ms: i64,
+) {
+    if let Some(call) = find_tool_call_mut(state, node_id, tool_call_id) {
+        call.started_at_ms.get_or_insert(now_ms);
+        call.completed_at_ms = None;
+    }
+}
+
+fn mark_tool_completed(
+    state: &mut WorkflowRunState,
+    node_id: &NodeId,
+    tool_call_id: &str,
+    now_ms: i64,
+) {
+    if let Some(call) = find_tool_call_mut(state, node_id, tool_call_id) {
+        call.completed_at_ms = Some(now_ms);
+    }
+}
+
 fn set_tool_streaming(
     state: &mut WorkflowRunState,
     node_id: &NodeId,
@@ -644,7 +675,7 @@ fn set_tool_streaming(
     }
 }
 
-fn abort_in_progress_tools(state: &mut WorkflowRunState) {
+fn abort_in_progress_tools(state: &mut WorkflowRunState, now_ms: i64) {
     for calls in state.tool_calls_by_node.values_mut() {
         for call in calls.iter_mut() {
             if matches!(
@@ -654,6 +685,9 @@ fn abort_in_progress_tools(state: &mut WorkflowRunState) {
                     | ToolCallStatus::AwaitingApproval
             ) {
                 call.status = ToolCallStatus::Aborted;
+                if call.started_at_ms.is_some() {
+                    call.completed_at_ms = Some(now_ms);
+                }
             }
         }
     }
@@ -746,6 +780,7 @@ fn record_node_failure(
     label: String,
     error: String,
     deactivate_run: bool,
+    now_ms: i64,
 ) {
     if deactivate_run {
         state.active = false;
@@ -762,14 +797,12 @@ fn record_node_failure(
         output: None,
     });
     state.last_error = Some(error.clone());
-    state
-        .chat_logs
-        .entry(node_id)
-        .or_default()
-        .push(ChatMessage::text(
-            ChatRole::System,
-            format!("Failed: {error}"),
-        ));
+    push_chat_message_at(
+        state,
+        node_id,
+        ChatMessage::text(ChatRole::System, format!("Failed: {error}")),
+        now_ms,
+    );
 }
 
 fn remove_pending_approval(state: &mut WorkflowRunState, approval_id: &str) {
@@ -791,7 +824,7 @@ pub fn record_entrypoint_message_with_attachments(
     let node_id = NodeId(node_id.to_string());
     let mut message = ChatMessage::text(ChatRole::User, text);
     message.attachments = attachments;
-    state.chat_logs.entry(node_id).or_default().push(message);
+    push_chat_message_at(state, node_id, message, Utc::now().timestamp_millis());
 }
 
 pub fn record_user_input(state: &mut WorkflowRunState, node_id: &str, text: String) {
@@ -807,14 +840,55 @@ pub fn record_user_input_with_attachments(
     let node_id = NodeId(node_id.to_string());
     let mut message = ChatMessage::text(ChatRole::User, text);
     message.attachments = attachments;
-    state
-        .chat_logs
-        .entry(node_id.clone())
-        .or_default()
-        .push(message);
+    push_chat_message_at(
+        state,
+        node_id.clone(),
+        message,
+        Utc::now().timestamp_millis(),
+    );
     remove_awaiting_node(state, &node_id);
     state.active_manual_node_id = None;
     state.status_by_node.insert(node_id, AgentStatus::Started);
+}
+
+fn push_chat_message_at(
+    state: &mut WorkflowRunState,
+    node_id: NodeId,
+    message: ChatMessage,
+    now_ms: i64,
+) {
+    let logs = state.chat_logs.entry(node_id).or_default();
+    push_message_to_logs_at(logs, message, now_ms);
+}
+
+fn push_message_to_logs_at(
+    logs: &mut Vec<ProjectedChatMessage>,
+    message: ChatMessage,
+    now_ms: i64,
+) {
+    let elapsed_since_previous_ms = if is_conversation_message(&message) {
+        logs.iter()
+            .rev()
+            .find(|previous| is_conversation_message(previous))
+            .and_then(|previous| previous.completed_at_ms.or(previous.created_at_ms))
+            .and_then(|previous_ms| now_ms.checked_sub(previous_ms))
+            .and_then(|elapsed_ms| u64::try_from(elapsed_ms).ok())
+    } else {
+        None
+    };
+    let completed_at_ms = (!message.streaming).then_some(now_ms);
+    logs.push(ProjectedChatMessage {
+        message,
+        created_at_ms: Some(now_ms),
+        completed_at_ms,
+        elapsed_since_previous_ms,
+    });
+}
+
+fn is_conversation_message(message: &ChatMessage) -> bool {
+    message.tool_call_id.is_none()
+        && message.message_kind.is_none()
+        && matches!(message.role, ChatRole::User | ChatRole::Assistant)
 }
 
 fn restore_active_node_status(state: &mut WorkflowRunState, node_id: &NodeId) {
@@ -844,6 +918,125 @@ fn restore_active_node_status(state: &mut WorkflowRunState, node_id: &NodeId) {
 mod tests {
     use super::*;
     use engine::{Node, PlanModeConfig};
+
+    #[test]
+    fn chat_projection_records_send_elapsed_and_thinking_times() {
+        let workflow = Workflow::new("timed chat");
+        let mut state = WorkflowRunState::running_for_workflow(&workflow);
+        let node_id = NodeId::from("chat");
+
+        apply_event_to_run_state_at(
+            &workflow,
+            &mut state,
+            ExecutionEvent::ChatMessage {
+                node_id: node_id.clone(),
+                role: ChatRole::User,
+                content: "Start".to_string(),
+            },
+            1_000,
+        );
+        apply_event_to_run_state_at(
+            &workflow,
+            &mut state,
+            ExecutionEvent::ChatMessageDelta {
+                node_id: node_id.clone(),
+                message_id: "thinking-1".to_string(),
+                role: ChatRole::Thinking,
+                delta: "Working".to_string(),
+                finalize: false,
+            },
+            2_000,
+        );
+        apply_event_to_run_state_at(
+            &workflow,
+            &mut state,
+            ExecutionEvent::ChatMessageDelta {
+                node_id: node_id.clone(),
+                message_id: "thinking-1".to_string(),
+                role: ChatRole::Thinking,
+                delta: String::new(),
+                finalize: true,
+            },
+            6_500,
+        );
+        apply_event_to_run_state_at(
+            &workflow,
+            &mut state,
+            ExecutionEvent::ChatMessage {
+                node_id: node_id.clone(),
+                role: ChatRole::Assistant,
+                content: "Done".to_string(),
+            },
+            7_000,
+        );
+
+        let messages = &state.chat_logs[&node_id];
+        assert_eq!(messages[0].created_at_ms, Some(1_000));
+        assert_eq!(messages[0].completed_at_ms, Some(1_000));
+        assert_eq!(messages[1].created_at_ms, Some(2_000));
+        assert_eq!(messages[1].completed_at_ms, Some(6_500));
+        assert_eq!(messages[2].elapsed_since_previous_ms, Some(6_000));
+
+        let wire = serde_json::to_value(&state).expect("serialize timed chat");
+        assert_eq!(wire["chatLogs"]["chat"][1]["createdAtMs"], json!(2_000));
+        assert_eq!(
+            wire["chatLogs"]["chat"][2]["elapsedSincePreviousMs"],
+            json!(6_000)
+        );
+    }
+
+    #[test]
+    fn tool_projection_records_execution_span() {
+        let workflow = Workflow::new("timed tool");
+        let mut state = WorkflowRunState::running_for_workflow(&workflow);
+        let node_id = NodeId::from("chat");
+        let tool_call = engine::ToolCall {
+            id: "call-1".to_string(),
+            provider_call_id: None,
+            name: "read".to_string(),
+            arguments: json!({ "path": "README.md" }),
+        };
+
+        apply_event_to_run_state_at(
+            &workflow,
+            &mut state,
+            ExecutionEvent::ToolCallProposed {
+                node_id: node_id.clone(),
+                label: "Chat".to_string(),
+                tool_call,
+            },
+            10_000,
+        );
+        apply_event_to_run_state_at(
+            &workflow,
+            &mut state,
+            ExecutionEvent::ToolStarted {
+                node_id: node_id.clone(),
+                tool_call_id: "call-1".to_string(),
+                tool_name: "read".to_string(),
+                arguments: json!({ "path": "README.md" }),
+            },
+            11_000,
+        );
+        apply_event_to_run_state_at(
+            &workflow,
+            &mut state,
+            ExecutionEvent::ToolCompleted {
+                node_id: node_id.clone(),
+                tool_call_id: "call-1".to_string(),
+                tool_name: "read".to_string(),
+                content: "ok".to_string(),
+                is_error: false,
+                output_meta: None,
+                artifact_ids: Vec::new(),
+            },
+            13_500,
+        );
+
+        let summary = &state.tool_calls_by_node[&node_id][0];
+        assert_eq!(summary.started_at_ms, Some(11_000));
+        assert_eq!(summary.completed_at_ms, Some(13_500));
+    }
 
     #[test]
     fn freeze_source_completion_unlocks_the_plan_mode_projection() {
@@ -922,6 +1115,8 @@ mod tests {
                     prompt_tokens: 10_000,
                     completion_tokens: 2_400,
                     total_tokens: 12_400,
+                    cached_input_tokens: 8_000,
+                    cache_creation_input_tokens: 1_000,
                 },
                 model: "gpt-4.1-mini".to_string(),
                 max_context_tokens: Some(50_000),
@@ -933,12 +1128,22 @@ mod tests {
             .get(&node_id)
             .expect("context usage snapshot");
         assert_eq!(snapshot.used_tokens, 12_400);
+        assert_eq!(snapshot.cached_input_tokens, 8_000);
+        assert_eq!(snapshot.cache_creation_input_tokens, 1_000);
         assert_eq!(snapshot.max_tokens, 50_000);
         assert_eq!(snapshot.model, "gpt-4.1-mini");
         let wire = serde_json::to_value(&state).expect("serialize run state");
         assert_eq!(
             wire["contextWindowByNode"]["chat"]["usedTokens"],
             json!(12_400)
+        );
+        assert_eq!(
+            wire["contextWindowByNode"]["chat"]["cachedInputTokens"],
+            json!(8_000)
+        );
+        assert_eq!(
+            wire["contextWindowByNode"]["chat"]["cacheCreationInputTokens"],
+            json!(1_000)
         );
     }
 

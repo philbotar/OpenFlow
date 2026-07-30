@@ -503,10 +503,10 @@ describe("ProvidersSection", () => {
     ).toBe("anthropic_messages");
   });
 
-  test("calls handleSaveSettings when save is clicked", () => {
+  test("calls handleSaveSettings when the API key save action is clicked", () => {
     const { handleSaveSettings } = renderSection();
     const saveButton = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent?.trim() === "Save settings",
+      (button) => button.textContent?.trim() === "Save API key",
     ) as HTMLButtonElement;
     saveButton.click();
     expect(handleSaveSettings).toHaveBeenCalledTimes(1);

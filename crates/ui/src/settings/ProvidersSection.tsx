@@ -812,9 +812,8 @@ export function ProvidersSection() {
                       Reasoning defaults
                     </h3>
                     <p class="providers-panel-copy">
-                      Effort options are sent as <code>reasoning_effort</code>{" "}
-                      (e.g. Fast → <code>none</code> for Grok). Applied to agent
-                      nodes that do not set their own level.
+                      Effort options are sent as <code>reasoning_effort</code>.
+                      Applied to agent nodes that do not set their own level.
                     </p>
                   </div>
                 </div>
@@ -946,15 +945,17 @@ export function ProvidersSection() {
       <footer class="settings-save-bar">
         <p class="settings-save-hint">
           {isBedrock()
-            ? "Saves AWS profile, region, and provider profile to local settings."
+            ? "AWS profile, region, and provider changes save automatically."
             : isCodex()
-              ? "ChatGPT credentials are managed by Sign in and Disconnect; profile changes save locally."
-              : "Saves API key and provider profile to local settings."}
+              ? "ChatGPT credentials are managed by Sign in and Disconnect; profile changes save automatically."
+              : "Provider changes save automatically. API keys save only when you click Save API key."}
         </p>
-        <Button variant="primary" onClick={() => void ctx.handleSaveSettings()}>
-          <SidebarIcon name="save" />
-          Save settings
-        </Button>
+        <Show when={!isBedrock() && !isCodex()}>
+          <Button variant="primary" onClick={() => void ctx.handleSaveSettings()}>
+            <SidebarIcon name="save" />
+            Save API key
+          </Button>
+        </Show>
       </footer>
     </SettingsSection>
   );

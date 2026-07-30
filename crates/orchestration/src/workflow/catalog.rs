@@ -43,6 +43,21 @@ impl WorkflowCatalog {
         self.load_all_unlocked(projects)
     }
 
+    /// Proves OpenFlow can persist project workflows and run metadata under `.flow`.
+    ///
+    /// # Errors
+    /// Returns an actionable project error when the project data directory is not writable.
+    pub fn ensure_project_storage_writable(&self, project_root: &Path) -> Result<(), BackendError> {
+        self.project_workflows
+            .ensure_writable(project_root)
+            .map_err(|error| {
+                BackendError::ProjectOperation(format!(
+                    "cannot write OpenFlow project data at {}: {error}. Re-select a writable project folder",
+                    project_root.join(".flow").display()
+                ))
+            })
+    }
+
     fn load_all_unlocked(&self, projects: &ProjectRegistry) -> Result<Vec<Workflow>, BackendError> {
         let app_state = self.ensure_bundled_examples_seeded()?;
 

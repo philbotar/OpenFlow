@@ -89,6 +89,7 @@ impl AgentLibrary {
             model_attempt: 1,
             reasoning_effort,
             reasoning_budget_tokens,
+            fast_mode: false,
             allow_user_input: false,
             conversation_mode: false,
             tool_access_policy: ToolAccessPolicy::Execution,

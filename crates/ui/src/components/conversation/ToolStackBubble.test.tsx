@@ -34,6 +34,18 @@ describe("ToolStackBubble", () => {
     ).toBeNull();
   });
 
+  it("shows the completed wall-clock duration", () => {
+    dispose = render(
+      () => (
+        <ToolStackBubble summaryText="Read 3 files" durationMs={65_000}>
+          <div>nested</div>
+        </ToolStackBubble>
+      ),
+      container,
+    );
+    expect(container.querySelector(".tool-line-duration")?.textContent).toContain("1m 5s");
+  });
+
   it("expands to show nested children and collapses again", () => {
     dispose = render(
       () => (

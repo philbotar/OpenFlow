@@ -97,6 +97,8 @@ export function McpSection() {
   });
 
   const connectionCount = () => connections().length;
+  const enabledConnectionCount = () =>
+    connections().filter((connection) => connection.enabled).length;
 
   const updateServer = (index: number, patch: Partial<McpServerConfig>) => {
     void ctx.updateSettings((settings) => {
@@ -119,6 +121,25 @@ export function McpSection() {
       settings.mcp ??= { servers: [] };
       settings.mcp.discoverExternal = enabled;
     });
+    await ctx.refreshDiscoveredMcp();
+  };
+
+  const disableAll = async () => {
+    await ctx.updateSettings((settings) => {
+      settings.mcp ??= { servers: [] };
+      settings.mcp.servers = settings.mcp.servers.map((server) => ({
+        ...server,
+        enabled: false,
+      }));
+      settings.mcp.discoverExternal = false;
+      settings.mcp.disabledDiscoveredIds = [
+        ...new Set([
+          ...(settings.mcp.disabledDiscoveredIds ?? []),
+          ...ctx.discoveredMcp().map((row) => row.id),
+        ]),
+      ];
+    });
+    setProbeResults({});
     await ctx.refreshDiscoveredMcp();
   };
 
@@ -200,19 +221,25 @@ export function McpSection() {
       <SectionHeader
         eyebrow="MCP"
         title="MCP servers"
-        description="Choose which MCP servers are available to workflow runs."
+        description="Choose which MCP servers are available to workflow runs. Changes save automatically."
       />
 
       <div class="mcp-cards">
         <section class="mcp-card mcp-card--management" aria-labelledby="mcp-connections-heading">
-          <div class="mcp-card-header">
-            <h4 id="mcp-connections-heading" class="mcp-card-title">
-              Connections
-            </h4>
-            <p class="mcp-card-copy">
-              {connectionCount()} available ·{" "}
-              {connections().filter((connection) => connection.enabled).length} enabled
-            </p>
+          <div class="mcp-card-header mcp-card-header--actions">
+            <div>
+              <h4 id="mcp-connections-heading" class="mcp-card-title">
+                Connections
+              </h4>
+              <p class="mcp-card-copy">
+                {connectionCount()} available · {enabledConnectionCount()} enabled
+              </p>
+            </div>
+            <Show when={enabledConnectionCount() > 0}>
+              <Button variant="secondary" ghost onClick={() => void disableAll()}>
+                Disable all
+              </Button>
+            </Show>
           </div>
           <Show
             when={connectionCount() > 0}
@@ -261,6 +288,25 @@ export function McpSection() {
                                   (connection as Extract<McpConnection, { kind: "configured" }>)
                                     .index,
                                   { command: event.currentTarget.value },
+                                )
+                              }
+                            />
+                          </label>
+                          <label>
+                            <span>Arguments (comma-separated)</span>
+                            <input
+                              class="text-input"
+                              value={connection.args.join(", ")}
+                              onInput={(event) =>
+                                updateServer(
+                                  (connection as Extract<McpConnection, { kind: "configured" }>)
+                                    .index,
+                                  {
+                                    args: event.currentTarget.value
+                                      .split(",")
+                                      .map((part) => part.trim())
+                                      .filter(Boolean),
+                                  },
                                 )
                               }
                             />
@@ -343,6 +389,9 @@ export function McpSection() {
             />
             <span>Use servers from external MCP configs</span>
           </label>
+          <p class="mcp-discovery-summary">
+            Turn this off to prevent OpenFlow from loading servers configured by other apps.
+          </p>
         </section>
 
         <section class="mcp-card mcp-card--composer" aria-labelledby="mcp-add-heading">

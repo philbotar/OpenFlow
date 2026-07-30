@@ -37,6 +37,7 @@ fn sample_agent_request() -> AgentRequest {
         model_attempt: 1,
         reasoning_effort: None,
         reasoning_budget_tokens: None,
+        fast_mode: false,
         tool_access_policy: engine::ToolAccessPolicy::Execution,
         allow_user_input: true,
         conversation_mode: false,
@@ -69,6 +70,8 @@ async fn adapter_emits_provider_usage_with_context_window() {
                     prompt_tokens: 10_000,
                     completion_tokens: 2_400,
                     total_tokens: 12_400,
+                    cached_input_tokens: 8_000,
+                    cache_creation_input_tokens: 1_000,
                 }),
             }))
         }
@@ -1514,6 +1517,88 @@ where
         search: Default::default(),
         runtime_config_store: engine::new_runtime_config_store(),
     }
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+async fn invalid_mcp_server_is_skipped_without_aborting_the_run() {
+    #[derive(Clone)]
+    struct CompleteAi {
+        calls: Arc<AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl AiPort for CompleteAi {
+        async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            if request.node_id != "__post_run_review" {
+                self.calls.fetch_add(1, Ordering::SeqCst);
+            }
+            Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                handoff: None,
+                output: json!({"summary": "done"}),
+                raw_text: "{}".to_string(),
+                assistant_message: None,
+                reasoning: Vec::new(),
+                usage: None,
+            }))
+        }
+    }
+
+    let temp = TempDir::new().expect("tempdir");
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut params = interactive_run_params(
+        workflow(),
+        temp.path().to_path_buf(),
+        CompleteAi {
+            calls: Arc::clone(&calls),
+        },
+    );
+    params.mcp = crate::settings::model::McpSettings {
+        servers: vec![crate::settings::model::McpServerConfig {
+            id: "missing".to_string(),
+            display_name: "Missing".to_string(),
+            command: "/definitely/not/a/real/openflow-mcp-server".to_string(),
+            args: Vec::new(),
+            env: BTreeMap::new(),
+            enabled: true,
+        }],
+        discover_external: false,
+        disabled_discovered_ids: Vec::new(),
+    };
+
+    let (handle, mut event_rx, _action_tx, _cancel, _) =
+        spawn_interactive_workflow_run(&tokio::runtime::Handle::current(), params);
+    let mut finished = false;
+    let mut terminal_error = None;
+    let mut saw_skip_warning = false;
+    while let Ok(Some(event)) = timeout(Duration::from_secs(5), event_rx.recv()).await {
+        match event {
+            ExecutionEvent::Finished(_) => {
+                finished = true;
+                break;
+            }
+            ExecutionEvent::Error(error) => {
+                terminal_error = Some(error);
+                break;
+            }
+            ExecutionEvent::ChatMessage {
+                role: ChatRole::System,
+                content,
+                ..
+            } if content.contains("MCP server `missing`") && content.contains("was skipped") => {
+                saw_skip_warning = true;
+            }
+            _ => {}
+        }
+    }
+    handle.await.expect("run task");
+
+    assert!(
+        finished,
+        "invalid MCP config must not abort the run: {terminal_error:?}"
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert!(saw_skip_warning, "the skipped MCP server must be visible");
 }
 
 #[cfg_attr(miri, ignore)]

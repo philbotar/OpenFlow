@@ -5,8 +5,11 @@ import { APPROVAL_MODE_OPTIONS } from "../../forms/approvalModeOptions";
 import {
   defaultReasoningBudgetTokens,
   defaultReasoningEffort,
+  fastModeAvailable,
   reasoningEffortOptions,
 } from "@/lib/workflow";
+
+const ADD_PROJECT_VALUE = "__openflow_add_project__";
 
 export function ChatRuntimeControls() {
   const ctx = useAppContext();
@@ -56,6 +59,7 @@ export function ChatRuntimeControls() {
       value: project.id,
       label: project.name,
     })),
+    { value: ADD_PROJECT_VALUE, label: "Add Project…" },
   ]);
   const selectedEffortOption = createMemo(() =>
     effortOptions().find(
@@ -80,6 +84,21 @@ export function ChatRuntimeControls() {
             disabled={controlsDisabled() || currentChat().runId !== null}
             aria-label="Chat project"
             onChange={(event) => {
+              if (event.currentTarget.value === ADD_PROJECT_VALUE) {
+                const chatId = currentChat().id;
+                const projectCount = ctx.projects().length;
+                void (async () => {
+                  await ctx.handleAddProject();
+                  const addedProject = ctx.projects()[projectCount];
+                  const activeChat = ctx.activeChat();
+                  if (!addedProject || activeChat?.id !== chatId) return;
+                  await ctx.handleUpdateChatConfig({
+                    ...activeChat.config,
+                    projectId: addedProject.id,
+                  });
+                })();
+                return;
+              }
               void ctx.handleUpdateChatConfig({
                 ...currentChat().config,
                 projectId: event.currentTarget.value || null,
@@ -101,6 +120,26 @@ export function ChatRuntimeControls() {
               });
             }}
           />
+          <Show when={fastModeAvailable(ctx.activeProfileMemo())}>
+            <TextSelect
+              class="composer-runtime-select"
+              menuPlacement="above"
+              valuePrefix="Speed: "
+              value={currentChat().config.fastMode ? "fast" : "standard"}
+              options={[
+                { value: "standard", label: "Standard" },
+                { value: "fast", label: "Fast" },
+              ]}
+              disabled={controlsDisabled()}
+              aria-label="Chat speed"
+              onChange={(event) => {
+                void ctx.handleUpdateChatConfig({
+                  ...currentChat().config,
+                  fastMode: event.currentTarget.value === "fast",
+                });
+              }}
+            />
+          </Show>
           <TextSelect
             class="composer-runtime-select"
             menuPlacement="above"

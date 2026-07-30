@@ -2,6 +2,9 @@
 
 mod anthropic_http;
 mod claude_thinking;
+#[allow(clippy::redundant_pub_crate)]
+// RigModel exposes this type to the crate-level Codex adapter.
+pub(crate) mod codex_http;
 mod convert;
 mod error;
 mod model;
@@ -29,8 +32,16 @@ pub(crate) fn build_codex_model(
     model_name: &str,
     credentials: &CodexOAuthCredentials,
     http: reqwest::Client,
+    fast_mode: bool,
 ) -> Result<model::RigModel, AgentError> {
-    model::build_codex(provider_label, base_url, model_name, credentials, http)
+    model::build_codex(
+        provider_label,
+        base_url,
+        model_name,
+        credentials,
+        http,
+        fast_mode,
+    )
 }
 
 #[allow(clippy::redundant_pub_crate)] // crate-private module; keep pub(crate) for intentional crate API

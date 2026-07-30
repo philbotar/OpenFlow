@@ -1,7 +1,6 @@
 use crate::api::{ChatDeleteResult, UserMessageInput};
 use crate::chat::{Chat, ChatConfig};
 use crate::run::execution::ExecutionEvent;
-use crate::run::persistence::RunStoreRoot;
 use crate::run::state::WorkflowRunState;
 use engine::{HandoffSpec, Node, Workflow, WorkflowId};
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -37,6 +36,7 @@ fn execution_workflow_for_chat(chat: &Chat) -> Workflow {
         .reasoning_effort
         .clone_from(&chat.config.reasoning_effort);
     node.agent.reasoning_budget_tokens = chat.config.reasoning_budget_tokens;
+    workflow.settings.fast_mode = chat.config.fast_mode;
     workflow.nodes.push(node);
     workflow
 }
@@ -51,7 +51,8 @@ pub(super) fn refresh_execution_workflow_for_chat(chat: &Chat, workflow: &mut Wo
         || !agent.request_user_input
         || !agent.conversation_mode
         || agent.tools.allow_free_text_user_input
-        || !agent.tools.allow_structured_user_input;
+        || !agent.tools.allow_structured_user_input
+        || workflow.settings.fast_mode != chat.config.fast_mode;
     if !changed {
         return false;
     }
@@ -61,6 +62,7 @@ pub(super) fn refresh_execution_workflow_for_chat(chat: &Chat, workflow: &mut Wo
     agent.conversation_mode = true;
     agent.tools.allow_free_text_user_input = false;
     agent.tools.allow_structured_user_input = true;
+    workflow.settings.fast_mode = chat.config.fast_mode;
     true
 }
 
@@ -185,61 +187,21 @@ impl AppBackend {
                 })
         });
         let chat = self.chats.prepare_start(chat_id, title_seed)?;
-        let project_context = match chat.config.project_id.as_deref() {
-            Some(project_id) => {
-                let project = self
-                    .projects
-                    .load()?
-                    .into_iter()
-                    .find(|project| project.id == project_id)
-                    .ok_or_else(|| BackendError::ProjectNotFound(project_id.to_string()))?;
-                let configured = project.default_execution_cwd.trim();
-                let execution_cwd = if configured.is_empty() {
-                    project.path.clone()
-                } else {
-                    configured.to_string()
-                };
-                let run_root = RunStoreRoot {
-                    project_id: Some(project.id),
-                    root: std::path::Path::new(&project.path)
-                        .join(".flow")
-                        .join("runs"),
-                };
-                Some((run_root, execution_cwd))
-            }
-            None => None,
-        };
+        let workspace = self.workspace_for_chat(&chat.id, chat.config.project_id.as_deref())?;
         let workflow = execution_workflow_for_chat(&chat);
         let entrypoint = first_message.filter(|message| !message.is_empty());
-        let run_root_for_cleanup = project_context
-            .as_ref()
-            .map(|(run_root, _)| run_root.clone())
-            .unwrap_or(RunStoreRoot {
-                project_id: None,
-                root: crate::adapters::storage::run_checkpoint_store::FileRunCheckpointStore::app_runs_root(),
-            });
-        let (state, event_rx) = if let Some((run_root, execution_cwd)) = project_context {
-            self.start_run_with_root(
+        let run_root_for_cleanup = workspace.run_root.clone();
+        let (state, event_rx) = self
+            .start_run_with_root(
                 workflow,
                 entrypoint.clone(),
-                Some(execution_cwd),
-                run_root,
+                Some(workspace.execution_cwd),
+                workspace.run_root,
                 settings,
                 transient_api_key,
                 invoked_skill_ids.clone(),
             )
-            .await?
-        } else {
-            self.start_run_with_message_and_skill_ids(
-                workflow,
-                entrypoint,
-                None,
-                settings,
-                transient_api_key,
-                invoked_skill_ids,
-            )
-            .await?
-        };
+            .await?;
         let Some(run_id) = state.run_id.clone() else {
             let _ = self.stop_run().await;
             return Err(BackendError::ChatRunMissingId);
@@ -277,6 +239,7 @@ mod tests {
             title: "Model selection".to_string(),
             config: ChatConfig {
                 model: Some("gpt-5".to_string()),
+                fast_mode: true,
                 ..ChatConfig::default()
             },
             run_id: None,
@@ -288,6 +251,7 @@ mod tests {
 
         assert_eq!(workflow.nodes[0].agent.model, "gpt-5");
         assert!(workflow.nodes[0].agent.auto_start);
+        assert!(workflow.settings.fast_mode);
     }
 
     #[test]

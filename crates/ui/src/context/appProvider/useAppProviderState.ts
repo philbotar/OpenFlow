@@ -122,6 +122,7 @@ export function useAppProviderState(): AppContextValue {
     settings: settingsState.settings,
     readiness: settingsState.readiness,
     activeProviderKeyInput: settingsState.activeProviderKeyInput,
+    projectIdForActiveWorkflow: () => workspace.activeProject()?.id ?? null,
     executionCwdForActiveWorkflow: workspace.executionCwdForActiveWorkflow,
     applySchemaEditor: workflowEditor.applySchemaEditor,
     runState: runKernel.runState,
@@ -254,7 +255,9 @@ export function useAppProviderState(): AppContextValue {
             chatComposer.navigateChatToNode(focusId);
             dock.focusChatDock();
             const suffix = awaitingIds.length > 1 ? ` (+${awaitingIds.length - 1} more)` : "";
-            toastApi.showInfoToast(`${label} is waiting for input${suffix}`, "run-state");
+            if (!workspace.activeChat()) {
+              toastApi.showInfoToast(`${label} is waiting for input${suffix}`, "run-state");
+            }
           } else if (awaitingIds.length === 0) {
             lastNotifiedAwaitingKey = null;
           }
@@ -296,14 +299,12 @@ export function useAppProviderState(): AppContextValue {
     }
   };
 
-  let handleOpenWorkflowAuthoringRef: () => Promise<void> = async () => undefined;
   const appShell = useAppShell({
     handleKeyDown: handleGlobalKeyDown,
     handlePointerMove: dock.handleDockResizePointerMove,
     handlePointerEnd: dock.clearDockResizeState,
     onMount: handleShellMount,
     onCleanup: handleShellCleanup,
-    handleOpenWorkflowAuthoring: () => handleOpenWorkflowAuthoringRef(),
     closeAddNodePicker: workflowEditor.closeAddNodePicker,
   });
 
@@ -327,8 +328,6 @@ export function useAppProviderState(): AppContextValue {
     showErrorToast: toastApi.showErrorToast,
     showSuccessToast: toastApi.showSuccessToast,
   });
-  handleOpenWorkflowAuthoringRef = () => workflowAuthoring.handleOpenWorkflowAuthoring();
-
   keyDownActions = (event: KeyboardEvent) => {
     if (event.key === "Escape" && appShell.sidebarDrawerOpen()) {
       appShell.closeSidebarDrawer();
@@ -662,9 +661,8 @@ export function useAppProviderState(): AppContextValue {
     handleRetryNode: runSession.handleRetryNode,
     stoppingRun: runSession.stoppingRun,
     handleSetThemePreference: appShell.handleSetThemePreference,
+    startFirstRunOnboarding: appShell.startFirstRunOnboarding,
     dismissFirstRunOnboarding: appShell.dismissFirstRunOnboarding,
-    handleOnboardingBuildWorkflow: appShell.handleOnboardingBuildWorkflow,
-    handleOnboardingSetupProvider: appShell.handleOnboardingSetupProvider,
     handleClearRunTrace: runSession.handleClearRunTrace,
     handleRefreshRunHistory: runSession.handleRefreshRunHistory,
     handleReplayRun: runSession.handleReplayRun,

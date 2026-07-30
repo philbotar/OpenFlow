@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
+import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AppContext, type AppContextValue } from "../../context/AppContext";
 import type { ChatMessage, ToolCallSummary, WorkflowRunState } from "../../lib/types";
 import { ConversationSegmentMessages } from "./ConversationSegmentMessages";
+import { resetThinkingBubbleExpandStateForTests } from "./ThinkingBubble";
 import { resetToolStackExpandStateForTests } from "./ToolStackBubble";
 
 function toolMsg(id: string): ChatMessage {
@@ -50,6 +52,7 @@ describe("ConversationSegmentMessages tool stacking", () => {
   afterEach(() => {
     dispose?.();
     container.remove();
+    resetThinkingBubbleExpandStateForTests();
     resetToolStackExpandStateForTests();
   });
 
@@ -78,9 +81,90 @@ describe("ConversationSegmentMessages tool stacking", () => {
 
   it("does not stack a single tool", () => {
     const messages = [toolMsg("a")];
-    renderSegment(messages, [summary("a", "read")]);
+    const read = summary("a", "read");
+    read.startedAtMs = 1_000;
+    read.completedAtMs = 2_250;
+    renderSegment(messages, [read]);
     expect(container.querySelectorAll(".tool-stack")).toHaveLength(0);
     expect(container.querySelectorAll(".tool-line[data-tool-name='read']")).toHaveLength(1);
+    expect(container.querySelector(".tool-line-duration")?.textContent).toContain("1.3s");
+  });
+
+  it("shows persisted message and thinking timing", () => {
+    renderSegment(
+      [
+        {
+          role: "User",
+          content: "Start",
+          createdAtMs: Date.UTC(2026, 6, 30, 3, 0),
+        },
+        {
+          role: "Thinking",
+          content: "Working",
+          createdAtMs: 10_000,
+          completedAtMs: 14_200,
+        },
+        {
+          role: "Assistant",
+          content: "Done",
+          createdAtMs: Date.UTC(2026, 6, 30, 3, 1),
+          elapsedSincePreviousMs: 60_000,
+        },
+      ],
+      [],
+    );
+
+    expect(container.querySelectorAll(".message-meta")).toHaveLength(2);
+    expect(container.textContent).toContain("Thought for 4.2s");
+    expect(container.textContent).toContain("1m after previous message");
+  });
+
+  it("keeps a live thought expanded when its completed message replaces the stream", () => {
+    const id = "reasoning-1";
+    const [messages, setMessages] = createSignal<ChatMessage[]>([
+      {
+        role: "Thinking",
+        content: "**Verifying large number addition**",
+        id,
+        streaming: true,
+        createdAtMs: 10_000,
+      },
+    ]);
+    dispose = render(
+      () => (
+        <AppContext.Provider value={stubContext([])}>
+          <ConversationSegmentMessages
+            nodeId="node-1"
+            label="Agent"
+            messages={messages()}
+          />
+        </AppContext.Provider>
+      ),
+      container,
+    );
+    expect(container.textContent).toContain("Verifying large number addition");
+
+    setMessages([
+      {
+        role: "Thinking",
+        content:
+          "**Verifying large number addition****Verifying large number addition**",
+        id,
+        streaming: false,
+        createdAtMs: 10_000,
+        completedAtMs: 10_641,
+      },
+    ]);
+
+    expect(container.textContent).toContain("Thought for 641ms");
+    expect(
+      container.textContent?.match(/Verifying large number addition/g),
+    ).toHaveLength(2);
+    expect(
+      container
+        .querySelector(".tool-line--thinking .tool-line-status-row")
+        ?.getAttribute("aria-expanded"),
+    ).toBe("true");
   });
 
   it("renders an attachment-only user message", () => {

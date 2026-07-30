@@ -359,7 +359,7 @@ export function createAgentNode(index: number, x: number, y: number, agentId: st
 export function startRun(
   workflow: Workflow,
   settings: AppSettings,
-  executionCwd: string | null = null,
+  projectId: string | null = null,
   transientApiKey: string | null = null,
   message: UserMessageInput | null = null,
   invokedSkillIds: readonly string[] = [],
@@ -367,7 +367,7 @@ export function startRun(
   return invoke<WorkflowRunState>("start_run", {
     workflow,
     settings,
-    executionCwd,
+    projectId,
     transientApiKey,
     message,
     ...(invokedSkillIds.length > 0 ? { invokedSkillIds: [...invokedSkillIds] } : {}),

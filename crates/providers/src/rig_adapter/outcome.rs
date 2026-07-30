@@ -12,6 +12,7 @@ use crate::mapping::{
     attach_usage, parse_internal_tool_outcome, resolve_tool_turn_outcome, NoToolCallsPolicy,
     ResolveToolTurnParams,
 };
+use crate::prompt_cache::unpack_openai_cache_usage;
 use crate::rig_adapter::reasoning_convert;
 use crate::spec::WireApi;
 use engine::{AgentError, AgentReasoning, AgentTurnOutcome, UsageReport};
@@ -51,13 +52,23 @@ pub fn response_diagnostics(
 }
 
 pub fn to_usage_report(usage: &Usage) -> Option<UsageReport> {
-    if usage.input_tokens == 0 && usage.output_tokens == 0 && usage.total_tokens == 0 {
+    if usage.input_tokens == 0
+        && usage.output_tokens == 0
+        && usage.total_tokens == 0
+        && usage.cached_input_tokens == 0
+        && usage.cache_creation_input_tokens == 0
+    {
         return None;
     }
+    let (cached_input_tokens, cache_creation_input_tokens) =
+        unpack_openai_cache_usage(usage.cached_input_tokens)
+            .unwrap_or((usage.cached_input_tokens, usage.cache_creation_input_tokens));
     Some(UsageReport {
         prompt_tokens: u32::try_from(usage.input_tokens).unwrap_or(u32::MAX),
         completion_tokens: u32::try_from(usage.output_tokens).unwrap_or(u32::MAX),
         total_tokens: u32::try_from(usage.total_tokens).unwrap_or(u32::MAX),
+        cached_input_tokens: u32::try_from(cached_input_tokens).unwrap_or(u32::MAX),
+        cache_creation_input_tokens: u32::try_from(cache_creation_input_tokens).unwrap_or(u32::MAX),
     })
 }
 

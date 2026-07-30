@@ -170,6 +170,12 @@ pub struct ReasoningEffortOption {
 }
 
 impl ProviderSpec {
+    /// Whether this provider exposes a request-level faster service tier.
+    #[must_use]
+    pub fn supports_fast_mode(&self) -> bool {
+        matches!(self.id, "openai" | "openai-codex")
+    }
+
     /// Returns the built-in reasoning effort options for this provider kind.
     #[must_use]
     pub fn default_reasoning_effort_options(&self) -> Vec<ReasoningEffortOption> {
@@ -204,7 +210,7 @@ impl ProviderSpec {
             ProviderKind::OpenAiCompatible(_) | ProviderKind::OpenAiCodex => vec![
                 ReasoningEffortOption {
                     value: "none".to_string(),
-                    label: "Fast".to_string(),
+                    label: "None".to_string(),
                     uses_budget_tokens: false,
                 },
                 ReasoningEffortOption {
@@ -618,7 +624,7 @@ mod reasoning_effort_tests {
         let options = spec.default_reasoning_effort_options();
         assert_eq!(options.len(), 4);
         assert_eq!(options[0].value, "none");
-        assert_eq!(options[0].label, "Fast");
+        assert_eq!(options[0].label, "None");
         assert!(!options[0].uses_budget_tokens);
         assert_eq!(options[1].value, "low");
         assert!(!options[1].uses_budget_tokens);
@@ -645,7 +651,18 @@ mod reasoning_effort_tests {
                 .collect::<Vec<_>>(),
             ["none", "low", "medium", "high"]
         );
-        assert_eq!(options[0].label, "Fast");
+        assert_eq!(options[0].label, "None");
         assert!(options.iter().all(|option| !option.uses_budget_tokens));
+    }
+
+    #[test]
+    fn fast_mode_is_separate_provider_capability() {
+        assert!(provider_spec(&ProviderId::from("openai"))
+            .is_some_and(ProviderSpec::supports_fast_mode));
+        assert!(provider_spec(&ProviderId::from("openai-codex"))
+            .is_some_and(ProviderSpec::supports_fast_mode));
+        assert!(
+            !provider_spec(&ProviderId::from("xai")).is_some_and(ProviderSpec::supports_fast_mode)
+        );
     }
 }

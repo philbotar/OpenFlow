@@ -35,6 +35,15 @@ beforeEach(() => {
   vi.useRealTimers();
 });
 
+test("reserves left clearance for the canvas toolbar when fitting a workflow", () => {
+  expect(FIT_ALL_VIEWPORT_OPTIONS.padding).toEqual({
+    top: 0.2,
+    right: 0.2,
+    bottom: 0.2,
+    left: "84px",
+  });
+});
+
 test("fits a workflow after React Flow finishes measuring its nodes", () => {
   const props = {
     workflowId: "workflow-1",
@@ -53,6 +62,16 @@ test("fits a workflow after React Flow finishes measuring its nodes", () => {
 
 test("fits a workflow at the app zoom inside React Flow", async () => {
   flowMocks.nodesInitialized = true;
+  const canvasRef = {
+    current: {
+      getBoundingClientRect: () => ({ left: 0 }) as DOMRect,
+    } as HTMLElement,
+  };
+  const toolbarRef = {
+    current: {
+      getBoundingClientRect: () => ({ right: 60 }) as DOMRect,
+    } as HTMLElement,
+  };
 
   render(
     createElement(CanvasViewportController, {
@@ -60,6 +79,8 @@ test("fits a workflow at the app zoom inside React Flow", async () => {
       graphSignature: "nodes:node-1,node-2|edges:edge-1:node-1->node-2",
       selectedNodeId: null,
       uiZoom: 1.3,
+      canvasRef,
+      toolbarRef,
     }),
   );
 
@@ -69,6 +90,15 @@ test("fits a workflow at the app zoom inside React Flow", async () => {
   expect(flowMocks.fitView.mock.invocationCallOrder[0]).toBeLessThan(
     flowMocks.zoomTo.mock.invocationCallOrder[0],
   );
+  expect(flowMocks.fitView).toHaveBeenCalledWith({
+    ...FIT_ALL_VIEWPORT_OPTIONS,
+    padding: {
+      ...FIT_ALL_VIEWPORT_OPTIONS.padding,
+      left: "157px",
+    },
+    minZoom: 0.4,
+    duration: 0,
+  });
 });
 
 test("rescales the current React Flow viewport when app zoom changes", async () => {

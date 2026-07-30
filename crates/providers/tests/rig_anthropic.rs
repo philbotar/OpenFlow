@@ -38,6 +38,7 @@ fn test_request() -> engine::AgentRequest {
         model_attempt: 1,
         reasoning_effort: None,
         reasoning_budget_tokens: None,
+        fast_mode: false,
         tool_access_policy: engine::ToolAccessPolicy::Execution,
         allow_user_input: true,
         conversation_mode: false,
@@ -184,7 +185,9 @@ async fn anthropic_submit_output_completes_node() {
             "stop_reason": "tool_use",
             "usage": {
                 "input_tokens": 101,
-                "output_tokens": 19
+                "output_tokens": 19,
+                "cache_read_input_tokens": 80,
+                "cache_creation_input_tokens": 21
             }
         })))
         .mount(&server)
@@ -198,7 +201,39 @@ async fn anthropic_submit_output_completes_node() {
     assert_eq!(success.output, serde_json::json!({"summary": "done"}));
     assert_eq!(
         success.usage.as_ref().map(|usage| usage.total_tokens),
-        Some(120)
+        Some(221)
+    );
+    assert_eq!(
+        success
+            .usage
+            .as_ref()
+            .map(|usage| usage.cached_input_tokens),
+        Some(80)
+    );
+    assert_eq!(
+        success
+            .usage
+            .as_ref()
+            .map(|usage| usage.cache_creation_input_tokens),
+        Some(21)
+    );
+
+    let requests = server.received_requests().await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+    assert_eq!(body["cache_control"]["type"], "ephemeral");
+    assert_eq!(
+        body["system"]
+            .as_array()
+            .and_then(|system| system.last())
+            .and_then(|block| block.pointer("/cache_control/type")),
+        Some(&serde_json::json!("ephemeral"))
+    );
+    assert_eq!(
+        body["tools"]
+            .as_array()
+            .and_then(|tools| tools.last())
+            .and_then(|tool| tool.pointer("/cache_control/type")),
+        Some(&serde_json::json!("ephemeral"))
     );
 }
 

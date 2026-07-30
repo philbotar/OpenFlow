@@ -45,6 +45,8 @@ fn backend_with_chat_store(
                 ("OPENAI_API_KEY", "openai-key"),
                 ("OPENAI_COMPATIBLE_API_KEY", "compatible-key"),
             ]),
+            app_runs_root: dir.path().join("runs"),
+            managed_workspace_root: dir.path().join("workspaces"),
             runtime_handle: runtime.handle().clone(),
         },
         Some(runtime),
@@ -185,6 +187,7 @@ fn create_chat_is_valid_and_does_not_create_a_workflow() {
     assert!(serialized.get("nodes").is_none());
     assert_eq!(serialized["config"]["approvalMode"], "read_only");
     assert!(serialized["config"]["reasoningEffort"].is_null());
+    assert_eq!(serialized["config"]["fastMode"], false);
     assert!(serialized["config"]["projectId"].is_null());
     assert_eq!(
         backend
@@ -228,6 +231,7 @@ fn chat_runtime_config_persists_with_project_scope() {
         approval_mode: ApprovalMode::AlwaysAsk,
         reasoning_effort: Some("high".to_string()),
         reasoning_budget_tokens: Some(24_000),
+        fast_mode: true,
         project_id: Some(project.id),
     };
 
@@ -300,6 +304,39 @@ fn start_chat_attaches_a_durable_run_without_creating_a_workflow() {
             .iter()
             .all(|workflow| workflow.id != chat.id));
 
+        backend.stop_run().await.expect("stop chat");
+    });
+}
+
+#[cfg_attr(miri, ignore)]
+#[test]
+fn app_chat_uses_an_isolated_managed_workspace() {
+    let (backend, dir) = backend();
+    let chat = backend.create_chat().expect("create chat");
+    let expected_workspace = dir.path().join("workspaces").join("chats").join(&chat.id);
+
+    backend.block_on_test(async {
+        let (_updated, initial_state, _event_rx) = backend
+            .start_chat(
+                &chat.id,
+                Some("Use the managed workspace".to_string()),
+                &AppSettings::default(),
+                None,
+            )
+            .await
+            .expect("start chat");
+
+        assert_eq!(initial_state.project_id, None);
+        assert_eq!(
+            initial_state.execution_cwd.as_deref(),
+            Some(
+                expected_workspace
+                    .canonicalize()
+                    .expect("canonical chat workspace")
+                    .to_string_lossy()
+                    .as_ref()
+            )
+        );
         backend.stop_run().await.expect("stop chat");
     });
 }
@@ -527,6 +564,8 @@ fn custom_provider_readiness_allows_a_trusted_endpoint_without_a_key() {
             skill_catalog: Box::new(FileSkillCatalog),
             attachment_store: Arc::new(FileRunAttachmentStore::default()),
             env: ProviderEnv::default(),
+            app_runs_root: std::path::PathBuf::from("/tmp/unused-runs"),
+            managed_workspace_root: std::path::PathBuf::from("/tmp/unused-workspaces"),
             runtime_handle: runtime.handle().clone(),
         },
         Some(runtime),
@@ -541,13 +580,14 @@ fn custom_provider_readiness_allows_a_trusted_endpoint_without_a_key() {
 #[cfg_attr(miri, ignore)]
 #[test]
 fn start_run_ignores_legacy_non_auto_start_flag() {
-    let (backend, _dir) = backend();
+    let (backend, dir) = backend();
     backend.block_on_test(async {
         let mut workflow = Workflow::new("Manual run");
         let mut node = Node::agent("Review", 0.0, 0.0);
         node.id = NodeId("review".to_string());
         node.agent.auto_start = false;
         workflow.nodes = vec![node];
+        let workflow_id = workflow.id.to_string();
 
         let (initial_state, mut event_rx) = backend
             .start_run(workflow, None, None, &AppSettings::default(), None)
@@ -556,6 +596,20 @@ fn start_run_ignores_legacy_non_auto_start_flag() {
 
         assert!(initial_state.active);
         assert!(initial_state.awaiting_node_id.is_none());
+        assert_eq!(initial_state.project_id, None);
+        assert_eq!(
+            initial_state.execution_cwd.as_deref(),
+            Some(
+                dir.path()
+                    .join("workspaces")
+                    .join("workflows")
+                    .join(workflow_id)
+                    .canonicalize()
+                    .expect("canonical managed workspace")
+                    .to_string_lossy()
+                    .as_ref()
+            )
+        );
 
         let first = event_rx.recv().await.expect("queued event");
         let second = event_rx.recv().await.expect("started event");
@@ -575,6 +629,86 @@ fn start_run_ignores_legacy_non_auto_start_flag() {
         assert!(stopped.last_error.is_none());
         assert!(backend.is_run_continuable().await);
     });
+}
+
+#[cfg_attr(miri, ignore)]
+#[test]
+fn selected_project_controls_run_workspace_and_persistence_root() {
+    let (backend, dir) = backend();
+    let first_path = dir.path().join("first-project");
+    let selected_path = dir.path().join("selected-project");
+    std::fs::create_dir_all(&first_path).expect("first project");
+    std::fs::create_dir_all(&selected_path).expect("selected project");
+    let selected_path = selected_path
+        .canonicalize()
+        .expect("canonical selected project");
+    let first = backend
+        .create_project_from_directory(first_path.display().to_string())
+        .expect("register first project");
+    let selected = backend
+        .create_project_from_directory(selected_path.display().to_string())
+        .expect("register selected project");
+    let workflow = backend
+        .create_workflow("Multi-project workflow".to_string())
+        .expect("create workflow");
+    backend
+        .assign_workflow_to_project(&first.id, &workflow.id)
+        .expect("assign first project");
+    backend
+        .assign_workflow_to_project(&selected.id, &workflow.id)
+        .expect("assign selected project");
+
+    backend.block_on_test(async {
+        let (initial_state, _event_rx) = backend
+            .start_run(
+                workflow.clone(),
+                None,
+                Some(&selected.id),
+                &AppSettings::default(),
+                None,
+            )
+            .await
+            .expect("start selected project run");
+
+        assert_eq!(
+            initial_state.project_id.as_deref(),
+            Some(selected.id.as_str())
+        );
+        assert_eq!(
+            initial_state.execution_cwd.as_deref(),
+            Some(selected_path.to_string_lossy().as_ref())
+        );
+        assert_eq!(
+            backend
+                .list_runs(Some(&workflow.id))
+                .expect("list runs")
+                .first()
+                .and_then(|run| run.project_id.as_deref()),
+            Some(selected.id.as_str())
+        );
+        assert!(selected_path.join(".flow").join("runs").exists());
+        assert!(!first_path.join(".flow").join("runs").exists());
+
+        backend.stop_run().await.expect("stop run");
+    });
+}
+
+#[cfg_attr(miri, ignore)]
+#[test]
+fn project_registration_rejects_an_unwritable_flow_location_before_persisting() {
+    let (backend, dir) = backend();
+    let project_path = dir.path().join("blocked-project");
+    std::fs::create_dir_all(&project_path).expect("project");
+    std::fs::write(project_path.join(".flow"), "not a directory").expect("blocking file");
+
+    let error = backend
+        .create_project_from_directory(project_path.display().to_string())
+        .expect_err("reject blocked flow location");
+
+    assert!(error
+        .to_string()
+        .contains("cannot write OpenFlow project data"));
+    assert!(backend.list_projects().expect("list projects").is_empty());
 }
 
 #[cfg_attr(miri, ignore)]

@@ -103,6 +103,12 @@ impl ProjectWorkflowStore for FileProjectWorkflowStore {
         discover_project_workflows(project_root)
     }
 
+    fn ensure_writable(&self, project_root: &Path) -> io::Result<()> {
+        crate::adapters::storage::workspace_access::ensure_writable_directory(
+            &project_root.join(FLOW_DIR_NAME),
+        )
+    }
+
     fn save_one(&self, project_root: &Path, workflow: &Workflow) -> io::Result<()> {
         save_project_workflow(project_root, workflow)
     }

@@ -14,7 +14,6 @@ export function DiagnosticsSection() {
         settings.local_diagnostics ??= { debug_output: false };
         settings.local_diagnostics.debug_output = enabled;
       });
-      await ctx.handleSaveSettings();
     } finally {
       setSaving(false);
     }

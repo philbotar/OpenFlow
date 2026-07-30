@@ -37,6 +37,27 @@ fn is_rig_empty_response(message: &str) -> bool {
     message.contains("no message or tool call")
 }
 
+/// True when the provider explicitly reports an output-token cutoff.
+#[must_use]
+pub(super) fn is_output_limit(error: &CompletionError) -> bool {
+    let message = match error {
+        CompletionError::ProviderError(message) | CompletionError::ResponseError(message) => {
+            message
+        }
+        CompletionError::HttpError(_)
+        | CompletionError::JsonError(_)
+        | CompletionError::UrlError(_)
+        | CompletionError::RequestError(_) => return false,
+    };
+    let message = message.to_ascii_lowercase();
+    message.contains("response stream was incomplete: max_output_tokens")
+        || message.contains("response was incomplete: max_output_tokens")
+        || message.contains("stop_reason=max_tokens")
+        || message.contains("stop reason: max_tokens")
+        || message.contains("finish_reason=length")
+        || message.contains("finish reason: length")
+}
+
 #[must_use]
 pub fn to_agent_error(error: CompletionError, label: &str) -> AgentError {
     match error {
