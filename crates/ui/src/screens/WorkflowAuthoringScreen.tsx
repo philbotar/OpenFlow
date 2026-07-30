@@ -18,6 +18,12 @@ export function WorkflowAuthoringScreen() {
     const draft = ctx.workflowAuthoringDraft();
     return Boolean(draft && draft.nodes.length > 0);
   };
+  const updatingExistingWorkflow = () => {
+    const draft = ctx.workflowAuthoringDraft();
+    return Boolean(
+      draft && ctx.workflows().some((workflow) => workflow.id === draft.id),
+    );
+  };
 
   return (
     <section class="workflow-authoring-screen">
@@ -93,8 +99,9 @@ export function WorkflowAuthoringScreen() {
                 />
                 <div class="workflow-authoring-apply-group">
                   <p>
-                    AI creates a draft. Click Create Workflow to save it. Then
-                    click Run in the editor to start it.
+                    {updatingExistingWorkflow()
+                      ? "AI prepares a revised draft. Review it, then click Apply Changes."
+                      : "AI creates a draft. Click Create Workflow to save it. Then click Run in the editor to start it."}
                   </p>
                   <Button
                     variant="primary"
@@ -105,7 +112,7 @@ export function WorkflowAuthoringScreen() {
                     }
                     onClick={() => void ctx.handleApplyWorkflowAuthoringDraft()}
                   >
-                    Create Workflow
+                    {updatingExistingWorkflow() ? "Apply Changes" : "Create Workflow"}
                   </Button>
                 </div>
               </div>

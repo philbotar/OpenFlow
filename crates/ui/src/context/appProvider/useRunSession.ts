@@ -207,26 +207,26 @@ export function useRunSession(params: UseRunSessionParams) {
     if (!chat.runId) {
       throw new Error("Chat has no durable run to resume.");
     }
+    const currentState = params.runState();
+    const continuationNodeId =
+      targetNodeId ??
+      Object.keys(currentState?.statusByNode ?? {})[0] ??
+      Object.keys(currentState?.chatLogs ?? {})[0];
+    if (!continuationNodeId) {
+      throw new Error("Chat run has no message target.");
+    }
     const resumed = await desktop.resumeDurableRun(
       chat.runId,
       params.settings(),
       params.activeProviderKeyInput() || null,
+      {
+        nodeId: continuationNodeId,
+        text: message.text,
+        invokedSkillIds: [...invokedSkillIds],
+        attachmentSourcePaths: [...message.attachmentSourcePaths],
+      },
     );
-    const liveState = await beginSynchronizedRunSession(resumed);
-    const awaitingNodeId =
-      targetNodeId ??
-      liveState.awaitingNodeIds?.[0] ??
-      liveState.awaitingNodeId;
-    if (!awaitingNodeId) {
-      throw new Error("Chat run is not awaiting a message.");
-    }
-    const configured = await desktop.updateNodeRuntimeConfig(
-      awaitingNodeId,
-      runtimeUpdateForChat(chat.config),
-    );
-    params.publishBackendRunState(configured);
-    const next = await submitChatInput(awaitingNodeId, message, invokedSkillIds);
-    params.publishBackendRunState(next);
+    await beginSynchronizedRunSession(resumed);
     params.clearChatSubmission(draftNodeId);
   };
 
@@ -373,6 +373,7 @@ export function useRunSession(params: UseRunSessionParams) {
           nodeId: targetNodeId,
           text: message.text,
           invokedSkillIds: [...(submission.invokedSkills ?? [])],
+          attachmentSourcePaths: [...message.attachmentSourcePaths],
         },
       );
       await beginSynchronizedRunSession(resumed);

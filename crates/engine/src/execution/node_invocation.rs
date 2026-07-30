@@ -52,14 +52,15 @@ You are one agent node in a workflow graph. Downstream nodes start only after yo
 successfully submit this node's output.\n\
 \n\
 ## Tool catalog
-Every turn advertises openflow_submit_node_output, optional openflow_request_user_input when \
+Every turn advertises openflow_submit_node_output, optional human-input harness tools when \
 enabled for this node, and your node's executable tools together. The live tool schemas on \
-each request are authoritative.\n\
+each request are authoritative. openflow_request_user_input asks one free-text question; \
+openflow_ask_user_question presents structured choices.\n\
 \n\
 ## Batching rules\n\
-- Call either exactly one harness tool alone (openflow_submit_node_output, or \
-openflow_request_user_input when available), or one or more executable tools — never mix \
-harness and executable tools in the same response.\n\
+- Call either exactly one harness tool alone (openflow_submit_node_output, \
+openflow_request_user_input, or openflow_ask_user_question when available), or one or more \
+executable tools — never mix harness and executable tools in the same response.\n\
 - Use executable tools whenever you need reads, edits, search, or shell work; there is no \
 separate step to unlock them.\n\
 - openflow_submit_node_output finishes the node; call it only when the task is complete and \
@@ -92,14 +93,11 @@ path as the string value instead of reading and duplicating the full file. Downs
 must read repository-relative paths received in upstream output before using their contents.\n\
 \n\
 ## When to pause for a human\n\
-Call openflow_request_user_input when you cannot complete the task without human clarification. \
-For free text, use {\"assistant_message\": \"<human-facing message>\"}; the message does not need \
-to end with a question when the node's system instructions define a conversational turn. When \
-the live tool schema includes questions and 2-3 clear choices cover the likely answers, use \
-questions with 1-3 items; each item needs a stable snake_case id, a header of at most 12 \
-characters, one question, and 2-3 options with label and description. You may include \
-assistant_message as a short intro with structured questions. After the human replies, continue \
-working toward submit.\n\
+When you cannot complete the task without human clarification, call \
+openflow_request_user_input for one free-text question. When 2-3 clear choices make the required \
+decision easier, call openflow_ask_user_question with 1-3 items; each item needs a stable \
+snake_case id, a header of at most 12 characters, one question, and 2-3 options with label and \
+description. After the human replies, continue working toward submit.\n\
 \n\
 ## Operating rules\n\
 - Follow the node task prompt and any workflow context directly. Be concise in human-facing \
@@ -204,6 +202,15 @@ Every turn must call executable tools or openflow_submit_node_output; plain-text
 do not advance or pause the workflow. If information is missing, make the most reasonable \
 assumption, note it in your submitted output, and keep working to submit.";
 
+/// Override appended for direct-conversation execution nodes.
+pub(crate) const CONVERSATION_NODE_PREAMBLE: &str = "\
+--- Conversation mode ---\n\
+A plain assistant message completes the current turn and pauses for the next human message. \
+This overrides the workflow rule that prose never pauses. Reply naturally without calling a \
+harness tool. Call openflow_ask_user_question only when the human's answer is required and \
+structured choices make the decision easier. openflow_request_user_input is not available. \
+Call openflow_submit_node_output only when the conversation itself should terminate.";
+
 /// Extra capability contract visible only to the selected Plan Mode evidence source.
 pub(crate) const PLAN_SOURCE_PREAMBLE: &str = "\
 --- Selected Plan Mode evidence source ---\n\
@@ -241,6 +248,9 @@ pub(crate) fn build_system_messages(
     }
     if !node.agent.request_user_input && !is_plan_source {
         messages.push(AUTONOMOUS_NODE_PREAMBLE.to_string());
+    }
+    if node.agent.conversation_mode {
+        messages.push(CONVERSATION_NODE_PREAMBLE.to_string());
     }
     match &node.agent.handoff {
         HandoffSpec::Markdown { template } => {
@@ -504,6 +514,7 @@ pub(crate) fn build_agent_request(
         reasoning_budget_tokens: node.agent.reasoning_budget_tokens,
         tool_access_policy: crate::ports::ToolAccessPolicy::Execution,
         allow_user_input: node.agent.request_user_input,
+        conversation_mode: node.agent.conversation_mode,
     })
 }
 
@@ -547,6 +558,22 @@ mod tests {
         assert!(NODE_RUNTIME_PREAMBLE.contains("Never call write with path only"));
         assert!(NODE_RUNTIME_PREAMBLE.contains("bash is not available during planning"));
         assert!(NODE_RUNTIME_PREAMBLE.contains("small stub first"));
+    }
+
+    #[test]
+    fn conversation_mode_overrides_workflow_turn_completion_instructions() {
+        let workflow = Workflow::new("direct chat");
+        let mut node = crate::graph::Node::agent("Assistant", 0.0, 0.0);
+        node.agent.request_user_input = true;
+        node.agent.conversation_mode = true;
+
+        let messages = build_system_messages(&workflow, &node, None);
+
+        assert!(messages.iter().any(|message| {
+            message.contains("--- Conversation mode ---")
+                && message.contains("A plain assistant message completes the current turn")
+                && message.contains("openflow_ask_user_question")
+        }));
     }
 
     #[test]
@@ -949,11 +976,12 @@ mod tests {
     }
 
     #[test]
-    fn build_agent_request_maps_request_user_input_flag() {
+    fn build_agent_request_maps_conversation_capabilities() {
         let mut workflow = Workflow::new("wf");
         let mut node = crate::graph::Node::agent("a", 0.0, 0.0);
         node.agent.model = "m".to_string();
         node.agent.request_user_input = true;
+        node.agent.conversation_mode = true;
         workflow.nodes.push(node.clone());
         let upstream_map = build_upstream_map(&workflow);
         let ctx = NodeInvocationContext {
@@ -972,10 +1000,13 @@ mod tests {
         };
         let request = build_agent_request(&ctx, &node, true).unwrap();
         assert!(request.allow_user_input);
+        assert!(request.conversation_mode);
 
         node.agent.request_user_input = false;
+        node.agent.conversation_mode = false;
         let request = build_agent_request(&ctx, &node, true).unwrap();
         assert!(!request.allow_user_input);
+        assert!(!request.conversation_mode);
     }
 
     #[test]

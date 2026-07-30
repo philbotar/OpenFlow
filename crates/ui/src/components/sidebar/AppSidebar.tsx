@@ -1,4 +1,4 @@
-import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { useAppContext } from "../../context/AppContext";
 import { isMacOS, ICON_STROKE_WIDTH } from "../../lib/utils";
 import ChevronRight from "lucide-solid/icons/chevron-right";
@@ -50,29 +50,91 @@ function WorkflowRows() {
   );
 }
 
+const CHAT_LIST_LIMIT = 5;
+
 function ChatRows() {
   const ctx = useAppContext();
+  const [showAll, setShowAll] = createSignal(false);
+  const visibleChats = () =>
+    showAll() ? ctx.chats() : ctx.chats().slice(0, CHAT_LIST_LIMIT);
+  const hasMore = () => ctx.chats().length > CHAT_LIST_LIMIT;
 
   return (
-    <For each={ctx.chats()}>
-      {(chat) => (
-        <ChatHistoryRow
-          title={chat.title}
-          active={chat.id === ctx.activeChatId() && ctx.screen() === "chat"}
-          onSelect={() => void ctx.handleOpenChat(chat.id)}
-          onDelete={() => void ctx.handleDeleteChat(chat.id)}
-        />
-      )}
-    </For>
+    <>
+      <For each={visibleChats()}>
+        {(chat) => (
+          <ChatHistoryRow
+            title={chat.title}
+            active={chat.id === ctx.activeChatId() && ctx.screen() === "chat"}
+            onSelect={() => void ctx.handleOpenChat(chat.id)}
+            onDelete={() => void ctx.handleDeleteChat(chat.id)}
+          />
+        )}
+      </For>
+      <Show when={hasMore()}>
+        <button
+          type="button"
+          class="sidebar-nav-button"
+          style={{ color: "var(--text-muted)" }}
+          onClick={() => setShowAll((open) => !open)}
+        >
+          {showAll() ? "Show less" : "Show more"}
+        </button>
+      </Show>
+    </>
   );
 }
 
 export function Sidebar() {
   const ctx = useAppContext();
   const [newWorkflowMenuOpen, setNewWorkflowMenuOpen] = createSignal(false);
+  // ponytail: custom thumb — WKWebView ignores transparent native tracks
+  const [scrollActive, setScrollActive] = createSignal(false);
+  const [thumb, setThumb] = createSignal({ top: 0, height: 0, needed: false });
   let newWorkflowMenuAnchor: HTMLDivElement | undefined;
+  let scrollEl: HTMLDivElement | undefined;
+  let scrollContentEl: HTMLDivElement | undefined;
+  let scrollIdleTimer: ReturnType<typeof setTimeout> | undefined;
 
   const closeNewWorkflowMenu = () => setNewWorkflowMenuOpen(false);
+
+  const syncThumb = () => {
+    const el = scrollEl;
+    if (!el) return;
+    const { scrollTop, scrollHeight, clientHeight } = el;
+    const needed = scrollHeight > clientHeight + 1;
+    if (!needed) {
+      setThumb({ top: 0, height: 0, needed: false });
+      return;
+    }
+    const height = Math.max(20, (clientHeight / scrollHeight) * clientHeight);
+    const maxTop = clientHeight - height;
+    const top =
+      scrollHeight <= clientHeight
+        ? 0
+        : (scrollTop / (scrollHeight - clientHeight)) * maxTop;
+    setThumb({ top, height, needed: true });
+  };
+
+  const handleSidebarScroll = () => {
+    syncThumb();
+    if (!scrollActive()) setScrollActive(true);
+    clearTimeout(scrollIdleTimer);
+    scrollIdleTimer = setTimeout(() => setScrollActive(false), 900);
+  };
+
+  onCleanup(() => clearTimeout(scrollIdleTimer));
+
+  onMount(() => {
+    const el = scrollEl;
+    const content = scrollContentEl;
+    if (!el) return;
+    syncThumb();
+    const ro = new ResizeObserver(syncThumb);
+    ro.observe(el);
+    if (content) ro.observe(content);
+    onCleanup(() => ro.disconnect());
+  });
 
   createEffect(() => {
     if (!newWorkflowMenuOpen()) return;
@@ -174,144 +236,170 @@ export function Sidebar() {
           active={ctx.screen() === "schedule"}
           onClick={ctx.handleOpenSchedule}
         />
-        <div class="sidebar-section-group sidebar-chats-section" aria-label="Chats">
-          <div class="sidebar-section-header workflows-section-header">
-            <div class="sidebar-section-label">Chats</div>
-            <div class="sidebar-section-trailing">
-              <Tooltip label="Toggle chats section">
-                <button
-                  type="button"
-                  class="workflows-section-chevron-btn"
-                  onClick={ctx.handleToggleChatsSection}
-                  aria-expanded={ctx.chatsSectionExpanded()}
-                  aria-label="Toggle chats section"
-                >
-                  <ChevronRight
-                    class="workflows-section-chevron"
-                    aria-hidden="true"
-                    absoluteStrokeWidth
-                    strokeWidth={ICON_STROKE_WIDTH}
-                  />
-                </button>
-              </Tooltip>
-            </div>
-          </div>
-          <CollapsibleSection
-            open={ctx.chatsSectionExpanded()}
-            class="sidebar-chats-collapsible"
+        <div class="sidebar-scroll-wrap">
+          <div
+            class="sidebar-scroll"
+            ref={(el) => {
+              scrollEl = el;
+            }}
+            onScroll={handleSidebarScroll}
           >
-            <ChatRows />
-          </CollapsibleSection>
-        </div>
-        <div class="sidebar-section-group sidebar-workflows-section">
-          <div class="sidebar-section-header workflows-section-header">
-            <div class="sidebar-section-label">Workflows</div>
-            <div class="sidebar-section-trailing">
-              <Tooltip label="Toggle workflows section">
-                <button
-                  type="button"
-                  class="workflows-section-chevron-btn"
-                  onClick={ctx.handleToggleWorkflowsSection}
-                  aria-expanded={ctx.workflowsSectionExpanded()}
-                  aria-label="Toggle workflows section"
-                >
-                  <ChevronRight
-                    class="workflows-section-chevron"
-                    aria-hidden="true"
-                    absoluteStrokeWidth
-                    strokeWidth={ICON_STROKE_WIDTH}
-                  />
-                </button>
-              </Tooltip>
-            </div>
-          </div>
-          <Show
-            when={ctx.appReady()}
-            fallback={
-              <div class="sidebar-skeleton" aria-hidden="true">
-                <span class="skeleton-line" />
-                <span class="skeleton-line" />
-                <span class="skeleton-line" />
-              </div>
-            }
-          >
-            <CollapsibleSection
-              open={ctx.workflowsSectionExpanded()}
-              class="sidebar-workflows-collapsible"
+            <div
+              class="sidebar-scroll-content"
+              ref={(el) => {
+                scrollContentEl = el;
+              }}
             >
-              <WorkflowRows />
-            </CollapsibleSection>
-          </Show>
-        </div>
-        <div
-          class="sidebar-section-group sidebar-projects-section"
-          classList={{ "sidebar-projects-section--expanded": ctx.projectsSectionExpanded() }}
-        >
-          <div class="sidebar-section-header workflows-section-header">
-            <div class="sidebar-section-label">Projects</div>
-            <div class="sidebar-section-trailing">
-              <Tooltip label="Toggle projects section">
-                <button
-                  type="button"
-                  class="workflows-section-chevron-btn"
-                  onClick={ctx.handleToggleProjectsSection}
-                  aria-expanded={ctx.projectsSectionExpanded()}
-                  aria-label="Toggle projects section"
+              <div class="sidebar-section-group sidebar-chats-section" aria-label="Chats">
+                <div class="sidebar-section-header workflows-section-header">
+                  <div class="sidebar-section-label">Chats</div>
+                  <div class="sidebar-section-trailing">
+                    <Tooltip label="Toggle chats section">
+                      <button
+                        type="button"
+                        class="workflows-section-chevron-btn"
+                        onClick={ctx.handleToggleChatsSection}
+                        aria-expanded={ctx.chatsSectionExpanded()}
+                        aria-label="Toggle chats section"
+                      >
+                        <ChevronRight
+                          class="workflows-section-chevron"
+                          aria-hidden="true"
+                          absoluteStrokeWidth
+                          strokeWidth={ICON_STROKE_WIDTH}
+                        />
+                      </button>
+                    </Tooltip>
+                  </div>
+                </div>
+                <CollapsibleSection
+                  open={ctx.chatsSectionExpanded()}
+                  class="sidebar-chats-collapsible"
                 >
-                  <ChevronRight
-                    class="workflows-section-chevron"
-                    aria-hidden="true"
-                    absoluteStrokeWidth
-                    strokeWidth={ICON_STROKE_WIDTH}
-                  />
-                </button>
-              </Tooltip>
-              <SidebarIconButton
-                icon="plus"
-                label="Add project"
-                class="sidebar-section-action"
-                onClick={() => void ctx.handleAddProject()}
-              />
+                  <ChatRows />
+                </CollapsibleSection>
+              </div>
+              <div class="sidebar-section-group sidebar-workflows-section">
+                <div class="sidebar-section-header workflows-section-header">
+                  <div class="sidebar-section-label">Workflows</div>
+                  <div class="sidebar-section-trailing">
+                    <Tooltip label="Toggle workflows section">
+                      <button
+                        type="button"
+                        class="workflows-section-chevron-btn"
+                        onClick={ctx.handleToggleWorkflowsSection}
+                        aria-expanded={ctx.workflowsSectionExpanded()}
+                        aria-label="Toggle workflows section"
+                      >
+                        <ChevronRight
+                          class="workflows-section-chevron"
+                          aria-hidden="true"
+                          absoluteStrokeWidth
+                          strokeWidth={ICON_STROKE_WIDTH}
+                        />
+                      </button>
+                    </Tooltip>
+                  </div>
+                </div>
+                <Show
+                  when={ctx.appReady()}
+                  fallback={
+                    <div class="sidebar-skeleton" aria-hidden="true">
+                      <span class="skeleton-line" />
+                      <span class="skeleton-line" />
+                      <span class="skeleton-line" />
+                    </div>
+                  }
+                >
+                  <CollapsibleSection
+                    open={ctx.workflowsSectionExpanded()}
+                    class="sidebar-workflows-collapsible"
+                  >
+                    <WorkflowRows />
+                  </CollapsibleSection>
+                </Show>
+              </div>
+              <div class="sidebar-section-group sidebar-projects-section">
+                <div class="sidebar-section-header workflows-section-header">
+                  <div class="sidebar-section-label">Projects</div>
+                  <div class="sidebar-section-trailing">
+                    <Tooltip label="Toggle projects section">
+                      <button
+                        type="button"
+                        class="workflows-section-chevron-btn"
+                        onClick={ctx.handleToggleProjectsSection}
+                        aria-expanded={ctx.projectsSectionExpanded()}
+                        aria-label="Toggle projects section"
+                      >
+                        <ChevronRight
+                          class="workflows-section-chevron"
+                          aria-hidden="true"
+                          absoluteStrokeWidth
+                          strokeWidth={ICON_STROKE_WIDTH}
+                        />
+                      </button>
+                    </Tooltip>
+                    <SidebarIconButton
+                      icon="plus"
+                      label="Add project"
+                      class="sidebar-section-action"
+                      onClick={() => void ctx.handleAddProject()}
+                    />
+                  </div>
+                </div>
+                <CollapsibleSection open={ctx.projectsSectionExpanded()} class="sidebar-projects-collapsible">
+                  <div class="sidebar-projects-list">
+                    <For each={ctx.projects()}>
+                      {(project) => (
+                        <ProjectFolderRow
+                          project={project}
+                          workflows={ctx.workflowsForProject(project)}
+                          expanded={ctx.isProjectExpanded(project.id)}
+                          selected={ctx.selectedProjectId() === project.id}
+                          activeWorkflowId={ctx.activeWorkflowId()}
+                          screen={ctx.screen()}
+                          editingWorkflowId={ctx.editingWorkflowId()}
+                          workflowNameDraft={ctx.workflowNameDraft()}
+                          onToggleExpand={() => ctx.handleToggleProjectExpanded(project.id)}
+                          onSelectProject={() => ctx.handleSelectProject(project.id)}
+                          onSelectWorkflow={(workflowId) => {
+                            ctx.handleSelectProject(project.id);
+                            ctx.handleSwitchWorkflow(workflowId);
+                          }}
+                          onRenameWorkflow={ctx.handleStartWorkflowNameEdit}
+                          onDeleteWorkflow={(workflowId) =>
+                            void ctx.handleDeleteWorkflow(workflowId)
+                          }
+                          onCreateWorkflow={() => void ctx.handleCreateWorkflow(project.id)}
+                          onCreateWorkflowWithAi={() =>
+                            void ctx.handleOpenWorkflowAuthoring(undefined, project.id)
+                          }
+                          onAddExistingWorkflow={() => ctx.handleOpenAssignWorkflowPicker(project.id)}
+                          onRemoveProject={() => void ctx.handleRemoveProject(project.id)}
+                          setWorkflowNameInputRef={ctx.setWorkflowNameInputRef}
+                          setWorkflowNameDraft={ctx.setWorkflowNameDraft}
+                          onWorkflowNameCommit={ctx.handleWorkflowNameCommit}
+                          onWorkflowNameKeyDown={ctx.handleWorkflowNameKeyDown}
+                        />
+                      )}
+                    </For>
+                  </div>
+                </CollapsibleSection>
+              </div>
             </div>
           </div>
-          <CollapsibleSection open={ctx.projectsSectionExpanded()} class="sidebar-projects-collapsible">
-            <div class="sidebar-projects-scroll">
-              <For each={ctx.projects()}>
-                {(project) => (
-                  <ProjectFolderRow
-                    project={project}
-                    workflows={ctx.workflowsForProject(project)}
-                    expanded={ctx.isProjectExpanded(project.id)}
-                    selected={ctx.selectedProjectId() === project.id}
-                    activeWorkflowId={ctx.activeWorkflowId()}
-                    screen={ctx.screen()}
-                    editingWorkflowId={ctx.editingWorkflowId()}
-                    workflowNameDraft={ctx.workflowNameDraft()}
-                    onToggleExpand={() => ctx.handleToggleProjectExpanded(project.id)}
-                    onSelectProject={() => ctx.handleSelectProject(project.id)}
-                    onSelectWorkflow={(workflowId) => {
-                      ctx.handleSelectProject(project.id);
-                      ctx.handleSwitchWorkflow(workflowId);
-                    }}
-                    onRenameWorkflow={ctx.handleStartWorkflowNameEdit}
-                    onDeleteWorkflow={(workflowId) =>
-                      void ctx.handleDeleteWorkflow(workflowId)
-                    }
-                    onCreateWorkflow={() => void ctx.handleCreateWorkflow(project.id)}
-                    onCreateWorkflowWithAi={() =>
-                      void ctx.handleOpenWorkflowAuthoring(undefined, project.id)
-                    }
-                    onAddExistingWorkflow={() => ctx.handleOpenAssignWorkflowPicker(project.id)}
-                    onRemoveProject={() => void ctx.handleRemoveProject(project.id)}
-                    setWorkflowNameInputRef={ctx.setWorkflowNameInputRef}
-                    setWorkflowNameDraft={ctx.setWorkflowNameDraft}
-                    onWorkflowNameCommit={ctx.handleWorkflowNameCommit}
-                    onWorkflowNameKeyDown={ctx.handleWorkflowNameKeyDown}
-                  />
-                )}
-              </For>
-            </div>
-          </CollapsibleSection>
+          <div
+            class="sidebar-scroll-thumb"
+            classList={{
+              "sidebar-scroll-thumb--needed": thumb().needed,
+              "sidebar-scroll-thumb--active": scrollActive(),
+            }}
+            style={{
+              height: `${thumb().height}px`,
+              transform: `translateY(${thumb().top}px)`,
+            }}
+            aria-hidden="true"
+          />
         </div>
       </SidebarList>
       <div class="sidebar-footer">

@@ -3,6 +3,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open as openDialog, confirm as confirmDialog } from "@tauri-apps/plugin-dialog";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import type { ConfirmDialogOptions, OpenDialogOptions } from "@tauri-apps/plugin-dialog";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
@@ -67,6 +68,14 @@ export function getAppVersion() {
     return Promise.resolve("dev");
   }
   return getVersion();
+}
+
+export function openExternalUrl(url: string): Promise<void> {
+  if (!isTauri()) {
+    window.open(url, "_blank", "noopener,noreferrer");
+    return Promise.resolve();
+  }
+  return openUrl(url);
 }
 
 export async function checkAppUpdateAvailable(): Promise<AppUpdateAvailability> {

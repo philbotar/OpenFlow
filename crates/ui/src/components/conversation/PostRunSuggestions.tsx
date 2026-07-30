@@ -1,10 +1,13 @@
 import Lightbulb from "lucide-solid/icons/lightbulb";
+import Sparkles from "lucide-solid/icons/sparkles";
 import { For, Show } from "solid-js";
-import type { Node, RunReport } from "../../lib/types";
+import type { Node, PostRunSuggestion, RunReport } from "../../lib/types";
+import { Button } from "../Button";
 
 interface PostRunSuggestionsProps {
   report: RunReport;
   nodes: Node[];
+  onApply: (suggestion: PostRunSuggestion) => void;
 }
 
 const categoryLabels = {
@@ -59,8 +62,23 @@ export function PostRunSuggestions(props: PostRunSuggestionsProps) {
                     </Show>
                   </div>
                   <h4>{suggestion.title}</h4>
-                  <p class="post-run-suggestion-evidence">{suggestion.evidence}</p>
-                  <p>{suggestion.recommendation}</p>
+                  <p>
+                    <span class="post-run-suggestion-evidence">
+                      {suggestion.evidence}
+                    </span>{" "}
+                    {suggestion.recommendation}
+                  </p>
+                  <div class="post-run-suggestion-actions">
+                    <Button
+                      variant="secondary"
+                      size="small"
+                      aria-label={`Apply ${suggestion.title} with AI`}
+                      onClick={() => props.onApply(suggestion)}
+                    >
+                      <Sparkles width={14} height={14} aria-hidden="true" />
+                      Apply with AI
+                    </Button>
+                  </div>
                 </li>
               )}
             </For>

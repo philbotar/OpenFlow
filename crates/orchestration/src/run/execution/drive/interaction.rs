@@ -1,4 +1,4 @@
-use crate::run::persistence::{PendingRunCheckpoint, RunCheckpointReason};
+use crate::run::persistence::PendingRunCheckpoint;
 use crate::tools::ToolRunner;
 use engine::{
     EngineAwaitApproval, EngineAwaitInput, EngineRetryableNode, InteractiveEngine, NodeId,
@@ -101,17 +101,6 @@ impl InteractionPause {
 
     fn is_empty(&self) -> bool {
         self.inputs.is_empty() && self.approvals.is_empty() && self.retryables.is_empty()
-    }
-
-    /// Priority: approval > retry > input — matches what blocks progress first.
-    pub(super) fn checkpoint_reason(&self) -> RunCheckpointReason {
-        if !self.approvals.is_empty() {
-            RunCheckpointReason::AwaitingToolApproval
-        } else if !self.retryables.is_empty() {
-            RunCheckpointReason::AwaitingRetry
-        } else {
-            RunCheckpointReason::AwaitingInput
-        }
     }
 }
 

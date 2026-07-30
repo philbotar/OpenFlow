@@ -43,6 +43,11 @@ pub struct NodeToolConfig {
         skip_serializing_if = "is_true"
     )]
     pub allow_structured_user_input: bool,
+    #[serde(
+        default = "default_allow_free_text_user_input",
+        skip_serializing_if = "is_true"
+    )]
+    pub allow_free_text_user_input: bool,
 }
 
 impl Default for NodeToolConfig {
@@ -50,6 +55,7 @@ impl Default for NodeToolConfig {
         Self {
             approval_mode: None,
             allow_structured_user_input: true,
+            allow_free_text_user_input: true,
         }
     }
 }
@@ -65,6 +71,10 @@ impl NodeToolConfig {
 }
 
 const fn default_allow_structured_user_input() -> bool {
+    true
+}
+
+const fn default_allow_free_text_user_input() -> bool {
     true
 }
 
@@ -377,6 +387,7 @@ mod tests {
         assert_eq!(config.approval_mode, None);
         assert_eq!(config.effective_approval_mode(), ApprovalMode::Write);
         assert!(config.allow_structured_user_input);
+        assert!(config.allow_free_text_user_input);
     }
 
     #[test]
@@ -386,7 +397,7 @@ mod tests {
     }
 
     #[test]
-    fn node_tool_config_serializes_only_structured_user_input_opt_out() {
+    fn node_tool_config_serializes_human_input_capability_opt_outs() {
         assert_eq!(
             serde_json::to_value(NodeToolConfig::default()).unwrap(),
             json!({})
@@ -399,6 +410,15 @@ mod tests {
         assert_eq!(
             serde_json::to_value(config).unwrap(),
             json!({ "allowStructuredUserInput": false })
+        );
+
+        let config = NodeToolConfig {
+            allow_free_text_user_input: false,
+            ..NodeToolConfig::default()
+        };
+        assert_eq!(
+            serde_json::to_value(config).unwrap(),
+            json!({ "allowFreeTextUserInput": false })
         );
     }
 

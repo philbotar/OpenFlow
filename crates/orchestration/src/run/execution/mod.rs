@@ -218,6 +218,7 @@ pub struct InteractiveWorkflowRunParams<A> {
 pub struct ResumeContinuation {
     pub node_id: engine::NodeId,
     pub text: String,
+    pub attachments: Vec<engine::ChatAttachmentRef>,
     pub skill_prompt: Option<String>,
 }
 

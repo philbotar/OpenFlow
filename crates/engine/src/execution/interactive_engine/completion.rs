@@ -74,15 +74,24 @@ impl InteractiveEngine {
                 self.apply_tool_calls(node_id, batch);
             }
             Ok(AgentTurnOutcome::Message(message)) => {
-                // Plain text never pauses — only openflow_request_user_input does.
-                // Conversational nodes get the interactive nudge; autonomous get the
-                // no-human-available nudge.
-                self.handle_text_only_turn(
-                    node_id,
-                    &message.assistant_message,
-                    &message.reasoning,
-                    message.usage.as_ref(),
-                );
+                if self.uses_natural_conversation_turns(node_id) {
+                    self.apply_conversational_turn(
+                        node_id,
+                        message.assistant_message,
+                        message.reasoning,
+                        message.usage.as_ref(),
+                    );
+                } else {
+                    // Workflow nodes require an explicit harness tool. Conversational
+                    // workflow nodes get the interactive nudge; autonomous nodes get
+                    // the no-human-available nudge.
+                    self.handle_text_only_turn(
+                        node_id,
+                        &message.assistant_message,
+                        &message.reasoning,
+                        message.usage.as_ref(),
+                    );
+                }
             }
             Ok(AgentTurnOutcome::NeedsUserInput(mut input)) => {
                 if self.interaction_mode(node_id) == InteractionMode::Autonomous {
@@ -144,6 +153,16 @@ impl InteractiveEngine {
     fn allows_structured_user_input(&self, node_id: &NodeId) -> bool {
         self.find_node(node_id)
             .is_none_or(|node| node.agent.tools.allow_structured_user_input)
+    }
+
+    fn allows_free_text_user_input(&self, node_id: &NodeId) -> bool {
+        self.find_node(node_id)
+            .is_none_or(|node| node.agent.tools.allow_free_text_user_input)
+    }
+
+    fn uses_natural_conversation_turns(&self, node_id: &NodeId) -> bool {
+        self.find_node(node_id)
+            .is_some_and(|node| node.agent.conversation_mode)
     }
 
     fn handle_malformed_submit_output_retry(
@@ -248,13 +267,20 @@ impl InteractiveEngine {
         }
         *retry_count += 1;
 
-        let input_shape = if self.allows_structured_user_input(node_id) {
-            "a direct question or structured choices"
-        } else {
-            "a complete human-facing assistant_message; do not set questions"
-        };
+        let mut harness_tools = vec!["openflow_submit_node_output when complete".to_string()];
+        if self.allows_free_text_user_input(node_id) {
+            harness_tools.push(
+                "openflow_request_user_input with one free-text question in assistant_message"
+                    .to_string(),
+            );
+        }
+        if self.allows_structured_user_input(node_id) {
+            harness_tools
+                .push("openflow_ask_user_question with 1-3 structured questions".to_string());
+        }
+        let harness_tools = harness_tools.join(", or ");
         let content = format!(
-            "Your last response mixed harness and executable tools ({tool_names}) and was rejected; no calls from that response were executed. Call either exactly one harness tool by itself (openflow_submit_node_output when complete, or openflow_request_user_input with {input_shape}), or one or more executable tools with no harness tools in the same batch."
+            "Your last response mixed harness and executable tools ({tool_names}) and was rejected; no calls from that response were executed. Call either exactly one harness tool by itself ({harness_tools}), or one or more executable tools with no harness tools in the same batch."
         );
         self.transcripts.entry(node_id.clone()).or_default().push(
             AgentTranscriptItem::UserMessage {
@@ -370,10 +396,9 @@ impl InteractiveEngine {
         })
     }
 
-    /// Text-only turn (or an autonomous explicit input request). Nudge forward
-    /// instead of pausing; fail the node after too many consecutive turns
-    /// without tool-call progress. Human pauses require
-    /// `openflow_request_user_input` on conversational nodes.
+    /// Text-only workflow turn. Nudge forward instead of pausing; fail the
+    /// node after too many consecutive turns without tool-call progress.
+    /// Natural conversation nodes bypass this path.
     fn handle_text_only_turn(
         &mut self,
         node_id: &NodeId,

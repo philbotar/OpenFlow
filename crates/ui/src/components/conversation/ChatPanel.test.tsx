@@ -465,8 +465,18 @@ describe("ChatPanel replay mode", () => {
     }
   });
 
-  it("shows suggestions after a completed full run", () => {
+  it("opens the current workflow in AI authoring with the selected suggestion", () => {
+    const handleOpenWorkflowAuthoring =
+      vi.fn<AppContextValue["handleOpenWorkflowAuthoring"]>(async () => {});
+    const workflow = {
+      id: "w1",
+      name: "Workflow",
+      nodes: [{ id: "builder", label: "Builder" }],
+      edges: [],
+      settings: {},
+    } as unknown as ReturnType<AppContextValue["activeWorkflow"]>;
     const { container, dispose } = renderChatPanel({
+      handleOpenWorkflowAuthoring,
       runState: () =>
         ({
           active: false,
@@ -490,19 +500,37 @@ describe("ChatPanel replay mode", () => {
             ],
           },
         }) as unknown as ReturnType<AppContextValue["runState"]>,
-      activeWorkflow: () =>
+      activeWorkflow: () => workflow,
+      activeProject: () =>
         ({
-          id: "w1",
-          name: "Workflow",
-          nodes: [{ id: "builder", label: "Builder" }],
-          edges: [],
-          settings: {},
-        }) as unknown as ReturnType<AppContextValue["activeWorkflow"]>,
+          id: "project-1",
+          name: "Project",
+          path: "/tmp/project",
+          default_execution_cwd: "/tmp/project",
+          workflow_ids: ["w1"],
+        }) as ReturnType<AppContextValue["activeProject"]>,
     });
     try {
       expect(container.textContent).toContain("Suggestions");
       expect(container.textContent).toContain("Require verification");
       expect(container.textContent).toContain("Builder");
+
+      container
+        .querySelector<HTMLButtonElement>(
+          'button[aria-label="Apply Require verification with AI"]',
+        )
+        ?.click();
+
+      expect(handleOpenWorkflowAuthoring).toHaveBeenCalledTimes(1);
+      const [baseWorkflow, projectId, initialMessage] =
+        handleOpenWorkflowAuthoring.mock.calls[0] ?? [];
+      expect(baseWorkflow).toBe(workflow);
+      expect(projectId).toBe("project-1");
+      expect(initialMessage).toContain("Target node: Builder (builder)");
+      expect(initialMessage).toContain("The agent skipped tests.");
+      expect(initialMessage).toContain(
+        "Add the focused test command to its prompt.",
+      );
     } finally {
       dispose();
       container.remove();

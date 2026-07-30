@@ -1,5 +1,5 @@
 use crate::run::state::WorkflowRunState;
-use engine::{InteractiveEngineCheckpoint, Workflow};
+use engine::{AgentTranscriptItem, ChatMessage, ChatRole, InteractiveEngineCheckpoint, Workflow};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
@@ -56,11 +56,94 @@ pub struct RunCheckpointPayload {
 }
 
 impl RunCheckpointPayload {
-    /// Drop stale choice cards while preserving the underlying free-text pause.
+    /// Drop a pre-dedicated-tool choice card while preserving the underlying pause.
     pub(crate) fn discard_structured_user_input(&mut self) {
         self.engine.structured_input_by_node.clear();
         self.projection.structured_input_by_node.clear();
     }
+
+    /// Repair a direct-chat projection from the canonical engine transcript.
+    ///
+    /// Older checkpoints could capture engine state after a model turn while their projection
+    /// still lagged behind. Merge missing visible messages at their transcript position.
+    pub(crate) fn repair_direct_chat_projection(&mut self) -> bool {
+        let Some(node_id) = self.engine.transcripts.keys().next().cloned() else {
+            return false;
+        };
+        let transcript = self
+            .engine
+            .transcripts
+            .get(&node_id)
+            .cloned()
+            .unwrap_or_default();
+        let entrypoint = self.engine.entrypoint_text.clone().map(|content| {
+            let mut message = ChatMessage::text(ChatRole::User, content);
+            message
+                .attachments
+                .clone_from(&self.engine.entrypoint_attachments);
+            message
+        });
+        let transcript_messages = transcript
+            .into_iter()
+            .filter_map(|item| match item {
+                AgentTranscriptItem::AssistantMessage { content } => {
+                    Some(ChatMessage::text(ChatRole::Assistant, content))
+                }
+                AgentTranscriptItem::UserMessage {
+                    content,
+                    attachments,
+                } => {
+                    let mut message = ChatMessage::text(ChatRole::User, content);
+                    message.attachments = attachments;
+                    Some(message)
+                }
+                AgentTranscriptItem::Reasoning { .. }
+                | AgentTranscriptItem::ToolCall { .. }
+                | AgentTranscriptItem::ToolResult { .. } => None,
+            })
+            .collect::<Vec<_>>();
+        let messages = self.projection.chat_logs.entry(node_id).or_default();
+        let mut changed = false;
+        let mut cursor = 0;
+
+        if let Some(entrypoint) = entrypoint {
+            if let Some(index) = messages
+                .iter()
+                .position(|message| visible_message_matches(message, &entrypoint))
+            {
+                cursor = index + 1;
+            } else {
+                messages.insert(0, entrypoint);
+                cursor = 1;
+                changed = true;
+            }
+        }
+
+        for transcript_message in transcript_messages {
+            if let Some(offset) = messages[cursor..]
+                .iter()
+                .position(|message| visible_message_matches(message, &transcript_message))
+            {
+                let index = cursor + offset;
+                if messages[index].streaming {
+                    messages[index].streaming = false;
+                    changed = true;
+                }
+                cursor = index + 1;
+            } else {
+                messages.insert(cursor, transcript_message);
+                cursor += 1;
+                changed = true;
+            }
+        }
+        changed
+    }
+}
+
+fn visible_message_matches(actual: &ChatMessage, expected: &ChatMessage) -> bool {
+    actual.role == expected.role
+        && actual.content == expected.content
+        && actual.attachments == expected.attachments
 }
 
 #[derive(Debug, Clone, PartialEq)]

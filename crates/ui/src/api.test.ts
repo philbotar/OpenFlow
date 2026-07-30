@@ -346,6 +346,7 @@ describe("api desktop seam", () => {
       nodeId: "node-1",
       text: "Continue with verification",
       invokedSkillIds: ["tdd"],
+      attachmentSourcePaths: ["/tmp/evidence.png"],
     };
     vi.mocked(invoke).mockResolvedValueOnce({ active: true });
 

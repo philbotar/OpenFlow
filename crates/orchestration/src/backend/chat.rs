@@ -10,12 +10,11 @@ use super::{AppBackend, BackendError};
 
 const CHAT_SYSTEM_PROMPT: &str = "\
 You are an AI assistant in an ongoing direct conversation. Answer the user's latest message \
-naturally and helpfully. After every response, call openflow_request_user_input with your full \
-response in assistant_message so the user can send their next message. This call ends the turn; \
-it does not require a question. Do not ask a follow-up question unless the user's request cannot \
-be completed without their answer. Never set questions in direct chat; use assistant_message \
-only. Do not call openflow_submit_node_output unless the user explicitly asks to end the \
-conversation.";
+naturally and helpfully. A plain assistant reply ends the current turn and waits for the user's \
+next message. Do not ask a follow-up question unless the user's request cannot be completed without \
+their answer. When the answer is required and 2-3 clear choices make the decision easier, call \
+openflow_ask_user_question. Do not call openflow_submit_node_output unless the user explicitly asks \
+to end the conversation.";
 const CHAT_TASK_PROMPT: &str = "\
 Reply to the latest user message. End the turn after the response; the user can send another \
 message without a follow-up prompt.";
@@ -30,8 +29,10 @@ fn execution_workflow_for_chat(chat: &Chat) -> Workflow {
     node.agent.handoff = HandoffSpec::Legacy;
     node.agent.auto_start = true;
     node.agent.request_user_input = true;
+    node.agent.conversation_mode = true;
     node.agent.tools.approval_mode = Some(chat.config.approval_mode);
-    node.agent.tools.allow_structured_user_input = false;
+    node.agent.tools.allow_free_text_user_input = false;
+    node.agent.tools.allow_structured_user_input = true;
     node.agent
         .reasoning_effort
         .clone_from(&chat.config.reasoning_effort);
@@ -47,13 +48,19 @@ pub(super) fn refresh_execution_workflow_for_chat(chat: &Chat, workflow: &mut Wo
     let agent = &mut workflow.nodes[0].agent;
     let changed = agent.system_prompt != CHAT_SYSTEM_PROMPT
         || agent.task_prompt != CHAT_TASK_PROMPT
-        || agent.tools.allow_structured_user_input;
+        || !agent.request_user_input
+        || !agent.conversation_mode
+        || agent.tools.allow_free_text_user_input
+        || !agent.tools.allow_structured_user_input;
     if !changed {
         return false;
     }
     agent.system_prompt = CHAT_SYSTEM_PROMPT.to_string();
     agent.task_prompt = CHAT_TASK_PROMPT.to_string();
-    agent.tools.allow_structured_user_input = false;
+    agent.request_user_input = true;
+    agent.conversation_mode = true;
+    agent.tools.allow_free_text_user_input = false;
+    agent.tools.allow_structured_user_input = true;
     true
 }
 
@@ -284,7 +291,7 @@ mod tests {
     }
 
     #[test]
-    fn execution_workflow_does_not_force_follow_up_questions_or_choices() {
+    fn execution_workflow_uses_natural_turns_and_optional_structured_questions() {
         let chat = Chat {
             id: "chat-1".to_string(),
             title: "Natural conversation".to_string(),
@@ -297,17 +304,16 @@ mod tests {
         let workflow = execution_workflow_for_chat(&chat);
         let system_prompt = &workflow.nodes[0].agent.system_prompt;
 
+        assert!(system_prompt.contains("A plain assistant reply ends the current turn"));
+        assert!(system_prompt.contains("openflow_ask_user_question"));
+        assert!(workflow.nodes[0].agent.conversation_mode);
         assert!(
-            system_prompt.contains("Do not ask a follow-up question unless"),
-            "direct chat must not force a question after every answer"
+            !workflow.nodes[0].agent.tools.allow_free_text_user_input,
+            "plain conversation turns replace the free-text pause harness"
         );
         assert!(
-            system_prompt.contains("Never set questions"),
-            "direct chat must not offer structured multiple-choice prompts"
-        );
-        assert!(
-            !workflow.nodes[0].agent.tools.allow_structured_user_input,
-            "direct chat must remove structured questions from the model tool schema"
+            workflow.nodes[0].agent.tools.allow_structured_user_input,
+            "direct chat must retain optional structured questions"
         );
     }
 
@@ -326,12 +332,16 @@ mod tests {
             "Legacy prompt that always requests a questionnaire.".to_string();
         workflow.nodes[0].agent.task_prompt =
             "Reply, then end with one short question.".to_string();
-        workflow.nodes[0].agent.tools.allow_structured_user_input = true;
+        workflow.nodes[0].agent.conversation_mode = false;
+        workflow.nodes[0].agent.tools.allow_free_text_user_input = true;
+        workflow.nodes[0].agent.tools.allow_structured_user_input = false;
 
         assert!(refresh_execution_workflow_for_chat(&chat, &mut workflow));
         assert_eq!(workflow.nodes[0].agent.system_prompt, CHAT_SYSTEM_PROMPT);
         assert_eq!(workflow.nodes[0].agent.task_prompt, CHAT_TASK_PROMPT);
-        assert!(!workflow.nodes[0].agent.tools.allow_structured_user_input);
+        assert!(workflow.nodes[0].agent.conversation_mode);
+        assert!(!workflow.nodes[0].agent.tools.allow_free_text_user_input);
+        assert!(workflow.nodes[0].agent.tools.allow_structured_user_input);
         assert!(!refresh_execution_workflow_for_chat(&chat, &mut workflow));
     }
 }

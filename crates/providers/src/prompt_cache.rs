@@ -41,6 +41,7 @@ mod tests {
             reasoning_budget_tokens: None,
             tool_access_policy: engine::ToolAccessPolicy::Execution,
             allow_user_input: true,
+            conversation_mode: false,
         }
     }
 

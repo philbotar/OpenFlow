@@ -9,6 +9,7 @@ pub(crate) mod blocking_ops;
 pub mod cache;
 pub mod errors;
 pub mod output;
+mod project_read;
 pub(crate) mod read;
 pub mod registry;
 pub mod retry;
@@ -17,6 +18,7 @@ pub(crate) mod web_search;
 
 pub use cache::ToolResultCache;
 pub use output::{ArtifactStore, PlanArtifact, ToolArtifactRecord, MAX_PLAN_ARTIFACT_BYTES};
+pub(crate) use project_read::ProjectReadTools;
 pub use registry::{ToolRegistry, ToolRegistryError};
 pub use runner::{
     ToolExecutionContext, ToolExecutionRecord, ToolExecutionUpdate, ToolRunner, ToolRunnerError,

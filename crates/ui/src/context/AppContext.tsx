@@ -203,6 +203,7 @@ export interface AppContextValue {
   handleCreateAgent: () => Promise<void>;
   handleCreateAgentWithAi: (description: string) => Promise<boolean>;
   handleSaveAgents: () => Promise<void>;
+  handleDeleteSelectedAgent: () => Promise<void>;
   handleAgentSchemaInput: (text: string) => void;
   updateSelectedAgent: (mutator: (draft: AgentDefinition) => void) => void;
   handleStartAgentNameEdit: (agentId: string, currentName: string) => void;
@@ -246,6 +247,7 @@ export interface AppContextValue {
   handleOpenWorkflowAuthoring: (
     baseWorkflow?: Workflow,
     targetProjectId?: string | null,
+    initialMessage?: string,
   ) => Promise<void>;
   handleCloseWorkflowAuthoring: () => void;
   handleWorkflowAuthoringSend: (message: string) => Promise<void>;

@@ -355,6 +355,10 @@ const fn saved_workflow_handoff_spec() -> HandoffSpec {
 
 /// Per-node agent invocation settings: prompts, model, tools, and callable subagents.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "persisted agent capabilities are independent wire-level switches"
+)]
 pub struct AgentNodeConfig {
     pub system_prompt: String,
     pub task_prompt: String,
@@ -388,16 +392,21 @@ pub struct AgentNodeConfig {
     /// Optional provider ID override at the node level.
     #[serde(default, rename = "providerId")]
     pub provider_id: Option<String>,
-    /// When false, this node never pauses for human input: the
-    /// `openflow_request_user_input` tool is not offered and text-only model
-    /// turns are auto-continued. When true, the request-input tool is offered
-    /// and only a valid call pauses; plain text still auto-continues.
+    /// When false, this node never pauses for human input: human-input harness
+    /// tools are not offered and text-only model turns are auto-continued.
+    /// When true, enabled human-input tools are offered. Plain text still
+    /// auto-continues unless `conversation_mode` is true.
     #[serde(
         default = "default_request_user_input",
         rename = "requestUserInput",
         alias = "request_user_input"
     )]
     pub request_user_input: bool,
+    /// When true, a plain provider message completes the current conversation
+    /// turn and pauses for the next human message. Workflow nodes leave this
+    /// false and use explicit harness tools for pause/completion semantics.
+    #[serde(default, rename = "conversationMode", alias = "conversation_mode")]
+    pub conversation_mode: bool,
 }
 
 const fn default_auto_start() -> bool {
@@ -471,6 +480,7 @@ impl Default for AgentNodeConfig {
             reasoning_budget_tokens: None,
             provider_id: None,
             request_user_input: false,
+            conversation_mode: false,
         }
     }
 }
@@ -571,6 +581,19 @@ mod tests {
         assert!(config.callable_agents.is_empty());
         assert!(!config.allow_all_callable_agents);
         assert_eq!(config.handoff, HandoffSpec::Json);
+        assert!(!config.conversation_mode);
+    }
+
+    #[test]
+    fn agent_node_config_conversation_mode_serde_roundtrip() {
+        let config = AgentNodeConfig {
+            conversation_mode: true,
+            ..AgentNodeConfig::default()
+        };
+        let value = serde_json::to_value(&config).unwrap();
+        assert_eq!(value["conversationMode"], json!(true));
+        let back: AgentNodeConfig = serde_json::from_value(value).unwrap();
+        assert!(back.conversation_mode);
     }
 
     #[test]

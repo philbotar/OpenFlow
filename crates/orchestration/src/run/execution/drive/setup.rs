@@ -53,12 +53,16 @@ fn build_engine(
                     .map_err(|error| error.to_string())?;
             if let Some(continuation) = resume_continuation {
                 let result = if awaiting_continuation {
-                    engine.on_human_message(&continuation.node_id, &continuation.text, Vec::new())
+                    engine.on_human_message(
+                        &continuation.node_id,
+                        &continuation.text,
+                        continuation.attachments,
+                    )
                 } else {
                     engine.retry_node_with_message(
                         &continuation.node_id,
                         &continuation.text,
-                        Vec::new(),
+                        continuation.attachments,
                     )
                 };
                 result.map_err(|error| error.to_string())?;

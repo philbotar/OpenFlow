@@ -177,7 +177,7 @@ stateDiagram-v2
 
 | Kind | Model-facing tools |
 | --- | --- |
-| **Harness** | `openflow_submit_node_output`, optional `openflow_request_user_input` |
+| **Harness** | `openflow_submit_node_output`, optional `openflow_request_user_input`, optional `openflow_ask_user_question` |
 | **Executable** | Catalog tools from registry (+ `ToolPort::augment_request`) |
 
 Batch rule: exactly one harness tool alone, **or** one or more executable tools — never mix. Mixed batches become `AgentError::MixedToolTurn`.
@@ -189,7 +189,10 @@ Batch rule: exactly one harness tool alone, **or** one or more executable tools 
 | `Completed` | Store `NodeRunOutput`, clear recovery state, advance layer when all siblings done |
 | `ToolCalls` | `apply_tool_calls` → approval policy → `pending_tool_batches` |
 | `NeedsUserInput` | Conversational: pause (valid human-facing message or structured question); Autonomous: auto-continue nudge |
-| `Message` | Auto-continue nudge (max streak) — never pauses; human pauses require `openflow_request_user_input` |
+| `Message` | Direct chat (`conversationMode`): end turn and await next message. Workflow: auto-continue nudge (max streak) |
+
+Provider requests mirror this lifecycle: workflow nodes require a tool call; `conversationMode`
+nodes use automatic tool choice so plain text remains a valid outcome.
 
 ### 3.3 ToolCallStatus lifecycle
 
@@ -260,7 +263,7 @@ Subagent turns run **inside** a parent `CALL_SUBAGENT` tool execution (`subagent
 | --- | --- | --- | --- | --- | --- | --- |
 | Workflow validation | Empty graph, duplicate ids, dangling edge, cycle | **engine** | Yes (start) | Fix workflow | `WorkflowValidationError` | `graph/validation.rs` → `validate_workflow` |
 | Provider / key readiness | Any referenced provider lacks resolvable credentials | **orchestration** | Yes (start) | Settings / transient key | Backend error to UI | `settings/provider.rs` → `resolve_provider_config` |
-| `request_user_input` | Model calls `openflow_request_user_input` with a non-empty human-facing message or valid structured question | **engine** | Yes (pause) | `submit_user_input` | Invalid request → nudge then fail | `completion.rs`, `allow_user_input` on `AgentRequest` |
+| `request_user_input` | Model calls `openflow_request_user_input` with one free-text question or `openflow_ask_user_question` with valid structured questions | **engine** | Yes (pause) | `submit_user_input` | Invalid request → nudge then fail | `completion.rs`, `allow_user_input` on `AgentRequest` |
 | Tool approval (`ApprovalMode`) | Write-tier tool under `write` / `always_ask` | **engine** policy; **orch** catalog | Yes (pause) | `submit_tool_approval` → `on_tool_decision` | Deny → synthetic denied `ToolResult` | `tools/config.rs`, `completion.rs` |
 | `read_only` tool exposure | Write-tier tool not in catalog | **orchestration** | Yes (model can't call) | Switch `ApprovalMode` | Tool unavailable to model | `tool/registry.rs` → `is_read_only` |
 | Retryable node / `RetryPolicy` | `AgentError::Transient`, interrupt, recoverable fail | **engine** | Yes (pause) | `retry_node` | Exhaust → `failed_nodes` / run fail | `completion.rs`, `RetryPolicy` in `WorkflowSettings` |
@@ -363,7 +366,7 @@ Orchestration wraps the run-scoped provider router with `AiInvocationAdapter`. A
 ### B. Node pauses for user input, resume
 
 1. A node with `request_user_input: true` starts when its upstream inputs are ready.
-2. The model calls `openflow_request_user_input` → `awaiting_nodes` → `run()` returns `NeedsInteraction { inputs: [EngineAwaitInput { ... }], ... }`.
+2. The model calls `openflow_request_user_input` or `openflow_ask_user_question` → `awaiting_nodes` → `run()` returns `NeedsInteraction { inputs: [EngineAwaitInput { ... }], ... }`.
 3. Orchestration emits `NodeAwaitingInput` → UI composer enabled.
 4. User: `submit_user_input` accepts the text, removes that node's actionable structured
    request from `WorkflowRunState`, appends the user transcript message, then forwards to
@@ -431,7 +434,7 @@ Orchestration wraps the run-scoped provider router with `AiInvocationAdapter`. A
 **Providers must not**
 
 - Decide tool approval, DAG advancement, or run lifecycle.
-- Offer `openflow_request_user_input` when `allow_user_input == false`.
+- Offer a human-input harness when `allow_user_input == false`.
 - Persist workflow or session state.
 
 **Boundary violations to avoid:** UI importing engine types directly; desktop calling orchestration internals; engine performing filesystem/HTTP I/O.

@@ -502,7 +502,11 @@ fn completion_request_for(
     openai_config: Option<&OpenAiCompatibleConfig>,
 ) -> Result<CompletionRequest, AgentError> {
     let mut completion_request = convert::to_completion_request(request)?;
-    apply_tool_choice_policy(&mut completion_request, provider_id);
+    apply_tool_choice_policy(
+        &mut completion_request,
+        provider_id,
+        request.conversation_mode,
+    );
     match model {
         RigModel::Anthropic(_) => {
             claude_thinking::apply(
@@ -550,9 +554,17 @@ fn merge_codex_params(request: &mut CompletionRequest, agent_request: &AgentRequ
     });
 }
 
-fn apply_tool_choice_policy(request: &mut CompletionRequest, provider_id: &ProviderId) {
+fn apply_tool_choice_policy(
+    request: &mut CompletionRequest,
+    provider_id: &ProviderId,
+    conversation_mode: bool,
+) {
     let _ = provider_id;
-    request.tool_choice = Some(ToolChoice::Required);
+    request.tool_choice = Some(if conversation_mode {
+        ToolChoice::Auto
+    } else {
+        ToolChoice::Required
+    });
 }
 
 fn apply_anthropic_cache_params(request: &mut CompletionRequest) {
@@ -736,6 +748,7 @@ mod tests {
             reasoning_budget_tokens: None,
             tool_access_policy: engine::ToolAccessPolicy::Execution,
             allow_user_input: false,
+            conversation_mode: false,
         }
     }
 
@@ -878,8 +891,31 @@ mod tests {
         let Ok(mut request) = result else {
             return;
         };
-        apply_tool_choice_policy(&mut request, &ProviderId::from("custom_openai_compatible"));
+        apply_tool_choice_policy(
+            &mut request,
+            &ProviderId::from("custom_openai_compatible"),
+            false,
+        );
         assert_eq!(request.tool_choice, Some(ToolChoice::Required));
+    }
+
+    #[test]
+    fn natural_conversation_uses_automatic_tool_choice() {
+        let mut agent_request = minimal_request();
+        agent_request.conversation_mode = true;
+        let result = convert::to_completion_request(&agent_request);
+        assert!(result.is_ok());
+        let Ok(mut request) = result else {
+            return;
+        };
+
+        apply_tool_choice_policy(
+            &mut request,
+            &ProviderId::from("openai"),
+            agent_request.conversation_mode,
+        );
+
+        assert_eq!(request.tool_choice, Some(ToolChoice::Auto));
     }
 
     #[test]

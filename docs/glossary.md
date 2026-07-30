@@ -28,7 +28,8 @@ For where terms live in code, see [Engine modules](#engine-modules), [Orchestrat
 | **HandoffSpec** | Per-node result format: a heading-based Markdown template or a JSON output schema | Output mode |
 | **HandoffArtifact** | Immutable run-scoped `HANDOFF.md` or `HANDOFF.json` reference with media type, size, and SHA-256 digest | Handoff file |
 | **NodePosition** | Coordinates for rendering a node on the canvas | Position, coordinates |
-| **RequestUserInput** | Whether a running node may call `openflow_request_user_input` to pause with a human-facing message or structured question; defaults to false | Manual start |
+| **RequestUserInput** | Whether a running node may call enabled human-input harnesses to pause; defaults to false | Manual start |
+| **ConversationMode** | Direct-chat lifecycle where a plain assistant message ends one turn; submit remains terminal and structured questions remain optional | Workflow completion |
 | **CallableAgent** | A saved agent definition a node may invoke as a subagent during a run (`engine::CallableAgent`) | Saved subagent, AgentDefinition |
 | **CallableAgentSelection** | Agent IDs on `AgentNodeConfig.callable_agents`; snapshotted at run start | Allowed agents, callable agents |
 | **AllowAllCallableAgents** | When true, every saved agent is snapshotted at run start instead of `callable_agents` | Allow all agents |
@@ -45,7 +46,7 @@ For where terms live in code, see [Engine modules](#engine-modules), [Orchestrat
 
 | Term | Definition | Aliases to avoid |
 | --- | --- | --- |
-| **NodeToolConfig** | Tool capabilities for a node or saved agent: approval mode plus whether `openflow_request_user_input` may expose structured choices | Tool settings, tool setup |
+| **NodeToolConfig** | Tool capabilities for a node or saved agent: approval mode plus separate free-text and structured human-input harness flags | Tool settings, tool setup |
 | **ApprovalMode** | Node-level tool approval strategy: `read_only` (read-class tools only, auto-approved), `write` (all tools; read-class auto, write-class prompt - default), `always_ask` (prompt every call), `yolo` (never prompt) | Approval policy |
 | **Tool capability class** | Static read/write grouping for builtins. Read: retrieval/search tools. Write: mutation, shell, subagent tools. Drives approval and `read_only` availability. | Tool tier |
 | **ToolTier** | Serialized capability class on tool definitions: `read` or `write` | Tool level, access tier |
@@ -168,7 +169,7 @@ See [orchestration crate layout](architecture/orchestration-layout.md) for the c
 - An **AgentNodeConfig** belongs to one **Node** and may include **NodeToolConfig**.
 - A **ChatMessage** or **AgentTranscriptItem** belongs to one **Node**'s transcript.
 - An **AgentRequest** goes to **AiPort** for one **Node** per turn.
-- Every **AgentRequest** advertises harness tools (`openflow_submit_node_output`, optional `openflow_request_user_input`) together with executable tools; a turn may use either exactly one harness tool alone, or one or more executable tools — never both in the same batch.
+- Every **AgentRequest** advertises harness tools (`openflow_submit_node_output`, optional `openflow_request_user_input`, optional `openflow_ask_user_question`) together with executable tools; a turn may use either exactly one harness tool alone, or one or more executable tools — never both in the same batch.
 - **AgentTurnOutcome** selects completion, executable tool work, human input, or a plain message.
 - A **Template** instantiates a **Node** with default config and **LockedField** constraints.
 - **InteractiveEngine::run** returns **EngineRunResult** until **Completed**, **Failed**, **Cancelled**, or **NeedsInteraction**.

@@ -25,7 +25,7 @@ export function HandoffEditor(props: {
   schemaJson: string;
   onHandoffChange: (handoff: HandoffSpec) => void;
   onSchemaChange: (value: string) => void;
-  onApplySchema: () => boolean;
+  onApplySchema?: () => boolean;
 }) {
   const format = () => (props.handoff?.format === "markdown" ? "markdown" : "json");
 
@@ -70,11 +70,15 @@ export function HandoffEditor(props: {
             <p class="field-help">
               The host validates this object, then stores it as <code>HANDOFF.json</code>.
             </p>
-            <ButtonRow>
-              <Button variant="secondary" onClick={props.onApplySchema}>
-                Apply schema
-              </Button>
-            </ButtonRow>
+            <Show when={props.onApplySchema}>
+              {(onApplySchema) => (
+                <ButtonRow>
+                  <Button variant="secondary" onClick={onApplySchema()}>
+                    Apply schema
+                  </Button>
+                </ButtonRow>
+              )}
+            </Show>
           </>
         }
       >

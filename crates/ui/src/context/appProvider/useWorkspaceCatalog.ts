@@ -627,7 +627,8 @@ export function useWorkspaceCatalog(params: UseWorkspaceCatalogParams) {
   };
 
   const handleSaveAgents = async () => {
-    if (selectedAgent()) {
+    const currentAgent = selectedAgent();
+    if (currentAgent && currentAgent.handoff?.format !== "markdown") {
       try {
         const parsed = JSON.parse(agentSchemaDraft());
         updateSelectedAgent((draft) => {
@@ -641,6 +642,34 @@ export function useWorkspaceCatalog(params: UseWorkspaceCatalogParams) {
     try {
       await desktop.saveAgents(agents());
       params.showSuccessToast("Saved agents");
+    } catch (error) {
+      params.showErrorToast(normalizeError(error));
+    }
+  };
+
+  const handleDeleteSelectedAgent = async () => {
+    const currentAgent = selectedAgent();
+    if (!currentAgent) return;
+    const displayName = currentAgent.name.trim() || "Untitled agent";
+    const confirmed = await confirmNativeDialog(
+      `Delete "${displayName}" permanently? This cannot be undone.`,
+      { title: "Delete agent", kind: "warning" },
+    );
+    if (!confirmed) return;
+
+    const currentAgents = agents();
+    const selectedIndex = currentAgents.findIndex((agent) => agent.id === currentAgent.id);
+    const remainingAgents = currentAgents.filter((agent) => agent.id !== currentAgent.id);
+    const nextSelectedAgent =
+      remainingAgents[Math.min(selectedIndex, remainingAgents.length - 1)] ?? null;
+    try {
+      await desktop.saveAgents(remainingAgents);
+      setAgents(remainingAgents);
+      setSelectedAgentId(nextSelectedAgent?.id ?? null);
+      if (editingAgentId() === currentAgent.id) {
+        handleCancelAgentNameEdit();
+      }
+      params.showSuccessToast(`Deleted "${displayName}"`);
     } catch (error) {
       params.showErrorToast(normalizeError(error));
     }
@@ -753,6 +782,7 @@ export function useWorkspaceCatalog(params: UseWorkspaceCatalogParams) {
     handleCreateAgent,
     handleCreateAgentWithAi,
     handleSaveAgents,
+    handleDeleteSelectedAgent,
     handleAgentSchemaInput,
     updateSelectedAgent,
     handleStartAgentNameEdit,

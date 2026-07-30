@@ -515,25 +515,9 @@ async fn saved_provider_direct_chat_probe() {
         message.role == engine::ChatRole::User && message.content == "Reply briefly: what is up?"
     }));
 
-    let paused = tokio::time::timeout(std::time::Duration::from_secs(45), async {
-        while let Some(event) = event_rx.recv().await {
-            let state = backend
-                .apply_execution_event(event)
-                .await
-                .expect("apply execution event");
-            if state.awaiting_node_id.is_some() {
-                return state;
-            }
-            assert!(
-                state.active,
-                "direct chat stopped before awaiting input: {:?}",
-                state.last_error
-            );
-        }
-        panic!("direct chat event channel closed before awaiting input");
-    })
-    .await
-    .expect("direct chat did not pause for input within 45 seconds");
+    let paused = wait_for_chat_pause(&backend, &mut event_rx, "saved-provider direct chat")
+        .await
+        .expect("direct chat response");
 
     assert!(paused
         .chat_logs
@@ -542,9 +526,40 @@ async fn saved_provider_direct_chat_probe() {
         .any(|message| message.role == engine::ChatRole::Assistant));
     assert!(
         paused.structured_input_by_node.is_empty(),
-        "direct chat must not expose structured multiple-choice questions: {:?}",
+        "a complete direct-chat answer must not force a structured follow-up: {:?}",
         paused.structured_input_by_node
     );
+
+    let node_id = paused
+        .awaiting_node_id
+        .as_ref()
+        .expect("direct chat awaiting node")
+        .clone();
+    backend
+        .submit_user_input(
+            &node_id,
+            concat!(
+                "Before continuing, ask me exactly one structured multiple-choice question about ",
+                "the response length. Offer exactly two choices: Brief and Detailed."
+            )
+            .to_string(),
+        )
+        .await
+        .expect("request structured question");
+    let question_pause = wait_for_chat_pause(
+        &backend,
+        &mut event_rx,
+        "saved-provider direct-chat structured question",
+    )
+    .await
+    .expect("direct chat structured question");
+    let structured = question_pause
+        .structured_input_by_node
+        .get(&node_id)
+        .expect("explicit structured question must render a card");
+    assert_eq!(structured.questions.len(), 1);
+    assert_eq!(structured.questions[0].options.len(), 2);
+
     backend.stop_run().await.expect("stop chat");
 }
 

@@ -1072,6 +1072,107 @@ describe("workflow authoring chat layout", () => {
     }
   });
 
+  test("starts an authoring turn from a post-run suggestion", async () => {
+    const workflow = makeWorkflow("workflow-1", "Workflow One");
+    const node = workflow.nodes[0];
+    const revisedWorkflow = {
+      ...workflow,
+      nodes: [
+        {
+          ...node,
+          agent: {
+            ...node.agent,
+            task_prompt: "Implement the change, then run the focused test command.",
+          },
+        },
+      ],
+    };
+    apiMocks.workflowAuthoringTurn.mockResolvedValue({
+      messages: [
+        { role: "user", content: "Apply the suggestion." },
+        { role: "assistant", content: "Updated the Builder prompt." },
+      ],
+      validation: { valid: true, errors: [], warnings: [] },
+      draft: revisedWorkflow,
+    });
+    const runState = makeAwaitingRunState(workflow);
+    runState.active = false;
+    runState.awaitingNodeId = null;
+    runState.statusByNode = { [node.id]: "completed" };
+    runState.chatLogs = {
+      [node.id]: [{ role: "Assistant", content: "Implemented without tests." }],
+    };
+    runState.lastReport = {
+      workflow_id: workflow.id,
+      outputs: [],
+      suggestions: [
+        {
+          id: "suggestion-1",
+          category: "prompt",
+          targetNodeId: node.id,
+          title: "Require verification",
+          evidence: "The agent skipped tests.",
+          recommendation: "Add the focused test command to its prompt.",
+        },
+      ],
+    };
+    const payload = makeBootstrapPayload([workflow]);
+    payload.runState = runState;
+    const { container, dispose } = await mountApp(payload);
+
+    try {
+      await openChatTab(container);
+      const applyButton = await waitForElement(
+        () =>
+          container.querySelector(
+            'button[aria-label="Apply Require verification with AI"]',
+          ) as HTMLButtonElement | null,
+        "apply suggestion with AI button",
+      );
+
+      applyButton.click();
+
+      await vi.waitFor(() =>
+        expect(apiMocks.startWorkflowAuthoring).toHaveBeenCalledWith(workflow, null),
+      );
+      await vi.waitFor(() =>
+        expect(apiMocks.workflowAuthoringTurn).toHaveBeenCalledWith(
+          "authoring-session-1",
+          expect.stringContaining("The agent skipped tests."),
+          SETTINGS,
+          "stored-openai-key",
+        ),
+      );
+      const confirmButton = await waitForElement(
+        () =>
+          Array.from(container.querySelectorAll("button")).find(
+            (button) => button.textContent?.trim() === "Apply Changes",
+          ) as HTMLButtonElement | null,
+        "apply workflow changes button",
+      );
+
+      confirmButton.click();
+
+      await vi.waitFor(() =>
+        expect(apiMocks.saveWorkflow).toHaveBeenCalledWith(
+          expect.objectContaining({
+            id: workflow.id,
+            nodes: [
+              expect.objectContaining({
+                agent: expect.objectContaining({
+                  task_prompt:
+                    "Implement the change, then run the focused test command.",
+                }),
+              }),
+            ],
+          }),
+        ),
+      );
+    } finally {
+      dispose();
+    }
+  });
+
   test("uses dock chat shell with bubble composer and thinking indicator while busy", async () => {
     let resolveTurn!: (value: {
       messages: { role: string; content: string }[];
@@ -1343,6 +1444,10 @@ describe("App workflow rename", () => {
     const independent = makeWorkflow("workflow-independent", "Independent Flow");
     const project = makeProject("project-b", "Project B", []);
     const generated = makeWorkflow("workflow-generated", "Generated Project Flow");
+    generated.nodes[0].agent.system_prompt =
+      "Inspect the repository before proposing changes.";
+    generated.nodes[0].agent.task_prompt =
+      "Summarize the relevant code and produce a triage report.";
 
     apiMocks.workflowAuthoringTurn.mockResolvedValue({
       messages: [
@@ -1393,6 +1498,21 @@ describe("App workflow rename", () => {
         ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       await flush();
       await flush();
+
+      const inspector = await waitForElement(
+        () =>
+          container.querySelector(
+            '[aria-label="Proposed workflow inspector"]',
+          ) as HTMLElement | null,
+        "proposed workflow inspector",
+      );
+      expect(inspector.textContent).toContain("Inspector");
+      expect(inspector.textContent).toContain(
+        "Inspect the repository before proposing changes.",
+      );
+      expect(inspector.textContent).toContain(
+        "Summarize the relevant code and produce a triage report.",
+      );
 
       const applyButton = await waitForElement(
         () =>
@@ -1582,6 +1702,33 @@ describe("App agent dashboard", () => {
         required: ["summary"],
       });
 
+      const formatSelect = await waitForElement(
+        () =>
+          Array.from(container.querySelectorAll("label span"))
+            .find((element) => element.textContent === "Format")
+            ?.parentElement?.querySelector(".text-select-trigger") as HTMLButtonElement | null,
+        "agent output format select",
+      );
+      formatSelect.click();
+      const markdownOption = await waitForElement(
+        () =>
+          Array.from(container.querySelectorAll(".text-select-option")).find(
+            (element) => element.textContent === "Markdown",
+          ) as HTMLButtonElement | null,
+        "Markdown output option",
+      );
+      markdownOption.click();
+      await flush();
+
+      const markdownTemplate = container.querySelector(
+        'textarea[aria-label="Markdown handoff template"]',
+      ) as HTMLTextAreaElement | null;
+      expect(markdownTemplate).not.toBeNull();
+      if (markdownTemplate) {
+        markdownTemplate.value = "# Result\n\n## Summary\n";
+        markdownTemplate.dispatchEvent(new InputEvent("input", { bubbles: true }));
+      }
+
       const nameInput = await waitForElement(
         () => Array.from(container.querySelectorAll("label span")).find((element) => element.textContent === "Name")?.parentElement?.querySelector("input") as HTMLInputElement | null,
         "agent name input",
@@ -1601,9 +1748,64 @@ describe("App agent dashboard", () => {
           expect.objectContaining({
             id: "created-agent",
             name: "Planner Agent",
+            handoff: {
+              format: "markdown",
+              template: "# Result\n\n## Summary\n",
+            },
           }),
         ]),
       );
+    } finally {
+      dispose();
+    }
+  });
+
+  test("deletes the selected saved agent from the action row", async () => {
+    const deleted = makeAgent("agent-1", "Delete Me");
+    const survivor = makeAgent("agent-2", "Keep Me");
+    vi.mocked(confirm).mockResolvedValueOnce(true);
+    const { container, dispose } = await mountApp(
+      makeBootstrapPayload(
+        [makeWorkflow("workflow-1", "Workflow One")],
+        [deleted, survivor],
+      ),
+    );
+
+    try {
+      const agentsButton = await waitForElement(
+        () =>
+          Array.from(container.querySelectorAll(".sidebar-nav-button")).find((element) =>
+            element.textContent?.includes("Agents"),
+          ) as HTMLButtonElement | null,
+        "agents button",
+      );
+      agentsButton.click();
+      await flush();
+
+      const saveButton = Array.from(container.querySelectorAll("button")).find(
+        (element) => element.textContent === "Save",
+      ) as HTMLButtonElement | undefined;
+      const actionRow = saveButton?.closest(".button-row");
+      const actionButtons = Array.from(actionRow?.querySelectorAll("button") ?? []);
+      expect(actionButtons.map((button) => button.textContent)).toEqual(["Delete", "Save"]);
+
+      actionButtons[0]?.click();
+      await flush();
+
+      expect(confirm).toHaveBeenCalledWith(
+        'Delete "Delete Me" permanently? This cannot be undone.',
+        { title: "Delete agent", kind: "warning" },
+      );
+      expect(apiMocks.saveAgents).toHaveBeenCalledWith([
+        expect.objectContaining({ id: "agent-2", name: "Keep Me" }),
+      ]);
+      expect(container.querySelector(".agents-sidebar-panel")?.textContent).not.toContain(
+        "Delete Me",
+      );
+      expect(
+        container.querySelector(".agents-sidebar-panel .workflow-row.active .workflow-row-title")
+          ?.textContent,
+      ).toBe("Keep Me");
     } finally {
       dispose();
     }
@@ -2783,6 +2985,7 @@ describe("Global chat layout", () => {
           nodeId,
           text: "Continue with verification",
           invokedSkillIds: [],
+          attachmentSourcePaths: [],
         },
       );
       expect(apiMocks.submitUserInput).not.toHaveBeenCalled();
@@ -4420,14 +4623,15 @@ describe("Ad-hoc chats", () => {
     const awaiting = makeAwaitingRunState(executionWorkflow);
     awaiting.active = false;
     awaiting.runId = "run-1";
+    awaiting.awaitingNodeId = null;
+    awaiting.awaitingNodeIds = [];
+    awaiting.statusByNode[executionWorkflow.nodes[0].id] = "started";
     awaiting.chatLogs[executionWorkflow.nodes[0].id] = [
       { role: "user", content: "How do durable runs work?" },
       { role: "assistant", content: "They persist checkpoints between app sessions." },
     ];
     apiMocks.replayRun.mockResolvedValue(awaiting);
     apiMocks.resumeDurableRun.mockResolvedValue(awaiting);
-    apiMocks.updateNodeRuntimeConfig.mockResolvedValue(awaiting);
-    apiMocks.submitUserInput.mockResolvedValue(awaiting);
     const payload = {
       ...makeBootstrapPayload([makeWorkflow("workflow-1", "Workflow One")]),
       chats: [chat],
@@ -4465,20 +4669,15 @@ describe("Ad-hoc chats", () => {
         "run-1",
         expect.objectContaining({ active_provider: "openai" }),
         "stored-openai-key",
-      );
-      expect(apiMocks.updateNodeRuntimeConfig).toHaveBeenCalledWith(
-        executionWorkflow.nodes[0].id,
         {
-          model: "gpt-4.1-mini",
-          approvalMode: "read_only",
-          reasoningEffort: null,
-          reasoningBudgetTokens: null,
+          nodeId: executionWorkflow.nodes[0].id,
+          text: "Continue from there",
+          invokedSkillIds: [],
+          attachmentSourcePaths: [],
         },
       );
-      expect(apiMocks.submitUserInput).toHaveBeenCalledWith(
-        executionWorkflow.nodes[0].id,
-        { text: "Continue from there", attachmentSourcePaths: [] },
-      );
+      expect(apiMocks.updateNodeRuntimeConfig).not.toHaveBeenCalled();
+      expect(apiMocks.submitUserInput).not.toHaveBeenCalled();
     } finally {
       dispose();
     }

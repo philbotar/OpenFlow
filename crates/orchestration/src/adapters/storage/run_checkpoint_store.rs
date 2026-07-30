@@ -78,6 +78,18 @@ impl RunCheckpointStore for FileRunCheckpointStore {
         write_json(&run_dir(root, &record.run_id).join(RUN_FILE_NAME), record)
     }
 
+    fn update_record(&self, root: &RunStoreRoot, record: &RunRecord) -> io::Result<()> {
+        validate_run_id(&record.run_id)?;
+        let path = run_dir(root, &record.run_id).join(RUN_FILE_NAME);
+        if !path.is_file() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("run record {} does not exist", path.display()),
+            ));
+        }
+        write_json(&path, record)
+    }
+
     fn append_checkpoint(
         &self,
         root: &RunStoreRoot,
@@ -451,6 +463,39 @@ mod tests {
 
         assert_eq!(loaded.status, RunStatus::Completed);
         assert_eq!(loaded.updated_at_ms, 300);
+    }
+
+    #[test]
+    fn update_record_persists_a_migrated_workflow_without_removing_checkpoints() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let store = FileRunCheckpointStore;
+        let root = root(dir.path());
+        let mut updated = record(dir.path(), "run-a");
+        store.create_run(&root, &updated).expect("create run");
+        store
+            .append_checkpoint(&root, "run-a", &checkpoint(1))
+            .expect("append checkpoint");
+        updated.workflow_snapshot.name = "Migrated direct chat".to_string();
+        updated.workflow_hash = "migrated-hash".to_string();
+
+        store
+            .update_record(&root, &updated)
+            .expect("update run record");
+
+        let (_, loaded) = store
+            .load_record(std::slice::from_ref(&root), "run-a")
+            .expect("load")
+            .expect("record");
+        assert_eq!(loaded.workflow_snapshot.name, "Migrated direct chat");
+        assert_eq!(loaded.workflow_hash, "migrated-hash");
+        assert_eq!(
+            store
+                .load_latest_checkpoint(&root, "run-a")
+                .expect("load checkpoint")
+                .expect("checkpoint")
+                .seq,
+            1
+        );
     }
 
     #[test]

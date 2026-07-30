@@ -11,6 +11,7 @@ import {
 } from "@/components";
 import { useAppContext } from "../context/AppContext";
 import { AgentConfigForm } from "../forms/AgentConfigForm";
+import { HandoffEditor } from "../forms/HandoffEditor";
 import { ToolConfigEditor } from "../forms/ToolConfigEditor";
 
 export function AgentsScreen() {
@@ -208,6 +209,17 @@ export function AgentsScreen() {
                     onSchemaChange={(value) => ctx.handleAgentSchemaInput(value)}
                     knownModels={() => ctx.activeProfileMemo().known_models}
                     defaultModel={() => ctx.activeProfileMemo().default_model}
+                    showSchema={false}
+                  />
+                  <HandoffEditor
+                    handoff={agent().handoff}
+                    schemaJson={ctx.agentSchemaDraft()}
+                    onHandoffChange={(handoff) =>
+                      ctx.updateSelectedAgent((draft) => {
+                        draft.handoff = handoff;
+                      })
+                    }
+                    onSchemaChange={(value) => ctx.handleAgentSchemaInput(value)}
                   />
                   <ToolConfigEditor
                     config={agent().tools}
@@ -218,6 +230,14 @@ export function AgentsScreen() {
                     }
                   />
                   <ButtonRow align="end">
+                    <Button
+                      class="agent-delete-button"
+                      variant="danger"
+                      size="compact"
+                      onClick={() => void ctx.handleDeleteSelectedAgent()}
+                    >
+                      Delete
+                    </Button>
                     <Button
                       variant="primary"
                       size="compact"

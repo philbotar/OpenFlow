@@ -1,6 +1,6 @@
 //! Saved agent definitions invocable as subagents during a run.
 
-use super::workflow::{AgentNodeConfig, Node, Workflow};
+use super::workflow::{AgentNodeConfig, HandoffSpec, Node, Workflow};
 use crate::tools::{SubagentStatus, SubagentSummary};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -19,6 +19,10 @@ pub struct CallableAgent {
     pub model: String,
     #[serde(alias = "outputSchema")]
     pub output_schema: Value,
+    /// Default node-to-node artifact contract when this saved agent creates a
+    /// workflow node. Missing fields remain JSON for saved-agent compatibility.
+    #[serde(default = "saved_agent_handoff_spec")]
+    pub handoff: HandoffSpec,
     /// Legacy wire field retained for saved-agent compatibility.
     /// Callable agents run when explicitly invoked.
     #[serde(default, alias = "autoStart")]
@@ -38,6 +42,7 @@ impl CallableAgent {
             task_prompt: defaults.task_prompt,
             model: defaults.model,
             output_schema: defaults.output_schema,
+            handoff: HandoffSpec::Json,
             auto_start: defaults.auto_start,
             tools: defaults.tools,
         }
@@ -63,6 +68,10 @@ impl CallableAgent {
             status: SubagentStatus::Declared,
         }
     }
+}
+
+const fn saved_agent_handoff_spec() -> HandoffSpec {
+    HandoffSpec::Json
 }
 
 /// Collect snapshotted callable agents referenced by workflow node settings.

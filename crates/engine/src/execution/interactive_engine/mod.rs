@@ -225,17 +225,18 @@ pub(crate) const MAX_EMPTY_PROVIDER_TURN_RETRIES: u8 = 3;
 pub(crate) const MAX_MIXED_TOOL_TURN_RETRIES: u8 = 3;
 pub(crate) const MAX_AUTO_CONTINUE_STREAK: u8 = 10;
 pub(crate) const MALFORMED_REQUEST_INPUT_FEEDBACK: &str =
-    "Your last human-input request was invalid. Call openflow_request_user_input with either \
-    assistant_message set to a non-empty human-facing message, or questions set to 1-3 structured questions \
-    with 2-3 options each. If you do not need human input, call executable tools or call \
-    openflow_submit_node_output when complete. Do not end a turn with plain narration.";
+    "Your last human-input request was invalid. Call openflow_request_user_input with \
+    assistant_message set to one non-empty free-text question, or call \
+    openflow_ask_user_question with 1-3 structured questions containing 2-3 options each. Use only \
+    a human-input tool offered in the current request. If you do not need human input, call \
+    executable tools or call openflow_submit_node_output when complete.";
 pub(crate) const FREE_TEXT_REQUEST_INPUT_FEEDBACK: &str =
     "Structured questions are not available for this conversation. Call \
-    openflow_request_user_input with your complete human-facing response in assistant_message. \
-    The response does not need to end with a question. Do not set questions.";
+    openflow_request_user_input with one direct human-facing question in assistant_message.";
 pub(crate) const INTERACTIVE_CONTINUE_FEEDBACK: &str =
-    "Call openflow_request_user_input with a direct question or structured choices if human \
-    clarification is needed, call executable tools if more work is required, or call \
+    "Call openflow_request_user_input with one free-text question, or \
+    openflow_ask_user_question with structured choices, if human clarification is needed. Call \
+    executable tools if more work is required, or call \
     openflow_submit_node_output when the task is complete. Do not end with plain text only.";
 pub(crate) const AUTONOMOUS_CONTINUE_FEEDBACK: &str =
     "No human input is available for this node. Call executable tools if more work is required, \

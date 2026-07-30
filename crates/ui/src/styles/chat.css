@@ -1160,9 +1160,18 @@
   line-height: 1.5;
 }
 
-.post-run-suggestion .post-run-suggestion-evidence {
+.post-run-suggestion-evidence {
   color: var(--text-muted);
-  font-size: 12px;
+}
+
+.post-run-suggestion-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 9px;
+}
+
+.post-run-suggestion-actions button {
+  gap: 6px;
 }
 
 .post-run-suggestion-meta {

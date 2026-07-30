@@ -123,6 +123,7 @@ mod tests {
             reasoning_budget_tokens: None,
             tool_access_policy: ToolAccessPolicy::Execution,
             allow_user_input: false,
+            conversation_mode: false,
         }
     }
 

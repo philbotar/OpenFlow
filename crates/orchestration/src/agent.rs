@@ -2,8 +2,7 @@ use crate::api::AgentDefinitionSummary;
 use crate::error::BackendError;
 use engine::{
     AgentMessageTurn, AgentNeedUserInput, AgentRequest, AgentTranscriptItem, AgentTurnOutcome,
-    AgentTurnSuccess, AiPort, CallableAgent, HandoffSpec, Node, NodeId, ToolAccessPolicy,
-    WorkflowId,
+    AgentTurnSuccess, AiPort, CallableAgent, Node, NodeId, ToolAccessPolicy, WorkflowId,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -91,6 +90,7 @@ impl AgentLibrary {
             reasoning_effort,
             reasoning_budget_tokens,
             allow_user_input: false,
+            conversation_mode: false,
             tool_access_policy: ToolAccessPolicy::Execution,
         };
 
@@ -177,7 +177,7 @@ impl AgentLibrary {
         node.agent.task_prompt = agent.task_prompt.clone();
         node.agent.model = agent.model.clone();
         node.agent.output_schema = agent.output_schema.clone();
-        node.agent.handoff = HandoffSpec::Json;
+        node.agent.handoff = agent.handoff.clone();
         node.agent.tools = agent.tools.clone();
 
         Ok(node)

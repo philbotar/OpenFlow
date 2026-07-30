@@ -57,10 +57,12 @@ pub struct AgentRequest {
     pub reasoning_budget_tokens: Option<u32>,
     /// Hard capability policy for this run phase.
     pub tool_access_policy: ToolAccessPolicy,
-    /// Whether this node may pause for human input. When false, providers must
-    /// not offer the request-input tool nor convert plain-text turns into
-    /// input requests.
+    /// Whether this node may pause through a human-input harness tool. When
+    /// false, providers must not offer free-text or structured input tools.
     pub allow_user_input: bool,
+    /// Whether a provider plain-message turn is valid without a tool call.
+    /// Providers use automatic tool choice when this is true.
+    pub conversation_mode: bool,
 }
 
 impl AgentRequest {

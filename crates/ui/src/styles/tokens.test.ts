@@ -60,6 +60,26 @@ describe("dark theme palette", () => {
     runButton.remove();
   });
 
+  test("matches agent delete geometry to save", () => {
+    style = document.createElement("style");
+    style.textContent = `${tokensCss}\n${indexCss}`;
+    document.head.append(style);
+
+    const deleteButton = document.createElement("button");
+    deleteButton.className = "danger-button compact agent-delete-button";
+    const saveButton = document.createElement("button");
+    saveButton.className = "primary-button compact";
+    document.body.append(deleteButton, saveButton);
+
+    const deleteStyle = getComputedStyle(deleteButton);
+    const saveStyle = getComputedStyle(saveButton);
+    expect(deleteStyle.minHeight).toBe(saveStyle.minHeight);
+    expect(deleteStyle.padding).toBe(saveStyle.padding);
+    expect(deleteStyle.fontSize).toBe(saveStyle.fontSize);
+    expect(deleteStyle.fontWeight).toBe(saveStyle.fontWeight);
+    expect(deleteStyle.borderRadius).toBe(saveStyle.borderRadius);
+  });
+
   test("constrains sidebar lists horizontally while menus overlay vertically", () => {
     style = document.createElement("style");
     style.textContent = `${tokensCss}\n${indexCss}`;

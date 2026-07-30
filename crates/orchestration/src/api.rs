@@ -21,6 +21,8 @@ pub struct DurableRunContinuationInput {
     pub text: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub invoked_skill_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachment_source_paths: Vec<String>,
 }
 
 impl UserMessageInput {

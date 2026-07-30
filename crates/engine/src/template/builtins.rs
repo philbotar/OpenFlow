@@ -37,6 +37,7 @@ pub fn default_templates() -> Vec<Template> {
                 reasoning_budget_tokens: None,
                 provider_id: None,
                 request_user_input: false,
+                conversation_mode: false,
             },
             HashSet::new(),
         ),
@@ -80,6 +81,7 @@ pub fn default_templates() -> Vec<Template> {
                 reasoning_budget_tokens: None,
                 provider_id: None,
                 request_user_input: false,
+                conversation_mode: false,
             },
             {
                 let mut locked = HashSet::new();
@@ -120,6 +122,7 @@ pub fn default_templates() -> Vec<Template> {
                 reasoning_budget_tokens: None,
                 provider_id: None,
                 request_user_input: false,
+                conversation_mode: false,
             },
             {
                 let mut locked = HashSet::new();
@@ -154,6 +157,7 @@ pub fn default_templates() -> Vec<Template> {
                 reasoning_budget_tokens: None,
                 provider_id: None,
                 request_user_input: false,
+                conversation_mode: false,
             },
             {
                 let mut locked = HashSet::new();
@@ -187,6 +191,7 @@ pub fn default_templates() -> Vec<Template> {
                 reasoning_budget_tokens: None,
                 provider_id: None,
                 request_user_input: true,
+                conversation_mode: false,
             },
             HashSet::new(),
         ),

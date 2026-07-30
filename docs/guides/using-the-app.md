@@ -7,7 +7,7 @@ Task-oriented map of the OpenFlow desktop UI after install and provider setup. F
 | Control | Purpose |
 | --- | --- |
 | **New chat** | Start a saved, direct AI conversation without creating or opening a workflow. Existing chats appear under **Chats**. |
-| **Agents** | Create and edit saved agent definitions (prompt, model, tools, output schema). |
+| **Agents** | Create and edit saved agent definitions (prompt, model, tools, Markdown or JSON output). |
 | **Schedule** | Enable timed or interval schedules on workflows that already exist in the catalog. |
 | **Workflows** | App-level workflows stored under the OpenFlow data directory. **New workflow** creates one; **Build with AI** opens the authoring chat. Use a workflow row's options menu to rename or delete it. |
 | **Projects** | Bind a repository folder, create or assign workflows under `.flow/workflows/`, and open project workflows in the editor. |
@@ -41,6 +41,10 @@ Use the controls below the composer to choose:
 - **Approval mode** — controls which tools require confirmation.
 - **Reasoning effort** — selects a provider-supported effort level and, when required, its token budget.
 
+Direct chat ends each assistant turn after a normal reply; it does not require a closing question.
+When your answer is required and clear choices help, the assistant can show a multiple-choice card.
+You can always answer that card through the normal composer instead.
+
 The saved Chat contains only chat metadata and its durable run ID. At run start, the backend privately adapts that Chat to the workflow execution engine. This execution detail is not returned in the Chat DTO or written to `chats.json`: direct chats do not expose nodes or appear in **Workflows**, the canvas, project assignments, or `workflows.json`.
 
 ## Editor layout
@@ -58,6 +62,8 @@ Use the Inspector **Handoff** section to choose what a completed node gives its 
 - **JSON** — define a JSON output schema for typed machine data. OpenFlow validates the object, stores `HANDOFF.json`, and passes both the structured output and artifact reference downstream.
 
 Saved workflows created before handoff formats existed load as JSON, preserving their existing output schemas. During execution, downstream nodes receive each direct upstream node's compact output and optional `handoff` manifest. The runtime instructs them to read the immutable `run://` artifact before using its contents.
+
+The **Agents** screen exposes the same format editor. OpenFlow saves the choice with the agent and copies it to workflow nodes created from that agent. Existing saved agents without a format continue to load as JSON.
 
 ## Run controls
 

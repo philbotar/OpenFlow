@@ -35,7 +35,9 @@ mod session;
 
 pub use session::{DurableResumeParams, RunStartParams};
 
-use checkpoint::{load_replay_projection, persist_pending_checkpoint};
+use checkpoint::{
+    load_replay_projection, persist_pending_checkpoint, projection_ready_for_checkpoint,
+};
 use session::{
     apply_user_stop_to_session, clear_artifact_root, finalize_run_launch, finish_run_session,
     fresh_execution_resources, prepare_workflow_run, require_action_tx, require_active_run_state,
@@ -594,10 +596,16 @@ impl RunCoordinator {
             apply_event_to_run_state(&workflow, run_state, event);
             let finished = !run_state.active;
             let snapshot = run_state.clone();
-            let pending_checkpoint = session
-                .checkpoint_sink
-                .as_ref()
-                .and_then(|sink| sink.lock().take());
+            let pending_checkpoint = session.checkpoint_sink.as_ref().and_then(|sink| {
+                let mut pending = sink.lock();
+                pending
+                    .as_ref()
+                    .is_some_and(|checkpoint| {
+                        projection_ready_for_checkpoint(checkpoint, &snapshot)
+                    })
+                    .then(|| pending.take())
+                    .flatten()
+            });
             let stopped_checkpoint = pending_checkpoint
                 .as_ref()
                 .filter(|pending| pending.reason == RunCheckpointReason::UserStopped)
@@ -685,7 +693,11 @@ impl RunCoordinator {
             params.settings_store,
             params.env,
         )?;
-        let resume_continuation = continuation
+        let attachment_root = params
+            .run_store
+            .run_dir(&params.root, params.run_id)
+            .join("attachments");
+        let (mut resume_continuation, attachment_source_paths) = continuation
             .map(|continuation| {
                 let node_id = NodeId(continuation.node_id);
                 let checkpoint = &params.checkpoint.engine;
@@ -700,23 +712,46 @@ impl RunCoordinator {
                     &prepared.skill_paths,
                     &format!("saved run continuation for node {node_id:?}"),
                 )?;
-                Ok(ResumeContinuation {
-                    node_id,
-                    text: continuation.text,
-                    skill_prompt,
-                })
+                Ok((
+                    ResumeContinuation {
+                        node_id,
+                        text: continuation.text,
+                        attachments: Vec::new(),
+                        skill_prompt,
+                    },
+                    continuation
+                        .attachment_source_paths
+                        .into_iter()
+                        .map(PathBuf::from)
+                        .collect::<Vec<_>>(),
+                ))
             })
-            .transpose()?;
+            .transpose()?
+            .map_or((None, Vec::new()), |(continuation, source_paths)| {
+                (Some(continuation), source_paths)
+            });
+        let attachments = if attachment_source_paths.is_empty() {
+            Vec::new()
+        } else {
+            let attachment_store = Arc::clone(&self.attachment_store);
+            let attachment_root_for_ingest = attachment_root.clone();
+            self.runtime_handle
+                .spawn_blocking(move || {
+                    attachment_store
+                        .ingest_batch(&attachment_root_for_ingest, &attachment_source_paths)
+                })
+                .await
+                .map_err(|error| BackendError::PreviewFailed(error.to_string()))??
+        };
+        if let Some(continuation) = resume_continuation.as_mut() {
+            continuation.attachments.clone_from(&attachments);
+        }
         let engine_checkpoint = params.checkpoint.engine;
 
         self.terminate_active_run(TerminationMode::Replaced).await;
 
         let resources = fresh_execution_resources(&prepared.persisted_settings);
         let artifact_root = PathBuf::from(&params.record.artifact_root);
-        let attachment_root = params
-            .run_store
-            .run_dir(&params.root, params.run_id)
-            .join("attachments");
         let execution_cwd = PathBuf::from(&params.record.execution_cwd);
         let run_root = params.root.clone();
         let run_id = params.run_id.to_string();
@@ -725,14 +760,15 @@ impl RunCoordinator {
         resumed_state.active = true;
         resumed_state.run_id = Some(run_id.clone());
         if let Some(continuation) = &resume_continuation {
-            crate::run::execution::record_user_input(
+            crate::run::execution::record_user_input_with_attachments(
                 &mut resumed_state,
                 &continuation.node_id.0,
                 continuation.text.clone(),
+                continuation.attachments.clone(),
             );
         }
 
-        let (state, event_rx) = finalize_run_launch(
+        let launch_result = finalize_run_launch(
             &self.runtime_handle,
             &self.session,
             prepared,
@@ -753,7 +789,7 @@ impl RunCoordinator {
                 entrypoint_attachments: Vec::new(),
                 execution_cwd,
                 artifact_root,
-                attachment_root,
+                attachment_root: attachment_root.clone(),
             },
             |session| {
                 session.run_state = Some(resumed_state.clone());
@@ -763,7 +799,20 @@ impl RunCoordinator {
                 Ok(resumed_state.clone())
             },
         )
-        .await?;
+        .await;
+        let (state, event_rx) = match launch_result {
+            Ok(launched) => launched,
+            Err(error) => {
+                remove_ingested_attachments(
+                    &self.runtime_handle,
+                    Arc::clone(&self.attachment_store),
+                    Some(attachment_root),
+                    attachments,
+                )
+                .await;
+                return Err(error);
+            }
+        };
         params.run_store.update_status(
             &run_root,
             &run_id,

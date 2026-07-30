@@ -39,6 +39,7 @@ fn sample_agent_request() -> AgentRequest {
         reasoning_budget_tokens: None,
         tool_access_policy: engine::ToolAccessPolicy::Execution,
         allow_user_input: true,
+        conversation_mode: false,
     }
 }
 
@@ -2320,6 +2321,7 @@ async fn stopped_run_continuation_retries_node_with_message() {
         resume_continuation: Some(ResumeContinuation {
             node_id: NodeId("idea".to_string()),
             text: "Continue with verification".to_string(),
+            attachments: Vec::new(),
             skill_prompt: None,
         }),
         ..resume_params

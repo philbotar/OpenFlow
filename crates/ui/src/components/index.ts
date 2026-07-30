@@ -3,6 +3,7 @@ export * from "./AppHeader";
 export * from "./Button";
 export * from "./ButtonRow";
 export * from "./CollapsibleSection";
+export * from "./ExternalLinkGuard";
 export * from "./FirstRunOnboarding";
 export * from "./InspectorSection";
 export * from "./NodePickerModal";

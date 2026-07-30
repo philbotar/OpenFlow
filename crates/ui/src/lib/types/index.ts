@@ -147,6 +147,7 @@ export type ApprovalMode = "read_only" | "always_ask" | "write" | "yolo";
 export interface NodeToolConfig {
   approvalMode: ApprovalMode | null;
   allowStructuredUserInput?: boolean;
+  allowFreeTextUserInput?: boolean;
 }
 
 export interface NodeRuntimeConfigUpdate {
@@ -191,6 +192,8 @@ export interface AgentNodeConfig {
   reasoningBudgetTokens?: number | null;
   /** When false, the node never pauses for human input (wire key: requestUserInput). */
   requestUserInput?: boolean;
+  /** Plain provider messages complete one direct-conversation turn. */
+  conversationMode?: boolean;
 }
 
 export interface ReasoningEffortOption {
@@ -206,6 +209,8 @@ export interface AgentDefinition {
   task_prompt: string;
   model: string;
   output_schema: unknown;
+  /** Default handoff used when this saved agent creates a workflow node. */
+  handoff?: HandoffSpec;
   /** Legacy wire field. Saved agents run when invoked. */
   auto_start: boolean;
   tools: NodeToolConfig;
@@ -249,6 +254,7 @@ export interface DurableRunContinuationInput {
   nodeId: NodeId;
   text: string;
   invokedSkillIds: string[];
+  attachmentSourcePaths: string[];
 }
 
 export interface PendingChatAttachment {

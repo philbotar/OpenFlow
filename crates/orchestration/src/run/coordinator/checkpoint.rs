@@ -5,7 +5,7 @@ use crate::run::persistence::{
     PendingRunCheckpoint, RunCheckpointPayload, RunCheckpointReason, RunStatus, RunStoreRoot,
 };
 use crate::run::ports::RunCheckpointStore;
-use crate::run::state::WorkflowRunState;
+use crate::run::state::{AgentStatus, WorkflowRunState};
 use chrono::Utc;
 
 pub(super) fn load_replay_projection(
@@ -63,4 +63,47 @@ pub(super) fn persist_pending_checkpoint(
     run_store.append_checkpoint(root, run_id, &payload)?;
     run_store.update_status(root, run_id, status_for_checkpoint(reason), now_ms)?;
     Ok(())
+}
+
+/// Return true once FIFO telemetry has fully projected the staged engine checkpoint.
+///
+/// The engine snapshot is staged before its pause/terminal telemetry. Waiting for every
+/// checkpointed interaction item prevents an early event from persisting a partial UI projection.
+pub(super) fn projection_ready_for_checkpoint(
+    pending: &PendingRunCheckpoint,
+    projection: &WorkflowRunState,
+) -> bool {
+    match pending.reason {
+        RunCheckpointReason::Started => true,
+        RunCheckpointReason::UserStopped
+        | RunCheckpointReason::Completed
+        | RunCheckpointReason::Failed => !projection.active,
+        RunCheckpointReason::AwaitingInput
+        | RunCheckpointReason::AwaitingToolApproval
+        | RunCheckpointReason::AwaitingRetry => {
+            let inputs_ready = pending
+                .engine
+                .awaiting_nodes
+                .iter()
+                .all(|node_id| projection.awaiting_node_ids.contains(node_id));
+            let approvals_ready = pending
+                .engine
+                .pending_tool_batches
+                .values()
+                .filter(|batch| batch.requires_approval)
+                .all(|batch| {
+                    projection
+                        .pending_approvals
+                        .iter()
+                        .any(|approval| approval.approval_id == batch.approval_id)
+                });
+            let interruptions_ready = pending.engine.interrupted_nodes.iter().all(|node_id| {
+                projection.status_by_node.get(node_id) == Some(&AgentStatus::Interrupted)
+            });
+            let failures_ready = pending.engine.failed_nodes.keys().all(|node_id| {
+                projection.status_by_node.get(node_id) == Some(&AgentStatus::Failed)
+            });
+            inputs_ready && approvals_ready && interruptions_ready && failures_ready
+        }
+    }
 }

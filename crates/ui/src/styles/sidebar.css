@@ -1,0 +1,99 @@
+/* Parent scroll for chats/workflows/projects; top nav stays pinned. */
+
+.sidebar-scroll-wrap {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.sidebar-scroll {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  /* Hide native scrollbar — WKWebView paints an opaque track we can't kill. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.sidebar-scroll::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.sidebar-scroll-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  /* Clear overlay thumb so row text / hit targets don't sit under it. */
+  padding-right: 8px;
+}
+
+.sidebar-scroll-content > .sidebar-section-group {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Overlay thumb only — no track. pointer-events none keeps row cursors working. */
+.sidebar-scroll-thumb {
+  position: absolute;
+  top: 0;
+  right: 2px;
+  width: 4px;
+  border-radius: 999px;
+  background: var(--scrollbar-thumb);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.35s var(--ease-out);
+}
+
+.sidebar-scroll-wrap:hover .sidebar-scroll-thumb--needed,
+.sidebar-scroll-thumb--needed.sidebar-scroll-thumb--active {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-scroll-thumb {
+    transition: none;
+  }
+}
+
+.sidebar button {
+  cursor: pointer;
+}
+
+.sidebar-projects-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* Kill legacy projects fill — parent .sidebar-scroll owns overflow. */
+.sidebar-projects-collapsible.collapsible-section--open {
+  display: block;
+  flex: none;
+  min-height: auto;
+}
+
+.sidebar-projects-collapsible.collapsible-section--open .collapsible-section-inner {
+  display: block;
+  flex: none;
+  min-width: 0;
+  overflow-x: clip;
+  overflow-y: visible;
+}
+
+/* Match chats/workflows: keep titles clipped inside the row width. */
+.sidebar-chats-collapsible.collapsible-section--open .collapsible-section-inner,
+.sidebar-workflows-collapsible.collapsible-section--open .collapsible-section-inner {
+  min-width: 0;
+}

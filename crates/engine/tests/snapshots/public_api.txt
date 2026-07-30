@@ -2990,6 +2990,7 @@ pub mod engine::graph
 pub mod engine::graph::callable_agent
 pub struct engine::graph::callable_agent::CallableAgent
 pub engine::graph::callable_agent::CallableAgent::auto_start: bool
+pub engine::graph::callable_agent::CallableAgent::handoff: engine::graph::workflow::HandoffSpec
 pub engine::graph::callable_agent::CallableAgent::id: alloc::string::String
 pub engine::graph::callable_agent::CallableAgent::model: alloc::string::String
 pub engine::graph::callable_agent::CallableAgent::name: alloc::string::String
@@ -3331,6 +3332,7 @@ pub struct engine::graph::workflow::AgentNodeConfig
 pub engine::graph::workflow::AgentNodeConfig::allow_all_callable_agents: bool
 pub engine::graph::workflow::AgentNodeConfig::auto_start: bool
 pub engine::graph::workflow::AgentNodeConfig::callable_agents: alloc::vec::Vec<alloc::string::String>
+pub engine::graph::workflow::AgentNodeConfig::conversation_mode: bool
 pub engine::graph::workflow::AgentNodeConfig::handoff: engine::graph::workflow::HandoffSpec
 pub engine::graph::workflow::AgentNodeConfig::model: alloc::string::String
 pub engine::graph::workflow::AgentNodeConfig::output_schema: serde_json::value::Value
@@ -4245,6 +4247,7 @@ pub struct engine::graph::AgentNodeConfig
 pub engine::graph::AgentNodeConfig::allow_all_callable_agents: bool
 pub engine::graph::AgentNodeConfig::auto_start: bool
 pub engine::graph::AgentNodeConfig::callable_agents: alloc::vec::Vec<alloc::string::String>
+pub engine::graph::AgentNodeConfig::conversation_mode: bool
 pub engine::graph::AgentNodeConfig::handoff: engine::graph::workflow::HandoffSpec
 pub engine::graph::AgentNodeConfig::model: alloc::string::String
 pub engine::graph::AgentNodeConfig::output_schema: serde_json::value::Value
@@ -4305,6 +4308,7 @@ impl<T> typenum::type_operators::Same for engine::graph::workflow::AgentNodeConf
 pub type engine::graph::workflow::AgentNodeConfig::Output = T
 pub struct engine::graph::CallableAgent
 pub engine::graph::CallableAgent::auto_start: bool
+pub engine::graph::CallableAgent::handoff: engine::graph::workflow::HandoffSpec
 pub engine::graph::CallableAgent::id: alloc::string::String
 pub engine::graph::CallableAgent::model: alloc::string::String
 pub engine::graph::CallableAgent::name: alloc::string::String
@@ -5416,6 +5420,7 @@ pub type engine::ports::outbound::AgentNeedUserInput::Output = T
 pub struct engine::ports::outbound::AgentRequest
 pub engine::ports::outbound::AgentRequest::allow_user_input: bool
 pub engine::ports::outbound::AgentRequest::available_tools: alloc::vec::Vec<engine::ToolDefinition>
+pub engine::ports::outbound::AgentRequest::conversation_mode: bool
 pub engine::ports::outbound::AgentRequest::entrypoint_attachments: alloc::vec::Vec<engine::conversation::ChatAttachmentRef>
 pub engine::ports::outbound::AgentRequest::input: serde_json::value::Value
 pub engine::ports::outbound::AgentRequest::model: alloc::string::String
@@ -6326,6 +6331,7 @@ pub type engine::ports::outbound::AgentNeedUserInput::Output = T
 pub struct engine::ports::AgentRequest
 pub engine::ports::AgentRequest::allow_user_input: bool
 pub engine::ports::AgentRequest::available_tools: alloc::vec::Vec<engine::ToolDefinition>
+pub engine::ports::AgentRequest::conversation_mode: bool
 pub engine::ports::AgentRequest::entrypoint_attachments: alloc::vec::Vec<engine::conversation::ChatAttachmentRef>
 pub engine::ports::AgentRequest::input: serde_json::value::Value
 pub engine::ports::AgentRequest::model: alloc::string::String
@@ -7582,6 +7588,7 @@ impl<T> serde_core::de::DeserializeOwned for engine::FileSnapshot where T: for<'
 impl<T> typenum::type_operators::Same for engine::FileSnapshot
 pub type engine::FileSnapshot::Output = T
 pub struct engine::tools::NodeToolConfig
+pub engine::tools::NodeToolConfig::allow_free_text_user_input: bool
 pub engine::tools::NodeToolConfig::allow_structured_user_input: bool
 pub engine::tools::NodeToolConfig::approval_mode: core::option::Option<engine::ApprovalMode>
 impl engine::NodeToolConfig
@@ -9759,6 +9766,7 @@ pub struct engine::AgentNodeConfig
 pub engine::AgentNodeConfig::allow_all_callable_agents: bool
 pub engine::AgentNodeConfig::auto_start: bool
 pub engine::AgentNodeConfig::callable_agents: alloc::vec::Vec<alloc::string::String>
+pub engine::AgentNodeConfig::conversation_mode: bool
 pub engine::AgentNodeConfig::handoff: engine::graph::workflow::HandoffSpec
 pub engine::AgentNodeConfig::model: alloc::string::String
 pub engine::AgentNodeConfig::output_schema: serde_json::value::Value
@@ -9869,6 +9877,7 @@ pub type engine::conversation::AgentReasoning::Output = T
 pub struct engine::AgentRequest
 pub engine::AgentRequest::allow_user_input: bool
 pub engine::AgentRequest::available_tools: alloc::vec::Vec<engine::ToolDefinition>
+pub engine::AgentRequest::conversation_mode: bool
 pub engine::AgentRequest::entrypoint_attachments: alloc::vec::Vec<engine::conversation::ChatAttachmentRef>
 pub engine::AgentRequest::input: serde_json::value::Value
 pub engine::AgentRequest::model: alloc::string::String
@@ -10026,6 +10035,7 @@ impl<T> typenum::type_operators::Same for engine::ports::outbound::AgentTurnSucc
 pub type engine::ports::outbound::AgentTurnSuccess::Output = T
 pub struct engine::CallableAgent
 pub engine::CallableAgent::auto_start: bool
+pub engine::CallableAgent::handoff: engine::graph::workflow::HandoffSpec
 pub engine::CallableAgent::id: alloc::string::String
 pub engine::CallableAgent::model: alloc::string::String
 pub engine::CallableAgent::name: alloc::string::String
@@ -11144,6 +11154,7 @@ pub fn engine::graph::runtime_config::NodeRuntimeConfigPatch::from(T) -> T
 impl<T> typenum::type_operators::Same for engine::graph::runtime_config::NodeRuntimeConfigPatch
 pub type engine::graph::runtime_config::NodeRuntimeConfigPatch::Output = T
 pub struct engine::NodeToolConfig
+pub engine::NodeToolConfig::allow_free_text_user_input: bool
 pub engine::NodeToolConfig::allow_structured_user_input: bool
 pub engine::NodeToolConfig::approval_mode: core::option::Option<engine::ApprovalMode>
 impl engine::NodeToolConfig

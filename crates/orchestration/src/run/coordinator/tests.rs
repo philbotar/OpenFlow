@@ -467,6 +467,96 @@ async fn aborted_event_preserves_user_stopped_checkpoint_for_continue() {
     assert!(coordinator.is_run_continuable().await);
 }
 
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+async fn checkpoint_waits_for_pause_projection_before_persisting() {
+    let dir = tempdir().expect("tempdir");
+    let coordinator = coordinator(dir.path());
+    let store = FileRunCheckpointStore;
+    let root = RunStoreRoot {
+        project_id: None,
+        root: dir.path().join("runs"),
+    };
+    let workflow = default_workflow("Checkpoint ordering");
+    let node_id = workflow.nodes[0].id.clone();
+    let run_id = "checkpoint-ordering";
+    store
+        .create_run(&root, &run_record(dir.path(), &workflow, run_id))
+        .expect("create run");
+
+    let mut engine_checkpoint = empty_engine_checkpoint(&workflow);
+    engine_checkpoint.awaiting_nodes.insert(node_id.clone());
+    let sink = Arc::new(parking_lot::Mutex::new(Some(PendingRunCheckpoint {
+        reason: RunCheckpointReason::AwaitingInput,
+        engine: engine_checkpoint,
+    })));
+    let mut run_state = WorkflowRunState::running_for_workflow(&workflow);
+    run_state.run_id = Some(run_id.to_string());
+    coordinator
+        .test_seed_full(TestSessionSeed {
+            workflow: workflow.clone(),
+            run_state,
+            run_id: Some(run_id.to_string()),
+            run_root: Some(root.clone()),
+            checkpoint_sink: Some(sink),
+            ..empty_seed_fields()
+        })
+        .await;
+
+    coordinator
+        .apply_execution_event(
+            ExecutionEvent::NodeStarted {
+                node_id: node_id.clone(),
+                label: "Chat".to_string(),
+            },
+            &store,
+        )
+        .await
+        .expect("apply start");
+    coordinator
+        .apply_execution_event(
+            ExecutionEvent::ChatMessage {
+                node_id: node_id.clone(),
+                role: engine::ChatRole::Assistant,
+                content: "What are you looking forward to this week?".to_string(),
+            },
+            &store,
+        )
+        .await
+        .expect("apply assistant reply");
+    coordinator
+        .apply_execution_event(
+            ExecutionEvent::NodeAwaitingInput {
+                node_id: node_id.clone(),
+                label: "Chat".to_string(),
+                context: String::new(),
+                is_initial: false,
+                structured_input: None,
+            },
+            &store,
+        )
+        .await
+        .expect("apply pause");
+
+    let checkpoint = store
+        .load_latest_checkpoint(&root, run_id)
+        .expect("load checkpoint")
+        .expect("checkpoint");
+    assert_eq!(
+        checkpoint.projection.awaiting_node_id,
+        Some(node_id.clone())
+    );
+    assert_eq!(
+        checkpoint
+            .projection
+            .chat_logs
+            .get(&node_id)
+            .and_then(|messages| messages.last())
+            .map(|message| message.content.as_str()),
+        Some("What are you looking forward to this week?")
+    );
+}
+
 // ── replay / list ────────────────────────────────────────────────────────────
 
 #[cfg_attr(miri, ignore)]
@@ -920,6 +1010,8 @@ async fn resume_durable_run_with_continuation_projects_user_message() {
     let coordinator = coordinator(stores.dir.path());
     let workflow = default_workflow("Durable continuation");
     let node_id = workflow.nodes[0].id.clone();
+    let attachment_path = stores.dir.path().join("continuation.png");
+    write_png(&attachment_path);
     let record = run_record(stores.dir.path(), &workflow, "run-message");
     stores
         .run_store
@@ -954,20 +1046,20 @@ async fn resume_durable_run_with_continuation_projects_user_message() {
                 node_id: node_id.0.clone(),
                 text: "Continue with verification".to_string(),
                 invoked_skill_ids: Vec::new(),
+                attachment_source_paths: vec![attachment_path.display().to_string()],
             }),
         )
         .await
         .expect("resume with message");
 
     assert!(resumed.active);
-    assert_eq!(
-        resumed
-            .chat_logs
-            .get(&node_id)
-            .and_then(|messages| messages.last())
-            .map(|message| message.content.as_str()),
-        Some("Continue with verification")
-    );
+    let message = resumed
+        .chat_logs
+        .get(&node_id)
+        .and_then(|messages| messages.last())
+        .expect("continuation message");
+    assert_eq!(message.content, "Continue with verification");
+    assert_eq!(message.attachments.len(), 1);
     assert_eq!(
         resumed.status_by_node.get(&node_id),
         Some(&AgentStatus::Started)
@@ -1531,6 +1623,61 @@ fn direct_chat_checkpoint_migration_discards_only_structured_input() {
         Some(node_id.clone())
     );
     assert_eq!(checkpoint.projection.awaiting_node_ids, vec![node_id]);
+}
+
+#[test]
+fn direct_chat_checkpoint_repairs_missing_assistant_message_in_transcript_order() {
+    let workflow = default_workflow("Direct chat repair");
+    let node_id = workflow.nodes[0].id.clone();
+    let mut projection = WorkflowRunState::running_for_workflow(&workflow);
+    projection.chat_logs.insert(
+        node_id.clone(),
+        vec![
+            engine::ChatMessage::text(engine::ChatRole::User, "Ask me a question".to_string()),
+            engine::ChatMessage::text(engine::ChatRole::User, "yooo".to_string()),
+            engine::ChatMessage::text(engine::ChatRole::Assistant, "What is up?".to_string()),
+        ],
+    );
+    let mut checkpoint = durable_checkpoint(&workflow, projection);
+    checkpoint.engine.entrypoint_text = Some("Ask me a question".to_string());
+    checkpoint.engine.transcripts.insert(
+        node_id.clone(),
+        vec![
+            engine::AgentTranscriptItem::AssistantMessage {
+                content: "What are you looking forward to this week?".to_string(),
+            },
+            engine::AgentTranscriptItem::UserMessage {
+                content: "yooo".to_string(),
+                attachments: Vec::new(),
+            },
+            engine::AgentTranscriptItem::AssistantMessage {
+                content: "What is up?".to_string(),
+            },
+        ],
+    );
+
+    assert!(checkpoint.repair_direct_chat_projection());
+
+    let visible = checkpoint
+        .projection
+        .chat_logs
+        .get(&node_id)
+        .expect("chat messages")
+        .iter()
+        .map(|message| (message.role.clone(), message.content.as_str()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        visible,
+        vec![
+            (engine::ChatRole::User, "Ask me a question"),
+            (
+                engine::ChatRole::Assistant,
+                "What are you looking forward to this week?"
+            ),
+            (engine::ChatRole::User, "yooo"),
+            (engine::ChatRole::Assistant, "What is up?"),
+        ]
+    );
 }
 
 fn seed_run_checkpoint(

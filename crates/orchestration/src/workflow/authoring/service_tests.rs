@@ -111,6 +111,8 @@ async fn send_turn_materializes_valid_draft() {
 #[cfg_attr(miri, ignore)]
 #[tokio::test]
 async fn project_authoring_uses_project_specific_preamble() {
+    let project_dir = tempfile::tempdir().expect("project tempdir");
+    let project_path = project_dir.path().display().to_string();
     let ai = CapturingPromptAi {
         response: single_node_draft("Repo Flow", "root", "Root"),
         system_messages: std::sync::Mutex::new(Vec::new()),
@@ -122,8 +124,8 @@ async fn project_authoring_uses_project_specific_preamble() {
             WorkflowAuthoringProjectContext {
                 id: "project-1".to_string(),
                 name: "OpenFlow".to_string(),
-                path: "/work/openflow".to_string(),
-                default_execution_cwd: Some("/work/openflow/crates/ui".to_string()),
+                path: project_path.clone(),
+                default_execution_cwd: Some(project_path.clone()),
             },
         )
         .session_id;
@@ -148,11 +150,114 @@ async fn project_authoring_uses_project_specific_preamble() {
         .join("\n\n");
     assert!(prompt.contains("You are creating a workflow for an OpenFlow project."));
     assert!(prompt.contains("Project name: OpenFlow"));
-    assert!(prompt.contains("Project path: /work/openflow"));
-    assert!(prompt.contains("Default execution cwd: /work/openflow/crates/ui"));
+    assert!(prompt.contains(&format!("Project path: {project_path}")));
+    assert!(prompt.contains(&format!("Default execution cwd: {project_path}")));
+    assert!(prompt.contains("Read-only project tools are available"));
     assert!(prompt.contains("Never call request_user_input. Never ask clarifying questions."));
     assert!(prompt.contains("requestUserInput: false for autonomous planning, coding"));
     assert!(prompt.contains("openflow_add_node"));
+}
+
+struct ProjectReadToolsAi {
+    calls: AtomicUsize,
+}
+
+#[async_trait]
+impl AiPort for ProjectReadToolsAi {
+    async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+        let call = self.calls.fetch_add(1, Ordering::SeqCst);
+        match call {
+            0 => {
+                let tool_names = request
+                    .available_tools
+                    .iter()
+                    .map(|tool| tool.name.as_str())
+                    .collect::<Vec<_>>();
+                assert!(tool_names.contains(&"read"));
+                assert!(tool_names.contains(&"search"));
+                assert!(tool_names.contains(&"find"));
+                assert!(!tool_names.contains(&"write"));
+                Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+                    raw_text: String::new(),
+                    assistant_message: None,
+                    tool_calls: vec![ToolCall {
+                        id: "read-project-manifest".to_string(),
+                        provider_call_id: None,
+                        name: "read".to_string(),
+                        arguments: json!({ "path": "PROJECT.md" }),
+                    }],
+                    reasoning: Vec::new(),
+                    usage: None,
+                }))
+            }
+            1 => {
+                assert!(
+                    request.transcript.iter().any(|item| {
+                        matches!(
+                            item,
+                            AgentTranscriptItem::ToolResult { result }
+                                if result.tool_name == "read"
+                                    && !result.is_error
+                                    && result.content.contains("Project-specific workflow guidance")
+                        )
+                    }),
+                    "expected project file content in the authoring transcript"
+                );
+                let output = single_node_draft("Repo-aware Flow", "root", "Root");
+                Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    handoff: None,
+                    output: output.clone(),
+                    raw_text: output.to_string(),
+                    assistant_message: Some("Built a repo-aware workflow.".to_string()),
+                    reasoning: Vec::new(),
+                    usage: None,
+                }))
+            }
+            _ => panic!("unexpected project authoring invoke count {call}"),
+        }
+    }
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+async fn project_authoring_exposes_and_executes_read_tools() {
+    let project_dir = tempfile::tempdir().expect("project tempdir");
+    std::fs::write(
+        project_dir.path().join("PROJECT.md"),
+        "# Project-specific workflow guidance\n",
+    )
+    .expect("seed project guidance");
+    let ai = ProjectReadToolsAi {
+        calls: AtomicUsize::new(0),
+    };
+    let service = WorkflowAuthoringService::new();
+    let project_path = project_dir.path().display().to_string();
+    let session_id = service
+        .start_project_session(
+            None,
+            WorkflowAuthoringProjectContext {
+                id: "project-1".to_string(),
+                name: "Project".to_string(),
+                path: project_path.clone(),
+                default_execution_cwd: Some(project_path),
+            },
+        )
+        .session_id;
+
+    let result = service
+        .send_turn(
+            &session_id,
+            "Build a workflow for this repo".to_string(),
+            &AppSettings::default(),
+            &ai,
+            |_| {},
+            |_| {},
+        )
+        .await
+        .expect("project authoring turn");
+
+    assert!(result.validation.valid, "{:?}", result.validation.errors);
+    assert_eq!(ai.calls.load(Ordering::SeqCst), 2);
 }
 
 struct IncrementalAuthoringAi {

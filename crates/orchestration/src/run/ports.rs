@@ -76,6 +76,7 @@ pub trait RunAttachmentStore: Send + Sync {
 
 pub trait RunCheckpointStore: Send + Sync {
     fn create_run(&self, root: &RunStoreRoot, record: &RunRecord) -> io::Result<()>;
+    fn update_record(&self, root: &RunStoreRoot, record: &RunRecord) -> io::Result<()>;
     fn append_checkpoint(
         &self,
         root: &RunStoreRoot,

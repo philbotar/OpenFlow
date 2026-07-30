@@ -40,7 +40,7 @@ The things you hit every single run.
 | 10 | **Pre-run workflow validation** — validate before `start_run`: dangling edges, cycles, missing provider/model/key, empty prompts; surface as canvas badges + blocking dialog | Planned | *New* |
 | 36 | **Workflow insights** — continuous design-time advisory panel: graph smells, config gaps, and best-practice suggestions; non-blocking; jump-to-node fixes | Planned | [Workflow insights](#workflow-insights) |
 | 11 | **Project rules** — `.flow/rules/` under linked projects; discovered on load, merged into shared context at run start | Planned | [Project rules](#project-rules) |
-| 12 | **Input queue + structured questions** — type ahead during active runs (buffer per node, drain on `AwaitInput`); option-card questions via extended `openflow_request_user_input` | Planned | [Agent questions & todos](#agent-questions--todos) |
+| 12 | **Input queue + structured questions** — type ahead during active runs (buffer per node, drain on `AwaitInput`); option-card questions via `openflow_ask_user_question` | Planned | [Agent questions & todos](#agent-questions--todos) |
 | 13 | **Token & cost tracking** — per-turn usage from provider responses; per-node and per-run totals in trace and overview; rough cost estimate per model | Planned | *New* |
 | 14 | **Project terminal & jobs** — interactive shell tab in the bottom dock; cwd follows linked project / active run execution root; background job handles for long-running commands | In progress | [Project terminal](#project-terminal) — interactive terminal tab **Done**; job manager + async bash job ids **Planned** |
 
@@ -618,7 +618,7 @@ Per-node and workflow-level `reasoning_effort` / `reasoning_budget_tokens` are i
 
 ### Agent questions & todos
 
-Agents can ask for free-text or structured input via `openflow_request_user_input` (`AgentNeedUserInput` → `AwaitInput` → chat composer or option cards when `awaitingNodeId` matches). Agents can also publish an in-chat phase checklist with `openflow_update_todo_list`. Input still cannot be queued while a node is running.
+Agents ask for free-text input via `openflow_request_user_input` or structured choices via `openflow_ask_user_question` (`AgentNeedUserInput` → `AwaitInput` → chat composer or option cards when `awaitingNodeId` matches). Direct-chat plain messages end a turn without either tool. Agents can also publish an in-chat phase checklist with `openflow_update_todo_list`. Input still cannot be queued while a node is running.
 
 | Layer | Gap |
 | --- | --- |
@@ -634,7 +634,7 @@ Agents can ask for free-text or structured input via `openflow_request_user_inpu
 | Drain queue on `AwaitInput` — deliver oldest-first when agent requests input | High | Planned |
 | Queued input UI — show pending messages in composer; allow edit/remove before delivery | Medium | Planned |
 | Structured questions — option cards / multiple-choice in chat | High | Done |
-| Question builtin — extend `openflow_request_user_input` with 1-3 questions, options, and question id | High | Done |
+| Question builtin — dedicated `openflow_ask_user_question` with 1-3 questions, options, and question id | High | Done |
 | In-run todo list — agent-managed tasks visible in dock or chat chrome | Medium | Planned |
 | Todo builtin — `openflow_update_todo_list` internal tool + conversation projection to UI | Medium | Done |
 | Notify when an agent asks a question while user is on another node | Medium | Planned |

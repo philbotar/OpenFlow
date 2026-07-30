@@ -462,6 +462,9 @@ fn create_agent_node_from_template_id_copies_agent_config() {
     agent.model = "gpt-template".to_string();
     agent.output_schema =
         serde_json::json!({ "type": "object", "properties": { "ok": { "type": "boolean" } } });
+    agent.handoff = engine::HandoffSpec::Markdown {
+        template: "# Result\n\n## Summary\n".to_string(),
+    };
     agent.auto_start = false;
     agent.tools.approval_mode = Some(engine::ApprovalMode::AlwaysAsk);
     backend
@@ -481,6 +484,12 @@ fn create_agent_node_from_template_id_copies_agent_config() {
     assert_eq!(
         node.agent.output_schema,
         serde_json::json!({ "type": "object", "properties": { "ok": { "type": "boolean" } } })
+    );
+    assert_eq!(
+        node.agent.handoff,
+        engine::HandoffSpec::Markdown {
+            template: "# Result\n\n## Summary\n".to_string(),
+        }
     );
     assert!(node.agent.auto_start);
     assert_eq!(

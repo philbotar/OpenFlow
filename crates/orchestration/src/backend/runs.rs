@@ -55,8 +55,23 @@ impl AppBackend {
 
     pub fn replay_run(&self, run_id: &str) -> Result<WorkflowRunState, BackendError> {
         let roots = self.run_roots()?;
-        self.runs
-            .replay_run(self.run_store.as_ref(), &roots, run_id)
+        let (root, _) = self
+            .run_store
+            .load_record(&roots, run_id)?
+            .ok_or_else(|| BackendError::RunNotFound(run_id.to_string()))?;
+        let mut checkpoint = self
+            .run_store
+            .load_latest_checkpoint(&root, run_id)?
+            .ok_or_else(|| BackendError::RunHasNoCheckpoints(run_id.to_string()))?;
+        if self
+            .chats
+            .list()?
+            .iter()
+            .any(|chat| chat.run_id.as_deref() == Some(run_id))
+        {
+            checkpoint.repair_direct_chat_projection();
+        }
+        Ok(checkpoint.projection.into_replay_projection())
     }
 
     pub async fn load_chat_attachment_preview(
@@ -154,29 +169,26 @@ impl AppBackend {
             .run_store
             .load_record(&roots, run_id)?
             .ok_or_else(|| BackendError::RunNotFound(run_id.to_string()))?;
-        let is_direct_chat = {
-            let direct_chat = self
-                .chats
-                .list()?
-                .into_iter()
-                .find(|chat| chat.run_id.as_deref() == Some(run_id));
-            if let Some(chat) = direct_chat.as_ref() {
-                if super::chat::refresh_execution_workflow_for_chat(
-                    chat,
-                    &mut record.workflow_snapshot,
-                ) {
-                    record.workflow_hash = workflow_hash(&record.workflow_snapshot);
-                }
+        let direct_chat = self
+            .chats
+            .list()?
+            .into_iter()
+            .find(|chat| chat.run_id.as_deref() == Some(run_id));
+        if let Some(chat) = direct_chat.as_ref() {
+            if super::chat::refresh_execution_workflow_for_chat(chat, &mut record.workflow_snapshot)
+            {
+                record.workflow_hash = workflow_hash(&record.workflow_snapshot);
+                self.run_store.update_record(&root, &record)?;
             }
-            direct_chat.is_some()
-        };
+        }
         let workflow_name = record.workflow_name.clone();
         let mut checkpoint = self
             .run_store
             .load_latest_checkpoint(&root, run_id)?
             .ok_or_else(|| BackendError::RunHasNoCheckpoints(run_id.to_string()))?;
-        if is_direct_chat {
+        if direct_chat.is_some() {
             checkpoint.discard_structured_user_input();
+            checkpoint.repair_direct_chat_projection();
         }
         let (state, event_rx) = self
             .runs

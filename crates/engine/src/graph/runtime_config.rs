@@ -145,6 +145,7 @@ mod tests {
             reasoning_budget_tokens: None,
             tool_access_policy: crate::ports::ToolAccessPolicy::Execution,
             allow_user_input: true,
+            conversation_mode: false,
         };
         apply_runtime_patch_to_request(&mut request, &patch);
         assert_eq!(

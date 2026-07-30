@@ -616,6 +616,7 @@ export function useAppProviderState(): AppContextValue {
     handleCreateAgent: workspace.handleCreateAgent,
     handleCreateAgentWithAi: workspace.handleCreateAgentWithAi,
     handleSaveAgents: workspace.handleSaveAgents,
+    handleDeleteSelectedAgent: workspace.handleDeleteSelectedAgent,
     handleAgentSchemaInput: workspace.handleAgentSchemaInput,
     updateSelectedAgent: workspace.updateSelectedAgent,
     handleStartAgentNameEdit: workspace.handleStartAgentNameEdit,

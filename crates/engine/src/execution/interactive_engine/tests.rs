@@ -1949,6 +1949,12 @@ fn interactive_node(id: &str) -> Node {
     node
 }
 
+fn conversation_node(id: &str) -> Node {
+    let mut node = interactive_node(id);
+    node.agent.conversation_mode = true;
+    node
+}
+
 fn needs_input(message: &str) -> AgentTurnOutcome {
     AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
         raw_text: message.to_string(),
@@ -2319,6 +2325,37 @@ fn interactive_node_accepts_a_complete_response_without_a_forced_question() {
 }
 
 #[test]
+fn direct_conversation_plain_reply_ends_the_turn() {
+    let mut workflow = Workflow::new("direct chat");
+    workflow.nodes = vec![conversation_node("assistant")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let node_id = NodeId::from("assistant");
+
+    engine.test_insert_in_flight(node_id.clone());
+    engine.on_ai_complete(
+        &node_id,
+        Ok(message(
+            "The list now includes the requested item and remains sorted.",
+        )),
+    );
+
+    assert!(engine.awaiting_nodes.contains(&node_id));
+    assert!(matches!(
+        engine.transcript(&node_id).last(),
+        Some(AgentTranscriptItem::AssistantMessage { content })
+            if content == "The list now includes the requested item and remains sorted."
+    ));
+    assert!(
+        engine.transcript(&node_id).iter().all(|item| !matches!(
+            item,
+            AgentTranscriptItem::UserMessage { content, .. }
+                if content.contains("openflow_request_user_input")
+        )),
+        "a natural direct-chat reply must not receive a harness-tool nudge"
+    );
+}
+
+#[test]
 fn structured_question_pauses_and_survives_checkpoint_restore() {
     let mut workflow = Workflow::new("wf");
     workflow.nodes = vec![interactive_node("a")];
@@ -2448,7 +2485,7 @@ fn structured_only_request_retries_with_free_text_feedback_when_disabled() {
         engine.transcript(&node_id).last(),
         Some(AgentTranscriptItem::UserMessage { content, .. })
             if content.contains("Structured questions are not available")
-                && content.contains("does not need to end with a question")
+                && content.contains("one direct human-facing question")
     ));
 }
 

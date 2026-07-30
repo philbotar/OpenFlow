@@ -4,6 +4,7 @@ import { AppProvider } from "./context/AppProvider";
 import { useAppContext } from "./context/AppContext";
 import {
   AppHeader,
+  ExternalLinkGuard,
   FirstRunOnboarding,
   Sidebar,
   WorkflowPickerModal,
@@ -135,7 +136,9 @@ function AppChrome() {
 function App() {
   return (
     <AppProvider>
-      <AppChrome />
+      <ExternalLinkGuard>
+        <AppChrome />
+      </ExternalLinkGuard>
     </AppProvider>
   );
 }

@@ -2114,6 +2114,19 @@ label {
   justify-content: flex-end;
 }
 
+.agent-delete-button {
+  margin-right: auto;
+  background: var(--status-danger);
+  border-color: var(--status-danger);
+  color: var(--action-foreground);
+  box-shadow: none;
+}
+
+.agent-delete-button:hover {
+  background: color-mix(in srgb, var(--status-danger) 88%, var(--text-primary));
+  border-color: color-mix(in srgb, var(--status-danger) 88%, var(--text-primary));
+}
+
 .tool-config-section {
   display: flex;
   flex-direction: column;
@@ -6466,12 +6479,19 @@ label {
   height: 14px;
 }
 
+.workflow-authoring-preview-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .workflow-authoring-preview-canvas {
   display: flex;
   flex-direction: column;
-  flex: 1;
   min-height: 0;
-  margin: 12px var(--card-padding-md) var(--card-padding-md);
+  margin: 12px 0 var(--card-padding-md) var(--card-padding-md);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   overflow: hidden;
@@ -6480,6 +6500,67 @@ label {
 
 [data-theme="dark"] .workflow-authoring-preview-canvas {
   background: var(--surface-panel);
+}
+
+.workflow-authoring-inspector {
+  min-width: 0;
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.workflow-authoring-inspector .panel-header-title-row h3 {
+  margin: 0;
+}
+
+.workflow-authoring-inspector-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.workflow-authoring-inspector-field > span,
+.workflow-authoring-inspector-facts dt {
+  color: var(--text-subtle);
+  font-size: var(--text-meta-xs);
+  font-weight: 500;
+}
+
+.workflow-authoring-inspector-text {
+  max-height: 220px;
+  margin: 0;
+  overflow: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--input-bg);
+  color: var(--text);
+  font: 12px/1.5 var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.workflow-authoring-inspector-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+}
+
+.workflow-authoring-inspector-facts > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+}
+
+.workflow-authoring-inspector-facts dt,
+.workflow-authoring-inspector-facts dd {
+  margin: 0;
+}
+
+.workflow-authoring-inspector-facts dd {
+  color: var(--text);
+  font-size: var(--text-body-sm);
+  text-align: right;
 }
 
 .workflow-authoring-status {
@@ -6585,7 +6666,8 @@ label {
   line-height: 1.4;
 }
 
-.primary-button.compact {
+.primary-button.compact,
+.danger-button.compact {
   display: inline-flex;
   align-items: center;
   gap: 6px;
