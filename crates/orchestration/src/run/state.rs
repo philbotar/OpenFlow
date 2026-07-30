@@ -115,6 +115,8 @@ pub struct WorkflowRunState {
     pub chat_logs: BTreeMap<NodeId, Vec<ChatMessage>>,
     pub run_trace: Vec<RunTraceEntry>,
     pub outputs: BTreeMap<NodeId, Value>,
+    #[serde(default)]
+    pub handoffs: BTreeMap<NodeId, engine::HandoffArtifact>,
     pub changed_files: Vec<engine::FileChangeRecord>,
     #[serde(default)]
     pub changed_files_by_node: BTreeMap<NodeId, Vec<engine::FileChangeRecord>>,
@@ -161,6 +163,7 @@ impl WorkflowRunState {
             chat_logs: BTreeMap::new(),
             run_trace: Vec::new(),
             outputs: BTreeMap::new(),
+            handoffs: BTreeMap::new(),
             changed_files: Vec::new(),
             changed_files_by_node: BTreeMap::new(),
             edit_batches: Vec::new(),

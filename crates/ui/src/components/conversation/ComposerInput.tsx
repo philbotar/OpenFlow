@@ -97,7 +97,7 @@ export function ComposerInput(props: ComposerInputProps) {
   });
 
   return (
-    <div class="composer-input-stack">
+    <div class="composer-input-stack" classList={{ "is-empty": local.value.length === 0 }}>
       <div ref={highlightRef} class="composer-input-highlight" aria-hidden="true">
         <Show
           when={local.value.length === 0 && local.placeholder}

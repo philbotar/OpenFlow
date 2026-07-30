@@ -86,7 +86,7 @@ UI never calls `engine` or `orchestration` — always `invoke` through `api.ts`.
 | Editor layout / dock | `screens/EditorScreen.tsx`, `panels/DockPanel.tsx` |
 | Run conversation UI | `components/conversation/` |
 | Workflow canvas | `canvas/` |
-| Node/agent forms | `forms/` |
+| Node/agent forms | `forms/`; node handoff format/template in `forms/HandoffEditor.tsx` |
 | Settings UX | `screens/SettingsScreen.tsx`, `settings/` |
 | Sidebar / projects | `components/sidebar/` |
 | Global run state | `context/AppProvider.tsx` |

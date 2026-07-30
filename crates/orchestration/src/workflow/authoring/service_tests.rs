@@ -17,6 +17,7 @@ struct MockAuthoringAi {
 impl AiPort for MockAuthoringAi {
     async fn invoke(&self, _request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+            handoff: None,
             output: self.response.clone(),
             raw_text: self.response.to_string(),
             assistant_message: Some("Built draft".to_string()),
@@ -36,6 +37,7 @@ impl AiPort for CapturingPromptAi {
     async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
         *self.system_messages.lock().expect("system messages lock") = request.system_messages;
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+            handoff: None,
             output: self.response.clone(),
             raw_text: self.response.to_string(),
             assistant_message: Some("Built draft".to_string()),
@@ -223,6 +225,7 @@ impl AiPort for IncrementalAuthoringAi {
                     "expected authoring tools on request"
                 );
                 Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    handoff: None,
                     output: json!({ "assistantMessage": "Built a two-step workflow." }),
                     raw_text: String::new(),
                     assistant_message: Some("Built a two-step workflow.".to_string()),
@@ -316,6 +319,7 @@ impl AiPort for MixedToolTurnRetryAi {
                 }))
             }
             2 => Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                handoff: None,
                 output: json!({ "assistantMessage": "Built a one-step workflow." }),
                 raw_text: String::new(),
                 assistant_message: Some("Built a one-step workflow.".to_string()),
@@ -406,6 +410,7 @@ impl AiPort for MultiTurnMockAi {
             single_node_draft("Draft v2", "root", "Root Updated")
         };
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+            handoff: None,
             output: output.clone(),
             raw_text: output.to_string(),
             assistant_message: Some("Updated draft".to_string()),
@@ -518,6 +523,7 @@ impl AiPort for ClarificationThenDraftAi {
             }))
         } else {
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                handoff: None,
                 output: self.draft_response.clone(),
                 raw_text: self.draft_response.to_string(),
                 assistant_message: Some("Built draft".to_string()),
@@ -663,6 +669,7 @@ impl AiPort for MalformedSubmitThenDraftAi {
             "expected malformed-submit feedback in transcript"
         );
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+            handoff: None,
             output: self.draft_response.clone(),
             raw_text: self.draft_response.to_string(),
             assistant_message: Some("Built draft".to_string()),
@@ -690,6 +697,7 @@ async fn send_turn_retries_missing_submit_output_and_materializes_draft() {
                 ));
             }
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                handoff: None,
                 output: self.draft_response.clone(),
                 raw_text: self.draft_response.to_string(),
                 assistant_message: Some("Built draft".to_string()),
@@ -850,6 +858,7 @@ impl AiPort for InvalidDraftThenValidAi {
             single_node_draft("Demo", "root", "Root")
         };
         Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+            handoff: None,
             output: output.clone(),
             raw_text: output.to_string(),
             assistant_message: Some("Built draft".to_string()),

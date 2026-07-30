@@ -721,6 +721,7 @@ mod tests {
             node_id: NodeId::from("n1"),
             node_label: "Idea".into(),
             model: "mimo-v2.5".into(),
+            provider_id: None,
             system_messages: vec!["sys".into()],
             task_prompt: "task".into(),
             input: serde_json::json!({}),

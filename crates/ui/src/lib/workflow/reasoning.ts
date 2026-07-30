@@ -35,6 +35,19 @@ export function workflowProviderProfile(
   return activeProfile(settings);
 }
 
+/** Resolve a node provider profile (node override → workflow override → active). */
+export function nodeProviderProfile(
+  settings: AppSettings,
+  workflowSettings: WorkflowSettings | null | undefined,
+  agent: AgentNodeConfig | null | undefined,
+): ProviderProfile {
+  const overrideId = agent?.providerId?.trim();
+  if (overrideId && settings.providers[overrideId]) {
+    return settings.providers[overrideId];
+  }
+  return workflowProviderProfile(settings, workflowSettings);
+}
+
 export function reasoningEffortOptions(profile: ProviderProfile): ReasoningEffortOption[] {
   return profile.reasoning_effort_options ?? profile.reasoningEffortOptions ?? [];
 }

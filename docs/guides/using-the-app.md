@@ -46,9 +46,18 @@ The saved Chat contains only chat metadata and its durable run ID. At run start,
 ## Editor layout
 
 - **Canvas** — nodes, edges, validation errors, and per-node run status.
-- **Inspector** — selected node configuration (instruction, model, tools, callable agents).
-- **Workflow settings** — shared context, execution cwd, provider overrides, optional Plan → Execute gate, and schedule metadata.
+- **Inspector** — selected node configuration (instruction, optional provider override, model, handoff, tools, callable agents).
+- **Workflow settings** — shared provider, shared context, execution cwd, optional Plan → Execute gate, and schedule metadata.
 - **Bottom dock** — **Chat**, **Terminal**, **Run trace**, and **History** tabs.
+
+## Node handoffs
+
+Use the Inspector **Handoff** section to choose what a completed node gives its downstream nodes:
+
+- **Markdown** — default for new nodes. Edit the heading template to match the work. The node must preserve and fill every heading. OpenFlow validates the result, stores `HANDOFF.md`, and passes its `run://` URI plus hash and media type downstream.
+- **JSON** — define a JSON output schema for typed machine data. OpenFlow validates the object, stores `HANDOFF.json`, and passes both the structured output and artifact reference downstream.
+
+Saved workflows created before handoff formats existed load as JSON, preserving their existing output schemas. During execution, downstream nodes receive each direct upstream node's compact output and optional `handoff` manifest. The runtime instructs them to read the immutable `run://` artifact before using its contents.
 
 ## Run controls
 
@@ -57,6 +66,8 @@ Use the top bar while a workflow is open in the editor:
 - **Run** — start a new run when the provider is ready and no continuable run exists. Optional starter text goes through the chat composer when the workflow expects entrypoint input.
 - **Continue** — resume a paused run that still has pending input or approvals.
 - **Stop** — cancel the active run.
+
+Nodes inherit the workflow's shared provider unless their Inspector selects an override. A workflow without a shared provider inherits the active Settings provider. Run start validates every provider referenced by the workflow.
 
 Provider readiness failures are covered in [`../troubleshooting/README.md#provider-not-ready`](../troubleshooting/README.md#provider-not-ready).
 

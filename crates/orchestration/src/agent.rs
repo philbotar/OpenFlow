@@ -2,7 +2,8 @@ use crate::api::AgentDefinitionSummary;
 use crate::error::BackendError;
 use engine::{
     AgentMessageTurn, AgentNeedUserInput, AgentRequest, AgentTranscriptItem, AgentTurnOutcome,
-    AgentTurnSuccess, AiPort, CallableAgent, Node, NodeId, ToolAccessPolicy, WorkflowId,
+    AgentTurnSuccess, AiPort, CallableAgent, HandoffSpec, Node, NodeId, ToolAccessPolicy,
+    WorkflowId,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -72,6 +73,7 @@ impl AgentLibrary {
             node_id: NodeId::from("agent-authoring"),
             node_label: "Agent authoring".to_string(),
             model: model.clone(),
+            provider_id: None,
             system_messages: vec![AGENT_AUTHORING_SYSTEM_PROMPT.to_string()],
             task_prompt: "Create a complete reusable agent definition from the user's description."
                 .to_string(),
@@ -175,6 +177,7 @@ impl AgentLibrary {
         node.agent.task_prompt = agent.task_prompt.clone();
         node.agent.model = agent.model.clone();
         node.agent.output_schema = agent.output_schema.clone();
+        node.agent.handoff = HandoffSpec::Json;
         node.agent.tools = agent.tools.clone();
 
         Ok(node)
@@ -283,6 +286,7 @@ mod tests {
             assert!(request.available_tools.is_empty());
             assert!(request.system_messages[0].contains("reusable OpenFlow saved agent"));
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                handoff: None,
                 output: json!({
                     "name": "Research Reviewer",
                     "systemPrompt": "You review research with a skeptical eye.",

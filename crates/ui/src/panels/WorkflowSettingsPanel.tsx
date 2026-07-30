@@ -4,6 +4,8 @@ import { useAppContext } from "../context/AppContext";
 import {
   defaultReasoningBudgetTokens,
   defaultReasoningEffort,
+  activeProfile,
+  providerDisplayOrder,
   reasoningBudgetForEffort,
   reasoningEffortOptions,
   workflowProviderProfile,
@@ -16,6 +18,16 @@ export function WorkflowSettingsPanel() {
   const workflowProfile = createMemo(() =>
     workflowProviderProfile(ctx.settings(), ctx.activeWorkflow()?.settings),
   );
+  const providerOptions = createMemo(() => [
+    {
+      value: "",
+      label: `Use active provider (${activeProfile(ctx.settings()).display_name})`,
+    },
+    ...providerDisplayOrder(ctx.settings()).map((providerId) => ({
+      value: providerId,
+      label: ctx.settings().providers[providerId].display_name,
+    })),
+  ]);
   const effortOptions = createMemo(() => reasoningEffortOptions(workflowProfile()));
   const interactiveNodes = createMemo(() =>
     (ctx.activeWorkflow()?.nodes ?? []).filter((node) => node.agent.requestUserInput),
@@ -67,6 +79,22 @@ export function WorkflowSettingsPanel() {
           <h3>Settings</h3>
         </div>
       </div>
+
+      <label>
+        <span>Shared provider</span>
+        <p class="field-help">
+          Nodes inherit this provider unless they select an override in the inspector.
+        </p>
+        <TextSelect
+          value={ctx.activeWorkflow()?.settings.provider_id ?? ""}
+          options={providerOptions()}
+          onChange={(event) =>
+            ctx.updateActiveWorkflowSettings((settings) => {
+              settings.provider_id = event.currentTarget.value || null;
+            })
+          }
+        />
+      </label>
 
       <label>
         <span>Shared context</span>

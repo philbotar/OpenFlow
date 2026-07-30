@@ -404,7 +404,7 @@ export function ConversationComposer(props: {
                     }
                   }}
                 >
-                  <Paperclip aria-hidden="true" width={18} height={18} />
+                  <Paperclip aria-hidden="true" width={16} height={16} />
                 </Button>
               </Tooltip>
             </div>

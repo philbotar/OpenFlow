@@ -55,6 +55,14 @@ pub struct RunCheckpointPayload {
     pub projection: WorkflowRunState,
 }
 
+impl RunCheckpointPayload {
+    /// Drop stale choice cards while preserving the underlying free-text pause.
+    pub(crate) fn discard_structured_user_input(&mut self) {
+        self.engine.structured_input_by_node.clear();
+        self.projection.structured_input_by_node.clear();
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct PendingRunCheckpoint {
     pub reason: RunCheckpointReason,

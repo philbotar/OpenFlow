@@ -210,6 +210,7 @@ impl WorkflowAuthoringService {
                 node_id: NodeId::from("authoring"),
                 node_label: "Workflow authoring".to_string(),
                 model: model.clone(),
+                provider_id: None,
                 system_messages: vec![system_prompt.clone()],
                 task_prompt: task_prompt.clone(),
                 input: json!({ "userMessage": user_message }),

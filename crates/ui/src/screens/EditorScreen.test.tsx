@@ -370,7 +370,7 @@ describe("EditorScreen", () => {
     });
 
     const screen = container.querySelector(".editor-screen") as HTMLElement;
-    expect(screen.style.getPropertyValue("--dock-height")).toBe("52px");
+    expect(screen.style.getPropertyValue("--dock-height")).toBe("30px");
     dispose();
   });
 });

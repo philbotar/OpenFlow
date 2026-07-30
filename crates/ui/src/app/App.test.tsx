@@ -3509,15 +3509,16 @@ describe("App bottom dock", () => {
       await flush();
       window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
 
-      expect(editorScreen.style.getPropertyValue("--dock-height")).toBe("52px");
+      expect(editorScreen.style.getPropertyValue("--dock-height")).toBe("30px");
       expect(container.querySelector(".chat-layout")).toBeNull();
 
+      // Drag past chat collapse threshold (half viewport − 32) from collapsed start.
       resizeZone.dispatchEvent(new MouseEvent("pointerdown", { clientY: 600, button: 0, bubbles: true }));
-      window.dispatchEvent(new MouseEvent("pointermove", { clientY: 460, bubbles: true }));
+      window.dispatchEvent(new MouseEvent("pointermove", { clientY: 130, bubbles: true }));
       await flush();
       window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
 
-      expect(editorScreen.style.getPropertyValue("--dock-height")).toBe("192px");
+      expect(editorScreen.style.getPropertyValue("--dock-height")).toBe("500px");
       expect(container.querySelector(".chat-layout")).not.toBeNull();
     } finally {
       dispose();
@@ -3558,7 +3559,7 @@ describe("App bottom dock", () => {
       await flush();
       window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
 
-      expect(editorScreen.style.getPropertyValue("--dock-height")).toBe("52px");
+      expect(editorScreen.style.getPropertyValue("--dock-height")).toBe("30px");
 
       chatTab.click();
       await flush();
@@ -3627,13 +3628,13 @@ describe("App bottom dock", () => {
         "dock resize zone",
       );
 
-      expect(editorScreen.style.getPropertyValue("--dock-height")).toBe("750px");
+      expect(editorScreen.style.getPropertyValue("--dock-height")).toBe("500px");
       resizeZone.dispatchEvent(new MouseEvent("pointerdown", { clientY: 600, button: 0, bubbles: true }));
       window.dispatchEvent(new MouseEvent("pointermove", { clientY: 520, bubbles: true }));
       await flush();
       window.dispatchEvent(new MouseEvent("pointerup", { bubbles: true }));
 
-      expect(editorScreen.style.getPropertyValue("--dock-height")).toBe("830px");
+      expect(editorScreen.style.getPropertyValue("--dock-height")).toBe("580px");
     } finally {
       dispose();
     }

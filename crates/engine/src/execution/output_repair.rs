@@ -261,6 +261,7 @@ fn build_repair_request(
         )),
         node_label: format!("{} (output repair)", originating.node_label),
         model: model.to_string(),
+        provider_id: originating.provider_id.clone(),
         system_messages: vec![OUTPUT_REPAIR_SYSTEM_INSTRUCTION.to_string()],
         task_prompt: "Repair the malformed final-output tool arguments.".to_string(),
         input: json!({
@@ -341,6 +342,7 @@ mod tests {
             node_id: NodeId("node-1".into()),
             node_label: "Worker".into(),
             model: "worker-model".into(),
+            provider_id: None,
             system_messages: vec!["worker system".into()],
             task_prompt: "do work".into(),
             input: json!({"x": 1}),
@@ -402,6 +404,7 @@ mod tests {
 
     fn good_repair_outcome() -> AgentTurnOutcome {
         AgentTurnOutcome::Completed(AgentTurnSuccess {
+            handoff: None,
             output: json!({
                 "repaired_arguments": {
                     "output": { "summary": "fixed" },
@@ -490,9 +493,20 @@ mod tests {
             ScriptedInner::new(vec![Err(repairable_error("{}")), Ok(good_repair_outcome())]);
         let captured = inner.captured.clone();
         let port = RepairingAiPort::new(inner, OutputRepairPolicy::default());
+        let mut request = base_request();
+        request.provider_id = Some("anthropic".to_string());
 
-        port.invoke(base_request()).await.expect("repair");
-        assert_eq!(captured.lock().expect("lock")[1].model, "worker-model");
+        port.invoke(request).await.expect("repair");
+        let captured_request = {
+            let captured = captured.lock().expect("lock");
+            captured
+                .get(1)
+                .map(|request| (request.model.clone(), request.provider_id.clone()))
+        };
+        assert_eq!(
+            captured_request,
+            Some(("worker-model".to_string(), Some("anthropic".to_string())))
+        );
     }
 
     #[test]
@@ -516,6 +530,7 @@ mod tests {
         let inner = ScriptedInner::new(vec![
             Err(primary),
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                handoff: None,
                 output: json!({"not_repaired": true}),
                 raw_text: "{}".into(),
                 assistant_message: None,

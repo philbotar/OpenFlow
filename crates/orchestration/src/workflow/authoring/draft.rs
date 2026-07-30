@@ -1,5 +1,5 @@
 use super::error::AuthoringError;
-use engine::{Edge, EdgeId, Node, NodeId, NodeKind, Workflow, WorkflowId};
+use engine::{Edge, EdgeId, HandoffSpec, Node, NodeId, NodeKind, Workflow, WorkflowId};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -26,6 +26,8 @@ pub struct WorkflowAuthoringNodeDraft {
     pub task_prompt: String,
     #[serde(default)]
     pub output_schema: Value,
+    #[serde(default = "default_node_handoff")]
+    pub handoff: HandoffSpec,
     /// Whether the runtime may pause this node for a direct human question.
     /// Autonomous authored nodes default to false.
     #[serde(default)]
@@ -40,6 +42,11 @@ pub fn default_node_output_schema() -> Value {
         "properties": { "summary": { "type": "string" } },
         "required": ["summary"]
     })
+}
+
+#[must_use]
+pub fn default_node_handoff() -> HandoffSpec {
+    HandoffSpec::markdown_default()
 }
 
 #[must_use]
@@ -61,6 +68,7 @@ pub fn workflow_to_authoring_draft(workflow: &Workflow) -> WorkflowAuthoringDraf
                 system_prompt: node.agent.system_prompt.clone(),
                 task_prompt: node.agent.task_prompt.clone(),
                 output_schema: node.agent.output_schema.clone(),
+                handoff: node.agent.handoff.clone(),
                 request_user_input: node.agent.request_user_input,
             })
             .collect(),
@@ -182,6 +190,7 @@ pub fn materialize_authoring_draft(
                 } else {
                     node_draft.output_schema
                 },
+                handoff: node_draft.handoff,
                 request_user_input: node_draft.request_user_input,
                 ..Default::default()
             },
@@ -288,6 +297,7 @@ mod tests {
                     system_prompt: node.agent.system_prompt.clone(),
                     task_prompt: node.agent.task_prompt.clone(),
                     output_schema: node.agent.output_schema.clone(),
+                    handoff: node.agent.handoff.clone(),
                     request_user_input: node.agent.request_user_input,
                 })
                 .collect(),

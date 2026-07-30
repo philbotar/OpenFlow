@@ -2192,12 +2192,6 @@ label {
   font-size: 0.92rem;
 }
 
-.tool-config-grid {
-  grid-template-columns: 1fr;
-  gap: 10px;
-}
-
-
 .output-panel {
   padding: 16px;
   border: 1px solid var(--border);
@@ -2601,12 +2595,15 @@ label {
   flex-direction: column;
   gap: 2px;
   flex-shrink: 0;
+  width: min(920px, calc(100% - 72px));
+  margin: 0 auto 8px;
   padding: 8px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface-muted);
   font-size: 13px;
   color: var(--text-muted);
+  box-sizing: border-box;
 }
 
 .chat-parallel-hint strong {
@@ -3432,11 +3429,12 @@ label {
 .composer-input-stack {
   position: relative;
   flex: 0 0 auto;
-  align-self: stretch;
+  align-self: center;
   min-width: 0;
   width: 100%;
+  min-height: var(--composer-send-size);
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   overflow: hidden;
 }
 
@@ -3444,7 +3442,8 @@ label {
   position: absolute;
   inset: 0;
   z-index: 1;
-  padding: 0;
+  box-sizing: border-box;
+  padding: calc((var(--composer-send-size) - 1.25em) / 2) 0;
   overflow: hidden;
   pointer-events: none;
   white-space: pre-wrap;
@@ -3565,10 +3564,16 @@ label {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-rows: auto;
-  align-items: end;
+  align-items: center;
   gap: 8px;
   width: 100%;
   min-width: 0;
+}
+
+.chat-composer-main > .app-tooltip-trigger {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
 }
 
 .chat-composer-main .composer-input-stack {
@@ -3595,11 +3600,12 @@ label {
 
 .composer-input {
   flex: 0 0 auto;
+  box-sizing: border-box;
   width: 100%;
   min-width: 0;
-  min-height: var(--composer-input-min-height);
+  min-height: var(--composer-send-size);
   max-height: var(--composer-input-max-height);
-  padding: 0;
+  padding: calc((var(--composer-send-size) - 1.25em) / 2) 0;
   border: 0;
   border-radius: var(--radius-none);
   background: transparent;
@@ -3626,8 +3632,8 @@ label {
 
 .composer-send-button {
   flex-shrink: 0;
-  width: 36px;
-  height: 36px;
+  width: var(--composer-send-size);
+  height: var(--composer-send-size);
   padding: 0;
   margin: 0;
   border: 0;
@@ -3650,8 +3656,8 @@ label {
 }
 
 .composer-send-icon {
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
   display: block;
 }
 
@@ -4519,6 +4525,11 @@ label {
 .sidebar-icon-button .sidebar-icon {
   width: var(--topbar-icon-size);
   height: var(--topbar-icon-size);
+}
+
+/* Lucide Ellipsis sits optically high in the 24px control. */
+.workflow-row-action.sidebar-icon-button .sidebar-icon {
+  transform: translateY(2px);
 }
 
 .sidebar-icon-button:hover {

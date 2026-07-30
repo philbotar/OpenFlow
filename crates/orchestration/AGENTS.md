@@ -30,7 +30,7 @@ orchestration/src/
 ├── agent.rs        saved CallableAgent definitions and AgentStore port
 ├── workflow/       ports.rs + catalog.rs
 ├── project/        ports.rs + registry.rs
-├── run/            coordinator/, execution/, state.rs
+├── run/            coordinator/, execution/, handoff.rs, state.rs
 ├── settings/       ports.rs + facade.rs
 ├── tool/           registry.rs, runner.rs, hooks.rs
 ├── adapters/
@@ -93,6 +93,7 @@ orchestration/src/
 | UI run snapshot fields | `run/state.rs` + engine telemetry if needed |
 | New builtin tool | `adapters/tool_impl/` + `tool/registry.rs`; tier in `engine/tools/config.rs`; update `NODE_RUNTIME_PREAMBLE` |
 | Tool execution wiring | `run/execution/tool_port.rs` |
+| Node handoff storage / `run://` resolution | `run/handoff.rs`, `tool/dispatch.rs` |
 | Settings / API keys | `settings/facade.rs`, `settings/provider.rs`, `adapters/storage/settings_store.rs` |
 | New persistence | `adapters/storage/` + `{entity}/ports.rs` |
 | IPC DTOs | `api.rs` |
@@ -104,11 +105,12 @@ See [`docs/architecture/orchestration-layout.md`](../../docs/architecture/orches
 1. **Shared context** — trimmed and appended per run in execution layer.
 2. **Execution cwd** — resolved at run start from project `default_execution_cwd` or process cwd.
 3. **Callable agents** — snapshotted at run start via `resolve_callable_agent_snapshots`.
-4. **Provider override** — `WorkflowSettings.provider_id` overrides active provider for the run.
-5. **Model default** — an empty node model inherits the active provider's `default_model` at run prep; an explicit node model wins.
+4. **Provider routing** — `AgentNodeConfig.provider_id` overrides `WorkflowSettings.provider_id`, which overrides the active settings provider. Orchestration builds every referenced client at run prep and routes each `AgentRequest` to its effective provider.
+5. **Model default** — an empty node model inherits its effective provider's `default_model` at run prep; an explicit node model wins.
 6. **Skill invocation** — installed `/skill-id` task-prompt tokens resolve through `SkillCatalog` at run start and augment node/callable-agent system prompts.
 7. **Workflow storage** — app `workflows.json` + project `.flow/workflows/`; merge on load (project wins on ID collision).
 8. **Direct chats** — `ChatCatalog` persists metadata plus project/model/approval/reasoning config. `backend/chat.rs` privately builds the execution `Workflow` at run start without returning it in the Chat DTO or adding it to `WorkflowCatalog`.
+9. **Node handoffs** — `AiInvocationAdapter` validates and materializes `HANDOFF.md` or `HANDOFF.json` before emitting completion; run state and checkpoints retain the immutable manifest.
 
 ### Persistence (quick reference)
 
@@ -120,6 +122,7 @@ See [`docs/architecture/orchestration-layout.md`](../../docs/architecture/orches
 | Agents | `{data_local}/openflow/agents.json` |
 | Projects | `{data_local}/openflow/projects.json` |
 | Settings | `{data_local}/openflow/settings.json` |
+| Node handoffs | `{run_root}/{run_id}/handoffs/{node_id}/HANDOFF.md` or `HANDOFF.json` |
 API key precedence: transient input → stored `ProviderProfile.api_key` → env var fallback.
 
 ### Testing

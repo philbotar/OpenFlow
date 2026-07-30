@@ -264,6 +264,43 @@ describe("WorkflowCanvas adapter helpers", () => {
 });
 
 describe("WorkflowCanvas component", () => {
+  test("keeps the workflow in place when wheel scrolling over the canvas", async () => {
+    render(
+      createElement(
+        "div",
+        { style: { width: "960px", height: "640px" } },
+        createElement(WorkflowCanvas, {
+          graph,
+          selectedNodeId: null,
+          selectedEdgeId: null,
+          statusByNode,
+          subagentsByNode: null,
+          onSelectNode: vi.fn(),
+          onSelectEdge: vi.fn(),
+          onUpdateNodePosition: vi.fn(),
+          onAutoLayout: vi.fn(),
+          onCreateEdge: vi.fn(),
+          onReconnectEdge: vi.fn(),
+          onDeleteEdge: vi.fn(),
+          onDeleteNode: vi.fn(),
+          onAddNode: vi.fn(),
+        }),
+      ),
+    );
+
+    const pane = document.querySelector(".react-flow__pane");
+    const viewport = document.querySelector(".react-flow__viewport");
+    expect(pane).not.toBeNull();
+    expect(viewport).not.toBeNull();
+    const initialTransform = viewport!.getAttribute("style");
+
+    fireEvent.wheel(pane!, { deltaX: 0, deltaY: 120, clientX: 480, clientY: 320 });
+
+    await vi.waitFor(() => {
+      expect(viewport!.getAttribute("style")).toBe(initialTransform);
+    });
+  });
+
   test("offers a contextual delete action for the selected node", () => {
     const onDeleteNode = vi.fn();
 

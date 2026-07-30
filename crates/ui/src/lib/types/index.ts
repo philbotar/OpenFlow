@@ -146,6 +146,7 @@ export type ApprovalMode = "read_only" | "always_ask" | "write" | "yolo";
 
 export interface NodeToolConfig {
   approvalMode: ApprovalMode | null;
+  allowStructuredUserInput?: boolean;
 }
 
 export interface NodeRuntimeConfigUpdate {
@@ -155,11 +156,28 @@ export interface NodeRuntimeConfigUpdate {
   reasoningBudgetTokens?: number | null;
 }
 
+export type HandoffSpec =
+  | { format: "legacy" }
+  | { format: "markdown"; template: string }
+  | { format: "json" };
+
+export interface HandoffArtifact {
+  format: "markdown" | "json";
+  uri: string;
+  mediaType: string;
+  sha256: string;
+  sizeBytes: number;
+}
+
 export interface AgentNodeConfig {
   system_prompt: string;
   task_prompt: string;
   model: string;
+  /** Optional provider override; blank inherits the workflow provider. */
+  providerId?: string | null;
   output_schema: unknown;
+  /** Canonical node-to-node artifact contract. Missing saved fields migrate to JSON. */
+  handoff?: HandoffSpec;
   /** Legacy wire field. Runtime scheduling ignores it. */
   auto_start: boolean;
   tools: NodeToolConfig;
@@ -465,6 +483,7 @@ export interface WorkflowRunState {
   chatLogs: Record<NodeId, ChatMessage[]>;
   runTrace: RunTraceEntry[];
   outputs: Record<NodeId, unknown>;
+  handoffs?: Record<NodeId, HandoffArtifact>;
   changedFiles: FileChangeRecord[];
   changedFilesByNode: Record<NodeId, FileChangeRecord[]>;
   editBatches: EditBatch[];

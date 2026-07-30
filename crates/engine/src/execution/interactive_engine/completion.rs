@@ -2,17 +2,21 @@ use super::{
     looks_like_narrated_file_mutation, InteractiveEngine, PendingToolBatch, RunError,
     AUTONOMOUS_CONTINUE_FEEDBACK, EMPTY_AFTER_NARRATED_WRITE_FEEDBACK,
     EMPTY_AFTER_WRITE_EXPAND_FEEDBACK, EMPTY_TURN_HUMAN_HANDOFF, EXPAND_VIA_EDIT_FEEDBACK,
-    INCOMPLETE_WRITE_FEEDBACK, INTERACTIVE_CONTINUE_FEEDBACK, MALFORMED_REQUEST_INPUT_FEEDBACK,
-    MAX_AUTO_CONTINUE_STREAK, MAX_EMPTY_PROVIDER_TURN_RETRIES, MAX_MALFORMED_REQUEST_INPUT_RETRIES,
-    MAX_MALFORMED_SUBMIT_OUTPUT_RETRIES, MAX_MIXED_TOOL_TURN_RETRIES, NARRATED_WRITE_FEEDBACK,
-    PLAN_EXPAND_VIA_EDIT_FEEDBACK, PLAN_NARRATED_WRITE_FEEDBACK, TEXT_STREAK_HUMAN_HANDOFF,
+    FREE_TEXT_REQUEST_INPUT_FEEDBACK, INCOMPLETE_WRITE_FEEDBACK, INTERACTIVE_CONTINUE_FEEDBACK,
+    MALFORMED_REQUEST_INPUT_FEEDBACK, MAX_AUTO_CONTINUE_STREAK, MAX_EMPTY_PROVIDER_TURN_RETRIES,
+    MAX_MALFORMED_REQUEST_INPUT_RETRIES, MAX_MALFORMED_SUBMIT_OUTPUT_RETRIES,
+    MAX_MIXED_TOOL_TURN_RETRIES, NARRATED_WRITE_FEEDBACK, PLAN_EXPAND_VIA_EDIT_FEEDBACK,
+    PLAN_NARRATED_WRITE_FEEDBACK, TEXT_STREAK_HUMAN_HANDOFF,
 };
 use crate::conversation::{
-    filter_tool_turn_assistant_message, is_clarifying_question, AgentReasoning, AgentTranscriptItem,
+    filter_tool_turn_assistant_message, AgentReasoning, AgentTranscriptItem,
 };
 use crate::execution::tool_results::{denied_tool_result, error_tool_result};
 use crate::execution::NodeFailureKind;
-use crate::graph::{apply_runtime_patch_to_tool_config, runtime_patch_for, NodeId, RetryPolicy};
+use crate::graph::{
+    apply_runtime_patch_to_tool_config, runtime_patch_for, submission_output_schema, NodeId,
+    RetryPolicy,
+};
 use crate::ports::{
     AgentError, AgentNeedUserInput, AgentToolCallBatch, AgentTurnOutcome, AgentTurnSuccess,
     StructuredUserInput, ToolAccessPolicy, UsageReport,
@@ -80,7 +84,7 @@ impl InteractiveEngine {
                     message.usage.as_ref(),
                 );
             }
-            Ok(AgentTurnOutcome::NeedsUserInput(input)) => {
+            Ok(AgentTurnOutcome::NeedsUserInput(mut input)) => {
                 if self.interaction_mode(node_id) == InteractionMode::Autonomous {
                     self.handle_text_only_turn(
                         node_id,
@@ -89,6 +93,9 @@ impl InteractiveEngine {
                         None,
                     );
                     return;
+                }
+                if !self.allows_structured_user_input(node_id) {
+                    input.structured_input = None;
                 }
                 let retried = self.handle_malformed_request_input_retry(node_id, &input);
                 if retried {
@@ -134,6 +141,11 @@ impl InteractiveEngine {
         }
     }
 
+    fn allows_structured_user_input(&self, node_id: &NodeId) -> bool {
+        self.find_node(node_id)
+            .is_none_or(|node| node.agent.tools.allow_structured_user_input)
+    }
+
     fn handle_malformed_submit_output_retry(
         &mut self,
         node_id: &NodeId,
@@ -146,8 +158,8 @@ impl InteractiveEngine {
         let schema_hint = self.find_node(node_id).map_or_else(
             || "see the node output schema".to_string(),
             |node| {
-                serde_json::to_string_pretty(&node.agent.output_schema)
-                    .unwrap_or_else(|_| node.agent.output_schema.to_string())
+                let schema = submission_output_schema(&node.agent);
+                serde_json::to_string_pretty(&schema).unwrap_or_else(|_| schema.to_string())
             },
         );
 
@@ -184,7 +196,7 @@ impl InteractiveEngine {
         input: &AgentNeedUserInput,
     ) -> bool {
         let request_is_valid = input.structured_input.as_ref().map_or_else(
-            || is_clarifying_question(&input.assistant_message),
+            || !input.assistant_message.trim().is_empty(),
             StructuredUserInput::is_valid,
         );
         if request_is_valid {
@@ -208,9 +220,14 @@ impl InteractiveEngine {
         }
 
         *retry_count += 1;
+        let feedback = if self.allows_structured_user_input(node_id) {
+            MALFORMED_REQUEST_INPUT_FEEDBACK
+        } else {
+            FREE_TEXT_REQUEST_INPUT_FEEDBACK
+        };
         self.transcripts.entry(node_id.clone()).or_default().push(
             AgentTranscriptItem::UserMessage {
-                content: MALFORMED_REQUEST_INPUT_FEEDBACK.to_string(),
+                content: feedback.to_string(),
                 attachments: Vec::new(),
             },
         );
@@ -231,8 +248,13 @@ impl InteractiveEngine {
         }
         *retry_count += 1;
 
+        let input_shape = if self.allows_structured_user_input(node_id) {
+            "a direct question or structured choices"
+        } else {
+            "a complete human-facing assistant_message; do not set questions"
+        };
         let content = format!(
-            "Your last response mixed harness and executable tools ({tool_names}) and was rejected; no calls from that response were executed. Call either exactly one harness tool by itself (openflow_submit_node_output when complete, or openflow_request_user_input with a direct question or structured choices), or one or more executable tools with no harness tools in the same batch."
+            "Your last response mixed harness and executable tools ({tool_names}) and was rejected; no calls from that response were executed. Call either exactly one harness tool by itself (openflow_submit_node_output when complete, or openflow_request_user_input with {input_shape}), or one or more executable tools with no harness tools in the same batch."
         );
         self.transcripts.entry(node_id.clone()).or_default().push(
             AgentTranscriptItem::UserMessage {
@@ -260,7 +282,7 @@ impl InteractiveEngine {
         } else if write_nudge {
             EMPTY_AFTER_NARRATED_WRITE_FEEDBACK
         } else if conversational {
-            INTERACTIVE_CONTINUE_FEEDBACK
+            self.user_input_continue_feedback(node_id)
         } else {
             AUTONOMOUS_CONTINUE_FEEDBACK
         };
@@ -418,7 +440,7 @@ impl InteractiveEngine {
                 NARRATED_WRITE_FEEDBACK
             }
         } else if conversational {
-            INTERACTIVE_CONTINUE_FEEDBACK
+            self.user_input_continue_feedback(node_id)
         } else {
             AUTONOMOUS_CONTINUE_FEEDBACK
         };
@@ -452,6 +474,14 @@ impl InteractiveEngine {
         true
     }
 
+    fn user_input_continue_feedback(&self, node_id: &NodeId) -> &'static str {
+        if self.allows_structured_user_input(node_id) {
+            INTERACTIVE_CONTINUE_FEEDBACK
+        } else {
+            FREE_TEXT_REQUEST_INPUT_FEEDBACK
+        }
+    }
+
     fn fail_node(&mut self, node_id: &NodeId, error: &AgentError) {
         self.retry_after_by_node.remove(node_id);
         self.failed_nodes.insert(node_id.clone(), error.to_string());
@@ -471,6 +501,9 @@ impl InteractiveEngine {
                 .entry(node_id.clone())
                 .or_default()
                 .push(AgentTranscriptItem::AssistantMessage { content: message });
+        }
+        if let Some(handoff) = success.handoff {
+            self.handoffs.insert(node_id.clone(), handoff);
         }
         self.outputs.insert(node_id.clone(), success.output.clone());
         if self.plan_mode_source_node_id.as_ref() == Some(node_id)

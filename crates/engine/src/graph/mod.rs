@@ -16,6 +16,8 @@ pub use runtime_config::{
 pub use validation::{execution_layers, validate_workflow, WorkflowValidationError};
 pub(crate) use workflow::default_structured_output_schema;
 pub use workflow::{
-    effective_output_schema, AgentNodeConfig, Edge, EdgeId, Node, NodeId, NodeKind, NodePosition,
-    PlanModeConfig, RetryPolicy, Workflow, WorkflowId, WorkflowSchedule, WorkflowSettings,
+    default_markdown_handoff_template, effective_output_schema, submission_output_schema,
+    validate_markdown_handoff, validate_markdown_handoff_template, AgentNodeConfig, Edge, EdgeId,
+    HandoffSpec, MarkdownHandoffError, Node, NodeId, NodeKind, NodePosition, PlanModeConfig,
+    RetryPolicy, Workflow, WorkflowId, WorkflowSchedule, WorkflowSettings,
 };

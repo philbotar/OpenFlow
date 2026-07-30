@@ -308,6 +308,7 @@ mod tests {
             node_id: NodeId("n1".into()),
             node_label: "Node".into(),
             model: "claude-sonnet-4-6".into(),
+            provider_id: None,
             system_messages: vec!["sys-a".into(), "sys-b".into()],
             task_prompt: "do the thing".into(),
             input: json!({"k": "v"}),

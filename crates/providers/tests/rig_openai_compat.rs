@@ -49,12 +49,61 @@ fn responses_submit_fixture() -> serde_json::Value {
     })
 }
 
+fn responses_submit_sse_fixture() -> String {
+    let tool_call = json!({
+        "type": "response.output_item.done",
+        "sequence_number": 1,
+        "output_index": 0,
+        "item": {
+            "type": "function_call",
+            "id": "fc_1",
+            "call_id": "call-1",
+            "name": "openflow_submit_node_output",
+            "arguments": "{\"output\":{\"summary\":\"done\"},\"assistant_message\":null}",
+            "status": "completed"
+        }
+    });
+    let response = json!({
+        "type": "response.completed",
+        "sequence_number": 2,
+        "response": {
+            "id": "resp_1",
+            "object": "response",
+            "created_at": 1,
+            "status": "completed",
+            "error": null,
+            "incomplete_details": null,
+            "instructions": null,
+            "max_output_tokens": null,
+            "model": "test-model",
+            "usage": {
+                "input_tokens": 5,
+                "input_tokens_details": {"cached_tokens": 0},
+                "output_tokens": 4,
+                "output_tokens_details": {"reasoning_tokens": 1},
+                "total_tokens": 9
+            },
+            "output": [{
+                "type": "function_call",
+                "id": "fc_1",
+                "call_id": "call-1",
+                "name": "openflow_submit_node_output",
+                "arguments": "{\"output\":{\"summary\":\"done\"},\"assistant_message\":null}",
+                "status": "completed"
+            }],
+            "tools": []
+        }
+    });
+    format!("data: {tool_call}\n\ndata: {response}\n\ndata: [DONE]\n\n")
+}
+
 fn test_request() -> engine::AgentRequest {
     engine::AgentRequest {
         workflow_id: engine::WorkflowId("wf-1".into()),
         node_id: engine::NodeId("idea".into()),
         node_label: "Idea".into(),
         model: "test-model".into(),
+        provider_id: None,
         system_messages: vec!["You are precise.".into()],
         task_prompt: "Summarize the kickoff.".into(),
         input: serde_json::json!({"entrypoint": {"text": "ORCHID-91"}, "upstream": []}),
@@ -282,6 +331,32 @@ async fn responses_submit_output_completes_node() {
         panic!("expected completed outcome");
     };
     assert_eq!(success.output, json!({"summary": "done"}));
+}
+
+#[tokio::test]
+async fn responses_stream_preserves_usage() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_raw(responses_submit_sse_fixture(), "text/event-stream"),
+        )
+        .mount(&server)
+        .await;
+
+    let client = create_provider(openai_test_config(&server.uri(), WireApi::Responses));
+    let outcome = client
+        .invoke_stream(test_request(), &RecordingSink::default())
+        .await
+        .unwrap();
+    let AgentTurnOutcome::Completed(success) = outcome else {
+        panic!("expected completed outcome");
+    };
+    assert_eq!(
+        success.usage.as_ref().map(|usage| usage.total_tokens),
+        Some(9)
+    );
 }
 
 #[tokio::test]
@@ -880,7 +955,13 @@ async fn chat_completions_stream_emits_deltas() {
         event,
         AiStreamEvent::AssistantDelta { content } if content == "Hi"
     )));
-    assert!(matches!(outcome, AgentTurnOutcome::Completed(_)));
+    let AgentTurnOutcome::Completed(success) = outcome else {
+        panic!("expected completed outcome");
+    };
+    assert_eq!(
+        success.usage.as_ref().map(|usage| usage.total_tokens),
+        Some(6)
+    );
 }
 
 #[tokio::test]

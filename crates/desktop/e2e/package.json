@@ -8,6 +8,7 @@
     "test:browser": "playwright test --project=browser-only",
     "test:visual": "playwright test --project=visual",
     "test:tauri": "playwright test --project=tauri",
+    "capture:readme-demo": "playwright test --config=playwright.readme-demo.config.ts",
     "postinstall": "playwright install chromium"
   },
   "devDependencies": {

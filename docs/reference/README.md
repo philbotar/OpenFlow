@@ -32,6 +32,8 @@ Agent and harness tools (built-ins, MCP, authoring): [`tools.md`](tools.md).
 | Project workflows | `{project}/.flow/workflows/{workflowId}.workflow.json` |
 | App-run attachments | `{data_local}/openflow/runs/{runId}/attachments/{attachmentId}.{ext}` |
 | Project-run attachments | `{project}/.flow/runs/{runId}/attachments/{attachmentId}.{ext}` |
+| App-run node handoffs | `{data_local}/openflow/runs/{runId}/handoffs/{nodeId}/HANDOFF.md` or `HANDOFF.json` |
+| Project-run node handoffs | `{project}/.flow/runs/{runId}/handoffs/{nodeId}/HANDOFF.md` or `HANDOFF.json` |
 | Provider API keys | Plaintext in `settings.json` as `ProviderProfile.api_key` |
 | Web search API keys | Plaintext in `settings.json` under `search.keys` (per search-cli provider id) |
 | ChatGPT Codex OAuth | Plaintext in `settings.json` as `ProviderProfile.codex_oauth`; redacted from normal settings IPC |

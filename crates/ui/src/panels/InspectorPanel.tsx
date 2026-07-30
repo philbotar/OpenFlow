@@ -1,20 +1,44 @@
-import { createEffect, Show } from "solid-js";
+import { createEffect, createMemo, Show } from "solid-js";
 import { useAppContext } from "../context/AppContext";
 import { AgentConfigForm } from "../forms/AgentConfigForm";
+import { HandoffEditor } from "../forms/HandoffEditor";
 import {
   agentReasoningBudgetTokens,
   agentReasoningEffort,
   defaultReasoningBudgetTokens,
   defaultReasoningEffort,
+  nodeProviderProfile,
+  providerDisplayOrder,
   reasoningEffortOptions,
+  workflowProviderProfile,
   workflowReasoningEffort,
 } from "@/lib/workflow";
 import { CallableAgentsEditor } from "../forms/CallableAgentsEditor";
 import { ToolConfigEditor } from "../forms/ToolConfigEditor";
-import { InspectorSection, SidebarIcon, Button, ButtonRow, Tooltip } from "@/components";
+import { InspectorSection, SidebarIcon, Tooltip } from "@/components";
 
 export function InspectorPanel() {
   const ctx = useAppContext();
+  const sharedProviderProfile = createMemo(() =>
+    workflowProviderProfile(ctx.settings(), ctx.activeWorkflow()?.settings),
+  );
+  const currentNodeProviderProfile = createMemo(() =>
+    nodeProviderProfile(
+      ctx.settings(),
+      ctx.activeWorkflow()?.settings,
+      ctx.currentNode()?.agent,
+    ),
+  );
+  const providerOptions = createMemo(() => [
+    {
+      value: "",
+      label: `Use shared provider (${sharedProviderProfile().display_name})`,
+    },
+    ...providerDisplayOrder(ctx.settings()).map((providerId) => ({
+      value: providerId,
+      label: ctx.settings().providers[providerId].display_name,
+    })),
+  ]);
   let labelInput: HTMLInputElement | undefined;
 
   createEffect(() => {
@@ -86,6 +110,18 @@ export function InspectorPanel() {
 
             <InspectorSection title="Agent" defaultOpen>
               <AgentConfigForm
+                providerId={node().agent.providerId ?? ""}
+                providerOptions={providerOptions()}
+                onProviderChange={(value) =>
+                  ctx.updateCurrentNode((nextNode) => {
+                    nextNode.agent.providerId = value || null;
+                    nextNode.agent.model = "";
+                    nextNode.agent.reasoning_effort = null;
+                    nextNode.agent.reasoningEffort = null;
+                    nextNode.agent.reasoning_budget_tokens = null;
+                    nextNode.agent.reasoningBudgetTokens = null;
+                  })
+                }
                 model={node().agent.model}
                 onModelChange={(value) =>
                   ctx.updateCurrentNode((nextNode) => {
@@ -113,14 +149,18 @@ export function InspectorPanel() {
                 skills={ctx.availableSkills()}
                 schemaJson={ctx.schemaText()}
                 onSchemaChange={(value) => ctx.setSchemaText(value)}
-                knownModels={() => ctx.activeProfileMemo().known_models}
-                defaultModel={() => ctx.activeProfileMemo().default_model}
-                reasoningEffortOptions={reasoningEffortOptions(ctx.activeProfileMemo())}
+                knownModels={() => currentNodeProviderProfile().known_models}
+                defaultModel={() => currentNodeProviderProfile().default_model}
+                reasoningEffortOptions={reasoningEffortOptions(currentNodeProviderProfile())}
                 workflowDefaultReasoningEffort={workflowReasoningEffort(
                   ctx.activeWorkflow()?.settings ?? { shared_context: "" },
                 )}
-                providerDefaultReasoningEffort={defaultReasoningEffort(ctx.activeProfileMemo())}
-                defaultReasoningBudgetTokens={defaultReasoningBudgetTokens(ctx.activeProfileMemo())}
+                providerDefaultReasoningEffort={defaultReasoningEffort(
+                  currentNodeProviderProfile(),
+                )}
+                defaultReasoningBudgetTokens={defaultReasoningBudgetTokens(
+                  currentNodeProviderProfile(),
+                )}
                 reasoningEffort={agentReasoningEffort(node().agent)}
                 reasoningBudgetTokens={agentReasoningBudgetTokens(node().agent)}
                 onReasoningEffortChange={(value) =>
@@ -145,21 +185,18 @@ export function InspectorPanel() {
               />
             </InspectorSection>
 
-            <InspectorSection title="Output schema">
-              <label>
-                <span>JSON output schema</span>
-                <textarea
-                  class="text-area code"
-                  rows={14}
-                  value={ctx.schemaText()}
-                  onInput={(event) => ctx.setSchemaText(event.currentTarget.value)}
-                />
-              </label>
-              <ButtonRow>
-                <Button variant="secondary" onClick={ctx.applySchemaEditor}>
-                  Apply schema
-                </Button>
-              </ButtonRow>
+            <InspectorSection title="Handoff" defaultOpen>
+              <HandoffEditor
+                handoff={node().agent.handoff}
+                schemaJson={ctx.schemaText()}
+                onHandoffChange={(handoff) =>
+                  ctx.updateCurrentNode((nextNode) => {
+                    nextNode.agent.handoff = handoff;
+                  })
+                }
+                onSchemaChange={(value) => ctx.setSchemaText(value)}
+                onApplySchema={ctx.applySchemaEditor}
+              />
             </InspectorSection>
 
             <InspectorSection title="Tools">

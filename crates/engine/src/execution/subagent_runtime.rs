@@ -6,7 +6,7 @@ use crate::conversation::{
 use crate::execution::interactive_engine::{
     AUTONOMOUS_CONTINUE_FEEDBACK, MAX_AUTO_CONTINUE_STREAK,
 };
-use crate::execution::node_invocation::merge_shared_context;
+use crate::execution::node_invocation::{effective_node_provider_id, merge_shared_context};
 use crate::execution::subagents::CALL_SUBAGENT_TOOL;
 use crate::execution::subagents::{
     adhoc_subagent_base_index, build_adhoc_subagent_summaries, merge_subagent_summaries,
@@ -183,6 +183,7 @@ pub fn start_subagent_invoke(
     subagent.status = SubagentStatus::Active;
     declared_subagents.insert(subagent.id.clone(), subagent.clone());
 
+    let provider_id = effective_node_provider_id(workflow, parent_node);
     let mut sub_request = if let Some(agent_def) = agent_snapshots.get(&call_args.subagent_id) {
         build_saved_agent_request(
             workflow,
@@ -190,6 +191,7 @@ pub fn start_subagent_invoke(
             &subagent,
             &call_args.input,
             available_tools,
+            provider_id,
         )
     } else {
         build_adhoc_agent_request(
@@ -198,6 +200,7 @@ pub fn start_subagent_invoke(
             &subagent,
             &call_args.input,
             available_tools,
+            provider_id,
         )
     };
     if sub_request.model.trim().is_empty() {
@@ -227,6 +230,7 @@ fn build_saved_agent_request(
     subagent: &SubagentSummary,
     input: &str,
     available_tools: Vec<crate::ToolDefinition>,
+    provider_id: Option<String>,
 ) -> AgentRequest {
     let sub_node_config = agent.tools.clone();
     let system_prompt = merge_shared_context(workflow, &agent.system_prompt);
@@ -242,6 +246,7 @@ fn build_saved_agent_request(
         node_id: NodeId(subagent.id.clone()),
         node_label: subagent.name.clone(),
         model: agent.model.clone(),
+        provider_id,
         system_messages: vec![system_prompt],
         task_prompt: input.to_string(),
         input: Value::Null,
@@ -265,6 +270,7 @@ fn build_adhoc_agent_request(
     subagent: &SubagentSummary,
     input: &str,
     available_tools: Vec<crate::ToolDefinition>,
+    provider_id: Option<String>,
 ) -> AgentRequest {
     let sub_node_config = parent_node.agent.tools.clone();
     let sub_transcript = vec![AgentTranscriptItem::UserMessage {
@@ -283,6 +289,7 @@ fn build_adhoc_agent_request(
         node_id: NodeId(subagent.id.clone()),
         node_label: subagent.name.clone(),
         model: parent_node.agent.model.clone(),
+        provider_id,
         system_messages: vec![system_prompt],
         task_prompt: input.to_string(),
         input: Value::Null,
@@ -479,6 +486,7 @@ mod tests {
                 node_id: NodeId("sub-1".to_string()),
                 node_label: "Researcher".to_string(),
                 model: "test-model".to_string(),
+                provider_id: None,
                 system_messages: vec!["system".to_string()],
                 task_prompt: "task".to_string(),
                 input: json!(null),
@@ -605,6 +613,7 @@ mod tests {
         let mut node = crate::Node::agent("Parent", 0.0, 0.0);
         node.id = NodeId("parent".to_string());
         node.agent.model = "parent-model".to_string();
+        node.agent.provider_id = Some("anthropic".to_string());
         workflow.nodes.push(node);
 
         let mut agent = CallableAgent::new("Helper");
@@ -629,6 +638,7 @@ mod tests {
         ) {
             SubagentStartOutcome::Started(session, _) => {
                 assert_eq!(session.request.model, "parent-model");
+                assert_eq!(session.request.provider_id.as_deref(), Some("anthropic"));
             }
             SubagentStartOutcome::Failed(result) => {
                 panic!("unexpected failure: {}", result.content);

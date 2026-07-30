@@ -352,6 +352,7 @@ pub fn apply_event_to_run_state(
             node_id,
             label,
             output,
+            handoff,
         } => {
             if let Some(plan_mode) = state.plan_mode.as_mut() {
                 if plan_mode.evidence_source_node_id == node_id {
@@ -363,6 +364,9 @@ pub fn apply_event_to_run_state(
                 .status_by_node
                 .insert(node_id.clone(), AgentStatus::Completed);
             state.outputs.insert(node_id.clone(), output.clone());
+            if let Some(handoff) = handoff {
+                state.handoffs.insert(node_id.clone(), handoff);
+            }
             state.run_trace.push(RunTraceEntry {
                 node_id: node_id.clone(),
                 node_label: label,
@@ -860,6 +864,7 @@ mod tests {
                 node_id: NodeId::from("freeze"),
                 label: "Freeze".to_string(),
                 output: json!({ "scope": "approved" }),
+                handoff: None,
             },
         );
 
@@ -900,6 +905,41 @@ mod tests {
         assert!(state.active);
         assert_eq!(state.pending_approvals.len(), 1);
         assert!(state.last_error.is_none());
+    }
+
+    #[test]
+    fn usage_event_updates_context_window_snapshot() {
+        let workflow = Workflow::new("w");
+        let mut state = WorkflowRunState::running_for_workflow(&workflow);
+        let node_id = NodeId::from("chat");
+
+        apply_event_to_run_state(
+            &workflow,
+            &mut state,
+            ExecutionEvent::UsageReported {
+                node_id: node_id.clone(),
+                usage: engine::UsageReport {
+                    prompt_tokens: 10_000,
+                    completion_tokens: 2_400,
+                    total_tokens: 12_400,
+                },
+                model: "gpt-4.1-mini".to_string(),
+                max_context_tokens: Some(50_000),
+            },
+        );
+
+        let snapshot = state
+            .context_window_by_node
+            .get(&node_id)
+            .expect("context usage snapshot");
+        assert_eq!(snapshot.used_tokens, 12_400);
+        assert_eq!(snapshot.max_tokens, 50_000);
+        assert_eq!(snapshot.model, "gpt-4.1-mini");
+        let wire = serde_json::to_value(&state).expect("serialize run state");
+        assert_eq!(
+            wire["contextWindowByNode"]["chat"]["usedTokens"],
+            json!(12_400)
+        );
     }
 
     #[test]

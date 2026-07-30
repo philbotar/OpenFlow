@@ -500,7 +500,8 @@ export function WorkflowCanvas(props: WorkflowCanvasProps) {
           fitViewOptions={FIT_ALL_VIEWPORT_OPTIONS}
           minZoom={CANVAS_MIN_ZOOM * uiZoom}
           maxZoom={CANVAS_MAX_ZOOM * uiZoom}
-          panOnScroll
+          panOnScroll={false}
+          zoomOnScroll={false}
           selectionOnDrag={false}
           nodesDraggable={!editingLocked}
           nodesConnectable={!editingLocked}

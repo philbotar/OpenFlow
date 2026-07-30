@@ -291,6 +291,7 @@ mod tests {
             node_id: engine::NodeId("node-1".into()),
             node_label: "Node".into(),
             model: "gpt-5.3-codex".into(),
+            provider_id: None,
             system_messages: vec!["Be precise.".into()],
             task_prompt: "Return the result.".into(),
             input: json!({}),

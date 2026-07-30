@@ -8,18 +8,16 @@ export function ToolConfigEditor(props: {
 }) {
   return (
     <div class="tool-config-body">
-      <div class="field-grid tool-config-grid">
-        <label>
-          <span>Approval mode</span>
-          <TextSelect
-            value={props.config.approvalMode ?? "write"}
-            options={APPROVAL_MODE_OPTIONS}
-            onChange={(event) =>
-              props.onApprovalModeChange(event.currentTarget.value as ApprovalMode)
-            }
-          />
-        </label>
-      </div>
+      <label>
+        <span>Approval mode</span>
+        <TextSelect
+          value={props.config.approvalMode ?? "write"}
+          options={APPROVAL_MODE_OPTIONS}
+          onChange={(event) =>
+            props.onApprovalModeChange(event.currentTarget.value as ApprovalMode)
+          }
+        />
+      </label>
     </div>
   );
 }

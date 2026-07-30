@@ -251,21 +251,21 @@ Schema fields belong under `output`, not at the top level. Invalid submits may t
 
 ## `openflow_request_user_input`
 
-**Purpose:** Pause the run and ask the human for free-text or structured clarification in chat.
+**Purpose:** Pause the run with a human-facing message or structured clarification in chat.
 
-**When to use:** Clarification is required and cannot be resolved with tools or upstream input.
+**When to use:** Clarification is required and cannot be resolved with tools or upstream input. Direct chat also uses this control tool to end an assistant turn without forcing a follow-up question.
 
 **Availability:** Only when the node has **request user input** enabled in configuration (inspector / agent template).
 
 **Key arguments:**
 
-- Free text: `{ "assistant_message": "<one direct question>" }`.
+- Free text: `{ "assistant_message": "<human-facing response or direct question>" }`.
 - Structured: `{ "questions": [{ "id": "<snake_case id>", "header": "<12 chars max>", "question": "<question>", "options": [{ "label": "<choice>", "description": "<tradeoff>" }] }] }`.
 
-Structured requests accept 1-3 questions with 2-3 options each. The UI adds an **Other** answer. `assistant_message` may accompany `questions` as a short intro.
+Structured workflow requests accept 1-3 questions with 2-3 options each. The normal composer remains available for a free-text answer. `assistant_message` may accompany `questions` as a short intro. Direct chat removes `questions` from the model-facing tool schema and accepts only `assistant_message`.
 Provide at least one of `assistant_message` or `questions`.
 
-**Rules:** Call **alone** in a model turn (like submit). Plain text in the assistant message does not pause the run.
+**Rules:** Call **alone** in a model turn (like submit). Plain provider text without this tool call does not pause the run.
 
 **Approval:** Harness.
 

@@ -3,13 +3,14 @@
 use crate::error::BackendError;
 use crate::run::execution::{
     apply_event_to_run_state, spawn_interactive_workflow_run, ExecutionAction, ExecutionEvent,
-    InteractiveWorkflowRunParams, NodeInterrupts, ResumeContinuation,
+    InteractiveWorkflowRunParams, NodeInterrupts, ProviderContextWindowSizes, ProviderRouter,
+    ResumeContinuation,
 };
 use crate::run::persistence::{
     PendingRunCheckpoint, RunCheckpointPayload, RunRecord, RunStoreRoot,
 };
 use crate::run::ports::RunCheckpointStore;
-use crate::run::prep::prepare_workflow_for_execution;
+use crate::run::prep::prepare_workflow_for_execution_with_profiles;
 use crate::run::skill_invocation::{
     apply_explicit_skill_invocations, apply_skill_invocations, has_skill_invocations, skill_paths,
     SkillPaths,
@@ -27,7 +28,7 @@ use engine::{
 };
 use parking_lot::Mutex as ParkingMutex;
 use providers::{create_provider, ProviderId};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -40,7 +41,7 @@ pub(super) struct PreparedWorkflowRun {
     pub ai: Box<dyn AiPort>,
     pub agent_snapshots: BTreeMap<String, CallableAgent>,
     pub persisted_settings: AppSettings,
-    pub context_window_sizes: BTreeMap<String, u32>,
+    pub context_window_sizes: ProviderContextWindowSizes,
     pub skill_paths: SkillPaths,
 }
 
@@ -98,11 +99,48 @@ pub(super) fn prepare_workflow_run(
     {
         provider_settings.active_provider = ProviderId::from(provider_id.as_str());
     }
-    let mut provider_config = resolve_provider_config(&provider_settings, transient_api_key, env)?;
-    attach_codex_credential_sink(&mut provider_config, settings_store);
-    let ai = create_provider(provider_config);
+    let default_provider_id = provider_settings.active_provider.clone();
+    let mut required_provider_ids = BTreeSet::from([default_provider_id.clone()]);
+    required_provider_ids.extend(workflow.nodes.iter().filter_map(|node| {
+        node.agent
+            .provider_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|provider_id| !provider_id.is_empty())
+            .map(ProviderId::from)
+    }));
+    let mut provider_clients = BTreeMap::new();
+    let mut context_window_sizes = BTreeMap::new();
+    for provider_id in required_provider_ids {
+        let mut selected_settings = provider_settings.clone();
+        selected_settings.active_provider = provider_id.clone();
+        let selected_transient_key = if provider_id == default_provider_id {
+            transient_api_key
+        } else {
+            None
+        };
+        let mut provider_config =
+            resolve_provider_config(&selected_settings, selected_transient_key, env)?;
+        attach_codex_credential_sink(&mut provider_config, Arc::clone(&settings_store));
+        context_window_sizes.insert(
+            provider_id.to_string(),
+            selected_settings
+                .active_profile()
+                .context_window_sizes
+                .clone(),
+        );
+        provider_clients.insert(provider_id.to_string(), create_provider(provider_config));
+    }
+    let ai: Box<dyn AiPort> = Box::new(ProviderRouter::new(
+        default_provider_id.to_string(),
+        provider_clients,
+    ));
     let mut workflow = workflow;
-    prepare_workflow_for_execution(&mut workflow, Some(provider_settings.active_profile()));
+    prepare_workflow_for_execution_with_profiles(
+        &mut workflow,
+        &default_provider_id,
+        &provider_settings.providers,
+    )?;
     let agents = agent_store.load()?;
     let mut agent_snapshots = resolve_callable_agent_snapshots(&workflow, &agents);
     let skills = skill_catalog.discover(&provider_settings.skill_search_paths)?;
@@ -116,10 +154,7 @@ pub(super) fn prepare_workflow_run(
         ai,
         agent_snapshots,
         persisted_settings,
-        context_window_sizes: provider_settings
-            .active_profile()
-            .context_window_sizes
-            .clone(),
+        context_window_sizes,
         skill_paths: resolved_skill_paths,
     })
 }

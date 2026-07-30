@@ -96,6 +96,7 @@ Use inline `impl AiPort` stubs (e.g. node-id-aware `ScriptedAi` in `workflow_acc
 | Orchestration headless E2E (stack mock) | `cargo nextest run -p orchestration --test workflow_e2e --no-capture` | Full orchestration + engine runs with `MockAiStack` (`tests/support/`) - happy path, retries, missing input/approval, interrupt; no real providers |
 | Live AI smoke | `STEP_WORKFLOW_LIVE_AI=1 STEP_WORKFLOW_LIVE_API_KEY=... STEP_WORKFLOW_LIVE_MODEL=... cargo nextest run -p orchestration --test live_workflow --run-ignored ignored-only --no-capture` | A real BYOK provider can complete a small workflow and satisfy schema-level rules |
 | Manual saved-provider smoke | `./scripts/smoke-live-ai.sh` | The provider selected in saved app settings supports workflow authoring, agent authoring, a fixed two-node run, and post-run review |
+| Manual mixed-provider smoke | `OPENFLOW_LIVE_AI_SECONDARY_PROVIDER=<provider-id> ./scripts/smoke-live-multi-provider.sh` | One real workflow routes an override node to a secondary saved provider and an inherited node to the shared saved provider |
 | Manual saved-provider attachment smoke | `./scripts/smoke-live-attachments.sh` | The selected provider reads generated PNG/PDF fixtures, then reads a new fact from each attachment after durable stop/resume |
 | Miri (engine + orchestration UB) | `./scripts/miri.sh` or `./scripts/verify.sh --deep miri` | UB interpreter over `engine` + `orchestration` **lib** tests; runs in `release.yml` `release-verify` on tag push (Ubuntu); not on PR CI. |
 
@@ -402,6 +403,18 @@ The smoke does not save generated workflows or agents. A subscription token refr
 saved OAuth credentials, matching normal app behavior. Output repair remains covered by deterministic
 acceptance tests because deliberately forcing malformed live model output would make this smoke
 non-deterministic.
+
+To validate real per-node provider routing, configure credentials for the active provider and one
+secondary saved provider, then run:
+
+```bash
+OPENFLOW_LIVE_AI_SECONDARY_PROVIDER=bedrock ./scripts/smoke-live-multi-provider.sh
+```
+
+The active provider becomes the workflow's shared provider. The planning node overrides it with the
+secondary provider; the implementation node inherits the shared provider. Set
+`OPENFLOW_LIVE_AI_PRIMARY_PROVIDER` to override the active-provider default. The smoke writes run
+records only under a temporary directory. Normal OAuth refresh may update saved credentials.
 
 DeepInfra-compatible chat completions example:
 

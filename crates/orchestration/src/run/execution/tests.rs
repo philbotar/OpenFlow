@@ -4,8 +4,9 @@ use crate::tools::ToolRegistry;
 use async_trait::async_trait;
 use engine::{
     AgentError, AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTurnOutcome,
-    AgentTurnSuccess, AiPort, AiStreamEvent, AiStreamSink, ApprovalMode, ChatRole, NodeId,
-    NodeToolConfig, SubagentStatus, SubagentSummary, ToolCall, ToolCallStatus, ToolTier, Workflow,
+    AgentTurnSuccess, AiPort, AiStreamEvent, AiStreamSink, ApprovalMode, ChatRole, HandoffFormat,
+    HandoffSpec, NodeId, NodeToolConfig, SubagentStatus, SubagentSummary, ToolCall, ToolCallStatus,
+    ToolTier, Workflow,
 };
 use parking_lot::Mutex;
 use serde_json::json;
@@ -23,6 +24,7 @@ fn sample_agent_request() -> AgentRequest {
         node_id: "choose-feature".into(),
         node_label: "Choose feature".to_string(),
         model: "test-model".to_string(),
+        provider_id: None,
         system_messages: Vec::new(),
         task_prompt: String::new(),
         input: json!({}),
@@ -38,6 +40,211 @@ fn sample_agent_request() -> AgentRequest {
         tool_access_policy: engine::ToolAccessPolicy::Execution,
         allow_user_input: true,
     }
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+async fn adapter_emits_provider_usage_with_context_window() {
+    struct UsageAi;
+
+    #[async_trait]
+    impl AiPort for UsageAi {
+        async fn invoke(&self, _request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            panic!("AiInvocationAdapter should call invoke_stream");
+        }
+
+        async fn invoke_stream(
+            &self,
+            _request: AgentRequest,
+            _sink: &dyn AiStreamSink,
+        ) -> Result<AgentTurnOutcome, AgentError> {
+            Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                handoff: None,
+                output: json!({"summary": "done"}),
+                raw_text: "{}".to_string(),
+                assistant_message: None,
+                reasoning: Vec::new(),
+                usage: Some(engine::UsageReport {
+                    prompt_tokens: 10_000,
+                    completion_tokens: 2_400,
+                    total_tokens: 12_400,
+                }),
+            }))
+        }
+    }
+
+    let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
+    let adapter = AiInvocationAdapter::new(
+        Arc::new(UsageAi),
+        event_tx,
+        Arc::new(parking_lot::Mutex::new(BTreeMap::new())),
+        CancellationToken::new(),
+        BTreeMap::from([
+            (
+                "openai".to_string(),
+                BTreeMap::from([("test-model".to_string(), 50_000)]),
+            ),
+            (
+                "anthropic".to_string(),
+                BTreeMap::from([("test-model".to_string(), 200_000)]),
+            ),
+        ]),
+    );
+
+    let mut request = sample_agent_request();
+    request.provider_id = Some("anthropic".to_string());
+    adapter.invoke(request).await.expect("invoke succeeds");
+
+    let usage = std::iter::from_fn(|| event_rx.try_recv().ok()).find_map(|event| match event {
+        ExecutionEvent::UsageReported {
+            usage,
+            model,
+            max_context_tokens,
+            ..
+        } => Some((usage, model, max_context_tokens)),
+        _ => None,
+    });
+    let (usage, model, max_context_tokens) = usage.expect("usage event");
+    assert_eq!(usage.total_tokens, 12_400);
+    assert_eq!(model, "test-model");
+    assert_eq!(max_context_tokens, Some(200_000));
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+async fn adapter_materializes_markdown_handoff_before_returning_completion() {
+    struct MarkdownAi;
+
+    #[async_trait]
+    impl AiPort for MarkdownAi {
+        async fn invoke(&self, _request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            panic!("AiInvocationAdapter should call invoke_stream");
+        }
+
+        async fn invoke_stream(
+            &self,
+            _request: AgentRequest,
+            _sink: &dyn AiStreamSink,
+        ) -> Result<AgentTurnOutcome, AgentError> {
+            Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                handoff: None,
+                output: json!({
+                    "markdown": "# Handoff\n\n## Summary\nDone.\n\n## Risks\nNone.\n"
+                }),
+                raw_text: "{}".to_string(),
+                assistant_message: Some("Research complete.".to_string()),
+                reasoning: Vec::new(),
+                usage: None,
+            }))
+        }
+    }
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (event_tx, _event_rx) = tokio::sync::mpsc::unbounded_channel();
+    let adapter = AiInvocationAdapter::new(
+        Arc::new(MarkdownAi),
+        event_tx,
+        Arc::new(parking_lot::Mutex::new(BTreeMap::new())),
+        CancellationToken::new(),
+        BTreeMap::new(),
+    )
+    .with_handoff_store(
+        dir.path().join("handoffs"),
+        BTreeMap::from([(
+            NodeId::from("choose-feature"),
+            HandoffSpec::Markdown {
+                template: "# Handoff\n\n## Summary\n\n## Risks\n".to_string(),
+            },
+        )]),
+    );
+
+    let outcome = adapter
+        .invoke(sample_agent_request())
+        .await
+        .expect("invoke succeeds");
+    let AgentTurnOutcome::Completed(success) = outcome else {
+        panic!("expected completion");
+    };
+    let handoff = success.handoff.expect("handoff artifact");
+
+    assert_eq!(handoff.format, HandoffFormat::Markdown);
+    assert_eq!(handoff.uri, "run://handoffs/choose-feature/HANDOFF.md");
+    assert_eq!(
+        handoff.sha256,
+        "2c9f0a223f31ecb0e9f63defc58ba907fcca8ebf960a9548d0d731749eef0018"
+    );
+    assert_eq!(success.output, json!({"summary": "Research complete."}));
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("handoffs/choose-feature/HANDOFF.md"))
+            .expect("read handoff"),
+        "# Handoff\n\n## Summary\nDone.\n\n## Risks\nNone.\n"
+    );
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+async fn adapter_rejects_markdown_handoff_missing_template_heading() {
+    struct IncompleteMarkdownAi;
+
+    #[async_trait]
+    impl AiPort for IncompleteMarkdownAi {
+        async fn invoke(&self, _request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            panic!("AiInvocationAdapter should call invoke_stream");
+        }
+
+        async fn invoke_stream(
+            &self,
+            _request: AgentRequest,
+            _sink: &dyn AiStreamSink,
+        ) -> Result<AgentTurnOutcome, AgentError> {
+            Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                handoff: None,
+                output: json!({ "markdown": "# Handoff\n\n## Summary\nDone.\n" }),
+                raw_text: "{}".to_string(),
+                assistant_message: None,
+                reasoning: Vec::new(),
+                usage: None,
+            }))
+        }
+    }
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
+    let adapter = AiInvocationAdapter::new(
+        Arc::new(IncompleteMarkdownAi),
+        event_tx,
+        Arc::new(parking_lot::Mutex::new(BTreeMap::new())),
+        CancellationToken::new(),
+        BTreeMap::new(),
+    )
+    .with_handoff_store(
+        dir.path().join("handoffs"),
+        BTreeMap::from([(
+            NodeId::from("choose-feature"),
+            HandoffSpec::Markdown {
+                template: "# Handoff\n\n## Summary\n\n## Risks\n".to_string(),
+            },
+        )]),
+    );
+
+    let error = adapter
+        .invoke(sample_agent_request())
+        .await
+        .expect_err("missing heading must fail");
+
+    assert!(error.is_malformed_submit_output());
+    assert!(error
+        .to_string()
+        .contains("missing template headings: ## Risks"));
+    assert!(
+        std::iter::from_fn(|| event_rx.try_recv().ok()).any(|event| {
+            matches!(
+                event,
+                ExecutionEvent::AiInvokeFailed { error, .. }
+                    if error.contains("missing template headings: ## Risks")
+            )
+        })
+    );
 }
 
 #[cfg_attr(miri, ignore)]
@@ -183,6 +390,7 @@ fn workflow() -> Workflow {
     let mut first = engine::Node::agent("First", 0.0, 0.0);
     first.id = NodeId("first".to_string());
     first.agent.model = "test-model".to_string();
+    first.agent.handoff = HandoffSpec::Json;
     workflow.nodes = vec![first];
     workflow
 }
@@ -286,6 +494,7 @@ fn reducer_node_completed_pushes_json_completion_message() {
             node_id: NodeId("first".to_string()),
             label: "First".to_string(),
             output: json!({"summary": "Captured the welcome message."}),
+            handoff: None,
         },
     );
 
@@ -312,6 +521,7 @@ fn reducer_node_completed_pushes_json_when_summary_missing() {
             node_id: NodeId("first".to_string()),
             label: "First".to_string(),
             output: json!({"ok": true}),
+            handoff: None,
         },
     );
 
@@ -685,6 +895,7 @@ async fn headless_run_auto_approves_read_tool_and_reenters_model_loop() {
         ) -> Result<AgentTurnOutcome, engine::AgentError> {
             if request.node_id == "__post_run_review" {
                 return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    handoff: None,
                     output: json!({"suggestions": []}),
                     raw_text: "{}".to_string(),
                     assistant_message: None,
@@ -714,6 +925,7 @@ async fn headless_run_auto_approves_read_tool_and_reenters_model_loop() {
                 }));
             }
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                handoff: None,
                 output: json!({"summary": "done"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
@@ -759,6 +971,7 @@ async fn headless_run_survives_permanent_tool_failure_and_completes() {
         ) -> Result<AgentTurnOutcome, engine::AgentError> {
             if request.node_id == "__post_run_review" {
                 return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    handoff: None,
                     output: json!({"suggestions": []}),
                     raw_text: "{}".to_string(),
                     assistant_message: None,
@@ -791,6 +1004,7 @@ async fn headless_run_survives_permanent_tool_failure_and_completes() {
             });
             assert!(saw_error, "model should see not_found tool error");
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                handoff: None,
                 output: json!({"summary": "recovered"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
@@ -1253,10 +1467,12 @@ fn parallel_pause_workflow() -> Workflow {
     wait.agent.auto_start = false;
     wait.agent.request_user_input = true;
     wait.agent.model = "test-model".to_string();
+    wait.agent.handoff = HandoffSpec::Json;
     let mut fail = engine::Node::agent("Fail", 200.0, 0.0);
     fail.id = NodeId("fail".to_string());
     fail.agent.auto_start = true;
     fail.agent.model = "test-model".to_string();
+    fail.agent.handoff = HandoffSpec::Json;
     workflow.nodes = vec![wait, fail];
     workflow
 }
@@ -1472,6 +1688,7 @@ async fn new_message_retries_failed_node_with_message_in_transcript() {
         ) -> Result<AgentTurnOutcome, AgentError> {
             if request.node_id == "__post_run_review" {
                 return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    handoff: None,
                     output: json!({"suggestions": []}),
                     raw_text: "{}".to_string(),
                     assistant_message: None,
@@ -1491,6 +1708,7 @@ async fn new_message_retries_failed_node_with_message_in_transcript() {
                 "retry request should include the new user message"
             );
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                handoff: None,
                 output: json!({"summary": "done"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
@@ -1574,6 +1792,7 @@ async fn headless_retries_transient_node_error() {
                 return Err(AgentError::Transient("timeout".to_string()));
             }
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                handoff: None,
                 output: json!({"summary": "ok"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
@@ -1706,6 +1925,7 @@ fn manual_review_workflow() -> Workflow {
     node.agent.auto_start = false;
     node.agent.request_user_input = true;
     node.agent.model = "test-model".to_string();
+    node.agent.handoff = HandoffSpec::Json;
     workflow.nodes = vec![node];
     workflow
 }
@@ -1720,6 +1940,7 @@ fn question_then_complete(request: &AgentRequest) -> AgentTurnOutcome {
         })
     } else {
         AgentTurnOutcome::Completed(AgentTurnSuccess {
+            handoff: None,
             output: json!({"summary": "done"}),
             raw_text: "{}".to_string(),
             assistant_message: None,
@@ -1962,6 +2183,7 @@ async fn completed_run_includes_post_run_suggestions() {
                 json!({"summary": "done"})
             };
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                handoff: None,
                 output,
                 raw_text: "{}".to_string(),
                 assistant_message: None,
@@ -2036,6 +2258,7 @@ async fn stopped_run_continuation_retries_node_with_message() {
             }
             tokio::time::sleep(Duration::from_millis(200)).await;
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                handoff: None,
                 output: json!({"summary": "resumed"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
@@ -2056,6 +2279,7 @@ async fn stopped_run_continuation_retries_node_with_message() {
     let mut node = engine::Node::agent("idea", 0.0, 0.0);
     node.id = engine::NodeId("idea".to_string());
     node.agent.model = "test-model".to_string();
+    node.agent.handoff = HandoffSpec::Json;
     workflow.nodes = vec![node];
 
     let artifact_root = super::new_artifact_root();
@@ -2122,6 +2346,7 @@ fn write_tool_workflow() -> Workflow {
     let mut node = engine::Node::agent("writer", 0.0, 0.0);
     node.id = NodeId("writer".to_string());
     node.agent.model = "test-model".to_string();
+    node.agent.handoff = HandoffSpec::Json;
     node.agent.tools.approval_mode = Some(ApprovalMode::AlwaysAsk);
     workflow.nodes = vec![node];
     workflow
@@ -2159,6 +2384,7 @@ async fn resolve_approval_uses_engine_node_id_after_stop_and_continue() {
                 }));
             }
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                handoff: None,
                 output: json!({"summary": "done"}),
                 raw_text: "{}".to_string(),
                 assistant_message: None,
@@ -2298,6 +2524,7 @@ async fn adapter_maps_repair_stream_events_to_telemetry_not_chat() {
                 model: "repair-m".into(),
             });
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                handoff: None,
                 output: json!({"summary": "ok"}),
                 raw_text: "{}".into(),
                 assistant_message: None,
@@ -2419,6 +2646,7 @@ async fn headless_repairs_malformed_submit_emits_trace_without_ai_invoke_failed(
         steps: StdMutex::new(vec![
             Err(primary_err),
             Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                handoff: None,
                 output: json!({
                     "repaired_arguments": {
                         "output": { "summary": "repaired" }

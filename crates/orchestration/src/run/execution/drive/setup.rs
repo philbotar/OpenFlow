@@ -183,6 +183,7 @@ where
         tool_registry.register_web_search();
     }
 
+    let handoff_root = crate::run::handoff::handoff_root_for_artifact_root(&artifact_root);
     let artifacts = match ArtifactStore::new(artifact_root) {
         Ok(artifacts) => artifacts,
         Err(error) => {
@@ -202,6 +203,11 @@ where
         .with_search_settings(search),
     );
     let workflow = Arc::new(workflow);
+    let handoff_specs = workflow
+        .nodes
+        .iter()
+        .map(|node| (node.id.clone(), node.agent.handoff.clone()))
+        .collect();
     let repair_policy = OutputRepairPolicy::from_workflow_settings(&workflow.settings);
     let repairing = Arc::new(RepairingAiPort::new(ai, repair_policy));
     let node_interrupts_for_tools = node_interrupts.clone();
@@ -213,7 +219,8 @@ where
             cancel_token.clone(),
             context_window_sizes,
         )
-        .with_attachment_store(attachment_root, attachment_store),
+        .with_attachment_store(attachment_root, attachment_store)
+        .with_handoff_store(handoff_root, handoff_specs),
     );
     let aborted_emitted = Arc::new(Mutex::new(false));
     let tool_port = ToolPortImpl::new(

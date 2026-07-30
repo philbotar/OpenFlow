@@ -12,6 +12,7 @@ Rust import paths match the folder layout. For example, `workflow/catalog.rs` is
 | `workflow/catalog.rs` | `orchestration::workflow::catalog` |
 | `run/coordinator/mod.rs` | `orchestration::run::coordinator` |
 | `run/execution/` | `orchestration::run::execution` |
+| `run/handoff.rs` | `orchestration::run::handoff` |
 | `tool/registry.rs` | `orchestration::tool::registry` |
 | `adapters/tool_impl/` | `orchestration::tools` internal alias |
 | `adapters/infrastructure/git` | `orchestration::git` public alias |
@@ -84,6 +85,7 @@ orchestration/src/
 ├── run/
 │   ├── coordinator/
 │   ├── execution/
+│   ├── handoff.rs
 │   ├── persistence.rs
 │   └── state.rs
 ├── schedule/
@@ -139,6 +141,7 @@ Catalog owns merge policy. Stores only read and write bytes.
 | --- | --- | --- |
 | `run/coordinator/mod.rs` | `run::coordinator` | Active session mutex; `start_run`, `submit_*`, `stop_run`, resume, replay, interrupts. |
 | `run/execution/` | `run::execution` | Host loop, AI adapter, `ToolPortImpl`, headless execution, telemetry event projection. |
+| `run/handoff.rs` | `run::handoff` | Validate, atomically persist, hash, and resolve canonical Markdown/JSON node handoffs. |
 | `run/persistence.rs` | `run::persistence` | Durable run roots, records, and checkpoint metadata. |
 | `run/ports.rs` | `run::ports` | Run checkpoint store trait. |
 | `run/skill_invocation.rs` | `run::skill_invocation` | Resolve installed task-prompt skill tokens into frozen runtime prompt guidance. |

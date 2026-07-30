@@ -540,6 +540,11 @@ async fn saved_provider_direct_chat_probe() {
         .values()
         .flatten()
         .any(|message| message.role == engine::ChatRole::Assistant));
+    assert!(
+        paused.structured_input_by_node.is_empty(),
+        "direct chat must not expose structured multiple-choice questions: {:?}",
+        paused.structured_input_by_node
+    );
     backend.stop_run().await.expect("stop chat");
 }
 
@@ -565,7 +570,7 @@ async fn saved_provider_attachment_replay_probe() {
     let dir = tempdir().expect("tempdir");
     let image_path = dir.path().join("three-blue-squares.png");
     write_attachment_smoke_png(&image_path).expect("create image fixture");
-    smoke_attachment_replay(
+    Box::pin(smoke_attachment_replay(
         &context,
         dir.path(),
         AttachmentSmokeCase {
@@ -582,7 +587,7 @@ async fn saved_provider_attachment_replay_probe() {
             replay_tokens: &["MIDDLE"],
             label: "PNG",
         },
-    )
+    ))
     .await
     .expect("PNG attachment smoke");
 }
@@ -609,7 +614,7 @@ async fn saved_provider_pdf_attachment_replay_probe() {
     let dir = tempdir().expect("tempdir");
     let pdf_path = dir.path().join("two-page-brief.pdf");
     write_attachment_smoke_pdf(&pdf_path).expect("create PDF fixture");
-    smoke_attachment_replay(
+    Box::pin(smoke_attachment_replay(
         &context,
         dir.path(),
         AttachmentSmokeCase {
@@ -626,7 +631,7 @@ async fn saved_provider_pdf_attachment_replay_probe() {
             replay_tokens: &["7319"],
             label: "PDF",
         },
-    )
+    ))
     .await
     .expect("PDF attachment smoke");
 }

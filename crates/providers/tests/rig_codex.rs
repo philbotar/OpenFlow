@@ -19,6 +19,7 @@ fn test_request() -> engine::AgentRequest {
         node_id: engine::NodeId("idea".into()),
         node_label: "Idea".into(),
         model: "gpt-5.3-codex".into(),
+        provider_id: None,
         system_messages: vec!["You are precise.".into()],
         task_prompt: "Summarize the kickoff.".into(),
         input: json!({"entrypoint": {"text": "ORCHID-91"}, "upstream": []}),

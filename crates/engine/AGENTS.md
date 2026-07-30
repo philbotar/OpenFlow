@@ -31,8 +31,8 @@ Pure domain hexagon. No filesystem, HTTP, provider, or UI code.
 
 | Path | Owns | Glossary terms |
 | --- | --- | --- |
-| `graph/` | `Workflow`, validation, layers, `CallableAgent` | Workflow, Node, Edge, execution layers |
-| `execution/` | `InteractiveEngine`, subagent runtime, telemetry | RunTelemetry, subagent builtins |
+| `graph/` | `Workflow`, validation, layers, `HandoffSpec`, `CallableAgent` | Workflow, Node, Edge, execution layers |
+| `execution/` | `InteractiveEngine`, `HandoffArtifact`, subagent runtime, telemetry | RunTelemetry, node handoffs, subagent builtins |
 | `ports/outbound.rs` | `AiPort`, `ToolPort`, `AgentRequest` | LLM + tool seams |
 | `conversation/` | `ChatMessage`, `AgentTranscriptItem` | Transcript DTOs |
 | `template/` | `Template`, `TemplateStore` trait | Node presets |
@@ -91,6 +91,8 @@ Provider-specific branching stays in `providers/`. Engine does not know which LL
 | Interactive pause/resume | `execution/interactive_engine/` |
 | Subagent declare/call | `execution/subagent_runtime.rs` |
 | Shared prompt assembly | `execution/node_invocation.rs` |
+| Node handoff format / validation | `graph/workflow.rs`, `graph/validation.rs` |
+| Node handoff manifest / checkpoint state | `execution/artifacts.rs`, `execution/interactive_engine/` |
 | Submit-output completion / schema validation | `execution/completion_protocol.rs` |
 | Run event vocabulary | `execution/telemetry.rs` |
 | New port contract | `ports/` |
@@ -104,7 +106,8 @@ These rules live here; orchestration wires them — do not duplicate in UI:
 1. **Shared context** — `WorkflowSettings.shared_context` merged into node/subagent system prompts.
 2. **Callable agents** — `resolve_callable_agent_snapshots` in `graph/`; snapshotted IDs frozen at run start.
 3. **Subagent builtins** — `openflow_declare_subagents`, `openflow_call_subagent` in subagent runtime.
-4. **Validation** — `validate_workflow` is the single gate for graph legality.
+4. **Node handoffs** — `HandoffSpec` selects Markdown or JSON; downstream input carries the host-produced `HandoffArtifact` manifest.
+5. **Validation** — `validate_workflow` is the single gate for graph legality and handoff-template validity.
 
 ### Testing
 

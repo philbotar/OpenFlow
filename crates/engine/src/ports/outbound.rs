@@ -35,6 +35,8 @@ pub struct AgentRequest {
     pub node_id: NodeId,
     pub node_label: String,
     pub model: String,
+    /// Effective provider selected for this turn. `None` lets the host use its run default.
+    pub provider_id: Option<String>,
     /// Ordered system instruction bodies assembled by the engine; providers map to wire format as-is.
     pub system_messages: Vec<String>,
     pub task_prompt: String,
@@ -79,6 +81,7 @@ pub struct UsageReport {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentTurnSuccess {
+    pub handoff: Option<crate::execution::HandoffArtifact>,
     pub output: Value,
     pub raw_text: String,
     pub assistant_message: Option<String>,

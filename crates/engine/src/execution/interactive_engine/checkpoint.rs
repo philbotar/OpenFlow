@@ -1,5 +1,6 @@
 use super::{FrozenChangeEvidencePacket, InteractiveEngine, PendingToolBatch};
 use crate::conversation::{AgentTranscriptItem, ChatAttachmentRef};
+use crate::execution::HandoffArtifact;
 use crate::graph::validation::WorkflowValidationError;
 use crate::graph::{NodeId, Workflow, WorkflowId};
 use crate::ports::{StructuredUserInput, ToolAccessPolicy};
@@ -48,6 +49,8 @@ pub struct InteractiveEngineCheckpoint {
     pub workflow_id: WorkflowId,
     pub layer_idx: usize,
     pub outputs: BTreeMap<NodeId, serde_json::Value>,
+    #[serde(default)]
+    pub handoffs: BTreeMap<NodeId, HandoffArtifact>,
     pub changed_files_by_node: BTreeMap<NodeId, Vec<FileChangeRecord>>,
     #[serde(default)]
     pub reads_by_node: BTreeMap<NodeId, Vec<ReadRecord>>,
@@ -97,6 +100,7 @@ pub enum CheckpointError {
 fn collect_checkpoint_node_ids(checkpoint: &InteractiveEngineCheckpoint) -> BTreeSet<NodeId> {
     let mut ids = BTreeSet::new();
     ids.extend(checkpoint.outputs.keys().cloned());
+    ids.extend(checkpoint.handoffs.keys().cloned());
     ids.extend(checkpoint.transcripts.keys().cloned());
     ids.extend(checkpoint.changed_files_by_node.keys().cloned());
     ids.extend(checkpoint.reads_by_node.keys().cloned());
@@ -167,6 +171,7 @@ impl InteractiveEngine {
             workflow_id: self.workflow.id.clone(),
             layer_idx: self.layer_idx,
             outputs: self.outputs.clone(),
+            handoffs: self.handoffs.clone(),
             changed_files_by_node: self.changed_files_by_node.clone(),
             reads_by_node: self.reads_by_node.clone(),
             transcripts: self.transcripts.clone(),
@@ -237,6 +242,7 @@ impl InteractiveEngine {
             layers,
             layer_idx: checkpoint.layer_idx,
             outputs: checkpoint.outputs,
+            handoffs: checkpoint.handoffs,
             changed_files_by_node: checkpoint.changed_files_by_node,
             reads_by_node: checkpoint.reads_by_node,
             read_calls: 0,

@@ -7,6 +7,25 @@ use serde_json::Value;
 use std::fmt;
 use thiserror::Error;
 
+/// Artifact format selected by a node's handoff contract.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum HandoffFormat {
+    Markdown,
+    Json,
+}
+
+/// Immutable run-scoped artifact produced at node completion.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct HandoffArtifact {
+    pub format: HandoffFormat,
+    pub uri: String,
+    pub media_type: String,
+    pub sha256: String,
+    pub size_bytes: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NodeFailureKind {
     MissingUpstreamOutput(Vec<NodeId>),

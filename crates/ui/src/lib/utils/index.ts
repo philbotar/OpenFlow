@@ -5,7 +5,8 @@ export const ICON_STROKE_WIDTH = 1.9;
 export const STATUS_TOAST_ID = "app-status";
 export const BANNER_DISMISS_MS = 4000;
 export const DEFAULT_DOCK_HEIGHT = 188;
-export const COLLAPSED_DOCK_HEIGHT = 52;
+// ponytail: keep in sync with dock-chrome.css tab row (padding + icon/button)
+export const COLLAPSED_DOCK_HEIGHT = 30;
 const RESTORED_CHAT_DOCK_HEIGHT_RATIO = 0.5;
 const MIN_CHAT_DOCK_HEIGHT_RATIO = 0.5;
 const DOCK_VIEWPORT_MARGIN = 160;

@@ -128,6 +128,7 @@ mod tests {
             task_prompt: "custom task".to_string(),
             model: "o3".to_string(),
             output_schema: serde_json::json!({"custom": true}),
+            handoff: crate::graph::HandoffSpec::Json,
             auto_start: false,
             tools: AgentNodeConfig::default().tools,
             callable_agents: Vec::new(),

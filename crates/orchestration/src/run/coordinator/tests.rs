@@ -3,7 +3,7 @@
 use super::checkpoint::status_for_checkpoint;
 use super::session::{
     apply_user_stop_to_session, clear_artifact_root, finish_run_session, fresh_execution_resources,
-    RunSession,
+    prepare_workflow_run, RunSession,
 };
 use super::{DurableResumeParams, RunCoordinator, RunStartParams, TestSessionSeed};
 use crate::adapters::storage::agent_store::FileAgentStore;
@@ -20,6 +20,7 @@ use crate::run::persistence::{
 use crate::run::ports::RunCheckpointStore;
 use crate::run::state::{AgentStatus, WorkflowRunState};
 use crate::settings::model::AppSettings;
+use crate::settings::provider::ProviderConfigError;
 use crate::settings::provider::ProviderEnv;
 use crate::workflow::catalog::default_workflow;
 use engine::{
@@ -46,6 +47,7 @@ fn empty_engine_checkpoint(workflow: &Workflow) -> InteractiveEngineCheckpoint {
         workflow_id: workflow.id.clone(),
         layer_idx: 0,
         outputs: Default::default(),
+        handoffs: Default::default(),
         changed_files_by_node: Default::default(),
         reads_by_node: Default::default(),
         transcripts: Default::default(),
@@ -155,6 +157,32 @@ fn run_start_params<'a>(stores: &'a LocalStores, workflow: Workflow) -> RunStart
 }
 
 // ── session helpers ──────────────────────────────────────────────────────────
+
+#[test]
+fn prepare_workflow_run_requires_credentials_for_each_node_provider() {
+    let stores = local_stores();
+    let mut workflow = default_workflow("Mixed providers");
+    workflow.settings.provider_id = Some("openai".to_string());
+    workflow.nodes[0].agent.provider_id = Some("anthropic".to_string());
+
+    let result = prepare_workflow_run(
+        workflow,
+        &[],
+        &stores.settings,
+        None,
+        &stores.agent_store,
+        &FileSkillCatalog,
+        stores.settings_store.clone(),
+        &stores.env,
+    );
+
+    assert!(matches!(
+        result,
+        Err(BackendError::ProviderConfig(
+            ProviderConfigError::MissingApiKey { provider, env_var }
+        )) if provider == "Anthropic" && env_var == "ANTHROPIC_API_KEY"
+    ));
+}
 
 #[test]
 fn finish_run_session_preserves_durable_artifact_root() {
@@ -1471,6 +1499,38 @@ fn durable_checkpoint(workflow: &Workflow, projection: WorkflowRunState) -> RunC
         engine: empty_engine_checkpoint(workflow),
         projection,
     }
+}
+
+#[test]
+fn direct_chat_checkpoint_migration_discards_only_structured_input() {
+    let workflow = default_workflow("Direct chat checkpoint");
+    let node_id = workflow.nodes[0].id.clone();
+    let structured_input = engine::StructuredUserInput {
+        questions: Vec::new(),
+    };
+    let mut projection = WorkflowRunState::running_for_workflow(&workflow);
+    projection.awaiting_node_id = Some(node_id.clone());
+    projection.awaiting_node_ids = vec![node_id.clone()];
+    projection
+        .structured_input_by_node
+        .insert(node_id.clone(), structured_input.clone());
+    let mut checkpoint = durable_checkpoint(&workflow, projection);
+    checkpoint.engine.awaiting_nodes.insert(node_id.clone());
+    checkpoint
+        .engine
+        .structured_input_by_node
+        .insert(node_id.clone(), structured_input);
+
+    checkpoint.discard_structured_user_input();
+
+    assert!(checkpoint.engine.structured_input_by_node.is_empty());
+    assert!(checkpoint.projection.structured_input_by_node.is_empty());
+    assert!(checkpoint.engine.awaiting_nodes.contains(&node_id));
+    assert_eq!(
+        checkpoint.projection.awaiting_node_id,
+        Some(node_id.clone())
+    );
+    assert_eq!(checkpoint.projection.awaiting_node_ids, vec![node_id]);
 }
 
 fn seed_run_checkpoint(

@@ -26,6 +26,7 @@ import {
   latestChangesByPath,
   chatNavigationForNode,
   normalizeRunState,
+  nodeProviderProfile,
   nodeRunAppearanceOrder,
   projectChatLayout,
   sortTranscriptSegmentsByNodeOrder,
@@ -260,6 +261,15 @@ describe("workflow helpers", () => {
     expect(cloned.settings.reasoning_budget_tokens).toBe(2_048);
   });
 
+  test("cloneWorkflow preserves node provider overrides", () => {
+    const source = cloneWorkflow(workflow);
+    source.nodes[0].agent.providerId = "anthropic";
+
+    const cloned = cloneWorkflow(source);
+
+    expect(cloned.nodes[0].agent.providerId).toBe("anthropic");
+  });
+
   test("cloneWorkflow preserves Plan → Execute configuration", () => {
     const source = cloneWorkflow(workflow);
     source.settings.planMode = { evidenceSourceNodeId: "node-1" };
@@ -295,6 +305,41 @@ describe("workflow helpers", () => {
     expect(profile.known_models).toEqual(["claude-sonnet"]);
     const fallback = workflowProviderProfile(multi, { shared_context: "", provider_id: "missing" });
     expect(fallback.known_models).toEqual(settings.providers.openai.known_models);
+  });
+
+  test("nodeProviderProfile prefers node then workflow then active provider", () => {
+    const multi: AppSettings = {
+      ...settings,
+      active_provider: "openai",
+      providers: {
+        ...settings.providers,
+        anthropic: {
+          ...settings.providers.openai,
+          display_name: "Anthropic",
+          known_models: ["claude-sonnet"],
+          default_model: "claude-sonnet",
+        },
+      },
+    };
+
+    expect(
+      nodeProviderProfile(
+        multi,
+        { shared_context: "", provider_id: "openai" },
+        { ...workflow.nodes[0].agent, providerId: "anthropic" },
+      ).display_name,
+    ).toBe("Anthropic");
+    expect(
+      nodeProviderProfile(
+        multi,
+        { shared_context: "", provider_id: "anthropic" },
+        workflow.nodes[0].agent,
+      ).display_name,
+    ).toBe("Anthropic");
+    expect(
+      nodeProviderProfile(multi, { shared_context: "" }, workflow.nodes[0].agent)
+        .display_name,
+    ).toBe("OpenAI");
   });
 
   test("cloneSettings detaches provider fields", () => {

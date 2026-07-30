@@ -267,38 +267,6 @@ pub fn filter_tool_turn_assistant_message(message: Option<String>) -> Option<Str
         .filter(|content| !content.trim().is_empty())
 }
 
-/// Whether `openflow_request_user_input` assistant text is a direct human-facing question.
-#[must_use]
-pub(crate) fn is_clarifying_question(message: &str) -> bool {
-    let trimmed = message.trim();
-    if trimmed.is_empty() {
-        return false;
-    }
-    if trimmed.contains('?') {
-        return true;
-    }
-    let lower = trimmed.to_lowercase();
-    [
-        "which ",
-        "what ",
-        "when ",
-        "where ",
-        "who ",
-        "how ",
-        "should ",
-        "can ",
-        "could ",
-        "would ",
-        "do you ",
-        "are you ",
-        "is there ",
-        "please choose",
-        "please pick",
-    ]
-    .iter()
-    .any(|prefix| lower.starts_with(prefix))
-}
-
 /// Provider reasoning block preserved for multi-turn Claude thinking continuity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentReasoning {
@@ -578,22 +546,6 @@ mod tests {
         );
         assert_eq!(strip_tool_call_markup("Planning.<tool_cal"), "Planning.");
         assert_eq!(strip_tool_call_markup("<tool"), "");
-    }
-
-    #[test]
-    fn clarifying_question_detects_questions_and_rejects_preamble() {
-        assert!(is_clarifying_question(
-            "Should tool rows animate like Cursor's shimmer?"
-        ));
-        assert!(is_clarifying_question(
-            "Which animation style do you prefer for the loading state?"
-        ));
-        assert!(!is_clarifying_question(
-            "Let me check the existing animation patterns and the CSS custom properties used in the codebase:"
-        ));
-        assert!(!is_clarifying_question(
-            "That's a pretty clear request! Let me make sure I have one detail right before submitting the brief:"
-        ));
     }
 
     #[test]

@@ -307,6 +307,7 @@ mod tests {
             node_id: NodeId("n1".into()),
             node_label: "Node".into(),
             model: model.into(),
+            provider_id: None,
             system_messages: vec!["sys".into()],
             task_prompt: "task".into(),
             input: json!({}),

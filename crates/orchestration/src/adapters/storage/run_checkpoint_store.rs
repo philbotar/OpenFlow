@@ -312,6 +312,7 @@ mod tests {
                 entrypoint_attachments: Vec::new(),
                 layer_idx: 0,
                 outputs: BTreeMap::new(),
+                handoffs: BTreeMap::new(),
                 changed_files_by_node: BTreeMap::new(),
                 reads_by_node: BTreeMap::new(),
                 transcripts: BTreeMap::new(),

@@ -170,6 +170,7 @@ impl MockAiStack {
         match turn {
             MockTurn::Completed { output, assistant } => {
                 Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    handoff: None,
                     output,
                     raw_text: "{}".to_string(),
                     assistant_message: assistant,

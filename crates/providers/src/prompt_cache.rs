@@ -26,6 +26,7 @@ mod tests {
             node_id: NodeId("idea".to_string()),
             node_label: "Idea".to_string(),
             model: "test".to_string(),
+            provider_id: None,
             system_messages: vec!["sys".to_string()],
             task_prompt: "task".to_string(),
             input: serde_json::Value::Null,

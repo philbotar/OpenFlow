@@ -2,7 +2,7 @@ use crate::adapters::storage::run_checkpoint_store::FileRunCheckpointStore;
 use crate::api::{AttachmentPreviewPayload, StagedAttachmentPayload, UserMessageInput};
 use crate::run::coordinator::{DurableResumeParams, RunStartParams};
 use crate::run::execution::ExecutionEvent;
-use crate::run::persistence::RunStoreRoot;
+use crate::run::persistence::{workflow_hash, RunStoreRoot};
 use crate::run::state::WorkflowRunState;
 use base64::Engine as _;
 use engine::Workflow;
@@ -150,15 +150,34 @@ impl AppBackend {
         continuation: Option<crate::api::DurableRunContinuationInput>,
     ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>, String), BackendError> {
         let roots = self.run_roots()?;
-        let (root, record) = self
+        let (root, mut record) = self
             .run_store
             .load_record(&roots, run_id)?
             .ok_or_else(|| BackendError::RunNotFound(run_id.to_string()))?;
+        let is_direct_chat = {
+            let direct_chat = self
+                .chats
+                .list()?
+                .into_iter()
+                .find(|chat| chat.run_id.as_deref() == Some(run_id));
+            if let Some(chat) = direct_chat.as_ref() {
+                if super::chat::refresh_execution_workflow_for_chat(
+                    chat,
+                    &mut record.workflow_snapshot,
+                ) {
+                    record.workflow_hash = workflow_hash(&record.workflow_snapshot);
+                }
+            }
+            direct_chat.is_some()
+        };
         let workflow_name = record.workflow_name.clone();
-        let checkpoint = self
+        let mut checkpoint = self
             .run_store
             .load_latest_checkpoint(&root, run_id)?
             .ok_or_else(|| BackendError::RunHasNoCheckpoints(run_id.to_string()))?;
+        if is_direct_chat {
+            checkpoint.discard_structured_user_input();
+        }
         let (state, event_rx) = self
             .runs
             .resume_durable_run_with_continuation(

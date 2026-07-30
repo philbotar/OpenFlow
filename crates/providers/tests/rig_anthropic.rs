@@ -18,6 +18,7 @@ fn test_request() -> engine::AgentRequest {
         node_id: engine::NodeId("idea".into()),
         node_label: "Idea".into(),
         model: "claude-3-5-sonnet-latest".into(),
+        provider_id: None,
         system_messages: vec!["You are precise.".into()],
         task_prompt: "Summarize the kickoff.".into(),
         input: serde_json::json!({"entrypoint": {"text": "ORCHID-91"}, "upstream": []}),
@@ -194,6 +195,10 @@ async fn anthropic_submit_output_completes_node() {
         panic!("expected completed outcome");
     };
     assert_eq!(success.output, serde_json::json!({"summary": "done"}));
+    assert_eq!(
+        success.usage.as_ref().map(|usage| usage.total_tokens),
+        Some(120)
+    );
 }
 
 #[tokio::test]
@@ -397,6 +402,10 @@ async fn anthropic_stream_emits_deltas_and_completes() {
         panic!("expected completed outcome");
     };
     assert_eq!(success.output, serde_json::json!({"summary": "done"}));
+    assert_eq!(
+        success.usage.as_ref().map(|usage| usage.total_tokens),
+        Some(29)
+    );
 }
 
 #[tokio::test]

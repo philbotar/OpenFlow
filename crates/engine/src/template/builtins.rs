@@ -5,7 +5,7 @@
 )]
 
 use super::Template;
-use crate::graph::AgentNodeConfig;
+use crate::graph::{AgentNodeConfig, HandoffSpec};
 use std::collections::HashSet;
 
 /// Curated builtin templates for the template library.
@@ -18,7 +18,7 @@ pub fn default_templates() -> Vec<Template> {
             "A basic agent node with a concise agent prompt and minimal output schema. Good starting point for most tasks.",
             AgentNodeConfig {
                 system_prompt: "You are a focused AI agent in a node workflow.".to_string(),
-                task_prompt: "Return a concise JSON object for this node.".to_string(),
+                task_prompt: "Complete the configured handoff for this node.".to_string(),
                 model: String::new(),
                 output_schema: serde_json::json!({
                     "type": "object",
@@ -28,6 +28,7 @@ pub fn default_templates() -> Vec<Template> {
                     },
                     "required": ["summary"]
                 }),
+                handoff: HandoffSpec::markdown_default(),
                 auto_start: true,
                 tools: AgentNodeConfig::default().tools,
                 callable_agents: Vec::new(),
@@ -70,6 +71,7 @@ pub fn default_templates() -> Vec<Template> {
                     },
                     "required": ["findings"]
                 }),
+                handoff: HandoffSpec::Json,
                 auto_start: true,
                 tools: AgentNodeConfig::default().tools,
                 callable_agents: Vec::new(),
@@ -109,6 +111,7 @@ pub fn default_templates() -> Vec<Template> {
                     },
                     "required": ["executive_summary", "key_points"]
                 }),
+                handoff: HandoffSpec::Json,
                 auto_start: true,
                 tools: AgentNodeConfig::default().tools,
                 callable_agents: Vec::new(),
@@ -142,6 +145,7 @@ pub fn default_templates() -> Vec<Template> {
                     },
                     "required": ["category", "confidence"]
                 }),
+                handoff: HandoffSpec::Json,
                 auto_start: true,
                 tools: AgentNodeConfig::default().tools,
                 callable_agents: Vec::new(),
@@ -174,6 +178,7 @@ pub fn default_templates() -> Vec<Template> {
                     },
                     "required": ["approved"]
                 }),
+                handoff: HandoffSpec::Json,
                 auto_start: true,
                 tools: AgentNodeConfig::default().tools,
                 callable_agents: Vec::new(),

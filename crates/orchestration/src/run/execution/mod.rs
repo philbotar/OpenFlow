@@ -2,6 +2,7 @@ mod ai_adapter;
 mod drive;
 mod events;
 mod headless;
+mod provider_router;
 mod tool_port;
 
 pub use ai_adapter::AiInvocationAdapter;
@@ -30,12 +31,16 @@ pub use events::{
     record_user_input_with_attachments,
 };
 pub use headless::run_workflow_headless;
+pub(crate) use provider_router::ProviderRouter;
 
 /// Interactive run telemetry; canonical type is [`engine::RunTelemetry`].
 pub type ExecutionEvent = RunTelemetry;
 
 /// Per-node interrupt tokens keyed by node id and model attempt.
 pub type NodeInterrupts = Arc<Mutex<BTreeMap<NodeId, (u8, CancellationToken)>>>;
+
+/// Per-provider model context-window overrides for mixed-provider runs.
+pub type ProviderContextWindowSizes = BTreeMap<String, BTreeMap<String, u32>>;
 
 /// Build the durable checkpoint saved before a new run starts.
 ///
@@ -203,7 +208,7 @@ pub struct InteractiveWorkflowRunParams<A> {
     pub lsp: LspSettings,
     pub pending_engine_reverts: Arc<parking_lot::Mutex<Vec<EditBatch>>>,
     pub node_interrupts: NodeInterrupts,
-    pub context_window_sizes: BTreeMap<String, u32>,
+    pub context_window_sizes: ProviderContextWindowSizes,
     pub mcp: crate::settings::model::McpSettings,
     pub search: crate::settings::model::SearchSettings,
     pub runtime_config_store: engine::NodeRuntimeConfigStore,

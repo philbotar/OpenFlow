@@ -244,6 +244,115 @@ pub struct NodePosition {
     pub y: f32,
 }
 
+/// Artifact contract used to hand one node's result to downstream nodes.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "format", rename_all = "snake_case")]
+pub enum HandoffSpec {
+    /// Internal opt-out for conversational flows that do not hand results to
+    /// downstream workflow nodes.
+    Legacy,
+    /// Human-readable artifact filled from an author-provided heading template.
+    Markdown { template: String },
+    /// Strict JSON artifact validated against [`AgentNodeConfig::output_schema`].
+    Json,
+}
+
+#[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
+pub enum MarkdownHandoffError {
+    #[error("template requires at least one Markdown heading")]
+    TemplateHasNoHeadings,
+    #[error("Markdown handoff is missing template headings: {0}")]
+    MissingHeadings(String),
+}
+
+impl HandoffSpec {
+    /// Markdown is the default for newly-created nodes. Deserialization uses
+    /// JSON separately so old output schemas become JSON artifacts.
+    #[must_use]
+    pub fn markdown_default() -> Self {
+        Self::Markdown {
+            template: default_markdown_handoff_template(),
+        }
+    }
+}
+
+/// Default human-readable handoff structure for newly-created nodes.
+#[must_use]
+pub fn default_markdown_handoff_template() -> String {
+    "\
+# Handoff\n\
+\n\
+## Summary\n\
+<!-- Required: concise result -->\n\
+\n\
+## Findings\n\
+<!-- Required: key findings, decisions, or completed work -->\n\
+\n\
+## Files\n\
+<!-- Relevant files or artifacts -->\n\
+\n\
+## Risks\n\
+<!-- Unknowns, blockers, or follow-up concerns -->\n\
+\n\
+## Recommended Next Step\n\
+<!-- Concrete action for the downstream node -->\n"
+        .to_string()
+}
+
+/// Validate a Markdown template before a workflow starts.
+///
+/// # Errors
+///
+/// Returns [`MarkdownHandoffError::TemplateHasNoHeadings`] when the template
+/// cannot provide a stable section contract.
+pub fn validate_markdown_handoff_template(template: &str) -> Result<(), MarkdownHandoffError> {
+    if markdown_headings(template).is_empty() {
+        return Err(MarkdownHandoffError::TemplateHasNoHeadings);
+    }
+    Ok(())
+}
+
+/// Validate completed Markdown against its configured heading contract.
+///
+/// # Errors
+///
+/// Returns a [`MarkdownHandoffError`] when the template is invalid or a
+/// required heading is absent from the completed artifact.
+pub fn validate_markdown_handoff(
+    template: &str,
+    markdown: &str,
+) -> Result<(), MarkdownHandoffError> {
+    validate_markdown_handoff_template(template)?;
+    let actual = markdown_headings(markdown);
+    let missing = markdown_headings(template)
+        .into_iter()
+        .filter(|heading| !actual.contains(heading))
+        .collect::<Vec<_>>();
+    if missing.is_empty() {
+        return Ok(());
+    }
+    Err(MarkdownHandoffError::MissingHeadings(missing.join(", ")))
+}
+
+fn markdown_headings(markdown: &str) -> Vec<String> {
+    markdown
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            let level = line.bytes().take_while(|byte| *byte == b'#').count();
+            if !(1..=6).contains(&level) {
+                return None;
+            }
+            let title = line[level..].trim();
+            (!title.is_empty()).then(|| format!("{} {title}", "#".repeat(level)))
+        })
+        .collect()
+}
+
+const fn saved_workflow_handoff_spec() -> HandoffSpec {
+    HandoffSpec::Json
+}
+
 /// Per-node agent invocation settings: prompts, model, tools, and callable subagents.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AgentNodeConfig {
@@ -252,6 +361,10 @@ pub struct AgentNodeConfig {
     #[serde(default)]
     pub model: String,
     pub output_schema: Value,
+    /// Canonical node-to-node result artifact. Missing fields deserialize as
+    /// JSON so existing schemas migrate without changing their structured output.
+    #[serde(default = "saved_workflow_handoff_spec")]
+    pub handoff: HandoffSpec,
     /// Legacy wire field retained for saved-workflow compatibility.
     /// Runtime scheduling ignores this value; nodes start when dependencies are ready.
     #[serde(default = "default_auto_start")]
@@ -322,13 +435,34 @@ pub fn effective_output_schema(schema: &Value) -> Value {
     }
 }
 
+/// Schema advertised by `openflow_submit_node_output` for this node's selected
+/// handoff format.
+#[must_use]
+pub fn submission_output_schema(agent: &AgentNodeConfig) -> Value {
+    match &agent.handoff {
+        HandoffSpec::Legacy | HandoffSpec::Json => effective_output_schema(&agent.output_schema),
+        HandoffSpec::Markdown { .. } => json!({
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "markdown": {
+                    "type": "string",
+                    "description": "Completed Markdown handoff. Preserve every heading from the configured template."
+                }
+            },
+            "required": ["markdown"]
+        }),
+    }
+}
+
 impl Default for AgentNodeConfig {
     fn default() -> Self {
         Self {
             system_prompt: "You are a focused AI agent in a node workflow.".to_string(),
-            task_prompt: "Return a concise JSON object for this node.".to_string(),
+            task_prompt: "Complete this node's configured handoff.".to_string(),
             model: String::new(),
             output_schema: default_structured_output_schema(),
+            handoff: HandoffSpec::markdown_default(),
             auto_start: true,
             tools: NodeToolConfig::default(),
             callable_agents: Vec::new(),
@@ -378,7 +512,7 @@ mod tests {
     }
 
     #[test]
-    fn agent_node_defaults_to_structured_summary_output() {
+    fn agent_node_defaults_to_markdown_handoff() {
         let node = Node::agent("Plan", 24.0, 48.0);
 
         assert_eq!(node.label, "Plan");
@@ -386,6 +520,12 @@ mod tests {
         assert_eq!(node.position, NodePosition { x: 24.0, y: 48.0 });
         assert_eq!(node.agent.model, "");
         assert_eq!(node.agent.output_schema["required"], json!(["summary"]));
+        assert_eq!(
+            node.agent.handoff,
+            HandoffSpec::Markdown {
+                template: default_markdown_handoff_template()
+            }
+        );
     }
 
     #[test]
@@ -430,6 +570,7 @@ mod tests {
         assert_eq!(config.tools, NodeToolConfig::default());
         assert!(config.callable_agents.is_empty());
         assert!(!config.allow_all_callable_agents);
+        assert_eq!(config.handoff, HandoffSpec::Json);
     }
 
     #[test]

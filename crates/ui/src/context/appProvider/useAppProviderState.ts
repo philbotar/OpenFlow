@@ -81,7 +81,6 @@ export function useAppProviderState(): AppContextValue {
     activeWorkflow: workspace.activeWorkflow,
     runState: runKernel.runState,
     settings: settingsState.settings,
-    activeProfileMemo: settingsState.activeProfileMemo,
     isCompactViewport: () => isCompactViewportAccessor(),
     showErrorToast: toastApi.showErrorToast,
     showSuccessToast: toastApi.showSuccessToast,

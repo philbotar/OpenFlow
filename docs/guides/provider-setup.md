@@ -19,7 +19,7 @@ In **Settings → Providers**:
 3. Adjust models, reasoning, or endpoint fields if needed.
 4. Select **Save settings**.
 
-The summary line states that the active profile is used for workflow runs and agent chat. A readiness chip on this page mirrors the header: **Ready** when configuration resolves, or a specific missing step otherwise.
+The active profile is the default for agent chat and workflows that do not select a shared provider. A readiness chip on this page mirrors the header: **Ready** when configuration resolves, or a specific missing step otherwise.
 
 ## Authenticate by provider type
 
@@ -88,7 +88,7 @@ Source of truth for IDs, models, and auth rules: `crates/providers/src/spec.rs` 
 | Reasoning effort | Set default extended-thinking effort where the provider supports it. |
 | **Custom endpoint** profile | Edit base URL and default wire API for self-hosted or third-party OpenAI-compatible gateways. |
 
-Node-level model fields still select which model each agent calls; the provider profile supplies credentials and defaults.
+In **Workflow settings**, select the shared provider. In a node's **Inspector**, leave **Provider** on **Use shared provider** or select a node override. Resolution order: node provider → shared workflow provider → active provider. The selected profile supplies that node's credentials, model list, and defaults.
 
 ## Verify
 
@@ -106,15 +106,15 @@ OpenFlow splits responsibilities so workflows stay provider-agnostic:
 
 ```text
 Workflow run (engine)
-  → AgentRequest (prompt, tools, model id)
+  → AgentRequest (prompt, tools, provider id, model id)
     → AiPort (engine port)
-      → orchestration resolves settings + keys
-      → providers::create_provider(...)
+      → orchestration routes to the effective provider
+      → providers::create_provider(...) for each referenced provider
         → mapping/ (transcript + tool wire shape)
         → rig_adapter/ (Rig HTTP + streaming to the vendor API)
 ```
 
-During a run, the **engine** only sees `AiPort`: one interface for model turns, streaming, and tool-call results. **Orchestration** loads `settings.json`, merges secrets, resolves the active `ProviderProfile`, and builds an `AiClientConfig`. It then calls **`create_provider()`** in `crates/providers`, which returns a boxed `AiPort` implementation.
+During a run, the **engine** only sees `AiPort`: one interface for model turns, streaming, and tool-call results. **Orchestration** loads `settings.json`, merges secrets, resolves every provider referenced by the workflow, and builds a run-scoped router over those clients. It validates all referenced provider credentials before execution. A provider failure stays attached to that node; OpenFlow does not retry the request through a different provider.
 
 Inside **`crates/providers`**, **Rig** (`rig-core` 0.39) owns most outbound HTTP and SSE streaming to vendor APIs. OpenFlow code around Rig handles:
 

@@ -130,6 +130,7 @@ mod tests {
             node_id: NodeId("idea".to_string()),
             node_label: "idea".into(),
             model: "gpt".into(),
+            provider_id: None,
             system_messages: vec![],
             task_prompt: String::new(),
             input: serde_json::Value::Null,

@@ -109,6 +109,7 @@ pub fn complete_submit_output(
     }
 
     Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+        handoff: None,
         output: args.output,
         raw_text: raw_arguments.to_string(),
         assistant_message: filter_tool_turn_assistant_message(

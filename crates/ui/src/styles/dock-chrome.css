@@ -1,0 +1,25 @@
+/* Compact dock tab chrome — loads after index.css (see main.tsx) */
+
+.dock-tabs {
+  gap: var(--space-xs);
+  padding: var(--dock-tabs-padding);
+}
+
+.dock-tab-switcher {
+  gap: 2px;
+}
+
+.dock-tab-actions {
+  gap: var(--space-xs);
+}
+
+.dock-tab-switcher > button {
+  padding: var(--dock-tab-button-padding);
+  font-size: var(--text-label-sm);
+  line-height: 1.2;
+}
+
+.dock-icon-action {
+  width: var(--dock-icon-action-size);
+  height: var(--dock-icon-action-size);
+}

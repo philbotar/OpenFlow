@@ -181,6 +181,7 @@ pub struct InteractiveEngine {
     layers: Vec<Vec<NodeId>>,
     layer_idx: usize,
     outputs: BTreeMap<NodeId, Value>,
+    handoffs: BTreeMap<NodeId, crate::execution::HandoffArtifact>,
     changed_files_by_node: BTreeMap<NodeId, Vec<FileChangeRecord>>,
     reads_by_node: BTreeMap<NodeId, Vec<ReadRecord>>,
     read_calls: u32,
@@ -225,9 +226,13 @@ pub(crate) const MAX_MIXED_TOOL_TURN_RETRIES: u8 = 3;
 pub(crate) const MAX_AUTO_CONTINUE_STREAK: u8 = 10;
 pub(crate) const MALFORMED_REQUEST_INPUT_FEEDBACK: &str =
     "Your last human-input request was invalid. Call openflow_request_user_input with either \
-    assistant_message set to one direct question, or questions set to 1-3 structured questions \
+    assistant_message set to a non-empty human-facing message, or questions set to 1-3 structured questions \
     with 2-3 options each. If you do not need human input, call executable tools or call \
     openflow_submit_node_output when complete. Do not end a turn with plain narration.";
+pub(crate) const FREE_TEXT_REQUEST_INPUT_FEEDBACK: &str =
+    "Structured questions are not available for this conversation. Call \
+    openflow_request_user_input with your complete human-facing response in assistant_message. \
+    The response does not need to end with a question. Do not set questions.";
 pub(crate) const INTERACTIVE_CONTINUE_FEEDBACK: &str =
     "Call openflow_request_user_input with a direct question or structured choices if human \
     clarification is needed, call executable tools if more work is required, or call \
@@ -361,6 +366,7 @@ impl InteractiveEngine {
             layers,
             layer_idx: 0,
             outputs: BTreeMap::new(),
+            handoffs: BTreeMap::new(),
             changed_files_by_node: BTreeMap::new(),
             reads_by_node: BTreeMap::new(),
             read_calls: 0,
@@ -941,6 +947,11 @@ impl InteractiveEngine {
     }
 
     #[must_use]
+    pub fn node_handoff(&self, node_id: &NodeId) -> Option<crate::execution::HandoffArtifact> {
+        self.handoffs.get(node_id).cloned()
+    }
+
+    #[must_use]
     pub fn conversation_history(&self, node_id: &NodeId) -> Vec<ChatMessage> {
         self.transcript(node_id)
             .iter()
@@ -979,6 +990,7 @@ impl InteractiveEngine {
             workflow: &self.workflow,
             upstream_map: &self.upstream_map,
             outputs: &self.outputs,
+            handoffs: &self.handoffs,
             changed_files_by_node: &self.changed_files_by_node,
             reads_by_node: &self.reads_by_node,
             entrypoint_text: self.entrypoint_text.as_deref(),

@@ -3,35 +3,58 @@ use crate::chat::{Chat, ChatConfig};
 use crate::run::execution::ExecutionEvent;
 use crate::run::persistence::RunStoreRoot;
 use crate::run::state::WorkflowRunState;
-use engine::{Node, Workflow, WorkflowId};
+use engine::{HandoffSpec, Node, Workflow, WorkflowId};
 use tokio::sync::mpsc::UnboundedReceiver;
 
 use super::{AppBackend, BackendError};
 
 const CHAT_SYSTEM_PROMPT: &str = "\
 You are an AI assistant in an ongoing direct conversation. Answer the user's latest message \
-naturally and helpfully. Keep the exchange conversational. After every answer, call \
-openflow_request_user_input with your full response in assistant_message so the user can send \
-their next message. End assistant_message with one short, direct question. Do not call \
-openflow_submit_node_output unless the user explicitly asks to end the conversation.";
+naturally and helpfully. After every response, call openflow_request_user_input with your full \
+response in assistant_message so the user can send their next message. This call ends the turn; \
+it does not require a question. Do not ask a follow-up question unless the user's request cannot \
+be completed without their answer. Never set questions in direct chat; use assistant_message \
+only. Do not call openflow_submit_node_output unless the user explicitly asks to end the \
+conversation.";
+const CHAT_TASK_PROMPT: &str = "\
+Reply to the latest user message. End the turn after the response; the user can send another \
+message without a follow-up prompt.";
 
 fn execution_workflow_for_chat(chat: &Chat) -> Workflow {
     let mut workflow = Workflow::new(&chat.title);
     workflow.id = WorkflowId(chat.id.clone());
     let mut node = Node::agent("Assistant", 80.0, 120.0);
     node.agent.system_prompt = CHAT_SYSTEM_PROMPT.to_string();
-    node.agent.task_prompt =
-        "Reply to the latest user message, then keep the conversation open.".to_string();
+    node.agent.task_prompt = CHAT_TASK_PROMPT.to_string();
     node.agent.model = chat.config.model.clone().unwrap_or_default();
+    node.agent.handoff = HandoffSpec::Legacy;
     node.agent.auto_start = true;
     node.agent.request_user_input = true;
     node.agent.tools.approval_mode = Some(chat.config.approval_mode);
+    node.agent.tools.allow_structured_user_input = false;
     node.agent
         .reasoning_effort
         .clone_from(&chat.config.reasoning_effort);
     node.agent.reasoning_budget_tokens = chat.config.reasoning_budget_tokens;
     workflow.nodes.push(node);
     workflow
+}
+
+pub(super) fn refresh_execution_workflow_for_chat(chat: &Chat, workflow: &mut Workflow) -> bool {
+    if workflow.id.to_string() != chat.id || workflow.nodes.len() != 1 {
+        return false;
+    }
+    let agent = &mut workflow.nodes[0].agent;
+    let changed = agent.system_prompt != CHAT_SYSTEM_PROMPT
+        || agent.task_prompt != CHAT_TASK_PROMPT
+        || agent.tools.allow_structured_user_input;
+    if !changed {
+        return false;
+    }
+    agent.system_prompt = CHAT_SYSTEM_PROMPT.to_string();
+    agent.task_prompt = CHAT_TASK_PROMPT.to_string();
+    agent.tools.allow_structured_user_input = false;
+    true
 }
 
 impl AppBackend {
@@ -258,5 +281,57 @@ mod tests {
 
         assert_eq!(workflow.nodes[0].agent.model, "gpt-5");
         assert!(workflow.nodes[0].agent.auto_start);
+    }
+
+    #[test]
+    fn execution_workflow_does_not_force_follow_up_questions_or_choices() {
+        let chat = Chat {
+            id: "chat-1".to_string(),
+            title: "Natural conversation".to_string(),
+            config: ChatConfig::default(),
+            run_id: None,
+            created_at_ms: 1,
+            updated_at_ms: 1,
+        };
+
+        let workflow = execution_workflow_for_chat(&chat);
+        let system_prompt = &workflow.nodes[0].agent.system_prompt;
+
+        assert!(
+            system_prompt.contains("Do not ask a follow-up question unless"),
+            "direct chat must not force a question after every answer"
+        );
+        assert!(
+            system_prompt.contains("Never set questions"),
+            "direct chat must not offer structured multiple-choice prompts"
+        );
+        assert!(
+            !workflow.nodes[0].agent.tools.allow_structured_user_input,
+            "direct chat must remove structured questions from the model tool schema"
+        );
+    }
+
+    #[test]
+    fn refresh_execution_workflow_updates_saved_chat_prompt_only_once() {
+        let chat = Chat {
+            id: "chat-1".to_string(),
+            title: "Saved conversation".to_string(),
+            config: ChatConfig::default(),
+            run_id: Some("run-1".to_string()),
+            created_at_ms: 1,
+            updated_at_ms: 1,
+        };
+        let mut workflow = execution_workflow_for_chat(&chat);
+        workflow.nodes[0].agent.system_prompt =
+            "Legacy prompt that always requests a questionnaire.".to_string();
+        workflow.nodes[0].agent.task_prompt =
+            "Reply, then end with one short question.".to_string();
+        workflow.nodes[0].agent.tools.allow_structured_user_input = true;
+
+        assert!(refresh_execution_workflow_for_chat(&chat, &mut workflow));
+        assert_eq!(workflow.nodes[0].agent.system_prompt, CHAT_SYSTEM_PROMPT);
+        assert_eq!(workflow.nodes[0].agent.task_prompt, CHAT_TASK_PROMPT);
+        assert!(!workflow.nodes[0].agent.tools.allow_structured_user_input);
+        assert!(!refresh_execution_workflow_for_chat(&chat, &mut workflow));
     }
 }

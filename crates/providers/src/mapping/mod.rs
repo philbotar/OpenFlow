@@ -56,6 +56,13 @@ fn annotate_large_string_file_references(schema: &mut Value) {
         return;
     };
     if object.get("type").and_then(Value::as_str) == Some("string") {
+        if object
+            .get("description")
+            .and_then(Value::as_str)
+            .is_some_and(|description| description.contains("Completed Markdown handoff"))
+        {
+            return;
+        }
         let note = "For large content already written to a file, use the repository-relative file path instead of duplicating the contents.";
         let description = object
             .get("description")
@@ -84,8 +91,8 @@ fn annotate_large_string_file_references(schema: &mut Value) {
     }
 }
 
-pub fn request_input_tool() -> ToolSpec {
-    ToolSpec {
+pub fn request_input_tool(allow_structured_user_input: bool) -> ToolSpec {
+    let mut tool = ToolSpec {
         name: REQUEST_INPUT_TOOL.to_string(),
         description: "Pause the node and ask the human for required clarification. Use assistant_message for a free-text question, questions for 1-3 structured multiple-choice questions, or both for a short intro plus choices."
             .to_string(),
@@ -146,7 +153,20 @@ pub fn request_input_tool() -> ToolSpec {
                 }
             }
         }),
+    };
+    if !allow_structured_user_input {
+        tool.description =
+            "Pause the node with a human-facing assistant message. The message may be a complete \
+             conversational response and does not need to end with a question."
+                .to_string();
+        if let Some(properties) = tool.parameters["properties"].as_object_mut() {
+            properties.remove("questions");
+        }
+        tool.parameters["properties"]["assistant_message"]["description"] =
+            json!("Required human-facing response. It may end the conversation turn without asking a question.");
+        tool.parameters["required"] = json!(["assistant_message"]);
     }
+    tool
 }
 
 pub fn external_tool_spec(tool: &ToolDefinition) -> ToolSpec {
@@ -160,7 +180,9 @@ pub fn external_tool_spec(tool: &ToolDefinition) -> ToolSpec {
 pub fn all_tool_specs(request: &AgentRequest) -> Vec<ToolSpec> {
     let mut tools = vec![submit_output_tool(request)];
     if should_allow_user_input(request) {
-        tools.push(request_input_tool());
+        tools.push(request_input_tool(
+            request.tool_config.allow_structured_user_input,
+        ));
     }
     tools.extend(request.available_tools.iter().map(external_tool_spec));
     tools
@@ -453,6 +475,7 @@ pub fn parse_plain_json_completion(
         return None;
     };
     Some(AgentTurnOutcome::Completed(AgentTurnSuccess {
+        handoff: None,
         output,
         raw_text: content.to_string(),
         assistant_message: None,
@@ -809,7 +832,7 @@ mod tests {
 
     #[test]
     fn request_input_tool_schema_supports_legacy_and_structured_forms() {
-        let schema = request_input_tool().parameters;
+        let schema = request_input_tool(true).parameters;
         assert_eq!(schema["properties"]["assistant_message"]["type"], "string");
         assert_eq!(schema["properties"]["questions"]["minItems"], 1);
         assert_eq!(schema["properties"]["questions"]["maxItems"], 3);
@@ -1121,6 +1144,7 @@ mod tests {
             node_id: NodeId::from("node-1"),
             node_label: "Node".to_string(),
             model: "gpt-5.5".to_string(),
+            provider_id: None,
             system_messages: vec!["system".to_string()],
             task_prompt: "task".to_string(),
             input: json!({}),
@@ -1147,11 +1171,12 @@ mod tests {
     fn submit_output_tool_allows_large_strings_to_stay_file_backed() {
         use engine::{NodeId, WorkflowId};
 
-        let request = AgentRequest {
+        let mut request = AgentRequest {
             workflow_id: WorkflowId::from("wf-1"),
             node_id: NodeId::from("node-1"),
             node_label: "Node".to_string(),
             model: "minimax-m3".to_string(),
+            provider_id: None,
             system_messages: vec!["system".to_string()],
             task_prompt: "write a specification".to_string(),
             input: json!({}),
@@ -1181,6 +1206,14 @@ mod tests {
         assert!(field["description"]
             .as_str()
             .is_some_and(|description| description.contains("repository-relative file path")));
+
+        request.output_schema =
+            engine::submission_output_schema(&engine::AgentNodeConfig::default());
+        let markdown_tool = submit_output_tool(&request);
+        let markdown = &markdown_tool.parameters["properties"]["output"]["properties"]["markdown"];
+        assert!(markdown["description"]
+            .as_str()
+            .is_some_and(|description| !description.contains("repository-relative file path")));
     }
 
     #[test]
@@ -1192,6 +1225,7 @@ mod tests {
             node_id: NodeId::from("authoring"),
             node_label: "Workflow authoring".to_string(),
             model: "gpt-5.5".to_string(),
+            provider_id: None,
             system_messages: vec!["design workflows".to_string()],
             task_prompt: "Create a draft.".to_string(),
             input: json!({}),
@@ -1228,6 +1262,7 @@ mod tests {
             node_id: NodeId::from("node-1"),
             node_label: "Node".to_string(),
             model: "model".to_string(),
+            provider_id: None,
             system_messages: vec!["system".to_string()],
             task_prompt: "task".to_string(),
             input: json!({}),
@@ -1268,6 +1303,7 @@ mod tests {
             node_id: NodeId::from("grill"),
             node_label: "Grill".to_string(),
             model: "gpt-5.5".to_string(),
+            provider_id: None,
             system_messages: vec!["Ask before assuming.".to_string()],
             task_prompt: "Create a feature brief.".to_string(),
             input: json!({"request": "Create a Supabase backend"}),
@@ -1293,6 +1329,52 @@ mod tests {
     }
 
     #[test]
+    fn request_user_input_tool_omits_structured_questions_when_disabled() {
+        use engine::{NodeId, WorkflowId};
+
+        let request = AgentRequest {
+            workflow_id: WorkflowId::from("chat-1"),
+            node_id: NodeId::from("assistant"),
+            node_label: "Assistant".to_string(),
+            model: "gpt-5.6-luna".to_string(),
+            provider_id: None,
+            system_messages: vec!["Direct conversation".to_string()],
+            task_prompt: "Reply naturally.".to_string(),
+            input: json!({}),
+            output_schema: json!({ "type": "object" }),
+            tool_config: engine::NodeToolConfig {
+                allow_structured_user_input: false,
+                ..engine::NodeToolConfig::default()
+            },
+            available_tools: Vec::new(),
+            transcript: Vec::new(),
+            entrypoint_attachments: Vec::new(),
+            resolved_attachments: std::collections::BTreeMap::default(),
+            model_attempt: 1,
+            reasoning_effort: None,
+            reasoning_budget_tokens: None,
+            tool_access_policy: engine::ToolAccessPolicy::Execution,
+            allow_user_input: true,
+        };
+
+        let request_input = all_tool_specs(&request)
+            .into_iter()
+            .find(|tool| tool.name == REQUEST_INPUT_TOOL)
+            .expect("request input tool");
+
+        assert!(
+            request_input.parameters["properties"]
+                .get("questions")
+                .is_none(),
+            "disabled structured input must be absent from the provider schema"
+        );
+        assert_eq!(
+            request_input.parameters["required"],
+            json!(["assistant_message"])
+        );
+    }
+
+    #[test]
     fn should_allow_user_input_false_when_node_disallows() {
         use engine::{NodeId, WorkflowId};
 
@@ -1301,6 +1383,7 @@ mod tests {
             node_id: NodeId::from("node-1"),
             node_label: "Node".to_string(),
             model: "gpt-5.5".to_string(),
+            provider_id: None,
             system_messages: vec!["system".to_string()],
             task_prompt: "task".to_string(),
             input: json!({}),
@@ -1334,6 +1417,7 @@ mod tests {
             node_id: NodeId::from("node-1"),
             node_label: "Review".to_string(),
             model: "gpt-5.5".to_string(),
+            provider_id: None,
             system_messages: vec![],
             task_prompt: "Review upstream".to_string(),
             input: json!({"upstream": [{"nodeId": "a", "output": {"ok": true}}]}),
