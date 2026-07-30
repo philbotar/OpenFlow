@@ -13,6 +13,7 @@ pub struct NodeRuntimeConfigPatch {
     pub approval_mode: Option<ApprovalMode>,
     pub reasoning_effort: Option<Option<String>>,
     pub reasoning_budget_tokens: Option<Option<u32>>,
+    pub fast_mode: Option<bool>,
 }
 
 impl NodeRuntimeConfigPatch {
@@ -28,6 +29,9 @@ impl NodeRuntimeConfigPatch {
         }
         if self.reasoning_budget_tokens.is_some() {
             target.reasoning_budget_tokens = self.reasoning_budget_tokens;
+        }
+        if self.fast_mode.is_some() {
+            target.fast_mode = self.fast_mode;
         }
     }
 }
@@ -102,6 +106,9 @@ pub fn apply_runtime_patch_to_request(request: &mut AgentRequest, patch: &NodeRu
     if let Some(budget) = patch.reasoning_budget_tokens {
         request.reasoning_budget_tokens = budget;
     }
+    if let Some(fast_mode) = patch.fast_mode {
+        request.fast_mode = fast_mode;
+    }
 }
 
 #[cfg(test)]
@@ -117,6 +124,7 @@ mod tests {
             approval_mode: Some(ApprovalMode::ReadOnly),
             reasoning_effort: Some(Some("high".to_string())),
             reasoning_budget_tokens: None,
+            fast_mode: Some(true),
         };
         upsert_runtime_patch(&store, NodeId("idea".to_string()), &patch_value);
         let patch = runtime_patch_for(&store, &NodeId("idea".to_string()));
@@ -143,6 +151,7 @@ mod tests {
             model_attempt: 1,
             reasoning_effort: None,
             reasoning_budget_tokens: None,
+            fast_mode: false,
             tool_access_policy: crate::ports::ToolAccessPolicy::Execution,
             allow_user_input: true,
             conversation_mode: false,
@@ -154,5 +163,6 @@ mod tests {
         );
         assert_eq!(request.model, "gpt-next");
         assert_eq!(request.reasoning_effort, Some("high".to_string()));
+        assert!(request.fast_mode);
     }
 }

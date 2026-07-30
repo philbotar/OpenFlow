@@ -1,4 +1,4 @@
-use crate::run::state::WorkflowRunState;
+use crate::run::state::{ProjectedChatMessage, WorkflowRunState};
 use engine::{AgentTranscriptItem, ChatMessage, ChatRole, InteractiveEngineCheckpoint, Workflow};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -113,7 +113,7 @@ impl RunCheckpointPayload {
             {
                 cursor = index + 1;
             } else {
-                messages.insert(0, entrypoint);
+                messages.insert(0, ProjectedChatMessage::from(entrypoint));
                 cursor = 1;
                 changed = true;
             }
@@ -131,7 +131,7 @@ impl RunCheckpointPayload {
                 }
                 cursor = index + 1;
             } else {
-                messages.insert(cursor, transcript_message);
+                messages.insert(cursor, ProjectedChatMessage::from(transcript_message));
                 cursor += 1;
                 changed = true;
             }
@@ -140,7 +140,7 @@ impl RunCheckpointPayload {
     }
 }
 
-fn visible_message_matches(actual: &ChatMessage, expected: &ChatMessage) -> bool {
+fn visible_message_matches(actual: &ProjectedChatMessage, expected: &ChatMessage) -> bool {
     actual.role == expected.role
         && actual.content == expected.content
         && actual.attachments == expected.attachments

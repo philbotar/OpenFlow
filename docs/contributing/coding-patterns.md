@@ -53,7 +53,7 @@ Patterns we follow in this repo.
 Keep these execution rules in `crates/orchestration/src/run/**` and `crates/engine/src/execution/**`; do not reimplement them in UI or desktop:
 
 1. **Shared context** - `WorkflowSettings.shared_context` is trimmed and appended to every node's system prompt (and ad-hoc/saved subagent prompts) for the run.
-2. **Execution cwd** - resolved at run start from the bound project's `default_execution_cwd`, else the process cwd. Filesystem tools run against this path.
+2. **Execution cwd** - the backend resolves it from the exact selected project's `default_execution_cwd` (or project root). App workflow/chat runs use an isolated app-managed folder under `{data_local}/openflow/workspaces/`. Filesystem tools run against this path.
 3. **Callable agents** - `AgentNodeConfig.callable_agents` (or `allow_all_callable_agents`) is snapshotted at run start via `engine::resolve_callable_agent_snapshots` into `CallableAgent` records; persisted agents use the same type (`orchestration::AgentDefinition` alias). Invocable through runtime builtins `openflow_call_subagent` and `openflow_declare_subagents`.
 4. **Provider routing** - `AgentNodeConfig.provider_id` overrides `WorkflowSettings.provider_id`, which overrides the active settings provider. The run-scoped router dispatches each `AgentRequest` to that effective provider; provider errors surface without cross-provider failover.
 5. **Model default** - at run prep, a node with an empty `AgentNodeConfig.model` inherits its effective `ProviderProfile.default_model`; an explicit node model always wins.

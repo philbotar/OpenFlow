@@ -403,6 +403,19 @@ describe("toolStackSummaryWithThinking", () => {
     ).toBe("Thinking");
   });
 
+  it("shows the settled thinking duration when timing is available", () => {
+    expect(
+      toolStackThinkingLabel([
+        {
+          role: "Thinking",
+          content: "plan",
+          createdAtMs: 1_000,
+          completedAtMs: 5_200,
+        },
+      ]),
+    ).toBe("Thought for 4.2s");
+  });
+
   it("omits thinking substring when stack has no thinking", () => {
     expect(
       toolStackSummaryWithThinking(

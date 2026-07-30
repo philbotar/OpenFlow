@@ -122,14 +122,14 @@ describe("api desktop seam", () => {
     expect(invoke).toHaveBeenCalledWith("append_debug_log", { settings, entry });
   });
 
-  test("startRun forwards workflow, settings, cwd, key, and structured message", async () => {
+  test("startRun forwards workflow, settings, project, key, and structured message", async () => {
     const message = { text: "Kickoff text", attachmentSourcePaths: ["/tmp/image.png"] };
-    await startRun(workflow, settings, "/tmp/project", "sk-test", message);
+    await startRun(workflow, settings, "project-1", "sk-test", message);
 
     expect(invoke).toHaveBeenCalledWith("start_run", {
       workflow,
       settings,
-      executionCwd: "/tmp/project",
+      projectId: "project-1",
       transientApiKey: "sk-test",
       message,
     });
@@ -144,7 +144,7 @@ describe("api desktop seam", () => {
     expect(invoke).toHaveBeenNthCalledWith(1, "start_run", {
       workflow,
       settings,
-      executionCwd: null,
+      projectId: null,
       transientApiKey: null,
       message,
       invokedSkillIds: ["systematic-debugging"],
@@ -203,6 +203,7 @@ describe("api desktop seam", () => {
       approvalMode: "always_ask" as const,
       reasoningEffort: "high",
       reasoningBudgetTokens: null,
+      fastMode: true,
       projectId: "project-1",
     };
     await createChat();

@@ -6,6 +6,7 @@ export type SidebarNavButtonProps = {
   active?: boolean;
   ariaHasPopup?: "menu";
   ariaExpanded?: boolean;
+  tourId?: string;
   /** Trailing update action shown when an app update is available. */
   updateAvailable?: boolean;
   onClick: () => void;
@@ -20,6 +21,7 @@ export function SidebarNavButton(props: SidebarNavButtonProps) {
       onClick={() => props.onClick()}
       aria-haspopup={props.ariaHasPopup}
       aria-expanded={props.ariaExpanded}
+      data-tour={props.tourId}
       aria-label={
         props.updateAvailable ? `${props.label} (update available)` : props.label
       }

@@ -1239,6 +1239,7 @@ pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::handoffs
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::interrupted_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::layer_idx: usize
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::mixed_tool_turn_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
+pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::output_truncation_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::outputs: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, serde_json::value::Value>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::pending_tool_batches: alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::execution::interactive_engine::checkpoint::CheckpointPendingToolBatch>
 pub engine::execution::interactive_engine::InteractiveEngineCheckpoint::plan_mode_source_node_id: core::option::Option<engine::graph::workflow::NodeId>
@@ -2592,6 +2593,7 @@ pub engine::execution::InteractiveEngineCheckpoint::handoffs: alloc::collections
 pub engine::execution::InteractiveEngineCheckpoint::interrupted_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
 pub engine::execution::InteractiveEngineCheckpoint::layer_idx: usize
 pub engine::execution::InteractiveEngineCheckpoint::mixed_tool_turn_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
+pub engine::execution::InteractiveEngineCheckpoint::output_truncation_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::execution::InteractiveEngineCheckpoint::outputs: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, serde_json::value::Value>
 pub engine::execution::InteractiveEngineCheckpoint::pending_tool_batches: alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::execution::interactive_engine::checkpoint::CheckpointPendingToolBatch>
 pub engine::execution::InteractiveEngineCheckpoint::plan_mode_source_node_id: core::option::Option<engine::graph::workflow::NodeId>
@@ -3053,6 +3055,7 @@ pub fn engine::graph::callable_agent::resolve_callable_agent_snapshots(&engine::
 pub mod engine::graph::runtime_config
 pub struct engine::graph::runtime_config::NodeRuntimeConfigPatch
 pub engine::graph::runtime_config::NodeRuntimeConfigPatch::approval_mode: core::option::Option<engine::ApprovalMode>
+pub engine::graph::runtime_config::NodeRuntimeConfigPatch::fast_mode: core::option::Option<bool>
 pub engine::graph::runtime_config::NodeRuntimeConfigPatch::model: core::option::Option<alloc::string::String>
 pub engine::graph::runtime_config::NodeRuntimeConfigPatch::reasoning_budget_tokens: core::option::Option<core::option::Option<u32>>
 pub engine::graph::runtime_config::NodeRuntimeConfigPatch::reasoning_effort: core::option::Option<core::option::Option<alloc::string::String>>
@@ -3968,6 +3971,7 @@ impl<T> serde_core::de::DeserializeOwned for engine::graph::workflow::WorkflowSc
 impl<T> typenum::type_operators::Same for engine::graph::workflow::WorkflowSchedule
 pub type engine::graph::workflow::WorkflowSchedule::Output = T
 pub struct engine::graph::workflow::WorkflowSettings
+pub engine::graph::workflow::WorkflowSettings::fast_mode: bool
 pub engine::graph::workflow::WorkflowSettings::forward_upstream_reads: bool
 pub engine::graph::workflow::WorkflowSettings::output_repair_model: core::option::Option<alloc::string::String>
 pub engine::graph::workflow::WorkflowSettings::plan_mode: core::option::Option<engine::graph::workflow::PlanModeConfig>
@@ -4669,6 +4673,7 @@ impl<T> typenum::type_operators::Same for engine::graph::workflow::NodePosition
 pub type engine::graph::workflow::NodePosition::Output = T
 pub struct engine::graph::NodeRuntimeConfigPatch
 pub engine::graph::NodeRuntimeConfigPatch::approval_mode: core::option::Option<engine::ApprovalMode>
+pub engine::graph::NodeRuntimeConfigPatch::fast_mode: core::option::Option<bool>
 pub engine::graph::NodeRuntimeConfigPatch::model: core::option::Option<alloc::string::String>
 pub engine::graph::NodeRuntimeConfigPatch::reasoning_budget_tokens: core::option::Option<core::option::Option<u32>>
 pub engine::graph::NodeRuntimeConfigPatch::reasoning_effort: core::option::Option<core::option::Option<alloc::string::String>>
@@ -4993,6 +4998,7 @@ impl<T> serde_core::de::DeserializeOwned for engine::graph::workflow::WorkflowSc
 impl<T> typenum::type_operators::Same for engine::graph::workflow::WorkflowSchedule
 pub type engine::graph::workflow::WorkflowSchedule::Output = T
 pub struct engine::graph::WorkflowSettings
+pub engine::graph::WorkflowSettings::fast_mode: bool
 pub engine::graph::WorkflowSettings::forward_upstream_reads: bool
 pub engine::graph::WorkflowSettings::output_repair_model: core::option::Option<alloc::string::String>
 pub engine::graph::WorkflowSettings::plan_mode: core::option::Option<engine::graph::workflow::PlanModeConfig>
@@ -5075,6 +5081,10 @@ pub engine::ports::outbound::AgentError::MalformedSubmitOutput::provider_label: 
 pub engine::ports::outbound::AgentError::MixedToolTurn
 pub engine::ports::outbound::AgentError::MixedToolTurn::provider_label: alloc::string::String
 pub engine::ports::outbound::AgentError::MixedToolTurn::tool_names: alloc::string::String
+pub engine::ports::outbound::AgentError::OutputTruncated
+pub engine::ports::outbound::AgentError::OutputTruncated::partial_tool_calls: alloc::vec::Vec<engine::ports::outbound::PartialToolCall>
+pub engine::ports::outbound::AgentError::OutputTruncated::provider_label: alloc::string::String
+pub engine::ports::outbound::AgentError::OutputTruncated::reason: alloc::string::String
 pub engine::ports::outbound::AgentError::Permanent(alloc::string::String)
 pub engine::ports::outbound::AgentError::Transient(alloc::string::String)
 impl engine::ports::outbound::AgentError
@@ -5082,6 +5092,7 @@ pub fn engine::ports::outbound::AgentError::is_empty_provider_turn(&self) -> boo
 pub const fn engine::ports::outbound::AgentError::is_interrupted(&self) -> bool
 pub const fn engine::ports::outbound::AgentError::is_malformed_submit_output(&self) -> bool
 pub const fn engine::ports::outbound::AgentError::is_mixed_tool_turn(&self) -> bool
+pub const fn engine::ports::outbound::AgentError::is_output_truncated(&self) -> bool
 pub fn engine::ports::outbound::AgentError::is_repairable_submit_output(&self) -> bool
 pub const fn engine::ports::outbound::AgentError::is_retryable(&self) -> bool
 pub fn engine::ports::outbound::AgentError::malformed_submit_output(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>) -> Self
@@ -5089,6 +5100,8 @@ pub fn engine::ports::outbound::AgentError::malformed_submit_with_candidate(impl
 pub fn engine::ports::outbound::AgentError::mixed_tool_names(&self) -> core::option::Option<&str>
 pub fn engine::ports::outbound::AgentError::mixed_tool_turn(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>) -> Self
 pub fn engine::ports::outbound::AgentError::output_repair_candidate(&self) -> core::option::Option<&engine::ports::outbound::OutputRepairCandidate>
+pub fn engine::ports::outbound::AgentError::output_truncated(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, alloc::vec::Vec<engine::ports::outbound::PartialToolCall>) -> Self
+pub fn engine::ports::outbound::AgentError::partial_tool_calls(&self) -> core::option::Option<&[engine::ports::outbound::PartialToolCall]>
 impl core::error::Error for engine::ports::outbound::AgentError
 impl core::fmt::Debug for engine::ports::outbound::AgentError
 pub fn engine::ports::outbound::AgentError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
@@ -5422,6 +5435,7 @@ pub engine::ports::outbound::AgentRequest::allow_user_input: bool
 pub engine::ports::outbound::AgentRequest::available_tools: alloc::vec::Vec<engine::ToolDefinition>
 pub engine::ports::outbound::AgentRequest::conversation_mode: bool
 pub engine::ports::outbound::AgentRequest::entrypoint_attachments: alloc::vec::Vec<engine::conversation::ChatAttachmentRef>
+pub engine::ports::outbound::AgentRequest::fast_mode: bool
 pub engine::ports::outbound::AgentRequest::input: serde_json::value::Value
 pub engine::ports::outbound::AgentRequest::model: alloc::string::String
 pub engine::ports::outbound::AgentRequest::model_attempt: u8
@@ -5628,6 +5642,55 @@ impl<T> core::convert::From<T> for engine::ports::outbound::OutputRepairCandidat
 pub fn engine::ports::outbound::OutputRepairCandidate::from(T) -> T
 impl<T> typenum::type_operators::Same for engine::ports::outbound::OutputRepairCandidate
 pub type engine::ports::outbound::OutputRepairCandidate::Output = T
+pub struct engine::ports::outbound::PartialToolCall
+impl engine::ports::outbound::PartialToolCall
+pub const fn engine::ports::outbound::PartialToolCall::arguments_len(&self) -> usize
+pub fn engine::ports::outbound::PartialToolCall::internal_call_id(&self) -> &str
+pub fn engine::ports::outbound::PartialToolCall::new(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, core::option::Option<alloc::string::String>, impl core::convert::Into<alloc::string::String>) -> Self
+pub fn engine::ports::outbound::PartialToolCall::raw_arguments(&self) -> &str
+pub fn engine::ports::outbound::PartialToolCall::tool_call_id(&self) -> &str
+pub fn engine::ports::outbound::PartialToolCall::tool_name(&self) -> core::option::Option<&str>
+impl core::clone::Clone for engine::ports::outbound::PartialToolCall
+pub fn engine::ports::outbound::PartialToolCall::clone(&self) -> engine::ports::outbound::PartialToolCall
+impl core::cmp::Eq for engine::ports::outbound::PartialToolCall
+impl core::cmp::PartialEq for engine::ports::outbound::PartialToolCall
+pub fn engine::ports::outbound::PartialToolCall::eq(&self, &engine::ports::outbound::PartialToolCall) -> bool
+impl core::fmt::Debug for engine::ports::outbound::PartialToolCall
+pub fn engine::ports::outbound::PartialToolCall::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::ports::outbound::PartialToolCall
+impl core::marker::Freeze for engine::ports::outbound::PartialToolCall
+impl core::marker::Send for engine::ports::outbound::PartialToolCall
+impl core::marker::Sync for engine::ports::outbound::PartialToolCall
+impl core::marker::Unpin for engine::ports::outbound::PartialToolCall
+impl core::marker::UnsafeUnpin for engine::ports::outbound::PartialToolCall
+impl core::panic::unwind_safe::RefUnwindSafe for engine::ports::outbound::PartialToolCall
+impl core::panic::unwind_safe::UnwindSafe for engine::ports::outbound::PartialToolCall
+impl<Q, K> equivalent::Equivalent<K> for engine::ports::outbound::PartialToolCall where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn engine::ports::outbound::PartialToolCall::equivalent(&self, &K) -> bool
+impl<T, U> core::convert::Into<U> for engine::ports::outbound::PartialToolCall where U: core::convert::From<T>
+pub fn engine::ports::outbound::PartialToolCall::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::ports::outbound::PartialToolCall where U: core::convert::Into<T>
+pub type engine::ports::outbound::PartialToolCall::Error = core::convert::Infallible
+pub fn engine::ports::outbound::PartialToolCall::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::ports::outbound::PartialToolCall where U: core::convert::TryFrom<T>
+pub type engine::ports::outbound::PartialToolCall::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::ports::outbound::PartialToolCall::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::ports::outbound::PartialToolCall where T: core::clone::Clone
+pub type engine::ports::outbound::PartialToolCall::Owned = T
+pub fn engine::ports::outbound::PartialToolCall::clone_into(&self, &mut T)
+pub fn engine::ports::outbound::PartialToolCall::to_owned(&self) -> T
+impl<T> core::any::Any for engine::ports::outbound::PartialToolCall where T: 'static + ?core::marker::Sized
+pub fn engine::ports::outbound::PartialToolCall::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::ports::outbound::PartialToolCall where T: ?core::marker::Sized
+pub fn engine::ports::outbound::PartialToolCall::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::ports::outbound::PartialToolCall where T: ?core::marker::Sized
+pub fn engine::ports::outbound::PartialToolCall::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::ports::outbound::PartialToolCall where T: core::clone::Clone
+pub unsafe fn engine::ports::outbound::PartialToolCall::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::ports::outbound::PartialToolCall
+pub fn engine::ports::outbound::PartialToolCall::from(T) -> T
+impl<T> typenum::type_operators::Same for engine::ports::outbound::PartialToolCall
+pub type engine::ports::outbound::PartialToolCall::Output = T
 pub struct engine::ports::outbound::ResolvedChatAttachment
 pub engine::ports::outbound::ResolvedChatAttachment::bytes: alloc::vec::Vec<u8>
 impl core::clone::Clone for engine::ports::outbound::ResolvedChatAttachment
@@ -5814,6 +5877,8 @@ pub fn engine::ports::outbound::ToolBatchOutput::from(T) -> T
 impl<T> typenum::type_operators::Same for engine::ports::outbound::ToolBatchOutput
 pub type engine::ports::outbound::ToolBatchOutput::Output = T
 pub struct engine::ports::outbound::UsageReport
+pub engine::ports::outbound::UsageReport::cache_creation_input_tokens: u32
+pub engine::ports::outbound::UsageReport::cached_input_tokens: u32
 pub engine::ports::outbound::UsageReport::completion_tokens: u32
 pub engine::ports::outbound::UsageReport::prompt_tokens: u32
 pub engine::ports::outbound::UsageReport::total_tokens: u32
@@ -5986,6 +6051,10 @@ pub engine::ports::AgentError::MalformedSubmitOutput::provider_label: alloc::str
 pub engine::ports::AgentError::MixedToolTurn
 pub engine::ports::AgentError::MixedToolTurn::provider_label: alloc::string::String
 pub engine::ports::AgentError::MixedToolTurn::tool_names: alloc::string::String
+pub engine::ports::AgentError::OutputTruncated
+pub engine::ports::AgentError::OutputTruncated::partial_tool_calls: alloc::vec::Vec<engine::ports::outbound::PartialToolCall>
+pub engine::ports::AgentError::OutputTruncated::provider_label: alloc::string::String
+pub engine::ports::AgentError::OutputTruncated::reason: alloc::string::String
 pub engine::ports::AgentError::Permanent(alloc::string::String)
 pub engine::ports::AgentError::Transient(alloc::string::String)
 impl engine::ports::outbound::AgentError
@@ -5993,6 +6062,7 @@ pub fn engine::ports::outbound::AgentError::is_empty_provider_turn(&self) -> boo
 pub const fn engine::ports::outbound::AgentError::is_interrupted(&self) -> bool
 pub const fn engine::ports::outbound::AgentError::is_malformed_submit_output(&self) -> bool
 pub const fn engine::ports::outbound::AgentError::is_mixed_tool_turn(&self) -> bool
+pub const fn engine::ports::outbound::AgentError::is_output_truncated(&self) -> bool
 pub fn engine::ports::outbound::AgentError::is_repairable_submit_output(&self) -> bool
 pub const fn engine::ports::outbound::AgentError::is_retryable(&self) -> bool
 pub fn engine::ports::outbound::AgentError::malformed_submit_output(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>) -> Self
@@ -6000,6 +6070,8 @@ pub fn engine::ports::outbound::AgentError::malformed_submit_with_candidate(impl
 pub fn engine::ports::outbound::AgentError::mixed_tool_names(&self) -> core::option::Option<&str>
 pub fn engine::ports::outbound::AgentError::mixed_tool_turn(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>) -> Self
 pub fn engine::ports::outbound::AgentError::output_repair_candidate(&self) -> core::option::Option<&engine::ports::outbound::OutputRepairCandidate>
+pub fn engine::ports::outbound::AgentError::output_truncated(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, alloc::vec::Vec<engine::ports::outbound::PartialToolCall>) -> Self
+pub fn engine::ports::outbound::AgentError::partial_tool_calls(&self) -> core::option::Option<&[engine::ports::outbound::PartialToolCall]>
 impl core::error::Error for engine::ports::outbound::AgentError
 impl core::fmt::Debug for engine::ports::outbound::AgentError
 pub fn engine::ports::outbound::AgentError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
@@ -6333,6 +6405,7 @@ pub engine::ports::AgentRequest::allow_user_input: bool
 pub engine::ports::AgentRequest::available_tools: alloc::vec::Vec<engine::ToolDefinition>
 pub engine::ports::AgentRequest::conversation_mode: bool
 pub engine::ports::AgentRequest::entrypoint_attachments: alloc::vec::Vec<engine::conversation::ChatAttachmentRef>
+pub engine::ports::AgentRequest::fast_mode: bool
 pub engine::ports::AgentRequest::input: serde_json::value::Value
 pub engine::ports::AgentRequest::model: alloc::string::String
 pub engine::ports::AgentRequest::model_attempt: u8
@@ -6539,6 +6612,55 @@ impl<T> core::convert::From<T> for engine::ports::outbound::OutputRepairCandidat
 pub fn engine::ports::outbound::OutputRepairCandidate::from(T) -> T
 impl<T> typenum::type_operators::Same for engine::ports::outbound::OutputRepairCandidate
 pub type engine::ports::outbound::OutputRepairCandidate::Output = T
+pub struct engine::ports::PartialToolCall
+impl engine::ports::outbound::PartialToolCall
+pub const fn engine::ports::outbound::PartialToolCall::arguments_len(&self) -> usize
+pub fn engine::ports::outbound::PartialToolCall::internal_call_id(&self) -> &str
+pub fn engine::ports::outbound::PartialToolCall::new(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, core::option::Option<alloc::string::String>, impl core::convert::Into<alloc::string::String>) -> Self
+pub fn engine::ports::outbound::PartialToolCall::raw_arguments(&self) -> &str
+pub fn engine::ports::outbound::PartialToolCall::tool_call_id(&self) -> &str
+pub fn engine::ports::outbound::PartialToolCall::tool_name(&self) -> core::option::Option<&str>
+impl core::clone::Clone for engine::ports::outbound::PartialToolCall
+pub fn engine::ports::outbound::PartialToolCall::clone(&self) -> engine::ports::outbound::PartialToolCall
+impl core::cmp::Eq for engine::ports::outbound::PartialToolCall
+impl core::cmp::PartialEq for engine::ports::outbound::PartialToolCall
+pub fn engine::ports::outbound::PartialToolCall::eq(&self, &engine::ports::outbound::PartialToolCall) -> bool
+impl core::fmt::Debug for engine::ports::outbound::PartialToolCall
+pub fn engine::ports::outbound::PartialToolCall::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::ports::outbound::PartialToolCall
+impl core::marker::Freeze for engine::ports::outbound::PartialToolCall
+impl core::marker::Send for engine::ports::outbound::PartialToolCall
+impl core::marker::Sync for engine::ports::outbound::PartialToolCall
+impl core::marker::Unpin for engine::ports::outbound::PartialToolCall
+impl core::marker::UnsafeUnpin for engine::ports::outbound::PartialToolCall
+impl core::panic::unwind_safe::RefUnwindSafe for engine::ports::outbound::PartialToolCall
+impl core::panic::unwind_safe::UnwindSafe for engine::ports::outbound::PartialToolCall
+impl<Q, K> equivalent::Equivalent<K> for engine::ports::outbound::PartialToolCall where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn engine::ports::outbound::PartialToolCall::equivalent(&self, &K) -> bool
+impl<T, U> core::convert::Into<U> for engine::ports::outbound::PartialToolCall where U: core::convert::From<T>
+pub fn engine::ports::outbound::PartialToolCall::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::ports::outbound::PartialToolCall where U: core::convert::Into<T>
+pub type engine::ports::outbound::PartialToolCall::Error = core::convert::Infallible
+pub fn engine::ports::outbound::PartialToolCall::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::ports::outbound::PartialToolCall where U: core::convert::TryFrom<T>
+pub type engine::ports::outbound::PartialToolCall::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::ports::outbound::PartialToolCall::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::ports::outbound::PartialToolCall where T: core::clone::Clone
+pub type engine::ports::outbound::PartialToolCall::Owned = T
+pub fn engine::ports::outbound::PartialToolCall::clone_into(&self, &mut T)
+pub fn engine::ports::outbound::PartialToolCall::to_owned(&self) -> T
+impl<T> core::any::Any for engine::ports::outbound::PartialToolCall where T: 'static + ?core::marker::Sized
+pub fn engine::ports::outbound::PartialToolCall::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::ports::outbound::PartialToolCall where T: ?core::marker::Sized
+pub fn engine::ports::outbound::PartialToolCall::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::ports::outbound::PartialToolCall where T: ?core::marker::Sized
+pub fn engine::ports::outbound::PartialToolCall::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::ports::outbound::PartialToolCall where T: core::clone::Clone
+pub unsafe fn engine::ports::outbound::PartialToolCall::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::ports::outbound::PartialToolCall
+pub fn engine::ports::outbound::PartialToolCall::from(T) -> T
+impl<T> typenum::type_operators::Same for engine::ports::outbound::PartialToolCall
+pub type engine::ports::outbound::PartialToolCall::Output = T
 pub struct engine::ports::ResolvedChatAttachment
 pub engine::ports::ResolvedChatAttachment::bytes: alloc::vec::Vec<u8>
 impl core::clone::Clone for engine::ports::outbound::ResolvedChatAttachment
@@ -6725,6 +6847,8 @@ pub fn engine::ports::outbound::ToolBatchOutput::from(T) -> T
 impl<T> typenum::type_operators::Same for engine::ports::outbound::ToolBatchOutput
 pub type engine::ports::outbound::ToolBatchOutput::Output = T
 pub struct engine::ports::UsageReport
+pub engine::ports::UsageReport::cache_creation_input_tokens: u32
+pub engine::ports::UsageReport::cached_input_tokens: u32
 pub engine::ports::UsageReport::completion_tokens: u32
 pub engine::ports::UsageReport::prompt_tokens: u32
 pub engine::ports::UsageReport::total_tokens: u32
@@ -8072,6 +8196,10 @@ pub engine::AgentError::MalformedSubmitOutput::provider_label: alloc::string::St
 pub engine::AgentError::MixedToolTurn
 pub engine::AgentError::MixedToolTurn::provider_label: alloc::string::String
 pub engine::AgentError::MixedToolTurn::tool_names: alloc::string::String
+pub engine::AgentError::OutputTruncated
+pub engine::AgentError::OutputTruncated::partial_tool_calls: alloc::vec::Vec<engine::ports::outbound::PartialToolCall>
+pub engine::AgentError::OutputTruncated::provider_label: alloc::string::String
+pub engine::AgentError::OutputTruncated::reason: alloc::string::String
 pub engine::AgentError::Permanent(alloc::string::String)
 pub engine::AgentError::Transient(alloc::string::String)
 impl engine::ports::outbound::AgentError
@@ -8079,6 +8207,7 @@ pub fn engine::ports::outbound::AgentError::is_empty_provider_turn(&self) -> boo
 pub const fn engine::ports::outbound::AgentError::is_interrupted(&self) -> bool
 pub const fn engine::ports::outbound::AgentError::is_malformed_submit_output(&self) -> bool
 pub const fn engine::ports::outbound::AgentError::is_mixed_tool_turn(&self) -> bool
+pub const fn engine::ports::outbound::AgentError::is_output_truncated(&self) -> bool
 pub fn engine::ports::outbound::AgentError::is_repairable_submit_output(&self) -> bool
 pub const fn engine::ports::outbound::AgentError::is_retryable(&self) -> bool
 pub fn engine::ports::outbound::AgentError::malformed_submit_output(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>) -> Self
@@ -8086,6 +8215,8 @@ pub fn engine::ports::outbound::AgentError::malformed_submit_with_candidate(impl
 pub fn engine::ports::outbound::AgentError::mixed_tool_names(&self) -> core::option::Option<&str>
 pub fn engine::ports::outbound::AgentError::mixed_tool_turn(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>) -> Self
 pub fn engine::ports::outbound::AgentError::output_repair_candidate(&self) -> core::option::Option<&engine::ports::outbound::OutputRepairCandidate>
+pub fn engine::ports::outbound::AgentError::output_truncated(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, alloc::vec::Vec<engine::ports::outbound::PartialToolCall>) -> Self
+pub fn engine::ports::outbound::AgentError::partial_tool_calls(&self) -> core::option::Option<&[engine::ports::outbound::PartialToolCall]>
 impl core::error::Error for engine::ports::outbound::AgentError
 impl core::fmt::Debug for engine::ports::outbound::AgentError
 pub fn engine::ports::outbound::AgentError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
@@ -9879,6 +10010,7 @@ pub engine::AgentRequest::allow_user_input: bool
 pub engine::AgentRequest::available_tools: alloc::vec::Vec<engine::ToolDefinition>
 pub engine::AgentRequest::conversation_mode: bool
 pub engine::AgentRequest::entrypoint_attachments: alloc::vec::Vec<engine::conversation::ChatAttachmentRef>
+pub engine::AgentRequest::fast_mode: bool
 pub engine::AgentRequest::input: serde_json::value::Value
 pub engine::AgentRequest::model: alloc::string::String
 pub engine::AgentRequest::model_attempt: u8
@@ -10824,6 +10956,7 @@ pub engine::InteractiveEngineCheckpoint::handoffs: alloc::collections::btree::ma
 pub engine::InteractiveEngineCheckpoint::interrupted_nodes: alloc::collections::btree::set::BTreeSet<engine::graph::workflow::NodeId>
 pub engine::InteractiveEngineCheckpoint::layer_idx: usize
 pub engine::InteractiveEngineCheckpoint::mixed_tool_turn_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
+pub engine::InteractiveEngineCheckpoint::output_truncation_retries_by_node: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, u8>
 pub engine::InteractiveEngineCheckpoint::outputs: alloc::collections::btree::map::BTreeMap<engine::graph::workflow::NodeId, serde_json::value::Value>
 pub engine::InteractiveEngineCheckpoint::pending_tool_batches: alloc::collections::btree::map::BTreeMap<alloc::string::String, engine::execution::interactive_engine::checkpoint::CheckpointPendingToolBatch>
 pub engine::InteractiveEngineCheckpoint::plan_mode_source_node_id: core::option::Option<engine::graph::workflow::NodeId>
@@ -11105,6 +11238,7 @@ impl<T> typenum::type_operators::Same for engine::execution::artifacts::NodeRunO
 pub type engine::execution::artifacts::NodeRunOutput::Output = T
 pub struct engine::NodeRuntimeConfigPatch
 pub engine::NodeRuntimeConfigPatch::approval_mode: core::option::Option<engine::ApprovalMode>
+pub engine::NodeRuntimeConfigPatch::fast_mode: core::option::Option<bool>
 pub engine::NodeRuntimeConfigPatch::model: core::option::Option<alloc::string::String>
 pub engine::NodeRuntimeConfigPatch::reasoning_budget_tokens: core::option::Option<core::option::Option<u32>>
 pub engine::NodeRuntimeConfigPatch::reasoning_effort: core::option::Option<core::option::Option<alloc::string::String>>
@@ -11307,6 +11441,55 @@ impl<T> core::convert::From<T> for engine::execution::output_repair::OutputRepai
 pub fn engine::execution::output_repair::OutputRepairPolicy::from(T) -> T
 impl<T> typenum::type_operators::Same for engine::execution::output_repair::OutputRepairPolicy
 pub type engine::execution::output_repair::OutputRepairPolicy::Output = T
+pub struct engine::PartialToolCall
+impl engine::ports::outbound::PartialToolCall
+pub const fn engine::ports::outbound::PartialToolCall::arguments_len(&self) -> usize
+pub fn engine::ports::outbound::PartialToolCall::internal_call_id(&self) -> &str
+pub fn engine::ports::outbound::PartialToolCall::new(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, core::option::Option<alloc::string::String>, impl core::convert::Into<alloc::string::String>) -> Self
+pub fn engine::ports::outbound::PartialToolCall::raw_arguments(&self) -> &str
+pub fn engine::ports::outbound::PartialToolCall::tool_call_id(&self) -> &str
+pub fn engine::ports::outbound::PartialToolCall::tool_name(&self) -> core::option::Option<&str>
+impl core::clone::Clone for engine::ports::outbound::PartialToolCall
+pub fn engine::ports::outbound::PartialToolCall::clone(&self) -> engine::ports::outbound::PartialToolCall
+impl core::cmp::Eq for engine::ports::outbound::PartialToolCall
+impl core::cmp::PartialEq for engine::ports::outbound::PartialToolCall
+pub fn engine::ports::outbound::PartialToolCall::eq(&self, &engine::ports::outbound::PartialToolCall) -> bool
+impl core::fmt::Debug for engine::ports::outbound::PartialToolCall
+pub fn engine::ports::outbound::PartialToolCall::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::ports::outbound::PartialToolCall
+impl core::marker::Freeze for engine::ports::outbound::PartialToolCall
+impl core::marker::Send for engine::ports::outbound::PartialToolCall
+impl core::marker::Sync for engine::ports::outbound::PartialToolCall
+impl core::marker::Unpin for engine::ports::outbound::PartialToolCall
+impl core::marker::UnsafeUnpin for engine::ports::outbound::PartialToolCall
+impl core::panic::unwind_safe::RefUnwindSafe for engine::ports::outbound::PartialToolCall
+impl core::panic::unwind_safe::UnwindSafe for engine::ports::outbound::PartialToolCall
+impl<Q, K> equivalent::Equivalent<K> for engine::ports::outbound::PartialToolCall where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn engine::ports::outbound::PartialToolCall::equivalent(&self, &K) -> bool
+impl<T, U> core::convert::Into<U> for engine::ports::outbound::PartialToolCall where U: core::convert::From<T>
+pub fn engine::ports::outbound::PartialToolCall::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::ports::outbound::PartialToolCall where U: core::convert::Into<T>
+pub type engine::ports::outbound::PartialToolCall::Error = core::convert::Infallible
+pub fn engine::ports::outbound::PartialToolCall::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::ports::outbound::PartialToolCall where U: core::convert::TryFrom<T>
+pub type engine::ports::outbound::PartialToolCall::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::ports::outbound::PartialToolCall::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::ports::outbound::PartialToolCall where T: core::clone::Clone
+pub type engine::ports::outbound::PartialToolCall::Owned = T
+pub fn engine::ports::outbound::PartialToolCall::clone_into(&self, &mut T)
+pub fn engine::ports::outbound::PartialToolCall::to_owned(&self) -> T
+impl<T> core::any::Any for engine::ports::outbound::PartialToolCall where T: 'static + ?core::marker::Sized
+pub fn engine::ports::outbound::PartialToolCall::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::ports::outbound::PartialToolCall where T: ?core::marker::Sized
+pub fn engine::ports::outbound::PartialToolCall::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::ports::outbound::PartialToolCall where T: ?core::marker::Sized
+pub fn engine::ports::outbound::PartialToolCall::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::ports::outbound::PartialToolCall where T: core::clone::Clone
+pub unsafe fn engine::ports::outbound::PartialToolCall::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::ports::outbound::PartialToolCall
+pub fn engine::ports::outbound::PartialToolCall::from(T) -> T
+impl<T> typenum::type_operators::Same for engine::ports::outbound::PartialToolCall
+pub type engine::ports::outbound::PartialToolCall::Output = T
 pub struct engine::PendingToolApproval
 pub engine::PendingToolApproval::approval_id: alloc::string::String
 pub engine::PendingToolApproval::node_id: engine::graph::workflow::NodeId
@@ -12281,6 +12464,8 @@ impl<T> serde_core::de::DeserializeOwned for engine::ToolTruncation where T: for
 impl<T> typenum::type_operators::Same for engine::ToolTruncation
 pub type engine::ToolTruncation::Output = T
 pub struct engine::UsageReport
+pub engine::UsageReport::cache_creation_input_tokens: u32
+pub engine::UsageReport::cached_input_tokens: u32
 pub engine::UsageReport::completion_tokens: u32
 pub engine::UsageReport::prompt_tokens: u32
 pub engine::UsageReport::total_tokens: u32
@@ -12602,6 +12787,7 @@ impl<T> serde_core::de::DeserializeOwned for engine::graph::workflow::WorkflowSc
 impl<T> typenum::type_operators::Same for engine::graph::workflow::WorkflowSchedule
 pub type engine::graph::workflow::WorkflowSchedule::Output = T
 pub struct engine::WorkflowSettings
+pub engine::WorkflowSettings::fast_mode: bool
 pub engine::WorkflowSettings::forward_upstream_reads: bool
 pub engine::WorkflowSettings::output_repair_model: core::option::Option<alloc::string::String>
 pub engine::WorkflowSettings::plan_mode: core::option::Option<engine::graph::workflow::PlanModeConfig>

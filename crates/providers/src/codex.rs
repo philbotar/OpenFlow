@@ -110,6 +110,7 @@ impl CodexClient {
             &request.model,
             credentials,
             self.http.clone(),
+            request.fast_mode,
         )?;
         rig_adapter::invoke_codex_model(&model, request, &self.provider_label, &self.provider_id)
             .await
@@ -128,6 +129,7 @@ impl CodexClient {
             &request.model,
             credentials,
             self.http.clone(),
+            request.fast_mode,
         )?;
         rig_adapter::invoke_codex_model_stream(
             &model,
@@ -308,6 +310,7 @@ mod tests {
             model_attempt: 1,
             reasoning_effort: Some("high".into()),
             reasoning_budget_tokens: None,
+            fast_mode: false,
             tool_access_policy: engine::ToolAccessPolicy::Execution,
             allow_user_input: false,
             conversation_mode: false,

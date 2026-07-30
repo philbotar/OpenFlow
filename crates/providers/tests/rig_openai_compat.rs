@@ -38,6 +38,16 @@ fn responses_submit_fixture() -> serde_json::Value {
         "created_at": 0,
         "status": "completed",
         "model": "test-model",
+        "usage": {
+            "input_tokens": 5,
+            "input_tokens_details": {
+                "cached_tokens": 3,
+                "cache_write_tokens": 2
+            },
+            "output_tokens": 4,
+            "output_tokens_details": {"reasoning_tokens": 1},
+            "total_tokens": 9
+        },
         "output": [{
             "type": "function_call",
             "id": "fc_1",
@@ -78,7 +88,10 @@ fn responses_submit_sse_fixture() -> String {
             "model": "test-model",
             "usage": {
                 "input_tokens": 5,
-                "input_tokens_details": {"cached_tokens": 0},
+                "input_tokens_details": {
+                    "cached_tokens": 3,
+                    "cache_write_tokens": 2
+                },
                 "output_tokens": 4,
                 "output_tokens_details": {"reasoning_tokens": 1},
                 "total_tokens": 9
@@ -123,6 +136,7 @@ fn test_request() -> engine::AgentRequest {
         model_attempt: 1,
         reasoning_effort: None,
         reasoning_budget_tokens: None,
+        fast_mode: false,
         tool_access_policy: engine::ToolAccessPolicy::Execution,
         allow_user_input: true,
         conversation_mode: false,
@@ -332,6 +346,59 @@ async fn responses_submit_output_completes_node() {
         panic!("expected completed outcome");
     };
     assert_eq!(success.output, json!({"summary": "done"}));
+    assert_eq!(
+        success
+            .usage
+            .as_ref()
+            .map(|usage| (usage.cached_input_tokens, usage.cache_creation_input_tokens)),
+        Some((3, 2))
+    );
+
+    let requests = server.received_requests().await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+    assert_eq!(body["prompt_cache_key"], "wf-1:idea");
+    assert!(body.get("metadata").is_none());
+}
+
+#[tokio::test]
+async fn gpt_5_6_responses_marks_only_the_stable_system_prefix() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(responses_submit_fixture()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let mut request = test_request();
+    request.model = "gpt-5.6-terra".into();
+    let outcome = create_provider(openai_test_config(&server.uri(), WireApi::Responses))
+        .invoke(request)
+        .await
+        .unwrap();
+    assert!(matches!(outcome, AgentTurnOutcome::Completed(_)));
+
+    let requests = server.received_requests().await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+    assert_eq!(body["prompt_cache_key"], "wf-1:idea");
+    assert_eq!(
+        body["prompt_cache_options"]["mode"], "explicit",
+        "wire body: {body:#}"
+    );
+    assert!(body.get("instructions").is_none());
+    assert!(body.get("metadata").is_none());
+
+    let system = body["input"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["role"] == "system")
+        .unwrap();
+    assert_eq!(system["content"][0]["type"], "input_text");
+    assert_eq!(
+        system["content"][0]["prompt_cache_breakpoint"]["mode"],
+        "explicit"
+    );
 }
 
 #[tokio::test]
@@ -358,6 +425,24 @@ async fn responses_stream_preserves_usage() {
         success.usage.as_ref().map(|usage| usage.total_tokens),
         Some(9)
     );
+    assert_eq!(
+        success
+            .usage
+            .as_ref()
+            .map(|usage| usage.cached_input_tokens),
+        Some(3)
+    );
+    assert_eq!(
+        success
+            .usage
+            .as_ref()
+            .map(|usage| usage.cache_creation_input_tokens),
+        Some(2)
+    );
+
+    let requests = server.received_requests().await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+    assert_eq!(body["prompt_cache_key"], "wf-1:idea");
 }
 
 #[tokio::test]
@@ -821,6 +906,7 @@ async fn chat_completions_external_tool_call_batch() {
 
     let requests = server.received_requests().await.unwrap();
     let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+    assert_eq!(body["prompt_cache_key"], "wf-1:idea");
     let tool_names = body["tools"]
         .as_array()
         .unwrap()
@@ -1132,6 +1218,10 @@ async fn ollama_skips_prompt_cache_key() {
     };
     let client = create_provider(config);
     client.invoke(test_request()).await.unwrap();
+
+    let requests = server.received_requests().await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+    assert!(body.get("prompt_cache_key").is_none());
 }
 
 #[tokio::test]

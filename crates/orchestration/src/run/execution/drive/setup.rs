@@ -106,6 +106,25 @@ async fn close_mcp_after_setup_error(
     error
 }
 
+fn report_skipped_mcp(
+    event_tx: &tokio::sync::mpsc::UnboundedSender<super::super::ExecutionEvent>,
+    notice_node_id: Option<&engine::NodeId>,
+    message: String,
+) {
+    log::warn!("{message}");
+    let Some(node_id) = notice_node_id else {
+        return;
+    };
+    super::super::send_or_log(
+        event_tx,
+        super::super::ExecutionEvent::ChatMessage {
+            node_id: node_id.clone(),
+            role: engine::ChatRole::System,
+            content: message,
+        },
+    );
+}
+
 pub(super) async fn wire_run<A>(
     params: InteractiveWorkflowRunParams<A>,
     event_tx: tokio::sync::mpsc::UnboundedSender<super::super::ExecutionEvent>,
@@ -138,6 +157,11 @@ where
         runtime_config_store,
     } = params;
 
+    let mcp_notice_node_id = entrypoint
+        .as_deref()
+        .and_then(|id| workflow.nodes.iter().find(|node| node.id.0 == id))
+        .or_else(|| workflow.nodes.first())
+        .map(|node| node.id.clone());
     let mut engine = build_engine(
         workflow.clone(),
         entrypoint,
@@ -159,25 +183,27 @@ where
         disabled_discovered_ids: mcp.disabled_discovered_ids.clone(),
     };
 
-    let mcp_clients = crate::adapters::mcp::McpRunClients::connect(&effective_mcp)
-        .await
-        .map_err(|error| error.to_string())?;
+    let (mcp_clients, mut mcp_issues) =
+        crate::adapters::mcp::McpRunClients::connect(&effective_mcp).await;
+    let (definitions, definition_issues) = mcp_clients.list_all_tool_definitions().await;
+    mcp_issues.extend(definition_issues);
+    for issue in mcp_issues {
+        report_skipped_mcp(&event_tx, mcp_notice_node_id.as_ref(), issue.to_string());
+    }
 
-    let definitions = match mcp_clients.list_all_tool_definitions().await {
-        Ok(definitions) => definitions,
-        Err(error) => {
-            return Err(close_mcp_after_setup_error(&mcp_clients, error.to_string()).await);
-        }
-    };
-    let mcp_tools = definitions
-        .into_iter()
-        .map(|definition| crate::tool::registry::RegisteredTool {
+    for definition in definitions {
+        let tool_name = definition.name.clone();
+        let tool = crate::tool::registry::RegisteredTool {
             definition,
             kind: crate::tool::registry::BuiltinToolKind::Mcp,
-        })
-        .collect();
-    if let Err(error) = tool_registry.extend_mcp(mcp_tools) {
-        return Err(close_mcp_after_setup_error(&mcp_clients, error.to_string()).await);
+        };
+        if let Err(error) = tool_registry.extend_mcp(vec![tool]) {
+            report_skipped_mcp(
+                &event_tx,
+                mcp_notice_node_id.as_ref(),
+                format!("MCP tool `{tool_name}` was skipped: {error}"),
+            );
+        }
     }
 
     if search.enabled

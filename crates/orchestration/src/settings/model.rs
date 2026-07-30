@@ -58,6 +58,9 @@ pub struct ProviderProfile {
         alias = "default_reasoning_effort"
     )]
     pub default_reasoning_effort: Option<String>,
+    /// Whether this provider exposes a request-level faster service tier.
+    #[serde(default, rename = "fastModeAvailable", alias = "fast_mode_available")]
+    pub fast_mode_available: bool,
     /// Per-model context window sizes (in tokens) for the bubble indicator.
     /// Users can override or extend the bundled defaults here.
     #[serde(default)]
@@ -134,6 +137,7 @@ impl ProviderProfile {
             reasoning_effort_options: spec.default_reasoning_effort_options(),
             default_reasoning_budget_tokens: Self::default_budget_tokens_for_spec(spec),
             default_reasoning_effort: None,
+            fast_mode_available: spec.supports_fast_mode(),
             context_window_sizes: crate::settings::default_context_window_sizes(),
         }
     }
@@ -168,6 +172,7 @@ impl ProviderProfile {
             reasoning_effort_options: Vec::new(),
             default_reasoning_budget_tokens: BTreeMap::new(),
             default_reasoning_effort: None,
+            fast_mode_available: false,
             context_window_sizes: crate::settings::default_context_window_sizes(),
         }
     }
@@ -214,9 +219,15 @@ impl ProviderProfile {
             if self.reasoning_effort_options.is_empty() {
                 self.reasoning_effort_options = spec.default_reasoning_effort_options();
             }
+            for option in &mut self.reasoning_effort_options {
+                if option.value == "none" && option.label == "Fast" {
+                    option.label = "None".to_string();
+                }
+            }
             if self.default_reasoning_budget_tokens.is_empty() {
                 self.default_reasoning_budget_tokens = Self::default_budget_tokens_for_spec(spec);
             }
+            self.fast_mode_available = spec.supports_fast_mode();
         }
         self.new_model_input.clear();
     }
@@ -718,6 +729,53 @@ mod tests {
 
         assert_eq!(profile.aws_region, "ap-southeast-2");
         assert!(profile.base_url.is_empty());
+    }
+
+    #[test]
+    fn provider_profiles_expose_fast_mode_separately_from_reasoning() {
+        let settings = AppSettings::default();
+
+        assert!(settings
+            .providers
+            .get(&ProviderId::from("openai-codex"))
+            .is_some_and(|profile| profile.fast_mode_available));
+        assert!(settings
+            .providers
+            .get(&ProviderId::from("openai"))
+            .is_some_and(|profile| profile.fast_mode_available));
+        assert!(!settings
+            .providers
+            .get(&ProviderId::from("anthropic"))
+            .is_some_and(|profile| profile.fast_mode_available));
+    }
+
+    #[test]
+    fn normalized_profile_migrates_legacy_fast_effort_label_to_none() {
+        let mut settings = AppSettings::default();
+        let profile = settings
+            .providers
+            .get_mut(&ProviderId::from("openai-codex"))
+            .expect("Codex profile");
+        let none = profile
+            .reasoning_effort_options
+            .iter_mut()
+            .find(|option| option.value == "none")
+            .expect("none effort");
+        none.label = "Fast".to_string();
+
+        let normalized = settings.normalized();
+        let none = normalized
+            .providers
+            .get(&ProviderId::from("openai-codex"))
+            .and_then(|profile| {
+                profile
+                    .reasoning_effort_options
+                    .iter()
+                    .find(|option| option.value == "none")
+            })
+            .expect("normalized none effort");
+
+        assert_eq!(none.label, "None");
     }
 
     #[test]

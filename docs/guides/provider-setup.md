@@ -17,7 +17,7 @@ In **Settings → Providers**:
 1. Under **Active provider**, pick a row from the **Provider** dropdown (for example **OpenAI**, **Anthropic**, **ChatGPT (Codex)**, **Amazon Bedrock**, or a hosted OpenAI-compatible vendor).
 2. Complete authentication for that profile (next section).
 3. Adjust models, reasoning, or endpoint fields if needed.
-4. Select **Save settings**.
+4. Provider profile changes save automatically. For API-key providers, select **Save API key** after entering or replacing the key.
 
 The active profile is the default for agent chat and workflows that do not select a shared provider. A readiness chip on this page mirrors the header: **Ready** when configuration resolves, or a specific missing step otherwise.
 
@@ -30,7 +30,7 @@ Applies to **OpenAI**, **Anthropic**, **OpenRouter**, local **Ollama** / **LM St
 1. Open the **API key** panel.
 2. Paste a key into the key field when the endpoint requires one. For a custom endpoint reached through localhost, a VPN, or another trusted network, leave the optional field empty.
 3. Readiness can turn **Ready** before you save; the typed value is also passed as the transient key for runs until you leave the session.
-4. Select **Save settings** to persist the key in local `settings.json` (plaintext on disk).
+4. Select **Save API key** to persist the key in local `settings.json` (plaintext on disk). Other provider fields save automatically.
 
 Alternatively, export the provider environment variable (for example `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`) before launching OpenFlow. Resolution order: transient key from the Settings field during a session, stored profile key, then environment variable. See [`../reference/README.md#provider-key-resolution`](../reference/README.md#provider-key-resolution).
 
@@ -46,7 +46,7 @@ Codex does not use `OPENAI_API_KEY`. Billing and entitlement follow the ChatGPT 
 
 1. Select **Amazon Bedrock** as the active provider.
 2. Set **AWS profile** and **AWS region** (or rely on `AWS_PROFILE` / `AWS_REGION` when OpenFlow inherits your shell environment).
-3. Select **Save settings**, then **Test AWS connection** to verify the credential chain.
+3. Wait for the automatic settings save, then select **Test AWS connection** to verify the credential chain.
 4. Optionally **Fetch from AWS**, then select the foundation model IDs to expose in OpenFlow.
 
 Readiness may show region configured before credentials are verified; use **Test AWS connection** to confirm. SSO and GUI `HOME` behavior: [`../architecture/provider-adapters.md#bedrock-with-sso`](../architecture/provider-adapters.md#bedrock-with-sso).

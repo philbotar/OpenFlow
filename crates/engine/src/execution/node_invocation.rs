@@ -512,6 +512,7 @@ pub(crate) fn build_agent_request(
         model_attempt: 1,
         reasoning_effort: node.agent.reasoning_effort.clone(),
         reasoning_budget_tokens: node.agent.reasoning_budget_tokens,
+        fast_mode: ctx.workflow.settings.fast_mode,
         tool_access_policy: crate::ports::ToolAccessPolicy::Execution,
         allow_user_input: node.agent.request_user_input,
         conversation_mode: node.agent.conversation_mode,
@@ -891,6 +892,7 @@ mod tests {
         node.agent.model = "gpt-4o".to_string();
         node.agent.reasoning_effort = Some("adaptive".to_string());
         node.agent.reasoning_budget_tokens = Some(40960);
+        workflow.settings.fast_mode = true;
         workflow.nodes.push(node.clone());
         let upstream_map = build_upstream_map(&workflow);
         let ctx = NodeInvocationContext {
@@ -910,6 +912,7 @@ mod tests {
         let request = build_agent_request(&ctx, &node, true).unwrap();
         assert_eq!(request.reasoning_effort, Some("adaptive".to_string()));
         assert_eq!(request.reasoning_budget_tokens, Some(40960));
+        assert!(request.fast_mode);
     }
 
     #[test]

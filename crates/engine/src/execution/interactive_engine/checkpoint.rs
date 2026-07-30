@@ -73,6 +73,8 @@ pub struct InteractiveEngineCheckpoint {
     #[serde(default)]
     pub mixed_tool_turn_retries_by_node: BTreeMap<NodeId, u8>,
     #[serde(default)]
+    pub output_truncation_retries_by_node: BTreeMap<NodeId, u8>,
+    #[serde(default)]
     pub auto_continue_streaks_by_node: BTreeMap<NodeId, u8>,
     pub entrypoint_text: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -116,6 +118,7 @@ fn collect_checkpoint_node_ids(checkpoint: &InteractiveEngineCheckpoint) -> BTre
     ids.extend(checkpoint.interrupted_nodes.iter().cloned());
     ids.extend(checkpoint.failed_nodes.keys().cloned());
     ids.extend(checkpoint.retries_by_node.keys().cloned());
+    ids.extend(checkpoint.output_truncation_retries_by_node.keys().cloned());
     ids.extend(
         checkpoint
             .pending_tool_batches
@@ -190,6 +193,7 @@ impl InteractiveEngine {
             request_input_retries_by_node: self.request_input_retries_by_node.clone(),
             empty_turn_retries_by_node: self.empty_turn_retries_by_node.clone(),
             mixed_tool_turn_retries_by_node: self.mixed_tool_turn_retries_by_node.clone(),
+            output_truncation_retries_by_node: self.output_truncation_retries_by_node.clone(),
             auto_continue_streaks_by_node: self.auto_continue_streaks_by_node.clone(),
             entrypoint_text: self.entrypoint_text.clone(),
             entrypoint_attachments: self.entrypoint_attachments.clone(),
@@ -267,6 +271,7 @@ impl InteractiveEngine {
             request_input_retries_by_node: checkpoint.request_input_retries_by_node,
             empty_turn_retries_by_node: checkpoint.empty_turn_retries_by_node,
             mixed_tool_turn_retries_by_node: checkpoint.mixed_tool_turn_retries_by_node,
+            output_truncation_retries_by_node: checkpoint.output_truncation_retries_by_node,
             auto_continue_streaks_by_node: checkpoint.auto_continue_streaks_by_node,
             entrypoint_text: checkpoint.entrypoint_text,
             entrypoint_attachments: checkpoint.entrypoint_attachments,

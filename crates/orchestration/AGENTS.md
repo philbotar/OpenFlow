@@ -103,7 +103,7 @@ See [`docs/architecture/orchestration-layout.md`](../../docs/architecture/orches
 ### Runtime semantics (orchestration wires, engine defines)
 
 1. **Shared context** — trimmed and appended per run in execution layer.
-2. **Execution cwd** — resolved at run start from project `default_execution_cwd` or process cwd.
+2. **Execution cwd** — project runs use the selected project's `default_execution_cwd` or project root; app workflow/chat runs use isolated folders under `{data_local}/openflow/workspaces/`.
 3. **Callable agents** — snapshotted at run start via `resolve_callable_agent_snapshots`.
 4. **Provider routing** — `AgentNodeConfig.provider_id` overrides `WorkflowSettings.provider_id`, which overrides the active settings provider. Orchestration builds every referenced client at run prep and routes each `AgentRequest` to its effective provider.
 5. **Model default** — an empty node model inherits its effective provider's `default_model` at run prep; an explicit node model wins.
@@ -122,6 +122,8 @@ See [`docs/architecture/orchestration-layout.md`](../../docs/architecture/orches
 | Agents | `{data_local}/openflow/agents.json` |
 | Projects | `{data_local}/openflow/projects.json` |
 | Settings | `{data_local}/openflow/settings.json` |
+| App-managed execution folders | `{data_local}/openflow/workspaces/{workflows|chats}/{id}` |
+| Project run metadata | `{project}/.flow/runs/{run_id}/` |
 | Node handoffs | `{run_root}/{run_id}/handoffs/{node_id}/HANDOFF.md` or `HANDOFF.json` |
 API key precedence: transient input → stored `ProviderProfile.api_key` → env var fallback.
 

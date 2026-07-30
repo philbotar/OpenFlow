@@ -74,8 +74,10 @@ sequenceDiagram
     BE->>BE: merge app + project stores
 
     Note over UI: Start run
-    UI->>DT: start_run(workflow, settings, cwd, key, entrypoint?)
-    DT->>RC: start_run
+    UI->>DT: start_run(workflow, settings, projectId, key, entrypoint?)
+    DT->>BE: start_run
+    BE->>BE: resolve workspace + probe write access
+    BE->>RC: start_run(execution cwd, run root)
     RC->>RC: validate_workflow
     RC->>RC: resolve_execution_cwd
     RC->>RC: prepare_workflow_run (provider router, snapshots)
@@ -263,6 +265,7 @@ Subagent turns run **inside** a parent `CALL_SUBAGENT` tool execution (`subagent
 | --- | --- | --- | --- | --- | --- | --- |
 | Workflow validation | Empty graph, duplicate ids, dangling edge, cycle | **engine** | Yes (start) | Fix workflow | `WorkflowValidationError` | `graph/validation.rs` → `validate_workflow` |
 | Provider / key readiness | Any referenced provider lacks resolvable credentials | **orchestration** | Yes (start) | Settings / transient key | Backend error to UI | `settings/provider.rs` → `resolve_provider_config` |
+| MCP setup | Enabled server cannot connect, list tools, or register a tool | **orchestration** | No | Fix, test, or disable server in Settings | Server/tool skipped; system chat warning | `adapters/mcp/mod.rs` → `run/execution/drive/setup.rs` |
 | `request_user_input` | Model calls `openflow_request_user_input` with one free-text question or `openflow_ask_user_question` with valid structured questions | **engine** | Yes (pause) | `submit_user_input` | Invalid request → nudge then fail | `completion.rs`, `allow_user_input` on `AgentRequest` |
 | Tool approval (`ApprovalMode`) | Write-tier tool under `write` / `always_ask` | **engine** policy; **orch** catalog | Yes (pause) | `submit_tool_approval` → `on_tool_decision` | Deny → synthetic denied `ToolResult` | `tools/config.rs`, `completion.rs` |
 | `read_only` tool exposure | Write-tier tool not in catalog | **orchestration** | Yes (model can't call) | Switch `ApprovalMode` | Tool unavailable to model | `tool/registry.rs` → `is_read_only` |
@@ -302,8 +305,8 @@ flowchart LR
 | Seam | Type | Important fields |
 | --- | --- | --- |
 | Workflow → invocation | `NodeInvocationContext` | upstream outputs and handoff refs, `entrypoint_text`, `shared_context`, callable snapshots |
-| → `AgentRequest` | `build_agent_request` | `provider_id`, `model`, `system_messages`, `task_prompt`, `input` JSON, `output_schema`, `tool_config` (approval + structured-input capability), `turn_phase`, `allow_user_input`, `transcript` |
-| → provider | `ProviderRouter` → `AiPort::invoke_stream` | Effective provider, model id, reasoning options, phase-specific `available_tools` (`mapping/mod.rs` → `all_tool_specs`) |
+| → `AgentRequest` | `build_agent_request` | `provider_id`, `model`, reasoning options, `fast_mode`, `system_messages`, `task_prompt`, `input` JSON, `output_schema`, `tool_config` (approval + structured-input capability), `turn_phase`, `allow_user_input`, `transcript` |
+| → provider | `ProviderRouter` → `AiPort::invoke_stream` | Effective provider, model id, reasoning options, independent fast-mode service tier, phase-specific `available_tools` (`mapping/mod.rs` → `all_tool_specs`) |
 | ← provider | `AgentTurnOutcome` | `Completed.output`, optional `Completed.handoff`, `ToolCalls.tool_calls`, control transitions |
 | Tool execution | `ToolPort::execute_batch` | `ToolBatchOutput` → `on_tool_results` |
 | → UI | `RunTelemetry` / `ExecutionEvent` | `ChatMessageDelta`, `NodeAwaitingInput`, `ToolApprovalRequested`, `NodeCompleted`, `Finished` |
@@ -320,6 +323,7 @@ Orchestration wraps the run-scoped provider router with `AiInvocationAdapter`. A
 | App workflows | `{data_local}/openflow/workflows.json` | `app_workflow_store` | Unassigned workflows only on save |
 | Chats | `{data_local}/openflow/chats.json` | `chat_store` | Chat identity, title, project/runtime config, timestamps, and durable run ID; separate from workflow catalog |
 | Project workflows | `{project}/.flow/workflows/{id}.workflow.json` | `project_workflow_store` | Wins on ID collision at load |
+| App-managed execution folders | `{data_local}/openflow/workspaces/{workflows|chats}/{id}` | workspace resolver | Isolated cwd for runs without a project |
 | Settings + API keys | `{data_local}/openflow/settings.json` | `settings_store` | Plaintext keys |
 | Projects registry | `{data_local}/openflow/projects.json` | `project_store` | Bindings + assigned workflow ids |
 | Saved agents (`CallableAgent`) | `{data_local}/openflow/agents.json` | `agent_store` | Snapshotted at run start |

@@ -34,6 +34,7 @@ export function useSettings(params: UseSettingsParams) {
   const [providerKeyInputByProvider, setProviderKeyInputByProvider] = createSignal<
     Record<AiProviderKind, string>
   >({} as Record<AiProviderKind, string>);
+  let settingsSaveQueue: Promise<void> = Promise.resolve();
 
   const activeProfileMemo = createMemo(() => activeProfile(settings()));
   const providerIdsMemo = createMemo(() => providerDisplayOrder(settings()));
@@ -67,6 +68,14 @@ export function useSettings(params: UseSettingsParams) {
     const next = cloneSettings(settings());
     mutator(next);
     setSettings(next);
+    const pendingSave = settingsSaveQueue.then(() => desktop.saveSettings(next));
+    settingsSaveQueue = pendingSave.catch(() => undefined);
+    try {
+      await pendingSave;
+    } catch (error) {
+      params.showErrorToast(normalizeError(error));
+      return;
+    }
     await refreshReadiness(next);
   };
 
@@ -83,6 +92,7 @@ export function useSettings(params: UseSettingsParams) {
     const providerId = settings().active_provider;
     const apiKey = activeProviderKeyInput().trim();
     try {
+      await settingsSaveQueue;
       if (providerId !== "bedrock" && providerId !== "openai-codex") {
         if (apiKey) {
           await desktop.saveProviderApiKey(providerId, apiKey);
@@ -92,7 +102,7 @@ export function useSettings(params: UseSettingsParams) {
       }
       await desktop.saveSettings(settings());
       await refreshReadiness();
-      params.showSuccessToast("Settings saved successfully.");
+      params.showSuccessToast("API key saved.");
     } catch (error) {
       params.showErrorToast(normalizeError(error));
     }

@@ -47,6 +47,38 @@ pub struct McpToolOutcome {
     pub is_error: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum McpSetupStage {
+    Connect,
+    ListTools,
+}
+
+impl std::fmt::Display for McpSetupStage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Connect => f.write_str("connect"),
+            Self::ListTools => f.write_str("list tools"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpSetupIssue {
+    pub server_id: String,
+    pub stage: McpSetupStage,
+    pub error: McpError,
+}
+
+impl std::fmt::Display for McpSetupIssue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "MCP server `{}` could not {} and was skipped: {}",
+            self.server_id, self.stage, self.error
+        )
+    }
+}
+
 pub fn namespaced_tool_name(server_id: &str, tool_name: &str) -> Result<String, McpError> {
     validate_segment(server_id)?;
     validate_segment(tool_name)?;
@@ -220,28 +252,40 @@ impl std::fmt::Debug for McpRunClients {
 }
 
 impl McpRunClients {
-    pub async fn connect(settings: &McpSettings) -> Result<Self, McpError> {
+    pub async fn connect(settings: &McpSettings) -> (Self, Vec<McpSetupIssue>) {
         let mut clients = HashMap::new();
+        let mut issues = Vec::new();
         for config in settings.servers.iter().filter(|server| server.enabled) {
             let client = match McpStdioClient::spawn(config).await {
                 Ok(client) => client,
                 Err(error) => {
-                    let connected = Self { clients };
-                    let _ = connected.close().await;
-                    return Err(error);
+                    issues.push(McpSetupIssue {
+                        server_id: config.id.clone(),
+                        stage: McpSetupStage::Connect,
+                        error,
+                    });
+                    continue;
                 }
             };
             clients.insert(config.id.clone(), client);
         }
-        Ok(Self { clients })
+        (Self { clients }, issues)
     }
 
-    pub async fn list_all_tool_definitions(&self) -> Result<Vec<ToolDefinition>, McpError> {
+    pub async fn list_all_tool_definitions(&self) -> (Vec<ToolDefinition>, Vec<McpSetupIssue>) {
         let mut definitions = Vec::new();
-        for client in self.clients.values() {
-            definitions.extend(client.list_tool_definitions().await?);
+        let mut issues = Vec::new();
+        for (server_id, client) in &self.clients {
+            match client.list_tool_definitions().await {
+                Ok(server_definitions) => definitions.extend(server_definitions),
+                Err(error) => issues.push(McpSetupIssue {
+                    server_id: server_id.clone(),
+                    stage: McpSetupStage::ListTools,
+                    error,
+                }),
+            }
         }
-        Ok(definitions)
+        (definitions, issues)
     }
 
     pub async fn call_namespaced(
@@ -334,6 +378,29 @@ mod tests {
 
         clients.close().await.unwrap();
         clients.close().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn connection_failure_is_reported_without_rejecting_other_setup() {
+        let settings = McpSettings {
+            servers: vec![McpServerConfig {
+                id: "missing".to_string(),
+                display_name: "Missing".to_string(),
+                command: "/definitely/not/a/real/openflow-mcp-server".to_string(),
+                args: Vec::new(),
+                env: Default::default(),
+                enabled: true,
+            }],
+            discover_external: false,
+            disabled_discovered_ids: Vec::new(),
+        };
+
+        let (clients, issues) = McpRunClients::connect(&settings).await;
+
+        assert!(clients.clients.is_empty());
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].server_id, "missing");
+        assert_eq!(issues[0].stage, McpSetupStage::Connect);
     }
 
     #[test]

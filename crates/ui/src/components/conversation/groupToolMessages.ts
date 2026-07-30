@@ -57,6 +57,10 @@ export function expandThinkMessages(messages: ChatMessage[]): ChatMessage[] {
       const prose: ChatMessage = {
         role: message.role,
         content: remainder,
+        attachments: message.attachments,
+        createdAtMs: message.createdAtMs,
+        completedAtMs: message.completedAtMs,
+        elapsedSincePreviousMs: message.elapsedSincePreviousMs,
       };
       if (message.id) prose.id = message.id;
       if (message.streaming && !thoughts) prose.streaming = true;

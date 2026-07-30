@@ -172,6 +172,7 @@ export function Sidebar() {
           <SidebarNavButton
             icon="plus"
             label="New workflow"
+            tourId="new-workflow"
             ariaHasPopup="menu"
             ariaExpanded={newWorkflowMenuOpen()}
             onClick={() => setNewWorkflowMenuOpen((open) => !open)}
@@ -210,6 +211,7 @@ export function Sidebar() {
         <SidebarNavButton
           icon="chat"
           label="New chat"
+          tourId="new-chat"
           onClick={() => void ctx.handleCreateChat()}
         />
         <Show
@@ -270,6 +272,12 @@ export function Sidebar() {
                         />
                       </button>
                     </Tooltip>
+                    <SidebarIconButton
+                      icon="plus"
+                      label="Add chat"
+                      class="sidebar-section-action"
+                      onClick={() => void ctx.handleCreateChat()}
+                    />
                   </div>
                 </div>
                 <CollapsibleSection
@@ -279,7 +287,10 @@ export function Sidebar() {
                   <ChatRows />
                 </CollapsibleSection>
               </div>
-              <div class="sidebar-section-group sidebar-workflows-section">
+              <div
+                class="sidebar-section-group sidebar-workflows-section"
+                data-tour="workflow-library"
+              >
                 <div class="sidebar-section-header workflows-section-header">
                   <div class="sidebar-section-label">Workflows</div>
                   <div class="sidebar-section-trailing">
@@ -299,6 +310,12 @@ export function Sidebar() {
                         />
                       </button>
                     </Tooltip>
+                    <SidebarIconButton
+                      icon="plus"
+                      label="Add workflow"
+                      class="sidebar-section-action"
+                      onClick={() => void ctx.handleCreateWorkflow()}
+                    />
                   </div>
                 </div>
                 <Show
@@ -403,10 +420,17 @@ export function Sidebar() {
         </div>
       </SidebarList>
       <div class="sidebar-footer">
+        <SidebarNavButton
+          icon="help"
+          label="Help"
+          tourId="help"
+          onClick={ctx.startFirstRunOnboarding}
+        />
         <div class="settings-nav-menu">
           <SidebarNavButton
             icon="settings"
             label="Settings"
+            tourId="settings"
             updateAvailable={ctx.appUpdateAvailable()}
             onClick={() => {
               ctx.closeAddNodePicker();

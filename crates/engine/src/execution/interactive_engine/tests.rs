@@ -9,6 +9,7 @@
 use super::{
     checkpoint::CheckpointError, EngineInputError, EngineRunResult, InteractiveEngine,
     PendingToolBatch, RunError, MAX_MALFORMED_REQUEST_INPUT_RETRIES, MAX_MIXED_TOOL_TURN_RETRIES,
+    MAX_OUTPUT_TRUNCATION_RETRIES,
 };
 use crate::conversation::{AgentTranscriptItem, ChatAttachmentKind, ChatAttachmentRef, ChatRole};
 use crate::execution::{HandoffArtifact, HandoffFormat, NodeFailureKind};
@@ -18,8 +19,9 @@ use crate::graph::{
 };
 use crate::ports::{
     AgentError, AgentMessageTurn, AgentNeedUserInput, AgentRequest, AgentToolCallBatch,
-    AgentTurnOutcome, AgentTurnSuccess, AiPort, StructuredUserInput, ToolAccessPolicy,
-    ToolBatchEffects, ToolBatchOutput, ToolPort, UserInputOption, UserInputQuestion,
+    AgentTurnOutcome, AgentTurnSuccess, AiPort, PartialToolCall, StructuredUserInput,
+    ToolAccessPolicy, ToolBatchEffects, ToolBatchOutput, ToolPort, UserInputOption,
+    UserInputQuestion,
 };
 use crate::tools::{ApprovalMode, FileChangeRecord, ToolCall, ToolResult};
 use async_trait::async_trait;
@@ -220,6 +222,9 @@ fn retry_failed_node_preserves_conversation_and_resets_recovery_budgets() {
         .mixed_tool_turn_retries_by_node
         .insert(node_id.clone(), 2);
     engine
+        .output_truncation_retries_by_node
+        .insert(node_id.clone(), 2);
+    engine
         .auto_continue_streaks_by_node
         .insert(node_id.clone(), 2);
 
@@ -232,6 +237,9 @@ fn retry_failed_node_preserves_conversation_and_resets_recovery_budgets() {
     assert!(!engine.empty_turn_retries_by_node.contains_key(&node_id));
     assert!(!engine
         .mixed_tool_turn_retries_by_node
+        .contains_key(&node_id));
+    assert!(!engine
+        .output_truncation_retries_by_node
         .contains_key(&node_id));
     assert!(!engine.auto_continue_streaks_by_node.contains_key(&node_id));
     assert_eq!(engine.model_attempt_for_node(&node_id), 2);
@@ -352,6 +360,108 @@ async fn mixed_tool_turn_is_corrected_and_retried_without_executing_calls() {
 
     assert!(matches!(result, EngineRunResult::Completed(_)));
     assert_eq!(requests.lock().expect("requests lock").len(), 2);
+}
+
+#[tokio::test]
+async fn output_truncation_retries_with_small_write_feedback() {
+    struct TruncatedThenCompleteAi {
+        requests: Arc<Mutex<Vec<AgentRequest>>>,
+    }
+
+    #[async_trait]
+    impl AiPort for TruncatedThenCompleteAi {
+        async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            let attempt = {
+                let mut requests = self.requests.lock().expect("requests lock");
+                let attempt = requests.len();
+                requests.push(request);
+                attempt
+            };
+            if attempt == 0 {
+                return Err(AgentError::output_truncated(
+                    "test provider",
+                    "output token limit",
+                    vec![PartialToolCall::new(
+                        "call-1",
+                        "internal-1",
+                        Some("write".to_string()),
+                        r#"{"path":"docs/large.md","content":"secret partial"#,
+                    )],
+                ));
+            }
+            let retry_request = self
+                .requests
+                .lock()
+                .expect("requests lock")
+                .last()
+                .expect("retry request")
+                .clone();
+            let feedback = retry_request
+                .transcript
+                .iter()
+                .find_map(|item| match item {
+                    AgentTranscriptItem::UserMessage { content, .. }
+                        if content.contains("output token limit") =>
+                    {
+                        Some(content)
+                    }
+                    _ => None,
+                })
+                .expect("retry feedback");
+            assert!(feedback.contains("write"));
+            assert!(feedback.contains("smaller"));
+            assert!(!feedback.contains("secret partial"));
+            assert!(!feedback.contains("docs/large.md"));
+            Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                handoff: None,
+                output: json!({"status": "complete"}),
+                raw_text: "{}".to_string(),
+                assistant_message: None,
+                reasoning: Vec::new(),
+                usage: None,
+            }))
+        }
+    }
+
+    let mut workflow = Workflow::new("output-truncation");
+    workflow.nodes = vec![node("idea")];
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let ai = TruncatedThenCompleteAi {
+        requests: Arc::clone(&requests),
+    };
+
+    let result = run_once(
+        &mut InteractiveEngine::new(workflow, None, None).unwrap(),
+        &ai,
+        &NoopToolPort,
+    )
+    .await;
+
+    assert!(matches!(result, EngineRunResult::Completed(_)));
+    assert_eq!(requests.lock().expect("requests lock").len(), 2);
+}
+
+#[test]
+fn output_truncation_fails_after_retry_cap() {
+    let mut workflow = Workflow::new("output-truncation-cap");
+    workflow.nodes = vec![node("idea")];
+    let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let node_id = NodeId::from("idea");
+    let truncated =
+        || AgentError::output_truncated("test provider", "output token limit", Vec::new());
+
+    for _ in 0..MAX_OUTPUT_TRUNCATION_RETRIES {
+        engine.test_insert_in_flight(node_id.clone());
+        engine.on_ai_complete(&node_id, Err(truncated()));
+    }
+    assert!(!engine.failed_nodes.contains_key(&node_id));
+
+    engine.test_insert_in_flight(node_id.clone());
+    engine.on_ai_complete(&node_id, Err(truncated()));
+    assert!(engine
+        .failed_nodes
+        .get(&node_id)
+        .is_some_and(|error| error.contains("output token limit")));
 }
 
 #[test]
@@ -983,7 +1093,7 @@ fn committed_plan_artifact_records_reference_without_plan_payload() {
 }
 
 #[test]
-fn checkpoint_preserves_mixed_tool_turn_retry_budget() {
+fn checkpoint_preserves_protocol_retry_budgets() {
     let mut workflow = Workflow::new("wf");
     workflow.nodes = vec![node("a")];
     let node_a = NodeId::from("a");
@@ -991,17 +1101,28 @@ fn checkpoint_preserves_mixed_tool_turn_retry_budget() {
     engine
         .mixed_tool_turn_retries_by_node
         .insert(node_a.clone(), 2);
+    engine
+        .output_truncation_retries_by_node
+        .insert(node_a.clone(), 1);
 
     let checkpoint = engine.prepare_stop_checkpoint();
     assert_eq!(
         checkpoint.mixed_tool_turn_retries_by_node.get(&node_a),
         Some(&2)
     );
+    assert_eq!(
+        checkpoint.output_truncation_retries_by_node.get(&node_a),
+        Some(&1)
+    );
 
     let restored = InteractiveEngine::from_checkpoint(workflow, checkpoint, None).unwrap();
     assert_eq!(
         restored.mixed_tool_turn_retries_by_node.get(&node_a),
         Some(&2)
+    );
+    assert_eq!(
+        restored.output_truncation_retries_by_node.get(&node_a),
+        Some(&1)
     );
 }
 
@@ -1489,6 +1610,7 @@ fn runtime_approval_patch_applies_before_tool_decision() {
         approval_mode: Some(ApprovalMode::Yolo),
         reasoning_effort: None,
         reasoning_budget_tokens: None,
+        fast_mode: None,
     };
     upsert_runtime_patch(&store, NodeId("idea".to_string()), &runtime_patch);
 

@@ -139,7 +139,7 @@ export function ChatPanel() {
           onViewAll={() => ctx.handleSelectBottomTab("history")}
         />
       </Show>
-      <div class="chat-composer-bar">
+      <div class="chat-composer-bar" data-tour="workflow-composer">
         <Show when={pendingApproval()}>
           {(approval) => (
             <ToolApprovalCardBody

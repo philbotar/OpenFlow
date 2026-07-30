@@ -240,6 +240,7 @@ impl WorkflowAuthoringService {
                 model_attempt,
                 reasoning_effort: reasoning_effort.clone(),
                 reasoning_budget_tokens,
+                fast_mode: false,
                 allow_user_input: false,
                 conversation_mode: false,
                 tool_access_policy: engine::ToolAccessPolicy::Execution,

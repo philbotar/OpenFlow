@@ -206,6 +206,8 @@ impl RunCoordinator {
 
         let mut initial_state = WorkflowRunState::running_for_workflow(&workflow);
         initial_state.run_id = Some(run_id.clone());
+        initial_state.execution_cwd = Some(resolved_cwd.display().to_string());
+        initial_state.project_id = run_root.project_id.clone();
         if entrypoint_text.is_some() || !entrypoint_attachments.is_empty() {
             if let Some(root_id) = execution_layers(&workflow)
                 .ok()
@@ -384,6 +386,8 @@ impl RunCoordinator {
             .map(|message| message.text)
             .filter(|text| !text.trim().is_empty());
         let entrypoint_attachments = Vec::new();
+        let continued_execution_cwd = execution_cwd.display().to_string();
+        let continued_project_id = project_id.clone();
         finalize_run_launch(
             &self.runtime_handle,
             &self.session,
@@ -393,7 +397,7 @@ impl RunCoordinator {
                     entrypoint: entrypoint_text.clone(),
                     entrypoint_attachments: entrypoint_attachments.clone(),
                     execution_cwd: execution_cwd.clone(),
-                    project_id,
+                    project_id: project_id.clone(),
                     artifact_root: artifact_root.clone(),
                     attachment_root: attachment_root.clone(),
                     attachment_store: Arc::clone(&self.attachment_store),
@@ -415,6 +419,8 @@ impl RunCoordinator {
                     .ok_or(BackendError::NoContinuableRun)?;
                 run_state.active = true;
                 run_state.run_id = run_id;
+                run_state.execution_cwd = Some(continued_execution_cwd);
+                run_state.project_id = continued_project_id;
                 Ok(run_state.clone())
             },
         )
@@ -759,6 +765,8 @@ impl RunCoordinator {
         let mut resumed_state = params.checkpoint.projection;
         resumed_state.active = true;
         resumed_state.run_id = Some(run_id.clone());
+        resumed_state.execution_cwd = Some(execution_cwd.display().to_string());
+        resumed_state.project_id.clone_from(&project_id);
         if let Some(continuation) = &resume_continuation {
             crate::run::execution::record_user_input_with_attachments(
                 &mut resumed_state,

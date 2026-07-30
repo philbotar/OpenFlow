@@ -11,12 +11,37 @@ Transport goes through **Rig 0.39** (`rig_adapter/`). Pre-Rig modules `openai_co
 | Adapter family | Implementation | Role |
 | --- | --- | --- |
 | OpenAI-compatible (via Rig) | `rig_adapter/model.rs` + `convert.rs` | Chat completions / Responses wire shape, tools, streaming |
-| ChatGPT (Codex) OAuth + Rig | `codex_oauth/`, `codex.rs`, and `rig_adapter/model.rs` | Browser/device login, refreshable credentials, ChatGPT Codex Responses streaming |
+| ChatGPT (Codex) OAuth + Rig | `codex_oauth/`, `codex.rs`, `rig_adapter/model.rs`, and `rig_adapter/codex_http.rs` | Browser/device login, refreshable credentials, ChatGPT Codex Responses streaming |
 | Anthropic Messages (via Rig) | `rig_adapter/` (+ `anthropic_http.rs`, `claude_thinking.rs`) | Anthropic-native mapping, thinking blocks, prompt cache |
 | Amazon Bedrock Converse (via Rig) | `rig_adapter/model.rs` + `aws_runtime.rs` | AWS Bedrock transport and credential resolution (`bedrock` Cargo feature; off by default on `providers`/`orchestration`, on via `desktop`) |
 | Shared mapping | `crates/providers/src/mapping/` | Transcript conversion, tool argument parsing, `jsonrepair-rs` recovery |
 | Factory | `crates/providers/src/lib.rs` | `create_provider()` returns `Box<dyn AiPort>` |
 | Client entry | `crates/providers/src/client.rs` | `AiClient: AiPort`, config enums, model cache |
+
+## Provider prompt caching
+
+Prompt caching reuses exact LLM prompt prefixes. It is independent from OpenFlow's validated
+tool-result cache.
+
+| Provider path | OpenFlow behavior |
+| --- | --- |
+| OpenAI API, Responses | Sends a stable `prompt_cache_key` per workflow node. GPT-5.6 models also use `prompt_cache_options.mode: "explicit"` and a breakpoint on the final stable system block, so changing user/tool history does not trigger a billable cache write. |
+| OpenAI API, Chat Completions | Sends the same stable per-node `prompt_cache_key`; the provider selects the automatic breakpoint. |
+| Anthropic Messages | Combines automatic moving-history caching with explicit stable system and tool-definition markers. Uses Anthropic's default five-minute TTL. |
+| Anthropic-compatible model override | Uses the same Messages caching policy. Backend support remains part of that endpoint's compatibility contract. |
+| Amazon Bedrock Converse | Enables Rig prompt caching only for the Claude and Nova model-ID allowlist in `rig_adapter/model.rs`; unsupported models receive no cache points. |
+| Other OpenAI-compatible endpoints | Sends `prompt_cache_key` except for Ollama and LM Studio. Cache acceptance, discounts, and lifetime remain provider-defined. |
+| ChatGPT (Codex) OAuth | Sends no OpenFlow-managed cache controls because the private backend contract does not document them. |
+
+The provider response maps cache reads to `UsageReport.cached_input_tokens` and cache writes to
+`UsageReport.cache_creation_input_tokens`. Orchestration projects the latest values into each
+node's `ContextWindowSnapshot` as `cachedInputTokens` and `cacheCreationInputTokens`. OpenAI
+Responses requires a final-wire compatibility shim because Rig 0.39 does not yet model
+`prompt_cache_key`, `prompt_cache_options`, or `cache_write_tokens`.
+
+Caching starts only after the provider's minimum prompt size. Cache keys improve routing; they do
+not memoize responses or change model output semantics. Keep stable system context and tool
+definitions first. Keep run-specific user input and tool results later.
 
 ## Per-model transport routing
 
@@ -32,6 +57,32 @@ Anthropic response mapping. Removing the override restores the profile default.
 When an adapter must invoke without streaming, it keeps typed reasoning on the turn outcome.
 The fallback stream emits displayable text and summary blocks before assistant text. It never
 emits encrypted or redacted reasoning payloads.
+
+## Fast mode
+
+Fast mode is an independent request setting. It does not select or rewrite reasoning effort.
+OpenAI API and ChatGPT (Codex) requests map the saved `fastMode` boolean to
+`service_tier: "priority"`. The ChatGPT UI name **Fast** and the Codex config value `fast` are not
+wire-level service tier values. Other providers do not expose this control.
+
+Rig's ChatGPT adapter clears `service_tier` during request construction. `CodexHttpClient` restores
+the user-selected priority tier at the final HTTP boundary while preserving Rig's request and
+stream mapping.
+
+## Stream cutoff recovery
+
+Rig streams tool-call names and argument deltas before the final response. OpenFlow accumulates
+those deltas by Rig's internal call ID. If a Responses stream ends with
+`response.incomplete: max_output_tokens`, the provider returns
+`AgentError::OutputTruncated` with redacted partial-call metadata instead of dropping the in-flight
+call or reporting a generic provider failure. Raw partial arguments stay in memory and are omitted
+from `Debug`, `Display`, telemetry, and chat projection.
+
+The engine executes no call from the incomplete response. It retries the node up to three times
+with instructions to create a small valid skeleton, then expand it through focused edits. Claude 4
+models recognized by Rig keep Rig's larger model-specific output limit; other Anthropic-compatible
+models receive a 16K minimum fallback. Successful edit-tool writes use a sibling temporary file plus
+atomic rename, so cancellation cannot expose a partially written destination.
 
 ## Deterministic recovery and overseer repair
 

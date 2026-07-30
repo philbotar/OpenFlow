@@ -4,11 +4,13 @@ import { useAppContext } from "../context/AppContext";
 import {
   defaultReasoningBudgetTokens,
   defaultReasoningEffort,
+  fastModeAvailable,
   activeProfile,
   providerDisplayOrder,
   reasoningBudgetForEffort,
   reasoningEffortOptions,
   workflowProviderProfile,
+  workflowFastMode,
   workflowReasoningBudgetTokens,
   workflowReasoningEffort,
 } from "../lib/workflow";
@@ -72,7 +74,10 @@ export function WorkflowSettingsPanel() {
   });
 
   return (
-    <aside class="inspector-panel workflow-settings-panel panel-enter">
+    <aside
+      class="inspector-panel workflow-settings-panel panel-enter"
+      data-tour="workflow-settings-panel"
+    >
       <div class="panel-header">
         <div class="panel-header-copy">
           <div class="eyebrow">Workflow</div>
@@ -112,6 +117,35 @@ export function WorkflowSettingsPanel() {
           }
         />
       </label>
+
+      <Show when={fastModeAvailable(workflowProfile())}>
+        <label>
+          <span>Speed</span>
+          <p class="field-help">
+            Fast mode keeps the selected model and reasoning effort, but uses more credits.
+          </p>
+          <TextSelect
+            value={
+              workflowFastMode(
+                ctx.activeWorkflow()?.settings ?? { shared_context: "" },
+              )
+                ? "fast"
+                : "standard"
+            }
+            options={[
+              { value: "standard", label: "Standard" },
+              { value: "fast", label: "Fast" },
+            ]}
+            onChange={(event) =>
+              ctx.updateActiveWorkflowSettings((settings) => {
+                const enabled = event.currentTarget.value === "fast";
+                settings.fast_mode = enabled;
+                settings.fastMode = enabled;
+              })
+            }
+          />
+        </label>
+      </Show>
 
       <section class="workflow-settings-section">
         <span>Plan → Execute</span>

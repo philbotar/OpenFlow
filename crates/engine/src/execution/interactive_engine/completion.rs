@@ -5,8 +5,8 @@ use super::{
     FREE_TEXT_REQUEST_INPUT_FEEDBACK, INCOMPLETE_WRITE_FEEDBACK, INTERACTIVE_CONTINUE_FEEDBACK,
     MALFORMED_REQUEST_INPUT_FEEDBACK, MAX_AUTO_CONTINUE_STREAK, MAX_EMPTY_PROVIDER_TURN_RETRIES,
     MAX_MALFORMED_REQUEST_INPUT_RETRIES, MAX_MALFORMED_SUBMIT_OUTPUT_RETRIES,
-    MAX_MIXED_TOOL_TURN_RETRIES, NARRATED_WRITE_FEEDBACK, PLAN_EXPAND_VIA_EDIT_FEEDBACK,
-    PLAN_NARRATED_WRITE_FEEDBACK, TEXT_STREAK_HUMAN_HANDOFF,
+    MAX_MIXED_TOOL_TURN_RETRIES, MAX_OUTPUT_TRUNCATION_RETRIES, NARRATED_WRITE_FEEDBACK,
+    PLAN_EXPAND_VIA_EDIT_FEEDBACK, PLAN_NARRATED_WRITE_FEEDBACK, TEXT_STREAK_HUMAN_HANDOFF,
 };
 use crate::conversation::{
     filter_tool_turn_assistant_message, AgentReasoning, AgentTranscriptItem,
@@ -121,6 +121,9 @@ impl InteractiveEngine {
                     return;
                 }
                 if self.handle_mixed_tool_turn_retry(node_id, &error) {
+                    return;
+                }
+                if self.handle_output_truncation_retry(node_id, &error) {
                     return;
                 }
                 if self.handle_empty_provider_turn_retry(node_id, &error) {
@@ -291,6 +294,48 @@ impl InteractiveEngine {
         true
     }
 
+    fn handle_output_truncation_retry(&mut self, node_id: &NodeId, error: &AgentError) -> bool {
+        let Some(partial_tool_calls) = error.partial_tool_calls() else {
+            return false;
+        };
+
+        let retry_count = self
+            .output_truncation_retries_by_node
+            .entry(node_id.clone())
+            .or_default();
+        if *retry_count >= MAX_OUTPUT_TRUNCATION_RETRIES {
+            return false;
+        }
+        *retry_count += 1;
+
+        let tool_names = partial_tool_calls
+            .iter()
+            .filter_map(|call| call.tool_name())
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>()
+            .join(", ");
+        let interrupted_work = if tool_names.is_empty() {
+            "your response".to_string()
+        } else {
+            format!("your {tool_names} tool call")
+        };
+        self.transcripts.entry(node_id.clone()).or_default().push(
+            AgentTranscriptItem::UserMessage {
+                content: format!(
+                    "The provider stopped {interrupted_work} at its output token limit. No tool \
+                     calls from that response were executed. Retry now using smaller file \
+                     mutations. For a large new file, write a short valid skeleton first, then \
+                     expand it with focused edit calls of roughly 40 lines. Use one small file \
+                     mutation call per turn until complete. Never resend the whole file in one \
+                     tool call."
+                ),
+                attachments: Vec::new(),
+            },
+        );
+        true
+    }
+
     fn handle_empty_provider_turn_retry(&mut self, node_id: &NodeId, error: &AgentError) -> bool {
         if !error.is_empty_provider_turn() {
             return false;
@@ -410,6 +455,7 @@ impl InteractiveEngine {
         self.empty_turn_retries_by_node.remove(node_id);
         self.request_input_retries_by_node.remove(node_id);
         self.submit_output_retries_by_node.remove(node_id);
+        self.output_truncation_retries_by_node.remove(node_id);
         if let Some(usage) = usage {
             self.note_usage(usage);
         }
@@ -724,6 +770,7 @@ impl InteractiveEngine {
         self.request_input_retries_by_node.remove(node_id);
         self.empty_turn_retries_by_node.remove(node_id);
         self.mixed_tool_turn_retries_by_node.remove(node_id);
+        self.output_truncation_retries_by_node.remove(node_id);
         self.auto_continue_streaks_by_node.remove(node_id);
     }
 }

@@ -5,6 +5,10 @@ import { applyTheme } from "../lib/theme";
 
 const tokensCss = readFileSync("src/styles/tokens.css", "utf8");
 const indexCss = readFileSync("src/styles/index.css", "utf8");
+const onboardingCss = readFileSync(
+  "src/components/FirstRunOnboarding/FirstRunOnboarding.css",
+  "utf8",
+);
 
 describe("dark theme palette", () => {
   let style: HTMLStyleElement | undefined;
@@ -58,6 +62,22 @@ describe("dark theme palette", () => {
     expect(getComputedStyle(runButton).color).toBe("var(--action-foreground)");
 
     runButton.remove();
+  });
+
+  test("uses theme-safe contrast for dark onboarding actions", () => {
+    style = document.createElement("style");
+    style.textContent = `${tokensCss}\n${onboardingCss}`;
+    document.head.append(style);
+    applyTheme("dark");
+
+    const nextButton = document.createElement("button");
+    nextButton.className = "of-tour-next";
+    const skipButton = document.createElement("button");
+    skipButton.className = "of-tour-skip";
+    document.body.append(nextButton, skipButton);
+
+    expect(getComputedStyle(nextButton).color).toBe("var(--action-foreground)");
+    expect(getComputedStyle(skipButton).color).toBe("var(--text-muted)");
   });
 
   test("matches agent delete geometry to save", () => {

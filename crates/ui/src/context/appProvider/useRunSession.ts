@@ -32,6 +32,7 @@ interface UseRunSessionParams {
   settings: Accessor<AppSettings>;
   readiness: Accessor<ProviderReadiness | null>;
   activeProviderKeyInput: Accessor<string>;
+  projectIdForActiveWorkflow: Accessor<string | null>;
   executionCwdForActiveWorkflow: Accessor<string | null>;
   applySchemaEditor: () => boolean;
   runState: Accessor<WorkflowRunState | null>;
@@ -136,6 +137,7 @@ export function useRunSession(params: UseRunSessionParams) {
     approvalMode: config.approvalMode,
     reasoningEffort: config.reasoningEffort,
     reasoningBudgetTokens: config.reasoningBudgetTokens,
+    fastMode: config.fastMode ?? false,
   });
 
   const startRunFromChat = (
@@ -147,7 +149,7 @@ export function useRunSession(params: UseRunSessionParams) {
       ? desktop.startRun(
           workflow,
           params.settings(),
-          params.executionCwdForActiveWorkflow(),
+          params.projectIdForActiveWorkflow(),
           params.activeProviderKeyInput() || null,
           message,
           invokedSkillIds,
@@ -155,7 +157,7 @@ export function useRunSession(params: UseRunSessionParams) {
       : desktop.startRun(
           workflow,
           params.settings(),
-          params.executionCwdForActiveWorkflow(),
+          params.projectIdForActiveWorkflow(),
           params.activeProviderKeyInput() || null,
           message,
         );
@@ -185,7 +187,7 @@ export function useRunSession(params: UseRunSessionParams) {
       const nextRunState = await desktop.startRun(
         workflow,
         params.settings(),
-        params.executionCwdForActiveWorkflow(),
+        params.projectIdForActiveWorkflow(),
         params.activeProviderKeyInput() || null,
         null,
       );

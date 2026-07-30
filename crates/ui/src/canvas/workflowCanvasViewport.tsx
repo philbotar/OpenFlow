@@ -1,11 +1,25 @@
 /** @jsxImportSource react */
 /** @jsxRuntime automatic */
-import { useNodesInitialized, useReactFlow, useStore } from "@xyflow/react";
-import { useCallback, useEffect, useRef } from "react";
+import {
+  useNodesInitialized,
+  useReactFlow,
+  useStore,
+  type FitViewOptions,
+} from "@xyflow/react";
+import { useCallback, useEffect, useRef, type RefObject } from "react";
 import type { NodeId } from "../lib/types";
 
+const CANVAS_TOOLBAR_BASE_CLEARANCE_PX = 84;
+const CANVAS_TOOLBAR_NODE_GAP_PX = 24;
+
 export const FIT_ALL_VIEWPORT_OPTIONS = {
-  padding: 0.2,
+  padding: {
+    top: 0.2,
+    right: 0.2,
+    bottom: 0.2,
+    // 16px panel margin + 44px toolbar + 24px node gap at 100% UI zoom.
+    left: `${CANVAS_TOOLBAR_BASE_CLEARANCE_PX}px`,
+  },
   maxZoom: 1,
   duration: 200,
 } as const;
@@ -22,6 +36,44 @@ export const CANVAS_MAX_ZOOM = 1.8;
 const GRAPH_AUTO_CENTER_DEBOUNCE_MS = 120;
 const NODE_FOCUS_SUPPRESS_MS = 400;
 
+function withCanvasToolbarClearance(
+  options: FitViewOptions | undefined,
+  uiZoom: number,
+  paneWidth: number,
+  canvasRef?: RefObject<HTMLElement | null>,
+  toolbarRef?: RefObject<HTMLElement | null>,
+): FitViewOptions | undefined {
+  if (!options?.padding || typeof options.padding !== "object") {
+    return options;
+  }
+
+  const canvas = canvasRef?.current;
+  const toolbar = toolbarRef?.current;
+  if (!canvas || !toolbar || paneWidth <= 0 || uiZoom <= 0) {
+    return options;
+  }
+
+  const canvasRect = canvas.getBoundingClientRect();
+  const toolbarRect = toolbar.getBoundingClientRect();
+  const visibleClearance =
+    toolbarRect.right - canvasRect.left + CANVAS_TOOLBAR_NODE_GAP_PX;
+  const paneCenter = paneWidth / 2;
+  const preZoomClearance =
+    paneCenter + (visibleClearance - paneCenter) / uiZoom;
+  const leftPadding = Math.max(
+    CANVAS_TOOLBAR_BASE_CLEARANCE_PX,
+    Math.ceil(preZoomClearance),
+  );
+
+  return {
+    ...options,
+    padding: {
+      ...options.padding,
+      left: `${leftPadding}px`,
+    },
+  };
+}
+
 export function CanvasViewportController(props: {
   workflowId: string | null;
   graphSignature: string;
@@ -29,6 +81,8 @@ export function CanvasViewportController(props: {
   chatFocusNode?: { nodeId: NodeId; tick: number } | null;
   viewportEnabled?: boolean;
   uiZoom?: number;
+  canvasRef?: RefObject<HTMLElement | null>;
+  toolbarRef?: RefObject<HTMLElement | null>;
 }) {
   const { fitView, getZoom, zoomTo } = useReactFlow();
   const nodesInitialized = useNodesInitialized();
@@ -46,15 +100,28 @@ export function CanvasViewportController(props: {
   const fitViewAtUiZoom = useCallback(
     async (options: Parameters<typeof fitView>[0]) => {
       const uiZoom = uiZoomRef.current;
+      const optionsWithToolbarClearance = withCanvasToolbarClearance(
+        options,
+        uiZoom,
+        paneWidth,
+        props.canvasRef,
+        props.toolbarRef,
+      );
       if (uiZoom === 1) {
-        await fitView(options);
+        await fitView(optionsWithToolbarClearance);
         return;
       }
 
-      await fitView({ ...options, minZoom: CANVAS_MIN_ZOOM, duration: 0 });
-      await zoomTo(getZoom() * uiZoom, { duration: options?.duration });
+      await fitView({
+        ...optionsWithToolbarClearance,
+        minZoom: CANVAS_MIN_ZOOM,
+        duration: 0,
+      });
+      await zoomTo(getZoom() * uiZoom, {
+        duration: optionsWithToolbarClearance?.duration,
+      });
     },
-    [fitView, getZoom, zoomTo],
+    [fitView, getZoom, paneWidth, props.canvasRef, props.toolbarRef, zoomTo],
   );
 
   useEffect(() => {

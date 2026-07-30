@@ -3,6 +3,7 @@ import ChevronRight from "lucide-solid/icons/chevron-right";
 import type { ToolCallStatus } from "../../lib/types";
 import { prettyJsonText } from "../../lib/utils";
 import { toolBubbleLineText } from "./toolBubbleState";
+import { formatDuration } from "./timing";
 
 export interface ToolBubbleProps {
   toolName: string;
@@ -12,6 +13,7 @@ export interface ToolBubbleProps {
   intent?: string | null;
   isError?: boolean;
   streaming?: boolean;
+  durationMs?: number | null;
   /** Execution cwd — strips absolute path prefixes in the label. */
   cwd?: string | null;
 }
@@ -30,6 +32,7 @@ export function ToolBubble(props: ToolBubbleProps) {
   const expandable = () => hasOutput() || props.streaming;
   const displayOutput = () =>
     props.output ? prettyJsonText(props.output) : props.output;
+  const duration = () => formatDuration(props.durationMs);
   const previewText = () => {
     if (!props.streaming || !props.output) return "";
     const text = props.output.trimEnd();
@@ -54,6 +57,9 @@ export function ToolBubble(props: ToolBubbleProps) {
       >
         <span class="tool-line-name">
           <span class="tool-line-name-text">{lineText()}</span>
+          <Show when={duration()}>
+            {(value) => <span class="tool-line-duration">· {value()}</span>}
+          </Show>
           <Show when={expandable()}>
             <button
               type="button"

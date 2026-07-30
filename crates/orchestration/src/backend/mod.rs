@@ -21,6 +21,7 @@ use crate::terminal::TerminalManager;
 use crate::workflow::authoring::WorkflowAuthoringService;
 use crate::workflow::catalog::WorkflowCatalog;
 use crate::workflow::ports::{ProjectWorkflowStore, WorkflowStore};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 mod agents;
@@ -33,6 +34,7 @@ mod schedule;
 mod settings;
 mod terminal;
 mod workflow;
+mod workspace;
 
 pub use crate::api::{
     AgentDefinitionSummary, AttachmentPreviewPayload, ChatDeleteResult, FileEditPreview,
@@ -53,6 +55,8 @@ pub struct AppBackendDeps {
     pub skill_catalog: Box<dyn SkillCatalog>,
     pub attachment_store: Arc<dyn RunAttachmentStore>,
     pub env: ProviderEnv,
+    pub app_runs_root: PathBuf,
+    pub managed_workspace_root: PathBuf,
     pub runtime_handle: tokio::runtime::Handle,
 }
 
@@ -68,6 +72,8 @@ pub struct AppBackend {
     pub(super) terminal: TerminalManager,
     pub(super) workflow_authoring: WorkflowAuthoringService,
     pub(super) schedule: ScheduleService,
+    pub(super) app_runs_root: PathBuf,
+    pub(super) managed_workspace_root: PathBuf,
     /// Keeps an owned runtime alive for tests and non-Tauri entrypoints.
     _owned_runtime: Option<tokio::runtime::Runtime>,
 }
@@ -91,6 +97,8 @@ impl AppBackend {
             terminal: TerminalManager::new(),
             workflow_authoring: WorkflowAuthoringService::new(),
             schedule: ScheduleService::new(),
+            app_runs_root: deps.app_runs_root,
+            managed_workspace_root: deps.managed_workspace_root,
             _owned_runtime: owned_runtime,
         }
     }
@@ -107,6 +115,9 @@ impl AppBackend {
             skill_catalog: Box::new(FileSkillCatalog),
             attachment_store: Arc::new(FileRunAttachmentStore::default()),
             env: ProviderEnv::from_system(),
+            app_runs_root: FileRunCheckpointStore::app_runs_root(),
+            managed_workspace_root:
+                crate::adapters::storage::workspace_access::default_managed_workspace_root(),
             runtime_handle,
         }
     }

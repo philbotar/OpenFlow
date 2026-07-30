@@ -259,9 +259,8 @@ export interface AppContextValue {
   handleRetryNode: (nodeId: NodeId) => Promise<void>;
   stoppingRun: Accessor<boolean>;
   handleSetThemePreference: (preference: ThemePreference) => void;
+  startFirstRunOnboarding: () => void;
   dismissFirstRunOnboarding: () => void;
-  handleOnboardingBuildWorkflow: () => Promise<void>;
-  handleOnboardingSetupProvider: () => void;
   handleClearRunTrace: () => Promise<void>;
   handleRefreshRunHistory: () => Promise<void>;
   handleReplayRun: (runId: string) => Promise<void>;

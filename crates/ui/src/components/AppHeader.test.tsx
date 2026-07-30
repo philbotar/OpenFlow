@@ -265,6 +265,12 @@ describe("AppHeader", () => {
     dispose();
   });
 
+  it("does not expose workspace selection in the top bar", () => {
+    const { container, dispose } = renderWithContext({ screen: () => "editor" });
+    expect(container.querySelector("button[aria-label='Reveal workspace in Finder']")).toBeNull();
+    dispose();
+  });
+
   it("disables topbar run when provider is not ready", () => {
     const { container, dispose } = renderWithContext({
       screen: () => "editor",

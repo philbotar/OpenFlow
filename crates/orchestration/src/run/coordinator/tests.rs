@@ -60,6 +60,7 @@ fn empty_engine_checkpoint(workflow: &Workflow) -> InteractiveEngineCheckpoint {
         request_input_retries_by_node: Default::default(),
         empty_turn_retries_by_node: Default::default(),
         mixed_tool_turn_retries_by_node: Default::default(),
+        output_truncation_retries_by_node: Default::default(),
         auto_continue_streaks_by_node: Default::default(),
         entrypoint_text: None,
         entrypoint_attachments: Vec::new(),
@@ -382,10 +383,7 @@ async fn clear_run_trace_preserves_chat_and_outputs() {
     let mut run_state = WorkflowRunState::idle_for_workflow(&workflow);
     run_state.chat_logs.insert(
         node_id.clone(),
-        vec![engine::ChatMessage::text(
-            engine::ChatRole::User,
-            "keep me".to_string(),
-        )],
+        vec![engine::ChatMessage::text(engine::ChatRole::User, "keep me".to_string()).into()],
     );
     run_state
         .outputs
@@ -1633,9 +1631,11 @@ fn direct_chat_checkpoint_repairs_missing_assistant_message_in_transcript_order(
     projection.chat_logs.insert(
         node_id.clone(),
         vec![
-            engine::ChatMessage::text(engine::ChatRole::User, "Ask me a question".to_string()),
-            engine::ChatMessage::text(engine::ChatRole::User, "yooo".to_string()),
-            engine::ChatMessage::text(engine::ChatRole::Assistant, "What is up?".to_string()),
+            engine::ChatMessage::text(engine::ChatRole::User, "Ask me a question".to_string())
+                .into(),
+            engine::ChatMessage::text(engine::ChatRole::User, "yooo".to_string()).into(),
+            engine::ChatMessage::text(engine::ChatRole::Assistant, "What is up?".to_string())
+                .into(),
         ],
     );
     let mut checkpoint = durable_checkpoint(&workflow, projection);

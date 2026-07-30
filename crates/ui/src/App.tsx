@@ -79,6 +79,22 @@ function AppToaster() {
 function AppChrome() {
   const ctx = useAppContext();
   const isSettings = () => ctx.screen() === "settings";
+  const showWorkflowForTour = () => {
+    const workflow = ctx.activeWorkflow() ?? ctx.workflows()[0];
+    if (workflow) ctx.handleSwitchWorkflow(workflow.id);
+  };
+  const showInspectorForTour = () => {
+    showWorkflowForTour();
+    if (!ctx.inspectorOpen() || !ctx.selectedNodeId()) {
+      ctx.handleToggleInspector();
+    }
+  };
+  const showWorkflowSettingsForTour = () => {
+    showWorkflowForTour();
+    if (!ctx.workflowSettingsOpen()) {
+      ctx.handleToggleWorkflowSettings();
+    }
+  };
 
   return (
     <>
@@ -104,8 +120,9 @@ function AppChrome() {
         <FirstRunOnboarding
           open={ctx.firstRunOnboardingOpen()}
           onClose={ctx.dismissFirstRunOnboarding}
-          onBuildWorkflow={ctx.handleOnboardingBuildWorkflow}
-          onSetupProvider={ctx.handleOnboardingSetupProvider}
+          onShowWorkflow={showWorkflowForTour}
+          onShowInspector={showInspectorForTour}
+          onShowWorkflowSettings={showWorkflowSettingsForTour}
         />
         <Show
           when={isSettings()}

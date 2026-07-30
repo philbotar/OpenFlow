@@ -25,6 +25,10 @@ impl AppBackend {
     }
 
     pub fn create_project_from_directory(&self, path: String) -> Result<Project, BackendError> {
+        let candidate = crate::project::domain::create_project_from_path(&path)
+            .map_err(BackendError::ProjectOperation)?;
+        self.workflows
+            .ensure_project_storage_writable(std::path::Path::new(&candidate.path))?;
         self.projects.create_from_directory(path)
     }
 }

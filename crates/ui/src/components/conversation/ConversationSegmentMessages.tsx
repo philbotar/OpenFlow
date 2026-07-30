@@ -15,6 +15,7 @@ import {
 import { ToolBubble } from "./ToolBubble";
 import { ToolStackBubble } from "./ToolStackBubble";
 import { groupToolMessages, type GroupedConversationItem } from "./groupToolMessages";
+import { completedDurationMs } from "./timing";
 import { resolveToolSummary, toolStackSummaryWithThinking } from "./toolBubbleState";
 
 function todoItemsForSummary(summary: ToolCallSummary | undefined) {
@@ -35,6 +36,8 @@ function MarkerToolBubble(props: { message: ChatMessage; nodeId: string }) {
   const summary = () =>
     resolveToolSummary(props.nodeId, props.message.toolCallId!, ctx.runState());
   const todoItems = () => todoItemsForSummary(summary());
+  const durationMs = () =>
+    completedDurationMs(summary()?.startedAtMs, summary()?.completedAtMs);
 
   return (
     <Show
@@ -48,6 +51,7 @@ function MarkerToolBubble(props: { message: ChatMessage; nodeId: string }) {
           intent={summary()?.intent}
           isError={summary()?.isError}
           streaming={summary()?.streaming ?? false}
+          durationMs={durationMs()}
           cwd={ctx.executionCwdForActiveWorkflow()}
         />
       }
@@ -69,23 +73,42 @@ function ToolStackView(props: {
   segmentHeaderShowsNode: boolean;
 }) {
   const ctx = useAppContext();
+  const toolSummaries = () =>
+    props.messages
+      .filter((message) => Boolean(message.toolCallId))
+      .map((message) =>
+        resolveToolSummary(props.nodeId, message.toolCallId!, ctx.runState()),
+      )
+      .filter((summary): summary is ToolCallSummary => summary !== undefined);
   const summaryText = () =>
     toolStackSummaryWithThinking(
-      props.messages
-        .filter((message) => Boolean(message.toolCallId))
-        .map((message) => {
-          const summary = resolveToolSummary(
-            props.nodeId,
-            message.toolCallId!,
-            ctx.runState(),
-          );
-          return {
-            toolName: summary?.toolName ?? "Tool",
-            status: summary?.status ?? "proposed",
-          };
-        }),
+      toolSummaries().map((summary) => ({
+        toolName: summary.toolName,
+        status: summary.status,
+      })),
       props.messages,
     );
+  const durationMs = () => {
+    const summaries = toolSummaries();
+    if (
+      summaries.length === 0 ||
+      summaries.some(
+        (summary) =>
+          summary.startedAtMs !== undefined &&
+          summary.completedAtMs === undefined,
+      )
+    ) {
+      return null;
+    }
+    const starts = summaries
+      .map((summary) => summary.startedAtMs)
+      .filter((value): value is number => value !== undefined);
+    const completions = summaries
+      .map((summary) => summary.completedAtMs)
+      .filter((value): value is number => value !== undefined);
+    if (starts.length === 0 || completions.length === 0) return null;
+    return completedDurationMs(Math.min(...starts), Math.max(...completions));
+  };
 
   const persistKey = () => {
     const firstToolId = props.messages.find((message) => message.toolCallId)?.toolCallId;
@@ -93,7 +116,11 @@ function ToolStackView(props: {
   };
 
   return (
-    <ToolStackBubble summaryText={summaryText()} persistKey={persistKey()}>
+    <ToolStackBubble
+      summaryText={summaryText()}
+      persistKey={persistKey()}
+      durationMs={durationMs()}
+    >
       <For each={props.messages}>
         {(message) =>
           message.toolCallId ? (
@@ -137,6 +164,8 @@ function PlainMessage(props: {
         streaming={props.message.streaming}
         attachments={props.message.attachments}
         runId={useAppContext().runState()?.runId ?? null}
+        sentAtMs={props.message.createdAtMs}
+        elapsedSincePreviousMs={props.message.elapsedSincePreviousMs}
       />
     </Show>
   );

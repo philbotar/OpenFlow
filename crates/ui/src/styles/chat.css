@@ -93,6 +93,14 @@
   font-size: 0.8125rem;
 }
 
+.direct-chat-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
 .direct-chat-error {
   display: flex;
   align-items: center;
@@ -119,7 +127,7 @@
 }
 
 .direct-chat-token-usage {
-  align-self: flex-end;
+  margin-left: auto;
   color: var(--text-muted);
   font-family: var(--font-mono);
   font-size: var(--text-label-sm);
@@ -918,6 +926,41 @@
   padding: 6px 12px;
   line-height: 1.35;
   box-shadow: none;
+}
+
+.message-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-tertiary);
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .chat-message-row .message-meta {
+    opacity: 0;
+    transition: opacity var(--dur-fast) var(--ease-out);
+  }
+
+  .chat-message-row:hover .message-meta,
+  .chat-message-row:focus-within .message-meta {
+    opacity: 1;
+  }
+}
+
+.message-system .message-meta {
+  justify-content: center;
+}
+
+.tool-line-duration {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 450;
+  white-space: nowrap;
 }
 
 .message-attachments {

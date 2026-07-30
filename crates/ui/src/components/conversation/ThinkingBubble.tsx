@@ -4,25 +4,62 @@ import type { ComponentProps } from "solid-js";
 import { displayChatContent } from "../../lib/stripToolCallMarkup";
 import type { ChatMessage } from "../../lib/types";
 import { MarkdownContent } from "./MarkdownContent";
+import { completedDurationMs, formatDuration } from "./timing";
 
 interface ThinkingBubbleProps extends ComponentProps<"div"> {
   message: ChatMessage;
   defaultExpanded?: boolean;
 }
 
+/** Survive the streamed message being replaced by its completed projection. */
+const expandedByMessageId = new Map<string, boolean>();
+
+/** Test-only: clear persisted expand state between cases. */
+export function resetThinkingBubbleExpandStateForTests(): void {
+  expandedByMessageId.clear();
+}
+
 export function ThinkingBubble(allProps: ThinkingBubbleProps) {
   const [local, rest] = splitProps(allProps, ["message", "class", "defaultExpanded"]);
-  const [expanded, setExpanded] = createSignal(local.defaultExpanded ?? false);
+  const initialExpanded = () => {
+    if (local.defaultExpanded !== undefined) return local.defaultExpanded;
+    return local.message.id
+      ? (expandedByMessageId.get(local.message.id) ?? false)
+      : false;
+  };
+  const [expanded, setExpanded] = createSignal(initialExpanded());
   const content = createMemo(() =>
     displayChatContent(local.message.role, local.message.content),
   );
-  const label = () =>
-    local.message.streaming ? "Thinking" : "Thought for a while";
+  const duration = () =>
+    formatDuration(
+      completedDurationMs(
+        local.message.createdAtMs,
+        local.message.completedAtMs,
+      ),
+    );
+  const label = () => {
+    if (local.message.streaming) return "Thinking";
+    return duration() ? `Thought for ${duration()}` : "Thought for a while";
+  };
   const hasContent = () => content().trim().length > 0;
+
+  const setExpandedPersist = (
+    next: boolean | ((value: boolean) => boolean),
+  ) => {
+    setExpanded((current) => {
+      const value = typeof next === "function" ? next(current) : next;
+      if (local.message.id) {
+        if (value) expandedByMessageId.set(local.message.id, true);
+        else expandedByMessageId.delete(local.message.id);
+      }
+      return value;
+    });
+  };
 
   createEffect(() => {
     if (local.message.streaming) {
-      setExpanded(true);
+      setExpandedPersist(true);
     }
   });
 
@@ -38,7 +75,7 @@ export function ThinkingBubble(allProps: ThinkingBubbleProps) {
           type="button"
           class="tool-line-status-row"
           aria-expanded={expanded()}
-          onClick={() => setExpanded((value) => !value)}
+          onClick={() => setExpandedPersist((value) => !value)}
         >
           <span class="tool-line-name">
             <span class="tool-line-name-text">{label()}</span>

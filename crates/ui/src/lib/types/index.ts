@@ -16,6 +16,7 @@ export interface RunSummary {
   updatedAtMs: number;
   status: DurableRunStatus;
 }
+
 export type Screen = "chat" | "editor" | "settings" | "agents" | "workflow-authoring" | "schedule";
 
 export interface RetryPolicy {
@@ -67,6 +68,8 @@ export interface WorkflowSettings {
   reasoningEffort?: string | null;
   reasoning_budget_tokens?: number | null;
   reasoningBudgetTokens?: number | null;
+  fast_mode?: boolean;
+  fastMode?: boolean;
   planMode?: PlanModeConfig | null;
   /** Overseer model for repairing malformed final output; null = use worker model. */
   outputRepairModel?: string | null;
@@ -105,6 +108,7 @@ export interface ChatConfig {
   approvalMode: ApprovalMode;
   reasoningEffort: string | null;
   reasoningBudgetTokens: number | null;
+  fastMode?: boolean;
   projectId: string | null;
 }
 
@@ -155,6 +159,7 @@ export interface NodeRuntimeConfigUpdate {
   approvalMode?: ApprovalMode | null;
   reasoningEffort?: string | null;
   reasoningBudgetTokens?: number | null;
+  fastMode?: boolean;
 }
 
 export type HandoffSpec =
@@ -290,6 +295,9 @@ export interface ChatMessage {
   streaming?: boolean;
   toolCallId?: string;
   messageKind?: ChatMessageKind;
+  createdAtMs?: number;
+  completedAtMs?: number;
+  elapsedSincePreviousMs?: number;
 }
 
 export type AgentStatus =
@@ -361,6 +369,8 @@ export interface ToolCallSummary {
   lastOutput: string | null;
   isError: boolean;
   streaming: boolean;
+  startedAtMs?: number;
+  completedAtMs?: number;
 }
 
 export interface ToolArtifactSummary {
@@ -464,6 +474,8 @@ export interface StructuredUserInput {
 
 export interface ContextWindowSnapshot {
   usedTokens: number;
+  cachedInputTokens: number;
+  cacheCreationInputTokens: number;
   maxTokens: number;
   model: string;
   nodeId: NodeId;
@@ -472,6 +484,8 @@ export interface ContextWindowSnapshot {
 export interface WorkflowRunState {
   active: boolean;
   runId?: string | null;
+  executionCwd?: string | null;
+  projectId?: string | null;
   awaitingNodeId: NodeId | null;
   awaitingNodeIds?: NodeId[];
   structuredInputByNode?: Record<NodeId, StructuredUserInput>;
@@ -518,10 +532,12 @@ export interface ProviderProfile {
   reasoning_effort_options?: ReasoningEffortOption[];
   default_reasoning_budget_tokens?: Record<string, number>;
   default_reasoning_effort?: string | null;
+  fast_mode_available?: boolean;
   /** Wire aliases from persisted settings JSON. */
   reasoningEffortOptions?: ReasoningEffortOption[];
   defaultReasoningBudgetTokens?: Record<string, number>;
   defaultReasoningEffort?: string | null;
+  fastModeAvailable?: boolean;
   /** Per-model context window sizes (tokens) for the bubble indicator. */
   contextWindowSizes?: Record<string, number>;
 }

@@ -235,7 +235,19 @@ where
         return Ok(WorkflowRunSnapshot {
             report,
             run_trace: state.run_trace,
-            chat_logs: state.chat_logs,
+            chat_logs: state
+                .chat_logs
+                .into_iter()
+                .map(|(node_id, messages)| {
+                    (
+                        node_id,
+                        messages
+                            .into_iter()
+                            .map(|projected| projected.message)
+                            .collect(),
+                    )
+                })
+                .collect(),
             outputs: state.outputs,
             pending_approvals: state.pending_approvals,
             tool_calls_by_node: state.tool_calls_by_node,

@@ -64,6 +64,14 @@ export function defaultReasoningEffort(profile: ProviderProfile): string | null 
   return profile.default_reasoning_effort ?? profile.defaultReasoningEffort ?? null;
 }
 
+export function fastModeAvailable(profile: ProviderProfile): boolean {
+  return profile.fast_mode_available ?? profile.fastModeAvailable ?? false;
+}
+
+export function workflowFastMode(settings: WorkflowSettings): boolean {
+  return settings.fast_mode ?? settings.fastMode ?? false;
+}
+
 export function reasoningBudgetForEffort(
   profile: ProviderProfile,
   effort: string,
@@ -145,5 +153,6 @@ export function cloneProviderProfile(profile: ProviderProfile): ProviderProfile 
     reasoning_effort_options: reasoningOptions.map((option) => ({ ...option })),
     default_reasoning_budget_tokens: { ...budgetTokens },
     default_reasoning_effort: defaultReasoningEffort(profile),
+    fast_mode_available: fastModeAvailable(profile),
   };
 }
