@@ -38,6 +38,8 @@ regex = "1.11.1"
 similar = "2.7.0"
 unicode-normalization = "0.1.24"
 reqwest.workspace = true
+eventsource-stream.workspace = true
+futures.workspace = true
 walkdir = "2.5.0"
 serde_json.workspace = true
 sha2.workspace = true
@@ -48,10 +50,20 @@ twox-hash = "2.1.0"
 tokio-util.workspace = true
 uuid.workspace = true
 engine = { path = "../engine", version = "0.1.9" }
+jsonschema.workspace = true
 rmcp.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.28", features = ["process", "signal"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "=3.6.3", default-features = false, features = ["apple-native"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "=3.6.3", default-features = false, features = ["windows-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "=3.6.3", default-features = false, features = ["sync-secret-service", "crypto-rust"] }
 
 [dev-dependencies]
 async-trait.workspace = true

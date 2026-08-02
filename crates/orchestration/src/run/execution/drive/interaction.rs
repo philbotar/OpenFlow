@@ -326,6 +326,11 @@ pub(super) async fn await_interaction_actions(
                 }
                 pause.approvals.remove(&approval_id);
             }
+            ExecutionAction::ResolveMcpClientRequest { request_id, .. } => {
+                log::warn!(
+                    "ignored MCP client response {request_id}: no MCP client request is pending"
+                );
+            }
             ExecutionAction::RetryNode { node_id } => {
                 if !pause.retryables.contains(&node_id) {
                     log::warn!(

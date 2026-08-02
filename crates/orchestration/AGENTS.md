@@ -122,6 +122,7 @@ See [`docs/architecture/orchestration-layout.md`](../../docs/architecture/orches
 | Agents | `{data_local}/openflow/agents.json` |
 | Projects | `{data_local}/openflow/projects.json` |
 | Settings | `{data_local}/openflow/settings.json` |
+| MCP inputs and OAuth credentials | `{data_local}/openflow/mcp-secrets.json` (plaintext, mode `0600` on Unix) |
 | App-managed execution folders | `{data_local}/openflow/workspaces/{workflows|chats}/{id}` |
 | Project run metadata | `{project}/.flow/runs/{run_id}/` |
 | Node handoffs | `{run_root}/{run_id}/handoffs/{node_id}/HANDOFF.md` or `HANDOFF.json` |

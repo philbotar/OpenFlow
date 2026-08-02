@@ -81,7 +81,7 @@ Use the top bar while a workflow is open in the editor:
 
 - **Run** — start a new run when the provider is ready and no continuable run exists. Optional starter text goes through the chat composer when the workflow expects entrypoint input.
 - **Continue** — resume a paused run that still has pending input or approvals.
-- **Stop** — cancel the active run.
+- **Stop** — cancel the selected run. Other active chats/workflows continue.
 
 Nodes inherit the workflow's shared provider unless their Inspector selects an override. A workflow without a shared provider inherits the active Settings provider. Run start validates every provider referenced by the workflow.
 
@@ -95,6 +95,12 @@ During a run, each active node has a chat thread in the dock.
 - Type `@` to reference project files when the workflow is bound to a project.
 
 Tool calls that require approval appear in the thread; approve or deny before execution continues.
+
+After a workflow node changes files, its thread shows a collapsed file-change summary. Expand it,
+then select **View diff** on an edit to load the exact diff. OpenFlow keeps repeated edits to the
+same path in execution order and makes exact diffs available in live runs and replay. Older runs
+show their stored summaries. A warning appears when the node used Bash because shell, external
+tool, and MCP writes cannot always be attributed to that node.
 
 ## Tools and approval
 
@@ -124,7 +130,7 @@ When a run completes successfully, the chat may show **Run review** suggestions:
 
 ## Build with AI
 
-**Build with AI** starts a workflow authoring session: describe the goal in chat, iterate on the draft graph in the preview, then apply the draft to a new or project-scoped workflow. Provider readiness is required, same as running a workflow.
+**Build with AI** starts a workflow authoring session. Ask questions or discuss the goal normally; the assistant proposes graph changes only after you explicitly ask to create or edit the workflow. Review the proposed graph, then select **Create Workflow** or **Apply Changes** to save it. Provider readiness is required, same as running a workflow.
 
 ## Schedule
 
@@ -147,7 +153,21 @@ The task-prompt editor lists matching skills after you type `/`, using the same 
 | Section | Use when |
 | --- | --- |
 | **Search** | Workflows call web search through bundled search-cli; store per-provider API keys here or export keys in the shell environment. |
-| **MCP Servers** | Add, edit, test, delete, or disable server commands. Changes save automatically. **Disable all** turns off configured servers plus external discovery in one action. |
+| **MCP Servers** | Discover supported configs, import `mcpServers` JSON, install registry packages, or add stdio/remote servers manually. Review trust before enablement. Test, edit, export, delete, or disable connections. **Disable all** turns off configured servers plus external discovery. |
 | **Diagnostics** | Local debug output and related developer options. |
 
+OpenFlow supports local stdio, Streamable HTTP, and legacy SSE MCP transports. Remote auth supports static secret-backed headers plus OAuth discovery, PKCE, callback validation, token refresh, and disconnect. MCP inputs and OAuth tokens stay in `{data_local}/openflow/mcp-secrets.json`; the file is plaintext with mode `0600` on Unix. Settings and exports contain opaque refs, never credential values. Remote URLs pass HTTPS, redirect, DNS/IP, and localhost policy checks before connection.
+
+Server-to-client capabilities default to off per server. Enable **Expose selected project root**, **Allow approved sampling reqs**, or **Allow approved form/URL elicitation**, then run **Approve & Test** again. OpenFlow exposes only the selected project's canonical folder as an MCP root; app-managed workspaces stay hidden. Sampling and elicitation stay bound to the originating node and MCP tool call.
+
+Every sampling or elicitation req appears in chat for one-time approval. Sampling uses the originating node's effective provider without tools, human-input tools, or recursive MCP access. Per-req and per-run request/token budgets apply, plus hard app ceilings. Form replies must match the server's primitive JSON schema. URL elicitation accepts credential-free HTTPS URLs, opens them in the system browser, then reports the user's decision. Stopping the run cancels pending callbacks.
+
+Use **Approve & Test** after import or any security-relevant change. Each row shows its current lifecycle state, last stage/error, check time, and attempt count. Use **Retry**, **Restart & Test**, **Disable**, **Copy diagnostics**, or **Open source** as available. OpenFlow reports a missing executable directly and stops waiting after 15 seconds when a server does not start or list tools. During run setup and shutdown, it handles up to four MCP servers concurrently, so one stalled server does not serialize the full server list. MCP tool calls stop waiting after 120 seconds and send the protocol cancellation notification. OpenFlow does not automatically retry a timed-out call because the server may already have completed it.
+
+Per-server policy defaults every tool to **Write** and serializes calls as **Exclusive**. After a successful test, you can allowlist individual discovered tools, classify the whole server as user-reviewed **Read**, or opt into **Shared** concurrency. These are user decisions: OpenFlow never trusts a server's own read-only annotation. Every policy change revokes trust and requires another test.
+
 MCP tools become available to nodes that advertise MCP access during a run. If an enabled server cannot connect or list tools, OpenFlow skips that server, shows a system message in chat, and continues the run without its tools.
+
+To add MCP resources or prompts to a node, open its Inspector, expand **MCP context**, choose an enabled server, then select each resource or prompt explicitly. OpenFlow does not inject catalog content merely because you loaded it. Preview shows source provenance, included size, and truncation. Each selection has a byte cap; the combined node cap is 1 MiB.
+
+At run start, OpenFlow reads selected resources and renders selected prompts once, stores that bounded snapshot with the durable run, then labels it as untrusted data in provider context. Resume and replay use the same immutable snapshot. Resource subscriptions remain attached to the run client until shutdown but do not mutate the frozen provider context.

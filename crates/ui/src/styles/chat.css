@@ -629,6 +629,152 @@
   max-width: 12rem;
 }
 
+.chat-runtime-menu-root {
+  position: relative;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.chat-runtime-menu-trigger,
+.composer-runtime-controls .composer-runtime-select .text-select-trigger {
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background-color: var(--surface-hover);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.8125rem;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.chat-runtime-menu-trigger {
+  gap: var(--space-xs);
+  max-width: 20rem;
+  padding: 4px 8px 4px 10px;
+}
+
+.chat-runtime-menu-trigger:hover:not(:disabled),
+.chat-runtime-menu-trigger[aria-expanded="true"],
+.composer-runtime-controls .composer-runtime-select .text-select-trigger:hover:not(:disabled),
+.composer-runtime-controls .composer-runtime-select .text-select-trigger[aria-expanded="true"] {
+  border-color: var(--border-subtle);
+  background-color: var(--surface-emphasis);
+  color: var(--text);
+}
+
+.chat-runtime-menu-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.chat-runtime-menu-summary {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.chat-runtime-menu-summary > span:not([aria-hidden]) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-runtime-menu-chevron {
+  flex: 0 0 auto;
+  transition: transform 150ms ease;
+}
+
+.chat-runtime-menu-chevron.is-open {
+  transform: rotate(180deg);
+}
+
+.chat-runtime-menu-popover {
+  position: fixed;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 8px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--surface-strong);
+  box-shadow: var(--shadow-soft);
+}
+
+.chat-runtime-menu-row {
+  display: grid;
+  grid-template-columns: 7rem minmax(0, 1fr);
+  align-items: center;
+  min-height: 38px;
+  padding-left: 10px;
+  border-radius: var(--radius-md);
+  color: var(--text);
+}
+
+.chat-runtime-menu-row:hover,
+.chat-runtime-menu-row:focus-within {
+  background: var(--surface-hover);
+}
+
+.chat-runtime-menu-row > span {
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.chat-runtime-menu-select.text-select-root {
+  width: 100%;
+  min-width: 0;
+}
+
+.chat-runtime-menu-select .text-select-trigger {
+  justify-content: flex-end;
+  min-height: 38px;
+  padding: 0 28px 0 8px;
+  border: 0;
+  background-color: transparent;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  text-align: right;
+}
+
+.chat-runtime-menu-select .text-select-trigger:hover:not(:disabled) {
+  border-color: transparent;
+  color: var(--text);
+}
+
+.chat-runtime-menu-select .text-select-value {
+  margin-left: auto;
+}
+
+.chat-runtime-menu-popover .text-select-menu {
+  z-index: 210;
+}
+
+.chat-runtime-menu-budget-row {
+  padding-top: 4px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.chat-runtime-menu-budget {
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--input-bg);
+  color: var(--text);
+  font: inherit;
+  text-align: right;
+}
+
 .composer-runtime-controls .composer-runtime-select.text-select-root {
   width: auto;
   flex: 0 1 auto;
@@ -638,25 +784,13 @@
 .composer-runtime-controls .composer-runtime-select .text-select-trigger {
   width: auto;
   max-width: 14rem;
-  min-height: 0;
-  padding: 2px 18px 2px 2px;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 0.8125rem;
-  line-height: 1.2;
-  background-position: right 0 center;
+  padding: 4px 28px 4px 10px;
+  background-position: right 8px center;
   background-size: 14px;
 }
 
-.composer-runtime-controls .composer-runtime-select .text-select-trigger:hover:not(:disabled) {
-  color: var(--text);
-  background-color: var(--surface-hover);
-}
-
 .composer-runtime-controls .composer-runtime-select .text-select-value {
-  font-weight: 500;
+  font-weight: inherit;
 }
 
 .composer-runtime-controls .text-select-menu {
@@ -897,10 +1031,6 @@
   box-shadow: none;
 }
 
-[data-theme="dark"] .composer-runtime-controls .composer-runtime-select .text-select-trigger:hover:not(:disabled) {
-  background-color: var(--surface-hover);
-}
-
 [data-theme="dark"] .composer-runtime-budget:hover:not(:disabled),
 [data-theme="dark"] .composer-runtime-budget:focus-visible {
   background-color: var(--surface-hover);
@@ -1018,13 +1148,44 @@
   padding: 4px 0;
 }
 
+.conversation::before,
+.conversation::after {
+  position: absolute;
+  inset-inline: 0;
+  z-index: 2;
+  height: 28px;
+  background: color-mix(in srgb, var(--dock-bg) 72%, transparent);
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+}
+
+.conversation::before {
+  top: 0;
+  -webkit-mask-image: linear-gradient(to bottom, black, transparent);
+  mask-image: linear-gradient(to bottom, black, transparent);
+}
+
+.conversation::after {
+  bottom: 0;
+  -webkit-mask-image: linear-gradient(to top, black, transparent);
+  mask-image: linear-gradient(to top, black, transparent);
+}
+
+.conversation.has-content-above::before,
+.conversation.has-content-below::after {
+  opacity: 1;
+}
+
 .conversation-content {
   gap: 0;
   padding: 0;
 }
 
 .chat-segment-body {
-  gap: 0;
+  gap: var(--chat-item-gap);
 }
 
 .chat-segment-body > .tool-line {
@@ -1238,10 +1399,11 @@
 }
 
 .workflow-authoring-composer-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
-  width: min(920px, calc(100% - 72px));
+  width: min(1200px, calc(100% - 48px));
   max-width: 100%;
   margin: 0 auto;
   padding: 6px 0;
@@ -1261,6 +1423,14 @@
   width: 100%;
 }
 
+.workflow-authoring-apply-group {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  width: auto;
+}
+
 .workflow-authoring-apply {
   flex-shrink: 0;
   align-self: center;
@@ -1269,4 +1439,21 @@
   border-radius: var(--radius-sm);
   box-shadow: none;
   white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .workflow-authoring-composer-row {
+    width: calc(100% - 32px);
+  }
+
+  .workflow-authoring-apply-group {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
+  }
+
+  .workflow-authoring-apply {
+    align-self: flex-start;
+  }
 }

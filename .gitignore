@@ -49,3 +49,6 @@ Desktop.ini
 .impeccable/
 .pnpm-store/
 *impeccable/
+
+*graphify-out*
+.codex

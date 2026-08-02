@@ -3,7 +3,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open as openDialog, confirm as confirmDialog } from "@tauri-apps/plugin-dialog";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openPath, openUrl } from "@tauri-apps/plugin-opener";
 import type { ConfirmDialogOptions, OpenDialogOptions } from "@tauri-apps/plugin-dialog";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
@@ -24,6 +24,14 @@ import type {
   ProjectFileReference,
   CopyWorkflowToProjectResult,
   McpServerConfig,
+  McpCatalogPage,
+  McpCapabilityCatalog,
+  McpConfigImport,
+  McpContextSnapshot,
+  McpInstallPreview,
+  McpInstallResult,
+  McpOAuthStatus,
+  McpProbeResult,
   SettingsLoadPayload,
   StagedChatAttachment,
   SkillSummary,
@@ -76,6 +84,11 @@ export function openExternalUrl(url: string): Promise<void> {
     return Promise.resolve();
   }
   return openUrl(url);
+}
+
+export function openLocalPath(path: string): Promise<void> {
+  if (!isTauri()) return Promise.resolve();
+  return openPath(path);
 }
 
 export async function checkAppUpdateAvailable(): Promise<AppUpdateAvailability> {
@@ -250,8 +263,113 @@ export function appendDebugLog(settings: AppSettings, entry: DebugLogEntry) {
   return invoke<DebugLogWrite>("append_debug_log", { settings, entry });
 }
 
-export function probeMcpServer(config: McpServerConfig) {
-  return invoke<string[]>("probe_mcp_server", { config });
+export function importMcpConfig(content: string) {
+  return invoke<McpConfigImport>("import_mcp_config", { content });
+}
+
+export function applyMcpConfig(content: string) {
+  return invoke<McpConfigImport>("apply_mcp_config", { content });
+}
+
+export function exportMcpConfig() {
+  return invoke<string>("export_mcp_config");
+}
+
+export function probeMcpServer(config: McpServerConfig, sourcePath?: string) {
+  return invoke<McpProbeResult>("probe_mcp_server", { config, sourcePath });
+}
+
+export function listMcpCapabilities(serverId: string) {
+  return invoke<McpCapabilityCatalog>("list_mcp_capabilities", { serverId });
+}
+
+export function previewMcpResource(serverId: string, uri: string, maxBytes: number) {
+  return invoke<McpContextSnapshot>("preview_mcp_resource", { serverId, uri, maxBytes });
+}
+
+export function previewMcpPrompt(
+  serverId: string,
+  name: string,
+  arguments_: Record<string, string>,
+  maxBytes: number,
+) {
+  return invoke<McpContextSnapshot>("preview_mcp_prompt", {
+    serverId,
+    name,
+    arguments: arguments_,
+    maxBytes,
+  });
+}
+
+export function startMcpOAuth(serverId: string, scopes: string[]) {
+  return invoke<McpOAuthStatus>("start_mcp_oauth", { serverId, scopes });
+}
+
+export function mcpOAuthStatus(serverId: string) {
+  return invoke<McpOAuthStatus>("mcp_oauth_status", { serverId });
+}
+
+export function refreshMcpOAuth(serverId: string) {
+  return invoke<McpOAuthStatus>("refresh_mcp_oauth", { serverId });
+}
+
+export function disconnectMcpOAuth(serverId: string) {
+  return invoke<McpOAuthStatus>("disconnect_mcp_oauth", { serverId });
+}
+
+export function saveMcpSecret(serverId: string, slot: string, value: string) {
+  return invoke<string>("save_mcp_secret", { serverId, slot, value });
+}
+
+export function deleteMcpSecret(secretRef: string) {
+  return invoke<void>("delete_mcp_secret", { secretRef });
+}
+
+export function searchMcpRegistry(search?: string, cursor?: string) {
+  return invoke<McpCatalogPage>("search_mcp_registry", {
+    search: search || null,
+    cursor: cursor || null,
+  });
+}
+
+export function listMcpRegistryVersions(serverName: string) {
+  return invoke<McpCatalogPage>("list_mcp_registry_versions", { serverName });
+}
+
+export function previewMcpRegistryInstall(
+  serverName: string,
+  version: string,
+  packageIndex: number,
+) {
+  return invoke<McpInstallPreview>("preview_mcp_registry_install", {
+    serverName,
+    version,
+    packageIndex,
+  });
+}
+
+export function previewMcpRegistryRemote(
+  serverName: string,
+  version: string,
+  remoteIndex: number,
+) {
+  return invoke<McpInstallPreview>("preview_mcp_registry_remote", {
+    serverName,
+    version,
+    remoteIndex,
+  });
+}
+
+export function installMcpPackage(operationId: string, server: McpServerConfig) {
+  return invoke<McpInstallResult>("install_mcp_package", { operationId, server });
+}
+
+export function cancelMcpInstall(operationId: string) {
+  return invoke<boolean>("cancel_mcp_install", { operationId });
+}
+
+export function rollbackMcpInstall(serverId: string) {
+  return invoke<McpServerConfig>("rollback_mcp_install", { serverId });
 }
 
 export function loadProviderApiKey(providerId: string) {
@@ -390,24 +508,26 @@ export function startChat(
   });
 }
 
-export function stopRun() {
-  return invoke<WorkflowRunState>("stop_run");
+export function stopRun(runId: string) {
+  return invoke<WorkflowRunState>("stop_run", { runId });
 }
 
 export function continueRun(
+  runId: string,
   workflow: Workflow,
   settings: AppSettings,
   transientApiKey: string | null = null,
 ) {
   return invoke<WorkflowRunState>("continue_run", {
+    runId,
     workflow,
     settings,
     transientApiKey,
   });
 }
 
-export function isRunContinuable() {
-  return invoke<boolean>("is_run_continuable");
+export function isRunContinuable(runId: string) {
+  return invoke<boolean>("is_run_continuable", { runId });
 }
 
 export function listRuns(workflowId: string | null = null) {
@@ -432,35 +552,42 @@ export function resumeDurableRun(
   });
 }
 
-export function interruptNode(nodeId: string) {
-  return invoke<WorkflowRunState>("interrupt_node", { nodeId });
+export function interruptNode(runId: string, nodeId: string) {
+  return invoke<WorkflowRunState>("interrupt_node", { runId, nodeId });
 }
 
-export function retryNode(nodeId: string) {
-  return invoke<WorkflowRunState>("retry_node", { nodeId });
+export function retryNode(runId: string, nodeId: string) {
+  return invoke<WorkflowRunState>("retry_node", { runId, nodeId });
 }
 
 export function updateNodeRuntimeConfig(
+  runId: string,
   nodeId: string,
   update: import("./lib/types").NodeRuntimeConfigUpdate,
 ) {
-  return invoke<WorkflowRunState>("update_node_runtime_config", { nodeId, update });
+  return invoke<WorkflowRunState>("update_node_runtime_config", { runId, nodeId, update });
 }
 
 export function previewFileEdit(
+  runId: string,
   approvalId: string,
   toolName: string,
   toolArguments: unknown,
 ) {
   return invoke<import("./lib/types").FileEditPreview>("preview_file_edit", {
+    runId,
     approvalId,
     toolName,
     arguments: toolArguments,
   });
 }
 
-export function gitDiffFile(path: string) {
-  return invoke<string>("git_diff_file", { path });
+export function gitDiffFile(runId: string, path: string) {
+  return invoke<string>("git_diff_file", { runId, path });
+}
+
+export function loadFileChangeDiff(runId: string, diffArtifactId: string) {
+  return invoke<string>("load_file_change_diff", { runId, diffArtifactId });
 }
 
 export function gitDiffRepo(cwd: string) {
@@ -475,16 +602,18 @@ export function gitCurrentBranch(cwd: string) {
   return invoke<string>("git_current_branch", { cwd });
 }
 
-export function revertEditBatch(batchId: string) {
-  return invoke<WorkflowRunState>("revert_edit_batch", { batchId });
+export function revertEditBatch(runId: string, batchId: string) {
+  return invoke<WorkflowRunState>("revert_edit_batch", { runId, batchId });
 }
 
 export function submitUserInput(
+  runId: string,
   nodeId: string,
   message: UserMessageInput,
   invokedSkillIds: readonly string[] = [],
 ) {
   return invoke<WorkflowRunState>("submit_user_input", {
+    runId,
     nodeId,
     message,
     ...(invokedSkillIds.length > 0 ? { invokedSkillIds: [...invokedSkillIds] } : {}),
@@ -492,23 +621,37 @@ export function submitUserInput(
 }
 
 export function submitToolApproval(
+  runId: string,
   approvalId: string,
   allow: boolean,
   reason?: string | null,
 ) {
   return invoke<WorkflowRunState>("submit_tool_approval", {
+    runId,
     approvalId,
     allow,
     reason: reason ?? null,
   });
 }
 
-export function getRunState() {
-  return invoke<WorkflowRunState | null>("get_run_state");
+export function resolveMcpClientRequest(
+  runId: string,
+  requestId: string,
+  decision: import("./lib/types").McpClientRequestDecision,
+) {
+  return invoke<WorkflowRunState>("resolve_mcp_client_request", {
+    runId,
+    requestId,
+    decision,
+  });
 }
 
-export function clearRunTrace() {
-  return invoke<WorkflowRunState | null>("clear_run_trace");
+export function getRunState(runId: string) {
+  return invoke<WorkflowRunState | null>("get_run_state", { runId });
+}
+
+export function clearRunTrace(runId: string) {
+  return invoke<WorkflowRunState | null>("clear_run_trace", { runId });
 }
 
 export function startTerminal(

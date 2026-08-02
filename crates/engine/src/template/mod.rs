@@ -138,6 +138,9 @@ mod tests {
             provider_id: None,
             request_user_input: true,
             conversation_mode: false,
+            mcp_resources: Vec::new(),
+            mcp_prompts: Vec::new(),
+            mcp_context_snapshots: Vec::new(),
         };
         let template = Template::new("Test", "desc", config.clone(), HashSet::new());
         let node = template.instantiate(0.0, 0.0);

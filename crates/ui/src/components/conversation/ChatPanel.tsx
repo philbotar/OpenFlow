@@ -5,6 +5,7 @@ import { useAppContext } from "../../context/AppContext";
 import { ConversationComposer } from "./ConversationComposer";
 import { ConversationMessages } from "./ConversationMessages";
 import { LiveSegmentFooter } from "./LiveSegmentFooter";
+import { McpClientRequestCard } from "./McpClientRequestCard";
 import { RecentRunsPicker } from "./RecentRunsPicker";
 import { ToolApprovalCardBody } from "./ToolApprovalCard";
 
@@ -76,6 +77,9 @@ export function ChatPanel() {
   // Surface approval outside the parallel-live picker — otherwise the card only
   // appears after the user picks (or the sibling finishes and folds inline).
   const pendingApproval = createMemo(() => ctx.runState()?.pendingApprovals[0] ?? null);
+  const pendingMcpClientRequest = createMemo(
+    () => ctx.runState()?.pendingMcpClientRequests?.[0] ?? null,
+  );
 
   const planModeStatus = createMemo(() => {
     const workflow = ctx.activeWorkflow();
@@ -140,10 +144,14 @@ export function ChatPanel() {
         />
       </Show>
       <div class="chat-composer-bar" data-tour="workflow-composer">
+        <Show when={pendingMcpClientRequest()}>
+          {(request) => <McpClientRequestCard request={request()} />}
+        </Show>
         <Show when={pendingApproval()}>
           {(approval) => (
             <ToolApprovalCardBody
               approval={approval()}
+              runId={ctx.runState()?.runId ?? ""}
               onApprove={(allow) =>
                 void ctx.handleToolApproval(approval().approvalId, allow)
               }

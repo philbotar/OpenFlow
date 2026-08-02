@@ -3,11 +3,12 @@
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use engine::{FileChangeOp, FileChangeRecord};
+use crate::tool::CapturedFileChange;
+use engine::FileChangeOp;
 
 #[derive(Debug, Clone, Default)]
 pub struct FileChangeLedger {
-    inner: Arc<Mutex<Vec<FileChangeRecord>>>,
+    inner: Arc<Mutex<Vec<CapturedFileChange>>>,
 }
 
 impl FileChangeLedger {
@@ -21,16 +22,9 @@ impl FileChangeLedger {
         path: impl Into<String>,
         op: FileChangeOp,
         rename_to: Option<String>,
-        diff_summary: Option<String>,
+        diff: Option<String>,
     ) {
-        let record = FileChangeRecord {
-            path: path.into(),
-            op,
-            rename_to,
-            diff_summary,
-            batch_id: None,
-            timestamp_ms: now_millis(),
-        };
+        let record = CapturedFileChange::new(path.into(), op, rename_to, diff, now_millis());
         self.inner
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -38,7 +32,7 @@ impl FileChangeLedger {
     }
 
     #[must_use]
-    pub fn take(&self) -> Vec<FileChangeRecord> {
+    pub(crate) fn take(&self) -> Vec<CapturedFileChange> {
         std::mem::take(
             &mut *self
                 .inner

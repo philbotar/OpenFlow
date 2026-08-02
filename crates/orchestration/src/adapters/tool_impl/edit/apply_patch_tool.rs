@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use serde_json::Value;
 
-use engine::{summarize_diff, FileChangeOp};
+use engine::FileChangeOp;
 
 use super::apply_patch::expand_apply_patch_to_inputs;
 use super::diff::generate_diff_string;
@@ -75,7 +75,7 @@ pub fn execute_apply_patch(
                 input.path.clone(),
                 op,
                 rename_to,
-                diff_summary.map(|diff| summarize_diff(&diff, 8)),
+                Some(diff_summary.unwrap_or_default()),
             );
         }
     }

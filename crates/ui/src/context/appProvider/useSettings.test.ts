@@ -37,11 +37,25 @@ describe("useSettings", () => {
       initial.mcp = {
         servers: [
           {
+            schemaVersion: 1,
             id: "gh",
             displayName: "GitHub",
-            command: "npx",
-            args: ["-y", "github-mcp"],
-            env: {},
+            source: { type: "manual" },
+            install: { type: "external" },
+            connection: {
+              type: "stdio",
+              command: "npx",
+              args: ["-y", "github-mcp"],
+              environment: {},
+            },
+            trust: { approvedFingerprint: "trusted" },
+            policy: {
+              defaultToolAccess: "write",
+              defaultToolConcurrency: "exclusive",
+              allowRoots: false,
+              allowSampling: false,
+              allowElicitation: false,
+            },
             enabled: true,
           },
         ],

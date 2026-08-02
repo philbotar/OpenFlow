@@ -320,6 +320,8 @@ where
         .stderr(std::process::Stdio::piped())
         .spawn()
         .map_err(|error| ToolError::failed(format!("bash failed to start: {error}")))?;
+    #[cfg(unix)]
+    let mut process_group_guard = ProcessGroupKillGuard::new(&child);
 
     let mut stdout_pipe = child
         .stdout
@@ -370,6 +372,8 @@ where
         biased;
         _ = cancel_token.cancelled() => {
             kill_process_group(&mut child).await;
+            #[cfg(unix)]
+            process_group_guard.disarm();
             stdout_reader.abort();
             stderr_reader.abort();
             Ok(RawShellOutcome {
@@ -387,6 +391,8 @@ where
             })?;
             let status = status
                 .map_err(|error| ToolError::failed(format!("bash failed: {error}")))?;
+            #[cfg(unix)]
+            process_group_guard.disarm();
             let stdout = stdout_bytes.lock().expect("stdout lock").clone();
             let stderr = stderr_bytes.lock().expect("stderr lock").clone();
             Ok(RawShellOutcome {
@@ -398,6 +404,8 @@ where
         after_secs = &mut timeout => {
             kill_process_group(&mut child).await;
             let _ = tokio::time::timeout(Duration::from_secs(2), child.wait()).await;
+            #[cfg(unix)]
+            process_group_guard.disarm();
             let readers_finished = tokio::time::timeout(Duration::from_secs(2), async {
                 let _ = (&mut stdout_reader).await;
                 let _ = (&mut stderr_reader).await;
@@ -437,6 +445,7 @@ fn build_shell_command(
     };
     #[cfg(unix)]
     command_builder.process_group(0);
+    command_builder.kill_on_drop(true);
     command_builder.current_dir(cwd);
     command_builder.env_remove("BASH_ENV");
     for (key, value) in NON_INTERACTIVE_ENV {
@@ -448,6 +457,37 @@ fn build_shell_command(
         }
     }
     command_builder
+}
+
+#[cfg(unix)]
+struct ProcessGroupKillGuard {
+    pgid: Option<i32>,
+}
+
+#[cfg(unix)]
+impl ProcessGroupKillGuard {
+    fn new(child: &tokio::process::Child) -> Self {
+        Self {
+            pgid: child.id().and_then(|pid| i32::try_from(pid).ok()),
+        }
+    }
+
+    fn disarm(&mut self) {
+        self.pgid = None;
+    }
+}
+
+#[cfg(unix)]
+impl Drop for ProcessGroupKillGuard {
+    fn drop(&mut self) {
+        let Some(pgid) = self.pgid else {
+            return;
+        };
+        use nix::sys::signal::{kill, killpg, Signal};
+        use nix::unistd::Pid;
+        let _ = killpg(Pid::from_raw(pgid), Signal::SIGKILL);
+        let _ = kill(Pid::from_raw(-pgid), Signal::SIGKILL);
+    }
 }
 
 #[cfg(unix)]
@@ -645,6 +685,67 @@ mod tests {
         assert!(
             matches!(result, Err(ToolError::Timeout { .. })),
             "expected timeout, got {result:?}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[cfg_attr(miri, ignore)]
+    #[tokio::test]
+    async fn dropping_bash_future_kills_process_group() {
+        use nix::sys::signal::{kill, killpg, Signal};
+        use nix::unistd::Pid;
+
+        let temp = TempDir::new().expect("tempdir");
+        let cwd = temp.path().canonicalize().expect("canonicalize");
+        let command_cwd = cwd.clone();
+        let task = tokio::spawn(async move {
+            let cancellation = CancellationToken::new();
+            run_shell_command(
+                "echo $$ > shell.pid; sleep 30 & echo $! > child.pid; wait",
+                &command_cwd,
+                None,
+                30,
+                &cancellation,
+                &None,
+            )
+            .await
+        });
+
+        let (shell_pid, child_pid) = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let shell = tokio::fs::read_to_string(cwd.join("shell.pid")).await;
+                let child = tokio::fs::read_to_string(cwd.join("child.pid")).await;
+                if let (Ok(shell), Ok(child)) = (shell, child) {
+                    break (
+                        shell.trim().parse::<i32>().expect("shell pid"),
+                        child.trim().parse::<i32>().expect("child pid"),
+                    );
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("bash process ids");
+
+        task.abort();
+        let _ = task.await;
+
+        let process_is_alive = |pid| kill(Pid::from_raw(pid), None).is_ok();
+        let cleaned = tokio::time::timeout(Duration::from_secs(2), async {
+            while process_is_alive(shell_pid) || process_is_alive(child_pid) {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .is_ok();
+        if !cleaned {
+            let _ = killpg(Pid::from_raw(shell_pid), Signal::SIGKILL);
+            let _ = kill(Pid::from_raw(child_pid), Signal::SIGKILL);
+        }
+
+        assert!(
+            cleaned,
+            "dropping bash execution left its process group alive"
         );
     }
 

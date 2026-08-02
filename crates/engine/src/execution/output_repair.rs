@@ -262,6 +262,7 @@ fn build_repair_request(
         node_label: format!("{} (output repair)", originating.node_label),
         model: model.to_string(),
         provider_id: originating.provider_id.clone(),
+        max_output_tokens: originating.max_output_tokens,
         system_messages: vec![OUTPUT_REPAIR_SYSTEM_INSTRUCTION.to_string()],
         task_prompt: "Repair the malformed final-output tool arguments.".to_string(),
         input: json!({
@@ -345,6 +346,7 @@ mod tests {
             node_label: "Worker".into(),
             model: "worker-model".into(),
             provider_id: None,
+            max_output_tokens: None,
             system_messages: vec!["worker system".into()],
             task_prompt: "do work".into(),
             input: json!({"x": 1}),

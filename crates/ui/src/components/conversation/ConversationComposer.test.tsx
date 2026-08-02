@@ -89,7 +89,7 @@ function renderComposer(options: { active?: boolean; directChat?: boolean } = {}
 }
 
 describe("ConversationComposer", () => {
-  it("shows Stop after Send only for an active workflow", () => {
+  it("shows Stop after Send for active workflows and chats", () => {
     const workflow = renderComposer({ active: true });
     const workflowSend = workflow.container.querySelector<HTMLButtonElement>(
       "button[aria-label='Send to paused node']",
@@ -109,9 +109,12 @@ describe("ConversationComposer", () => {
     workflow.dispose();
 
     const directChat = renderComposer({ active: true, directChat: true });
-    expect(
-      directChat.container.querySelector("button[aria-label='Stop workflow run']"),
-    ).toBeNull();
+    const directChatStop = directChat.container.querySelector<HTMLButtonElement>(
+      "button[aria-label='Stop chat run']",
+    );
+    expect(directChatStop).not.toBeNull();
+    directChatStop!.click();
+    expect(directChat.handleStopRun).toHaveBeenCalledOnce();
     directChat.dispose();
   });
 

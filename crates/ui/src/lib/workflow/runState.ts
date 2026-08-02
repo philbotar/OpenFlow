@@ -36,6 +36,9 @@ export function inferRunStateWorkflowId(
   if (!runState) {
     return null;
   }
+  if (runState.workflowId) {
+    return runState.workflowId;
+  }
   const nodeIds = new Set([
     ...Object.keys(runState.statusByNode),
     ...Object.keys(runState.chatLogs),
@@ -67,6 +70,7 @@ export function createIdleRunState(workflow: Workflow): WorkflowRunState {
   }, {});
   return {
     active: false,
+    workflowId: workflow.id,
     awaitingNodeId: null,
     awaitingNodeIds: [],
     activeManualNodeId: null,
@@ -95,7 +99,7 @@ export function nodeChangedFiles(
   if (!runState || !nodeId) {
     return [];
   }
-  return runState.changedFilesByNode[nodeId] ?? [];
+  return runState.changedFilesByNode?.[nodeId] ?? [];
 }
 
 export function effectiveChangePath(record: FileChangeRecord): string {

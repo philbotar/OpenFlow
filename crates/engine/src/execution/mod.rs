@@ -36,4 +36,4 @@ pub use subagent_runtime::{
 pub use subagents::{
     augment_call_subagent_tool_description, merge_subagent_summaries, CALL_SUBAGENT_TOOL,
 };
-pub use telemetry::RunTelemetry;
+pub use telemetry::{McpClientRequestKind, PendingMcpClientRequest, RunTelemetry};

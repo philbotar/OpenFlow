@@ -78,7 +78,7 @@
   --menu-row-height: 30px;
   --menu-row-padding-inline: 8px;
   --control-size-md: 36px;
-  --composer-input-max-rows: 3;
+  --composer-input-max-rows: 10;
   --composer-send-size: 28px;
   --composer-input-min-height: var(--composer-send-size);
   --composer-input-max-height: calc(var(--composer-send-size) + (var(--composer-input-max-rows) - 1) * 1.25em);

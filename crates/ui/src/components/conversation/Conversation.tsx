@@ -11,6 +11,8 @@ import ArrowDown from "lucide-solid/icons/arrow-down";
 
 export interface ConversationApi {
   isAtBottom: Accessor<boolean>;
+  hasContentAbove: Accessor<boolean>;
+  hasContentBelow: Accessor<boolean>;
   scrollToBottom: (smooth?: boolean) => void;
   registerEl: (el: HTMLDivElement) => void;
   onScroll: () => void;
@@ -28,16 +30,24 @@ export function Conversation(allProps: ConversationProps) {
   const { class: className, threshold = 60, children, ...rest } = allProps;
   let scrollEl: HTMLDivElement | undefined;
   const [isAtBottom, setIsAtBottom] = createSignal(true);
+  const [hasContentAbove, setHasContentAbove] = createSignal(false);
+  const [hasContentBelow, setHasContentBelow] = createSignal(false);
+
+  const updateScrollState = () => {
+    if (!scrollEl) return;
+    const remaining =
+      scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight;
+    setIsAtBottom(remaining < threshold);
+    setHasContentAbove(scrollEl.scrollTop > 1);
+    setHasContentBelow(remaining > 1);
+  };
 
   const registerEl = (el: HTMLDivElement) => {
     scrollEl = el;
+    updateScrollState();
   };
 
-  const onScroll = () => {
-    if (!scrollEl) return;
-    const diff = scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight;
-    setIsAtBottom(diff < threshold);
-  };
+  const onScroll = () => updateScrollState();
 
   const scrollToBottom = (smooth = true) => {
     if (!scrollEl) return;
@@ -45,17 +55,29 @@ export function Conversation(allProps: ConversationProps) {
       top: scrollEl.scrollHeight,
       behavior: smooth ? "smooth" : "instant",
     });
+    updateScrollState();
   };
 
   const conversation: ConversationApi = {
     isAtBottom,
+    hasContentAbove,
+    hasContentBelow,
     scrollToBottom,
     registerEl,
     onScroll,
   };
 
   return (
-    <div class={`conversation ${className ?? ""}`} role="log" aria-live="polite" {...rest}>
+    <div
+      class={`conversation ${className ?? ""}`}
+      classList={{
+        "has-content-above": hasContentAbove(),
+        "has-content-below": hasContentBelow(),
+      }}
+      role="log"
+      aria-live="polite"
+      {...rest}
+    >
       {children?.(conversation)}
     </div>
   );
@@ -87,11 +109,18 @@ export function ConversationContent(allProps: ConversationContentProps) {
     // Initial scroll to bottom when content loads
     conversation.scrollToBottom(false);
     ro = new ResizeObserver(() => {
-      if (conversation.isAtBottom()) conversation.scrollToBottom(false);
+      if (conversation.isAtBottom()) {
+        conversation.scrollToBottom(false);
+        return;
+      }
+      conversation.onScroll();
     });
     ro.observe(ref);
     mo = new MutationObserver(() => {
-      if (!conversation.isAtBottom()) return;
+      if (!conversation.isAtBottom()) {
+        conversation.onScroll();
+        return;
+      }
       if (rafId != null) return;
       rafId = requestAnimationFrame(() => {
         rafId = undefined;

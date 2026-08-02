@@ -21,6 +21,7 @@ fn test_request() -> engine::AgentRequest {
         node_label: "Idea".into(),
         model: "gpt-5.3-codex".into(),
         provider_id: None,
+        max_output_tokens: None,
         system_messages: vec!["You are precise.".into()],
         task_prompt: "Summarize the kickoff.".into(),
         input: json!({"entrypoint": {"text": "ORCHID-91"}, "upstream": []}),
@@ -486,4 +487,66 @@ async fn codex_replays_tool_call_and_result_with_responses_call_id() {
         .find(|item| item["type"] == "function_call_output")
         .unwrap();
     assert_eq!(replayed_result["call_id"], "call_authoring_1");
+}
+
+#[tokio::test]
+async fn codex_downgrades_open_mcp_schema_without_rewriting_it() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/responses"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_raw(completed_submit_sse(), "text/event-stream"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let mut request = test_request();
+    request.available_tools = vec![engine::ToolDefinition {
+        name: "mcp_7_massive_call__api".into(),
+        description: "Call the Massive API".into(),
+        input_schema: json!({
+            "type": "object",
+            "properties": {
+                "apply": {
+                    "anyOf": [{
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }, {
+                        "type": "null"
+                    }]
+                }
+            }
+        }),
+        tier: engine::ToolTier::Write,
+        concurrency: engine::ToolConcurrency::Shared,
+    }];
+
+    let outcome = create_provider(codex_config(&server.uri()))
+        .invoke(request)
+        .await
+        .unwrap();
+    assert!(matches!(outcome, AgentTurnOutcome::Completed(_)));
+
+    let requests = server.received_requests().await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+    let tools = body["tools"].as_array().unwrap();
+    let mcp = tools
+        .iter()
+        .find(|tool| tool["name"] == "mcp_7_massive_call__api")
+        .unwrap();
+    assert_eq!(mcp["strict"], false);
+    assert_eq!(
+        mcp["parameters"]["properties"]["apply"]["anyOf"][0]["items"]["additionalProperties"], true,
+        "provider adaptation must preserve the MCP server's open-object semantics"
+    );
+
+    let submit = tools
+        .iter()
+        .find(|tool| tool["name"] == "openflow_submit_node_output")
+        .unwrap();
+    assert_eq!(submit["strict"], true);
 }

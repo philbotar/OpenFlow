@@ -4,7 +4,7 @@ mod setup;
 
 use crate::run::persistence::{PendingRunCheckpoint, RunCheckpointReason};
 use engine::{review_completed_run, AiPort, EngineRunResult, NodeId, PostRunReview, RunError};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio_util::sync::CancellationToken;
 
@@ -58,10 +58,76 @@ pub(super) async fn drive_interactive_workflow<A>(
             &mut wiring.engine,
             wiring.tool_port.tool_runner(),
         );
-        let run_result = wiring
-            .engine
-            .run(&*wiring.ai_adapter, &wiring.tool_port, &cancel_token)
-            .await;
+        let run_result = {
+            let run = wiring
+                .engine
+                .run(&*wiring.ai_adapter, &wiring.tool_port, &cancel_token);
+            tokio::pin!(run);
+            let mut pending_mcp =
+                HashMap::<String, crate::adapters::mcp::McpRunClientRequest>::new();
+            loop {
+                tokio::select! {
+                    result = &mut run => {
+                        for (_, request) in pending_mcp.drain() {
+                            super::mcp_callbacks::cancel(request);
+                        }
+                        break result;
+                    }
+                    request = recv_mcp_client_request(&mut wiring.mcp_client_request_rx) => {
+                        let Some(request) = request else {
+                            wiring.mcp_client_request_rx = None;
+                            continue;
+                        };
+                        let request_id = request.pending.request_id.clone();
+                        send_or_log(
+                            &event_tx,
+                            ExecutionEvent::McpClientRequestCreated {
+                                request: request.pending.clone(),
+                            },
+                        );
+                        if let Some(replaced) = pending_mcp.insert(request_id, request) {
+                            super::mcp_callbacks::cancel(replaced);
+                        }
+                    }
+                    action = action_rx.recv(), if !pending_mcp.is_empty() => {
+                        let Some(action) = action else {
+                            cancel_token.cancel();
+                            continue;
+                        };
+                        match action {
+                            ExecutionAction::ResolveMcpClientRequest { request_id, decision } => {
+                                let Some(request) = pending_mcp.remove(&request_id) else {
+                                    log::warn!("ignored MCP client response {request_id}: request is not pending");
+                                    continue;
+                                };
+                                let (pending, outcome) = super::mcp_callbacks::resolve(
+                                    request,
+                                    decision,
+                                    &*wiring.review_ai,
+                                    &wiring.workflow,
+                                    &cancel_token,
+                                )
+                                .await;
+                                send_or_log(
+                                    &event_tx,
+                                    ExecutionEvent::McpClientRequestResolved {
+                                        request_id: pending.request_id,
+                                        node_id: pending.node_id,
+                                        outcome,
+                                    },
+                                );
+                            }
+                            ExecutionAction::Stop => {
+                                cancel_token.cancel();
+                            }
+                            other => {
+                                log::warn!("ignored run action while MCP client request is pending: {other:?}");
+                            }
+                        }
+                    }
+                }
+            }
+        };
         match run_result {
             EngineRunResult::NeedsInteraction {
                 inputs,
@@ -177,5 +243,16 @@ pub(super) async fn drive_interactive_workflow<A>(
 
     if let Err(error) = wiring.tool_port.tool_runner().close_mcp_clients().await {
         log::warn!("failed to close MCP clients at run end: {error}");
+    }
+}
+
+async fn recv_mcp_client_request(
+    receiver: &mut Option<
+        tokio::sync::mpsc::UnboundedReceiver<crate::adapters::mcp::McpRunClientRequest>,
+    >,
+) -> Option<crate::adapters::mcp::McpRunClientRequest> {
+    match receiver {
+        Some(receiver) => receiver.recv().await,
+        None => std::future::pending().await,
     }
 }

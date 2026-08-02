@@ -206,6 +206,19 @@ impl InteractiveEngine {
     pub fn prepare_stop_checkpoint(&mut self) -> InteractiveEngineCheckpoint {
         self.interrupted_nodes
             .extend(std::mem::take(&mut self.in_flight_ai));
+        let interrupted_tool_nodes = self
+            .in_flight_tools
+            .iter()
+            .filter_map(|approval_id| {
+                self.pending_tool_batches
+                    .get(approval_id)
+                    .map(|batch| batch.node_id.clone())
+            })
+            .collect::<BTreeSet<_>>();
+        self.in_flight_tools.clear();
+        for node_id in interrupted_tool_nodes {
+            self.mark_node_interrupted(&node_id);
+        }
         self.retry_after_by_node.clear();
 
         self.checkpoint()

@@ -13,6 +13,7 @@ const DEFAULT_HEAD_BYTES: usize = 20_000;
 const DEFAULT_TAIL_BYTES: usize = 20_000;
 pub const MAX_PLAN_ARTIFACT_BYTES: usize = 256 * 1024;
 const PLAN_DRAFT_FILE_NAME: &str = "PLAN.md";
+const FILE_CHANGE_DIFF_TOOL_NAME: &str = "file_change_diff";
 
 /// Per-run artifact storage. Artifacts live under the run's artifact root for the
 /// duration of the run; there is no garbage collection until the run ends.
@@ -169,6 +170,34 @@ impl ArtifactStore {
         })
     }
 
+    /// Persist an exact file-change diff under an immutable host-selected path.
+    pub fn store_file_change_diff(&self, diff: &str) -> Result<ToolArtifactRecord, ToolError> {
+        let artifact_id = Uuid::new_v4().to_string();
+        let path = self.root.join(format!("{artifact_id}-file-diff.txt"));
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .map_err(|error| {
+                ToolError::failed(format!(
+                    "failed to create file-change diff artifact: {error}"
+                ))
+            })?;
+        file.write_all(diff.as_bytes())
+            .and_then(|()| file.sync_all())
+            .map_err(|error| {
+                ToolError::failed(format!(
+                    "failed to write file-change diff artifact: {error}"
+                ))
+            })?;
+        Ok(ToolArtifactRecord {
+            artifact_id,
+            tool_name: FILE_CHANGE_DIFF_TOOL_NAME.to_string(),
+            path: path.display().to_string(),
+            size_bytes: diff.len(),
+        })
+    }
+
     /// Write a plan exactly once to a host-selected Markdown artifact path.
     pub fn store_plan_markdown(&self, markdown: String) -> Result<PlanArtifact, ToolError> {
         if markdown.len() > MAX_PLAN_ARTIFACT_BYTES {
@@ -313,6 +342,23 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = ArtifactStore::new(dir.path().join("artifacts")).unwrap();
         assert!(store.path_for("nonexistent-id").is_none());
+    }
+
+    #[test]
+    fn file_change_diff_always_persists_exact_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = ArtifactStore::new(dir.path().join("artifacts")).unwrap();
+        let diff = " 1|old\n-2|before\n+2|after\n";
+
+        let record = store.store_file_change_diff(diff).unwrap();
+
+        assert_eq!(record.tool_name, "file_change_diff");
+        assert_eq!(record.size_bytes, diff.len());
+        assert!(record.path.ends_with("-file-diff.txt"));
+        assert_eq!(
+            fs::read_to_string(store.path_for(&record.artifact_id).unwrap()).unwrap(),
+            diff
+        );
     }
 
     #[test]

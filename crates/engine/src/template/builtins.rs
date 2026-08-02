@@ -38,6 +38,9 @@ pub fn default_templates() -> Vec<Template> {
                 provider_id: None,
                 request_user_input: false,
                 conversation_mode: false,
+                mcp_resources: Vec::new(),
+                mcp_prompts: Vec::new(),
+                mcp_context_snapshots: Vec::new(),
             },
             HashSet::new(),
         ),
@@ -82,6 +85,9 @@ pub fn default_templates() -> Vec<Template> {
                 provider_id: None,
                 request_user_input: false,
                 conversation_mode: false,
+                mcp_resources: Vec::new(),
+                mcp_prompts: Vec::new(),
+                mcp_context_snapshots: Vec::new(),
             },
             {
                 let mut locked = HashSet::new();
@@ -123,6 +129,9 @@ pub fn default_templates() -> Vec<Template> {
                 provider_id: None,
                 request_user_input: false,
                 conversation_mode: false,
+                mcp_resources: Vec::new(),
+                mcp_prompts: Vec::new(),
+                mcp_context_snapshots: Vec::new(),
             },
             {
                 let mut locked = HashSet::new();
@@ -158,6 +167,9 @@ pub fn default_templates() -> Vec<Template> {
                 provider_id: None,
                 request_user_input: false,
                 conversation_mode: false,
+                mcp_resources: Vec::new(),
+                mcp_prompts: Vec::new(),
+                mcp_context_snapshots: Vec::new(),
             },
             {
                 let mut locked = HashSet::new();
@@ -192,6 +204,9 @@ pub fn default_templates() -> Vec<Template> {
                 provider_id: None,
                 request_user_input: true,
                 conversation_mode: false,
+                mcp_resources: Vec::new(),
+                mcp_prompts: Vec::new(),
+                mcp_context_snapshots: Vec::new(),
             },
             HashSet::new(),
         ),

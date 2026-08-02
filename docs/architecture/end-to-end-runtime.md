@@ -270,7 +270,7 @@ Subagent turns run **inside** a parent `CALL_SUBAGENT` tool execution (`subagent
 | Tool approval (`ApprovalMode`) | Write-tier tool under `write` / `always_ask` | **engine** policy; **orch** catalog | Yes (pause) | `submit_tool_approval` → `on_tool_decision` | Deny → synthetic denied `ToolResult` | `tools/config.rs`, `completion.rs` |
 | `read_only` tool exposure | Write-tier tool not in catalog | **orchestration** | Yes (model can't call) | Switch `ApprovalMode` | Tool unavailable to model | `tool/registry.rs` → `is_read_only` |
 | Retryable node / `RetryPolicy` | `AgentError::Transient`, interrupt, recoverable fail | **engine** | Yes (pause) | `retry_node` | Exhaust → `failed_nodes` / run fail | `completion.rs`, `RetryPolicy` in `WorkflowSettings` |
-| Cancel | User stop, run replaced | **orchestration** + token | Yes (terminal) | New run | `EngineRunResult::Cancelled` | `CancellationToken`, `stop_run` |
+| Cancel | User stops an addressed run | **orchestration** + token | Yes (terminal) | New run / continue | `EngineRunResult::Cancelled` | `CancellationToken`, `stop_run(run_id)` |
 | Structured output / completion protocol | Invalid `openflow_submit_node_output` JSON | **engine** | No (nudge retry) | Auto (≤3 nudges) | Then `failed_nodes` | `AgentError::MalformedSubmitOutput` |
 | DAG layer readiness | Upstream node lacks output | **engine** | No (wait) | Auto when upstream completes | — | `is_node_blocked`, `gather_call_ai_actions` |
 | Checkpoint restore | User stop / durable resume | **orchestration** | — | `continue_run` / `resume_durable_run` | Hash / stale node mismatch | `checkpoint.rs`, `run_checkpoint_store.rs` |
@@ -341,15 +341,18 @@ Orchestration wraps the run-scoped provider router with `AiInvocationAdapter`. A
 
 | Mechanism | Behavior | Source |
 | --- | --- | --- |
-| Single active run | `RunCoordinator` replaces prior run | `coordinator/mod.rs` |
+| Top-level runs | `RunRegistry` addresses independent `RunCoordinator` sessions by `run_id`; no session-count cap | `run/registry.rs` |
+| Provider budget | At most 8 active provider invocations; excess calls await a permit | `run/resources.rs` |
+| Tool budget | At most 16 executable tools across runs; excess calls await a permit | `run/resources.rs`, `tool_port.rs` |
+| Same-cwd mutation | One mutation-capable run per canonical execution cwd | `run/resources.rs`, `execution/mod.rs` |
 | Layer parallelism | Same-layer ready nodes dispatch concurrently via `FuturesUnordered` | `interactive_engine/mod.rs` |
 | Completion ordering | AI/tool completions applied serially as they finish | `in_flight.next()` in `run()` |
 | Cross-layer | Strict: layer N+1 after all layer N outputs | `current_layer_complete` |
 | Tool batch parallelism | `ToolConcurrency::Shared` tools spawn in parallel inside batch | `tool_port.rs` |
 | Exclusive tools | Semaphore permit before spawn | `tool/registry.rs`, `tool_port.rs` |
 | Subagents | Nested in parent tool; not layer-parallel | `subagent_runtime.rs` |
-| Cancel | `CancellationToken` checked each `run()` iteration | `stop_run`, run replace |
-| Event coalescing | ~30ms while run active | `desktop/run_event_bridge.rs` |
+| Cancel | `CancellationToken` checked while waiting for a mutation lease and during `run()` | addressed `stop_run(run_id)` |
+| Event coalescing | ~30ms independently per active run | `desktop/run_event_bridge.rs` |
 | Blocking I/O | Filesystem/subprocess on `spawn_blocking` | orchestration adapters |
 
 **Headless vs interactive:** both call `drive_interactive_workflow` with the same `InteractiveEngine`. Headless (`run_workflow_headless`) uses scripted `ExecutionAction` queues instead of UI; checkpoints are not durably persisted without coordinator.

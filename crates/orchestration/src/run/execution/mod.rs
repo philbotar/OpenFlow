@@ -2,6 +2,7 @@ mod ai_adapter;
 mod drive;
 mod events;
 mod headless;
+mod mcp_callbacks;
 mod provider_router;
 mod tool_port;
 
@@ -94,6 +95,7 @@ fn emit_phase_timed(
     });
 }
 
+#[derive(Debug)]
 pub enum ExecutionAction {
     ProvideInput {
         node_id: NodeId,
@@ -105,6 +107,10 @@ pub enum ExecutionAction {
         approval_id: String,
         allow: bool,
         reason: Option<String>,
+    },
+    ResolveMcpClientRequest {
+        request_id: String,
+        decision: crate::mcp::client_capabilities::McpClientRequestDecision,
     },
     RetryNode {
         node_id: NodeId,
@@ -148,7 +154,9 @@ pub enum WorkflowExecutionError {
     MissingManualInput(NodeId),
     #[error("tool approval {0} was requested but no scripted approval was provided")]
     MissingApproval(String),
-    #[error("node {0} failed or was interrupted and requires manual retry but no scripted retry was provided")]
+    #[error(
+        "node {0} failed or was interrupted and requires manual retry but no scripted retry was provided"
+    )]
     MissingRetry(NodeId),
 }
 
@@ -210,8 +218,14 @@ pub struct InteractiveWorkflowRunParams<A> {
     pub node_interrupts: NodeInterrupts,
     pub context_window_sizes: ProviderContextWindowSizes,
     pub mcp: crate::settings::model::McpSettings,
+    pub prepared_mcp: Option<(
+        crate::adapters::mcp::McpRunClients,
+        Vec<crate::adapters::mcp::McpSetupIssue>,
+    )>,
     pub search: crate::settings::model::SearchSettings,
     pub runtime_config_store: engine::NodeRuntimeConfigStore,
+    pub tool_budget: Arc<tokio::sync::Semaphore>,
+    pub mutation_gate: Option<Arc<tokio::sync::Semaphore>>,
 }
 
 #[derive(Debug, Clone)]
@@ -224,7 +238,7 @@ pub struct ResumeContinuation {
 
 pub fn spawn_interactive_workflow_run<A>(
     runtime_handle: &tokio::runtime::Handle,
-    params: InteractiveWorkflowRunParams<A>,
+    mut params: InteractiveWorkflowRunParams<A>,
 ) -> (
     tokio::task::JoinHandle<()>,
     UnboundedReceiver<ExecutionEvent>,
@@ -240,7 +254,17 @@ where
     let cancel_token = CancellationToken::new();
     let drive_cancel_token = cancel_token.clone();
     let node_interrupts = params.node_interrupts.clone();
+    let mutation_gate = params.mutation_gate.take();
     let handle = runtime_handle.spawn(async move {
+        let _mutation_permit = if let Some(gate) = mutation_gate {
+            tokio::select! {
+                biased;
+                () = drive_cancel_token.cancelled() => return,
+                permit = gate.acquire_owned() => permit.ok(),
+            }
+        } else {
+            None
+        };
         drive::drive_interactive_workflow(params, event_tx, action_rx, drive_cancel_token).await;
     });
     (handle, event_rx, action_tx, cancel_token, node_interrupts)

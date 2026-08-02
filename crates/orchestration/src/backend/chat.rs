@@ -81,7 +81,7 @@ impl AppBackend {
             self.chats.delete(chat_id)?;
             return Ok(ChatDeleteResult::Deleted);
         };
-        if self.is_run_active().await && self.current_run_id().await.as_deref() == Some(run_id) {
+        if self.is_run_active_for(run_id).await {
             return Err(BackendError::ActiveChatRun);
         }
         let roots = self.run_roots()?;

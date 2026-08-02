@@ -60,7 +60,7 @@ export function useAppProviderState(): AppContextValue {
     selectWorkflow: (workflow) => selectWorkflowRef(workflow),
     selectChat: (chatId, state) => selectChatRef(chatId, state),
     runState: runKernel.runState,
-    backendRunWorkflowId: runKernel.backendRunWorkflowId,
+    runStateByWorkflowId: runKernel.runStateByWorkflowId,
     setBackendRunWorkflowId: runKernel.setBackendRunWorkflowId,
     cacheRunStateForWorkflow: runKernel.cacheRunStateForWorkflow,
     setRunStateByWorkflowId: (updater) =>
@@ -97,7 +97,6 @@ export function useAppProviderState(): AppContextValue {
     activeWorkflow: workspace.activeWorkflow,
     activeChat: workspace.activeChat,
     activeWorkflowId: workspace.activeWorkflowId,
-    backendRunWorkflowId: runKernel.backendRunWorkflowId,
     runState: runKernel.runState,
     readiness: settingsState.readiness,
     startingRun: () => startingRunAccessor(),
@@ -126,7 +125,6 @@ export function useAppProviderState(): AppContextValue {
     executionCwdForActiveWorkflow: workspace.executionCwdForActiveWorkflow,
     applySchemaEditor: workflowEditor.applySchemaEditor,
     runState: runKernel.runState,
-    backendRunWorkflowId: runKernel.backendRunWorkflowId,
     setBackendRunWorkflowId: runKernel.setBackendRunWorkflowId,
     publishBackendRunState: runKernel.publishBackendRunState,
     clearStatusToast: toastApi.clearStatusToast,
@@ -137,6 +135,7 @@ export function useAppProviderState(): AppContextValue {
     uiZoom: () => uiZoomAccessor(),
     isCompactViewport: () => isCompactViewportAccessor(),
     cacheRunStateForWorkflow: runKernel.cacheRunStateForWorkflow,
+    runStateByWorkflowId: runKernel.runStateByWorkflowId,
     applyRunStateSnapshot: runKernel.applyRunStateSnapshot,
     chatSubmissionFor: chatComposer.chatSubmissionFor,
     resolveChatSubmissionPayload: chatComposer.resolveChatSubmissionPayload,
@@ -157,7 +156,6 @@ export function useAppProviderState(): AppContextValue {
     selectWorkflow({
       workflow,
       activeWorkflowId: workspace.activeWorkflowId,
-      backendRunWorkflowId: runKernel.backendRunWorkflowId,
       runState: runKernel.runState,
       runStateByWorkflowId: runKernel.runStateByWorkflowId,
       cacheRunStateForWorkflow: runKernel.cacheRunStateForWorkflow,
@@ -214,16 +212,16 @@ export function useAppProviderState(): AppContextValue {
   const handleShellMount = async () => {
     try {
       unlistenRunState = await desktop.listenToRunState((nextRunState) => {
+        const eventWorkflowId = nextRunState.workflowId ?? runKernel.backendRunWorkflowId();
+        runKernel.publishBackendRunState(nextRunState);
+        const activeId = workspace.activeWorkflowId();
+        if (activeId !== eventWorkflowId) {
+          return;
+        }
         if (nextRunState.active) {
           runSession.setReplayRunId(null);
         }
-        runKernel.publishBackendRunState(nextRunState);
         void runSession.refreshContinuableRun();
-        const activeId = workspace.activeWorkflowId();
-        const backendId = runKernel.backendRunWorkflowId();
-        if (activeId !== backendId) {
-          return;
-        }
         if (!nextRunState.active) {
           lastNotifiedPendingApprovalId = null;
           lastNotifiedAwaitingKey = null;
@@ -491,6 +489,7 @@ export function useAppProviderState(): AppContextValue {
     refreshDiscoveredMcp: settingsState.refreshDiscoveredMcp,
     runState: runKernel.runState,
     backendRunWorkflowId: runKernel.backendRunWorkflowId,
+    backendRunActive: runKernel.backendRunActive,
     readiness: settingsState.readiness,
     refreshReadiness: settingsState.refreshReadiness,
     bottomTab: dock.bottomTab,
@@ -650,6 +649,8 @@ export function useAppProviderState(): AppContextValue {
     workflowAuthoringMessages: workflowAuthoring.workflowAuthoringMessages,
     workflowAuthoringValidation: workflowAuthoring.workflowAuthoringValidation,
     workflowAuthoringDraft: workflowAuthoring.workflowAuthoringDraft,
+    workflowAuthoringDraftPending: workflowAuthoring.workflowAuthoringDraftPending,
+    updateWorkflowAuthoringDraft: workflowAuthoring.updateWorkflowAuthoringDraft,
     handleOpenWorkflowAuthoring: workflowAuthoring.handleOpenWorkflowAuthoring,
     handleCloseWorkflowAuthoring: workflowAuthoring.handleCloseWorkflowAuthoring,
     handleWorkflowAuthoringSend: workflowAuthoring.handleWorkflowAuthoringSend,
@@ -673,6 +674,7 @@ export function useAppProviderState(): AppContextValue {
     handleRefreshSkills: workspace.handleRefreshSkills,
     searchProjectFileReferences: runSession.searchProjectFileReferences,
     handleToolApproval: runSession.handleToolApproval,
+    handleMcpClientRequest: runSession.handleMcpClientRequest,
     handleUpdateChatConfig: runSession.handleUpdateChatConfig,
     handleUpdateNodeRuntimeConfig: runSession.handleUpdateNodeRuntimeConfig,
     handleStartNodeLabelEdit: workflowEditor.handleStartNodeLabelEdit,

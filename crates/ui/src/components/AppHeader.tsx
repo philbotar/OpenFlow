@@ -25,10 +25,26 @@ export function AppHeader() {
     }
   };
 
-  const runDisabledReason = () =>
-    ctx.readiness()?.ready
-      ? undefined
-      : (ctx.readiness()?.message ?? "Add an API key in Settings to run workflows");
+  const runDisabledReason = () => {
+    const readiness = ctx.readiness();
+    if (!readiness) return "Checking provider settings";
+    return readiness.ready ? undefined : "Open Providers to connect before running";
+  };
+
+  const readinessLabel = () => {
+    const readiness = ctx.readiness();
+    if (!readiness) return "Checking provider…";
+    return readiness.ready ? "Provider ready" : "Connect provider";
+  };
+
+  const readinessDetails = () => {
+    const readiness = ctx.readiness();
+    if (!readiness) return "Checking provider settings";
+    if (!readiness.ready) return "Open Providers to connect";
+    return readiness.message === "Ready via env var"
+      ? "Environment variable"
+      : "Configured in Providers";
+  };
 
   return (
     <header
@@ -235,15 +251,17 @@ export function AppHeader() {
             </div>
           </div>
         </Show>
-        <div
-          class="readiness-chip"
-          classList={{ ready: ctx.readiness()?.ready }}
-          title={ctx.readiness()?.message ?? "Checking API key and provider settings"}
-          role="status"
-        >
-          <span class="status-dot" aria-hidden="true" />
-          <span>{ctx.readiness()?.message ?? "Checking API key…"}</span>
-        </div>
+        <Tooltip label={readinessDetails()}>
+          <div
+            class="readiness-chip"
+            classList={{ ready: ctx.readiness()?.ready }}
+            role="status"
+            tabIndex={0}
+          >
+            <span class="status-dot" aria-hidden="true" />
+            <span>{readinessLabel()}</span>
+          </div>
+        </Tooltip>
       </div>
     </header>
   );

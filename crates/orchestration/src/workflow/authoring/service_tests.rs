@@ -3,8 +3,9 @@ use crate::api::WorkflowAuthoringRole;
 use crate::settings::model::AppSettings;
 use async_trait::async_trait;
 use engine::{
-    AgentError, AgentNeedUserInput, AgentRequest, AgentToolCallBatch, AgentTranscriptItem,
-    AgentTurnOutcome, AgentTurnSuccess, AiPort, ToolCall, Workflow, WorkflowId,
+    AgentError, AgentMessageTurn, AgentNeedUserInput, AgentRequest, AgentToolCallBatch,
+    AgentTranscriptItem, AgentTurnOutcome, AgentTurnSuccess, AiPort, ToolCall, Workflow,
+    WorkflowId,
 };
 use serde_json::json;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -106,6 +107,181 @@ async fn send_turn_materializes_valid_draft() {
 
     assert!(result.validation.valid);
     assert_eq!(result.draft.as_ref().expect("draft").nodes.len(), 2);
+    assert!(result.draft_changed);
+}
+
+struct NaturalConversationAi;
+
+#[async_trait]
+impl AiPort for NaturalConversationAi {
+    async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+        assert!(request.conversation_mode);
+        assert!(request
+            .available_tools
+            .iter()
+            .all(|tool| !tool.name.starts_with("openflow_")));
+        Ok(AgentTurnOutcome::Message(AgentMessageTurn {
+            raw_text: "MCPs can provide live market data and news.".to_string(),
+            assistant_message: "MCPs can provide live market data and news.".to_string(),
+            reasoning: Vec::new(),
+            usage: None,
+        }))
+    }
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+async fn send_turn_keeps_informational_questions_in_chat() {
+    let service = WorkflowAuthoringService::new();
+    let session_id = service.start_session(None).session_id;
+    let initial_draft = service
+        .get_session(&session_id)
+        .expect("authoring session")
+        .current_draft;
+
+    let result = service
+        .send_turn(
+            &session_id,
+            "What MCPs can improve the information available?".to_string(),
+            &AppSettings::default(),
+            &NaturalConversationAi,
+            |_| {},
+            |_| {},
+        )
+        .await
+        .expect("conversational turn");
+
+    assert_eq!(
+        result.assistant_message,
+        "MCPs can provide live market data and news."
+    );
+    assert_eq!(result.draft, initial_draft);
+    assert!(!result.draft_changed);
+    assert_eq!(result.messages.len(), 2);
+}
+
+struct ProposalThenToolsAi {
+    calls: AtomicUsize,
+    first_completed: bool,
+}
+
+#[async_trait]
+impl AiPort for ProposalThenToolsAi {
+    async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+        let call = self.calls.fetch_add(1, Ordering::SeqCst);
+        assert!(request
+            .available_tools
+            .iter()
+            .any(|tool| tool.name == "openflow_set_workflow_meta"));
+        match call {
+            0 if self.first_completed => Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                handoff: None,
+                output: json!({
+                    "assistantMessage": "I'll propose a risk-controlled workflow. Please review and accept it in the UI."
+                }),
+                raw_text: String::new(),
+                assistant_message: Some(
+                    "I'll propose a risk-controlled workflow. Please review and accept it in the UI."
+                        .to_string(),
+                ),
+                reasoning: Vec::new(),
+                usage: None,
+            })),
+            0 => Ok(AgentTurnOutcome::Message(AgentMessageTurn {
+                raw_text: "I'll propose a risk-controlled workflow. Please review and accept it in the UI."
+                    .to_string(),
+                assistant_message: "I'll propose a risk-controlled workflow. Please review and accept it in the UI."
+                    .to_string(),
+                reasoning: Vec::new(),
+                usage: None,
+            })),
+            1 => Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+                raw_text: String::new(),
+                assistant_message: None,
+                tool_calls: vec![ToolCall {
+                    id: "set-weekly-options-name".to_string(),
+                    provider_call_id: None,
+                    name: "openflow_set_workflow_meta".to_string(),
+                    arguments: json!({ "name": "Weekly Options Research" }),
+                }],
+                reasoning: Vec::new(),
+                usage: None,
+            })),
+            2 => Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                handoff: None,
+                output: json!({ "assistantMessage": "Proposed a workflow for review." }),
+                raw_text: String::new(),
+                assistant_message: Some("Proposed a workflow for review.".to_string()),
+                reasoning: Vec::new(),
+                usage: None,
+            })),
+            _ => panic!("unexpected proposal authoring invoke count {call}"),
+        }
+    }
+}
+
+async fn assert_proposal_text_requires_a_real_draft(first_completed: bool) {
+    let ai = ProposalThenToolsAi {
+        calls: AtomicUsize::new(0),
+        first_completed,
+    };
+    let service = WorkflowAuthoringService::new();
+    let session_id = service.start_session(None).session_id;
+    let result = service
+        .send_turn(
+            &session_id,
+            "Create a risk-controlled weekly-options research workflow with validated market data, parallel analysis, red-team review, a risk committee, and a human approval gate.".to_string(),
+            &AppSettings::default(),
+            &ai,
+            |_| {},
+            |_| {},
+        )
+        .await
+        .expect("proposal turn");
+
+    assert!(result.draft_changed);
+    assert_eq!(
+        result.draft.as_ref().expect("draft").name,
+        "Weekly Options Research"
+    );
+    assert_eq!(ai.calls.load(Ordering::SeqCst), 3);
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+async fn submitted_proposal_text_is_retried_until_a_real_draft_exists() {
+    assert_proposal_text_requires_a_real_draft(true).await;
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+async fn plain_proposal_text_is_retried_until_a_real_draft_exists() {
+    assert_proposal_text_requires_a_real_draft(false).await;
+}
+
+#[test]
+fn only_direct_workflow_change_requests_enable_authoring_tools() {
+    assert!(!super::service::explicit_workflow_change_request(
+        "What MCPs can improve the information available?"
+    ));
+    assert!(!super::service::explicit_workflow_change_request(
+        "How do I create a workflow?"
+    ));
+    assert!(!super::service::explicit_workflow_change_request(
+        "Can you explain how to edit a workflow?"
+    ));
+    assert!(super::service::explicit_workflow_change_request(
+        "Please add an MCP research node to the workflow."
+    ));
+    assert!(super::service::explicit_workflow_change_request(
+        "Build a simple planner"
+    ));
+    assert!(super::service::explicit_workflow_change_request(
+        "Can you update the current workflow?"
+    ));
+    assert!(super::service::explicit_workflow_change_request(
+        "Revise the current workflow draft based on the run."
+    ));
 }
 
 #[cfg_attr(miri, ignore)]
@@ -153,7 +329,8 @@ async fn project_authoring_uses_project_specific_preamble() {
     assert!(prompt.contains(&format!("Project path: {project_path}")));
     assert!(prompt.contains(&format!("Default execution cwd: {project_path}")));
     assert!(prompt.contains("Read-only project tools are available"));
-    assert!(prompt.contains("Never call request_user_input. Never ask clarifying questions."));
+    assert!(prompt.contains("Answer informational questions, explain concepts"));
+    assert!(prompt.contains("ask a concise clarifying question and wait"));
     assert!(prompt.contains("requestUserInput: false for autonomous planning, coding"));
     assert!(prompt.contains("openflow_add_node"));
 }
@@ -368,6 +545,7 @@ async fn send_turn_builds_draft_via_incremental_authoring_tools() {
 
     assert!(result.validation.valid, "{:?}", result.validation.errors);
     assert_eq!(result.draft.as_ref().expect("draft").nodes.len(), 2);
+    assert!(result.draft_changed);
     assert_eq!(ai.calls.load(Ordering::SeqCst), 3);
 }
 
@@ -641,7 +819,7 @@ impl AiPort for ClarificationThenDraftAi {
 
 #[cfg_attr(miri, ignore)]
 #[tokio::test]
-async fn send_turn_retries_clarification_and_materializes_draft() {
+async fn send_turn_returns_clarification_for_the_next_user_turn() {
     let draft_response = json!({
         "assistantMessage": "Here is a two-step workflow.",
         "workflowDraft": {
@@ -699,8 +877,9 @@ async fn send_turn_retries_clarification_and_materializes_draft() {
         .expect("turn");
 
     assert!(result.validation.valid, "{:?}", result.validation.errors);
-    assert_eq!(result.draft.as_ref().expect("draft").nodes.len(), 2);
-    assert_eq!(ai.calls.load(Ordering::SeqCst), 2);
+    assert_eq!(result.draft.as_ref().expect("draft").nodes.len(), 4);
+    assert!(!result.draft_changed);
+    assert_eq!(ai.calls.load(Ordering::SeqCst), 1);
 }
 
 struct AlwaysClarifyAi;
@@ -719,7 +898,7 @@ impl AiPort for AlwaysClarifyAi {
 
 #[cfg_attr(miri, ignore)]
 #[tokio::test]
-async fn send_turn_returns_assistant_message_when_clarification_exhausted() {
+async fn send_turn_returns_assistant_message_when_model_requests_clarification() {
     let ai = AlwaysClarifyAi;
     let service = WorkflowAuthoringService::new();
     let session_id = service.start_session(None).session_id;
@@ -748,7 +927,8 @@ async fn send_turn_returns_assistant_message_when_clarification_exhausted() {
         result.assistant_message,
         "What kind of workflow do you want?"
     );
-    assert!(!result.validation.valid);
+    assert!(result.validation.valid);
+    assert!(!result.draft_changed);
 }
 
 struct MalformedSubmitThenDraftAi {

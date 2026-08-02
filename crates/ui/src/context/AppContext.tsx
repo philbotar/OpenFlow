@@ -9,6 +9,7 @@ import type {
   ChatConfig,
   EdgeId,
   McpDiscoveryRow,
+  McpClientRequestDecision,
   NodeId,
   PendingChatAttachment,
   ProviderProfile,
@@ -57,6 +58,7 @@ export interface AppContextValue {
   refreshDiscoveredMcp: (projectPath?: string | null) => Promise<void>;
   runState: Accessor<WorkflowRunState | null>;
   backendRunWorkflowId: Accessor<string | null>;
+  backendRunActive: Accessor<boolean>;
   readiness: Accessor<ProviderReadiness | null>;
   refreshReadiness: (nextSettings?: AppSettings) => Promise<void>;
   bottomTab: Accessor<BottomTab>;
@@ -244,6 +246,8 @@ export interface AppContextValue {
   workflowAuthoringMessages: Accessor<WorkflowAuthoringMessage[]>;
   workflowAuthoringValidation: Accessor<WorkflowAuthoringValidation | null>;
   workflowAuthoringDraft: Accessor<Workflow | null>;
+  workflowAuthoringDraftPending: Accessor<boolean>;
+  updateWorkflowAuthoringDraft: (mutator: (draft: Workflow) => void) => void;
   handleOpenWorkflowAuthoring: (
     baseWorkflow?: Workflow,
     targetProjectId?: string | null,
@@ -271,6 +275,10 @@ export interface AppContextValue {
   handleRefreshSkills: () => Promise<void>;
   searchProjectFileReferences: (query: string) => Promise<ProjectFileReference[]>;
   handleToolApproval: (approvalId: string, allow: boolean) => Promise<void>;
+  handleMcpClientRequest: (
+    requestId: string,
+    decision: McpClientRequestDecision,
+  ) => Promise<void>;
   handleUpdateNodeRuntimeConfig: (
     nodeId: NodeId,
     update: import("../lib/types").NodeRuntimeConfigUpdate,

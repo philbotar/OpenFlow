@@ -11,10 +11,10 @@ This app is **not heavily threaded**. In the desktop app, orchestration uses the
 1. **Runtime split outside Tauri** when tests or helper entry points construct `AppBackend` with a separate owned runtime.
 2. **Blocking I/O coverage** that depends on dispatching filesystem and subprocess work through `spawn_blocking`.
 3. **Layer-bounded concurrency** — independent nodes only overlap while they share a ready layer; later layers still wait.
-4. **A single active-run mutex** around live run state.
+4. **Addressable run sessions** with shared provider/tool budgets and one mutation lease per canonical execution cwd.
 5. **Many sync Tauri commands** doing filesystem or settings I/O on the command thread pool.
 
-Tool execution has per-tool semaphores for `ToolConcurrency::Exclusive`, but workflow runs themselves are still single-active-run.
+Each run retains its own per-tool semaphores for `ToolConcurrency::Exclusive`. All runs also share process-wide provider and executable-tool budgets. Registered sessions have no fixed count limit.
 
 ---
 
@@ -45,8 +45,10 @@ flowchart TB
 
     UI -->|"invoke()"| TC
     UI -->|"listen('run-state')"| EB
-    TC -->|"lock RunSession"| RS[("tokio::Mutex RunSession")]
-    EB -->|"apply_execution_event"| RS
+    TC -->|"lookup run_id"| RR[("RunRegistry")]
+    EB -->|"apply_execution_event_for(run_id)"| RR
+    RR --> RS1[("RunSession A")]
+    RR --> RS2[("RunSession B")]
     TC -->|"action_tx.send()"| CH[["Unbounded MPSC"]]
     EX -->|"event_tx.send()"| CH
     CH --> EB
@@ -219,10 +221,11 @@ sequenceDiagram
 
 | Issue | Detail |
 | --- | --- |
-| **Single mutex** | Every event apply + every user input + every approval contends on `run_session` |
+| **Per-run mutex** | Events and controls for one run contend on that run's `RunSession`; independent runs do not share the session lock |
 | **Clone on hot path** | `apply_execution_event` clones full `Workflow` and `WorkflowRunState` each event |
 | **Unbounded channels** | `unbounded_channel()` - fast event bursts can grow memory without backpressure |
-| **Single active run** | New `start_run` aborts previous handle - no concurrent runs |
+| **Shared capacity** | Sessions are unbounded, while provider calls and executable tools wait on shared process budgets |
+| **Same-cwd mutations** | Write-capable runs sharing a canonical cwd serialize for the whole run; read-only runs and different roots can overlap |
 
 ---
 
@@ -258,7 +261,9 @@ flowchart LR
 
 `ToolPortImpl` runs adjacent shared tools in parallel. Exclusive tools acquire a per-tool `tokio::sync::Semaphore` before execution (`crates/orchestration/src/run/execution/tool_port.rs`). This protects tools such as write, edit, bash, and apply-patch from running concurrently with the same tool name inside a run.
 
-This is not a full bulkhead model. It does not cap all provider calls, all read tools, or all workflow runs globally.
+All runs also acquire process-wide permits in `run/resources.rs`: 8 concurrent provider invocations
+and 16 concurrent executable tools by default. These budgets queue work; they never reject or cap
+registered run sessions.
 
 ---
 
@@ -271,7 +276,7 @@ This is not a full bulkhead model. It does not cap all provider calls, all read 
 | **P1** | Sync Tauri commands for persistence | Invoke hangs on save/load during heavy I/O |
 | **P2** | Subagents in nested loop, same task | Parent node frozen while subagent runs |
 | **P2** | Unbounded event channel | Memory growth on chatty runs |
-| **P3** | Tool semaphores are per tool name and per run | No global cap across runs or providers |
+| **P3** | Shared budget sizes are fixed defaults | Provider-specific quotas cannot be tuned independently yet |
 
 ---
 
@@ -297,7 +302,7 @@ tokio::task::spawn_blocking(move || {
 ### C. Tune layer concurrency (already parallel)
 
 - Ready nodes in a layer already share one `FuturesUnordered` pool.
-- Follow-ups: caps on concurrent provider calls, fairer event ordering under load, or isolating per-node cancellation without draining siblings.
+- Follow-ups: fairer permit ordering under load or isolating per-node cancellation without draining siblings.
 
 ### D. Async persistence commands
 
@@ -309,10 +314,10 @@ tokio::task::spawn_blocking(move || {
 - Replace `unbounded_channel` with `bounded_channel(N)`
 - Or batch events before emit to reduce IPC churn
 
-### F. Broaden tool concurrency limits
+### F. Make shared budgets configurable
 
-- Add global caps for expensive read tools if large repositories starve the blocking pool.
-- Cap concurrent provider calls if multi-node layers saturate upstream rate limits.
+- Add per-provider overrides for upstream rate limits.
+- Add workload-specific tool budgets if large repositories starve the blocking pool.
 
 ---
 
@@ -324,7 +329,7 @@ flowchart TB
         direction TB
         W1["1 process"]
         W2["injected Tauri runtime handle"]
-        W3["1 run at a time"]
+        W3["addressable concurrent top-level runs"]
         W4["1 execution task per run"]
         W5["ready layer work concurrent"]
         W6["shared tools can run in parallel"]
@@ -337,8 +342,8 @@ flowchart TB
         N1["thread pools per subsystem"]
         N2["cross-layer node overlap"]
         N3["async persistence commands"]
-        N4["global bulkheads"]
-        N5["concurrent workflow runs"]
+        N4["per-provider budget tuning"]
+        N5["parallel same-cwd mutation without isolated worktrees"]
     end
 
     WhatYouHave --- WhatYouDontHave

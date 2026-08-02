@@ -31,6 +31,8 @@ where
     pub pending_engine_reverts: Arc<Mutex<Vec<EditBatch>>>,
     pub checkpoint_sink: Arc<Mutex<Option<PendingRunCheckpoint>>>,
     pub aborted_emitted: Arc<Mutex<bool>>,
+    pub mcp_client_request_rx:
+        Option<tokio::sync::mpsc::UnboundedReceiver<crate::adapters::mcp::McpRunClientRequest>>,
 }
 
 /// Construct a fresh engine or restore one from a persisted checkpoint.
@@ -134,7 +136,7 @@ where
     A: AiPort + Send + Sync + 'static,
 {
     let InteractiveWorkflowRunParams {
-        workflow,
+        mut workflow,
         entrypoint,
         entrypoint_attachments,
         execution_cwd,
@@ -153,8 +155,11 @@ where
         node_interrupts,
         context_window_sizes,
         mcp,
+        prepared_mcp,
         search,
         runtime_config_store,
+        tool_budget,
+        mutation_gate: _,
     } = params;
 
     let mcp_notice_node_id = entrypoint
@@ -162,7 +167,28 @@ where
         .and_then(|id| workflow.nodes.iter().find(|node| node.id.0 == id))
         .or_else(|| workflow.nodes.first())
         .map(|node| node.id.clone());
-    let mut engine = build_engine(
+    let mut tool_registry = ToolRegistry::new();
+    let effective_servers = crate::adapters::mcp::effective_mcp_servers(&mcp, &execution_cwd);
+    let effective_mcp = crate::settings::model::McpSettings {
+        servers: effective_servers,
+        discover_external: mcp.discover_external,
+        disabled_discovered_ids: mcp.disabled_discovered_ids.clone(),
+        registry_base_url: mcp.registry_base_url.clone(),
+    };
+
+    let (mcp_clients, mut mcp_issues) = match prepared_mcp {
+        Some(prepared) => prepared,
+        None => {
+            crate::adapters::mcp::McpRunClients::connect_for_run(
+                &effective_mcp,
+                project_repository_root.as_deref(),
+            )
+            .await
+        }
+    };
+    mcp_clients.resolve_workflow_context(&mut workflow).await;
+    mcp_issues.extend(mcp_clients.subscribe_workflow_resources(&workflow).await);
+    let mut engine = match build_engine(
         workflow.clone(),
         entrypoint,
         entrypoint_attachments,
@@ -171,20 +197,11 @@ where
         project_repository_root
             .as_ref()
             .map(|path| path.display().to_string()),
-    )?;
-
-    engine.set_runtime_config_store(runtime_config_store.clone());
-
-    let mut tool_registry = ToolRegistry::new();
-    let effective_servers = crate::adapters::mcp::effective_mcp_servers(&mcp, &execution_cwd);
-    let effective_mcp = crate::settings::model::McpSettings {
-        servers: effective_servers,
-        discover_external: mcp.discover_external,
-        disabled_discovered_ids: mcp.disabled_discovered_ids.clone(),
+    ) {
+        Ok(engine) => engine,
+        Err(error) => return Err(close_mcp_after_setup_error(&mcp_clients, error).await),
     };
-
-    let (mcp_clients, mut mcp_issues) =
-        crate::adapters::mcp::McpRunClients::connect(&effective_mcp).await;
+    engine.set_runtime_config_store(runtime_config_store.clone());
     let (definitions, definition_issues) = mcp_clients.list_all_tool_definitions().await;
     mcp_issues.extend(definition_issues);
     for issue in mcp_issues {
@@ -221,6 +238,7 @@ where
         }
     };
 
+    let mcp_client_request_rx = mcp_clients.take_client_request_receiver();
     let tool_runner = Arc::new(
         ToolRunner::new(
             tool_registry,
@@ -264,7 +282,8 @@ where
         node_interrupts_for_tools,
         Arc::clone(&aborted_emitted),
         runtime_config_store,
-    );
+    )
+    .with_tool_budget(tool_budget);
 
     Ok(RunWiring {
         engine,
@@ -275,5 +294,6 @@ where
         pending_engine_reverts,
         checkpoint_sink,
         aborted_emitted,
+        mcp_client_request_rx,
     })
 }

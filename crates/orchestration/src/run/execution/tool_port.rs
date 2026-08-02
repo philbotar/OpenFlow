@@ -33,6 +33,7 @@ pub struct ToolPortImpl<A> {
     node_interrupts: NodeInterrupts,
     aborted_emitted: Arc<parking_lot::Mutex<bool>>,
     exclusive_locks: Arc<ExclusiveLocks>,
+    tool_budget: Arc<Semaphore>,
     runtime_config_store: NodeRuntimeConfigStore,
 }
 
@@ -77,8 +78,15 @@ where
             node_interrupts,
             aborted_emitted,
             exclusive_locks: Arc::new(ExclusiveLocks::default()),
+            tool_budget: Arc::new(Semaphore::new(16)),
             runtime_config_store,
         }
+    }
+
+    #[must_use]
+    pub(crate) fn with_tool_budget(mut self, tool_budget: Arc<Semaphore>) -> Self {
+        self.tool_budget = tool_budget;
+        self
     }
 
     pub fn tool_runner(&self) -> &Arc<ToolRunner> {
@@ -296,9 +304,15 @@ where
             let event_tx = self.event_tx.clone();
             let retry_policy = retry_policy.clone();
             let exclusive_locks = Arc::clone(&self.exclusive_locks);
+            let tool_budget = Arc::clone(&self.tool_budget);
             let exclusive_keys = self.exclusive_lock_keys_for(node_id, &call);
             join_handles.push(tokio::spawn(async move {
                 let _permits = exclusive_locks.acquire(exclusive_keys).await;
+                let _tool_permit = tokio::select! {
+                    biased;
+                    () = cancel_token.cancelled() => return None,
+                    permit = tool_budget.acquire_owned() => permit.ok()?,
+                };
                 let conversation_id = node_id_for_task.0.clone();
                 let ctx = ToolExecutionContext {
                     node_id: node_id_for_task.clone(),
@@ -612,6 +626,16 @@ where
         let wait_started = Instant::now();
         let exclusive_permits = self.exclusive_permits(node_id, &tool_call).await;
         maybe_emit_exclusive_wait(&self.event_tx, node_id, &tool_name, wait_started.elapsed());
+        let _tool_permit = tokio::select! {
+            biased;
+            () = self.cancel_token.cancelled() => {
+                abort_run(&self.event_tx, self.aborted_emitted.as_ref());
+                return None;
+            }
+            permit = Arc::clone(&self.tool_budget).acquire_owned() => {
+                permit.expect("shared tool semaphore remains open")
+            },
+        };
         let started = Instant::now();
         let node_token = self.node_interrupt_token(node_id);
         let policy = self.workflow.settings.retry_policy.clone();
@@ -795,11 +819,10 @@ fn exclusive_lock_keys(
         return fallback;
     }
     if kind == Kind::Mcp {
-        let server_id = call
-            .name
-            .strip_prefix("mcp/")
-            .and_then(|name| name.split_once('/'))
-            .map_or_else(|| call.name.as_str(), |(server_id, _)| server_id);
+        let parsed = crate::adapters::mcp::parse_namespaced_tool_name(&call.name).ok();
+        let server_id = parsed
+            .as_ref()
+            .map_or_else(|| call.name.as_str(), |(server_id, _)| server_id.as_str());
         return vec![format!("mcp-server:{server_id}")];
     }
     let keys = match kind {
@@ -1036,7 +1059,7 @@ mod tests {
             ToolCall {
                 id: "mcp".to_string(),
                 provider_call_id: None,
-                name: "mcp/example".to_string(),
+                name: "mcp_7_example_tool".to_string(),
                 arguments: serde_json::json!({}),
             },
             ToolCall {
@@ -1381,7 +1404,7 @@ mod tests {
             BuiltinToolKind::Mcp,
             ToolConcurrency::Exclusive,
             &node("a"),
-            &call("mcp/server/write", serde_json::json!({})),
+            &call("mcp_6_server_write", serde_json::json!({})),
         );
         assert_eq!(keys, vec!["mcp-server:server".to_string()]);
     }

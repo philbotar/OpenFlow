@@ -1,7 +1,9 @@
 use crate::api::{ProviderReadiness, WorkflowValidationSummary};
 use crate::error::BackendError;
 use crate::settings::codex_login::{CodexLoginCoordinator, CodexLoginStatus};
-use crate::settings::model::{merge_preserved_secrets, AppSettings};
+use crate::settings::model::{
+    merge_preserved_mcp_env, merge_preserved_secrets, AppSettings, McpServerConfig,
+};
 use crate::settings::ports::{SettingsStore, SkillCatalog, SkillSummary};
 use crate::settings::provider::{
     active_provider_env_var, active_provider_label, resolve_provider_config, ProviderConfigError,
@@ -56,10 +58,53 @@ impl SettingsFacade {
         Ok(self.store.load()?.redacted())
     }
 
+    pub(crate) fn hydrate_mcp_server(
+        &self,
+        mut incoming: McpServerConfig,
+    ) -> Result<McpServerConfig, BackendError> {
+        let settings = self.store.load()?;
+        if let Some(existing) = settings
+            .mcp
+            .servers
+            .iter()
+            .find(|server| server.id == incoming.id)
+        {
+            merge_preserved_mcp_env(&mut incoming, existing);
+        }
+        Ok(incoming)
+    }
+
     /// # Errors
     /// Returns an error if the settings file cannot be written.
     pub fn save(&self, settings: &AppSettings) -> Result<(), BackendError> {
         self.store.save(settings).map_err(BackendError::from)
+    }
+
+    pub fn save_mcp_secret(
+        &self,
+        server_id: &str,
+        slot: &str,
+        value: &str,
+    ) -> Result<String, BackendError> {
+        if value.is_empty() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "MCP secret value must not be empty",
+            )
+            .into());
+        }
+        let secret_ref =
+            crate::mcp::ports::mcp_secret_ref(server_id, slot).map_err(std::io::Error::other)?;
+        self.store.set_mcp_secret(&secret_ref, value)?;
+        Ok(secret_ref.to_string())
+    }
+
+    pub fn delete_mcp_secret(&self, secret_ref: &str) -> Result<(), BackendError> {
+        let secret_ref = secret_ref
+            .parse::<crate::mcp::ports::McpSecretRef>()
+            .map_err(std::io::Error::other)?;
+        self.store.delete_mcp_secret(&secret_ref)?;
+        Ok(())
     }
 
     /// # Errors
@@ -350,4 +395,82 @@ impl SettingsFacade {
 
 fn map_agent_error_to_backend(error: AgentError) -> BackendError {
     BackendError::from(std::io::Error::other(error.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mcp::model::{
+        McpConnection, McpInstall, McpServerRecord, McpServerSource, PersistedValue,
+    };
+    use std::collections::BTreeMap;
+    use std::io;
+
+    struct StaticSettingsStore(AppSettings);
+
+    impl SettingsStore for StaticSettingsStore {
+        fn load(&self) -> io::Result<AppSettings> {
+            Ok(self.0.clone())
+        }
+
+        fn save(&self, _settings: &AppSettings) -> io::Result<()> {
+            Ok(())
+        }
+
+        fn save_raw(&self, _settings: &AppSettings) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    struct EmptySkillCatalog;
+
+    impl SkillCatalog for EmptySkillCatalog {
+        fn discover(&self, _search_paths: &[String]) -> io::Result<Vec<SkillSummary>> {
+            Ok(Vec::new())
+        }
+    }
+
+    #[test]
+    fn hydrate_mcp_server_restores_redacted_environment_values() {
+        let mut settings = AppSettings::default();
+        let server = |value: &str| {
+            let mut server = McpServerRecord::new(
+                "massive",
+                "Massive",
+                McpServerSource::Manual,
+                McpInstall::External,
+                McpConnection::Stdio {
+                    command: "mcp_massive".to_string(),
+                    args: Vec::new(),
+                    environment: BTreeMap::from([(
+                        "MASSIVE_API_KEY".to_string(),
+                        PersistedValue::Literal {
+                            value: value.to_string(),
+                        },
+                    )]),
+                },
+            );
+            server.enabled = true;
+            server
+        };
+        settings.mcp.servers.push(server("secret"));
+        let facade = SettingsFacade::new(
+            Arc::new(StaticSettingsStore(settings)),
+            Box::new(EmptySkillCatalog),
+            ProviderEnv::default(),
+        );
+        let input = server("");
+
+        let hydrated = facade.hydrate_mcp_server(input).expect("hydrate");
+
+        let McpConnection::Stdio { environment, .. } = hydrated.connection else {
+            panic!("stdio server");
+        };
+        assert_eq!(
+            environment["MASSIVE_API_KEY"],
+            PersistedValue::Literal {
+                value: "secret".to_string()
+            }
+        );
+    }
 }

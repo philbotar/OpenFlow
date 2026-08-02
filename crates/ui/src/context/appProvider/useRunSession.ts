@@ -36,7 +36,6 @@ interface UseRunSessionParams {
   executionCwdForActiveWorkflow: Accessor<string | null>;
   applySchemaEditor: () => boolean;
   runState: Accessor<WorkflowRunState | null>;
-  backendRunWorkflowId: Accessor<string | null>;
   setBackendRunWorkflowId: Setter<string | null>;
   publishBackendRunState: (nextRunState: WorkflowRunState) => void;
   clearStatusToast: () => void;
@@ -47,6 +46,7 @@ interface UseRunSessionParams {
   uiZoom: Accessor<number>;
   isCompactViewport: Accessor<boolean>;
   cacheRunStateForWorkflow: (workflowId: string, state: WorkflowRunState) => void;
+  runStateByWorkflowId: Record<string, WorkflowRunState>;
   applyRunStateSnapshot: (next: WorkflowRunState | null) => void;
   chatSubmissionFor: (nodeId: NodeId) => {
     submittedText: string;
@@ -64,8 +64,9 @@ export function useRunSession(params: UseRunSessionParams) {
   const [startingRun, setStartingRun] = createSignal(false);
   const [stoppingRun, setStoppingRun] = createSignal(false);
   const [continuableRunBackend, setContinuableRunBackend] = createSignal(false);
+  const selectedRunId = () => params.runState()?.runId ?? null;
   const continuableRun = createMemo(
-    () => continuableRunBackend() && params.backendRunWorkflowId() === params.activeWorkflowId(),
+    () => continuableRunBackend() && selectedRunId() !== null,
   );
   const [runHistory, setRunHistory] = createSignal<RunSummary[]>([]);
   const [runHistoryLoading, setRunHistoryLoading] = createSignal(false);
@@ -97,8 +98,11 @@ export function useRunSession(params: UseRunSessionParams) {
     if (workflowId) {
       params.setBackendRunWorkflowId(workflowId);
     }
+    const addressedState = nextRunState.workflowId || !workflowId
+      ? nextRunState
+      : { ...nextRunState, workflowId };
     setReplayRunId(null);
-    params.publishBackendRunState(nextRunState);
+    params.publishBackendRunState(addressedState);
     setContinuableRunBackend(false);
     setSelectedTraceIndex(null);
     focusChatTab();
@@ -113,7 +117,7 @@ export function useRunSession(params: UseRunSessionParams) {
       return initialState;
     }
     try {
-      const liveState = await desktop.getRunState();
+      const liveState = await desktop.getRunState(initialState.runId);
       if (liveState?.runId === initialState.runId) {
         params.publishBackendRunState(liveState);
         return liveState;
@@ -125,8 +129,13 @@ export function useRunSession(params: UseRunSessionParams) {
   };
 
   const refreshContinuableRun = async () => {
+    const runId = selectedRunId();
+    if (!runId) {
+      setContinuableRunBackend(false);
+      return;
+    }
     try {
-      setContinuableRunBackend(await desktop.isRunContinuable());
+      setContinuableRunBackend(await desktop.isRunContinuable(runId));
     } catch {
       setContinuableRunBackend(false);
     }
@@ -161,15 +170,6 @@ export function useRunSession(params: UseRunSessionParams) {
           params.activeProviderKeyInput() || null,
           message,
         );
-
-  const submitChatInput = (
-    nodeId: NodeId,
-    message: UserMessageInput,
-    invokedSkillIds: readonly string[],
-  ) =>
-    invokedSkillIds.length > 0
-      ? desktop.submitUserInput(nodeId, message, invokedSkillIds)
-      : desktop.submitUserInput(nodeId, message);
 
   const handleRun = async () => {
     const workflow = params.activeWorkflow();
@@ -394,6 +394,7 @@ export function useRunSession(params: UseRunSessionParams) {
     setStartingRun(true);
     try {
       const nextRunState = await desktop.continueRun(
+        selectedRunId()!,
         workflow,
         params.settings(),
         params.activeProviderKeyInput() || null,
@@ -407,10 +408,11 @@ export function useRunSession(params: UseRunSessionParams) {
   };
 
   const handleStopRun = async () => {
-    if (!params.runState()?.active || stoppingRun()) return;
+    const runId = selectedRunId();
+    if (!runId || !params.runState()?.active || stoppingRun()) return;
     setStoppingRun(true);
     try {
-      const nextRunState = await desktop.stopRun();
+      const nextRunState = await desktop.stopRun(runId);
       params.publishBackendRunState(nextRunState);
       await refreshContinuableRun();
       params.clearStatusToast();
@@ -422,26 +424,30 @@ export function useRunSession(params: UseRunSessionParams) {
   };
 
   const handleInterruptNode = async (nodeId: NodeId) => {
-    if (!params.runState()?.active) return;
+    const runId = selectedRunId();
+    if (!runId || !params.runState()?.active) return;
     try {
-      await desktop.interruptNode(nodeId);
+      await desktop.interruptNode(runId, nodeId);
     } catch (error) {
       params.showErrorToast(normalizeError(error));
     }
   };
 
   const handleRetryNode = async (nodeId: NodeId) => {
-    if (!params.runState()?.active) return;
+    const runId = selectedRunId();
+    if (!runId || !params.runState()?.active) return;
     try {
-      await desktop.retryNode(nodeId);
+      await desktop.retryNode(runId, nodeId);
     } catch (error) {
       params.showErrorToast(normalizeError(error));
     }
   };
 
   const handleClearRunTrace = async () => {
+    const runId = selectedRunId();
+    if (!runId) return;
     try {
-      const nextRunState = await desktop.clearRunTrace();
+      const nextRunState = await desktop.clearRunTrace(runId);
       if (nextRunState) params.publishBackendRunState(nextRunState);
       setContinuableRunBackend(false);
       setSelectedTraceIndex(null);
@@ -494,9 +500,10 @@ export function useRunSession(params: UseRunSessionParams) {
       return;
     }
     const workflowId = workflow.id;
-    if (params.backendRunWorkflowId() === workflowId) {
+    const cachedRunId = params.runStateByWorkflowId[workflowId]?.runId;
+    if (cachedRunId) {
       try {
-        const live = await desktop.getRunState();
+        const live = await desktop.getRunState(cachedRunId);
         if (live && params.activeWorkflowId() === workflowId && !replayRunId()) {
           params.cacheRunStateForWorkflow(workflowId, live);
           params.applyRunStateSnapshot(live);
@@ -546,8 +553,24 @@ export function useRunSession(params: UseRunSessionParams) {
   };
 
   const handleToolApproval = async (approvalId: string, allow: boolean) => {
+    const runId = selectedRunId();
+    if (!runId) return;
     try {
-      const nextRunState = await desktop.submitToolApproval(approvalId, allow);
+      const nextRunState = await desktop.submitToolApproval(runId, approvalId, allow);
+      params.publishBackendRunState(nextRunState);
+    } catch (error) {
+      params.showErrorToast(normalizeError(error));
+    }
+  };
+
+  const handleMcpClientRequest = async (
+    requestId: string,
+    decision: import("../../lib/types").McpClientRequestDecision,
+  ) => {
+    const runId = selectedRunId();
+    if (!runId) return;
+    try {
+      const nextRunState = await desktop.resolveMcpClientRequest(runId, requestId, decision);
       params.publishBackendRunState(nextRunState);
     } catch (error) {
       params.showErrorToast(normalizeError(error));
@@ -574,6 +597,7 @@ export function useRunSession(params: UseRunSessionParams) {
         return;
       }
       const next = await desktop.updateNodeRuntimeConfig(
+        state.runId!,
         nodeId,
         runtimeUpdateForChat(updated.config),
       );
@@ -608,11 +632,12 @@ export function useRunSession(params: UseRunSessionParams) {
         node.agent.reasoningBudgetTokens = update.reasoningBudgetTokens;
       }
     });
-    if (!params.runState()?.active) {
+    const runId = selectedRunId();
+    if (!runId || !params.runState()?.active) {
       return;
     }
     try {
-      await desktop.updateNodeRuntimeConfig(nodeId, update);
+      await desktop.updateNodeRuntimeConfig(runId, nodeId, update);
     } catch (error) {
       params.showErrorToast(normalizeError(error));
     }
@@ -648,6 +673,7 @@ export function useRunSession(params: UseRunSessionParams) {
     handleResumeDurableRun,
     searchProjectFileReferences,
     handleToolApproval,
+    handleMcpClientRequest,
     handleUpdateChatConfig,
     handleUpdateNodeRuntimeConfig,
   };

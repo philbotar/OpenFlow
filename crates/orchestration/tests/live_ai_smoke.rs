@@ -182,6 +182,38 @@ async fn wait_for_chat_pause(
     .map_err(|_| format!("{phase}: chat did not pause within 90 seconds"))?
 }
 
+async fn wait_for_chat_pause_for(
+    backend: &AppBackend,
+    run_id: &str,
+    event_rx: &mut tokio::sync::mpsc::UnboundedReceiver<
+        orchestration::run::execution::ExecutionEvent,
+    >,
+    phase: &str,
+) -> Result<orchestration::run::state::WorkflowRunState, String> {
+    tokio::time::timeout(std::time::Duration::from_secs(90), async {
+        while let Some(event) = event_rx.recv().await {
+            let state = backend
+                .apply_execution_event_for(run_id, event)
+                .await
+                .map_err(|error| format!("{phase}: apply execution event: {error}"))?;
+            if state.awaiting_node_id.is_some() {
+                return Ok(state);
+            }
+            if !state.active {
+                return Err(format!(
+                    "{phase}: chat stopped before awaiting input: {:?}",
+                    state.last_error
+                ));
+            }
+        }
+        Err(format!(
+            "{phase}: chat event channel closed before awaiting input"
+        ))
+    })
+    .await
+    .map_err(|_| format!("{phase}: chat did not pause within 90 seconds"))?
+}
+
 fn require_answer_tokens(
     state: &orchestration::run::state::WorkflowRunState,
     tokens: &[&str],
@@ -251,6 +283,47 @@ fn prepare_attachment_smoke_chat(
     Ok((backend, chat.id))
 }
 
+fn prepare_concurrent_smoke_chats(
+    context: &SmokeContext,
+    dir: &std::path::Path,
+) -> Result<(AppBackend, String, String), String> {
+    let backend = AppBackend::new(
+        AppBackendDeps {
+            workflow_store: Box::new(FileWorkflowStore::new(dir.join("workflows.json"))),
+            chat_store: Box::new(FileChatStore::new(dir.join("chats.json"))),
+            project_workflow_store: Box::new(FileProjectWorkflowStore),
+            agent_store: Box::new(FileAgentStore::new(dir.join("agents.json"))),
+            project_store: Box::new(FileProjectStore::new(dir.join("projects.json"))),
+            settings_store: Arc::new(FileSettingsStore::new(FileSettingsStore::default_path())),
+            skill_catalog: Box::new(FileSkillCatalog),
+            env: ProviderEnv::from_system(),
+            runtime_handle: tokio::runtime::Handle::current(),
+            attachment_store: Arc::new(FileRunAttachmentStore::default()),
+            app_runs_root: dir.join("runs"),
+            managed_workspace_root: dir.join("workspaces"),
+        },
+        None,
+    );
+    let chat_a = backend
+        .create_chat()
+        .map_err(|error| format!("create chat A: {error}"))?;
+    let chat_b = backend
+        .create_chat()
+        .map_err(|error| format!("create chat B: {error}"))?;
+    for chat_id in [&chat_a.id, &chat_b.id] {
+        backend
+            .update_chat_config(
+                chat_id,
+                ChatConfig {
+                    model: Some(context.model.clone()),
+                    ..ChatConfig::default()
+                },
+            )
+            .map_err(|error| format!("configure concurrent chat: {error}"))?;
+    }
+    Ok((backend, chat_a.id, chat_b.id))
+}
+
 async fn smoke_attachment_replay(
     context: &SmokeContext,
     dir: &std::path::Path,
@@ -306,10 +379,10 @@ async fn smoke_attachment_replay(
         .map_err(|error| format!("{label}: stop before durable replay: {error}"))?;
     drop(event_rx);
 
-    let (resumed_state, mut resumed_event_rx, _) = backend
-        .resume_durable_run(&run_id, &context.settings, None)
-        .await
-        .map_err(|error| format!("{label}: resume durable run: {error}"))?;
+    let (resumed_state, mut resumed_event_rx, _) =
+        Box::pin(backend.resume_durable_run(&run_id, &context.settings, None))
+            .await
+            .map_err(|error| format!("{label}: resume durable run: {error}"))?;
     let resumed_state = if resumed_state.awaiting_node_id.is_some()
         || !resumed_state.awaiting_node_ids.is_empty()
     {
@@ -565,6 +638,107 @@ async fn saved_provider_direct_chat_probe() {
     assert_eq!(structured.questions[0].options.len(), 2);
 
     backend.stop_run().await.expect("stop chat");
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+#[ignore = "manual only: probes concurrent direct chats through the saved provider"]
+async fn saved_provider_concurrent_direct_chat_probe() {
+    assert_eq!(
+        std::env::var(ENABLE_ENV).as_deref(),
+        Ok("1"),
+        "set OPENFLOW_LIVE_AI_SMOKE=1 to enable"
+    );
+    let context = load_smoke_context().expect("load saved provider");
+    println!(
+        "Concurrent live chat smoke: provider={} ({}) model={} transport={}",
+        context.provider_label, context.provider_id, context.model, context.transport_label
+    );
+
+    let dir = tempdir().expect("tempdir");
+    let (backend, chat_a, chat_b) = prepare_concurrent_smoke_chats(&context, dir.path())
+        .expect("prepare concurrent smoke chats");
+
+    let started_at = std::time::Instant::now();
+    let (_, state_a, mut events_a) = backend
+        .start_chat(
+            &chat_a,
+            Some("Reply with exactly ALPHA-731 and no other text.".to_string()),
+            &context.settings,
+            None,
+        )
+        .await
+        .expect("start chat A");
+    let run_a = state_a.run_id.clone().expect("chat A run ID");
+    let (_, state_b, mut events_b) = backend
+        .start_chat(
+            &chat_b,
+            Some("Reply with exactly BRAVO-842 and no other text.".to_string()),
+            &context.settings,
+            None,
+        )
+        .await
+        .expect("start chat B");
+    let run_b = state_b.run_id.clone().expect("chat B run ID");
+    assert_ne!(run_a, run_b);
+
+    let active_run_ids = backend
+        .active_run_states()
+        .await
+        .into_iter()
+        .filter_map(|state| state.run_id)
+        .collect::<Vec<_>>();
+    assert!(active_run_ids.contains(&run_a));
+    assert!(active_run_ids.contains(&run_b));
+
+    let (paused_a, paused_b) = tokio::join!(
+        wait_for_chat_pause_for(&backend, &run_a, &mut events_a, "concurrent chat A"),
+        wait_for_chat_pause_for(&backend, &run_b, &mut events_b, "concurrent chat B")
+    );
+    let paused_a = paused_a.expect("chat A response");
+    let paused_b = paused_b.expect("chat B response");
+    require_answer_tokens(&paused_a, &["ALPHA-731"], "concurrent chat A").expect("chat A sentinel");
+    require_answer_tokens(&paused_b, &["BRAVO-842"], "concurrent chat B").expect("chat B sentinel");
+
+    backend
+        .stop_run_for(&run_a)
+        .await
+        .expect("stop only chat A");
+    assert!(!backend.is_run_active_for(&run_a).await);
+    assert!(backend.is_run_active_for(&run_b).await);
+
+    let node_b = paused_b
+        .awaiting_node_id
+        .as_ref()
+        .expect("chat B awaiting node")
+        .clone();
+    backend
+        .submit_user_message_with_skill_ids_for(
+            &run_b,
+            &node_b,
+            UserMessageInput::text(
+                "Chat A was stopped. Reply with exactly SURVIVOR-953 and no other text.",
+            ),
+            Vec::new(),
+        )
+        .await
+        .expect("continue chat B after stopping chat A");
+    let survivor = wait_for_chat_pause_for(
+        &backend,
+        &run_b,
+        &mut events_b,
+        "concurrent chat B survivor",
+    )
+    .await
+    .expect("chat B survivor response");
+    require_answer_tokens(&survivor, &["SURVIVOR-953"], "concurrent chat B survivor")
+        .expect("chat B survivor sentinel");
+    backend.stop_run_for(&run_b).await.expect("stop chat B");
+
+    println!(
+        "PASS  two concurrent chats, addressed stop, survivor continuation ({:?})",
+        started_at.elapsed()
+    );
 }
 
 #[cfg_attr(miri, ignore)]

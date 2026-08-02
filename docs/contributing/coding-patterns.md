@@ -62,9 +62,10 @@ Keep these execution rules in `crates/orchestration/src/run/**` and `crates/engi
 
 ## Persistence conventions
 
-1. All app persistence files live under `{data_local}/openflow/` (`agents.json`, `projects.json`, `workflows.json`, `settings.json`).
+1. All app persistence files live under `{data_local}/openflow/` (`agents.json`, `projects.json`, `workflows.json`, `settings.json`, `mcp-secrets.json`).
 2. Project workflow files use the `{workflowId}.workflow.json` suffix under `.flow/workflows/`.
 3. Provider API keys persist in `settings.json` on each `ProviderProfile.api_key` (plaintext on disk). UI loads settings redacted and fetches keys via dedicated IPC. Env vars (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, and provider-specific fallbacks) remain fallbacks.
+4. MCP inputs and OAuth credentials persist in `mcp-secrets.json` (plaintext, mode `0600` on Unix). MCP config stores opaque `mcp-secret:v1:*` refs only.
 
 ## Implementation conventions
 

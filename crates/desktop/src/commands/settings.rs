@@ -64,11 +64,200 @@ pub fn append_debug_log(
 }
 
 #[tauri::command]
+pub fn import_mcp_config(
+    backend: tauri::State<AppBackend>,
+    content: String,
+) -> Result<orchestration::api::McpConfigImport, CommandError> {
+    Ok(backend.import_mcp_config(&content)?)
+}
+
+#[tauri::command]
+pub fn apply_mcp_config(
+    backend: tauri::State<AppBackend>,
+    content: String,
+) -> Result<orchestration::api::McpConfigImport, CommandError> {
+    Ok(backend.apply_mcp_config(&content)?)
+}
+
+#[tauri::command]
+pub fn export_mcp_config(backend: tauri::State<AppBackend>) -> Result<String, CommandError> {
+    Ok(backend.export_mcp_config()?)
+}
+
+#[tauri::command]
 pub async fn probe_mcp_server(
     backend: tauri::State<'_, AppBackend>,
     config: McpServerConfig,
-) -> Result<Vec<String>, CommandError> {
-    Ok(backend.probe_mcp_server(config).await?)
+    source_path: Option<String>,
+) -> Result<orchestration::api::McpProbeResult, CommandError> {
+    Ok(backend
+        .probe_mcp_server(config, source_path.as_deref())
+        .await?)
+}
+
+#[tauri::command]
+pub async fn list_mcp_capabilities(
+    backend: tauri::State<'_, AppBackend>,
+    server_id: String,
+) -> Result<orchestration::McpCapabilityCatalog, CommandError> {
+    Ok(backend.list_mcp_capabilities(&server_id).await?)
+}
+
+#[tauri::command]
+pub async fn preview_mcp_resource(
+    backend: tauri::State<'_, AppBackend>,
+    server_id: String,
+    uri: String,
+    max_bytes: u32,
+) -> Result<orchestration::McpContextSnapshot, CommandError> {
+    Ok(backend
+        .preview_mcp_resource(&server_id, &uri, max_bytes)
+        .await?)
+}
+
+#[tauri::command]
+pub async fn preview_mcp_prompt(
+    backend: tauri::State<'_, AppBackend>,
+    server_id: String,
+    name: String,
+    arguments: std::collections::BTreeMap<String, String>,
+    max_bytes: u32,
+) -> Result<orchestration::McpContextSnapshot, CommandError> {
+    Ok(backend
+        .preview_mcp_prompt(&server_id, &name, arguments, max_bytes)
+        .await?)
+}
+
+#[tauri::command]
+pub async fn start_mcp_oauth(
+    backend: tauri::State<'_, AppBackend>,
+    app: tauri::AppHandle,
+    server_id: String,
+    scopes: Vec<String>,
+) -> Result<orchestration::McpOAuthStatus, CommandError> {
+    let start = backend.start_mcp_oauth(&server_id, scopes).await?;
+    if app
+        .opener()
+        .open_url(&start.authorization_url, None::<&str>)
+        .is_err()
+    {
+        let _ = backend.disconnect_mcp_oauth(&server_id).await;
+        return Err(
+            orchestration::backend::BackendError::Io(std::io::Error::other(
+                "MCP OAuth browser could not be opened",
+            ))
+            .into(),
+        );
+    }
+    Ok(start.status)
+}
+
+#[tauri::command]
+pub async fn mcp_oauth_status(
+    backend: tauri::State<'_, AppBackend>,
+    server_id: String,
+) -> Result<orchestration::McpOAuthStatus, CommandError> {
+    Ok(backend.mcp_oauth_status(&server_id).await?)
+}
+
+#[tauri::command]
+pub async fn refresh_mcp_oauth(
+    backend: tauri::State<'_, AppBackend>,
+    server_id: String,
+) -> Result<orchestration::McpOAuthStatus, CommandError> {
+    Ok(backend.refresh_mcp_oauth(&server_id).await?)
+}
+
+#[tauri::command]
+pub async fn disconnect_mcp_oauth(
+    backend: tauri::State<'_, AppBackend>,
+    server_id: String,
+) -> Result<orchestration::McpOAuthStatus, CommandError> {
+    Ok(backend.disconnect_mcp_oauth(&server_id).await?)
+}
+
+#[tauri::command]
+pub fn save_mcp_secret(
+    backend: tauri::State<AppBackend>,
+    server_id: String,
+    slot: String,
+    value: String,
+) -> Result<String, CommandError> {
+    Ok(backend.save_mcp_secret(&server_id, &slot, &value)?)
+}
+
+#[tauri::command]
+pub fn delete_mcp_secret(
+    backend: tauri::State<AppBackend>,
+    secret_ref: String,
+) -> Result<(), CommandError> {
+    Ok(backend.delete_mcp_secret(&secret_ref)?)
+}
+
+#[tauri::command]
+pub async fn search_mcp_registry(
+    backend: tauri::State<'_, AppBackend>,
+    search: Option<String>,
+    cursor: Option<String>,
+) -> Result<orchestration::mcp::catalog::McpCatalogPage, CommandError> {
+    Ok(backend.search_mcp_registry(search, cursor).await?)
+}
+
+#[tauri::command]
+pub async fn list_mcp_registry_versions(
+    backend: tauri::State<'_, AppBackend>,
+    server_name: String,
+) -> Result<orchestration::mcp::catalog::McpCatalogPage, CommandError> {
+    Ok(backend.list_mcp_registry_versions(&server_name).await?)
+}
+
+#[tauri::command]
+pub async fn preview_mcp_registry_install(
+    backend: tauri::State<'_, AppBackend>,
+    server_name: String,
+    version: String,
+    package_index: usize,
+) -> Result<orchestration::api::McpInstallPreview, CommandError> {
+    Ok(backend
+        .preview_mcp_registry_install(&server_name, &version, package_index)
+        .await?)
+}
+
+#[tauri::command]
+pub async fn preview_mcp_registry_remote(
+    backend: tauri::State<'_, AppBackend>,
+    server_name: String,
+    version: String,
+    remote_index: usize,
+) -> Result<orchestration::api::McpInstallPreview, CommandError> {
+    Ok(backend
+        .preview_mcp_registry_remote(&server_name, &version, remote_index)
+        .await?)
+}
+
+#[tauri::command]
+pub async fn install_mcp_package(
+    backend: tauri::State<'_, AppBackend>,
+    operation_id: String,
+    server: McpServerConfig,
+) -> Result<orchestration::api::McpInstallResult, CommandError> {
+    Ok(backend.install_mcp_package(&operation_id, server).await?)
+}
+
+#[tauri::command]
+pub fn cancel_mcp_install(
+    backend: tauri::State<AppBackend>,
+    operation_id: String,
+) -> Result<bool, CommandError> {
+    Ok(backend.cancel_mcp_install(&operation_id)?)
+}
+
+#[tauri::command]
+pub fn rollback_mcp_install(
+    backend: tauri::State<AppBackend>,
+    server_id: String,
+) -> Result<McpServerConfig, CommandError> {
+    Ok(backend.rollback_mcp_install(&server_id)?)
 }
 
 #[tauri::command]

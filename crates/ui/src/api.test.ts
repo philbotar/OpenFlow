@@ -23,29 +23,50 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 
 import {
   RUN_STATE_EVENT,
+  applyMcpConfig,
   appendDebugLog,
   bootstrapApp,
   confirmNativeDialog,
   cancelCodexLogin,
+  cancelMcpInstall,
   codexLoginStatus,
   createChat,
   debugLogPath,
   deleteChat,
+  deleteMcpSecret,
   deleteWorkflow,
   disconnectCodex,
+  disconnectMcpOAuth,
+  exportMcpConfig,
   getRunState,
   listenToRunState,
   listScheduleStatuses,
   listRuns,
   listChats,
+  importMcpConfig,
+  installMcpPackage,
+  listMcpRegistryVersions,
+  listMcpCapabilities,
   loadChatAttachmentPreview,
+  loadFileChangeDiff,
   pickChatAttachmentSources,
+  probeMcpServer,
+  mcpOAuthStatus,
+  previewMcpRegistryInstall,
+  previewMcpPrompt,
+  previewMcpResource,
   replayRun,
   refreshProviderModels,
+  refreshMcpOAuth,
   refreshSchedules,
+  resolveMcpClientRequest,
   resumeDurableRun,
+  rollbackMcpInstall,
+  saveMcpSecret,
+  searchMcpRegistry,
   startWorkflowAuthoring,
   startCodexLogin,
+  startMcpOAuth,
   startRun,
   startChat,
   submitUserInput,
@@ -54,7 +75,12 @@ import {
   updateChatConfig,
   workflowAuthoringTurn,
 } from "./api";
-import type { AppSettings, DurableRunContinuationInput, Workflow } from "./lib/types";
+import type {
+  AppSettings,
+  DurableRunContinuationInput,
+  McpServerConfig,
+  Workflow,
+} from "./lib/types";
 import { createEmptyToolConfig } from "./lib/workflow/testHelpers";
 
 const settings: AppSettings = {
@@ -68,6 +94,29 @@ const workflow: Workflow = {
   nodes: [],
   edges: [],
   settings: { shared_context: "" },
+};
+
+const mcpServer: McpServerConfig = {
+  schemaVersion: 1,
+  id: "massive",
+  displayName: "Massive",
+  source: { type: "manual" },
+  install: { type: "external" },
+  connection: {
+    type: "stdio",
+    command: "mcp-massive",
+    args: ["--stdio"],
+    environment: {},
+  },
+  trust: {},
+  policy: {
+    defaultToolAccess: "write",
+    defaultToolConcurrency: "exclusive",
+    allowRoots: false,
+    allowSampling: false,
+    allowElicitation: false,
+  },
+  enabled: false,
 };
 
 describe("api desktop seam", () => {
@@ -122,6 +171,197 @@ describe("api desktop seam", () => {
     expect(invoke).toHaveBeenCalledWith("append_debug_log", { settings, entry });
   });
 
+  test("MCP import and structured probe use typed desktop commands", async () => {
+    const imported = { servers: [mcpServer], diagnostics: [] };
+    const probed = {
+      server: {
+        ...mcpServer,
+        trust: { approvedFingerprint: "sha256:approved", approvedAt: "2026-08-01T00:00:00Z" },
+      },
+      report: {
+        state: "ready" as const,
+        stage: "close" as const,
+        durationMs: 42,
+        transport: "stdio" as const,
+        protocolVersion: "2025-06-18",
+        capabilities: ["tools"],
+        toolNames: ["massive_search"],
+      },
+    };
+    invoke
+      .mockResolvedValueOnce(imported)
+      .mockResolvedValueOnce(imported)
+      .mockResolvedValueOnce('{"format":"openflow.mcp"}')
+      .mockResolvedValueOnce(probed);
+
+    await expect(importMcpConfig('{"mcpServers":{}}')).resolves.toEqual(imported);
+    await expect(applyMcpConfig('{"mcpServers":{}}')).resolves.toEqual(imported);
+    await expect(exportMcpConfig()).resolves.toContain("openflow.mcp");
+    await expect(probeMcpServer(mcpServer, "/tmp/.mcp.json")).resolves.toEqual(probed);
+
+    expect(invoke).toHaveBeenNthCalledWith(1, "import_mcp_config", {
+      content: '{"mcpServers":{}}',
+    });
+    expect(invoke).toHaveBeenNthCalledWith(2, "apply_mcp_config", {
+      content: '{"mcpServers":{}}',
+    });
+    expect(invoke).toHaveBeenNthCalledWith(3, "export_mcp_config");
+    expect(invoke).toHaveBeenNthCalledWith(4, "probe_mcp_server", {
+      config: mcpServer,
+      sourcePath: "/tmp/.mcp.json",
+    });
+  });
+
+  test("MCP secret commands send values in and return only opaque refs", async () => {
+    invoke.mockResolvedValueOnce("mcp-secret:v1:opaque").mockResolvedValueOnce(undefined);
+
+    await expect(saveMcpSecret("massive", "env.API_KEY", "secret-value")).resolves.toBe(
+      "mcp-secret:v1:opaque",
+    );
+    await deleteMcpSecret("mcp-secret:v1:opaque");
+
+    expect(invoke).toHaveBeenNthCalledWith(1, "save_mcp_secret", {
+      serverId: "massive",
+      slot: "env.API_KEY",
+      value: "secret-value",
+    });
+    expect(invoke).toHaveBeenNthCalledWith(2, "delete_mcp_secret", {
+      secretRef: "mcp-secret:v1:opaque",
+    });
+  });
+
+  test("MCP context commands preserve explicit source, arguments, and byte limits", async () => {
+    const catalog = { serverId: "docs", resources: [], prompts: [] };
+    const snapshot = {
+      kind: "resource" as const,
+      serverId: "docs",
+      source: "docs://guide",
+      content: "guide",
+      originalSizeBytes: 5,
+      includedSizeBytes: 5,
+      truncated: false,
+    };
+    invoke
+      .mockResolvedValueOnce(catalog)
+      .mockResolvedValueOnce(snapshot)
+      .mockResolvedValueOnce({ ...snapshot, kind: "prompt", source: "review" });
+
+    await listMcpCapabilities("docs");
+    await previewMcpResource("docs", "docs://guide", 4096);
+    await previewMcpPrompt("docs", "review", { topic: "Rust" }, 8192);
+
+    expect(invoke).toHaveBeenNthCalledWith(1, "list_mcp_capabilities", { serverId: "docs" });
+    expect(invoke).toHaveBeenNthCalledWith(2, "preview_mcp_resource", {
+      serverId: "docs",
+      uri: "docs://guide",
+      maxBytes: 4096,
+    });
+    expect(invoke).toHaveBeenNthCalledWith(3, "preview_mcp_prompt", {
+      serverId: "docs",
+      name: "review",
+      arguments: { topic: "Rust" },
+      maxBytes: 8192,
+    });
+  });
+
+  test("MCP OAuth commands return secret-free status DTOs", async () => {
+    const connecting = {
+      serverId: "hosted",
+      state: "connecting" as const,
+      clientId: "openflow",
+      issuer: "https://auth.example.test",
+      credentialRef: "mcp-secret:v1:opaque",
+      grantedScopes: ["tools.read"],
+    };
+    const connected = { ...connecting, state: "connected" as const };
+    const disconnected = {
+      serverId: "hosted",
+      state: "disconnected" as const,
+      grantedScopes: [],
+    };
+    invoke
+      .mockResolvedValueOnce(connecting)
+      .mockResolvedValueOnce(connected)
+      .mockResolvedValueOnce(connected)
+      .mockResolvedValueOnce(disconnected);
+
+    await expect(startMcpOAuth("hosted", ["tools.read"])).resolves.toEqual(connecting);
+    await expect(mcpOAuthStatus("hosted")).resolves.toEqual(connected);
+    await expect(refreshMcpOAuth("hosted")).resolves.toEqual(connected);
+    await expect(disconnectMcpOAuth("hosted")).resolves.toEqual(disconnected);
+
+    expect(invoke).toHaveBeenNthCalledWith(1, "start_mcp_oauth", {
+      serverId: "hosted",
+      scopes: ["tools.read"],
+    });
+    expect(invoke).toHaveBeenNthCalledWith(2, "mcp_oauth_status", { serverId: "hosted" });
+    expect(invoke).toHaveBeenNthCalledWith(3, "refresh_mcp_oauth", { serverId: "hosted" });
+    expect(invoke).toHaveBeenNthCalledWith(4, "disconnect_mcp_oauth", { serverId: "hosted" });
+    expect(JSON.stringify(connected)).not.toContain("accessToken");
+    expect(JSON.stringify(connected)).not.toContain("refreshToken");
+  });
+
+  test("MCP Registry and install commands keep exact selections typed", async () => {
+    const page = {
+      catalogBaseUrl: "https://registry.modelcontextprotocol.io/v0.1",
+      catalogLabel: "Preview",
+      servers: [],
+    };
+    const preview = {
+      server: mcpServer,
+      displayCommand: "npm install -- package@1.0.0",
+      catalogLabel: "Preview",
+      warnings: [],
+      requiresInstall: true,
+    };
+    const installed = {
+      operationId: "op-1",
+      state: "succeeded" as const,
+      stdoutTail: "",
+      stderrTail: "",
+      outputTruncated: false,
+      durationMs: 10,
+      server: mcpServer,
+    };
+    invoke
+      .mockResolvedValueOnce(page)
+      .mockResolvedValueOnce(page)
+      .mockResolvedValueOnce(preview)
+      .mockResolvedValueOnce(installed)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(mcpServer);
+
+    await searchMcpRegistry("files", "cursor-1");
+    await listMcpRegistryVersions("io.example/files");
+    await previewMcpRegistryInstall("io.example/files", "1.0.0", 0);
+    await installMcpPackage("op-1", mcpServer);
+    await cancelMcpInstall("op-1");
+    await rollbackMcpInstall("files");
+
+    expect(invoke).toHaveBeenNthCalledWith(1, "search_mcp_registry", {
+      search: "files",
+      cursor: "cursor-1",
+    });
+    expect(invoke).toHaveBeenNthCalledWith(2, "list_mcp_registry_versions", {
+      serverName: "io.example/files",
+    });
+    expect(invoke).toHaveBeenNthCalledWith(3, "preview_mcp_registry_install", {
+      serverName: "io.example/files",
+      version: "1.0.0",
+      packageIndex: 0,
+    });
+    expect(invoke).toHaveBeenNthCalledWith(4, "install_mcp_package", {
+      operationId: "op-1",
+      server: mcpServer,
+    });
+    expect(invoke).toHaveBeenNthCalledWith(5, "cancel_mcp_install", {
+      operationId: "op-1",
+    });
+    expect(invoke).toHaveBeenNthCalledWith(6, "rollback_mcp_install", {
+      serverId: "files",
+    });
+  });
+
   test("startRun forwards workflow, settings, project, key, and structured message", async () => {
     const message = { text: "Kickoff text", attachmentSourcePaths: ["/tmp/image.png"] };
     await startRun(workflow, settings, "project-1", "sk-test", message);
@@ -139,7 +379,7 @@ describe("api desktop seam", () => {
     const message = { text: "Inspect", attachmentSourcePaths: ["/tmp/screenshot.png"] };
     await startRun(workflow, settings, null, null, message, ["systematic-debugging"]);
     await startChat("chat-1", settings, null, message, ["browser"]);
-    await submitUserInput("node-1", message, ["tdd"]);
+    await submitUserInput("run-1", "node-1", message, ["tdd"]);
 
     expect(invoke).toHaveBeenNthCalledWith(1, "start_run", {
       workflow,
@@ -157,6 +397,7 @@ describe("api desktop seam", () => {
       invokedSkillIds: ["browser"],
     });
     expect(invoke).toHaveBeenNthCalledWith(3, "submit_user_input", {
+      runId: "run-1",
       nodeId: "node-1",
       message,
       invokedSkillIds: ["tdd"],
@@ -194,6 +435,15 @@ describe("api desktop seam", () => {
     expect(invoke).toHaveBeenNthCalledWith(2, "load_chat_attachment_preview", {
       runId: "run-1",
       attachmentId: "attachment-1",
+    });
+  });
+
+  test("file-change diff loader scopes artifacts to a run", async () => {
+    await loadFileChangeDiff("run-1", "diff-1");
+
+    expect(invoke).toHaveBeenCalledWith("load_file_change_diff", {
+      runId: "run-1",
+      diffArtifactId: "diff-1",
     });
   });
 
@@ -235,9 +485,10 @@ describe("api desktop seam", () => {
   });
 
   test("submitToolApproval passes null reason when omitted", async () => {
-    await submitToolApproval("approval-1", true);
+    await submitToolApproval("run-1", "approval-1", true);
 
     expect(invoke).toHaveBeenCalledWith("submit_tool_approval", {
+      runId: "run-1",
       approvalId: "approval-1",
       allow: true,
       reason: null,
@@ -245,18 +496,32 @@ describe("api desktop seam", () => {
   });
 
   test("submitToolApproval forwards explicit denial reason", async () => {
-    await submitToolApproval("approval-2", false, "Too risky");
+    await submitToolApproval("run-2", "approval-2", false, "Too risky");
 
     expect(invoke).toHaveBeenCalledWith("submit_tool_approval", {
+      runId: "run-2",
       approvalId: "approval-2",
       allow: false,
       reason: "Too risky",
     });
   });
 
+  test("resolveMcpClientRequest forwards one-shot decision and form content", async () => {
+    await resolveMcpClientRequest("run-1", "mcp-request-1", {
+      allow: true,
+      content: { project: "OpenFlow" },
+    });
+
+    expect(invoke).toHaveBeenCalledWith("resolve_mcp_client_request", {
+      runId: "run-1",
+      requestId: "mcp-request-1",
+      decision: { allow: true, content: { project: "OpenFlow" } },
+    });
+  });
+
   test("getRunState invokes get_run_state", async () => {
-    await getRunState();
-    expect(invoke).toHaveBeenCalledWith("get_run_state");
+    await getRunState("run-1");
+    expect(invoke).toHaveBeenCalledWith("get_run_state", { runId: "run-1" });
   });
 
   test("listenToRunState subscribes to run-state events", async () => {

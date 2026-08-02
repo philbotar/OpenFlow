@@ -11,6 +11,7 @@ use crate::run::persistence::{
 };
 use crate::run::ports::RunCheckpointStore;
 use crate::run::prep::prepare_workflow_for_execution_with_profiles;
+use crate::run::resources::{BudgetedAiPort, SharedRunResources};
 use crate::run::skill_invocation::{
     apply_explicit_skill_invocations, apply_skill_invocations, has_skill_invocations, skill_paths,
     SkillPaths,
@@ -43,6 +44,8 @@ pub(super) struct PreparedWorkflowRun {
     pub persisted_settings: AppSettings,
     pub context_window_sizes: ProviderContextWindowSizes,
     pub skill_paths: SkillPaths,
+    pub mcp_clients: Option<crate::adapters::mcp::McpRunClients>,
+    pub mcp_issues: Vec<crate::adapters::mcp::McpSetupIssue>,
 }
 
 pub(super) struct ExecutionResources {
@@ -64,6 +67,8 @@ pub(super) struct SpawnRunInput {
     pub attachment_store: Arc<dyn crate::run::ports::RunAttachmentStore>,
     pub resume_checkpoint: Option<InteractiveEngineCheckpoint>,
     pub resume_continuation: Option<ResumeContinuation>,
+    pub shared_resources: Arc<SharedRunResources>,
+    pub mutation_gate: Option<Arc<tokio::sync::Semaphore>>,
 }
 
 pub(super) struct SpawnedRun {
@@ -87,6 +92,7 @@ pub(super) fn prepare_workflow_run(
     skill_catalog: &dyn SkillCatalog,
     settings_store: Arc<dyn crate::settings::ports::SettingsStore>,
     env: &ProviderEnv,
+    shared_resources: Arc<SharedRunResources>,
 ) -> Result<PreparedWorkflowRun, BackendError> {
     let persisted_settings = settings_store.load()?;
     let mut provider_settings = settings.clone();
@@ -131,9 +137,12 @@ pub(super) fn prepare_workflow_run(
         );
         provider_clients.insert(provider_id.to_string(), create_provider(provider_config));
     }
-    let ai: Box<dyn AiPort> = Box::new(ProviderRouter::new(
-        default_provider_id.to_string(),
-        provider_clients,
+    let ai: Box<dyn AiPort> = Box::new(BudgetedAiPort::new(
+        Box::new(ProviderRouter::new(
+            default_provider_id.to_string(),
+            provider_clients,
+        )),
+        shared_resources,
     ));
     let mut workflow = workflow;
     prepare_workflow_for_execution_with_profiles(
@@ -156,7 +165,44 @@ pub(super) fn prepare_workflow_run(
         persisted_settings,
         context_window_sizes,
         skill_paths: resolved_skill_paths,
+        mcp_clients: None,
+        mcp_issues: Vec::new(),
     })
+}
+
+pub(super) async fn resolve_mcp_context_for_run(
+    prepared: &mut PreparedWorkflowRun,
+    execution_cwd: &std::path::Path,
+    project_root: Option<&std::path::Path>,
+) {
+    if prepared.workflow.nodes.iter().all(|node| {
+        node.agent.mcp_resources.is_empty()
+            && node.agent.mcp_prompts.is_empty()
+            && node.agent.mcp_context_snapshots.is_empty()
+    }) {
+        return;
+    }
+    let effective_servers = crate::adapters::mcp::effective_mcp_servers(
+        &prepared.persisted_settings.mcp,
+        execution_cwd,
+    );
+    let effective_mcp = crate::settings::model::McpSettings {
+        servers: effective_servers,
+        discover_external: prepared.persisted_settings.mcp.discover_external,
+        disabled_discovered_ids: prepared
+            .persisted_settings
+            .mcp
+            .disabled_discovered_ids
+            .clone(),
+        registry_base_url: prepared.persisted_settings.mcp.registry_base_url.clone(),
+    };
+    let (clients, issues) =
+        crate::adapters::mcp::McpRunClients::connect_for_run(&effective_mcp, project_root).await;
+    clients
+        .resolve_workflow_context(&mut prepared.workflow)
+        .await;
+    prepared.mcp_clients = Some(clients);
+    prepared.mcp_issues = issues;
 }
 
 pub(crate) fn fresh_execution_resources(persisted_settings: &AppSettings) -> ExecutionResources {
@@ -174,7 +220,7 @@ pub(crate) fn fresh_execution_resources(persisted_settings: &AppSettings) -> Exe
 
 pub(super) fn spawn_prepared_run(
     runtime_handle: &tokio::runtime::Handle,
-    prepared: PreparedWorkflowRun,
+    mut prepared: PreparedWorkflowRun,
     input: SpawnRunInput,
     resources: &ExecutionResources,
 ) -> SpawnedRun {
@@ -203,8 +249,14 @@ pub(super) fn spawn_prepared_run(
             node_interrupts: resources.node_interrupts.clone(),
             context_window_sizes: prepared.context_window_sizes,
             mcp: prepared.persisted_settings.mcp.clone(),
+            prepared_mcp: prepared
+                .mcp_clients
+                .take()
+                .map(|clients| (clients, std::mem::take(&mut prepared.mcp_issues))),
             search: prepared.persisted_settings.search.clone(),
             runtime_config_store: resources.runtime_config_store.clone(),
+            tool_budget: input.shared_resources.tool_budget(),
+            mutation_gate: input.mutation_gate,
         },
     );
     SpawnedRun {
@@ -345,11 +397,10 @@ pub(crate) fn apply_user_stop_to_session(session: &mut RunSession) -> Option<Wor
     let captured_checkpoint = session
         .checkpoint_sink
         .as_ref()
-        .and_then(|sink| sink.lock().take());
+        .and_then(|sink| sink.lock().clone());
     if let Some(checkpoint) = captured_checkpoint {
         session.engine_checkpoint = Some(checkpoint.engine);
     }
-    session.checkpoint_sink = None;
     let workflow = session.workflow.clone()?;
     let run_state = session.run_state.as_mut()?;
     if run_state.active {

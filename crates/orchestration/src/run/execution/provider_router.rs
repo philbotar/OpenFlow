@@ -109,6 +109,7 @@ mod tests {
             node_label: node_id.to_string(),
             model: "model".to_string(),
             provider_id: provider_id.map(ToString::to_string),
+            max_output_tokens: None,
             system_messages: Vec::new(),
             task_prompt: String::new(),
             input: json!(null),

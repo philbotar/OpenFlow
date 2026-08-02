@@ -795,7 +795,7 @@ mod tests {
         assert!(!definitions
             .iter()
             .any(|tool| tool.name == "openflow_call_subagent"));
-        assert!(!definitions.iter().any(|tool| tool.name.starts_with("mcp/")));
+        assert!(!definitions.iter().any(|tool| tool.name.starts_with("mcp_")));
         let write = definitions
             .iter()
             .find(|tool| tool.name == "write")
@@ -968,7 +968,7 @@ mod tests {
         registry
             .extend_mcp(vec![RegisteredTool {
                 definition: ToolDefinition {
-                    name: "mcp/gh/search".into(),
+                    name: "mcp_2_gh_search".into(),
                     description: "Search GitHub".into(),
                     input_schema: serde_json::json!({"type":"object","properties":{}}),
                     tier: ToolTier::Write,
@@ -978,7 +978,7 @@ mod tests {
             }])
             .unwrap();
         assert!(registry.get("read").is_ok());
-        assert!(registry.get("mcp/gh/search").is_ok());
+        assert!(registry.get("mcp_2_gh_search").is_ok());
         assert!(registry.get("search").is_ok());
     }
 

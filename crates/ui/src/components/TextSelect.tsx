@@ -8,14 +8,21 @@ import {
   splitProps,
   type JSX,
 } from "solid-js";
+import { Portal } from "solid-js/web";
 
 export type TextSelectOption = {
   value: string;
   label: string;
 };
 
-type MenuPlacement = "auto" | "above" | "below";
-type ResolvedMenuPlacement = Exclude<MenuPlacement, "auto">;
+type MenuPlacement =
+  | "auto"
+  | "above"
+  | "below"
+  | "left"
+  | "right"
+  | "horizontal";
+type ResolvedMenuPlacement = Exclude<MenuPlacement, "auto" | "horizontal">;
 
 type TextSelectProps = {
   value: string;
@@ -25,6 +32,8 @@ type TextSelectProps = {
   class?: string;
   classList?: JSX.HTMLAttributes<HTMLDivElement>["classList"];
   menuPlacement?: MenuPlacement;
+  portalMenu?: boolean;
+  openOnHover?: boolean;
   valuePrefix?: string;
   "aria-label"?: string;
 };
@@ -57,6 +66,9 @@ export function TextSelect(props: TextSelectProps) {
   let rootRef: HTMLDivElement | undefined;
   let triggerRef: HTMLButtonElement | undefined;
   let menuRef: HTMLUListElement | undefined;
+  let hoverCloseTimer: number | undefined;
+  let triggerHovered = false;
+  let menuHovered = false;
   const listboxId = `text-select-${++nextListboxId}`;
 
   const selectedLabel = createMemo(() => {
@@ -73,36 +85,92 @@ export function TextSelect(props: TextSelectProps) {
       trigger.offsetWidth > 0 ? rect.width / trigger.offsetWidth : 1;
     const positionScale =
       Number.isFinite(effectiveScale) && effectiveScale > 0 ? effectiveScale : 1;
-    const left = rect.left / positionScale;
-    const width = `${Math.max(trigger.offsetWidth, MENU_MIN_WIDTH_PX)}px`;
     const viewport = window.visualViewport;
+    const viewportLeft = viewport?.offsetLeft ?? 0;
     const viewportTop = viewport?.offsetTop ?? 0;
+    const viewportWidth = viewport?.width ?? window.innerWidth;
     const viewportHeight = viewport?.height ?? window.innerHeight;
+    const viewportRight = viewportLeft + viewportWidth;
     const viewportBottom = viewportTop + viewportHeight;
+    const triggerLeft = rect.left / positionScale;
+    const triggerRight = rect.right / positionScale;
+    const triggerTop = rect.top / positionScale;
+    const triggerBottom = rect.bottom / positionScale;
+    const menuWidthPx = Math.max(trigger.offsetWidth, MENU_MIN_WIDTH_PX);
+    const width = `${menuWidthPx}px`;
     const availableAbove = Math.max(0, rect.top - viewportTop);
     const availableBelow = Math.max(0, viewportBottom - rect.bottom);
-    const menuHeight =
+    const rawMenuHeight =
       menuRef?.isConnected ? menuRef.getBoundingClientRect().height : 0;
+    const menuHeight = rawMenuHeight / positionScale;
     const requestedPlacement = props.menuPlacement ?? "auto";
+    const availableLeft = Math.max(
+      0,
+      triggerLeft - viewportLeft / positionScale,
+    );
+    const availableRight = Math.max(
+      0,
+      viewportRight / positionScale - triggerRight,
+    );
+    const sideFitsLeft = availableLeft >= menuWidthPx + MENU_GAP_PX;
+    const sideFitsRight = availableRight >= menuWidthPx + MENU_GAP_PX;
     const placement: ResolvedMenuPlacement =
-      requestedPlacement === "above" ||
-      (requestedPlacement === "auto" &&
-        menuHeight > 0 &&
-        availableBelow < menuHeight + MENU_GAP_PX * positionScale &&
-        availableAbove > availableBelow)
-        ? "above"
-        : "below";
-    const availableHeight = placement === "above" ? availableAbove : availableBelow;
+      requestedPlacement === "left" ||
+      (requestedPlacement === "horizontal" &&
+        !sideFitsRight &&
+        (sideFitsLeft || availableLeft > availableRight))
+        ? "left"
+        : requestedPlacement === "right" ||
+            (requestedPlacement === "horizontal" &&
+              (sideFitsRight || !sideFitsLeft))
+          ? "right"
+          : requestedPlacement === "above" ||
+              (requestedPlacement === "auto" &&
+                rawMenuHeight > 0 &&
+                availableBelow < rawMenuHeight + MENU_GAP_PX * positionScale &&
+                availableAbove > availableBelow)
+            ? "above"
+            : "below";
+    if (placement === "left" || placement === "right") {
+      const verticalPadding = MENU_GAP_PX;
+      const availableHeight = Math.max(
+        0,
+        viewportBottom / positionScale -
+          viewportTop / positionScale -
+          verticalPadding * 2,
+      );
+      const constrainedMaxHeight =
+        menuHeight > availableHeight ? `${availableHeight}px` : undefined;
+      const maxTop = Math.max(
+        viewportTop / positionScale + verticalPadding,
+        viewportBottom / positionScale - menuHeight - verticalPadding,
+      );
+      const top = Math.min(
+        Math.max(triggerTop, viewportTop / positionScale + verticalPadding),
+        maxTop,
+      );
+      setResolvedMenuPlacement(placement);
+      setMenuStyle({
+        top: `${top}px`,
+        left: `${placement === "left" ? triggerLeft - MENU_GAP_PX : triggerRight + MENU_GAP_PX}px`,
+        width,
+        "max-height": constrainedMaxHeight,
+        transform: placement === "left" ? "translateX(-100%)" : "none",
+      });
+      return;
+    }
+    const availableHeight =
+      placement === "above" ? availableAbove : availableBelow;
     const constrainedMaxHeight =
       menuHeight > 0 &&
-      availableHeight < menuHeight + MENU_GAP_PX * positionScale
+      availableHeight < rawMenuHeight + MENU_GAP_PX * positionScale
         ? `${Math.max(0, availableHeight / positionScale - MENU_GAP_PX)}px`
         : undefined;
     setResolvedMenuPlacement(placement);
     if (placement === "above") {
       setMenuStyle({
-        top: `${rect.top / positionScale - MENU_GAP_PX}px`,
-        left: `${left}px`,
+        top: `${triggerTop - MENU_GAP_PX}px`,
+        left: `${triggerLeft}px`,
         width,
         "max-height": constrainedMaxHeight,
         transform: "translateY(-100%)",
@@ -110,18 +178,37 @@ export function TextSelect(props: TextSelectProps) {
       return;
     }
     setMenuStyle({
-      top: `${rect.bottom / positionScale + MENU_GAP_PX}px`,
-      left: `${left}px`,
+      top: `${triggerBottom + MENU_GAP_PX}px`,
+      left: `${triggerLeft}px`,
       width,
       "max-height": constrainedMaxHeight,
       transform: "none",
     });
   };
 
-  const close = () => setOpen(false);
+  const clearHoverClose = () => {
+    if (hoverCloseTimer === undefined) return;
+    window.clearTimeout(hoverCloseTimer);
+    hoverCloseTimer = undefined;
+  };
+
+  const scheduleHoverClose = () => {
+    if (!props.openOnHover || triggerHovered || menuHovered) return;
+    clearHoverClose();
+    hoverCloseTimer = window.setTimeout(() => {
+      hoverCloseTimer = undefined;
+      if (!triggerHovered && !menuHovered) setOpen(false);
+    }, 140);
+  };
+
+  const close = () => {
+    clearHoverClose();
+    setOpen(false);
+  };
 
   const openMenu = () => {
     if (props.disabled) return;
+    clearHoverClose();
     syncMenuPosition();
     setOpen(true);
   };
@@ -131,20 +218,37 @@ export function TextSelect(props: TextSelectProps) {
     close();
   };
 
+  onCleanup(clearHoverClose);
+
   createEffect(() => {
     if (!open()) return;
 
     const onDocumentMouseDown = (event: MouseEvent) => {
       const root = rootRef;
+      const menu = menuRef;
       const target = event.target;
-      if (!root || !(target instanceof Node) || root.contains(target)) return;
+      if (
+        !root ||
+        !(target instanceof Node) ||
+        root.contains(target) ||
+        menu?.contains(target)
+      ) {
+        return;
+      }
       close();
     };
 
     const onScroll = (event: Event) => {
       const root = rootRef;
+      const menu = menuRef;
       const target = event.target;
-      if (root && target instanceof Node && root.contains(target)) return;
+      if (
+        root &&
+        target instanceof Node &&
+        (root.contains(target) || menu?.contains(target))
+      ) {
+        return;
+      }
       close();
     };
 
@@ -159,6 +263,61 @@ export function TextSelect(props: TextSelectProps) {
       window.removeEventListener("resize", onDismiss);
     });
   });
+
+  const renderMenu = () => (
+    <ul
+      ref={(element) => {
+        menuRef = element;
+        queueMicrotask(syncMenuPosition);
+      }}
+      id={listboxId}
+      class="text-select-menu"
+      classList={{
+        "text-select-menu--above": resolvedMenuPlacement() === "above",
+        "text-select-menu--left": resolvedMenuPlacement() === "left",
+        "text-select-menu--right": resolvedMenuPlacement() === "right",
+        "text-select-menu--portal": Boolean(props.portalMenu),
+      }}
+      role="listbox"
+      aria-label={props["aria-label"]}
+      style={menuStyle()}
+      onMouseEnter={() => {
+        if (!props.openOnHover) return;
+        menuHovered = true;
+        clearHoverClose();
+      }}
+      onMouseLeave={() => {
+        if (!props.openOnHover) return;
+        menuHovered = false;
+        scheduleHoverClose();
+      }}
+    >
+      <For each={props.options}>
+        {(option) => (
+          <li role="presentation">
+            <button
+              type="button"
+              class="text-select-option"
+              classList={{ "is-selected": option.value === props.value }}
+              role="option"
+              aria-selected={option.value === props.value}
+              title={option.label}
+              onMouseDown={(event) => {
+                if (props.portalMenu) {
+                  event.stopPropagation();
+                  return;
+                }
+                event.preventDefault();
+              }}
+              onClick={() => selectValue(option.value)}
+            >
+              <span class="text-select-option-label">{option.label}</span>
+            </button>
+          </li>
+        )}
+      </For>
+    </ul>
+  );
 
   return (
     <div
@@ -175,6 +334,17 @@ export function TextSelect(props: TextSelectProps) {
         aria-controls={listboxId}
         aria-label={props["aria-label"]}
         disabled={props.disabled}
+        onMouseEnter={() => {
+          if (!props.openOnHover) return;
+          triggerHovered = true;
+          clearHoverClose();
+          openMenu();
+        }}
+        onMouseLeave={() => {
+          if (!props.openOnHover) return;
+          triggerHovered = false;
+          scheduleHoverClose();
+        }}
         onClick={() => (open() ? close() : openMenu())}
         onKeyDown={(event) => {
           if (props.disabled) return;
@@ -190,37 +360,7 @@ export function TextSelect(props: TextSelectProps) {
         <span class="text-select-value">{selectedLabel()}</span>
       </button>
       <Show when={open()}>
-        <ul
-          ref={(element) => {
-            menuRef = element;
-            queueMicrotask(syncMenuPosition);
-          }}
-          id={listboxId}
-          class="text-select-menu"
-          classList={{ "text-select-menu--above": resolvedMenuPlacement() === "above" }}
-          role="listbox"
-          aria-label={props["aria-label"]}
-          style={menuStyle()}
-        >
-          <For each={props.options}>
-            {(option) => (
-              <li role="presentation">
-                <button
-                  type="button"
-                  class="text-select-option"
-                  classList={{ "is-selected": option.value === props.value }}
-                  role="option"
-                  aria-selected={option.value === props.value}
-                  title={option.label}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => selectValue(option.value)}
-                >
-                  <span class="text-select-option-label">{option.label}</span>
-                </button>
-              </li>
-            )}
-          </For>
-        </ul>
+        {props.portalMenu ? <Portal>{renderMenu()}</Portal> : renderMenu()}
       </Show>
     </div>
   );

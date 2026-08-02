@@ -116,4 +116,37 @@ mod tests {
         assert!(error.to_string().contains("[not_found]"));
         assert_eq!(attempts.load(Ordering::SeqCst), 1);
     }
+
+    #[cfg_attr(miri, ignore)]
+    #[tokio::test]
+    async fn ambiguous_mcp_transport_error_does_not_retry() {
+        let policy = RetryPolicy {
+            max_attempts: 2,
+            backoff_ms: 1,
+        };
+        let attempts = Arc::new(AtomicU8::new(0));
+        let cancel = CancellationToken::new();
+
+        let error = execute_with_retry::<(), _, _>(
+            &policy,
+            &cancel,
+            |_, _| {},
+            || {
+                let attempts = Arc::clone(&attempts);
+                async move {
+                    attempts.fetch_add(1, Ordering::SeqCst);
+                    Err(ToolRunnerError::Mcp(
+                        crate::adapters::mcp::McpError::Transport(
+                            "connection closed after request was sent".into(),
+                        ),
+                    ))
+                }
+            },
+        )
+        .await
+        .expect_err("ambiguous MCP transport failure");
+
+        assert!(error.to_string().contains("connection closed"));
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
+    }
 }

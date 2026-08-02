@@ -1,4 +1,4 @@
-use crate::graph::workflow::{effective_output_schema, Workflow};
+use crate::graph::workflow::{effective_output_schema, Workflow, MCP_CONTEXT_MAX_BYTES};
 use crate::graph::{validate_markdown_handoff_template, EdgeId, HandoffSpec, NodeId};
 use std::collections::{HashMap, HashSet};
 use thiserror::Error;
@@ -25,6 +25,8 @@ pub enum WorkflowValidationError {
     InvalidOutputSchema { node_id: NodeId, detail: String },
     #[error("node {node_id} Markdown handoff template is invalid: {detail}")]
     InvalidHandoffTemplate { node_id: NodeId, detail: String },
+    #[error("node {node_id} MCP context selection is invalid: {detail}")]
+    InvalidMcpContextSelection { node_id: NodeId, detail: String },
     #[error("internal consistency: {0}")]
     InternalConsistency(String),
 }
@@ -113,6 +115,91 @@ fn check_output_schemas(workflow: &Workflow) -> Result<(), WorkflowValidationErr
     Ok(())
 }
 
+fn check_mcp_context_selections(workflow: &Workflow) -> Result<(), WorkflowValidationError> {
+    for node in &workflow.nodes {
+        let selection_count = node.agent.mcp_resources.len() + node.agent.mcp_prompts.len();
+        if selection_count > 64 {
+            return Err(WorkflowValidationError::InvalidMcpContextSelection {
+                node_id: node.id.clone(),
+                detail: "at most 64 resources and prompts may be selected".to_string(),
+            });
+        }
+        let mut requested_bytes = 0_u64;
+        for (server_id, source, max_bytes) in
+            node.agent
+                .mcp_resources
+                .iter()
+                .map(|selection| (&selection.server_id, &selection.uri, selection.max_bytes))
+                .chain(
+                    node.agent.mcp_prompts.iter().map(|selection| {
+                        (&selection.server_id, &selection.name, selection.max_bytes)
+                    }),
+                )
+        {
+            if server_id.trim().is_empty() || server_id.len() > 128 || server_id.contains('/') {
+                return Err(WorkflowValidationError::InvalidMcpContextSelection {
+                    node_id: node.id.clone(),
+                    detail: "server ID must be 1-128 characters without '/'".to_string(),
+                });
+            }
+            if source.trim().is_empty()
+                || source.len() > 4096
+                || source.chars().any(char::is_control)
+            {
+                return Err(WorkflowValidationError::InvalidMcpContextSelection {
+                    node_id: node.id.clone(),
+                    detail: "resource URI or prompt name must be 1-4096 printable characters"
+                        .to_string(),
+                });
+            }
+            if max_bytes == 0 || max_bytes > MCP_CONTEXT_MAX_BYTES {
+                return Err(WorkflowValidationError::InvalidMcpContextSelection {
+                    node_id: node.id.clone(),
+                    detail: format!("maxBytes must be 1-{MCP_CONTEXT_MAX_BYTES}"),
+                });
+            }
+            requested_bytes = requested_bytes.saturating_add(u64::from(max_bytes));
+        }
+        if requested_bytes > u64::from(MCP_CONTEXT_MAX_BYTES) {
+            return Err(WorkflowValidationError::InvalidMcpContextSelection {
+                node_id: node.id.clone(),
+                detail: format!(
+                    "combined context budget must not exceed {MCP_CONTEXT_MAX_BYTES} bytes"
+                ),
+            });
+        }
+        for prompt in &node.agent.mcp_prompts {
+            if prompt.arguments.len() > 64
+                || prompt.arguments.iter().any(|(name, value)| {
+                    name.trim().is_empty()
+                        || name.len() > 256
+                        || name.chars().any(char::is_control)
+                        || value.len() > 16_384
+                })
+            {
+                return Err(WorkflowValidationError::InvalidMcpContextSelection {
+                    node_id: node.id.clone(),
+                    detail: "prompt arguments exceed count, name, or value limits".to_string(),
+                });
+            }
+        }
+        let snapshot_bytes = node
+            .agent
+            .mcp_context_snapshots
+            .iter()
+            .fold(0_u64, |total, snapshot| {
+                total.saturating_add(snapshot.content.len() as u64)
+            });
+        if snapshot_bytes > u64::from(MCP_CONTEXT_MAX_BYTES) {
+            return Err(WorkflowValidationError::InvalidMcpContextSelection {
+                node_id: node.id.clone(),
+                detail: format!("resolved context must not exceed {MCP_CONTEXT_MAX_BYTES} bytes"),
+            });
+        }
+    }
+    Ok(())
+}
+
 /// # Errors
 /// Returns an error if the workflow is invalid.
 pub fn validate_workflow(workflow: &Workflow) -> Result<(), WorkflowValidationError> {
@@ -129,6 +216,7 @@ pub fn execution_layers(workflow: &Workflow) -> Result<Vec<Vec<NodeId>>, Workflo
 
     let node_ids = check_duplicate_nodes(workflow)?;
     check_output_schemas(workflow)?;
+    check_mcp_context_selections(workflow)?;
     check_duplicate_edges_and_endpoints(workflow, &node_ids)?;
     check_plan_mode_source(workflow)?;
 
@@ -400,5 +488,34 @@ mod tests {
                 detail: "template requires at least one Markdown heading".to_string(),
             })
         );
+    }
+
+    #[test]
+    fn rejects_mcp_context_budget_above_node_limit() {
+        let mut workflow = workflow_with_nodes(&["context"]);
+        workflow.nodes[0]
+            .agent
+            .mcp_resources
+            .push(crate::graph::McpResourceSelection {
+                server_id: "docs".to_string(),
+                uri: "docs://one".to_string(),
+                max_bytes: MCP_CONTEXT_MAX_BYTES,
+                subscribe: false,
+            });
+        workflow.nodes[0]
+            .agent
+            .mcp_prompts
+            .push(crate::graph::McpPromptSelection {
+                server_id: "docs".to_string(),
+                name: "review".to_string(),
+                arguments: std::collections::BTreeMap::default(),
+                max_bytes: 1,
+            });
+
+        assert!(matches!(
+            validate_workflow(&workflow),
+            Err(WorkflowValidationError::InvalidMcpContextSelection { ref detail, .. })
+                if detail.contains("combined context budget")
+        ));
     }
 }

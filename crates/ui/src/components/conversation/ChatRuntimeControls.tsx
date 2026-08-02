@@ -1,4 +1,11 @@
-import { createMemo, Show } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  onCleanup,
+  Show,
+} from "solid-js";
+import ChevronDown from "lucide-solid/icons/chevron-down";
 import { TextSelect } from "@/components";
 import { useAppContext } from "../../context/AppContext";
 import { APPROVAL_MODE_OPTIONS } from "../../forms/approvalModeOptions";
@@ -10,9 +17,30 @@ import {
 } from "@/lib/workflow";
 
 const ADD_PROJECT_VALUE = "__openflow_add_project__";
+const RUNTIME_MENU_GAP_PX = 6;
+const RUNTIME_MENU_MARGIN_PX = 8;
+const RUNTIME_MENU_WIDTH_PX = 320;
+
+type RuntimeMenuStyle = {
+  top: string;
+  left: string;
+  width: string;
+  transform: string;
+  "max-height"?: string;
+};
 
 export function ChatRuntimeControls() {
   const ctx = useAppContext();
+  const [runtimeMenuOpen, setRuntimeMenuOpen] = createSignal(false);
+  const [runtimeMenuStyle, setRuntimeMenuStyle] =
+    createSignal<RuntimeMenuStyle>({
+      top: "0px",
+      left: "0px",
+      width: `${RUNTIME_MENU_WIDTH_PX}px`,
+      transform: "translateY(-100%)",
+    });
+  let runtimeMenuRootRef: HTMLDivElement | undefined;
+  let runtimeMenuTriggerRef: HTMLButtonElement | undefined;
   const chat = createMemo(() => ctx.activeChat());
   const modelOptions = createMemo(() => {
     const models = [...ctx.activeProfileMemo().known_models];
@@ -66,7 +94,99 @@ export function ChatRuntimeControls() {
       (option) => option.value === chat()?.config.reasoningEffort,
     ),
   );
+  const selectedModelLabel = createMemo(
+    () =>
+      modelOptions().find((option) => option.value === selectedModel())?.label ??
+      selectedModel(),
+  );
+  const selectedEffortLabel = createMemo(
+    () =>
+      effortSelectOptions().find(
+        (option) => option.value === (chat()?.config.reasoningEffort ?? ""),
+      )?.label ?? defaultEffortLabel(),
+  );
   const controlsDisabled = () => ctx.startingRun();
+
+  const syncRuntimeMenuPosition = () => {
+    const trigger = runtimeMenuTriggerRef;
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    const effectiveScale =
+      trigger.offsetWidth > 0 ? rect.width / trigger.offsetWidth : 1;
+    const scale =
+      Number.isFinite(effectiveScale) && effectiveScale > 0 ? effectiveScale : 1;
+    const viewport = window.visualViewport;
+    const viewportLeft = (viewport?.offsetLeft ?? 0) / scale;
+    const viewportTop = (viewport?.offsetTop ?? 0) / scale;
+    const viewportWidth = (viewport?.width ?? window.innerWidth) / scale;
+    const triggerLeft = rect.left / scale;
+    const menuWidth = Math.min(
+      RUNTIME_MENU_WIDTH_PX,
+      viewportWidth - RUNTIME_MENU_MARGIN_PX * 2,
+    );
+    const maxLeft =
+      viewportLeft + viewportWidth - menuWidth - RUNTIME_MENU_MARGIN_PX;
+    const left = Math.max(
+      viewportLeft + RUNTIME_MENU_MARGIN_PX,
+      Math.min(triggerLeft, maxLeft),
+    );
+    const availableAbove =
+      rect.top / scale -
+      viewportTop -
+      RUNTIME_MENU_GAP_PX -
+      RUNTIME_MENU_MARGIN_PX;
+
+    setRuntimeMenuStyle({
+      top: `${rect.top / scale - RUNTIME_MENU_GAP_PX}px`,
+      left: `${left}px`,
+      width: `${menuWidth}px`,
+      transform: "translateY(-100%)",
+      "max-height":
+        availableAbove > 0 ? `${availableAbove}px` : undefined,
+    });
+  };
+
+  const closeRuntimeMenu = () => setRuntimeMenuOpen(false);
+
+  createEffect(() => {
+    if (!runtimeMenuOpen()) return;
+
+    const onDocumentMouseDown = (event: MouseEvent) => {
+      const root = runtimeMenuRootRef;
+      const target = event.target;
+      if (
+        !root ||
+        !(target instanceof Node) ||
+        root.contains(target) ||
+        (target instanceof Element && target.closest(".text-select-menu"))
+      ) {
+        return;
+      }
+      closeRuntimeMenu();
+    };
+    const onScroll = (event: Event) => {
+      const root = runtimeMenuRootRef;
+      const target = event.target;
+      if (
+        root &&
+        target instanceof Node &&
+        (root.contains(target) ||
+          (target instanceof Element && target.closest(".text-select-menu")))
+      ) {
+        return;
+      }
+      closeRuntimeMenu();
+    };
+
+    document.addEventListener("mousedown", onDocumentMouseDown);
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", closeRuntimeMenu);
+    onCleanup(() => {
+      document.removeEventListener("mousedown", onDocumentMouseDown);
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", closeRuntimeMenu);
+    });
+  });
 
   return (
     <Show when={chat()}>
@@ -106,42 +226,7 @@ export function ChatRuntimeControls() {
             }}
           />
           <TextSelect
-            class="composer-runtime-select"
-            menuPlacement="above"
-            valuePrefix="Model: "
-            value={selectedModel()}
-            options={modelOptions()}
-            disabled={controlsDisabled() || modelOptions().length === 0}
-            aria-label="Chat model"
-            onChange={(event) => {
-              void ctx.handleUpdateChatConfig({
-                ...currentChat().config,
-                model: event.currentTarget.value || null,
-              });
-            }}
-          />
-          <Show when={fastModeAvailable(ctx.activeProfileMemo())}>
-            <TextSelect
-              class="composer-runtime-select"
-              menuPlacement="above"
-              valuePrefix="Speed: "
-              value={currentChat().config.fastMode ? "fast" : "standard"}
-              options={[
-                { value: "standard", label: "Standard" },
-                { value: "fast", label: "Fast" },
-              ]}
-              disabled={controlsDisabled()}
-              aria-label="Chat speed"
-              onChange={(event) => {
-                void ctx.handleUpdateChatConfig({
-                  ...currentChat().config,
-                  fastMode: event.currentTarget.value === "fast",
-                });
-              }}
-            />
-          </Show>
-          <TextSelect
-            class="composer-runtime-select"
+            class="composer-runtime-select direct-chat-approval-select"
             menuPlacement="above"
             valuePrefix="Approval: "
             value={currentChat().config.approvalMode}
@@ -157,53 +242,163 @@ export function ChatRuntimeControls() {
               });
             }}
           />
-          <TextSelect
-            class="composer-runtime-select"
-            menuPlacement="above"
-            valuePrefix="Effort: "
-            value={currentChat().config.reasoningEffort ?? ""}
-            options={effortSelectOptions()}
-            disabled={controlsDisabled()}
-            aria-label="Chat reasoning effort"
-            onChange={(event) => {
-              const nextEffort = event.currentTarget.value || null;
-              const option = effortOptions().find(
-                (entry) => entry.value === nextEffort,
-              );
-              const defaultBudget =
-                nextEffort === null
-                  ? null
-                  : defaultReasoningBudgetTokens(ctx.activeProfileMemo())[
-                      nextEffort
-                    ] ?? null;
-              void ctx.handleUpdateChatConfig({
-                ...currentChat().config,
-                reasoningEffort: nextEffort,
-                reasoningBudgetTokens: option?.uses_budget_tokens
-                  ? currentChat().config.reasoningBudgetTokens ?? defaultBudget
-                  : null,
-              });
+          <div
+            ref={runtimeMenuRootRef}
+            class="chat-runtime-menu-root"
+            onKeyDown={(event) => {
+              if (event.key !== "Escape") return;
+              closeRuntimeMenu();
+              runtimeMenuTriggerRef?.focus();
             }}
-          />
-          <Show when={selectedEffortOption()?.uses_budget_tokens}>
-            <input
-              class="composer-runtime-budget"
-              type="number"
-              min={1}
-              step={1}
-              disabled={controlsDisabled()}
-              aria-label="Chat reasoning budget tokens"
-              value={currentChat().config.reasoningBudgetTokens ?? ""}
-              onInput={(event) => {
-                const parsed = Number.parseInt(event.currentTarget.value, 10);
-                void ctx.handleUpdateChatConfig({
-                  ...currentChat().config,
-                  reasoningBudgetTokens:
-                    Number.isFinite(parsed) && parsed > 0 ? parsed : null,
-                });
+          >
+            <button
+              ref={runtimeMenuTriggerRef}
+              type="button"
+              class="chat-runtime-menu-trigger"
+              aria-label={`Chat runtime settings: model ${selectedModelLabel()}, effort ${selectedEffortLabel()}`}
+              aria-haspopup="dialog"
+              aria-expanded={runtimeMenuOpen()}
+              disabled={controlsDisabled() || modelOptions().length === 0}
+              onClick={() => {
+                if (runtimeMenuOpen()) {
+                  closeRuntimeMenu();
+                  return;
+                }
+                syncRuntimeMenuPosition();
+                setRuntimeMenuOpen(true);
               }}
-            />
-          </Show>
+            >
+              <span class="chat-runtime-menu-summary">
+                <span>{selectedModelLabel()}</span>
+                <span aria-hidden="true">·</span>
+                <span>{selectedEffortLabel()}</span>
+              </span>
+              <ChevronDown
+                class="chat-runtime-menu-chevron"
+                classList={{ "is-open": runtimeMenuOpen() }}
+                aria-hidden="true"
+                width={14}
+                height={14}
+              />
+            </button>
+            <Show when={runtimeMenuOpen()}>
+              <div
+                ref={(_element) => {
+                  queueMicrotask(syncRuntimeMenuPosition);
+                }}
+                class="chat-runtime-menu-popover"
+                role="dialog"
+                aria-label="Chat runtime settings"
+                style={runtimeMenuStyle()}
+              >
+                <div class="chat-runtime-menu-row">
+                  <span>Model</span>
+                  <TextSelect
+                    class="chat-runtime-menu-select"
+                    menuPlacement="horizontal"
+                    portalMenu
+                    openOnHover
+                    value={selectedModel()}
+                    options={modelOptions()}
+                    disabled={controlsDisabled() || modelOptions().length === 0}
+                    aria-label="Chat model"
+                    onChange={(event) => {
+                      void ctx.handleUpdateChatConfig({
+                        ...currentChat().config,
+                        model: event.currentTarget.value || null,
+                      });
+                    }}
+                  />
+                </div>
+                <div class="chat-runtime-menu-row">
+                  <span>Effort</span>
+                  <TextSelect
+                    class="chat-runtime-menu-select"
+                    menuPlacement="horizontal"
+                    portalMenu
+                    openOnHover
+                    value={currentChat().config.reasoningEffort ?? ""}
+                    options={effortSelectOptions()}
+                    disabled={controlsDisabled()}
+                    aria-label="Chat reasoning effort"
+                    onChange={(event) => {
+                      const nextEffort = event.currentTarget.value || null;
+                      const option = effortOptions().find(
+                        (entry) => entry.value === nextEffort,
+                      );
+                      const defaultBudget =
+                        nextEffort === null
+                          ? null
+                          : defaultReasoningBudgetTokens(
+                              ctx.activeProfileMemo(),
+                            )[nextEffort] ?? null;
+                      void ctx.handleUpdateChatConfig({
+                        ...currentChat().config,
+                        reasoningEffort: nextEffort,
+                        reasoningBudgetTokens: option?.uses_budget_tokens
+                          ? currentChat().config.reasoningBudgetTokens ??
+                            defaultBudget
+                          : null,
+                      });
+                    }}
+                  />
+                </div>
+                <Show when={fastModeAvailable(ctx.activeProfileMemo())}>
+                  <div class="chat-runtime-menu-row">
+                    <span>Speed</span>
+                    <TextSelect
+                      class="chat-runtime-menu-select"
+                      menuPlacement="horizontal"
+                      portalMenu
+                      openOnHover
+                      value={
+                        currentChat().config.fastMode ? "fast" : "standard"
+                      }
+                      options={[
+                        { value: "standard", label: "Standard" },
+                        { value: "fast", label: "Fast" },
+                      ]}
+                      disabled={controlsDisabled()}
+                      aria-label="Chat speed"
+                      onChange={(event) => {
+                        void ctx.handleUpdateChatConfig({
+                          ...currentChat().config,
+                          fastMode: event.currentTarget.value === "fast",
+                        });
+                      }}
+                    />
+                  </div>
+                </Show>
+                <Show when={selectedEffortOption()?.uses_budget_tokens}>
+                  <div class="chat-runtime-menu-row chat-runtime-menu-budget-row">
+                    <span>Reasoning budget</span>
+                    <input
+                      class="chat-runtime-menu-budget"
+                      type="number"
+                      min={1}
+                      step={1}
+                      disabled={controlsDisabled()}
+                      aria-label="Chat reasoning budget tokens"
+                      value={currentChat().config.reasoningBudgetTokens ?? ""}
+                      onInput={(event) => {
+                        const parsed = Number.parseInt(
+                          event.currentTarget.value,
+                          10,
+                        );
+                        void ctx.handleUpdateChatConfig({
+                          ...currentChat().config,
+                          reasoningBudgetTokens:
+                            Number.isFinite(parsed) && parsed > 0
+                              ? parsed
+                              : null,
+                        });
+                      }}
+                    />
+                  </div>
+                </Show>
+              </div>
+            </Show>
+          </div>
         </div>
       )}
     </Show>

@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cargo nextest run -p orchestration --test mcp_live_fixture
+cargo nextest run -p orchestration streamable_http_negotiates_session_headers_and_deletes_on_close
+cargo nextest run -p orchestration oauth_flow_discovers_registers_checks_state_refreshes_and_revokes
+cargo nextest run -p orchestration mcp_resources_and_prompts_require_explicit_selection_and_freeze_bounded_context
+cargo nextest run -p orchestration sampling_callback_is_bound_to_originating_tool_call

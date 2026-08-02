@@ -272,13 +272,108 @@ describe("AppHeader", () => {
   });
 
   it("disables topbar run when provider is not ready", () => {
+    vi.useFakeTimers();
+    try {
+      const { container, dispose } = renderWithContext({
+        screen: () => "editor",
+        readiness: () => ({
+          ready: false,
+          provider: "OpenAI",
+          message: "Add an API key in Settings",
+          envVar: "",
+        }),
+      });
+      const run = container.querySelector(
+        "button[aria-label='Run workflow']",
+      ) as HTMLButtonElement;
+      expect(run.disabled).toBe(true);
+
+      run
+        .closest(".app-tooltip-trigger")
+        ?.dispatchEvent(new Event("pointerenter", { bubbles: true }));
+      vi.advanceTimersByTime(400);
+      const details = document.querySelector('[role="tooltip"]')?.textContent;
+      expect(details).toContain("Open Providers to connect before running");
+      expect(details).not.toContain("API key");
+
+      dispose();
+    } finally {
+      vi.useRealTimers();
+      document.querySelectorAll(".app-tooltip").forEach((element) => element.remove());
+    }
+  });
+
+  it("shows product language when the provider is ready", () => {
     const { container, dispose } = renderWithContext({
-      screen: () => "editor",
-      readiness: () => ({ ready: false, provider: "OpenAI", message: "Add an API key in Settings", envVar: "" }),
+      readiness: () => ({
+        ready: true,
+        provider: "OpenAI",
+        message: "Ready via env var",
+        envVar: "OPENAI_API_KEY",
+      }),
     });
-    const run = container.querySelector("button[aria-label='Run workflow']") as HTMLButtonElement;
-    expect(run.disabled).toBe(true);
+
+    expect(container.querySelector(".readiness-chip")?.textContent).toContain(
+      "Provider ready",
+    );
     dispose();
+  });
+
+  it("keeps environment-backed readiness in the chip details", () => {
+    vi.useFakeTimers();
+    try {
+      const { container, dispose } = renderWithContext({
+        readiness: () => ({
+          ready: true,
+          provider: "OpenAI",
+          message: "Ready via env var",
+          envVar: "OPENAI_API_KEY",
+        }),
+      });
+
+      const chip = container.querySelector<HTMLElement>(".readiness-chip");
+      expect(chip?.getAttribute("title")).toBeNull();
+      expect(chip?.tabIndex).toBe(0);
+
+      chip?.focus();
+      vi.advanceTimersByTime(400);
+      expect(document.querySelector('[role="tooltip"]')?.textContent).toContain(
+        "Environment variable",
+      );
+
+      dispose();
+    } finally {
+      vi.useRealTimers();
+      document.querySelectorAll(".app-tooltip").forEach((element) => element.remove());
+    }
+  });
+
+  it("invites the user to connect a missing provider", () => {
+    vi.useFakeTimers();
+    try {
+      const { container, dispose } = renderWithContext({
+        readiness: () => ({
+          ready: false,
+          provider: "OpenAI",
+          message: "OpenAI API key missing",
+          envVar: "OPENAI_API_KEY",
+        }),
+      });
+
+      const chip = container.querySelector<HTMLElement>(".readiness-chip");
+      expect(chip?.textContent).toContain("Connect provider");
+
+      chip?.focus();
+      vi.advanceTimersByTime(400);
+      const details = document.querySelector('[role="tooltip"]')?.textContent;
+      expect(details).toContain("Open Providers to connect");
+      expect(details).not.toContain("API key");
+
+      dispose();
+    } finally {
+      vi.useRealTimers();
+      document.querySelectorAll(".app-tooltip").forEach((element) => element.remove());
+    }
   });
 
   it("shows stop action while a run is active", () => {

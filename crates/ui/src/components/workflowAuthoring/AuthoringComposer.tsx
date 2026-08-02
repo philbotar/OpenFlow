@@ -34,7 +34,7 @@ export function AuthoringComposer(props: {
     if (!props.providerReady) {
       return props.providerMessage || "Configure a provider in Settings first.";
     }
-    return "Describe the workflow you want to build...";
+    return "Ask a question or describe a workflow change...";
   };
 
   const handleSend = () => {

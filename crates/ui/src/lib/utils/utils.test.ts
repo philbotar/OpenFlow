@@ -89,7 +89,7 @@ describe("toastMessageForDebugMode", () => {
   });
 });
 
-test("resizeComposerTextarea caps growth at three rows", () => {
+test("resizeComposerTextarea caps growth at ten rows", () => {
   const textarea = document.createElement("textarea");
   textarea.style.paddingTop = "0px";
   textarea.style.paddingBottom = "0px";
@@ -121,12 +121,12 @@ test("resizeComposerTextarea caps growth at three rows", () => {
 
   textarea.value = "x".repeat(20 * COMPOSER_INPUT_MAX_ROWS);
   resizeComposerTextarea(textarea);
-  expect(textarea.style.height).toBe("60px");
+  expect(textarea.style.height).toBe("200px");
   expect(textarea.style.overflowY).toBe("hidden");
 
   textarea.value = "x".repeat(20 * (COMPOSER_INPUT_MAX_ROWS + 2));
   resizeComposerTextarea(textarea);
-  expect(textarea.style.height).toBe("60px");
+  expect(textarea.style.height).toBe("200px");
   expect(textarea.style.overflowY).toBe("auto");
 
   textarea.remove();

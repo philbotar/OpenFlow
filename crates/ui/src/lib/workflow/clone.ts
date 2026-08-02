@@ -1,4 +1,12 @@
-import type { AppSettings, Edge, Node, ProviderProfile, Workflow } from "../types";
+import type {
+  AppSettings,
+  Edge,
+  McpConnection,
+  McpServerConfig,
+  Node,
+  ProviderProfile,
+  Workflow,
+} from "../types";
 import { agentReasoningEffort, cloneProviderProfile } from "./reasoning";
 
 export function cloneWorkflow(workflow: Workflow): Workflow {
@@ -45,11 +53,7 @@ export function cloneSettings(settings: AppSettings): AppSettings {
     lsp: settings.lsp ? { ...settings.lsp } : undefined,
     mcp: settings.mcp
       ? {
-          servers: settings.mcp.servers.map((server) => ({
-            ...server,
-            args: [...server.args],
-            env: { ...server.env },
-          })),
+          servers: settings.mcp.servers.map(cloneMcpServer),
           discoverExternal: settings.mcp.discoverExternal,
           disabledDiscoveredIds: settings.mcp.disabledDiscoveredIds
             ? [...settings.mcp.disabledDiscoveredIds]
@@ -59,6 +63,44 @@ export function cloneSettings(settings: AppSettings): AppSettings {
     local_diagnostics: settings.local_diagnostics
       ? { ...settings.local_diagnostics }
       : undefined,
+  };
+}
+
+function cloneMcpConnection(connection: McpConnection): McpConnection {
+  if (connection.type === "stdio") {
+    return {
+      ...connection,
+      args: [...connection.args],
+      environment: Object.fromEntries(
+        Object.entries(connection.environment).map(([key, value]) => [key, { ...value }]),
+      ),
+    };
+  }
+  return {
+    ...connection,
+    headers: Object.fromEntries(
+      Object.entries(connection.headers).map(([key, value]) => [key, { ...value }]),
+    ),
+    auth:
+      connection.auth.type === "oauth"
+        ? { ...connection.auth, scopes: [...connection.auth.scopes] }
+        : { ...connection.auth },
+  };
+}
+
+function cloneMcpServer(server: McpServerConfig): McpServerConfig {
+  return {
+    ...server,
+    source: { ...server.source },
+    install: { ...server.install },
+    connection: cloneMcpConnection(server.connection),
+    trust: { ...server.trust },
+    policy: {
+      ...server.policy,
+      enabledTools: Array.isArray(server.policy.enabledTools)
+        ? [...server.policy.enabledTools]
+        : server.policy.enabledTools,
+    },
   };
 }
 

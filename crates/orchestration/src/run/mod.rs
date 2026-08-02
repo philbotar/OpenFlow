@@ -4,5 +4,7 @@ pub(crate) mod handoff;
 pub mod persistence;
 pub mod ports;
 pub mod prep;
+pub mod registry;
+pub(crate) mod resources;
 pub(crate) mod skill_invocation;
 pub mod state;

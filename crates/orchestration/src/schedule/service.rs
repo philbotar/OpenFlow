@@ -93,7 +93,7 @@ impl ScheduleService {
     pub fn claim_due_run(
         &self,
         now: DateTime<Utc>,
-        run_active: bool,
+        _other_runs_active: bool,
     ) -> Option<ScheduledRunCandidate> {
         let mut entries = self.entries.lock();
         for entry in entries.values_mut() {
@@ -105,14 +105,6 @@ impl ScheduleService {
             };
             if next_run_at > now {
                 continue;
-            }
-
-            if run_active {
-                entry.last_skipped_at = Some(now);
-                entry.last_error =
-                    Some("Skipped because another workflow run was active".to_string());
-                entry.next_run_at = next_run_after(&entry.schedule, now).ok();
-                return None;
             }
 
             entry.last_run_at = Some(now);
@@ -237,24 +229,24 @@ mod tests {
     }
 
     #[test]
-    fn active_manual_run_skips_due_occurrence() {
+    fn active_manual_run_does_not_block_due_occurrence() {
         let service = ScheduleService::new();
         let workflow = workflow_with_schedule("wf-1", "*/15 * * * *", true);
         service
             .refresh(&[workflow], utc("2026-06-16T00:01:00Z"))
             .expect("refresh schedules");
 
-        let candidate = service.claim_due_run(utc("2026-06-16T00:15:00Z"), true);
+        let candidate = service
+            .claim_due_run(utc("2026-06-16T00:15:00Z"), true)
+            .expect("candidate");
 
-        assert!(candidate.is_none());
+        assert_eq!(candidate.workflow_id, "wf-1");
         let status = service.statuses().remove(0);
         assert_eq!(
-            status.last_skipped_at.expect("skipped").to_rfc3339(),
+            status.last_run_at.expect("last run").to_rfc3339(),
             "2026-06-16T00:15:00+00:00"
         );
-        assert_eq!(
-            status.last_error.as_deref(),
-            Some("Skipped because another workflow run was active")
-        );
+        assert_eq!(status.last_skipped_at, None);
+        assert_eq!(status.last_error, None);
     }
 }

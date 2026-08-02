@@ -37,6 +37,8 @@ pub struct AgentRequest {
     pub model: String,
     /// Effective provider selected for this turn. `None` lets the host use its run default.
     pub provider_id: Option<String>,
+    /// Hard provider output-token limit for this invocation.
+    pub max_output_tokens: Option<u32>,
     /// Ordered system instruction bodies assembled by the engine; providers map to wire format as-is.
     pub system_messages: Vec<String>,
     pub task_prompt: String,

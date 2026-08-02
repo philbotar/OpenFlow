@@ -218,7 +218,7 @@ Runs today live entirely in memory: `RunCoordinator` holds `WorkflowRunState`; `
 | Fork from checkpoint — `replay_run(checkpoint_id)` starts new run seeded from snapshot; optional workflow diff warning | Medium | Planned |
 | Replay from node — fork from checkpoint taken after a specific node completed (extends `retry_node` with persistence) | Medium | Planned |
 | App restart — detect incomplete run records on launch; offer resume or discard | Medium | Planned |
-| Prune/retention — max runs per workflow, max checkpoint depth, delete run dir on discard | Low | Planned |
+| Stored-history retention — prune old completed run records/checkpoints; never limit live-run admission | Low | Planned |
 | Export run — zip run dir for sharing or CI artifacts | Low | Planned |
 
 **Target:** Every meaningful pause and layer boundary writes a durable checkpoint under the linked project. You can close the app, reopen, and resume a paused run. Completed and in-progress runs appear in history. Open any past run to inspect trace and chat read-only, or fork a new run from an earlier checkpoint without re-entering context by hand.
@@ -229,44 +229,47 @@ Runs today live entirely in memory: `RunCoordinator` holds `WorkflowRunState`; `
 
 ### Concurrent top-level runs
 
-OpenFlow currently owns one live `RunSession`. Starting a run replaces the previous session, and run-scoped commands infer that single active run. Users cannot start workflow B while workflow A is running or awaiting input. This capability covers independent top-level runs started by a user, schedule, or project script. It is distinct from same-workflow node parallelism and [#35 Workflow orchestration](#workflow-orchestration--reinvoke), which adds parent/child runs.
+OpenFlow owns an addressable `RunRegistry` of live `RunSession` instances. Starting a run leaves existing runs active, and run-scoped commands require the target `run_id`. Independent top-level runs can come from a user or schedule. This capability is distinct from same-workflow node parallelism and [#35 Workflow orchestration](#workflow-orchestration--reinvoke), which adds parent/child runs.
 
-| Layer | Gap |
+| Layer | Current design |
 | --- | --- |
-| `crates/orchestration/src/run/coordinator/` | One live session instead of a run registry keyed by `run_id`; handles, actions, checkpoints, and projections are not independently addressable |
-| `crates/orchestration/src/backend/` + `crates/desktop/src/commands/run.rs` | Most run actions infer the current session instead of requiring `run_id` |
-| `crates/desktop/src/run_event_bridge.rs` | Bridge ownership follows one current run; no independent event lifecycle per run |
-| `crates/ui/src/context/` | One live `runState`; selected workflow/run and executing runs are coupled |
-| Provider/tool execution | Node-level concurrency exists, but there is no cross-run capacity budget or same-repository mutation policy |
+| `crates/orchestration/src/run/` | `RunRegistry` owns one independently addressable `RunCoordinator` per `run_id` |
+| `crates/orchestration/src/backend/` + `crates/desktop/src/commands/run.rs` | Run-scoped reads and mutations require `run_id` |
+| `crates/desktop/src/run_event_bridge.rs` | Each run has an independent bridge lifecycle; shutdown stops all active runs |
+| `crates/ui/src/context/` | Projections are cached by workflow/chat; the selected view controls presentation only |
+| Provider/tool execution | Shared AI/tool budgets bound active work; mutation-capable runs sharing a canonical cwd queue |
 
-**Decisions (resolve before coding):**
+**Shipped decisions:**
 
 | ID | Question | Recommendation |
 | --- | --- | --- |
 | M1 | What is a top-level run? | Every `start_run` creates an independent run record and session. Starting or selecting another run never stops existing runs |
 | M2 | How are commands routed? | Require `run_id` on every run-scoped read or mutation (`stop`, input, approval, retry, interrupt, state, continue); only start/list operations omit it |
-| M3 | How many run at once? | Configurable global `max_concurrent_runs`, default **3**; queue overflow and show its position instead of rejecting or replacing a run |
+| M3 | How many run at once? | Do not cap registered sessions. Queue provider calls, tool executions, and same-cwd mutation-capable runs at their actual shared resource boundaries |
 | M4 | What does “active” mean in the UI? | `selected_run_id` controls presentation only. Each running/paused run keeps its own status, unread-attention badge, trace, and controls |
 | M5 | How are same-project writes protected? | Allow independent projects and read-only runs concurrently. Hold one mutation-capable run lease per canonical execution cwd; queue conflicting runs. Add isolated git-worktree execution later for true parallel writes to one repo |
 | M6 | How are provider/tool limits enforced? | Share provider request and tool-exec budgets across runs so run-level concurrency cannot multiply into unbounded model calls or subprocesses |
 
 | Item | Priority | Status |
 | --- | --- | --- |
-| Run registry — replace the single session slot with sessions keyed by `run_id`; never abort another run on start | High | Planned |
-| Run-scoped command contract — thread `run_id` through backend, desktop IPC, actions, approvals, retries, stop, continue, and state reads | High | Planned |
-| Per-run event routing — one bridge/subscription lifecycle per run; include `run_id` in every emitted state update | High | Planned |
-| UI run switcher — show running, queued, paused, and attention-required runs; switching views does not affect execution | High | Planned |
-| Global concurrency queue — configurable cap, fair start order, visible queue position, cancellation before start | High | Planned |
-| Same-cwd mutation lease — serialize write-capable runs against one canonical execution root; explain the blocked reason in UI | High | Planned |
-| Shared resource budgets — provider-call and subprocess limits across all live runs | Medium | Planned |
-| Close/restart behavior — cancel, checkpoint, or preserve each run independently; never apply a bulk action silently | Medium | Planned |
-| Acceptance coverage — two runs interleave events; input/approval routes correctly; stopping one leaves the other active; queued runs start when capacity frees | High | Planned |
+| Run registry — sessions keyed by `run_id`; starting one never aborts another | High | Done |
+| Run-scoped command contract — `run_id` routes state, input, approval, retry, interrupt, stop, continue, preview, diff, and revert operations | High | Done |
+| Per-run event routing — one bridge lifecycle per run; every projected state carries `run_id` and `workflow_id` | High | Done |
+| UI run switcher — switching workflows/chats restores each cached live projection without affecting execution | High | Done |
+| Background-run attention badges | Medium | In progress |
+| Resource-level queues — no session cap; provider, tool, and same-cwd mutation work wait at shared boundaries | High | Done |
+| Same-cwd mutation lease — serialize write-capable runs against one canonical execution root; explain the blocked reason in UI | High | Done |
+| Shared resource budgets — provider-call and subprocess limits across all live runs | Medium | Done |
+| Shutdown handling — app close checkpoints and cancels every in-process run | Medium | Done |
+| Restart recovery UX | Medium | In progress |
+| Two-chat acceptance — events stay isolated and stopping one leaves the other active | High | Done |
+| Broader approval/queue acceptance | Medium | In progress |
 
 **Target:** Start workflow A, switch to workflow B, and start B while A continues. If A pauses for approval, its badge changes without stealing focus from B. Opening A shows its own trace and controls. Stopping A does not affect B. Runs in different projects can execute concurrently; unsafe writes to the same execution root queue with a clear reason.
 
 **Depends on:** #6 (run lifecycle ownership) and [#24 Run checkpoint & replay](#run-checkpoint-history-and-replay) (durable run identity). **Unlocks:** reliable overlapping schedules, background project runs, and [#35 Workflow orchestration](#workflow-orchestration--reinvoke).
 
-**Reference:** Single-run ownership — `RunCoordinator` in `crates/orchestration/src/run/coordinator/`; event bridge — `crates/desktop/src/run_event_bridge.rs`; current concurrency model — [`architecture/threading-concurrency.md`](architecture/threading-concurrency.md).
+**Reference:** Registry ownership — `RunRegistry` in `crates/orchestration/src/run/registry.rs`; per-session lifecycle — `RunCoordinator` in `crates/orchestration/src/run/coordinator/`; event bridge — `crates/desktop/src/run_event_bridge.rs`; current concurrency model — [`architecture/threading-concurrency.md`](architecture/threading-concurrency.md).
 
 ### Workflow insights
 

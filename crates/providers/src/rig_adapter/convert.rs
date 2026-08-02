@@ -90,7 +90,7 @@ pub fn to_completion_request(request: &AgentRequest) -> Result<CompletionRequest
         documents: Vec::new(),
         tools: all_tool_specs(request).into_iter().map(rig_tool).collect(),
         temperature: None,
-        max_tokens: None,
+        max_tokens: request.max_output_tokens.map(u64::from),
         tool_choice: Some(ToolChoice::Required),
         additional_params: None,
         output_schema: None,
@@ -309,6 +309,7 @@ mod tests {
             node_label: "Node".into(),
             model: "claude-sonnet-4-6".into(),
             provider_id: None,
+            max_output_tokens: None,
             system_messages: vec!["sys-a".into(), "sys-b".into()],
             task_prompt: "do the thing".into(),
             input: json!({"k": "v"}),
@@ -326,6 +327,16 @@ mod tests {
             allow_user_input: true,
             conversation_mode: false,
         }
+    }
+
+    #[test]
+    fn explicit_output_token_limit_maps_to_provider_request() {
+        let mut request = request_with_transcript(Vec::new());
+        request.max_output_tokens = Some(77);
+
+        let completion = to_completion_request(&request).expect("completion request");
+
+        assert_eq!(completion.max_tokens, Some(77));
     }
 
     fn tc(id: &str, name: &str) -> AgentTranscriptItem {

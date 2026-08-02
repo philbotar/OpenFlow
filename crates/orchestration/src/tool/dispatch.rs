@@ -188,15 +188,15 @@ impl ToolRunner {
                 .await;
                 match outcome.output {
                     Ok(raw) => {
-                        self.finalize_record(call, raw, outcome.file_changes, None)
+                        self.finalize_captured_record(call, raw, outcome.file_changes, None)
                             .await
                     }
                     Err(error) if outcome.file_changes.is_empty() => {
                         Err(ToolRunnerError::Tool(error))
                     }
-                    Err(error) => {
-                        Ok(self.failed_record(call, error.to_string(), outcome.file_changes, None))
-                    }
+                    Err(error) => Ok(self
+                        .failed_captured_record(call, error.to_string(), outcome.file_changes, None)
+                        .await),
                 }
             }
             BuiltinToolKind::Bash => {
@@ -238,20 +238,27 @@ impl ToolRunner {
                     .await?;
                 match outcome.output {
                     Ok(raw) => {
-                        self.finalize_record(call, raw, outcome.file_changes, outcome.edit_batch)
-                            .await
+                        self.finalize_captured_record(
+                            call,
+                            raw,
+                            outcome.file_changes,
+                            outcome.edit_batch,
+                        )
+                        .await
                     }
                     Err(error)
                         if outcome.file_changes.is_empty() && outcome.edit_batch.is_none() =>
                     {
                         Err(ToolRunnerError::Tool(error))
                     }
-                    Err(error) => Ok(self.failed_record(
-                        call,
-                        error.to_string(),
-                        outcome.file_changes,
-                        outcome.edit_batch,
-                    )),
+                    Err(error) => Ok(self
+                        .failed_captured_record(
+                            call,
+                            error.to_string(),
+                            outcome.file_changes,
+                            outcome.edit_batch,
+                        )
+                        .await),
                 }
             }
             BuiltinToolKind::DeclareSubagents | BuiltinToolKind::CallSubagent => {
@@ -266,8 +273,22 @@ impl ToolRunner {
                         server_id: call.name.clone(),
                     })
                 })?;
+                let context = ctx.as_ref().ok_or_else(|| {
+                    ToolRunnerError::InvalidArguments(
+                        "MCP tool execution requires run and node context".to_string(),
+                    )
+                })?;
                 let outcome = clients
-                    .call_namespaced(&call.name, call.arguments.clone())
+                    .call_namespaced_for_origin(
+                        &call.name,
+                        call.arguments.clone(),
+                        &self.cancel_token,
+                        crate::adapters::mcp::McpRequestOrigin {
+                            node_id: context.node_id.clone(),
+                            tool_call_id: call.id.clone(),
+                            tool_name: call.name.clone(),
+                        },
+                    )
                     .await?;
                 self.finalize_record_with_status(
                     call,

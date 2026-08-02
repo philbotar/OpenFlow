@@ -2,14 +2,14 @@
   <img src="crates/desktop/icons/icon.png" alt="OpenFlow logo" width="128" height="128" />
 </p>
 
-<h1 align="center">OpenFlow: Visual AI Agent Workflow Builder</h1>
+<h1 align="center">OpenFlow</h1>
 
 <p align="center">
-  <strong>Open-source desktop IDE for building, running, and debugging multi-agent LLM workflows.</strong>
+  <strong>Agent harness for creating multi-agent workflows</strong>
 </p>
 
 <p align="center">
-  Design agent pipelines on a canvas. Orchestrate models, tools, subagents, human approvals, and MCP servers without hand-wiring prompts, provider SDKs, or state.
+  Design workflows where different provider agents can work autonomously or with human intervention, with defined handoffs, context availablility and parallel execution.
 </p>
 
 <p align="center">
@@ -20,22 +20,20 @@
 </p>
 
 <p align="center">
-  <a href="#visual-multi-agent-workflow-orchestration">Overview</a> ·
+  <a href="#manage-multi-step-ai-processes-with-ease">Overview</a> ·
   <a href="#install">Install</a> ·
   <a href="#use-cases">Use cases</a> ·
-  <a href="#features-for-ai-agent-workflows">Features</a> ·
+  <a href="#features">Features</a> ·
   <a href="#supported-ai-model-providers">Providers</a> ·
   <a href="#developing">Developing</a> ·
   <a href="#contributing">Contributing</a>
 </p>
 
-## Visual multi-agent workflow orchestration
+## Manage multi-step AI processes with ease
 
-OpenFlow replaces hand-built prompt chains with a visual DAG editor and agent runtime. Drag AI agent nodes onto a canvas, connect their dependencies, configure prompts, providers, models, and tools, then watch the workflow execute in real time.
+Create workflows manually or with AI, you can replicate the workflow you do daily with skills easily. It acts like a sequential Claude code sessions, where you can have dependencies and handoffs between mutliple agents, and allow them to work in parallel to speed up your development.
 
-Each graph is an executable, repeatable LLM workflow. Independent agents run in parallel, downstream nodes receive upstream output, and explicit handoff artifacts move results through the pipeline.
-
-Use OpenFlow like a Claude Code-style interactive agent session, with chat and tool approvals, or enable auto-approve for an autonomous run. Project workflows can live in Git under `.flow/workflows/`.
+Aswell, OpenFlow watches your runs, providing post-run reports to identify where in your workflow the agent is getting stuck, and reccomends ways to improve the quality and speed of your workflow. 
 
 <p align="center">
   <img src="docs/assets/openflow-workflow-demo.gif" alt="OpenFlow running a four-agent feature-planning workflow" width="100%" />
@@ -47,7 +45,7 @@ Use OpenFlow like a Claude Code-style interactive agent session, with chat and t
 
 ## Install
 
-Grab the latest build from [Releases](https://github.com/philbotar/OpenFlow/releases/latest) and open it. No Rust or Node required.
+Grab the latest build from [Releases](https://github.com/philbotar/OpenFlow/releases/latest) and open it. No prior installs required. 
 
 > **macOS Gatekeeper:** If macOS blocks the app on first launch, right-click **OpenFlow** → **Open**, or run `xattr -cr /path/to/OpenFlow.app`.
 
@@ -61,58 +59,15 @@ Want to build the installer yourself instead? See [Developing](#developing) belo
 - **Multi-provider workflows** — route individual nodes through different hosted or local model providers.
 - **Repeatable LLM pipelines** — version prompts, agent settings, graph structure, and project context alongside your code.
 
-## Features for AI agent workflows
+## Features
 
-<table>
-<tr>
-<td width="50%" valign="top">
-
-### Visual workflow editor
-
-Drag nodes onto a canvas, wire them into a DAG, and configure each agent in an inspector panel. Validation runs before every run: cycles and broken edges never reach execution.
-
-</td>
-<td width="50%" valign="top">
-
-### Parallel agent layers
-
-Nodes in the same topological layer run concurrently. Downstream agents receive upstream output automatically, with no manual plumbing.
-
-</td>
-</tr>
-<tr>
-<td width="50%" valign="top">
-
-### Tools & subagents
-
-Agents can read and edit files, run shell commands, search code or the web, call MCP tools, and delegate to saved subagents. Approval policies gate sensitive actions.
-
-</td>
-<td width="50%" valign="top">
-
-### Multi-provider LLM support
-
-Choose a provider and model per node. Mix hosted APIs, ChatGPT OAuth, Amazon Bedrock, local Ollama or LM Studio, and custom OpenAI-compatible endpoints in one workflow.
-
-</td>
-</tr>
-<tr>
-<td width="50%" valign="top">
-
-### Durable context
-
-Attach images, keep workflows beside project code, and preserve run-owned context across replies, retries, checkpoint resume, and replay.
-
-</td>
-<td width="50%" valign="top">
-
-### Interactive or autonomous runs
-
-Chat with individual agents, inspect streamed reasoning and results, and approve tools as they run. Or enable auto-approve and let dependency-ready work finish unattended.
-
-</td>
-</tr>
-</table>
+- **Canvas editor** — Add nodes and edges, configure each agent in the Inspector. Validation blocks cycles and broken edges before **Run**.
+- **Build with AI** — Draft or edit a workflow graph from chat, then save with **Create Workflow** or **Apply Changes**.
+- **Parallel layers** — Nodes in the same dependency layer run concurrently. Downstream nodes receive upstream output and optional handoff artifacts.
+- **Per-node models** — Each node can use its own model from the same provider or a different one.
+- **Tools and subagents** — Built-in tools (files, shell, search, MCP, and others) plus callable saved agents. **Approval mode** controls whether tool calls pause for confirmation.
+- **Chat and approvals** — Per-node chat during a run; approve or deny tool calls, or set **Auto-approve all**.
+- **Run review** — After a successful run, chat may show post-run review suggestions (prompts, tools, structure, models, coordination). Advisory only; does not change run success.
 
 ## Supported AI model providers
 

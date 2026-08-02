@@ -95,17 +95,28 @@ export function createRunStateKernel(activeWorkflowId: Accessor<string | null>) 
     Record<string, WorkflowRunState>
   >({});
   const [backendRunWorkflowId, setBackendRunWorkflowId] = createSignal<string | null>(null);
+  const backendRunState = () => {
+    const backendId = backendRunWorkflowId();
+    if (!backendId) {
+      return null;
+    }
+    return (
+      runStateByWorkflowId[backendId] ??
+      (activeWorkflowId() === backendId ? runState() : null)
+    );
+  };
+  const backendRunActive = () => backendRunState()?.active === true;
 
   const cacheRunStateForWorkflow = (workflowId: string, state: WorkflowRunState) => {
     setRunStateByWorkflowId(workflowId, normalizeRunState(state));
   };
 
   const publishBackendRunState = (nextRunState: WorkflowRunState) => {
-    const backendId = backendRunWorkflowId();
-    if (backendId) {
-      cacheRunStateForWorkflow(backendId, nextRunState);
+    const workflowId = nextRunState.workflowId ?? backendRunWorkflowId();
+    if (workflowId) {
+      cacheRunStateForWorkflow(workflowId, nextRunState);
     }
-    if (activeWorkflowId() === backendId) {
+    if (activeWorkflowId() === workflowId) {
       setRunState(nextRunState);
     }
   };
@@ -117,6 +128,7 @@ export function createRunStateKernel(activeWorkflowId: Accessor<string | null>) 
     runStateByWorkflowId,
     setRunStateByWorkflowId,
     backendRunWorkflowId,
+    backendRunActive,
     setBackendRunWorkflowId,
     cacheRunStateForWorkflow,
     publishBackendRunState,
@@ -208,7 +220,6 @@ export async function persistAll(params: {
 export function selectWorkflow(params: {
   workflow: Workflow;
   activeWorkflowId: Accessor<string | null>;
-  backendRunWorkflowId: Accessor<string | null>;
   runState: Accessor<WorkflowRunState | null>;
   runStateByWorkflowId: Record<string, WorkflowRunState>;
   cacheRunStateForWorkflow: (workflowId: string, state: WorkflowRunState) => void;
@@ -223,12 +234,11 @@ export function selectWorkflow(params: {
 }) {
   const restoreRunStateForWorkflow = (workflow: Workflow) => {
     const workflowId = workflow.id;
-    const backendId = params.backendRunWorkflowId();
     const cached = params.runStateByWorkflowId[workflowId];
-    if (backendId === workflowId) {
-      params.applyRunStateSnapshot(cached ?? createIdleRunState(workflow));
+    params.applyRunStateSnapshot(cached ?? createIdleRunState(workflow));
+    if (cached?.runId) {
       void desktop
-        .getRunState()
+        .getRunState(cached.runId)
         .then((live) => {
           if (!live || params.activeWorkflowId() !== workflowId) {
             return;
@@ -239,14 +249,11 @@ export function selectWorkflow(params: {
         .catch(() => undefined);
       return;
     }
-    params.applyRunStateSnapshot(cached ?? createIdleRunState(workflow));
   };
 
   const previousId = params.activeWorkflowId();
   if (previousId && previousId !== params.workflow.id) {
-    const backendId = params.backendRunWorkflowId();
-    const toCache =
-      previousId === backendId ? params.runStateByWorkflowId[previousId] ?? params.runState() : params.runState();
+    const toCache = params.runState();
     if (toCache) {
       params.cacheRunStateForWorkflow(previousId, toCache);
     }

@@ -9,10 +9,11 @@ use crate::adapters::storage::settings_store::FileSettingsStore;
 use crate::adapters::storage::skill_store::FileSkillCatalog;
 use crate::agent::{AgentLibrary, AgentStore};
 use crate::chat::{ChatCatalog, ChatStore};
+use crate::mcp::oauth::McpOAuthCoordinator;
 use crate::project::ports::ProjectStore;
 use crate::project::registry::ProjectRegistry;
-use crate::run::coordinator::RunCoordinator;
 use crate::run::ports::{RunAttachmentStore, RunCheckpointStore};
+use crate::run::registry::RunRegistry;
 use crate::schedule::ScheduleService;
 use crate::settings::facade::SettingsFacade;
 use crate::settings::ports::{SettingsStore, SkillCatalog};
@@ -21,13 +22,17 @@ use crate::terminal::TerminalManager;
 use crate::workflow::authoring::WorkflowAuthoringService;
 use crate::workflow::catalog::WorkflowCatalog;
 use crate::workflow::ports::{ProjectWorkflowStore, WorkflowStore};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::Mutex;
+use tokio_util::sync::CancellationToken;
 
 mod agents;
 mod authoring;
 mod chat;
 mod helpers;
+mod mcp;
 mod projects;
 mod runs;
 mod schedule;
@@ -66,7 +71,7 @@ pub struct AppBackend {
     pub(super) agents: AgentLibrary,
     pub(super) projects: ProjectRegistry,
     pub(super) settings: SettingsFacade,
-    pub(super) runs: RunCoordinator,
+    pub(super) runs: RunRegistry,
     pub(super) attachment_store: Arc<dyn RunAttachmentStore>,
     pub(super) run_store: Box<dyn RunCheckpointStore>,
     pub(super) terminal: TerminalManager,
@@ -74,6 +79,9 @@ pub struct AppBackend {
     pub(super) schedule: ScheduleService,
     pub(super) app_runs_root: PathBuf,
     pub(super) managed_workspace_root: PathBuf,
+    pub(super) mcp_install_root: PathBuf,
+    pub(super) mcp_install_operations: Mutex<HashMap<String, CancellationToken>>,
+    pub(super) mcp_oauth: McpOAuthCoordinator,
     /// Keeps an owned runtime alive for tests and non-Tauri entrypoints.
     _owned_runtime: Option<tokio::runtime::Runtime>,
 }
@@ -82,16 +90,20 @@ impl AppBackend {
     #[must_use]
     pub fn new(deps: AppBackendDeps, owned_runtime: Option<tokio::runtime::Runtime>) -> Self {
         let attachment_store = deps.attachment_store;
+        let mcp_install_root = deps.managed_workspace_root.join("mcp-installs");
+        let mcp_oauth = McpOAuthCoordinator::new(
+            Arc::new(crate::adapters::mcp::oauth_http::McpOAuthHttpAdapter),
+            Arc::new(crate::adapters::mcp::oauth_store::SettingsOAuthStore::new(
+                Arc::clone(&deps.settings_store),
+            )),
+        );
         Self {
             workflows: WorkflowCatalog::new(deps.workflow_store, deps.project_workflow_store),
             chats: ChatCatalog::new(deps.chat_store),
             agents: AgentLibrary::new(deps.agent_store),
             projects: ProjectRegistry::new(deps.project_store),
             settings: SettingsFacade::new(deps.settings_store, deps.skill_catalog, deps.env),
-            runs: RunCoordinator::with_attachment_store(
-                deps.runtime_handle,
-                Arc::clone(&attachment_store),
-            ),
+            runs: RunRegistry::new(deps.runtime_handle, Arc::clone(&attachment_store)),
             attachment_store,
             run_store: Box::new(FileRunCheckpointStore),
             terminal: TerminalManager::new(),
@@ -99,6 +111,9 @@ impl AppBackend {
             schedule: ScheduleService::new(),
             app_runs_root: deps.app_runs_root,
             managed_workspace_root: deps.managed_workspace_root,
+            mcp_install_root,
+            mcp_install_operations: Mutex::new(HashMap::new()),
+            mcp_oauth,
             _owned_runtime: owned_runtime,
         }
     }

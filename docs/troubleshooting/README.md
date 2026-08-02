@@ -42,6 +42,26 @@ Key order for API-key providers: transient run input, stored `settings.json` key
 | Image card has no preview | The bounded local preview failed or its run data is unavailable | The message stays visible as a generic attachment card. Reattach only if the provider also reports an attachment error. |
 | Chat deletion reports cleanup pending | Metadata deletion succeeded but run-directory cleanup could not finish | Restart or open run history to retry quarantined cleanup. Do not manually edit `chats.json`. |
 
+## MCP servers
+
+| State / symptom | Likely cause | Fix |
+| --- | --- | --- |
+| **Not installed** | Registry package metadata exists without a completed exact-version install | Review the package/version/command, install it, then run **Approve & Test**. |
+| **Needs config** | Command or required env/header input is empty | Store inputs in `{data_local}/openflow/mcp-secrets.json`. Credential values must not appear in settings/export. |
+| **Auth required** | OAuth token is absent, expired without refresh, revoked, or rejected | Use **Connect OAuth** or **Re-authenticate**. Verify displayed scopes and issuer, then test again. |
+| **Failed · Preflight** | Executable missing, remote URL rejected, secret ref unavailable, or trust stale | Read the exact row error. Fix config/runtime, then **Retry**. Security-relevant changes require fresh approval. |
+| **Failed · Connect/List tools/Close** | Process/HTTP initialization, capability negotiation, pagination, or shutdown failed | Use **Copy diagnostics**. Retry only as a user action; OpenFlow does not replay ambiguous tool calls automatically. |
+| Enabled server skipped during a run | That server failed setup; other servers continue | Read the system chat message, disable/fix the named server, then restart the run if its tools are required. |
+| Sampling/elicitation card appears | An allowed server made a server-to-client req from an active MCP tool | Review server + originating tool. Approve once or deny. Stop cancels pending callbacks. |
+
+Local children run only during probes/runs. OpenFlow keeps no background MCP process. Remote endpoints require HTTPS unless explicit loopback development is enabled; private/link-local targets and unsafe redirects remain blocked.
+
+Run the deterministic local protocol lane:
+
+```bash
+./scripts/verify/mcp-live.sh
+```
+
 ## Focused verification
 
 ```bash

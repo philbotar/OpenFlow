@@ -15,9 +15,8 @@ use crate::workflow::authoring::{
     WorkflowAuthoringDraft,
 };
 use engine::{
-    AgentError, AgentMessageTurn, AgentNeedUserInput, AgentRequest, AgentTranscriptItem,
-    AgentTurnOutcome, AgentTurnSuccess, AiPort, AiStreamEvent, AiStreamSink, NodeId, Workflow,
-    WorkflowId,
+    AgentError, AgentMessageTurn, AgentRequest, AgentTranscriptItem, AgentTurnOutcome,
+    AgentTurnSuccess, AiPort, AiStreamEvent, AiStreamSink, NodeId, Workflow, WorkflowId,
 };
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -185,6 +184,7 @@ impl WorkflowAuthoringService {
             .unwrap_or_default();
 
         let system_prompt = authoring_system_prompt(project_context.as_ref());
+        let authoring_change_requested = explicit_workflow_change_request(&user_message);
         let output_schema = authoring_finish_output_schema();
         let project_read_tools = project_context
             .as_ref()
@@ -198,15 +198,19 @@ impl WorkflowAuthoringService {
                     .map_err(|error| AuthoringError::ProjectReadTools(error.to_string()))
             })
             .transpose()?;
-        let mut available_tools = authoring_tool_definitions();
+        let mut available_tools = if authoring_change_requested {
+            authoring_tool_definitions()
+        } else {
+            Vec::new()
+        };
         if project_read_tools.is_some() {
             available_tools.extend(ProjectReadTools::definitions());
         }
         let task_prompt = if base_context.is_empty() {
-            "Create the workflow draft incrementally using the authoring tools.".to_string()
+            "Continue the conversation. Answer the user's message directly. Only propose a workflow draft if the user explicitly asks for a workflow change.".to_string()
         } else {
             format!(
-                "Update the workflow draft incrementally using the authoring tools.\n\nCurrent draft JSON:\n{base_context}"
+                "Continue the conversation. Answer the user's message directly unless the user explicitly asks for a workflow change. Treat the current draft as a proposal; do not change it for an informational question.\n\nCurrent draft JSON:\n{base_context}"
             )
         };
 
@@ -217,10 +221,12 @@ impl WorkflowAuthoringService {
         let mut model_attempt = 1u8;
         let mut malformed_submit_retries = 0u8;
         let mut missing_submit_retries = 0u8;
+        let mut missing_draft_retries = 0u8;
         let mut mixed_tool_turn_retries = 0u8;
         let mut invalid_draft_retries = 0u8;
         let mut authoring_tool_rounds = 0u8;
         let mut messages = messages;
+        let mut draft_changed = false;
         let (assistant_message, workflow, validation) = loop {
             let request = AgentRequest {
                 workflow_id: WorkflowId::from("workflow-authoring"),
@@ -228,6 +234,7 @@ impl WorkflowAuthoringService {
                 node_label: "Workflow authoring".to_string(),
                 model: model.clone(),
                 provider_id: None,
+                max_output_tokens: None,
                 system_messages: vec![system_prompt.clone()],
                 task_prompt: task_prompt.clone(),
                 input: json!({ "userMessage": user_message }),
@@ -242,7 +249,7 @@ impl WorkflowAuthoringService {
                 reasoning_budget_tokens,
                 fast_mode: false,
                 allow_user_input: false,
-                conversation_mode: false,
+                conversation_mode: true,
                 tool_access_policy: engine::ToolAccessPolicy::Execution,
             };
 
@@ -281,11 +288,10 @@ impl WorkflowAuthoringService {
                     {
                         transcript.push(AgentTranscriptItem::AssistantMessage { content });
                     }
-                    let mut draft_changed = false;
+                    let draft_before_tools = tool_state.snapshot();
                     for call in &batch.tool_calls {
                         transcript.push(AgentTranscriptItem::ToolCall { call: call.clone() });
                         let result = if is_authoring_tool(&call.name) {
-                            draft_changed = true;
                             tool_state.execute(call)
                         } else {
                             project_read_tools
@@ -297,8 +303,9 @@ impl WorkflowAuthoringService {
                         transcript.push(AgentTranscriptItem::ToolResult { result });
                     }
 
-                    if draft_changed {
-                        publish_draft_progress(self, session_id, &tool_state, &on_draft_update);
+                    if draft_before_tools != tool_state.snapshot() {
+                        draft_changed = true;
+                        missing_draft_retries = 0;
                     }
 
                     let thinking_text = thinking_buffer
@@ -322,13 +329,19 @@ impl WorkflowAuthoringService {
                 Ok(AgentTurnOutcome::Completed(AgentTurnSuccess { output, .. })) => {
                     let assistant_message = extract_assistant_message(&output);
                     if output_contains_legacy_draft(&output) {
+                        if !authoring_change_requested {
+                            let (workflow, validation) =
+                                existing_draft_state(current_draft.clone());
+                            break (assistant_message, workflow, validation);
+                        }
+                        draft_changed = true;
                         match build_workflow_from_output(&output, current_draft.as_ref(), &model) {
                             Ok((workflow, validation)) if validation.valid => {
-                                break (assistant_message, workflow, validation)
+                                break (assistant_message, Some(workflow), validation)
                             }
                             Ok((workflow, validation)) => {
                                 if invalid_draft_retries >= MAX_INVALID_DRAFT_RETRIES {
-                                    break (assistant_message, workflow, validation);
+                                    break (assistant_message, Some(workflow), validation);
                                 }
                                 invalid_draft_retries += 1;
                                 model_attempt += 1;
@@ -358,11 +371,29 @@ impl WorkflowAuthoringService {
                     } else {
                         match tool_state.materialize_workflow() {
                             Ok((workflow, validation)) if validation.valid => {
-                                break (assistant_message, workflow, validation)
+                                if authoring_change_requested && !draft_changed {
+                                    if missing_draft_retries < MAX_MISSING_DRAFT_RETRIES {
+                                        missing_draft_retries += 1;
+                                        model_attempt += 1;
+                                        push_missing_draft_retry(
+                                            &mut messages,
+                                            &mut transcript,
+                                            &assistant_message,
+                                            missing_draft_retries,
+                                        );
+                                        continue;
+                                    }
+                                    break (
+                                        proposal_not_created_message(&assistant_message),
+                                        Some(workflow),
+                                        validation,
+                                    );
+                                }
+                                break (assistant_message, Some(workflow), validation);
                             }
                             Ok((workflow, validation)) => {
                                 if invalid_draft_retries >= MAX_INVALID_DRAFT_RETRIES {
-                                    break (assistant_message, workflow, validation);
+                                    break (assistant_message, Some(workflow), validation);
                                 }
                                 invalid_draft_retries += 1;
                                 model_attempt += 1;
@@ -393,38 +424,35 @@ impl WorkflowAuthoringService {
                 }
                 Ok(AgentTurnOutcome::Message(AgentMessageTurn {
                     assistant_message, ..
-                })) if missing_submit_retries < MAX_MISSING_SUBMIT_TURN_RETRIES => {
-                    missing_submit_retries += 1;
-                    model_attempt += 1;
-                    transcript.push(AgentTranscriptItem::AssistantMessage {
-                        content: assistant_message,
-                    });
-                    transcript.push(AgentTranscriptItem::UserMessage {
-                        content: AUTHORING_FINISH_REQUIRED_FEEDBACK.to_string(),
-                        attachments: Vec::new(),
-                    });
-                }
-                Ok(AgentTurnOutcome::Message(_)) => {
-                    return Err(AgentError::Failed(format!(
-                        "workflow authoring model produced more than {MAX_MISSING_SUBMIT_TURN_RETRIES} consecutive text-only turns"
-                    ))
-                    .into());
-                }
-                Ok(AgentTurnOutcome::NeedsUserInput(AgentNeedUserInput {
-                    assistant_message,
-                    ..
-                })) if model_attempt <= MAX_AUTHORING_CLARIFICATION_RETRIES => {
-                    transcript.push(AgentTranscriptItem::AssistantMessage {
-                        content: assistant_message,
-                    });
-                    transcript.push(AgentTranscriptItem::UserMessage {
-                        content: AUTHORING_FINISH_REQUIRED_FEEDBACK.to_string(),
-                        attachments: Vec::new(),
-                    });
-                    model_attempt += 1;
+                })) => {
+                    if authoring_change_requested
+                        && !draft_changed
+                        && claims_workflow_proposal_ready(&assistant_message)
+                    {
+                        if missing_draft_retries < MAX_MISSING_DRAFT_RETRIES {
+                            missing_draft_retries += 1;
+                            model_attempt += 1;
+                            push_missing_draft_retry(
+                                &mut messages,
+                                &mut transcript,
+                                &assistant_message,
+                                missing_draft_retries,
+                            );
+                            continue;
+                        }
+                        let (workflow, validation) = existing_draft_state(current_draft.clone());
+                        break (
+                            proposal_not_created_message(&assistant_message),
+                            workflow,
+                            validation,
+                        );
+                    }
+                    let (workflow, validation) = existing_draft_state(current_draft.clone());
+                    break (assistant_message, workflow, validation);
                 }
                 Ok(AgentTurnOutcome::NeedsUserInput(need)) => {
                     let assistant_message = need.assistant_message;
+                    let (draft, validation) = existing_draft_state(current_draft.clone());
                     messages.push(WorkflowAuthoringMessage {
                         role: WorkflowAuthoringRole::Assistant,
                         content: assistant_message.clone(),
@@ -442,16 +470,10 @@ impl WorkflowAuthoringService {
                     return Ok(WorkflowAuthoringTurnResult {
                         session_id: session_id.to_string(),
                         assistant_message,
-                        draft: current_draft,
-                        validation: WorkflowAuthoringValidation {
-                            valid: false,
-                            errors: vec![
-                                "Model requested clarification instead of a draft".to_string()
-                            ],
-                            warnings: Vec::new(),
-                            dag: None,
-                        },
+                        draft,
+                        validation,
                         messages,
+                        draft_changed: false,
                     });
                 }
                 Err(error)
@@ -528,15 +550,26 @@ impl WorkflowAuthoringService {
                 .get_mut(session_id)
                 .ok_or(AuthoringError::SessionNotFound)?;
             session.messages = messages.clone();
-            session.current_draft = Some(workflow.clone());
+            session.current_draft = workflow.clone();
+        }
+
+        if draft_changed {
+            if let Some(workflow) = workflow.clone() {
+                on_draft_update(WorkflowAuthoringDraftEvent {
+                    session_id: session_id.to_string(),
+                    draft: Some(workflow),
+                    validation: validation.clone(),
+                });
+            }
         }
 
         Ok(WorkflowAuthoringTurnResult {
             session_id: session_id.to_string(),
             assistant_message,
-            draft: Some(workflow),
+            draft: workflow,
             validation,
             messages,
+            draft_changed,
         })
     }
 }
@@ -584,9 +617,9 @@ where
     }
 }
 
-const MAX_AUTHORING_CLARIFICATION_RETRIES: u8 = 1;
 const MAX_MALFORMED_SUBMIT_OUTPUT_RETRIES: u8 = 3;
 const MAX_MISSING_SUBMIT_TURN_RETRIES: u8 = 3;
+const MAX_MISSING_DRAFT_RETRIES: u8 = 2;
 const MAX_MIXED_TOOL_TURN_RETRIES: u8 = 3;
 const MAX_INVALID_DRAFT_RETRIES: u8 = 5;
 
@@ -595,36 +628,6 @@ fn mixed_tool_turn_feedback(error: &AgentError) -> String {
     format!(
         "Your last response mixed finish/submit tools and authoring tools ({tool_names}) and was rejected; no calls from that response were executed. Call openflow_submit_node_output alone when the draft is complete, or call one or more authoring tools (openflow_set_workflow_meta, openflow_add_node, openflow_update_node, openflow_add_edge, openflow_remove_node, openflow_remove_edge) without submit in the same batch."
     )
-}
-
-fn publish_draft_progress<G>(
-    service: &WorkflowAuthoringService,
-    session_id: &str,
-    tool_state: &AuthoringToolState,
-    on_draft_update: &G,
-) where
-    G: Fn(WorkflowAuthoringDraftEvent),
-{
-    let materialized = tool_state.materialize_workflow().ok();
-    let validation = materialized
-        .as_ref()
-        .map(|(_, validation)| validation.clone())
-        .unwrap_or_else(|| tool_state.validation_summary());
-    let draft = materialized.map(|(workflow, _)| workflow);
-    if let Some(workflow) = draft.clone() {
-        let mut sessions = service
-            .sessions
-            .lock()
-            .expect("authoring sessions mutex poisoned");
-        if let Some(session) = sessions.get_mut(session_id) {
-            session.current_draft = Some(workflow);
-        }
-    }
-    on_draft_update(WorkflowAuthoringDraftEvent {
-        session_id: session_id.to_string(),
-        draft,
-        validation,
-    });
 }
 
 fn push_invalid_draft_retry(
@@ -659,8 +662,141 @@ fn push_invalid_draft_retry(
     });
 }
 
+fn push_missing_draft_retry(
+    messages: &mut Vec<WorkflowAuthoringMessage>,
+    transcript: &mut Vec<AgentTranscriptItem>,
+    assistant_message: &str,
+    attempt: u8,
+) {
+    messages.push(WorkflowAuthoringMessage {
+        role: WorkflowAuthoringRole::Thinking,
+        content: format!(
+            "The model described a proposal without changing the draft; asking it to create the draft (attempt {attempt}/{MAX_MISSING_DRAFT_RETRIES})."
+        ),
+    });
+    transcript.push(AgentTranscriptItem::AssistantMessage {
+        content: assistant_message.to_string(),
+    });
+    transcript.push(AgentTranscriptItem::UserMessage {
+        content: "You described a workflow proposal without changing the workflow draft. Do not claim that a proposal is ready yet. Use the authoring tools to create or edit the requested workflow, then call openflow_submit_node_output with assistantMessage only. If the request is unclear, ask a clarification question instead of submitting a proposal.".to_string(),
+        attachments: Vec::new(),
+    });
+}
+
+fn claims_workflow_proposal_ready(message: &str) -> bool {
+    let message = message.to_ascii_lowercase();
+    let claims_proposal = ["proposal", "propose", "proposed"]
+        .iter()
+        .any(|term| message.contains(term));
+    let asks_acceptance = ["review", "accept", "not saved", "ready"]
+        .iter()
+        .any(|term| message.contains(term));
+    claims_proposal && asks_acceptance
+}
+
+fn proposal_not_created_message(message: &str) -> String {
+    format!(
+        "{message}\n\nI haven't changed the workflow draft yet, so there is nothing to accept. Tell me what to add or edit and I'll prepare a proposal."
+    )
+}
+
 fn output_contains_legacy_draft(output: &Value) -> bool {
     workflow_draft_value_from_model_output(output).is_ok()
+}
+
+fn existing_draft_state(
+    draft: Option<Workflow>,
+) -> (Option<Workflow>, WorkflowAuthoringValidation) {
+    match draft {
+        Some(workflow) => {
+            let validation = validate_authoring_workflow(&workflow);
+            (Some(workflow), validation)
+        }
+        None => (
+            None,
+            WorkflowAuthoringValidation {
+                valid: false,
+                errors: vec!["No workflow draft exists yet".to_string()],
+                warnings: Vec::new(),
+                dag: None,
+            },
+        ),
+    }
+}
+
+pub(super) fn explicit_workflow_change_request(message: &str) -> bool {
+    const ACTIONS: &[&str] = &[
+        "add",
+        "apply",
+        "build",
+        "change",
+        "configure",
+        "create",
+        "delete",
+        "design",
+        "edit",
+        "make",
+        "modify",
+        "remove",
+        "rename",
+        "replace",
+        "revise",
+        "update",
+    ];
+    const TARGETS: &[&str] = &[
+        "agent",
+        "agents",
+        "draft",
+        "edge",
+        "edges",
+        "graph",
+        "handoff",
+        "node",
+        "nodes",
+        "pipeline",
+        "prompt",
+        "prompts",
+        "workflow",
+        "workflows",
+    ];
+    let words = message
+        .split(|character: char| !character.is_ascii_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .map(str::to_ascii_lowercase)
+        .collect::<Vec<_>>();
+    let has_action = words.iter().any(|word| ACTIONS.contains(&word.as_str()));
+    let has_target = words.iter().any(|word| TARGETS.contains(&word.as_str()));
+    let starts_workflow_creation = matches!(
+        words.first().map(String::as_str),
+        Some("build" | "create" | "design" | "make")
+    );
+    if !has_action || (!has_target && !starts_workflow_creation) {
+        return false;
+    }
+
+    let first = words.first().map(String::as_str);
+    if matches!(
+        first,
+        Some("how" | "what" | "why" | "when" | "where" | "tell" | "explain")
+    ) || words
+        .iter()
+        .any(|word| matches!(word.as_str(), "explain" | "understand" | "learn" | "know"))
+    {
+        return false;
+    }
+
+    let direct_request = matches!(first, Some(word) if ACTIONS.contains(&word))
+        || words.iter().any(|word| word == "please")
+        || words.windows(2).any(|window| window == ["let", "us"])
+        || words.windows(2).any(|window| window == ["help", "me"])
+        || words.windows(2).any(|window| window == ["i", "want"])
+        || words.windows(2).any(|window| window == ["i", "need"])
+        || words
+            .windows(3)
+            .any(|window| window == ["i", "would", "like"])
+        || matches!(first, Some("can" | "could" | "would") if words.get(1).is_some_and(|word| matches!(word.as_str(), "you" | "we" | "us")));
+
+    direct_request
 }
 
 fn extract_assistant_message(output: &Value) -> String {
@@ -688,8 +824,6 @@ fn build_workflow_from_output(
     let validation = validate_authoring_workflow(&workflow);
     Ok((workflow, validation))
 }
-
-const AUTHORING_FINISH_REQUIRED_FEEDBACK: &str = "Build the workflow with the authoring tools, then call openflow_submit_node_output with assistantMessage only. Do not ask clarifying questions — make reasonable assumptions.";
 
 fn malformed_submit_output_feedback(error: &AgentError) -> String {
     format!(
@@ -741,10 +875,10 @@ fn authoring_system_prompt(project_context: Option<&WorkflowAuthoringProjectCont
          Read-only project tools are available in this conversation: read, search, and find. \
          Use them to inspect relevant files before designing repository-specific nodes. All paths \
          must be relative to the project's execution cwd. These tools cannot modify files.\n\n\
-         Use this context to make repository-aware assumptions. Prefer nodes that can inspect, \
-         reason about, and modify files relative to the project's execution cwd when the user's \
-         request is about this codebase. Build incrementally with the authoring tools; do not ask \
-         follow-up questions.\n\n\
+         Use this context to make repository-aware assumptions when the user explicitly asks for \
+         a repository workflow change. Prefer nodes that can inspect, reason about, and modify \
+         files relative to the project's execution cwd. For informational questions, answer in \
+         chat without changing the draft.\n\n\
          ## Starting template\n\n\
          This session begins with a preloaded template (clarify → parallel plan/risk → brief). \
          Adapt it with openflow_set_workflow_meta, openflow_update_node, and edge/node tools — do \

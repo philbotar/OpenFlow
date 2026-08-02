@@ -143,11 +143,15 @@ pub struct ContextWindowSnapshot {
 pub struct WorkflowRunState {
     pub active: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub run_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub execution_cwd: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub waiting_reason: Option<String>,
     pub awaiting_node_id: Option<NodeId>,
     #[serde(default)]
     pub awaiting_node_ids: Vec<NodeId>,
@@ -156,6 +160,8 @@ pub struct WorkflowRunState {
     pub active_manual_node_id: Option<NodeId>,
     pub active_tool_call_id: Option<String>,
     pub pending_approvals: Vec<engine::PendingToolApproval>,
+    #[serde(default)]
+    pub pending_mcp_client_requests: Vec<engine::PendingMcpClientRequest>,
     pub tool_calls_by_node: BTreeMap<NodeId, Vec<ToolCallSummary>>,
     pub tool_artifacts: BTreeMap<String, ToolArtifactSummary>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -198,15 +204,18 @@ impl WorkflowRunState {
             });
         Self {
             active: true,
+            workflow_id: Some(workflow.id.to_string()),
             run_id: None,
             execution_cwd: None,
             project_id: None,
+            waiting_reason: None,
             awaiting_node_id: None,
             awaiting_node_ids: Vec::new(),
             structured_input_by_node: BTreeMap::new(),
             active_manual_node_id: None,
             active_tool_call_id: None,
             pending_approvals: Vec::new(),
+            pending_mcp_client_requests: Vec::new(),
             tool_calls_by_node: BTreeMap::new(),
             tool_artifacts: BTreeMap::new(),
             plan_mode,
@@ -244,6 +253,7 @@ impl WorkflowRunState {
         self.active_manual_node_id = None;
         self.active_tool_call_id = None;
         self.pending_approvals.clear();
+        self.pending_mcp_client_requests.clear();
         self
     }
 }

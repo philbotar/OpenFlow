@@ -489,14 +489,14 @@ export function ConversationComposer(props: {
               />
             </Button>
             </Tooltip>
-            <Show when={!props.directChat && ctx.runState()?.active}>
+            <Show when={ctx.runState()?.active}>
               <Tooltip label={ctx.stoppingRun() ? "Stopping run" : "Stop run"}>
                 <Button
                   variant="danger"
                   class="composer-stop-button"
                   onClick={() => void ctx.handleStopRun()}
                   disabled={ctx.stoppingRun()}
-                  aria-label="Stop workflow run"
+                  aria-label={props.directChat ? "Stop chat run" : "Stop workflow run"}
                 >
                   <Square
                     class="composer-stop-icon"

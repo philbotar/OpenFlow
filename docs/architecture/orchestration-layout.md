@@ -32,7 +32,7 @@ backend/                  AppBackend facade and composition root
     ├── project/           project registry and file references
     ├── settings/          settings facade, provider readiness, skills
     ├── schedule/          schedule evaluation and status
-    ├── run/               active runs, checkpoints, state projection
+    ├── run/               run registry, per-run coordinators, checkpoints, state projection
     ├── terminal.rs        embedded terminal sessions
     └── tool/              tool registry, dispatch, retry, output
 
@@ -139,7 +139,8 @@ Catalog owns merge policy. Stores only read and write bytes.
 
 | File | Module path | Responsibility |
 | --- | --- | --- |
-| `run/coordinator/mod.rs` | `run::coordinator` | Active session mutex; `start_run`, `submit_*`, `stop_run`, resume, replay, interrupts. |
+| `run/registry.rs` | `run::registry` | Addressable top-level sessions keyed by `run_id`; shared execution resources. |
+| `run/coordinator/mod.rs` | `run::coordinator` | One session mutex; `start_run`, `submit_*`, `stop_run`, resume, replay, interrupts. |
 | `run/execution/` | `run::execution` | Host loop, AI adapter, `ToolPortImpl`, headless execution, telemetry event projection. |
 | `run/handoff.rs` | `run::handoff` | Validate, atomically persist, hash, and resolve canonical Markdown/JSON node handoffs. |
 | `run/persistence.rs` | `run::persistence` | Durable run roots, records, and checkpoint metadata. |
@@ -189,6 +190,7 @@ sequenceDiagram
     participant UI
     participant Desktop
     participant Backend as backend/mod.rs
+    participant Registry as run/registry
     participant Coordinator as run/coordinator
     participant Execution as run/execution
     participant Engine as engine::InteractiveEngine
@@ -196,7 +198,8 @@ sequenceDiagram
 
     UI->>Desktop: invoke start_run
     Desktop->>Backend: AppBackend::start_run
-    Backend->>Coordinator: RunCoordinator::start_run
+    Backend->>Registry: RunRegistry::start_run
+    Registry->>Coordinator: create one RunCoordinator
     Coordinator->>Execution: spawn_interactive_workflow_run
     Execution->>Engine: engine.run(ai, tool_port, cancel_token)
     Engine->>ToolPort: ToolPort::run_tools
@@ -206,7 +209,8 @@ sequenceDiagram
     Backend-->>Desktop: IPC payload
 ```
 
-`AppBackend` does not embed run logic. It delegates run lifecycle to `RunCoordinator`.
+`AppBackend` does not embed run logic. It delegates addressed lifecycle to `RunRegistry`, which owns
+one `RunCoordinator` per live or retained in-process run.
 
 ## Where to add code
 

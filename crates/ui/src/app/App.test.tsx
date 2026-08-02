@@ -38,6 +38,7 @@ const apiMocks = vi.hoisted(() => ({
   listenToScheduleStatuses: vi.fn(),
   startRun: vi.fn(),
   startChat: vi.fn(),
+  stopRun: vi.fn(),
   getRunState: vi.fn(),
   continueRun: vi.fn(),
   listRuns: vi.fn(),
@@ -115,6 +116,7 @@ vi.mock("../api", async (importOriginal) => {
     listenToScheduleStatuses: apiMocks.listenToScheduleStatuses,
     startRun: apiMocks.startRun,
     startChat: apiMocks.startChat,
+    stopRun: apiMocks.stopRun,
     getRunState: apiMocks.getRunState,
     continueRun: apiMocks.continueRun,
     listRuns: apiMocks.listRuns,
@@ -496,6 +498,7 @@ function installDefaultApiMocks() {
   apiMocks.isRunContinuable.mockResolvedValue(false);
   apiMocks.listRuns.mockResolvedValue([]);
   apiMocks.retryNode.mockResolvedValue(undefined);
+  apiMocks.stopRun.mockResolvedValue(undefined);
   apiMocks.getRunState.mockResolvedValue(null);
   apiMocks.resolveProviderReadiness.mockResolvedValue(READY);
   apiMocks.loadProviderApiKey.mockImplementation(async (providerId: string) => {
@@ -609,6 +612,8 @@ function makeAwaitingRunState(workflow: Workflow): WorkflowRunState {
   const [node] = workflow.nodes;
   return {
     active: true,
+    workflowId: workflow.id,
+    runId: `${workflow.id}-run`,
     awaitingNodeId: node.id,
     activeManualNodeId: null,
     activeToolCallId: null,
@@ -675,6 +680,8 @@ function makeParallelAwaitingRunState(workflow: Workflow): WorkflowRunState {
   const [a, b, c, d] = workflow.nodes;
   return {
     active: true,
+    workflowId: workflow.id,
+    runId: `${workflow.id}-run`,
     awaitingNodeIds: [b.id, c.id],
     awaitingNodeId: b.id,
     activeManualNodeId: null,
@@ -1140,6 +1147,7 @@ describe("workflow authoring chat layout", () => {
       ],
       validation: { valid: true, errors: [], warnings: [] },
       draft: revisedWorkflow,
+      draftChanged: true,
     });
     const runState = makeAwaitingRunState(workflow);
     runState.active = false;
@@ -1278,6 +1286,12 @@ describe("workflow authoring chat layout", () => {
       });
       await flush();
       await flush();
+      expect(container.textContent).toContain("Here is a draft.");
+      expect(
+        Array.from(container.querySelectorAll("button")).some((button) =>
+          /Apply Changes|Create Workflow/.test(button.textContent ?? ""),
+        ),
+      ).toBe(false);
     } finally {
       dispose();
     }
@@ -1525,6 +1539,7 @@ describe("App workflow rename", () => {
       ],
       validation: { valid: true, errors: [], warnings: [] },
       draft: generated,
+      draftChanged: true,
     });
     apiMocks.assignWorkflowToProject.mockResolvedValue([
       {
@@ -1568,6 +1583,19 @@ describe("App workflow rename", () => {
       await flush();
       await flush();
 
+      const nodeButton = await waitForElement(
+        () =>
+          container.querySelector(
+            `button[aria-label="Select node ${generated.nodes[0].id}"]`,
+          ) as HTMLButtonElement | null,
+        "authoring canvas node button",
+      );
+      expect(
+        container.querySelector('[aria-label="Proposed workflow inspector"]'),
+      ).toBeNull();
+      nodeButton.click();
+      await flush();
+
       const inspector = await waitForElement(
         () =>
           container.querySelector(
@@ -1576,11 +1604,14 @@ describe("App workflow rename", () => {
         "proposed workflow inspector",
       );
       expect(inspector.textContent).toContain("Inspector");
-      expect(inspector.textContent).toContain(
-        "Inspect the repository before proposing changes.",
-      );
-      expect(inspector.textContent).toContain(
-        "Summarize the relevant code and produce a triage report.",
+      const inspectorTextareas = Array.from(
+        inspector.querySelectorAll("textarea"),
+      ) as HTMLTextAreaElement[];
+      expect(inspectorTextareas.map((textarea) => textarea.value)).toEqual(
+        expect.arrayContaining([
+          "Inspect the repository before proposing changes.",
+          "Summarize the relevant code and produce a triage report.",
+        ]),
       );
 
       const applyButton = await waitForElement(
@@ -1590,9 +1621,22 @@ describe("App workflow rename", () => {
           ) as HTMLButtonElement | null,
         "create workflow button",
       );
-      expect(container.textContent).toContain(
+      expect(container.textContent).not.toContain(
         "Then click Run in the editor to start it.",
       );
+
+      const systemPrompt = inspectorTextareas.find(
+        (textarea) => textarea.value === "Inspect the repository before proposing changes.",
+      );
+      expect(systemPrompt).toBeDefined();
+      systemPrompt!.value = "Use the repository context to propose safe changes.";
+      systemPrompt!.dispatchEvent(new Event("input", { bubbles: true }));
+      const followUpToggle = inspector.querySelector(
+        'input[type="checkbox"]',
+      ) as HTMLInputElement;
+      followUpToggle.click();
+      await flush();
+
       applyButton.click();
       await flush();
       await flush();
@@ -1601,6 +1645,14 @@ describe("App workflow rename", () => {
         expect.objectContaining({
           id: "workflow-generated",
           name: "Generated Project Flow",
+          nodes: expect.arrayContaining([
+            expect.objectContaining({
+              agent: expect.objectContaining({
+                system_prompt: "Use the repository context to propose safe changes.",
+                requestUserInput: true,
+              }),
+            }),
+          ]),
         }),
       );
       expect(apiMocks.assignWorkflowToProject).toHaveBeenCalledWith(
@@ -2679,6 +2731,7 @@ describe("App chat slash commands", () => {
       await flush();
 
       expect(apiMocks.submitUserInput).toHaveBeenCalledWith(
+        `${workflow.id}-run`,
         workflow.nodes[0].id,
         { text: "Investigate ORCHID-91", attachmentSourcePaths: [] },
         ["systematic-debugging"],
@@ -2776,7 +2829,7 @@ describe("App chat slash commands", () => {
       textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
       await flush();
 
-      expect(apiMocks.submitUserInput).toHaveBeenCalledWith(workflow.nodes[0].id, {
+      expect(apiMocks.submitUserInput).toHaveBeenCalledWith(`${workflow.id}-run`, workflow.nodes[0].id, {
         text: "Approved",
         attachmentSourcePaths: [],
       });
@@ -3234,7 +3287,11 @@ describe("Global chat layout", () => {
       expect(card).not.toBeNull();
       card?.querySelector(".primary-button")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       await flush();
-      expect(apiMocks.submitToolApproval).toHaveBeenCalledWith("approval-parallel", true);
+      expect(apiMocks.submitToolApproval).toHaveBeenCalledWith(
+        `${workflow.id}-run`,
+        "approval-parallel",
+        true,
+      );
     } finally {
       dispose();
     }
@@ -3280,7 +3337,7 @@ describe("Global chat layout", () => {
         ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       await flush();
 
-      expect(apiMocks.submitUserInput).toHaveBeenCalledWith("node-c", {
+      expect(apiMocks.submitUserInput).toHaveBeenCalledWith(`${workflow.id}-run`, "node-c", {
         text: "branch c reply",
         attachmentSourcePaths: [],
       });
@@ -3459,7 +3516,11 @@ describe("Global chat layout", () => {
       expect(card).not.toBeNull();
       card?.querySelector(".primary-button")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       await flush();
-      expect(apiMocks.submitToolApproval).toHaveBeenCalledWith("approval-1", true);
+      expect(apiMocks.submitToolApproval).toHaveBeenCalledWith(
+        `${workflow.id}-run`,
+        "approval-1",
+        true,
+      );
     } finally {
       dispose();
     }
@@ -4267,7 +4328,7 @@ describe("Ad-hoc chats", () => {
     }
   });
 
-  test("shows separate speed, approval, effort, and project controls for a chat", async () => {
+  test("groups model, effort, and speed while keeping approval separate", async () => {
     const chat = makeChat("chat-1");
     const project = makeProject("project-1", "OpenFlow");
     const chatSettings: AppSettings = {
@@ -4310,30 +4371,43 @@ describe("Ad-hoc chats", () => {
       expect(
         container.querySelector('[aria-label="Chat project"]')?.textContent,
       ).toBe("Project: None");
+      const runtimeSettings = container.querySelector(
+        '[aria-label^="Chat runtime settings:"]',
+      ) as HTMLButtonElement;
+      expect(runtimeSettings.textContent).toContain(
+        "Default (gpt-4.1-mini)",
+      );
+      expect(runtimeSettings.textContent).toMatch(/Default effort|High/);
+      expect(container.querySelector('[aria-label="Chat model"]')).toBeNull();
+
+      runtimeSettings.click();
+      await flush();
+
       expect(
         container.querySelector('[aria-label="Chat model"]')?.textContent,
-      ).toBe("Model: Default (gpt-4.1-mini)");
+      ).toBe("Default (gpt-4.1-mini)");
       expect(
         container.querySelector('[aria-label="Chat speed"]')?.textContent,
-      ).toBe("Speed: Standard");
+      ).toBe("Standard");
+      expect(
+        container.querySelector('[aria-label="Chat reasoning effort"]')?.textContent,
+      ).toMatch(/Default effort|High/);
       expect(
         container.querySelector('[aria-label="Chat tool approval mode"]')?.textContent,
       ).toBe("Approval: Read only");
-      expect(
-        container.querySelector('[aria-label="Chat reasoning effort"]')?.textContent,
-      ).toMatch(/^Effort: /);
 
       (container.querySelector('[aria-label="Chat model"]') as HTMLButtonElement).click();
       await flush();
       const modelOption = Array.from(
-        container.querySelectorAll(".text-select-option"),
+        document.querySelectorAll(".text-select-option"),
       ).find((element) => element.textContent === "gpt-5") as HTMLButtonElement;
       modelOption.click();
       await flush();
 
       expect(
         container.querySelector('[aria-label="Chat model"]')?.textContent,
-      ).toBe("Model: gpt-5");
+      ).toBe("gpt-5");
+      expect(runtimeSettings.textContent).toContain("gpt-5");
       expect(apiMocks.updateChatConfig).toHaveBeenCalledWith(
         "chat-1",
         expect.objectContaining({ model: "gpt-5" }),
@@ -4342,7 +4416,7 @@ describe("Ad-hoc chats", () => {
       (container.querySelector('[aria-label="Chat model"]') as HTMLButtonElement).click();
       await flush();
       const defaultModelOption = Array.from(
-        container.querySelectorAll(".text-select-option"),
+        document.querySelectorAll(".text-select-option"),
       ).find(
         (element) => element.textContent === "Default (gpt-4.1-mini)",
       ) as HTMLButtonElement;
@@ -4351,7 +4425,7 @@ describe("Ad-hoc chats", () => {
 
       expect(
         container.querySelector('[aria-label="Chat model"]')?.textContent,
-      ).toBe("Model: Default (gpt-4.1-mini)");
+      ).toBe("Default (gpt-4.1-mini)");
       expect(apiMocks.updateChatConfig).toHaveBeenCalledWith(
         "chat-1",
         expect.objectContaining({ model: null }),
@@ -4360,19 +4434,21 @@ describe("Ad-hoc chats", () => {
       (container.querySelector('[aria-label="Chat speed"]') as HTMLButtonElement).click();
       await flush();
       const fastOption = Array.from(
-        container.querySelectorAll(".text-select-option"),
+        document.querySelectorAll(".text-select-option"),
       ).find((element) => element.textContent === "Fast") as HTMLButtonElement;
       fastOption.click();
       await flush();
 
       expect(
         container.querySelector('[aria-label="Chat speed"]')?.textContent,
-      ).toBe("Speed: Fast");
+      ).toBe("Fast");
       expect(apiMocks.updateChatConfig).toHaveBeenCalledWith(
         "chat-1",
         expect.objectContaining({ fastMode: true, reasoningEffort: null }),
       );
 
+      runtimeSettings.click();
+      await flush();
       (container.querySelector('[aria-label="Chat project"]') as HTMLButtonElement).click();
       await flush();
       const projectOption = Array.from(
@@ -4409,6 +4485,8 @@ describe("Ad-hoc chats", () => {
         expect.objectContaining({ approvalMode: "always_ask" }),
       );
 
+      runtimeSettings.click();
+      await flush();
       (
         container.querySelector(
           '[aria-label="Chat reasoning effort"]',
@@ -4416,14 +4494,15 @@ describe("Ad-hoc chats", () => {
       ).click();
       await flush();
       const effortOption = Array.from(
-        container.querySelectorAll(".text-select-option"),
+        document.querySelectorAll(".text-select-option"),
       ).find((element) => element.textContent === "High") as HTMLButtonElement;
       effortOption.click();
       await flush();
 
       expect(
         container.querySelector('[aria-label="Chat reasoning effort"]')?.textContent,
-      ).toBe("Effort: High");
+      ).toBe("High");
+      expect(runtimeSettings.textContent).toContain("High");
       expect(apiMocks.updateChatConfig).toHaveBeenLastCalledWith(
         "chat-1",
         expect.objectContaining({ reasoningEffort: "high" }),
@@ -4610,6 +4689,124 @@ describe("Ad-hoc chats", () => {
     }
   });
 
+  test("starts a second chat while the first chat keeps running", async () => {
+    let emitRunState: ((state: WorkflowRunState) => void) | undefined;
+    apiMocks.listenToRunState.mockImplementation(async (handler) => {
+      emitRunState = handler;
+      return () => {};
+    });
+    const firstChat = makeChat("chat-1", "Long command");
+    const secondChat = makeChat("chat-2", "Other chat");
+    const firstWorkflow = makeWorkflow(firstChat.id, firstChat.title);
+    const secondWorkflow = makeWorkflow(secondChat.id, secondChat.title);
+    const firstState = makeAwaitingRunState(firstWorkflow);
+    firstState.runId = "run-1";
+    firstState.awaitingNodeId = null;
+    firstState.awaitingNodeIds = [];
+    firstState.statusByNode[firstWorkflow.nodes[0].id] = "running_tool";
+    const secondState = makeAwaitingRunState(secondWorkflow);
+    secondState.runId = "run-2";
+    secondState.awaitingNodeId = null;
+    secondState.awaitingNodeIds = [];
+    secondState.statusByNode[secondWorkflow.nodes[0].id] = "started";
+    apiMocks.startChat
+      .mockResolvedValueOnce({ chat: { ...firstChat, runId: "run-1" }, runState: firstState })
+      .mockResolvedValueOnce({ chat: { ...secondChat, runId: "run-2" }, runState: secondState });
+    apiMocks.getRunState.mockImplementation(async (runId: string) =>
+      runId === "run-1" ? firstState : secondState,
+    );
+    apiMocks.stopRun.mockImplementation(async (runId: string) => ({
+      ...(runId === "run-1" ? firstState : secondState),
+      active: false,
+    }));
+    const payload = {
+      ...makeBootstrapPayload([makeWorkflow("workflow-1", "Workflow One")]),
+      chats: [firstChat, secondChat],
+    };
+    const { container, dispose } = await mountApp(payload);
+
+    try {
+      const firstRow = Array.from(container.querySelectorAll(".workflow-row-main")).find(
+        (element) =>
+          element.querySelector(".workflow-row-title")?.textContent === "Long command",
+      ) as HTMLButtonElement;
+      firstRow.click();
+      await flush();
+
+      const firstTextarea = container.querySelector(
+        ".chat-composer-pill textarea",
+      ) as HTMLTextAreaElement;
+      firstTextarea.value = "Run the long command";
+      firstTextarea.dispatchEvent(new Event("input", { bubbles: true }));
+      container
+        .querySelector(".composer-send-button")
+        ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await flush();
+
+      const secondRow = Array.from(container.querySelectorAll(".workflow-row-main")).find(
+        (element) =>
+          element.querySelector(".workflow-row-title")?.textContent === "Other chat",
+      ) as HTMLButtonElement;
+      secondRow.click();
+      await flush();
+
+      const otherTextarea = container.querySelector(
+        ".chat-composer-pill textarea",
+      ) as HTMLTextAreaElement;
+      otherTextarea.value = "Start another task";
+      otherTextarea.dispatchEvent(new Event("input", { bubbles: true }));
+      container
+        .querySelector<HTMLButtonElement>(".composer-send-button")
+        ?.click();
+      await flush();
+      expect(apiMocks.startChat).toHaveBeenCalledTimes(2);
+
+      emitRunState?.({
+        ...firstState,
+        chatLogs: {
+          [firstWorkflow.nodes[0].id]: [
+            { role: "assistant", content: "First chat still running", streaming: true },
+          ],
+        },
+      });
+      emitRunState?.({
+        ...secondState,
+        chatLogs: {
+          [secondWorkflow.nodes[0].id]: [
+            { role: "assistant", content: "Second chat still running", streaming: true },
+          ],
+        },
+      });
+      await flush();
+      expect(container.textContent).toContain("Second chat still running");
+      expect(container.textContent).not.toContain("First chat still running");
+
+      const liveFirstRow = Array.from(container.querySelectorAll(".workflow-row-main")).find(
+        (element) =>
+          element.querySelector(".workflow-row-title")?.textContent === "Long command",
+      ) as HTMLButtonElement;
+      liveFirstRow.click();
+      await flush();
+      expect(container.textContent).toContain("First chat still running");
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="Stop chat run"]')
+        ?.click();
+      await flush();
+      expect(apiMocks.stopRun).toHaveBeenCalledWith("run-1");
+
+      const liveSecondRow = Array.from(container.querySelectorAll(".workflow-row-main")).find(
+        (element) =>
+          element.querySelector(".workflow-row-title")?.textContent === "Other chat",
+      ) as HTMLButtonElement;
+      liveSecondRow.click();
+      await flush();
+      expect(container.textContent).toContain("Second chat still running");
+      expect(container.querySelector('button[aria-label="Stop chat run"]')).not.toBeNull();
+    } finally {
+      dispose();
+    }
+  });
+
   test("applies a model change while the active chat is thinking", async () => {
     const chat = { ...makeChat("chat-1", "Active chat"), runId: "run-1" };
     const executionWorkflow = makeWorkflow(chat.id, chat.title);
@@ -4650,23 +4847,30 @@ describe("Ad-hoc chats", () => {
       chatRow.click();
       await flush();
 
-      const modelControl = container.querySelector(
-        '[aria-label="Chat model"]',
+      const runtimeSettings = container.querySelector(
+        '[aria-label^="Chat runtime settings:"]',
       ) as HTMLButtonElement;
       expect(container.querySelector(".direct-chat-generating")?.textContent).toContain(
         "Thinking",
       );
+      expect(runtimeSettings.disabled).toBe(false);
+      runtimeSettings.click();
+      await flush();
+      const modelControl = container.querySelector(
+        '[aria-label="Chat model"]',
+      ) as HTMLButtonElement;
       expect(modelControl.disabled).toBe(false);
       modelControl.click();
       await flush();
       (
-        Array.from(container.querySelectorAll(".text-select-option")).find(
+        Array.from(document.querySelectorAll(".text-select-option")).find(
           (element) => element.textContent === "gpt-5",
         ) as HTMLButtonElement
       ).click();
       await flush();
 
       expect(apiMocks.updateNodeRuntimeConfig).toHaveBeenCalledWith(
+        "run-1",
         executionWorkflow.nodes[0].id,
         {
           model: "gpt-5",
@@ -4778,7 +4982,7 @@ describe("Ad-hoc chats", () => {
       retry.click();
       await flush();
 
-      expect(apiMocks.retryNode).toHaveBeenCalledWith(nodeId);
+      expect(apiMocks.retryNode).toHaveBeenCalledWith("run-1", nodeId);
     } finally {
       dispose();
     }

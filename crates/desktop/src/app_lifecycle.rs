@@ -19,9 +19,7 @@ pub(crate) fn handle_window_event(window: &tauri::Window, event: &tauri::WindowE
         let app_handle = window.app_handle().clone();
         tauri::async_runtime::block_on(async move {
             let backend = app_handle.state::<AppBackend>();
-            if backend.is_run_active().await {
-                let _ = backend.stop_run().await;
-            }
+            backend.stop_all_runs().await;
             backend.stop_all_terminals();
             run_sleep_guard::stop_for_app(&app_handle);
         });

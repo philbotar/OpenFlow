@@ -15,6 +15,7 @@ import {
 } from "@/lib/workflow";
 import { CallableAgentsEditor } from "../forms/CallableAgentsEditor";
 import { ToolConfigEditor } from "../forms/ToolConfigEditor";
+import { McpContextEditor } from "../forms/McpContextEditor";
 import { InspectorSection, SidebarIcon, Tooltip } from "@/components";
 
 export function InspectorPanel() {
@@ -205,6 +206,21 @@ export function InspectorPanel() {
                 onApprovalModeChange={(value) =>
                   ctx.updateCurrentNodeToolConfig((tools) => {
                     tools.approvalMode = value;
+                  })
+                }
+              />
+            </InspectorSection>
+
+            <InspectorSection title="MCP context">
+              <McpContextEditor
+                servers={ctx.settings().mcp?.servers ?? []}
+                resources={node().agent.mcpResources ?? []}
+                prompts={node().agent.mcpPrompts ?? []}
+                onChange={(resources, prompts) =>
+                  ctx.updateCurrentNode((nextNode) => {
+                    nextNode.agent.mcpResources = resources;
+                    nextNode.agent.mcpPrompts = prompts;
+                    nextNode.agent.mcpContextSnapshots = [];
                   })
                 }
               />

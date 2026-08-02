@@ -73,6 +73,7 @@ impl AgentLibrary {
             node_label: "Agent authoring".to_string(),
             model: model.clone(),
             provider_id: None,
+            max_output_tokens: None,
             system_messages: vec![AGENT_AUTHORING_SYSTEM_PROMPT.to_string()],
             task_prompt: "Create a complete reusable agent definition from the user's description."
                 .to_string(),

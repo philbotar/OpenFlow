@@ -1,7 +1,7 @@
 
 # Tools reference
 
-Agents call **tools** during a workflow run. Built-in repository tools are registered in `crates/orchestration/src/tool/registry.rs`. **Harness** tools (`openflow_submit_node_output`, `openflow_request_user_input`, `openflow_ask_user_question`) control node completion and human pauses. **MCP** tools are added at run start from **Settings → MCP Servers** and appear as `mcp/<server>/<tool>`.
+Agents call **tools** during a workflow run. Built-in repository tools are registered in `crates/orchestration/src/tool/registry.rs`. **Harness** tools (`openflow_submit_node_output`, `openflow_request_user_input`, `openflow_ask_user_question`) control node completion and human pauses. **MCP** tools are added at run start from **Settings → MCP Servers** and use a provider-safe `mcp_…` namespace.
 
 Paths are relative to the run **execution folder** (the selected project's configured folder, or an isolated app-managed workspace when no project is selected). Approval behavior depends on the node **Approval mode** in the inspector; see [`../guides/using-the-app.md#tools-and-approval`](../guides/using-the-app.md#tools-and-approval).
 
@@ -292,11 +292,15 @@ Each call accepts 1-3 questions with 2-3 options each. The normal composer remai
 
 **Purpose:** External tools exposed by MCP servers you enable in settings.
 
-**Names:** `mcp/<server-id>/<tool-name>` (exact names appear in the model catalog at run start).
+**Names:** provider-safe `mcp_…` identifiers containing only ASCII letters, digits, `_`, and `-`. OpenFlow encodes the server ID and original MCP tool name reversibly, then dispatches model calls back to the original names.
 
 **When to use:** Integrations (issue trackers, browsers, custom servers) beyond built-ins.
 
-**Setup:** [`../guides/using-the-app.md#settings-beyond-providers`](../guides/using-the-app.md#settings-beyond-providers).
+**Setup:** In **Settings → MCP Servers**, discover/import a supported config, install a registry package, or configure stdio/Streamable HTTP/legacy SSE manually. See [`../guides/using-the-app.md#settings-beyond-providers`](../guides/using-the-app.md#settings-beyond-providers).
+
+Remote servers support secret-backed headers and OAuth. OpenFlow keeps credential values out of settings payloads and exported configs. Server trust is bound to security-relevant config; changing that config requires review again.
+
+MCP roots, sampling, and elicitation default to denied. Per-server policy may expose only the selected project root. Each sampling or elicitation req requires a one-time chat decision and carries its originating node, tool-call ID, and tool name. Sampling cannot request MCP tools, other tools, tasks, or cross-server context. Configured budgets are bounded by app ceilings: 64 sampling reqs/run, 65,536 output tokens/req, 262,144 requested sampling tokens/run, and 64 elicitation reqs/run.
 
 An unavailable server is skipped during run setup. Other MCP servers and the chat continue; OpenFlow adds a system chat message naming the skipped server.
 

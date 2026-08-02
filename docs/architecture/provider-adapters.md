@@ -54,6 +54,11 @@ An `anthropic_messages` override uses the Rig Anthropic client against the profi
 sends the standard `/v1/messages` request, Anthropic auth/version headers, tool schema, and
 Anthropic response mapping. Removing the override restores the profile default.
 
+OpenAI Responses and ChatGPT (Codex) preserve MCP schemas with map-like object parameters. Rig
+0.39 marks every Responses function tool as strict, but OpenAI strict mode rejects objects that
+allow additional properties. The final-wire adapters set `strict: false` only on affected tools;
+they do not close or otherwise rewrite the MCP server's schema. Closed schemas remain strict.
+
 When an adapter must invoke without streaming, it keeps typed reasoning on the turn outcome.
 The fallback stream emits displayable text and summary blocks before assistant text. It never
 emits encrypted or redacted reasoning payloads.
