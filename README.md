@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  Design workflows where different provider agents can work autonomously or with human intervention, with defined handoffs, context availablility and parallel execution.
+  Design workflows where different provider agents can work autonomously or with human intervention, with defined handoffs, context availability and parallel execution.
 </p>
 
 <p align="center">
@@ -31,9 +31,9 @@
 
 ## Manage multi-step AI processes with ease
 
-Create workflows manually or with AI, you can replicate the workflow you do daily with skills easily. It acts like a sequential Claude code sessions, where you can have dependencies and handoffs between mutliple agents, and allow them to work in parallel to speed up your development.
+Create workflows manually or with AI, you can replicate the workflow you do daily with skills easily. It acts like a sequential Claude code sessions, where you can have dependencies and handoffs between multiple agents, and allow them to work in parallel to speed up your development.
 
-Aswell, OpenFlow watches your runs, providing post-run reports to identify where in your workflow the agent is getting stuck, and reccomends ways to improve the quality and speed of your workflow. 
+Aswell, OpenFlow watches your runs, providing post-run reports to identify where in your workflow the agent is getting stuck, and recommends ways to improve the quality and speed of your workflow. 
 
 <p align="center">
   <img src="docs/assets/openflow-workflow-demo.gif" alt="OpenFlow running a four-agent feature-planning workflow" width="100%" />
