@@ -161,6 +161,9 @@ jobs:
       - name: Setup Rust
         uses: ./.github/actions/setup-rust
 
+      - name: Install Tauri Linux deps (cached)
+        uses: ./.github/actions/install-tauri-deps
+
       - name: Install Node
         uses: actions/setup-node@v4
         with:
