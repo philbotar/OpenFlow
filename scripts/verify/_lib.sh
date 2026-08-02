@@ -187,23 +187,24 @@ preflight_tauri_deps() {
 		echo "error: pkg-config is required for desktop/Tauri workspace builds on Linux" >&2
 		exit 1
 	fi
-	if pkg-config --exists gdk-3.0 2>/dev/null; then
+	if pkg-config --exists gdk-3.0 dbus-1 2>/dev/null; then
 		return 0
 	fi
 	if [[ "${VERIFY_SKIP_TAURI_DEPS:-0}" == "1" ]]; then
-		echo "error: gdk-3.0 dev libs missing — install Tauri Linux deps or unset VERIFY_SKIP_TAURI_DEPS to auto-install" >&2
+		echo "error: Tauri Linux dev libs missing (gdk-3.0 and/or dbus-1) — install them or unset VERIFY_SKIP_TAURI_DEPS to auto-install" >&2
 		exit 1
 	fi
 	if ! command -v apt-get >/dev/null 2>&1; then
-		echo "error: gdk-3.0 dev libs missing — install Tauri Linux deps (see .github/actions/install-tauri-deps/action.yml)" >&2
+		echo "error: Tauri Linux dev libs missing (gdk-3.0 and/or dbus-1) — install them (see .github/actions/install-tauri-deps/action.yml)" >&2
 		exit 1
 	fi
-	echo "Installing Tauri Linux dev libs (gdk-3.0 missing) ..."
+	echo "Installing Tauri Linux dev libs (gdk-3.0 and/or dbus-1 missing) ..."
 	sudo apt-get update -qq
 	sudo apt-get install -y -qq \
-		libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
-	if ! pkg-config --exists gdk-3.0 2>/dev/null; then
-		echo "error: gdk-3.0 still missing after installing Tauri Linux deps" >&2
+		libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev \
+		libdbus-1-dev
+	if ! pkg-config --exists gdk-3.0 dbus-1 2>/dev/null; then
+		echo "error: gdk-3.0 and/or dbus-1 still missing after installing Tauri Linux deps" >&2
 		exit 1
 	fi
 }
