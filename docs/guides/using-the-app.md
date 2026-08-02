@@ -170,4 +170,4 @@ MCP tools become available to nodes that advertise MCP access during a run. If a
 
 To add MCP resources or prompts to a node, open its Inspector, expand **MCP context**, choose an enabled server, then select each resource or prompt explicitly. OpenFlow does not inject catalog content merely because you loaded it. Preview shows source provenance, included size, and truncation. Each selection has a byte cap; the combined node cap is 1 MiB.
 
-At run start, OpenFlow reads selected resources and renders selected prompts once, stores that bounded snapshot with the durable run, then labels it as untrusted data in provider context. Resume and replay use the same immutable snapshot. Resource subscriptions remain attached to the run client until shutdown but do not mutate the frozen provider context.
+At run start, OpenFlow reads selected resources and renders selected prompts once, stores that bounded snapshot with the durable run, then labels it as untrusted data in provider context. Resume and replay use the same immutable snapshot. OpenFlow does not subscribe to resource updates because provider context stays frozen for the run.

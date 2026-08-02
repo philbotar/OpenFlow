@@ -38,6 +38,7 @@ interface UseRunSessionParams {
   runState: Accessor<WorkflowRunState | null>;
   setBackendRunWorkflowId: Setter<string | null>;
   publishBackendRunState: (nextRunState: WorkflowRunState) => void;
+  replaceBackendRunState: (nextRunState: WorkflowRunState) => void;
   clearStatusToast: () => void;
   showErrorToast: ToastHandler;
   setDockOpen: Setter<boolean>;
@@ -102,7 +103,7 @@ export function useRunSession(params: UseRunSessionParams) {
       ? nextRunState
       : { ...nextRunState, workflowId };
     setReplayRunId(null);
-    params.publishBackendRunState(addressedState);
+    params.replaceBackendRunState(addressedState);
     setContinuableRunBackend(false);
     setSelectedTraceIndex(null);
     focusChatTab();

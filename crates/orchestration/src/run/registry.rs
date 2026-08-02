@@ -14,17 +14,62 @@ use crate::run::state::WorkflowRunState;
 use engine::NodeRuntimeConfigPatch;
 #[cfg(test)]
 use engine::Workflow;
-use std::collections::BTreeMap;
-use std::sync::Arc;
+use parking_lot::Mutex as ParkingMutex;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::sync::{Arc, Weak};
 use tokio::sync::mpsc::UnboundedReceiver;
 #[cfg(test)]
 use tokio::sync::mpsc::UnboundedSender;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
+
+const MAX_RETAINED_RUN_SESSIONS: usize = 64;
 
 #[derive(Default)]
 struct RegistryState {
     sessions: BTreeMap<String, Arc<RunCoordinator>>,
+    session_order: VecDeque<String>,
+    active_run_ids: BTreeSet<String>,
     latest_run_id: Option<String>,
+}
+
+impl RegistryState {
+    fn register(&mut self, run_id: String, coordinator: Arc<RunCoordinator>, active: bool) {
+        self.session_order.retain(|candidate| candidate != &run_id);
+        self.session_order.push_back(run_id.clone());
+        self.sessions.insert(run_id.clone(), coordinator);
+        self.latest_run_id = Some(run_id.clone());
+        self.set_active(&run_id, active);
+    }
+
+    fn set_active(&mut self, run_id: &str, active: bool) {
+        if active {
+            self.active_run_ids.insert(run_id.to_string());
+        } else {
+            self.active_run_ids.remove(run_id);
+        }
+        self.prune_inactive_sessions();
+    }
+
+    fn prune_inactive_sessions(&mut self) {
+        while self.sessions.len() > MAX_RETAINED_RUN_SESSIONS {
+            let Some(index) = self
+                .session_order
+                .iter()
+                .position(|run_id| !self.active_run_ids.contains(run_id))
+            else {
+                break;
+            };
+            let run_id = self
+                .session_order
+                .remove(index)
+                .expect("inactive run index must exist");
+            self.sessions.remove(&run_id);
+            self.active_run_ids.remove(&run_id);
+            if self.latest_run_id.as_deref() == Some(run_id.as_str()) {
+                self.latest_run_id = self.session_order.back().cloned();
+            }
+        }
+    }
 }
 
 /// Owns every in-process top-level run. Each coordinator still hosts exactly one session.
@@ -33,6 +78,7 @@ pub struct RunRegistry {
     attachment_store: Arc<dyn RunAttachmentStore>,
     resources: Arc<SharedRunResources>,
     state: RwLock<RegistryState>,
+    workflow_start_gates: ParkingMutex<BTreeMap<String, Weak<Mutex<()>>>>,
 }
 
 impl RunRegistry {
@@ -46,6 +92,7 @@ impl RunRegistry {
             attachment_store,
             resources: Arc::new(SharedRunResources::default()),
             state: RwLock::new(RegistryState::default()),
+            workflow_start_gates: ParkingMutex::new(BTreeMap::new()),
         }
     }
 
@@ -64,9 +111,43 @@ impl RunRegistry {
     ) -> Result<(), BackendError> {
         let run_id = run_state.run_id.clone().ok_or(BackendError::RunMissingId)?;
         let mut state = self.state.write().await;
-        state.sessions.insert(run_id.clone(), coordinator);
-        state.latest_run_id = Some(run_id);
+        state.register(run_id, coordinator, run_state.active);
         Ok(())
+    }
+
+    fn workflow_start_gate(&self, workflow_id: &str) -> Arc<Mutex<()>> {
+        let mut gates = self.workflow_start_gates.lock();
+        gates.retain(|_, gate| gate.strong_count() > 0);
+        if let Some(gate) = gates.get(workflow_id).and_then(Weak::upgrade) {
+            return gate;
+        }
+        let gate = Arc::new(Mutex::new(()));
+        gates.insert(workflow_id.to_string(), Arc::downgrade(&gate));
+        gate
+    }
+
+    async fn ensure_workflow_inactive(&self, workflow_id: &str) -> Result<(), BackendError> {
+        let active_run = self
+            .active_run_states()
+            .await
+            .into_iter()
+            .find(|state| state.workflow_id.as_deref() == Some(workflow_id));
+        match active_run {
+            Some(state) => Err(BackendError::RunAlreadyActive(
+                state.run_id.unwrap_or_else(|| workflow_id.to_string()),
+            )),
+            None => Ok(()),
+        }
+    }
+
+    async fn record_run_state(&self, run_state: &WorkflowRunState) {
+        let Some(run_id) = run_state.run_id.as_deref() else {
+            return;
+        };
+        self.state
+            .write()
+            .await
+            .set_active(run_id, run_state.active);
     }
 
     pub async fn coordinator_for(&self, run_id: &str) -> Result<Arc<RunCoordinator>, BackendError> {
@@ -97,6 +178,10 @@ impl RunRegistry {
         &self,
         params: RunStartParams<'_>,
     ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
+        let workflow_id = params.workflow.id.to_string();
+        let start_gate = self.workflow_start_gate(&workflow_id);
+        let _start_guard = start_gate.lock().await;
+        self.ensure_workflow_inactive(&workflow_id).await?;
         let coordinator = self.new_coordinator();
         let (run_state, events) = coordinator.start_run(params).await?;
         self.register(coordinator, &run_state).await?;
@@ -109,6 +194,10 @@ impl RunRegistry {
         params: DurableResumeParams<'_>,
         continuation: Option<crate::api::DurableRunContinuationInput>,
     ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
+        let workflow_id = params.record.workflow_id.clone();
+        let start_gate = self.workflow_start_gate(&workflow_id);
+        let _start_guard = start_gate.lock().await;
+        self.ensure_workflow_inactive(&workflow_id).await?;
         let existing = self.state.read().await.sessions.get(params.run_id).cloned();
         if let Some(coordinator) = existing.as_ref() {
             if coordinator.is_run_active().await {
@@ -164,10 +253,13 @@ impl RunRegistry {
         run_id: &str,
         run_store: &dyn RunCheckpointStore,
     ) -> Result<WorkflowRunState, BackendError> {
-        self.coordinator_for(run_id)
+        let run_state = self
+            .coordinator_for(run_id)
             .await?
             .stop_run_and_persist(run_store)
-            .await
+            .await?;
+        self.record_run_state(&run_state).await;
+        Ok(run_state)
     }
 
     pub async fn apply_execution_event_for(
@@ -176,10 +268,13 @@ impl RunRegistry {
         event: ExecutionEvent,
         run_store: &dyn RunCheckpointStore,
     ) -> Result<WorkflowRunState, BackendError> {
-        self.coordinator_for(run_id)
+        let run_state = self
+            .coordinator_for(run_id)
             .await?
             .apply_execution_event(event, run_store)
-            .await
+            .await?;
+        self.record_run_state(&run_state).await;
+        Ok(run_state)
     }
 
     #[must_use]
@@ -194,16 +289,23 @@ impl RunRegistry {
         &self,
         run_store: &dyn RunCheckpointStore,
     ) -> Result<WorkflowRunState, BackendError> {
-        self.latest_coordinator()
+        let run_state = self
+            .latest_coordinator()
             .await?
             .stop_run_and_persist(run_store)
-            .await
+            .await?;
+        self.record_run_state(&run_state).await;
+        Ok(run_state)
     }
 
     pub async fn continue_run(
         &self,
         params: RunStartParams<'_>,
     ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
+        let workflow_id = params.workflow.id.to_string();
+        let start_gate = self.workflow_start_gate(&workflow_id);
+        let _start_guard = start_gate.lock().await;
+        self.ensure_workflow_inactive(&workflow_id).await?;
         let coordinator = self.latest_coordinator().await?;
         let result = coordinator.continue_run(params).await?;
         self.register(coordinator, &result.0).await?;
@@ -215,6 +317,10 @@ impl RunRegistry {
         run_id: &str,
         params: RunStartParams<'_>,
     ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
+        let workflow_id = params.workflow.id.to_string();
+        let start_gate = self.workflow_start_gate(&workflow_id);
+        let _start_guard = start_gate.lock().await;
+        self.ensure_workflow_inactive(&workflow_id).await?;
         let coordinator = self.coordinator_for(run_id).await?;
         let result = coordinator.continue_run(params).await?;
         self.register(coordinator, &result.0).await?;
@@ -303,10 +409,13 @@ impl RunRegistry {
         event: ExecutionEvent,
         run_store: &dyn RunCheckpointStore,
     ) -> Result<WorkflowRunState, BackendError> {
-        self.latest_coordinator()
+        let run_state = self
+            .latest_coordinator()
             .await?
             .apply_execution_event(event, run_store)
-            .await
+            .await?;
+        self.record_run_state(&run_state).await;
+        Ok(run_state)
     }
 
     pub async fn submit_user_message_with_skill_ids(
@@ -476,7 +585,9 @@ impl RunRegistry {
             .collect::<Vec<_>>();
         for coordinator in coordinators {
             if coordinator.is_run_active().await {
-                let _ = coordinator.stop_run_and_persist(run_store).await;
+                if let Ok(run_state) = coordinator.stop_run_and_persist(run_store).await {
+                    self.record_run_state(&run_state).await;
+                }
             }
         }
     }
@@ -488,28 +599,96 @@ impl RunRegistry {
         mut run_state: WorkflowRunState,
         action_tx: UnboundedSender<ExecutionAction>,
     ) {
-        let run_id = run_state
+        run_state
             .run_id
-            .get_or_insert_with(|| format!("test-seed-{}", uuid::Uuid::new_v4()))
-            .clone();
+            .get_or_insert_with(|| format!("test-seed-{}", uuid::Uuid::new_v4()));
         run_state
             .workflow_id
             .get_or_insert_with(|| workflow.id.to_string());
         let coordinator = self.new_coordinator();
+        let registered_state = run_state.clone();
         coordinator
             .test_seed_session(workflow, run_state, action_tx)
             .await;
-        let mut state = self.state.write().await;
-        state.sessions.insert(run_id.clone(), coordinator);
-        state.latest_run_id = Some(run_id);
+        self.register(coordinator, &registered_state)
+            .await
+            .expect("seeded run must have an id");
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::adapters::storage::run_attachment_store::FileRunAttachmentStore;
     use crate::run::resources::SharedRunResources;
     use std::sync::Arc;
     use std::time::Duration;
+
+    fn registry() -> RunRegistry {
+        RunRegistry::new(
+            tokio::runtime::Handle::current(),
+            Arc::new(FileRunAttachmentStore::default()),
+        )
+    }
+
+    #[tokio::test]
+    async fn same_workflow_cannot_own_two_active_sessions() {
+        let registry = registry();
+        let workflow = Workflow::new("workflow");
+        let mut run_state = WorkflowRunState::running_for_workflow(&workflow);
+        run_state.run_id = Some("active-run".to_string());
+        let (action_tx, _action_rx) = tokio::sync::mpsc::unbounded_channel();
+        registry
+            .test_seed_session(workflow.clone(), run_state, action_tx)
+            .await;
+
+        assert!(matches!(
+            registry.ensure_workflow_inactive(&workflow.id.to_string()).await,
+            Err(BackendError::RunAlreadyActive(run_id)) if run_id == "active-run"
+        ));
+        assert!(registry
+            .ensure_workflow_inactive("other-workflow")
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    async fn registry_evicts_oldest_inactive_sessions_above_retention_limit() {
+        let registry = registry();
+        let workflow = Workflow::new("workflow");
+        for index in 0..=MAX_RETAINED_RUN_SESSIONS {
+            let mut run_state = WorkflowRunState::idle_for_workflow(&workflow);
+            run_state.run_id = Some(format!("run-{index:03}"));
+            let (action_tx, _action_rx) = tokio::sync::mpsc::unbounded_channel();
+            registry
+                .test_seed_session(workflow.clone(), run_state, action_tx)
+                .await;
+        }
+
+        assert!(registry.get_run_state_for("run-000").await.is_none());
+        assert!(registry.get_run_state_for("run-001").await.is_some());
+        assert_eq!(registry.current_run_id().await.as_deref(), Some("run-064"));
+    }
+
+    #[tokio::test]
+    async fn registry_never_evicts_active_sessions_to_meet_retention_limit() {
+        let registry = registry();
+        let workflow = Workflow::new("workflow");
+        for index in 0..=MAX_RETAINED_RUN_SESSIONS {
+            let mut run_state = WorkflowRunState::running_for_workflow(&workflow);
+            run_state.run_id = Some(format!("run-{index:03}"));
+            let (action_tx, _action_rx) = tokio::sync::mpsc::unbounded_channel();
+            registry
+                .test_seed_session(workflow.clone(), run_state, action_tx)
+                .await;
+        }
+
+        assert!(registry.get_run_state_for("run-000").await.is_some());
+        let mut inactive = WorkflowRunState::idle_for_workflow(&workflow);
+        inactive.run_id = Some("run-000".to_string());
+        registry.record_run_state(&inactive).await;
+        assert!(registry.get_run_state_for("run-000").await.is_none());
+    }
 
     #[tokio::test]
     async fn shared_resource_budgets_queue_excess_work_without_limiting_sessions() {

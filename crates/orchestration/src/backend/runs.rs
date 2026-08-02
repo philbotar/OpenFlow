@@ -731,7 +731,12 @@ impl AppBackend {
         &self,
         now: chrono::DateTime<chrono::Utc>,
     ) -> Result<Option<ScheduledRunCandidate>, BackendError> {
-        let active = self.is_run_active().await;
-        Ok(self.schedule.claim_due_run(now, active))
+        let active_workflow_ids = self
+            .active_run_states()
+            .await
+            .into_iter()
+            .filter_map(|state| state.workflow_id)
+            .collect();
+        Ok(self.schedule.claim_due_run(now, &active_workflow_ids))
     }
 }

@@ -341,7 +341,7 @@ Orchestration wraps the run-scoped provider router with `AiInvocationAdapter`. A
 
 | Mechanism | Behavior | Source |
 | --- | --- | --- |
-| Top-level runs | `RunRegistry` addresses independent `RunCoordinator` sessions by `run_id`; no session-count cap | `run/registry.rs` |
+| Top-level runs | `RunRegistry` addresses sessions by `run_id`, permits one active run per workflow, and targets 64 in-process sessions by evicting inactive sessions first; active sessions are never evicted | `run/registry.rs` |
 | Provider budget | At most 8 active provider invocations; excess calls await a permit | `run/resources.rs` |
 | Tool budget | At most 16 executable tools across runs; excess calls await a permit | `run/resources.rs`, `tool_port.rs` |
 | Same-cwd mutation | One mutation-capable run per canonical execution cwd | `run/resources.rs`, `execution/mod.rs` |

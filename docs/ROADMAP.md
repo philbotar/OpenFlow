@@ -229,7 +229,7 @@ Runs today live entirely in memory: `RunCoordinator` holds `WorkflowRunState`; `
 
 ### Concurrent top-level runs
 
-OpenFlow owns an addressable `RunRegistry` of live `RunSession` instances. Starting a run leaves existing runs active, and run-scoped commands require the target `run_id`. Independent top-level runs can come from a user or schedule. This capability is distinct from same-workflow node parallelism and [#35 Workflow orchestration](#workflow-orchestration--reinvoke), which adds parent/child runs.
+OpenFlow owns an addressable `RunRegistry` of live `RunSession` instances. Starting a run leaves runs for other workflows active, rejects a second active run for the same workflow, and requires run-scoped commands to target `run_id`. Independent top-level runs can come from a user or schedule. This capability is distinct from same-workflow node parallelism and [#35 Workflow orchestration](#workflow-orchestration--reinvoke), which adds parent/child runs.
 
 | Layer | Current design |
 | --- | --- |
@@ -245,19 +245,19 @@ OpenFlow owns an addressable `RunRegistry` of live `RunSession` instances. Start
 | --- | --- | --- |
 | M1 | What is a top-level run? | Every `start_run` creates an independent run record and session. Starting or selecting another run never stops existing runs |
 | M2 | How are commands routed? | Require `run_id` on every run-scoped read or mutation (`stop`, input, approval, retry, interrupt, state, continue); only start/list operations omit it |
-| M3 | How many run at once? | Do not cap registered sessions. Queue provider calls, tool executions, and same-cwd mutation-capable runs at their actual shared resource boundaries |
+| M3 | How many run at once? | One active run per workflow; different workflows may overlap. Queue provider calls, tool executions, and same-cwd mutation-capable runs at their actual shared resource boundaries. Target 64 in-process sessions; evict inactive sessions first, never active sessions |
 | M4 | What does “active” mean in the UI? | `selected_run_id` controls presentation only. Each running/paused run keeps its own status, unread-attention badge, trace, and controls |
 | M5 | How are same-project writes protected? | Allow independent projects and read-only runs concurrently. Hold one mutation-capable run lease per canonical execution cwd; queue conflicting runs. Add isolated git-worktree execution later for true parallel writes to one repo |
 | M6 | How are provider/tool limits enforced? | Share provider request and tool-exec budgets across runs so run-level concurrency cannot multiply into unbounded model calls or subprocesses |
 
 | Item | Priority | Status |
 | --- | --- | --- |
-| Run registry — sessions keyed by `run_id`; starting one never aborts another | High | Done |
+| Run registry — sessions keyed by `run_id`; one active run per workflow; starting one never aborts another | High | Done |
 | Run-scoped command contract — `run_id` routes state, input, approval, retry, interrupt, stop, continue, preview, diff, and revert operations | High | Done |
 | Per-run event routing — one bridge lifecycle per run; every projected state carries `run_id` and `workflow_id` | High | Done |
 | UI run switcher — switching workflows/chats restores each cached live projection without affecting execution | High | Done |
 | Background-run attention badges | Medium | In progress |
-| Resource-level queues — no session cap; provider, tool, and same-cwd mutation work wait at shared boundaries | High | Done |
+| Resource-level queues — active sessions are never evicted; provider, tool, and same-cwd mutation work wait at shared boundaries | High | Done |
 | Same-cwd mutation lease — serialize write-capable runs against one canonical execution root; explain the blocked reason in UI | High | Done |
 | Shared resource budgets — provider-call and subprocess limits across all live runs | Medium | Done |
 | Shutdown handling — app close checkpoints and cancels every in-process run | Medium | Done |
@@ -538,7 +538,7 @@ Workflow-level cron schedules (`WorkflowSettings.schedule`) persist on the workf
 | --- | --- | --- |
 | Schedule schema on `WorkflowSettings` | High | Done |
 | Schedule screen — enable/disable cron, pick preset or custom expression, timezone | High | Done |
-| Due-run loop — poll while app open; skip when manual run active; emit schedule status events | High | Done |
+| Due-run loop — poll while app open; skip when the same workflow already has an active run; emit schedule status events | High | Done |
 | Workflow retry loop — re-run workflow on terminal failure per schema (distinct from per-turn `retry_policy`) | High | Planned |
 | Durable run records for scheduled attempts (history, failure streaks) | Medium | Planned — depends on [#24](#run-checkpoint-history-and-replay) |
 

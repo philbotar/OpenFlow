@@ -210,7 +210,9 @@ sequenceDiagram
 ```
 
 `AppBackend` does not embed run logic. It delegates addressed lifecycle to `RunRegistry`, which owns
-one `RunCoordinator` per live or retained in-process run.
+one `RunCoordinator` per live or retained in-process run. Different workflows may run concurrently;
+the registry rejects a second active run for the same workflow and targets 64 retained sessions by
+evicting inactive sessions first. Active sessions are never evicted.
 
 ## Where to add code
 

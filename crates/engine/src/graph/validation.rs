@@ -500,7 +500,6 @@ mod tests {
                 server_id: "docs".to_string(),
                 uri: "docs://one".to_string(),
                 max_bytes: MCP_CONTEXT_MAX_BYTES,
-                subscribe: false,
             });
         workflow.nodes[0]
             .agent

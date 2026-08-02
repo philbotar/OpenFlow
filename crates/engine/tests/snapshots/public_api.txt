@@ -3924,7 +3924,6 @@ pub type engine::graph::workflow::McpPromptSelection::Output = T
 pub struct engine::graph::workflow::McpResourceSelection
 pub engine::graph::workflow::McpResourceSelection::max_bytes: u32
 pub engine::graph::workflow::McpResourceSelection::server_id: alloc::string::String
-pub engine::graph::workflow::McpResourceSelection::subscribe: bool
 pub engine::graph::workflow::McpResourceSelection::uri: alloc::string::String
 impl core::clone::Clone for engine::graph::workflow::McpResourceSelection
 pub fn engine::graph::workflow::McpResourceSelection::clone(&self) -> engine::graph::workflow::McpResourceSelection
@@ -5120,7 +5119,6 @@ pub type engine::graph::workflow::McpPromptSelection::Output = T
 pub struct engine::graph::McpResourceSelection
 pub engine::graph::McpResourceSelection::max_bytes: u32
 pub engine::graph::McpResourceSelection::server_id: alloc::string::String
-pub engine::graph::McpResourceSelection::subscribe: bool
 pub engine::graph::McpResourceSelection::uri: alloc::string::String
 impl core::clone::Clone for engine::graph::workflow::McpResourceSelection
 pub fn engine::graph::workflow::McpResourceSelection::clone(&self) -> engine::graph::workflow::McpResourceSelection
@@ -11926,7 +11924,6 @@ pub type engine::graph::workflow::McpPromptSelection::Output = T
 pub struct engine::McpResourceSelection
 pub engine::McpResourceSelection::max_bytes: u32
 pub engine::McpResourceSelection::server_id: alloc::string::String
-pub engine::McpResourceSelection::subscribe: bool
 pub engine::McpResourceSelection::uri: alloc::string::String
 impl core::clone::Clone for engine::graph::workflow::McpResourceSelection
 pub fn engine::graph::workflow::McpResourceSelection::clone(&self) -> engine::graph::workflow::McpResourceSelection

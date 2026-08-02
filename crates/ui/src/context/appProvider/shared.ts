@@ -19,6 +19,16 @@ import { normalizeError, STATUS_TOAST_ID, toastMessageForDebugMode } from "../..
 
 type ToastHandler = (message: string, context?: string) => void;
 
+export function acceptsRunStateUpdate(
+  current: Pick<WorkflowRunState, "active" | "runId"> | null,
+  next: Pick<WorkflowRunState, "active" | "runId">,
+): boolean {
+  if (!current?.runId || !next.runId || current.runId === next.runId) {
+    return true;
+  }
+  return !current.active;
+}
+
 export function createToastApi(
   settings: Accessor<AppSettings>,
   setLocalDebugLogPath: Setter<string | null>,
@@ -114,6 +124,20 @@ export function createRunStateKernel(activeWorkflowId: Accessor<string | null>) 
   const publishBackendRunState = (nextRunState: WorkflowRunState) => {
     const workflowId = nextRunState.workflowId ?? backendRunWorkflowId();
     if (workflowId) {
+      if (!acceptsRunStateUpdate(runStateByWorkflowId[workflowId] ?? null, nextRunState)) {
+        return false;
+      }
+      cacheRunStateForWorkflow(workflowId, nextRunState);
+    }
+    if (activeWorkflowId() === workflowId) {
+      setRunState(nextRunState);
+    }
+    return true;
+  };
+
+  const replaceBackendRunState = (nextRunState: WorkflowRunState) => {
+    const workflowId = nextRunState.workflowId ?? backendRunWorkflowId();
+    if (workflowId) {
       cacheRunStateForWorkflow(workflowId, nextRunState);
     }
     if (activeWorkflowId() === workflowId) {
@@ -132,6 +156,7 @@ export function createRunStateKernel(activeWorkflowId: Accessor<string | null>) 
     setBackendRunWorkflowId,
     cacheRunStateForWorkflow,
     publishBackendRunState,
+    replaceBackendRunState,
   };
 }
 

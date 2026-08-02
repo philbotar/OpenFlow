@@ -36,10 +36,7 @@ pub fn validate_endpoint_url(
         return Err(HttpSecurityError::EmbeddedCredentialsOrFragment);
     }
     let host = url.host_str().ok_or(HttpSecurityError::InvalidUrl)?;
-    let local_host = is_localhost_name(host)
-        || host
-            .parse::<IpAddr>()
-            .is_ok_and(|address| address.is_loopback());
+    let local_host = is_loopback_host(host);
     match url.scheme() {
         "https" => {}
         "http" if local_host && allow_localhost => {}
@@ -135,6 +132,17 @@ fn is_localhost_name(host: &str) -> bool {
     host.eq_ignore_ascii_case("localhost") || host.to_ascii_lowercase().ends_with(".localhost")
 }
 
+pub(super) fn is_loopback_host(host: &str) -> bool {
+    let ip_host = host
+        .strip_prefix('[')
+        .and_then(|host| host.strip_suffix(']'))
+        .unwrap_or(host);
+    is_localhost_name(host)
+        || ip_host
+            .parse::<IpAddr>()
+            .is_ok_and(|address| address.is_loopback())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -166,6 +174,8 @@ mod tests {
             Err(HttpSecurityError::LocalhostApprovalRequired)
         );
         assert!(validate_endpoint_url("http://127.0.0.1:3000/mcp", true).is_ok());
+        assert!(validate_endpoint_url("http://auth.localhost:3000/mcp", true).is_ok());
+        assert!(validate_endpoint_url("http://[::1]:3000/mcp", true).is_ok());
         assert!(validate_endpoint_url("https://example.com/mcp", false).is_ok());
     }
 

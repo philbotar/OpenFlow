@@ -187,7 +187,6 @@ where
         }
     };
     mcp_clients.resolve_workflow_context(&mut workflow).await;
-    mcp_issues.extend(mcp_clients.subscribe_workflow_resources(&workflow).await);
     let mut engine = match build_engine(
         workflow.clone(),
         entrypoint,

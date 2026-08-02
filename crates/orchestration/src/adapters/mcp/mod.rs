@@ -49,8 +49,7 @@ use rmcp::{
         CallToolRequest, CallToolRequestParams, CancelledNotificationParam, ClientRequest,
         GetPromptRequest, GetPromptRequestParams, ListPromptsRequest, ListResourcesRequest,
         ListToolsRequest, PaginatedRequestParams, PromptMessage, ReadResourceRequest,
-        ReadResourceRequestParams, ResourceContents, ServerResult, SubscribeRequest,
-        SubscribeRequestParams, Tool as McpTool,
+        ReadResourceRequestParams, ResourceContents, ServerResult, Tool as McpTool,
     },
     service::{PeerRequestOptions, RunningService},
     transport::TokioChildProcess,
@@ -873,22 +872,14 @@ impl McpClient {
         &self,
         uri: &str,
         max_bytes: u32,
-        subscribe: bool,
     ) -> Result<engine::McpContextSnapshot, McpError> {
-        let (supported, subscribable, _) = self.advertised_capabilities().await;
-        if !supported || (subscribe && !subscribable) {
+        let (supported, _, _) = self.advertised_capabilities().await;
+        if !supported {
             return Err(McpError::CapabilityRequest {
                 server_id: self.server_id.clone(),
-                operation: if subscribe {
-                    "subscribe to resource"
-                } else {
-                    "read resource"
-                },
+                operation: "read resource",
                 source_id: uri.to_string(),
             });
-        }
-        if subscribe {
-            self.subscribe_resource(uri).await?;
         }
         let request = ClientRequest::ReadResourceRequest(ReadResourceRequest::new(
             ReadResourceRequestParams::new(uri),
@@ -908,36 +899,6 @@ impl McpClient {
             });
         };
         project_resource_snapshot(&self.server_id, uri, &result.contents, max_bytes)
-    }
-
-    pub async fn subscribe_resource(&self, uri: &str) -> Result<(), McpError> {
-        let (supported, subscribable, _) = self.advertised_capabilities().await;
-        if !supported || !subscribable {
-            return Err(McpError::CapabilityRequest {
-                server_id: self.server_id.clone(),
-                operation: "subscribe to resource",
-                source_id: uri.to_string(),
-            });
-        }
-        let request = ClientRequest::SubscribeRequest(SubscribeRequest::new(
-            SubscribeRequestParams::new(uri),
-        ));
-        let result = self
-            .capability_request(
-                request,
-                self.policy.capability_timeout,
-                "subscribe to resource",
-                Some(uri),
-            )
-            .await?;
-        if matches!(result, ServerResult::EmptyResult(_)) {
-            Ok(())
-        } else {
-            Err(McpError::UnexpectedResponse {
-                server_id: self.server_id.clone(),
-                operation: "subscribe to resource",
-            })
-        }
     }
 
     pub async fn get_prompt_snapshot(
@@ -1470,7 +1431,7 @@ impl McpRunClients {
                 let result = match self.clients.get(&selection.server_id) {
                     Some(client) => {
                         client
-                            .read_resource_snapshot(&selection.uri, selection.max_bytes, false)
+                            .read_resource_snapshot(&selection.uri, selection.max_bytes)
                             .await
                     }
                     None => Err(McpError::ServerNotConnected {
@@ -1522,34 +1483,6 @@ impl McpRunClients {
             }
             node.agent.mcp_context_snapshots = snapshots;
         }
-    }
-
-    pub async fn subscribe_workflow_resources(
-        &self,
-        workflow: &engine::Workflow,
-    ) -> Vec<McpSetupIssue> {
-        let mut issues = Vec::new();
-        for selection in workflow
-            .nodes
-            .iter()
-            .flat_map(|node| &node.agent.mcp_resources)
-            .filter(|selection| selection.subscribe)
-        {
-            let result = match self.clients.get(&selection.server_id) {
-                Some(client) => client.subscribe_resource(&selection.uri).await,
-                None => Err(McpError::ServerNotConnected {
-                    server_id: selection.server_id.clone(),
-                }),
-            };
-            if let Err(error) = result {
-                issues.push(McpSetupIssue {
-                    server_id: selection.server_id.clone(),
-                    stage: McpSetupStage::Context,
-                    error,
-                });
-            }
-        }
-        issues
     }
 
     pub async fn capability_catalog(
@@ -1811,7 +1744,7 @@ mod tests {
             assert_eq!(initialized["method"], "notifications/initialized");
 
             let mut methods = Vec::new();
-            for _ in 0..5 {
+            for _ in 0..4 {
                 let request: Value = serde_json::from_str(
                     &lines
                         .next_line()
@@ -1861,10 +1794,6 @@ mod tests {
                             }]
                         })
                     }
-                    "resources/subscribe" => {
-                        assert_eq!(request["params"]["uri"], "docs://guide");
-                        serde_json::json!({})
-                    }
                     other => panic!("unexpected MCP request {other}"),
                 };
                 let response = serde_json::json!({
@@ -1879,7 +1808,7 @@ mod tests {
             }
             let eof = tokio::time::timeout(Duration::from_secs(1), lines.next_line())
                 .await
-                .expect("client must close subscribed transport")
+                .expect("client must close transport")
                 .unwrap();
             assert!(eof.is_none());
             methods
@@ -1913,7 +1842,6 @@ mod tests {
             server_id: "docs".to_string(),
             uri: "docs://guide".to_string(),
             max_bytes: 5,
-            subscribe: true,
         });
         node.agent.mcp_prompts.push(engine::McpPromptSelection {
             server_id: "docs".to_string(),
@@ -1933,19 +1861,12 @@ mod tests {
         assert!(snapshots[0].truncated);
         assert_eq!(snapshots[0].server_id, "docs");
         assert!(snapshots[1].content.contains("Review Rust"));
-        assert!(clients
-            .subscribe_workflow_resources(&workflow)
-            .await
-            .is_empty());
         clients.close().await.unwrap();
 
         let methods = server.await.unwrap();
         assert!(methods.contains(&"resources/list".to_string()));
         assert!(methods.contains(&"prompts/list".to_string()));
-        assert_eq!(
-            methods.last().map(String::as_str),
-            Some("resources/subscribe")
-        );
+        assert!(!methods.contains(&"resources/subscribe".to_string()));
     }
 
     #[tokio::test]

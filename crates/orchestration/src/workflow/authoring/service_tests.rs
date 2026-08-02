@@ -270,6 +270,12 @@ fn only_direct_workflow_change_requests_enable_authoring_tools() {
     assert!(!super::service::explicit_workflow_change_request(
         "Can you explain how to edit a workflow?"
     ));
+    assert!(!super::service::explicit_workflow_change_request(
+        "I want to understand how to update this workflow."
+    ));
+    assert!(!super::service::explicit_workflow_change_request(
+        "Please explain how to modify the workflow."
+    ));
     assert!(super::service::explicit_workflow_change_request(
         "Please add an MCP research node to the workflow."
     ));
@@ -281,6 +287,12 @@ fn only_direct_workflow_change_requests_enable_authoring_tools() {
     ));
     assert!(super::service::explicit_workflow_change_request(
         "Revise the current workflow draft based on the run."
+    ));
+    assert!(super::service::explicit_workflow_change_request(
+        "Explain this, then update the workflow."
+    ));
+    assert!(super::service::explicit_workflow_change_request(
+        "I want to understand the current draft and revise the workflow."
     ));
 }
 

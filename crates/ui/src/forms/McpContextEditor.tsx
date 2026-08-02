@@ -58,7 +58,7 @@ export function McpContextEditor(props: {
         : props.resources.filter((selection) => selection !== existing).map((selection) => ({ ...selection }))
       : [
           ...props.resources.map((selection) => ({ ...selection })),
-          { serverId: serverId(), uri, maxBytes: DEFAULT_MAX_BYTES, subscribe: false },
+          { serverId: serverId(), uri, maxBytes: DEFAULT_MAX_BYTES },
         ];
     props.onChange(resources, props.prompts.map((selection) => ({ ...selection, arguments: { ...selection.arguments } })));
   };
@@ -194,18 +194,6 @@ export function McpContextEditor(props: {
                                   }
                                 />
                               </label>
-                              <Show when={resource.subscribable}>
-                                <label class="checkbox-row">
-                                  <input
-                                    type="checkbox"
-                                    checked={selection().subscribe}
-                                    onChange={(event) =>
-                                      updateResource(resource.uri, { subscribe: event.currentTarget.checked })
-                                    }
-                                  />
-                                  <span>Subscribe during run</span>
-                                </label>
-                              </Show>
                               <Button
                                 variant="secondary"
                                 onClick={() => void showResourcePreview(resource.uri, selection().maxBytes)}

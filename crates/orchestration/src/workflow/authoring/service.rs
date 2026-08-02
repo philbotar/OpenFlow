@@ -775,26 +775,31 @@ pub(super) fn explicit_workflow_change_request(message: &str) -> bool {
     }
 
     let first = words.first().map(String::as_str);
-    if matches!(
-        first,
-        Some("how" | "what" | "why" | "when" | "where" | "tell" | "explain")
-    ) || words
-        .iter()
-        .any(|word| matches!(word.as_str(), "explain" | "understand" | "learn" | "know"))
-    {
-        return false;
-    }
-
     let direct_request = matches!(first, Some(word) if ACTIONS.contains(&word))
-        || words.iter().any(|word| word == "please")
-        || words.windows(2).any(|window| window == ["let", "us"])
-        || words.windows(2).any(|window| window == ["help", "me"])
-        || words.windows(2).any(|window| window == ["i", "want"])
-        || words.windows(2).any(|window| window == ["i", "need"])
-        || words
-            .windows(3)
-            .any(|window| window == ["i", "would", "like"])
-        || matches!(first, Some("can" | "could" | "would") if words.get(1).is_some_and(|word| matches!(word.as_str(), "you" | "we" | "us")));
+        || words.windows(2).any(|window| {
+            matches!(window[0].as_str(), "and" | "please" | "then")
+                && ACTIONS.contains(&window[1].as_str())
+        })
+        || words.windows(3).any(|window| {
+            matches!(
+                (window[0].as_str(), window[1].as_str()),
+                ("help", "me") | ("let", "us")
+            ) && ACTIONS.contains(&window[2].as_str())
+        })
+        || words.windows(3).any(|window| {
+            matches!(window[0].as_str(), "can" | "could" | "would")
+                && matches!(window[1].as_str(), "you" | "we" | "us")
+                && ACTIONS.contains(&window[2].as_str())
+        })
+        || words.windows(4).any(|window| {
+            window[0] == "i"
+                && matches!(window[1].as_str(), "need" | "want")
+                && window[2] == "to"
+                && ACTIONS.contains(&window[3].as_str())
+        })
+        || words.windows(5).any(|window| {
+            window[..4] == ["i", "would", "like", "to"] && ACTIONS.contains(&window[4].as_str())
+        });
 
     direct_request
 }

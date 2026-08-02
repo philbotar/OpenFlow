@@ -107,7 +107,7 @@ describe("McpContextEditor", () => {
     ) as HTMLElement;
     (resourceItem.querySelector('input[type="checkbox"]') as HTMLInputElement).click();
     expect(resources()).toEqual([
-      { serverId: "docs", uri: "docs://guide", maxBytes: 65_536, subscribe: false },
+      { serverId: "docs", uri: "docs://guide", maxBytes: 65_536 },
     ]);
 
     const maxBytes = resourceItem.querySelector('input[type="number"]') as HTMLInputElement;

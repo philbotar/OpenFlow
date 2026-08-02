@@ -673,7 +673,6 @@ mod tests {
                 server_id: "docs".to_string(),
                 uri: "docs://guide".to_string(),
                 max_bytes: 1024,
-                subscribe: false,
             });
 
         let unresolved = build_system_messages(&workflow, &node, None);

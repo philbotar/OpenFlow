@@ -127,6 +127,7 @@ export function useAppProviderState(): AppContextValue {
     runState: runKernel.runState,
     setBackendRunWorkflowId: runKernel.setBackendRunWorkflowId,
     publishBackendRunState: runKernel.publishBackendRunState,
+    replaceBackendRunState: runKernel.replaceBackendRunState,
     clearStatusToast: toastApi.clearStatusToast,
     showErrorToast: toastApi.showErrorToast,
     setDockOpen: dock.setDockOpen,
@@ -213,7 +214,9 @@ export function useAppProviderState(): AppContextValue {
     try {
       unlistenRunState = await desktop.listenToRunState((nextRunState) => {
         const eventWorkflowId = nextRunState.workflowId ?? runKernel.backendRunWorkflowId();
-        runKernel.publishBackendRunState(nextRunState);
+        if (!runKernel.publishBackendRunState(nextRunState)) {
+          return;
+        }
         const activeId = workspace.activeWorkflowId();
         if (activeId !== eventWorkflowId) {
           return;

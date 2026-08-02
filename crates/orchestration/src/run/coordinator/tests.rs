@@ -800,7 +800,6 @@ async fn start_run_persists_mcp_context_resolution_once_in_durable_workflow_snap
             server_id: "missing-docs".to_string(),
             uri: "docs://guide".to_string(),
             max_bytes: 4096,
-            subscribe: false,
         });
 
     let (state, event_rx) = coordinator

@@ -47,8 +47,6 @@ Aswell, OpenFlow watches your runs, providing post-run reports to identify where
 
 Grab the latest build from [Releases](https://github.com/philbotar/OpenFlow/releases/latest) and open it. No prior installs required. 
 
-> **macOS Gatekeeper:** If macOS blocks the app on first launch, right-click **OpenFlow** → **Open**, or run `xattr -cr /path/to/OpenFlow.app`.
-
 Want to build the installer yourself instead? See [Developing](#developing) below.
 
 ## Use cases

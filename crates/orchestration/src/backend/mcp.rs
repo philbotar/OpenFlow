@@ -42,7 +42,7 @@ impl AppBackend {
         validate_context_preview(server_id, uri, max_bytes)?;
         let server = self.trusted_mcp_capability_server(server_id)?;
         let client = McpClient::spawn(&server).await.map_err(mcp_io_error)?;
-        let result = client.read_resource_snapshot(uri, max_bytes, false).await;
+        let result = client.read_resource_snapshot(uri, max_bytes).await;
         finish_mcp_capability_request(client, result).await
     }
 

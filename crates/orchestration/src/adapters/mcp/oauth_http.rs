@@ -1,4 +1,4 @@
-use super::http_security::{secure_http_endpoint, validate_endpoint_url};
+use super::http_security::{is_loopback_host, secure_http_endpoint, validate_endpoint_url};
 use crate::mcp::oauth::{
     McpOAuthCredentials, McpOAuthError, McpOAuthPublicConfig, McpOAuthRequest,
     MCP_OAUTH_CALLBACK_TIMEOUT_SECS,
@@ -962,12 +962,7 @@ fn localhost_allowed_for_resource(resource: &str) -> bool {
     Url::parse(resource)
         .ok()
         .and_then(|url| url.host_str().map(str::to_string))
-        .is_some_and(|host| {
-            host.eq_ignore_ascii_case("localhost")
-                || host
-                    .parse::<std::net::IpAddr>()
-                    .is_ok_and(|ip| ip.is_loopback())
-        })
+        .is_some_and(|host| is_loopback_host(&host))
 }
 
 #[cfg(test)]
@@ -980,6 +975,16 @@ mod tests {
         method: String,
         path: String,
         body: String,
+    }
+
+    #[test]
+    fn oauth_refresh_preserves_localhost_approval_for_subdomains() {
+        assert!(localhost_allowed_for_resource("http://auth.localhost/mcp"));
+        assert!(localhost_allowed_for_resource("http://LOCALHOST/mcp"));
+        assert!(localhost_allowed_for_resource("http://127.0.0.1/mcp"));
+        assert!(localhost_allowed_for_resource("http://[::1]/mcp"));
+        assert!(!localhost_allowed_for_resource("https://example.com/mcp"));
+        assert!(!localhost_allowed_for_resource("not a URL"));
     }
 
     #[test]

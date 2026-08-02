@@ -14,7 +14,7 @@ This app is **not heavily threaded**. In the desktop app, orchestration uses the
 4. **Addressable run sessions** with shared provider/tool budgets and one mutation lease per canonical execution cwd.
 5. **Many sync Tauri commands** doing filesystem or settings I/O on the command thread pool.
 
-Each run retains its own per-tool semaphores for `ToolConcurrency::Exclusive`. All runs also share process-wide provider and executable-tool budgets. Registered sessions have no fixed count limit.
+Each run retains its own per-tool semaphores for `ToolConcurrency::Exclusive`. All runs also share process-wide provider and executable-tool budgets. Different workflows may run concurrently; one workflow owns at most one active run. The registry targets 64 in-process sessions by evicting the oldest inactive session first. It never evicts active sessions, so the count may temporarily exceed 64.
 
 ---
 
@@ -224,7 +224,7 @@ sequenceDiagram
 | **Per-run mutex** | Events and controls for one run contend on that run's `RunSession`; independent runs do not share the session lock |
 | **Clone on hot path** | `apply_execution_event` clones full `Workflow` and `WorkflowRunState` each event |
 | **Unbounded channels** | `unbounded_channel()` - fast event bursts can grow memory without backpressure |
-| **Shared capacity** | Sessions are unbounded, while provider calls and executable tools wait on shared process budgets |
+| **Shared capacity** | Active runs across different workflows may exceed the 64-session retention target; provider calls and executable tools wait on shared process budgets |
 | **Same-cwd mutations** | Write-capable runs sharing a canonical cwd serialize for the whole run; read-only runs and different roots can overlap |
 
 ---
@@ -262,8 +262,9 @@ flowchart LR
 `ToolPortImpl` runs adjacent shared tools in parallel. Exclusive tools acquire a per-tool `tokio::sync::Semaphore` before execution (`crates/orchestration/src/run/execution/tool_port.rs`). This protects tools such as write, edit, bash, and apply-patch from running concurrently with the same tool name inside a run.
 
 All runs also acquire process-wide permits in `run/resources.rs`: 8 concurrent provider invocations
-and 16 concurrent executable tools by default. These budgets queue work; they never reject or cap
-registered run sessions.
+and 16 concurrent executable tools by default. These budgets queue work. `RunRegistry` separately
+rejects a second active run for the same workflow and targets 64 in-process sessions by evicting
+inactive sessions. It never evicts active sessions; durable run records remain on disk.
 
 ---
 
@@ -329,7 +330,7 @@ flowchart TB
         direction TB
         W1["1 process"]
         W2["injected Tauri runtime handle"]
-        W3["addressable concurrent top-level runs"]
+        W3["addressable top-level runs<br/>one active run per workflow"]
         W4["1 execution task per run"]
         W5["ready layer work concurrent"]
         W6["shared tools can run in parallel"]

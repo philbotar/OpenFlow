@@ -211,7 +211,6 @@ export interface McpResourceSelection {
   serverId: string;
   uri: string;
   maxBytes: number;
-  subscribe: boolean;
 }
 
 export interface McpPromptSelection {

@@ -373,8 +373,6 @@ pub struct McpResourceSelection {
     pub uri: String,
     #[serde(default = "default_mcp_context_max_bytes")]
     pub max_bytes: u32,
-    #[serde(default)]
-    pub subscribe: bool,
 }
 
 /// Explicit user selection of one rendered MCP prompt for a node's immutable run context.
