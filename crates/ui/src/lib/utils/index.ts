@@ -232,7 +232,7 @@ export function isMacOS(): boolean {
 }
 
 // ponytail: keep in sync with --composer-input-max-rows in styles/tokens.css
-export const COMPOSER_INPUT_MAX_ROWS = 3;
+export const COMPOSER_INPUT_MAX_ROWS = 10;
 
 export function resizeComposerTextarea(textarea: HTMLTextAreaElement) {
   const style = getComputedStyle(textarea);

@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { TextSelect } from "./TextSelect";
 
 describe("TextSelect", () => {
   const initialInnerHeight = window.innerHeight;
+  const initialInnerWidth = window.innerWidth;
   let container: HTMLDivElement;
   let scrollHost: HTMLDivElement | undefined;
   let dispose: () => void;
@@ -19,6 +20,11 @@ describe("TextSelect", () => {
       configurable: true,
       value: initialInnerHeight,
     });
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: initialInnerWidth,
+    });
+    vi.useRealTimers();
   });
 
   test("opens below trigger and selects a value", () => {
@@ -201,5 +207,90 @@ describe("TextSelect", () => {
     expect(menu.classList.contains("text-select-menu--above")).toBe(true);
     expect(menu.style.transform).toBe("translateY(-100%)");
     expect(menu.style.top).toBe("396px");
+  });
+
+  test("opens a horizontal menu on hover and keeps it open across the gap", async () => {
+    vi.useFakeTimers();
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 700,
+    });
+    container = document.createElement("div");
+    document.body.append(container);
+    dispose = render(
+      () => (
+        <TextSelect
+          menuPlacement="horizontal"
+          openOnHover
+          portalMenu
+          value="a"
+          options={[
+            { value: "a", label: "A" },
+            { value: "b", label: "B" },
+          ]}
+        />
+      ),
+      container,
+    );
+
+    const trigger = container.querySelector(".text-select-trigger") as HTMLButtonElement;
+    Object.defineProperty(trigger, "offsetWidth", {
+      configurable: true,
+      value: 120,
+    });
+    trigger.getBoundingClientRect = () =>
+      ({
+        top: 100,
+        bottom: 130,
+        left: 500,
+        right: 620,
+        width: 120,
+        height: 30,
+        x: 500,
+        y: 100,
+        toJSON: () => ({}),
+      }) as DOMRect;
+    trigger.dispatchEvent(new MouseEvent("mouseenter"));
+    await Promise.resolve();
+
+    const menu = document.body.querySelector(".text-select-menu") as HTMLUListElement;
+    expect(menu).not.toBeNull();
+    expect(menu.classList.contains("text-select-menu--left")).toBe(true);
+    expect(menu.style.left).toBe("496px");
+    expect(menu.style.transform).toBe("translateX(-100%)");
+
+    trigger.dispatchEvent(new MouseEvent("mouseleave"));
+    menu.dispatchEvent(new MouseEvent("mouseenter"));
+    vi.advanceTimersByTime(200);
+    expect(document.body.querySelector(".text-select-menu")).not.toBeNull();
+  });
+
+  test("keeps a portaled menu interactive inside a fixed-position parent", () => {
+    const [value, setValue] = createSignal("a");
+    container = document.createElement("div");
+    document.body.append(container);
+    dispose = render(
+      () => (
+        <div style={{ position: "fixed" }}>
+          <TextSelect
+            portalMenu
+            value={value()}
+            options={[{ value: "a", label: "A" }, { value: "b", label: "B" }]}
+            onChange={(event) => setValue(event.currentTarget.value)}
+          />
+        </div>
+      ),
+      container,
+    );
+
+    (container.querySelector(".text-select-trigger") as HTMLButtonElement).click();
+    const option = [...document.body.querySelectorAll<HTMLButtonElement>(".text-select-option")]
+      .find((element) => element.textContent === "B");
+    expect(option).not.toBeUndefined();
+    option?.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    option?.click();
+
+    expect(value()).toBe("b");
+    expect(document.body.querySelector(".text-select-menu")).toBeNull();
   });
 });

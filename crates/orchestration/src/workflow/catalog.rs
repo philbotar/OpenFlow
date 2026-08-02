@@ -159,6 +159,7 @@ impl WorkflowCatalog {
         workflow: Workflow,
     ) -> Result<Workflow, BackendError> {
         let _guard = self.mutation_lock.lock();
+        let workflow = authored_workflow(workflow);
         let mut workflows = self.load_all_unlocked(projects)?;
         if let Some(existing) = workflows.iter_mut().find(|item| item.id == workflow.id) {
             *existing = workflow.clone();
@@ -177,7 +178,12 @@ impl WorkflowCatalog {
         workflows: &[Workflow],
     ) -> Result<(), BackendError> {
         let _guard = self.mutation_lock.lock();
-        self.save_all_unlocked(projects, workflows)
+        let workflows = workflows
+            .iter()
+            .cloned()
+            .map(authored_workflow)
+            .collect::<Vec<_>>();
+        self.save_all_unlocked(projects, &workflows)
     }
 
     fn save_all_unlocked(
@@ -337,6 +343,13 @@ impl WorkflowCatalog {
     }
 }
 
+fn authored_workflow(mut workflow: Workflow) -> Workflow {
+    for node in &mut workflow.nodes {
+        node.agent.mcp_context_snapshots.clear();
+    }
+    workflow
+}
+
 pub(crate) fn default_workflow(name: &str) -> Workflow {
     let mut workflow = Workflow::new(name);
     workflow.nodes.push(Node::agent("Idea", 80.0, 120.0));
@@ -364,7 +377,32 @@ fn is_incomplete_matt_pocock_seed(workflow: &Workflow) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use engine::{validate_workflow, ApprovalMode};
+    use engine::{validate_workflow, ApprovalMode, McpContextKind, McpContextSnapshot};
+
+    #[test]
+    fn authored_workflow_drops_runtime_mcp_context_snapshots() {
+        let mut workflow = default_workflow("MCP context");
+        workflow.nodes[0]
+            .agent
+            .mcp_context_snapshots
+            .push(McpContextSnapshot {
+                kind: McpContextKind::Resource,
+                server_id: "docs".to_string(),
+                source: "resource://guide".to_string(),
+                title: None,
+                description: None,
+                mime_type: Some("text/plain".to_string()),
+                content: "runtime-only content".to_string(),
+                original_size_bytes: 20,
+                included_size_bytes: 20,
+                truncated: false,
+                error: None,
+            });
+
+        let authored = authored_workflow(workflow);
+
+        assert!(authored.nodes[0].agent.mcp_context_snapshots.is_empty());
+    }
 
     #[test]
     fn matt_pocock_idea_to_ship_example_is_valid_and_human_steered() {

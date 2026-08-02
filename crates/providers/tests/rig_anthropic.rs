@@ -19,6 +19,7 @@ fn test_request() -> engine::AgentRequest {
         node_label: "Idea".into(),
         model: "claude-3-5-sonnet-latest".into(),
         provider_id: None,
+        max_output_tokens: None,
         system_messages: vec!["You are precise.".into()],
         task_prompt: "Summarize the kickoff.".into(),
         input: serde_json::json!({"entrypoint": {"text": "ORCHID-91"}, "upstream": []}),

@@ -314,6 +314,7 @@ mod tests {
             node_label: "Node".into(),
             model: model.into(),
             provider_id: None,
+            max_output_tokens: None,
             system_messages: vec!["sys".into()],
             task_prompt: "task".into(),
             input: json!({}),

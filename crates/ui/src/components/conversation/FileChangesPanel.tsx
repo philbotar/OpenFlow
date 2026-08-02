@@ -1,14 +1,15 @@
+import AlertTriangle from "lucide-solid/icons/triangle-alert";
 import ChevronRight from "lucide-solid/icons/chevron-right";
-import { createSignal, For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import * as desktop from "../../api";
 import { useAppContext } from "../../context/AppContext";
+import type { FileChangeRecord, NodeId } from "../../lib/types";
+import { effectiveChangePath, nodeChangedFiles } from "../../lib/workflow";
 import { Spinner } from "../Spinner";
-import { Button } from "../Button";
-import type { EditBatch, FileChangeRecord } from "../../lib/types";
-import { effectiveChangePath, latestChangesByPath, nodeChangedFiles, nodeEditBatches } from "../../lib/workflow";
 import { formatToolDisplayName } from "./toolBubbleState";
 
 const EDIT_TOOLS = new Set(["write", "edit", "apply_patch"]);
+const expandedPanelKeys = new Set<string>();
 
 function opLabel(op: FileChangeRecord["op"]): string {
   switch (op) {
@@ -25,32 +26,43 @@ function opLabel(op: FileChangeRecord["op"]): string {
   }
 }
 
-function FileChangeRow(props: { record: FileChangeRecord }) {
-  const [toolDiffOpen, setToolDiffOpen] = createSignal(Boolean(props.record.diffSummary));
-  const [gitDiff, setGitDiff] = createSignal<string | null>(null);
-  const [gitDiffOpen, setGitDiffOpen] = createSignal(false);
-  const [gitLoading, setGitLoading] = createSignal(false);
-  const [gitError, setGitError] = createSignal<string | null>(null);
+function FileChangeRow(props: {
+  record: FileChangeRecord;
+  runId: string | null;
+}) {
+  const [diff, setDiff] = createSignal<string | null>(null);
+  const [diffOpen, setDiffOpen] = createSignal(false);
+  const [loading, setLoading] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
+  const hasDiff = () => Boolean(props.record.diffArtifactId || props.record.diffSummary);
+  const shownDiff = () => diff() ?? props.record.diffSummary ?? "";
 
-  async function loadGitDiff() {
-    if (gitDiffOpen()) {
-      setGitDiffOpen(false);
+  async function loadDiff() {
+    if (diffOpen()) {
+      setDiffOpen(false);
       return;
     }
-    if (gitDiff()) {
-      setGitDiffOpen(true);
+    if (diff() !== null || !props.record.diffArtifactId) {
+      setDiffOpen(true);
       return;
     }
-    setGitLoading(true);
-    setGitError(null);
+    if (!props.runId) {
+      setError("Run id unavailable. Reopen this run, then retry.");
+      return;
+    }
+    setLoading(true);
+    setError(null);
     try {
-      const diff = await desktop.gitDiffFile(effectiveChangePath(props.record));
-      setGitDiff(diff.trim() || "(no changes)");
-      setGitDiffOpen(true);
-    } catch (error) {
-      setGitError(error instanceof Error ? error.message : String(error));
+      const exactDiff = await desktop.loadFileChangeDiff(
+        props.runId,
+        props.record.diffArtifactId,
+      );
+      setDiff(exactDiff || "(empty diff)");
+      setDiffOpen(true);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : String(loadError));
     } finally {
-      setGitLoading(false);
+      setLoading(false);
     }
   }
 
@@ -62,117 +74,117 @@ function FileChangeRow(props: { record: FileChangeRecord }) {
         <Show when={props.record.renameTo}>
           {(renameTo) => <span class="file-change-rename">→ {renameTo()}</span>}
         </Show>
+        <Show when={props.record.toolName}>
+          {(toolName) => (
+            <span class="file-change-tool">
+              via {formatToolDisplayName(toolName())}
+            </span>
+          )}
+        </Show>
         <div class="file-change-actions">
-          <Show when={props.record.diffSummary}>
+          <Show when={!props.record.diffArtifactId && props.record.diffSummary}>
+            <span class="file-change-summary-only">Summary only</span>
+          </Show>
+          <Show when={hasDiff()}>
             <button
               type="button"
               class="file-change-action"
-              onClick={() => setToolDiffOpen((value) => !value)}
+              disabled={loading()}
+              onClick={() => void loadDiff()}
             >
-              {toolDiffOpen() ? "Hide tool diff" : "Tool diff"}
+              <Show
+                when={loading()}
+                fallback={diffOpen() ? "Hide diff" : "View diff"}
+              >
+                <span class="loading-inline">
+                  <Spinner size="sm" />
+                  Loading…
+                </span>
+              </Show>
             </button>
           </Show>
-          <button
-            type="button"
-            class="file-change-action"
-            disabled={gitLoading()}
-            onClick={() => void loadGitDiff()}
-          >
-            <Show
-              when={gitLoading()}
-              fallback={gitDiffOpen() ? "Hide git diff" : "Git diff"}
-            >
-              <span class="loading-inline">
-                <Spinner size="sm" />
-                Loading…
-              </span>
-            </Show>
-          </button>
         </div>
       </div>
-      <Show when={gitError()}>
-        <p class="file-change-error">{gitError()}</p>
+      <Show when={error()}>
+        {(message) => (
+          <p class="file-change-error">
+            {message()}{" "}
+            <button
+              type="button"
+              class="file-change-retry"
+              disabled={loading()}
+              onClick={() => void loadDiff()}
+            >
+              Retry
+            </button>
+          </p>
+        )}
       </Show>
-      <Show when={toolDiffOpen() && props.record.diffSummary}>
-        <pre class="file-edit-diff">{props.record.diffSummary}</pre>
-      </Show>
-      <Show when={gitDiffOpen() && gitDiff()}>
-        {(diff) => <pre class="file-edit-diff file-git-diff">{diff()}</pre>}
+      <Show when={diffOpen() && shownDiff()}>
+        <pre class="file-edit-diff">{shownDiff()}</pre>
       </Show>
     </div>
   );
 }
 
-function EditBatchRow(props: { batch: EditBatch }) {
-  const [busy, setBusy] = createSignal(false);
-  const [error, setError] = createSignal<string | null>(null);
+function panelSummaryLabel(fileCount: number, editCount: number): string {
+  return `${fileCount} file${fileCount === 1 ? "" : "s"} changed · ${editCount} edit${
+    editCount === 1 ? "" : "s"
+  }`;
+}
 
-  async function revert() {
-    setBusy(true);
-    setError(null);
-    try {
-      await desktop.revertEditBatch(props.batch.batchId);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
+export function FileChangesPanel(props: { nodeId: NodeId }) {
+  const ctx = useAppContext();
+  const panelKey = () => `${ctx.runState()?.runId ?? "no-run"}:${props.nodeId}`;
+  let currentPanelKey = panelKey();
+  const [expanded, setExpanded] = createSignal(
+    expandedPanelKeys.has(currentPanelKey),
+  );
+  const changedFiles = createMemo(() =>
+    nodeChangedFiles(ctx.runState(), props.nodeId)
+      .map((record, index) => ({ record, index }))
+      .sort(
+        (left, right) =>
+          left.record.timestampMs - right.record.timestampMs ||
+          left.index - right.index,
+      )
+      .map(({ record }) => record),
+  );
+  const fileCount = createMemo(
+    () => new Set(changedFiles().map(effectiveChangePath)).size,
+  );
+  const usedBash = createMemo(() =>
+    (ctx.runState()?.toolCallsByNode?.[props.nodeId] ?? []).some(
+      (call) => call.toolName === "bash",
+    ),
+  );
+  const runId = () => ctx.runState()?.runId ?? null;
+
+  createEffect(() => {
+    const nextPanelKey = panelKey();
+    if (nextPanelKey === currentPanelKey) return;
+    currentPanelKey = nextPanelKey;
+    setExpanded(expandedPanelKeys.has(nextPanelKey));
+  });
+
+  function toggleExpanded() {
+    const nextExpanded = !expanded();
+    if (nextExpanded) {
+      expandedPanelKeys.add(panelKey());
+    } else {
+      expandedPanelKeys.delete(panelKey());
     }
+    setExpanded(nextExpanded);
   }
 
   return (
-    <div class="edit-batch-row">
-      <div class="edit-batch-summary">
-        <span class="edit-batch-tool">{formatToolDisplayName(props.batch.toolName)}</span>
-        <span class="edit-batch-meta">
-          {props.batch.snapshots.length} file
-          {props.batch.snapshots.length === 1 ? "" : "s"}
-        </span>
-      </div>
-      <Button
-        variant="secondary"
-        class="edit-batch-revert"
-        disabled={busy()}
-        onClick={() => void revert()}
-      >
-        {busy() ? "Reverting…" : "Revert batch"}
-      </Button>
-      <Show when={error()}>
-        <p class="file-change-error">{error()}</p>
-      </Show>
-    </div>
-  );
-}
-
-function panelSummaryLabel(fileCount: number, batchCount: number): string {
-  const filePart =
-    fileCount > 0 ? `${fileCount} file${fileCount === 1 ? "" : "s"}` : null;
-  const batchPart =
-    batchCount > 0
-      ? `${batchCount} revertible batch${batchCount === 1 ? "" : "es"}`
-      : null;
-  return [filePart, batchPart].filter(Boolean).join(", ");
-}
-
-export function FileChangesPanel() {
-  const ctx = useAppContext();
-  const [expanded, setExpanded] = createSignal(true);
-  const changedFiles = () =>
-    latestChangesByPath(nodeChangedFiles(ctx.runState(), ctx.selectedNodeId()));
-  const editBatches = () => nodeEditBatches(ctx.runState(), ctx.selectedNodeId());
-  const fileCount = () => changedFiles().length;
-  const batchCount = () => editBatches().length;
-
-  return (
-    <Show when={fileCount() > 0 || batchCount() > 0}>
-      <div
-        class="file-changes-panel"
-        classList={{ "is-collapsed": !expanded() }}
-      >
+    <Show when={changedFiles().length > 0 || usedBash()}>
+      <div class="file-changes-panel is-node-output" classList={{ "is-collapsed": !expanded() }}>
         <button
           type="button"
           class="file-changes-panel-header"
           aria-expanded={expanded()}
-          onClick={() => setExpanded((value) => !value)}
+          onClick={toggleExpanded}
         >
           <ChevronRight
             class="file-changes-chevron"
@@ -181,23 +193,22 @@ export function FileChangesPanel() {
             size={14}
           />
           <span class="file-changes-panel-title">
-            {panelSummaryLabel(fileCount(), batchCount())}
+            {panelSummaryLabel(fileCount(), changedFiles().length)}
           </span>
         </button>
         <Show when={expanded()}>
           <div class="file-changes-panel-body">
-            <Show when={batchCount() > 0}>
-              <div class="edit-batches-section">
-                <div class="edit-batches-label">Revertible batches</div>
-                <For each={editBatches()}>
-                  {(batch) => <EditBatchRow batch={batch} />}
-                </For>
-              </div>
+            <Show when={usedBash()}>
+              <p class="file-changes-attribution-warning">
+                <AlertTriangle size={14} aria-hidden="true" />
+                Bash ran in this node. Shell, external tool, or MCP file writes may not appear
+                here.
+              </p>
             </Show>
-            <Show when={fileCount() > 0}>
+            <Show when={changedFiles().length > 0}>
               <div class="file-changes-list">
                 <For each={changedFiles()}>
-                  {(record) => <FileChangeRow record={record} />}
+                  {(record) => <FileChangeRow record={record} runId={runId()} />}
                 </For>
               </div>
             </Show>
@@ -210,4 +221,8 @@ export function FileChangesPanel() {
 
 export function isFileEditTool(name: string): boolean {
   return EDIT_TOOLS.has(name);
+}
+
+export function resetFileChangesPanelExpandStateForTests(): void {
+  expandedPanelKeys.clear();
 }

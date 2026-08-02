@@ -1,6 +1,6 @@
 # How OpenFlow Works
 
-OpenFlow is a desktop workflow runner for agentic model workflows. A user builds a workflow in the UI, the desktop adapter sends commands to orchestration, orchestration hosts the active run, the engine decides legal execution behavior, and providers perform model calls.
+OpenFlow is a desktop workflow runner for agentic model workflows. A user builds a workflow in the UI, the desktop adapter sends run-addressed commands to orchestration, orchestration hosts independent active runs, the engine decides legal execution behavior, and providers perform model calls.
 
 ## Runtime Path
 

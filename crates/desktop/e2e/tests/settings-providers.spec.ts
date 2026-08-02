@@ -12,7 +12,10 @@ test.describe("settings providers", () => {
     await expect(tauriPage.locator(".providers-section")).toBeVisible();
     await expect(tauriPage.locator(".readiness-chip")).toBeVisible();
     await expect(tauriPage.locator('input[type="password"]')).toBeVisible();
-    await expect(tauriPage.locator(".readiness-chip")).toContainText("Ready via env var");
+    const readinessChip = tauriPage.locator(".readiness-chip");
+    await expect(readinessChip).toContainText("Provider ready");
+    await readinessChip.focus();
+    await expect(tauriPage.getByRole("tooltip")).toContainText("Environment variable");
   });
 
   test("switches provider and saves API key", async ({ tauriPage }) => {

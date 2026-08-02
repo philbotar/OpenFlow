@@ -55,6 +55,7 @@ fn sample_request() -> AgentRequest {
         node_label: "Agent".to_string(),
         model: "mock".to_string(),
         provider_id: None,
+        max_output_tokens: None,
         system_messages: Vec::new(),
         task_prompt: String::new(),
         input: serde_json::json!({}),

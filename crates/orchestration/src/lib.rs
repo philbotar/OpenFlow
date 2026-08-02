@@ -12,6 +12,7 @@ pub mod backend;
 pub mod chat;
 pub mod diagnostics;
 pub mod error;
+pub mod mcp;
 pub mod project;
 pub mod run;
 pub mod schedule;
@@ -35,9 +36,17 @@ pub use api::{
 pub use chat::{Chat, ChatConfig};
 pub use engine::CallableAgent as AgentDefinition;
 pub use engine::{
-    ChatAttachmentKind, ChatAttachmentRef, Node, NodeId, NodeRunOutput, PendingToolApproval,
-    RunReport, RunTelemetry, ToolCall, ToolTier, Workflow, WorkflowId, WorkflowSchedule,
+    ChatAttachmentKind, ChatAttachmentRef, McpContextSnapshot, Node, NodeId, NodeRunOutput,
+    PendingToolApproval, RunReport, RunTelemetry, ToolCall, ToolTier, Workflow, WorkflowId,
+    WorkflowSchedule,
 };
+pub use mcp::capabilities::{
+    McpCapabilityCatalog, McpPromptArgumentDescriptor, McpPromptDescriptor, McpResourceDescriptor,
+};
+pub use mcp::client_capabilities::{
+    McpClientRequestDecision, McpClientRequestKind, PendingMcpClientRequest,
+};
+pub use mcp::oauth::{McpOAuthStart, McpOAuthStatus, McpOAuthStatusState};
 pub use project::ports::Project;
 pub use settings::codex_login::CodexLoginStatus;
 pub use settings::model::{AppSettings, McpServerConfig, McpSettings, SkillSummary};

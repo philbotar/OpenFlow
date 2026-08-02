@@ -398,6 +398,8 @@ API key or subscription OAuth credentials as the app, then reports a separate re
 2. Agent **Create with AI** producing a valid reusable agent in a temporary store.
 3. A separate fixed two-node workflow preserving `ORCHID-91` through its handoff.
 4. The automatic post-run AI review completing without an error.
+5. Two direct chats running against the saved provider concurrently; stopping one leaves the other
+   active and able to answer a follow-up.
 
 The smoke does not save generated workflows or agents. A subscription token refresh may update the
 saved OAuth credentials, matching normal app behavior. Output repair remains covered by deterministic

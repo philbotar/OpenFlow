@@ -1,11 +1,16 @@
 use super::*;
 use crate::chat::{Chat, ChatConfig, ChatStore};
 use crate::run::execution::{ExecutionAction, ExecutionEvent};
+use crate::run::persistence::{
+    workflow_hash, RunCheckpointPayload, RunCheckpointReason, RunRecord, RunStatus, RunStoreRoot,
+};
 use crate::run::state::WorkflowRunState;
 use crate::settings::model::{AppSettings, ProviderProfile, ProviderTransport};
 use crate::workflow::catalog::default_workflow;
 use crate::workflow::ports::{WorkflowStore, WorkflowStoreState};
-use engine::{ApprovalMode, ChatRole, Node, NodeId, Workflow, WorkflowId};
+use engine::{
+    ApprovalMode, ChatRole, InteractiveEngineCheckpoint, Node, NodeId, Workflow, WorkflowId,
+};
 use providers::ProviderId;
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -52,6 +57,200 @@ fn backend_with_chat_store(
         Some(runtime),
     );
     (backend, dir)
+}
+
+#[test]
+fn mcp_probe_returns_structured_preflight_failure_without_trusting_server() {
+    let (backend, _dir) = backend();
+    let mut server = crate::mcp::model::McpServerRecord::new(
+        "missing",
+        "Missing",
+        crate::mcp::model::McpServerSource::Manual,
+        crate::mcp::model::McpInstall::External,
+        crate::mcp::model::McpConnection::Stdio {
+            command: "/definitely/not/a/real/openflow-mcp-server".to_string(),
+            args: Vec::new(),
+            environment: Default::default(),
+        },
+    );
+    server.enabled = true;
+
+    let probe_runtime = tokio::runtime::Runtime::new().expect("probe runtime");
+    let result = probe_runtime
+        .block_on(backend.probe_mcp_server(server, None))
+        .expect("structured probe result");
+
+    assert_eq!(result.report.state, crate::api::McpProbeState::Failed);
+    assert_eq!(result.report.stage, crate::api::McpProbeStage::Preflight);
+    assert!(!result.report.auth_required);
+    assert_eq!(
+        result.report.transport,
+        crate::mcp::model::McpTransportKind::Stdio
+    );
+    assert!(result
+        .report
+        .error
+        .as_deref()
+        .is_some_and(|error| error.contains("not found")));
+    assert!(!result.server.enabled);
+    assert!(result.server.trust.approved_fingerprint.is_none());
+}
+
+#[test]
+fn mcp_probe_ignores_blank_import_source_path() {
+    let (backend, _dir) = backend();
+    let server = crate::mcp::model::McpServerRecord::new(
+        "missing-import",
+        "Missing import",
+        crate::mcp::model::McpServerSource::Imported {
+            dialect: "mcpServers".to_string(),
+            source_path: String::new(),
+        },
+        crate::mcp::model::McpInstall::External,
+        crate::mcp::model::McpConnection::Stdio {
+            command: "/definitely/not/a/real/openflow-mcp-server".to_string(),
+            args: Vec::new(),
+            environment: Default::default(),
+        },
+    );
+
+    let probe_runtime = tokio::runtime::Runtime::new().expect("probe runtime");
+    let result = probe_runtime
+        .block_on(backend.probe_mcp_server(server, Some("")))
+        .expect("structured probe result");
+
+    assert_eq!(result.report.stage, crate::api::McpProbeStage::Preflight);
+    assert!(result
+        .report
+        .error
+        .as_deref()
+        .is_some_and(|error| error.contains("MCP command") && error.contains("not found")));
+}
+
+fn empty_checkpoint(workflow: &Workflow) -> InteractiveEngineCheckpoint {
+    InteractiveEngineCheckpoint {
+        workflow_id: workflow.id.clone(),
+        layer_idx: 0,
+        outputs: Default::default(),
+        handoffs: Default::default(),
+        changed_files_by_node: Default::default(),
+        reads_by_node: Default::default(),
+        transcripts: Default::default(),
+        awaiting_nodes: Default::default(),
+        structured_input_by_node: Default::default(),
+        plan_mode_source_node_id: None,
+        frozen_change_evidence_packet: None,
+        pending_tool_batches: Default::default(),
+        retries_by_node: Default::default(),
+        transient_streaks_by_node: Default::default(),
+        submit_output_retries_by_node: Default::default(),
+        request_input_retries_by_node: Default::default(),
+        empty_turn_retries_by_node: Default::default(),
+        mixed_tool_turn_retries_by_node: Default::default(),
+        output_truncation_retries_by_node: Default::default(),
+        auto_continue_streaks_by_node: Default::default(),
+        entrypoint_text: None,
+        entrypoint_attachments: Vec::new(),
+        interrupted_nodes: Default::default(),
+        failed_nodes: Default::default(),
+    }
+}
+
+#[cfg_attr(miri, ignore)]
+#[test]
+fn file_change_diff_loader_requires_run_projection_membership() {
+    let (backend, dir) = backend();
+    let workflow = default_workflow("Diff replay");
+    let node_id = workflow.nodes[0].id.clone();
+    let run_id = "diff-replay";
+    let root = RunStoreRoot {
+        project_id: None,
+        root: dir.path().join("runs"),
+    };
+    let artifact_id = uuid::Uuid::new_v4().to_string();
+    let unowned_artifact_id = uuid::Uuid::new_v4().to_string();
+    let run_dir = backend.run_store.run_dir(&root, run_id);
+    let record = RunRecord {
+        run_id: run_id.to_string(),
+        name: Some("Diff replay".to_string()),
+        workflow_id: workflow.id.to_string(),
+        workflow_name: workflow.name.clone(),
+        workflow_hash: workflow_hash(&workflow),
+        workflow_snapshot: workflow.clone(),
+        project_id: None,
+        execution_cwd: dir.path().display().to_string(),
+        artifact_root: run_dir.join("artifacts").display().to_string(),
+        started_at_ms: 1,
+        updated_at_ms: 1,
+        status: RunStatus::Paused,
+    };
+    backend
+        .run_store
+        .create_run(&root, &record)
+        .expect("create run");
+    std::fs::create_dir_all(run_dir.join("artifacts")).expect("artifact dir");
+    std::fs::write(
+        run_dir
+            .join("artifacts")
+            .join(format!("{artifact_id}-file-diff.txt")),
+        "-1|old\n+1|new\n",
+    )
+    .expect("owned diff");
+    std::fs::write(
+        run_dir
+            .join("artifacts")
+            .join(format!("{unowned_artifact_id}-file-diff.txt")),
+        "secret",
+    )
+    .expect("unowned diff");
+    let mut projection = WorkflowRunState::running_for_workflow(&workflow);
+    projection.run_id = Some(run_id.to_string());
+    let change = engine::FileChangeRecord {
+        path: "src/main.rs".to_string(),
+        op: engine::FileChangeOp::Update,
+        rename_to: None,
+        diff_summary: Some("-1|old\n+1|new".to_string()),
+        batch_id: None,
+        tool_call_id: Some("call-edit".to_string()),
+        tool_name: Some("edit".to_string()),
+        diff_artifact_id: Some(artifact_id.clone()),
+        diff_size_bytes: Some(16),
+        timestamp_ms: 1,
+    };
+    projection.changed_files.push(change.clone());
+    projection
+        .changed_files_by_node
+        .insert(node_id, vec![change]);
+    backend
+        .run_store
+        .append_checkpoint(
+            &root,
+            run_id,
+            &RunCheckpointPayload {
+                seq: 1,
+                created_at_ms: 1,
+                reason: RunCheckpointReason::AwaitingInput,
+                engine: empty_checkpoint(&workflow),
+                projection,
+            },
+        )
+        .expect("append checkpoint");
+
+    backend.block_on_test(async {
+        assert_eq!(
+            backend
+                .load_file_change_diff(run_id, &artifact_id)
+                .await
+                .expect("owned diff"),
+            "-1|old\n+1|new\n"
+        );
+        assert!(matches!(
+            backend
+                .load_file_change_diff(run_id, &unowned_artifact_id)
+                .await,
+            Err(BackendError::FileChangeDiffNotFound { .. })
+        ));
+    });
 }
 
 struct FailingChatStore {
@@ -338,6 +537,72 @@ fn app_chat_uses_an_isolated_managed_workspace() {
             )
         );
         backend.stop_run().await.expect("stop chat");
+    });
+}
+
+#[cfg_attr(miri, ignore)]
+#[test]
+fn starting_a_second_chat_keeps_the_first_chat_active() {
+    let (backend, _dir) = backend();
+    let first_chat = backend.create_chat().expect("create first chat");
+    let second_chat = backend.create_chat().expect("create second chat");
+
+    backend.block_on_test(async {
+        let (_first_chat, first_state, _first_events) = backend
+            .start_chat(
+                &first_chat.id,
+                Some("Run the first task".to_string()),
+                &AppSettings::default(),
+                None,
+            )
+            .await
+            .expect("start first chat");
+        let first_run_id = first_state.run_id.as_deref().expect("first run id");
+
+        let (_second_chat, second_state, _second_events) = backend
+            .start_chat(
+                &second_chat.id,
+                Some("Run the second task".to_string()),
+                &AppSettings::default(),
+                None,
+            )
+            .await
+            .expect("start second chat");
+        let second_run_id = second_state.run_id.as_deref().expect("second run id");
+
+        assert_ne!(first_run_id, second_run_id);
+        assert_eq!(
+            first_state.workflow_id.as_deref(),
+            Some(first_chat.id.as_str())
+        );
+        assert_eq!(
+            second_state.workflow_id.as_deref(),
+            Some(second_chat.id.as_str())
+        );
+        assert!(backend
+            .get_run_state_for(first_run_id)
+            .await
+            .is_some_and(|state| state.active));
+        assert!(backend
+            .get_run_state_for(second_run_id)
+            .await
+            .is_some_and(|state| state.active));
+        assert_eq!(backend.active_run_states().await.len(), 2);
+
+        let stopped = backend
+            .stop_run_for(first_run_id)
+            .await
+            .expect("stop first run");
+        assert!(!stopped.active);
+        assert!(backend
+            .get_run_state_for(second_run_id)
+            .await
+            .is_some_and(|state| state.active));
+
+        backend
+            .stop_run_for(second_run_id)
+            .await
+            .expect("stop second run");
     });
 }
 
@@ -907,6 +1172,9 @@ fn submit_user_input_updates_snapshot_and_sends_action() {
             }
             ExecutionAction::Stop => panic!("unexpected stop action"),
             ExecutionAction::RetryNode { .. } => panic!("unexpected retry action"),
+            ExecutionAction::ResolveMcpClientRequest { .. } => {
+                panic!("unexpected MCP client response action");
+            }
         }
     });
 }
@@ -956,6 +1224,9 @@ fn submit_tool_approval_updates_snapshot_and_sends_action() {
             }
             ExecutionAction::Stop => panic!("unexpected stop action"),
             ExecutionAction::RetryNode { .. } => panic!("unexpected retry action"),
+            ExecutionAction::ResolveMcpClientRequest { .. } => {
+                panic!("unexpected MCP client response action");
+            }
         }
     });
 }
@@ -1201,7 +1472,8 @@ fn submit_tool_approval_denied_forwards_reason() {
             ExecutionAction::ResolveApproval { .. }
             | ExecutionAction::ProvideInput { .. }
             | ExecutionAction::Stop
-            | ExecutionAction::RetryNode { .. } => {
+            | ExecutionAction::RetryNode { .. }
+            | ExecutionAction::ResolveMcpClientRequest { .. } => {
                 panic!("unexpected action variant");
             }
         }

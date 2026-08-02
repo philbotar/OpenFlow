@@ -6,7 +6,8 @@ Domain terms for the Step-through-agentic-workflow architecture.
 |---|---|
 | **Composition root** | The crate responsible for constructing and wiring all dependencies. Here, orchestration is the composition root — `AppBackend` delegates to `WorkflowCatalog`, `AgentLibrary`, `ProjectRegistry`, `SettingsFacade`, and `RunCoordinator`. Provider construction uses the factory pattern (`create_provider`). |
 | **WorkflowCatalog** | Orchestration module: workflow CRUD, app/project merge (project wins on ID collision), assign/unassign. Adapters: `app_workflow_store`, `project_workflow_store`. |
-| **RunCoordinator** | Orchestration module: active run session, action channel, `start_run` / `submit_*` / event projection entry points. Calls `finish_run_session` when a run becomes inactive to clear session-scoped resources. |
+| **RunRegistry** | Orchestration owner for independent top-level sessions keyed by `run_id`; routes addressed controls and shares execution budgets across coordinators. |
+| **RunCoordinator** | Orchestration owner for one run session, action channel, checkpoint, and event projection. Calls `finish_run_session` when its run becomes inactive. |
 | **JsonFileStore** | Adapter-internal module (`adapters/storage/json_file_store.rs`): atomic JSON file load/save. Port traits unchanged. |
 | **SubagentSession** | `run/execution/subagent_session.rs`: subagent AI-invocation loop extracted from `ToolPortImpl` for locality. |
 | **CallableAgent** | Engine type (`engine::CallableAgent`): saved agent snapshotted at run start for subagent invocation. Persisted as `openflow/agents.json`; orchestration alias `AgentDefinition`. |

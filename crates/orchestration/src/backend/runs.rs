@@ -66,8 +66,8 @@ impl AppBackend {
             .run_store
             .load_record(&roots, run_id)?
             .ok_or_else(|| BackendError::RunNotFound(run_id.to_string()))?;
-        let current_attachment = if self.current_run_id().await.as_deref() == Some(run_id) {
-            self.get_run_state().await.and_then(|state| {
+        let current_attachment = if self.is_run_active_for(run_id).await {
+            self.get_run_state_for(run_id).await.and_then(|state| {
                 state
                     .chat_logs
                     .values()
@@ -103,6 +103,59 @@ impl AppBackend {
         Ok(AttachmentPreviewPayload {
             media_type: preview.media_type,
             data_base64: base64::engine::general_purpose::STANDARD.encode(preview.bytes),
+        })
+    }
+
+    pub async fn load_file_change_diff(
+        &self,
+        run_id: &str,
+        artifact_id: &str,
+    ) -> Result<String, BackendError> {
+        let roots = self.run_roots()?;
+        let (root, _) = self
+            .run_store
+            .load_record(&roots, run_id)?
+            .ok_or_else(|| BackendError::RunNotFound(run_id.to_string()))?;
+        let current_state = if self.is_run_active_for(run_id).await {
+            self.get_run_state_for(run_id).await
+        } else {
+            None
+        };
+        let state = match current_state {
+            Some(state) => state,
+            None => {
+                self.run_store
+                    .load_latest_checkpoint(&root, run_id)?
+                    .ok_or_else(|| BackendError::RunHasNoCheckpoints(run_id.to_string()))?
+                    .projection
+            }
+        };
+        let belongs_to_run = state
+            .changed_files_by_node
+            .values()
+            .flatten()
+            .chain(state.changed_files.iter())
+            .any(|change| change.diff_artifact_id.as_deref() == Some(artifact_id));
+        let valid_artifact_id = uuid::Uuid::parse_str(artifact_id)
+            .is_ok_and(|parsed| parsed.to_string() == artifact_id);
+        if !belongs_to_run || !valid_artifact_id {
+            return Err(BackendError::FileChangeDiffNotFound {
+                run_id: run_id.to_string(),
+                artifact_id: artifact_id.to_string(),
+            });
+        }
+
+        let path = self
+            .run_store
+            .run_dir(&root, run_id)
+            .join("artifacts")
+            .join(format!("{artifact_id}-file-diff.txt"));
+        tokio::fs::read_to_string(path).await.map_err(|error| {
+            BackendError::FileChangeDiffUnavailable {
+                run_id: run_id.to_string(),
+                artifact_id: artifact_id.to_string(),
+                error: error.to_string(),
+            }
         })
     }
 
@@ -290,7 +343,21 @@ impl AppBackend {
     }
 
     pub async fn stop_run(&self) -> Result<WorkflowRunState, BackendError> {
-        self.runs.stop_run().await
+        self.runs
+            .stop_run_and_persist(self.run_store.as_ref())
+            .await
+    }
+
+    pub async fn stop_run_for(&self, run_id: &str) -> Result<WorkflowRunState, BackendError> {
+        self.runs
+            .stop_run_for(run_id, self.run_store.as_ref())
+            .await
+    }
+
+    pub async fn stop_all_runs(&self) {
+        self.runs
+            .stop_all_and_persist(self.run_store.as_ref())
+            .await;
     }
 
     pub async fn continue_run(
@@ -322,17 +389,71 @@ impl AppBackend {
             .map_err(|error| self.backend_err(error))
     }
 
+    pub async fn continue_run_for(
+        &self,
+        run_id: &str,
+        workflow: Workflow,
+        entrypoint: Option<String>,
+        settings: &crate::settings::model::AppSettings,
+        transient_api_key: Option<&str>,
+    ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
+        self.runs
+            .continue_run_for(
+                run_id,
+                RunStartParams {
+                    workflow,
+                    invoked_skill_ids: Vec::new(),
+                    entrypoint: entrypoint.map(UserMessageInput::text),
+                    execution_cwd: None,
+                    run_root: RunStoreRoot {
+                        project_id: None,
+                        root: self.app_runs_root.clone(),
+                    },
+                    settings,
+                    transient_api_key,
+                    agent_store: self.agents.store(),
+                    skill_catalog: self.settings.skill_catalog(),
+                    settings_store: self.settings.store_arc(),
+                    run_store: self.run_store.as_ref(),
+                    env: self.settings.env(),
+                },
+            )
+            .await
+            .map_err(|error| self.backend_err(error))
+    }
+
     #[must_use]
     pub async fn is_run_continuable(&self) -> bool {
         self.runs.is_run_continuable().await
+    }
+
+    #[must_use]
+    pub async fn is_run_continuable_for(&self, run_id: &str) -> bool {
+        self.runs.is_run_continuable_for(run_id).await
     }
 
     pub async fn interrupt_node(&self, node_id: &str) -> Result<WorkflowRunState, BackendError> {
         self.runs.interrupt_node(node_id).await
     }
 
+    pub async fn interrupt_node_for(
+        &self,
+        run_id: &str,
+        node_id: &str,
+    ) -> Result<WorkflowRunState, BackendError> {
+        self.runs.interrupt_node_for(run_id, node_id).await
+    }
+
     pub async fn retry_node(&self, node_id: &str) -> Result<WorkflowRunState, BackendError> {
         self.runs.retry_node(node_id).await
+    }
+
+    pub async fn retry_node_for(
+        &self,
+        run_id: &str,
+        node_id: &str,
+    ) -> Result<WorkflowRunState, BackendError> {
+        self.runs.retry_node_for(run_id, node_id).await
     }
 
     pub async fn update_node_runtime_config(
@@ -345,9 +466,25 @@ impl AppBackend {
             .await
     }
 
+    pub async fn update_node_runtime_config_for(
+        &self,
+        run_id: &str,
+        node_id: &str,
+        update: crate::api::NodeRuntimeConfigUpdate,
+    ) -> Result<WorkflowRunState, BackendError> {
+        self.runs
+            .update_node_runtime_config_for(run_id, node_id, update.into_patch())
+            .await
+    }
+
     #[must_use]
     pub async fn is_run_active(&self) -> bool {
         self.runs.is_run_active().await
+    }
+
+    #[must_use]
+    pub async fn is_run_active_for(&self, run_id: &str) -> bool {
+        self.runs.is_run_active_for(run_id).await
     }
 
     pub async fn apply_execution_event(
@@ -356,6 +493,16 @@ impl AppBackend {
     ) -> Result<WorkflowRunState, BackendError> {
         self.runs
             .apply_execution_event(event, self.run_store.as_ref())
+            .await
+    }
+
+    pub async fn apply_execution_event_for(
+        &self,
+        run_id: &str,
+        event: ExecutionEvent,
+    ) -> Result<WorkflowRunState, BackendError> {
+        self.runs
+            .apply_execution_event_for(run_id, event, self.run_store.as_ref())
             .await
     }
 
@@ -394,6 +541,19 @@ impl AppBackend {
             .map_err(|error| self.backend_err(error))
     }
 
+    pub async fn submit_user_message_with_skill_ids_for(
+        &self,
+        run_id: &str,
+        node_id: &str,
+        message: UserMessageInput,
+        invoked_skill_ids: Vec<String>,
+    ) -> Result<WorkflowRunState, BackendError> {
+        self.runs
+            .submit_user_message_with_skill_ids_for(run_id, node_id, message, &invoked_skill_ids)
+            .await
+            .map_err(|error| self.backend_err(error))
+    }
+
     pub async fn submit_tool_approval(
         &self,
         approval_id: &str,
@@ -406,8 +566,52 @@ impl AppBackend {
             .map_err(|error| self.backend_err(error))
     }
 
+    pub async fn submit_tool_approval_for(
+        &self,
+        run_id: &str,
+        approval_id: &str,
+        allow: bool,
+        reason: Option<String>,
+    ) -> Result<WorkflowRunState, BackendError> {
+        self.runs
+            .submit_tool_approval_for(run_id, approval_id, allow, reason)
+            .await
+            .map_err(|error| self.backend_err(error))
+    }
+
+    pub async fn resolve_mcp_client_request(
+        &self,
+        request_id: &str,
+        decision: crate::mcp::client_capabilities::McpClientRequestDecision,
+    ) -> Result<WorkflowRunState, BackendError> {
+        self.runs
+            .resolve_mcp_client_request(request_id, decision)
+            .await
+            .map_err(|error| self.backend_err(error))
+    }
+
+    pub async fn resolve_mcp_client_request_for(
+        &self,
+        run_id: &str,
+        request_id: &str,
+        decision: crate::mcp::client_capabilities::McpClientRequestDecision,
+    ) -> Result<WorkflowRunState, BackendError> {
+        self.runs
+            .resolve_mcp_client_request_for(run_id, request_id, decision)
+            .await
+            .map_err(|error| self.backend_err(error))
+    }
+
     pub async fn get_run_state(&self) -> Option<WorkflowRunState> {
         self.runs.get_run_state().await
+    }
+
+    pub async fn get_run_state_for(&self, run_id: &str) -> Option<WorkflowRunState> {
+        self.runs.get_run_state_for(run_id).await
+    }
+
+    pub async fn active_run_states(&self) -> Vec<WorkflowRunState> {
+        self.runs.active_run_states().await
     }
 
     pub async fn current_run_id(&self) -> Option<String> {
@@ -425,8 +629,28 @@ impl AppBackend {
             .await
     }
 
+    pub async fn preview_file_edit_for(
+        &self,
+        run_id: &str,
+        approval_id: &str,
+        tool_name: String,
+        arguments: serde_json::Value,
+    ) -> Result<FileEditPreview, BackendError> {
+        self.runs
+            .preview_file_edit_for(run_id, approval_id, tool_name, arguments)
+            .await
+    }
+
     pub async fn git_diff_file(&self, path: String) -> Result<String, BackendError> {
         self.runs.git_diff_file(path).await
+    }
+
+    pub async fn git_diff_file_for(
+        &self,
+        run_id: &str,
+        path: String,
+    ) -> Result<String, BackendError> {
+        self.runs.git_diff_file_for(run_id, path).await
     }
 
     pub async fn revert_edit_batch(
@@ -436,20 +660,29 @@ impl AppBackend {
         self.runs.revert_edit_batch(batch_id).await
     }
 
+    pub async fn revert_edit_batch_for(
+        &self,
+        run_id: &str,
+        batch_id: String,
+    ) -> Result<WorkflowRunState, BackendError> {
+        self.runs.revert_edit_batch_for(run_id, batch_id).await
+    }
+
     pub async fn clear_run_trace(&self) -> Result<Option<WorkflowRunState>, BackendError> {
         self.runs.clear_run_trace().await
+    }
+
+    pub async fn clear_run_trace_for(
+        &self,
+        run_id: &str,
+    ) -> Result<Option<WorkflowRunState>, BackendError> {
+        self.runs.clear_run_trace_for(run_id).await
     }
 
     pub async fn start_scheduled_run(
         &self,
         workflow_id: String,
     ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
-        if self.is_run_active().await {
-            return Err(BackendError::Schedule(
-                "Skipped because another workflow run was active".to_string(),
-            ));
-        }
-
         let workflow = self.load_workflow(&workflow_id)?;
         let workspace = self.workspace_for_workflow(&workflow_id, None)?;
         let settings = self.load_settings(None)?.settings;
@@ -498,7 +731,12 @@ impl AppBackend {
         &self,
         now: chrono::DateTime<chrono::Utc>,
     ) -> Result<Option<ScheduledRunCandidate>, BackendError> {
-        let active = self.is_run_active().await;
-        Ok(self.schedule.claim_due_run(now, active))
+        let active_workflow_ids = self
+            .active_run_states()
+            .await
+            .into_iter()
+            .filter_map(|state| state.workflow_id)
+            .collect();
+        Ok(self.schedule.claim_due_run(now, &active_workflow_ids))
     }
 }

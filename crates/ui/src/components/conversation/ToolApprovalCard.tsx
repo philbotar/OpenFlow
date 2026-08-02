@@ -24,6 +24,7 @@ function opLabel(op: string): string {
 
 export function ToolApprovalCardBody(props: {
   approval: PendingToolApproval;
+  runId: string;
   onApprove: (allow: boolean) => void;
   showNodeLabel?: boolean;
 }) {
@@ -33,6 +34,7 @@ export function ToolApprovalCardBody(props: {
         return null;
       }
       return {
+        runId: props.runId,
         approvalId: props.approval.approvalId,
         toolName: props.approval.toolCall.name,
         arguments: props.approval.toolCall.arguments,
@@ -44,6 +46,7 @@ export function ToolApprovalCardBody(props: {
       }
       try {
         return await desktop.previewFileEdit(
+          input.runId,
           input.approvalId,
           input.toolName,
           input.arguments,

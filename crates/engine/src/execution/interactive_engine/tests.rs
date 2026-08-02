@@ -1234,6 +1234,10 @@ fn revert_file_changes_for_batch_removes_only_matching_records() {
                 rename_to: None,
                 diff_summary: None,
                 batch_id: Some("batch-1".to_string()),
+                tool_call_id: None,
+                tool_name: None,
+                diff_artifact_id: None,
+                diff_size_bytes: None,
                 timestamp_ms: 1,
             },
             FileChangeRecord {
@@ -1242,6 +1246,10 @@ fn revert_file_changes_for_batch_removes_only_matching_records() {
                 rename_to: None,
                 diff_summary: None,
                 batch_id: Some("batch-2".to_string()),
+                tool_call_id: None,
+                tool_name: None,
+                diff_artifact_id: None,
+                diff_size_bytes: None,
                 timestamp_ms: 2,
             },
         ],
@@ -1978,6 +1986,10 @@ impl ToolPort for EffectsToolPort {
                     rename_to: None,
                     diff_summary: None,
                     batch_id: None,
+                    tool_call_id: None,
+                    tool_name: None,
+                    diff_artifact_id: None,
+                    diff_size_bytes: None,
                     timestamp_ms: 1,
                 }],
                 reads: Vec::new(),
@@ -2036,14 +2048,15 @@ fn tool_batch_effects_are_recorded_on_engine() {
 }
 
 #[test]
-fn checkpoint_stop_mid_tool_execution_retains_approved_batch() {
+fn checkpoint_stop_mid_tool_execution_marks_node_retryable() {
     let mut workflow = Workflow::new("mid-tool");
     workflow.nodes = vec![node("idea")];
     let mut engine = InteractiveEngine::new(workflow, None, None).unwrap();
+    let node_id = NodeId::from("idea");
 
     engine.test_insert_pending_batch(PendingToolBatch {
         approval_id: "batch-1".to_string(),
-        node_id: NodeId::from("idea"),
+        node_id: node_id.clone(),
         tool_calls: vec![ToolCall {
             id: "call-1".to_string(),
             provider_call_id: None,
@@ -2053,10 +2066,18 @@ fn checkpoint_stop_mid_tool_execution_retains_approved_batch() {
         requires_approval: false,
         tool_access_policy: crate::ports::ToolAccessPolicy::Execution,
     });
-    engine.test_insert_in_flight(NodeId::from("idea"));
+    assert_eq!(engine.take_ready_tool_batches().len(), 1);
 
     let checkpoint = engine.prepare_stop_checkpoint();
-    assert!(checkpoint.pending_tool_batches.contains_key("batch-1"));
+    assert!(!checkpoint.pending_tool_batches.contains_key("batch-1"));
+    assert!(checkpoint.interrupted_nodes.contains(&node_id));
+    assert!(checkpoint.transcripts[&node_id].iter().any(|item| {
+        matches!(
+            item,
+            AgentTranscriptItem::ToolResult { result }
+                if result.is_error && result.content.contains("interrupted or cancelled")
+        )
+    }));
 }
 
 fn autonomous_node(id: &str) -> Node {

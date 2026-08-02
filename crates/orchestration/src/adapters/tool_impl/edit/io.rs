@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 use uuid::Uuid;
 
-use engine::{summarize_diff, FileChangeOp};
+use engine::FileChangeOp;
 
 use crate::lsp::{after_write, FileDiagnosticsResult, LspSettings};
 
@@ -275,13 +275,11 @@ impl EditIo {
         let disk_normalized = self.read_text(user_path).ok();
 
         if let Some(ledger) = &self.ledger {
-            let diff_summary = match (&old_normalized, &disk_normalized) {
+            let diff = match (&old_normalized, &disk_normalized) {
                 (Some(old), Some(new)) if old != new => {
-                    Some(summarize_diff(&generate_diff_string(old, new, 2).diff, 8))
+                    Some(generate_diff_string(old, new, 2).diff)
                 }
-                (None, Some(new)) if !new.is_empty() => {
-                    Some(summarize_diff(&generate_diff_string("", new, 2).diff, 8))
-                }
+                (None, Some(new)) => Some(generate_diff_string("", new, 2).diff),
                 _ => None,
             };
             ledger.record(
@@ -292,7 +290,7 @@ impl EditIo {
                     FileChangeOp::Create
                 },
                 None,
-                diff_summary,
+                diff,
             );
         }
 

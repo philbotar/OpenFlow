@@ -134,7 +134,7 @@ fn default_tier_for_tool_name(tool_name: &str) -> ToolTier {
         "read" | "search" | "find" | "ast_grep" | "web_search" | "openflow_update_todo_list" => {
             ToolTier::Read
         }
-        name if name.starts_with("mcp/") => ToolTier::Write,
+        name if name.starts_with("mcp_") || name.starts_with("mcp/") => ToolTier::Write,
         _ => ToolTier::Write,
     }
 }
@@ -522,6 +522,10 @@ mod tests {
         assert_eq!(tool_tier_for_call(&config, "custom_write"), ToolTier::Write);
         assert_eq!(
             tool_tier_for_call(&config, "mcp/gh/search"),
+            ToolTier::Write
+        );
+        assert_eq!(
+            tool_tier_for_call(&config, "mcp_2_gh_search"),
             ToolTier::Write
         );
     }

@@ -42,7 +42,7 @@ interface UseWorkspaceCatalogParams {
   selectWorkflow: (workflow: Workflow) => void;
   selectChat: (chatId: string, state: WorkflowRunState | null) => void;
   runState: Accessor<WorkflowRunState | null>;
-  backendRunWorkflowId: Accessor<string | null>;
+  runStateByWorkflowId: Record<string, WorkflowRunState>;
   setBackendRunWorkflowId: Setter<string | null>;
   cacheRunStateForWorkflow: (workflowId: string, state: WorkflowRunState) => void;
   setRunStateByWorkflowId: (setter: (state: Record<string, WorkflowRunState>) => Record<string, WorkflowRunState>) => void;
@@ -132,10 +132,7 @@ export function useWorkspaceCatalog(params: UseWorkspaceCatalogParams) {
   });
   const executionCwdForActiveWorkflow = createMemo(() => {
     const retainedRun = params.runState();
-    if (
-      params.backendRunWorkflowId() === activeWorkflowId() &&
-      retainedRun?.executionCwd?.trim()
-    ) {
+    if (retainedRun?.executionCwd?.trim()) {
       return retainedRun.executionCwd;
     }
     const chatProjectId = activeChat()?.config.projectId;
@@ -224,8 +221,10 @@ export function useWorkspaceCatalog(params: UseWorkspaceCatalogParams) {
     const chat = chats().find((item) => item.id === chatId);
     if (!chat) return;
     let replay: WorkflowRunState | null = null;
-    const isActiveBackendChat = params.backendRunWorkflowId() === chat.id;
-    if (chat.runId && !isActiveBackendChat) {
+    const cached = params.runStateByWorkflowId[chat.id];
+    if (cached) {
+      replay = cached;
+    } else if (chat.runId) {
       try {
         replay = await desktop.replayRun(chat.runId);
       } catch (error) {
@@ -240,7 +239,7 @@ export function useWorkspaceCatalog(params: UseWorkspaceCatalogParams) {
   const handleDeleteChat = async (chatId: string) => {
     const chat = chats().find((item) => item.id === chatId);
     if (!chat) return;
-    if (params.runState()?.active && params.backendRunWorkflowId() === chat.id) {
+    if (params.runStateByWorkflowId[chat.id]?.active) {
       params.showErrorToast("Stop the run before deleting this chat.");
       return;
     }
@@ -367,7 +366,7 @@ export function useWorkspaceCatalog(params: UseWorkspaceCatalogParams) {
   const handleDeleteWorkflow = async (workflowId: string) => {
     const workflow = workflows().find((item) => item.id === workflowId);
     if (!workflow) return;
-    if (params.runState()?.active && params.backendRunWorkflowId() === workflow.id) {
+    if (params.runStateByWorkflowId[workflow.id]?.active) {
       params.showErrorToast("Stop the run before deleting this workflow.");
       return;
     }
@@ -433,10 +432,12 @@ export function useWorkspaceCatalog(params: UseWorkspaceCatalogParams) {
   const handleRemoveProject = async (projectId: string) => {
     const project = projects().find((item) => item.id === projectId);
     if (!project) return;
-    const projectRunActive =
-      params.runState()?.active &&
-      (project.workflow_ids.includes(params.backendRunWorkflowId() ?? "") ||
-        activeChat()?.config.projectId === projectId);
+    const projectRunActive = Object.entries(params.runStateByWorkflowId).some(
+      ([workflowId, state]) =>
+        state.active &&
+        (project.workflow_ids.includes(workflowId) ||
+          chats().some((chat) => chat.id === workflowId && chat.config.projectId === projectId)),
+    );
     if (projectRunActive) {
       params.showErrorToast("Stop the project run before removing this project.");
       return;

@@ -1,8 +1,12 @@
+use crate::mcp::model::{
+    McpConnection, McpInstall, McpServerRecord, McpServerSource, PersistedValue,
+    MCP_SERVER_RECORD_VERSION,
+};
 use providers::{
     builtin_provider_specs, provider_spec, CodexOAuthCredentials, ModelTransport, ProviderId,
     ProviderKind, ProviderSpec, ReasoningEffortOption, WireApi,
 };
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::BTreeMap;
 
 pub type ProviderTransport = WireApi;
@@ -275,37 +279,91 @@ fn default_true() -> bool {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpSettings {
+    #[serde(default, deserialize_with = "deserialize_mcp_servers")]
+    pub servers: Vec<McpServerRecord>,
     #[serde(default)]
-    pub servers: Vec<McpServerConfig>,
-    #[serde(default = "default_true")]
     pub discover_external: bool,
     #[serde(default)]
     pub disabled_discovered_ids: Vec<String>,
+    #[serde(default = "default_mcp_registry_base_url")]
+    pub registry_base_url: String,
+}
+
+fn default_mcp_registry_base_url() -> String {
+    crate::mcp::catalog::DEFAULT_MCP_REGISTRY_BASE_URL.to_string()
 }
 
 impl Default for McpSettings {
     fn default() -> Self {
         Self {
             servers: Vec::new(),
-            discover_external: true,
+            discover_external: false,
             disabled_discovered_ids: Vec::new(),
+            registry_base_url: default_mcp_registry_base_url(),
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct McpServerConfig {
-    pub id: String,
-    pub display_name: String,
-    pub command: String,
+struct LegacyMcpServerConfig {
+    id: String,
+    display_name: String,
+    command: String,
     #[serde(default)]
-    pub args: Vec<String>,
+    args: Vec<String>,
     #[serde(default)]
-    pub env: BTreeMap<String, String>,
+    env: BTreeMap<String, String>,
     #[serde(default = "default_true")]
-    pub enabled: bool,
+    #[allow(
+        dead_code,
+        reason = "legacy value is intentionally not trusted during migration"
+    )]
+    enabled: bool,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(untagged)]
+enum McpServerWire {
+    Current(Box<McpServerRecord>),
+    Legacy(LegacyMcpServerConfig),
+}
+
+fn deserialize_mcp_servers<'de, D>(deserializer: D) -> Result<Vec<McpServerRecord>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let servers = Vec::<McpServerWire>::deserialize(deserializer)?;
+    Ok(servers
+        .into_iter()
+        .map(|server| match server {
+            McpServerWire::Current(record) => *record,
+            McpServerWire::Legacy(legacy) => McpServerRecord {
+                schema_version: MCP_SERVER_RECORD_VERSION,
+                id: legacy.id,
+                display_name: legacy.display_name,
+                source: McpServerSource::Manual,
+                install: McpInstall::External,
+                connection: McpConnection::Stdio {
+                    command: legacy.command,
+                    args: legacy.args,
+                    environment: legacy
+                        .env
+                        .into_iter()
+                        .map(|(key, value)| (key, PersistedValue::Literal { value }))
+                        .collect(),
+                },
+                trust: Default::default(),
+                policy: Default::default(),
+                enabled: false,
+                install_history: None,
+            },
+        })
+        .collect())
+}
+
+/// Compatibility name for desktop/UI seams while normalized records roll out.
+pub type McpServerConfig = McpServerRecord;
 
 impl Default for LspSettings {
     fn default() -> Self {
@@ -470,6 +528,9 @@ impl AppSettings {
         for key in copy.search.keys.values_mut() {
             key.clear();
         }
+        for server in &mut copy.mcp.servers {
+            *server = server.redacted();
+        }
         copy
     }
 
@@ -544,11 +605,114 @@ pub fn merge_preserved_secrets(incoming: &mut AppSettings, existing: &AppSetting
             *entry = key.clone();
         }
     }
+    for incoming_server in &mut incoming.mcp.servers {
+        if let Some(existing_server) = existing
+            .mcp
+            .servers
+            .iter()
+            .find(|server| server.id == incoming_server.id)
+        {
+            merge_preserved_mcp_env(incoming_server, existing_server);
+        }
+    }
+}
+
+pub(crate) fn merge_preserved_mcp_env(incoming: &mut McpServerConfig, existing: &McpServerConfig) {
+    match (&mut incoming.connection, &existing.connection) {
+        (
+            McpConnection::Stdio {
+                environment: incoming,
+                ..
+            },
+            McpConnection::Stdio {
+                environment: existing,
+                ..
+            },
+        )
+        | (
+            McpConnection::StreamableHttp {
+                headers: incoming, ..
+            },
+            McpConnection::StreamableHttp {
+                headers: existing, ..
+            },
+        )
+        | (
+            McpConnection::LegacySse {
+                headers: incoming, ..
+            },
+            McpConnection::LegacySse {
+                headers: existing, ..
+            },
+        ) => merge_preserved_mcp_values(incoming, existing),
+        _ => {}
+    }
+}
+
+fn merge_preserved_mcp_values(
+    incoming: &mut BTreeMap<String, PersistedValue>,
+    existing: &BTreeMap<String, PersistedValue>,
+) {
+    for (key, incoming_value) in incoming {
+        if let PersistedValue::Secret {
+            secret_ref,
+            resolved_value,
+        } = incoming_value
+        {
+            if resolved_value.is_none() {
+                if let Some(PersistedValue::Secret {
+                    secret_ref: existing_ref,
+                    resolved_value: existing_value,
+                }) = existing.get(key)
+                {
+                    if existing_ref == secret_ref {
+                        resolved_value.clone_from(existing_value);
+                    }
+                }
+            }
+            continue;
+        }
+        let is_empty_literal = matches!(
+            incoming_value,
+            PersistedValue::Literal { value } if value.trim().is_empty()
+        );
+        if is_empty_literal {
+            if let Some(existing_value) = existing.get(key) {
+                incoming_value.clone_from(existing_value);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn mcp_stdio_server(
+        id: &str,
+        display_name: &str,
+        command: &str,
+        args: Vec<String>,
+        env: BTreeMap<String, String>,
+        enabled: bool,
+    ) -> McpServerConfig {
+        let mut server = McpServerRecord::new(
+            id,
+            display_name,
+            McpServerSource::Manual,
+            McpInstall::External,
+            McpConnection::Stdio {
+                command: command.to_string(),
+                args,
+                environment: env
+                    .into_iter()
+                    .map(|(key, value)| (key, PersistedValue::Literal { value }))
+                    .collect(),
+            },
+        );
+        server.enabled = enabled;
+        server
+    }
 
     fn codex_credentials() -> CodexOAuthCredentials {
         CodexOAuthCredentials {
@@ -891,16 +1055,16 @@ mod tests {
     }
 
     #[test]
-    fn mcp_settings_default_enables_external_discovery() {
-        assert!(McpSettings::default().discover_external);
+    fn mcp_settings_default_disables_external_discovery() {
+        assert!(!McpSettings::default().discover_external);
     }
 
     #[test]
-    fn app_settings_missing_mcp_key_enables_external_discovery() {
+    fn app_settings_missing_mcp_key_disables_external_discovery() {
         let mut value = serde_json::to_value(AppSettings::default()).unwrap();
         value.as_object_mut().unwrap().remove("mcp");
         let parsed: AppSettings = serde_json::from_value(value).unwrap();
-        assert!(parsed.mcp.discover_external);
+        assert!(!parsed.mcp.discover_external);
     }
 
     #[test]
@@ -923,6 +1087,7 @@ mod tests {
                 servers: vec![],
                 discover_external: true,
                 disabled_discovered_ids: vec!["playwright".into()],
+                registry_base_url: McpSettings::default().registry_base_url,
             },
             ..AppSettings::default()
         };
@@ -936,14 +1101,14 @@ mod tests {
     fn mcp_settings_round_trip() {
         let settings = AppSettings {
             mcp: McpSettings {
-                servers: vec![McpServerConfig {
-                    id: "github".into(),
-                    display_name: "GitHub".into(),
-                    command: "npx".into(),
-                    args: vec!["-y".into(), "@modelcontextprotocol/server-github".into()],
-                    env: Default::default(),
-                    enabled: true,
-                }],
+                servers: vec![mcp_stdio_server(
+                    "github",
+                    "GitHub",
+                    "npx",
+                    vec!["-y".into(), "@modelcontextprotocol/server-github".into()],
+                    BTreeMap::new(),
+                    true,
+                )],
                 ..McpSettings::default()
             },
             ..AppSettings::default()
@@ -951,6 +1116,57 @@ mod tests {
         let json = serde_json::to_string(&settings).unwrap();
         let parsed: AppSettings = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.mcp.servers[0].id, "github");
+    }
+
+    #[test]
+    fn normalized_mcp_legacy_config_migrates_losslessly_but_requires_new_trust() {
+        let mut json = serde_json::to_value(AppSettings::default()).unwrap();
+        json["mcp"] = serde_json::json!({
+            "servers": [{
+                "id": "massive",
+                "displayName": "Massive MCP",
+                "command": "npx",
+                "args": ["--yes", "@acme/massive@1.2.3"],
+                "env": {
+                    "MASSIVE_API_KEY": "legacy-secret",
+                    "MCP_LOG_LEVEL": "info"
+                },
+                "enabled": true
+            }],
+            "discoverExternal": true,
+            "disabledDiscoveredIds": []
+        });
+
+        let parsed: AppSettings = serde_json::from_value(json).unwrap();
+        let server = &parsed.mcp.servers[0];
+
+        assert_eq!(
+            server.schema_version,
+            crate::mcp::model::MCP_SERVER_RECORD_VERSION
+        );
+        assert_eq!(server.source, crate::mcp::model::McpServerSource::Manual);
+        assert_eq!(server.install, crate::mcp::model::McpInstall::External);
+        let crate::mcp::model::McpConnection::Stdio {
+            command,
+            args,
+            environment,
+        } = &server.connection
+        else {
+            panic!("legacy command must migrate to stdio");
+        };
+        assert_eq!(command, "npx");
+        assert_eq!(args, &["--yes", "@acme/massive@1.2.3"]);
+        assert_eq!(
+            environment["MASSIVE_API_KEY"],
+            crate::mcp::model::PersistedValue::Literal {
+                value: "legacy-secret".to_string()
+            }
+        );
+        assert!(
+            !server.enabled,
+            "legacy executable needs explicit re-approval"
+        );
+        assert!(!crate::mcp::trust::is_trusted(server));
     }
 
     #[test]
@@ -999,6 +1215,43 @@ mod tests {
     }
 
     #[test]
+    fn redacted_clears_mcp_env_values_but_keeps_keys() {
+        let mut settings = AppSettings::default();
+        settings.mcp.servers.push(mcp_stdio_server(
+            "massive",
+            "Massive",
+            "mcp_massive",
+            vec![],
+            BTreeMap::from([
+                ("MASSIVE_API_KEY".into(), "secret".into()),
+                ("MCP_TRANSPORT".into(), "stdio".into()),
+            ]),
+            true,
+        ));
+
+        let redacted = settings.redacted();
+
+        assert_eq!(
+            match &redacted.mcp.servers[0].connection {
+                McpConnection::Stdio { environment, .. } => environment.get("MASSIVE_API_KEY"),
+                _ => None,
+            },
+            Some(&PersistedValue::Literal {
+                value: String::new()
+            })
+        );
+        assert_eq!(
+            match &redacted.mcp.servers[0].connection {
+                McpConnection::Stdio { environment, .. } => environment.get("MCP_TRANSPORT"),
+                _ => None,
+            },
+            Some(&PersistedValue::Literal {
+                value: String::new()
+            })
+        );
+    }
+
+    #[test]
     fn merge_preserved_secrets_restores_search_keys() {
         let mut existing = AppSettings::default();
         existing
@@ -1024,6 +1277,36 @@ mod tests {
         assert_eq!(
             incoming.search.keys.get("exa").map(String::as_str),
             Some("ek-456")
+        );
+    }
+
+    #[test]
+    fn merge_preserved_secrets_restores_redacted_mcp_env_values() {
+        let server = |value: &str| {
+            mcp_stdio_server(
+                "massive",
+                "Massive",
+                "mcp_massive",
+                vec![],
+                BTreeMap::from([("MASSIVE_API_KEY".into(), value.into())]),
+                true,
+            )
+        };
+        let mut existing = AppSettings::default();
+        existing.mcp.servers.push(server("secret"));
+        let mut incoming = AppSettings::default();
+        incoming.mcp.servers.push(server(""));
+
+        merge_preserved_secrets(&mut incoming, &existing);
+
+        assert_eq!(
+            match &incoming.mcp.servers[0].connection {
+                McpConnection::Stdio { environment, .. } => environment.get("MASSIVE_API_KEY"),
+                _ => None,
+            },
+            Some(&PersistedValue::Literal {
+                value: "secret".to_string()
+            })
         );
     }
 

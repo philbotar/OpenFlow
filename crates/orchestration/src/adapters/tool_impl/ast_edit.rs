@@ -17,7 +17,7 @@ use crate::tool::errors::ToolError;
 use crate::tools::edit::diff::generate_diff_string;
 use crate::tools::edit::ledger::FileChangeLedger;
 use crate::tools::edit::path::{resolve_writable, PathEscapeError};
-use engine::{summarize_diff, FileChangeOp, FileChangeRecord};
+use engine::FileChangeOp;
 
 #[derive(Debug, Deserialize)]
 struct AstEditArgs {
@@ -33,7 +33,7 @@ struct AstEditOp {
 
 pub(crate) struct AstEditRunOutcome {
     pub output: Result<String, ToolError>,
-    pub file_changes: Vec<FileChangeRecord>,
+    pub file_changes: Vec<crate::tool::CapturedFileChange>,
 }
 
 #[derive(Default)]
@@ -51,7 +51,7 @@ struct ChangedFile {
 
 struct CollectedChanges {
     changed: Vec<ChangedFile>,
-    file_changes: Vec<FileChangeRecord>,
+    file_changes: Vec<crate::tool::CapturedFileChange>,
     diagnostics: Vec<FileDiagnosticsResult>,
 }
 
@@ -471,7 +471,7 @@ fn collect_changes(
             display_path.clone(),
             FileChangeOp::Update,
             None,
-            Some(summarize_diff(&diff, 8)),
+            Some(diff.clone()),
         );
         changed.push(ChangedFile {
             absolute: path.clone(),

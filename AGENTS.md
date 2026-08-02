@@ -234,6 +234,7 @@ Before editing, classify the change with [`docs/contributing/development-lanes.m
 | App workflows | `{data_local}/openflow/workflows.json` |
 | Chats | `{data_local}/openflow/chats.json` |
 | Settings | `{data_local}/openflow/settings.json` |
+| MCP inputs and OAuth credentials | `{data_local}/openflow/mcp-secrets.json` (plaintext, mode `0600` on Unix) |
 | Projects | `{data_local}/openflow/projects.json` (migrates from legacy slug) |
 | Saved agents | `{data_local}/openflow/agents.json` (migrates from legacy slug) |
 | Project workflows | `{project}/.flow/workflows/{workflowId}.workflow.json` |
@@ -306,3 +307,16 @@ OpenFlow is a **Tauri desktop GUI app**. Standard commands are in the README and
 - **No API key = editor only:** without an LLM key the header shows "API key missing" and the **Run** button cannot execute a workflow, but the visual editor (create workflow, add/rename/configure nodes, save) works fully. For real runs, set `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` (env fallback) or a key in Settings; resolution order is in [Runtime/Persistence Locations](#runtimepersistence-locations).
 - **First Rust build:** `providers`/`orchestration` omit Bedrock (AWS SDK) by default — use `./scripts/check-fast.sh` / `./scripts/test-fast.sh` for the fast loop. Desktop enables `bedrock`. Cold still heavy (reqwest/Tauri). Cargo incremental compilation is disabled to prevent unbounded `target/debug` growth; compiled deps and optional sccache remain reusable. Scripted Cargo entrypoints stop when `target/debug` exceeds 64 GiB or free space falls below the configured floor. Run `./scripts/clean-rust-cache.sh --yes` to delete only the rebuildable debug cache. `verify.sh` reuses `./target` by default; `VERIFY_ISOLATE_TARGET=1` for parallel agents.
 - **Verify-gate tooling** (`cargo-deny`, `cargo-machete`, `typos`) and Tauri Linux system libs (`libwebkit2gtk-4.1-dev`, `libxdo-dev`, `libayatana-appindicator3-dev`, `librsvg2-dev`, ...) are preinstalled in the VM snapshot. If a `verify.sh` step reports one missing, reinstall it (cargo tool via `cargo install`, system lib via `apt-get`).
+
+## graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+When the user types `/graphify`, use the installed graphify skill or instructions before doing anything else.
+
+Rules:
+- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- Dirty graphify-out/ files are expected after hooks or incremental updates; dirty graph files are not a reason to skip graphify. Only skip graphify if the task is about stale or incorrect graph output, or the user explicitly says not to use it.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).

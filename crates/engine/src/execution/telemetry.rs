@@ -8,6 +8,33 @@ use crate::tools::{
 };
 use serde_json::Value;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum McpClientRequestKind {
+    Sampling,
+    ElicitationForm,
+    ElicitationUrl,
+}
+
+/// UI-safe projection of one server-to-client MCP req.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingMcpClientRequest {
+    pub request_id: String,
+    pub server_id: String,
+    pub node_id: NodeId,
+    pub tool_call_id: String,
+    pub tool_name: String,
+    pub kind: McpClientRequestKind,
+    pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requested_schema: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_tokens: Option<u32>,
+}
+
 /// Atomic telemetry event during an interactive run.
 #[derive(Debug, Clone)]
 pub enum RunTelemetry {
@@ -45,6 +72,14 @@ pub enum RunTelemetry {
     },
     ToolApprovalRequested {
         request: PendingToolApproval,
+    },
+    McpClientRequestCreated {
+        request: PendingMcpClientRequest,
+    },
+    McpClientRequestResolved {
+        request_id: String,
+        node_id: NodeId,
+        outcome: String,
     },
     ToolApproved {
         approval_id: String,

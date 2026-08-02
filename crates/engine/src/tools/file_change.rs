@@ -43,6 +43,14 @@ pub struct FileChangeRecord {
     pub diff_summary: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub batch_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diff_artifact_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diff_size_bytes: Option<usize>,
     pub timestamp_ms: u64,
 }
 
@@ -105,6 +113,10 @@ mod tests {
                 rename_to: None,
                 diff_summary: None,
                 batch_id: None,
+                tool_call_id: None,
+                tool_name: None,
+                diff_artifact_id: None,
+                diff_size_bytes: None,
                 timestamp_ms: 1,
             },
         );
@@ -116,6 +128,10 @@ mod tests {
                 rename_to: Some("new.rs".to_string()),
                 diff_summary: None,
                 batch_id: None,
+                tool_call_id: None,
+                tool_name: None,
+                diff_artifact_id: None,
+                diff_size_bytes: None,
                 timestamp_ms: 2,
             },
         );
@@ -127,6 +143,10 @@ mod tests {
                 rename_to: None,
                 diff_summary: None,
                 batch_id: None,
+                tool_call_id: None,
+                tool_name: None,
+                diff_artifact_id: None,
+                diff_size_bytes: None,
                 timestamp_ms: 3,
             },
         );
@@ -146,5 +166,21 @@ mod tests {
         let summary = summarize_diff(&diff, 8);
         assert!(summary.ends_with('…'));
         assert_eq!(summary.lines().count(), 9);
+    }
+
+    #[test]
+    fn legacy_file_change_deserializes_without_diff_artifact_metadata(
+    ) -> Result<(), serde_json::Error> {
+        let record: FileChangeRecord = serde_json::from_value(serde_json::json!({
+            "path": "src/lib.rs",
+            "op": "update",
+            "timestampMs": 42
+        }))?;
+
+        assert_eq!(record.tool_call_id, None);
+        assert_eq!(record.tool_name, None);
+        assert_eq!(record.diff_artifact_id, None);
+        assert_eq!(record.diff_size_bytes, None);
+        Ok(())
     }
 }

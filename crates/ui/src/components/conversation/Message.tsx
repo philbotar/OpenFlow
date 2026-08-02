@@ -47,7 +47,7 @@ export function Message(allProps: MessageProps) {
       class={`chat-row chat-message-row chat-message-row--${local.from} message message-${local.from} role-${local.from} ${animationClass()} ${local.class ?? ""}`}
       {...rest}
     >
-      <Show when={local.from !== "assistant"}>
+      <Show when={local.from !== "assistant" && local.from !== "user"}>
         <div class={`chat-role ${local.from === "system" ? "is-system" : ""}`}>
           {local.label}
         </div>

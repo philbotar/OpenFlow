@@ -76,7 +76,7 @@ describe("ToolApprovalCardBody", () => {
     onApprove = vi.fn(),
   ) {
     dispose = render(
-      () => <ToolApprovalCardBody approval={approval} onApprove={onApprove} />,
+      () => <ToolApprovalCardBody approval={approval} runId="run-1" onApprove={onApprove} />,
       container,
     );
     return onApprove;
@@ -95,6 +95,7 @@ describe("ToolApprovalCardBody", () => {
 
     await vi.waitFor(() => {
       expect(previewFileEdit).toHaveBeenCalledWith(
+        "run-1",
         "approval-edit",
         "edit",
         editApproval.toolCall.arguments,

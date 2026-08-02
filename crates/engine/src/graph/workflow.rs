@@ -9,6 +9,7 @@
 use crate::tools::NodeToolConfig;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::BTreeMap;
 use std::fmt;
 use std::ops::Deref;
 use std::time::Duration;
@@ -357,6 +358,69 @@ const fn saved_workflow_handoff_spec() -> HandoffSpec {
     HandoffSpec::Json
 }
 
+pub const MCP_CONTEXT_DEFAULT_MAX_BYTES: u32 = 65_536;
+pub const MCP_CONTEXT_MAX_BYTES: u32 = 1_048_576;
+
+const fn default_mcp_context_max_bytes() -> u32 {
+    MCP_CONTEXT_DEFAULT_MAX_BYTES
+}
+
+/// Explicit user selection of one MCP resource for a node's immutable run context.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct McpResourceSelection {
+    pub server_id: String,
+    pub uri: String,
+    #[serde(default = "default_mcp_context_max_bytes")]
+    pub max_bytes: u32,
+}
+
+/// Explicit user selection of one rendered MCP prompt for a node's immutable run context.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct McpPromptSelection {
+    pub server_id: String,
+    pub name: String,
+    #[serde(default)]
+    pub arguments: BTreeMap<String, String>,
+    #[serde(default = "default_mcp_context_max_bytes")]
+    pub max_bytes: u32,
+}
+
+/// Protocol source represented by an MCP context snapshot.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum McpContextKind {
+    Resource,
+    Prompt,
+}
+
+/// Run-frozen MCP data. Orchestration resolves it; engine renders it into provider context.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct McpContextSnapshot {
+    pub kind: McpContextKind,
+    pub server_id: String,
+    /// Resource URI or prompt name.
+    pub source: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
+    #[serde(default)]
+    pub content: String,
+    #[serde(default)]
+    pub original_size_bytes: u64,
+    #[serde(default)]
+    pub included_size_bytes: u64,
+    #[serde(default)]
+    pub truncated: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 /// Per-node agent invocation settings: prompts, model, tools, and callable subagents.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[allow(
@@ -411,6 +475,20 @@ pub struct AgentNodeConfig {
     /// false and use explicit harness tools for pause/completion semantics.
     #[serde(default, rename = "conversationMode", alias = "conversation_mode")]
     pub conversation_mode: bool,
+    /// Explicit resource selections. Server content is never injected without one.
+    #[serde(default, rename = "mcpResources", alias = "mcp_resources")]
+    pub mcp_resources: Vec<McpResourceSelection>,
+    /// Explicit prompt selections. Arguments are frozen when the run starts.
+    #[serde(default, rename = "mcpPrompts", alias = "mcp_prompts")]
+    pub mcp_prompts: Vec<McpPromptSelection>,
+    /// Run-only immutable snapshots resolved from the selections above.
+    #[serde(
+        default,
+        rename = "mcpContextSnapshots",
+        alias = "mcp_context_snapshots",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub mcp_context_snapshots: Vec<McpContextSnapshot>,
 }
 
 const fn default_auto_start() -> bool {
@@ -485,6 +563,9 @@ impl Default for AgentNodeConfig {
             provider_id: None,
             request_user_input: false,
             conversation_mode: false,
+            mcp_resources: Vec::new(),
+            mcp_prompts: Vec::new(),
+            mcp_context_snapshots: Vec::new(),
         }
     }
 }

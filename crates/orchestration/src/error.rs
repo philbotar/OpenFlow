@@ -26,6 +26,10 @@ pub enum BackendError {
     ActiveChatRun,
     #[error("chat run started without a run id")]
     ChatRunMissingId,
+    #[error("workflow run started without a run id")]
+    RunMissingId,
+    #[error("run {0} is already active")]
+    RunAlreadyActive(String),
     #[error("skill /{skill_id} invoked by {invoked_by} is not installed")]
     SkillNotFound {
         skill_id: String,
@@ -53,10 +57,14 @@ pub enum BackendError {
     NoAwaitingInput,
     #[error("workflow run has no pending tool approval")]
     NoPendingApproval,
+    #[error("workflow run has no pending MCP client request")]
+    NoPendingMcpClientRequest,
     #[error("expected input for {expected}, got {received}")]
     WrongAwaitingNode { expected: NodeId, received: NodeId },
     #[error("expected approval {expected}, got {received}")]
     WrongApprovalId { expected: String, received: String },
+    #[error("expected MCP client request {expected}, got {received}")]
+    WrongMcpClientRequestId { expected: String, received: String },
     #[error("workflow run channel closed")]
     RunChannelClosed,
     #[error("file edit preview failed: {0}")]
@@ -83,6 +91,14 @@ pub enum BackendError {
     RunNotFound(String),
     #[error("run {0} has no checkpoints")]
     RunHasNoCheckpoints(String),
+    #[error("file-change diff artifact {artifact_id} does not belong to run {run_id}")]
+    FileChangeDiffNotFound { run_id: String, artifact_id: String },
+    #[error("file-change diff artifact {artifact_id} for run {run_id} is unavailable: {error}")]
+    FileChangeDiffUnavailable {
+        run_id: String,
+        artifact_id: String,
+        error: String,
+    },
     #[error("run {0} cannot be resumed because workflow {1} changed")]
     RunWorkflowChanged(String, String),
     #[error("schedule error: {0}")]

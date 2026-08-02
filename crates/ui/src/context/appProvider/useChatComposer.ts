@@ -66,7 +66,6 @@ interface UseChatComposerParams {
   activeWorkflow: Accessor<Workflow | undefined>;
   activeChat: Accessor<Chat | null>;
   activeWorkflowId: Accessor<string | null>;
-  backendRunWorkflowId: Accessor<string | null>;
   runState: Accessor<WorkflowRunState | null>;
   readiness: Accessor<ProviderReadiness | null>;
   startingRun: Accessor<boolean>;
@@ -310,10 +309,15 @@ export function useChatComposer(params: UseChatComposerParams) {
     nodeId: NodeId,
     message: UserMessageInput,
     invokedSkills: readonly string[],
-  ) =>
-    invokedSkills.length > 0
-      ? desktop.submitUserInput(nodeId, message, invokedSkills)
-      : desktop.submitUserInput(nodeId, message);
+  ) => {
+    const runId = params.runState()?.runId;
+    if (!runId) {
+      return Promise.reject(new Error("Run id missing for chat input."));
+    }
+    return invokedSkills.length > 0
+      ? desktop.submitUserInput(runId, nodeId, message, invokedSkills)
+      : desktop.submitUserInput(runId, nodeId, message);
+  };
 
   const resolveChatSubmissionPayload = async (nodeId: NodeId): Promise<UserMessageInput> => {
     const submission = chatSubmissionFor(nodeId);
@@ -432,7 +436,7 @@ export function useChatComposer(params: UseChatComposerParams) {
     }
     if (
       params.activeChat()?.runId &&
-      params.backendRunWorkflowId() !== params.activeWorkflowId()
+      params.runState()?.active !== true
     ) {
       const handler = resumeChatFromInputHandler();
       if (handler) {
@@ -464,7 +468,11 @@ export function useChatComposer(params: UseChatComposerParams) {
       return;
     }
     try {
-      const nextRunState = await desktop.submitUserInput(nodeId, {
+      const runId = params.runState()?.runId;
+      if (!runId) {
+        throw new Error("Run id missing for structured input.");
+      }
+      const nextRunState = await desktop.submitUserInput(runId, nodeId, {
         text,
         attachmentSourcePaths: [],
       });

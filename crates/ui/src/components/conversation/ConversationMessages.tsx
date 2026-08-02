@@ -18,6 +18,7 @@ import {
   ConversationScrollButton,
 } from "./Conversation";
 import { ConversationSegmentMessages } from "./ConversationSegmentMessages";
+import { FileChangesPanel } from "./FileChangesPanel";
 import { PostRunSuggestions } from "./PostRunSuggestions";
 
 function postRunSuggestionAuthoringMessage(
@@ -204,6 +205,7 @@ export function ConversationMessages() {
                           messages={segment.messages}
                           segmentHeaderShowsNode
                         />
+                        <FileChangesPanel nodeId={segment.nodeId} />
                       </section>
                     )}
                   </For>

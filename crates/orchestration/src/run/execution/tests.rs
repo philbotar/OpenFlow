@@ -25,6 +25,7 @@ fn sample_agent_request() -> AgentRequest {
         node_label: "Choose feature".to_string(),
         model: "test-model".to_string(),
         provider_id: None,
+        max_output_tokens: None,
         system_messages: Vec::new(),
         task_prompt: String::new(),
         input: json!({}),
@@ -1450,6 +1451,10 @@ fn file_changed_event_appends_to_run_state() {
                 rename_to: None,
                 diff_summary: None,
                 batch_id: None,
+                tool_call_id: None,
+                tool_name: None,
+                diff_artifact_id: None,
+                diff_size_bytes: None,
                 timestamp_ms: 1,
             },
         },
@@ -1514,8 +1519,11 @@ where
         node_interrupts: Arc::new(parking_lot::Mutex::new(BTreeMap::new())),
         context_window_sizes: BTreeMap::new(),
         mcp: Default::default(),
+        prepared_mcp: None,
         search: Default::default(),
         runtime_config_store: engine::new_runtime_config_store(),
+        tool_budget: Arc::new(tokio::sync::Semaphore::new(16)),
+        mutation_gate: None,
     }
 }
 
@@ -1553,17 +1561,24 @@ async fn invalid_mcp_server_is_skipped_without_aborting_the_run() {
             calls: Arc::clone(&calls),
         },
     );
-    params.mcp = crate::settings::model::McpSettings {
-        servers: vec![crate::settings::model::McpServerConfig {
-            id: "missing".to_string(),
-            display_name: "Missing".to_string(),
+    let mut missing = crate::mcp::model::McpServerRecord::new(
+        "missing",
+        "Missing",
+        crate::mcp::model::McpServerSource::Manual,
+        crate::mcp::model::McpInstall::External,
+        crate::mcp::model::McpConnection::Stdio {
             command: "/definitely/not/a/real/openflow-mcp-server".to_string(),
             args: Vec::new(),
-            env: BTreeMap::new(),
-            enabled: true,
-        }],
+            environment: BTreeMap::new(),
+        },
+    );
+    missing.enabled = true;
+    crate::mcp::trust::approve_current(&mut missing, chrono::Utc::now()).unwrap();
+    params.mcp = crate::settings::model::McpSettings {
+        servers: vec![missing],
         discover_external: false,
         disabled_discovered_ids: Vec::new(),
+        registry_base_url: crate::settings::model::McpSettings::default().registry_base_url,
     };
 
     let (handle, mut event_rx, _action_tx, _cancel, _) =
@@ -2073,8 +2088,11 @@ where
         node_interrupts: Arc::new(parking_lot::Mutex::new(BTreeMap::new())),
         context_window_sizes: BTreeMap::new(),
         mcp: Default::default(),
+        prepared_mcp: None,
         search: Default::default(),
         runtime_config_store: engine::new_runtime_config_store(),
+        tool_budget: Arc::new(tokio::sync::Semaphore::new(16)),
+        mutation_gate: None,
     };
     (params, checkpoint_sink)
 }

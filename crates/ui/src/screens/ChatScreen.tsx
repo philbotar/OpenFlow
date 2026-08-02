@@ -109,6 +109,7 @@ export function ChatScreen() {
             {(approval) => (
               <ToolApprovalCardBody
                 approval={approval()}
+                runId={ctx.runState()?.runId ?? ""}
                 showNodeLabel={false}
                 onApprove={(allow) =>
                   void ctx.handleToolApproval(approval().approvalId, allow)
@@ -140,6 +141,13 @@ export function ChatScreen() {
                   Retry
                 </Button>
               </div>
+            )}
+          </Show>
+          <Show when={ctx.runState()?.waitingReason}>
+            {(reason) => (
+              <p class="direct-chat-generating" role="status" aria-live="polite">
+                {reason()}
+              </p>
             )}
           </Show>
           <Show when={generating() || contextWindow()}>

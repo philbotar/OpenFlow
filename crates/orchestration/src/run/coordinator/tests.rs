@@ -12,6 +12,7 @@ use crate::adapters::storage::settings_store::FileSettingsStore;
 use crate::adapters::storage::skill_store::FileSkillCatalog;
 use crate::api::{DurableRunContinuationInput, UserMessageInput};
 use crate::error::BackendError;
+use crate::mcp::client_capabilities::McpClientRequestDecision;
 use crate::run::execution::{ExecutionAction, ExecutionEvent, NodeInterrupts};
 use crate::run::persistence::{
     workflow_hash, PendingRunCheckpoint, RunCheckpointPayload, RunCheckpointReason, RunRecord,
@@ -24,7 +25,8 @@ use crate::settings::provider::ProviderConfigError;
 use crate::settings::provider::ProviderEnv;
 use crate::workflow::catalog::default_workflow;
 use engine::{
-    InteractiveEngineCheckpoint, NodeId, PendingToolApproval, ToolCall, ToolTier, Workflow,
+    InteractiveEngineCheckpoint, McpClientRequestKind, NodeId, PendingMcpClientRequest,
+    PendingToolApproval, ToolCall, ToolTier, Workflow,
 };
 use image::{ImageFormat, Rgba, RgbaImage};
 use std::collections::BTreeMap;
@@ -175,6 +177,7 @@ fn prepare_workflow_run_requires_credentials_for_each_node_provider() {
         &FileSkillCatalog,
         stores.settings_store.clone(),
         &stores.env,
+        Arc::new(crate::run::resources::SharedRunResources::default()),
     );
 
     assert!(matches!(
@@ -467,6 +470,56 @@ async fn aborted_event_preserves_user_stopped_checkpoint_for_continue() {
 
 #[cfg_attr(miri, ignore)]
 #[tokio::test]
+async fn stop_run_persists_user_stopped_checkpoint_before_returning() {
+    let dir = tempdir().expect("tempdir");
+    let coordinator = coordinator(dir.path());
+    let store = FileRunCheckpointStore;
+    let root = RunStoreRoot {
+        project_id: None,
+        root: dir.path().join("runs"),
+    };
+    let workflow = default_workflow("Persist stop");
+    let run_id = "persist-stop";
+    store
+        .create_run(&root, &run_record(dir.path(), &workflow, run_id))
+        .expect("create run");
+    let mut engine_checkpoint = empty_engine_checkpoint(&workflow);
+    engine_checkpoint
+        .interrupted_nodes
+        .insert(workflow.nodes[0].id.clone());
+    let sink = Arc::new(parking_lot::Mutex::new(Some(PendingRunCheckpoint {
+        reason: RunCheckpointReason::UserStopped,
+        engine: engine_checkpoint,
+    })));
+    let mut run_state = WorkflowRunState::running_for_workflow(&workflow);
+    run_state.run_id = Some(run_id.to_string());
+
+    coordinator
+        .test_seed_full(TestSessionSeed {
+            workflow,
+            run_state,
+            run_id: Some(run_id.to_string()),
+            run_root: Some(root.clone()),
+            checkpoint_sink: Some(sink),
+            ..empty_seed_fields()
+        })
+        .await;
+
+    let stopped = coordinator
+        .stop_run_and_persist(&store)
+        .await
+        .expect("stop and persist");
+
+    assert!(!stopped.active);
+    let checkpoint = store
+        .load_latest_checkpoint(&root, run_id)
+        .expect("load checkpoint")
+        .expect("persisted checkpoint");
+    assert_eq!(checkpoint.reason, RunCheckpointReason::UserStopped);
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
 async fn checkpoint_waits_for_pause_projection_before_persisting() {
     let dir = tempdir().expect("tempdir");
     let coordinator = coordinator(dir.path());
@@ -729,6 +782,51 @@ async fn start_run_resolves_task_prompt_skill_into_durable_workflow_snapshot() {
     assert!(system_prompt.contains("--- Invoked skills ---"));
     assert!(system_prompt.contains(&format!("/tdd: {}", skill_path.display())));
     assert!(system_prompt.contains("# TDD"));
+
+    drop(event_rx);
+    let _ = coordinator.stop_run().await;
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+async fn start_run_persists_mcp_context_resolution_once_in_durable_workflow_snapshot() {
+    let stores = local_stores();
+    let coordinator = coordinator(stores.dir.path());
+    let mut workflow = default_workflow("MCP context snapshot");
+    workflow.nodes[0]
+        .agent
+        .mcp_resources
+        .push(engine::McpResourceSelection {
+            server_id: "missing-docs".to_string(),
+            uri: "docs://guide".to_string(),
+            max_bytes: 4096,
+        });
+
+    let (state, event_rx) = coordinator
+        .start_run(run_start_params(&stores, workflow))
+        .await
+        .expect("start run");
+    let run_id = state.run_id.as_deref().expect("durable run id");
+    let (_, record) = stores
+        .run_store
+        .load_record(std::slice::from_ref(&stores.run_root), run_id)
+        .expect("load run record")
+        .expect("persisted run record");
+    let snapshots = &record.workflow_snapshot.nodes[0]
+        .agent
+        .mcp_context_snapshots;
+
+    assert_eq!(snapshots.len(), 1);
+    assert_eq!(snapshots[0].server_id, "missing-docs");
+    assert_eq!(snapshots[0].source, "docs://guide");
+    assert!(snapshots[0]
+        .error
+        .as_deref()
+        .is_some_and(|error| error.contains("not connected")));
+    assert_eq!(
+        workflow_hash(&record.workflow_snapshot),
+        record.workflow_hash
+    );
 
     drop(event_rx);
     let _ = coordinator.stop_run().await;
@@ -1118,7 +1216,8 @@ async fn submit_user_input_appends_chat_and_sends_action() {
         }
         ExecutionAction::Stop
         | ExecutionAction::ResolveApproval { .. }
-        | ExecutionAction::RetryNode { .. } => {
+        | ExecutionAction::RetryNode { .. }
+        | ExecutionAction::ResolveMcpClientRequest { .. } => {
             panic!("unexpected action")
         }
     }
@@ -1155,7 +1254,8 @@ async fn submit_user_input_retries_failed_node_with_new_message() {
         }
         ExecutionAction::Stop
         | ExecutionAction::ResolveApproval { .. }
-        | ExecutionAction::RetryNode { .. } => {
+        | ExecutionAction::RetryNode { .. }
+        | ExecutionAction::ResolveMcpClientRequest { .. } => {
             panic!("unexpected action")
         }
     }
@@ -1272,7 +1372,8 @@ async fn submit_tool_approval_sends_resolve_action() {
         }
         ExecutionAction::Stop
         | ExecutionAction::ProvideInput { .. }
-        | ExecutionAction::RetryNode { .. } => {
+        | ExecutionAction::RetryNode { .. }
+        | ExecutionAction::ResolveMcpClientRequest { .. } => {
             panic!("unexpected action")
         }
     }
@@ -1297,6 +1398,63 @@ async fn submit_tool_approval_rejects_unknown_id() {
         coordinator.submit_tool_approval("wrong", true, None).await,
         Err(BackendError::WrongApprovalId { .. })
     ));
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+async fn resolve_mcp_client_request_rejects_stale_id_then_sends_matching_action() {
+    let dir = tempdir().expect("tempdir");
+    let coordinator = coordinator(dir.path());
+    let workflow = default_workflow("MCP callback");
+    let (action_tx, mut action_rx) = tokio::sync::mpsc::unbounded_channel();
+    let mut run_state = WorkflowRunState::running_for_workflow(&workflow);
+    run_state
+        .pending_mcp_client_requests
+        .push(PendingMcpClientRequest {
+            request_id: "current-request".to_string(),
+            server_id: "github".to_string(),
+            node_id: "idea".into(),
+            tool_call_id: "tool-call-1".to_string(),
+            tool_name: "mcp_6_github_search".to_string(),
+            kind: McpClientRequestKind::Sampling,
+            message: "Approve sampling".to_string(),
+            requested_schema: None,
+            url: None,
+            max_tokens: Some(32),
+        });
+    coordinator
+        .test_seed_session(workflow, run_state, action_tx)
+        .await;
+    let decision = McpClientRequestDecision {
+        allow: false,
+        content: None,
+    };
+
+    assert!(matches!(
+        coordinator
+            .resolve_mcp_client_request("stale-request", decision.clone())
+            .await,
+        Err(BackendError::WrongMcpClientRequestId { .. })
+    ));
+    assert!(matches!(
+        action_rx.try_recv(),
+        Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+    ));
+
+    coordinator
+        .resolve_mcp_client_request("current-request", decision)
+        .await
+        .expect("resolve current request");
+    match action_rx.recv().await.expect("action") {
+        ExecutionAction::ResolveMcpClientRequest {
+            request_id,
+            decision,
+        } => {
+            assert_eq!(request_id, "current-request");
+            assert!(!decision.allow);
+        }
+        other => panic!("unexpected action: {other:?}"),
+    }
 }
 
 #[cfg_attr(miri, ignore)]
@@ -1373,7 +1531,8 @@ async fn retry_node_sends_action_for_failed_node() {
         }
         ExecutionAction::Stop
         | ExecutionAction::ProvideInput { .. }
-        | ExecutionAction::ResolveApproval { .. } => {
+        | ExecutionAction::ResolveApproval { .. }
+        | ExecutionAction::ResolveMcpClientRequest { .. } => {
             panic!("unexpected action")
         }
     }

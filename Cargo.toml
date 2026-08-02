@@ -31,6 +31,7 @@ image = { version = "0.25.8", default-features = false, features = ["gif", "jpeg
 parking_lot = "0.12.5"
 portable-pty = "0.9.0"
 reqwest = { version = "0.13.3", features = ["form", "json", "rustls", "stream"] }
+eventsource-stream = "0.2.3"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 sha2 = "0.10.9"
@@ -45,7 +46,7 @@ tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread", "sync", "
 tokio-util = { version = "0.7.18", features = ["rt"] }
 uuid = { version = "1.23.1", features = ["v4", "serde"] }
 wiremock = "0.6.5"
-rmcp = { version = "1.7", features = ["client", "transport-child-process"] }
+rmcp = { version = "1.7", features = ["client", "transport-child-process", "transport-streamable-http-client-reqwest", "reqwest"] }
 aws-config = { version = "1.8", features = ["behavior-version-latest", "credentials-login"] }
 aws-sdk-bedrock = "1.146"
 aws-sdk-bedrockruntime = "1.116"

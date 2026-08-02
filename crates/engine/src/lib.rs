@@ -24,11 +24,11 @@ pub use execution::{
     start_subagent_invoke, subagent_runtime_builtin_denied, validate_checkpoint_against_workflow,
     CompleteSubmitOutputParams, EngineAwaitApproval, EngineAwaitInput, EngineRetryableNode,
     EngineRunResult, FrozenChangeEvidencePacket, HandoffArtifact, HandoffFormat, InteractiveEngine,
-    InteractiveEngineCheckpoint, NodeRunOutput, OutputRepairPolicy, PostRunReview,
-    PostRunSuggestion, PostRunSuggestionCategory, RepairingAiPort, RunError, RunReport,
-    RunTelemetry, SubagentInvokeSession, SubagentInvokeStep, SubagentStartOutcome,
-    CALL_SUBAGENT_TOOL, DECLARE_SUBAGENTS_TOOL, OUTPUT_REPAIR_RAW_ARGUMENTS_MAX_BYTES,
-    SUBMIT_NODE_OUTPUT_TOOL,
+    InteractiveEngineCheckpoint, McpClientRequestKind, NodeRunOutput, OutputRepairPolicy,
+    PendingMcpClientRequest, PostRunReview, PostRunSuggestion, PostRunSuggestionCategory,
+    RepairingAiPort, RunError, RunReport, RunTelemetry, SubagentInvokeSession, SubagentInvokeStep,
+    SubagentStartOutcome, CALL_SUBAGENT_TOOL, DECLARE_SUBAGENTS_TOOL,
+    OUTPUT_REPAIR_RAW_ARGUMENTS_MAX_BYTES, SUBMIT_NODE_OUTPUT_TOOL,
 };
 pub use graph::{
     apply_runtime_patch_to_agent, apply_runtime_patch_to_request,
@@ -37,9 +37,11 @@ pub use graph::{
     new_runtime_config_store, resolve_callable_agent_snapshots, runtime_patch_for,
     submission_output_schema, upsert_runtime_patch, validate_markdown_handoff,
     validate_markdown_handoff_template, validate_workflow, AgentNodeConfig, CallableAgent, Edge,
-    EdgeId, HandoffSpec, MarkdownHandoffError, Node, NodeId, NodeKind, NodePosition,
+    EdgeId, HandoffSpec, MarkdownHandoffError, McpContextKind, McpContextSnapshot,
+    McpPromptSelection, McpResourceSelection, Node, NodeId, NodeKind, NodePosition,
     NodeRuntimeConfigPatch, NodeRuntimeConfigStore, PlanModeConfig, RetryPolicy, Workflow,
     WorkflowId, WorkflowSchedule, WorkflowSettings, WorkflowValidationError,
+    MCP_CONTEXT_DEFAULT_MAX_BYTES, MCP_CONTEXT_MAX_BYTES,
 };
 pub use ports::{
     emit_assistant_deltas_from_outcome, AgentError, AgentMessageTurn, AgentNeedUserInput,

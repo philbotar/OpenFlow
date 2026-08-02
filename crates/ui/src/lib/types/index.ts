@@ -199,6 +199,39 @@ export interface AgentNodeConfig {
   requestUserInput?: boolean;
   /** Plain provider messages complete one direct-conversation turn. */
   conversationMode?: boolean;
+  /** Explicit user-selected MCP resources. */
+  mcpResources?: McpResourceSelection[];
+  /** Explicit user-selected MCP prompts. */
+  mcpPrompts?: McpPromptSelection[];
+  /** Run-only immutable context resolved before provider invocation. */
+  mcpContextSnapshots?: McpContextSnapshot[];
+}
+
+export interface McpResourceSelection {
+  serverId: string;
+  uri: string;
+  maxBytes: number;
+}
+
+export interface McpPromptSelection {
+  serverId: string;
+  name: string;
+  arguments: Record<string, string>;
+  maxBytes: number;
+}
+
+export interface McpContextSnapshot {
+  kind: "resource" | "prompt";
+  serverId: string;
+  source: string;
+  title?: string;
+  description?: string;
+  mimeType?: string;
+  content: string;
+  originalSizeBytes: number;
+  includedSizeBytes: number;
+  truncated: boolean;
+  error?: string;
 }
 
 export interface ReasoningEffortOption {
@@ -438,6 +471,10 @@ export interface FileChangeRecord {
   renameTo?: string | null;
   diffSummary?: string | null;
   batchId?: string | null;
+  toolCallId?: string | null;
+  toolName?: string | null;
+  diffArtifactId?: string | null;
+  diffSizeBytes?: number | null;
   timestampMs: number;
 }
 
@@ -483,15 +520,18 @@ export interface ContextWindowSnapshot {
 
 export interface WorkflowRunState {
   active: boolean;
+  workflowId?: string | null;
   runId?: string | null;
   executionCwd?: string | null;
   projectId?: string | null;
+  waitingReason?: string | null;
   awaitingNodeId: NodeId | null;
   awaitingNodeIds?: NodeId[];
   structuredInputByNode?: Record<NodeId, StructuredUserInput>;
   activeManualNodeId: NodeId | null;
   activeToolCallId: string | null;
   pendingApprovals: PendingToolApproval[];
+  pendingMcpClientRequests?: PendingMcpClientRequest[];
   toolCallsByNode: Record<NodeId, ToolCallSummary[]>;
   toolArtifacts: Record<string, ToolArtifactSummary>;
   planMode?: PlanModeRunState | null;
@@ -508,6 +548,26 @@ export interface WorkflowRunState {
   changedFilesByNode: Record<NodeId, FileChangeRecord[]>;
   editBatches: EditBatch[];
   contextWindowByNode?: Record<NodeId, ContextWindowSnapshot>;
+}
+
+export type McpClientRequestKind = "sampling" | "elicitationForm" | "elicitationUrl";
+
+export interface PendingMcpClientRequest {
+  requestId: string;
+  serverId: string;
+  nodeId: NodeId;
+  toolCallId: string;
+  toolName: string;
+  kind: McpClientRequestKind;
+  message: string;
+  requestedSchema?: Record<string, unknown> | null;
+  url?: string | null;
+  maxTokens?: number | null;
+}
+
+export interface McpClientRequestDecision {
+  allow: boolean;
+  content?: unknown;
 }
 
 export type ProviderId = string;
@@ -548,13 +608,99 @@ export interface LspSettings {
   diagnostics_on_write: boolean;
 }
 
+export type McpServerSource =
+  | { type: "manual" }
+  | { type: "imported"; dialect: string; sourcePath: string }
+  | {
+      type: "registry";
+      catalogBaseUrl: string;
+      serverName: string;
+      version: string;
+    };
+
+export type McpInstall =
+  | { type: "external" }
+  | { type: "npm"; package: string; version: string }
+  | { type: "pypi"; package: string; version: string; executable?: string | null };
+
+export type McpPersistedValue =
+  | { type: "literal"; value: string }
+  | { type: "secret"; secretRef: string };
+
+export type McpAuth =
+  | { type: "none" }
+  | { type: "static"; headerName: string; scheme?: string; secretRef: string }
+  | {
+      type: "oauth";
+      clientId: string;
+      scopes: string[];
+      issuer?: string;
+      credentialRef?: string;
+    };
+
+export type McpTransportKind = "stdio" | "streamableHttp" | "legacySse";
+
+export type McpConnection =
+  | {
+      type: "stdio";
+      command: string;
+      args: string[];
+      environment: Record<string, McpPersistedValue>;
+    }
+  | {
+      type: "streamableHttp";
+      url: string;
+      allowLocalhost?: boolean;
+      headers: Record<string, McpPersistedValue>;
+      auth: McpAuth;
+    }
+  | {
+      type: "legacySse";
+      url: string;
+      allowLocalhost?: boolean;
+      headers: Record<string, McpPersistedValue>;
+      auth: McpAuth;
+    };
+
+export interface McpTrust {
+  approvedFingerprint?: string;
+  approvedAt?: string;
+}
+
+export interface McpPolicy {
+  defaultToolAccess: "read" | "write";
+  defaultToolConcurrency: "shared" | "exclusive";
+  allowRoots: boolean;
+  allowSampling: boolean;
+  allowElicitation: boolean;
+  samplingMaxRequestsPerRun?: number;
+  samplingMaxTokensPerRequest?: number;
+  samplingMaxTotalTokensPerRun?: number;
+  elicitationMaxRequestsPerRun?: number;
+  enabledTools?: string[] | null;
+}
+
 export interface McpServerConfig {
+  schemaVersion: number;
   id: string;
   displayName: string;
-  command: string;
-  args: string[];
-  env: Record<string, string>;
+  source: McpServerSource;
+  install: McpInstall;
+  connection: McpConnection;
+  trust: McpTrust;
+  policy: McpPolicy;
   enabled: boolean;
+  installHistory?: {
+    current: McpInstallRevision;
+    previous?: McpInstallRevision;
+  };
+}
+
+export interface McpInstallRevision {
+  install: McpInstall;
+  connection: McpConnection;
+  installedAt: string;
+  targetDir: string;
 }
 
 export interface McpDiscoveryRow {
@@ -562,15 +708,165 @@ export interface McpDiscoveryRow {
   displayName: string;
   command: string;
   args: string[];
+  envKeys: string[];
   enabled: boolean;
   source: string;
   sourcePath: string;
+}
+
+export interface McpImportDiagnostic {
+  serverId: string;
+  message: string;
+}
+
+export interface McpConfigImport {
+  servers: McpServerConfig[];
+  diagnostics: McpImportDiagnostic[];
+}
+
+export interface McpProbeReport {
+  state: "ready" | "failed";
+  stage: "preflight" | "connect" | "listTools" | "close";
+  authRequired: boolean;
+  durationMs: number;
+  transport: McpTransportKind;
+  protocolVersion?: string;
+  serverName?: string;
+  serverVersion?: string;
+  capabilities: string[];
+  toolNames: string[];
+  error?: string;
+}
+
+export interface McpProbeResult {
+  server: McpServerConfig;
+  report: McpProbeReport;
+}
+
+export type McpOAuthStatusState =
+  | "disconnected"
+  | "connecting"
+  | "connected"
+  | "reauthorizationRequired"
+  | "failed";
+
+export interface McpOAuthStatus {
+  serverId: string;
+  state: McpOAuthStatusState;
+  clientId?: string;
+  issuer?: string;
+  credentialRef?: string;
+  grantedScopes: string[];
+  expiresAt?: string;
+  error?: string;
+}
+
+export interface McpResourceDescriptor {
+  serverId: string;
+  uri: string;
+  name: string;
+  title?: string;
+  description?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  subscribable: boolean;
+}
+
+export interface McpPromptArgumentDescriptor {
+  name: string;
+  title?: string;
+  description?: string;
+  required: boolean;
+}
+
+export interface McpPromptDescriptor {
+  serverId: string;
+  name: string;
+  title?: string;
+  description?: string;
+  arguments: McpPromptArgumentDescriptor[];
+}
+
+export interface McpCapabilityCatalog {
+  serverId: string;
+  resources: McpResourceDescriptor[];
+  prompts: McpPromptDescriptor[];
+}
+
+export interface McpCatalogInput {
+  name?: string;
+  description?: string;
+  default?: string;
+  required: boolean;
+  secret: boolean;
+}
+
+export interface McpCatalogArgument extends McpCatalogInput {
+  argumentType: string;
+  value?: string;
+}
+
+export interface McpCatalogPackage {
+  registryType: string;
+  identifier: string;
+  version?: string;
+  runtimeHint?: string;
+  transportType: string;
+  runtimeArguments: McpCatalogArgument[];
+  packageArguments: McpCatalogArgument[];
+  inputs: McpCatalogInput[];
+}
+
+export interface McpCatalogRemote {
+  transportType: string;
+  url?: string;
+  inputs: McpCatalogInput[];
+}
+
+export interface McpCatalogServer {
+  name: string;
+  title?: string;
+  description: string;
+  version: string;
+  repositoryUrl?: string;
+  websiteUrl?: string;
+  isLatest?: boolean;
+  packages: McpCatalogPackage[];
+  remotes: McpCatalogRemote[];
+}
+
+export interface McpCatalogPage {
+  catalogBaseUrl: string;
+  catalogLabel: string;
+  servers: McpCatalogServer[];
+  nextCursor?: string;
+  count?: number;
+}
+
+export interface McpInstallPreview {
+  server: McpServerConfig;
+  displayCommand: string;
+  catalogLabel: string;
+  warnings: string[];
+  requiresInstall: boolean;
+}
+
+export interface McpInstallResult {
+  operationId: string;
+  state: "succeeded" | "failed" | "cancelled" | "timedOut";
+  exitCode?: number;
+  stdoutTail: string;
+  stderrTail: string;
+  outputTruncated: boolean;
+  durationMs: number;
+  server?: McpServerConfig;
 }
 
 export interface McpSettings {
   servers: McpServerConfig[];
   discoverExternal?: boolean;
   disabledDiscoveredIds?: string[];
+  registryBaseUrl?: string;
 }
 
 export interface LocalDiagnosticsSettings {
@@ -686,6 +982,7 @@ export interface WorkflowAuthoringTurnResult {
   sessionId: string;
   assistantMessage: string;
   draft?: Workflow;
+  draftChanged?: boolean;
   validation: WorkflowAuthoringValidation;
   messages: WorkflowAuthoringMessage[];
 }

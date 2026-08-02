@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use engine::Workflow;
 use parking_lot::Mutex;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::evaluator::next_run_after;
 use super::model::{ScheduleEntry, ScheduleStatus, ScheduledRunCandidate};
@@ -93,7 +93,7 @@ impl ScheduleService {
     pub fn claim_due_run(
         &self,
         now: DateTime<Utc>,
-        run_active: bool,
+        active_workflow_ids: &BTreeSet<String>,
     ) -> Option<ScheduledRunCandidate> {
         let mut entries = self.entries.lock();
         for entry in entries.values_mut() {
@@ -107,12 +107,11 @@ impl ScheduleService {
                 continue;
             }
 
-            if run_active {
+            if active_workflow_ids.contains(&entry.workflow_id) {
                 entry.last_skipped_at = Some(now);
-                entry.last_error =
-                    Some("Skipped because another workflow run was active".to_string());
+                entry.last_error = None;
                 entry.next_run_at = next_run_after(&entry.schedule, now).ok();
-                return None;
+                continue;
             }
 
             entry.last_run_at = Some(now);
@@ -194,7 +193,7 @@ mod tests {
             .expect("refresh schedules");
 
         let candidate = service
-            .claim_due_run(utc("2026-06-16T00:15:00Z"), false)
+            .claim_due_run(utc("2026-06-16T00:15:00Z"), &BTreeSet::new())
             .expect("candidate");
 
         assert_eq!(candidate.workflow_id, "wf-1");
@@ -237,24 +236,47 @@ mod tests {
     }
 
     #[test]
-    fn active_manual_run_skips_due_occurrence() {
+    fn active_run_for_due_workflow_skips_occurrence() {
         let service = ScheduleService::new();
         let workflow = workflow_with_schedule("wf-1", "*/15 * * * *", true);
         service
             .refresh(&[workflow], utc("2026-06-16T00:01:00Z"))
             .expect("refresh schedules");
 
-        let candidate = service.claim_due_run(utc("2026-06-16T00:15:00Z"), true);
+        let candidate = service.claim_due_run(
+            utc("2026-06-16T00:15:00Z"),
+            &BTreeSet::from(["wf-1".to_string()]),
+        );
 
         assert!(candidate.is_none());
         let status = service.statuses().remove(0);
+        assert_eq!(status.last_run_at, None);
         assert_eq!(
-            status.last_skipped_at.expect("skipped").to_rfc3339(),
+            status.last_skipped_at.expect("last skipped").to_rfc3339(),
             "2026-06-16T00:15:00+00:00"
         );
+        assert_eq!(status.last_error, None);
         assert_eq!(
-            status.last_error.as_deref(),
-            Some("Skipped because another workflow run was active")
+            status.next_run_at.expect("next").to_rfc3339(),
+            "2026-06-16T00:30:00+00:00"
         );
+    }
+
+    #[test]
+    fn active_other_workflow_does_not_block_due_occurrence() {
+        let service = ScheduleService::new();
+        let workflow = workflow_with_schedule("wf-1", "*/15 * * * *", true);
+        service
+            .refresh(&[workflow], utc("2026-06-16T00:01:00Z"))
+            .expect("refresh schedules");
+
+        let candidate = service
+            .claim_due_run(
+                utc("2026-06-16T00:15:00Z"),
+                &BTreeSet::from(["wf-2".to_string()]),
+            )
+            .expect("candidate");
+
+        assert_eq!(candidate.workflow_id, "wf-1");
     }
 }

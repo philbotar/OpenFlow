@@ -422,7 +422,7 @@ impl AuthoringToolState {
         Ok(())
     }
 
-    fn snapshot(&self) -> Value {
+    pub(crate) fn snapshot(&self) -> Value {
         let validation = self.validation_summary();
         json!({
             "name": self.draft.name,

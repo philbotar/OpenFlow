@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 pub(crate) struct BlockingRunOutcome {
     pub output: Result<String, ToolError>,
-    pub file_changes: Vec<engine::FileChangeRecord>,
+    pub file_changes: Vec<crate::tool::CapturedFileChange>,
     pub edit_batch: Option<engine::EditBatch>,
 }
 
@@ -83,7 +83,7 @@ impl BlockingToolOps {
         let mut file_changes = ledger.take();
         if let Some(ref batch) = edit_batch {
             for change in &mut file_changes {
-                change.batch_id = Some(batch.batch_id.clone());
+                change.record.batch_id = Some(batch.batch_id.clone());
             }
         }
         BlockingRunOutcome {

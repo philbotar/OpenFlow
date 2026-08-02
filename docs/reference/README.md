@@ -27,6 +27,7 @@ Agent and harness tools (built-ins, MCP, authoring): [`tools.md`](tools.md).
 | App workflows | `{data_local}/openflow/workflows.json` |
 | Chats | `{data_local}/openflow/chats.json` |
 | Settings | `{data_local}/openflow/settings.json` |
+| MCP inputs and OAuth credentials | `{data_local}/openflow/mcp-secrets.json` (plaintext, mode `0600` on Unix) |
 | Projects | `{data_local}/openflow/projects.json` |
 | Saved agents | `{data_local}/openflow/agents.json` |
 | Project workflows | `{project}/.flow/workflows/{workflowId}.workflow.json` |
@@ -38,6 +39,7 @@ Agent and harness tools (built-ins, MCP, authoring): [`tools.md`](tools.md).
 | Provider API keys | Plaintext in `settings.json` as `ProviderProfile.api_key` |
 | Web search API keys | Plaintext in `settings.json` under `search.keys` (per search-cli provider id) |
 | ChatGPT Codex OAuth | Plaintext in `settings.json` as `ProviderProfile.codex_oauth`; redacted from normal settings IPC |
+| MCP inputs and OAuth | Plaintext in `mcp-secrets.json`; `settings.json` and exports contain opaque refs only |
 
 `AppBackend::load_all_workflows` merges app-store and project-discovered workflows. Project files win on ID collision.
 Run start accepts a project ID, then the backend resolves the cwd and run root. Project runs use

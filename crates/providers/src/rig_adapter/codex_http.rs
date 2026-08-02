@@ -1,4 +1,4 @@
-//! `ChatGPT Codex` HTTP wrapper for request fields `Rig` intentionally clears.
+//! `ChatGPT Codex` HTTP wrapper for final-wire request compatibility.
 
 use bytes::Bytes;
 use rig_core::http_client::{
@@ -7,11 +7,13 @@ use rig_core::http_client::{
 use serde_json::Value;
 use std::future::Future;
 
-/// Injects `ChatGPT` Fast mode after `Rig` builds its `Codex` request.
+/// Adjusts `ChatGPT` requests after `Rig` builds its `Codex` request.
 ///
 /// `Rig` 0.39 clears `service_tier` in the `ChatGPT` adapter. `OpenFlow` keeps using
 /// `Rig` for request construction and streaming, then restores this one
-/// user-selected field at the HTTP boundary.
+/// user-selected field at the HTTP boundary. Rig also makes every Responses
+/// function strict; the wrapper relaxes only schemas that intentionally contain
+/// open objects.
 #[derive(Clone, Debug, Default)]
 #[allow(clippy::redundant_pub_crate)] // Exposed through the crate-visible RigModel enum.
 pub(crate) struct CodexHttpClient {
@@ -35,7 +37,7 @@ impl HttpClientExt for CodexHttpClient {
         U: From<Bytes> + Send + 'static,
     {
         self.inner
-            .send::<Bytes, U>(with_fast_service_tier(request, self.fast_mode))
+            .send::<Bytes, U>(with_codex_request_compatibility(request, self.fast_mode))
     }
 
     fn send_multipart<U>(
@@ -56,34 +58,40 @@ impl HttpClientExt for CodexHttpClient {
         T: Into<Bytes> + Send,
     {
         self.inner
-            .send_streaming(with_fast_service_tier(request, self.fast_mode))
+            .send_streaming(with_codex_request_compatibility(request, self.fast_mode))
     }
 }
 
-fn with_fast_service_tier<T: Into<Bytes>>(request: Request<T>, fast_mode: bool) -> Request<Bytes> {
-    request.map(|body| {
-        let bytes = body.into();
-        if fast_mode {
-            inject_fast_service_tier(bytes)
-        } else {
-            bytes
-        }
-    })
+fn with_codex_request_compatibility<T: Into<Bytes>>(
+    request: Request<T>,
+    fast_mode: bool,
+) -> Request<Bytes> {
+    request.map(|body| prepare_codex_request(body.into(), fast_mode))
 }
 
-fn inject_fast_service_tier(body: Bytes) -> Bytes {
+fn prepare_codex_request(body: Bytes, fast_mode: bool) -> Bytes {
     let Ok(mut value) = serde_json::from_slice::<Value>(&body) else {
         return body;
     };
-    let Some(object) = value.as_object_mut() else {
+    if !value.is_object() {
         return body;
-    };
-    // ChatGPT calls this UI mode Fast. Its request contract names the tier
-    // `priority`; `fast` is a Codex config value, not a service tier value.
-    object.insert(
-        "service_tier".to_string(),
-        Value::String("priority".to_string()),
-    );
+    }
+    let schema_changed =
+        crate::rig_adapter::openai_tool_schema::relax_incompatible_responses_tools(&mut value);
+    if fast_mode {
+        let Some(object) = value.as_object_mut() else {
+            return body;
+        };
+        // ChatGPT calls this UI mode Fast. Its request contract names the tier
+        // `priority`; `fast` is a Codex config value, not a service tier value.
+        object.insert(
+            "service_tier".to_string(),
+            Value::String("priority".to_string()),
+        );
+    }
+    if !schema_changed && !fast_mode {
+        return body;
+    }
     serde_json::to_vec(&value).map_or(body, Bytes::from)
 }
 
@@ -102,7 +110,7 @@ mod tests {
             .to_string(),
         );
 
-        let injected = inject_fast_service_tier(body);
+        let injected = prepare_codex_request(body, true);
         let value = serde_json::from_slice::<Value>(&injected).unwrap_or_default();
 
         assert_eq!(value["service_tier"], "priority");

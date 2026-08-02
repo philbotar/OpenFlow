@@ -58,7 +58,8 @@ impl HttpClientExt for OpenAiHttpClient {
         U: From<Bytes> + Send + 'static,
     {
         strip_empty_bearer_auth(&mut request);
-        let request = promote_openai_prompt_cache(request.map(Into::into));
+        let request =
+            relax_openai_responses_tools(promote_openai_prompt_cache(request.map(Into::into)));
         let response = self.inner.send::<Bytes, Bytes>(request);
         let debug_output = self.debug_output;
         let provider_label = self.provider_label.clone();
@@ -95,9 +96,11 @@ impl HttpClientExt for OpenAiHttpClient {
     {
         // Streaming recovery of SSE argument fragments is deferred (slice 2 scope).
         strip_empty_bearer_auth(&mut request);
-        let response = self
-            .inner
-            .send_streaming(promote_openai_prompt_cache(request.map(Into::into)));
+        let response =
+            self.inner
+                .send_streaming(relax_openai_responses_tools(promote_openai_prompt_cache(
+                    request.map(Into::into),
+                )));
         async move { response.await.map(normalize_openai_streaming_response) }
     }
 }
@@ -111,6 +114,18 @@ fn strip_empty_bearer_auth<T>(request: &mut Request<T>) {
     if empty_bearer {
         request.headers_mut().remove("authorization");
     }
+}
+
+fn relax_openai_responses_tools(mut request: Request<Bytes>) -> Request<Bytes> {
+    let original = request.body().clone();
+    let Ok(mut value) = serde_json::from_slice::<Value>(&original) else {
+        return request;
+    };
+    if !crate::rig_adapter::openai_tool_schema::relax_incompatible_responses_tools(&mut value) {
+        return request;
+    }
+    *request.body_mut() = serde_json::to_vec(&value).map_or(original, Bytes::from);
+    request
 }
 
 /// Promote `OpenFlow`'s namespaced metadata carrier into Responses API fields.

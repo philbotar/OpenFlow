@@ -75,6 +75,18 @@ describe("Message", () => {
     dispose();
   });
 
+  it("does not render a user role label", () => {
+    const { container, dispose } = renderMessage({
+      from: "user",
+      label: "You",
+      content: "Hello",
+    });
+
+    expect(container.querySelector(".chat-role")).toBeNull();
+    expect(container.textContent).not.toContain("You");
+    dispose();
+  });
+
   it("shows the sent date, time, and elapsed time from the prior message", () => {
     const sentAtMs = Date.UTC(2026, 6, 30, 3, 4, 5);
     const { container, dispose } = renderMessage({

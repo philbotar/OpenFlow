@@ -25,6 +25,7 @@ fn apply_event_to_run_state_at(
     event: ExecutionEvent,
     now_ms: i64,
 ) {
+    state.waiting_reason = None;
     match event {
         ExecutionEvent::NodeQueued { node_id, label } => {
             state
@@ -190,6 +191,52 @@ fn apply_event_to_run_state_at(
                 ToolCallStatus::AwaitingApproval,
                 None,
                 false,
+            );
+        }
+        ExecutionEvent::McpClientRequestCreated { request } => {
+            if !state
+                .pending_mcp_client_requests
+                .iter()
+                .any(|pending| pending.request_id == request.request_id)
+            {
+                state.pending_mcp_client_requests.push(request.clone());
+            }
+            state.run_trace.push(RunTraceEntry {
+                node_id: request.node_id.clone(),
+                node_label: request.node_id.to_string(),
+                status: TraceStatus::Paused,
+                message: format!(
+                    "awaiting approval for MCP client request from {}",
+                    request.server_id
+                ),
+                output: None,
+            });
+            push_chat_message_at(
+                state,
+                request.node_id.clone(),
+                ChatMessage::text(
+                    ChatRole::System,
+                    format!(
+                        "MCP server '{}' requested {:?}; explicit approval required.",
+                        request.server_id, request.kind
+                    ),
+                ),
+                now_ms,
+            );
+        }
+        ExecutionEvent::McpClientRequestResolved {
+            request_id,
+            node_id,
+            outcome,
+        } => {
+            state
+                .pending_mcp_client_requests
+                .retain(|pending| pending.request_id != request_id);
+            push_chat_message_at(
+                state,
+                node_id,
+                ChatMessage::text(ChatRole::System, format!("MCP client request {outcome}.")),
+                now_ms,
             );
         }
         ExecutionEvent::ToolApproved {

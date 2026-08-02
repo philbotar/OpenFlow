@@ -12,6 +12,7 @@ use crate::run::persistence::{
     RunStoreRoot,
 };
 use crate::run::ports::{RunAttachmentStore, RunCheckpointStore};
+use crate::run::resources::SharedRunResources;
 use crate::run::skill_invocation::skill_prompt_for_ids;
 use crate::run::state::{AgentStatus, WorkflowRunState};
 use crate::tools::edit::preview::preview_file_edit;
@@ -42,12 +43,14 @@ use session::{
     apply_user_stop_to_session, clear_artifact_root, finalize_run_launch, finish_run_session,
     fresh_execution_resources, prepare_workflow_run, require_action_tx, require_active_run_state,
     require_node_mut, require_run_state, require_run_state_mut, require_workflow_mut,
-    ExecutionResources, RunLaunchTail, RunSession, SpawnRunInput, TerminationMode,
+    resolve_mcp_context_for_run, ExecutionResources, RunLaunchTail, RunSession, SpawnRunInput,
+    TerminationMode,
 };
 
 pub struct RunCoordinator {
     runtime_handle: tokio::runtime::Handle,
     attachment_store: Arc<dyn RunAttachmentStore>,
+    shared_resources: Arc<SharedRunResources>,
     session: Mutex<RunSession>,
 }
 
@@ -70,9 +73,23 @@ impl RunCoordinator {
         runtime_handle: tokio::runtime::Handle,
         attachment_store: Arc<dyn RunAttachmentStore>,
     ) -> Self {
+        Self::with_shared_resources(
+            runtime_handle,
+            attachment_store,
+            Arc::new(SharedRunResources::default()),
+        )
+    }
+
+    #[must_use]
+    pub(crate) fn with_shared_resources(
+        runtime_handle: tokio::runtime::Handle,
+        attachment_store: Arc<dyn RunAttachmentStore>,
+        shared_resources: Arc<SharedRunResources>,
+    ) -> Self {
         Self {
             runtime_handle,
             attachment_store,
+            shared_resources,
             session: Mutex::new(RunSession {
                 workflow: None,
                 run_state: None,
@@ -131,7 +148,7 @@ impl RunCoordinator {
             .map_err(|error| BackendError::PreviewFailed(error.to_string()))?
             .map_err(BackendError::InvalidExecutionCwd)?;
 
-        let prepared = prepare_workflow_run(
+        let mut prepared = prepare_workflow_run(
             workflow,
             &invoked_skill_ids,
             settings,
@@ -140,8 +157,15 @@ impl RunCoordinator {
             skill_catalog,
             settings_store,
             env,
+            Arc::clone(&self.shared_resources),
         )?;
+        let mcp_project_root = run_root.project_id.as_ref().map(|_| resolved_cwd.as_path());
+        resolve_mcp_context_for_run(&mut prepared, &resolved_cwd, mcp_project_root).await;
+        validate_workflow(&prepared.workflow)?;
         let workflow = prepared.workflow.clone();
+        let mutation_gate = self
+            .shared_resources
+            .mutation_gate_for_workflow(&workflow, &resolved_cwd);
         let run_entrypoint = entrypoint.filter(|message| !message.is_empty());
         let entrypoint_text = run_entrypoint
             .as_ref()
@@ -208,6 +232,10 @@ impl RunCoordinator {
         initial_state.run_id = Some(run_id.clone());
         initial_state.execution_cwd = Some(resolved_cwd.display().to_string());
         initial_state.project_id = run_root.project_id.clone();
+        initial_state.waiting_reason = mutation_gate
+            .as_ref()
+            .is_some_and(|gate| gate.available_permits() == 0)
+            .then(|| "Waiting for another run using this workspace".to_string());
         if entrypoint_text.is_some() || !entrypoint_attachments.is_empty() {
             if let Some(root_id) = execution_layers(&workflow)
                 .ok()
@@ -268,6 +296,8 @@ impl RunCoordinator {
                     attachment_store: Arc::clone(&self.attachment_store),
                     resume_checkpoint: None,
                     resume_continuation: None,
+                    shared_resources: Arc::clone(&self.shared_resources),
+                    mutation_gate,
                 },
                 resources,
                 entrypoint: entrypoint_text,
@@ -296,7 +326,7 @@ impl RunCoordinator {
         params: RunStartParams<'_>,
     ) -> Result<(WorkflowRunState, UnboundedReceiver<ExecutionEvent>), BackendError> {
         let RunStartParams {
-            workflow,
+            mut workflow,
             invoked_skill_ids,
             entrypoint,
             settings,
@@ -318,6 +348,7 @@ impl RunCoordinator {
             lsp_settings,
             pending_engine_reverts,
             project_id,
+            frozen_workflow,
         ) = {
             let session = self.session.lock().await;
             if session.run_state.as_ref().is_some_and(|state| state.active) {
@@ -357,8 +388,28 @@ impl RunCoordinator {
                     .clone()
                     .ok_or(BackendError::NoContinuableRun)?,
                 session.project_id.clone(),
+                session.workflow.clone(),
             )
         };
+        if let Some(frozen_workflow) = frozen_workflow {
+            for node in &mut workflow.nodes {
+                if let Some(frozen_node) = frozen_workflow
+                    .nodes
+                    .iter()
+                    .find(|candidate| candidate.id == node.id)
+                {
+                    node.agent
+                        .mcp_resources
+                        .clone_from(&frozen_node.agent.mcp_resources);
+                    node.agent
+                        .mcp_prompts
+                        .clone_from(&frozen_node.agent.mcp_prompts);
+                    node.agent
+                        .mcp_context_snapshots
+                        .clone_from(&frozen_node.agent.mcp_context_snapshots);
+                }
+            }
+        }
         engine::validate_checkpoint_against_workflow(&workflow, &checkpoint)
             .map_err(|error| BackendError::CheckpointIncompatible(error.to_string()))?;
 
@@ -371,7 +422,12 @@ impl RunCoordinator {
             skill_catalog,
             settings_store,
             env,
+            Arc::clone(&self.shared_resources),
         )?;
+        let mutation_gate = self
+            .shared_resources
+            .mutation_gate_for_workflow(&prepared.workflow, &execution_cwd);
+        let continued_workflow_id = prepared.workflow.id.to_string();
         self.terminate_active_run(TerminationMode::Replaced).await;
 
         let resources = ExecutionResources {
@@ -403,6 +459,8 @@ impl RunCoordinator {
                     attachment_store: Arc::clone(&self.attachment_store),
                     resume_checkpoint: Some(checkpoint),
                     resume_continuation: None,
+                    shared_resources: Arc::clone(&self.shared_resources),
+                    mutation_gate: mutation_gate.clone(),
                 },
                 resources,
                 entrypoint: entrypoint_text,
@@ -418,9 +476,14 @@ impl RunCoordinator {
                     .as_mut()
                     .ok_or(BackendError::NoContinuableRun)?;
                 run_state.active = true;
+                run_state.workflow_id = Some(continued_workflow_id);
                 run_state.run_id = run_id;
                 run_state.execution_cwd = Some(continued_execution_cwd);
                 run_state.project_id = continued_project_id;
+                run_state.waiting_reason = mutation_gate
+                    .as_ref()
+                    .is_some_and(|gate| gate.available_permits() == 0)
+                    .then(|| "Waiting for another run using this workspace".to_string());
                 Ok(run_state.clone())
             },
         )
@@ -544,6 +607,43 @@ impl RunCoordinator {
             (None, Some(workflow)) => Ok(WorkflowRunState::idle_for_workflow(&workflow)),
             (None, None) => Err(BackendError::NoActiveRun),
         }
+    }
+
+    /// Stops the active run and durably records its resumable user-stop checkpoint.
+    ///
+    /// # Errors
+    /// Returns an error when stopping or checkpoint persistence fails.
+    pub async fn stop_run_and_persist(
+        &self,
+        run_store: &dyn RunCheckpointStore,
+    ) -> Result<WorkflowRunState, BackendError> {
+        let snapshot = self.stop_run().await?;
+        let pending_persist = {
+            let mut session = self.session.lock().await;
+            let checkpoint_sink = session.checkpoint_sink.clone();
+            let pending = checkpoint_sink.and_then(|sink| sink.lock().take());
+            let engine = pending
+                .map(|checkpoint| checkpoint.engine)
+                .or_else(|| session.engine_checkpoint.clone());
+            if let Some(engine) = engine.as_ref() {
+                session.engine_checkpoint = Some(engine.clone());
+            }
+            match (session.run_root.clone(), session.run_id.clone(), engine) {
+                (Some(root), Some(run_id), Some(engine)) => Some((
+                    root,
+                    run_id,
+                    PendingRunCheckpoint {
+                        reason: RunCheckpointReason::UserStopped,
+                        engine,
+                    },
+                )),
+                _ => None,
+            }
+        };
+        if let Some((root, run_id, pending)) = pending_persist {
+            persist_pending_checkpoint(run_store, &root, &run_id, &snapshot, pending)?;
+        }
+        Ok(snapshot)
     }
 
     async fn terminate_active_run(&self, mode: TerminationMode) -> Option<WorkflowRunState> {
@@ -698,6 +798,7 @@ impl RunCoordinator {
             params.skill_catalog,
             params.settings_store,
             params.env,
+            Arc::clone(&self.shared_resources),
         )?;
         let attachment_root = params
             .run_store
@@ -759,14 +860,23 @@ impl RunCoordinator {
         let resources = fresh_execution_resources(&prepared.persisted_settings);
         let artifact_root = PathBuf::from(&params.record.artifact_root);
         let execution_cwd = PathBuf::from(&params.record.execution_cwd);
+        let mutation_gate = self
+            .shared_resources
+            .mutation_gate_for_workflow(&prepared.workflow, &execution_cwd);
+        let resumed_workflow_id = prepared.workflow.id.to_string();
         let run_root = params.root.clone();
         let run_id = params.run_id.to_string();
         let project_id = params.record.project_id.clone();
         let mut resumed_state = params.checkpoint.projection;
         resumed_state.active = true;
+        resumed_state.workflow_id = Some(resumed_workflow_id);
         resumed_state.run_id = Some(run_id.clone());
         resumed_state.execution_cwd = Some(execution_cwd.display().to_string());
         resumed_state.project_id.clone_from(&project_id);
+        resumed_state.waiting_reason = mutation_gate
+            .as_ref()
+            .is_some_and(|gate| gate.available_permits() == 0)
+            .then(|| "Waiting for another run using this workspace".to_string());
         if let Some(continuation) = &resume_continuation {
             crate::run::execution::record_user_input_with_attachments(
                 &mut resumed_state,
@@ -791,6 +901,8 @@ impl RunCoordinator {
                     attachment_store: Arc::clone(&self.attachment_store),
                     resume_checkpoint: Some(engine_checkpoint),
                     resume_continuation,
+                    shared_resources: Arc::clone(&self.shared_resources),
+                    mutation_gate,
                 },
                 resources,
                 entrypoint: None,
@@ -982,6 +1094,38 @@ impl RunCoordinator {
                 approval_id: approval_id.to_string(),
                 allow,
                 reason,
+            })
+            .map_err(|_| BackendError::RunChannelClosed)?;
+        Ok(run_state.clone())
+    }
+
+    /// # Errors
+    /// Returns an error if no matching server-to-client MCP req is pending.
+    pub async fn resolve_mcp_client_request(
+        &self,
+        request_id: &str,
+        decision: crate::mcp::client_capabilities::McpClientRequestDecision,
+    ) -> Result<WorkflowRunState, BackendError> {
+        let session = self.session.lock().await;
+        let run_state = require_run_state(&session)?;
+        if !run_state
+            .pending_mcp_client_requests
+            .iter()
+            .any(|pending| pending.request_id == request_id)
+        {
+            return Err(if run_state.pending_mcp_client_requests.is_empty() {
+                BackendError::NoPendingMcpClientRequest
+            } else {
+                BackendError::WrongMcpClientRequestId {
+                    expected: run_state.pending_mcp_client_requests[0].request_id.clone(),
+                    received: request_id.to_string(),
+                }
+            });
+        }
+        require_action_tx(&session)?
+            .send(ExecutionAction::ResolveMcpClientRequest {
+                request_id: request_id.to_string(),
+                decision,
             })
             .map_err(|_| BackendError::RunChannelClosed)?;
         Ok(run_state.clone())

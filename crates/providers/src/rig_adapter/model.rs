@@ -311,7 +311,11 @@ impl RigModel {
             completion_request_for(self, request, provider_id, openai_config)?;
         let result = match self {
             Self::Anthropic(model) => {
-                ensure_anthropic_output_budget(&model_name, &mut completion_request);
+                ensure_anthropic_output_budget(
+                    &model_name,
+                    &mut completion_request,
+                    request.max_output_tokens.is_some(),
+                );
                 match model.completion(completion_request).await {
                     Err(e) => Err(error::to_agent_error(e, provider_label)),
                     Ok(response) => {
@@ -428,7 +432,11 @@ impl RigModel {
             completion_request_for(self, request, provider_id, openai_config)?;
         let result = match self {
             Self::Anthropic(model) => {
-                ensure_anthropic_output_budget(&model_name, &mut completion_request);
+                ensure_anthropic_output_budget(
+                    &model_name,
+                    &mut completion_request,
+                    request.max_output_tokens.is_some(),
+                );
                 match model.stream(completion_request).await {
                     Err(e) => Err(error::to_agent_error(e, provider_label)),
                     Ok(rig_stream) => {
@@ -501,7 +509,14 @@ impl RigModel {
     }
 }
 
-fn ensure_anthropic_output_budget(model: &str, request: &mut CompletionRequest) {
+fn ensure_anthropic_output_budget(
+    model: &str,
+    request: &mut CompletionRequest,
+    has_explicit_output_limit: bool,
+) {
+    if has_explicit_output_limit {
+        return;
+    }
     if let Some(max_tokens) = request.max_tokens {
         request.max_tokens = Some(max_tokens.max(ANTHROPIC_MIN_OUTPUT_TOKENS));
         return;
@@ -757,6 +772,7 @@ mod tests {
             node_label: "Idea".into(),
             model: "mimo-v2.5".into(),
             provider_id: None,
+            max_output_tokens: None,
             system_messages: vec!["sys".into()],
             task_prompt: "task".into(),
             input: serde_json::json!({}),
@@ -1035,22 +1051,28 @@ mod tests {
     fn anthropic_output_budget_supports_large_tool_calls_without_lowering_explicit_budget() {
         let mut defaulted =
             convert::to_completion_request(&minimal_request()).expect("minimal completion request");
-        ensure_anthropic_output_budget("custom-anthropic-model", &mut defaulted);
+        ensure_anthropic_output_budget("custom-anthropic-model", &mut defaulted, false);
         assert_eq!(defaulted.max_tokens, Some(16_384));
 
         let mut explicit =
             convert::to_completion_request(&minimal_request()).expect("minimal completion request");
         explicit.max_tokens = Some(64_000);
-        ensure_anthropic_output_budget("custom-anthropic-model", &mut explicit);
+        ensure_anthropic_output_budget("custom-anthropic-model", &mut explicit, false);
         assert_eq!(explicit.max_tokens, Some(64_000));
 
         let mut current_claude =
             convert::to_completion_request(&minimal_request()).expect("minimal completion request");
-        ensure_anthropic_output_budget("claude-sonnet-4-6", &mut current_claude);
+        ensure_anthropic_output_budget("claude-sonnet-4-6", &mut current_claude, false);
         assert_eq!(
             current_claude.max_tokens, None,
             "Rig must apply its larger current-model default"
         );
+
+        let mut constrained =
+            convert::to_completion_request(&minimal_request()).expect("minimal completion request");
+        constrained.max_tokens = Some(64);
+        ensure_anthropic_output_budget("custom-anthropic-model", &mut constrained, true);
+        assert_eq!(constrained.max_tokens, Some(64));
     }
 
     #[test]

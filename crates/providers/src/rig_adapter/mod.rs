@@ -9,6 +9,7 @@ mod convert;
 mod error;
 mod model;
 mod openai_http;
+mod openai_tool_schema;
 mod outcome;
 mod reasoning_convert;
 mod stream;

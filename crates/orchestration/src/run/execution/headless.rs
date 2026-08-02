@@ -94,8 +94,11 @@ where
                 discover_external: false,
                 ..McpSettings::default()
             },
+            prepared_mcp: None,
             search: crate::settings::model::SearchSettings::default(),
             runtime_config_store: engine::new_runtime_config_store(),
+            tool_budget: Arc::new(tokio::sync::Semaphore::new(16)),
+            mutation_gate: None,
         },
         event_tx,
         action_rx,
@@ -207,6 +210,17 @@ where
                     .pending_approvals
                     .retain(|pending| pending.approval_id != approval_id);
             }
+        }
+        if let ExecutionEvent::McpClientRequestCreated { request } = &event {
+            action_tx
+                .send(ExecutionAction::ResolveMcpClientRequest {
+                    request_id: request.request_id.clone(),
+                    decision: crate::mcp::client_capabilities::McpClientRequestDecision {
+                        allow: false,
+                        content: None,
+                    },
+                })
+                .map_err(|_| WorkflowExecutionError::Execution("run channel closed".to_string()))?;
         }
 
         if !state.active {

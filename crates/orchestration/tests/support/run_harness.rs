@@ -85,8 +85,11 @@ where
             discover_external: false,
             ..McpSettings::default()
         },
+        prepared_mcp: None,
         search: orchestration::settings::model::SearchSettings::default(),
         runtime_config_store: engine::new_runtime_config_store(),
+        tool_budget: Arc::new(tokio::sync::Semaphore::new(16)),
+        mutation_gate: None,
     };
 
     let (handle, event_rx, action_tx, cancel_token, node_interrupts) =

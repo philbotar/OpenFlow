@@ -7,6 +7,7 @@ use crate::tool::cache::{cache_key, CacheEntry, CacheValidation, ToolResultCache
 use crate::tool::errors::ToolError;
 use crate::tool::output::{ArtifactStore, ToolArtifactRecord};
 use crate::tool::registry::{BuiltinToolKind, ToolRegistry, ToolRegistryError};
+use crate::tool::CapturedFileChange;
 use engine::{EditBatch, FileChangeRecord, ReadRecord, ToolCall, ToolOutputMeta, ToolResult};
 use reqwest::Client;
 use serde_json::Value;
@@ -88,7 +89,7 @@ impl ToolRunnerError {
         match self {
             Self::Tool(error) => error.is_retryable(),
             Self::Registry(_) | Self::InvalidArguments(_) | Self::BlockingTask(_) => false,
-            Self::Mcp(error) => matches!(error, crate::adapters::mcp::McpError::Transport(_)),
+            Self::Mcp(_) => false,
         }
     }
 }
@@ -376,6 +377,18 @@ impl ToolRunner {
             .await
     }
 
+    pub(super) async fn finalize_captured_record(
+        &self,
+        call: ToolCall,
+        raw_output: String,
+        file_changes: Vec<CapturedFileChange>,
+        edit_batch: Option<EditBatch>,
+    ) -> Result<ToolExecutionRecord, ToolRunnerError> {
+        let file_changes = self.persist_file_change_diffs(&call, file_changes).await;
+        self.finalize_record(call, raw_output, file_changes, edit_batch)
+            .await
+    }
+
     pub(super) async fn finalize_record_with_status(
         &self,
         call: ToolCall,
@@ -428,6 +441,46 @@ impl ToolRunner {
             .map_err(ToolRunnerError::Tool)
     }
 
+    async fn persist_file_change_diffs(
+        &self,
+        call: &ToolCall,
+        file_changes: Vec<CapturedFileChange>,
+    ) -> Vec<FileChangeRecord> {
+        let mut persisted = Vec::with_capacity(file_changes.len());
+        for change in file_changes {
+            let CapturedFileChange { mut record, diff } = change;
+            record.tool_call_id = Some(call.id.clone());
+            record.tool_name = Some(call.name.clone());
+            if let Some(diff) = diff {
+                let artifacts = self.artifacts.clone();
+                match tokio::task::spawn_blocking(move || artifacts.store_file_change_diff(&diff))
+                    .await
+                {
+                    Ok(Ok(artifact)) => {
+                        record.diff_size_bytes = Some(artifact.size_bytes);
+                        record.diff_artifact_id = Some(artifact.artifact_id);
+                    }
+                    Ok(Err(error)) => {
+                        log::warn!(
+                            "failed to persist exact diff for {} from tool call {}: {error}",
+                            record.path,
+                            call.id
+                        );
+                    }
+                    Err(error) => {
+                        log::warn!(
+                            "failed to join exact diff persistence for {} from tool call {}: {error}",
+                            record.path,
+                            call.id
+                        );
+                    }
+                }
+            }
+            persisted.push(record);
+        }
+        persisted
+    }
+
     pub fn denied(&self, call: ToolCall, reason: impl Into<String>) -> ToolExecutionRecord {
         self.failed_record(call, reason, Vec::new(), None)
     }
@@ -453,6 +506,17 @@ impl ToolRunner {
             reads: Vec::new(),
             edit_batch,
         }
+    }
+
+    pub(super) async fn failed_captured_record(
+        &self,
+        call: ToolCall,
+        reason: impl Into<String>,
+        file_changes: Vec<CapturedFileChange>,
+        edit_batch: Option<EditBatch>,
+    ) -> ToolExecutionRecord {
+        let file_changes = self.persist_file_change_diffs(&call, file_changes).await;
+        self.failed_record(call, reason, file_changes, edit_batch)
     }
 }
 
@@ -589,6 +653,22 @@ mod tests {
         assert_eq!(record.file_changes[0].path, "new.txt");
         assert_eq!(record.file_changes[0].op, engine::FileChangeOp::Create);
         assert!(record.file_changes[0].diff_summary.is_some());
+        assert_eq!(
+            record.file_changes[0].tool_call_id.as_deref(),
+            Some("call-write")
+        );
+        assert_eq!(record.file_changes[0].tool_name.as_deref(), Some("write"));
+        let artifact_id = record.file_changes[0]
+            .diff_artifact_id
+            .as_deref()
+            .expect("diff artifact id");
+        let exact_diff =
+            fs::read_to_string(runner.artifacts().path_for(artifact_id).unwrap()).unwrap();
+        assert!(exact_diff.contains("+1|hello"));
+        assert_eq!(
+            record.file_changes[0].diff_size_bytes,
+            Some(exact_diff.len())
+        );
     }
 
     #[cfg_attr(miri, ignore)]
@@ -1009,6 +1089,19 @@ mod tests {
         assert_eq!(record.file_changes.len(), 1);
         assert_eq!(record.file_changes[0].path, "good.txt");
         assert_eq!(
+            record.file_changes[0].tool_call_id.as_deref(),
+            Some("call-partial")
+        );
+        let partial_diff_id = record.file_changes[0]
+            .diff_artifact_id
+            .as_deref()
+            .expect("partial diff artifact");
+        assert!(
+            fs::read_to_string(runner.artifacts().path_for(partial_diff_id).unwrap())
+                .unwrap()
+                .contains("+1|hello")
+        );
+        assert_eq!(
             fs::read_to_string(dir.path().join("good.txt")).unwrap(),
             "hello\n"
         );
@@ -1040,7 +1133,7 @@ mod tests {
                 ToolCall {
                     id: "call-external".into(),
                     provider_call_id: None,
-                    name: "mcp/test/echo".into(),
+                    name: "mcp_4_test_echo".into(),
                     arguments: serde_json::json!({}),
                 },
                 "invalid input".into(),
@@ -1063,7 +1156,7 @@ mod tests {
         registry
             .extend_mcp(vec![RegisteredTool {
                 definition: engine::ToolDefinition {
-                    name: "mcp/test/echo".into(),
+                    name: "mcp_4_test_echo".into(),
                     description: "echo".into(),
                     input_schema: serde_json::json!({"type":"object","properties":{}}),
                     tier: engine::ToolTier::Write,
@@ -1084,7 +1177,7 @@ mod tests {
                 ToolCall {
                     id: "call-mcp".into(),
                     provider_call_id: None,
-                    name: "mcp/test/echo".into(),
+                    name: "mcp_4_test_echo".into(),
                     arguments: serde_json::json!({}),
                 },
                 None,
