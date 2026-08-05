@@ -7,6 +7,7 @@ use regex::Regex;
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::ffi::OsStr;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex};
@@ -315,7 +316,8 @@ where
         });
     }
 
-    let mut child = build_shell_command(command, cwd, extra_env)
+    let effective_path = crate::mcp::environment::effective_path().await;
+    let mut child = build_shell_command(command, cwd, extra_env, effective_path.as_deref())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
@@ -433,6 +435,7 @@ fn build_shell_command(
     command: &str,
     cwd: &Path,
     extra_env: Option<&HashMap<String, String>>,
+    effective_path: Option<&OsStr>,
 ) -> Command {
     let mut command_builder = if cfg!(windows) {
         let mut cmd = Command::new("cmd");
@@ -446,10 +449,14 @@ fn build_shell_command(
     #[cfg(unix)]
     command_builder.process_group(0);
     command_builder.kill_on_drop(true);
+    command_builder.stdin(std::process::Stdio::null());
     command_builder.current_dir(cwd);
     command_builder.env_remove("BASH_ENV");
     for (key, value) in NON_INTERACTIVE_ENV {
         command_builder.env(key, *value);
+    }
+    if let Some(path) = effective_path {
+        command_builder.env("PATH", path);
     }
     if let Some(extra) = extra_env {
         for (key, value) in extra {
@@ -585,6 +592,26 @@ mod tests {
     }
 
     #[test]
+    fn build_shell_command_uses_login_shell_path_before_explicit_env() {
+        let effective_path = OsStr::new("/login/bin:/usr/bin");
+        let explicit_path = HashMap::from([(String::from("PATH"), String::from("/explicit"))]);
+
+        let command = build_shell_command(
+            "true",
+            Path::new("."),
+            Some(&explicit_path),
+            Some(effective_path),
+        );
+        let path = command
+            .as_std()
+            .get_envs()
+            .find_map(|(key, value)| (key == OsStr::new("PATH")).then_some(value))
+            .flatten();
+
+        assert_eq!(path, Some(OsStr::new("/explicit")));
+    }
+
+    #[test]
     fn resolve_bash_cwd_defaults_to_execution_folder() {
         let temp = TempDir::new().expect("tempdir");
         let cwd = temp.path().canonicalize().expect("canonicalize");
@@ -686,6 +713,70 @@ mod tests {
             matches!(result, Err(ToolError::Timeout { .. })),
             "expected timeout, got {result:?}"
         );
+    }
+
+    #[cfg(unix)]
+    #[cfg_attr(miri, ignore)]
+    #[tokio::test]
+    async fn bash_cancellation_kills_process_group() {
+        use nix::sys::signal::{kill, killpg, Signal};
+        use nix::unistd::Pid;
+
+        let temp = TempDir::new().expect("tempdir");
+        let cwd = temp.path().canonicalize().expect("canonicalize");
+        let command_cwd = cwd.clone();
+        let cancellation = CancellationToken::new();
+        let cancellation_for_task = cancellation.clone();
+        let task = tokio::spawn(async move {
+            run_shell_command(
+                "echo $$ > shell.pid; sleep 30 & echo $! > child.pid; wait",
+                &command_cwd,
+                None,
+                30,
+                &cancellation_for_task,
+                &None,
+            )
+            .await
+        });
+
+        let (shell_pid, child_pid) = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let shell = tokio::fs::read_to_string(cwd.join("shell.pid")).await;
+                let child = tokio::fs::read_to_string(cwd.join("child.pid")).await;
+                if let (Ok(shell), Ok(child)) = (shell, child) {
+                    break (
+                        shell.trim().parse::<i32>().expect("shell pid"),
+                        child.trim().parse::<i32>().expect("child pid"),
+                    );
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("bash process ids");
+
+        cancellation.cancel();
+        let outcome = tokio::time::timeout(Duration::from_secs(5), task)
+            .await
+            .expect("bash cancellation")
+            .expect("bash task")
+            .expect("bash result");
+        assert!(outcome.cancelled);
+
+        let process_is_alive = |pid| kill(Pid::from_raw(pid), None).is_ok();
+        let cleaned = tokio::time::timeout(Duration::from_secs(2), async {
+            while process_is_alive(shell_pid) || process_is_alive(child_pid) {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .is_ok();
+        if !cleaned {
+            let _ = killpg(Pid::from_raw(shell_pid), Signal::SIGKILL);
+            let _ = kill(Pid::from_raw(child_pid), Signal::SIGKILL);
+        }
+
+        assert!(cleaned, "cancelling bash left its process group alive");
     }
 
     #[cfg(unix)]

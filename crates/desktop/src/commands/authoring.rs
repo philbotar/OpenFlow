@@ -1,8 +1,10 @@
 use crate::ipc_types::CommandError;
 use orchestration::api::{
-    WorkflowAuthoringDraftEvent, WorkflowAuthoringStartResult, WorkflowAuthoringThinkingEvent,
+    WorkflowAuthoringDraftEvent, WorkflowAuthoringRuntimeConfig, WorkflowAuthoringStartResult,
+    WorkflowAuthoringThinkingEvent,
 };
 use orchestration::backend::{AppBackend, WorkflowAuthoringTurnResult};
+use orchestration::workflow::authoring::WorkflowAuthoringEventHandlers;
 use orchestration::{AppSettings, Workflow};
 use tauri::Emitter;
 
@@ -30,6 +32,7 @@ pub async fn workflow_authoring_turn(
     session_id: String,
     message: String,
     settings: AppSettings,
+    runtime_config: WorkflowAuthoringRuntimeConfig,
     transient_api_key: Option<String>,
 ) -> Result<WorkflowAuthoringTurnResult, CommandError> {
     let thinking_app = app.clone();
@@ -39,12 +42,15 @@ pub async fn workflow_authoring_turn(
             session_id,
             message,
             &settings,
+            &runtime_config,
             transient_api_key.as_deref(),
-            move |event: WorkflowAuthoringThinkingEvent| {
-                let _ = thinking_app.emit("workflow-authoring-thinking", event);
-            },
-            move |event: WorkflowAuthoringDraftEvent| {
-                let _ = draft_app.emit("workflow-authoring-draft", event);
+            WorkflowAuthoringEventHandlers {
+                on_thinking: move |event: WorkflowAuthoringThinkingEvent| {
+                    let _ = thinking_app.emit("workflow-authoring-thinking", event);
+                },
+                on_draft_update: move |event: WorkflowAuthoringDraftEvent| {
+                    let _ = draft_app.emit("workflow-authoring-draft", event);
+                },
             },
         )
         .await?)

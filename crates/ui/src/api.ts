@@ -42,6 +42,7 @@ import type {
   WorkflowRunState,
   WorkflowValidationSummary,
   WorkflowAuthoringStartResult,
+  WorkflowAuthoringRuntimeConfig,
   WorkflowAuthoringTurnResult,
   WorkflowAuthoringDraftEvent,
   WorkflowAuthoringThinkingEvent,
@@ -461,11 +462,18 @@ export function workflowAuthoringTurn(
   message: string,
   settings: AppSettings,
   transientApiKey: string | null = null,
+  runtimeConfig: WorkflowAuthoringRuntimeConfig = {
+    model: null,
+    reasoningEffort: null,
+    reasoningBudgetTokens: null,
+    fastMode: false,
+  },
 ) {
   return invoke<WorkflowAuthoringTurnResult>("workflow_authoring_turn", {
     sessionId,
     message,
     settings,
+    runtimeConfig,
     transientApiKey,
   });
 }

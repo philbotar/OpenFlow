@@ -11,7 +11,7 @@ pub async fn start_terminal(
     cols: u16,
     rows: u16,
 ) -> Result<TerminalStart, CommandError> {
-    let (session, events) = backend.start_terminal(cwd.as_deref(), cols, rows)?;
+    let (session, events) = backend.start_terminal(cwd.as_deref(), cols, rows).await?;
     spawn_terminal_event_bridge(app, events);
     Ok(session)
 }

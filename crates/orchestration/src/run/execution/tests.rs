@@ -1522,7 +1522,7 @@ where
         prepared_mcp: None,
         search: Default::default(),
         runtime_config_store: engine::new_runtime_config_store(),
-        tool_budget: Arc::new(tokio::sync::Semaphore::new(16)),
+        tool_budget: crate::run::resources::SharedRunResources::default().tool_budget(),
         mutation_gate: None,
     }
 }
@@ -1865,6 +1865,117 @@ async fn new_message_retries_failed_node_with_message_in_transcript() {
 
 #[cfg_attr(miri, ignore)]
 #[tokio::test]
+async fn new_message_during_tool_execution_reaches_next_model_turn() {
+    #[derive(Clone, Default)]
+    struct ToolThenCompleteAi {
+        calls: Arc<AtomicUsize>,
+    }
+
+    struct NoopStreamSink;
+
+    impl AiStreamSink for NoopStreamSink {
+        fn on_stream_event(&self, _event: AiStreamEvent) {}
+    }
+
+    #[async_trait]
+    impl AiPort for ToolThenCompleteAi {
+        async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+            self.invoke_stream(request, &NoopStreamSink).await
+        }
+
+        async fn invoke_stream(
+            &self,
+            request: AgentRequest,
+            _sink: &dyn AiStreamSink,
+        ) -> Result<AgentTurnOutcome, AgentError> {
+            if request.node_id == "__post_run_review" {
+                return Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                    handoff: None,
+                    output: json!({"suggestions": []}),
+                    raw_text: "{}".to_string(),
+                    assistant_message: None,
+                    reasoning: Vec::new(),
+                    usage: None,
+                }));
+            }
+            if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                return Ok(AgentTurnOutcome::ToolCalls(AgentToolCallBatch {
+                    raw_text: String::new(),
+                    assistant_message: None,
+                    tool_calls: vec![ToolCall {
+                        id: "call-sleep".to_string(),
+                        provider_call_id: None,
+                        name: "bash".to_string(),
+                        arguments: json!({"command": "sleep 1", "timeout": 5}),
+                    }],
+                    reasoning: Vec::new(),
+                    usage: None,
+                }));
+            }
+            assert!(
+                request.transcript.iter().any(|item| matches!(
+                    item,
+                    engine::AgentTranscriptItem::UserMessage { content, .. }
+                        if content == "while the tool runs"
+                )),
+                "next model request must include the live user message"
+            );
+            Ok(AgentTurnOutcome::Completed(AgentTurnSuccess {
+                handoff: None,
+                output: json!({"summary": "done"}),
+                raw_text: "{}".to_string(),
+                assistant_message: None,
+                reasoning: Vec::new(),
+                usage: None,
+            }))
+        }
+    }
+
+    let temp = TempDir::new().expect("tempdir");
+    let mut workflow = workflow();
+    workflow.nodes[0].agent.request_user_input = true;
+    workflow.nodes[0].agent.conversation_mode = true;
+    workflow.nodes[0].agent.tools.approval_mode = Some(ApprovalMode::Yolo);
+    let node_id = workflow.nodes[0].id.clone();
+    let (handle, mut event_rx, action_tx, _cancel, _) = spawn_interactive_workflow_run(
+        &tokio::runtime::Handle::current(),
+        interactive_run_params(
+            workflow,
+            temp.path().to_path_buf(),
+            ToolThenCompleteAi::default(),
+        ),
+    );
+
+    let mut sent_message = false;
+    let mut finished = false;
+    while let Ok(Some(event)) = timeout(Duration::from_secs(10), event_rx.recv()).await {
+        match event {
+            ExecutionEvent::ToolStarted { node_id: id, .. } if id == node_id => {
+                sent_message = true;
+                action_tx
+                    .send(ExecutionAction::ProvideInput {
+                        node_id: id,
+                        text: "while the tool runs".to_string(),
+                        attachments: Vec::new(),
+                        skill_prompt: None,
+                    })
+                    .expect("live input");
+            }
+            ExecutionEvent::Finished(_) => {
+                finished = true;
+                break;
+            }
+            _ => {}
+        }
+    }
+    handle.await.expect("drive task");
+
+    assert!(sent_message, "expected tool to start before sending input");
+    assert!(finished, "expected run to finish after live input");
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
 async fn headless_retries_transient_node_error() {
     #[derive(Clone)]
     struct TransientTwiceAi {
@@ -2091,7 +2202,7 @@ where
         prepared_mcp: None,
         search: Default::default(),
         runtime_config_store: engine::new_runtime_config_store(),
-        tool_budget: Arc::new(tokio::sync::Semaphore::new(16)),
+        tool_budget: crate::run::resources::SharedRunResources::default().tool_budget(),
         mutation_gate: None,
     };
     (params, checkpoint_sink)

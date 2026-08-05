@@ -966,6 +966,13 @@ export interface WorkflowAuthoringStartResult {
   draft?: Workflow;
 }
 
+export interface WorkflowAuthoringRuntimeConfig {
+  model: string | null;
+  reasoningEffort: string | null;
+  reasoningBudgetTokens: number | null;
+  fastMode: boolean;
+}
+
 export interface WorkflowAuthoringThinkingEvent {
   sessionId: string;
   delta: string;

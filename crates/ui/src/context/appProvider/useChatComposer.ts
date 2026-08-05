@@ -358,12 +358,24 @@ export function useChatComposer(params: UseChatComposerParams) {
         !!activeWorkflow && !activeChat,
       );
     }
+    const activeWorkflow = params.activeWorkflow();
+    const activeChat = params.activeChat();
+    const allowsLiveMessage =
+      Boolean(activeChat) ||
+      Boolean(
+        activeWorkflow?.nodes.some(
+          (node) =>
+            node.id === nodeId &&
+            (node.agent.requestUserInput === true || node.agent.conversationMode === true),
+        ),
+      );
     return canSendChat(
       params.runState(),
       nodeId,
       params.readiness()?.ready ?? false,
       sendableSubmissionText(nodeId),
       pendingChatAttachments(nodeId).length > 0,
+      allowsLiveMessage,
     );
   };
 

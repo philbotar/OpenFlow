@@ -160,6 +160,37 @@ impl ChatCatalog {
         })
     }
 
+    /// Detach chats from projects that are no longer registered.
+    ///
+    /// # Errors
+    /// Returns an error if the chat store cannot be read or written.
+    pub fn detach_from_projects(&self, project_ids: &[String]) -> Result<(), BackendError> {
+        if project_ids.is_empty() {
+            return Ok(());
+        }
+        let _guard = self.mutation_lock.lock();
+        let mut chats = self.store.load()?;
+        let mut changed = false;
+        for chat in &mut chats {
+            let Some(project_id) = chat.config.project_id.as_ref() else {
+                continue;
+            };
+            if !project_ids
+                .iter()
+                .any(|removed_id| removed_id == project_id)
+            {
+                continue;
+            }
+            chat.config.project_id = None;
+            chat.updated_at_ms = chrono::Utc::now().timestamp_millis();
+            changed = true;
+        }
+        if changed {
+            self.store.save(&chats)?;
+        }
+        Ok(())
+    }
+
     fn update(&self, chat_id: &str, mutate: impl FnOnce(&mut Chat)) -> Result<Chat, BackendError> {
         let _guard = self.mutation_lock.lock();
         let mut chats = self.store.load()?;

@@ -216,11 +216,35 @@ impl McpOAuthFlowPort for McpOAuthHttpAdapter {
 async fn discover(request: &McpOAuthRequest) -> Result<Discovery, McpOAuthError> {
     let resource_url = validate_endpoint_url(&request.resource_url, request.allow_localhost)
         .map_err(|_| McpOAuthError::Discovery)?;
+    let resource_candidates = discovery_resource_candidates(&resource_url);
+    let mut last_error = McpOAuthError::Discovery;
+    for candidate in resource_candidates {
+        let expected_issuer = if candidate != resource_url
+            && crate::adapters::mcp::normalize_atlassian_url(&request.resource_url).is_some()
+        {
+            None
+        } else {
+            request.expected_issuer.as_deref()
+        };
+        match discover_resource(request, &candidate, expected_issuer).await {
+            Ok(discovery) => return Ok(discovery),
+            Err(McpOAuthError::PkceRequired) => return Err(McpOAuthError::PkceRequired),
+            Err(error) => last_error = error,
+        }
+    }
+    Err(last_error)
+}
+
+async fn discover_resource(
+    request: &McpOAuthRequest,
+    resource_url: &Url,
+    expected_issuer: Option<&str>,
+) -> Result<Discovery, McpOAuthError> {
     let (challenge_metadata, challenge_scope) =
-        resource_challenge(&resource_url, request.allow_localhost).await?;
+        resource_challenge(resource_url, request.allow_localhost).await?;
     let metadata_urls = challenge_metadata
         .into_iter()
-        .chain(protected_resource_metadata_urls(&resource_url));
+        .chain(protected_resource_metadata_urls(resource_url));
     let mut protected = None;
     for url in metadata_urls {
         if let Some(candidate) =
@@ -242,24 +266,9 @@ async fn discover(request: &McpOAuthRequest) -> Result<Discovery, McpOAuthError>
     if protected.authorization_servers.is_empty() {
         return Err(McpOAuthError::Discovery);
     }
-    let issuer = request
-        .expected_issuer
-        .as_deref()
-        .map_or_else(
-            || protected.authorization_servers.first().cloned(),
-            |expected| {
-                protected
-                    .authorization_servers
-                    .iter()
-                    .find(|issuer| {
-                        canonical_resource(issuer).ok() == canonical_resource(expected).ok()
-                    })
-                    .cloned()
-            },
-        )
+    let issuer = select_authorization_server(&protected.authorization_servers, expected_issuer)
         .ok_or(McpOAuthError::Discovery)?;
     let metadata = discover_authorization_server(&issuer, request.allow_localhost).await?;
-    validate_authorization_metadata(&metadata, &issuer, request.allow_localhost).await?;
     let scopes = if !request.requested_scopes.is_empty() {
         request.requested_scopes.clone()
     } else if !challenge_scope.is_empty() {
@@ -274,6 +283,33 @@ async fn discover(request: &McpOAuthRequest) -> Result<Discovery, McpOAuthError>
         scopes: dedupe_scopes(scopes),
         metadata,
     })
+}
+
+fn select_authorization_server(
+    authorization_servers: &[String],
+    preferred_issuer: Option<&str>,
+) -> Option<String> {
+    preferred_issuer
+        .and_then(|preferred| {
+            let preferred = canonical_resource(preferred).ok()?;
+            authorization_servers
+                .iter()
+                .find(|issuer| canonical_resource(issuer).is_ok_and(|issuer| issuer == preferred))
+                .cloned()
+        })
+        .or_else(|| authorization_servers.first().cloned())
+}
+
+fn discovery_resource_candidates(resource_url: &Url) -> Vec<Url> {
+    let mut candidates = vec![resource_url.clone()];
+    if let Some(normalized) = crate::adapters::mcp::normalize_atlassian_url(resource_url.as_str())
+        .and_then(|url| Url::parse(&url).ok())
+    {
+        if !candidates.contains(&normalized) {
+            candidates.push(normalized);
+        }
+    }
+    candidates
 }
 
 async fn resource_challenge(
@@ -337,6 +373,8 @@ async fn discover_authorization_server(
             fetch_optional_json::<AuthorizationServerMetadata>(url.as_str(), allow_localhost)
                 .await?
         {
+            validate_authorization_metadata(&metadata, issuer.as_str(), allow_localhost, &url)
+                .await?;
             return Ok(metadata);
         }
     }
@@ -373,8 +411,9 @@ async fn validate_authorization_metadata(
     metadata: &AuthorizationServerMetadata,
     expected_issuer: &str,
     allow_localhost: bool,
+    metadata_url: &Url,
 ) -> Result<(), McpOAuthError> {
-    if canonical_resource(&metadata.issuer)? != canonical_resource(expected_issuer)? {
+    if !authorization_server_issuer_matches(&metadata.issuer, expected_issuer, metadata_url)? {
         return Err(McpOAuthError::Discovery);
     }
     if !metadata.response_types_supported.is_empty()
@@ -408,12 +447,48 @@ async fn validate_authorization_metadata(
     Ok(())
 }
 
+fn authorization_server_issuer_matches(
+    metadata_issuer: &str,
+    expected_issuer: &str,
+    metadata_url: &Url,
+) -> Result<bool, McpOAuthError> {
+    if canonical_resource(metadata_issuer)? == canonical_resource(expected_issuer)? {
+        return Ok(true);
+    }
+
+    // Some providers, including Atlassian's current DCR service, publish a
+    // path-scoped authorization server in protected-resource metadata but
+    // return the shared origin as the metadata issuer. Accept that alias only
+    // when the metadata document was fetched from the scoped issuer's own
+    // well-known URL and both URLs share the same origin.
+    let expected = Url::parse(expected_issuer).map_err(|_| McpOAuthError::Discovery)?;
+    let metadata_issuer_url = Url::parse(metadata_issuer).map_err(|_| McpOAuthError::Discovery)?;
+    let mut expected_origin = expected.clone();
+    expected_origin.set_path("");
+    expected_origin.set_query(None);
+    expected_origin.set_fragment(None);
+    let expected_path = expected.path().trim_matches('/');
+    let metadata_from_expected_issuer = authorization_metadata_urls(&expected)
+        .into_iter()
+        .any(|candidate| candidate == *metadata_url);
+    Ok(!expected_path.is_empty()
+        && metadata_from_expected_issuer
+        && metadata_issuer_url.host_str() == expected.host_str()
+        && canonical_resource(metadata_issuer_url.as_str())?
+            == canonical_resource(expected_origin.as_str())?)
+}
+
 async fn configure_or_register_client(
     request: &McpOAuthRequest,
     discovery: &Discovery,
     redirect_uri: &str,
 ) -> Result<OAuthClientRegistration, McpOAuthError> {
-    if !request.client_id.trim().is_empty() {
+    if !request.client_id.trim().is_empty()
+        && configured_client_matches_issuer(
+            request.expected_issuer.as_deref(),
+            &discovery.metadata.issuer,
+        )
+    {
         if !discovery
             .metadata
             .token_endpoint_auth_methods_supported
@@ -495,6 +570,22 @@ async fn configure_or_register_client(
         client_secret,
         token_endpoint_auth_method,
     })
+}
+
+fn configured_client_matches_issuer(
+    registered_issuer: Option<&str>,
+    discovered_issuer: &str,
+) -> bool {
+    let Some(registered_issuer) = registered_issuer else {
+        return true;
+    };
+    matches!(
+        (
+            canonical_resource(registered_issuer),
+            canonical_resource(discovered_issuer),
+        ),
+        (Ok(registered), Ok(discovered)) if registered == discovered
+    )
 }
 
 fn authorization_url(
@@ -1013,6 +1104,69 @@ mod tests {
                 "/.well-known/oauth-authorization-server/tenant",
                 "/.well-known/openid-configuration/tenant",
                 "/tenant/.well-known/openid-configuration",
+            ]
+        );
+    }
+
+    #[test]
+    fn scoped_authorization_server_accepts_shared_origin_issuer() {
+        let expected = "https://auth.atlassian.com/tenant";
+        let metadata_url = authorization_metadata_urls(&Url::parse(expected).unwrap())
+            .into_iter()
+            .next()
+            .unwrap();
+
+        assert!(authorization_server_issuer_matches(
+            "https://auth.atlassian.com",
+            expected,
+            &metadata_url,
+        )
+        .unwrap());
+        assert!(!authorization_server_issuer_matches(
+            "https://other.example.test",
+            expected,
+            &metadata_url,
+        )
+        .unwrap());
+    }
+
+    #[test]
+    fn authorization_server_selection_recovers_from_issuer_migration() {
+        let servers = vec!["https://auth.example.test/current".to_string()];
+
+        assert_eq!(
+            select_authorization_server(&servers, Some("https://auth.example.test/retired"),)
+                .as_deref(),
+            Some("https://auth.example.test/current")
+        );
+    }
+
+    #[test]
+    fn configured_client_registration_is_bound_to_discovered_issuer() {
+        assert!(configured_client_matches_issuer(
+            None,
+            "https://auth.example.test/current"
+        ));
+        assert!(configured_client_matches_issuer(
+            Some("https://auth.example.test/current"),
+            "https://auth.example.test/current"
+        ));
+        assert!(!configured_client_matches_issuer(
+            Some("https://auth.example.test/retired"),
+            "https://auth.example.test/current"
+        ));
+    }
+
+    #[test]
+    fn atlassian_legacy_endpoint_has_authv2_discovery_candidate() {
+        let resource = Url::parse("https://mcp.atlassian.com/v1/sse").unwrap();
+        let candidates = discovery_resource_candidates(&resource);
+
+        assert_eq!(
+            candidates.iter().map(Url::as_str).collect::<Vec<_>>(),
+            vec![
+                "https://mcp.atlassian.com/v1/sse",
+                "https://mcp.atlassian.com/v1/mcp/authv2",
             ]
         );
     }

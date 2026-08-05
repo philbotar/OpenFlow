@@ -61,7 +61,7 @@ pub fn authoring_tool_definitions() -> Vec<ToolDefinition> {
         },
         ToolDefinition {
             name: ADD_NODE_TOOL.to_string(),
-            description: "Add one agent node. Call once per node with short prompts (1-2 sentences). handoffFormat defaults to markdown; use json only for typed machine data.".to_string(),
+            description: "Add one agent node. Call once per node with short prompts (1-2 sentences). Markdown handoffs are first-class and default: set handoffFormat to markdown to materialize the final output as HANDOFF.md. Use json plus outputSchema only for typed machine data.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "additionalProperties": false,
@@ -76,11 +76,12 @@ pub fn authoring_tool_definitions() -> Vec<ToolDefinition> {
                     },
                     "handoffFormat": {
                         "type": "string",
-                        "enum": ["markdown", "json"]
+                        "enum": ["markdown", "json"],
+                        "description": "Use markdown for a human-readable HANDOFF.md (default); use json only for typed machine data."
                     },
                     "handoffTemplate": {
                         "type": "string",
-                        "description": "Markdown heading template. Used only with handoffFormat markdown."
+                        "description": "Optional Markdown heading template. Used with handoffFormat markdown; the host validates and stores the result as HANDOFF.md."
                     },
                     "outputSchema": { "type": "object" }
                 },
@@ -91,7 +92,7 @@ pub fn authoring_tool_definitions() -> Vec<ToolDefinition> {
         },
         ToolDefinition {
             name: UPDATE_NODE_TOOL.to_string(),
-            description: "Update fields on an existing node by id.".to_string(),
+            description: "Update fields on an existing node by id. Set handoffFormat to markdown for a human-readable HANDOFF.md, or json plus outputSchema for typed machine data.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "additionalProperties": false,
@@ -103,9 +104,13 @@ pub fn authoring_tool_definitions() -> Vec<ToolDefinition> {
                     "requestUserInput": { "type": "boolean" },
                     "handoffFormat": {
                         "type": "string",
-                        "enum": ["markdown", "json"]
+                        "enum": ["markdown", "json"],
+                        "description": "Use markdown for a human-readable HANDOFF.md (default); use json only for typed machine data."
                     },
-                    "handoffTemplate": { "type": "string" },
+                    "handoffTemplate": {
+                        "type": "string",
+                        "description": "Optional Markdown heading template; the host validates and stores the result as HANDOFF.md."
+                    },
                     "outputSchema": { "type": "object" }
                 },
                 "required": ["id"]

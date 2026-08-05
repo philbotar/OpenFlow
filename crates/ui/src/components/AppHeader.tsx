@@ -109,6 +109,17 @@ export function AppHeader() {
         </Show>
       </div>
       <div class="topbar-actions" data-tauri-drag-region>
+        <Show when={ctx.screen() === "workflow-authoring"}>
+          <button
+            type="button"
+            class="topbar-danger-button"
+            onClick={ctx.handleCloseWorkflowAuthoring}
+            aria-label="Cancel AI workflow authoring"
+            data-tauri-drag-region="false"
+          >
+            Cancel
+          </button>
+        </Show>
         <Show when={ctx.screen() === "editor"}>
           <div class="toolbar-group topbar-button-group ">
             <div class="topbar-primary-actions">

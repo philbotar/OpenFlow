@@ -218,7 +218,7 @@ impl AppBackend {
 
         match crate::mcp::preflight::preflight(
             &config.connection,
-            std::env::var_os("PATH").as_deref(),
+            crate::mcp::environment::effective_path().await.as_deref(),
         ) {
             crate::mcp::preflight::McpPreflight::Ready { .. }
             | crate::mcp::preflight::McpPreflight::RemoteReady { .. } => {}

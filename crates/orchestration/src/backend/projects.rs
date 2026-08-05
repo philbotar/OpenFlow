@@ -21,6 +21,17 @@ impl AppBackend {
     }
 
     pub fn save_projects(&self, projects: &[Project]) -> Result<(), BackendError> {
+        let current_projects = self.projects.load()?;
+        let project_ids = projects
+            .iter()
+            .map(|project| project.id.as_str())
+            .collect::<std::collections::HashSet<_>>();
+        let removed_project_ids = current_projects
+            .iter()
+            .filter(|project| !project_ids.contains(project.id.as_str()))
+            .map(|project| project.id.clone())
+            .collect::<Vec<_>>();
+        self.chats.detach_from_projects(&removed_project_ids)?;
         self.projects.save(projects)
     }
 

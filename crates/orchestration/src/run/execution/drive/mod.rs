@@ -3,7 +3,10 @@ mod lifecycle;
 mod setup;
 
 use crate::run::persistence::{PendingRunCheckpoint, RunCheckpointReason};
-use engine::{review_completed_run, AiPort, EngineRunResult, NodeId, PostRunReview, RunError};
+use engine::{
+    review_completed_run, AiPort, EngineRunResult, EngineUserMessage, NodeId, PostRunReview,
+    RunError,
+};
 use std::collections::{HashMap, HashSet};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio_util::sync::CancellationToken;
@@ -42,6 +45,8 @@ pub(super) async fn drive_interactive_workflow<A>(
     let mut proposed_tool_calls: HashSet<String> = HashSet::new();
     let mut emitted_retryables: HashSet<(NodeId, u8)> = HashSet::new();
     let aborted_emitted = wiring.aborted_emitted.clone();
+    let (user_message_tx, mut user_message_rx) =
+        tokio::sync::mpsc::unbounded_channel::<EngineUserMessage>();
 
     loop {
         if cancel_token.is_cancelled() {
@@ -59,42 +64,46 @@ pub(super) async fn drive_interactive_workflow<A>(
             wiring.tool_port.tool_runner(),
         );
         let run_result = {
-            let run = wiring
-                .engine
-                .run(&*wiring.ai_adapter, &wiring.tool_port, &cancel_token);
+            let run = wiring.engine.run_with_user_messages(
+                &*wiring.ai_adapter,
+                &wiring.tool_port,
+                &cancel_token,
+                &mut user_message_rx,
+            );
             tokio::pin!(run);
             let mut pending_mcp =
                 HashMap::<String, crate::adapters::mcp::McpRunClientRequest>::new();
+            let mut action_channel_open = true;
             loop {
                 tokio::select! {
-                    result = &mut run => {
-                        for (_, request) in pending_mcp.drain() {
-                            super::mcp_callbacks::cancel(request);
-                        }
-                        break result;
-                    }
-                    request = recv_mcp_client_request(&mut wiring.mcp_client_request_rx) => {
-                        let Some(request) = request else {
-                            wiring.mcp_client_request_rx = None;
-                            continue;
-                        };
-                        let request_id = request.pending.request_id.clone();
-                        send_or_log(
-                            &event_tx,
-                            ExecutionEvent::McpClientRequestCreated {
-                                request: request.pending.clone(),
-                            },
-                        );
-                        if let Some(replaced) = pending_mcp.insert(request_id, request) {
-                            super::mcp_callbacks::cancel(replaced);
-                        }
-                    }
-                    action = action_rx.recv(), if !pending_mcp.is_empty() => {
+                    biased;
+                    action = action_rx.recv(), if action_channel_open => {
                         let Some(action) = action else {
-                            cancel_token.cancel();
+                            action_channel_open = false;
+                            if !pending_mcp.is_empty() {
+                                cancel_token.cancel();
+                            }
                             continue;
                         };
                         match action {
+                            ExecutionAction::ProvideInput {
+                                node_id,
+                                text,
+                                attachments,
+                                skill_prompt,
+                            } => {
+                                if user_message_tx
+                                    .send(EngineUserMessage {
+                                        node_id,
+                                        text,
+                                        attachments,
+                                        system_prompt: skill_prompt,
+                                    })
+                                    .is_err()
+                                {
+                                    log::warn!("ignored user message: engine message channel closed");
+                                }
+                            }
                             ExecutionAction::ResolveMcpClientRequest { request_id, decision } => {
                                 let Some(request) = pending_mcp.remove(&request_id) else {
                                     log::warn!("ignored MCP client response {request_id}: request is not pending");
@@ -121,8 +130,30 @@ pub(super) async fn drive_interactive_workflow<A>(
                                 cancel_token.cancel();
                             }
                             other => {
-                                log::warn!("ignored run action while MCP client request is pending: {other:?}");
+                                log::warn!("ignored run action while execution is active: {other:?}");
                             }
+                        }
+                    }
+                    result = &mut run => {
+                        for (_, request) in pending_mcp.drain() {
+                            super::mcp_callbacks::cancel(request);
+                        }
+                        break result;
+                    }
+                    request = recv_mcp_client_request(&mut wiring.mcp_client_request_rx) => {
+                        let Some(request) = request else {
+                            wiring.mcp_client_request_rx = None;
+                            continue;
+                        };
+                        let request_id = request.pending.request_id.clone();
+                        send_or_log(
+                            &event_tx,
+                            ExecutionEvent::McpClientRequestCreated {
+                                request: request.pending.clone(),
+                            },
+                        );
+                        if let Some(replaced) = pending_mcp.insert(request_id, request) {
+                            super::mcp_callbacks::cancel(replaced);
                         }
                     }
                 }

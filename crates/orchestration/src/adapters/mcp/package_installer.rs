@@ -62,7 +62,8 @@ impl PackageInstaller {
             .await
             .map_err(|_| PackageInstallerError::CreateDirectory)?;
         let started = Instant::now();
-        let mut command = build_command(plan);
+        let path = crate::mcp::environment::effective_path().await;
+        let mut command = build_command(plan, path.as_deref());
         let mut child = command.spawn().map_err(|error| {
             if error.kind() == std::io::ErrorKind::NotFound {
                 PackageInstallerError::RuntimeNotFound {
@@ -119,9 +120,12 @@ impl PackageInstaller {
     }
 }
 
-fn build_command(plan: &PackageInstallPlan) -> Command {
+fn build_command(plan: &PackageInstallPlan, path: Option<&std::ffi::OsStr>) -> Command {
     let mut command = Command::new(&plan.executable);
     command.args(&plan.args);
+    if let Some(path) = path {
+        command.env("PATH", path);
+    }
     command.envs(&plan.environment);
     command.stdin(std::process::Stdio::null());
     command.stdout(std::process::Stdio::piped());

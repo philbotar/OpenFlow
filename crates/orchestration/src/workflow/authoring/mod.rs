@@ -12,7 +12,9 @@ pub use draft::{
 };
 pub use error::AuthoringError;
 pub use layout::layout_workflow_by_layers;
-pub use service::{WorkflowAuthoringProjectContext, WorkflowAuthoringService};
+pub use service::{
+    WorkflowAuthoringEventHandlers, WorkflowAuthoringProjectContext, WorkflowAuthoringService,
+};
 pub use template::default_authoring_template_workflow;
 pub use tools::authoring_tool_definitions;
 pub use validate::validate_authoring_workflow;

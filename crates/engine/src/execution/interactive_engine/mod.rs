@@ -61,6 +61,16 @@ pub struct EngineRetryableNode {
     pub interrupted: bool,
 }
 
+/// User message accepted while a live node is executing model/tool work.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EngineUserMessage {
+    pub node_id: NodeId,
+    pub text: String,
+    pub attachments: Vec<ChatAttachmentRef>,
+    /// Host-resolved instructions, such as an invoked skill prompt.
+    pub system_prompt: Option<String>,
+}
+
 /// Terminal or pause outcome from [`InteractiveEngine::run`].
 #[derive(Debug, Clone)]
 pub enum EngineRunResult {
@@ -87,6 +97,24 @@ pub enum EngineInputError {
     UnknownApproval(String),
     #[error("node {0} is not retryable")]
     NodeNotRetryable(NodeId),
+    #[error("node {0} is not active")]
+    NodeNotActive(NodeId),
+    #[error("node {0} does not allow live user messages")]
+    LiveMessagesDisabled(NodeId),
+}
+
+impl EngineInputError {
+    fn node_id(&self) -> NodeId {
+        match self {
+            Self::WrongNode { got, .. } => got.clone(),
+            Self::NodeNotRetryable(node_id)
+            | Self::NodeNotActive(node_id)
+            | Self::LiveMessagesDisabled(node_id) => node_id.clone(),
+            Self::NoNodeAwaiting | Self::NoPendingTools | Self::UnknownApproval(_) => {
+                NodeId("engine".to_string())
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -240,8 +268,7 @@ pub(crate) const INTERACTIVE_CONTINUE_FEEDBACK: &str =
     openflow_ask_user_question with structured choices, if human clarification is needed. Call \
     executable tools if more work is required, or call \
     openflow_submit_node_output when the task is complete. Do not end with plain text only.";
-pub(crate) const AUTONOMOUS_CONTINUE_FEEDBACK: &str =
-    "No human input is available for this node. Call executable tools if more work is required, \
+pub(crate) const AUTONOMOUS_CONTINUE_FEEDBACK: &str = "No human input is available for this node. Call executable tools if more work is required, \
     or call openflow_submit_node_output when the task is complete. Do not end with plain text only.";
 /// Plain-text turn claimed file create/update without calling write/edit.
 pub(crate) const NARRATED_WRITE_FEEDBACK: &str =
@@ -250,17 +277,14 @@ pub(crate) const NARRATED_WRITE_FEEDBACK: &str =
     docs), then edit in ~40-line chunks if needed. Or call openflow_request_user_input if you need \
     the human. Do not narrate writing again.";
 /// After a successful write, narration must become edit chunks — not another one-shot rewrite.
-pub(crate) const EXPAND_VIA_EDIT_FEEDBACK: &str =
-    "A write already succeeded. Plain text does not update the file. Call edit to append or replace \
+pub(crate) const EXPAND_VIA_EDIT_FEEDBACK: &str = "A write already succeeded. Plain text does not update the file. Call edit to append or replace \
     the next section in ~40 lines or fewer. Do not narrate. Do not attempt a one-shot full-file \
     rewrite in a single write.";
-pub(crate) const PLAN_NARRATED_WRITE_FEEDBACK: &str =
-    "You narrated creating the plan but did not call a tool. During Plan Mode, call write now with \
+pub(crate) const PLAN_NARRATED_WRITE_FEEDBACK: &str = "You narrated creating the plan but did not call a tool. During Plan Mode, call write now with \
     path=\"run://PLAN.md\" and a short Markdown stub. Update that run-local draft incrementally with \
     replace-mode edit. When complete, call openflow_write_plan_artifact with no plan text in its \
     arguments. Do not write the draft into the repository. Do not narrate writing again.";
-pub(crate) const PLAN_EXPAND_VIA_EDIT_FEEDBACK: &str =
-    "The run-local plan draft already exists. Call replace-mode edit on run://PLAN.md now to add or \
+pub(crate) const PLAN_EXPAND_VIA_EDIT_FEEDBACK: &str = "The run-local plan draft already exists. Call replace-mode edit on run://PLAN.md now to add or \
     refine the next section. When the complete plan is ready, call openflow_write_plan_artifact \
     with no plan text in its arguments. Do not narrate.";
 /// Empty provider turn after the model already intended to write a file.
@@ -270,8 +294,7 @@ pub(crate) const EMPTY_AFTER_NARRATED_WRITE_FEEDBACK: &str =
     path=\"docs/feature-briefs/002-slug.md\" content=\"# Title\\n\\nStub.\\n\". Do not use bash. \
     Do not reply with plain text.";
 /// Empty turn after a successful write — expand via edit, not another giant write.
-pub(crate) const EMPTY_AFTER_WRITE_EXPAND_FEEDBACK: &str =
-    "Previous turn was empty. A write already succeeded. Call edit now to append or replace the next \
+pub(crate) const EMPTY_AFTER_WRITE_EXPAND_FEEDBACK: &str = "Previous turn was empty. A write already succeeded. Call edit now to append or replace the next \
     ~40-line section. Do not narrate. Do not one-shot the whole file in one write.";
 /// Conversational handoff when empty-turn retries are exhausted.
 pub(crate) const EMPTY_TURN_HUMAN_HANDOFF: &str =
@@ -514,23 +537,45 @@ impl InteractiveEngine {
         None
     }
 
-    /// Drive the engine until it needs host interaction or reaches a terminal state.
-    ///
-    /// All runnable work in the current layer (model calls and tool batches
-    /// across nodes) executes concurrently; completions are applied to engine
-    /// state one at a time as they arrive.
+    /// Drive the engine without accepting live user messages.
     pub async fn run<A: AiPort, T: ToolPort>(
         &mut self,
         ai: &A,
         tools: &T,
         cancel: &CancellationToken,
     ) -> EngineRunResult {
+        let (_user_message_tx, mut user_message_rx) =
+            tokio::sync::mpsc::unbounded_channel::<EngineUserMessage>();
+        self.run_with_user_messages(ai, tools, cancel, &mut user_message_rx)
+            .await
+    }
+
+    /// Drive the engine while accepting user messages between model/tool calls.
+    ///
+    /// All runnable work in the current layer (model calls and tool batches
+    /// across nodes) executes concurrently; completions are applied to engine
+    /// state one at a time as they arrive. Live messages append to the node
+    /// transcript, then the next model request sees them in order.
+    pub async fn run_with_user_messages<A: AiPort, T: ToolPort>(
+        &mut self,
+        ai: &A,
+        tools: &T,
+        cancel: &CancellationToken,
+        user_messages: &mut tokio::sync::mpsc::UnboundedReceiver<EngineUserMessage>,
+    ) -> EngineRunResult {
         type WorkFuture<'a> = Pin<Box<dyn Future<Output = WorkOutput> + Send + 'a>>;
         let mut in_flight: FuturesUnordered<WorkFuture<'_>> = FuturesUnordered::new();
+        let mut user_messages_open = true;
 
         loop {
             if cancel.is_cancelled() {
                 return EngineRunResult::Cancelled;
+            }
+            if user_messages_open {
+                if let Err(error) = self.drain_user_messages(user_messages, &mut user_messages_open)
+                {
+                    return EngineRunResult::Failed(error);
+                }
             }
             if let Some(error) = self.terminal_error.clone() {
                 return EngineRunResult::Failed(error);
@@ -576,51 +621,116 @@ impl InteractiveEngine {
                         }
                     }
                 }
-                self.recover_stale_in_flight_nodes();
-                let inputs = self.gather_await_inputs();
-                let approvals = self.gather_await_approvals();
-                let retryables = self.gather_retryable_nodes();
-                if !inputs.is_empty() || !approvals.is_empty() || !retryables.is_empty() {
-                    return EngineRunResult::NeedsInteraction {
-                        inputs,
-                        approvals,
-                        retryables,
-                    };
+                if user_messages_open {
+                    if let Err(error) =
+                        self.drain_user_messages(user_messages, &mut user_messages_open)
+                    {
+                        return EngineRunResult::Failed(error);
+                    }
                 }
-                if let Some(report) = self.try_advance_layer() {
-                    return EngineRunResult::Completed(report);
-                }
-                return EngineRunResult::Failed(RunError::NodeFailed {
-                    node_id: self
-                        .current_layer_nodes()
-                        .first()
-                        .cloned()
-                        .unwrap_or_else(|| NodeId("engine".to_string())),
-                    kind: NodeFailureKind::NoRunnableNodesInLayer,
-                });
+                return self.idle_result();
             }
 
-            let work = tokio::select! {
-                biased;
-                () = cancel.cancelled() => return EngineRunResult::Cancelled,
-                Some(work) = in_flight.next() => work,
-            };
-            match work {
-                WorkOutput::Ai { node_id, outcome } => {
-                    self.on_ai_complete(&node_id, outcome);
-                }
-                WorkOutput::Tools {
-                    approval_id,
-                    node_id,
-                    output,
-                } => {
-                    self.in_flight_tools.remove(&approval_id);
-                    if let Err(error) = self.apply_tool_batch_output(&node_id, output) {
-                        return EngineRunResult::Failed(RunError::NodeFailed {
-                            node_id,
-                            kind: NodeFailureKind::EngineInput(error.to_string()),
-                        });
+            if user_messages_open {
+                tokio::select! {
+                    biased;
+                    () = cancel.cancelled() => return EngineRunResult::Cancelled,
+                    message = user_messages.recv() => {
+                        match message {
+                            Some(message) => {
+                                if let Err(error) = self.apply_user_message(message) {
+                                    return EngineRunResult::Failed(RunError::NodeFailed {
+                                        node_id: error.node_id(),
+                                        kind: NodeFailureKind::EngineInput(error.to_string()),
+                                    });
+                                }
+                            }
+                            None => user_messages_open = false,
+                        }
                     }
+                    Some(work) = in_flight.next() => {
+                        if let Err(error) = self.apply_work_output(work) {
+                            return EngineRunResult::Failed(error);
+                        }
+                    }
+                }
+            } else {
+                let work = tokio::select! {
+                    biased;
+                    () = cancel.cancelled() => return EngineRunResult::Cancelled,
+                    Some(work) = in_flight.next() => work,
+                };
+                if let Err(error) = self.apply_work_output(work) {
+                    return EngineRunResult::Failed(error);
+                }
+            }
+        }
+    }
+
+    fn apply_work_output(&mut self, work: WorkOutput) -> Result<(), RunError> {
+        match work {
+            WorkOutput::Ai { node_id, outcome } => {
+                self.on_ai_complete(&node_id, outcome);
+            }
+            WorkOutput::Tools {
+                approval_id,
+                node_id,
+                output,
+            } => {
+                self.in_flight_tools.remove(&approval_id);
+                self.apply_tool_batch_output(&node_id, output)
+                    .map_err(|error| RunError::NodeFailed {
+                        node_id,
+                        kind: NodeFailureKind::EngineInput(error.to_string()),
+                    })?;
+            }
+        }
+        Ok(())
+    }
+
+    fn idle_result(&mut self) -> EngineRunResult {
+        self.recover_stale_in_flight_nodes();
+        let inputs = self.gather_await_inputs();
+        let approvals = self.gather_await_approvals();
+        let retryables = self.gather_retryable_nodes();
+        if !inputs.is_empty() || !approvals.is_empty() || !retryables.is_empty() {
+            return EngineRunResult::NeedsInteraction {
+                inputs,
+                approvals,
+                retryables,
+            };
+        }
+        if let Some(report) = self.try_advance_layer() {
+            return EngineRunResult::Completed(report);
+        }
+        EngineRunResult::Failed(RunError::NodeFailed {
+            node_id: self
+                .current_layer_nodes()
+                .first()
+                .cloned()
+                .unwrap_or_else(|| NodeId("engine".to_string())),
+            kind: NodeFailureKind::NoRunnableNodesInLayer,
+        })
+    }
+
+    fn drain_user_messages(
+        &mut self,
+        user_messages: &mut tokio::sync::mpsc::UnboundedReceiver<EngineUserMessage>,
+        user_messages_open: &mut bool,
+    ) -> Result<(), RunError> {
+        loop {
+            match user_messages.try_recv() {
+                Ok(message) => {
+                    self.apply_user_message(message)
+                        .map_err(|error| RunError::NodeFailed {
+                            node_id: error.node_id(),
+                            kind: NodeFailureKind::EngineInput(error.to_string()),
+                        })?;
+                }
+                Err(tokio::sync::mpsc::error::TryRecvError::Empty) => return Ok(()),
+                Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
+                    *user_messages_open = false;
+                    return Ok(());
                 }
             }
         }
@@ -886,6 +996,49 @@ impl InteractiveEngine {
     /// Returns an error if no node is awaiting input or the wrong node id is provided.
     pub fn on_human_input(&mut self, node_id: &NodeId, text: &str) -> Result<(), EngineInputError> {
         self.on_human_message(node_id, text, Vec::new())
+    }
+
+    fn apply_user_message(&mut self, message: EngineUserMessage) -> Result<(), EngineInputError> {
+        let EngineUserMessage {
+            node_id,
+            text,
+            attachments,
+            system_prompt,
+        } = message;
+
+        if self.awaiting_nodes.contains(&node_id) {
+            self.on_human_message(&node_id, &text, attachments)?;
+        } else if self.failed_nodes.contains_key(&node_id)
+            || self.interrupted_nodes.contains(&node_id)
+        {
+            self.retry_node_with_message(&node_id, &text, attachments)?;
+        } else {
+            let Some(node) = self.find_node(&node_id) else {
+                return Err(EngineInputError::NodeNotActive(node_id));
+            };
+            if !node.agent.request_user_input && !node.agent.conversation_mode {
+                return Err(EngineInputError::LiveMessagesDisabled(node_id));
+            }
+            let node_is_live = self.current_layer_nodes().contains(&node_id)
+                && !self.outputs.contains_key(&node_id)
+                && !self.awaiting_nodes.contains(&node_id)
+                && !self.failed_nodes.contains_key(&node_id)
+                && !self.interrupted_nodes.contains(&node_id);
+            if !node_is_live {
+                return Err(EngineInputError::NodeNotActive(node_id));
+            }
+            self.transcripts.entry(node_id.clone()).or_default().push(
+                AgentTranscriptItem::UserMessage {
+                    content: text,
+                    attachments,
+                },
+            );
+        }
+
+        if let Some(prompt) = system_prompt {
+            self.append_system_prompt(&node_id, &prompt);
+        }
+        Ok(())
     }
 
     /// Append host-resolved instructions to the node before its next model turn.

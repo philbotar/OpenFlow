@@ -88,15 +88,7 @@ fn seeded_session(artifact_root: PathBuf) -> RunSession {
         attachment_root: None,
         generation: 0,
         engine_checkpoint: None,
-        checkpoint_sink: None,
-        snapshot_store: None,
-        lsp_settings: None,
-        pending_engine_reverts: None,
-        action_tx: None,
-        handle: None,
-        cancel_token: None,
-        node_interrupts: None,
-        runtime_config_store: None,
+        active: None,
     }
 }
 
@@ -200,8 +192,7 @@ fn finish_run_session_preserves_durable_artifact_root() {
 
     assert_eq!(session.artifact_root.as_ref(), Some(&artifact_root));
     assert!(artifact_root.exists());
-    assert!(session.handle.is_none());
-    assert!(session.action_tx.is_none());
+    assert!(session.active.is_none());
 }
 
 #[test]
@@ -1259,6 +1250,41 @@ async fn submit_user_input_retries_failed_node_with_new_message() {
             panic!("unexpected action")
         }
     }
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+async fn submit_user_input_accepts_active_conversation_node() {
+    let dir = tempdir().expect("tempdir");
+    let coordinator = coordinator(dir.path());
+    let mut workflow = default_workflow("Live input");
+    let node = workflow.nodes.first_mut().expect("workflow node");
+    node.id = NodeId::from("idea");
+    node.agent.request_user_input = true;
+    node.agent.conversation_mode = true;
+    let (action_tx, mut action_rx) = tokio::sync::mpsc::unbounded_channel();
+    let mut run_state = WorkflowRunState::running_for_workflow(&workflow);
+    run_state
+        .status_by_node
+        .insert(NodeId::from("idea"), AgentStatus::RunningTool);
+    coordinator
+        .test_seed_session(workflow, run_state, action_tx)
+        .await;
+
+    let run_state = coordinator
+        .submit_user_input("idea", "while the tool runs".to_string())
+        .await
+        .expect("submit live input");
+
+    assert_eq!(
+        run_state.chat_logs[&NodeId::from("idea")][0].content,
+        "while the tool runs"
+    );
+    assert!(matches!(
+        action_rx.recv().await.expect("action"),
+        ExecutionAction::ProvideInput { node_id, text, .. }
+            if node_id.0 == "idea" && text == "while the tool runs"
+    ));
 }
 
 #[cfg_attr(miri, ignore)]

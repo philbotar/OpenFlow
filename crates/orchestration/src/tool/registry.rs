@@ -49,6 +49,7 @@ impl ToolRegistry {
     pub fn new() -> Self {
         let mut tools = BTreeMap::new();
         register(&mut tools, read_tool());
+        register(&mut tools, ls_tool());
         register(&mut tools, search_tool());
         register(&mut tools, find_tool());
         register(&mut tools, ast_grep_tool());
@@ -254,6 +255,13 @@ fn read_tool() -> RegisteredTool {
         },
         kind: BuiltinToolKind::Read,
     }
+}
+
+fn ls_tool() -> RegisteredTool {
+    let mut tool = read_tool();
+    tool.definition.name = "ls".to_string();
+    tool.definition.description = "List a local directory using the execution folder as the root. Use `path` for the directory to inspect; `.` lists the execution folder.".to_string();
+    tool
 }
 
 fn search_tool() -> RegisteredTool {
@@ -475,7 +483,7 @@ fn bash_tool() -> RegisteredTool {
     RegisteredTool {
         definition: ToolDefinition {
             name: "bash".to_string(),
-            description: "Execute a bash command in the execution folder. Use cwd for the working directory (not cd dir && …). Prefer dedicated read/search/find/edit/write tools when they suffice. Output over 50KB is truncated to an artifact (read it via artifact:{id}). Returns merged stdout/stderr, wall time, and exit code.".to_string(),
+            description: "Execute a bash command in the execution folder. Use cwd for the working directory (not cd dir && …). Prefer dedicated read/search/find/ls/edit/write tools when they suffice. Plain ls and read-only find commands do not require approval in Write mode; shell operators and mutating find predicates still do. Output over 50KB is truncated to an artifact (read it via artifact:{id}). Returns merged stdout/stderr, wall time, and exit code.".to_string(),
             input_schema: with_intent_field(serde_json::json!({
                 "type": "object",
                 "additionalProperties": false,
@@ -714,7 +722,7 @@ mod tests {
         let registry = ToolRegistry::new();
         let config = NodeToolConfig::default();
         let definitions = registry.definitions_for(&config);
-        assert_eq!(definitions.len(), 12);
+        assert_eq!(definitions.len(), 13);
         assert!(definitions.iter().any(|tool| tool.name == "ast_edit"));
         assert!(definitions
             .iter()
@@ -738,7 +746,8 @@ mod tests {
             ..NodeToolConfig::default()
         };
         let definitions = registry.definitions_for(&config);
-        assert_eq!(definitions.len(), 5);
+        assert_eq!(definitions.len(), 6);
+        assert!(definitions.iter().any(|tool| tool.name == "ls"));
         assert!(definitions
             .iter()
             .any(|tool| tool.name == "openflow_update_todo_list"));
@@ -882,6 +891,7 @@ mod tests {
         let registry = ToolRegistry::new();
         let builtins = [
             "read",
+            "ls",
             "search",
             "find",
             "ast_grep",
@@ -920,6 +930,7 @@ mod tests {
         let registry = ToolRegistry::new();
         let builtins = [
             "read",
+            "ls",
             "search",
             "find",
             "ast_grep",

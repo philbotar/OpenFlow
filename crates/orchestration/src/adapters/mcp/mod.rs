@@ -76,6 +76,55 @@ const MCP_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 const MCP_MAX_CONCURRENT_SERVERS: usize = 4;
 const MCP_MAX_CAPABILITY_ITEMS: usize = 1_000;
 
+/// Atlassian retired the old Rovo MCP paths in favor of the authv2 endpoint.
+/// Keep imported configs usable, including legacy SSE imports, without making
+/// users hand-edit a URL before OAuth can start.
+pub(crate) fn normalize_atlassian_url(url: &str) -> Option<String> {
+    let mut parsed = reqwest::Url::parse(url).ok()?;
+    if parsed.scheme() != "https" || parsed.host_str() != Some("mcp.atlassian.com") {
+        return None;
+    }
+    if !matches!(
+        parsed.path(),
+        "/v1/mcp" | "/v1/mcp/" | "/v1/sse" | "/v1/sse/"
+    ) {
+        return None;
+    }
+    parsed.set_path("/v1/mcp/authv2");
+    Some(parsed.to_string())
+}
+
+pub(crate) fn normalize_atlassian_connection(connection: &mut McpConnection) {
+    let replacement = match connection {
+        McpConnection::StreamableHttp {
+            url,
+            allow_localhost,
+            headers,
+            auth,
+        } => normalize_atlassian_url(url).map(|url| McpConnection::StreamableHttp {
+            url,
+            allow_localhost: *allow_localhost,
+            headers: headers.clone(),
+            auth: auth.clone(),
+        }),
+        McpConnection::LegacySse {
+            url,
+            allow_localhost,
+            headers,
+            auth,
+        } => normalize_atlassian_url(url).map(|url| McpConnection::StreamableHttp {
+            url,
+            allow_localhost: *allow_localhost,
+            headers: headers.clone(),
+            auth: auth.clone(),
+        }),
+        McpConnection::Stdio { .. } => None,
+    };
+    if let Some(replacement) = replacement {
+        *connection = replacement;
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 struct McpRuntimePolicy {
     startup_timeout: Duration,
@@ -512,8 +561,12 @@ impl McpClient {
         policy: McpRuntimePolicy,
         handler: client_handler::OpenFlowMcpClientHandler,
     ) -> Result<Self, McpError> {
+        let mut normalized_config = config.clone();
+        normalize_atlassian_connection(&mut normalized_config.connection);
+        let config = &normalized_config;
         let transport_kind = config.connection.transport_kind();
         let service_handler = handler.clone();
+        let path = crate::mcp::environment::effective_path().await;
         let startup = async {
             match &config.connection {
                 McpConnection::Stdio {
@@ -523,6 +576,9 @@ impl McpClient {
                 } => {
                     let mut command = Command::new(executable);
                     command.args(args);
+                    if let Some(path) = path.as_deref() {
+                        command.env("PATH", path);
+                    }
                     for (key, value) in environment {
                         match value {
                             PersistedValue::Literal { value } => {
@@ -1100,34 +1156,46 @@ impl McpClient {
 pub type McpStdioClient = McpClient;
 
 fn streamable_error_requires_oauth(error: &rmcp::service::ClientInitializeError) -> bool {
+    let Some(error) = streamable_http_initialization_error(error) else {
+        return false;
+    };
     matches!(
-        streamable_http_initialization_error(error),
-        Some(
-            rmcp::transport::streamable_http_client::StreamableHttpError::AuthRequired(_)
-                | rmcp::transport::streamable_http_client::StreamableHttpError::InsufficientScope(
-                    _
-                )
-        )
-    )
+        error,
+        rmcp::transport::streamable_http_client::StreamableHttpError::AuthRequired(_)
+            | rmcp::transport::streamable_http_client::StreamableHttpError::InsufficientScope(_)
+    ) || http_status_requires_oauth(streamable_http_error_status(error))
 }
 
 fn streamable_error_allows_legacy_fallback(error: &rmcp::service::ClientInitializeError) -> bool {
     let Some(error) = streamable_http_initialization_error(error) else {
         return false;
     };
+    streamable_http_error_status(error).is_some_and(|status| matches!(status, 400 | 404 | 405))
+}
+
+fn streamable_http_error_status(
+    error: &rmcp::transport::streamable_http_client::StreamableHttpError<reqwest::Error>,
+) -> Option<u16> {
     match error {
-        rmcp::transport::streamable_http_client::StreamableHttpError::Client(error) => error
-            .status()
-            .is_some_and(|status| matches!(status.as_u16(), 400 | 404 | 405)),
+        rmcp::transport::streamable_http_client::StreamableHttpError::Client(error) => {
+            error.status().map(|status| status.as_u16())
+        }
         rmcp::transport::streamable_http_client::StreamableHttpError::UnexpectedServerResponse(
             message,
-        ) => message
-            .strip_prefix("HTTP ")
-            .and_then(|message| message.split_whitespace().next())
-            .and_then(|status| status.parse::<u16>().ok())
-            .is_some_and(|status| matches!(status, 400 | 404 | 405)),
-        _ => false,
+        ) => unexpected_server_response_status(message),
+        _ => None,
     }
+}
+
+fn unexpected_server_response_status(message: &str) -> Option<u16> {
+    message
+        .strip_prefix("HTTP ")
+        .and_then(|message| message.split_whitespace().next())
+        .and_then(|status| status.parse::<u16>().ok())
+}
+
+fn http_status_requires_oauth(status: Option<u16>) -> bool {
+    status.is_some_and(|status| matches!(status, 401 | 403))
 }
 
 fn streamable_http_initialization_error(
@@ -1215,7 +1283,7 @@ impl McpRunClients {
     ) -> (Self, Vec<McpSetupIssue>) {
         let concurrency = policy.max_concurrent_servers.max(1);
         let mut setup_issues = Vec::new();
-        let path = std::env::var_os("PATH");
+        let path = crate::mcp::environment::effective_path().await;
         let mut configs = settings
             .servers
             .iter()
@@ -2365,6 +2433,39 @@ mod tests {
             ),
             "provider-rejected MCP tool name: {name}"
         );
+    }
+
+    #[test]
+    fn atlassian_legacy_mcp_urls_normalize_to_streamable_authv2_endpoint() {
+        assert_eq!(
+            normalize_atlassian_url("https://mcp.atlassian.com/v1/sse").as_deref(),
+            Some("https://mcp.atlassian.com/v1/mcp/authv2")
+        );
+        assert_eq!(
+            normalize_atlassian_url("https://mcp.atlassian.com/v1/mcp/").as_deref(),
+            Some("https://mcp.atlassian.com/v1/mcp/authv2")
+        );
+        assert_eq!(
+            normalize_atlassian_url("https://other.example.test/v1/sse"),
+            None
+        );
+    }
+
+    #[test]
+    fn generic_http_auth_statuses_require_oauth() {
+        assert!(http_status_requires_oauth(Some(401)));
+        assert!(http_status_requires_oauth(Some(403)));
+        assert!(!http_status_requires_oauth(Some(404)));
+        assert!(!http_status_requires_oauth(None));
+    }
+
+    #[test]
+    fn unexpected_server_response_status_extracts_http_status() {
+        assert_eq!(
+            unexpected_server_response_status("HTTP 401 Unauthorized"),
+            Some(401)
+        );
+        assert_eq!(unexpected_server_response_status("transport closed"), None);
     }
 
     #[test]

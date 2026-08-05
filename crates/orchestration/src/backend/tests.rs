@@ -450,6 +450,36 @@ fn chat_runtime_config_persists_with_project_scope() {
 
 #[cfg_attr(miri, ignore)]
 #[test]
+fn removing_project_detaches_scoped_chats() {
+    let (backend, dir) = backend();
+    let project = backend
+        .create_project_from_directory(project_dir(&dir))
+        .expect("create project");
+    let chat = backend.create_chat().expect("create chat");
+    backend
+        .update_chat_config(
+            &chat.id,
+            ChatConfig {
+                project_id: Some(project.id.clone()),
+                ..ChatConfig::default()
+            },
+        )
+        .expect("scope chat to project");
+
+    backend.save_projects(&[]).expect("remove project");
+
+    let detached = backend
+        .list_chats()
+        .expect("list chats")
+        .into_iter()
+        .find(|item| item.id == chat.id)
+        .expect("chat remains");
+    assert!(detached.config.project_id.is_none());
+    assert!(backend.list_projects().expect("list projects").is_empty());
+}
+
+#[cfg_attr(miri, ignore)]
+#[test]
 fn start_chat_attaches_a_durable_run_without_creating_a_workflow() {
     let (backend, dir) = backend();
     let project = backend

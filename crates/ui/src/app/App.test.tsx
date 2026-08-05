@@ -2,6 +2,7 @@
 import { render } from "solid-js/web";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { AgentDefinition, AppSettings, BootstrapPayload, Chat, Project, ProviderReadiness, ScheduleDraft, SkillSummary, Workflow, WorkflowRunState } from "../lib/types";
+import { CHAT_APPROVAL_MODE_STORAGE_KEY } from "../forms/approvalModeOptions";
 import { defaultWorkflowSchedule } from "../lib/schedule";
 import { createEmptyToolConfig } from "../lib/workflow/testHelpers";
 
@@ -1125,6 +1126,183 @@ describe("workflow authoring chat layout", () => {
     }
   });
 
+  test("shows the composer during startup and fully cancels a late authoring session", async () => {
+    let resolveStart!: (value: {
+      sessionId: string;
+      draft?: Workflow;
+    }) => void;
+    apiMocks.startWorkflowAuthoring.mockReturnValue(
+      new Promise((resolve) => {
+        resolveStart = resolve;
+      }),
+    );
+    const { container, dispose } = await mountApp(
+      makeBootstrapPayload([makeWorkflow("workflow-1", "Workflow One")]),
+    );
+
+    try {
+      await openWorkflowAuthoring(container);
+
+      const composer = container.querySelector<HTMLTextAreaElement>(
+        ".workflow-authoring-screen .chat-composer-pill textarea",
+      );
+      expect(composer).not.toBeNull();
+      expect(composer?.placeholder).toBe("Starting authoring session...");
+
+      const cancel = container.querySelector<HTMLButtonElement>(
+        "button[aria-label='Cancel AI workflow authoring']",
+      );
+      expect(cancel).not.toBeNull();
+      cancel!.click();
+      await flush();
+
+      expect(container.querySelector(".workflow-authoring-screen")).toBeNull();
+      expect(topbarTitle(container)).toBe("Workflow One");
+
+      resolveStart({ sessionId: "late-authoring-session" });
+      await flush();
+      await flush();
+
+      expect(apiMocks.endWorkflowAuthoring).toHaveBeenCalledWith(
+        "late-authoring-session",
+      );
+      expect(
+        container.querySelector(
+          'button[aria-label="Resume AI workflow draft"]',
+        ),
+      ).toBeNull();
+    } finally {
+      dispose();
+    }
+  });
+
+  test("uses shared project and model controls without exposing tool approval", async () => {
+    const project = makeProject("project-1", "OpenFlow");
+    const authoringSettings: AppSettings = {
+      ...SETTINGS,
+      providers: {
+        ...SETTINGS.providers,
+        openai: {
+          ...SETTINGS.providers.openai,
+          known_models: ["gpt-4.1-mini", "gpt-5"],
+          reasoning_effort_options: [
+            { value: "high", label: "High", uses_budget_tokens: false },
+          ],
+          fast_mode_available: true,
+        },
+      },
+    };
+    const payload = makeBootstrapPayload(
+      [makeWorkflow("workflow-1", "Workflow One")],
+      undefined,
+      undefined,
+      [project],
+    );
+    payload.settings = authoringSettings;
+    const { container, dispose } = await mountApp(payload);
+
+    try {
+      await openWorkflowAuthoring(container);
+
+      expect(
+        container.querySelector('[aria-label="Authoring project"]')?.textContent,
+      ).toBe("Project: None");
+      expect(
+        container.querySelector('[aria-label="Authoring tool approval mode"]'),
+      ).toBeNull();
+
+      (
+        container.querySelector(
+          '[aria-label="Authoring project"]',
+        ) as HTMLButtonElement
+      ).click();
+      await flush();
+      const projectOption = Array.from(
+        container.querySelectorAll(".text-select-option"),
+      ).find((element) => element.textContent === "OpenFlow") as HTMLButtonElement;
+      projectOption.click();
+      await flush();
+
+      expect(apiMocks.endWorkflowAuthoring).toHaveBeenCalledWith(
+        "authoring-session-1",
+      );
+      expect(apiMocks.startWorkflowAuthoring).toHaveBeenLastCalledWith(
+        null,
+        "project-1",
+      );
+      expect(
+        container.querySelector('[aria-label="Authoring project"]')?.textContent,
+      ).toBe("Project: OpenFlow");
+
+      const runtimeSettings = container.querySelector(
+        '[aria-label^="Authoring runtime settings:"]',
+      ) as HTMLButtonElement;
+      runtimeSettings.click();
+      await flush();
+      (
+        container.querySelector(
+          '[aria-label="Authoring model"]',
+        ) as HTMLButtonElement
+      ).click();
+      await flush();
+      const modelOption = Array.from(
+        document.querySelectorAll(".text-select-option"),
+      ).find((element) => element.textContent === "gpt-5") as HTMLButtonElement;
+      modelOption.click();
+      await flush();
+
+      (
+        container.querySelector(
+          '[aria-label="Authoring reasoning effort"]',
+        ) as HTMLButtonElement
+      ).click();
+      await flush();
+      const effortOption = Array.from(
+        document.querySelectorAll(".text-select-option"),
+      ).find((element) => element.textContent === "High") as HTMLButtonElement;
+      effortOption.click();
+      await flush();
+
+      (
+        container.querySelector(
+          '[aria-label="Authoring speed"]',
+        ) as HTMLButtonElement
+      ).click();
+      await flush();
+      const fastOption = Array.from(
+        document.querySelectorAll(".text-select-option"),
+      ).find((element) => element.textContent === "Fast") as HTMLButtonElement;
+      fastOption.click();
+      await flush();
+
+      const textarea = container.querySelector(
+        ".workflow-authoring-screen .chat-composer-pill textarea",
+      ) as HTMLTextAreaElement;
+      textarea.value = "Build a research workflow";
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      await flush();
+      container
+        .querySelector(".workflow-authoring-screen .composer-send-button")
+        ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await flush();
+
+      expect(apiMocks.workflowAuthoringTurn).toHaveBeenCalledWith(
+        "authoring-session-1",
+        "Build a research workflow",
+        authoringSettings,
+        "stored-openai-key",
+        {
+          model: "gpt-5",
+          reasoningEffort: "high",
+          reasoningBudgetTokens: null,
+          fastMode: true,
+        },
+      );
+    } finally {
+      dispose();
+    }
+  });
+
   test("starts an authoring turn from a post-run suggestion", async () => {
     const workflow = makeWorkflow("workflow-1", "Workflow One");
     const node = workflow.nodes[0];
@@ -1195,6 +1373,12 @@ describe("workflow authoring chat layout", () => {
           expect.stringContaining("The agent skipped tests."),
           SETTINGS,
           "stored-openai-key",
+          {
+            model: null,
+            reasoningEffort: null,
+            reasoningBudgetTokens: null,
+            fastMode: false,
+          },
         ),
       );
       const confirmButton = await waitForElement(
@@ -1421,24 +1605,26 @@ describe("App workflow rename", () => {
     }
   });
 
-  test("removes a project from its options menu without deleting project files", async () => {
+  test("removes a project with attached chats without deleting project files", async () => {
     const removedWorkflow = makeWorkflow("workflow-removed", "Removed Project Flow");
     const remainingWorkflow = makeWorkflow("workflow-remaining", "Remaining Project Flow");
     const independentWorkflow = makeWorkflow("workflow-independent", "Independent Flow");
     const removedProject = makeProject("project-remove", "Remove Me", ["workflow-removed"]);
     const remainingProject = makeProject("project-keep", "Keep Me", ["workflow-remaining"]);
+    const attachedChat = makeChat("chat-project", "Project chat");
+    attachedChat.config.projectId = removedProject.id;
     vi.mocked(confirm).mockResolvedValueOnce(true);
     apiMocks.saveProjects.mockResolvedValue(undefined);
     apiMocks.loadAllWorkflows.mockResolvedValue([remainingWorkflow, independentWorkflow]);
 
-    const { container, dispose } = await mountApp(
-      makeBootstrapPayload(
-        [removedWorkflow, remainingWorkflow, independentWorkflow],
-        undefined,
-        undefined,
-        [removedProject, remainingProject],
-      ),
+    const payload = makeBootstrapPayload(
+      [removedWorkflow, remainingWorkflow, independentWorkflow],
+      undefined,
+      undefined,
+      [removedProject, remainingProject],
     );
+    payload.chats = [attachedChat];
+    const { container, dispose } = await mountApp(payload);
 
     try {
       (
@@ -4507,6 +4693,52 @@ describe("Ad-hoc chats", () => {
         "chat-1",
         expect.objectContaining({ reasoningEffort: "high" }),
       );
+    } finally {
+      dispose();
+    }
+  });
+
+  test("remembers the approval mode for newly created chats", async () => {
+    const existingChat = makeChat("chat-1");
+    const createdChat = makeChat("chat-2");
+    apiMocks.createChat.mockResolvedValue(createdChat);
+    apiMocks.updateChatConfig.mockImplementation(async (chatId, config) => ({
+      ...(chatId === existingChat.id ? existingChat : createdChat),
+      config,
+    }));
+    const payload = {
+      ...makeBootstrapPayload([makeWorkflow("workflow-1", "Workflow One")]),
+      chats: [existingChat],
+    };
+    const { container, dispose } = await mountApp(payload);
+
+    try {
+      const chatRow = Array.from(container.querySelectorAll(".workflow-row-main")).find(
+        (element) => element.querySelector(".workflow-row-title")?.textContent === "New chat",
+      ) as HTMLButtonElement;
+      chatRow.click();
+      await flush();
+
+      (container.querySelector('[aria-label="Chat tool approval mode"]') as HTMLButtonElement).click();
+      await flush();
+      const approvalOption = Array.from(
+        container.querySelectorAll(".text-select-option"),
+      ).find((element) => element.textContent === "Always ask") as HTMLButtonElement;
+      approvalOption.click();
+      await flush();
+
+      expect(window.localStorage.getItem(CHAT_APPROVAL_MODE_STORAGE_KEY)).toBe("always_ask");
+
+      (container.querySelector('button[aria-label="New chat"]') as HTMLButtonElement).click();
+      await flush();
+
+      expect(apiMocks.updateChatConfig).toHaveBeenLastCalledWith(
+        "chat-2",
+        expect.objectContaining({ approvalMode: "always_ask" }),
+      );
+      expect(
+        container.querySelector('[aria-label="Chat tool approval mode"]')?.textContent,
+      ).toBe("Approval: Always ask");
     } finally {
       dispose();
     }

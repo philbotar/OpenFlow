@@ -895,8 +895,10 @@ pub fn engine::execution::completion_protocol::malformed_submit_invalid_json(imp
 pub fn engine::execution::completion_protocol::normalize_submit_output_arguments(serde_json::value::Value, core::option::Option<&serde_json::value::Value>) -> serde_json::value::Value
 pub mod engine::execution::interactive_engine
 pub enum engine::execution::interactive_engine::EngineInputError
+pub engine::execution::interactive_engine::EngineInputError::LiveMessagesDisabled(engine::graph::workflow::NodeId)
 pub engine::execution::interactive_engine::EngineInputError::NoNodeAwaiting
 pub engine::execution::interactive_engine::EngineInputError::NoPendingTools
+pub engine::execution::interactive_engine::EngineInputError::NodeNotActive(engine::graph::workflow::NodeId)
 pub engine::execution::interactive_engine::EngineInputError::NodeNotRetryable(engine::graph::workflow::NodeId)
 pub engine::execution::interactive_engine::EngineInputError::UnknownApproval(alloc::string::String)
 pub engine::execution::interactive_engine::EngineInputError::WrongNode
@@ -1118,6 +1120,52 @@ impl<T> core::convert::From<T> for engine::execution::interactive_engine::Engine
 pub fn engine::execution::interactive_engine::EngineRetryableNode::from(T) -> T
 impl<T> typenum::type_operators::Same for engine::execution::interactive_engine::EngineRetryableNode
 pub type engine::execution::interactive_engine::EngineRetryableNode::Output = T
+pub struct engine::execution::interactive_engine::EngineUserMessage
+pub engine::execution::interactive_engine::EngineUserMessage::attachments: alloc::vec::Vec<engine::conversation::ChatAttachmentRef>
+pub engine::execution::interactive_engine::EngineUserMessage::node_id: engine::graph::workflow::NodeId
+pub engine::execution::interactive_engine::EngineUserMessage::system_prompt: core::option::Option<alloc::string::String>
+pub engine::execution::interactive_engine::EngineUserMessage::text: alloc::string::String
+impl core::clone::Clone for engine::execution::interactive_engine::EngineUserMessage
+pub fn engine::execution::interactive_engine::EngineUserMessage::clone(&self) -> engine::execution::interactive_engine::EngineUserMessage
+impl core::cmp::Eq for engine::execution::interactive_engine::EngineUserMessage
+impl core::cmp::PartialEq for engine::execution::interactive_engine::EngineUserMessage
+pub fn engine::execution::interactive_engine::EngineUserMessage::eq(&self, &engine::execution::interactive_engine::EngineUserMessage) -> bool
+impl core::fmt::Debug for engine::execution::interactive_engine::EngineUserMessage
+pub fn engine::execution::interactive_engine::EngineUserMessage::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::execution::interactive_engine::EngineUserMessage
+impl core::marker::Freeze for engine::execution::interactive_engine::EngineUserMessage
+impl core::marker::Send for engine::execution::interactive_engine::EngineUserMessage
+impl core::marker::Sync for engine::execution::interactive_engine::EngineUserMessage
+impl core::marker::Unpin for engine::execution::interactive_engine::EngineUserMessage
+impl core::marker::UnsafeUnpin for engine::execution::interactive_engine::EngineUserMessage
+impl core::panic::unwind_safe::RefUnwindSafe for engine::execution::interactive_engine::EngineUserMessage
+impl core::panic::unwind_safe::UnwindSafe for engine::execution::interactive_engine::EngineUserMessage
+impl<Q, K> equivalent::Equivalent<K> for engine::execution::interactive_engine::EngineUserMessage where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn engine::execution::interactive_engine::EngineUserMessage::equivalent(&self, &K) -> bool
+impl<T, U> core::convert::Into<U> for engine::execution::interactive_engine::EngineUserMessage where U: core::convert::From<T>
+pub fn engine::execution::interactive_engine::EngineUserMessage::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::execution::interactive_engine::EngineUserMessage where U: core::convert::Into<T>
+pub type engine::execution::interactive_engine::EngineUserMessage::Error = core::convert::Infallible
+pub fn engine::execution::interactive_engine::EngineUserMessage::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::execution::interactive_engine::EngineUserMessage where U: core::convert::TryFrom<T>
+pub type engine::execution::interactive_engine::EngineUserMessage::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::execution::interactive_engine::EngineUserMessage::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::execution::interactive_engine::EngineUserMessage where T: core::clone::Clone
+pub type engine::execution::interactive_engine::EngineUserMessage::Owned = T
+pub fn engine::execution::interactive_engine::EngineUserMessage::clone_into(&self, &mut T)
+pub fn engine::execution::interactive_engine::EngineUserMessage::to_owned(&self) -> T
+impl<T> core::any::Any for engine::execution::interactive_engine::EngineUserMessage where T: 'static + ?core::marker::Sized
+pub fn engine::execution::interactive_engine::EngineUserMessage::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::execution::interactive_engine::EngineUserMessage where T: ?core::marker::Sized
+pub fn engine::execution::interactive_engine::EngineUserMessage::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::execution::interactive_engine::EngineUserMessage where T: ?core::marker::Sized
+pub fn engine::execution::interactive_engine::EngineUserMessage::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::execution::interactive_engine::EngineUserMessage where T: core::clone::Clone
+pub unsafe fn engine::execution::interactive_engine::EngineUserMessage::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::execution::interactive_engine::EngineUserMessage
+pub fn engine::execution::interactive_engine::EngineUserMessage::from(T) -> T
+impl<T> typenum::type_operators::Same for engine::execution::interactive_engine::EngineUserMessage
+pub type engine::execution::interactive_engine::EngineUserMessage::Output = T
 pub struct engine::execution::interactive_engine::FrozenChangeEvidencePacket
 pub engine::execution::interactive_engine::FrozenChangeEvidencePacket::content: serde_json::value::Value
 pub engine::execution::interactive_engine::FrozenChangeEvidencePacket::schema_version: u8
@@ -1190,6 +1238,7 @@ pub fn engine::execution::interactive_engine::InteractiveEngine::retry_node(&mut
 pub fn engine::execution::interactive_engine::InteractiveEngine::retry_node_with_message(&mut self, &engine::graph::workflow::NodeId, &str, alloc::vec::Vec<engine::conversation::ChatAttachmentRef>) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::revert_file_changes_for_batch(&mut self, &str, &engine::graph::workflow::NodeId)
 pub async fn engine::execution::interactive_engine::InteractiveEngine::run<A: engine::ports::outbound::AiPort, T: engine::ports::outbound::ToolPort>(&mut self, &A, &T, &tokio_util::sync::cancellation_token::CancellationToken) -> engine::execution::interactive_engine::EngineRunResult
+pub async fn engine::execution::interactive_engine::InteractiveEngine::run_with_user_messages<A: engine::ports::outbound::AiPort, T: engine::ports::outbound::ToolPort>(&mut self, &A, &T, &tokio_util::sync::cancellation_token::CancellationToken, &mut tokio::sync::mpsc::unbounded::UnboundedReceiver<engine::execution::interactive_engine::EngineUserMessage>) -> engine::execution::interactive_engine::EngineRunResult
 pub fn engine::execution::interactive_engine::InteractiveEngine::set_runtime_config_store(&mut self, engine::graph::runtime_config::NodeRuntimeConfigStore)
 pub fn engine::execution::interactive_engine::InteractiveEngine::transcript(&self, &engine::graph::workflow::NodeId) -> &[engine::conversation::AgentTranscriptItem]
 impl engine::execution::interactive_engine::InteractiveEngine
@@ -2595,6 +2644,52 @@ impl<T> core::convert::From<T> for engine::execution::interactive_engine::Engine
 pub fn engine::execution::interactive_engine::EngineRetryableNode::from(T) -> T
 impl<T> typenum::type_operators::Same for engine::execution::interactive_engine::EngineRetryableNode
 pub type engine::execution::interactive_engine::EngineRetryableNode::Output = T
+pub struct engine::execution::EngineUserMessage
+pub engine::execution::EngineUserMessage::attachments: alloc::vec::Vec<engine::conversation::ChatAttachmentRef>
+pub engine::execution::EngineUserMessage::node_id: engine::graph::workflow::NodeId
+pub engine::execution::EngineUserMessage::system_prompt: core::option::Option<alloc::string::String>
+pub engine::execution::EngineUserMessage::text: alloc::string::String
+impl core::clone::Clone for engine::execution::interactive_engine::EngineUserMessage
+pub fn engine::execution::interactive_engine::EngineUserMessage::clone(&self) -> engine::execution::interactive_engine::EngineUserMessage
+impl core::cmp::Eq for engine::execution::interactive_engine::EngineUserMessage
+impl core::cmp::PartialEq for engine::execution::interactive_engine::EngineUserMessage
+pub fn engine::execution::interactive_engine::EngineUserMessage::eq(&self, &engine::execution::interactive_engine::EngineUserMessage) -> bool
+impl core::fmt::Debug for engine::execution::interactive_engine::EngineUserMessage
+pub fn engine::execution::interactive_engine::EngineUserMessage::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::execution::interactive_engine::EngineUserMessage
+impl core::marker::Freeze for engine::execution::interactive_engine::EngineUserMessage
+impl core::marker::Send for engine::execution::interactive_engine::EngineUserMessage
+impl core::marker::Sync for engine::execution::interactive_engine::EngineUserMessage
+impl core::marker::Unpin for engine::execution::interactive_engine::EngineUserMessage
+impl core::marker::UnsafeUnpin for engine::execution::interactive_engine::EngineUserMessage
+impl core::panic::unwind_safe::RefUnwindSafe for engine::execution::interactive_engine::EngineUserMessage
+impl core::panic::unwind_safe::UnwindSafe for engine::execution::interactive_engine::EngineUserMessage
+impl<Q, K> equivalent::Equivalent<K> for engine::execution::interactive_engine::EngineUserMessage where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn engine::execution::interactive_engine::EngineUserMessage::equivalent(&self, &K) -> bool
+impl<T, U> core::convert::Into<U> for engine::execution::interactive_engine::EngineUserMessage where U: core::convert::From<T>
+pub fn engine::execution::interactive_engine::EngineUserMessage::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::execution::interactive_engine::EngineUserMessage where U: core::convert::Into<T>
+pub type engine::execution::interactive_engine::EngineUserMessage::Error = core::convert::Infallible
+pub fn engine::execution::interactive_engine::EngineUserMessage::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::execution::interactive_engine::EngineUserMessage where U: core::convert::TryFrom<T>
+pub type engine::execution::interactive_engine::EngineUserMessage::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::execution::interactive_engine::EngineUserMessage::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::execution::interactive_engine::EngineUserMessage where T: core::clone::Clone
+pub type engine::execution::interactive_engine::EngineUserMessage::Owned = T
+pub fn engine::execution::interactive_engine::EngineUserMessage::clone_into(&self, &mut T)
+pub fn engine::execution::interactive_engine::EngineUserMessage::to_owned(&self) -> T
+impl<T> core::any::Any for engine::execution::interactive_engine::EngineUserMessage where T: 'static + ?core::marker::Sized
+pub fn engine::execution::interactive_engine::EngineUserMessage::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::execution::interactive_engine::EngineUserMessage where T: ?core::marker::Sized
+pub fn engine::execution::interactive_engine::EngineUserMessage::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::execution::interactive_engine::EngineUserMessage where T: ?core::marker::Sized
+pub fn engine::execution::interactive_engine::EngineUserMessage::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::execution::interactive_engine::EngineUserMessage where T: core::clone::Clone
+pub unsafe fn engine::execution::interactive_engine::EngineUserMessage::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::execution::interactive_engine::EngineUserMessage
+pub fn engine::execution::interactive_engine::EngineUserMessage::from(T) -> T
+impl<T> typenum::type_operators::Same for engine::execution::interactive_engine::EngineUserMessage
+pub type engine::execution::interactive_engine::EngineUserMessage::Output = T
 pub struct engine::execution::FrozenChangeEvidencePacket
 pub engine::execution::FrozenChangeEvidencePacket::content: serde_json::value::Value
 pub engine::execution::FrozenChangeEvidencePacket::schema_version: u8
@@ -2719,6 +2814,7 @@ pub fn engine::execution::interactive_engine::InteractiveEngine::retry_node(&mut
 pub fn engine::execution::interactive_engine::InteractiveEngine::retry_node_with_message(&mut self, &engine::graph::workflow::NodeId, &str, alloc::vec::Vec<engine::conversation::ChatAttachmentRef>) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::revert_file_changes_for_batch(&mut self, &str, &engine::graph::workflow::NodeId)
 pub async fn engine::execution::interactive_engine::InteractiveEngine::run<A: engine::ports::outbound::AiPort, T: engine::ports::outbound::ToolPort>(&mut self, &A, &T, &tokio_util::sync::cancellation_token::CancellationToken) -> engine::execution::interactive_engine::EngineRunResult
+pub async fn engine::execution::interactive_engine::InteractiveEngine::run_with_user_messages<A: engine::ports::outbound::AiPort, T: engine::ports::outbound::ToolPort>(&mut self, &A, &T, &tokio_util::sync::cancellation_token::CancellationToken, &mut tokio::sync::mpsc::unbounded::UnboundedReceiver<engine::execution::interactive_engine::EngineUserMessage>) -> engine::execution::interactive_engine::EngineRunResult
 pub fn engine::execution::interactive_engine::InteractiveEngine::set_runtime_config_store(&mut self, engine::graph::runtime_config::NodeRuntimeConfigStore)
 pub fn engine::execution::interactive_engine::InteractiveEngine::transcript(&self, &engine::graph::workflow::NodeId) -> &[engine::conversation::AgentTranscriptItem]
 impl engine::execution::interactive_engine::InteractiveEngine
@@ -11474,6 +11570,52 @@ impl<T> core::convert::From<T> for engine::execution::interactive_engine::Engine
 pub fn engine::execution::interactive_engine::EngineRetryableNode::from(T) -> T
 impl<T> typenum::type_operators::Same for engine::execution::interactive_engine::EngineRetryableNode
 pub type engine::execution::interactive_engine::EngineRetryableNode::Output = T
+pub struct engine::EngineUserMessage
+pub engine::EngineUserMessage::attachments: alloc::vec::Vec<engine::conversation::ChatAttachmentRef>
+pub engine::EngineUserMessage::node_id: engine::graph::workflow::NodeId
+pub engine::EngineUserMessage::system_prompt: core::option::Option<alloc::string::String>
+pub engine::EngineUserMessage::text: alloc::string::String
+impl core::clone::Clone for engine::execution::interactive_engine::EngineUserMessage
+pub fn engine::execution::interactive_engine::EngineUserMessage::clone(&self) -> engine::execution::interactive_engine::EngineUserMessage
+impl core::cmp::Eq for engine::execution::interactive_engine::EngineUserMessage
+impl core::cmp::PartialEq for engine::execution::interactive_engine::EngineUserMessage
+pub fn engine::execution::interactive_engine::EngineUserMessage::eq(&self, &engine::execution::interactive_engine::EngineUserMessage) -> bool
+impl core::fmt::Debug for engine::execution::interactive_engine::EngineUserMessage
+pub fn engine::execution::interactive_engine::EngineUserMessage::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for engine::execution::interactive_engine::EngineUserMessage
+impl core::marker::Freeze for engine::execution::interactive_engine::EngineUserMessage
+impl core::marker::Send for engine::execution::interactive_engine::EngineUserMessage
+impl core::marker::Sync for engine::execution::interactive_engine::EngineUserMessage
+impl core::marker::Unpin for engine::execution::interactive_engine::EngineUserMessage
+impl core::marker::UnsafeUnpin for engine::execution::interactive_engine::EngineUserMessage
+impl core::panic::unwind_safe::RefUnwindSafe for engine::execution::interactive_engine::EngineUserMessage
+impl core::panic::unwind_safe::UnwindSafe for engine::execution::interactive_engine::EngineUserMessage
+impl<Q, K> equivalent::Equivalent<K> for engine::execution::interactive_engine::EngineUserMessage where Q: core::cmp::Eq + ?core::marker::Sized, K: core::borrow::Borrow<Q> + ?core::marker::Sized
+pub fn engine::execution::interactive_engine::EngineUserMessage::equivalent(&self, &K) -> bool
+impl<T, U> core::convert::Into<U> for engine::execution::interactive_engine::EngineUserMessage where U: core::convert::From<T>
+pub fn engine::execution::interactive_engine::EngineUserMessage::into(self) -> U
+impl<T, U> core::convert::TryFrom<U> for engine::execution::interactive_engine::EngineUserMessage where U: core::convert::Into<T>
+pub type engine::execution::interactive_engine::EngineUserMessage::Error = core::convert::Infallible
+pub fn engine::execution::interactive_engine::EngineUserMessage::try_from(U) -> core::result::Result<T, <T as core::convert::TryFrom<U>>::Error>
+impl<T, U> core::convert::TryInto<U> for engine::execution::interactive_engine::EngineUserMessage where U: core::convert::TryFrom<T>
+pub type engine::execution::interactive_engine::EngineUserMessage::Error = <U as core::convert::TryFrom<T>>::Error
+pub fn engine::execution::interactive_engine::EngineUserMessage::try_into(self) -> core::result::Result<U, <U as core::convert::TryFrom<T>>::Error>
+impl<T> alloc::borrow::ToOwned for engine::execution::interactive_engine::EngineUserMessage where T: core::clone::Clone
+pub type engine::execution::interactive_engine::EngineUserMessage::Owned = T
+pub fn engine::execution::interactive_engine::EngineUserMessage::clone_into(&self, &mut T)
+pub fn engine::execution::interactive_engine::EngineUserMessage::to_owned(&self) -> T
+impl<T> core::any::Any for engine::execution::interactive_engine::EngineUserMessage where T: 'static + ?core::marker::Sized
+pub fn engine::execution::interactive_engine::EngineUserMessage::type_id(&self) -> core::any::TypeId
+impl<T> core::borrow::Borrow<T> for engine::execution::interactive_engine::EngineUserMessage where T: ?core::marker::Sized
+pub fn engine::execution::interactive_engine::EngineUserMessage::borrow(&self) -> &T
+impl<T> core::borrow::BorrowMut<T> for engine::execution::interactive_engine::EngineUserMessage where T: ?core::marker::Sized
+pub fn engine::execution::interactive_engine::EngineUserMessage::borrow_mut(&mut self) -> &mut T
+impl<T> core::clone::CloneToUninit for engine::execution::interactive_engine::EngineUserMessage where T: core::clone::Clone
+pub unsafe fn engine::execution::interactive_engine::EngineUserMessage::clone_to_uninit(&self, *mut u8)
+impl<T> core::convert::From<T> for engine::execution::interactive_engine::EngineUserMessage
+pub fn engine::execution::interactive_engine::EngineUserMessage::from(T) -> T
+impl<T> typenum::type_operators::Same for engine::execution::interactive_engine::EngineUserMessage
+pub type engine::execution::interactive_engine::EngineUserMessage::Output = T
 pub struct engine::FileChangeRecord
 pub engine::FileChangeRecord::batch_id: core::option::Option<alloc::string::String>
 pub engine::FileChangeRecord::diff_artifact_id: core::option::Option<alloc::string::String>
@@ -11705,6 +11847,7 @@ pub fn engine::execution::interactive_engine::InteractiveEngine::retry_node(&mut
 pub fn engine::execution::interactive_engine::InteractiveEngine::retry_node_with_message(&mut self, &engine::graph::workflow::NodeId, &str, alloc::vec::Vec<engine::conversation::ChatAttachmentRef>) -> core::result::Result<(), engine::execution::interactive_engine::EngineInputError>
 pub fn engine::execution::interactive_engine::InteractiveEngine::revert_file_changes_for_batch(&mut self, &str, &engine::graph::workflow::NodeId)
 pub async fn engine::execution::interactive_engine::InteractiveEngine::run<A: engine::ports::outbound::AiPort, T: engine::ports::outbound::ToolPort>(&mut self, &A, &T, &tokio_util::sync::cancellation_token::CancellationToken) -> engine::execution::interactive_engine::EngineRunResult
+pub async fn engine::execution::interactive_engine::InteractiveEngine::run_with_user_messages<A: engine::ports::outbound::AiPort, T: engine::ports::outbound::ToolPort>(&mut self, &A, &T, &tokio_util::sync::cancellation_token::CancellationToken, &mut tokio::sync::mpsc::unbounded::UnboundedReceiver<engine::execution::interactive_engine::EngineUserMessage>) -> engine::execution::interactive_engine::EngineRunResult
 pub fn engine::execution::interactive_engine::InteractiveEngine::set_runtime_config_store(&mut self, engine::graph::runtime_config::NodeRuntimeConfigStore)
 pub fn engine::execution::interactive_engine::InteractiveEngine::transcript(&self, &engine::graph::workflow::NodeId) -> &[engine::conversation::AgentTranscriptItem]
 impl engine::execution::interactive_engine::InteractiveEngine

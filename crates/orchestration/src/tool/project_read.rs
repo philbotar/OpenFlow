@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
-const PROJECT_READ_TOOL_NAMES: [&str; 3] = ["read", "search", "find"];
+const PROJECT_READ_TOOL_NAMES: [&str; 4] = ["read", "ls", "search", "find"];
 
 pub(crate) struct ProjectReadTools {
     cwd: PathBuf,
@@ -89,7 +89,7 @@ fn execute_project_read(
     arguments: Value,
 ) -> Result<String, ToolError> {
     match name {
-        "read" => {
+        "read" | "ls" => {
             #[derive(Deserialize)]
             struct ReadArgs {
                 path: String,
@@ -97,7 +97,7 @@ fn execute_project_read(
 
             let args: ReadArgs =
                 serde_json::from_value(arguments).map_err(|error| ToolError::InvalidArgs {
-                    tool: "read".to_string(),
+                    tool: name.to_string(),
                     problem: error.to_string(),
                     hint: "required field: path (project-relative string)".to_string(),
                 })?;
@@ -139,7 +139,7 @@ fn execute_project_read(
         _ => Err(ToolError::InvalidArgs {
             tool: name.to_string(),
             problem: "tool is not available during project workflow authoring".to_string(),
-            hint: "use read, search, or find".to_string(),
+            hint: "use read, ls, search, or find".to_string(),
         }),
     }
 }
@@ -218,5 +218,25 @@ mod tests {
 
         assert!(!result.is_error, "{}", result.content);
         assert_eq!(result.content, "PROJECT.md");
+    }
+
+    #[tokio::test]
+    async fn ls_lists_project_execution_folder() {
+        let project_dir = tempfile::tempdir().expect("project tempdir");
+        std::fs::write(project_dir.path().join("PROJECT.md"), "# Project\n")
+            .expect("seed project file");
+        let tools =
+            ProjectReadTools::new(&project_dir.path().display().to_string()).expect("read tools");
+        let result = tools
+            .execute(&ToolCall {
+                id: "ls-project-files".to_string(),
+                provider_call_id: None,
+                name: "ls".to_string(),
+                arguments: json!({ "path": "." }),
+            })
+            .await;
+
+        assert!(!result.is_error, "{}", result.content);
+        assert!(result.content.contains("PROJECT.md"));
     }
 }

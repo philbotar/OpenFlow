@@ -1,7 +1,7 @@
 use crate::api::{
     WorkflowAuthoringDraftEvent, WorkflowAuthoringMessage, WorkflowAuthoringRole,
-    WorkflowAuthoringStartResult, WorkflowAuthoringThinkingEvent, WorkflowAuthoringTurnResult,
-    WorkflowAuthoringValidation,
+    WorkflowAuthoringRuntimeConfig, WorkflowAuthoringStartResult, WorkflowAuthoringThinkingEvent,
+    WorkflowAuthoringTurnResult, WorkflowAuthoringValidation,
 };
 use crate::run::prep::provider_reasoning_for_profile;
 use crate::settings::model::AppSettings;
@@ -45,6 +45,11 @@ pub struct WorkflowAuthoringProjectContext {
 pub struct WorkflowAuthoringService {
     // ponytail: std mutex; lock only in brief scopes, never held across ai.invoke().await
     sessions: Arc<Mutex<HashMap<String, WorkflowAuthoringSession>>>,
+}
+
+pub struct WorkflowAuthoringEventHandlers<F, G> {
+    pub on_thinking: F,
+    pub on_draft_update: G,
 }
 
 impl WorkflowAuthoringService {
@@ -139,6 +144,38 @@ impl WorkflowAuthoringService {
         F: Fn(WorkflowAuthoringThinkingEvent) + Send + Sync,
         G: Fn(WorkflowAuthoringDraftEvent) + Send + Sync,
     {
+        self.send_turn_with_runtime_config(
+            session_id,
+            user_message,
+            settings,
+            &WorkflowAuthoringRuntimeConfig::default(),
+            ai,
+            WorkflowAuthoringEventHandlers {
+                on_thinking,
+                on_draft_update,
+            },
+        )
+        .await
+    }
+
+    pub async fn send_turn_with_runtime_config<A, F, G>(
+        &self,
+        session_id: &str,
+        user_message: String,
+        settings: &AppSettings,
+        runtime_config: &WorkflowAuthoringRuntimeConfig,
+        ai: &A,
+        event_handlers: WorkflowAuthoringEventHandlers<F, G>,
+    ) -> Result<WorkflowAuthoringTurnResult, AuthoringError>
+    where
+        A: AiPort + Send + Sync,
+        F: Fn(WorkflowAuthoringThinkingEvent) + Send + Sync,
+        G: Fn(WorkflowAuthoringDraftEvent) + Send + Sync,
+    {
+        let WorkflowAuthoringEventHandlers {
+            on_thinking,
+            on_draft_update,
+        } = event_handlers;
         let (messages, current_draft, project_context) = {
             let mut sessions = self
                 .sessions
@@ -158,10 +195,12 @@ impl WorkflowAuthoringService {
             )
         };
 
-        let model = settings
-            .active_profile()
-            .default_model
-            .clone()
+        let model = runtime_config
+            .model
+            .as_ref()
+            .filter(|model| !model.trim().is_empty())
+            .cloned()
+            .or_else(|| settings.active_profile().default_model.clone())
             .unwrap_or_else(|| "gpt-5.5".to_string());
 
         let mut transcript: Vec<AgentTranscriptItem> = messages
@@ -214,8 +253,11 @@ impl WorkflowAuthoringService {
             )
         };
 
-        let (reasoning_effort, reasoning_budget_tokens) =
-            provider_reasoning_for_profile(settings.active_profile());
+        let (reasoning_effort, reasoning_budget_tokens) = runtime_config
+            .reasoning_effort
+            .as_ref()
+            .map(|effort| (Some(effort.clone()), runtime_config.reasoning_budget_tokens))
+            .unwrap_or_else(|| provider_reasoning_for_profile(settings.active_profile()));
 
         let mut tool_state = AuthoringToolState::new(current_draft.as_ref(), &model);
         let mut model_attempt = 1u8;
@@ -247,7 +289,7 @@ impl WorkflowAuthoringService {
                 model_attempt,
                 reasoning_effort: reasoning_effort.clone(),
                 reasoning_budget_tokens,
-                fast_mode: false,
+                fast_mode: runtime_config.fast_mode,
                 allow_user_input: false,
                 conversation_mode: true,
                 tool_access_policy: engine::ToolAccessPolicy::Execution,

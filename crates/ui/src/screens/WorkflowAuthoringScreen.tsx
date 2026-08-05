@@ -85,39 +85,30 @@ export function WorkflowAuthoringScreen() {
           </Show>
 
           <div class="chat-composer-bar">
-            <Show
-              when={ctx.workflowAuthoringSessionReady()}
-              fallback={
-                <div class="chat-live-strip chat-live-strip--pending" aria-live="polite">
-                  <p class="chat-live-starting">Starting authoring session…</p>
+            <div class="workflow-authoring-composer-row">
+              <AuthoringComposer
+                busy={ctx.workflowAuthoringBusy()}
+                sessionReady={ctx.workflowAuthoringSessionReady()}
+                providerReady={ctx.readiness()?.ready === true}
+                providerMessage={ctx.readiness()?.message ?? "Checking provider..."}
+                onSend={(message) => void ctx.handleWorkflowAuthoringSend(message)}
+              />
+              <Show when={ctx.workflowAuthoringDraftPending()}>
+                <div class="workflow-authoring-apply-group">
+                  <Button
+                    variant="primary"
+                    class="workflow-authoring-apply"
+                    disabled={
+                      ctx.workflowAuthoringValidation()?.valid !== true ||
+                      ctx.workflowAuthoringBusy()
+                    }
+                    onClick={() => void ctx.handleApplyWorkflowAuthoringDraft()}
+                  >
+                    {updatingExistingWorkflow() ? "Apply Changes" : "Create Workflow"}
+                  </Button>
                 </div>
-              }
-            >
-              <div class="workflow-authoring-composer-row">
-                <AuthoringComposer
-                  busy={ctx.workflowAuthoringBusy()}
-                  sessionReady={ctx.workflowAuthoringSessionReady()}
-                  providerReady={ctx.readiness()?.ready === true}
-                  providerMessage={ctx.readiness()?.message ?? "Checking provider..."}
-                  onSend={(message) => void ctx.handleWorkflowAuthoringSend(message)}
-                />
-                <Show when={ctx.workflowAuthoringDraftPending()}>
-                  <div class="workflow-authoring-apply-group">
-                    <Button
-                      variant="primary"
-                      class="workflow-authoring-apply"
-                      disabled={
-                        ctx.workflowAuthoringValidation()?.valid !== true ||
-                        ctx.workflowAuthoringBusy()
-                      }
-                      onClick={() => void ctx.handleApplyWorkflowAuthoringDraft()}
-                    >
-                      {updatingExistingWorkflow() ? "Apply Changes" : "Create Workflow"}
-                    </Button>
-                  </div>
-                </Show>
-              </div>
-            </Show>
+              </Show>
+            </div>
           </div>
         </div>
       </div>

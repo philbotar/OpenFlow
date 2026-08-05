@@ -1,5 +1,7 @@
-use super::{WorkflowAuthoringProjectContext, WorkflowAuthoringService};
-use crate::api::WorkflowAuthoringRole;
+use super::{
+    WorkflowAuthoringEventHandlers, WorkflowAuthoringProjectContext, WorkflowAuthoringService,
+};
+use crate::api::{WorkflowAuthoringRole, WorkflowAuthoringRuntimeConfig};
 use crate::settings::model::AppSettings;
 use async_trait::async_trait;
 use engine::{
@@ -127,6 +129,65 @@ impl AiPort for NaturalConversationAi {
             usage: None,
         }))
     }
+}
+
+struct CapturingRuntimeAi {
+    request: std::sync::Mutex<Option<AgentRequest>>,
+}
+
+#[async_trait]
+impl AiPort for CapturingRuntimeAi {
+    async fn invoke(&self, request: AgentRequest) -> Result<AgentTurnOutcome, AgentError> {
+        *self.request.lock().expect("request lock") = Some(request);
+        Ok(AgentTurnOutcome::Message(AgentMessageTurn {
+            raw_text: "Ready.".to_string(),
+            assistant_message: "Ready.".to_string(),
+            reasoning: Vec::new(),
+            usage: None,
+        }))
+    }
+}
+
+#[cfg_attr(miri, ignore)]
+#[tokio::test]
+async fn send_turn_applies_authoring_runtime_config() {
+    let ai = CapturingRuntimeAi {
+        request: std::sync::Mutex::new(None),
+    };
+    let service = WorkflowAuthoringService::new();
+    let session_id = service.start_session(None).session_id;
+    let runtime_config = WorkflowAuthoringRuntimeConfig {
+        model: Some("gpt-5".to_string()),
+        reasoning_effort: Some("high".to_string()),
+        reasoning_budget_tokens: Some(24_000),
+        fast_mode: true,
+    };
+
+    service
+        .send_turn_with_runtime_config(
+            &session_id,
+            "Help me choose a workflow structure".to_string(),
+            &AppSettings::default(),
+            &runtime_config,
+            &ai,
+            WorkflowAuthoringEventHandlers {
+                on_thinking: |_| {},
+                on_draft_update: |_| {},
+            },
+        )
+        .await
+        .expect("turn");
+
+    let request = ai
+        .request
+        .lock()
+        .expect("request lock")
+        .clone()
+        .expect("request");
+    assert_eq!(request.model, "gpt-5");
+    assert_eq!(request.reasoning_effort.as_deref(), Some("high"));
+    assert_eq!(request.reasoning_budget_tokens, Some(24_000));
+    assert!(request.fast_mode);
 }
 
 #[cfg_attr(miri, ignore)]
@@ -345,6 +406,11 @@ async fn project_authoring_uses_project_specific_preamble() {
     assert!(prompt.contains("ask a concise clarifying question and wait"));
     assert!(prompt.contains("requestUserInput: false for autonomous planning, coding"));
     assert!(prompt.contains("openflow_add_node"));
+    assert!(prompt.contains("Node-to-node handoffs are first-class workflow outputs"));
+    assert!(prompt.contains("handoffFormat: \"markdown\""));
+    assert!(prompt.contains("output.markdown"));
+    assert!(prompt.contains("HANDOFF.md"));
+    assert!(prompt.contains("handoffFormat: \"json\""));
 }
 
 struct ProjectReadToolsAi {
@@ -363,6 +429,7 @@ impl AiPort for ProjectReadToolsAi {
                     .map(|tool| tool.name.as_str())
                     .collect::<Vec<_>>();
                 assert!(tool_names.contains(&"read"));
+                assert!(tool_names.contains(&"ls"));
                 assert!(tool_names.contains(&"search"));
                 assert!(tool_names.contains(&"find"));
                 assert!(!tool_names.contains(&"write"));

@@ -97,7 +97,7 @@ where
             prepared_mcp: None,
             search: crate::settings::model::SearchSettings::default(),
             runtime_config_store: engine::new_runtime_config_store(),
-            tool_budget: Arc::new(tokio::sync::Semaphore::new(16)),
+            tool_budget: crate::run::resources::SharedRunResources::default().tool_budget(),
             mutation_gate: None,
         },
         event_tx,

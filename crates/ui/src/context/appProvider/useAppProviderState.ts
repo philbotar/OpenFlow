@@ -653,9 +653,15 @@ export function useAppProviderState(): AppContextValue {
     workflowAuthoringValidation: workflowAuthoring.workflowAuthoringValidation,
     workflowAuthoringDraft: workflowAuthoring.workflowAuthoringDraft,
     workflowAuthoringDraftPending: workflowAuthoring.workflowAuthoringDraftPending,
+    workflowAuthoringTargetProjectId: workflowAuthoring.workflowAuthoringTargetProjectId,
+    workflowAuthoringRuntimeConfig: workflowAuthoring.workflowAuthoringRuntimeConfig,
     updateWorkflowAuthoringDraft: workflowAuthoring.updateWorkflowAuthoringDraft,
     handleOpenWorkflowAuthoring: workflowAuthoring.handleOpenWorkflowAuthoring,
     handleCloseWorkflowAuthoring: workflowAuthoring.handleCloseWorkflowAuthoring,
+    handleWorkflowAuthoringProjectChange:
+      workflowAuthoring.handleWorkflowAuthoringProjectChange,
+    handleUpdateWorkflowAuthoringRuntimeConfig:
+      workflowAuthoring.handleUpdateWorkflowAuthoringRuntimeConfig,
     handleWorkflowAuthoringSend: workflowAuthoring.handleWorkflowAuthoringSend,
     handleApplyWorkflowAuthoringDraft: workflowAuthoring.handleApplyWorkflowAuthoringDraft,
     handleRun: runSession.handleRun,
